@@ -4,10 +4,10 @@ import { checkIfCloudUrl, CLOUD_PROVIDERS } from "@/data/providersCopy";
 import { checkLlmProviderHealth } from "@/services/settingsService";
 import {
   Brain, Cloud, Network, Volume2, Sparkles, Mic,
-  RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Clock
+  RefreshCw, AlertCircle, Clock
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { ApiKeyField } from "@/shared/ui";
+import { ApiKeyField, UnderlineInput, CarouselSelector } from "@/shared/ui";
 
 interface LlmConfigDeskProps {
   activeCategory: "STT" | "LLM" | "TTS";
@@ -220,14 +220,14 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
     }
     if (isHealthy === true) {
       return (
-        <span className="text-[12px] font-bold text-emerald-400 flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-md">
+        <span className="text-[12px] font-bold text-emerald-400 flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Online
         </span>
       );
     }
     if (isHealthy === false) {
       return (
-        <span className="text-[12px] font-bold text-rose-400 flex items-center gap-1 bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.5 rounded-md">
+        <span className="text-[12px] font-bold text-rose-400 flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
         </span>
       );
@@ -238,14 +238,14 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
   return (
     <div
       className={cn(
-        "w-full flex flex-col rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)]",
+        "w-full flex flex-col flex-1 min-h-0 pt-2.5 pb-0.5 justify-between",
         layoutMode === "small"
-          ? "h-auto min-h-0 max-h-none py-4 space-y-4"
+          ? "h-auto min-h-0 max-h-none py-2 space-y-3"
           : isModular
             ? activeCategory === "TTS" && activePill === "remote"
-              ? "h-auto min-h-[120px]"
-              : "h-[120px] min-h-[120px] max-h-[120px]"
-            : "flex-1 min-h-[120px]"
+              ? "h-auto min-h-[115px]"
+              : "h-[115px] min-h-[115px] max-h-[115px]"
+            : "flex-1 min-h-[115px]"
       )}
     >
       {/* ─── SECTION 0: INTEGRATED PIPELINE (MODE = INTEGRATED) ─── */}
@@ -371,24 +371,16 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
 
           <div
             className={cn(
-              "grid gap-2 items-end flex-1 pb-1",
-              layoutMode === "small" ? "grid-cols-1 gap-3" : "grid-cols-[1.5fr_1.5fr]"
+              "grid gap-3 items-end flex-1 pb-1",
+              layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
             )}
           >
-            <div className="space-y-1">
-              <label className="text-[12px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75 ml-0.5">
-                Server URL
-              </label>
-              <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
-                <input
-                  type="text"
-                  value={url}
-                  onChange={(e) => handleUrlChange(e.target.value)}
-                  placeholder="http://127.0.0.1:11434"
-                  className="w-full bg-transparent border-none outline-none text-[12px] font-mono py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/25"
-                />
-              </div>
-            </div>
+            <UnderlineInput
+              label="Server URL"
+              value={url}
+              onChange={(e) => handleUrlChange(e.target.value)}
+              placeholder="http://127.0.0.1:11434"
+            />
             <ApiKeyField
               label="API Key (Optional)"
               value={apiKey}
@@ -415,29 +407,13 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
             {renderLlmStatusBadge()}
           </div>
 
-          <div className={cn("grid gap-3 flex-1 min-h-0 items-end", layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2")}>
-            <div className="space-y-1">
-              <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75 ml-0.5">
-                Cloud Provider
-              </label>
-              <div className="flex items-center justify-between bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.15)] rounded-lg h-[32px] px-2">
-                <button
-                  onClick={() => handleCloudCycle("left")}
-                  className="p-1 text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] transition-colors active:scale-90"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <span className="text-[11px] sm:text-[12px] font-bold text-[rgb(var(--accent))] uppercase tracking-wider truncate px-1">
-                  {CLOUD_PROVIDERS[cloudIndex].name}
-                </span>
-                <button
-                  onClick={() => handleCloudCycle("right")}
-                  className="p-1 text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] transition-colors active:scale-90"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            </div>
+          <div className={cn("grid gap-5 flex-1 min-h-0 items-end", layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2")}>
+            <CarouselSelector
+              label="Cloud Provider"
+              value={CLOUD_PROVIDERS[cloudIndex].name}
+              onPrev={() => handleCloudCycle("left")}
+              onNext={() => handleCloudCycle("right")}
+            />
 
             <ApiKeyField
               label="API Key (Required)"
@@ -488,35 +464,19 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2.5">
-            <div className="space-y-1">
-              <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
-                Server HTTP URL
-              </label>
-              <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
-                <input
-                  type="text"
-                  value={remoteTtsEndpoint}
-                  onChange={(e) => handleRemoteTtsEndpointChange(e.target.value)}
-                  placeholder="http://127.0.0.1:7860"
-                  className="w-full bg-transparent border-none outline-none text-[12px] font-mono text-[rgb(var(--foreground))]"
-                />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] uppercase font-bold text-[rgb(var(--foreground-muted))]/75">
-                Remote Path
-              </label>
-              <div className="border-b border-[rgba(var(--border),0.12)] focus-within:border-b-2 focus-within:border-[rgb(var(--accent))] transition-all duration-300 pb-0.5">
-                <input
-                  type="text"
-                  value={remoteTtsPath}
-                  onChange={(e) => handleRemoteTtsPathChange(e.target.value)}
-                  placeholder="~/.vox"
-                  className="w-full bg-transparent border-none outline-none text-[12px] font-mono text-[rgb(var(--foreground))]"
-                />
-              </div>
-            </div>
+          <div className="grid grid-cols-2 gap-3">
+            <UnderlineInput
+              label="Server HTTP URL"
+              value={remoteTtsEndpoint}
+              onChange={(e) => handleRemoteTtsEndpointChange(e.target.value)}
+              placeholder="http://127.0.0.1:7860"
+            />
+            <UnderlineInput
+              label="Remote Path"
+              value={remoteTtsPath}
+              onChange={(e) => handleRemoteTtsPathChange(e.target.value)}
+              placeholder="~/.vox"
+            />
           </div>
         </div>
       )}
@@ -532,7 +492,7 @@ export const LlmConfigDesk = memo(({ activeCategory, activePill, isModular, layo
 
           <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
             <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
-              <span className="text-[11px] font-bold text-emerald-400 uppercase">
+              <span className="text-[11px] font-bold text-white-400 uppercase">
                 Zero Config
               </span>
             </div>

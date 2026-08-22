@@ -27,11 +27,11 @@ export const AuxiliaryWorkspace = memo(
     const auxiliaryModels = modelCatalog?.auxiliary || [];
 
     return (
-      <div className="space-y-3">
+      <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1">
         <div
           className={cn(
-            "grid gap-2.5",
-            layoutMode === "small" ? "grid-cols-1" : "grid-cols-2"
+            "grid gap-2.5 auto-rows-max content-start",
+            layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
           )}
         >
           {auxiliaryModels.map((model) => (

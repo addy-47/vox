@@ -1,7 +1,6 @@
 import { memo, useState, useMemo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import {
-  Globe,
   Search,
   Cpu,
   Mic,
@@ -28,13 +27,7 @@ const VOICE_INFO: Record<string, { desc: string }> = {
 
 // ─── Pipeline flow visualization (senior UI/UX) ─────────────────────────────
 
-const PipelineFlow = ({
-  active,
-  providerName,
-}: {
-  active: boolean;
-  providerName: string;
-}) => {
+const PipelineFlow = ({ active }: { active: boolean }) => {
   // Generate 3 particles per connection with unique delays/drifts
   const particles = useMemo(
     () =>
@@ -54,7 +47,7 @@ const PipelineFlow = ({
   );
 
   return (
-    <div className="relative w-full overflow-hidden rounded-xl border border-[rgba(var(--accent),0.06)]">
+    <div className="relative w-full overflow-hidden rounded-xl border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]">
       <div className="flex items-center justify-between relative z-10 px-3 py-2.5">
         {/* Stage 1: Capture */}
         <div className="flex flex-col items-center gap-1 shrink-0">
@@ -268,28 +261,10 @@ const PipelineFlow = ({
         </div>
       </div>
 
-      {/* Provider label */}
-      {active && (
-        <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2">
-          <span className="text-[11px] font-semibold tracking-wider text-[rgb(var(--foreground-muted))]/25 uppercase">
-            {providerName} · live
-          </span>
-        </div>
-      )}
+      {/* End of Pipeline Flow */}
     </div>
   );
 };
-
-import {
-  REALTIME_PROVIDER_DISPLAY_NAMES,
-  REALTIME_PROVIDER_SHORT_NAMES,
-} from "@/data/providersCopy";
-
-const providerDisplayName = (id: string): string =>
-  (REALTIME_PROVIDER_DISPLAY_NAMES as any)[id] || "ElevenLabs Conversational AI";
-
-const providerShortName = (id: string): string =>
-  (REALTIME_PROVIDER_SHORT_NAMES as any)[id] || "ElevenLabs";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -519,9 +494,10 @@ function VoiceCarousel({
       )}
     >
       {/* Voice Title */}
-      <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 block leading-none">
-        Voice
+      <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 block text-center leading-none">
+        Select Voice
       </span>
+
 
       {/* Carousel name + arrows */}
       <div className="flex items-center justify-between gap-1 my-2">
@@ -622,14 +598,6 @@ function UnifiedConfig({
     (isGemini ? draftSettings?.realtime?.gemini : isDeepgram ? draftSettings?.realtime?.deepgram : {});
 
   if (!config) return null;
-
-  const defaultModelId: string = (() => {
-    if (isGemini) return "gemini-2.5-flash";
-    if (isOpenAi) return "gpt-4o-realtime-preview";
-    if (isDeepgram) return "gpt-4o-mini";
-    return "";
-  })();
-
   const voiceField = isGemini ? "voice_name" : "voice";
   const currentVoice = config[voiceField] || VOICE_OPTIONS[0];
 
@@ -676,7 +644,7 @@ function UnifiedConfig({
             if (!disabled)
               updateDraft("realtime", canonicalSubkey, { ...config, model: v });
           }}
-          placeholder={defaultModelId || "Model ID"}
+          placeholder={"Model ID"}
           disabled={disabled}
         />
 
@@ -812,26 +780,10 @@ export const RealtimeCard = memo(
         )}
 
         {/* ── Pipeline Flow (transparent container) ──────────────────────── */}
-        <PipelineFlow
-          active={true}
-          providerName={providerShortName(providerId)}
-        />
+        <PipelineFlow active={true} />
 
-        {/* ── Provider info bar (transparent container) ──────────────────── */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[rgba(var(--border),0.06)] shrink-0">
-          <div className="flex-1 flex items-center gap-2 min-w-0">
-            <Globe size={12} className="text-[rgb(var(--accent))] shrink-0" />
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70 truncate">
-              {providerDisplayName(providerId)}
-            </span>
-          </div>
-          <span className="text-[11px] font-bold tracking-widest uppercase px-2 py-0.5 rounded-full shrink-0 border border-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))]">
-            Live
-          </span>
-        </div>
-
-        {/* ── Config workspace (transparent container, 2-column) ─────────── */}
-        <div className="w-full flex flex-col shrink-0">
+        {/* ── Config workspace: Unified Glass Desk Container ─────────── */}
+        <div className="w-full flex flex-col shrink-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]">
           <UnifiedConfig
             subkey={subkey}
             draftSettings={draftSettings}

@@ -180,7 +180,12 @@ export const InteractionCard = memo(
 
               {/* Category & Provider Selector Subcomponent or Realtime Config Desk */}
               {isModular ? (
-                <>
+                <div
+                  className={cn(
+                    "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)] justify-between",
+                    layoutMode === "small" ? "h-auto" : "h-full"
+                  )}
+                >
                   <CategorySelector
                     activeCategory={activeCategory}
                     activePill={activePill}
@@ -197,9 +202,16 @@ export const InteractionCard = memo(
                     isModular={isModular}
                     layoutMode={layoutMode}
                   />
-                </>
+                </div>
               ) : (
-                <RealtimeConfigDesk layoutMode={layoutMode} />
+                <div
+                  className={cn(
+                    "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]",
+                    layoutMode === "small" ? "h-auto" : "h-full"
+                  )}
+                >
+                  <RealtimeConfigDesk layoutMode={layoutMode} />
+                </div>
               )}
             </>
           ) : (

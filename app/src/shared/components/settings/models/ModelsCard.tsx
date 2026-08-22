@@ -620,10 +620,10 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           />
         </div>
 
-        {/* Workspaces by Pipeline Tab */}
+        {/* Workspaces by Pipeline Tab: Unified Glass Container */}
         <div
           className={cn(
-            "flex-1 w-full flex flex-col glass rounded-xl p-2.5 relative bg-[rgba(var(--foreground),0.02)] min-h-0 overflow-hidden",
+            "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]",
             layoutMode === "small" ? "h-[290px] max-h-[290px]" : "h-full"
           )}
         >

@@ -69,7 +69,7 @@ Package manager is **pnpm** (never npm/yarn).
 
 - **Store** — `app/src/store/settingsStore.ts` is the single source of truth for `VoxSettings` (full schema: `settingsStore.ts:108-207`). It uses a draft/committed pattern: edits mutate `draftSettings`; `commitChanges()` diffs against `settings` and writes only changed keys via `updateSetting`, collecting `restartKeys` for `Restart`-policy domains. Domain-dirty checks (`isDomainDirty`) drive the unsaved-changes badge.
 - **Selector discipline** — components read with `useSettingsStore(s => s.ui.theme)` to avoid re-renders. New code uses the store directly.
-- **Adapter** — `app/src/shared/context/SettingsContext.tsx` wraps the store for legacy `useSettings()` consumers. It exists only for backward compatibility; do not add new consumers.
+- **Adapter** — `app/src/shared/context/SettingsContext.tsx` wraps the store for legacy consumers. To prevent Vite Fast Refresh invalidation cascades (`"useSettings" export is incompatible`), the hook is extracted into `src/shared/hooks/useSettings.ts`, leaving `SettingsContext.tsx` strictly component/context only.
 - **Model catalog** — `ModelCatalog` / `ModelGroupInfo` / `ModelCapabilities` types and `requestModelCatalog()` live in the store + `services/settingsService.ts`. Catalog drives the Settings model workspaces.
 - **Shared state rule** — low-frequency config in the store/context; fast-changing animation values stay in local state or refs (`code-style-guide.md` §2).
 
