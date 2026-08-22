@@ -7,6 +7,7 @@ import { TriggerModeCard } from "./TriggerModeCard";
 import { PipelineModeCard } from "./PipelineModeCard";
 import { CategorySelector } from "./CategorySelector";
 import { LlmConfigDesk } from "./LlmConfigDesk";
+import { RealtimeConfigDesk } from "./RealtimeConfigDesk";
 import { DictationConfigDesk } from "./DictationConfigDesk";
 import { checkIfCloudUrl } from "@/data/providersCopy";
 import { DICTATION_COPY } from "@/data/settingsCopy";
@@ -177,25 +178,29 @@ export const InteractionCard = memo(
                 <PipelineModeCard layoutMode={layoutMode} />
               </div>
 
-              {/* Category & Provider Selector Subcomponent */}
-              {isModular && (
-                <CategorySelector
-                  activeCategory={activeCategory}
-                  activePill={activePill}
-                  onCycleCategory={cycleCategory}
-                  onSetCategory={setActiveCategory}
-                  onPillChange={handlePillChange}
-                  layoutMode={layoutMode}
-                />
-              )}
+              {/* Category & Provider Selector Subcomponent or Realtime Config Desk */}
+              {isModular ? (
+                <>
+                  <CategorySelector
+                    activeCategory={activeCategory}
+                    activePill={activePill}
+                    onCycleCategory={cycleCategory}
+                    onSetCategory={setActiveCategory}
+                    onPillChange={handlePillChange}
+                    layoutMode={layoutMode}
+                  />
 
-              {/* Configuration Desk Subcomponent */}
-              <LlmConfigDesk
-                activeCategory={activeCategory}
-                activePill={activePill}
-                isModular={isModular}
-                layoutMode={layoutMode}
-              />
+                  {/* Configuration Desk Subcomponent */}
+                  <LlmConfigDesk
+                    activeCategory={activeCategory}
+                    activePill={activePill}
+                    isModular={isModular}
+                    layoutMode={layoutMode}
+                  />
+                </>
+              ) : (
+                <RealtimeConfigDesk layoutMode={layoutMode} />
+              )}
             </>
           ) : (
             <>

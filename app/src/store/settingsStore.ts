@@ -333,6 +333,7 @@ interface SettingsState {
   restoreDefaults: () => Promise<void>;
   toggleTheme: () => void;
   clearRestartKeys: () => void;
+  isCommitting: boolean;
 }
 
 function applyAppearance(appearance?: AppearanceSettings) {
@@ -501,10 +502,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
+  isCommitting: false,
   commitChanges: async () => {
     const { settings, draftSettings } = get();
     if (!settings || !draftSettings) return;
 
+    set({ isCommitting: true });
     const promises: Promise<any>[] = [];
     const restartKeys: string[] = [];
 
@@ -549,15 +552,19 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }
     }
 
-    await Promise.all(promises);
-    set({ hasChanges: false });
-    const bootState = await requestBootState();
-    const fetched = bootState.settings;
-    const cloned = structuredClone(fetched);
-    set({ settings: fetched, draftSettings: cloned, hasChanges: false, isLoading: false });
+    try {
+      await Promise.all(promises);
+      set({ hasChanges: false });
+      const bootState = await requestBootState();
+      const fetched = bootState.settings;
+      const cloned = structuredClone(fetched);
+      set({ settings: fetched, draftSettings: cloned, hasChanges: false, isLoading: false });
 
-    if (restartKeys.length > 0) {
-      set({ restartKeys });
+      if (restartKeys.length > 0) {
+        set({ restartKeys });
+      }
+    } finally {
+      set({ isCommitting: false });
     }
   },
 

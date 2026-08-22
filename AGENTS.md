@@ -112,6 +112,22 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 - **Persistent Model Capability Cache**: Probed model metrics and hardware telemetry are written atomically to `~/.vox/cache/model_capabilities.json` upon benchmark completion, loaded via `loadCapabilitiesCache()` on startup and synced directly to Zustand `capabilitiesCache`, guaranteeing benchmark results persist across tab switches and app sessions.
 - **Unified Model Capability Tooltip**: Consolidated all model telemetry (Speed TPS, Context Window, VRAM, Tool calling, and `EN`/`HIN` script validation) into a single compact `Capabilities` trigger with a theme-aware rich breakdown tooltip positioned on the left, keeping card footers minimal and uniform across light and dark themes.
 
+### 5.6 Realtime Voice Desk & Interaction Ribbon Architecture
+> Full specification: [`docs/frontend.md`](docs/frontend.md)
+- **Liquid Space Interaction Ribbon**: When `pipeline_mode === "realtime"`, `RealtimeConfigDesk` implements the unified interaction ribbon pattern (`Live Voice` $\longrightarrow$ `Gemini Live | Deepgram Agent`), replacing disjointed floating boxes with a cohesive glass desk container matching `LlmConfigDesk` and `DictationConfigDesk`.
+- **Decoupled API Key & Provider Memory**: Seamless 1-click provider switching updating `draftSettings.realtime.active`, with full provider description tagline and subtle error indicators for missing keys.
+- **Domain Dirty Sync**: Retains `{ scope: "realtime" }` in `DOMAIN_DIRTY_KEYS.interaction` for persistent Save/Discard flows.
 
-
-
+### 5.7 TTS Speech Desk Unification & Full-Width Region Tabs
+> Full specification: [`docs/frontend.md`](docs/frontend.md)
+- **Full-Width Region Grid Tabs (`VoiceCarousel.tsx`)**: Removed extraneous voice count headers and expanded the Region selector (`ALL`, `US`, `UK`, `AU`, `GLOBAL`) across the entire carousel width with a 5-column grid and leading Globe icon.
+- **3-Step Speed Rotary Knob**: Standardized speed controls to 3 clean presets (`0.8x`, `1.0x`, `1.25x`), eliminating horizontal edge clipping and redundant reset buttons.
+### 5.8 Settings Performance Optimization & Reactive UI Hardening
+> Full specification: [`docs/features/performance-memory-optimizations.md`](docs/features/performance-memory-optimizations.md)
+- **Zero Fan-Out Context Migration**: Migrated `SettingsCardWrapper` and `RealtimeCard` from `useSettings()` to granular `useSettingsStore` selectors, completely eliminating whole-tree re-rendering sweeps during `updateDraft` mutations.
+- **Coalesced Appearance Color Picker**: `AppearanceCard` buffers live color adjustments in local component state with direct CSS variable updates (`--accent`), committing to `settingsStore` on `pointerup`.
+- **Reactive Connector Geometry Settlement**: Fixed stale `lines` state closures in `useSettingsPage` with functional updates (`setLines(prev => ...)`), ensuring SVG node-to-card connectors draw accurately without ghost lines on rapid toggling while preserving the transform settlement timer.
+- **Granular Domain Dirty Checking**: Configured explicit `keys` arrays in `DOMAIN_DIRTY_KEYS.models` to replace expensive whole-scope stringification with fast scalar equality checks.
+- **Event-Driven Save Debounce Isolation**: Set `isCommitting` guards to suppress redundant `settings-updated` reload events during batch `commitChanges` roundtrips.
+- **Tab-Gated TTS Polling**: Isolated Chatterbox remote health polling strictly to `activePipelineTab === "tts"`, stopping background interval work on other tabs.
+- **Ambient Settled Layer Demotion**: Settled idle energy states in `AmbientBackground` demote GPU layer promotion (`will-change: auto`), and `@media (prefers-reduced-motion)` covers all wave bar and micro-interaction animations.

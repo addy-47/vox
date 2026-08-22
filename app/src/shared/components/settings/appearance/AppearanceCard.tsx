@@ -1,8 +1,8 @@
-import { memo } from "react";
+import { memo, useState, useEffect, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { HexColorPicker } from "react-colorful";
 import { Palette, Sun, Moon } from "lucide-react";
-import { cn } from "@/shared/lib/utils";
+import { cn, hexToRgb } from "@/shared/lib/utils";
 import { Card, SegmentedControl } from "@/shared/ui";
 
 interface AppearanceCardProps {
@@ -15,11 +15,30 @@ const THEME_OPTIONS = [
 ];
 
 export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardProps) => {
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const appearance = useSettingsStore((s) => s.draftSettings?.appearance);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
+  const [localColor, setLocalColor] = useState(appearance?.accent_seed || "#00dbe9");
 
-  if (!draftSettings) return null;
-  const { appearance } = draftSettings;
+  useEffect(() => {
+    if (appearance?.accent_seed && appearance.accent_seed !== localColor) {
+      setLocalColor(appearance.accent_seed);
+    }
+  }, [appearance?.accent_seed]);
+
+  const handleColorChange = useCallback((color: string) => {
+    setLocalColor(color);
+    if (typeof document !== "undefined") {
+      document.documentElement.style.setProperty("--accent", hexToRgb(color));
+    }
+  }, []);
+
+  const handlePointerUp = useCallback(() => {
+    if (appearance && localColor !== appearance.accent_seed) {
+      updateDraft("appearance", "accent_seed", localColor);
+    }
+  }, [appearance, localColor, updateDraft]);
+
+  if (!appearance) return null;
 
   const isSmall = layoutMode === "small";
   const isMin = layoutMode === "full-min";
@@ -55,10 +74,13 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
       </div>
 
       {/* Bottom Row: Full card width color picker */}
-      <div className="flex-1 flex items-center justify-center min-h-0 pt-0.5">
+      <div
+        className="flex-1 flex items-center justify-center min-h-0 pt-0.5"
+        onPointerUp={handlePointerUp}
+      >
         <HexColorPicker
-          color={appearance.accent_seed}
-          onChange={(color) => updateDraft("appearance", "accent_seed", color)}
+          color={localColor}
+          onChange={handleColorChange}
           className="custom-color-picker w-full"
           style={{ width: "100%", height: "92px" }}
         />

@@ -94,12 +94,12 @@ export interface DomainDirtyKey {
 
 export const DOMAIN_DIRTY_KEYS: Record<SettingsDomainId, readonly DomainDirtyKey[]> = {
   models: [
-    { scope: "audio" },
-    { scope: "vad" },
-    { scope: "stt" },
-    { scope: "tts" },
-    { scope: "llm" },
-    { scope: "realtime" },
+    { scope: "audio", keys: SETTINGS_SCOPE_KEYS.audio },
+    { scope: "vad", keys: SETTINGS_SCOPE_KEYS.vad },
+    { scope: "stt", keys: SETTINGS_SCOPE_KEYS.stt },
+    { scope: "tts", keys: SETTINGS_SCOPE_KEYS.tts },
+    { scope: "llm", keys: SETTINGS_SCOPE_KEYS.llm },
+    { scope: "realtime", keys: SETTINGS_SCOPE_KEYS.realtime },
   ],
   history: [
     { scope: "history" },
@@ -116,7 +116,31 @@ export const DOMAIN_DIRTY_KEYS: Record<SettingsDomainId, readonly DomainDirtyKey
   interaction: [
     { scope: "interaction" },
     { scope: "dictation" },
+    { scope: "realtime" },
   ],
+};
+
+export const REALTIME_CONFIG_DESK_COPY = {
+  title: "Live Voice Provider",
+  duplexBadge: "Direct Voice",
+  providerLabel: "Voice Provider",
+  apiKeyLabel: "API Key (Required)",
+  prevProvider: "Previous provider",
+  nextProvider: "Next provider",
+};
+
+export const PIPELINE_MODE_COPY = {
+  modularTitle: "Modular",
+  modularSub: "Custom Models",
+  realtimeTitle: "Realtime",
+  realtimeSub: "Direct Voice",
+};
+
+export const TRIGGER_MODE_COPY = {
+  continuousTitle: "Continuous",
+  continuousSub: "Always Listening",
+  pttTitle: "Push-To-Talk",
+  pttSub: "Hold to Speak",
 };
 
 export const SETTINGS_COPY = {
