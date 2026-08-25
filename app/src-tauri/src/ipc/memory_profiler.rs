@@ -50,6 +50,7 @@ pub fn sanitize_page_name(route: &str) -> String {
     }
 }
 
+/// Process memory entry capturing RSS, CPU, and assigned role in the application tree.
 #[derive(Debug, Clone, serde::Deserialize, Serialize)]
 pub struct ProcessMemoryEntry {
     pub pid: u32,
@@ -62,6 +63,7 @@ pub struct ProcessMemoryEntry {
     pub role: String,
 }
 
+/// Comprehensive profiler snapshot capturing system and per-webview memory breakdown.
 #[derive(Debug, Clone, Serialize)]
 pub struct ProfilerSnapshot {
     pub total_vox_ram_mb: f32,
@@ -79,6 +81,121 @@ pub struct ProfilerSnapshot {
     pub accuracy: &'static str,
 }
 
+fn extract_descendant_processes(
+    sys: &System,
+    target: sysinfo::Pid,
+) -> (Vec<ProcessMemoryEntry>, f32, Option<f32>, f32, u64) {
+    let mut process_tree = Vec::new();
+    let mut main_ram = 0.0;
+    let mut network_ram = None;
+    let mut other_ram = 0.0;
+    let mut total_bytes = 0;
+
+    for (&p_pid, proc) in sys.processes() {
+        #[cfg(target_os = "linux")]
+        if proc.tasks().is_none() {
+            continue;
+        }
+
+        let is_main = p_pid == target;
+        let mut is_descendant = is_main;
+        if !is_main {
+            let mut curr = proc;
+            while let Some(parent_pid) = curr.parent() {
+                if parent_pid == target {
+                    is_descendant = true;
+                    break;
+                }
+                match sys.process(parent_pid) {
+                    Some(parent_proc) => curr = parent_proc,
+                    None => break,
+                }
+            }
+        }
+
+        if is_descendant {
+            let mem_bytes = proc.memory();
+            total_bytes += mem_bytes;
+            let mem_mb = mem_bytes as f32 / 1024.0 / 1024.0;
+            let cpu = proc.cpu_usage();
+            let name = proc.name().to_string();
+
+            let role = if is_main {
+                main_ram = mem_mb;
+                "Main Process (Rust Core)".to_string()
+            } else if name.contains("WebKitWeb") || name.contains("WebProcess") {
+                "WebKit WebProcess".to_string()
+            } else if name.contains("WebKitNetwork") || name.contains("NetworkProcess") {
+                network_ram = Some(mem_mb);
+                "WebKit NetworkProcess".to_string()
+            } else {
+                other_ram += mem_mb;
+                "Child Process".to_string()
+            };
+
+            process_tree.push(ProcessMemoryEntry {
+                pid: p_pid.as_u32(),
+                parent_pid: proc.parent().map(|p| p.as_u32()),
+                name,
+                memory_mb: (mem_mb * 100.0).round() / 100.0,
+                cpu_usage: (cpu * 10.0).round() / 10.0,
+                start_time: proc.start_time(),
+                is_main_process: is_main,
+                role,
+            });
+        }
+    }
+
+    (process_tree, main_ram, network_ram, other_ram, total_bytes)
+}
+
+fn assign_webview_roles(
+    process_tree: &mut [ProcessMemoryEntry],
+    has_main: bool,
+    has_tray: bool,
+    has_wizard: bool,
+) -> (Option<f32>, Option<f32>, Option<f32>) {
+    let mut web_pids: Vec<(u32, u64, f32)> = process_tree
+        .iter()
+        .filter(|p| {
+            !p.is_main_process && (p.name.contains("WebKitWeb") || p.name.contains("WebProcess"))
+        })
+        .map(|p| (p.pid, p.start_time, p.memory_mb))
+        .collect();
+
+    web_pids.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+
+    let mut main_ram = None;
+    let mut tray_ram = None;
+    let mut wizard_ram = None;
+    let mut idx = 0;
+
+    let roles = [
+        (has_main, "Main WebView (Primary UI)", &mut main_ram),
+        (has_tray, "Tray WebView (HUD Overlay)", &mut tray_ram),
+        (has_wizard, "Wizard WebView (Setup Window)", &mut wizard_ram),
+    ];
+
+    for (active, role_name, ram_slot) in roles {
+        if active && idx < web_pids.len() {
+            *ram_slot = Some(web_pids[idx].2);
+            if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_pids[idx].0) {
+                entry.role = role_name.to_string();
+            }
+            idx += 1;
+        }
+    }
+
+    while idx < web_pids.len() {
+        if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_pids[idx].0) {
+            entry.role = "WebKit Auxiliary WebProcess".to_string();
+        }
+        idx += 1;
+    }
+
+    (main_ram, tray_ram, wizard_ram)
+}
+
 fn collect_profiler_snapshot_internal(
     has_main: bool,
     has_tray: bool,
@@ -93,177 +210,42 @@ fn collect_profiler_snapshot_internal(
         .unwrap_or_default()
         .as_millis() as u64;
 
-    let total_system_ram_mb = (sys.total_memory() / 1024 / 1024) as u32;
-    let used_system_ram_mb = (sys.used_memory() / 1024 / 1024) as u32;
-    let system_ram_pct = if sys.total_memory() > 0 {
+    let total_sys_ram = (sys.total_memory() / 1024 / 1024) as u32;
+    let used_sys_ram = (sys.used_memory() / 1024 / 1024) as u32;
+    let sys_pct = if sys.total_memory() > 0 {
         (sys.used_memory() as f32 / sys.total_memory() as f32) * 100.0
     } else {
         0.0
     };
 
-    let mut process_tree: Vec<ProcessMemoryEntry> = Vec::new();
-    let mut main_process_ram_mb: f32 = 0.0;
-    let mut web_processes: Vec<ProcessMemoryEntry> = Vec::new();
-    let mut network_process_ram_mb: Option<f32> = None;
-    let mut other_children_ram_mb: f32 = 0.0;
-    let mut total_vox_memory_bytes: u64 = 0;
+    let (mut tree, main_ram, net_ram, other_ram, total_bytes) = match target_pid {
+        Some(target) => extract_descendant_processes(&sys, target),
+        None => (Vec::new(), 0.0, None, 0.0, 0),
+    };
 
-    if let Some(target) = target_pid {
-        // 1. Gather all descendants recursively
-        for (&p_pid, proc) in sys.processes() {
-            #[cfg(target_os = "linux")]
-            {
-                if proc.tasks().is_none() {
-                    continue;
-                }
-            }
+    let (main_web, tray_web, wizard_web) =
+        assign_webview_roles(&mut tree, has_main, has_tray, has_wizard);
 
-            let p_u32 = p_pid.as_u32();
-            let mut is_descendant = false;
-            let is_main = p_pid == target;
-
-            if is_main {
-                is_descendant = true;
-            } else {
-                let mut curr = proc;
-                while let Some(parent_pid) = curr.parent() {
-                    if parent_pid == target {
-                        is_descendant = true;
-                        break;
-                    }
-                    if let Some(parent_proc) = sys.process(parent_pid) {
-                        curr = parent_proc;
-                    } else {
-                        break;
-                    }
-                }
-            }
-
-            if is_descendant {
-                let mem_bytes = proc.memory();
-                total_vox_memory_bytes += mem_bytes;
-                let mem_mb = mem_bytes as f32 / 1024.0 / 1024.0;
-                let cpu = proc.cpu_usage();
-                let name = proc.name().to_string();
-                let parent_u32 = proc.parent().map(|p| p.as_u32());
-                let start_time = proc.start_time();
-
-                let mut role = "Child Process".to_string();
-                if is_main {
-                    role = "Main Process (Rust Core)".to_string();
-                    main_process_ram_mb = mem_mb;
-                } else if name.contains("WebKitWeb") || name.contains("WebProcess") {
-                    role = "WebKit WebProcess".to_string();
-                } else if name.contains("WebKitNetwork") || name.contains("NetworkProcess") {
-                    role = "WebKit NetworkProcess".to_string();
-                    network_process_ram_mb = Some(mem_mb);
-                }
-
-                let entry = ProcessMemoryEntry {
-                    pid: p_u32,
-                    parent_pid: parent_u32,
-                    name,
-                    memory_mb: (mem_mb * 100.0).round() / 100.0,
-                    cpu_usage: (cpu * 10.0).round() / 10.0,
-                    start_time,
-                    is_main_process: is_main,
-                    role,
-                };
-
-                if !is_main
-                    && (entry.name.contains("WebKitWeb") || entry.name.contains("WebProcess"))
-                {
-                    web_processes.push(entry.clone());
-                } else if !is_main
-                    && !entry.name.contains("WebKitNetwork")
-                    && !entry.name.contains("NetworkProcess")
-                {
-                    other_children_ram_mb += mem_mb;
-                }
-
-                process_tree.push(entry);
-            }
-        }
-    }
-
-    // Sort WebProcesses chronologically by start_time (or PID as fallback)
-    web_processes.sort_by(|a, b| {
-        a.start_time
-            .cmp(&b.start_time)
-            .then_with(|| a.pid.cmp(&b.pid))
-    });
-
-    let mut main_webview_ram_mb: Option<f32> = None;
-    let mut tray_webview_ram_mb: Option<f32> = None;
-    let mut wizard_webview_ram_mb: Option<f32> = None;
-
-    let mut proc_idx = 0;
-
-    if has_main && proc_idx < web_processes.len() {
-        main_webview_ram_mb = Some(web_processes[proc_idx].memory_mb);
-        if let Some(entry) = process_tree
-            .iter_mut()
-            .find(|p| p.pid == web_processes[proc_idx].pid)
-        {
-            entry.role = "Main WebView (Primary UI)".to_string();
-        }
-        proc_idx += 1;
-    }
-
-    if has_tray && proc_idx < web_processes.len() {
-        tray_webview_ram_mb = Some(web_processes[proc_idx].memory_mb);
-        if let Some(entry) = process_tree
-            .iter_mut()
-            .find(|p| p.pid == web_processes[proc_idx].pid)
-        {
-            entry.role = "Tray WebView (HUD Overlay)".to_string();
-        }
-        proc_idx += 1;
-    }
-
-    if has_wizard && proc_idx < web_processes.len() {
-        wizard_webview_ram_mb = Some(web_processes[proc_idx].memory_mb);
-        if let Some(entry) = process_tree
-            .iter_mut()
-            .find(|p| p.pid == web_processes[proc_idx].pid)
-        {
-            entry.role = "Wizard WebView (Setup Window)".to_string();
-        }
-        proc_idx += 1;
-    }
-
-    while proc_idx < web_processes.len() {
-        if let Some(entry) = process_tree
-            .iter_mut()
-            .find(|p| p.pid == web_processes[proc_idx].pid)
-        {
-            entry.role = "WebKit Auxiliary WebProcess".to_string();
-        }
-        proc_idx += 1;
-    }
-
-    // Sort complete process_tree with Main Process first, then WebViews, then others
-    process_tree.sort_by(|a, b| {
+    tree.sort_by(|a, b| {
         b.is_main_process
             .cmp(&a.is_main_process)
             .then_with(|| a.pid.cmp(&b.pid))
     });
 
-    let total_vox_ram_mb =
-        (total_vox_memory_bytes as f32 / 1024.0 / 1024.0 * 100.0).round() / 100.0;
+    let total_vox_mb = (total_bytes as f32 / 1024.0 / 1024.0 * 100.0).round() / 100.0;
 
     ProfilerSnapshot {
-        total_vox_ram_mb,
-        main_process_ram_mb: (main_process_ram_mb * 100.0).round() / 100.0,
-        main_webview_ram_mb,
-        tray_webview_ram_mb,
-        wizard_webview_ram_mb,
-        network_process_ram_mb,
-        other_children_ram_mb: (other_children_ram_mb * 100.0).round() / 100.0,
-        total_system_ram_mb,
-        used_system_ram_mb,
-        system_ram_pct: (system_ram_pct * 10.0).round() / 10.0,
-        process_tree,
+        total_vox_ram_mb: total_vox_mb,
+        main_process_ram_mb: (main_ram * 100.0).round() / 100.0,
+        main_webview_ram_mb: main_web,
+        tray_webview_ram_mb: tray_web,
+        wizard_webview_ram_mb: wizard_web,
+        network_process_ram_mb: net_ram,
+        other_children_ram_mb: (other_ram * 100.0).round() / 100.0,
+        total_system_ram_mb: total_sys_ram,
+        used_system_ram_mb: used_sys_ram,
+        system_ram_pct: (sys_pct * 10.0).round() / 10.0,
+        process_tree: tree,
         timestamp_ms: now,
         accuracy: "Measured (OS-level RSS via /proc & sysinfo)",
     }
@@ -293,6 +275,7 @@ pub async fn get_profiler_snapshot(app: tauri::AppHandle) -> Result<ProfilerSnap
     .map_err(|e| format!("Failed to collect memory profiler snapshot: {e}"))
 }
 
+/// Telemetry event payload recorded during frontend route transitions and component renders.
 #[derive(Debug, Clone, serde::Deserialize, Serialize)]
 pub struct MemoryProfileLogEvent {
     pub route: String,
@@ -313,13 +296,10 @@ pub struct MemoryProfileLogEvent {
     pub process_tree: Option<Vec<ProcessMemoryEntry>>,
 }
 
-/// Records a structured memory event.
-/// - Lifecycle events (mount/snapshot/peak/retained) → emitted to tracing log (vox2.log).
-/// - Disk persistence writes structured logs to `temp/<timestamp>-<page>.jsonl`.
+/// Record a structured frontend memory profile event to tracing and persisted JSONL log.
 #[tauri::command]
 pub async fn record_memory_profile_event(event: MemoryProfileLogEvent) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        // 1. Emit structured tracing log (shows in terminal & vox2.log)
         if event.event_type != "poll" {
             tracing::info!(
                 target: "memory_profiler",
@@ -338,7 +318,6 @@ pub async fn record_memory_profile_event(event: MemoryProfileLogEvent) -> Result
             );
         }
 
-        // 2. Disk persistence to temp/<timestamp>-<page>.jsonl
         if let Ok(serialized) = serde_json::to_string(&event) {
             use std::io::Write;
             let temp_dir = resolve_temp_dir();
@@ -359,13 +338,16 @@ pub async fn record_memory_profile_event(event: MemoryProfileLogEvent) -> Result
                 .append(true)
                 .open(&file_path)
             {
-                let _ = writeln!(file, "{}", serialized);
+                if let Err(e) = writeln!(file, "{}", serialized) {
+                    tracing::warn!(target: "memory_profiler", "Failed to write to snapshot JSONL: {}", e);
+                }
             } else {
                 tracing::warn!(target: "memory_profiler", "Failed to open snapshot JSONL file at {:?}", file_path);
             }
 
-            // Also update latest snapshot JSON for immediate inspection
-            let _ = std::fs::write(temp_dir.join("memory_profile_latest.json"), &serialized);
+            if let Err(e) = std::fs::write(temp_dir.join("memory_profile_latest.json"), &serialized) {
+                tracing::warn!(target: "memory_profiler", "Failed to write latest snapshot JSON: {}", e);
+            }
         }
     })
     .await

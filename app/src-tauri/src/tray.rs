@@ -1,7 +1,5 @@
 use std::time::Duration;
-use tauri::menu::{
-    CheckMenuItem, CheckMenuItemBuilder, Menu, MenuItemBuilder, PredefinedMenuItem,
-};
+use tauri::menu::{CheckMenuItem, CheckMenuItemBuilder, Menu, MenuItemBuilder, PredefinedMenuItem};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 #[cfg(target_os = "linux")]
@@ -58,13 +56,17 @@ pub fn build_main_tray_menu(
 
     let tray_menu = Menu::new(app)?;
     let launch_i = MenuItemBuilder::new("Launch Vox").id("launch").build(app)?;
-    let live_i = CheckMenuItemBuilder::new("Vox Live").id("live").build(app)?;
+    let live_i = CheckMenuItemBuilder::new("Vox Live")
+        .id("live")
+        .build(app)?;
     tray_menu.append(&launch_i)?;
     tray_menu.append(&live_i)?;
 
     if crash_detected {
         tray_menu.append(&PredefinedMenuItem::separator(app)?)?;
-        let restart_i = MenuItemBuilder::new("Restart Vox").id("restart").build(app)?;
+        let restart_i = MenuItemBuilder::new("Restart Vox")
+            .id("restart")
+            .build(app)?;
         tray_menu.append(&restart_i)?;
     }
 
@@ -113,7 +115,6 @@ pub fn refresh_tray_menu(app: &AppHandle<tauri::Wry>) {
         let _ = tray.set_menu(Some(tray_menu));
     }
 }
-
 
 /// Configures the tray window with standard HUD settings: frameless, always-on-top, etc.
 pub fn setup_tray_window(window: &WebviewWindow) {

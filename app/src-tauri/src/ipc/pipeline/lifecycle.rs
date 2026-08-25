@@ -172,7 +172,8 @@ pub async fn engage(
         let remote_tts_info = {
             let s = state.settings.read().ok();
             s.and_then(|settings| {
-                if settings.tts.active == crate::core::settings::TtsActiveProvider::ChatterboxRemote {
+                if settings.tts.active == crate::core::settings::TtsActiveProvider::ChatterboxRemote
+                {
                     Some(settings.tts.chatterbox_remote.endpoint.clone())
                 } else {
                     None

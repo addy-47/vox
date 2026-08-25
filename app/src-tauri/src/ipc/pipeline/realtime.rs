@@ -30,10 +30,12 @@ pub async fn start_realtime_session_internal(
         }
         let engine_guard = state.engine.lock().await;
         match engine_guard.as_ref() {
-            Some(e) => (e.vad_tx.clone(), e.pipeline_tx.clone(), e.playback_engine.clone()),
-            None => {
-                return Err("Failed to launch audio engine for realtime session.".to_string())
-            }
+            Some(e) => (
+                e.vad_tx.clone(),
+                e.pipeline_tx.clone(),
+                e.playback_engine.clone(),
+            ),
+            None => return Err("Failed to launch audio engine for realtime session.".to_string()),
         }
     };
 
@@ -42,20 +44,17 @@ pub async fn start_realtime_session_internal(
         crate::core::state::InteractionOwner::MainWindow as u32,
         std::sync::atomic::Ordering::Relaxed,
     );
-    let _ = vad_tx
-        .send(crate::core::state::VadCommand::UpdateOwner(
-            crate::core::state::InteractionOwner::MainWindow,
-        ));
+    let _ = vad_tx.send(crate::core::state::VadCommand::UpdateOwner(
+        crate::core::state::InteractionOwner::MainWindow,
+    ));
 
     // 2. Clear any existing realtime engine
     let mut rt_guard = state.realtime_engine.lock().await;
     if let Some(mut old_rt) = rt_guard.take() {
         log::info!("[IPC] Stopping existing realtime session...");
         old_rt.stop();
-        let _ = vad_tx
-            .send(crate::core::state::VadCommand::StopRealtime);
+        let _ = vad_tx.send(crate::core::state::VadCommand::StopRealtime);
     }
-
 
     // 3. Load settings to determine active provider
     let settings = state.settings.read().unwrap().clone();
@@ -170,10 +169,9 @@ pub async fn start_realtime_session_internal(
     };
 
     // 6. Propagate settings update to the pipeline event loop
-    let _ = pipeline_tx
-        .send(crate::core::events::VoxEvent::SettingsUpdated(Box::new(
-            current_settings,
-        )));
+    let _ = pipeline_tx.send(crate::core::events::VoxEvent::SettingsUpdated(Box::new(
+        current_settings,
+    )));
 
     // 7. Tell VAD to start routing chunks — pass is_ptt so it applies the
     //    correct routing policy (gated vs. unconditional).
@@ -181,12 +179,10 @@ pub async fn start_realtime_session_internal(
         "[IPC] Sending StartRealtime to VAD actor (is_ptt={})",
         is_ptt
     );
-    let _ = vad_tx
-        .send(crate::core::state::VadCommand::StartRealtime {
-            tx: audio_tx,
-            is_ptt,
-        });
-
+    let _ = vad_tx.send(crate::core::state::VadCommand::StartRealtime {
+        tx: audio_tx,
+        is_ptt,
+    });
 
     // Update backend engagement state
     state

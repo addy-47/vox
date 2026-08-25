@@ -5,6 +5,7 @@ use crate::persistence::encode_f32_blob;
 use std::sync::atomic::Ordering;
 use tauri::State;
 
+/// Update the text content and vector embedding of an existing memory fact.
 #[tauri::command]
 pub async fn edit_fact_content(
     state: State<'_, std::sync::Arc<AppState>>,
@@ -21,7 +22,6 @@ pub async fn edit_fact_content(
         .await
         .map_err(|e| format!("DB open failed: {}", e))?;
 
-    // Ensure embedder is loaded
     crate::services::memory::ensure_embedder_loaded(true)
         .map_err(|e| format!("Embedder loading failed: {}", e))?;
 
@@ -31,7 +31,6 @@ pub async fn edit_fact_content(
 
     let blob_bytes = encode_f32_blob(&embedding);
 
-    // Query existing collection
     let mut rows = conn
         .query(
             "SELECT collection FROM memory_facts WHERE id = ?",
@@ -71,16 +70,22 @@ pub async fn edit_fact_content(
     }
     .await;
 
-    if result.is_ok() {
-        let _ = conn.execute("COMMIT;", ()).await;
-        state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    } else {
-        let _ = conn.execute("ROLLBACK;", ()).await;
-        result
+    if let Err(err) = result {
+        if let Err(e) = conn.execute("ROLLBACK;", ()).await {
+            log::warn!("[Memory] Failed to rollback transaction: {}", e);
+        }
+        return Err(err);
     }
+
+    conn.execute("COMMIT;", ())
+        .await
+        .map_err(|e| format!("Failed to commit memory transaction: {}", e))?;
+
+    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
+    Ok(())
 }
 
+/// Reassign a memory fact to a new collection by staging it into the ingestion queue.
 #[tauri::command]
 pub async fn reassign_fact_collection(
     state: State<'_, std::sync::Arc<AppState>>,
@@ -127,6 +132,7 @@ pub async fn reassign_fact_collection(
     Ok(())
 }
 
+/// Soft-delete a memory fact by creating a tombstone fact with a SUPERSEDES edge.
 #[tauri::command]
 pub async fn soft_delete_fact(
     state: State<'_, std::sync::Arc<AppState>>,
@@ -148,7 +154,6 @@ pub async fn soft_delete_fact(
         .map_err(|e| e.to_string())?;
 
     let result: Result<(), String> = async {
-        // Mark target fact status as superseded
         conn.execute(
             "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
             (fact_id.clone(),),
@@ -156,7 +161,6 @@ pub async fn soft_delete_fact(
         .await
         .map_err(|e| e.to_string())?;
 
-        // Insert tombstone empty fact record
         conn.execute(
             "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at) VALUES (?, 'foundational', 'Identity', '', ?, 'active', ?)",
             (tombstone_id.clone(), PM_SOURCE_USER.to_string(), now),
@@ -164,7 +168,6 @@ pub async fn soft_delete_fact(
         .await
         .map_err(|e| e.to_string())?;
 
-        // Insert SUPERSEDES edge from tombstone -> target fact
         conn.execute(
             "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at) VALUES (?, ?, ?, 'USER', ?)",
             (tombstone_id, fact_id, PM_RELATION_SUPERSEDES.to_string(), now),
@@ -176,16 +179,22 @@ pub async fn soft_delete_fact(
     }
     .await;
 
-    if result.is_ok() {
-        let _ = conn.execute("COMMIT;", ()).await;
-        state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    } else {
-        let _ = conn.execute("ROLLBACK;", ()).await;
-        result
+    if let Err(err) = result {
+        if let Err(e) = conn.execute("ROLLBACK;", ()).await {
+            log::warn!("[Memory] Failed to rollback transaction: {}", e);
+        }
+        return Err(err);
     }
+
+    conn.execute("COMMIT;", ())
+        .await
+        .map_err(|e| format!("Failed to commit memory transaction: {}", e))?;
+
+    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
+    Ok(())
 }
 
+/// Supersede an existing user memory fact with a newly edited version and audit trail.
 #[tauri::command]
 pub async fn user_edit_memory(
     state: State<'_, std::sync::Arc<AppState>>,
@@ -193,28 +202,65 @@ pub async fn user_edit_memory(
     new_fact: String,
     collection: String,
 ) -> Result<String, String> {
+    let trimmed = new_fact.trim();
+    if trimmed.is_empty() {
+        return Err("Fact content cannot be empty".to_string());
+    }
+
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
         .map_err(|e| format!("DB open failed: {}", e))?;
 
-    let res = crate::persistence::mutations::supersede_user_fact(
-        &conn,
-        &old_fact_id,
-        &new_fact,
-        &collection,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    conn.execute("BEGIN TRANSACTION;", ())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let result: Result<String, String> = async {
+        let res = crate::persistence::mutations::supersede_user_fact(
+            &conn,
+            &old_fact_id,
+            trimmed,
+            &collection,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        Ok(res)
+    }
+    .await;
+
+    let new_id = match result {
+        Ok(id) => id,
+        Err(err) => {
+            if let Err(e) = conn.execute("ROLLBACK;", ()).await {
+                log::warn!("[Memory] Failed to rollback user edit transaction: {}", e);
+            }
+            return Err(err);
+        }
+    };
+
+    conn.execute("COMMIT;", ())
+        .await
+        .map_err(|e| format!("Failed to commit user edit transaction: {}", e))?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-    Ok(res)
+    log::info!(
+        "[Memory] Successfully superseded fact {} -> new_id={}",
+        old_fact_id,
+        new_id
+    );
+    Ok(new_id)
 }
 
+/// Delete a user memory fact via soft-deletion and tombstone relation edge.
 #[tauri::command]
 pub async fn user_delete_memory(
     state: State<'_, std::sync::Arc<AppState>>,
     fact_id: String,
 ) -> Result<(), String> {
-    soft_delete_fact(state, fact_id).await
+    let trimmed = fact_id.trim();
+    if trimmed.is_empty() {
+        return Err("Fact ID cannot be empty".to_string());
+    }
+    soft_delete_fact(state, trimmed.to_string()).await
 }

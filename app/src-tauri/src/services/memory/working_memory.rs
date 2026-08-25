@@ -1,14 +1,14 @@
 use crate::core::constants::{TRANSITION_MESSAGES_EN, TRANSITION_MESSAGES_HI};
 use crate::services::llm::{LlmProvider, ProviderKind};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-// ─── Working Memory Budget Constants ──────────────────────────────────────────
-/// Soft cap share (5%) of total context window reserved for Message 1 narrative history chain.
 pub const NARRATIVE_CHAIN_SOFT_CAP_SHARE: f32 = 0.05;
 
+/// Conversational message participant roles.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
@@ -17,9 +17,8 @@ pub enum Role {
     Assistant,
 }
 
-// Deleted ProfileUpdate struct
-
 impl std::fmt::Display for Role {
+    /// Formats the role enum into its canonical lowercase string identifier.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Role::System => write!(f, "system"),
@@ -29,6 +28,7 @@ impl std::fmt::Display for Role {
     }
 }
 
+/// A structured chat message within working memory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: Role,
@@ -36,6 +36,7 @@ pub struct ChatMessage {
     pub timestamp_ms: u64,
 }
 
+/// Context snapshot ready for LLM generation.
 pub struct ConversationContext {
     pub messages: Vec<ChatMessage>,
     pub token_count: usize,
@@ -44,6 +45,7 @@ pub struct ConversationContext {
 
 use super::estimate_tokens;
 
+/// Computes the current Unix timestamp in milliseconds.
 fn current_timestamp_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -51,6 +53,7 @@ fn current_timestamp_ms() -> u64 {
         .as_millis() as u64
 }
 
+/// Orchestrates conversation turns, dynamic FIFO sliding window, and context compaction.
 pub struct ConversationManager {
     messages: Vec<ChatMessage>,
     system_prompt: ChatMessage,
@@ -58,19 +61,20 @@ pub struct ConversationManager {
     total_token_count: usize,
     max_context_tokens: usize,
     reserved_generation_tokens: usize,
-    critical_threshold: f32, // Default: 0.85
-    soft_threshold: f32,     // Default: 0.65
+    critical_threshold: f32,
+    soft_threshold: f32,
 
     kv_synced_index: usize,
 
     session_compaction_contexts: Vec<String>,
-    latest_compaction_facts: std::collections::HashMap<String, Vec<String>>,
+    latest_compaction_facts: HashMap<String, Vec<String>>,
 
     opportunistic_active: bool,
     opportunistic_cancel: Arc<AtomicBool>,
 }
 
 impl ConversationManager {
+    /// Creates a new ConversationManager instance with the specified context capacity.
     pub fn new(max_context_tokens: usize) -> Self {
         let default_sys_prompt = ChatMessage {
             role: Role::System,
@@ -90,16 +94,18 @@ impl ConversationManager {
             soft_threshold: 0.65,
             kv_synced_index: 0,
             session_compaction_contexts: Vec::new(),
-            latest_compaction_facts: std::collections::HashMap::new(),
+            latest_compaction_facts: HashMap::new(),
             opportunistic_active: false,
             opportunistic_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 
+    /// Returns current total token count across active messages.
     pub fn total_token_count(&self) -> usize {
         self.total_token_count
     }
 
+    /// Updates the maximum allowable context token budget.
     pub fn set_max_context_tokens(&mut self, max_tokens: usize) {
         if max_tokens > 0 {
             self.max_context_tokens = max_tokens;
@@ -110,6 +116,7 @@ impl ConversationManager {
         }
     }
 
+    /// Preloads active Identity facts into the base system prompt block.
     pub async fn load_identity_into_system_prompt(
         &mut self,
         conn: &turso::Connection,
@@ -117,7 +124,6 @@ impl ConversationManager {
         let active_identities =
             crate::persistence::queries::fetch_all_active_identity(conn).await?;
         if !active_identities.is_empty() {
-            // Strip any existing <user_profile> block for idempotency
             let mut base_prompt = self.system_prompt.content.clone();
             if let Some(start_idx) = base_prompt.find("\n\n<user_profile>") {
                 base_prompt.truncate(start_idx);
@@ -147,6 +153,7 @@ impl ConversationManager {
         Ok(())
     }
 
+    /// Resets conversational history and initializes a new session.
     pub fn new_session(&mut self, system_prompt: &str) {
         let sys_msg = ChatMessage {
             role: Role::System,
@@ -165,8 +172,7 @@ impl ConversationManager {
         log::info!("[WorkingMemory] New session started. System prompt set.");
     }
 
-    /// Constructs a chronological narrative context chain from session compactions (C_1 -> C_N)
-    /// using backward prepending (from C_N down to C_1) up to the soft_cap_tokens limit (5% of ctx window).
+    /// Constructs a chronological narrative context chain from session compactions up to token cap.
     pub fn build_narrative_context_chain(&self, soft_cap_tokens: usize) -> String {
         let mut selected: Vec<&str> = Vec::new();
         let mut current_tokens = 0;
@@ -189,6 +195,7 @@ impl ConversationManager {
         selected.join(" ")
     }
 
+    /// Replaces the active system prompt content and updates token calculations.
     pub fn update_system_prompt(&mut self, new_system_prompt: &str) {
         if self.system_prompt.content != new_system_prompt {
             let sys_tokens = estimate_tokens(new_system_prompt);
@@ -203,6 +210,7 @@ impl ConversationManager {
         }
     }
 
+    /// Appends a new user turn to working memory.
     pub fn push_user_turn(&mut self, text: String) {
         let tokens = estimate_tokens(&text);
         let msg = ChatMessage {
@@ -219,6 +227,7 @@ impl ConversationManager {
         );
     }
 
+    /// Appends a new assistant turn to working memory.
     pub fn push_assistant_turn(&mut self, text: String) {
         if text.trim().is_empty() {
             return;
@@ -240,6 +249,7 @@ impl ConversationManager {
         );
     }
 
+    /// Removes the latest user turn if cancelled by barge-in.
     pub fn pop_last_user_turn(&mut self) {
         if let Some(last) = self.messages.last() {
             if last.role == Role::User {
@@ -253,6 +263,7 @@ impl ConversationManager {
         }
     }
 
+    /// Computes percentage of usable context budget consumed by current conversation.
     pub fn context_utilization(&self) -> f32 {
         let usable_budget = self
             .max_context_tokens
@@ -261,17 +272,68 @@ impl ConversationManager {
         self.total_token_count as f32 / usable_budget as f32
     }
 
+    /// Returns a slice view of active conversation messages.
     pub fn get_messages(&self) -> &[ChatMessage] {
         &self.messages
     }
 
+    /// Returns true if memory utilization has crossed the critical threshold.
     pub fn needs_threshold_maintenance(&self) -> bool {
         self.context_utilization() >= self.critical_threshold
     }
 
-    /// Prepares context for LLM generation.
-    /// If critical threshold is reached, executes Threshold Maintenance.
-    /// Returns (ConversationContext, Option<TransitionSpeechText>, HashMap<String, Vec<String>>).
+    /// Formats recent compaction narrative chain and facts into XML session history.
+    fn build_session_history_xml(&self, soft_cap_tokens: usize) -> String {
+        let narrative_chain = self.build_narrative_context_chain(soft_cap_tokens.max(50));
+        let mut session_history = String::new();
+
+        if !narrative_chain.is_empty() || !self.latest_compaction_facts.is_empty() {
+            session_history.push_str("<session_history>\n");
+            if !narrative_chain.is_empty() {
+                session_history.push_str("  <narrative_chain>\n  ");
+                session_history.push_str(&narrative_chain);
+                session_history.push_str("\n  </narrative_chain>\n");
+            }
+            if !self.latest_compaction_facts.is_empty() {
+                session_history.push_str("  <recent_compaction_facts>\n");
+                for (col, facts) in &self.latest_compaction_facts {
+                    if !facts.is_empty() {
+                        session_history.push_str(&format!("    [{}]\n", col));
+                        for f in facts {
+                            session_history.push_str(&format!("    - {}\n", f));
+                        }
+                    }
+                }
+                session_history.push_str("  </recent_compaction_facts>\n");
+            }
+            session_history.push_str("</session_history>");
+        }
+
+        session_history
+    }
+
+    /// Consolidates session history XML into the root System Message.
+    fn consolidate_system_message(&mut self, session_history: &str) {
+        if session_history.is_empty() || self.messages.is_empty() || self.messages[0].role != Role::System {
+            return;
+        }
+
+        let base_prompt = &self.system_prompt.content;
+        let consolidated_prompt = if let Some(idx) = base_prompt.find("<user_profile>") {
+            let (prefix, suffix) = base_prompt.split_at(idx);
+            format!("{}\n{}\n\n{}", prefix.trim_end(), session_history, suffix)
+        } else {
+            format!("{}\n\n{}", base_prompt, session_history)
+        };
+
+        let old_sys_tokens = estimate_tokens(&self.messages[0].content);
+        let new_sys_tokens = estimate_tokens(&consolidated_prompt);
+        self.messages[0].content = consolidated_prompt;
+        self.total_token_count =
+            self.total_token_count.saturating_sub(old_sys_tokens) + new_sys_tokens;
+    }
+
+    /// Prepares context for LLM generation with threshold maintenance if required.
     pub fn build_context(
         &mut self,
         provider_kind: ProviderKind,
@@ -281,12 +343,12 @@ impl ConversationManager {
     ) -> (
         ConversationContext,
         Option<String>,
-        std::collections::HashMap<String, Vec<String>>,
+        HashMap<String, Vec<String>>,
     ) {
         self.cancel_opportunistic();
 
         let mut transition_speech = None;
-        let mut personal_memory = std::collections::HashMap::new();
+        let mut personal_memory = HashMap::new();
 
         if self.needs_threshold_maintenance() {
             log::warn!(
@@ -294,7 +356,6 @@ impl ConversationManager {
                 self.context_utilization() * 100.0
             );
 
-            // Select transition message
             let msg_set = if is_devanagari {
                 TRANSITION_MESSAGES_HI
             } else {
@@ -303,7 +364,6 @@ impl ConversationManager {
             let random_idx = (current_timestamp_ms() as usize) % msg_set.len();
             transition_speech = Some(msg_set[random_idx].to_string());
 
-            // Strategy selection
             let use_fifo = match provider_kind {
                 ProviderKind::Embedded => self.max_context_tokens <= 4096,
                 ProviderKind::OpenAiCompat => false,
@@ -327,52 +387,9 @@ impl ConversationManager {
             }
         }
 
-        // Format <session_history> XML block (narrative chain + recent 9-collection compaction facts)
         let soft_cap = ((self.max_context_tokens as f32) * NARRATIVE_CHAIN_SOFT_CAP_SHARE) as usize;
-        let narrative_chain = self.build_narrative_context_chain(soft_cap.max(50));
-
-        let mut session_history = String::new();
-        if !narrative_chain.is_empty() || !self.latest_compaction_facts.is_empty() {
-            session_history.push_str("<session_history>\n");
-            if !narrative_chain.is_empty() {
-                session_history.push_str("  <narrative_chain>\n  ");
-                session_history.push_str(&narrative_chain);
-                session_history.push_str("\n  </narrative_chain>\n");
-            }
-            if !self.latest_compaction_facts.is_empty() {
-                session_history.push_str("  <recent_compaction_facts>\n");
-                for (col, facts) in &self.latest_compaction_facts {
-                    if !facts.is_empty() {
-                        session_history.push_str(&format!("    [{}]\n", col));
-                        for f in facts {
-                            session_history.push_str(&format!("    - {}\n", f));
-                        }
-                    }
-                }
-                session_history.push_str("  </recent_compaction_facts>\n");
-            }
-            session_history.push_str("</session_history>");
-        }
-
-        // Consolidate into single System Message at messages[0]
-        if !session_history.is_empty()
-            && !self.messages.is_empty()
-            && self.messages[0].role == Role::System
-        {
-            let base_prompt = &self.system_prompt.content;
-            let consolidated_prompt = if let Some(idx) = base_prompt.find("<user_profile>") {
-                let (prefix, suffix) = base_prompt.split_at(idx);
-                format!("{}\n{}\n\n{}", prefix.trim_end(), session_history, suffix)
-            } else {
-                format!("{}\n\n{}", base_prompt, session_history)
-            };
-
-            let old_sys_tokens = estimate_tokens(&self.messages[0].content);
-            let new_sys_tokens = estimate_tokens(&consolidated_prompt);
-            self.messages[0].content = consolidated_prompt;
-            self.total_token_count =
-                self.total_token_count.saturating_sub(old_sys_tokens) + new_sys_tokens;
-        }
+        let session_history = self.build_session_history_xml(soft_cap);
+        self.consolidate_system_message(&session_history);
 
         let kv_idx = if provider_kind == ProviderKind::Embedded {
             self.kv_synced_index
@@ -394,7 +411,6 @@ impl ConversationManager {
         log::info!("[WorkingMemory] Executing FIFO Sliding Window shift...");
 
         while self.messages.len() > 3 && self.context_utilization() > self.soft_threshold {
-            // Keep index 0 (system prompt). Look for oldest User/Assistant pair at index 1 and 2
             let mut removed_tokens = 0;
             if self.messages.len() >= 3
                 && self.messages[1].role == Role::User
@@ -413,7 +429,6 @@ impl ConversationManager {
             self.total_token_count = self.total_token_count.saturating_sub(removed_tokens);
         }
 
-        // Force KV cache re-sync
         self.kv_synced_index = 0;
         log::info!(
             "[WorkingMemory] FIFO shift complete. Retained {} messages ({} tokens, utilization {:.1}%).",
@@ -423,15 +438,48 @@ impl ConversationManager {
         );
     }
 
+    /// Rebuilds message buffer and session compaction state from successful ingestion result.
+    fn apply_compaction_result(
+        &mut self,
+        result: &crate::services::memory::ingestion::CompactionResult,
+        last_user_turn: ChatMessage,
+    ) -> HashMap<String, Vec<String>> {
+        let context_summary = result.context_summary.trim().to_string();
+        if !context_summary.is_empty() {
+            self.session_compaction_contexts.push(context_summary);
+        }
+
+        let mut facts_9_col = result.personal_memory.clone();
+        facts_9_col.remove("Context");
+        facts_9_col.remove("Narrative");
+        self.latest_compaction_facts = facts_9_col;
+
+        let sys_tokens = estimate_tokens(&self.system_prompt.content);
+        let user_tokens = estimate_tokens(&last_user_turn.content);
+
+        self.messages = vec![self.system_prompt.clone(), last_user_turn];
+        self.total_token_count = sys_tokens + user_tokens;
+        self.kv_synced_index = 0;
+
+        log::info!(
+            "[WorkingMemory] Compaction complete. Context rebuilt with 2 items ({} tokens, utilization {:.1}%). Total session compactions: {}.",
+            self.total_token_count,
+            self.context_utilization() * 100.0,
+            self.session_compaction_contexts.len()
+        );
+
+        result.diff_to_enqueue.clone()
+    }
+
     /// LLM-driven Context Compaction: Delegates ingestion & prompt generation to `ingestion::run_compaction`.
     fn perform_compaction_maintenance(
         &mut self,
         provider: &dyn LlmProvider,
         settings: Option<&crate::core::settings::LlmSettings>,
-    ) -> anyhow::Result<std::collections::HashMap<String, Vec<String>>> {
+    ) -> anyhow::Result<HashMap<String, Vec<String>>> {
         if self.messages.len() <= 3 {
             self.perform_fifo_maintenance();
-            return Ok(std::collections::HashMap::new());
+            return Ok(HashMap::new());
         }
 
         let last_user_turn = self
@@ -448,36 +496,7 @@ impl ConversationManager {
             last_context_summary,
             settings,
         ) {
-            Ok(result) => {
-                let context_summary = result.context_summary.trim().to_string();
-                if !context_summary.is_empty() {
-                    self.session_compaction_contexts.push(context_summary);
-                }
-
-                // Store 9 non-Context collections from this compaction for immediate Turn LLM visibility
-                let mut facts_9_col = result.personal_memory.clone();
-                facts_9_col.remove("Context");
-                facts_9_col.remove("Narrative");
-                self.latest_compaction_facts = facts_9_col;
-
-                let sys_tokens = estimate_tokens(&self.system_prompt.content);
-                let user_tokens = estimate_tokens(&last_user_turn.content);
-
-                // Single System Message Architecture: All compaction state lives inside messages[0]
-                self.messages = vec![self.system_prompt.clone(), last_user_turn];
-
-                self.total_token_count = sys_tokens + user_tokens;
-                self.kv_synced_index = 0;
-
-                log::info!(
-                    "[WorkingMemory] Compaction complete. Context rebuilt with 2 items ({} tokens, utilization {:.1}%). Total session compactions: {}.",
-                    self.total_token_count,
-                    self.context_utilization() * 100.0,
-                    self.session_compaction_contexts.len()
-                );
-
-                Ok(result.diff_to_enqueue)
-            }
+            Ok(result) => Ok(self.apply_compaction_result(&result, last_user_turn)),
             Err(e) => {
                 log::warn!(
                     "[WorkingMemory] Ingestion compaction failed: {}. Falling back to FIFO shift.",
@@ -485,11 +504,12 @@ impl ConversationManager {
                 );
                 self.messages.push(last_user_turn);
                 self.perform_fifo_maintenance();
-                Ok(std::collections::HashMap::new())
+                Ok(HashMap::new())
             }
         }
     }
 
+    /// Attempts to initiate an opportunistic background compaction when between soft and critical thresholds.
     pub fn try_trigger_opportunistic(
         &mut self,
     ) -> Option<(usize, Vec<ChatMessage>, Arc<AtomicBool>)> {
@@ -514,6 +534,7 @@ impl ConversationManager {
         }
     }
 
+    /// Commits opportunistic compaction results if no user turns were added during processing.
     pub fn commit_opportunistic(&mut self, snapshot_len: usize, summary_text: String) -> bool {
         if !self.opportunistic_active {
             log::info!("[WorkingMemory] Commit rejected: Opportunistic compaction was inactive.");
@@ -559,14 +580,16 @@ impl ConversationManager {
         true
     }
 
+    /// Handles idle pipeline transitions.
     pub fn on_pipeline_idle(&mut self) {
-        // Handled via try_trigger_opportunistic
     }
 
+    /// Cancels active opportunistic compaction on speech detection.
     pub fn on_speech_start(&mut self) {
         self.cancel_opportunistic();
     }
 
+    /// Aborts any running opportunistic compaction task.
     pub fn cancel_opportunistic(&mut self) {
         if self.opportunistic_active {
             self.opportunistic_cancel.store(true, Ordering::Relaxed);
@@ -575,6 +598,7 @@ impl ConversationManager {
         }
     }
 
+    /// Returns the most recent compaction summary string if present in history.
     pub fn latest_summary(&self) -> String {
         for msg in self.messages.iter().rev() {
             if msg.role == Role::System {
@@ -599,7 +623,6 @@ mod tests {
         let mut mgr = ConversationManager::new(1024);
         mgr.new_session("System prompt");
 
-        // Push enough long turns to cross 85% threshold
         for i in 0..15 {
             mgr.push_user_turn(format!(
                 "User question turn {} with significant padding text to build token count...",
@@ -723,7 +746,6 @@ mod tests {
         mgr.push_assistant_turn("Hello!".to_string());
         mgr.push_user_turn("Yes.".to_string());
 
-        // Plain prose instead of JSON
         let mock_response = "The user is Alex. He loves system programming.".to_string();
 
         let provider = MockProvider {
@@ -731,7 +753,6 @@ mod tests {
         };
         let updates = mgr.perform_compaction_maintenance(&provider, None).unwrap();
 
-        // Should fall back to prose, return no profile updates, but successfully compact the conversation
         assert_eq!(updates.len(), 0);
         assert_eq!(mgr.messages.len(), 2);
         assert_eq!(mgr.messages[0].role, Role::System);
@@ -771,7 +792,7 @@ mod tests {
         #[derive(Debug, Deserialize)]
         struct UnifiedCompactionPayload {
             summary: String,
-            personal_memory: std::collections::HashMap<String, Vec<String>>,
+            personal_memory: HashMap<String, Vec<String>>,
         }
         let resp: UnifiedCompactionPayload =
             serde_json::from_str(json_data).expect("Failed to deserialize compaction response");
@@ -804,12 +825,10 @@ mod tests {
 
         let (ctx, _, _) = mgr.build_context(ProviderKind::Embedded, false, Some(&provider), None);
 
-        // 1. Single System Message
         assert_eq!(ctx.messages.len(), 2);
         assert_eq!(ctx.messages[0].role, Role::System);
         assert_eq!(ctx.messages[1].role, Role::User);
 
-        // 2. Contains <session_history> with <narrative_chain> and <recent_compaction_facts>
         let sys_content = &ctx.messages[0].content;
         assert!(sys_content.contains("<session_history>"));
         assert!(sys_content.contains("<narrative_chain>"));
@@ -817,8 +836,6 @@ mod tests {
         assert!(sys_content.contains("[Directives]"));
         assert!(sys_content.contains("Add Symphonia dependency to Cargo.toml"));
         assert!(sys_content.contains("[Entities]"));
-
-        // 3. Excludes Narrative from recent_compaction_facts (mapped to narrative_chain)
         assert!(!sys_content.contains("[Narrative]"));
     }
 }

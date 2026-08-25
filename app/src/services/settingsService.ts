@@ -95,9 +95,14 @@ export function probeModelCapabilities(
   return invoke("probe_model_capabilities", { provider, modelId });
 }
 
-/** List audio input devices (ipc/settings.rs). */
+/** List audio input devices (ipc/audio.rs). */
 export function listInputDevices(): Promise<AudioDevice[]> {
   return invoke("list_input_devices");
+}
+
+/** List audio output devices (ipc/audio.rs). */
+export function listOutputDevices(): Promise<AudioDevice[]> {
+  return invoke("list_output_devices");
 }
 
 /** Mark setup wizard as completed (ipc/settings.rs). */

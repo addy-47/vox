@@ -1,59 +1,58 @@
-//! Embedded STT provider — wraps the local Qwen3-ASR and Nemotron-3.5 ONNX engines
-//! behind a single `SttProvider` interface.
-//!
-//! This provider owns the stride-buffering and transcript-stitching logic that was
-//! previously inline in `actor.rs`, keeping the actor engine-agnostic.
-
 use super::{SttProvider, SttProviderKind};
 use crate::services::stt::SttEngine;
 use parking_lot::Mutex;
-
-// ─── Internal State ────────────────────────────────────────────────────────────
+use std::path::PathBuf;
 
 struct EmbeddedSttProviderInner {
-    /// Nemotron engine, if active.
+    model_path: PathBuf,
+    model_type: String,
     nemotron_engine: Option<super::super::nemotron_onnx::SttEngine>,
-    /// Qwen engine, if active.
     qwen_engine: Option<super::super::qwen_onnx::SttEngine>,
-
-    // ── Stride buffering state (Nemotron only) ─────────────────────────────
-    /// Accumulated audio samples not yet consumed by the engine.
     stt_audio_buffer: Vec<f32>,
-
-    // ── Transcript stitching state (Qwen) / accumulation (Nemotron) ────────
-    /// Full accumulated transcript for the current turn.
     stitched_transcript: String,
 }
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
+impl EmbeddedSttProviderInner {
+    /// Loads the target ONNX speech recognition engine into memory if not already active.
+    fn ensure_loaded(&mut self) -> anyhow::Result<()> {
+        if self.nemotron_engine.is_some() || self.qwen_engine.is_some() {
+            return Ok(());
+        }
 
+        log::info!(
+            "[STT] Lazy-loading embedded STT engine: {}",
+            self.model_type
+        );
+        match self.model_type.as_str() {
+            "nvidia_nemotron" | "nemotron" => {
+                let engine = super::super::nemotron_onnx::SttEngine::new(&self.model_path)?;
+                self.nemotron_engine = Some(engine);
+            }
+            _ => {
+                let engine = super::super::qwen_onnx::SttEngine::new(&self.model_path)?;
+                self.qwen_engine = Some(engine);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Local embedded Speech-to-Text provider wrapping ONNX inference models (Qwen3-ASR or Nemotron-3.5).
 pub struct EmbeddedSttProvider {
     _engine_type: String,
     inner: Mutex<EmbeddedSttProviderInner>,
 }
 
 impl EmbeddedSttProvider {
-    /// Create a new embedded provider.
-    ///
-    /// `model_type`: `"nvidia_nemotron"`, `"nemotron"`, or any other value (treated as Qwen3-ASR).
-    /// `model_path`: path to the model directory.
+    /// Instantiates an embedded speech-to-text provider with lazy engine loading on first transcription.
     pub fn new(model_path: &std::path::Path, model_type: &str) -> anyhow::Result<Self> {
-        let (nemotron_engine, qwen_engine) = match model_type {
-            "nvidia_nemotron" | "nemotron" => {
-                let engine = super::super::nemotron_onnx::SttEngine::new(model_path)?;
-                (Some(engine), None)
-            }
-            _ => {
-                let engine = super::super::qwen_onnx::SttEngine::new(model_path)?;
-                (None, Some(engine))
-            }
-        };
-
         Ok(Self {
             _engine_type: model_type.to_string(),
             inner: Mutex::new(EmbeddedSttProviderInner {
-                nemotron_engine,
-                qwen_engine,
+                model_path: model_path.to_path_buf(),
+                model_type: model_type.to_string(),
+                nemotron_engine: None,
+                qwen_engine: None,
                 stt_audio_buffer: Vec::new(),
                 stitched_transcript: String::new(),
             }),
@@ -62,8 +61,10 @@ impl EmbeddedSttProvider {
 }
 
 impl SttProvider for EmbeddedSttProvider {
+    /// Transcribes an entire audio frame buffer in a single offline pass.
     fn transcribe(&self, audio: &[f32]) -> anyhow::Result<String> {
-        let inner = self.inner.lock();
+        let mut inner = self.inner.lock();
+        inner.ensure_loaded()?;
         if let Some(ref engine) = inner.nemotron_engine {
             engine.transcribe(audio)
         } else if let Some(ref engine) = inner.qwen_engine {
@@ -73,8 +74,10 @@ impl SttProvider for EmbeddedSttProvider {
         }
     }
 
+    /// Transcribes streaming audio chunks with transcript stitching and final turn flushing.
     fn transcribe_chunk(&self, chunk: &[f32], is_final: bool) -> anyhow::Result<String> {
         let mut inner = self.inner.lock();
+        inner.ensure_loaded()?;
 
         if let Some(ref engine) = inner.nemotron_engine {
             let transcript = engine.transcribe(chunk)?;
@@ -89,7 +92,6 @@ impl SttProvider for EmbeddedSttProvider {
                 Ok(inner.stitched_transcript.clone())
             }
         } else if let Some(ref engine) = inner.qwen_engine {
-            // Qwen3-ASR stitching logic
             let transcript = engine.transcribe(chunk)?;
             if !transcript.is_empty() {
                 inner.stitched_transcript = transcript;
@@ -106,6 +108,7 @@ impl SttProvider for EmbeddedSttProvider {
         }
     }
 
+    /// Clears internal audio buffers and accumulated stitched transcripts.
     fn reset_state(&self) -> anyhow::Result<()> {
         let mut inner = self.inner.lock();
         inner.stt_audio_buffer.clear();
@@ -113,11 +116,13 @@ impl SttProvider for EmbeddedSttProvider {
         Ok(())
     }
 
+    /// Returns true if an engine is loaded or the model file path exists.
     fn health_check(&self) -> bool {
         let inner = self.inner.lock();
-        inner.nemotron_engine.is_some() || inner.qwen_engine.is_some()
+        inner.nemotron_engine.is_some() || inner.qwen_engine.is_some() || inner.model_path.exists()
     }
 
+    /// Returns the SttProviderKind::Embedded variant identifier.
     fn kind(&self) -> SttProviderKind {
         SttProviderKind::Embedded
     }

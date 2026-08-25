@@ -1,7 +1,3 @@
-//! ============================================================================
-//! src/services/dictation/hotkey.rs — Global Shortcut Registration & Listener
-//! ============================================================================
-
 use crate::core::error::DictationError;
 use crate::services::dictation::controller::DictationController;
 use tauri::{AppHandle, Emitter};
@@ -15,13 +11,18 @@ pub fn register_global_hotkey(app: &AppHandle, shortcut_str: &str) -> Result<(),
             shortcut_str,
             e
         );
-        let _ = app.emit(
+        if let Err(emit_err) = app.emit(
             "dictation_hotkey_conflict",
             serde_json::json!({
                 "shortcut": shortcut_str,
                 "error": format!("Invalid shortcut format: {:?}", e)
             }),
-        );
+        ) {
+            log::warn!(
+                "[Dictation::Hotkey] Failed to emit hotkey parse conflict: {}",
+                emit_err
+            );
+        }
         DictationError::HotkeyRegistrationFailed {
             message: format!("Invalid shortcut string: {:?}", e),
         }
@@ -58,13 +59,18 @@ pub fn register_global_hotkey(app: &AppHandle, shortcut_str: &str) -> Result<(),
             shortcut_clone,
             e
         );
-        let _ = app.emit(
+        if let Err(emit_err) = app.emit(
             "dictation_hotkey_conflict",
             serde_json::json!({
                 "shortcut": shortcut_clone,
                 "error": format!("Registration failed: {:?}", e)
             }),
-        );
+        ) {
+            log::warn!(
+                "[Dictation::Hotkey] Failed to emit hotkey registration conflict: {}",
+                emit_err
+            );
+        }
         return Err(DictationError::HotkeyRegistrationFailed {
             message: format!("Failed to register shortcut '{}': {:?}", shortcut_clone, e),
         });

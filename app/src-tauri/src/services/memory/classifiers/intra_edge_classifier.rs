@@ -8,6 +8,7 @@ pub const NLI_CONTRADICTION_THRESHOLD: f32 = 0.85;
 /// Threshold above which an NLI prediction is classified as Entailment.
 pub const NLI_ENTAILMENT_THRESHOLD: f32 = 0.85;
 
+/// Output classification classes produced by the Natural Language Inference model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum NliLabel {
     Contradiction,
@@ -16,6 +17,7 @@ pub enum NliLabel {
 }
 
 impl NliLabel {
+    /// Returns the static string representation of the NLI label.
     pub fn as_str(&self) -> &'static str {
         match self {
             NliLabel::Contradiction => "Contradiction",
@@ -25,6 +27,7 @@ impl NliLabel {
     }
 }
 
+/// Normalized probability distribution across the three NLI classes.
 #[derive(Debug, Clone)]
 pub struct NliResult {
     pub contradiction: f32,
@@ -32,6 +35,7 @@ pub struct NliResult {
     pub neutral: f32,
 }
 
+/// Discretized relationship category derived from thresholded NliResult probabilities.
 pub enum NliRelation {
     Conflicts,
     Supports,
@@ -42,6 +46,7 @@ pub const NLI_MODEL_DIR: &str = "nli-deberta-v3-base";
 pub const NLI_MODEL_FILENAME: &str = "model_quantized.onnx";
 pub const TOKENIZER_FILENAME: &str = "tokenizer.json";
 
+/// ONNX session container for running Natural Language Inference models with dynamic calibration.
 pub struct NliEngine {
     session: parking_lot::Mutex<ort::session::Session>,
     tokenizer: Tokenizer,
@@ -52,7 +57,6 @@ pub struct NliEngine {
 static NLI_ENGINE: parking_lot::RwLock<Option<NliEngine>> = parking_lot::RwLock::new(None);
 
 /// Loads the NLI model from disk and runs calibration to determine output label indices.
-/// Returns `Ok(true)` if loaded, `Ok(false)` if model assets are missing.
 pub fn init_nli_engine(model_dir: &Path) -> Result<bool> {
     let model_path = model_dir.join(NLI_MODEL_FILENAME);
     let tokenizer_path = model_dir.join(TOKENIZER_FILENAME);
@@ -75,7 +79,6 @@ pub fn init_nli_engine(model_dir: &Path) -> Result<bool> {
     let mut tokenizer = Tokenizer::from_file(&tokenizer_path)
         .map_err(|e| anyhow!("Failed to load NLI tokenizer: {}", e))?;
 
-    // Clamp tokenizer maximum window size to prevent tensor overflows
     if tokenizer.get_truncation().is_none() {
         tokenizer
             .with_truncation(Some(tokenizers::TruncationParams {
@@ -111,7 +114,6 @@ pub fn init_nli_engine(model_dir: &Path) -> Result<bool> {
         class_mapping,
     };
 
-    // Run calibration
     engine.calibrate()?;
 
     *lock = Some(engine);
@@ -132,7 +134,15 @@ pub fn unload_nli_engine() {
     }
 }
 
+struct BatchEncodingTensors {
+    input_ids: Array2<i64>,
+    attention_mask: Array2<i64>,
+    token_type_ids: Array2<i64>,
+    batch_size: usize,
+}
+
 impl NliEngine {
+    /// Calibrates model output logits against synthetic entailment and contradiction anchor pairs.
     fn calibrate(&mut self) -> Result<()> {
         let p_ent = "A person is playing tennis.";
         let h_ent = "A person is playing tennis.";
@@ -183,6 +193,7 @@ impl NliEngine {
         Ok(())
     }
 
+    /// Evaluates raw logits for a single premise/hypothesis pair.
     fn raw_predict(&self, premise: &str, hypothesis: &str) -> Result<Vec<f32>> {
         let batch = self.raw_predict_batch(&[(premise, hypothesis)])?;
         batch
@@ -191,11 +202,8 @@ impl NliEngine {
             .ok_or_else(|| anyhow!("Empty prediction output"))
     }
 
-    fn raw_predict_batch(&self, pairs: &[(&str, &str)]) -> Result<Vec<Vec<f32>>> {
-        if pairs.is_empty() {
-            return Ok(Vec::new());
-        }
-
+    /// Encodes a batch of pairs into padded input tensors.
+    fn encode_batch_pairs(&self, pairs: &[(&str, &str)]) -> Result<BatchEncodingTensors> {
         let batch_size = pairs.len();
         let mut encodings = Vec::with_capacity(batch_size);
 
@@ -237,18 +245,34 @@ impl NliEngine {
         let input_ids_arr = Array2::<i64>::from_shape_vec((batch_size, max_seq_len), input_ids)?;
         let attention_mask_arr =
             Array2::<i64>::from_shape_vec((batch_size, max_seq_len), attention_mask)?;
+        let type_ids_arr =
+            Array2::<i64>::from_shape_vec((batch_size, max_seq_len), token_type_ids)?;
 
-        let input_ids_tensor = ort::value::Tensor::from_array(input_ids_arr)
+        Ok(BatchEncodingTensors {
+            input_ids: input_ids_arr,
+            attention_mask: attention_mask_arr,
+            token_type_ids: type_ids_arr,
+            batch_size,
+        })
+    }
+
+    /// Evaluates raw logits for a batch of premise/hypothesis pairs.
+    fn raw_predict_batch(&self, pairs: &[(&str, &str)]) -> Result<Vec<Vec<f32>>> {
+        if pairs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let tensors = self.encode_batch_pairs(pairs)?;
+
+        let input_ids_tensor = ort::value::Tensor::from_array(tensors.input_ids)
             .map_err(|e| anyhow!("Failed to create NLI input_ids tensor: {:?}", e))?;
-        let attention_mask_tensor = ort::value::Tensor::from_array(attention_mask_arr)
+        let attention_mask_tensor = ort::value::Tensor::from_array(tensors.attention_mask)
             .map_err(|e| anyhow!("Failed to create NLI attention_mask tensor: {:?}", e))?;
 
         let mut session_guard = self.session.lock();
 
         let outputs = if self.has_token_type_ids {
-            let type_ids_arr =
-                Array2::<i64>::from_shape_vec((batch_size, max_seq_len), token_type_ids)?;
-            let type_ids_tensor = ort::value::Tensor::from_array(type_ids_arr)
+            let type_ids_tensor = ort::value::Tensor::from_array(tensors.token_type_ids)
                 .map_err(|e| anyhow!("Failed to create NLI type_ids tensor: {:?}", e))?;
 
             session_guard
@@ -276,16 +300,16 @@ impl NliEngine {
             .map_err(|e| anyhow!("Failed to extract NLI logits array: {:?}", e))?;
 
         let shape = logits_array.shape();
-        if shape.len() < 2 || shape[0] < batch_size || shape[1] < 3 {
+        if shape.len() < 2 || shape[0] < tensors.batch_size || shape[1] < 3 {
             return Err(anyhow!(
                 "Invalid output logits tensor dimensions. Expected [{}, >=3], received: {:?}",
-                batch_size,
+                tensors.batch_size,
                 shape
             ));
         }
 
-        let mut batch_logits = Vec::with_capacity(batch_size);
-        for b in 0..batch_size {
+        let mut batch_logits = Vec::with_capacity(tensors.batch_size);
+        for b in 0..tensors.batch_size {
             batch_logits.push(vec![
                 logits_array[[b, 0]],
                 logits_array[[b, 1]],
@@ -297,12 +321,12 @@ impl NliEngine {
     }
 }
 
+/// Returns true if the NLI classifier ONNX engine is currently loaded in memory.
 pub fn is_nli_loaded() -> bool {
     NLI_ENGINE.read().is_some()
 }
 
 /// Lazily loads the NLI engine if not already loaded.
-/// Returns `Ok(true)` if ready, `Ok(false)` if assets are missing.
 pub fn ensure_nli_loaded(model_name: &str) -> Result<bool> {
     if NLI_ENGINE.read().is_some() {
         return Ok(true);
@@ -330,8 +354,7 @@ pub fn ensure_nli_loaded(model_name: &str) -> Result<bool> {
     init_nli_engine(&nli_model_dir)
 }
 
-/// Performs NLI classification between premise and hypothesis.
-/// Returns the softmax probabilities mapped to the output struct.
+/// Performs NLI classification between a single premise and hypothesis.
 pub fn classify_pair(premise: &str, hypothesis: &str) -> Result<NliResult> {
     let mut results = classify_batch(&[(premise, hypothesis)])?;
     results
@@ -340,7 +363,6 @@ pub fn classify_pair(premise: &str, hypothesis: &str) -> Result<NliResult> {
 }
 
 /// Performs batched NLI classification for a slice of (premise, hypothesis) pairs.
-/// Returns softmax probabilities for each pair mapped to NliResult.
 pub fn classify_batch(pairs: &[(&str, &str)]) -> Result<Vec<NliResult>> {
     if pairs.is_empty() {
         return Ok(Vec::new());

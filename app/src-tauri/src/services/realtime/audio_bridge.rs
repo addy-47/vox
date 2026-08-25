@@ -5,21 +5,25 @@ use tokio::sync::mpsc::{channel, Sender};
 
 static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
 
+/// Bridges captured PCM audio frames to active realtime streaming sessions with automatic resampling.
 pub struct AudioBridge {
     tx: Option<Sender<Vec<i16>>>,
 }
 
 impl Default for AudioBridge {
+    /// Creates an empty default audio bridge.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl AudioBridge {
+    /// Creates a new uninitialized AudioBridge instance.
     pub fn new() -> Self {
         Self { tx: None }
     }
 
+    /// Starts streaming worker task routing PCM audio to the realtime session.
     pub fn start(
         &mut self,
         session: Arc<dyn RealtimeSession>,
@@ -63,14 +67,17 @@ impl AudioBridge {
         });
     }
 
+    /// Stops the audio bridge and drops channel sender.
     pub fn stop(&mut self) {
         self.tx = None;
     }
 
+    /// Returns a clone of the internal audio channel sender if active.
     pub fn get_sender(&self) -> Option<Sender<Vec<i16>>> {
         self.tx.clone()
     }
 
+    /// Submits a PCM audio frame buffer to the bridge in a non-blocking manner.
     pub fn send_pcm(&self, samples: &[i16]) {
         if let Some(ref tx) = self.tx {
             if let Err(e) = tx.try_send(samples.to_vec()) {
@@ -106,7 +113,6 @@ mod tests {
         let initial_drops = DROP_COUNT.load(Ordering::Relaxed);
 
         let chunk = vec![0i16; 320];
-        // Fill bounded MPSC audio channel (100 capacity) to saturation
         for _ in 0..100 {
             bridge.send_pcm(&chunk);
         }
@@ -117,7 +123,6 @@ mod tests {
             "No chunks should be dropped when channel is within capacity"
         );
 
-        // Invoke send_pcm with 101st chunk
         bridge.send_pcm(&chunk);
 
         let drops_after_overflow = DROP_COUNT.load(Ordering::Relaxed);
@@ -134,11 +139,9 @@ mod tests {
         let (tx, rx) = channel::<Vec<i16>>(100);
         bridge.tx = Some(tx);
 
-        // Drop receiver to simulate WebSocket disconnect
         drop(rx);
 
         let chunk = vec![0i16; 320];
-        // Verify send_pcm completes safely without panic
         bridge.send_pcm(&chunk);
     }
 }

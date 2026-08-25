@@ -9,11 +9,13 @@ use std::path::Path;
 
 pub const SAMPLE_RATE: i32 = 16000;
 
+/// Speech-to-text inference engine wrapping Sherpa-ONNX Qwen3-ASR offline recognizer.
 pub struct SttEngine {
     recognizer: OfflineRecognizer,
 }
 
 impl SttEngine {
+    /// Loads Qwen3-ASR ONNX model components and initializes the Sherpa recognizer.
     pub fn new(model_dir: &Path) -> Result<Self> {
         log::info!("[STT] >>> Initializing Sherpa-ONNX Qwen3-ASR Engine...");
 
@@ -48,11 +50,11 @@ impl SttEngine {
                     .into(),
             ),
             max_total_len: 2048,
-            max_new_tokens: 128, // Raised to prevent truncation of final transcripts, particularly for token-dense languages like Hindi
+            max_new_tokens: 128,
             ..Default::default()
         };
 
-        config.model_config.num_threads = 4; // Optimized from 2 to 4 threads for standard laptop performance cores
+        config.model_config.num_threads = 4;
         config.model_config.debug = false;
         config.model_config.provider = Some("cpu".into());
 
@@ -68,6 +70,7 @@ impl SttEngine {
     }
 }
 
+/// Removes CJK Unicode ideographs and normalization artifact spaces from the transcribed text.
 fn strip_cjk(text: &str) -> String {
     text.chars()
         .filter(|&c| {
@@ -83,6 +86,7 @@ fn strip_cjk(text: &str) -> String {
 }
 
 impl SttEngineTrait for SttEngine {
+    /// Transcribes the audio waveform using Qwen3-ASR and returns cleaned transcript text.
     fn transcribe(&self, audio: &[f32]) -> Result<String> {
         if audio.is_empty() {
             return Ok(String::new());
@@ -120,10 +124,12 @@ impl SttEngineTrait for SttEngine {
         Ok(cleaned_text)
     }
 
+    /// Transcribes an incoming streaming chunk.
     fn transcribe_chunk(&self, chunk: &[f32], _is_final: bool) -> Result<String> {
         self.transcribe(chunk)
     }
 
+    /// Resets internal engine state.
     fn reset_state(&self) -> Result<()> {
         Ok(())
     }

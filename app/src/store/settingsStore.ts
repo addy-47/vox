@@ -253,7 +253,6 @@ export interface RealtimeSettings {
 
 export interface InteractionSettings {
   mode: "Passive" | "PTT";
-  main_app_mode?: "Passive" | "PTT";
   auto_sleep_timeout: number;
   pipeline_mode: PipelineMode;
 }

@@ -46,6 +46,9 @@ use tauri::{Emitter, Manager, State};
 /// engine on startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Install default crypto provider for rustls (required in rustls 0.23+ for WebSocket / TLS)
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     // Suppress ALSA/Jack noisy logs on Linux
     #[cfg(target_os = "linux")]
     {
@@ -498,12 +501,12 @@ pub fn run() {
             crate::ipc::setup::delete_model,
             // Audio
             crate::ipc::audio::list_input_devices,
+            crate::ipc::audio::list_output_devices,
             // Memory Subsystem
             crate::ipc::memory::get_graph_version,
             crate::ipc::memory::get_memory_graph_topology,
             crate::ipc::memory::get_memory_fact_detail,
             crate::ipc::memory::get_memory_stats,
-            crate::ipc::memory::trigger_memory_consolidation,
             crate::ipc::memory::edit_fact_content,
             crate::ipc::memory::reassign_fact_collection,
             crate::ipc::memory::soft_delete_fact,

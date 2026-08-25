@@ -102,9 +102,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
         let models_dir = paths::get().models.clone();
         let manifest_lock = state.manifest.read().await;
 
-        // Resolve STT model path and create the provider (always pre-loaded)
-        app.emit(crate::core::constants::EVENT_MODEL_LOADING, "STT")
-            .ok();
+        // Resolve STT model path and create the provider (lazy-loaded on first turn)
         let (stt_path, p) = match asr_provider {
             crate::core::settings::SttProviderConfig::Embedded { ref model_type } => {
                 let path = match model_type.as_str() {
@@ -114,11 +112,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                     _ => models_dir.join(crate::services::stt::MODEL_DIR_STT_QWEN),
                 };
                 match create_stt_provider(&asr_provider, &path) {
-                    Ok(provider) => {
-                        app.emit(crate::core::constants::EVENT_MODEL_READY, "STT")
-                            .ok();
-                        (path, provider)
-                    }
+                    Ok(provider) => (path, provider),
                     Err(e) => {
                         app.emit(
                             crate::core::constants::EVENT_MODEL_FAILED,
@@ -133,11 +127,7 @@ pub async fn launch_engine(app: tauri::AppHandle) -> Result<(), String> {
                 // For cloud providers, model_path is not used (auth is configured separately)
                 let path = models_dir.join("stt");
                 match create_stt_provider(&asr_provider, &path) {
-                    Ok(provider) => {
-                        app.emit(crate::core::constants::EVENT_MODEL_READY, "STT")
-                            .ok();
-                        (path, provider)
-                    }
+                    Ok(provider) => (path, provider),
                     Err(e) => {
                         app.emit(
                             crate::core::constants::EVENT_MODEL_FAILED,

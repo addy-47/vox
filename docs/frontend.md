@@ -55,7 +55,7 @@ Package manager is **pnpm** (never npm/yarn).
 
 - **Boot gate** — `app/src/App.tsx:50-75`: reads `getOnboardingStatus()`; if setup incomplete, routes to `/wizard`, else mounts `ResponsiveLayout` with the five main routes. Window reveal uses a double-`requestAnimationFrame` + `show()` + 300ms cross-fade behind an `OrbitalLoader` (`shared/components/common/OrbitalLoader.tsx`).
 - **Lazy + prewarm** — secondary pages (`History`, `Memory`, `Settings`, `Monitoring`) are `React.lazy`; their chunks are imported in the background on boot (`App.tsx:46-48`) so navigation is instant.
-- **Providers** (mount order in `App.tsx`): `ErrorBoundary` (root) → `MemoryProfilerProvider` → `Router` → `ProfilerDrawerProvider` → `installOverlayStack()` (`shared/lib/overlayStack.ts`).
+- **Providers** (mount order in `App.tsx`): `ErrorBoundary` (root) → `MemoryProfilerProvider` → `VoiceSessionProvider` (persistent pipeline state & event listeners across route changes) → `Router` → `ProfilerDrawerProvider` → `installOverlayStack()` (`shared/lib/overlayStack.ts`).
 - **Layout shell** — `app/src/layout/ResponsiveLayout.tsx` renders `TitleBar`, `AmbientBackground`, `EdgeNav`, the bottom-left engine monitor toggle, and an `<Outlet/>` inside a `contain: layout style` `<main>`. It also owns the viewport-transition engine (compact ↔ desktop) and arrow-key page navigation (`ResponsiveLayout.tsx:32-96`).
 
 ## 4. Window system (Tauri)

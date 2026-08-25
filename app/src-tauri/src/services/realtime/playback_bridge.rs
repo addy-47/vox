@@ -3,21 +3,25 @@ use crate::services::realtime::{resampler::AudioResampler, RealtimeAudioConfig};
 use std::sync::Arc;
 use tokio::sync::mpsc::{channel, Sender};
 
+/// Bridges incoming synthesized audio PCM stream from realtime WebSocket to the local PlaybackEngine.
 pub struct PlaybackBridge {
     tx: Option<Sender<Vec<i16>>>,
 }
 
 impl Default for PlaybackBridge {
+    /// Creates a default uninitialized playback bridge.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl PlaybackBridge {
+    /// Creates a new PlaybackBridge instance.
     pub fn new() -> Self {
         Self { tx: None }
     }
 
+    /// Spawns worker task receiving remote PCM chunks, resampling to 24kHz, and feeding PlaybackEngine.
     pub fn start(
         &mut self,
         playback_engine: Arc<PlaybackEngine>,
@@ -65,10 +69,12 @@ impl PlaybackBridge {
         });
     }
 
+    /// Stops the playback bridge and closes the channel sender.
     pub fn stop(&mut self) {
         self.tx = None;
     }
 
+    /// Returns a clone of the channel sender for dispatching PCM audio.
     pub fn get_sender(&self) -> Option<Sender<Vec<i16>>> {
         self.tx.clone()
     }
