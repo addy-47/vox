@@ -1,672 +1,248 @@
-# Vox — End-to-End Voice Pipeline Flow
+# Vox — End-to-End Voice Pipeline Flow & Architecture
 
-> **Purpose:** Trace a single voice interaction from microphone to speaker, documenting every stage's algorithm, data format, and metrics. This is the canonical reference for how audio flows through the Vox stack.
-
----
-
-## Pipeline Overview
-
-```
-MODULAR PATH:
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│  Audio   │ →  │   VAD    │ →  │   STT    │ →  │   LLM    │ →  │   TTS    │ →  Playback
-│ Capture  │    │ Detection │    │(Nemotron)│    │ (Llama)  │    │(Supertonic)│
-└──────────┘    └──────────┘    └──────────┘    └──────────┘    └──────────┘
-      │               │               │               │               │
-  16kHz PCM       Speech VAD      Transcript       LLM Tokens     24kHz PCM
-  mono @10-20ms   events          (text)           (streaming)     → 48kHz
-
-  REALTIME S2S PATH (alternative):
-  ┌──────────┐    ┌──────────┐    ┌─────────────────────────┐    ┌──────────┐
-  │  Audio   │ →  │  Audio   │ →  │   WebSocket Provider    │ →  │Playback  │
-  │ Capture  │    │ Router   │    │ (Gemini/Deepgram Live)  │    │ Engine   │
-  └──────────┘    └──────────┘    └─────────────────────────┘    └──────────┘
-       │               │                     │                        │
-  16kHz PCM       256-sample          Server-side                24kHz→48kHz
-                   chunks             STT+LLM+TTS                  upsampled
-```
+> **Purpose:** Canonical reference and trace for all voice interaction flows in Vox, documenting every domain's lifecycle, state transitions, audio routing, data formats, and latency characteristics.
 
 ---
 
-## Stage 1: Audio Capture
+## 1. High-Level Architecture Overview
 
-### Implementation
-- **Library:** `cpal` (Rust cross-platform audio)
-- **Format:** 16 kHz mono PCM, f32 samples
-- **Chunk size:** 10–20 ms (160–320 samples)
-- **Callback:** Real-time audio callback, zero-allocation buffers
-
-### Transport
-Audio flows from the CPAL callback into a **lock-free SPSC ring buffer**:
-
-| Property | Value |
-|----------|-------|
-| Buffer type | `HeapProd`/`HeapCons` (crossbeam) |
-| Capacity | 64,000 samples (4 seconds) |
-| Producer | CPAL audio callback |
-| Consumer | VAD worker thread |
-| Overflow | Drops oldest, logs every 100th drop |
-
-### Resampling
-If the input device is not 16 kHz, linear interpolation resamples to 16 kHz in the callback.
-
-### Audio Router (v0.9.0+)
-In Realtime S2S mode, the AudioRouter thread (`services/audio/router.rs`) replaces VAD as the direct consumer. It reads 256-sample chunks and routes based on RouteMode:
-- `RouteMode::LocalVad` — forward to VAD actor (modular mode + realtime PTT)
-- `RouteMode::DirectRealtime` — convert f32→i16 and send to WebSocket session
-
----
-
-## Stage 2: Voice Activity Detection (VAD)
-
-### Available Backends
-
-| Backend | Format | Threshold | Latency | Notes |
-|---------|--------|-----------|---------|-------|
-| **Earshot** (Default) | Native Rust energy-based | 0.5 (default) | ~1ms | Ultra-low latency, no model file, ~20x faster than TenVAD |
-| **Ten VAD** (Legacy) | ONNX FP32 via sherpa-onnx | 0.45 (default) | ~15ms/frame | CPU-efficient, requires model file |
-
-### VAD Algorithm
-
-The VAD runs on a dedicated OS thread consuming from the ring buffer:
+Vox operates on a **Spec-First, Domain-Partitioned Pipeline Architecture** (Phase 10). Rather than routing audio and events through a monolithic God loop, all incoming audio, VAD events, STT transcripts, and LLM tokens flow through a non-blocking **Central Event Router** (`services/pipeline/router.rs`) which dispatches to one of **5 dedicated domain handlers**:
 
 ```
-loop {
-    // Check for hot-update commands (lock-free)
-    while let Ok(cmd) = vad_rx.try_recv() { apply_command(cmd); }
-    
-    if ring_buffer.occupied_len() >= 256 (16ms @ 16kHz) {
-        pop 256 samples → chunk
-        run VAD prediction on chunk
-        
-        if speech_detected && !in_speech {
-            // Speech onset
-            in_speech = true
-            send ResetStream to STT
-            send SpeechStart to pipeline
-        }
-        
-        if speech_detected {
-            buffer chunk into utterance_buffer
-            every 800ms: send Partial utterance to STT
-        } else if in_speech {
-            // Speech offset
-            in_speech = false
-            if utterance_buffer >= 3200 samples:
-                send Final utterance to STT
-        }
-    } else {
-        sleep 5ms (throttle)
-    }
-}
-```
-
-### Pre-roll Buffer
-- 500ms sliding window during silence
-- Prepended to the first `Partial` chunk on `SpeechStart`
-- Captures the speech onset that the VAD may have partially missed
-
-### Key Parameters
-| Parameter | Default | Effect |
-|-----------|---------|--------|
-| `threshold` | 0.45 | Lower = more sensitive, higher = less false positive |
-| `min_silence_duration` | 0.5s | How long after speech ends to declare utterance complete |
-| `pre_roll_ms` | 500 | Audio before speech onset to include |
-
----
-
-## Stage 3: Speech-to-Text (Nemotron-3.5)
-
-### Model Details
-- **Model:** Nvidia Nemotron-3.5-ASR (INT8 quantized)
-- **Runtime:** ONNX Runtime (native, via `ort` crate)
-- **Files:** `config.json`, `encoder.onnx` (657MB), `decoder_joint.onnx` (98MB), `tokenizer.model`
-- **Memory:** ~2.5 GB RSS
-- **RTF:** 0.02–0.35× (average 0.18×) — **22× faster than Qwen3-ASR**
-
-### Backend Selection
-Vox supports two STT backends via the SttEngine trait:
-- **Embedded** (primary): local ONNX Nemotron-3.5-ASR as documented below
-- **Cloud** (future): planned API-based STT via provider trait
-
-### Chunked Transcription Algorithm
-
-A critical fix in v0.8.2: audio is fed in sequential 8960-sample windows through the ONNX session, with `reset_state()` called only at the very end.
-
-```
-fn transcribe(audio: &[f32]) -> String {
-    let window_size = 8960;  // ~560ms @ 16kHz
-    let mut offset = 0;
-    
-    while offset < audio.len() {
-        let end = min(offset + window_size, audio.len());
-        let chunk = &audio[offset..end];
-        
-        // Feed chunk to ONNX session
-        session.run(ORTFeed {
-            name: "audio_signal",
-            tensor: chunk,
-        });
-        
-        offset = end;
-    }
-    
-    // Only NOW reset state — keeps context across all chunks
-    session.reset_state();
-    
-    // Decode final output
-    decode_output(session)
-}
-```
-
-### STT Command Types
-
-```rust
-pub enum SttCommand {
-    Partial(u32, InteractionOwner, Vec<f32>),  // Streaming partial result
-    Final(u32, InteractionOwner, Vec<f32>),    // End of utterance
-    ResetStream,                                // Clear decoder state for new turn
-    Shutdown,                                   // Exit thread
-}
-```
-
-### Throttling
-- Partial transcripts: every 800ms (to prevent CPU spikes)
-- Partial is UI-only feedback — **only `Final` is authoritative**
-
----
-
-## Stage 4: Language Detection & Prompt Routing
-
-After the STT produces a `TranscriptFinal`, the pipeline decides which language prompt to use:
-
-```rust
-fn route_prompt(text: &str) -> String {
-    if is_devanagari(&text) {
-        // Text contains Devanagari chars (U+0900–U+097F) → modular prompt
-        assistant_settings.modular_prompt
-    } else {
-        // No Devanagari → realtime prompt
-        assistant_settings.realtime_prompt
-    }
-}
-```
-
-### Expression Tag Injection
-The chosen prompt always gets an expression tag appendix:
-
-```
-"{prompt} You may use <laugh>, <breath>, <sigh> tags for expressive speech."
-```
-
-These tags are processed by the TTS engine (Supertonic 3) to produce emotional/prosodic variation in the audio output. Verified working: `<laugh>` adds ~18% duration and produces audibly different audio.
-
-### Personal Memory Injection
-
-Every turn, after the language-routed prompt is resolved, Vox appends a **Personal Memory** `<user_profile>` block to the system prompt. This block is retrieved from the `personal_memory` Turso table via `load_user_profile` (`services/memory/personal_memory.rs`), which reads `category` / `key` / `value` rows and formats them as a structured, XML-style block:
-
-```
-<user_profile>
-[<category>]
-<key>: <value>
-...
-
-Instructions: Always address the user by name (Alex) when recalling their profile.
-</user_profile>
-```
-
-The block is truncated to a **≤120-token budget** (line-based truncation if exceeded) so it stays a small, fixed overhead on the context window. This is the "what Vox knows about the user" context and is **active in the live pipeline** — it is injected on every turn before LLM generation. (Extraction of new profile facts is a separate, not-yet-live path; see [Context Maintenance](#context-maintenance-working-memory).)
-
----
-
-## Stage 5: LLM Generation (Llama-3.2-1B-Instruct)
-
-### Provider Options
-The LLM stage supports multiple backends via the LlmProvider trait:
-- **Embedded** (default): local GGUF model via llama.cpp (documented below)
-- **Cloud** (optional): OpenAiCompatProvider supports OpenAI, Gemini, Anthropic, and any OpenAI-compatible server (Ollama, vLLM, etc.)
-
-### Embedded Model Details
-- **Model:** Llama-3.2-1B-Instruct (Q6_K GGUF)
-- **Runtime:** llama.cpp via `llama-cpp-4` crate
-- **File:** `Llama-3.2-1B-Instruct-Q6_K.gguf` (~1.02 GB)
-- **Memory:** ~970 MB RSS
-- **TPS:** 2.5–4.4 (average 3.3 on CPU)
-- **Context window:** 2048 tokens (configurable)
-
-### Token Streaming Loop
-
-```rust
-loop {
-    if cancel_flag.load(Ordering::Relaxed) {
-        ctx.clear_kv_cache();
-        tx.send(VoxEvent::Cancelled { turn_id });
-        return;
-    }
-    
-    let token = ctx.sample();  // Greedy sampling
-    if is_eog_token(token) { break; }  // End of generation
-    
-    let token_str = model.token_to_piece(token);
-    if !cleaned.is_empty() {
-        tx.send(VoxEvent::LlmToken { turn_id, token: cleaned });
-    }
-    
-    ctx.decode(&mut batch);
-}
-tx.send(VoxEvent::LlmFinished { turn_id });
-```
-
-### Prompt Format
-The prompt format is **model-dependent** — `ModelFamily` detection selects the correct template:
-- **Llama3** (default example):
-  ```
-  <|begin_of_text|>
-  <|start_header_id|>system<|end_header_id|>
-  {system_prompt}<|eot_id|>
-  <|start_header_id|>user<|end_header_id|>
-  {transcript_text}<|eot_id|>
-  <|start_header_id|>assistant<|end_header_id|>
-  ```
-- **Gemma**: `<bos><start_of_turn>user\n{text}<end_of_turn>\n<start_of_turn>model\n`
-- **Qwen**: `<|im_start|>system\n{prompt}<|im_end|>\n<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n`
-- **Nemotron**: `<s><|begin_of_text|>system\n{prompt}<|end_of_text|>\nuser\n{text}<|end_of_text|>\nassistant\n`
-
-### Cancellation
-- `cancel_flag` (AtomicBool) checked every token iteration
-- On cancel: KV cache cleared, `Cancelled` event sent, TTS queue flushed
-- Barge-in: new `SpeechStart` sets cancel flag, interrupting current generation
-
----
-
-## Stage 6: Chunked TTS Flush (Pipeline Orchestrator)
-
-### The `should_flush` Algorithm (Fully Dynamic)
-
-This is the core algorithm controlling when accumulated LLM tokens are sent to TTS for synthesis. It lives in `utils.rs` and uses **continuous TPS interpolation** — no hardcoded categories.
-
-```rust
-pub fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128, tps: f32) -> bool {
-    let trimmed = buf.trim_end();
-    let last = trimmed.chars().last().unwrap_or(' ');
-    
-    // 1. Hard boundaries: always flush
-    if matches!(last, '.' | '!' | '?' | '।') { return true; }
-    
-    // ─── Continuous dynamic parameter computation ───
-    let tps_clamped = tps.clamp(0.5, 6.0);
-    let tps_norm = (tps_clamped - 0.5) / (6.0 - 0.5); // 0.0=slow, 1.0=fast
-    
-    // 2. Clause boundaries (`,`, `;`, `—`)
-    //    Fades out between TPS 3.0–5.0. Word threshold increases 3→7.
-    if matches!(last, ',' | ';') || trimmed.ends_with(" — ") || trimmed.ends_with(" - ") {
-        if tps_norm < clause_norm_high {
-            let clause_threshold = (3.0 + t * 4.0).round() as usize;
-            if word_count >= clause_threshold { return true; }
-        }
-    }
-    
-    // 3. Time-based flush: scales 1.0s→3.5s, word min 3→8
-    let max_wait_ms = lerp(tps_norm, 1000.0, 3500.0) as u128;
-    let min_time_words = lerp(tps_norm, 3.0, 8.0).round() as usize;
-    if elapsed_ms >= max_wait_ms && word_count >= min_time_words && ends_at_word_boundary(buf) {
-        return true;
-    }
-    
-    // 4. Word-count fallback: scales 5→20 words
-    let max_words = lerp(tps_norm, 5.0, 20.0).round() as usize;
-    if word_count >= max_words && ends_at_word_boundary(buf) {
-        return true;
-    }
-    
-    false
-}
-```
-
-### Word-Boundary Safety (`ends_at_word_boundary`)
-
-Prevents mid-word splits when BPE subword tokens cross word boundaries:
-
-```rust
-fn ends_at_word_boundary(buf: &str) -> bool {
-    match buf.chars().last() {
-        Some(c) => c.is_whitespace() || matches!(c, '.' | '!' | '?' | ',' | ';' | ':' | ')' | ']' | '\u{2014}' | '\u{2013}' | '।'),
-        None => true  // empty buffer
-    }
-}
-```
-
-The check ensures the buffer ends at whitespace or punctuation. Together with Devanagari boundary mark `।`, this prevents splits like `हा` + `री`.
-
-### Flush Decision Table
-
-| Condition | When it fires | Example |
-|-----------|--------------|---------|
-| `. ! ?` | Always | Sentence end |
-| `, ; —` | ≥3–7 words (TPS-dependent) | Clause boundary |
-| Time gate (1.0s–3.5s) | ≥ time_gate words + word boundary | Slow generation catch-up |
-| ≥ fallback_words (5–20) | Word boundary | Large accumulated buffer |
-
-### Dynamic Thresholds (Sample Points)
-
-| TPS | Clause Threshold | Time Gate | Min Words | Fallback |
-|-----|:-:|:-:|:-:|:-:|
-| ~1.0 (slow) | 3 words | 1.0s / 3 words | 3 | 5 words |
-| ~3.5 (medium) | 4 words | 2.2s / 5 words | 5 | 12 words |
-| ~6.0 (fast) | Disabled | 3.5s / 8 words | 8 | 20 words |
-
----
-
-## Stage 7: TTS Synthesis (Supertonic 3)
-
-Vox supports multiple TTS providers via the TtsProvider trait:
-- **Supertonic 3** (default): 99M param flow-matching, INT8 quantized, 31 languages, 10 voices
-- **Chatterbox Local**: 340M param, voice cloning from 5s reference audio, ~1.1GB RAM
-- **Chatterbox Remote**: Offload to GPU server, 0MB local RAM
-This section covers Supertonic 3. See `docs/backend.md` for Chatterbox details.
-
-### Model Details
-- **Model:** Supertonic 3 — 99M param flow-matching TTS
-- **Runtime:** sherpa-onnx native (C++)
-- **Quantization:** INT8 (~144 MB total across 7 model files)
-- **Languages:** 31
-- **Voices:** 10 (James, David, Alex, Ryan, Ethan, Sophia, Olivia, Emma, Ava, Mia)
-- **Memory:** ~21 MB RSS
-- **Output sample rate:** 44.1 kHz (internally resampled to 24 kHz by progress callback)
-
-### Architecture
-
-```text
-TTS Worker (OS Thread):
-  TtsCommand::Generate { text }
-    → supertonic::synthesize(text, config)
-    → progress_callback (each chunk of audio: resample 44.1k→24kHz)
-    → send TtsChunk { samples } to pipeline
-    → send TtsFinished { rtf } on completion
-```
-
-### Model Files (7 files, flat directory)
-
-| File | Size | Purpose |
-|------|------|---------|
-| `duration_predictor.int8.onnx` | 3.7 MB | Predicts phoneme durations |
-| `text_encoder.int8.onnx` | 36.4 MB | Encodes text to latent space |
-| `vector_estimator.int8.onnx` | 78.4 MB | Flow-matching vector field |
-| `vocoder.int8.onnx` | 26.0 MB | Converts mel to waveform |
-| `tts.json` | 8.3 KB | Model configuration |
-| `unicode_indexer.bin` | 262 KB | Unicode character index |
-| `voice.bin` | 517 KB | Voice style embeddings |
-
-### Supertonic Config
-
-```rust
-OfflineTtsSupertonicModelConfig {
-    duration_predictor: path,
-    text_encoder: path,
-    vector_estimator: path,
-    vocoder: path,
-    tts_json: path,
-    unicode_indexer: path,
-    voice_style: path,
-}
-
-GenerationConfig {
-    sid: voice_id,        // 0-9
-    num_steps: 8_i32,     // quality (2-12)
-    speed: 1.0,           // 0.7-2.0
-    extra: { "lang": "hi"|"en" }  // Language hint
-}
-```
-
-### Anti-Aliasing Low-Pass Filter (v0.8.2+)
-
-Supertonic 3's vocoder produces audio at 44.1kHz. The progress callback downsamples to 24kHz for TTS delivery. To prevent aliasing artifacts from high-frequency content near Nyquist (22.05kHz), a 2nd-order Butterworth LPF is applied before downsampling:
-
-- **Type**: Biquad low-pass filter (2nd-order Butterworth)
-- **Cutoff**: 11000 Hz (below 24kHz Nyquist of 12000 Hz, with 1kHz margin)
-- **Execution**: Applied sample-by-sample in the resampling loop
-
-```rust
-let mut lpf = BiquadFilter::new(BiquadType::Lpf, 11000.0, 44100.0);
-for i in 0..output_samples {
-    let filtered = lpf.process(supertonic_output[i]);
-    interpolated_24k[i] = filtered;
-}
-```
-
-### Expression Tags
-`<laugh>`, `<breath>`, `<sigh>` tags in the input text are processed by the sherpa-onnx Supertonic engine to produce expressive/prosodic variation. These are injected into the LLM system prompt (Stage 4).
-
----
-
-## Stage 8: Playback Engine
-
-### Architecture
-
-```
-TtsChunk (24kHz PCM, f32)
-  → upsample_2x() (linear interpolation 24→48 kHz)
-  → CPAL ring buffer
-  → Audio output device callback (48 kHz)
-```
-
-### Upsampling (Cubic Hermite Catmull-Rom)
-```rust
-pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
-    // Cubic Hermite (Catmull-Rom) interpolation for 24kHz → 48kHz (exact 2x ratio)
-    // Uses 4-point basis with weights [-1/16, 9/16, 9/16, -1/16]
-    // Produces smoother waveform than linear, continuous 1st derivatives
-    let mut out = Vec::with_capacity(len * 2);
-    for i in 0..len {
-        out.push(input[i]);
-        let p0 = if i > 0 { input[i - 1] } else { input[i] };
-        let p2 = if i + 1 < len { input[i + 1] } else { input[i] };
-        let p3 = if i + 2 < len { input[i + 2] } else { p2 };
-        let midpoint = (-p0 + 9.0 * input[i] + 9.0 * p2 - p3) / 16.0;
-        out.push(midpoint);
-    }
-    out
-}
-```
-
-### Jitter Buffer
-| Property | Value |
-|----------|-------|
-| Pre-buffer | 300 ms (14,400 samples) |
-| Total capacity | 2 s (192,000 samples) |
-| Drop policy | Log warning, never block |
-
-### Barge-In (Interruption)
-```rust
-// VAD thread checks during playback:
-if playback_active.load(Ordering::Relaxed) && mode == Speaker {
-    // Drop microphone frame — user is speaking over assistant
-}
-```
-
-When user speech is detected during playback:
-1. `cancel_flag` is set
-2. LLM generation stops (checked every token)
-3. TTS queue is flushed
-4. Playback stops
-5. New turn begins
-
-### Playback Underrun Protection (v0.8.2+)
-
-When the TTS ring buffer is empty (generation hasn't started or is delayed), a short linear volume fade prevents audible click/pop artifacts:
-
-```rust
-// Linear fade to avoid clicks (~10ms fade window at 48kHz)
-let step = 0.002f32;
-if current_volume < target_volume {
-    current_volume = (current_volume + step).min(target_volume);
-} else if current_volume > target_volume {
-    current_volume = (current_volume - step).max(target_volume);
-}
-```
-
-- **Duration**: ~10ms (96 samples at 48kHz, step=0.002)
-- **Direction**: Smooth transition between silence and active playback (bidirectional)
-- **State reset**: Volume resets to 1.0 on `PlaybackFinished`/`Cancelled`
-- **Tradeoff**: 10ms fade is imperceptible; prevents the DC pop that would result from abrupt ring buffer underrun
-
----
-
-## Metrics & Timing
-
-### Key Metrics
-
-| Metric | Definition | v0.8.2 Average | Target |
-|--------|-----------|---------------|--------|
-| **STT RTF** | STT processing time / audio duration | **0.04–0.31×** | < 1.0× |
-| **LLM TPS** | Tokens generated per second | **1.2–3.2** | > 1.0 |
-| **TTFA** | Time from speech end to first audio | **15.5–25.3s** | < 30 s |
-| **TTFT** | Time from speech end to first LLM token | **~4.0s** | — |
-| **LLM Mem** | LLM process memory load | **969–970 MB** | < 1,500 MB |
-| **Peak RSS** | Peak process memory | **2,446–2,503 MB** | < 7,500 MB |
-
-### Metric Collection
-Each interaction records:
-- `stt_proc_sec`: Wall clock time of STT processing
-- `llm_proc_sec`: Wall clock time of LLM generation
-- `tts_proc_sec`: Wall clock time of TTS synthesis
-- `ttfa_sec`: Speech end → first TTS chunk output
-- `ttft_sec`: Speech end → first LLM token
-- `llm_tps`: Generated tokens / LLM processing time
-- `stt_rtf`: STT processing time / input audio duration
-- `tts_rtf`: TTS processing time / output audio duration
-- `peak_process_rss_mb`: Peak memory usage
-
----
-
-## Interaction State Machine
-
-```
-           ┌──────────────────────────────────────────────────┐
-           │                                                  │
-           v                                                  │
-    ┌──────────┐  SpeechStart  ┌──────────────┐  STT Final  ┌──────────┐
-    │   Idle   │ ────────────→ │  Listening   │ ───────────→ │ Thinking │
-    └──────────┘               └──────────────┘              └──────────┘
-         ↑                          │                              │
-         │                          │ Barge-in                     │
-         │     PlaybackFinish       │ (new SpeechStart)            │ LLM Token
-         │     ┌────────────────────┘                              │
-         │     ↓                                                   ↓
-     ┌──────────┐                                            ┌──────────┐
-     │Assistant │←───────────────────────────────────────────│  User    │
-     │Speaking  │  First TTSChunk                             │Speaking │ (handoff)
-     └──────────┘                                            └──────────┘
-
-     Context maintenance (FIFO threshold reached during Thinking / UserSpeaking):
-              ┌──────────────────┐
-              │ MaintainingContext│
-              └──────────────────┘
-                  │            ▲
-      threshold   │            │ transition speech
-      reached     │            │ played, resume generation
-                  ▼            │
-              ┌──────────┐
-              │ Thinking │
-              └──────────┘
-```
-
-`MaintainingContext` is entered when context maintenance triggers during a turn. It plays a deterministic transition speech (so the user hears that context is being maintained) and then returns to `Thinking` to resume generation. See [Context Maintenance](#context-maintenance-working-memory) below.
-
----
-
-## Context Maintenance (Working Memory)
-
-`ConversationManager` (Working Memory) owns context maintenance. When context utilization crosses a critical threshold, maintenance runs before the next generation:
-
-- **Threshold (FIFO sliding window):** drops the oldest `(User, Assistant)` pairs until utilization falls below the soft threshold. This is the **only maintenance strategy active in the live path** — `build_context` is invoked with `None` for the LLM provider, so the LLM-compaction branch is skipped at runtime.
-- **Opportunistic compaction (LLM-driven):** summarizes history and extracts Personal Memory profile updates. This branch only runs when an `LlmProvider` is passed (benchmarks / non-live paths), so **Personal Memory extraction is NOT yet active in the live pipeline** — only retrieval/injection (below) is.
-
-The `MaintainingContext` state (above) is entered when FIFO maintenance triggers; it plays a deterministic transition speech, then returns to `Thinking` to resume generation.
-
----
-
-## Performance Budget (Measured v0.8.2)
-
-| Component | Memory (RSS) | Typical Latency | Notes |
-|-----------|-------------|-----------------|-------|
-| VAD (Earshot) | ~50 MB | ~1ms per frame | Always loaded, no model file |
-| VAD (Ten) | ~50 MB | ~15ms per frame | Legacy, requires model file |
-| STT (Nemotron) | ~2,500 MB | 0.04–0.31× RTF | INT8 quantized ONNX |
-| LLM (Llama-3.2-1B) | ~970 MB | 2.5–4.4 TPS | Q6_K quantization |
-| TTS (Supertonic) | ~21 MB | 0.79–1.50× RTF | INT8 quantized |
-| TTS (Chatterbox Local) | ~1,100 MB | TBD | Optional, 340M param voice cloning |
-| **Total Peak** | **~3,541 MB** | — | ~4,641 MB with Chatterbox |
-
----
-
-## Event Flow Sequence
-
-The event flow below shows the **modular** (VAD→STT→LLM→TTS) path. In **Realtime S2S mode**, the flow is different:
-- Audio capture → AudioRouter → WebSocket session (direct server-side STT+LLM+TTS)
-- Server sends audio frames directly to the playback bridge
-- No intermediate VAD/STT/LLM/TTS events — only session lifecycle events (SessionStarted, RealtimeAudioReceived, SessionEnded)
-
-```
- VAD                          Pipeline                  STT                      LLM                      TTS              Playback
-  │                              │                       │                        │                        │                  │
-  │──── SpeechStart ────────────→│                       │                        │                        │                  │
-  │                              │──── ResetStream ─────→│                        │                        │                  │
-  │                              │                       │                        │                        │                  │
-  │──── (audio chunks) ─────────→│ (forwarded)           │                        │                        │                  │
-  │                              │──── Partial(audio) ──→│                        │                        │                  │
-  │                              │                       │                        │                        │                  │
-  │──── SpeechEnd ──────────────→│                       │                        │                        │                  │
-  │                              │──── Final(audio) ────→│                        │                        │                  │
-  │                              │                       │                        │                        │                  │
-  │                              │←── TranscriptFinal ───│                        │                        │                  │
-  │                              │     (detect language) │                        │                        │                  │
-  │                              │──── Generate(text) ──→│                        │                        │                  │
-  │                              │                       │                        │                        │                  │
-  │                              │←── LlmToken(token) ───│                        │                        │                  │
-  │                              │     (buffer & flush)  │                        │                        │                  │
-  │                              │──── Generate(chunk) ──────────────────────────→│                        │                  │
-  │                              │                       │                        │                        │                  │
-  │                              │←── TtsChunk(samples) ─────────────────────────│                        │                  │
-  │                              │                                                     ──→ Play(chunk) ──→│                  │
-  │                              │                       │                        │                        │                  │
-  │                              │←── LlmFinished ───────│                        │                        │                  │
-  │                              │──── (remainder) ───────────────────────────────→│                        │                  │
-  │                              │                       │                        │                        │                  │
-  │                              │←── TtsFinished ────────────────────────────────│                        │                  │
-  │                              │                                                      ──→ (done) ──────→│── PlaybackFin →│
+                              ┌──────────────────────────────────┐
+                              │    Audio Capture & VAD Tier      │
+                              │  (cpal 16kHz PCM + Earshot VAD)  │
+                              └────────────────┬─────────────────┘
+                                               │
+                                               ▼
+                                  ┌────────────────────────┐
+                                  │  Central Event Router  │
+                                  │      (router.rs)       │
+                                  └────────────┬───────────┘
+                                               │
+                     ┌─────────────────────────┼─────────────────────────┐
+                     ▼                         ▼                         ▼
+        ┌─────────────────────────┐ ┌────────────────────┐    ┌────────────────────┐
+        │     Modular Domains     │ │  Realtime Domains  │    │  Dictation Domain  │
+        │ ┌─────────────────────┐ │ │ ┌────────────────┐ │    │ ┌────────────────┐ │
+        │ │ modular_passive.rs  │ │ │ │realtime_passive│ │    │ │  dictation.rs  │ │
+        │ ├─────────────────────┤ │ │ ├────────────────┤ │    │ └────────────────┘ │
+        │ │   modular_ptt.rs    │ │ │ │  realtime_ptt  │ │    │   (0ms LLM/TTS     │
+        │ └─────────────────────┘ │ │ └────────────────┘ │    │   Direct OS Paste) │
+        └─────────────────────────┘ └────────────────────┘    └────────────────────┘
 ```
 
 ---
 
-## Appendix: Flush Algorithm Decision Flow
+## 2. The Canonical 7-State Turn Machine
+
+All surfaces (Main Window, Ambient Orb, Tray HUD, Status Capsules) and both Rust backend (`core/state.rs`) and TypeScript frontend (`services/eventsService.ts`) align strictly on the **Canonical 7-State Turn Machine**:
 
 ```
-LLM Token arrives
-       │
-       ▼
-Append to token_buf
-       │
-       ▼
-Compute word_count, elapsed_ms, tps
-       │
-       ▼
-┌─────────────────────────────────────────────────────┐
-│ should_flush(token_buf, word_count, elapsed_ms, tps) │
-└─────────────────────────────────────────────────────┘
-       │
-       ├─ Hard boundary (. ! ?) ───────────────────→ YES
-       │
-       ├─ Soft boundary (, ; —) + word_count ≥ soft_words ──→ YES
-       │
-       ├─ elapsed_ms > 1500 + word_count ≥ time_gate_words ──→
-       │      └─ ends_at_word_boundary(buf)? ────→ YES / NO
-       │                                                    │
-       ├─ word_count ≥ fallback_words ──────────────────→   │
-       │      └─ ends_at_word_boundary(buf)? ────→ YES / NO │
-       │                                                    │
-       └──────────────────────────────────────────────→ NO  │
-                                                            ▼
-                                           YES → flush to TTS, clear buffer
-                                           NO  → continue accumulating
+        ┌────────────────────────────────────────────────────────┐
+        │                                                        │
+        ▼                                                        │
+    ┌────────┐    start_session()    ┌────────┐   speech_start   │
+    │  Idle  ├──────────────────────►│ Ready  │◄─────────────────┤
+    └────────┘                       └───┬────┘                  │
+                                         │                       │
+                                         ▼                       │
+                                   ┌───────────┐                 │
+                                   │ Listening │                 │
+                                   └─────┬─────┘                 │
+                                         │ speech_end            │
+                                         ▼                       │
+                                   ┌───────────┐                 │
+                                   │ Thinking  │                 │
+                                   └─────┬─────┘                 │
+                                         │ playback_started      │
+                                         ▼                       │
+                                   ┌───────────┐                 │
+                                   │ Speaking  ├─────────────────┘
+                                   └───────────┘ playback_finished
 ```
+
+### State Semantics
+
+| State | Canonical Role | `is_engaged` | VAD Audio Capture | Description |
+|---|---|:---:|:---:|---|
+| **`Idle`** | Cold / Standby | `false` | Dormant | Session is dormant; no conversational turns active. |
+| **`Ready`** | Warm / Standby | `true` | Active | Session is active, awaiting speech onset (Passive) or PTT hold. |
+| **`Listening`** | Active Ingestion | `true` | Streaming | User is actively speaking; mic audio is buffered. |
+| **`Thinking`** | Processing | `true` | Gated | Speech ended; STT / RAG context compaction / LLM reasoning active. |
+| **`Speaking`** | System Playback | `true` | Monitored | Assistant audio playback actively streaming through speakers. |
+| **`Paused`** | Explicit Hold | `true` / `false` | Discarded | User paused interaction; audio input discarded. |
+| **`Error`** | Failure State | Current | Discarded | Recoverable or unrecoverable error encountered. |
+
+---
+
+## 3. Audio Capture & VAD Tier
+
+### 3.1 Audio Ingestion (`services/audio/`)
+- **Library:** `cpal` (cross-platform audio I/O unified across Linux PipeWire/PulseAudio, macOS CoreAudio, Windows WASAPI).
+- **Format:** 16 kHz mono PCM, 32-bit floating point (`f32`), normalized `[-1.0, 1.0]`.
+- **Buffer:** Lock-free Single-Producer Single-Consumer (SPSC) ring buffer (64,000 samples / 4.0s depth).
+- **Resampling:** Dynamic linear interpolation in callback if the hardware input rate is non-16kHz.
+
+### 3.2 Decoupled VAD Actor (`services/vad/actor.rs`)
+- **Frame Size:** 256 samples (16ms @ 16kHz).
+- **Backends:**
+  - **Earshot (Default):** Native Rust energy/spectral analysis, ~1ms latency, 0MB model overhead.
+  - **Ten VAD:** ONNX runtime neural voice activity detection (~15ms frame latency).
+- **Decoupled Architecture:** Evaluates frames strictly in its dedicated worker loop without acquiring global locks or querying `app.state()`. Emits `VoxEvent::SpeechStart` and `VoxEvent::SpeechEnd { turn_id, audio_buffer }`.
+
+---
+
+## 4. Domain 1: Modular Passive Pipeline (`services/pipeline/modular_passive.rs`)
+
+Designed for hands-free, continuous ambient voice conversations.
+
+```
+[User Speaks] ──► VAD SpeechStart ──► State: Listening ──► Stream to STT
+      │
+[Speech Finishes] ──► VAD SpeechEnd ──► State: Thinking
+      │
+[STT Final] ──► Ingest to Working Memory & Context Compaction
+      │
+[LLM Streaming] ──► Tokens stream into TtsClauseChunker
+      │
+[First Sentence Ready] ──► Synthesize via TTS ──► State: Speaking
+      │
+[Playback Finishes] ──► State: Ready (Awaiting next user speech)
+```
+
+### Discrete Execution Steps:
+1. **Session Start (`start_session`):**
+   - Ensures audio engine is running (`services/audio::start_audio_engine`).
+   - Sets `pipeline.is_engaged = true`, `pipeline.is_paused = false`.
+   - Transitions state to `InteractionState::Ready`.
+2. **Speech Onset (`on_speech_start`):**
+   - Cancels any existing playback (barge-in).
+   - Transitions state to `InteractionState::Listening`.
+   - Emits `speech_start` event to frontend.
+3. **Speech Offset (`on_speech_end`):**
+   - Buffers captured PCM audio and transitions state to `InteractionState::Thinking`.
+   - Dispatches `SttCommand::Final(turn_id, buffer)` to STT worker.
+4. **Transcription & Memory Ingestion (`on_transcript_final`):**
+   - If empty/silence: transitions state back to `InteractionState::Ready`.
+   - Pushes user turn into `ConversationManager`.
+   - Executes RAG retrieval / context compaction if token limit threshold is exceeded.
+   - Dispatches prompt to LLM provider via `spawn_llm_stream`.
+5. **Token Generation & Chunking (`on_llm_token`):**
+   - Tokens are fed to `TtsClauseChunker`.
+   - Complete clauses or sentences trigger `TtsCommand::SynthesizeChunk`.
+6. **Playback & Completion (`on_playback_started` / `on_playback_finished`):**
+   - When playback starts: state transitions to `InteractionState::Speaking`.
+   - When audio finishes: state transitions back to `InteractionState::Ready`.
+
+---
+
+## 5. Domain 2: Modular Push-To-Talk Pipeline (`services/pipeline/modular_ptt.rs`)
+
+Designed for explicit, intentional push-to-talk button or hotkey interactions.
+
+```
+[User Holds PTT] ──► handle_ptt_start() ──► State: Listening (Waveform UI)
+      │
+[User Releases PTT] ──► handle_ptt_stop()
+      ├─► No Speech Detected (Silence) ──► Discard Buffer ──► State: Ready
+      └─► Speech Detected ──► State: Thinking ──► STT ──► LLM ──► TTS ──► Speaking
+```
+
+### Key Invariants & Features:
+- **Silence Gating & Ghost Discard:** If the user presses and releases PTT without speaking, the audio buffer is immediately dropped without invoking STT or LLM inference, resetting state to `Ready`.
+- **Discrete PTT Verbs:** Handled via non-toggle IPC commands (`ptt_start`, `ptt_stop`, `ptt_cancel`).
+- **Waveform-Only Capture:** During `RECORDING`, live partial transcripts are suppressed to eliminate visual jitter until the user finishes talking.
+
+---
+
+## 6. Domain 3: Realtime S2S Passive Pipeline (`services/pipeline/realtime_passive.rs`)
+
+Designed for ultra-low latency direct Speech-to-Speech cloud streaming (Gemini Live WebSocket / Deepgram Voice Agent).
+
+```
+[Audio Ingestion] ──► Raw 16kHz PCM streaming to WebSocket
+      │
+[Server VAD / Speech] ──► on_server_speech_start ──► State: Listening
+      │
+[Server Audio Stream] ──► 24kHz PCM Chunks ──► Playback ──► State: Speaking
+      │
+[Server Turn Complete] ──► State: Ready
+```
+
+### Key Invariants:
+- **Zero Local Model Latency:** STT, LLM reasoning, and TTS voice generation execute concurrently in the cloud.
+- **Barge-In Protection:** Speech onset locally interrupts speaker playback immediately (`playback_engine.cancel()`) and informs the server.
+- **Session Resumption & Idle Timeout:** Automatically manages WebSocket keep-alives and caches session tokens for transparent reconnection.
+
+---
+
+## 7. Domain 4: Realtime S2S Push-To-Talk Pipeline (`services/pipeline/realtime_ptt.rs`)
+
+Designed for explicit user control over cloud Realtime S2S sessions with **Ghost Audio Hallucination Protection**.
+
+```
+[User Holds PTT] ──► Buffer PCM locally in REALTIME_PTT_BUFFER
+      │
+[Client VAD Evaluates] ──► Sets SPEECH_DETECTED = true if voice active
+      │
+[User Releases PTT]
+      ├─► SPEECH_DETECTED == false ──► Clear Buffer (0 Network Calls) ──► State: Ready
+      └─► SPEECH_DETECTED == true  ──► Push Buffer to WebSocket ──► Server Responds
+```
+
+### Ghost Audio Protection:
+Gemini Live and other conversational WebSocket providers can hallucinate or output background noise when sent empty or ambient audio frames with turn completion signals. `realtime_ptt.rs` buffers audio locally in memory (`REALTIME_PTT_BUFFER`) and evaluates client-side VAD. If no speech was detected during the hold, the buffer is purged without dispatching anything over the WebSocket.
+
+---
+
+## 8. Domain 5: Unified Dictation Pipeline (`services/pipeline/dictation.rs`)
+
+Designed for system-wide speech-to-text dictation across any application on the operating system.
+
+```
+[Global Hotkey Press (Alt+Space)] ──► State: Listening (Tray HUD Active)
+      │
+[User Releases Hotkey] ──► State: Thinking ──► Whisper/Sherpa STT
+      │
+[Final Transcript] ──► OS Input Simulation (enigo paste/type) ──► State: Idle
+```
+
+### 0ms LLM / TTS Fast Path:
+Dictation bypasses LLM prompting, context compilation, and TTS synthesis entirely. Final transcripts are sent directly to `services/dictation/output_router.rs` for immediate clipboard restoration and simulated keystrokes.
+
+---
+
+## 9. Sub-Sentence Streaming TTS Chunking (`TtsClauseChunker`)
+
+To achieve perceived pipeline latencies under 200ms in Modular mode, LLM tokens are streamed dynamically into `TtsClauseChunker` (`services/utils.rs`).
+
+Thresholds are dynamically computed based on observed LLM Tokens Per Second (TPS):
+
+| Condition | Slow TPS (1.0) | Medium TPS (3.5) | Fast TPS (6.0+) |
+|---|:---:|:---:|:---:|
+| **Sentence Boundary** (`. ! ? ।`) | Always flush | Always flush | Always flush |
+| **Clause Boundary** (`, ; : —`) | 3 words | 4 words | Disabled (avoids choppy audio) |
+| **Time Gate** | 1.0s / 3 words | 2.2s / 5 words | 3.5s / 8 words |
+| **Word Fallback Cap** | 5 words | 12 words | 20 words |
+
+*Note: Chunker enforces `ends_at_word_boundary()` to ensure words are never truncated across synthetic audio frames.*
+
+---
+
+## 10. Tauri IPC Command Matrix
+
+All interaction is dispatched via discrete non-toggle commands in [`ipc/pipeline/assistant.rs`](file:///home/addy/projects/apps/vox/app/src-tauri/src/ipc/pipeline/assistant.rs):
+
+| Command | Signature | Description |
+|---|---|---|
+| `start_session` | `() -> Result<(), String>` | Launches engine if needed, engages session, transitions to `Ready`. |
+| `end_session` | `() -> Result<(), String>` | Disengages session, cancels audio, transitions to `Idle`. |
+| `pause_session` | `() -> Result<(), String>` | Pauses active session, discards mic audio, transitions to `Paused`. |
+| `resume_session` | `() -> Result<(), String>` | Resumes active session, transitions to `Ready`. |
+| `ptt_start` | `() -> Result<(), String>` | Starts Push-To-Talk recording, transitions to `Listening`. |
+| `ptt_stop` | `() -> Result<(), String>` | Stops Push-To-Talk recording, evaluates speech, transitions to `Thinking`/`Ready`. |
+| `ptt_cancel` | `() -> Result<(), String>` | Cancels in-flight Push-To-Talk recording, resets to `Ready`. |
+| `launch_engine` | `() -> Result<(), String>` | Starts audio stream for Setup Wizard / diagnostics. |
+| `stop_engine` | `() -> Result<(), String>` | Stops hardware audio stream and unloads models. |
+| `check_engine_status` | `() -> EngineStatus` | Returns whether audio engine is currently running. |

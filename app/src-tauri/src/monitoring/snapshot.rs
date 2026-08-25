@@ -4,7 +4,7 @@ use serde::Serialize;
 /// This is the primary source of truth for the frontend monitoring UI.
 #[derive(Debug, Clone, Serialize)]
 pub struct RuntimeSnapshot {
-    /// Current pipeline state (Idle, Listening, Thinking, AssistantSpeaking, etc.)
+    /// Current pipeline state (Idle, Ready, Listening, Thinking, Speaking, Paused, Error)
     pub pipeline_state: String,
     /// Ephemeral turn ID for the current interaction.
     pub current_turn_id: u32,

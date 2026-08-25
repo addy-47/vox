@@ -11,6 +11,7 @@ export type { InteractionMode, DialogueTurn };
 export type AmbientMood =
   | "Dormant"
   | "Idle"
+  | "Ready"
   | "Listening"
   | "Thinking"
   | "Speaking"
@@ -22,12 +23,13 @@ export function toMood(state: InteractionState, isEngaged: boolean): AmbientMood
   switch (state) {
     case "Idle":
       return "Idle";
+    case "Ready":
+      return "Ready";
     case "Listening":
-    case "UserSpeaking":
       return "Listening";
     case "Thinking":
       return "Thinking";
-    case "AssistantSpeaking":
+    case "Speaking":
       return "Speaking";
     case "Paused":
       return "Paused";
@@ -55,13 +57,13 @@ export function toStatusLabel(
   switch (state) {
     case "Idle":
       return "Ready";
-    case "Listening":
+    case "Ready":
       return "Ready";
-    case "UserSpeaking":
+    case "Listening":
       return "Listening";
     case "Thinking":
       return "Thinking";
-    case "AssistantSpeaking":
+    case "Speaking":
       return "Speaking";
     case "Paused":
       return "Paused";
@@ -80,7 +82,7 @@ export function isDotActive(
 ): boolean {
   if (!engaged || sleeping) return false;
   if (ptt === "RECORDING" || ptt === "PROCESSING") return true;
-  return state === "UserSpeaking" || state === "Thinking" || state === "AssistantSpeaking";
+  return state === "Listening" || state === "Thinking" || state === "Speaking";
 }
 
 export function useHomePage() {

@@ -37,10 +37,10 @@ pub enum RuntimeStatus {
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub enum InteractionState {
     Idle,
+    Ready,
     Listening,
-    UserSpeaking,
     Thinking,
-    AssistantSpeaking,
+    Speaking,
     Paused,
     Error,
 }
@@ -133,7 +133,7 @@ impl PipelineAtomics {
         let mut state_lock = self.state.lock();
         *state_lock = new_state;
         self.is_assistant_speaking.store(
-            new_state == InteractionState::AssistantSpeaking,
+            new_state == InteractionState::Speaking,
             Ordering::Relaxed,
         );
         self.current_state_atomic

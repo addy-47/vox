@@ -123,7 +123,7 @@ The Rust event contract is authoritative in `docs/backend.md` §8. The frontend 
 
 | Event | Payload source | Consumer surface |
 |---|---|---|
-| `state_changed` | `InteractionState` (`"Idle" | "Listening" | "UserSpeaking" | "Thinking" | "AssistantSpeaking" | "Paused" | "Error"`) | Main + Tray (mood sync) |
+| `state_changed` | `InteractionState` (`"Idle" | "Ready" | "Listening" | "Thinking" | "Speaking" | "Paused" | "Error"`) | Main + Tray (mood sync) |
 | `audio_energy` | `{ energy }` | Orb waveform, Tray HUD |
 | `transcript_partial` / `transcript_final` | `TranscriptPayload` | ActiveTranscript, Tray |
 | `ptt_status` | `PttStatusPayload` | Main PTT button, Tray |

@@ -46,10 +46,12 @@ fn collect_snapshot(
     let pipeline_state_u32 = pa.current_state_atomic.load(Ordering::Relaxed);
     let pipeline_state = match pipeline_state_u32 {
         0 => "Idle".to_string(),
-        1 => "Listening".to_string(),
-        2 => "Thinking".to_string(),
-        3 => "AssistantSpeaking".to_string(),
-        4 => "Error".to_string(),
+        1 => "Ready".to_string(),
+        2 => "Listening".to_string(),
+        3 => "Thinking".to_string(),
+        4 => "Speaking".to_string(),
+        5 => "Paused".to_string(),
+        6 => "Error".to_string(),
         _ => "Unknown".to_string(),
     };
 

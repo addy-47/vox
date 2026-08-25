@@ -85,7 +85,7 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     *rt_guard = Some(rt_engine);
 
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Listening, &ctx, app, state);
+    transition(InteractionState::Ready, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "session_started", 0) {
         log::warn!("[RealtimePassive] Failed to emit session_started: {}", e);
@@ -117,7 +117,7 @@ pub async fn resume_session(app: &AppHandle, state: &AppState) -> Result<(), Str
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Listening, &ctx, app, state);
+    transition(InteractionState::Ready, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "pipeline_resumed", ()) {
         log::warn!("[RealtimePassive] Failed to emit pipeline_resumed: {}", e);
@@ -177,7 +177,7 @@ fn on_speech_start(turn_id: u32, app: &AppHandle, state: &AppState) {
 
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::UserSpeaking, &ctx, app, state);
+    transition(InteractionState::Listening, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "speech_start", turn_id) {
         log::warn!("[RealtimePassive] Failed to emit speech_start: {}", e);
@@ -233,7 +233,7 @@ fn on_llm_token(turn_id: u32, token: String, app: &AppHandle) {
 /// Transitions pipeline state to assistant speaking when audio playback begins.
 fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::AssistantSpeaking, &ctx, app, state);
+    transition(InteractionState::Speaking, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "playback_started", turn_id) {
         log::warn!("[RealtimePassive] Failed to emit playback_started: {}", e);
@@ -243,7 +243,7 @@ fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
 /// Transitions pipeline state back to listening upon playback completion.
 fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Listening, &ctx, app, state);
+    transition(InteractionState::Ready, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "playback_finished", turn_id) {
         log::warn!("[RealtimePassive] Failed to emit playback_finished: {}", e);

@@ -77,29 +77,21 @@ Every output mode is **mutually exclusive** — at any given moment, transcripti
 
 ## 3. Fast-Path Pipeline Interception
 
-When dictation is active, the pipeline owner is set to `InteractionOwner::Dictation = 0`.
+When dictation is active, the pipeline owner is set to `InteractionOwner::Dictation`.
 
-In `services/pipeline/event_loop.rs`, upon receiving `VoxEvent::TranscriptFinal`:
+In `services/pipeline/dictation.rs`, upon receiving `VoxEvent::TranscriptFinal`:
 ```rust
-if owner == InteractionOwner::Dictation {
-    let transliterated = crate::services::utils::transliterate_if_hi(
-        &text,
-        true,
-        transliterate_enabled,
-    );
-    
-    // Route to selected output destination
-    services::dictation::output_router::route_transcript(
-        app_handle,
-        &transliterated,
-        output_mode,
-        &dictation_last_transcript,
-    ).await;
+// Dispatches to OS input router and resets state to Idle
+tauri::async_runtime::spawn(async move {
+    if let Err(e) =
+        crate::services::dictation::output_router::route_transcript(&app_handle, &text_clone)
+            .await
+    {
+        log::warn!("[Dictation] Output routing failed: {}", e);
+    }
+});
 
-    // Reset interaction state to Idle and SKIP LLM + TTS completely
-    state.pipeline.update_interaction_state(InteractionState::Idle, owner, app_handle);
-    continue;
-}
+transition(InteractionState::Idle, &ctx, app, state);
 ```
 
 **Benefits**:

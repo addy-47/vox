@@ -116,17 +116,17 @@ audio → VAD → STT → (Transliteration) → LLM → (Tag Stripping) → TTS 
    Audio Capture (cpal, 16kHz)                                         Playback Engine (48kHz)
 ```
 
-### Pipeline State Machine
+### Pipeline State Machine (7 Canonical Turn States)
 
 | State | Description |
 |-------|-------------|
-| `Idle` | Waiting for speech |
-| `Listening` | VAD active, no speech detected |
-| `UserSpeaking` | Speech in progress, STT streaming |
-| `Thinking` | LLM generating response |
-| `AssistantSpeaking` | TTS playback active |
-| `Interrupted` | Barge-in triggered |
-| `MaintainingContext` | Compaction running, transition speech plays |
+| `Idle` | Session is dormant / unengaged (`is_engaged = false`) |
+| `Ready` | Session is engaged (`is_engaged = true`), warm, awaiting speech or PTT hold |
+| `Listening` | User is actively speaking; Vox is capturing voice |
+| `Thinking` | Turn complete; LLM inference or RAG compaction active |
+| `Speaking` | System audio playback actively streaming through speakers |
+| `Paused` | User explicitly paused session |
+| `Error` | Recoverable or unrecoverable subsystem error |
 
 ### Sub-Sentence Chunking (should_flush)
 

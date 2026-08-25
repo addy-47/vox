@@ -19,7 +19,7 @@ pub async fn handle_hotkey_press(app: &AppHandle, state: &AppState) -> Result<()
     let turn_id = state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
 
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::UserSpeaking, &ctx, app, state);
+    transition(InteractionState::Listening, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
         "tray",
@@ -88,7 +88,7 @@ pub async fn handle_hotkey_release(app: &AppHandle, state: &AppState) -> Result<
 /// Handles user speech onset for background passive dictation.
 fn on_speech_start(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::UserSpeaking, &ctx, app, state);
+    transition(InteractionState::Listening, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
         "tray",
