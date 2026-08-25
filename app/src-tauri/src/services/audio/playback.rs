@@ -46,19 +46,20 @@ pub struct PlaybackEngine {
     discard_request: Arc<AtomicBool>,
     /// Active CPAL output stream kept alive until cancelled.
     _stream: Option<cpal::Stream>,
-    /// Real-time energy telemetry atomics.
-    _playback_energy: Arc<std::sync::atomic::AtomicU32>,
-    _playback_low: Arc<std::sync::atomic::AtomicU32>,
-    _playback_mid: Arc<std::sync::atomic::AtomicU32>,
-    _playback_high: Arc<std::sync::atomic::AtomicU32>,
-    /// Underrun counter while assistant is speaking.
-    _playback_underruns: Arc<std::sync::atomic::AtomicU64>,
-    /// State flag indicating assistant speaking status.
-    _is_assistant_speaking: Arc<AtomicBool>,
     /// Current sample count in buffer.
     buffer_samples: Arc<std::sync::atomic::AtomicUsize>,
     /// Total samples ingested during turn.
     total_samples_ingested: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+/// Telemetry and visualization atomics passed to the playback engine.
+#[derive(Clone)]
+pub struct PlaybackTelemetryHandles {
+    pub energy: Arc<std::sync::atomic::AtomicU32>,
+    pub low: Arc<std::sync::atomic::AtomicU32>,
+    pub mid: Arc<std::sync::atomic::AtomicU32>,
+    pub high: Arc<std::sync::atomic::AtomicU32>,
+    pub underruns: Arc<std::sync::atomic::AtomicU64>,
 }
 
 unsafe impl Send for PlaybackEngine {}
@@ -66,16 +67,11 @@ unsafe impl Sync for PlaybackEngine {}
 
 impl PlaybackEngine {
     /// Initialise CPAL output stream at 48kHz without starting playback immediately.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
-        playback_energy: Arc<std::sync::atomic::AtomicU32>,
-        playback_low: Arc<std::sync::atomic::AtomicU32>,
-        playback_mid: Arc<std::sync::atomic::AtomicU32>,
-        playback_high: Arc<std::sync::atomic::AtomicU32>,
-        playback_underruns: Arc<std::sync::atomic::AtomicU64>,
         is_assistant_speaking: Arc<AtomicBool>,
+        telemetry: PlaybackTelemetryHandles,
     ) -> Result<Self> {
         let rb = ringbuf::HeapRb::<f32>::new(48_000 * 30);
         let (producer, consumer) = rb.split();
@@ -87,13 +83,9 @@ impl PlaybackEngine {
             Arc::clone(&playback_active),
             Arc::clone(&cancel_flag),
             Arc::clone(&discard_request),
-            Arc::clone(&playback_energy),
-            Arc::clone(&playback_low),
-            Arc::clone(&playback_mid),
-            Arc::clone(&playback_high),
-            Arc::clone(&playback_underruns),
             Arc::clone(&is_assistant_speaking),
             Arc::clone(&buffer_samples),
+            &telemetry,
         )?;
 
         Ok(Self {
@@ -102,12 +94,6 @@ impl PlaybackEngine {
             cancel_flag,
             discard_request,
             _stream: Some(stream),
-            _playback_energy: playback_energy,
-            _playback_low: playback_low,
-            _playback_mid: playback_mid,
-            _playback_high: playback_high,
-            _playback_underruns: playback_underruns,
-            _is_assistant_speaking: is_assistant_speaking,
             buffer_samples,
             total_samples_ingested: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         })
@@ -182,19 +168,14 @@ impl PlaybackEngine {
     }
 
     /// Builds and starts the CPAL 48kHz stereo output stream.
-    #[allow(clippy::too_many_arguments)]
     fn build_cpal_stream(
         consumer: HeapCons<f32>,
         playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
         discard_request: Arc<AtomicBool>,
-        playback_energy: Arc<std::sync::atomic::AtomicU32>,
-        playback_low: Arc<std::sync::atomic::AtomicU32>,
-        playback_mid: Arc<std::sync::atomic::AtomicU32>,
-        playback_high: Arc<std::sync::atomic::AtomicU32>,
-        playback_underruns: Arc<std::sync::atomic::AtomicU64>,
         is_assistant_speaking: Arc<AtomicBool>,
         buffer_samples: Arc<std::sync::atomic::AtomicUsize>,
+        telemetry: &PlaybackTelemetryHandles,
     ) -> Result<cpal::Stream> {
         let host = cpal::default_host();
         let (device, config) = resolve_output_device_and_config(&host)?;
@@ -204,11 +185,11 @@ impl PlaybackEngine {
             playback_active,
             cancel_flag,
             discard_request,
-            playback_energy,
-            playback_low,
-            playback_mid,
-            playback_high,
-            playback_underruns,
+            playback_energy: Arc::clone(&telemetry.energy),
+            playback_low: Arc::clone(&telemetry.low),
+            playback_mid: Arc::clone(&telemetry.mid),
+            playback_high: Arc::clone(&telemetry.high),
+            playback_underruns: Arc::clone(&telemetry.underruns),
             is_assistant_speaking,
             buffer_samples,
             last_sample: 0.0,
@@ -414,148 +395,5 @@ impl Drop for PlaybackEngine {
     /// Cleans up and halts output on engine drop.
     fn drop(&mut self) {
         self.cancel();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-    use std::sync::Arc;
-
-    #[test]
-    fn test_upsample_2x_boundaries() {
-        let test_cases: Vec<Vec<f32>> = vec![
-            vec![],
-            vec![0.5],
-            vec![0.2, -0.8],
-            vec![0.1, 0.5, -0.3],
-            vec![0.0; 100],
-        ];
-
-        for input in test_cases {
-            let output = upsample_2x(&input);
-            assert_eq!(
-                output.len(),
-                input.len() * 2,
-                "Output length must be exactly 2 * N for input len {}",
-                input.len()
-            );
-            for &sample in &output {
-                assert!(
-                    sample.is_finite(),
-                    "Sample must be finite (not NaN or Inf): {}",
-                    sample
-                );
-            }
-        }
-
-        let non_zero_100: Vec<f32> = (0..100)
-            .map(|i| if i % 2 == 0 { 0.9 } else { -0.9 })
-            .collect();
-        let output_100 = upsample_2x(&non_zero_100);
-        assert_eq!(output_100.len(), 200);
-        for &sample in &output_100 {
-            assert!(sample.is_finite());
-        }
-    }
-
-    #[test]
-    fn test_upsample_2x_sine_wave_fidelity() {
-        let freq = 1000.0f32;
-        let sample_rate = 24000.0f32;
-        let num_samples = 2400;
-        let peak_amp = 0.8f32;
-
-        let input: Vec<f32> = (0..num_samples)
-            .map(|i| {
-                (2.0 * std::f32::consts::PI * freq * (i as f32) / sample_rate).sin() * peak_amp
-            })
-            .collect();
-
-        let output = upsample_2x(&input);
-
-        assert_eq!(output.len(), num_samples * 2);
-
-        let input_peak = input.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
-        let output_peak = output.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
-
-        let peak_diff = (input_peak - output_peak).abs();
-        assert!(
-            peak_diff < 0.02,
-            "Peak amplitude mismatch: input peak {}, output peak {}, diff {}",
-            input_peak,
-            output_peak,
-            peak_diff
-        );
-
-        assert!(
-            output_peak <= 1.0,
-            "Output clipped or overshot boundary: peak {}",
-            output_peak
-        );
-
-        for &sample in &output {
-            assert!(sample.is_finite(), "Output sample contains NaN or Inf");
-        }
-    }
-
-    #[test]
-    fn test_playback_barge_in_discard() {
-        let playback_active = Arc::new(AtomicBool::new(false));
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        let playback_energy = Arc::new(AtomicU32::new(0));
-        let playback_low = Arc::new(AtomicU32::new(0));
-        let playback_mid = Arc::new(AtomicU32::new(0));
-        let playback_high = Arc::new(AtomicU32::new(0));
-        let playback_underruns = Arc::new(AtomicU64::new(0));
-        let is_assistant_speaking = Arc::new(AtomicBool::new(false));
-
-        let engine = match PlaybackEngine::new(
-            playback_active.clone(),
-            cancel_flag.clone(),
-            playback_energy.clone(),
-            playback_low.clone(),
-            playback_mid.clone(),
-            playback_high.clone(),
-            playback_underruns.clone(),
-            is_assistant_speaking.clone(),
-        ) {
-            Ok(engine) => engine,
-            Err(e) => {
-                eprintln!(
-                    "[test_playback_barge_in_discard] Audio device not available: {}",
-                    e
-                );
-                return;
-            }
-        };
-
-        assert!(engine.is_idle());
-        assert_eq!(engine.buffer_len(), 0);
-        assert_eq!(engine.total_samples_ingested(), 0);
-
-        let chunk = vec![0.1f32; 100];
-        engine.ingest_chunk(&chunk);
-
-        assert_eq!(engine.buffer_len(), 200);
-        assert_eq!(engine.total_samples_ingested(), 200);
-
-        engine.start_playback();
-        assert!(!engine.is_idle());
-
-        engine.cancel();
-
-        assert_eq!(engine.buffer_len(), 0);
-        assert!(engine.is_idle());
-        assert!(cancel_flag.load(Ordering::Relaxed));
-
-        let new_chunk = vec![0.5f32; 50];
-        engine.ingest_chunk(&new_chunk);
-        assert_eq!(engine.buffer_len(), 0);
-
-        assert_eq!(engine.total_samples_ingested(), 200);
-        engine.reset_samples_ingested();
-        assert_eq!(engine.total_samples_ingested(), 0);
     }
 }

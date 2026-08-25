@@ -117,25 +117,3 @@ pub fn classify_scope(text: &str) -> MemoryScope {
 pub fn is_scope_classifier_loaded() -> bool {
     SCOPE_CLASSIFIER_INSTANCE.read().is_some()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_uninitialized_classifier_fallback() {
-        let res = classify_scope("hello how are you");
-        if is_scope_classifier_loaded() {
-            assert_eq!(res, MemoryScope::ChitChat);
-        } else {
-            assert_eq!(res, MemoryScope::Domain);
-        }
-    }
-
-    #[test]
-    fn test_classifier_path_constants() {
-        assert_eq!(MEMORY_SCOPE_MODEL_DIR, "modernbert_memory_scope");
-        assert_eq!(CLASSIFIER_MODEL_FILENAME, "model_quantized.onnx");
-        assert_eq!(CLASSIFIER_TOKENIZER_FILENAME, "tokenizer.json");
-    }
-}

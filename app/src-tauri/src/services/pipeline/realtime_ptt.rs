@@ -237,7 +237,8 @@ pub fn handle_ptt_cancel(app: &AppHandle, state: &AppState) -> Result<(), String
 }
 
 /// Handles speech onset detection and marks speech active for PTT gating.
-fn on_speech_start(turn_id: u32, app: &AppHandle, _state: &AppState) {
+fn on_speech_start(turn_id: u32, app: &AppHandle, playback: &Arc<PlaybackEngine>) {
+    playback.cancel();
     if IS_RECORDING.load(Ordering::Relaxed) {
         SPEECH_DETECTED.store(true, Ordering::Relaxed);
     }
@@ -248,7 +249,7 @@ fn on_speech_start(turn_id: u32, app: &AppHandle, _state: &AppState) {
 }
 
 /// Handles speech end detection and buffers captured speech audio.
-fn on_speech_end(turn_id: u32, app: &AppHandle, _state: &AppState, audio: Vec<f32>) {
+fn on_speech_end(turn_id: u32, app: &AppHandle, audio: Vec<f32>) {
     if IS_RECORDING.load(Ordering::Relaxed) {
         let i16_samples: Vec<i16> = audio
             .iter()
@@ -338,15 +339,15 @@ fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
 pub fn handle_event(
     app: &AppHandle,
     state: &AppState,
-    _playback: &Arc<PlaybackEngine>,
+    playback: &Arc<PlaybackEngine>,
     event: VoxEvent,
 ) {
     match event {
-        VoxEvent::SpeechStart { turn_id } => on_speech_start(turn_id, app, state),
+        VoxEvent::SpeechStart { turn_id } => on_speech_start(turn_id, app, playback),
         VoxEvent::SpeechEnd {
             turn_id,
             audio_buffer,
-        } => on_speech_end(turn_id, app, state, audio_buffer),
+        } => on_speech_end(turn_id, app, audio_buffer),
         VoxEvent::TranscriptFinal { turn_id, text } => {
             on_transcript_final(turn_id, text, app, state)
         }

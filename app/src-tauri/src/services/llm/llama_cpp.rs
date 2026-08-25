@@ -261,9 +261,9 @@ struct CacheState {
 /// In-process llama.cpp model worker executing token generation.
 pub struct LlmWorker {
     model: LlamaModel,
-    _backend: &'static LlamaBackend,
+    backend: &'static LlamaBackend,
     ctx_size: u32,
-    _n_threads: u32,
+    n_threads: u32,
     family: ModelFamily,
     ctx: Mutex<Option<LlamaContext<'static>>>,
     cache_state: Mutex<Option<CacheState>>,
@@ -320,9 +320,9 @@ impl LlmWorker {
 
         Ok(Self {
             model,
-            _backend: backend,
+            backend,
             ctx_size,
-            _n_threads: n_threads,
+            n_threads,
             family,
             ctx: Mutex::new(None),
             cache_state: Mutex::new(None),
@@ -388,14 +388,14 @@ impl LlmWorker {
             log::info!("[LLM] Lazy initializing LlamaContext on stable execution address...");
             let ctx_params = LlamaContextParams::default()
                 .with_n_ctx(Some(NonZeroU32::new(self.ctx_size).unwrap()))
-                .with_n_threads(self._n_threads as i32)
-                .with_n_threads_batch(self._n_threads as i32)
+                .with_n_threads(self.n_threads as i32)
+                .with_n_threads_batch(self.n_threads as i32)
                 .with_n_batch(self.ctx_size)
                 .with_n_ubatch(self.ctx_size);
 
             let ctx = self
                 .model
-                .new_context(self._backend, ctx_params)
+                .new_context(self.backend, ctx_params)
                 .map_err(|e| anyhow!("[LLM] Lazy context creation failed: {}", e))?;
 
             let static_ctx: LlamaContext<'static> = unsafe { std::mem::transmute(ctx) };
