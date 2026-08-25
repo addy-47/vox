@@ -4,6 +4,7 @@ use crate::services::llm::types::GenerationRequest;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+/// Commands processed by the background LLM worker thread.
 pub enum LlmCommand {
     Generate {
         request: GenerationRequest,
@@ -13,6 +14,7 @@ pub enum LlmCommand {
     Shutdown,
 }
 
+/// Spawns the dedicated LLM generation worker thread and runs its command loop.
 pub fn spawn_llm_worker(
     app: tauri::AppHandle,
     rx: std::sync::mpsc::Receiver<LlmCommand>,
@@ -24,7 +26,9 @@ pub fn spawn_llm_worker(
 
     let is_local = provider.kind() == super::ProviderKind::Embedded;
     is_loaded.store(is_local, Ordering::Relaxed);
-    let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "LLM");
+    if let Err(e) = app.emit(crate::core::constants::EVENT_MODEL_READY, "LLM") {
+        log::warn!("[LLM Worker] Failed to emit EVENT_MODEL_READY: {}", e);
+    }
 
     log::info!("[LLM Worker] Persistent loop started.");
 
@@ -45,10 +49,12 @@ pub fn spawn_llm_worker(
 
                 if let Err(e) = res {
                     log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
-                    let _ = event_tx.send(VoxEvent::Error {
+                    if let Err(send_err) = event_tx.send(VoxEvent::Error {
                         turn_id,
                         message: e.to_string(),
-                    });
+                    }) {
+                        log::warn!("[LLM Worker] Failed to dispatch error event: {}", send_err);
+                    }
                 }
             }
             LlmCommand::Shutdown => {

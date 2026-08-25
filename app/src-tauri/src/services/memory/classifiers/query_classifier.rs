@@ -27,6 +27,7 @@ impl QueryScopeClassifier {
         Ok(Self { classifier })
     }
 
+    /// Classifies an input text string into a MemoryScope enum variant.
     pub fn classify(&self, text: &str) -> MemoryScope {
         self.classifier
             .classify(text)

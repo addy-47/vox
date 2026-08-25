@@ -33,6 +33,7 @@ pub fn jaccard_similarity(s1: &str, s2: &str) -> f32 {
     intersection / union
 }
 
+/// Returns true if cosine similarity or Jaccard similarity exceeds exact-match thresholds.
 pub fn is_exact_duplicate(cosine_sim: f32, jaccard_sim: f32) -> bool {
     cosine_sim >= COSINE_HARD_MATCH_THRESHOLD || jaccard_sim >= JACCARD_EXACT_MATCH_THRESHOLD
 }

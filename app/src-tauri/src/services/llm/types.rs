@@ -71,6 +71,7 @@ pub struct ProviderCapabilities {
 }
 
 impl Default for ProviderCapabilities {
+    /// Returns default provider capability matrix with standard chat completion features enabled.
     fn default() -> Self {
         Self {
             temperature: Support::Supported,

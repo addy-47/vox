@@ -3,12 +3,14 @@ use crate::services::llm::providers::ProviderKind;
 use crate::services::llm::types::Support;
 use std::time::Duration;
 
+/// Dedicated client for testing parameter compatibility against LLM endpoints.
 pub struct ActiveProbeEngine {
     client: reqwest::Client,
     registry: CapabilityRegistry,
 }
 
 impl ActiveProbeEngine {
+    /// Creates a new probe engine backed by the provided capability registry.
     pub fn new(registry: CapabilityRegistry) -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(4))
@@ -19,6 +21,7 @@ impl ActiveProbeEngine {
         Self { client, registry }
     }
 
+    /// Returns a reference to the underlying capability registry.
     pub fn registry(&self) -> &CapabilityRegistry {
         &self.registry
     }

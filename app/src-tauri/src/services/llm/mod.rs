@@ -33,6 +33,7 @@ pub const MODEL_FILE_LLM_GEMMA_GGUF: &str = "gemma-4-e2b-q4_k_m.gguf";
 use crate::services::memory::ConversationContext;
 
 pub trait LlmEngine {
+    /// Generates completion tokens for the conversation context and dispatches them via channel.
     fn generate(
         &self,
         ctx: &ConversationContext,

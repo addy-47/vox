@@ -1,7 +1,3 @@
-//! ============================================================================
-//! src/services/dictation/controller.rs — Dictation Session Controller
-//! ============================================================================
-
 use crate::core::error::DictationError;
 use crate::core::events::VoxEvent;
 use crate::core::state::{AppState, InteractionOwner, InteractionState};
@@ -11,6 +7,7 @@ use serde_json::json;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+/// Session controller managing global dictation press, release, and cancel lifecycles.
 pub struct DictationController;
 
 impl DictationController {
@@ -18,36 +15,22 @@ impl DictationController {
     pub async fn handle_press(app: &AppHandle) -> Result<(), DictationError> {
         let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-        // 1. Ensure audio/STT engine is active (lazy launch on-demand if cold)
-        {
-            let engine_lock = state.engine.lock().await;
-            if engine_lock.is_none() {
-                log::info!(
-                    "[Dictation::Controller] Engine is cold. Auto-launching audio/STT engine..."
-                );
-                drop(engine_lock);
-                if let Err(e) = crate::ipc::pipeline::launch_engine(app.clone()).await {
-                    log::error!(
-                        "[Dictation::Controller] Failed to lazy-launch engine: {}",
-                        e
-                    );
-                    return Err(DictationError::EngineNotReady {
-                        message: format!("Failed to initialize audio engine: {}", e),
-                    });
-                }
-            }
-        }
+        ensure_engine_running(app, &state).await?;
 
-        // 2. Set active owner to Dictation
         let owner = InteractionOwner::Dictation;
         state.owner.store(owner as u32, Ordering::Relaxed);
         if let Some(engine) = state.engine.lock().await.as_ref() {
-            let _ = engine
+            if let Err(e) = engine
                 .vad_tx
-                .send(crate::core::state::VadCommand::UpdateOwner(owner));
+                .send(crate::core::state::VadCommand::UpdateOwner(owner))
+            {
+                log::warn!(
+                    "[Dictation::Controller] Failed to notify VAD of owner switch: {}",
+                    e
+                );
+            }
         }
 
-        // 3. Atomic compare-exchange to prevent double-press racing
         if state
             .ptt
             .is_recording
@@ -58,35 +41,11 @@ impl DictationController {
             return Ok(());
         }
 
-        // 4. Allocate new turn ID and reset PTT buffer
-        let turn = {
-            let new_turn = state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
-            state.ptt.turn_id.store(new_turn, Ordering::Relaxed);
-            reset_ptt_state_inner(&state.ptt);
-            new_turn
-        };
-
-        // 5. Notify pipeline of SpeechStart for potential playback cancellation
-        if let Some(engine) = state.engine.lock().await.as_ref() {
-            let _ = engine.pipeline_tx.send(VoxEvent::SpeechStart {
-                turn_id: turn,
-                owner,
-            });
-        }
-
+        let turn = begin_dictation_turn(app, &state, owner).await;
         log::info!(
             "[Dictation::Controller] 🎙️ Dictation recording started (turn: {})",
             turn
         );
-
-        // 6. Broadcast PTT status & state transition
-        let _ = app.emit(
-            "ptt_status",
-            json!({ "state": "RECORDING", "session_id": turn, "owner": "dictation" }),
-        );
-        state
-            .pipeline
-            .update_interaction_state(InteractionState::UserSpeaking, owner, app);
 
         Ok(())
     }
@@ -102,22 +61,11 @@ impl DictationController {
         let owner = InteractionOwner::Dictation;
         let speech_detected = state.ptt.speech_detected.load(Ordering::Relaxed);
 
-        // If no speech was detected during the hold, discard cleanly
         if !speech_detected {
-            log::info!("[Dictation::Controller] Silence only detected. Discarding dictation hold.");
-            discard_ptt_hold_inner(&state.ptt);
-
-            let _ = app.emit(
-                "ptt_status",
-                json!({ "state": "IDLE", "owner": "dictation" }),
-            );
-            state
-                .pipeline
-                .update_interaction_state(InteractionState::Idle, owner, app);
+            handle_silent_dictation_release(app, &state, owner);
             return Ok(());
         }
 
-        // Extract audio buffer and mark recording as stopped
         let (turn, buffer_clone) = {
             let buffer = state.ptt.audio_buffer.lock();
             let turn = state.ptt.turn_id.load(Ordering::Relaxed);
@@ -131,30 +79,7 @@ impl DictationController {
             turn
         );
 
-        let _ = app.emit(
-            "ptt_status",
-            json!({ "state": "PROCESSING", "session_id": turn, "owner": "dictation" }),
-        );
-        state
-            .pipeline
-            .update_interaction_state(InteractionState::Thinking, owner, app);
-
-        // Send captured buffer to STT worker for final transcription
-        let engine_lock = state.engine.lock().await;
-        if let Some(engine) = engine_lock.as_ref() {
-            let _ = engine
-                .stt_tx
-                .send(SttCommand::Final(turn, owner, buffer_clone));
-        } else {
-            log::error!(
-                "[Dictation::Controller] Engine not running during dictation finalization."
-            );
-            return Err(DictationError::EngineNotReady {
-                message: "Engine not available for transcription".into(),
-            });
-        }
-
-        Ok(())
+        finalize_dictation_audio(app, &state, turn, owner, buffer_clone).await
     }
 
     /// Triggered to cancel an active dictation session.
@@ -169,14 +94,137 @@ impl DictationController {
         let owner = InteractionOwner::Dictation;
         log::info!("[Dictation::Controller] ❌ Dictation recording cancelled.");
 
-        let _ = app.emit(
+        if let Err(e) = app.emit(
             "ptt_status",
             json!({ "state": "IDLE", "owner": "dictation" }),
-        );
+        ) {
+            log::warn!(
+                "[Dictation::Controller] Failed to emit ptt_status on cancel: {}",
+                e
+            );
+        }
+
         state
             .pipeline
             .update_interaction_state(InteractionState::Idle, owner, app);
 
         Ok(())
     }
+}
+
+/// Ensures the audio engine is running, lazy-launching it if not initialized.
+async fn ensure_engine_running(app: &AppHandle, state: &AppState) -> Result<(), DictationError> {
+    let engine_lock = state.engine.lock().await;
+    if engine_lock.is_none() {
+        log::info!("[Dictation::Controller] Engine is cold. Auto-launching audio/STT engine...");
+        drop(engine_lock);
+        if let Err(e) = crate::ipc::pipeline::launch_engine(app.clone()).await {
+            log::error!(
+                "[Dictation::Controller] Failed to lazy-launch engine: {}",
+                e
+            );
+            return Err(DictationError::EngineNotReady {
+                message: format!("Failed to initialize audio engine: {}", e),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Allocates a new turn ID, resets PTT state, and broadcasts SpeechStart and recording events.
+async fn begin_dictation_turn(app: &AppHandle, state: &AppState, owner: InteractionOwner) -> u32 {
+    let new_turn = state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
+    state.ptt.turn_id.store(new_turn, Ordering::Relaxed);
+    reset_ptt_state_inner(&state.ptt);
+
+    if let Some(engine) = state.engine.lock().await.as_ref() {
+        if let Err(e) = engine.pipeline_tx.send(VoxEvent::SpeechStart {
+            turn_id: new_turn,
+            owner,
+        }) {
+            log::warn!(
+                "[Dictation::Controller] Failed to send SpeechStart to pipeline: {}",
+                e
+            );
+        }
+    }
+
+    if let Err(e) = app.emit(
+        "ptt_status",
+        json!({ "state": "RECORDING", "session_id": new_turn, "owner": "dictation" }),
+    ) {
+        log::warn!(
+            "[Dictation::Controller] Failed to emit ptt_status RECORDING: {}",
+            e
+        );
+    }
+
+    state
+        .pipeline
+        .update_interaction_state(InteractionState::UserSpeaking, owner, app);
+
+    new_turn
+}
+
+/// Cleans up state and broadcasts Idle transition when no speech was captured during the hold.
+fn handle_silent_dictation_release(app: &AppHandle, state: &AppState, owner: InteractionOwner) {
+    log::info!("[Dictation::Controller] Silence only detected. Discarding dictation hold.");
+    discard_ptt_hold_inner(&state.ptt);
+
+    if let Err(e) = app.emit(
+        "ptt_status",
+        json!({ "state": "IDLE", "owner": "dictation" }),
+    ) {
+        log::warn!(
+            "[Dictation::Controller] Failed to emit ptt_status IDLE: {}",
+            e
+        );
+    }
+
+    state
+        .pipeline
+        .update_interaction_state(InteractionState::Idle, owner, app);
+}
+
+/// Emits processing state and forwards captured audio to STT worker.
+async fn finalize_dictation_audio(
+    app: &AppHandle,
+    state: &AppState,
+    turn: u32,
+    owner: InteractionOwner,
+    buffer: Vec<f32>,
+) -> Result<(), DictationError> {
+    if let Err(e) = app.emit(
+        "ptt_status",
+        json!({ "state": "PROCESSING", "session_id": turn, "owner": "dictation" }),
+    ) {
+        log::warn!(
+            "[Dictation::Controller] Failed to emit ptt_status PROCESSING: {}",
+            e
+        );
+    }
+
+    state
+        .pipeline
+        .update_interaction_state(InteractionState::Thinking, owner, app);
+
+    let engine_lock = state.engine.lock().await;
+    if let Some(engine) = engine_lock.as_ref() {
+        if let Err(e) = engine.stt_tx.send(SttCommand::Final(turn, owner, buffer)) {
+            log::error!(
+                "[Dictation::Controller] Failed to dispatch Final STT command: {}",
+                e
+            );
+            return Err(DictationError::EngineNotReady {
+                message: format!("Failed to dispatch STT finalization: {}", e),
+            });
+        }
+    } else {
+        log::error!("[Dictation::Controller] Engine not running during dictation finalization.");
+        return Err(DictationError::EngineNotReady {
+            message: "Engine not available for transcription".into(),
+        });
+    }
+
+    Ok(())
 }

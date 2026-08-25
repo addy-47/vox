@@ -3,31 +3,18 @@ use crate::services::tts::providers::TtsProvider;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+/// Commands dispatched to the background speech synthesis worker actor.
 pub enum TtsCommand {
     Generate {
         turn_id: u32,
         text: String,
     },
-    /// Hot-update the number of diffusion steps (2-12).
     UpdateQualitySteps(u32),
-    /// Hot-update the speed factor (0.7-2.0).
     UpdateSpeed(f32),
     Shutdown,
 }
 
-/// Spawn a persistent TTS worker thread.
-///
-/// The worker takes ownership of the provider and processes `TtsCommand`s
-/// from the pipeline in a blocking loop. The provider must be fully initialized
-/// before calling this function.
-///
-/// # Parameters
-/// - `app` — Tauri app handle for emitting model lifecycle events.
-/// - `rx` — Receiver for `TtsCommand` from the pipeline.
-/// - `provider` — The TTS provider to use (e.g. Supertonic, Pocket, etc.).
-/// - `event_tx` — Channel to emit `VoxEvent`s (TtsChunk, TtsFinished) back to the pipeline.
-/// - `cancel_flag` — Shared atomic flag for barge-in cancellation.
-/// - `is_loaded` — Set to true after successful init, false on shutdown.
+/// Spawns a dedicated OS worker thread processing speech synthesis tasks in a blocking loop.
 pub fn spawn_tts_worker(
     app: tauri::AppHandle,
     rx: std::sync::mpsc::Receiver<TtsCommand>,
@@ -38,9 +25,10 @@ pub fn spawn_tts_worker(
 ) {
     use tauri::Emitter;
 
-    // Provider is pre-initialized — signal ready immediately.
     is_loaded.store(true, Ordering::Relaxed);
-    let _ = app.emit(crate::core::constants::EVENT_MODEL_READY, "TTS");
+    if let Err(e) = app.emit(crate::core::constants::EVENT_MODEL_READY, "TTS") {
+        log::warn!("[TTS Worker] Failed to emit model ready event: {:?}", e);
+    }
 
     log::info!(
         "[TTS Worker] Persistent loop started with provider: {:?}",
@@ -75,31 +63,27 @@ pub fn spawn_tts_worker(
     log::info!("[TTS Worker] Loop exited. Provider will be dropped.");
 }
 
-/// Clause and sentence chunker for streaming TTS input.
-///
-/// Accumulates text fragments and splits them into speakable clause/sentence
-/// chunks at natural boundaries (`,`, `;`, `:`, `—`, `.`, `!`, `?`, `\n`).
-/// Protects abbreviations (Dr., Mr., vs., e.g., etc.), version tags (v0.8.6),
-/// and decimal numbers (3.14) from invalid splitting.
+/// Accumulates streaming token fragments and splits them into speakable clause/sentence chunks.
 #[derive(Debug, Default, Clone)]
 pub struct TtsClauseChunker {
     buffer: String,
 }
 
 impl TtsClauseChunker {
+    /// Creates an empty TtsClauseChunker instance.
     pub fn new() -> Self {
         Self {
             buffer: String::new(),
         }
     }
 
-    /// Feed incoming text into the chunker and return any complete chunks.
+    /// Appends incoming text slice into the accumulator and returns any completed clauses.
     pub fn push_str(&mut self, text: &str) -> Vec<String> {
         self.buffer.push_str(text);
         self.extract_chunks()
     }
 
-    /// Flush any remaining text in the buffer as a final chunk.
+    /// Flushes any remaining unpunctuated text in the buffer as a final speakable chunk.
     pub fn flush(&mut self) -> Option<String> {
         let trimmed = self.buffer.trim().to_string();
         self.buffer.clear();
@@ -110,87 +94,76 @@ impl TtsClauseChunker {
         }
     }
 
-    /// Clear the buffer unconditionally (e.g. on turn cancellation or barge-in).
+    /// Clears the internal chunker buffer unconditionally on cancellation or interruption.
     pub fn clear(&mut self) {
         self.buffer.clear();
     }
 
-    /// View current buffer contents.
+    /// Returns a slice view of the current unconsumed buffer text.
     pub fn buffer(&self) -> &str {
         &self.buffer
     }
 
-    /// Check if the buffer is empty.
+    /// Returns true if the chunker accumulator contains no text.
     pub fn is_empty(&self) -> bool {
         self.buffer.trim().is_empty()
     }
 
-    /// Scan internal buffer for completed clauses and sentences.
+    /// Scans buffer text and locates valid clause or sentence split byte positions.
+    fn find_split_point(&self) -> Option<(usize, usize)> {
+        let chars: Vec<(usize, char)> = self.buffer.char_indices().collect();
+
+        for i in 0..chars.len() {
+            let (pos, c) = chars[i];
+
+            if c == '\n' || c == '?' || c == '!' {
+                return Some((pos, c.len_utf8()));
+            }
+
+            if c == ',' || c == ';' || c == ':' || c == '—' || c == '–' {
+                return Some((pos, c.len_utf8()));
+            }
+
+            if c == '.' {
+                let prev_is_digit = if i > 0 {
+                    chars[i - 1].1.is_ascii_digit()
+                } else {
+                    false
+                };
+                let next_is_digit = if i + 1 < chars.len() {
+                    chars[i + 1].1.is_ascii_digit()
+                } else {
+                    false
+                };
+
+                if prev_is_digit && next_is_digit {
+                    continue;
+                }
+
+                let text_before = &self.buffer[..pos];
+                let last_word = text_before
+                    .split_whitespace()
+                    .last()
+                    .unwrap_or("")
+                    .trim_matches(|p: char| !p.is_alphanumeric());
+
+                if is_abbreviation(last_word) {
+                    continue;
+                }
+
+                return Some((pos, c.len_utf8()));
+            }
+        }
+
+        None
+    }
+
+    /// Extracts all completed speakable clause strings from the buffer.
     fn extract_chunks(&mut self) -> Vec<String> {
         let mut chunks = Vec::new();
 
-        loop {
-            if self.buffer.is_empty() {
-                break;
-            }
-
-            let mut split_pos: Option<(usize, usize)> = None; // (char_byte_pos, char_len)
-            let chars: Vec<(usize, char)> = self.buffer.char_indices().collect();
-
-            for i in 0..chars.len() {
-                let (pos, c) = chars[i];
-
-                // Hard boundaries: newline, question mark, exclamation point
-                if c == '\n' || c == '?' || c == '!' {
-                    split_pos = Some((pos, c.len_utf8()));
-                    break;
-                }
-
-                // Clause boundaries: comma, semicolon, colon, dash
-                if c == ',' || c == ';' || c == ':' || c == '—' || c == '–' {
-                    split_pos = Some((pos, c.len_utf8()));
-                    break;
-                }
-
-                // Period boundary: check if abbreviation, decimal, or version string
-                if c == '.' {
-                    // Check 1: Decimal number (e.g., 3.14 or 0.8.6)
-                    let prev_is_digit = if i > 0 {
-                        chars[i - 1].1.is_ascii_digit()
-                    } else {
-                        false
-                    };
-                    let next_is_digit = if i + 1 < chars.len() {
-                        chars[i + 1].1.is_ascii_digit()
-                    } else {
-                        false
-                    };
-
-                    if prev_is_digit && next_is_digit {
-                        // Part of decimal/version string like 3.14 or 0.8.6 - skip
-                        continue;
-                    }
-
-                    // Check 2: Preceding word abbreviation (e.g. Dr., Mr., v0., vs., e.g., etc.)
-                    let text_before = &self.buffer[..pos];
-                    let last_word = text_before
-                        .split_whitespace()
-                        .last()
-                        .unwrap_or("")
-                        .trim_matches(|p: char| !p.is_alphanumeric());
-
-                    if is_abbreviation(last_word) {
-                        // Skip abbreviation split
-                        continue;
-                    }
-
-                    // Valid period boundary
-                    split_pos = Some((pos, c.len_utf8()));
-                    break;
-                }
-            }
-
-            if let Some((pos, len)) = split_pos {
+        while !self.buffer.is_empty() {
+            if let Some((pos, len)) = self.find_split_point() {
                 let end = pos + len;
                 let chunk = self.buffer[..end].trim().to_string();
                 self.buffer = self.buffer[end..].to_string();
@@ -207,7 +180,7 @@ impl TtsClauseChunker {
     }
 }
 
-/// Helper function to detect standard abbreviations and version prefixes.
+/// Identifies standard honorifics, abbreviations, and version prefixes that suppress period splits.
 fn is_abbreviation(word: &str) -> bool {
     if word.is_empty() {
         return false;
@@ -215,7 +188,6 @@ fn is_abbreviation(word: &str) -> bool {
 
     let lower = word.to_lowercase();
 
-    // Standard title & common abbreviations
     const ABBREVS: &[&str] = &[
         "dr", "mr", "mrs", "ms", "prof", "sr", "jr", "st", "vs", "e.g", "i.e", "etc", "approx",
         "dept", "fig", "ver", "vol", "inc", "ltd", "co", "no", "p", "pg", "pp",
@@ -225,12 +197,10 @@ fn is_abbreviation(word: &str) -> bool {
         return true;
     }
 
-    // Version prefixes like "v0", "v1", "v2"
     if lower.starts_with('v') && lower.len() > 1 && lower[1..].chars().all(|c| c.is_ascii_digit()) {
         return true;
     }
 
-    // Single capital letter initial (e.g. "A." in "A. Smith")
     if word.len() == 1 && word.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
         return true;
     }
@@ -248,11 +218,9 @@ mod tests {
         let input = "Dr. Smith tested version 0.8.6 at 3.14 PM.";
         let chunks = chunker.push_str(input);
 
-        // Verify the chunker did NOT split on "Dr.", "v0." / "0.8.6", or "3." / "3.14"
         assert_eq!(chunks.len(), 1, "Expected single chunk, got {:?}", chunks);
         assert_eq!(chunks[0], "Dr. Smith tested version 0.8.6 at 3.14 PM.");
 
-        // Additional abbreviation check with v0.8.6 explicitly
         let mut chunker2 = TtsClauseChunker::new();
         let input2 = "Tested v0.8.6 release.";
         let chunks2 = chunker2.push_str(input2);
@@ -271,7 +239,6 @@ mod tests {
         let input = "Hello world, how are you?\nI am doing well, thank you!";
         let chunks = chunker.push_str(input);
 
-        // Verify chunks split cleanly at clause boundaries
         assert_eq!(
             chunks,
             vec![
@@ -299,7 +266,6 @@ mod tests {
         );
         assert_eq!(chunker.buffer(), partial_input);
 
-        // Trigger turn cancellation / clear buffer
         chunker.clear();
 
         assert!(
@@ -308,7 +274,6 @@ mod tests {
         );
         assert_eq!(chunker.buffer(), "");
 
-        // Next turn should proceed cleanly without stale buffer text
         let new_turn_chunks = chunker.push_str("New turn sentence.");
         assert_eq!(new_turn_chunks, vec!["New turn sentence."]);
     }

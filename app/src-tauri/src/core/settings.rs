@@ -95,16 +95,46 @@ pub struct LlmModelInfo {
 
 pub fn get_voice_profiles() -> Vec<VoiceProfile> {
     vec![
-        VoiceProfile { id: 0, name: "James".to_string() },
-        VoiceProfile { id: 1, name: "David".to_string() },
-        VoiceProfile { id: 2, name: "Alex".to_string() },
-        VoiceProfile { id: 3, name: "Ryan".to_string() },
-        VoiceProfile { id: 4, name: "Ethan".to_string() },
-        VoiceProfile { id: 5, name: "Sophia".to_string() },
-        VoiceProfile { id: 6, name: "Olivia".to_string() },
-        VoiceProfile { id: 7, name: "Emma".to_string() },
-        VoiceProfile { id: 8, name: "Ava".to_string() },
-        VoiceProfile { id: 9, name: "Mia".to_string() },
+        VoiceProfile {
+            id: 0,
+            name: "James".to_string(),
+        },
+        VoiceProfile {
+            id: 1,
+            name: "David".to_string(),
+        },
+        VoiceProfile {
+            id: 2,
+            name: "Alex".to_string(),
+        },
+        VoiceProfile {
+            id: 3,
+            name: "Ryan".to_string(),
+        },
+        VoiceProfile {
+            id: 4,
+            name: "Ethan".to_string(),
+        },
+        VoiceProfile {
+            id: 5,
+            name: "Sophia".to_string(),
+        },
+        VoiceProfile {
+            id: 6,
+            name: "Olivia".to_string(),
+        },
+        VoiceProfile {
+            id: 7,
+            name: "Emma".to_string(),
+        },
+        VoiceProfile {
+            id: 8,
+            name: "Ava".to_string(),
+        },
+        VoiceProfile {
+            id: 9,
+            name: "Mia".to_string(),
+        },
     ]
 }
 
@@ -142,7 +172,11 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
     match domain {
         "appearance" | "memory" | "persona" | "history" | "realtime" => SettingReloadPolicy::Hot,
         "tts" if key == "quality_steps" || key == "speed" => SettingReloadPolicy::WorkerCommand,
-        "llm" if key == "temperature" || key == "compaction_temperature" || key == "max_output_tokens" => {
+        "llm"
+            if key == "temperature"
+                || key == "compaction_temperature"
+                || key == "max_output_tokens" =>
+        {
             SettingReloadPolicy::Hot
         }
         "vad" if key == "threshold" || key == "ptt_noise_gate" => SettingReloadPolicy::Hot,

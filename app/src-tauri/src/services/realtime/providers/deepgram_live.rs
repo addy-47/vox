@@ -22,6 +22,7 @@ type WsReader = futures_util::stream::SplitStream<
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
 >;
 
+/// Realtime duplex voice provider connecting to the Deepgram Voice Agent WebSocket API.
 pub struct DeepgramVoiceAgentProvider {
     config: DeepgramVoiceAgentConfig,
     system_prompt: String,
@@ -29,6 +30,7 @@ pub struct DeepgramVoiceAgentProvider {
 }
 
 impl DeepgramVoiceAgentProvider {
+    /// Creates a new DeepgramVoiceAgentProvider instance.
     pub fn new(
         config: DeepgramVoiceAgentConfig,
         system_prompt: String,
@@ -43,10 +45,12 @@ impl DeepgramVoiceAgentProvider {
 }
 
 impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
+    /// Returns the DeepgramVoiceAgent provider kind.
     fn kind(&self) -> RealtimeProviderKind {
         RealtimeProviderKind::DeepgramVoiceAgent
     }
 
+    /// Returns audio sampling configuration for Deepgram (16kHz in, 24kHz out).
     fn audio_config(&self) -> RealtimeAudioConfig {
         RealtimeAudioConfig {
             input_sample_rate: 16000,
@@ -56,6 +60,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         }
     }
 
+    /// Establishes the WebSocket connection to Deepgram Voice Agent and spawns background streaming tasks.
     fn connect(
         &self,
         _interaction_mode: crate::core::settings::InteractionMode,
@@ -120,7 +125,9 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                     guard.clone()
                 };
                 if let Some(tx) = opt_tx {
-                    let _ = tx.send(msg);
+                    if let Err(e) = tx.send(msg) {
+                        log::warn!("[DeepgramVoiceAgent] Failed to forward audio packet: {:?}", e);
+                    }
                 }
                 packet_count += 1;
                 if packet_count % 100 == 0 {
@@ -147,7 +154,9 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                     guard.clone()
                 };
                 if let Some(tx) = opt_tx {
-                    let _ = tx.send(Message::Text(msg.into()));
+                    if let Err(e) = tx.send(Message::Text(msg.into())) {
+                        log::warn!("[DeepgramVoiceAgent] Failed to forward control event: {:?}", e);
+                    }
                 }
             }
         });
@@ -172,7 +181,9 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                 };
                 if let Some(tx) = opt_tx {
                     log::debug!("[DeepgramVoiceAgent] Sending KeepAlive message.");
-                    let _ = tx.send(Message::Text(keepalive_msg.into()));
+                    if let Err(e) = tx.send(Message::Text(keepalive_msg.into())) {
+                        log::warn!("[DeepgramVoiceAgent] Failed to send KeepAlive message: {:?}", e);
+                    }
                 }
             }
         });
@@ -386,6 +397,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         }))
     }
 
+    /// Performs a network health check by probing the Deepgram Voice Agent TCP endpoint.
     fn health_check(&self) -> bool {
         use std::net::ToSocketAddrs;
         if let Ok(mut addrs) = "agent.deepgram.com:443".to_socket_addrs() {
@@ -401,6 +413,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
     }
 }
 
+/// Connects to Deepgram WebSocket and exchanges the initial Settings JSON handshake.
 async fn perform_handshake(
     url: &str,
     api_key: &str,
@@ -566,6 +579,7 @@ struct SessionState {
     last_activity_time: Arc<std::sync::atomic::AtomicU64>,
 }
 
+/// Active duplex session interacting with Deepgram Voice Agent via background channels.
 pub struct DeepgramVoiceAgentSession {
     audio_tx: tokio::sync::mpsc::UnboundedSender<Vec<i16>>,
     control_tx: tokio::sync::mpsc::UnboundedSender<ControlEvent>,
@@ -575,6 +589,7 @@ pub struct DeepgramVoiceAgentSession {
 }
 
 impl RealtimeSession for DeepgramVoiceAgentSession {
+    /// Enqueues PCM audio chunk for transmission to Deepgram.
     fn send_audio(&self, pcm: &[i16]) -> Result<()> {
         self.last_activity_time.store(
             chrono::Utc::now().timestamp_millis() as u64,
@@ -585,6 +600,7 @@ impl RealtimeSession for DeepgramVoiceAgentSession {
             .map_err(|e| anyhow!("Failed to write to Deepgram audio queue: {:?}", e))
     }
 
+    /// Sends interrupt cancellation event to Deepgram.
     fn cancel(&self) -> Result<()> {
         self.last_activity_time.store(
             chrono::Utc::now().timestamp_millis() as u64,
@@ -595,30 +611,38 @@ impl RealtimeSession for DeepgramVoiceAgentSession {
             .map_err(|e| anyhow!("Failed to send interrupt control event: {:?}", e))
     }
 
+    /// Terminates the active session and signals background worker tasks to shutdown.
     fn disconnect(&self) -> Result<()> {
         if let Some(tx) = self.shutdown_tx.lock().take() {
-            let _ = tx.send(());
+            if let Err(e) = tx.send(()) {
+                log::warn!("[DeepgramVoiceAgent] Shutdown signal drop: {:?}", e);
+            }
         }
         Ok(())
     }
 
+    /// Signals start of speech activity.
     fn activity_start(&self) -> Result<()> {
         Ok(())
     }
 
+    /// Signals end of speech activity.
     fn activity_end(&self) -> Result<()> {
         Ok(())
     }
 
+    /// Returns whether the Deepgram WebSocket is actively connected.
     fn is_connected(&self) -> bool {
         self.ws_connected.load(Ordering::SeqCst)
     }
 
+    /// Returns timestamp of the most recent network activity.
     fn last_activity_time(&self) -> u64 {
         self.last_activity_time.load(Ordering::Relaxed)
     }
 }
 
+/// Parses and routes incoming Deepgram Voice Agent JSON protocol messages.
 fn handle_deepgram_server_message(
     text: &str,
     _playback_tx: &tokio::sync::mpsc::Sender<Vec<i16>>,
@@ -641,7 +665,9 @@ fn handle_deepgram_server_message(
                 log::info!("[DeepgramVoiceAgent] User started speaking (barge-in).");
                 let mut s_lock = state.lock();
                 s_lock.last_assistant_text.clear();
-                let _ = event_tx.send(VoxEvent::Cancelled { turn_id: 0 });
+                if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id: 0 }) {
+                    log::warn!("[DeepgramVoiceAgent] Failed to send Cancelled event: {:?}", e);
+                }
             }
             "ConversationText" => {
                 let role = val.get("role").and_then(|v| v.as_str()).unwrap_or("");
@@ -649,11 +675,13 @@ fn handle_deepgram_server_message(
 
                 if role == "user" {
                     log::debug!("[DeepgramVoiceAgent] User final transcript: {:?}", content);
-                    let _ = event_tx.send(VoxEvent::TranscriptFinal {
+                    if let Err(e) = event_tx.send(VoxEvent::TranscriptFinal {
                         turn_id: 0,
                         owner: crate::core::state::InteractionOwner::MainWindow,
                         text: content.to_string(),
-                    });
+                    }) {
+                        log::warn!("[DeepgramVoiceAgent] Failed to send TranscriptFinal event: {:?}", e);
+                    }
                 } else if role == "assistant" {
                     log::debug!("[DeepgramVoiceAgent] Assistant transcript: {:?}", content);
                     let mut s_lock = state.lock();
@@ -661,16 +689,20 @@ fn handle_deepgram_server_message(
                     if content.starts_with(last_text) {
                         let delta = &content[last_text.len()..];
                         if !delta.is_empty() {
-                            let _ = event_tx.send(VoxEvent::LlmToken {
+                            if let Err(e) = event_tx.send(VoxEvent::LlmToken {
                                 turn_id: 0,
                                 token: delta.to_string(),
-                            });
+                            }) {
+                                log::warn!("[DeepgramVoiceAgent] Failed to send LlmToken event: {:?}", e);
+                            }
                         }
                     } else {
-                        let _ = event_tx.send(VoxEvent::LlmToken {
+                        if let Err(e) = event_tx.send(VoxEvent::LlmToken {
                             turn_id: 0,
                             token: content.to_string(),
-                        });
+                        }) {
+                            log::warn!("[DeepgramVoiceAgent] Failed to send LlmToken event: {:?}", e);
+                        }
                     }
                     s_lock.last_assistant_text = content.to_string();
                 }
@@ -679,15 +711,19 @@ fn handle_deepgram_server_message(
                 log::debug!("[DeepgramVoiceAgent] Agent audio done.");
                 let mut s_lock = state.lock();
                 s_lock.last_assistant_text.clear();
-                let _ = event_tx.send(VoxEvent::LlmFinished { turn_id: 0 });
+                if let Err(e) = event_tx.send(VoxEvent::LlmFinished { turn_id: 0 }) {
+                    log::warn!("[DeepgramVoiceAgent] Failed to send LlmFinished event: {:?}", e);
+                }
             }
             "Error" | "Warning" => {
                 log::error!("[DeepgramVoiceAgent] Server error/warning: {:?}", val);
                 if let Some(err_msg) = val.get("message").and_then(|v| v.as_str()) {
-                    let _ = event_tx.send(VoxEvent::Error {
+                    if let Err(e) = event_tx.send(VoxEvent::Error {
                         turn_id: 0,
                         message: format!("Deepgram server error: {}", err_msg),
-                    });
+                    }) {
+                        log::warn!("[DeepgramVoiceAgent] Failed to send Error event: {:?}", e);
+                    }
                 }
             }
             _ => {}

@@ -26,6 +26,7 @@ pub struct CapabilityObservation {
 }
 
 impl CapabilityObservation {
+    /// Creates a static observation marked as supported with documented details.
     pub fn static_supported(detail: &str) -> Self {
         Self {
             support: Support::Supported,
@@ -35,6 +36,7 @@ impl CapabilityObservation {
         }
     }
 
+    /// Creates a static observation marked as unsupported.
     pub fn static_unsupported(detail: &str) -> Self {
         Self {
             support: Support::Unsupported,
@@ -44,6 +46,7 @@ impl CapabilityObservation {
         }
     }
 
+    /// Creates an unknown capability observation placeholder.
     pub fn unknown() -> Self {
         Self {
             support: Support::Unknown,
@@ -103,13 +106,14 @@ pub struct CapabilityRegistry {
 }
 
 impl CapabilityRegistry {
+    /// Creates an empty thread-safe capability registry.
     pub fn new() -> Self {
         Self {
             cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    /// Fetches capability matrix for `key` (`provider:endpoint:model`), initializing with `kind` baseline if missing.
+    /// Fetches capability matrix for key, initializing with kind baseline if missing.
     pub fn get_or_insert_default(&self, key: &str, kind: ProviderKind) -> ModelCapabilities {
         let read_guard = self.cache.read();
         if let Some(caps) = read_guard.get(key) {
@@ -125,7 +129,7 @@ impl CapabilityRegistry {
         default_caps
     }
 
-    /// Records an active probe observation for a given key and field name.
+    /// Records an active probe observation for a given key and provider kind.
     pub fn update_observation(
         &self,
         key: &str,

@@ -22,6 +22,7 @@ type WsReader = futures_util::stream::SplitStream<
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
 >;
 
+/// Realtime duplex voice provider connecting to Google Gemini Live BidiGenerateContent WebSocket API.
 pub struct GeminiLiveProvider {
     config: GeminiRealtimeConfig,
     system_prompt: String,
@@ -29,6 +30,7 @@ pub struct GeminiLiveProvider {
 }
 
 impl GeminiLiveProvider {
+    /// Creates a new GeminiLiveProvider instance.
     pub fn new(
         config: GeminiRealtimeConfig,
         system_prompt: String,
@@ -43,10 +45,12 @@ impl GeminiLiveProvider {
 }
 
 impl RealtimeVoiceProvider for GeminiLiveProvider {
+    /// Returns the GeminiLive provider kind.
     fn kind(&self) -> RealtimeProviderKind {
         RealtimeProviderKind::GeminiLive
     }
 
+    /// Returns audio configuration (16kHz in, 24kHz out, output resampling enabled).
     fn audio_config(&self) -> RealtimeAudioConfig {
         RealtimeAudioConfig {
             input_sample_rate: 16000,
@@ -56,6 +60,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         }
     }
 
+    /// Connects to Gemini Live WebSocket and establishes bidirectional streaming channels.
     fn connect(
         &self,
         interaction_mode: crate::core::settings::InteractionMode,
@@ -157,7 +162,9 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                     guard.clone()
                 };
                 if let Some(tx) = opt_tx {
-                    let _ = tx.send(Message::Text(msg.into()));
+                    if let Err(e) = tx.send(Message::Text(msg.into())) {
+                        log::warn!("[GeminiLive] Failed to forward audio packet: {:?}", e);
+                    }
                 }
                 packet_count += 1;
                 if packet_count % 100 == 0 {
@@ -205,7 +212,9 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                                 guard.clone()
                             };
                             if let Some(ref tx) = opt_tx {
-                                let _ = tx.send(Message::Text(start_msg.into()));
+                                if let Err(e) = tx.send(Message::Text(start_msg.into())) {
+                                    log::warn!("[GeminiLive] Failed to send activityStart on interrupt: {:?}", e);
+                                }
                             }
 
                             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -216,7 +225,9 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                             })
                             .to_string();
                             if let Some(ref tx) = opt_tx {
-                                let _ = tx.send(Message::Text(end_msg.into()));
+                                if let Err(e) = tx.send(Message::Text(end_msg.into())) {
+                                    log::warn!("[GeminiLive] Failed to send activityEnd on interrupt: {:?}", e);
+                                }
                             }
                         }
                         continue;
@@ -228,7 +239,9 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                     guard.clone()
                 };
                 if let Some(tx) = opt_tx {
-                    let _ = tx.send(Message::Text(msg.into()));
+                    if let Err(e) = tx.send(Message::Text(msg.into())) {
+                        log::warn!("[GeminiLive] Failed to forward control event: {:?}", e);
+                    }
                 }
             }
         });
@@ -494,8 +507,8 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         }))
     }
 
+    /// Performs TCP health check against Gemini Live endpoint.
     fn health_check(&self) -> bool {
-        // TCP check to check endpoint reachability
         std::net::TcpStream::connect_timeout(
             &"generativelanguage.googleapis.com:443"
                 .parse()
@@ -506,6 +519,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
     }
 }
 
+/// Establishes WebSocket connection and sends the setup config JSON frame to Gemini Live.
 async fn perform_handshake(
     url: &str,
     model: &str,
@@ -703,6 +717,7 @@ struct SessionState {
     last_activity_time: Arc<std::sync::atomic::AtomicU64>,
 }
 
+/// Active duplex session interacting with Gemini Live BidiGenerateContent WebSocket.
 pub struct GeminiLiveSession {
     audio_tx: tokio::sync::mpsc::UnboundedSender<Vec<i16>>,
     control_tx: tokio::sync::mpsc::UnboundedSender<ControlEvent>,
@@ -712,6 +727,7 @@ pub struct GeminiLiveSession {
 }
 
 impl RealtimeSession for GeminiLiveSession {
+    /// Enqueues PCM audio chunk for transmission to Gemini Live.
     fn send_audio(&self, pcm: &[i16]) -> Result<()> {
         self.last_activity_time.store(
             chrono::Utc::now().timestamp_millis() as u64,
@@ -722,6 +738,7 @@ impl RealtimeSession for GeminiLiveSession {
             .map_err(|e| anyhow!("Failed to write to S2S audio pipeline queue: {:?}", e))
     }
 
+    /// Sends interrupt cancellation event to Gemini Live.
     fn cancel(&self) -> Result<()> {
         self.last_activity_time.store(
             chrono::Utc::now().timestamp_millis() as u64,
@@ -732,13 +749,17 @@ impl RealtimeSession for GeminiLiveSession {
             .map_err(|e| anyhow!("Failed to send interrupt control event: {:?}", e))
     }
 
+    /// Terminates active session and signals background tasks to shut down.
     fn disconnect(&self) -> Result<()> {
         if let Some(tx) = self.shutdown_tx.lock().take() {
-            let _ = tx.send(());
+            if let Err(e) = tx.send(()) {
+                log::warn!("[GeminiLive] Shutdown signal drop: {:?}", e);
+            }
         }
         Ok(())
     }
 
+    /// Signals start of speech activity in PTT mode.
     fn activity_start(&self) -> Result<()> {
         self.last_activity_time.store(
             chrono::Utc::now().timestamp_millis() as u64,
@@ -749,6 +770,7 @@ impl RealtimeSession for GeminiLiveSession {
             .map_err(|e| anyhow!("Failed to send activity_start control event: {:?}", e))
     }
 
+    /// Signals end of speech activity in PTT mode.
     fn activity_end(&self) -> Result<()> {
         self.last_activity_time.store(
             chrono::Utc::now().timestamp_millis() as u64,
@@ -759,16 +781,19 @@ impl RealtimeSession for GeminiLiveSession {
             .map_err(|e| anyhow!("Failed to send activity_end control event: {:?}", e))
     }
 
+    /// Returns whether the Gemini Live WebSocket is actively connected.
     fn is_connected(&self) -> bool {
         self.ws_connected.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Returns timestamp of the most recent network activity.
     fn last_activity_time(&self) -> u64 {
         self.last_activity_time
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
+/// Parses and routes incoming Gemini Live BidiGenerateContent JSON protocol messages.
 fn handle_gemini_server_message(
     text: &str,
     playback_tx: &tokio::sync::mpsc::Sender<Vec<i16>>,
@@ -840,7 +865,9 @@ fn handle_gemini_server_message(
         {
             log::info!("[GeminiLive] Interruption confirmed by Gemini Live server.");
             s_lock.interrupt_active = false;
-            let _ = event_tx.send(VoxEvent::Cancelled { turn_id: 0 });
+            if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id: 0 }) {
+                log::warn!("[GeminiLive] Failed to send Cancelled event: {:?}", e);
+            }
         }
 
         // 2. Handle modelTurn audio and text parts
@@ -887,10 +914,12 @@ fn handle_gemini_server_message(
                     }
                     if let Some(text_token) = part.get("text").and_then(|t| t.as_str()) {
                         log::debug!("[GeminiLive] Received text token: {:?}", text_token);
-                        let _ = event_tx.send(VoxEvent::LlmToken {
+                        if let Err(e) = event_tx.send(VoxEvent::LlmToken {
                             turn_id: 0,
                             token: text_token.to_string(),
-                        });
+                        }) {
+                            log::warn!("[GeminiLive] Failed to send LlmToken event: {:?}", e);
+                        }
                     }
                 }
             }
@@ -904,11 +933,13 @@ fn handle_gemini_server_message(
                         "[GeminiLive] Received input transcription (ASR): {:?}",
                         text
                     );
-                    let _ = event_tx.send(VoxEvent::TranscriptFinal {
+                    if let Err(e) = event_tx.send(VoxEvent::TranscriptFinal {
                         turn_id: 0,
                         owner: crate::core::state::InteractionOwner::MainWindow,
                         text: text.to_string(),
-                    });
+                    }) {
+                        log::warn!("[GeminiLive] Failed to send TranscriptFinal event: {:?}", e);
+                    }
                 }
             }
         }
@@ -921,10 +952,12 @@ fn handle_gemini_server_message(
                         "[GeminiLive] Received output transcription (TTS): {:?}",
                         text
                     );
-                    let _ = event_tx.send(VoxEvent::LlmToken {
+                    if let Err(e) = event_tx.send(VoxEvent::LlmToken {
                         turn_id: 0,
                         token: text.to_string(),
-                    });
+                    }) {
+                        log::warn!("[GeminiLive] Failed to send LlmToken event: {:?}", e);
+                    }
                 }
             }
         }
@@ -937,7 +970,9 @@ fn handle_gemini_server_message(
         {
             log::debug!("[GeminiLive] Turn completed.");
             s_lock.interrupt_active = false;
-            let _ = event_tx.send(VoxEvent::LlmFinished { turn_id: 0 });
+            if let Err(e) = event_tx.send(VoxEvent::LlmFinished { turn_id: 0 }) {
+                log::warn!("[GeminiLive] Failed to send LlmFinished event: {:?}", e);
+            }
         }
     }
 
