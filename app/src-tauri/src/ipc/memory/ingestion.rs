@@ -42,9 +42,7 @@ pub struct MemoryQueueSummary {
 
 /// Retrieve all relation edges from the memory graph database.
 #[tauri::command]
-pub async fn get_memory_relations(
-    _state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<Vec<MemoryRelationEntry>, String> {
+pub async fn get_memory_relations() -> Result<Vec<MemoryRelationEntry>, String> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await
@@ -75,9 +73,7 @@ pub async fn get_memory_relations(
 
 /// Retrieve queue status counts and the most recent 50 queue items.
 #[tauri::command]
-pub async fn get_memory_queue_status(
-    _state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<MemoryQueueSummary, String> {
+pub async fn get_memory_queue_status() -> Result<MemoryQueueSummary, String> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await

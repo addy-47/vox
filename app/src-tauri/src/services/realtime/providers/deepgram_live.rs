@@ -63,10 +63,11 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
     /// Establishes the WebSocket connection to Deepgram Voice Agent and spawns background streaming tasks.
     fn connect(
         &self,
-        _interaction_mode: crate::core::settings::InteractionMode,
+        interaction_mode: crate::core::settings::InteractionMode,
         playback_tx: tokio::sync::mpsc::Sender<Vec<i16>>,
         event_tx: Sender<VoxEvent>,
     ) -> Result<Box<dyn RealtimeSession>> {
+        let _ = interaction_mode;
         let handle = tokio::runtime::Handle::current();
 
         if self.config.api_key.is_empty() {
@@ -227,7 +228,6 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                         let text_str: &str = &text;
                         if let Err(e) = handle_deepgram_server_message(
                             text_str,
-                            &playback_tx_recv,
                             &event_tx_recv,
                             &state_recv,
                         ) {
@@ -338,7 +338,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                                     match res {
                                         Ok(Message::Text(text)) => {
                                             let text_str: &str = &text;
-                                            if let Err(e) = handle_deepgram_server_message(text_str, &new_playback_tx, &new_event_tx, &new_state_recv) {
+                                            if let Err(e) = handle_deepgram_server_message(text_str, &new_event_tx, &new_state_recv) {
                                                 log::error!("[DeepgramVoiceAgent] Reconnected Message handling error: {:?}", e);
                                             }
                                         }
@@ -654,7 +654,6 @@ impl RealtimeSession for DeepgramVoiceAgentSession {
 /// Parses and routes incoming Deepgram Voice Agent JSON protocol messages.
 fn handle_deepgram_server_message(
     text: &str,
-    _playback_tx: &tokio::sync::mpsc::Sender<Vec<i16>>,
     event_tx: &Sender<VoxEvent>,
     state: &Arc<Mutex<SessionState>>,
 ) -> Result<()> {

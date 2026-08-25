@@ -96,25 +96,4 @@ impl SttEngineTrait for SttEngine {
 
         Ok(full_text)
     }
-
-    /// Transcribes an individual streaming audio chunk without resetting recurrent state.
-    fn transcribe_chunk(&self, chunk: &[f32], _is_final: bool) -> Result<String> {
-        if chunk.is_empty() {
-            return Ok(String::new());
-        }
-
-        let mut model_lock = self.model.lock();
-        let text = model_lock
-            .transcribe_chunk(chunk)
-            .map_err(|e| anyhow!("Nemotron chunk transcription failed: {:?}", e))?;
-
-        Ok(text)
-    }
-
-    /// Resets the internal recurrent hidden state of the streaming Nemotron model.
-    fn reset_state(&self) -> Result<()> {
-        let mut model_lock = self.model.lock();
-        model_lock.reset();
-        Ok(())
-    }
 }

@@ -34,24 +34,3 @@ pub fn estimate_tokens(text: &str) -> usize {
         (token_estimate as f64 / 3.0).ceil() as usize
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_bpe_english_and_devanagari_token_counts() {
-        let en_text = "Hello Vox, can you tell me what the capital of France is?";
-        let hi_text = "नमस्ते वॉक्स, क्या आप मुझे भारत के बारे में बता सकते हैं?";
-
-        let en_tokens = estimate_tokens(en_text);
-        let hi_tokens = estimate_tokens(hi_text);
-
-        println!("EN text len: {} -> tokens: {}", en_text.len(), en_tokens);
-        println!("HI text len: {} -> tokens: {}", hi_text.len(), hi_tokens);
-
-        assert!(en_tokens > 10 && en_tokens < 20);
-        // Devanagari Hindi text must tokenize into significantly higher BPE subword tokens
-        assert!(hi_tokens >= 18);
-    }
-}

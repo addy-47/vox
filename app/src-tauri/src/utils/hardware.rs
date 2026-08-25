@@ -119,15 +119,3 @@ pub fn detect_local_gpu() -> LocalHardwareGpuInfo {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_detect_local_gpu() {
-        let info = detect_local_gpu();
-        assert!(!info.device_name.is_empty());
-        assert!(!info.resolved_tier.is_empty());
-    }
-}

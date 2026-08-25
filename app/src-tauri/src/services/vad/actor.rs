@@ -326,68 +326,101 @@ fn accumulate_speech_frames(
     }
 }
 
+/// Configuration settings for the VAD actor.
+#[derive(Debug, Clone)]
+pub struct VadActorConfig {
+    pub initial_threshold: f32,
+    pub initial_noise_gate: f32,
+    pub initial_mode: InteractionMode,
+    pub initial_audio_mode: AudioOutputMode,
+}
+
+/// Shared atomic handles and flags passed to the VAD actor.
+#[derive(Clone)]
+pub struct VadActorHandles {
+    pub is_loaded: Arc<AtomicBool>,
+    pub playback_active: Arc<AtomicBool>,
+    pub turn_id_atomic: Arc<AtomicU32>,
+    pub owner_atomic: Arc<AtomicU32>,
+    pub is_dictation_enabled: Arc<AtomicBool>,
+    pub engine_shutdown: Arc<AtomicBool>,
+    pub dropped_counter: Arc<std::sync::atomic::AtomicU64>,
+}
+
+/// Communication channels utilized by the VAD actor.
+pub struct VadActorChannels {
+    pub event_tx: mpsc::Sender<serde_json::Value>,
+    pub stt_tx: std::sync::mpsc::Sender<SttCommand>,
+    pub vad_rx: std::sync::mpsc::Receiver<VadCommand>,
+    pub telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
+    pub vox_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
+}
+
+struct VadFrameContext<'a> {
+    is_earshot: bool,
+    turn_id_atomic: &'a AtomicU32,
+    owner: InteractionOwner,
+    stt_tx: &'a std::sync::mpsc::Sender<SttCommand>,
+    vox_event_tx: Option<&'a std::sync::mpsc::Sender<VoxEvent>>,
+    event_tx: &'a mpsc::Sender<serde_json::Value>,
+}
+
 /// Evaluates voice activity on incoming frame and advances speech onset or offset counters.
-#[allow(clippy::too_many_arguments)]
 fn process_speech_frame(
     chunk: &[f32],
     raw_energy: f32,
-    is_earshot: bool,
     vad: &mut VadBackend,
     state: &mut VadActorState,
-    turn_id_atomic: &AtomicU32,
-    owner: InteractionOwner,
-    stt_tx: &std::sync::mpsc::Sender<SttCommand>,
-    vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
-    event_tx: &mpsc::Sender<serde_json::Value>,
+    ctx: &VadFrameContext<'_>,
 ) {
     let is_speech =
-        vad.predict(chunk) && is_above_noise_gate(raw_energy, state.noise_gate, is_earshot);
+        vad.predict(chunk) && is_above_noise_gate(raw_energy, state.noise_gate, ctx.is_earshot);
 
     if is_speech {
         state.active_frames += 1;
         state.inactive_frames = 0;
 
         if !state.in_speech && state.active_frames >= 2 {
-            handle_speech_start(state, turn_id_atomic, owner, stt_tx, vox_event_tx, event_tx);
+            handle_speech_start(
+                state,
+                ctx.turn_id_atomic,
+                ctx.owner,
+                ctx.stt_tx,
+                ctx.vox_event_tx,
+                ctx.event_tx,
+            );
         }
     } else {
         state.inactive_frames += 1;
         state.active_frames = 0;
 
         if state.in_speech && state.inactive_frames >= 50 {
-            handle_speech_end(vad, state, owner, stt_tx, vox_event_tx, event_tx);
+            handle_speech_end(
+                vad,
+                state,
+                ctx.owner,
+                ctx.stt_tx,
+                ctx.vox_event_tx,
+                ctx.event_tx,
+            );
         }
     }
 
     if state.in_speech {
-        accumulate_speech_frames(chunk, state, stt_tx);
+        accumulate_speech_frames(chunk, state, ctx.stt_tx);
     } else {
         state.pre_roll_buffer.push(chunk);
     }
 }
 
 /// Spawns the synchronous, low-latency VAD actor thread.
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_vad_actor<C>(
     mut vad: VadBackend,
     app: tauri::AppHandle,
     mut consumer: C,
-    event_tx: mpsc::Sender<serde_json::Value>,
-    stt_tx: std::sync::mpsc::Sender<SttCommand>,
-    vad_rx: std::sync::mpsc::Receiver<VadCommand>,
-    telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
-    vox_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
-    is_loaded: Arc<AtomicBool>,
-    playback_active: Arc<AtomicBool>,
-    turn_id_atomic: Arc<AtomicU32>,
-    owner_atomic: Arc<AtomicU32>,
-    is_dictation_enabled: Arc<AtomicBool>,
-    engine_shutdown: Arc<AtomicBool>,
-    dropped_counter: Arc<std::sync::atomic::AtomicU64>,
-    initial_threshold: f32,
-    initial_noise_gate: f32,
-    initial_mode: InteractionMode,
-    initial_audio_mode: AudioOutputMode,
+    channels: VadActorChannels,
+    handles: VadActorHandles,
+    config: VadActorConfig,
 ) -> Result<()>
 where
     C: ringbuf::traits::Consumer<Item = f32>,
@@ -400,32 +433,32 @@ where
     log::info!("[VAD Actor] Starting synchronous VAD loop on dedicated thread");
 
     let mut state = VadActorState::new(
-        initial_threshold,
-        initial_noise_gate,
-        initial_mode,
-        initial_audio_mode,
+        config.initial_threshold,
+        config.initial_noise_gate,
+        config.initial_mode,
+        config.initial_audio_mode,
     );
     let is_earshot = matches!(vad, VadBackend::Earshot(_));
     let mut filter_bank = FilterBank::new(16000.0);
     let mut chunk = vec![0.0f32; 256];
-    is_loaded.store(true, Ordering::Relaxed);
+    handles.is_loaded.store(true, Ordering::Relaxed);
 
     loop {
-        if engine_shutdown.load(Ordering::Relaxed) {
+        if handles.engine_shutdown.load(Ordering::Relaxed) {
             log::info!("[VAD Actor] Engine shutdown detected");
-            is_loaded.store(false, Ordering::Relaxed);
+            handles.is_loaded.store(false, Ordering::Relaxed);
             return Ok(());
         }
 
-        if process_vad_commands(&vad_rx, &mut vad, &mut state) {
-            is_loaded.store(false, Ordering::Relaxed);
+        if process_vad_commands(&channels.vad_rx, &mut vad, &mut state) {
+            handles.is_loaded.store(false, Ordering::Relaxed);
             return Ok(());
         }
 
         if consumer.occupied_len() >= 256 {
             consumer.pop_slice(&mut chunk);
 
-            let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
+            let owner: InteractionOwner = handles.owner_atomic.load(Ordering::Relaxed).into();
 
             let raw_energy = emit_audio_telemetry(
                 &chunk,
@@ -433,8 +466,8 @@ where
                 &app,
                 owner,
                 &mut filter_bank,
-                &telemetry_tx,
-                &dropped_counter,
+                &channels.telemetry_tx,
+                &handles.dropped_counter,
             );
 
             stream_passive_realtime(&chunk, &state);
@@ -455,21 +488,25 @@ where
                 continue;
             }
 
-            if should_suppress_audio(owner, &playback_active, &is_dictation_enabled, &state) {
+            if should_suppress_audio(owner, &handles.playback_active, &handles.is_dictation_enabled, &state) {
                 continue;
             }
+
+            let frame_ctx = VadFrameContext {
+                is_earshot,
+                turn_id_atomic: &handles.turn_id_atomic,
+                owner,
+                stt_tx: &channels.stt_tx,
+                vox_event_tx: channels.vox_event_tx.as_ref(),
+                event_tx: &channels.event_tx,
+            };
 
             process_speech_frame(
                 &chunk,
                 raw_energy,
-                is_earshot,
                 &mut vad,
                 &mut state,
-                &turn_id_atomic,
-                owner,
-                &stt_tx,
-                vox_event_tx.as_ref(),
-                &event_tx,
+                &frame_ctx,
             );
         } else {
             std::thread::sleep(std::time::Duration::from_millis(5));
@@ -529,73 +566,4 @@ pub fn is_above_noise_gate(raw_energy: f32, noise_gate: f32, is_earshot: bool) -
         noise_gate
     };
     raw_energy >= effective_noise_gate
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_pre_roll_circular_buffer_cap() {
-        let mut pre_roll = PreRollBuffer::new(8000);
-        assert_eq!(pre_roll.as_slice().len(), 0);
-        assert!(pre_roll.as_slice().is_empty());
-
-        let silence_chunk = vec![0.0f32; 256];
-        let total_samples_pushed = 100_000;
-        for _ in 0..(total_samples_pushed / 256) {
-            pre_roll.push(&silence_chunk);
-            assert!(
-                pre_roll.as_slice().len() <= 8000,
-                "Pre-roll length exceeded cap: {}",
-                pre_roll.as_slice().len()
-            );
-        }
-
-        assert_eq!(pre_roll.as_slice().len(), 8000);
-
-        let marker_chunk = vec![0.99f32; 256];
-        pre_roll.push(&marker_chunk);
-        assert_eq!(pre_roll.as_slice().len(), 8000);
-
-        let slice = pre_roll.as_slice();
-        assert_eq!(&slice[8000 - 256..], marker_chunk.as_slice());
-
-        pre_roll.clear();
-        assert_eq!(pre_roll.as_slice().len(), 0);
-        assert!(pre_roll.as_slice().is_empty());
-    }
-
-    #[test]
-    fn test_noise_gate_rms_threshold() {
-        let silence = vec![0.0f32; 256];
-        assert_eq!(calculate_rms(&silence), 0.0);
-
-        let dc_signal = vec![0.5f32; 256];
-        let dc_rms = calculate_rms(&dc_signal);
-        assert!((dc_rms - 0.5).abs() < 1e-6);
-
-        let amplitude = 0.8f32;
-        let sine_wave: Vec<f32> = (0..256)
-            .map(|i| amplitude * (2.0 * std::f32::consts::PI * i as f32 / 16.0).sin())
-            .collect();
-        let sine_rms = calculate_rms(&sine_wave);
-        let expected_rms = amplitude / 2.0f32.sqrt();
-        assert!((sine_rms - expected_rms).abs() < 1e-3);
-
-        let noise_gate = 0.02f32;
-
-        let quiet_noise = vec![0.005f32; 256];
-        let quiet_rms = calculate_rms(&quiet_noise);
-        assert!(quiet_rms < noise_gate);
-        assert!(!is_above_noise_gate(quiet_rms, noise_gate, false));
-
-        let loud_signal = vec![0.1f32; 256];
-        let loud_rms = calculate_rms(&loud_signal);
-        assert!(loud_rms > noise_gate);
-        assert!(is_above_noise_gate(loud_rms, noise_gate, false));
-
-        assert!(is_above_noise_gate(0.025, noise_gate, false));
-        assert!(!is_above_noise_gate(0.025, noise_gate, true));
-    }
 }

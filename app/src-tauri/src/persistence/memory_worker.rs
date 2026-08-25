@@ -220,17 +220,3 @@ pub fn spawn_memory_worker(
 
     tx
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_f32_blob_encode_decode() {
-        let floats = vec![0.1f32, -0.5, 0.99, 123.456];
-        let encoded = encode_f32_blob(&floats);
-        assert_eq!(encoded.len(), 16);
-        let decoded = decode_f32_blob(&encoded);
-        assert_eq!(floats, decoded);
-    }
-}

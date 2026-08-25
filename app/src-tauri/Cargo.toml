@@ -120,62 +120,6 @@ split-debuginfo = "unpacked"
 opt-level = 2
 debug = false
 
-[[bench]]
-name = "vox_multi_session_bench"
-harness = false
-
-[[bench]]
-name = "vox_bench"
-harness = false
-
-[[bench]]
-name = "vector_bench"
-harness = false
-
-[[bench]]
-name = "nli_bench"
-harness = false
-
-[[bench]]
-name = "embedding_bench"
-harness = false
-
-[[bench]]
-name = "vox_realtime_bench"
-harness = false
-
-[[bench]]
-name = "tts_bench"
-harness = false
-
-[[bench]]
-name = "vox_clone_bench"
-harness = false
-
-[[bench]]
-name = "dedup_bench"
-harness = false
-
-[[bench]]
-name = "translit_bench"
-harness = false
-
-[[bench]]
-name = "edge_classifier_bench"
-harness = false
-
-[[bench]]
-name = "memory_scope_bench"
-harness = false
-
-[[bench]]
-name = "memory_pipeline_bench"
-harness = false
-
-[[bench]]
-name = "dictation_bench"
-harness = false
-
 [[example]]
 name = "voice_clone"
 

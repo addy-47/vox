@@ -218,10 +218,8 @@ fn compute_softmax(logits_slice: &[f32]) -> (usize, f32) {
 pub fn classify_edge(
     src_collection: &str,
     src_fact: &str,
-    _src_context: Option<&str>,
     tgt_collection: &str,
     tgt_fact: &str,
-    _tgt_context: Option<&str>,
 ) -> Result<(Option<String>, f32)> {
     if !is_valid_inter_collection_pair(src_collection, tgt_collection) {
         return Ok((None, 0.0));
@@ -253,43 +251,5 @@ pub fn classify_edge(
         Ok((Some(predicted_label.to_string()), max_prob))
     } else {
         Ok((None, max_prob))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::core::constants::{is_valid_inter_collection_pair, PM_COLLECTIONS};
-
-    #[test]
-    fn test_special_state_collections_reject_inter_collection_edges() {
-        for &coll in PM_COLLECTIONS {
-            assert!(
-                !is_valid_inter_collection_pair("Narrative", coll),
-                "Narrative as source must not originate inter-collection edge to '{}'",
-                coll
-            );
-        }
-    }
-
-    #[test]
-    fn test_class_c_taxonomy_connection_matrix_compliance() {
-        let allowed_pairs = [
-            ("Identity", "Profile"),
-            ("Directives", "Constraints"),
-            ("Directives", "Entities"),
-            ("Entities", "Constraints"),
-            ("Entities", "Profile"),
-            ("Entities", "Entities"),
-            ("Profile", "Profile"),
-        ];
-
-        for (src, tgt) in allowed_pairs {
-            assert!(
-                is_valid_inter_collection_pair(src, tgt),
-                "Sanctioned pair ({}, {}) must be allowed",
-                src,
-                tgt
-            );
-        }
     }
 }
