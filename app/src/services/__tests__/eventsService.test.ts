@@ -74,12 +74,12 @@ describe("eventsService", () => {
       onTranscriptFinal(handler);
 
       expect(registeredCallback).not.toBeNull();
-      registeredCallback!({ payload: { text: "Hello Vox", turn_id: 1, owner: "MainWindow" } });
+      registeredCallback!({ payload: { text: "Hello Vox", turn_id: 1, owner: "Assistant" } });
 
       expect(handler).toHaveBeenCalledWith({
         text: "Hello Vox",
         turn_id: 1,
-        owner: "MainWindow",
+        owner: "Assistant",
       });
     });
 

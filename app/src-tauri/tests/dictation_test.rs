@@ -18,18 +18,13 @@ use vox_lib::services::dictation::input::create_input_adapter;
 fn test_dictation_interaction_owner_fast_path_invariants() {
     // Contract: Dictation must have InteractionOwner ID = 0 for zero-latency indexing
     let owner = InteractionOwner::Dictation;
-    assert_eq!(owner as u8, 0);
     assert_eq!(owner as u32, 0);
-    assert_eq!(InteractionOwner::from(0u8), InteractionOwner::Dictation);
     assert_eq!(InteractionOwner::from(0u32), InteractionOwner::Dictation);
+    assert_eq!(InteractionOwner::from(1u32), InteractionOwner::Assistant);
 
-    // Contract: Dictation does not collide with Assistant window owners
+    // Contract: Dictation does not collide with Assistant owner
     assert_ne!(
-        InteractionOwner::MainWindow as u32,
-        InteractionOwner::Dictation as u32
-    );
-    assert_ne!(
-        InteractionOwner::Ptt as u32,
+        InteractionOwner::Assistant as u32,
         InteractionOwner::Dictation as u32
     );
 }

@@ -26,8 +26,11 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
       case "AssistantSpeaking":
         targetEnergy = 0.32 + volume * 0.3;
         break;
-      case "Interrupted":
-        targetEnergy = 0.15;
+      case "Paused":
+        targetEnergy = 0.08;
+        break;
+      case "Error":
+        targetEnergy = 0.05;
         break;
       case "Idle":
       default:

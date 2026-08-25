@@ -144,7 +144,10 @@ fn stream_pcm_response(
 
     loop {
         if cancel.load(Ordering::Relaxed) {
-            log::info!("[ChatterboxRemote] Synthesis cancelled for turn {}", turn_id);
+            log::info!(
+                "[ChatterboxRemote] Synthesis cancelled for turn {}",
+                turn_id
+            );
             return Ok(total_samples_received);
         }
 

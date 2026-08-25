@@ -294,7 +294,10 @@ mod tests {
         let mut zero_vec = vec![0.0f32; 384];
         l2_normalize_in_place(&mut zero_vec);
         for &val in zero_vec.iter() {
-            assert_eq!(val, 0.0f32, "Zero vector normalization must remain all zeroes");
+            assert_eq!(
+                val, 0.0f32,
+                "Zero vector normalization must remain all zeroes"
+            );
         }
 
         let non_finite_vec = vec![f32::NAN, f32::INFINITY, 0.0];

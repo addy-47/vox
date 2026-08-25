@@ -36,7 +36,8 @@ const BASE_AMP: Record<string, number> = {
   UserSpeaking:      0.58,
   Thinking:          0.30,
   AssistantSpeaking: 0.58,
-  Interrupted:       0.02,
+  Paused:            0.02,
+  Error:             0.02,
 };
 
 function getCSSColor(varName: string, fallbackHex: string): THREE.Color {
@@ -421,7 +422,7 @@ export const VoxOrb = React.memo(({
   }, []);
 
   // ── Dynamic FPS controls ─────────────────────────────────────────────────
-  const isActive = interactionState !== 'Idle' && interactionState !== 'Interrupted';
+  const isActive = interactionState !== 'Idle' && interactionState !== 'Paused';
 
   /**
    * Runtime scene context — populated by the init effect below.
@@ -534,7 +535,7 @@ export const VoxOrb = React.memo(({
     const themeAccent = themeRef.current.accent;
     const themeGlow = themeRef.current.glow;
 
-    if (state === 'Idle' || state === 'Interrupted') {
+    if (state === 'Idle' || state === 'Paused' || state === 'Error') {
       ctx.tgtGlow.copy(themeGlow);
       ctx.tgtAccent.copy(themeAccent);
     } else if (state === 'AssistantSpeaking') {

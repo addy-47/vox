@@ -28,7 +28,10 @@ async fn collect_sql_sections(
 ) -> Vec<String> {
     let mut out_sections = Vec::new();
 
-    if routing.sql_collections.contains(&MemoryCollection::Narrative) {
+    if routing
+        .sql_collections
+        .contains(&MemoryCollection::Narrative)
+    {
         let narrative_facts = queries::fetch_narrative_history(conn, 3)
             .await
             .unwrap_or_default();
@@ -51,7 +54,10 @@ async fn collect_sql_sections(
         }
     }
 
-    if routing.sql_collections.contains(&MemoryCollection::Directives) {
+    if routing
+        .sql_collections
+        .contains(&MemoryCollection::Directives)
+    {
         let directives_facts = queries::fetch_latest_directives(conn, 5)
             .await
             .unwrap_or_default();

@@ -1,15 +1,13 @@
 use crate::core::events::VoxEvent;
-use crate::core::state::InteractionOwner;
 use crate::services::stt::providers::SttProvider;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
-/// Commands sent to the background STT worker actor thread.
 pub enum SttCommand {
-    Partial(u32, crate::core::state::InteractionOwner, Vec<f32>),
-    Final(u32, crate::core::state::InteractionOwner, Vec<f32>),
+    Partial(u32, Vec<f32>),
+    Final(u32, Vec<f32>),
     ResetStream,
     Shutdown,
 }
@@ -34,13 +32,12 @@ fn coalesce_partials(
     rx: &std::sync::mpsc::Receiver<SttCommand>,
     pending_cmd: &mut Option<SttCommand>,
 ) -> SttCommand {
-    if let SttCommand::Partial(mut tid, mut owner, mut utterance) = cmd {
+    if let SttCommand::Partial(mut tid, mut utterance) = cmd {
         let mut skipped = 0;
         while let Ok(next_cmd) = rx.try_recv() {
             match next_cmd {
-                SttCommand::Partial(next_tid, next_owner, next_utterance) => {
+                SttCommand::Partial(next_tid, next_utterance) => {
                     tid = next_tid;
-                    owner = next_owner;
                     utterance = next_utterance;
                     skipped += 1;
                 }
@@ -53,17 +50,16 @@ fn coalesce_partials(
         if skipped > 0 {
             log::debug!("[STT] Coalesced {} stale partials in queue", skipped);
         }
-        SttCommand::Partial(tid, owner, utterance)
+        SttCommand::Partial(tid, utterance)
     } else {
         cmd
     }
 }
 
-/// Processes an incoming partial speech frame with adaptive throttle and emits partial events.
+/// Processes incoming partial speech frames with dynamic throttling and emits partial events.
 fn handle_partial_command(
     ctx: &WorkerContext<'_>,
     tid: u32,
-    owner: InteractionOwner,
     utterance: &[f32],
     state: &mut WorkerState,
 ) {
@@ -80,7 +76,9 @@ fn handle_partial_command(
         }
     }
 
-    let dynamic_throttle = state.last_inference_duration.max(Duration::from_millis(300));
+    let dynamic_throttle = state
+        .last_inference_duration
+        .max(Duration::from_millis(300));
     if state.last_emit_time.elapsed() < dynamic_throttle {
         return;
     }
@@ -110,7 +108,6 @@ fn handle_partial_command(
                 if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
                     if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptPartial {
                         turn_id: tid,
-                        owner,
                         text: text.clone(),
                     }) {
                         log::warn!("[STT] Error dispatching partial transcript: {:?}", e);
@@ -128,11 +125,10 @@ fn handle_partial_command(
     state.last_emit_time = Instant::now();
 }
 
-/// Transcribes the final utterance, dispatches final events, and resets PTT status.
+/// Transcribes final speech buffer, dispatches final events, and resets worker state.
 fn handle_final_command(
     ctx: &WorkerContext<'_>,
     tid: u32,
-    owner: InteractionOwner,
     utterance: &[f32],
     state: &mut WorkerState,
 ) {
@@ -168,21 +164,15 @@ fn handle_final_command(
     } else if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
         if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptFinal {
             turn_id: tid,
-            owner,
             text: transcript,
         }) {
             log::warn!("[STT] Error sending final transcript event: {:?}", e);
         }
     }
 
-    let target = match owner {
-        InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
-        InteractionOwner::Dictation => "tray",
-        InteractionOwner::Wizard => "wizard",
-    };
     if let Err(e) = ctx
         .app
-        .emit_to(target, "ptt_status", serde_json::json!({ "state": "IDLE" }))
+        .emit_to("main", "ptt_status", serde_json::json!({ "state": "IDLE" }))
     {
         log::warn!("[STT] Error emitting ptt_status idle event: {:?}", e);
     }
@@ -191,7 +181,7 @@ fn handle_final_command(
     state.last_emit_time = Instant::now();
 }
 
-/// Drains stream reset commands and discards stale audio messages in the queue.
+/// Drains stream reset commands and clears transcription state.
 fn drain_reset_stream(
     rx: &std::sync::mpsc::Receiver<SttCommand>,
     provider: &dyn SttProvider,
@@ -204,16 +194,14 @@ fn drain_reset_stream(
     }
     while let Ok(pending_cmd) = rx.try_recv() {
         match pending_cmd {
-            SttCommand::Partial(..)
-            | SttCommand::Final(..)
-            | SttCommand::ResetStream => continue,
+            SttCommand::Partial(..) | SttCommand::Final(..) | SttCommand::ResetStream => continue,
             SttCommand::Shutdown => return true,
         }
     }
     false
 }
 
-/// Spawns a dedicated OS worker thread for speech recognition inference and event dispatching.
+/// Spawns dedicated OS worker thread for speech recognition inference and event dispatching.
 pub fn spawn_stt_worker(
     app: AppHandle,
     rx: std::sync::mpsc::Receiver<SttCommand>,
@@ -274,11 +262,11 @@ pub fn spawn_stt_worker(
                         log::info!("[STT] Shutdown signal received. Exiting worker thread.");
                         break;
                     }
-                    SttCommand::Partial(tid, owner, utterance) => {
-                        handle_partial_command(&ctx, tid, owner, &utterance, &mut state);
+                    SttCommand::Partial(tid, utterance) => {
+                        handle_partial_command(&ctx, tid, &utterance, &mut state);
                     }
-                    SttCommand::Final(tid, owner, utterance) => {
-                        handle_final_command(&ctx, tid, owner, &utterance, &mut state);
+                    SttCommand::Final(tid, utterance) => {
+                        handle_final_command(&ctx, tid, &utterance, &mut state);
                     }
                     SttCommand::ResetStream => {
                         if drain_reset_stream(&rx, &*provider, &mut state) {

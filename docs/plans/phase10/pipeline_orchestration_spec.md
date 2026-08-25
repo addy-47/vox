@@ -69,25 +69,26 @@ This yields **4 distinct conversational execution pipelines** + **1 unified dict
 
 ## 3. Interaction State Machine (Canonical 7 Turn States)
 
-Tier 1 Session Lifecycle (`AppState.is_engaged: AtomicBool`) governs whether a conversational session exists (`Active` vs `Dormant`). Tier 2 Turn Control defines the discrete turn state (`InteractionState` enum):
+The state machine is defined strictly from **Vox's entity perspective**:
 
 | State | Definition | Audio Ingestion | Model / WS State | Target Window |
 |---|---|---|---|---|
-| `Idle` | Session active in PTT mode; mic gate closed, waiting for user PTT hold. | Gated / Buffering only on PTT | Warm & Ready | `"main"` |
-| `Listening` | Session active in Passive mode; waiting for user speech onset. | Continuous (Passive VAD) | Warm & Ready | `"main"` |
-| `UserSpeaking` | User is actively talking (VAD active or PTT held). | Buffering / Streaming to Provider | Ingesting audio | `"main"` / `"tray"` |
-| `Thinking` | User finished speaking; LLM inference or RAG context compaction active. | Standby | Inferring / Compacting | `"main"` |
-| `AssistantSpeaking`| System audio playback is active. | Ducked (Speaker) or Active (Headset / PTT) | Streaming playback | `"main"` |
-| `Paused` | User explicitly paused session. | Discarded | Paused (Audio muted) | `"main"` |
+| `Idle` | Session is dormant / unengaged (`is_engaged = false`). | Standby (or background dictation) | Cold / Standby | `"main"` / `"tray"` |
+| `Ready` | Session is engaged (`is_engaged = true`) and waiting for speech onset or PTT press. | Continuous (Passive VAD) or PTT Standby | Warm & Ready | `"main"` |
+| `Listening` | User is actively talking; Vox is actively capturing and ingesting speech. | Buffering / Streaming to STT or Cloud WS | Ingesting audio / Transcribing | `"main"` / `"tray"` |
+| `Thinking` | User finished speaking; Vox is reasoning (LLM inference, RAG retrieval, context compaction). | Standby | Inferring / Compacting | `"main"` |
+| `Speaking` | Vox is talking back; system audio playback is active through speakers. | Ducked (Speaker) or Active (Headset / PTT) | Streaming playback | `"main"` |
+| `Paused` | User explicitly paused session; Vox is temporarily muted / ignoring audio. | Discarded | Paused (Audio muted) | `"main"` |
 | `Error` | Recoverable or unrecoverable subsystem error. | Halted | Logged with reason | `"main"` / `"tray"` |
 
-*Note on Session Dormancy:* When `is_engaged == false`, the session is cold (`Dormant`). The UI renders cold unlit state, and audio hardware is stopped unless background Dictation is active.
-
 ### State Machine Invariants:
-1. **Context Maintenance / Compaction:** Runs strictly inside the `Thinking` state. Transition speech plays while in `Thinking`, before final LLM response generation.
-2. **Acoustic Barge-In vs Speaker Echo Protection:**
-   - **`AudioOutputMode::Headset`:** Full acoustic barge-in. While in `AssistantSpeaking`, user speech onset immediately sets `cancel_flag = true`, halts playback, and transitions directly to `UserSpeaking`.
-   - **`AudioOutputMode::Speaker`:** Open speaker audio bleeds into the microphone. To prevent self-interruption acoustic feedback loops, mic frames are ducked/muted during `AssistantSpeaking`. Passive barge-in is suppressed; user can manually interrupt via PTT key or UI tap.
+1. **`Idle` vs `Ready` Separation:**
+   - `Idle`: User has not clicked engage or has disengaged (`is_engaged == false`).
+   - `Ready`: User has started a session (`is_engaged == true`); Vox is warm and awaiting voice input.
+2. **Context Maintenance / Compaction:** Runs strictly inside the `Thinking` state. Transition speech plays while in `Thinking`, before final LLM response generation.
+3. **Acoustic Barge-In vs Speaker Echo Protection:**
+   - **`AudioOutputMode::Headset`:** Full acoustic barge-in. While in `Speaking`, user speech onset immediately sets `cancel_flag = true`, halts playback, and transitions directly to `Listening`.
+   - **`AudioOutputMode::Speaker`:** Open speaker audio bleeds into the microphone. To prevent self-interruption acoustic feedback loops, mic frames are ducked/muted during `Speaking`. Passive barge-in is suppressed; user can manually interrupt via PTT key or UI tap.
    - **PTT Mode:** Pressing the PTT button (`ptt_start`) always triggers instantaneous barge-in regardless of output mode.
 
 ---
@@ -215,65 +216,56 @@ In the legacy codebase, `InteractionOwner` was conflated across 22 files with in
 
 ```
 PASSIVE UX (Autonomous):
-[ Start Session ] ──► State: Listening (Mic Open)
+[ Start Session ] ──► State: Ready (Mic Open)
                       ├── UI Buttons: [ Pause / Resume ] & [ End Session ]
-                      └── Flow: Listening ──► (VAD) ──► UserSpeaking ──► Thinking ──► AssistantSpeaking ──► Listening
+                      └── Flow: Ready ──► (VAD) ──► Listening ──► Thinking ──► Speaking ──► Ready
 
 PTT UX (User Gated):
-[ Start Session ] ──► State: Idle (Mic Closed, Engines Warm)
+[ Start Session ] ──► State: Ready (Mic Closed, Engines Warm)
                       ├── UI Buttons: [ 🎙️ Hold to Talk (Mic Button) ] & [ End Session ]
-                      │   (No "Pause" button needed — not holding mic is already paused)
-                      └── Flow: Idle ──► (ptt_start) ──► UserSpeaking ──► (ptt_stop) ──► Thinking ──► AssistantSpeaking ──► Idle
+                      │   (No "Pause" button needed — not holding mic is already ready)
+                      └── Flow: Ready ──► (ptt_start) ──► Listening ──► (ptt_stop) ──► Thinking ──► Speaking ──► Ready
 ```
-
-### 6.2 The 3 PTT IPC Commands
-
-| IPC Command | Physical Trigger | Exact Action Taken |
-|---|---|---|
-| `ptt_start` | `PointerDown` / `KeyDown` (Space or Hotkey) | Sets `is_recording = true`, resets audio buffer and `speech_detected`. If Assistant is speaking, immediately cuts off playback (barge-in) and switches state to `UserSpeaking`. |
-| `ptt_stop` | `PointerUp` / `KeyUp` (Normal release) | Sets `is_recording = false`. If `speech_detected == true`, transitions to `Thinking` and sends buffer to STT (`SttCommand::Final`). If silence, discards buffer silently and returns to `Idle`. |
-| `ptt_cancel` | `Escape` key / Pointer drag outside / Window lost focus | Immediately drops and clears the buffer without sending anything to STT or LLM. Resets state to `Idle`. |
 
 ---
 
 ## 7. Domain Pipeline Step-by-Step Function Inventory
 
-### 7.1 `modular_passive.rs` (Estimated LOC: ~380)
+### 7.1 `modular_passive.rs`
 
-```rust
-// ─── EVENT 1: Start Session (Dormant -> Listening) ───────────────────────────
+// ─── EVENT 1: Start Session (Idle -> Ready) ─────────────────────────────────
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Ensure engine is launched (CPAL stream + VAD + STT worker active)
     // Step 2: Set active owner to InteractionOwner::Assistant
-    // Step 3: Lazy-load MemoryScope classifier in background thread
+    // Step 3: Check conversation_id (resume existing if within 15 min, else start new)
     // Step 4: Generate new epoch conversation_id & record SessionStarted in DB
     // Step 5: Notify MemoryWorker of active session change
     // Step 6: Warm up LLM and TTS workers
-    // Step 7: Transition InteractionState to Listening & broadcast to "main" window
+    // Step 7: Transition InteractionState to Ready & broadcast to "main" window
 }
 
-// ─── EVENT 2: Pause Session (Listening / Thinking -> Paused) ─────────────────
+// ─── EVENT 2: Pause Session (Ready / Thinking / Speaking -> Paused) ──────────
 pub async fn pause_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Set is_paused = true and cancel_flag = true (abort playback & inference)
     // Step 2: Send SttCommand::ResetStream to reset STT decoder
     // Step 3: Transition InteractionState to Paused & emit "pipeline_paused" to UI
 }
 
-// ─── EVENT 3: Resume Session (Paused -> Listening) ───────────────────────────
+// ─── EVENT 3: Resume Session (Paused -> Ready) ──────────────────────────────
 pub async fn resume_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Set is_paused = false and cancel_flag = false
     // Step 2: Send VoxEvent::WarmUp to ensure worker readiness
-    // Step 3: Transition InteractionState to Listening & emit "pipeline_resumed" to UI
+    // Step 3: Transition InteractionState to Ready & emit "pipeline_resumed" to UI
 }
 
-// ─── EVENT 4: Speech Start (Listening / AssistantSpeaking -> UserSpeaking) ────
+// ─── EVENT 4: Speech Start (Ready / Speaking -> Listening) ───────────────────
 pub fn on_speech_start(turn_id: u32, app: &AppHandle, state: &AppState) {
     // Step 1: Set cancel_flag = true to interrupt any ongoing LLM/TTS/Playback (Barge-in)
     // Step 2: Send SttCommand::ResetStream to STT worker
-    // Step 3: Transition InteractionState to UserSpeaking & broadcast to "main" window
+    // Step 3: Transition InteractionState to Listening & broadcast to "main" window
 }
 
-// ─── EVENT 5: Speech End (UserSpeaking -> Thinking) ──────────────────────────
+// ─── EVENT 5: Speech End (Listening -> Thinking) ─────────────────────────────
 pub fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState, audio_buffer: Vec<f32>) {
     // Step 1: Send SttCommand::Final(turn_id, audio_buffer) to STT worker
     // Step 2: Transition InteractionState to Thinking & broadcast to "main" window
@@ -281,7 +273,7 @@ pub fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState, audio_buff
 
 // ─── EVENT 6: Transcript Final (Thinking) ────────────────────────────────────
 pub async fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppState) {
-    // Step 1: Check for empty/silence transcript -> if empty, reset to Listening
+    // Step 1: Check for empty/silence transcript -> if empty, reset to Ready
     // Step 2: Run MemoryScope classifier on transcript (ChitChat vs Domain vs Temporal)
     // Step 3: If not ChitChat, retrieve RAG memory facts from Turso DB
     // Step 4: Push user turn to ConversationManager & resolve system prompt
@@ -289,7 +281,7 @@ pub async fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, st
     // Step 6: Dispatch LlmCommand::Generate with resolved prompt to LLM worker
 }
 
-// ─── EVENT 7: LLM Token & Dynamic TTS Flush (Thinking -> AssistantSpeaking) ───
+// ─── EVENT 7: LLM Token & Dynamic TTS Flush (Thinking -> Speaking) ───────────
 pub fn on_llm_token(turn_id: u32, token: String, state: &AppState) {
     // Step 1: Append token to sub-sentence token accumulator buffer
     // Step 2: Evaluate should_flush(buffer, word_count, elapsed_ms, tps) from services/utils.rs
@@ -298,53 +290,51 @@ pub fn on_llm_token(turn_id: u32, token: String, state: &AppState) {
     //         - Dispatch TtsCommand::Generate(chunk) to TTS worker
 }
 
-// ─── EVENT 8: TTS Chunk Audio Playback (AssistantSpeaking) ───────────────────
+// ─── EVENT 8: TTS Chunk Audio Playback (Speaking) ────────────────────────────
 pub fn on_tts_chunk(turn_id: u32, samples: Vec<f32>, state: &AppState, app: &AppHandle) {
     // Step 1: Upsample 24kHz -> 48kHz via Cubic Hermite interpolation
     // Step 2: Push upsampled audio to CPAL PlaybackEngine jitter buffer
-    // Step 3: Transition InteractionState to AssistantSpeaking (if not already)
+    // Step 3: Transition InteractionState to Speaking (if not already)
 }
 
-// ─── EVENT 9: Playback Finished (AssistantSpeaking -> Listening) ─────────────
+// ─── EVENT 9: Playback Finished (Speaking -> Ready) ──────────────────────────
 pub fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
     // Step 1: Record turn completion metrics (STT RTF, LLM TPS, TTFT, TTFA) in DB
-    // Step 2: Transition InteractionState back to Listening
+    // Step 2: Transition InteractionState back to Ready
 }
 
-// ─── EVENT 10: End Session (Listening / Paused -> Dormant) ───────────────────
+// ─── EVENT 10: End Session (Ready / Paused -> Idle) ──────────────────────────
 pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Abort any active turn (cancel_flag = true, stop playback)
     // Step 2: Emit PersistenceEvent::SessionEnded & trigger MemoryWorker consolidation
     // Step 3: Evaluate Dictation settings:
     //         - If dictation.enabled == true -> Hand ownership to Dictation, keep engine warm
     //         - If dictation.enabled == false -> Stop engine, evict ONNX models, trim heap
-    // Step 4: Transition InteractionState to Dormant & broadcast to UI
+    // Step 4: Transition InteractionState to Idle & broadcast to UI
 }
-```
 
 ---
 
-### 7.2 `modular_ptt.rs` (Estimated LOC: ~350)
+### 7.2 `modular_ptt.rs`
 
-```rust
-// ─── EVENT 1: Start Session (Dormant -> Idle) ────────────────────────────────
+// ─── EVENT 1: Start Session (Idle -> Ready) ──────────────────────────────────
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Ensure engine is launched (CPAL stream + VAD + STT worker active)
     // Step 2: Set active owner to InteractionOwner::Assistant
     // Step 3: Warm up LLM and TTS workers
-    // Step 4: Transition InteractionState to Idle (Waiting for user to hold mic button)
+    // Step 4: Transition InteractionState to Ready (Waiting for user to hold mic button)
 }
 
-// ─── EVENT 2: PTT Press / Start (Idle / AssistantSpeaking -> UserSpeaking) ───
+// ─── EVENT 2: PTT Press / Start (Ready / Speaking -> Listening) ──────────────
 pub fn handle_ptt_start(app: &AppHandle, state: &AppState) {
     // Step 1: Atomic CAS is_recording -> true (prevent double press)
     // Step 2: If Assistant was speaking, cancel playback & LLM immediately (Barge-in)
     // Step 3: Reset PTT audio buffer & speech_detected = false
     // Step 4: Bump turn_id
-    // Step 5: Transition InteractionState to UserSpeaking & emit "RECORDING" status
+    // Step 5: Transition InteractionState to Listening & emit "RECORDING" status
 }
 
-// ─── EVENT 3: PTT Ingestion & Waveform (UserSpeaking) ────────────────────────
+// ─── EVENT 3: PTT Ingestion & Waveform (Listening) ───────────────────────────
 pub fn handle_audio_frame(samples: &[f32], state: &AppState) {
     // Step 1: Append audio chunk to ptt.audio_buffer
     // Step 2: Calculate RMS energy & check noise gate -> if speech, set speech_detected = true
@@ -352,52 +342,50 @@ pub fn handle_audio_frame(samples: &[f32], state: &AppState) {
     // Step 4: If hard limit reached (10 min), auto-trigger ptt_stop
 }
 
-// ─── EVENT 4: PTT Release / Stop (UserSpeaking -> Thinking / Idle) ────────────
+// ─── EVENT 4: PTT Release / Stop (Listening -> Thinking / Ready) ─────────────
 pub fn handle_ptt_stop(app: &AppHandle, state: &AppState) {
     // Step 1: Atomic CAS is_recording -> false
     // Step 2: Check speech_detected atomic:
-    //         - If false (silence hold): Discard buffer, transition to Idle
+    //         - If false (silence hold): Discard buffer, transition to Ready
     //         - If true (speech detected):
     //             • Transition InteractionState to Thinking & emit "PROCESSING" status
     //             • Send full buffer to STT (SttCommand::Final)
 }
 
-// ─── EVENT 5: PTT Cancel (UserSpeaking -> Idle) ──────────────────────────────
+// ─── EVENT 5: PTT Cancel (Listening -> Ready) ────────────────────────────────
 pub fn handle_ptt_cancel(app: &AppHandle, state: &AppState) {
     // Step 1: Clear audio buffer & reset flags
-    // Step 2: Transition InteractionState to Idle & emit "IDLE" status
+    // Step 2: Transition InteractionState to Ready & emit "IDLE" status
 }
 
-// ─── EVENT 6: Turn Completion (AssistantSpeaking -> Idle) ────────────────────
+// ─── EVENT 6: Turn Completion (Speaking -> Ready) ────────────────────────────
 pub fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
     // Step 1: Record turn completion metrics
-    // Step 2: Transition InteractionState back to Idle (NOT Listening — waiting for next PTT hold)
+    // Step 2: Transition InteractionState back to Ready
 }
 
-// ─── EVENT 7: End Session (Idle -> Dormant) ──────────────────────────────────
+// ─── EVENT 7: End Session (Ready -> Idle) ────────────────────────────────────
 pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Clear any lingering PTT buffer
     // Step 2: Finalize persistence session in DB
     // Step 3: Stop or maintain engine based on dictation.enabled
-    // Step 4: Transition InteractionState to Dormant
+    // Step 4: Transition InteractionState to Idle
 }
-```
 
 ---
 
-### 7.3 `realtime_passive.rs` (Estimated LOC: ~350)
+### 7.3 `realtime_passive.rs`
 
-```rust
-// ─── EVENT 1: Start Session (Dormant -> Listening) ───────────────────────────
+// ─── EVENT 1: Start Session (Idle -> Ready) ──────────────────────────────────
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Ensure engine is launched
     // Step 2: Connect WebSocket session to Gemini Live (load cached resumption handle if present)
     // Step 3: Set active owner to InteractionOwner::Assistant
     // Step 4: Register realtime audio bridge with VAD actor
-    // Step 5: Transition InteractionState to Listening
+    // Step 5: Transition InteractionState to Ready
 }
 
-// ─── EVENT 2: Pause Session & Go-Away Protection (Listening -> Paused) ───────
+// ─── EVENT 2: Pause Session & Go-Away Protection (Ready -> Paused) ───────────
 pub async fn pause_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Signal activity_end to WebSocket provider, stop local playback
     // Step 2: Transition InteractionState to Paused (audio bridge mutes mic forwarding)
@@ -405,11 +393,11 @@ pub async fn pause_session(app: &AppHandle, state: &AppState) -> Result<(), VoxE
     //         cache the latest sessionResumption token and close WebSocket gracefully.
 }
 
-// ─── EVENT 3: Resume Session & Resumption Recovery (Paused -> Listening) ──────
+// ─── EVENT 3: Resume Session & Resumption Recovery (Paused -> Ready) ─────────
 pub async fn resume_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Check if WebSocket connection is still alive
     // Step 2: If disconnected, reconnect using cached sessionResumption token to restore context
-    // Step 3: Re-enable audio streaming and transition InteractionState to Listening
+    // Step 3: Re-enable audio streaming and transition InteractionState to Ready
 }
 
 // ─── EVENT 4: Stream Continuous Audio Frame ──────────────────────────────────
@@ -418,27 +406,27 @@ pub fn stream_audio_chunk(samples: &[f32], state: &AppState) {
     // Step 2: Send PCM frame over realtime_tx to WebSocket channel
 }
 
-// ─── EVENT 5: Server VAD Speech Start (Listening -> UserSpeaking) ────────────
+// ─── EVENT 5: Server VAD Speech Start (Ready / Speaking -> Listening) ────────
 pub fn on_server_speech_start(app: &AppHandle, state: &AppState) {
     // Step 1: Cancel any local audio playback (Barge-in)
-    // Step 2: Transition InteractionState to UserSpeaking
+    // Step 2: Transition InteractionState to Listening
 }
 
-// ─── EVENT 6: Server Audio Frame Received (UserSpeaking -> AssistantSpeaking) 
+// ─── EVENT 6: Server Audio Frame Received (Listening / Thinking -> Speaking) ─
 pub fn on_server_audio_frame(samples: Vec<f32>, state: &AppState) {
     // Step 1: Stream samples to PlaybackEngine
-    // Step 2: Transition InteractionState to AssistantSpeaking
+    // Step 2: Transition InteractionState to Speaking
 }
 
-// ─── EVENT 7: Server Turn Complete (AssistantSpeaking -> Listening) ──────────
+// ─── EVENT 7: Server Turn Complete (Speaking -> Ready) ───────────────────────
 pub fn on_server_turn_complete(app: &AppHandle, state: &AppState) {
-    // Step 1: Transition InteractionState back to Listening
+    // Step 1: Transition InteractionState back to Ready
 }
 
-// ─── EVENT 8: End Session (Listening / Paused -> Dormant) ────────────────────
+// ─── EVENT 8: End Session (Ready / Paused -> Idle) ───────────────────────────
 pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Send session termination message to WebSocket & close connection
-    // Step 2: Transition InteractionState to Dormant
+    // Step 2: Transition InteractionState to Idle
 }
 ```
 
@@ -447,40 +435,52 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), VoxErr
 ### 7.4 `realtime_ptt.rs` (Estimated LOC: ~300)
 
 ```rust
-// ─── EVENT 1: Start Session (Dormant -> Idle) ────────────────────────────────
+// ─── EVENT 1: Start Session (Idle -> Ready) ──────────────────────────────────
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Connect WebSocket session to Gemini Live
     // Step 2: Set active owner to InteractionOwner::Assistant
-    // Step 3: Transition InteractionState to Idle
+    // Step 3: Transition InteractionState to Ready
 }
 
-// ─── EVENT 2: PTT Press / Start (Idle -> UserSpeaking) ───────────────────────
+// ─── EVENT 2: PTT Press / Start (Ready / Speaking -> Listening) ──────────────
 pub fn handle_ptt_start(app: &AppHandle, state: &AppState) {
     // Step 1: Atomic CAS is_recording -> true
-    // Step 2: Signal activity_start to realtime WebSocket provider
-    // Step 3: Transition InteractionState to UserSpeaking
+    // Step 2: Reset speech_detected atomic flag to false and clear local PTT buffer
+    // Step 3: Cancel ongoing playback (Barge-in)
+    // Step 4: Transition InteractionState to Listening
 }
 
-// ─── EVENT 3: Gated PCM Streaming (UserSpeaking) ─────────────────────────────
-pub fn stream_gated_pcm(samples: &[f32], state: &AppState) {
-    // Step 1: Client VAD gate check -> if speech_detected, stream i16 chunk to WebSocket
+// ─── EVENT 3: VAD Evaluation & Gated Buffering (Listening) ───────────────────
+pub fn on_ptt_audio_frame(samples: &[f32], vad: &mut VadBackend, state: &AppState) {
+    // Step 1: Accumulate audio frame in local PTT buffer
+    // Step 2: Run local VAD on frame. If human voice energy detected:
+    //         - Atomic store speech_detected -> true
+    //         - Emit speech_start to UI (for visualizer / waveform feedback only)
 }
 
-// ─── EVENT 4: PTT Release / Stop (UserSpeaking -> Thinking / Idle) ────────────
+// ─── EVENT 4: PTT Release / Stop (Listening -> Thinking / Ready) ─────────────
 pub fn handle_ptt_stop(app: &AppHandle, state: &AppState) {
     // Step 1: Atomic CAS is_recording -> false
-    // Step 2: Signal activity_end to realtime WebSocket provider
-    // Step 3: Transition InteractionState to Thinking
+    // Step 2: GHOST AUDIO / SILENCE GATING CHECK:
+    //         - If speech_detected == false:
+    //           * Discard local PTT buffer (do NOT send silence to Gemini)
+    //           * Do NOT signal turn completion to Gemini (prevents hallucinated ghost responses)
+    //           * Transition InteractionState to Ready and emit ptt_status: IDLE
+    //           * Return early
+    // Step 3: If speech_detected == true:
+    //         - Flush buffered i16 PCM audio chunks to Gemini WebSocket over realtime_tx
+    //         - Signal activity_end / turn_complete to Gemini WebSocket provider
+    //         - Transition InteractionState to Thinking and emit ptt_status: PROCESSING
 }
 
-// ─── EVENT 5: Turn Complete (AssistantSpeaking -> Idle) ──────────────────────
+// ─── EVENT 5: Turn Complete (Speaking -> Ready) ──────────────────────────────
 pub fn on_server_turn_complete(app: &AppHandle, state: &AppState) {
-    // Step 1: Transition InteractionState to Idle
+    // Step 1: Transition InteractionState to Ready
 }
 
-// ─── EVENT 6: End Session (Idle -> Dormant) ──────────────────────────────────
+// ─── EVENT 6: End Session (Ready -> Idle) ────────────────────────────────────
 pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
-    // Step 1: Disconnect WebSocket and return to Dormant
+    // Step 1: Disconnect WebSocket and return to Idle
 }
 ```
 

@@ -9,13 +9,13 @@ vi.mock("@tauri-apps/api/core", () => ({
 import {
   stopEngine,
   launchEngine,
-  engage,
-  startRealtimeSession,
-  stopRealtimeSession,
-  pausePipeline,
-  resumePipeline,
+  startSession,
+  endSession,
+  pauseSession,
+  resumeSession,
   pttStart,
   pttStop,
+  pttCancel,
   testClip,
   testClipCancel,
   getRuntimeSnapshot,
@@ -50,37 +50,34 @@ describe("pipelineService", () => {
       expect(mockInvoke).toHaveBeenCalledWith("launch_engine");
     });
 
-    it("should invoke engage correctly", async () => {
-      mockInvoke.mockResolvedValueOnce(undefined);
-      await engage();
-      expect(mockInvoke).toHaveBeenCalledWith("engage");
+    it("should invoke start_session and end_session correctly", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+      await startSession();
+      expect(mockInvoke).toHaveBeenCalledWith("start_session");
+
+      await endSession();
+      expect(mockInvoke).toHaveBeenCalledWith("end_session");
     });
 
-    it("should invoke start_realtime_session and stop_realtime_session", async () => {
+    it("should invoke pause_session and resume_session", async () => {
       mockInvoke.mockResolvedValue(undefined);
-      await startRealtimeSession();
-      expect(mockInvoke).toHaveBeenCalledWith("start_realtime_session");
+      await pauseSession();
+      expect(mockInvoke).toHaveBeenCalledWith("pause_session");
 
-      await stopRealtimeSession();
-      expect(mockInvoke).toHaveBeenCalledWith("stop_realtime_session");
+      await resumeSession();
+      expect(mockInvoke).toHaveBeenCalledWith("resume_session");
     });
 
-    it("should invoke pause_pipeline and resume_pipeline", async () => {
+    it("should invoke ptt_start, ptt_stop, and ptt_cancel correctly", async () => {
       mockInvoke.mockResolvedValue(undefined);
-      await pausePipeline();
-      expect(mockInvoke).toHaveBeenCalledWith("pause_pipeline");
+      await pttStart();
+      expect(mockInvoke).toHaveBeenCalledWith("ptt_start");
 
-      await resumePipeline();
-      expect(mockInvoke).toHaveBeenCalledWith("resume_pipeline");
-    });
+      await pttStop();
+      expect(mockInvoke).toHaveBeenCalledWith("ptt_stop");
 
-    it("should invoke ptt_start and ptt_stop with correct owner parameters", async () => {
-      mockInvoke.mockResolvedValue(undefined);
-      await pttStart("MainWindow");
-      expect(mockInvoke).toHaveBeenCalledWith("ptt_start", { owner: "MainWindow" });
-
-      await pttStop("Tray");
-      expect(mockInvoke).toHaveBeenCalledWith("ptt_stop", { owner: "Tray" });
+      await pttCancel();
+      expect(mockInvoke).toHaveBeenCalledWith("ptt_cancel");
     });
 
     it("should invoke test_clip and test_clip_cancel", async () => {

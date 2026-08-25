@@ -44,17 +44,17 @@ fn test_interaction_mode_settings_mutation() {
 
 #[test]
 fn test_audio_router_target_owner_matching() {
-    let owner_main = InteractionOwner::MainWindow;
+    let owner_main = InteractionOwner::Assistant;
     let owner_dictation = InteractionOwner::Dictation;
 
     let target_main = match "main".to_lowercase().as_str() {
-        "main" => InteractionOwner::MainWindow,
+        "main" => InteractionOwner::Assistant,
         _ => InteractionOwner::Dictation,
     };
     assert_eq!(target_main, owner_main);
 
     let target_tray = match "tray".to_lowercase().as_str() {
-        "main" => InteractionOwner::MainWindow,
+        "main" => InteractionOwner::Assistant,
         _ => InteractionOwner::Dictation,
     };
     assert_eq!(target_tray, owner_dictation);

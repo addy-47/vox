@@ -9,7 +9,6 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 pub async fn toggle_hud_visibility(app: AppHandle) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    // Check setup completion and dictation prerequisites
     let (setup_completed, dictation_enabled, is_tray_mode) = {
         let s = state.settings.read().unwrap();
         (
@@ -131,19 +130,6 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
             crate::core::state::InteractionOwner::Dictation as u32,
             std::sync::atomic::Ordering::Relaxed,
         );
-        if let Some(engine) = state.engine.lock().await.as_ref() {
-            if let Err(e) = engine
-                .vad_tx
-                .send(crate::core::state::VadCommand::UpdateOwner(
-                    crate::core::state::InteractionOwner::Dictation,
-                ))
-            {
-                log::warn!(
-                    "[Tray] Failed to send VadCommand::UpdateOwner(Dictation): {}",
-                    e
-                );
-            }
-        }
         if let Ok(window) = crate::tray::ensure_tray_window(&app) {
             let _ = window.show();
             let _ = position_tray_window(&window).await;
@@ -157,22 +143,9 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
             .load(std::sync::atomic::Ordering::Relaxed)
         {
             state.owner.store(
-                crate::core::state::InteractionOwner::MainWindow as u32,
+                crate::core::state::InteractionOwner::Assistant as u32,
                 std::sync::atomic::Ordering::Relaxed,
             );
-            if let Some(engine) = state.engine.lock().await.as_ref() {
-                if let Err(e) = engine
-                    .vad_tx
-                    .send(crate::core::state::VadCommand::UpdateOwner(
-                        crate::core::state::InteractionOwner::MainWindow,
-                    ))
-                {
-                    log::warn!(
-                        "[Tray] Failed to send VadCommand::UpdateOwner(MainWindow): {}",
-                        e
-                    );
-                }
-            }
         }
 
         if let Some(window) = app.get_webview_window("tray") {
@@ -272,7 +245,7 @@ pub async fn update_interaction_mode(
         .load(std::sync::atomic::Ordering::Relaxed)
         .into();
     let current_target = match target.to_lowercase().as_str() {
-        "main" => crate::core::state::InteractionOwner::MainWindow,
+        "main" => crate::core::state::InteractionOwner::Assistant,
         _ => crate::core::state::InteractionOwner::Dictation,
     };
 

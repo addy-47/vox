@@ -78,7 +78,11 @@ async fn commit_item_to_storage(
     let mut relations_count = 0;
 
     if item_status == PM_QUEUE_STATUS_EVALUATED || item_status == PM_QUEUE_STATUS_SUPERSEDED {
-        let fact_status = if item_status == PM_QUEUE_STATUS_SUPERSEDED { "superseded" } else { "active" };
+        let fact_status = if item_status == PM_QUEUE_STATUS_SUPERSEDED {
+            "superseded"
+        } else {
+            "active"
+        };
 
         conn.execute(
             "INSERT INTO memory_facts (id, type, collection, fact, source, status, session_id, created_at)
@@ -192,7 +196,8 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
         }
 
         Ok(())
-    }.await;
+    }
+    .await;
 
     if let Err(e) = commit_res {
         let _ = conn.execute("ROLLBACK", ()).await;

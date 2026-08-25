@@ -340,8 +340,7 @@ async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()
 
     let item_a = item.clone();
     let cand_a = nli_candidates.clone();
-    let handle_a =
-        tokio::task::spawn_blocking(move || eval_subbranch_a_nli_sync(&item_a, &cand_a));
+    let handle_a = tokio::task::spawn_blocking(move || eval_subbranch_a_nli_sync(&item_a, &cand_a));
 
     let item_b = item.clone();
     let cand_b = edge_candidates.clone();
