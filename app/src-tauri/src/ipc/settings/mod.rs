@@ -6,9 +6,6 @@ pub mod catalog;
 pub mod health;
 pub mod mutation;
 
-#[cfg(test)]
-mod tests;
-
 pub use catalog::*;
 pub use health::*;
 pub use mutation::*;

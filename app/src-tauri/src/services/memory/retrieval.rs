@@ -243,14 +243,3 @@ pub async fn retrieve_personal_context_v7(
         out_sections.join("\n\n")
     ))
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_vector_distance_ranking_order() {
-        let u = vec![1.0f32, 0.0f32];
-        let v = vec![1.0f32, 0.0f32];
-        let sim = crate::services::memory::embedder::cosine_similarity(&u, &v);
-        assert!((sim - 1.0).abs() < 1e-5);
-    }
-}

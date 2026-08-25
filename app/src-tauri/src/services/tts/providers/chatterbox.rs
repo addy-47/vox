@@ -18,8 +18,6 @@ pub struct ChatterboxEngine {
     engine: Mutex<Engine>,
     quality_steps: AtomicU32,
     speed: AtomicU32,
-    #[allow(dead_code)]
-    language: String,
 }
 
 impl ChatterboxEngine {
@@ -103,7 +101,6 @@ impl ChatterboxEngine {
             engine: Mutex::new(engine),
             quality_steps: AtomicU32::new(cfm as u32),
             speed: AtomicU32::new(speed.to_bits()),
-            language: language.to_string(),
         })
     }
 

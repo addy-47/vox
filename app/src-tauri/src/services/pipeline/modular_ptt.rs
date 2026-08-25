@@ -36,25 +36,29 @@ async fn ensure_modular_workers(app: &AppHandle, state: &AppState) -> Result<(),
 
     crate::services::llm::actor::warm_up_llm(
         app,
-        &mut engine.llm_tx,
-        &mut engine.llm_handle,
+        crate::services::llm::actor::LlmWarmUpHandles {
+            llm_tx: &mut engine.llm_tx,
+            llm_handle: &mut engine.llm_handle,
+            is_loaded: Arc::clone(&state.is_llm_loaded),
+            is_sleeping: Arc::clone(&state.is_sleeping),
+        },
         &settings,
         &llm_path,
         engine.pipeline_tx.clone(),
-        Arc::clone(&state.is_llm_loaded),
-        Arc::clone(&state.is_sleeping),
     )?;
 
     crate::services::tts::actor::warm_up_tts(
         app,
-        &mut engine.tts_tx,
-        &mut engine.tts_handle,
+        crate::services::tts::actor::TtsWarmUpHandles {
+            tts_tx: &mut engine.tts_tx,
+            tts_handle: &mut engine.tts_handle,
+            cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
+            is_loaded: Arc::clone(&state.is_tts_loaded),
+            is_sleeping: Arc::clone(&state.is_sleeping),
+        },
         &settings,
         &tts_path,
-        Arc::clone(&state.pipeline.cancel_flag),
         engine.pipeline_tx.clone(),
-        Arc::clone(&state.is_tts_loaded),
-        Arc::clone(&state.is_sleeping),
     )?;
 
     Ok(())
@@ -367,12 +371,12 @@ fn on_llm_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
 }
 
 /// Forwards synthesized audio samples to the audio playback buffer.
-fn on_tts_chunk(_turn_id: u32, samples: Vec<f32>, playback: &Arc<PlaybackEngine>) {
+fn on_tts_chunk(samples: Vec<f32>, playback: &Arc<PlaybackEngine>) {
     playback.ingest_chunk(&samples);
 }
 
 /// Updates latest TTS real-time factor metrics upon synthesis completion.
-fn on_tts_finished(_turn_id: u32, rtf: f32, state: &AppState) {
+fn on_tts_finished(rtf: f32, state: &AppState) {
     state.latest_tts_rtf.store(rtf.to_bits(), Ordering::Relaxed);
 }
 
@@ -432,8 +436,8 @@ pub fn handle_event(
         }
         VoxEvent::LlmToken { turn_id, token } => on_llm_token(turn_id, token, app, state),
         VoxEvent::LlmFinished { turn_id } => on_llm_finished(turn_id, app, state),
-        VoxEvent::TtsChunk { turn_id, samples } => on_tts_chunk(turn_id, samples, playback),
-        VoxEvent::TtsFinished { turn_id, rtf } => on_tts_finished(turn_id, rtf, state),
+        VoxEvent::TtsChunk { samples, .. } => on_tts_chunk(samples, playback),
+        VoxEvent::TtsFinished { rtf, .. } => on_tts_finished(rtf, state),
         VoxEvent::PlaybackStarted { turn_id } => on_playback_started(turn_id, app, state),
         VoxEvent::PlaybackFinished { turn_id } => on_playback_finished(turn_id, app, state),
         VoxEvent::Error { turn_id, message } => on_error(turn_id, message, app, state),

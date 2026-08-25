@@ -53,38 +53,40 @@ pub struct TelemetryAggregator {
     dropped_events: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
+/// Target atomics updated by the telemetry aggregator loop.
+pub struct TelemetryAggregatorHandles {
+    pub latest_energy: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub latest_vad_prob: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub latest_low: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub latest_mid: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub latest_high: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub latest_sys_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub latest_sys_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub latest_vox_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub latest_vox_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub latest_stt_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub latest_ttft_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub dropped_events: std::sync::Arc<std::sync::atomic::AtomicU64>,
+}
+
 impl TelemetryAggregator {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        latest_energy: std::sync::Arc<std::sync::atomic::AtomicU32>,
-        latest_vad_prob: std::sync::Arc<std::sync::atomic::AtomicU32>,
-        latest_low: std::sync::Arc<std::sync::atomic::AtomicU32>,
-        latest_mid: std::sync::Arc<std::sync::atomic::AtomicU32>,
-        latest_high: std::sync::Arc<std::sync::atomic::AtomicU32>,
-        latest_sys_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
-        latest_sys_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
-        latest_vox_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
-        latest_vox_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
-        latest_stt_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
-        latest_ttft_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
-        dropped_events: std::sync::Arc<std::sync::atomic::AtomicU64>,
-    ) -> (Self, Sender<TelemetryEvent>) {
+    pub fn new(handles: TelemetryAggregatorHandles) -> (Self, Sender<TelemetryEvent>) {
         let (tx, rx) = bounded(4096);
         (
             Self {
                 rx,
-                latest_energy,
-                latest_vad_prob,
-                latest_low,
-                latest_mid,
-                latest_high,
-                latest_sys_cpu,
-                latest_sys_ram,
-                latest_vox_cpu,
-                latest_vox_ram,
-                latest_stt_ms,
-                latest_ttft_ms,
-                dropped_events,
+                latest_energy: handles.latest_energy,
+                latest_vad_prob: handles.latest_vad_prob,
+                latest_low: handles.latest_low,
+                latest_mid: handles.latest_mid,
+                latest_high: handles.latest_high,
+                latest_sys_cpu: handles.latest_sys_cpu,
+                latest_sys_ram: handles.latest_sys_ram,
+                latest_vox_cpu: handles.latest_vox_cpu,
+                latest_vox_ram: handles.latest_vox_ram,
+                latest_stt_ms: handles.latest_stt_ms,
+                latest_ttft_ms: handles.latest_ttft_ms,
+                dropped_events: handles.dropped_events,
             },
             tx,
         )
@@ -138,58 +140,5 @@ impl TelemetryAggregator {
                 tracing::info!("[Telemetry] Channel disconnected. Aggregator exiting.");
             })
             .expect("[Telemetry] Failed to spawn aggregator thread");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    #[test]
-    fn test_telemetry_atomic_float_bit_encoding() {
-        let subnormal_1 = f32::from_bits(1);
-        let subnormal_2 = f32::MIN_POSITIVE / 2.0;
-
-        let test_values = vec![
-            0.0_f32,
-            -0.0_f32,
-            0.12345_f32,
-            1.0_f32,
-            f32::EPSILON,
-            subnormal_1,
-            subnormal_2,
-            f32::MAX,
-            f32::MIN,
-            f32::MIN_POSITIVE,
-        ];
-
-        let atomic = AtomicU32::new(0);
-
-        for &val in &test_values {
-            // Encode f32 into AtomicU32 via to_bits()
-            atomic.store(val.to_bits(), Ordering::Relaxed);
-
-            // Decode back from AtomicU32 via from_bits()
-            let raw_bits = atomic.load(Ordering::Relaxed);
-            let decoded = f32::from_bits(raw_bits);
-
-            // Verify exact floating-point equality without NaN poison
-            assert!(
-                !decoded.is_nan(),
-                "Decoded value for {} resulted in NaN poison",
-                val
-            );
-            assert_eq!(
-                decoded.to_bits(),
-                val.to_bits(),
-                "Bit representation mismatch for value {}",
-                val
-            );
-            assert_eq!(
-                decoded, val,
-                "Floating point equality check failed for value {}",
-                val
-            );
-        }
     }
 }

@@ -29,14 +29,14 @@ pub struct VoxPaths {
 
 static PATHS: OnceLock<VoxPaths> = OnceLock::new();
 
-/// Initialize the path singleton. Must be called ONCE at startup with the AppHandle,
+/// Initialize the path singleton. Must be called ONCE at startup,
 /// before any call to `paths::get()`.
 ///
 /// Priority:
 /// 1. `VOX_HOME` environment variable (for testing/hardening)
 /// 2. Platform-specific local data dir (e.g. ~/.local/share/vox)
 /// 3. Fallback to `$HOME/.vox`
-pub fn init(_app: &tauri::AppHandle) {
+pub fn init() {
     let root = if let Ok(env_path) = std::env::var("VOX_HOME") {
         PathBuf::from(env_path)
     } else {

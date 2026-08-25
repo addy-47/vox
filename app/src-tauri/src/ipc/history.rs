@@ -60,9 +60,7 @@ pub struct TurnRow {
 
 /// Returns all sessions ordered by most recent first.
 #[tauri::command]
-pub async fn get_sessions(
-    _state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<Vec<SessionRow>, String> {
+pub async fn get_sessions() -> Result<Vec<SessionRow>, String> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await
@@ -73,7 +71,7 @@ pub async fn get_sessions(
             "SELECT s.id, s.started_at, s.ended_at, s.turn_count,
                     (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message
              FROM sessions s
-             ORDER BY s.started_at DESC LIMIT 100",
+             ORDER BY s.started_at DESC",
             (),
         )
         .await
@@ -97,10 +95,8 @@ pub async fn get_sessions(
 #[tauri::command]
 pub async fn get_turns(
     session_id: i64,
-    state: State<'_, std::sync::Arc<AppState>>,
 ) -> Result<Vec<TurnRow>, String> {
     let db_path = crate::utils::paths::get().db.clone();
-    let _ = state;
 
     let conn = VoxDb::open_readonly(&db_path)
         .await
@@ -136,10 +132,8 @@ pub async fn get_turns(
 #[tauri::command]
 pub async fn delete_session(
     id: i64,
-    state: State<'_, std::sync::Arc<AppState>>,
 ) -> Result<(), String> {
     let db_path = crate::utils::paths::get().db.clone();
-    let _ = state;
 
     let conn = VoxDb::open(&db_path)
         .await

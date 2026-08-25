@@ -218,7 +218,7 @@ pub async fn update_setting(
         dispatch_worker_command(&app, &domain, &key, &value).await;
     }
 
-    schedule_debounced_save(app.clone(), state.clone()).await;
+    schedule_debounced_save(state.clone()).await;
 
     let action_label = match policy {
         SettingReloadPolicy::Hot => "hot-applied",
@@ -264,7 +264,7 @@ pub async fn update_theme(app: AppHandle, theme: String) -> Result<(), String> {
         settings.appearance.theme = theme.clone();
     }
     let _ = app.emit("theme-changed", theme);
-    schedule_debounced_save(app.clone(), state.clone()).await;
+    schedule_debounced_save(state.clone()).await;
     Ok(())
 }
 
@@ -281,7 +281,7 @@ pub async fn reset_settings(app: AppHandle) -> Result<VoxSettings, String> {
     // Immediate apply for theme and other hot settings
     let _ = app.emit("theme-changed", defaults.appearance.theme.clone());
 
-    schedule_debounced_save(app.clone(), state.clone()).await;
+    schedule_debounced_save(state.clone()).await;
 
     Ok(defaults)
 }
@@ -802,7 +802,7 @@ async fn dispatch_worker_command(
 
 /// Schedules a debounced settings save: cancels any pending save, spawns a new
 /// task that waits `SETTINGS_SAVE_DEBOUNCE_MS` then writes to disk.
-async fn schedule_debounced_save(_app: AppHandle, state: State<'_, std::sync::Arc<AppState>>) {
+async fn schedule_debounced_save(state: State<'_, std::sync::Arc<AppState>>) {
     let mut debounce = state.save_debounce.lock().await;
 
     // Cancel the previous pending write

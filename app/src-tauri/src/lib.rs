@@ -76,7 +76,7 @@ pub fn run() {
             app.emit(crate::core::constants::EVENT_RUNTIME_BOOTING, ()).ok();
 
             // ── 0. Paths Singleton (must be first) ──────────────────────────────────
-            crate::utils::paths::init(app.handle());
+            crate::utils::paths::init();
             crate::utils::paths::ensure_dirs().ok();
 
             // ── Background Manifest Caching (fetches once at boot) ──────────────────
@@ -137,18 +137,20 @@ pub fn run() {
             let dropped_telemetry_events = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
 
             let (telemetry_worker, telemetry_tx) = crate::monitoring::aggregator::TelemetryAggregator::new(
-                std::sync::Arc::clone(&latest_energy),
-                std::sync::Arc::clone(&latest_vad_prob),
-                std::sync::Arc::clone(&latest_low),
-                std::sync::Arc::clone(&latest_mid),
-                std::sync::Arc::clone(&latest_high),
-                std::sync::Arc::clone(&latest_sys_cpu),
-                std::sync::Arc::clone(&latest_sys_ram),
-                std::sync::Arc::clone(&latest_vox_cpu),
-                std::sync::Arc::clone(&latest_vox_ram),
-                std::sync::Arc::clone(&latest_stt_ms),
-                std::sync::Arc::clone(&latest_ttft_ms),
-                std::sync::Arc::clone(&dropped_telemetry_events),
+                crate::monitoring::aggregator::TelemetryAggregatorHandles {
+                    latest_energy: std::sync::Arc::clone(&latest_energy),
+                    latest_vad_prob: std::sync::Arc::clone(&latest_vad_prob),
+                    latest_low: std::sync::Arc::clone(&latest_low),
+                    latest_mid: std::sync::Arc::clone(&latest_mid),
+                    latest_high: std::sync::Arc::clone(&latest_high),
+                    latest_sys_cpu: std::sync::Arc::clone(&latest_sys_cpu),
+                    latest_sys_ram: std::sync::Arc::clone(&latest_sys_ram),
+                    latest_vox_cpu: std::sync::Arc::clone(&latest_vox_cpu),
+                    latest_vox_ram: std::sync::Arc::clone(&latest_vox_ram),
+                    latest_stt_ms: std::sync::Arc::clone(&latest_stt_ms),
+                    latest_ttft_ms: std::sync::Arc::clone(&latest_ttft_ms),
+                    dropped_events: std::sync::Arc::clone(&dropped_telemetry_events),
+                },
             );
             telemetry_worker.start();
 
@@ -164,30 +166,32 @@ pub fn run() {
             let mut app_state = AppState::new(
                 app.handle(),
                 Some(log_guard),
-                telemetry_tx,
-                latest_energy,
-                latest_vad_prob,
-                latest_low,
-                latest_mid,
-                latest_high,
-                latest_playback_energy,
-                latest_playback_low,
-                latest_playback_mid,
-                latest_playback_high,
-                latest_sys_cpu,
-                latest_sys_ram,
-                latest_vox_cpu,
-                latest_vox_ram,
-                latest_stt_ms,
-                latest_ttft_ms,
-                latest_voice_latency_ms,
-                latest_threads,
-                latest_tts_rtf,
-                latest_playback_start_ms,
-                latest_persistence_rate,
-                is_db_healthy,
-                is_private_mode.clone(),
-                dropped_telemetry_events,
+                crate::core::state::AppStateTelemetryHandles {
+                    telemetry_tx,
+                    latest_energy,
+                    latest_vad_prob,
+                    latest_low,
+                    latest_mid,
+                    latest_high,
+                    latest_playback_energy,
+                    latest_playback_low,
+                    latest_playback_mid,
+                    latest_playback_high,
+                    latest_sys_cpu,
+                    latest_sys_ram,
+                    latest_vox_cpu,
+                    latest_vox_ram,
+                    latest_stt_ms,
+                    latest_ttft_ms,
+                    latest_voice_latency_ms,
+                    latest_threads,
+                    latest_tts_rtf,
+                    latest_playback_start_ms,
+                    latest_persistence_rate,
+                    is_db_healthy,
+                    is_private_mode: is_private_mode.clone(),
+                    dropped_telemetry_events,
+                },
             );
             app_state.persist_tx = parking_lot::Mutex::new(Some(persist_tx));
 
@@ -390,10 +394,6 @@ pub fn run() {
                     log::info!("[BOOTSTRAP] Dictation disabled. Skipping engine auto-launch to save resources.");
                 }
             });
-
-            // ── 4. CLI Arguments Handling ────────────────────────
-            let _args: Vec<String> = std::env::args().collect();
-            // (Future CLI flags can be added here)
 
             Ok(())
         })

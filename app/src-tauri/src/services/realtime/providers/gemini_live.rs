@@ -180,12 +180,6 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         let control_sender_task = handle.spawn(async move {
             while let Some(evt) = control_rx.recv().await {
                 let msg = match evt {
-                    ControlEvent::Text(txt) => serde_json::json!({
-                        "realtimeInput": {
-                            "text": txt
-                        }
-                    })
-                    .to_string(),
                     ControlEvent::ActivityStart => serde_json::json!({
                         "realtimeInput": {
                             "activityStart": {}
@@ -703,8 +697,6 @@ async fn perform_handshake(
 }
 
 enum ControlEvent {
-    #[allow(dead_code)]
-    Text(String),
     Interrupt,
     ActivityStart,
     ActivityEnd,

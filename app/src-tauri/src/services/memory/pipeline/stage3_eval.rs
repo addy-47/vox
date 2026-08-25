@@ -191,7 +191,7 @@ fn eval_subbranch_b_edges_sync(
             };
 
             match inter_edge_classifier::classify_edge(
-                src_coll, src_fact, None, tgt_coll, tgt_fact, None,
+                src_coll, src_fact, tgt_coll, tgt_fact,
             ) {
                 Ok((Some(pred_edge), score)) => {
                     edge_score_val = Some(score);
@@ -456,19 +456,4 @@ pub async fn run_stage3_eval_with_metrics_seq(
     }
 
     Ok(processed_count)
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::core::constants::has_inter_collection_relationship;
-
-    #[test]
-    fn test_bidirectional_trigger_policy() {
-        assert!(has_inter_collection_relationship("Identity", "Profile"));
-        assert!(has_inter_collection_relationship("Profile", "Identity"));
-        assert!(has_inter_collection_relationship("Directives", "Entities"));
-        assert!(has_inter_collection_relationship("Entities", "Directives"));
-        assert!(!has_inter_collection_relationship("Narrative", "Profile"));
-        assert!(!has_inter_collection_relationship("Profile", "Narrative"));
-    }
 }

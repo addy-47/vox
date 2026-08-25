@@ -100,19 +100,23 @@ pub fn create_llm_provider(
     }
 }
 
+/// Handles and flags passed when warming up the LLM actor.
+pub struct LlmWarmUpHandles<'a> {
+    pub llm_tx: &'a mut Option<std::sync::mpsc::Sender<LlmCommand>>,
+    pub llm_handle: &'a mut Option<std::thread::JoinHandle<()>>,
+    pub is_loaded: Arc<AtomicBool>,
+    pub is_sleeping: Arc<AtomicBool>,
+}
+
 /// Spawns and initializes a persistent LLM worker actor thread.
-#[allow(clippy::too_many_arguments)]
 pub fn warm_up_llm(
     app: &tauri::AppHandle,
-    llm_tx: &mut Option<std::sync::mpsc::Sender<LlmCommand>>,
-    llm_handle: &mut Option<std::thread::JoinHandle<()>>,
+    handles: LlmWarmUpHandles<'_>,
     settings: &VoxSettings,
     llm_path: &Path,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
-    is_loaded: Arc<AtomicBool>,
-    is_sleeping: Arc<AtomicBool>,
 ) -> Result<(), String> {
-    if llm_tx.is_some() {
+    if handles.llm_tx.is_some() {
         return Ok(());
     }
 
@@ -124,15 +128,18 @@ pub fn warm_up_llm(
         Err(e) => {
             log::error!("[LLM Actor] Failed to create provider: {}", e);
             let _ = app.emit(EVENT_MODEL_FAILED, format!("LLM: {}", e));
-            is_loaded.store(false, Ordering::Relaxed);
+            handles.is_loaded.store(false, Ordering::Relaxed);
             return Err(e);
         }
     };
 
     let (tx, rx) = std::sync::mpsc::channel();
-    *llm_tx = Some(tx);
+    *handles.llm_tx = Some(tx);
 
     let app_clone = app.clone();
+    let is_loaded = handles.is_loaded;
+    let is_sleeping = handles.is_sleeping;
+
     let handle = std::thread::Builder::new()
         .name("vox-llm-persistent".to_string())
         .spawn(move || {
@@ -140,7 +147,7 @@ pub fn warm_up_llm(
         })
         .map_err(|e| e.to_string())?;
 
-    *llm_handle = Some(handle);
+    *handles.llm_handle = Some(handle);
     is_sleeping.store(false, Ordering::Relaxed);
     Ok(())
 }

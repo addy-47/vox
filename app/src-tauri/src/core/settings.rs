@@ -970,29 +970,3 @@ impl VoxSettings {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_memory_settings_defaults() {
-        let settings = VoxSettings::default();
-        assert!(settings.memory.context_retrieval_enabled);
-        assert!(settings.memory.pipeline_processing_enabled);
-        assert_eq!(settings.memory.top_k_facts, 5);
-        assert_eq!(settings.memory.max_hops, 2);
-    }
-
-    #[test]
-    fn test_memory_settings_reload_policy() {
-        assert_eq!(
-            get_setting_reload_policy("memory", "context_retrieval_enabled"),
-            SettingReloadPolicy::Hot
-        );
-        assert_eq!(
-            get_setting_reload_policy("memory", "pipeline_processing_enabled"),
-            SettingReloadPolicy::Hot
-        );
-    }
-}

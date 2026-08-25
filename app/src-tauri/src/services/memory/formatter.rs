@@ -39,50 +39,53 @@ pub fn format_relative_timestamp(created_at_ms: i64) -> String {
     }
 }
 
+/// Section blocks for user profile context assembly.
+#[derive(Debug, Default)]
+pub struct UserProfileSections<'a> {
+    pub manifest_header: &'a str,
+    pub conflict_block: &'a str,
+    pub identity_block: &'a str,
+    pub constraints_block: &'a str,
+    pub tasks_block: &'a str,
+    pub goals_block: &'a str,
+    pub context_block: &'a str,
+    pub semantic_block: &'a str,
+}
+
 /// Assembles memory section blocks into clean <user_profile> XML string.
-#[allow(clippy::too_many_arguments)]
-pub fn format_user_profile_context(
-    manifest_header: &str,
-    conflict_block: &str,
-    identity_block: &str,
-    constraints_block: &str,
-    tasks_block: &str,
-    goals_block: &str,
-    context_block: &str,
-    semantic_block: &str,
-) -> String {
+pub fn format_user_profile_context(sections: &UserProfileSections<'_>) -> String {
     let mut out = String::new();
     out.push_str("<user_profile>\n");
-    out.push_str(manifest_header);
+    out.push_str(sections.manifest_header);
 
-    if !conflict_block.is_empty() {
+    if !sections.conflict_block.is_empty() {
         out.push_str("[Unresolved Contradictions]\n");
-        out.push_str(conflict_block);
+        out.push_str(sections.conflict_block);
     }
-    if !identity_block.is_empty() {
+    if !sections.identity_block.is_empty() {
         out.push_str("[Identity]\n");
-        out.push_str(identity_block);
+        out.push_str(sections.identity_block);
     }
-    if !constraints_block.is_empty() {
+    if !sections.constraints_block.is_empty() {
         out.push_str("[Constraints]\n");
-        out.push_str(constraints_block);
+        out.push_str(sections.constraints_block);
     }
-    if !tasks_block.is_empty() {
+    if !sections.tasks_block.is_empty() {
         out.push_str("[Active Tasks]\n");
-        out.push_str(tasks_block);
+        out.push_str(sections.tasks_block);
     }
-    if !goals_block.is_empty() {
+    if !sections.goals_block.is_empty() {
         out.push_str("[Active Goals]\n");
-        out.push_str(goals_block);
+        out.push_str(sections.goals_block);
     }
-    if !context_block.is_empty() {
-        out.push_str(context_block);
+    if !sections.context_block.is_empty() {
+        out.push_str("[User Context]\n");
+        out.push_str(sections.context_block);
     }
-    if !semantic_block.is_empty() {
-        out.push_str("[Semantic Knowledge Context]\n");
-        out.push_str(semantic_block);
+    if !sections.semantic_block.is_empty() {
+        out.push_str("[Knowledge & Notes]\n");
+        out.push_str(sections.semantic_block);
     }
-
     out.push_str("</user_profile>");
     out
 }

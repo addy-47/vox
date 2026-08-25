@@ -122,12 +122,14 @@ fn create_playback_engine(state: &AppState) -> Result<Arc<PlaybackEngine>, Strin
     PlaybackEngine::new(
         Arc::clone(&state.pipeline.playback_active),
         Arc::clone(&state.pipeline.cancel_flag),
-        Arc::clone(&state.latest_playback_energy),
-        Arc::clone(&state.latest_playback_low),
-        Arc::clone(&state.latest_playback_mid),
-        Arc::clone(&state.latest_playback_high),
-        Arc::clone(&state.pipeline.playback_underruns),
         Arc::clone(&state.pipeline.is_assistant_speaking),
+        crate::services::audio::playback::PlaybackTelemetryHandles {
+            energy: Arc::clone(&state.latest_playback_energy),
+            low: Arc::clone(&state.latest_playback_low),
+            mid: Arc::clone(&state.latest_playback_mid),
+            high: Arc::clone(&state.latest_playback_high),
+            underruns: Arc::clone(&state.pipeline.playback_underruns),
+        },
     )
     .map(Arc::new)
     .map_err(|e| format!("[AudioEngine] PlaybackEngine initialization failed: {}", e))
@@ -228,26 +230,35 @@ pub async fn start_audio_engine(app: &AppHandle, state: &AppState) -> Result<(),
     let vad_handle = std::thread::Builder::new()
         .name("vox-vad-worker".to_string())
         .spawn(move || {
-            if let Err(e) = crate::services::vad::spawn_vad_actor(
-                vad,
-                app_vad,
-                consumer,
+            let channels = crate::services::vad::actor::VadActorChannels {
                 event_tx,
-                stt_vad_tx,
+                stt_tx: stt_vad_tx,
                 vad_rx,
-                telemetry_vad_tx,
-                Some(vox_vad_tx),
-                is_vad_loaded,
+                telemetry_tx: telemetry_vad_tx,
+                vox_event_tx: Some(vox_vad_tx),
+            };
+            let handles = crate::services::vad::actor::VadActorHandles {
+                is_loaded: is_vad_loaded,
                 playback_active,
                 turn_id_atomic,
                 owner_atomic,
                 is_dictation_enabled,
                 engine_shutdown,
                 dropped_counter,
-                threshold,
-                noise_gate,
-                mode,
-                audio_mode,
+            };
+            let config = crate::services::vad::actor::VadActorConfig {
+                initial_threshold: threshold,
+                initial_noise_gate: noise_gate,
+                initial_mode: mode,
+                initial_audio_mode: audio_mode,
+            };
+            if let Err(e) = crate::services::vad::spawn_vad_actor(
+                vad,
+                app_vad,
+                consumer,
+                channels,
+                handles,
+                config,
             ) {
                 log::error!("[AudioEngine] VAD worker crashed: {}", e);
             }

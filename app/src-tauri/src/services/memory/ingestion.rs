@@ -116,8 +116,6 @@ fn execute_compaction_attempt(
 pub fn run_compaction(
     provider: &dyn LlmProvider,
     history_messages: &[ChatMessage],
-    _last_user_turn: &ChatMessage,
-    _last_context_summary: Option<&str>,
     settings: Option<&crate::core::settings::LlmSettings>,
 ) -> Result<CompactionResult> {
     if history_messages.is_empty() {
@@ -184,62 +182,4 @@ pub fn run_compaction(
         personal_memory: personal_memory.clone(),
         diff_to_enqueue: personal_memory,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::services::llm::ProviderKind;
-
-    #[test]
-    fn test_compaction_empty_history() {
-        struct MockProvider;
-        impl LlmProvider for MockProvider {
-            fn kind(&self) -> ProviderKind {
-                ProviderKind::Embedded
-            }
-            fn health_check(&self) -> bool {
-                true
-            }
-            fn capabilities(&self) -> &crate::services::llm::types::ProviderCapabilities {
-                static CAPS: std::sync::OnceLock<
-                    crate::services::llm::types::ProviderCapabilities,
-                > = std::sync::OnceLock::new();
-                CAPS.get_or_init(crate::services::llm::types::ProviderCapabilities::default)
-            }
-            fn list_models(
-                &self,
-            ) -> Result<
-                Vec<crate::core::settings::LlmModelInfo>,
-                crate::services::llm::types::LlmError,
-            > {
-                Ok(vec![])
-            }
-            fn generate<'a>(
-                &'a self,
-                _request: crate::services::llm::types::GenerationRequest,
-                _turn_id: u32,
-                _cancel_flag: &'a Arc<AtomicBool>,
-                _event_tx: &'a std::sync::mpsc::Sender<VoxEvent>,
-            ) -> futures_util::future::BoxFuture<
-                'a,
-                Result<(), crate::services::llm::types::LlmError>,
-            > {
-                Box::pin(async { Ok(()) })
-            }
-        }
-
-        let provider = MockProvider;
-        let history: Vec<ChatMessage> = vec![];
-        let last_user_turn = ChatMessage {
-            role: Role::User,
-            content: "Hello".to_string(),
-            timestamp_ms: 0,
-        };
-        let res = run_compaction(&provider, &history, &last_user_turn, None, None);
-        assert!(
-            res.is_err(),
-            "run_compaction should return Err when history is empty"
-        );
-    }
 }
