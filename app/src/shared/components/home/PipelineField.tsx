@@ -14,16 +14,16 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
     let targetEnergy = 0.12;
 
     switch (state) {
-      case "Listening":
-        targetEnergy = 0.28;
+      case "Ready":
+        targetEnergy = 0.16;
         break;
-      case "UserSpeaking":
+      case "Listening":
         targetEnergy = 0.35 + volume * 0.25;
         break;
       case "Thinking":
         targetEnergy = 0.24;
         break;
-      case "AssistantSpeaking":
+      case "Speaking":
         targetEnergy = 0.32 + volume * 0.3;
         break;
       case "Paused":

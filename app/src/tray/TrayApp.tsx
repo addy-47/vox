@@ -380,7 +380,7 @@ export const TrayApp: React.FC = () => {
           >
             <ErrorBoundary name="TrayAppContent">
               <Header 
-                isListening={interactionState === "Listening" || interactionState === "UserSpeaking" || pttStatus === 'RECORDING'} 
+                isListening={interactionState === "Listening" || pttStatus === 'RECORDING'} 
                 hasContent={!!currentTargetText} 
                 copied={copied} 
                 isPttActive={pttStatus !== 'IDLE'}
