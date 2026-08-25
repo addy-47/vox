@@ -1,10 +1,7 @@
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager};
 
-/// Spawns a background task running at 30Hz (~33ms ticks) that pushes unified
-/// telemetry (audio energy + VAD probability) to the active Tauri window.
-///
-/// Decouples UI drawing from real-time audio threads to guarantee no stuttering.
+/// Spawns periodic background task pushing audio and VAD telemetry to active window.
 pub fn spawn_telemetry_emitter(app: AppHandle) {
     let state = app
         .state::<std::sync::Arc<crate::core::state::AppState>>()
@@ -19,7 +16,6 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
                 continue;
             }
 
-            // Read output energy if assistant is speaking; otherwise read microphone energy
             let local_pipeline_mode = {
                 let s = state.settings.read().unwrap();
                 s.interaction.pipeline_mode.clone()
@@ -47,17 +43,14 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
             };
 
             let vad_prob = f32::from_bits(state.latest_vad_prob.load(Ordering::Relaxed));
-
             let owner_enum: crate::core::state::InteractionOwner =
                 state.owner.load(Ordering::Relaxed).into();
             let target = match owner_enum {
-                crate::core::state::InteractionOwner::MainWindow
-                | crate::core::state::InteractionOwner::Ptt => "main",
+                crate::core::state::InteractionOwner::Assistant => "main",
                 crate::core::state::InteractionOwner::Dictation => "tray",
-                crate::core::state::InteractionOwner::Wizard => "wizard",
             };
 
-            let _ = app.emit_to(
+            if let Err(e) = app.emit_to(
                 target,
                 "telemetry",
                 crate::core::state::TelemetryData {
@@ -67,7 +60,9 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
                     mid,
                     high,
                 },
-            );
+            ) {
+                log::warn!("[Telemetry] Failed to emit telemetry event: {}", e);
+            }
         }
     });
 }

@@ -7,7 +7,7 @@ pub mod probe;
 pub mod providers;
 pub mod types;
 
-pub use actor::{spawn_llm_worker, LlmCommand};
+pub use actor::{cool_down_llm, create_llm_provider, spawn_llm_worker, warm_up_llm, LlmCommand};
 pub use capabilities::{
     CapabilityObservation, CapabilityRegistry, CapabilitySource, ModelCapabilities,
 };

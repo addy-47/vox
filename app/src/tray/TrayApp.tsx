@@ -181,9 +181,9 @@ export const TrayApp: React.FC = () => {
   const togglePtt = async () => {
     try {
       if (pttStatus === 'IDLE') {
-        pttStart("Tray");
+        pttStart();
       } else {
-        pttStop("Tray");
+        pttStop();
       }
     } catch (e) {
       console.error("[TrayApp] Failed to toggle PTT:", e);

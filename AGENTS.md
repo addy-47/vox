@@ -78,7 +78,8 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 ## 5. Current Phase 10: IPC & Services Layer Refactor (Spec-First, 3-Layer Execution)
 
 > **Phase status:** Phase 10 Layer 1 Audit & Behavioral Specification Complete (100% — 572 of 572 functions audited and classified into Production / Bad Code / Disaster). Ready for Layer 2 Spec-Driven Architecture Refactor.
-> **SSOT for Behavioral Architecture:** [`docs/plans/phase10/pipeline_orchestration_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/pipeline_orchestration_spec.md) (All routing, 7 canonical states, 6 domain pipeline step-by-step function inventories, ownership rules, and button orchestration live strictly in the spec).
+> **SSOT for Behavioral Architecture:** [`docs/plans/phase10/pipeline_orchestration_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/pipeline_orchestration_spec.md) (Backend routing, 7 canonical states, 6 domain pipeline step-by-step function inventories, Realtime PTT silence-gating & ghost audio protection, ownership rules, and button orchestration live strictly in the spec).
+> **SSOT for Frontend Integration:** [`docs/plans/phase10/frontend_orchestration_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/frontend_orchestration_spec.md) (Tauri IPC discrete action mapping, 7-state TypeScript alignment, VoiceSessionContext, and mode-adaptive UI controls).
 > **Checklist Tracker:** [`docs/plans/phase10/function_inventory_checklist.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/function_inventory_checklist.md) (572 of 572 functions audited).
 
 ---
@@ -123,14 +124,28 @@ The refactor executes in 3 distinct, gated layers:
 - Backend implementation is strictly driven by and gated on the finalized behavioral specification ([`docs/plans/phase10/pipeline_orchestration_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/pipeline_orchestration_spec.md)).
 - Deconstruct God files into dedicated domain modules (`modular_passive.rs`, `modular_ptt.rs`, `realtime_passive.rs`, `realtime_ptt.rs`, per-event loop handlers).
 
-#### Layer 3: System Wiring, Polish & Legacy Purge
-- Wire thin IPC adapters (`orchestration.rs`) to the new domain handlers.
-- Purge all obsolete shims, dead code, and legacy paths.
-- Perform comprehensive end-to-end regression validation.
+#### Layer 3: Testing and Validation
+- Integrate the Phase 10 backend with the frontend via Tauri IPC.
+- Replace placeholder event handlers and stubs with the new event-driven architecture.
+- Validate that all 572 functions execute correctly within the new state machine and routing logic.
+- Ensure full TypeScript integration for Tauri commands and events.
 
 ---
 
 ### 5.4 Applied Hotfixes & System Health
 - **Audio Device Resolution Unification (`services/audio/device.rs` & `ipc/audio.rs`):** Removed hardcoded ALSA host override on Linux in `device.rs` to unify with `cpal::default_host()`, ensuring PipeWire/PulseAudio devices (including headsets) match correctly. Implemented and registered `list_output_devices` IPC command.
 - **Frontend Voice Session Persistence (`shared/context/VoiceSessionContext.tsx`):** Lifted voice session state (`interactionState`, `isEngaged`, `dialogueHistory`, `pttStatus`, Tauri event listeners) to a root `<VoiceSessionProvider>` in `App.tsx`. Prevents unmounting and UI state resets when navigating between `/`, `/settings`, `/history`, and `/memory`.
+- **Phase 10 Layer 2 Sprint 1 Complete:** State surgery finalized (`InteractionOwner` reduced to Assistant & Dictation, `PttState` removed from `AppState`, `InteractionState` canonical 7 states, `VoxEvent::SpeechEnd` includes `audio_buffer: Vec<f32>`). New skeletons created (`context.rs`, `state_machine.rs`, `assistant.rs`, domain modules). Zero compilation errors or warnings on `cargo check`.
+- **Phase 10 Layer 2 Sprint 2 Complete:** Audio Engine extracted to `services/audio/engine.rs` (`start_audio_engine` / `stop_audio_engine`), deconstructed with sub-50-line helpers and single docstrings. `ipc/pipeline/engine_launch.rs` and `ipc/pipeline/lifecycle.rs::stop_engine` reduced to pure 1-line dispatchers. Zero errors or warnings on `cargo check`.
+- **Phase 10 Layer 2 Sprint 3 Complete:** LLM and TTS lifecycles promoted into `services/llm/actor.rs` (`warm_up_llm`, `cool_down_llm`, `create_llm_provider`) and `services/tts/actor.rs` (`warm_up_tts`, `cool_down_tts`, `create_tts_provider`, `resolve_reference_audio`). Deleted `services/pipeline/llm_lifecycle.rs` and `tts_lifecycle.rs`. Zero errors or warnings on `cargo check`.
+- **Phase 10 Layer 2 Sprint 4 Complete:** VAD Actor rewritten in `services/vad/actor.rs` (`VadActorState`, sub-50-line helpers, zero per-line comments, strict warning logging on channel send failures). Unit tests passing. Zero errors or warnings on `cargo check`.
+- **Phase 10 Layer 2 Sprint 5 Complete:** Central Router (`services/pipeline/router.rs`) implemented; deleted legacy `event_loop.rs` (1145-line God loop), `handlers.rs`, `types.rs`, and `tests.rs`; purged `PipelineOrchestrator`. Zero errors or warnings on `cargo check`.
+- **Phase 10 Layer 2 Sprint 6 Complete:** Modular Passive Domain (`services/pipeline/modular_passive.rs`) implemented with complete session control (`start_session`, `pause_session`, `resume_session`, `end_session`) and discrete event handlers. Zero errors or warnings on `cargo check`.
+- **Phase 10 Layer 2 Sprint 7 Complete:** Modular PTT Domain (`services/pipeline/modular_ptt.rs`) implemented with PTT hold-to-talk triggers (`handle_ptt_start`, `handle_ptt_stop`, `handle_ptt_cancel`), discrete turn event handlers, and `Idle` resting state. Zero errors or warnings on `cargo check`.
+- **Phase 10 Layer 2 Sprint 8 Complete:** Realtime Domains (`services/pipeline/realtime_passive.rs` & `realtime_ptt.rs`) implemented with WebSocket provider lifecycle management, full barge-in support, and session caching; deleted `ipc/pipeline/realtime.rs`. Zero errors or warnings on `cargo check`.
+- **Phase 10 Layer 2 Sprint 9 Complete:** Unified Dictation Domain (`services/pipeline/dictation.rs`) implemented with hotkey recording, transcription, and direct OS clipboard/keystroke injection. Zero errors or warnings on `cargo check`.
+- **Phase 10 Layer 2 Sprint 10 Complete:** IPC Layer Wiring & Legacy Purge finalized. Consolidated `ipc/pipeline/dictation.rs` and `ipc/pipeline/assistant.rs`; consolidated `context.rs` & `state_machine.rs` into `services/pipeline/mod.rs`; pruned `ipc/dictation.rs`, `ipc/pipeline/lifecycle.rs`, and `ipc/pipeline/engine_launch.rs`. `services/pipeline/` strictly contains domain modules, `router.rs`, and `mod.rs`. Zero errors or warnings on `cargo check`.
+- **Phase 10 Layer 3 Frontend Refactor Complete:** Fully aligned TypeScript services (`eventsService.ts`, `pipelineService.ts`), root context (`VoiceSessionContext.tsx`), UI hooks (`useHomePage.ts`), and ambient surface components (`Home.tsx`, `AdvancedOrb.tsx`, `PipelineField.tsx`, `TrayApp.tsx`) to canonical 7 states (`Idle`, `Listening`, `UserSpeaking`, `Thinking`, `AssistantSpeaking`, `Paused`, `Error`) and discrete non-toggle Tauri IPC commands (`start_session`, `end_session`, `pause_session`, `resume_session`, `ptt_cancel`). Eliminated frontend mode branching. Zero compilation errors on `pnpm build` (`tsc && vite build`) and 100% tests passing across all suites.
+- **Phase 10 Layer 2 Domain Logic & Execution Architecture Complete:** Fully decoupled `app.state()` lookups from the 16ms VAD evaluation loop (`services/vad/actor.rs`). Implemented live STT ──► LLM ──► TTS generation chains with `ConversationManager` integration and `TtsClauseChunker` streaming in `services/pipeline/modular_passive.rs` and `services/pipeline/modular_ptt.rs`. Replaced blocking tokio `block_on` locks with non-blocking `try_lock()`. Implemented silence gating and local PCM pre-buffering in `services/pipeline/realtime_ptt.rs` to protect against ghost audio hallucinations in Gemini Live. Zero compiler errors on `cargo check --release` and `cargo clippy --all-targets`.
+
 

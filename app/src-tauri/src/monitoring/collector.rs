@@ -13,7 +13,6 @@ pub fn spawn_monitoring_collector(state: Arc<AppState>) {
         .spawn(move || {
             tracing::info!("[Monitoring] Collector worker started (10Hz).");
 
-            // Fetch static hardware context once
             let sys = sysinfo::System::new_with_specifics(
                 sysinfo::RefreshKind::new()
                     .with_memory(sysinfo::MemoryRefreshKind::everything())
@@ -23,15 +22,9 @@ pub fn spawn_monitoring_collector(state: Arc<AppState>) {
             let cpu_cores = sys.cpus().len() as u32;
 
             loop {
-                // Read current thread count from atomic (updated by system_monitor.rs at 1Hz)
                 let threads = state.latest_threads.load(Ordering::Relaxed);
-
                 let snapshot = collect_snapshot(&state, threads, total_ram_mb, cpu_cores);
-
-                // 2. Push to ringbuffer history
                 state.monitoring.push(snapshot);
-
-                // 3. Sleep until next tick (100ms = 10Hz)
                 thread::sleep(Duration::from_millis(100));
             }
         })
@@ -49,10 +42,7 @@ fn collect_snapshot(
         .unwrap_or_default()
         .as_millis() as u64;
 
-    // Get pipeline atomics (cheaper than locking the Mutex)
     let pa = &state.pipeline;
-
-    // Convert InteractionState enum from atomic u32
     let pipeline_state_u32 = pa.current_state_atomic.load(Ordering::Relaxed);
     let pipeline_state = match pipeline_state_u32 {
         0 => "Idle".to_string(),
@@ -63,12 +53,9 @@ fn collect_snapshot(
         _ => "Unknown".to_string(),
     };
 
-    // Get interaction owner
     let owner_enum: crate::core::state::InteractionOwner =
         state.owner.load(Ordering::Relaxed).into();
     let owner = format!("{:?}", owner_enum);
-
-    // Get buffer length from playback engine if it exists
     let buffer_samples = {
         if let Ok(lock) = state.engine.try_lock() {
             if let Some(engine) = lock.as_ref() {

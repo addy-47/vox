@@ -26,15 +26,8 @@ impl AudioResampler {
             window: WindowFunction::BlackmanHarris2,
         };
 
-        let inner = Async::<f32>::new_sinc(
-            ratio,
-            2.0,
-            &params,
-            chunk_size,
-            1,
-            FixedAsync::Input,
-        )
-        .map_err(|e| anyhow!("Failed to create rubato resampler: {:?}", e))?;
+        let inner = Async::<f32>::new_sinc(ratio, 2.0, &params, chunk_size, 1, FixedAsync::Input)
+            .map_err(|e| anyhow!("Failed to create rubato resampler: {:?}", e))?;
 
         let nbr_frames_needed = inner.input_frames_next();
         let resampler_in_buf = vec![vec![0.0f32; inner.input_frames_max()]; 1];

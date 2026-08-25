@@ -16,7 +16,6 @@ use std::time::Duration;
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::metrics::{MetricField, PipelineMetrics};
 use vox_lib::core::settings::SttProviderConfig;
-use vox_lib::core::state::InteractionOwner;
 use vox_lib::services::llm::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider};
 use vox_lib::services::stt::providers::{create_stt_provider, SttProvider};
 use vox_lib::services::utils::{count_words, is_devanagari, should_flush, transliterate_if_hi};
@@ -291,7 +290,6 @@ fn main() -> anyhow::Result<()> {
                             if !text.is_empty() && text != last_transcript {
                                 let _ = stt_event_tx.send(VoxEvent::TranscriptPartial {
                                     turn_id: tid,
-                                    owner: InteractionOwner::MainWindow,
                                     text: text.clone(),
                                 });
                                 last_transcript = text;
@@ -311,11 +309,7 @@ fn main() -> anyhow::Result<()> {
                     let _ = provider.reset_state();
 
                     if !text.is_empty() {
-                        let _ = stt_event_tx.send(VoxEvent::TranscriptFinal {
-                            turn_id: tid,
-                            owner: InteractionOwner::MainWindow,
-                            text,
-                        });
+                        let _ = stt_event_tx.send(VoxEvent::TranscriptFinal { turn_id: tid, text });
                     }
 
                     last_transcript.clear();

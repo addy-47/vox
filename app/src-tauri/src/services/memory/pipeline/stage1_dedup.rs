@@ -66,7 +66,9 @@ async fn claim_staged_items(conn: &Connection, now: i64) -> Result<Vec<Stage1Ite
 }
 
 /// Loads active DB facts and in-flight queue items into an in-memory collection map.
-async fn load_active_and_queue_facts(conn: &Connection) -> Result<HashMap<String, Vec<(String, String, String)>>> {
+async fn load_active_and_queue_facts(
+    conn: &Connection,
+) -> Result<HashMap<String, Vec<(String, String, String)>>> {
     let mut active_facts_map: HashMap<String, Vec<(String, String, String)>> = HashMap::new();
 
     let mut db_rows = conn
@@ -192,12 +194,9 @@ async fn dedup_item_against_active(
                 decision: "duplicate_dropped".to_string(),
                 rejection_reason: Some("exact_jaccard_match".to_string()),
             };
-            let _ = crate::persistence::mutations::write_candidate_audit(
-                conn,
-                item.id,
-                &[cand_log],
-            )
-            .await;
+            let _ =
+                crate::persistence::mutations::write_candidate_audit(conn, item.id, &[cand_log])
+                    .await;
         } else {
             if !matched_id.starts_with("item_") {
                 let _ = conn
@@ -241,12 +240,9 @@ async fn dedup_item_against_active(
                 decision: "superseded_existing".to_string(),
                 rejection_reason: None,
             };
-            let _ = crate::persistence::mutations::write_candidate_audit(
-                conn,
-                item.id,
-                &[cand_log],
-            )
-            .await;
+            let _ =
+                crate::persistence::mutations::write_candidate_audit(conn, item.id, &[cand_log])
+                    .await;
 
             active_facts_map
                 .entry(item.collection.clone())

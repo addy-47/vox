@@ -1,5 +1,4 @@
 pub mod audio;
-pub mod dictation;
 pub mod history;
 pub mod memory;
 pub mod memory_profiler;

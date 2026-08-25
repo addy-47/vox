@@ -6,7 +6,6 @@ use crate::core::settings::{
     get_setting_reload_policy, InteractionMode, SettingReloadPolicy, VoxSettings,
 };
 use crate::core::state::AppState;
-use crate::ipc::pipeline::{launch_engine, stop_engine};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -42,6 +41,9 @@ async fn handle_dictation_side_effects(
             .read()
             .map(|s| s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray)
             .unwrap_or(false);
+        state
+            .is_dictation_enabled
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
         let is_clickable = enabled && is_tray_mode;
         let menu_item_lock = state.hud_menu_item.lock().await;
         if let Some(ref live_i) = *menu_item_lock {
@@ -51,20 +53,6 @@ async fn handle_dictation_side_effects(
         }
 
         if !enabled {
-            state.owner.store(
-                crate::core::state::InteractionOwner::MainWindow as u32,
-                std::sync::atomic::Ordering::Relaxed,
-            );
-            if let Some(engine) = state.engine.lock().await.as_ref() {
-                if let Err(e) = engine
-                    .vad_tx
-                    .send(crate::core::state::VadCommand::UpdateOwner(
-                        crate::core::state::InteractionOwner::MainWindow,
-                    ))
-                {
-                    log::warn!("[Settings] Failed to send VadCommand::UpdateOwner: {}", e);
-                }
-            }
             crate::tray::destroy_tray_window(app);
 
             let is_engaged = state
@@ -72,9 +60,9 @@ async fn handle_dictation_side_effects(
                 .is_engaged
                 .load(std::sync::atomic::Ordering::Relaxed);
             if !is_engaged {
-                let app_clone = app.clone();
+                let state_clone = app.state::<std::sync::Arc<AppState>>().inner().clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = stop_engine(app_clone).await;
+                    let _ = crate::services::audio::stop_audio_engine(&state_clone).await;
                 });
             }
         } else {
@@ -82,8 +70,11 @@ async fn handle_dictation_side_effects(
                 let _ = crate::tray::ensure_tray_window(app);
             }
             let app_clone = app.clone();
+            let state_clone = app.state::<std::sync::Arc<AppState>>().inner().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = launch_engine(app_clone).await {
+                if let Err(e) =
+                    crate::services::audio::start_audio_engine(&app_clone, &state_clone).await
+                {
                     log::error!("[Settings] Failed to launch engine for dictation: {}", e);
                 }
             });
@@ -137,12 +128,12 @@ async fn handle_interaction_side_effects(
         if !dictation_enabled && !is_engaged && !is_passive {
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = stop_engine(app_clone).await;
+                let _ = crate::ipc::pipeline::stop_engine(app_clone).await;
             });
         } else if is_passive {
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = launch_engine(app_clone).await;
+                let _ = crate::ipc::pipeline::launch_engine(app_clone).await;
             });
         }
 
@@ -150,7 +141,7 @@ async fn handle_interaction_side_effects(
             .owner
             .load(std::sync::atomic::Ordering::Relaxed)
             .into();
-        if owner == crate::core::state::InteractionOwner::MainWindow {
+        if owner == crate::core::state::InteractionOwner::Assistant {
             if let Some(engine) = state.engine.lock().await.as_ref() {
                 if let Ok(mode) =
                     serde_json::from_value::<crate::core::settings::InteractionMode>(value.clone())
@@ -188,8 +179,8 @@ async fn handle_setting_side_effects(
         log::info!("[Settings] VAD backend changed. Hot-swapping 3-Tier Engine...");
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
-            let _ = stop_engine(app_clone.clone()).await;
-            let _ = launch_engine(app_clone).await;
+            let _ = crate::ipc::pipeline::stop_engine(app_clone.clone()).await;
+            let _ = crate::ipc::pipeline::launch_engine(app_clone).await;
         });
     }
 }
@@ -366,7 +357,7 @@ pub(crate) fn apply_setting_mutation(
             settings.stt.cloud = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid STT cloud config: {}", e))?;
         }
-        ("stt" | "asr", "provider") => {
+        ("stt", "provider") => {
             if let Ok(config) =
                 serde_json::from_value::<crate::core::settings::SttProviderConfig>(value.clone())
             {

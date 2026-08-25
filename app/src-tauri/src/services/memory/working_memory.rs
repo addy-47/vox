@@ -314,7 +314,10 @@ impl ConversationManager {
 
     /// Consolidates session history XML into the root System Message.
     fn consolidate_system_message(&mut self, session_history: &str) {
-        if session_history.is_empty() || self.messages.is_empty() || self.messages[0].role != Role::System {
+        if session_history.is_empty()
+            || self.messages.is_empty()
+            || self.messages[0].role != Role::System
+        {
             return;
         }
 
@@ -581,8 +584,7 @@ impl ConversationManager {
     }
 
     /// Handles idle pipeline transitions.
-    pub fn on_pipeline_idle(&mut self) {
-    }
+    pub fn on_pipeline_idle(&mut self) {}
 
     /// Cancels active opportunistic compaction on speech detection.
     pub fn on_speech_start(&mut self) {

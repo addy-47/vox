@@ -96,10 +96,9 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                     crate::core::constants::MemoryCollection::parse(&item.collection)
                         .map(|c| c.priority())
                         .unwrap_or(0);
-                let existing_priority =
-                    crate::core::constants::MemoryCollection::parse(match_coll)
-                        .map(|c| c.priority())
-                        .unwrap_or(0);
+                let existing_priority = crate::core::constants::MemoryCollection::parse(match_coll)
+                    .map(|c| c.priority())
+                    .unwrap_or(0);
 
                 if incoming_priority <= existing_priority {
                     let rel = vec![RelationEdge {
@@ -108,8 +107,7 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                         relation: PM_RELATION_SUPERSEDES.to_string(),
                         source: "Embedding".to_string(),
                     }];
-                    let rel_json =
-                        serde_json::to_string(&rel).unwrap_or_else(|_| "[]".to_string());
+                    let rel_json = serde_json::to_string(&rel).unwrap_or_else(|_| "[]".to_string());
 
                     conn.execute(
                         "UPDATE personal_memory_queue SET status = ?, vector = ?, relations_json = ? WHERE id = ?",
@@ -129,8 +127,7 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                         score: *sim,
                     };
                     let _ =
-                        crate::persistence::mutations::write_dedup_audit(conn, item.id, &log)
-                            .await;
+                        crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
                 } else {
                     for (m_id, _, _, _) in &soft_dups {
                         if !m_id.starts_with("item_") {
@@ -160,8 +157,7 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                         score: *sim,
                     };
                     let _ =
-                        crate::persistence::mutations::write_dedup_audit(conn, item.id, &log)
-                            .await;
+                        crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
                 }
             } else {
                 conn.execute(

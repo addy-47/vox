@@ -479,7 +479,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
 
                 if !reconnected {
                     log::error!("[GeminiLive] Max reconnection attempts reached. Terminating session orchestrator.");
-                    
+
                     // Clear the cache file since token is now invalid
                     let cache_path = crate::utils::paths::cache_dir().join("realtime_session.json");
                     if cache_path.exists() {
@@ -935,7 +935,6 @@ fn handle_gemini_server_message(
                     );
                     if let Err(e) = event_tx.send(VoxEvent::TranscriptFinal {
                         turn_id: 0,
-                        owner: crate::core::state::InteractionOwner::MainWindow,
                         text: text.to_string(),
                     }) {
                         log::warn!("[GeminiLive] Failed to send TranscriptFinal event: {:?}", e);

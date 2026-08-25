@@ -17,8 +17,11 @@ use crate::ipc::history::{
     commit_session_to_history, delete_session, get_sessions, get_transcript_history, get_turns,
 };
 use crate::ipc::pipeline::{
-    engage, get_realtime_session_cache, launch_engine, pause_pipeline, resume_pipeline,
-    start_realtime_session, stop_engine, stop_realtime_session, test_clip, test_clip_cancel,
+    copy_last_dictation_transcript, end_session, engage, get_dictation_settings,
+    get_last_dictation_transcript, get_realtime_session_cache, launch_engine, pause_pipeline,
+    pause_session, ptt_cancel, ptt_start, ptt_stop, resume_pipeline, resume_session,
+    start_realtime_session, start_session, stop_engine, stop_realtime_session, test_clip,
+    test_clip_cancel,
 };
 use crate::ipc::settings::{
     check_llm_provider_health, check_stt_provider_health, check_tts_provider_health, get_settings,
@@ -29,7 +32,6 @@ use crate::ipc::tray::{
     hide_tray_window, set_hud_ignore_cursor, show_main_window, sync_hud_visibility,
     toggle_hud_visibility, update_interaction_mode,
 };
-use crate::services::ptt::{ptt_start, ptt_stop};
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
 
@@ -81,7 +83,7 @@ pub fn run() {
             // ── Background Manifest Caching (fetches once at boot) ──────────────────
             tauri::async_runtime::spawn(async {
                 let cache_dir = crate::utils::paths::cache_dir();
-                
+
                 // Fetch and cache App Manifest
                 match crate::setup::manifest::AppManifest::fetch().await {
                     Ok(manifest) => {
@@ -225,7 +227,7 @@ pub fn run() {
             // ── 1.5 Monitoring Collector ──────────────────────────────────────────
             let state_arc = std::sync::Arc::new(app_state);
             app.manage(state_arc.clone());
-            
+
             crate::monitoring::collector::spawn_monitoring_collector(std::sync::Arc::clone(&state_arc));
             spawn_system_monitor(app.handle().clone());
             crate::monitoring::telemetry_emitter::spawn_telemetry_emitter(app.handle().clone());
@@ -292,7 +294,7 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            
+
             // ── 1.7.5 CPU Governor Check (Linux only — warns if not "performance") ──
             {
                 let state: tauri::State<'_, std::sync::Arc<AppState>> = app.state();
@@ -357,7 +359,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let (dictation_enabled, dictation_mode, setup_completed) = {
                     let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
-                    
+
                     // ── 3.1 Auto-detect existing models ────────────────────────────
                     let mut settings = state.settings.write().unwrap();
                     if !settings.system.setup_completed && wizard::check_setup_health() {
@@ -365,7 +367,7 @@ pub fn run() {
                         settings.system.setup_completed = true;
                         let _ = settings.save();
                     }
-                    
+
                     (
                         settings.dictation.enabled,
                         settings.dictation.interaction_mode.clone(),
@@ -412,7 +414,7 @@ pub fn run() {
                     log::info!("[Window] Close requested for main, hiding instead of closing window.");
                     let _ = window.hide();
                     api.prevent_close();
-                    
+
                     // Evaluate engine offload if the main window is hidden
                     let handle = window.app_handle().clone();
                     tauri::async_runtime::spawn(async move {
@@ -421,7 +423,7 @@ pub fn run() {
                             let s = state.settings.read().unwrap();
                             (s.dictation.enabled, state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed))
                         };
-                        
+
                         if !dictation_enabled && !is_engaged {
                             log::info!("[Window] Main window hidden, Dictation is disabled, and app is disengaged. Offloading engine...");
                             let _ = crate::ipc::pipeline::stop_engine(handle).await;
@@ -436,6 +438,10 @@ pub fn run() {
             launch_engine,
             stop_engine,
             engage,
+            start_session,
+            end_session,
+            pause_session,
+            resume_session,
             test_clip,
             test_clip_cancel,
             start_realtime_session,
@@ -463,15 +469,16 @@ pub fn run() {
             reset_settings,
             ptt_start,
             ptt_stop,
+            ptt_cancel,
             get_transcript_history,
             commit_session_to_history,
             get_sessions,
             get_turns,
             delete_session,
             // Dictation
-            crate::ipc::dictation::get_dictation_settings,
-            crate::ipc::dictation::get_last_dictation_transcript,
-            crate::ipc::dictation::copy_last_dictation_transcript,
+            get_dictation_settings,
+            get_last_dictation_transcript,
+            copy_last_dictation_transcript,
             // Voices
             crate::ipc::voices::list_voices,
             crate::ipc::voices::fetch_edge_tts_voices,
@@ -527,7 +534,7 @@ pub fn run() {
                 tauri::RunEvent::Exit => {
                     log::info!("[Vox] Shutting down engine...");
                     let state: State<'_, std::sync::Arc<AppState>> = app_handle.state();
-                
+
                     // Clear engine (this will drop VoxEngine and close channels)
                     let mut engine_lock = state.engine.blocking_lock();
                     if let Some(engine) = engine_lock.take() {
@@ -535,7 +542,7 @@ pub fn run() {
                         let _ = engine.stt_tx.send(crate::services::stt::SttCommand::Shutdown);
                         let _ = engine.vad_tx.send(crate::core::state::VadCommand::Shutdown);
                     }
-                
+
                     // Gracefully signal background memory worker to flush and shutdown
                     {
                         let mut memory_tx_lock = state.memory_tx.lock();

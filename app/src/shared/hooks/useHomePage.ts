@@ -8,21 +8,33 @@ import {
 } from "@/shared/context/VoiceSessionContext";
 
 export type { InteractionMode, DialogueTurn };
-export type AmbientMood = "calm" | "active" | "thinking" | "speaking";
+export type AmbientMood =
+  | "Dormant"
+  | "Idle"
+  | "Listening"
+  | "Thinking"
+  | "Speaking"
+  | "Paused"
+  | "Error";
 
-export function toMood(state: InteractionState, sleeping: boolean): AmbientMood {
-  if (sleeping) return "calm";
+export function toMood(state: InteractionState, isEngaged: boolean): AmbientMood {
+  if (!isEngaged) return "Dormant";
   switch (state) {
-    case "UserSpeaking":
-      return "active";
-    case "Thinking":
-      return "thinking";
-    case "AssistantSpeaking":
-      return "speaking";
+    case "Idle":
+      return "Idle";
     case "Listening":
-      return "active";
+    case "UserSpeaking":
+      return "Listening";
+    case "Thinking":
+      return "Thinking";
+    case "AssistantSpeaking":
+      return "Speaking";
+    case "Paused":
+      return "Paused";
+    case "Error":
+      return "Error";
     default:
-      return "calm";
+      return "Dormant";
   }
 }
 
@@ -41,16 +53,20 @@ export function toStatusLabel(
   if (ptt === "RECORDING") return "Recording";
   if (ptt === "PROCESSING") return "Processing";
   switch (state) {
+    case "Idle":
+      return "Ready";
+    case "Listening":
+      return "Ready";
     case "UserSpeaking":
       return "Listening";
     case "Thinking":
       return "Thinking";
     case "AssistantSpeaking":
       return "Speaking";
-    case "Listening":
-      return "Ready";
-    case "Interrupted":
-      return "Interrupted";
+    case "Paused":
+      return "Paused";
+    case "Error":
+      return "Error";
     default:
       return "Ready";
   }

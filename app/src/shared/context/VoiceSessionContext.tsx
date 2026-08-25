@@ -1,13 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  engage,
-  startRealtimeSession,
-  stopRealtimeSession,
-  pausePipeline,
-  resumePipeline,
+  startSession,
+  endSession,
+  pauseSession,
+  resumeSession,
   pttStart,
   pttStop,
+  pttCancel,
   testClip,
   testClipCancel,
   getRealtimeSessionCache,
@@ -27,6 +27,7 @@ export interface DialogueTurn {
 }
 
 export interface VoiceSessionContextValue {
+  // State
   interactionState: InteractionState;
   setInteractionState: (state: InteractionState) => void;
   interactionMode: InteractionMode;
@@ -51,12 +52,29 @@ export interface VoiceSessionContextValue {
   errorAlert: string | null;
   setErrorAlert: (error: string | null) => void;
   isThinking: boolean;
+
+  // Discrete UI Actions
+  engage: () => Promise<void>;
+  disengage: () => Promise<void>;
+  pause: () => Promise<void>;
+  resume: () => Promise<void>;
+
+  // PTT Actions
+  handlePttStart: () => Promise<void>;
+  handlePttStop: () => Promise<void>;
+  handlePttCancel: () => Promise<void>;
+
+  // Aliases for compatibility
   handleEngage: () => Promise<void>;
   handleEnd: () => Promise<void>;
   handlePause: () => Promise<void>;
   handleResume: () => Promise<void>;
   togglePtt: () => Promise<void>;
+
+  // Clip Testing & Reset
   handleTestClip: (clipId: string) => Promise<void>;
+  clearHistory: () => void;
+  dismissError: () => void;
 }
 
 const VoiceSessionContext = createContext<VoiceSessionContextValue | null>(null);
@@ -112,7 +130,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
   }, []);
 
-  const handleEngage = useCallback(async () => {
+  const engage = useCallback(async () => {
     archiveCurrentTurn();
     hasActiveTurnStarted.current = false;
     isEngagedRef.current = true;
@@ -125,22 +143,18 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     setTranscript("");
     setAssistantText("");
     try {
-      if (pipelineMode === "realtime") {
-        await startRealtimeSession();
-      } else {
-        await engage();
-      }
+      await startSession();
     } catch (err: any) {
-      console.error("[VoiceSession] Engage failed:", err);
+      console.error("[VoiceSession] Start session failed:", err);
       setErrorAlert(err?.message || "Voice engagement failed");
       isEngagedRef.current = false;
       setIsEngaged(false);
     } finally {
       setIsLaunching(false);
     }
-  }, [pipelineMode, archiveCurrentTurn]);
+  }, [archiveCurrentTurn]);
 
-  const handleEnd = useCallback(async () => {
+  const disengage = useCallback(async () => {
     hasActiveTurnStarted.current = false;
     isEngagedRef.current = false;
     setIsLaunching(true);
@@ -158,10 +172,8 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     try {
       if (wasTesting) {
         await testClipCancel();
-      } else if (pipelineMode === "realtime") {
-        await stopRealtimeSession();
       } else {
-        await engage();
+        await endSession();
       }
     } catch (err: any) {
       console.error("[VoiceSession] End session failed:", err);
@@ -169,13 +181,13 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     } finally {
       setIsLaunching(false);
     }
-  }, [pipelineMode, testingClip]);
+  }, [testingClip]);
 
-  const handlePause = useCallback(async () => {
+  const pause = useCallback(async () => {
     if (!isEngaged || isPaused) return;
     setIsPaused(true);
     try {
-      await pausePipeline();
+      await pauseSession();
     } catch (err: any) {
       console.error("[VoiceSession] Pause failed:", err);
       setErrorAlert(err?.message || "Pausing voice pipeline failed");
@@ -183,11 +195,11 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
   }, [isEngaged, isPaused]);
 
-  const handleResume = useCallback(async () => {
+  const resume = useCallback(async () => {
     if (!isEngaged || !isPaused) return;
     setIsPaused(false);
     try {
-      await resumePipeline();
+      await resumeSession();
     } catch (err: any) {
       console.error("[VoiceSession] Resume failed:", err);
       setErrorAlert(err?.message || "Resuming voice pipeline failed");
@@ -195,20 +207,44 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
   }, [isEngaged, isPaused]);
 
-  const togglePtt = useCallback(async () => {
+  const handlePttStart = useCallback(async () => {
+    if (!isEngaged || isPaused) return;
+    archiveCurrentTurn();
+    try {
+      await pttStart();
+    } catch (err: any) {
+      console.error("[VoiceSession] PTT start failed:", err);
+      setErrorAlert(err?.message || "PTT start failed");
+    }
+  }, [isEngaged, isPaused, archiveCurrentTurn]);
+
+  const handlePttStop = useCallback(async () => {
     if (!isEngaged || isPaused) return;
     try {
-      if (pttStatus === "IDLE") {
-        archiveCurrentTurn();
-        await pttStart("MainWindow");
-      } else {
-        await pttStop("MainWindow");
-      }
+      await pttStop();
     } catch (err: any) {
-      console.error("[VoiceSession] PTT toggle failed:", err);
-      setErrorAlert(err?.message || "PTT toggle failed");
+      console.error("[VoiceSession] PTT stop failed:", err);
+      setErrorAlert(err?.message || "PTT stop failed");
     }
-  }, [isEngaged, isPaused, pttStatus, archiveCurrentTurn]);
+  }, [isEngaged, isPaused]);
+
+  const handlePttCancel = useCallback(async () => {
+    if (!isEngaged) return;
+    try {
+      await pttCancel();
+    } catch (err: any) {
+      console.error("[VoiceSession] PTT cancel failed:", err);
+    }
+  }, [isEngaged]);
+
+  const togglePtt = useCallback(async () => {
+    if (!isEngaged || isPaused) return;
+    if (pttStatus === "IDLE") {
+      await handlePttStart();
+    } else {
+      await handlePttStop();
+    }
+  }, [isEngaged, isPaused, pttStatus, handlePttStart, handlePttStop]);
 
   const handleTestClip = useCallback(async (clipId: string) => {
     if (isEngaged) return;
@@ -228,6 +264,15 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
   }, [isEngaged, archiveCurrentTurn]);
 
+  const clearHistory = useCallback(() => {
+    setDialogueHistory([]);
+    turnIdCounter.current = 0;
+  }, []);
+
+  const dismissError = useCallback(() => {
+    setErrorAlert(null);
+  }, []);
+
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -238,23 +283,27 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
           e.preventDefault();
           if (!isSpacePressedRef.current) {
             isSpacePressedRef.current = true;
-            archiveCurrentTurn();
-            pttStart("MainWindow").catch((err) => {
-              console.error("[VoiceSession] PTT start failed:", err);
+            handlePttStart().catch(() => {
               isSpacePressedRef.current = false;
             });
           }
         }
+      } else if (e.key === "Escape") {
+        if (interactionMode === "PTT" && isEngaged && pttStatus === "RECORDING") {
+          e.preventDefault();
+          isSpacePressedRef.current = false;
+          handlePttCancel();
+        }
       } else if (key === "s") {
         e.preventDefault();
-        if (isEngaged) handleEnd();
-        else handleEngage();
+        if (isEngaged) disengage();
+        else engage();
       } else if (key === "p") {
         e.preventDefault();
-        handlePause();
+        pause();
       } else if (key === "r") {
         e.preventDefault();
-        handleResume();
+        resume();
       }
     };
 
@@ -263,7 +312,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
         isSpacePressedRef.current = false;
         if (interactionMode === "PTT" && isEngaged && !isPaused) {
           e.preventDefault();
-          pttStop("MainWindow").catch((err) => console.error("[VoiceSession] PTT stop failed:", err));
+          handlePttStop();
         }
       }
     };
@@ -271,7 +320,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     const handleBlur = () => {
       if (isSpacePressedRef.current && interactionMode === "PTT" && isEngaged && !isPaused) {
         isSpacePressedRef.current = false;
-        pttStop("MainWindow").catch(() => {});
+        handlePttStop();
       }
     };
 
@@ -283,7 +332,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [isEngaged, isPaused, interactionMode, handleEngage, handleEnd, handlePause, handleResume, archiveCurrentTurn]);
+  }, [isEngaged, isPaused, interactionMode, pttStatus, engage, disengage, pause, resume, handlePttStart, handlePttStop, handlePttCancel]);
 
   // Session Cache Check
   useEffect(() => {
@@ -512,12 +561,21 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     errorAlert,
     setErrorAlert,
     isThinking,
-    handleEngage,
-    handleEnd,
-    handlePause,
-    handleResume,
+    engage,
+    disengage,
+    pause,
+    resume,
+    handlePttStart,
+    handlePttStop,
+    handlePttCancel,
+    handleEngage: engage,
+    handleEnd: disengage,
+    handlePause: pause,
+    handleResume: resume,
     togglePtt,
     handleTestClip,
+    clearHistory,
+    dismissError,
   };
 
   return <VoiceSessionContext.Provider value={value}>{children}</VoiceSessionContext.Provider>;
