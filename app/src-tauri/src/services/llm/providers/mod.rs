@@ -20,6 +20,7 @@ pub use openai_compat::OpenAiCompatProvider;
 
 use crate::services::llm::types::{GenerationRequest, LlmError, ProviderCapabilities};
 
+/// Common contract implemented by all local and remote LLM providers.
 pub trait LlmProvider: Send + Sync {
     /// Submit a provider-neutral generation request; stream tokens via `tx`.
     fn generate<'a>(
@@ -33,7 +34,7 @@ pub trait LlmProvider: Send + Sync {
     /// Returns static or dynamic capabilities of this provider.
     fn capabilities(&self) -> &ProviderCapabilities;
 
-    /// Returns true if the provider is healthy / reachable.
+    /// Returns true if the provider is healthy and reachable.
     fn health_check(&self) -> bool;
 
     /// Returns list of model IDs the provider can serve.
@@ -48,6 +49,7 @@ pub trait LlmProvider: Send + Sync {
     }
 }
 
+/// Identifies the runtime engine type of an LLM provider.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {

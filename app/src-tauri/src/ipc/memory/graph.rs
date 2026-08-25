@@ -3,6 +3,7 @@ use crate::persistence::db::VoxDb;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+/// Topology node representing a single fact entity in the memory graph.
 #[derive(Debug, Serialize, Clone)]
 pub struct MemoryNodeTopology {
     pub id: String,
@@ -12,6 +13,7 @@ pub struct MemoryNodeTopology {
     pub fact: Option<String>,
 }
 
+/// Topology edge representing a relational connection between two memory nodes.
 #[derive(Debug, Serialize, Clone)]
 pub struct MemoryEdgeTopology {
     pub id: i64,
@@ -21,6 +23,7 @@ pub struct MemoryEdgeTopology {
     pub created_at: i64,
 }
 
+/// Complete graph topology payload with atomic version counter.
 #[derive(Debug, Serialize, Clone)]
 pub struct MemoryGraphPayload {
     pub version: u64,
@@ -28,12 +31,14 @@ pub struct MemoryGraphPayload {
     pub edges: Vec<MemoryEdgeTopology>,
 }
 
+/// Query filter for memory graph topology extraction.
 #[derive(Debug, Deserialize, Clone)]
 pub struct MemoryGraphQueryFilter {
     pub collections: Option<Vec<String>>,
     pub include_inactive: Option<bool>,
 }
 
+/// Detailed descriptor for a single memory fact node and its adjacent edges.
 #[derive(Debug, Serialize, Clone)]
 pub struct MemoryFactDetail {
     pub id: String,
@@ -47,6 +52,7 @@ pub struct MemoryFactDetail {
     pub outgoing_relations: Vec<MemoryEdgeTopology>,
 }
 
+/// Aggregate memory subsystem statistics for sessions, episodes, and queue sizes.
 #[derive(Debug, Serialize, Clone)]
 pub struct MemoryStats {
     pub pending_sessions: u32,
@@ -56,6 +62,7 @@ pub struct MemoryStats {
     pub history_entries: u32,
 }
 
+/// Retrieve the current monotonic memory graph version.
 #[tauri::command]
 pub async fn get_graph_version(state: State<'_, std::sync::Arc<AppState>>) -> Result<u64, String> {
     Ok(state
@@ -64,6 +71,77 @@ pub async fn get_graph_version(state: State<'_, std::sync::Arc<AppState>>) -> Re
         .load(std::sync::atomic::Ordering::SeqCst))
 }
 
+fn build_topology_query(filter: Option<&MemoryGraphQueryFilter>) -> (String, Vec<turso::Value>) {
+    let include_inactive = filter.and_then(|f| f.include_inactive).unwrap_or(false);
+    let collections = filter.and_then(|f| f.collections.as_ref());
+
+    match collections {
+        Some(cols) if !cols.is_empty() => {
+            let placeholders = cols.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let base = if include_inactive {
+                format!(
+                    "SELECT f.id, f.collection, f.created_at, 
+                            EXISTS(SELECT 1 FROM memory_relations r WHERE r.to_id = f.id AND r.relation = 'SUPERSEDES') as is_superseded,
+                            f.fact
+                     FROM memory_facts f
+                     WHERE f.fact != '' AND f.collection IN ({})
+                     ORDER BY f.collection, f.created_at DESC",
+                    placeholders
+                )
+            } else {
+                format!(
+                    "SELECT f.id, f.collection, f.created_at, 0 as is_superseded, f.fact
+                     FROM memory_facts f
+                     WHERE f.fact != '' AND f.id NOT IN (SELECT to_id FROM memory_relations WHERE relation = 'SUPERSEDES')
+                       AND f.collection IN ({})
+                     ORDER BY f.collection, f.created_at DESC",
+                    placeholders
+                )
+            };
+            let vals = cols.iter().map(|c| c.clone().into()).collect();
+            (base, vals)
+        }
+        _ => {
+            let base = if include_inactive {
+                "SELECT f.id, f.collection, f.created_at, 
+                        EXISTS(SELECT 1 FROM memory_relations r WHERE r.to_id = f.id AND r.relation = 'SUPERSEDES') as is_superseded,
+                        f.fact
+                 FROM memory_facts f
+                 WHERE f.fact != ''
+                 ORDER BY f.collection, f.created_at DESC"
+                    .to_string()
+            } else {
+                "SELECT f.id, f.collection, f.created_at, 0 as is_superseded, f.fact
+                 FROM memory_facts f
+                 WHERE f.fact != '' AND f.id NOT IN (SELECT to_id FROM memory_relations WHERE relation = 'SUPERSEDES')
+                 ORDER BY f.collection, f.created_at DESC"
+                    .to_string()
+            };
+            (base, Vec::new())
+        }
+    }
+}
+
+async fn fetch_memory_relations(
+    conn: &turso::Connection,
+    sql: &str,
+    params: impl turso::IntoParams,
+) -> Result<Vec<MemoryEdgeTopology>, String> {
+    let mut rel_rows = conn.query(sql, params).await.map_err(|e| e.to_string())?;
+    let mut edges = Vec::new();
+    while let Some(row) = rel_rows.next().await.map_err(|e| e.to_string())? {
+        edges.push(MemoryEdgeTopology {
+            id: row.get(0).map_err(|e| e.to_string())?,
+            from_id: row.get(1).map_err(|e| e.to_string())?,
+            to_id: row.get(2).map_err(|e| e.to_string())?,
+            relation: row.get(3).map_err(|e| e.to_string())?,
+            created_at: row.get(4).map_err(|e| e.to_string())?,
+        });
+    }
+    Ok(edges)
+}
+
+/// Retrieve the full memory graph topology filtered by collection or active status.
 #[tauri::command]
 pub async fn get_memory_graph_topology(
     state: State<'_, std::sync::Arc<AppState>>,
@@ -74,26 +152,11 @@ pub async fn get_memory_graph_topology(
         .await
         .map_err(|e| format!("DB open failed: {}", e))?;
 
-    let include_inactive = filter
-        .as_ref()
-        .and_then(|f| f.include_inactive)
-        .unwrap_or(false);
-
-    let query_str = if include_inactive {
-        "SELECT f.id, f.collection, f.created_at, 
-                EXISTS(SELECT 1 FROM memory_relations r WHERE r.to_id = f.id AND r.relation = 'SUPERSEDES') as is_superseded,
-                f.fact
-         FROM memory_facts f
-         WHERE f.fact != ''
-         ORDER BY f.collection, f.created_at DESC"
-    } else {
-        "SELECT f.id, f.collection, f.created_at, 0 as is_superseded, f.fact
-         FROM memory_facts f
-         WHERE f.fact != '' AND f.id NOT IN (SELECT to_id FROM memory_relations WHERE relation = 'SUPERSEDES')
-         ORDER BY f.collection, f.created_at DESC"
-    };
-
-    let mut rows = conn.query(query_str, ()).await.map_err(|e| e.to_string())?;
+    let (query_str, params) = build_topology_query(filter.as_ref());
+    let mut rows = conn
+        .query(&query_str, params)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let mut nodes = Vec::new();
     while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
@@ -108,24 +171,12 @@ pub async fn get_memory_graph_topology(
         });
     }
 
-    let mut rel_rows = conn
-        .query(
-            "SELECT id, from_id, to_id, relation, created_at FROM memory_relations ORDER BY id ASC",
-            (),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let mut edges = Vec::new();
-    while let Some(row) = rel_rows.next().await.map_err(|e| e.to_string())? {
-        edges.push(MemoryEdgeTopology {
-            id: row.get(0).map_err(|e| e.to_string())?,
-            from_id: row.get(1).map_err(|e| e.to_string())?,
-            to_id: row.get(2).map_err(|e| e.to_string())?,
-            relation: row.get(3).map_err(|e| e.to_string())?,
-            created_at: row.get(4).map_err(|e| e.to_string())?,
-        });
-    }
+    let edges = fetch_memory_relations(
+        &conn,
+        "SELECT id, from_id, to_id, relation, created_at FROM memory_relations ORDER BY id ASC",
+        (),
+    )
+    .await?;
 
     let version = state
         .memory
@@ -139,6 +190,7 @@ pub async fn get_memory_graph_topology(
     })
 }
 
+/// Retrieve detailed information for a single memory fact by ID.
 #[tauri::command]
 pub async fn get_memory_fact_detail(
     _state: State<'_, std::sync::Arc<AppState>>,
@@ -181,41 +233,19 @@ pub async fn get_memory_fact_detail(
         s_rows.next().await.map_err(|e| e.to_string())?.is_some()
     };
 
-    let mut inc_rows = conn
-        .query(
-            "SELECT id, from_id, to_id, relation, created_at FROM memory_relations WHERE to_id = ? ORDER BY id ASC",
-            (id.clone(),),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-    let mut incoming_relations = Vec::new();
-    while let Some(r) = inc_rows.next().await.map_err(|e| e.to_string())? {
-        incoming_relations.push(MemoryEdgeTopology {
-            id: r.get(0).map_err(|e| e.to_string())?,
-            from_id: r.get(1).map_err(|e| e.to_string())?,
-            to_id: r.get(2).map_err(|e| e.to_string())?,
-            relation: r.get(3).map_err(|e| e.to_string())?,
-            created_at: r.get(4).map_err(|e| e.to_string())?,
-        });
-    }
+    let incoming_relations = fetch_memory_relations(
+        &conn,
+        "SELECT id, from_id, to_id, relation, created_at FROM memory_relations WHERE to_id = ? ORDER BY id ASC",
+        (id.clone(),),
+    )
+    .await?;
 
-    let mut out_rows = conn
-        .query(
-            "SELECT id, from_id, to_id, relation, created_at FROM memory_relations WHERE from_id = ? ORDER BY id ASC",
-            (id.clone(),),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-    let mut outgoing_relations = Vec::new();
-    while let Some(r) = out_rows.next().await.map_err(|e| e.to_string())? {
-        outgoing_relations.push(MemoryEdgeTopology {
-            id: r.get(0).map_err(|e| e.to_string())?,
-            from_id: r.get(1).map_err(|e| e.to_string())?,
-            to_id: r.get(2).map_err(|e| e.to_string())?,
-            relation: r.get(3).map_err(|e| e.to_string())?,
-            created_at: r.get(4).map_err(|e| e.to_string())?,
-        });
-    }
+    let outgoing_relations = fetch_memory_relations(
+        &conn,
+        "SELECT id, from_id, to_id, relation, created_at FROM memory_relations WHERE from_id = ? ORDER BY id ASC",
+        (id.clone(),),
+    )
+    .await?;
 
     Ok(MemoryFactDetail {
         id,
@@ -230,6 +260,7 @@ pub async fn get_memory_fact_detail(
     })
 }
 
+/// Retrieve aggregate statistics for personal and episodic memory.
 #[tauri::command]
 pub async fn get_memory_stats(
     _state: State<'_, std::sync::Arc<AppState>>,

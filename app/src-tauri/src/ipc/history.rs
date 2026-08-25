@@ -20,7 +20,6 @@ pub async fn commit_session_to_history(
 ) -> Result<Vec<String>, String> {
     if !text.trim().is_empty() {
         let mut history = state.pipeline.transcript_history.lock();
-        // Prevent duplicate consecutive entries
         if history.front() != Some(&text) {
             history.push_front(text);
             let limit = {
@@ -36,8 +35,7 @@ pub async fn commit_session_to_history(
     Ok(history.iter().cloned().collect())
 }
 
-// ─── Persistence-Backed History Commands ─────────────────────────────────────
-
+/// Representation of a stored conversation session.
 #[derive(Debug, Serialize, Clone)]
 pub struct SessionRow {
     pub id: i64,
@@ -47,6 +45,7 @@ pub struct SessionRow {
     pub first_message: Option<String>,
 }
 
+/// Representation of a single conversation turn in a session.
 #[derive(Debug, Serialize, Clone)]
 pub struct TurnRow {
     pub id: i64,
@@ -101,7 +100,7 @@ pub async fn get_turns(
     state: State<'_, std::sync::Arc<AppState>>,
 ) -> Result<Vec<TurnRow>, String> {
     let db_path = crate::utils::paths::get().db.clone();
-    let _ = state; // holds the managed state lifetime
+    let _ = state;
 
     let conn = VoxDb::open_readonly(&db_path)
         .await
@@ -140,7 +139,7 @@ pub async fn delete_session(
     state: State<'_, std::sync::Arc<AppState>>,
 ) -> Result<(), String> {
     let db_path = crate::utils::paths::get().db.clone();
-    let _ = state; // holds the managed state lifetime
+    let _ = state;
 
     let conn = VoxDb::open(&db_path)
         .await

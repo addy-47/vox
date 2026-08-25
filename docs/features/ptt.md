@@ -33,7 +33,7 @@ pub enum InteractionMode {
 
 ```rust
 pub struct InteractionSettings {
-    pub main_app_mode: InteractionMode,  // Main window behavior
+    pub mode: InteractionMode,           // Main window behavior
     pub auto_sleep_timeout: u32,         // Dormancy timeout in seconds
     pub pipeline_mode: PipelineMode,     // Modular or Realtime
 }

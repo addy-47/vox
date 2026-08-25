@@ -7,8 +7,7 @@ use crate::core::state::AppState;
 use crate::utils::paths;
 use tauri::{AppHandle, Manager, State};
 
-// ─── Response Types ───────────────────────────────────────────────────────────
-
+/// Initial boot payload returned to the frontend during application initialization.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BootState {
     pub settings: VoxSettings,
@@ -16,6 +15,7 @@ pub struct BootState {
     pub settings_path: String,
 }
 
+/// Categorized catalog of available local and cloud AI models.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ModelCatalog {
     pub llm: Vec<crate::setup::manifest::ModelGroup>,
@@ -28,13 +28,7 @@ pub struct ModelCatalog {
     pub preset_colors: Vec<String>,
 }
 
-// ─── IPC Commands ─────────────────────────────────────────────────────────────
-
-/// Called by the frontend on mount.
-///
-/// Returns the full settings snapshot plus directory health status.
-/// The frontend should boot into a loading/splash state and render only
-/// after this resolves successfully.
+/// Called by the frontend on mount to load initial settings snapshot and model paths.
 #[tauri::command]
 pub async fn request_boot_state(app: AppHandle) -> Result<BootState, String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
@@ -55,6 +49,7 @@ pub async fn request_boot_state(app: AppHandle) -> Result<BootState, String> {
     })
 }
 
+/// Query the model manifest catalog filtered into distinct model categories.
 #[tauri::command]
 pub async fn request_model_catalog(app: AppHandle) -> Result<ModelCatalog, String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();

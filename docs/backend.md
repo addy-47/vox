@@ -343,8 +343,8 @@ Cold ──(engage)──→ Warm ──(auto-sleep timeout)──→ Cold
   └───────────────────(re-engage)───────────────────────┘
 ```
 
-- **Cold state**: 0 ONNX models loaded on boot (~50 MB base RAM). Audio engine auto-launches only if `tray_enabled == true`. Opening main window in passive mode does not load engine or ONNX models.
-- **Warm state**: LLM + TTS loaded on demand (`engage()`), query scope classifier lazy-loaded for spoken turn routing.
+- **Cold state**: 0 ONNX models loaded on boot (~50 MB base RAM). Audio engine auto-launches only if `tray_enabled == true`. Opening main window in passive mode does not load engine or ONNX models. STT provider (`EmbeddedSttProvider`) is lazy-loaded on-demand.
+- **Warm state**: STT, LLM + TTS loaded on demand (on first turn / `engage()`), query scope classifier lazy-loaded for spoken turn routing. Realtime S2S sessions bypass STT/LLM/TTS entirely (0 MB local inference models).
 - **Memory Pipeline Eviction**: Pipeline ONNX models (Embedder, NLI, Edge Classifier) lazy-load during 30s idle sweeps **only if pending queue items exist**, and evict back to 0 MB RAM on voice engagement (`PipelineActive`), disengage, or batch completion.
 - **Auto-sleep**: Offloads LLM/TTS after inactivity timeout.
 - **Shutdown**: Signal via channels + atomics → join threads → persistence flush.

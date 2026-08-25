@@ -247,17 +247,6 @@ export async function getMemoryStats(): Promise<MemoryStats | null> {
   }
 }
 
-/**
- * Triggers a manual memory pipeline consolidation cycle.
- */
-export async function triggerMemoryConsolidation(): Promise<number> {
-  try {
-    return await invoke<number>("trigger_memory_consolidation");
-  } catch (err) {
-    console.error("Failed to trigger memory consolidation:", err);
-    throw err;
-  }
-}
 
 /**
  * Compatibility wrapper for editing memory facts.

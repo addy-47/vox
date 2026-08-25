@@ -13,6 +13,7 @@ pub async fn run_pipeline_cycle(conn: &Connection, cancel_flag: &Arc<AtomicBool>
     run_pipeline_cycle_with_id_seq(conn, cancel_flag, &uuid::Uuid::new_v4().to_string(), 0).await
 }
 
+/// Executes a single consolidation pipeline cycle with a specific run ID and batch sequence counter.
 pub async fn run_pipeline_cycle_with_id_seq(
     conn: &Connection,
     cancel_flag: &Arc<AtomicBool>,
@@ -107,6 +108,7 @@ pub async fn drain_pipeline_queue(
     drain_pipeline_queue_with_run_id(conn, cancel_flag, &uuid::Uuid::new_v4().to_string()).await
 }
 
+/// Drains the memory queue in a loop with a fixed run identifier.
 pub async fn drain_pipeline_queue_with_run_id(
     conn: &Connection,
     cancel_flag: &Arc<AtomicBool>,

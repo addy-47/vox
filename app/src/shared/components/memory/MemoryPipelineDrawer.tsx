@@ -27,7 +27,6 @@ import {
   MemoryNodeTopology,
   MemoryEdgeTopology,
   MemoryQueueSummary,
-  triggerMemoryConsolidation,
   togglePipelineProcessing,
   retryFailedQueue,
   retryFailedQueueItems,
@@ -66,6 +65,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
   const [retrying, setRetrying] = useState(false);
   const [lastProcessedCount, setLastProcessedCount] = useState<number | null>(null);
   const [lastRetriedCount, setLastRetriedCount] = useState<number | null>(null);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"pipeline" | "failed">("pipeline");
 
   // Settings Store SSOT for Pipeline Processing Enabled
@@ -136,11 +136,12 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
     setRunning(true);
     setLastProcessedCount(null);
     try {
-      const res = await triggerMemoryConsolidation();
-      setLastProcessedCount(res);
+      const nextState = await togglePipelineProcessing(false);
+      updateDraft("memory", "pipeline_processing_enabled", nextState);
+      await commitChanges();
       onRefresh();
     } catch (e) {
-      console.error("Pipeline sweep error:", e);
+      console.error("Pipeline processing enable error:", e);
     } finally {
       setRunning(false);
     }
@@ -160,23 +161,27 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
   const handleRetryAll = async () => {
     setRetrying(true);
     setLastRetriedCount(null);
+    setRetryError(null);
     try {
       const count = await retryFailedQueue();
       setLastRetriedCount(count);
       onRefresh();
     } catch (e) {
       console.error("Retry failed queue error:", e);
+      setRetryError(typeof e === "string" ? e : "Failed to retry queue items. Ensure pipeline processing is enabled.");
     } finally {
       setRetrying(false);
     }
   };
 
   const handleRetrySingleItem = async (itemId: number) => {
+    setRetryError(null);
     try {
       await retryFailedQueueItems([itemId]);
       onRefresh();
     } catch (e) {
       console.error("Retry item error:", e);
+      setRetryError(typeof e === "string" ? e : "Failed to retry item. Ensure pipeline processing is enabled.");
     }
   };
 
@@ -734,6 +739,13 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[11px] font-sans font-medium text-center flex items-center justify-center gap-1.5">
                       <Check size={14} />
                       <span>Added {lastRetriedCount} items back to the queue.</span>
+                    </div>
+                  )}
+
+                  {retryError && (
+                    <div className="p-2.5 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-[11px] font-sans font-medium text-center flex items-center justify-center gap-1.5">
+                      <AlertCircle size={14} />
+                      <span>{retryError}</span>
                     </div>
                   )}
                 </div>

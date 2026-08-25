@@ -1,10 +1,3 @@
-//! Chatterbox Remote TTS provider — offloads synthesis to GPU server.
-//!
-//! ## Transport Strategy
-//! Uses `reqwest::blocking::Client` to stream f32 mono PCM samples from `POST /tts/stream-pcm`.
-//! Since the synthesis runs on the dedicated `vox-tts-persistent` OS thread,
-//! blocking I/O is correct and keeps thread context switches low.
-
 use anyhow::{anyhow, Result};
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -18,17 +11,19 @@ const MIN_QUALITY_STEPS: u32 = 2;
 const MAX_QUALITY_STEPS: u32 = 10;
 const MIN_SPEED: f32 = 0.7;
 const MAX_SPEED: f32 = 2.0;
+const CHUNK_SIZE: usize = 2048;
 
+/// Remote speech synthesis provider offloading Chatterbox inference to a GPU server via HTTP streaming.
 pub struct ChatterboxRemoteProvider {
     client: reqwest::blocking::Client,
     endpoint: String,
     language: String,
     quality_steps: AtomicU32,
-    speed: AtomicU32, // Stored as f32 bits
+    speed: AtomicU32,
 }
 
 impl ChatterboxRemoteProvider {
-    /// Create a new Chatterbox Remote TTS provider.
+    /// Creates a new ChatterboxRemoteProvider and performs initial endpoint connectivity verification.
     pub fn new(
         endpoint: &str,
         language: &str,
@@ -37,7 +32,7 @@ impl ChatterboxRemoteProvider {
         remote_path: &str,
     ) -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
-            .timeout(None) // Disable timeout for streaming response
+            .timeout(None)
             .pool_max_idle_per_host(5)
             .build()
             .map_err(|e| anyhow!("Failed to build reqwest client: {}", e))?;
@@ -52,7 +47,6 @@ impl ChatterboxRemoteProvider {
             speed: AtomicU32::new(speed.clamp(MIN_SPEED, MAX_SPEED).to_bits()),
         };
 
-        // Note: We check health on construction to guarantee the endpoint is up.
         if !prov.health_check() {
             log::warn!(
                 "[ChatterboxRemote] Initial health check failed for {}",
@@ -64,7 +58,6 @@ impl ChatterboxRemoteProvider {
                 endpoint
             );
 
-            // Decoupled loading: Load models now that connection is established
             let load_url = format!("{}/models/load", endpoint.trim_end_matches('/'));
             let t3_path = format!(
                 "{}/models/tts/chatterbox/chatterbox-t3-mtl-q4_0.gguf",
@@ -114,7 +107,7 @@ impl ChatterboxRemoteProvider {
     }
 }
 
-/// Apply time-stretch via linear interpolation.
+/// Applies time-stretch playback rate scaling on 24kHz audio via linear interpolation.
 fn apply_speed_stretch(samples: &[f32], speed: f32) -> Vec<f32> {
     if (speed - 1.0).abs() < 0.01 || samples.is_empty() {
         return samples.to_vec();
@@ -136,23 +129,111 @@ fn apply_speed_stretch(samples: &[f32], speed: f32) -> Vec<f32> {
     out
 }
 
+/// Reads streaming binary f32 PCM samples from HTTP response and streams 2048-sample audio events.
+fn stream_pcm_response(
+    mut response: reqwest::blocking::Response,
+    speed: f32,
+    turn_id: u32,
+    cancel: &Arc<AtomicBool>,
+    event_tx: &Sender<VoxEvent>,
+) -> Result<usize> {
+    let mut byte_buf = Vec::new();
+    let mut raw_pcm_samples = Vec::new();
+    let mut total_samples_received = 0;
+    let mut buf = [0u8; 8192];
+
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            log::info!("[ChatterboxRemote] Synthesis cancelled for turn {}", turn_id);
+            return Ok(total_samples_received);
+        }
+
+        match response.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                byte_buf.extend_from_slice(&buf[..n]);
+
+                let num_samples = byte_buf.len() / 4;
+                if num_samples > 0 {
+                    let consumed_bytes = num_samples * 4;
+                    for chunk in byte_buf[..consumed_bytes].chunks_exact(4) {
+                        let val = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                        raw_pcm_samples.push(val);
+                    }
+                    byte_buf.drain(..consumed_bytes);
+                }
+
+                while raw_pcm_samples.len() >= CHUNK_SIZE {
+                    if cancel.load(Ordering::Relaxed) {
+                        return Ok(total_samples_received);
+                    }
+
+                    let chunk_samples = raw_pcm_samples.drain(..CHUNK_SIZE).collect::<Vec<f32>>();
+                    total_samples_received += chunk_samples.len();
+
+                    let stretched_chunk = if (speed - 1.0).abs() >= 0.01 {
+                        apply_speed_stretch(&chunk_samples, speed)
+                    } else {
+                        chunk_samples
+                    };
+
+                    if event_tx
+                        .send(VoxEvent::TtsChunk {
+                            turn_id,
+                            samples: stretched_chunk,
+                        })
+                        .is_err()
+                    {
+                        log::warn!("[ChatterboxRemote] event_tx closed, stopping synthesis");
+                        return Ok(total_samples_received);
+                    }
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(anyhow!("Error reading remote stream: {}", e)),
+        }
+    }
+
+    if !raw_pcm_samples.is_empty() {
+        total_samples_received += raw_pcm_samples.len();
+        let stretched_chunk = if (speed - 1.0).abs() >= 0.01 {
+            apply_speed_stretch(&raw_pcm_samples, speed)
+        } else {
+            raw_pcm_samples
+        };
+
+        if let Err(e) = event_tx.send(VoxEvent::TtsChunk {
+            turn_id,
+            samples: stretched_chunk,
+        }) {
+            log::warn!("[ChatterboxRemote] Error sending final chunk: {:?}", e);
+        }
+    }
+
+    Ok(total_samples_received)
+}
+
 impl TtsProvider for ChatterboxRemoteProvider {
+    /// Hot-updates the number of remote diffusion quality steps.
     fn set_quality_steps(&self, steps: u32) {
         let clamped = steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS);
         self.quality_steps.store(clamped, Ordering::Relaxed);
         log::info!("[ChatterboxRemote] Quality steps set to {}", clamped);
     }
 
+    /// Hot-updates the remote speech playback speed factor.
     fn set_speed(&self, speed: f32) {
         let clamped = speed.clamp(MIN_SPEED, MAX_SPEED);
         self.speed.store(clamped.to_bits(), Ordering::Relaxed);
         log::info!("[ChatterboxRemote] Speed set to {:.2}", clamped);
     }
 
+    /// Returns the TtsProviderKind::ChatterboxRemote variant identifier.
     fn kind(&self) -> TtsProviderKind {
         TtsProviderKind::ChatterboxRemote
     }
 
+    /// Performs HTTP GET health check against the remote server health endpoint.
     fn health_check(&self) -> bool {
         let url = format!("{}/health", self.endpoint.trim_end_matches('/'));
         match self
@@ -173,6 +254,7 @@ impl TtsProvider for ChatterboxRemoteProvider {
         }
     }
 
+    /// Submits synthesis job to remote GPU server and streams audio chunks back to local pipeline.
     fn synthesize_chunk(
         &self,
         text: &str,
@@ -180,11 +262,7 @@ impl TtsProvider for ChatterboxRemoteProvider {
         cancel: Arc<AtomicBool>,
         event_tx: Sender<VoxEvent>,
     ) -> Result<()> {
-        if cancel.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-
-        if text.trim().is_empty() {
+        if cancel.load(Ordering::Relaxed) || text.trim().is_empty() {
             return Ok(());
         }
 
@@ -205,8 +283,7 @@ impl TtsProvider for ChatterboxRemoteProvider {
 
         let url = format!("{}/tts/stream-pcm", self.endpoint.trim_end_matches('/'));
 
-        // Execute synchronous HTTP request
-        let mut response = self
+        let response = self
             .client
             .post(&url)
             .json(&payload)
@@ -223,93 +300,11 @@ impl TtsProvider for ChatterboxRemoteProvider {
             ));
         }
 
-        // Buffer and stream PCM samples in chunks of 2048 (clamped f32-LE bytes)
-        const CHUNK_SIZE: usize = 2048;
-        let mut byte_buf = Vec::new();
-        let mut raw_pcm_samples = Vec::new();
-        let mut total_samples_received = 0;
-        let mut buf = [0u8; 8192];
-
-        loop {
-            if cancel.load(Ordering::Relaxed) {
-                log::info!(
-                    "[ChatterboxRemote] Synthesis cancelled for turn {}",
-                    turn_id
-                );
-                return Ok(());
-            }
-
-            match response.read(&mut buf) {
-                Ok(0) => break, // EOF reached
-                Ok(n) => {
-                    byte_buf.extend_from_slice(&buf[..n]);
-
-                    // Decode bytes into f32-LE
-                    let num_samples = byte_buf.len() / 4;
-                    if num_samples > 0 {
-                        let consumed_bytes = num_samples * 4;
-                        for chunk in byte_buf[..consumed_bytes].chunks_exact(4) {
-                            let val = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-                            raw_pcm_samples.push(val);
-                        }
-                        byte_buf.drain(..consumed_bytes);
-                    }
-
-                    // Feed 2048 samples as chunks to the audio bridge
-                    while raw_pcm_samples.len() >= CHUNK_SIZE {
-                        if cancel.load(Ordering::Relaxed) {
-                            return Ok(());
-                        }
-
-                        let chunk_samples =
-                            raw_pcm_samples.drain(..CHUNK_SIZE).collect::<Vec<f32>>();
-                        total_samples_received += chunk_samples.len();
-
-                        // Apply time-stretch if speed != 1.0
-                        let speed_bits = self.speed.load(Ordering::Relaxed);
-                        let speed = f32::from_bits(speed_bits);
-                        let stretched_chunk = if (speed - 1.0).abs() >= 0.01 {
-                            apply_speed_stretch(&chunk_samples, speed)
-                        } else {
-                            chunk_samples
-                        };
-
-                        if event_tx
-                            .send(VoxEvent::TtsChunk {
-                                turn_id,
-                                samples: stretched_chunk,
-                            })
-                            .is_err()
-                        {
-                            log::warn!("[ChatterboxRemote] event_tx closed, stopping synthesis");
-                            return Ok(());
-                        }
-                    }
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(e) => return Err(anyhow!("Error reading remote stream: {}", e)),
-            }
-        }
-
-        // Flush remaining samples (less than 2048)
-        if !raw_pcm_samples.is_empty() {
-            total_samples_received += raw_pcm_samples.len();
-            let speed_bits = self.speed.load(Ordering::Relaxed);
-            let speed = f32::from_bits(speed_bits);
-            let stretched_chunk = if (speed - 1.0).abs() >= 0.01 {
-                apply_speed_stretch(&raw_pcm_samples, speed)
-            } else {
-                raw_pcm_samples
-            };
-
-            let _ = event_tx.send(VoxEvent::TtsChunk {
-                turn_id,
-                samples: stretched_chunk,
-            });
-        }
+        let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
+        let total_samples = stream_pcm_response(response, speed, turn_id, &cancel, &event_tx)?;
 
         let elapsed = start.elapsed().as_secs_f32();
-        let audio_duration = total_samples_received as f32 / 24000.0;
+        let audio_duration = total_samples as f32 / 24000.0;
         let rtf = if audio_duration > 0.0 {
             elapsed / audio_duration
         } else {
@@ -323,7 +318,9 @@ impl TtsProvider for ChatterboxRemoteProvider {
             rtf,
         );
 
-        let _ = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf });
+        if let Err(e) = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf }) {
+            log::warn!("[ChatterboxRemote] Error sending TtsFinished: {:?}", e);
+        }
 
         Ok(())
     }

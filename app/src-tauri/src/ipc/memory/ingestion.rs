@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::sync::atomic::Ordering;
 use tauri::State;
 
+/// Memory graph relation table entry.
 #[derive(Debug, Serialize, Clone)]
 pub struct MemoryRelationEntry {
     pub id: i64,
@@ -14,6 +15,7 @@ pub struct MemoryRelationEntry {
     pub created_at: i64,
 }
 
+/// Item in the personal memory staging ingestion queue.
 #[derive(Debug, Serialize, Clone)]
 pub struct MemoryQueueItem {
     pub id: i64,
@@ -27,6 +29,7 @@ pub struct MemoryQueueItem {
     pub created_at: i64,
 }
 
+/// Summary counts and recent entries in the memory ingestion queue.
 #[derive(Debug, Serialize, Clone)]
 pub struct MemoryQueueSummary {
     pub staged_pending: u32,
@@ -37,6 +40,7 @@ pub struct MemoryQueueSummary {
     pub recent_items: Vec<MemoryQueueItem>,
 }
 
+/// Retrieve all relation edges from the memory graph database.
 #[tauri::command]
 pub async fn get_memory_relations(
     _state: State<'_, std::sync::Arc<AppState>>,
@@ -69,6 +73,7 @@ pub async fn get_memory_relations(
     Ok(relations)
 }
 
+/// Retrieve queue status counts and the most recent 50 queue items.
 #[tauri::command]
 pub async fn get_memory_queue_status(
     _state: State<'_, std::sync::Arc<AppState>>,
@@ -139,56 +144,41 @@ pub async fn get_memory_queue_status(
     })
 }
 
+/// Toggle or set pause state for background memory pipeline processing.
 #[tauri::command]
 pub async fn toggle_pipeline_processing(
     state: State<'_, std::sync::Arc<AppState>>,
+    paused: Option<bool>,
 ) -> Result<bool, String> {
-    let current = state.memory.pipeline_paused.load(Ordering::SeqCst);
-    let new_state = !current;
+    let new_paused = match paused {
+        Some(p) => p,
+        None => !state.memory.pipeline_paused.load(Ordering::SeqCst),
+    };
+
     state
         .memory
         .pipeline_paused
-        .store(new_state, Ordering::SeqCst);
+        .store(new_paused, Ordering::SeqCst);
 
     if let Ok(mut settings) = state.settings.write() {
-        settings.memory.pipeline_processing_enabled = !new_state;
+        settings.memory.pipeline_processing_enabled = !new_paused;
+        let _ = settings.save();
     }
 
-    Ok(!new_state)
+    log::info!(
+        "[Memory] Pipeline processing state updated: enabled={}",
+        !new_paused
+    );
+    Ok(!new_paused)
 }
 
-#[tauri::command]
-pub async fn trigger_memory_consolidation(
-    state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<u32, String> {
-    let db_path = crate::utils::paths::get().db.clone();
-    let conn = VoxDb::open(&db_path)
-        .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
-
-    let mut compacted_count = 0;
-    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-    loop {
-        match crate::services::memory::pipeline::run_pipeline_cycle(&conn, &cancel_flag).await {
-            Ok(n) if n > 0 => {
-                compacted_count += n;
-            }
-            Ok(_) => {
-                break;
-            }
-            Err(e) => {
-                return Err(format!("Pipeline processing failed: {}", e));
-            }
-        }
-    }
-
-    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-    Ok(compacted_count as u32)
-}
-
+/// Reset all failed memory queue items to staged_pending for retry.
 #[tauri::command]
 pub async fn retry_failed_queue(state: State<'_, std::sync::Arc<AppState>>) -> Result<u32, String> {
+    if state.memory.pipeline_paused.load(Ordering::SeqCst) {
+        return Err("Memory pipeline processing is currently paused. Please enable processing before retrying.".to_string());
+    }
+
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
@@ -208,6 +198,7 @@ pub async fn retry_failed_queue(state: State<'_, std::sync::Arc<AppState>>) -> R
     Ok(affected as u32)
 }
 
+/// Reset specific failed memory queue items by ID to staged_pending for retry.
 #[tauri::command]
 pub async fn retry_failed_queue_items(
     state: State<'_, std::sync::Arc<AppState>>,
@@ -216,6 +207,11 @@ pub async fn retry_failed_queue_items(
     if item_ids.is_empty() {
         return Ok(0);
     }
+
+    if state.memory.pipeline_paused.load(Ordering::SeqCst) {
+        return Err("Memory pipeline processing is currently paused. Please enable processing before retrying.".to_string());
+    }
+
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
@@ -229,7 +225,6 @@ pub async fn retry_failed_queue_items(
         placeholders
     );
 
-    // Convert item_ids to parameters
     let params: Vec<turso::Value> = item_ids.into_iter().map(|id| id.into()).collect();
     let affected = conn
         .execute(&sql, params)
