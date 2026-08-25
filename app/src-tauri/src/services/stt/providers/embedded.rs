@@ -39,7 +39,6 @@ impl EmbeddedSttProviderInner {
 
 /// Local embedded Speech-to-Text provider wrapping ONNX inference models (Qwen3-ASR or Nemotron-3.5).
 pub struct EmbeddedSttProvider {
-    _engine_type: String,
     inner: Mutex<EmbeddedSttProviderInner>,
 }
 
@@ -47,7 +46,6 @@ impl EmbeddedSttProvider {
     /// Instantiates an embedded speech-to-text provider with lazy engine loading on first transcription.
     pub fn new(model_path: &std::path::Path, model_type: &str) -> anyhow::Result<Self> {
         Ok(Self {
-            _engine_type: model_type.to_string(),
             inner: Mutex::new(EmbeddedSttProviderInner {
                 model_path: model_path.to_path_buf(),
                 model_type: model_type.to_string(),

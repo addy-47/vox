@@ -15,9 +15,7 @@ pub struct MemoryConflict {
 
 /// Retrieve all unresolved memory fact conflicts from the graph.
 #[tauri::command]
-pub async fn get_unresolved_conflicts(
-    _state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<Vec<MemoryConflict>, String> {
+pub async fn get_unresolved_conflicts() -> Result<Vec<MemoryConflict>, String> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await

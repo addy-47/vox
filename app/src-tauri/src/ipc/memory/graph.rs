@@ -193,7 +193,6 @@ pub async fn get_memory_graph_topology(
 /// Retrieve detailed information for a single memory fact by ID.
 #[tauri::command]
 pub async fn get_memory_fact_detail(
-    _state: State<'_, std::sync::Arc<AppState>>,
     fact_id: String,
 ) -> Result<MemoryFactDetail, String> {
     let db_path = crate::utils::paths::get().db.clone();
@@ -262,9 +261,7 @@ pub async fn get_memory_fact_detail(
 
 /// Retrieve aggregate statistics for personal and episodic memory.
 #[tauri::command]
-pub async fn get_memory_stats(
-    _state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<MemoryStats, String> {
+pub async fn get_memory_stats() -> Result<MemoryStats, String> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await

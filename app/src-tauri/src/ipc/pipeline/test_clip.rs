@@ -98,7 +98,6 @@ pub async fn test_clip(
 /// Cancels a running test clip and resets the speech recognition stream.
 #[tauri::command]
 pub async fn test_clip_cancel(
-    _app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);

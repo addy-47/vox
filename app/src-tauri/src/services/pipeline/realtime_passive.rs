@@ -168,13 +168,19 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
 }
 
 /// Handles user speech detection and transitions state machine to speaking.
-fn on_speech_start(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_speech_start(
+    turn_id: u32,
+    app: &AppHandle,
+    state: &AppState,
+    playback: &Arc<PlaybackEngine>,
+) {
     if !state.pipeline.is_engaged.load(Ordering::Relaxed)
         || state.pipeline.is_paused.load(Ordering::Relaxed)
     {
         return;
     }
 
+    playback.cancel();
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Listening, &ctx, app, state);
@@ -272,11 +278,11 @@ fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
 pub fn handle_event(
     app: &AppHandle,
     state: &AppState,
-    _playback: &Arc<PlaybackEngine>,
+    playback: &Arc<PlaybackEngine>,
     event: VoxEvent,
 ) {
     match event {
-        VoxEvent::SpeechStart { turn_id } => on_speech_start(turn_id, app, state),
+        VoxEvent::SpeechStart { turn_id } => on_speech_start(turn_id, app, state, playback),
         VoxEvent::SpeechEnd { turn_id, .. } => on_speech_end(turn_id, app, state),
         VoxEvent::TranscriptFinal { turn_id, text } => {
             on_transcript_final(turn_id, text, app, state)

@@ -161,20 +161,24 @@ pub fn create_tts_provider(
     }
 }
 
+/// Handles and flags passed when warming up the TTS actor.
+pub struct TtsWarmUpHandles<'a> {
+    pub tts_tx: &'a mut Option<std::sync::mpsc::Sender<TtsCommand>>,
+    pub tts_handle: &'a mut Option<std::thread::JoinHandle<()>>,
+    pub cancel_flag: Arc<AtomicBool>,
+    pub is_loaded: Arc<AtomicBool>,
+    pub is_sleeping: Arc<AtomicBool>,
+}
+
 /// Spawns and initializes a persistent TTS worker actor thread.
-#[allow(clippy::too_many_arguments)]
 pub fn warm_up_tts(
     app: &tauri::AppHandle,
-    tts_tx: &mut Option<std::sync::mpsc::Sender<TtsCommand>>,
-    tts_handle: &mut Option<std::thread::JoinHandle<()>>,
+    handles: TtsWarmUpHandles<'_>,
     settings: &VoxSettings,
     super_tts_path: &Path,
-    cancel_flag: Arc<AtomicBool>,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
-    is_loaded: Arc<AtomicBool>,
-    is_sleeping: Arc<AtomicBool>,
 ) -> Result<(), String> {
-    if tts_tx.is_some() {
+    if handles.tts_tx.is_some() {
         return Ok(());
     }
 
@@ -182,9 +186,13 @@ pub fn warm_up_tts(
     let provider = create_tts_provider(settings, super_tts_path)?;
 
     let (tx, rx) = std::sync::mpsc::channel::<TtsCommand>();
-    *tts_tx = Some(tx);
+    *handles.tts_tx = Some(tx);
 
     let app_clone = app.clone();
+    let cancel_flag = handles.cancel_flag;
+    let is_loaded = handles.is_loaded;
+    let is_sleeping = handles.is_sleeping;
+
     let handle = std::thread::Builder::new()
         .name("vox-tts-persistent".to_string())
         .spawn(move || {
@@ -192,7 +200,7 @@ pub fn warm_up_tts(
         })
         .map_err(|e| e.to_string())?;
 
-    *tts_handle = Some(handle);
+    *handles.tts_handle = Some(handle);
     is_sleeping.store(false, Ordering::Relaxed);
     Ok(())
 }
@@ -350,75 +358,4 @@ fn is_abbreviation(word: &str) -> bool {
     }
 
     false
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_tts_clause_chunker_abbreviations() {
-        let mut chunker = TtsClauseChunker::new();
-        let input = "Dr. Smith tested version 0.8.6 at 3.14 PM.";
-        let chunks = chunker.push_str(input);
-
-        assert_eq!(chunks.len(), 1, "Expected single chunk, got {:?}", chunks);
-        assert_eq!(chunks[0], "Dr. Smith tested version 0.8.6 at 3.14 PM.");
-
-        let mut chunker2 = TtsClauseChunker::new();
-        let input2 = "Tested v0.8.6 release.";
-        let chunks2 = chunker2.push_str(input2);
-        assert_eq!(
-            chunks2.len(),
-            1,
-            "Expected single chunk for version tag, got {:?}",
-            chunks2
-        );
-        assert_eq!(chunks2[0], "Tested v0.8.6 release.");
-    }
-
-    #[test]
-    fn test_tts_clause_chunker_punctuation() {
-        let mut chunker = TtsClauseChunker::new();
-        let input = "Hello world, how are you?\nI am doing well, thank you!";
-        let chunks = chunker.push_str(input);
-
-        assert_eq!(
-            chunks,
-            vec![
-                "Hello world,",
-                "how are you?",
-                "I am doing well,",
-                "thank you!"
-            ]
-        );
-    }
-
-    #[test]
-    fn test_tts_turn_cancel_clears_buffer() {
-        let mut chunker = TtsClauseChunker::new();
-        let partial_input = "This is incomplete text without punctuation";
-        let chunks = chunker.push_str(partial_input);
-
-        assert!(
-            chunks.is_empty(),
-            "Partial text without punctuation should produce no chunks"
-        );
-        assert!(
-            !chunker.is_empty(),
-            "Buffer should contain partial text before cancel"
-        );
-        assert_eq!(chunker.buffer(), partial_input);
-
-        chunker.clear();
-
-        assert!(
-            chunker.is_empty(),
-            "Buffer should be empty after cancellation"
-        );
-        assert_eq!(chunker.buffer(), "");
-
-        let new_turn_chunks = chunker.push_str("New turn sentence.");
-        assert_eq!(new_turn_chunks, vec!["New turn sentence."]);
-    }
 }

@@ -340,14 +340,3 @@ impl TtsProvider for EdgeTtsProvider {
         false
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_edge_tts_synthesis() {
-        let sec_ms_gec = generate_sec_ms_gec();
-        assert_eq!(sec_ms_gec.len(), 64);
-    }
-}

@@ -17,10 +17,4 @@ pub const MODEL_FILE_ASR_TOKENIZER: &str = "tokenizer";
 pub(crate) trait SttEngine: Send + Sync {
     /// Transcribes a complete audio frame buffer to text.
     fn transcribe(&self, audio: &[f32]) -> anyhow::Result<String>;
-    /// Transcribes an audio chunk in streaming mode.
-    #[allow(dead_code)]
-    fn transcribe_chunk(&self, chunk: &[f32], is_final: bool) -> anyhow::Result<String>;
-    /// Resets internal streaming states and recurrent caches.
-    #[allow(dead_code)]
-    fn reset_state(&self) -> anyhow::Result<()>;
 }

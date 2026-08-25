@@ -42,7 +42,9 @@ where Tier 2 is recommended for users
 - **No step-comment sequences:** If a function body needs numbered step comments (`// 1. do X`, `// 2. do Y`), each step must become a named private function. Step comments are compensating for missing abstraction.
 - **No toggle functions:** A function named `engage()` must only engage. `if condition { engage } else { disengage }` in one function body is banned. Use two explicitly named functions.
 - **Comment policy:** One `///` doc comment per function that states: what it does, what it takes, what it returns. No per-line comments inside function bodies. Runtime trace belongs in `log::info!` / `log::warn!`, not inline comments.
-- **Builder pattern for large constructors:** Any `new()` taking more than 8 arguments must use a builder pattern or be redesigned. `#[allow(clippy::too_many_arguments)]` is banned as a substitute.
+- **Struct bundling for parameter lists:** Any function or constructor taking more than 5 arguments must group related parameters into a dedicated config/handles struct (e.g. `PlaybackTelemetryHandles`, `VadActorConfig`, `AppStateTelemetryHandles`). `#[allow(clippy::too_many_arguments)]` is strictly banned.
+- **No dead `_` prefixed variables or fields:** Never mask unused parameters, variables, or struct fields with a `_` prefix (e.g. `_playback_energy`, `_state`, `_last_user_turn`) to silence the compiler. If a parameter or struct field is not needed, delete it.
+- **RAII drop guard exception for `_`:** The `_` prefix is strictly reserved for genuine RAII drop guards (`_stream: Option<cpal::Stream>`, `_log_guard: Option<WorkerGuard>`, `_thread_handle`) where holding the handle in memory is required to keep hardware audio streams or background logging workers alive, or for foreign trait callbacks with fixed signatures.
 
 ### 1.3 Error Handling
 - **No `unwrap()` in `src/`:** Banned except on `RwLock`/`Mutex` guards (poisoned lock = unrecoverable).
@@ -61,9 +63,10 @@ where Tier 2 is recommended for users
 ### 1.5 Routing Context
 - **No inline settings re-reads per handler:** When an IPC handler needs `pipeline_mode`, `interaction_mode`, and `owner`, these must be resolved once into a `RoutingContext` struct, not duplicated across each handler with an inline `state.settings.read().unwrap()` block.
 
-### 1.6 Linting & Verification
+### 1.6 Linting & Zero-Suppression Policy
 - `cargo check`: Mandatory zero errors.
-- `cargo clippy --all-targets`: Mandatory zero warnings. Never suppress with `#[allow(...)]` without an explanatory comment.
+- `cargo clippy --all-targets`: Mandatory zero warnings.
+- **Zero `#[allow(...)]` policy:** `#[allow(clippy::too_many_arguments)]`, `#[allow(dead_code)]`, `#[allow(unused_variables)]`, and all other compiler lint suppressions are strictly banned across the entire codebase. Fix the signature or delete the dead code.
 - `cargo fmt`: Must be run before committing.
 
 ### 1.5 Testing & Evaluation Taxonomy & Principles
