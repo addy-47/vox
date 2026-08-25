@@ -66,22 +66,22 @@ fn test_tray_hide_cancels_active_session() {
 }
 
 #[test]
-fn test_tray_hide_switch_owner_to_main_window_when_engaged() {
+fn test_tray_hide_switch_owner_to_assistant_when_engaged() {
     let owner_atomic = std::sync::atomic::AtomicU32::new(InteractionOwner::Dictation as u32);
     let is_engaged = AtomicBool::new(true);
 
     let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
     assert_eq!(owner, InteractionOwner::Dictation);
 
-    // When tray hides and pipeline is engaged, owner switches to MainWindow
+    // When tray hides and pipeline is engaged, owner switches to Assistant
     if is_engaged.load(Ordering::Relaxed) {
-        owner_atomic.store(InteractionOwner::MainWindow as u32, Ordering::Relaxed);
+        owner_atomic.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
     }
 
     let new_owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
     assert_eq!(
         new_owner,
-        InteractionOwner::MainWindow,
-        "Ending Dictation tray session when engaged MUST revert owner to MainWindow!"
+        InteractionOwner::Assistant,
+        "Ending Dictation tray session when engaged MUST revert owner to Assistant!"
     );
 }

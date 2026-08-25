@@ -1,8 +1,8 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 /**
- * Rust `InteractionState` enum (core/state.rs:54). Drives mood sync and
- * all ambient visuals.
+ * Canonical Rust `InteractionState` enum (core/state.rs).
+ * Drives mood sync, visualizers, and UI state indicators.
  */
 export type InteractionState =
   | "Idle"
@@ -10,26 +10,29 @@ export type InteractionState =
   | "UserSpeaking"
   | "Thinking"
   | "AssistantSpeaking"
-  | "Interrupted"
-  | "MaintainingContext";
+  | "Paused"
+  | "Error";
 
-/** Rust `InteractionOwner` enum (core/state.rs:11). */
-export type InteractionOwner = "Tray" | "MainWindow" | "Ptt" | "Wizard";
+/** Canonical Rust `InteractionOwner` enum (core/state.rs). */
+export type InteractionOwner = "Assistant" | "Dictation";
 
-/** Mirror of `TelemetryData` (core/state.rs:65), emitted on `telemetry`. */
+/** Payload emitted on `state_changed` event. */
+export type StateChangedPayload = InteractionState;
+
+/** `transcript_partial` / `transcript_final` payload. */
+export interface TranscriptPayload {
+  turn_id: number;
+  text: string;
+  owner: InteractionOwner;
+}
+
+/** Mirror of `TelemetryData` emitted on `telemetry`. */
 export interface TelemetryData {
   energy: number;
   vad_prob: number;
   low: number;
   mid: number;
   high: number;
-}
-
-/** `transcript_partial` / `transcript_final` payload (services/pipeline.rs:801). */
-export interface TranscriptPayload {
-  text: string;
-  turn_id: number;
-  owner: InteractionOwner;
 }
 
 /** `ptt_status` payload (services/ptt.rs). */

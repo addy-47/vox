@@ -1,522 +1,476 @@
 use super::VadBackend;
 use super::VadEngine as _;
-use crate::core::settings::InteractionMode;
+use crate::core::events::VoxEvent;
+use crate::core::settings::{AudioOutputMode, InteractionMode};
 use crate::core::state::{InteractionOwner, VadCommand};
+use crate::services::stt::SttCommand;
+use crate::utils::audio_filters::FilterBank;
 use anyhow::Result;
 use serde_json::json;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
+/// Internal mutable state maintained by the synchronous VAD actor loop.
+pub struct VadActorState {
+    pub threshold: f32,
+    pub noise_gate: f32,
+    pub mode: InteractionMode,
+    pub audio_mode: AudioOutputMode,
+    pub in_speech: bool,
+    pub current_turn_id: u32,
+    pub active_frames: usize,
+    pub inactive_frames: usize,
+    pub samples_since_partial: usize,
+    pub utterance_buffer: Vec<f32>,
+    pub pre_roll_buffer: PreRollBuffer,
+    pub realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>>,
+    pub realtime_is_ptt: bool,
+    pub ui_emit_counter: usize,
+}
+
+impl VadActorState {
+    /// Initializes actor state with settings snapshots and allocated buffers.
+    pub fn new(
+        threshold: f32,
+        noise_gate: f32,
+        mode: InteractionMode,
+        audio_mode: AudioOutputMode,
+    ) -> Self {
+        Self {
+            threshold,
+            noise_gate,
+            mode,
+            audio_mode,
+            in_speech: false,
+            current_turn_id: 0,
+            active_frames: 0,
+            inactive_frames: 0,
+            samples_since_partial: 0,
+            utterance_buffer: Vec::new(),
+            pre_roll_buffer: PreRollBuffer::new(8000),
+            realtime_tx: None,
+            realtime_is_ptt: false,
+            ui_emit_counter: 0,
+        }
+    }
+}
+
+/// Drains and applies pending hot-reload commands without acquiring locks.
+fn process_vad_commands(
+    vad_rx: &std::sync::mpsc::Receiver<VadCommand>,
+    vad: &mut VadBackend,
+    state: &mut VadActorState,
+) -> bool {
+    let mut should_exit = false;
+    while let Ok(cmd) = vad_rx.try_recv() {
+        match cmd {
+            VadCommand::UpdateThreshold(v) => {
+                log::info!("[VAD Actor] Updating threshold to {}", v);
+                state.threshold = v;
+                if let Err(e) = vad.update_threshold(state.threshold) {
+                    log::error!("[VAD Actor] Failed to update threshold: {}", e);
+                }
+            }
+            VadCommand::UpdateNoiseGate(v) => {
+                log::info!("[VAD Actor] Updating noise gate to {}", v);
+                state.noise_gate = v;
+            }
+            VadCommand::UpdateMode(m) => {
+                log::info!("[VAD Actor] Updating interaction mode to {:?}", m);
+                state.mode = m;
+            }
+            VadCommand::UpdateAudioMode(m) => {
+                log::info!("[VAD Actor] Updating audio output mode to {:?}", m);
+                state.audio_mode = m;
+            }
+            VadCommand::StartRealtime { tx, is_ptt } => {
+                log::info!("[VAD Actor] Starting realtime routing (is_ptt={})", is_ptt);
+                state.realtime_tx = Some(tx);
+                state.realtime_is_ptt = is_ptt;
+            }
+            VadCommand::StopRealtime => {
+                log::info!("[VAD Actor] Stopping realtime routing");
+                state.realtime_tx = None;
+                state.realtime_is_ptt = false;
+            }
+            VadCommand::Shutdown => {
+                log::info!("[VAD Actor] Shutdown signal received");
+                should_exit = true;
+                break;
+            }
+        }
+    }
+
+    if !should_exit {
+        if let Err(std::sync::mpsc::TryRecvError::Disconnected) = vad_rx.try_recv() {
+            log::info!("[VAD Actor] Command channel disconnected. Exiting loop.");
+            should_exit = true;
+        }
+    }
+
+    should_exit
+}
+
+/// Calculates and emits audio energy telemetry to the monitoring pipeline and UI.
+fn emit_audio_telemetry(
+    chunk: &[f32],
+    state: &mut VadActorState,
+    app: &AppHandle,
+    owner: InteractionOwner,
+    filter_bank: &mut FilterBank,
+    telemetry_tx: &crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
+    dropped_counter: &Arc<std::sync::atomic::AtomicU64>,
+) -> f32 {
+    let (raw_low, raw_mid, raw_high) = filter_bank.process_chunk(chunk);
+    let raw_energy = calculate_rms(chunk);
+
+    let gated_raw = if raw_energy > state.noise_gate {
+        raw_energy
+    } else {
+        0.0
+    };
+    let energy = (gated_raw * 12.0).clamp(0.0, 1.0).powf(0.5);
+
+    let gated_low = if raw_low > state.noise_gate {
+        raw_low
+    } else {
+        0.0
+    };
+    let gated_mid = if raw_mid > state.noise_gate {
+        raw_mid
+    } else {
+        0.0
+    };
+    let gated_high = if raw_high > state.noise_gate {
+        raw_high
+    } else {
+        0.0
+    };
+
+    let low = (gated_low * 12.0).clamp(0.0, 1.0).powf(0.5);
+    let mid = (gated_mid * 12.0).clamp(0.0, 1.0).powf(0.5);
+    let high = (gated_high * 12.0).clamp(0.0, 1.0).powf(0.5);
+
+    if telemetry_tx
+        .try_send(crate::monitoring::aggregator::TelemetryEvent::AudioEnergy {
+            energy,
+            vad_prob: 0.0,
+            low,
+            mid,
+            high,
+        })
+        .is_err()
+    {
+        dropped_counter.fetch_add(1, Ordering::Relaxed);
+    }
+
+    state.ui_emit_counter += 1;
+    if state.ui_emit_counter >= 2 {
+        let target = match owner {
+            InteractionOwner::Assistant => "main",
+            InteractionOwner::Dictation => "tray",
+        };
+        let _ = app.emit_to(target, "audio_energy", energy);
+        state.ui_emit_counter = 0;
+    }
+
+    raw_energy
+}
+
+/// Streams raw audio chunks directly to an active realtime server session when running in passive mode.
+fn stream_passive_realtime(chunk: &[f32], state: &VadActorState) {
+    if let Some(ref tx) = state.realtime_tx {
+        if !state.realtime_is_ptt {
+            let i16_samples: Vec<i16> = chunk
+                .iter()
+                .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
+                .collect();
+            let _ = tx.try_send(i16_samples);
+        }
+    }
+}
+
+/// Checks whether audio processing should be ducked due to speaker output or disabled dictation.
+fn should_suppress_audio(
+    owner: InteractionOwner,
+    playback_active: &AtomicBool,
+    dictation_enabled: &AtomicBool,
+    state: &VadActorState,
+) -> bool {
+    if owner == InteractionOwner::Dictation && !dictation_enabled.load(Ordering::Relaxed) {
+        return true;
+    }
+
+    let is_playing = playback_active.load(Ordering::Relaxed);
+    state.realtime_tx.is_none() && is_playing && state.audio_mode == AudioOutputMode::Speaker
+}
+
+/// Handles speech start event transition, stream resets, and pre-roll transfer.
+fn handle_speech_start(
+    state: &mut VadActorState,
+    turn_id_atomic: &AtomicU32,
+    owner: InteractionOwner,
+    stt_tx: &std::sync::mpsc::Sender<SttCommand>,
+    vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
+    event_tx: &mpsc::Sender<serde_json::Value>,
+) {
+    state.in_speech = true;
+    state.current_turn_id = turn_id_atomic.fetch_add(1, Ordering::Relaxed) + 1;
+
+    log::info!(
+        "[VAD Actor] Speech Start (turn: {}, owner: {:?})",
+        state.current_turn_id,
+        owner
+    );
+
+    if let Err(e) = stt_tx.send(SttCommand::ResetStream) {
+        log::warn!("[VAD Actor] Failed to send ResetStream to STT: {}", e);
+    }
+
+    if let Some(tx) = vox_event_tx {
+        if let Err(e) = tx.send(VoxEvent::SpeechStart {
+            turn_id: state.current_turn_id,
+        }) {
+            log::warn!("[VAD Actor] Failed to send SpeechStart event: {}", e);
+        }
+    }
+
+    let _ = event_tx.try_send(json!({
+        "type": "speech_start",
+        "session_id": state.current_turn_id
+    }));
+
+    state.utterance_buffer.clear();
+    state
+        .utterance_buffer
+        .extend_from_slice(state.pre_roll_buffer.as_slice());
+    state.samples_since_partial = state.utterance_buffer.len();
+    state.pre_roll_buffer.clear();
+}
+
+/// Handles speech end event transition, flushing VAD detector and dispatching final STT audio.
+fn handle_speech_end(
+    vad: &mut VadBackend,
+    state: &mut VadActorState,
+    owner: InteractionOwner,
+    stt_tx: &std::sync::mpsc::Sender<SttCommand>,
+    vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
+    event_tx: &mpsc::Sender<serde_json::Value>,
+) {
+    state.in_speech = false;
+    log::info!(
+        "[VAD Actor] Speech End (turn: {}, owner: {:?})",
+        state.current_turn_id,
+        owner
+    );
+
+    if let Some(tx) = vox_event_tx {
+        if let Err(e) = tx.send(VoxEvent::SpeechEnd {
+            turn_id: state.current_turn_id,
+            audio_buffer: state.utterance_buffer.clone(),
+        }) {
+            log::warn!("[VAD Actor] Failed to send SpeechEnd event: {}", e);
+        }
+    }
+
+    let _ = event_tx.try_send(json!({
+        "type": "speech_end",
+        "session_id": state.current_turn_id
+    }));
+
+    vad.flush();
+
+    if state.utterance_buffer.len() >= 4800 && state.realtime_tx.is_none() {
+        if let Err(e) = stt_tx.send(SttCommand::Final(
+            state.current_turn_id,
+            state.utterance_buffer.clone(),
+        )) {
+            log::warn!("[VAD Actor] Failed to send Final audio to STT: {}", e);
+        }
+    }
+
+    state.utterance_buffer.clear();
+    state.samples_since_partial = 0;
+}
+
+/// Accumulates streaming audio frames during active speech and triggers periodic partial STT transcriptions.
+fn accumulate_speech_frames(
+    chunk: &[f32],
+    state: &mut VadActorState,
+    stt_tx: &std::sync::mpsc::Sender<SttCommand>,
+) {
+    state.utterance_buffer.extend_from_slice(chunk);
+    state.samples_since_partial += chunk.len();
+
+    if let Some(ref tx) = state.realtime_tx {
+        let i16_samples: Vec<i16> = chunk
+            .iter()
+            .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
+            .collect();
+        let _ = tx.try_send(i16_samples);
+    }
+
+    if state.samples_since_partial >= 12800 {
+        if state.realtime_tx.is_none() {
+            let start_idx = state.utterance_buffer.len().saturating_sub(240000);
+            if let Err(e) = stt_tx.send(SttCommand::Partial(
+                state.current_turn_id,
+                state.utterance_buffer[start_idx..].to_vec(),
+            )) {
+                log::warn!("[VAD Actor] Failed to send Partial audio to STT: {}", e);
+            }
+        }
+        state.samples_since_partial = 0;
+    }
+}
+
+/// Evaluates voice activity on incoming frame and advances speech onset or offset counters.
+#[allow(clippy::too_many_arguments)]
+fn process_speech_frame(
+    chunk: &[f32],
+    raw_energy: f32,
+    is_earshot: bool,
+    vad: &mut VadBackend,
+    state: &mut VadActorState,
+    turn_id_atomic: &AtomicU32,
+    owner: InteractionOwner,
+    stt_tx: &std::sync::mpsc::Sender<SttCommand>,
+    vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
+    event_tx: &mpsc::Sender<serde_json::Value>,
+) {
+    let is_speech =
+        vad.predict(chunk) && is_above_noise_gate(raw_energy, state.noise_gate, is_earshot);
+
+    if is_speech {
+        state.active_frames += 1;
+        state.inactive_frames = 0;
+
+        if !state.in_speech && state.active_frames >= 2 {
+            handle_speech_start(state, turn_id_atomic, owner, stt_tx, vox_event_tx, event_tx);
+        }
+    } else {
+        state.inactive_frames += 1;
+        state.active_frames = 0;
+
+        if state.in_speech && state.inactive_frames >= 50 {
+            handle_speech_end(vad, state, owner, stt_tx, vox_event_tx, event_tx);
+        }
+    }
+
+    if state.in_speech {
+        accumulate_speech_frames(chunk, state, stt_tx);
+    } else {
+        state.pre_roll_buffer.push(chunk);
+    }
+}
+
+/// Spawns the synchronous, low-latency VAD actor thread.
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_vad_actor<C>(
     mut vad: VadBackend,
     app: tauri::AppHandle,
     mut consumer: C,
     event_tx: mpsc::Sender<serde_json::Value>,
-    stt_tx: std::sync::mpsc::Sender<crate::services::stt::SttCommand>,
+    stt_tx: std::sync::mpsc::Sender<SttCommand>,
     vad_rx: std::sync::mpsc::Receiver<VadCommand>,
     telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
-    vox_event_tx: Option<std::sync::mpsc::Sender<crate::core::events::VoxEvent>>,
-    is_loaded: Arc<std::sync::atomic::AtomicBool>,
+    vox_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
+    is_loaded: Arc<AtomicBool>,
+    playback_active: Arc<AtomicBool>,
+    turn_id_atomic: Arc<AtomicU32>,
+    owner_atomic: Arc<AtomicU32>,
+    is_dictation_enabled: Arc<AtomicBool>,
+    engine_shutdown: Arc<AtomicBool>,
+    dropped_counter: Arc<std::sync::atomic::AtomicU64>,
+    initial_threshold: f32,
+    initial_noise_gate: f32,
+    initial_mode: InteractionMode,
+    initial_audio_mode: AudioOutputMode,
 ) -> Result<()>
 where
     C: ringbuf::traits::Consumer<Item = f32>,
 {
-    // ── Phase 1: Thread Prioritization (Tier 1 - Realtime) ───────────────
     use thread_priority::*;
     if let Err(e) = set_current_thread_priority(ThreadPriority::Max) {
-        log::warn!(
-            "[VAD] Failed to set max priority (likely non-root/cap_sys_nice): {:?}",
-            e
-        );
+        log::warn!("[VAD Actor] Thread priority elevation failed: {:?}", e);
     }
 
-    log::info!("[VAD] Starting synchronous VAD loop on dedicated thread.");
+    log::info!("[VAD Actor] Starting synchronous VAD loop on dedicated thread");
 
-    let mut in_speech = false;
-    let mut current_turn_id: u32 = 0;
-    let mut utterance_buffer: Vec<f32> = Vec::new();
-    let mut samples_since_partial = 0;
-    let mut pre_roll_buffer = PreRollBuffer::new(8000); // 500ms pre-roll
-    let mut active_frames = 0;
-    let mut inactive_frames = 0;
-
-    // Local state initialized once, updated via vad_rx to avoid hot-path locks
-    let (threshold_init, noise_gate_init, mode_init, owner_init, audio_mode_init) = {
-        let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
-        let settings = state.settings.read().unwrap();
-        let owner: InteractionOwner = state
-            .owner
-            .load(std::sync::atomic::Ordering::Relaxed)
-            .into();
-        let mode = match owner {
-            InteractionOwner::Dictation => match settings.dictation.interaction_mode {
-                crate::core::settings::DictationInteractionMode::Passive => {
-                    InteractionMode::Passive
-                }
-                crate::core::settings::DictationInteractionMode::Ptt => InteractionMode::PTT,
-            },
-            InteractionOwner::MainWindow => settings.interaction.mode.clone(),
-            InteractionOwner::Ptt => InteractionMode::PTT,
-            InteractionOwner::Wizard => InteractionMode::Passive,
-        };
-        (
-            settings.vad.threshold,
-            settings.vad.ptt_noise_gate,
-            mode,
-            owner,
-            settings.audio.output_mode.clone(),
-        )
-    };
-
-    let mut threshold = threshold_init;
-    let mut noise_gate = noise_gate_init;
-    let mut mode = mode_init;
-    let mut owner = owner_init;
-    let mut audio_mode = audio_mode_init;
-    let mut realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>> = None;
-    // Tracks whether the active realtime session is PTT-gated (true) or
-    // fully passive (false). Only meaningful when realtime_tx is Some.
-    let mut realtime_is_ptt: bool = false;
-
-    let (dropped_counter, engine_shutdown) = {
-        let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> = app.state();
-        (
-            state.dropped_telemetry_events.clone(),
-            state.pipeline.engine_shutdown.clone(),
-        )
-    };
-
-    let is_earshot = matches!(vad, VadBackend::Earshot(_));
-    is_loaded.store(true, Ordering::Relaxed);
-    log::info!(
-        "[VAD] Entering sync loop: threshold={}, noise_gate={}, is_earshot={}, mode={:?}",
-        threshold,
-        noise_gate,
-        is_earshot,
-        mode
+    let mut state = VadActorState::new(
+        initial_threshold,
+        initial_noise_gate,
+        initial_mode,
+        initial_audio_mode,
     );
-
-    let mut filter_bank = crate::utils::audio_filters::FilterBank::new(16000.0);
-
-    // 16ms chunks (256 samples at 16kHz) — matches TenVAD window_size default
+    let is_earshot = matches!(vad, VadBackend::Earshot(_));
+    let mut filter_bank = FilterBank::new(16000.0);
     let mut chunk = vec![0.0f32; 256];
-
-    let mut ui_emit_counter = 0;
+    is_loaded.store(true, Ordering::Relaxed);
 
     loop {
-        // Check for global engine shutdown signal
         if engine_shutdown.load(Ordering::Relaxed) {
-            log::info!("[VAD] Engine shutdown flag detected. Exiting loop.");
+            log::info!("[VAD Actor] Engine shutdown detected");
             is_loaded.store(false, Ordering::Relaxed);
             return Ok(());
         }
 
-        // ── 0. Process hot-updates (Lock-Free) ───────────────────────────
-        let mut should_exit = false;
-        while let Ok(cmd) = vad_rx.try_recv() {
-            match cmd {
-                VadCommand::UpdateThreshold(v) => {
-                    log::info!("[VAD] Updating threshold to {} (Hot-Reloading)...", v);
-                    threshold = v;
-                    if let Err(e) = vad.update_threshold(threshold) {
-                        log::error!("[VAD] Failed to hot-reload detector: {}", e);
-                    } else {
-                        log::info!("[VAD] Detector hot-reloaded successfully.");
-                    }
-                }
-                VadCommand::UpdateNoiseGate(v) => {
-                    log::info!("[VAD] Updating noise gate to {}", v);
-                    noise_gate = v;
-                }
-                VadCommand::UpdateMode(m) => {
-                    log::info!("[VAD] Updating interaction mode to {:?}", m);
-                    mode = m;
-                }
-                VadCommand::UpdateOwner(o) => {
-                    log::info!("[VAD] Updating interaction owner to {:?}", o);
-                    owner = o;
-
-                    let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
-                        app.state();
-                    let settings = state.settings.read().unwrap();
-                    mode = match owner {
-                        InteractionOwner::Dictation => match settings.dictation.interaction_mode {
-                            crate::core::settings::DictationInteractionMode::Passive => {
-                                InteractionMode::Passive
-                            }
-                            crate::core::settings::DictationInteractionMode::Ptt => {
-                                InteractionMode::PTT
-                            }
-                        },
-                        InteractionOwner::MainWindow => settings.interaction.mode.clone(),
-                        InteractionOwner::Ptt => InteractionMode::PTT,
-                        InteractionOwner::Wizard => InteractionMode::Passive,
-                    };
-                    log::info!(
-                        "[VAD] Automatically recalculated interaction mode to {:?}",
-                        mode
-                    );
-                }
-                VadCommand::UpdateAudioMode(m) => {
-                    log::info!("[VAD] Updating audio output mode to {:?}", m);
-                    audio_mode = m;
-                }
-                VadCommand::Shutdown => {
-                    log::info!("[VAD] Shutdown signal received. Exiting loop.");
-                    should_exit = true;
-                    break;
-                }
-                VadCommand::StartRealtime { tx, is_ptt } => {
-                    log::info!(
-                        "[VAD] Starting realtime S2S audio routing (is_ptt={}).",
-                        is_ptt
-                    );
-                    realtime_tx = Some(tx);
-                    realtime_is_ptt = is_ptt;
-                }
-                VadCommand::StopRealtime => {
-                    log::info!("[VAD] Stopping realtime S2S audio routing.");
-                    realtime_tx = None;
-                    realtime_is_ptt = false;
-                }
-            }
-        }
-
-        // Check for channel disconnection (Sender dropped in stop_engine)
-        if !should_exit {
-            if let Err(std::sync::mpsc::TryRecvError::Disconnected) = vad_rx.try_recv() {
-                log::info!("[VAD] Command channel disconnected. Exiting loop.");
-                should_exit = true;
-            }
-        }
-
-        if should_exit {
+        if process_vad_commands(&vad_rx, &mut vad, &mut state) {
             is_loaded.store(false, Ordering::Relaxed);
             return Ok(());
         }
 
-        // Check if we have at least 16ms of audio available (256 samples at 16kHz)
         if consumer.occupied_len() >= 256 {
             consumer.pop_slice(&mut chunk);
 
-            // ── Phase 5: High-Frequency Telemetry ────────────────────────
-            // Process the chunk through our filter bank to get low, mid, and high RMS
-            let (raw_low, raw_mid, raw_high) = filter_bank.process_chunk(&chunk);
-            let raw_energy = calculate_rms(&chunk);
+            let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
 
-            // Gate individual bands as well, keeping mid and high relative to low/energy
-            let gated_raw = if raw_energy > noise_gate {
-                raw_energy
-            } else {
-                0.0
-            };
-            let energy = (gated_raw * 12.0).clamp(0.0, 1.0).powf(0.5);
+            let raw_energy = emit_audio_telemetry(
+                &chunk,
+                &mut state,
+                &app,
+                owner,
+                &mut filter_bank,
+                &telemetry_tx,
+                &dropped_counter,
+            );
 
-            let gated_low = if raw_low > noise_gate { raw_low } else { 0.0 };
-            let gated_mid = if raw_mid > noise_gate { raw_mid } else { 0.0 };
-            let gated_high = if raw_high > noise_gate { raw_high } else { 0.0 };
+            stream_passive_realtime(&chunk, &state);
 
-            let low = (gated_low * 12.0).clamp(0.0, 1.0).powf(0.5);
-            let mid = (gated_mid * 12.0).clamp(0.0, 1.0).powf(0.5);
-            let high = (gated_high * 12.0).clamp(0.0, 1.0).powf(0.5);
-
-            if telemetry_tx
-                .try_send(crate::monitoring::aggregator::TelemetryEvent::AudioEnergy {
-                    energy,
-                    vad_prob: 0.0,
-                    low,
-                    mid,
-                    high,
-                })
-                .is_err()
-            {
-                dropped_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            }
-
-            ui_emit_counter += 1;
-            if ui_emit_counter >= 2 {
-                use tauri::Emitter;
-                let target = match owner {
-                    InteractionOwner::MainWindow | InteractionOwner::Ptt => "main",
-                    InteractionOwner::Dictation => "tray",
-                    InteractionOwner::Wizard => "wizard",
-                };
-                let _ = app.emit_to(target, "audio_energy", energy);
-                ui_emit_counter = 0;
-            }
-
-            // ── Highest-priority: Passive Realtime routing ────────────────────
-            // In Realtime Passive mode bypass ALL local VAD/PTT logic — Gemini's
-            // server-side VAD handles speech detection. Stream every audio chunk
-            // directly. This MUST run before the PTT branch so that users whose
-            // VAD mode is historically PTT still get audio flowing in passive
-            // realtime sessions.
-            if let Some(ref tx) = realtime_tx {
-                if !realtime_is_ptt {
-                    let i16_samples: Vec<i16> = chunk
-                        .iter()
-                        .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
-                        .collect();
-                    if let Err(e) = tx.try_send(i16_samples) {
-                        static PASSIVE_DROP: std::sync::atomic::AtomicU64 =
-                            std::sync::atomic::AtomicU64::new(0);
-                        let cnt = PASSIVE_DROP.fetch_add(1, Ordering::Relaxed);
-                        if cnt.is_multiple_of(50) {
-                            log::warn!(
-                                "[VAD] [Realtime/Passive] Audio bridge backpressure — dropped {} chunks so far: {:?}",
-                                cnt + 1,
-                                e
-                            );
-                        }
-                    } else {
-                        static PASSIVE_ROUTE: std::sync::atomic::AtomicU64 =
-                            std::sync::atomic::AtomicU64::new(0);
-                        let count = PASSIVE_ROUTE.fetch_add(1, Ordering::Relaxed);
-                        if count.is_multiple_of(200) {
-                            log::info!(
-                                "[VAD] [Realtime/Passive] Streamed audio chunk #{} to Gemini Live",
-                                count + 1
-                            );
-                        }
-                    }
-                }
-                // is_ptt == true: fall through to the PTT block which handles
-                // gated forwarding via speech_detected.
-            }
-
-            let effective_mode = if realtime_tx.is_some() && !realtime_is_ptt {
+            let effective_mode = if state.realtime_tx.is_some() && !state.realtime_is_ptt {
                 InteractionMode::Passive
             } else {
-                mode.clone()
+                state.mode.clone()
             };
 
             if effective_mode == InteractionMode::PTT {
-                let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
-                    app.state();
-                let is_rec = state.ptt.is_recording.load(Ordering::SeqCst);
-
-                if is_rec {
-                    let mut detected = vad.predict(&chunk);
-
-                    // Override prediction on sub-threshold noise
-                    let effective_noise_gate = if is_earshot {
-                        noise_gate * 1.5
-                    } else {
-                        noise_gate
-                    };
-                    if raw_energy < effective_noise_gate {
-                        detected = false;
-                    }
-
-                    if detected {
-                        let was_speech = state.ptt.speech_detected.swap(true, Ordering::Relaxed);
-                        if !was_speech {
-                            // SPEECH ONSET TRANSITION: Flush pre-roll buffer to avoid clipping the first word
-                            if let Some(ref tx) = realtime_tx {
-                                let pre_roll_i16: Vec<i16> = pre_roll_buffer
-                                    .as_slice()
-                                    .iter()
-                                    .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
-                                    .collect();
-                                if let Err(e) = tx.try_send(pre_roll_i16) {
-                                    log::error!(
-                                        "[VAD] Failed to flush PTT pre-roll audio to S2S: {:?}",
-                                        e
-                                    );
-                                } else {
-                                    log::info!("[VAD] Flushed PTT pre-roll audio on speech onset.");
-                                }
-                                pre_roll_buffer.clear();
-                            }
-                        }
-                    }
-                }
-
-                // Waveform telemetry and PTT buffering
-                crate::services::ptt::handle_ptt_audio_sync(&app, &chunk);
-
-                // In Realtime PTT: Gate audio bridge forwarding
-                if let Some(ref tx) = realtime_tx {
-                    let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
-                        app.state();
-                    if state.ptt.speech_detected.load(Ordering::Relaxed) {
-                        let i16_samples: Vec<i16> = chunk
-                            .iter()
-                            .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
-                            .collect();
-                        if let Err(e) = tx.try_send(i16_samples) {
-                            log::error!("[VAD] Failed to send gated PTT audio samples to realtime S2S bridge: {:?}", e);
-                        } else {
-                            static PTT_ROUTE_COUNT: std::sync::atomic::AtomicU64 =
-                                std::sync::atomic::AtomicU64::new(0);
-                            let count = PTT_ROUTE_COUNT.fetch_add(1, Ordering::Relaxed);
-                            if count.is_multiple_of(200) {
-                                log::debug!(
-                                    "[VAD] Routing realtime PTT audio chunk (count: {})",
-                                    count + 1
-                                );
-                            }
-                        }
-                    }
-                }
-
-                // In both Modular and Realtime PTT: Accumulate pre-roll when not in speech
-                let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
-                    app.state();
-                if !state.ptt.speech_detected.load(Ordering::Relaxed) {
-                    pre_roll_buffer.push(&chunk);
-                }
-
-                if in_speech {
-                    in_speech = false;
-                    utterance_buffer.clear();
-                    samples_since_partial = 0;
+                state.pre_roll_buffer.push(&chunk);
+                if state.in_speech {
+                    state.in_speech = false;
+                    state.utterance_buffer.clear();
+                    state.samples_since_partial = 0;
                 }
                 continue;
             }
 
-            // ── Phase 4: Speaker-mode mic ducking & Tray disabled gating ─────────
-            {
-                let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
-                    app.state();
-
-                // If VAD is owned by Dictation but dictation is disabled, bypass speech detection
-                let dictation_enabled = match state.settings.read() {
-                    Ok(s) => s.dictation.enabled,
-                    Err(_) => true,
-                };
-                if owner == InteractionOwner::Dictation && !dictation_enabled {
-                    continue;
-                }
-
-                let is_playing = state
-                    .pipeline
-                    .playback_active
-                    .load(std::sync::atomic::Ordering::Relaxed);
-                if realtime_tx.is_none()
-                    && is_playing
-                    && audio_mode == crate::core::settings::AudioOutputMode::Speaker
-                {
-                    // Drop this frame — do NOT advance utterance buffer or VAD state
-                    continue;
-                }
+            if should_suppress_audio(owner, &playback_active, &is_dictation_enabled, &state) {
+                continue;
             }
 
-            // Classify chunk as speech or silence
-            // We must ALWAYS call vad.predict to keep its internal context windows synchronized.
-            let mut detected = vad.predict(&chunk);
-
-            // Override hallucinated speech on sub-threshold noise
-            if !is_above_noise_gate(raw_energy, noise_gate, is_earshot) {
-                detected = false;
-            }
-
-            if detected {
-                active_frames += 1;
-                inactive_frames = 0;
-
-                if !in_speech && active_frames >= 6 {
-                    in_speech = true;
-                    let app_state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
-                        app.state();
-                    current_turn_id =
-                        app_state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
-                    log::info!(
-                        "[VAD] >>> SPEECH START (session: {}, owner: {:?})",
-                        current_turn_id,
-                        owner
-                    );
-
-                    let _ = stt_tx.send(crate::services::stt::SttCommand::ResetStream);
-
-                    if let Some(ref tx) = vox_event_tx {
-                        let _ = tx.send(crate::core::events::VoxEvent::SpeechStart {
-                            turn_id: current_turn_id,
-                            owner,
-                        });
-                    }
-
-                    let _ = event_tx.try_send(json!({
-                        "type": "speech_start",
-                        "session_id": current_turn_id
-                    }));
-                    utterance_buffer.clear();
-                    utterance_buffer.extend_from_slice(pre_roll_buffer.as_slice());
-                    samples_since_partial = utterance_buffer.len();
-                    pre_roll_buffer.clear();
-                }
-            } else {
-                inactive_frames += 1;
-                active_frames = 0;
-
-                if in_speech && inactive_frames >= 50 {
-                    in_speech = false;
-                    log::info!(
-                        "[VAD] <<< SPEECH END (session: {}, owner: {:?})",
-                        current_turn_id,
-                        owner
-                    );
-
-                    if let Some(ref tx) = vox_event_tx {
-                        let _ = tx.send(crate::core::events::VoxEvent::SpeechEnd {
-                            turn_id: current_turn_id,
-                            owner,
-                        });
-                    }
-
-                    let _ = event_tx.try_send(json!({
-                        "type": "speech_end",
-                        "session_id": current_turn_id
-                    }));
-
-                    vad.flush();
-
-                    if utterance_buffer.len() >= 4800 && realtime_tx.is_none() {
-                        let _ = stt_tx.send(crate::services::stt::SttCommand::Final(
-                            current_turn_id,
-                            owner,
-                            utterance_buffer.clone(),
-                        ));
-                    }
-
-                    utterance_buffer.clear();
-                    samples_since_partial = 0;
-                }
-            }
-
-            // Append chunk to the appropriate buffer
-            if in_speech {
-                utterance_buffer.extend_from_slice(&chunk);
-                samples_since_partial += chunk.len();
-
-                if let Some(ref tx) = realtime_tx {
-                    let i16_samples: Vec<i16> = chunk
-                        .iter()
-                        .map(|&x| {
-                            let clamped = x.clamp(-1.0, 1.0);
-                            (clamped * 32767.0) as i16
-                        })
-                        .collect();
-                    let _ = tx.try_send(i16_samples);
-                }
-
-                if samples_since_partial >= 12800 {
-                    if realtime_tx.is_none() {
-                        let start_idx = utterance_buffer.len().saturating_sub(240000);
-                        let _ = stt_tx.send(crate::services::stt::SttCommand::Partial(
-                            current_turn_id,
-                            owner,
-                            utterance_buffer[start_idx..].to_vec(),
-                        ));
-                    }
-                    samples_since_partial = 0;
-                }
-            } else {
-                pre_roll_buffer.push(&chunk);
-            }
+            process_speech_frame(
+                &chunk,
+                raw_energy,
+                is_earshot,
+                &mut vad,
+                &mut state,
+                &turn_id_atomic,
+                owner,
+                &stt_tx,
+                vox_event_tx.as_ref(),
+                &event_tx,
+            );
         } else {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
@@ -525,12 +479,13 @@ where
 
 /// Bounded circular-like buffer for retaining pre-roll audio before speech onset.
 #[derive(Debug)]
-pub(crate) struct PreRollBuffer {
+pub struct PreRollBuffer {
     buffer: Vec<f32>,
     max_capacity: usize,
 }
 
 impl PreRollBuffer {
+    /// Constructs a pre-roll buffer with a fixed maximum sample capacity.
     pub fn new(max_capacity: usize) -> Self {
         Self {
             buffer: Vec::with_capacity(max_capacity),
@@ -547,17 +502,19 @@ impl PreRollBuffer {
         }
     }
 
+    /// Clears all stored audio samples.
     pub fn clear(&mut self) {
         self.buffer.clear();
     }
 
+    /// Returns a slice view of the current pre-roll audio buffer.
     pub fn as_slice(&self) -> &[f32] {
         &self.buffer
     }
 }
 
 /// Calculates Root Mean Square (RMS) energy of an audio sample slice.
-pub(crate) fn calculate_rms(chunk: &[f32]) -> f32 {
+pub fn calculate_rms(chunk: &[f32]) -> f32 {
     if chunk.is_empty() {
         return 0.0;
     }
@@ -565,7 +522,7 @@ pub(crate) fn calculate_rms(chunk: &[f32]) -> f32 {
 }
 
 /// Evaluates if raw energy satisfies the noise gate threshold.
-pub(crate) fn is_above_noise_gate(raw_energy: f32, noise_gate: f32, is_earshot: bool) -> bool {
+pub fn is_above_noise_gate(raw_energy: f32, noise_gate: f32, is_earshot: bool) -> bool {
     let effective_noise_gate = if is_earshot {
         noise_gate * 1.5
     } else {
@@ -584,7 +541,6 @@ mod tests {
         assert_eq!(pre_roll.as_slice().len(), 0);
         assert!(pre_roll.as_slice().is_empty());
 
-        // Push 100,000 samples of silence (in chunks of 256)
         let silence_chunk = vec![0.0f32; 256];
         let total_samples_pushed = 100_000;
         for _ in 0..(total_samples_pushed / 256) {
@@ -596,19 +552,15 @@ mod tests {
             );
         }
 
-        // Verify pre-roll capacity stays strictly bounded at 8,000 samples (500ms at 16kHz)
         assert_eq!(pre_roll.as_slice().len(), 8000);
 
-        // Push non-silence chunk with distinct values to verify old samples are drained (FIFO)
         let marker_chunk = vec![0.99f32; 256];
         pre_roll.push(&marker_chunk);
         assert_eq!(pre_roll.as_slice().len(), 8000);
 
-        // The last 256 samples in buffer should be marker_chunk (0.99)
         let slice = pre_roll.as_slice();
         assert_eq!(&slice[8000 - 256..], marker_chunk.as_slice());
 
-        // Test clear
         pre_roll.clear();
         assert_eq!(pre_roll.as_slice().len(), 0);
         assert!(pre_roll.as_slice().is_empty());
@@ -616,16 +568,13 @@ mod tests {
 
     #[test]
     fn test_noise_gate_rms_threshold() {
-        // Test RMS energy calculation
         let silence = vec![0.0f32; 256];
         assert_eq!(calculate_rms(&silence), 0.0);
 
-        // Constant DC signal of 0.5 -> RMS = 0.5
         let dc_signal = vec![0.5f32; 256];
         let dc_rms = calculate_rms(&dc_signal);
         assert!((dc_rms - 0.5).abs() < 1e-6);
 
-        // Sine wave with amplitude A -> RMS = A / sqrt(2) approx 0.7071 * A
         let amplitude = 0.8f32;
         let sine_wave: Vec<f32> = (0..256)
             .map(|i| amplitude * (2.0 * std::f32::consts::PI * i as f32 / 16.0).sin())
@@ -634,29 +583,19 @@ mod tests {
         let expected_rms = amplitude / 2.0f32.sqrt();
         assert!((sine_rms - expected_rms).abs() < 1e-3);
 
-        // Test noise gate thresholding logic
         let noise_gate = 0.02f32;
 
-        // Sub-threshold noise
         let quiet_noise = vec![0.005f32; 256];
         let quiet_rms = calculate_rms(&quiet_noise);
         assert!(quiet_rms < noise_gate);
         assert!(!is_above_noise_gate(quiet_rms, noise_gate, false));
 
-        // Super-threshold signal
         let loud_signal = vec![0.1f32; 256];
         let loud_rms = calculate_rms(&loud_signal);
         assert!(loud_rms > noise_gate);
         assert!(is_above_noise_gate(loud_rms, noise_gate, false));
 
-        // Test Earshot effective noise gate multiplier (1.5x multiplier)
-        let _earshot_gate = noise_gate * 1.5; // 0.03
-        let borderline_noise = vec![0.025f32; 256]; // RMS = 0.025
-        let borderline_rms = calculate_rms(&borderline_noise);
-
-        // Should pass standard gate (0.025 >= 0.02)
-        assert!(is_above_noise_gate(borderline_rms, noise_gate, false));
-        // Should fail Earshot gate (0.025 < 0.03)
-        assert!(!is_above_noise_gate(borderline_rms, noise_gate, true));
+        assert!(is_above_noise_gate(0.025, noise_gate, false));
+        assert!(!is_above_noise_gate(0.025, noise_gate, true));
     }
 }

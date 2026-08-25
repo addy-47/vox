@@ -75,11 +75,13 @@ export const Home = memo(() => {
     isMobileScreen,
     testButtonRef,
     testPanelRef,
-    handleEngage,
-    handleEnd,
-    handlePause,
-    handleResume,
-    togglePtt,
+    engage,
+    disengage,
+    pause,
+    resume,
+    handlePttStart,
+    handlePttStop,
+    handlePttCancel,
     handleTestClip,
   } = useHomePage();
 
@@ -105,6 +107,8 @@ export const Home = memo(() => {
   const visibleDialogueTurns = useMemo(() => {
     return dialogueHistory.slice(-10);
   }, [dialogueHistory]);
+
+  const isPttActive = isEngaged && !testingClip && interactionMode === "PTT" && !isPaused;
 
   return (
     <div className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none">
@@ -190,7 +194,13 @@ export const Home = memo(() => {
 
       {/* ── Orb Stage (Vertically centered in stage distance between top edge & EdgeNav) ── */}
       <div
-        className="absolute z-10 pointer-events-none overflow-hidden flex items-center justify-center"
+        className={cn(
+          "absolute z-10 overflow-hidden flex items-center justify-center select-none",
+          isPttActive ? "pointer-events-auto cursor-pointer" : "pointer-events-none"
+        )}
+        onPointerDown={isPttActive ? () => handlePttStart() : undefined}
+        onPointerUp={isPttActive ? () => handlePttStop() : undefined}
+        onPointerLeave={isPttActive ? () => { if (pttStatus === "RECORDING") handlePttCancel(); } : undefined}
         style={{
           left: "50%",
           top: "calc(50% - 36px)",
@@ -231,10 +241,10 @@ export const Home = memo(() => {
       >
         {/* Buttons */}
         <div className="flex items-center gap-4 relative">
-          {/* Universal Pause / Resume Button */}
-          {isEngaged && !testingClip && (
+          {/* Passive Mode Pause / Resume Button (Hidden in PTT Mode) */}
+          {isEngaged && !testingClip && interactionMode !== "PTT" && (
             <button
-              onClick={isPaused ? handleResume : handlePause}
+              onClick={isPaused ? resume : pause}
               className={cn(
                 "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95",
                 isPaused
@@ -247,19 +257,21 @@ export const Home = memo(() => {
             </button>
           )}
 
-          {/* PTT Mic Button */}
+          {/* PTT Hold-to-Talk Mic Button */}
           {isEngaged && !testingClip && interactionMode === "PTT" && (
             <button
-              onClick={togglePtt}
+              onPointerDown={() => handlePttStart()}
+              onPointerUp={() => handlePttStop()}
+              onPointerLeave={() => { if (pttStatus === "RECORDING") handlePttCancel(); }}
               disabled={isPaused}
               className={cn(
-                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95",
+                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer",
                 pttStatus === "RECORDING"
                   ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
                   : "text-[rgb(var(--accent))]",
                 isPaused && "opacity-40 cursor-not-allowed hover:bg-transparent hover:scale-100"
               )}
-              aria-label="Toggle PTT Microphone"
+              aria-label="Hold to Talk (Push-To-Talk)"
             >
               <Mic size={28} className={cn(pttStatus === "RECORDING" && "animate-pulse-slow")} />
             </button>
@@ -273,7 +285,7 @@ export const Home = memo(() => {
               </span>
             )}
             <button
-              onClick={isEngaged ? handleEnd : handleEngage}
+              onClick={isEngaged ? disengage : engage}
               className={cn(
                 "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95",
                 isEngaged && isThinking && "engage-btn-loading border-transparent",

@@ -1,35 +1,32 @@
-//! ============================================================================
-//! src/ipc/dictation.rs — Tauri IPC Commands for Dictation Subsystem
-//! ============================================================================
-
 use crate::core::settings::DictationSettings;
 use crate::core::state::AppState;
 use crate::services::dictation::clipboard;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 
-/// Query current dictation settings.
+/// Returns current dictation settings.
 #[tauri::command]
 pub async fn get_dictation_settings(
-    state: State<'_, std::sync::Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<DictationSettings, String> {
     let settings = state.settings.read().map_err(|e| e.to_string())?;
     Ok(settings.dictation.clone())
 }
 
-/// Query the last completed dictation transcript for recovery (FR-08).
+/// Returns the last completed dictation transcript for recovery.
 #[tauri::command]
 pub async fn get_last_dictation_transcript(
-    state: State<'_, std::sync::Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Option<String>, String> {
     let last = state.dictation_last_transcript.lock().clone();
     Ok(last)
 }
 
-/// Manually copy the last completed dictation transcript to the clipboard.
+/// Manually copies the last completed dictation transcript to the system clipboard.
 #[tauri::command]
 pub async fn copy_last_dictation_transcript(
     app: AppHandle,
-    state: State<'_, std::sync::Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let last = state.dictation_last_transcript.lock().clone();
     if let Some(text) = last {

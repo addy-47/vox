@@ -6,13 +6,13 @@ import { renderHook, act } from "@testing-library/react";
 // Mocked pipeline service primitives (the IPC command contract under test).
 // ---------------------------------------------------------------------------
 const pipelineMocks = vi.hoisted(() => ({
-  engage: vi.fn().mockResolvedValue(undefined),
-  startRealtimeSession: vi.fn().mockResolvedValue(undefined),
-  stopRealtimeSession: vi.fn().mockResolvedValue(undefined),
-  pausePipeline: vi.fn().mockResolvedValue(undefined),
-  resumePipeline: vi.fn().mockResolvedValue(undefined),
+  startSession: vi.fn().mockResolvedValue(undefined),
+  endSession: vi.fn().mockResolvedValue(undefined),
+  pauseSession: vi.fn().mockResolvedValue(undefined),
+  resumeSession: vi.fn().mockResolvedValue(undefined),
   pttStart: vi.fn().mockResolvedValue(undefined),
   pttStop: vi.fn().mockResolvedValue(undefined),
+  pttCancel: vi.fn().mockResolvedValue(undefined),
   testClip: vi.fn().mockResolvedValue(undefined),
   testClipCancel: vi.fn().mockResolvedValue(undefined),
   getRealtimeSessionCache: vi.fn().mockResolvedValue({ has_session: false }),
@@ -25,13 +25,13 @@ const pipelineMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/services/pipelineService", () => ({
-  engage: pipelineMocks.engage,
-  startRealtimeSession: pipelineMocks.startRealtimeSession,
-  stopRealtimeSession: pipelineMocks.stopRealtimeSession,
-  pausePipeline: pipelineMocks.pausePipeline,
-  resumePipeline: pipelineMocks.resumePipeline,
+  startSession: pipelineMocks.startSession,
+  endSession: pipelineMocks.endSession,
+  pauseSession: pipelineMocks.pauseSession,
+  resumeSession: pipelineMocks.resumeSession,
   pttStart: pipelineMocks.pttStart,
   pttStop: pipelineMocks.pttStop,
+  pttCancel: pipelineMocks.pttCancel,
   testClip: pipelineMocks.testClip,
   testClipCancel: pipelineMocks.testClipCancel,
   getRealtimeSessionCache: pipelineMocks.getRealtimeSessionCache,
@@ -112,21 +112,20 @@ const mountHook = () => {
 // Test suite
 // ---------------------------------------------------------------------------
 describe("useHomePage voice pipeline lifecycle", () => {
-  describe("Engage (handleEngage)", () => {
-    it("invokes engage() when in modular mode", async () => {
+  describe("Engage (engage / handleEngage)", () => {
+    it("invokes startSession() unconditionally regardless of pipeline mode", async () => {
       const { result } = mountHook();
       await flush();
 
       await act(async () => {
-        await result.current.handleEngage();
+        await result.current.engage();
       });
 
-      expect(pipelineMocks.engage).toHaveBeenCalledTimes(1);
-      expect(pipelineMocks.startRealtimeSession).not.toHaveBeenCalled();
+      expect(pipelineMocks.startSession).toHaveBeenCalledTimes(1);
       expect(result.current.isEngaged).toBe(true);
     });
 
-    it("invokes startRealtimeSession() when in realtime mode", async () => {
+    it("invokes startSession() when in realtime mode without mode branching", async () => {
       settingsState.value = {
         interaction: { mode: "passive", pipeline_mode: "realtime" },
       };
@@ -136,55 +135,31 @@ describe("useHomePage voice pipeline lifecycle", () => {
       expect(result.current.pipelineMode).toBe("realtime");
 
       await act(async () => {
-        await result.current.handleEngage();
+        await result.current.engage();
       });
 
-      expect(pipelineMocks.startRealtimeSession).toHaveBeenCalledTimes(1);
-      expect(pipelineMocks.engage).not.toHaveBeenCalled();
+      expect(pipelineMocks.startSession).toHaveBeenCalledTimes(1);
+      expect(result.current.isEngaged).toBe(true);
     });
   });
 
-  describe("Disengage (handleEnd) — standard session", () => {
-    it("invokes engage() to toggle off and never pausePipeline() in modular mode", async () => {
+  describe("Disengage (disengage / handleEnd) — standard session", () => {
+    it("invokes endSession() unconditionally and never pauseSession()", async () => {
       const { result } = mountHook();
       await flush();
 
       await act(async () => {
-        await result.current.handleEngage();
+        await result.current.engage();
       });
-      pipelineMocks.engage.mockClear();
+      pipelineMocks.startSession.mockClear();
 
       await act(async () => {
-        await result.current.handleEnd();
+        await result.current.disengage();
       });
 
-      expect(pipelineMocks.engage).toHaveBeenCalledTimes(1);
+      expect(pipelineMocks.endSession).toHaveBeenCalledTimes(1);
       expect(pipelineMocks.testClipCancel).not.toHaveBeenCalled();
-      expect(pipelineMocks.pausePipeline).not.toHaveBeenCalled();
-      expect(pipelineMocks.stopRealtimeSession).not.toHaveBeenCalled();
-      expect(result.current.isEngaged).toBe(false);
-    });
-
-    it("invokes stopRealtimeSession() and never engage()/pausePipeline() in realtime mode", async () => {
-      settingsState.value = {
-        interaction: { mode: "passive", pipeline_mode: "realtime" },
-      };
-      const { result } = mountHook();
-      await flush();
-
-      await act(async () => {
-        await result.current.handleEngage();
-      });
-      pipelineMocks.stopRealtimeSession.mockClear();
-
-      await act(async () => {
-        await result.current.handleEnd();
-      });
-
-      expect(pipelineMocks.stopRealtimeSession).toHaveBeenCalledTimes(1);
-      expect(pipelineMocks.engage).not.toHaveBeenCalled();
-      expect(pipelineMocks.testClipCancel).not.toHaveBeenCalled();
-      expect(pipelineMocks.pausePipeline).not.toHaveBeenCalled();
+      expect(pipelineMocks.pauseSession).not.toHaveBeenCalled();
       expect(result.current.isEngaged).toBe(false);
     });
 
@@ -193,11 +168,11 @@ describe("useHomePage voice pipeline lifecycle", () => {
       await flush();
 
       await act(async () => {
-        await result.current.handleEngage();
+        await result.current.engage();
       });
 
       await act(async () => {
-        await result.current.handleEnd();
+        await result.current.disengage();
       });
 
       expect(result.current.transcript).toBe("");
@@ -206,8 +181,8 @@ describe("useHomePage voice pipeline lifecycle", () => {
     });
   });
 
-  describe("Disengage (handleEnd) — test clip playing", () => {
-    it("invokes testClipCancel() and never engage()/pausePipeline() when a test clip is active", async () => {
+  describe("Disengage (disengage / handleEnd) — test clip playing", () => {
+    it("invokes testClipCancel() and never endSession()/pauseSession() when a test clip is active", async () => {
       const { result } = mountHook();
       await flush();
 
@@ -220,13 +195,12 @@ describe("useHomePage voice pipeline lifecycle", () => {
       pipelineMocks.testClipCancel.mockClear();
 
       await act(async () => {
-        await result.current.handleEnd();
+        await result.current.disengage();
       });
 
       expect(pipelineMocks.testClipCancel).toHaveBeenCalledTimes(1);
-      expect(pipelineMocks.engage).not.toHaveBeenCalled();
-      expect(pipelineMocks.pausePipeline).not.toHaveBeenCalled();
-      expect(pipelineMocks.stopRealtimeSession).not.toHaveBeenCalled();
+      expect(pipelineMocks.endSession).not.toHaveBeenCalled();
+      expect(pipelineMocks.pauseSession).not.toHaveBeenCalled();
       expect(result.current.testingClip).toBeNull();
       expect(result.current.isEngaged).toBe(false);
     });
@@ -254,7 +228,7 @@ describe("useHomePage voice pipeline lifecycle", () => {
       await flush();
 
       await act(async () => {
-        await result.current.handleEngage();
+        await result.current.engage();
       });
       pipelineMocks.testClip.mockClear();
 
@@ -267,37 +241,66 @@ describe("useHomePage voice pipeline lifecycle", () => {
     });
   });
 
-  describe("Pause / Resume (handlePause / handleResume)", () => {
-    it("invokes pausePipeline() on pause and resumePipeline() on resume", async () => {
+  describe("Pause / Resume (pause / resume)", () => {
+    it("invokes pauseSession() on pause and resumeSession() on resume", async () => {
       const { result } = mountHook();
       await flush();
 
       await act(async () => {
-        await result.current.handleEngage();
+        await result.current.engage();
       });
 
       await act(async () => {
-        await result.current.handlePause();
+        await result.current.pause();
       });
-      expect(pipelineMocks.pausePipeline).toHaveBeenCalledTimes(1);
+      expect(pipelineMocks.pauseSession).toHaveBeenCalledTimes(1);
       expect(result.current.isPaused).toBe(true);
 
       await act(async () => {
-        await result.current.handleResume();
+        await result.current.resume();
       });
-      expect(pipelineMocks.resumePipeline).toHaveBeenCalledTimes(1);
+      expect(pipelineMocks.resumeSession).toHaveBeenCalledTimes(1);
       expect(result.current.isPaused).toBe(false);
     });
 
-    it("does not invoke pausePipeline() when not engaged", async () => {
+    it("does not invoke pauseSession() when not engaged", async () => {
       const { result } = mountHook();
       await flush();
 
       await act(async () => {
-        await result.current.handlePause();
+        await result.current.pause();
       });
 
-      expect(pipelineMocks.pausePipeline).not.toHaveBeenCalled();
+      expect(pipelineMocks.pauseSession).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Push-To-Talk (handlePttStart / handlePttStop / handlePttCancel)", () => {
+    it("invokes pttStart(), pttStop(), and pttCancel()", async () => {
+      settingsState.value = {
+        interaction: { mode: "ptt", pipeline_mode: "modular" },
+      };
+      const { result } = mountHook();
+      await flush();
+
+      await act(async () => {
+        await result.current.engage();
+      });
+
+      await act(async () => {
+        await result.current.handlePttStart();
+      });
+      expect(pipelineMocks.pttStart).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await result.current.handlePttStop();
+      });
+      expect(pipelineMocks.pttStop).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await result.current.handlePttCancel();
+      });
+      expect(pipelineMocks.pttCancel).toHaveBeenCalledTimes(1);
     });
   });
 });
