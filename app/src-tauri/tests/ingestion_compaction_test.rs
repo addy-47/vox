@@ -95,7 +95,7 @@ fn test_ingestion_and_compaction_session1() {
 
     let base_url = env::var("LLM_BASE_URL")
         .unwrap_or_else(|_| "https://integrate.api.nvidia.com/v1".to_string());
-    let model = env::var("LLM_MODEL").unwrap_or_else(|_| "meta/llama-3.1-70b-instruct".to_string());
+    let model = env::var("LLM_MODEL").unwrap_or_else(|_| "meta/llama-3.1-8b-instruct".to_string());
     let provider_name = env::var("LLM_PROVIDER_NAME").unwrap_or_else(|_| "nvidia".to_string());
 
     println!(

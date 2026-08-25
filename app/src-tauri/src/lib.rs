@@ -17,10 +17,9 @@ use crate::ipc::history::{
     commit_session_to_history, delete_session, get_sessions, get_transcript_history, get_turns,
 };
 use crate::ipc::pipeline::{
-    copy_last_dictation_transcript, end_session, engage, get_dictation_settings,
-    get_last_dictation_transcript, get_realtime_session_cache, launch_engine, pause_pipeline,
-    pause_session, ptt_cancel, ptt_start, ptt_stop, resume_pipeline, resume_session,
-    start_realtime_session, start_session, stop_engine, stop_realtime_session, test_clip,
+    check_engine_status, copy_last_dictation_transcript, end_session, get_dictation_settings,
+    get_last_dictation_transcript, get_realtime_session_cache, launch_engine, pause_session,
+    ptt_cancel, ptt_start, ptt_stop, resume_session, start_session, stop_engine, test_clip,
     test_clip_cancel,
 };
 use crate::ipc::settings::{
@@ -435,20 +434,16 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            check_engine_status,
             launch_engine,
             stop_engine,
-            engage,
             start_session,
             end_session,
             pause_session,
             resume_session,
             test_clip,
             test_clip_cancel,
-            start_realtime_session,
-            stop_realtime_session,
             get_realtime_session_cache,
-            pause_pipeline,
-            resume_pipeline,
             hide_tray_window,
             sync_hud_visibility,
             set_hud_ignore_cursor,

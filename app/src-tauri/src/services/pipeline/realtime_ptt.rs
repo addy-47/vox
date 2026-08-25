@@ -93,7 +93,7 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     *rt_guard = Some(rt_engine);
 
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Idle, &ctx, app, state);
+    transition(InteractionState::Ready, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "session_started", 0) {
         log::warn!("[RealtimePTT] Failed to emit session_started: {}", e);
@@ -156,7 +156,7 @@ pub fn handle_ptt_start(app: &AppHandle, state: &AppState) -> Result<(), String>
 
     let turn_id = state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::UserSpeaking, &ctx, app, state);
+    transition(InteractionState::Listening, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
         "main",
@@ -184,7 +184,7 @@ pub fn handle_ptt_stop(app: &AppHandle, state: &AppState) -> Result<(), String> 
     if !SPEECH_DETECTED.load(Ordering::Relaxed) {
         REALTIME_PTT_BUFFER.lock().clear();
         let ctx = RoutingContext::from_app_state(state);
-        transition(InteractionState::Idle, &ctx, app, state);
+        transition(InteractionState::Ready, &ctx, app, state);
         let _ = app.emit_to("main", "ptt_status", serde_json::json!({ "state": "IDLE" }));
         log::info!(
             "[RealtimePTT] Non-speech PTT hold discarded without cloud request (Turn: {})",
@@ -226,7 +226,7 @@ pub fn handle_ptt_cancel(app: &AppHandle, state: &AppState) -> Result<(), String
     REALTIME_PTT_BUFFER.lock().clear();
 
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Idle, &ctx, app, state);
+    transition(InteractionState::Ready, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "ptt_status", serde_json::json!({ "state": "IDLE" })) {
         log::warn!("[RealtimePTT] Failed to emit ptt_status IDLE: {}", e);
@@ -295,7 +295,7 @@ fn on_llm_token(turn_id: u32, token: String, app: &AppHandle) {
 /// Transitions pipeline state to assistant speaking when audio playback begins.
 fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::AssistantSpeaking, &ctx, app, state);
+    transition(InteractionState::Speaking, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "playback_started", turn_id) {
         log::warn!("[RealtimePTT] Failed to emit playback_started: {}", e);
@@ -305,7 +305,7 @@ fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
 /// Transitions pipeline state back to idle resting state upon playback completion.
 fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Idle, &ctx, app, state);
+    transition(InteractionState::Ready, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "playback_finished", turn_id) {
         log::warn!("[RealtimePTT] Failed to emit playback_finished: {}", e);

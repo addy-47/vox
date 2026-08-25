@@ -415,7 +415,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
                 setTranscript("");
                 setAssistantText("");
               }
-              if ((newState === "UserSpeaking" || newState === "Listening") && isEngagedRef.current) {
+              if (newState === "Listening" && isEngagedRef.current) {
                 archiveCurrentTurn();
               }
             },

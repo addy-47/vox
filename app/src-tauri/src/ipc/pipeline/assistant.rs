@@ -25,9 +25,9 @@ pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
     crate::services::audio::stop_audio_engine(&state).await
 }
 
-/// Starts or toggles the primary voice assistant session.
+/// Starts the voice assistant session based on current pipeline settings.
 #[tauri::command]
-pub async fn engage(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let ctx = RoutingContext::from_app_state(&state);
     match (ctx.pipeline_mode, ctx.interaction_mode) {
         (PipelineMode::Modular, InteractionMode::Passive) => {
@@ -43,12 +43,6 @@ pub async fn engage(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(
             crate::services::pipeline::realtime_ptt::start_session(&app, &state).await
         }
     }
-}
-
-/// Starts the voice assistant session based on current pipeline settings.
-#[tauri::command]
-pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    engage(app, state).await
 }
 
 /// Ends the active voice assistant session.
@@ -85,12 +79,6 @@ pub async fn pause_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> R
     }
 }
 
-/// Legacy alias for pause_session.
-#[tauri::command]
-pub async fn pause_pipeline(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    pause_session(app, state).await
-}
-
 /// Resumes a paused voice assistant pipeline.
 #[tauri::command]
 pub async fn resume_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
@@ -103,15 +91,6 @@ pub async fn resume_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> 
             crate::services::pipeline::realtime_passive::resume_session(&app, &state).await
         }
     }
-}
-
-/// Legacy alias for resume_session.
-#[tauri::command]
-pub async fn resume_pipeline(
-    app: AppHandle,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    resume_session(app, state).await
 }
 
 /// Initiates Push-To-Talk speech recording.
@@ -154,22 +133,4 @@ pub async fn ptt_cancel(app: AppHandle, state: State<'_, Arc<AppState>>) -> Resu
             crate::services::pipeline::realtime_ptt::handle_ptt_cancel(&app, &state)
         }
     }
-}
-
-/// Starts real-time session (alias for start_session in realtime mode).
-#[tauri::command]
-pub async fn start_realtime_session(
-    app: AppHandle,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    engage(app, state).await
-}
-
-/// Stops real-time session (alias for end_session in realtime mode).
-#[tauri::command]
-pub async fn stop_realtime_session(
-    app: AppHandle,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    end_session(app, state).await
 }

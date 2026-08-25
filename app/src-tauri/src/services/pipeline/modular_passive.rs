@@ -89,7 +89,7 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     }
 
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Listening, &ctx, app, state);
+    transition(InteractionState::Ready, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "session_started", conv_id) {
         log::warn!("[ModularPassive] Failed to emit session_started: {}", e);
@@ -121,7 +121,7 @@ pub async fn resume_session(app: &AppHandle, state: &AppState) -> Result<(), Str
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Listening, &ctx, app, state);
+    transition(InteractionState::Ready, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "pipeline_resumed", ()) {
         log::warn!("[ModularPassive] Failed to emit pipeline_resumed: {}", e);
@@ -184,7 +184,7 @@ fn on_speech_start(turn_id: u32, app: &AppHandle, state: &AppState) {
     state.conversation_manager.lock().pop_last_user_turn();
 
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::UserSpeaking, &ctx, app, state);
+    transition(InteractionState::Listening, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "speech_start", turn_id) {
         log::warn!("[ModularPassive] Failed to emit speech_start: {}", e);
@@ -226,7 +226,7 @@ fn on_transcript_partial(turn_id: u32, text: String, app: &AppHandle) {
 fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppState) {
     if text.trim().is_empty() {
         let ctx = RoutingContext::from_app_state(state);
-        transition(InteractionState::Listening, &ctx, app, state);
+        transition(InteractionState::Ready, &ctx, app, state);
         return;
     }
 
@@ -352,7 +352,7 @@ fn on_tts_finished(_turn_id: u32, rtf: f32, state: &AppState) {
 /// Transitions pipeline state to assistant speaking when audio playback begins.
 fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::AssistantSpeaking, &ctx, app, state);
+    transition(InteractionState::Speaking, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "playback_started", turn_id) {
         log::warn!("[ModularPassive] Failed to emit playback_started: {}", e);
@@ -362,7 +362,7 @@ fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
 /// Finalizes assistant response playback and transitions pipeline back to listening.
 fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Listening, &ctx, app, state);
+    transition(InteractionState::Ready, &ctx, app, state);
 
     if let Err(e) = app.emit_to("main", "playback_finished", turn_id) {
         log::warn!("[ModularPassive] Failed to emit playback_finished: {}", e);

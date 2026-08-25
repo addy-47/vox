@@ -31,13 +31,13 @@ const NUM_SHEETS = 7;
 
 /** Target amplitude per interaction state. */
 const BASE_AMP: Record<string, number> = {
-  Idle:              0.02,
-  Listening:         0.14,
-  UserSpeaking:      0.58,
-  Thinking:          0.30,
-  AssistantSpeaking: 0.58,
-  Paused:            0.02,
-  Error:             0.02,
+  Idle:      0.02,
+  Ready:     0.08,
+  Listening: 0.58,
+  Thinking:  0.30,
+  Speaking:  0.58,
+  Paused:    0.02,
+  Error:     0.02,
 };
 
 function getCSSColor(varName: string, fallbackHex: string): THREE.Color {
@@ -486,11 +486,11 @@ export const VoxOrb = React.memo(({
       const h = telemetryRef.current.high;
       const v = telemetryRef.current.vad_prob || 0;
       
-      if (state === 'UserSpeaking' || state === 'AssistantSpeaking') {
+      if (state === 'Listening' || state === 'Speaking') {
         rawEnergy = e;
         rawHigh = h;
-      } else if (state === 'Listening') {
-        // Subtle energy feedback when listening based on mic energy & VAD
+      } else if (state === 'Ready') {
+        // Subtle energy feedback when ready based on mic energy & VAD
         rawEnergy = e * 0.4 + v * 0.2;
         rawHigh = h * 0.3;
       }
@@ -538,7 +538,7 @@ export const VoxOrb = React.memo(({
     if (state === 'Idle' || state === 'Paused' || state === 'Error') {
       ctx.tgtGlow.copy(themeGlow);
       ctx.tgtAccent.copy(themeAccent);
-    } else if (state === 'AssistantSpeaking') {
+    } else if (state === 'Speaking') {
       ctx.tgtGlow.copy(themeAccent);
       const isDark = themeRef.current.theme !== 'light';
       if (isDark) {

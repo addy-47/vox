@@ -30,12 +30,12 @@ fn engine_stop_trigger(dictation_enabled: bool, is_engaged: bool, is_passive: bo
     !dictation_enabled && !is_engaged && !is_passive
 }
 
-/// Model the `resume_pipeline()` post-resume interaction state transition from
-/// `src/ipc/pipeline/lifecycle.rs`.
+/// Model the `resume_session()` post-resume interaction state transition from
+/// `src/services/pipeline/`.
 fn resume_next_state(mode: InteractionMode) -> InteractionState {
     match mode {
-        InteractionMode::PTT => InteractionState::Idle,
-        InteractionMode::Passive => InteractionState::Listening,
+        InteractionMode::PTT => InteractionState::Ready,
+        InteractionMode::Passive => InteractionState::Ready,
     }
 }
 
@@ -165,13 +165,13 @@ fn test_cancellation_bumping_turn_id_invalidates_inflight_tasks() {
 fn test_cancellation_during_playback_clears_pipeline_buffers() {
     let pipeline = PipelineAtomics::new();
 
-    // 1. Pipeline transitions to AssistantSpeaking.
+    // 1. Pipeline transitions to Speaking.
     {
         let mut state_lock = pipeline.state.lock();
-        *state_lock = InteractionState::AssistantSpeaking;
+        *state_lock = InteractionState::Speaking;
     }
     pipeline.current_state_atomic.store(
-        InteractionState::AssistantSpeaking as u32,
+        InteractionState::Speaking as u32,
         Ordering::Relaxed,
     );
 
@@ -196,7 +196,7 @@ fn test_cancellation_during_playback_clears_pipeline_buffers() {
 // ─── 3. Pause / Resume State Transitions ──────────────────────────────────────
 
 #[test]
-fn test_pause_pipeline_sets_pause_flag_and_transitions_to_idle() {
+fn test_pause_session_sets_pause_flag_and_transitions_to_idle() {
     let pipeline = PipelineAtomics::new();
     let owner_atomic = AtomicU32::new(InteractionOwner::Dictation as u32);
 
@@ -210,7 +210,7 @@ fn test_pause_pipeline_sets_pause_flag_and_transitions_to_idle() {
         .current_state_atomic
         .store(InteractionState::Listening as u32, Ordering::Relaxed);
 
-    // Pause requested (matching pause_pipeline IPC command).
+    // Pause requested (matching pause_session IPC command).
     pipeline.is_paused.store(true, Ordering::SeqCst);
     pipeline.cancel_flag.store(true, Ordering::SeqCst);
     pipeline.turn_id.fetch_add(1, Ordering::SeqCst);
@@ -245,7 +245,7 @@ fn test_pause_pipeline_sets_pause_flag_and_transitions_to_idle() {
 }
 
 #[test]
-fn test_resume_pipeline_clears_pause_flag_and_transitions_to_mode_state() {
+fn test_resume_session_clears_pause_flag_and_transitions_to_mode_state() {
     let pipeline = PipelineAtomics::new();
     let owner_atomic = AtomicU32::new(InteractionOwner::Dictation as u32);
 
@@ -256,7 +256,7 @@ fn test_resume_pipeline_clears_pause_flag_and_transitions_to_mode_state() {
         .current_state_atomic
         .store(InteractionState::Idle as u32, Ordering::Relaxed);
 
-    // Resume under Passive mode -> Transitions to Listening.
+    // Resume under Passive mode -> Transitions to Ready.
     pipeline.is_paused.store(false, Ordering::SeqCst);
     pipeline.cancel_flag.store(false, Ordering::SeqCst);
     let next_passive_state = resume_next_state(InteractionMode::Passive);
@@ -278,11 +278,11 @@ fn test_resume_pipeline_clears_pause_flag_and_transitions_to_mode_state() {
     );
     assert_eq!(
         pipeline.current_state_atomic.load(Ordering::Relaxed),
-        InteractionState::Listening as u32,
-        "Resume under Passive mode MUST transition state to Listening!"
+        InteractionState::Ready as u32,
+        "Resume under Passive mode MUST transition state to Ready!"
     );
 
-    // Resume under PTT mode -> Transitions to Idle.
+    // Resume under PTT mode -> Transitions to Ready.
     let next_ptt_state = resume_next_state(InteractionMode::PTT);
     {
         let mut state_lock = pipeline.state.lock();
@@ -294,8 +294,8 @@ fn test_resume_pipeline_clears_pause_flag_and_transitions_to_mode_state() {
 
     assert_eq!(
         pipeline.current_state_atomic.load(Ordering::Relaxed),
-        InteractionState::Idle as u32,
-        "Resume under PTT mode MUST transition state to Idle!"
+        InteractionState::Ready as u32,
+        "Resume under PTT mode MUST transition state to Ready!"
     );
 
     let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
@@ -390,16 +390,16 @@ fn test_interaction_mode_switching_between_owners() {
 }
 
 #[test]
-fn test_resume_pipeline_state_machine_by_mode() {
-    // Passive owner resumes to Listening.
+fn test_resume_session_state_machine_by_mode() {
+    // Passive owner resumes to Ready.
     assert_eq!(
         resume_next_state(InteractionMode::Passive),
-        InteractionState::Listening
+        InteractionState::Ready
     );
-    // PTT owner resumes to Idle (waiting for key press).
+    // PTT owner resumes to Ready.
     assert_eq!(
         resume_next_state(InteractionMode::PTT),
-        InteractionState::Idle
+        InteractionState::Ready
     );
 }
 

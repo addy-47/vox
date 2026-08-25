@@ -6,10 +6,10 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
  */
 export type InteractionState =
   | "Idle"
+  | "Ready"
   | "Listening"
-  | "UserSpeaking"
   | "Thinking"
-  | "AssistantSpeaking"
+  | "Speaking"
   | "Paused"
   | "Error";
 

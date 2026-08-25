@@ -286,21 +286,21 @@ Legend: ✅ resident · ❌ not loaded · ↺ lazy/on-demand (loaded on first wa
 **Transliteration (ONNX)** is orthogonal to the above: it loads on the first Devanagari string seen in *any* state (`transliterate` → `init_transliteration_engine`) and stays resident until `stop_engine`.
 
 **Reference — load entry points** (for tracing in code):
-- VAD: `ipc/pipeline/engine_launch.rs` (`launch_engine`) — eager at engine launch.
+- VAD: `services/audio/engine.rs` (`start_audio_engine`) — eager at engine launch.
 - STT: `services/stt/providers/embedded.rs` (`ensure_loaded`) — lazy on first `transcribe`/`transcribe_chunk` turn.
-- LLM / TTS: `services/pipeline/{llm,tts}_lifecycle.rs` (`warm_up_*`) — lazy on `VoxEvent::WarmUp` / first turn; `cool_down_*` on auto-sleep.
-- Scope Clf: `ipc/pipeline/lifecycle.rs` (`engage` → `ensure_scope_classifier_loaded`).
+- LLM / TTS: `services/llm/actor.rs` & `services/tts/actor.rs` (`warm_up_*`) — lazy on `VoxEvent::WarmUp` / first turn; `cool_down_*` on auto-sleep.
+- Scope Clf: `services/intent/` (`ensure_scope_classifier_loaded`).
 - Embedding / NLI / Edge: `services/memory/**` + `persistence/memory_worker.rs` — idle sweep only.
 - Transliteration: `services/translit.rs`.
-- Realtime S2S: `ipc/pipeline/realtime.rs` (`start_realtime_session_internal`) — cloud, no local weights.
-- Full teardown: `ipc/pipeline/lifecycle.rs` (`stop_engine` → `unload_all_onnx_models` + `trim_heap`).
+- Realtime S2S: `services/pipeline/realtime_passive.rs` & `services/pipeline/realtime_ptt.rs` — cloud WebSocket, no local weights.
+- Full teardown: `services/audio/engine.rs` (`stop_audio_engine` → `unload_all_onnx_models` + `trim_heap`).
 
 ### Auto-Sleep Cooldown
 
-Auto-sleep is driven by the pipeline event loop (`services/pipeline/event_loop.rs`) using `interaction.auto_sleep_timeout` (default 300s). On sustained inactivity it sets `is_sleeping` and runs a **tiered offload**:
+Auto-sleep is driven by the pipeline router (`services/pipeline/router.rs`) using `interaction.auto_sleep_timeout` (default 300s). On sustained inactivity it sets `is_sleeping` and runs a **tiered offload**:
 
-- `cool_down_llm()` (`services/pipeline/llm_lifecycle.rs`) — drops the local GGUF model / closes the cloud provider, frees ~0.75–1.4 GB.
-- `cool_down_tts()` (`services/pipeline/tts_lifecycle.rs`) — drops the TTS engine, frees ~0.14–1.1 GB.
+- `cool_down_llm()` (`services/llm/actor.rs`) — drops the local GGUF model / closes the cloud provider, frees ~0.75–1.4 GB.
+- `cool_down_tts()` (`services/tts/actor.rs`) — drops the TTS engine, frees ~0.14–1.1 GB.
 
 VAD and STT are **not** cooled on auto-sleep — they stay resident so the mic keeps listening for the next wake word / push-to-talk. Any new activity flips `is_sleeping` back to false and re-warms LLM + TTS lazily via `warm_up_*`. Only `stop_engine()` (main-window close with dictation disabled, disengage, or app quit) tears down VAD/STT and evicts **every** ONNX model via `unload_all_onnx_models()` followed by a cross-platform `trim_heap()`.
 
