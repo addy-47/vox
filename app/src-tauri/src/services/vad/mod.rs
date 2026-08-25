@@ -4,25 +4,23 @@ pub mod ten_onnx;
 
 pub use actor::spawn_vad_actor;
 
-// ─── VAD Model Constants ───────────────────────────────────────────────────
 pub const MODEL_DIR_VAD: &str = "vad";
 pub const MODEL_FILE_VAD: &str = "ten_vad.onnx";
 
 /// Voice Activity Detection engine contract.
 pub trait VadEngine {
+    /// Evaluates if the current audio chunk contains active speech.
     fn predict(&mut self, chunk: &[f32]) -> bool;
 }
 
-/// Unified dispatch enum for all supported VAD backends.
-///
-/// Uses enum dispatch (zero-cost, no vtable) instead of `Box<dyn VadEngine>`
-/// to avoid dynamic dispatch overhead in the audio hot path.
+/// Unified dispatch enum for supported Voice Activity Detection backends.
 pub enum VadBackend {
     Ten(ten_onnx::VadEngine),
     Earshot(earshot_vad::EarshotVadEngine),
 }
 
 impl VadEngine for VadBackend {
+    /// Dispatches chunk speech activity evaluation to the selected backend.
     fn predict(&mut self, chunk: &[f32]) -> bool {
         match self {
             VadBackend::Ten(e) => e.predict(chunk),
@@ -32,10 +30,7 @@ impl VadEngine for VadBackend {
 }
 
 impl VadBackend {
-    /// Hot-update the detection threshold.
-    ///
-    /// For TenVAD: recreates the ONNX detector with the new threshold.
-    /// For Earshot: free f32 write, no reinitialization.
+    /// Hot-updates the voice detection activation threshold.
     pub fn update_threshold(&mut self, threshold: f32) -> anyhow::Result<()> {
         match self {
             VadBackend::Ten(e) => e.update_detector(threshold),
@@ -46,7 +41,7 @@ impl VadBackend {
         }
     }
 
-    /// Flush/reset the detector state at utterance boundaries.
+    /// Flushes internal detector state across utterance boundaries.
     pub fn flush(&mut self) {
         match self {
             VadBackend::Ten(e) => e.flush(),

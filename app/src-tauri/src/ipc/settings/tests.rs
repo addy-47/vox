@@ -34,7 +34,12 @@ mod tests {
         assert!(err.contains("enabled must be a boolean"));
 
         // 5. Type mismatch: string passed to numeric field (tray_history_limit)
-        let res = apply_setting_mutation(&mut settings, "history", "tray_history_limit", &json!("dense"));
+        let res = apply_setting_mutation(
+            &mut settings,
+            "history",
+            "tray_history_limit",
+            &json!("dense"),
+        );
         assert!(res.is_err());
 
         // 6. Type mismatch: boolean passed to string field (theme)

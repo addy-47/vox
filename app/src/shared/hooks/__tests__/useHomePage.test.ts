@@ -43,7 +43,7 @@ vi.mock("@/services/pipelineService", () => ({
 // touching real Tauri runtime state.
 // ---------------------------------------------------------------------------
 const settingsState = vi.hoisted(() => ({
-  value: { interaction: { main_app_mode: "passive", pipeline_mode: "modular" } },
+  value: { interaction: { mode: "passive", pipeline_mode: "modular" } },
 }));
 
 vi.mock("@/services/settingsService", () => ({
@@ -86,7 +86,7 @@ let activeWrapper: ReturnType<typeof renderHook> | null = null;
 beforeEach(() => {
   vi.clearAllMocks();
   settingsState.value = {
-    interaction: { main_app_mode: "passive", pipeline_mode: "modular" },
+    interaction: { mode: "passive", pipeline_mode: "modular" },
   };
 });
 
@@ -97,15 +97,16 @@ afterEach(() => {
   }
 });
 
+import { VoiceSessionProvider } from "@/shared/context/VoiceSessionContext";
+import { useHomePage } from "@/shared/hooks/useHomePage";
+
 const mountHook = () => {
-  const wrapper = renderHook(() => useHomePage());
+  const wrapper = renderHook(() => useHomePage(), {
+    wrapper: VoiceSessionProvider,
+  });
   activeWrapper = wrapper;
   return wrapper;
 };
-
-// Import the hook under test. vi.mock calls above are hoisted, so the module
-// is loaded with all collaborators replaced by the mocks declared in this file.
-import { useHomePage } from "@/shared/hooks/useHomePage";
 
 // ---------------------------------------------------------------------------
 // Test suite
@@ -127,7 +128,7 @@ describe("useHomePage voice pipeline lifecycle", () => {
 
     it("invokes startRealtimeSession() when in realtime mode", async () => {
       settingsState.value = {
-        interaction: { main_app_mode: "passive", pipeline_mode: "realtime" },
+        interaction: { mode: "passive", pipeline_mode: "realtime" },
       };
       const { result } = mountHook();
       await flush();
@@ -166,7 +167,7 @@ describe("useHomePage voice pipeline lifecycle", () => {
 
     it("invokes stopRealtimeSession() and never engage()/pausePipeline() in realtime mode", async () => {
       settingsState.value = {
-        interaction: { main_app_mode: "passive", pipeline_mode: "realtime" },
+        interaction: { mode: "passive", pipeline_mode: "realtime" },
       };
       const { result } = mountHook();
       await flush();
@@ -184,6 +185,23 @@ describe("useHomePage voice pipeline lifecycle", () => {
       expect(pipelineMocks.engage).not.toHaveBeenCalled();
       expect(pipelineMocks.testClipCancel).not.toHaveBeenCalled();
       expect(pipelineMocks.pausePipeline).not.toHaveBeenCalled();
+      expect(result.current.isEngaged).toBe(false);
+    });
+
+    it("clears active transcript and assistant text on disengage", async () => {
+      const { result } = mountHook();
+      await flush();
+
+      await act(async () => {
+        await result.current.handleEngage();
+      });
+
+      await act(async () => {
+        await result.current.handleEnd();
+      });
+
+      expect(result.current.transcript).toBe("");
+      expect(result.current.assistantText).toBe("");
       expect(result.current.isEngaged).toBe(false);
     });
   });

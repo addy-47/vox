@@ -9,6 +9,7 @@ pub const MODEL_FILENAME: &str = "model_quantized.onnx";
 pub const TOKENIZER_FILENAME: &str = "tokenizer.json";
 pub const EDGE_CLASSIFIER_THRESHOLD: f32 = 0.80;
 
+/// Runtime state container holding the ONNX inference session and tokenizer for edge classification.
 pub struct EdgeClassifierEngine {
     session: parking_lot::Mutex<ort::session::Session>,
     tokenizer: Tokenizer,
@@ -18,7 +19,7 @@ pub struct EdgeClassifierEngine {
 static EDGE_ENGINE: parking_lot::RwLock<Option<EdgeClassifierEngine>> =
     parking_lot::RwLock::new(None);
 
-/// Initializes the ModernBERT INT8 ONNX Edge Classifier Engine.
+/// Initializes the ModernBERT INT8 ONNX Edge Classifier Engine from model directory.
 pub fn init_edge_classifier(model_dir: &Path) -> Result<bool> {
     let model_path = model_dir.join(MODEL_FILENAME);
     let tokenizer_path = model_dir.join(TOKENIZER_FILENAME);
@@ -91,10 +92,12 @@ pub fn unload_edge_classifier() {
     }
 }
 
+/// Returns true if the edge classifier ONNX session is currently loaded in memory.
 pub fn is_edge_classifier_loaded() -> bool {
     EDGE_ENGINE.read().is_some()
 }
 
+/// Ensures the edge classifier model is loaded, loading default weights from disk if absent.
 pub fn ensure_edge_classifier_loaded() -> Result<()> {
     if is_edge_classifier_loaded() {
         return Ok(());
@@ -110,32 +113,14 @@ pub fn ensure_edge_classifier_loaded() -> Result<()> {
     Ok(())
 }
 
-/// Classifies an inter-collection candidate pair using the fine-tuned ModernBERT INT8 ONNX sequence classifier.
-/// Dynamically predicts output relation label (0: SHAPES, 1: DEPENDS_ON, 2: CONFLICTS_WITH, 3: NONE) (spec §4.2).
-/// Returns `Ok((Some(predicted_edge), prob))` if score >= tau* (0.80) and predicted label != NONE, else `Ok((None, prob))`.
-pub fn classify_edge(
+/// Tokenizes source and target collection facts for inter-edge classification.
+fn tokenize_input(
+    engine: &EdgeClassifierEngine,
     src_collection: &str,
     src_fact: &str,
-    _src_context: Option<&str>,
     tgt_collection: &str,
     tgt_fact: &str,
-    _tgt_context: Option<&str>,
-) -> Result<(Option<String>, f32)> {
-    // 1. Verify policy matrix allows an edge for this collection pair (spec §4.2)
-    if !is_valid_inter_collection_pair(src_collection, tgt_collection) {
-        return Ok((None, 0.0));
-    }
-
-    if !is_edge_classifier_loaded() {
-        ensure_edge_classifier_loaded()?;
-    }
-
-    let lock = EDGE_ENGINE.read();
-    let engine = match lock.as_ref() {
-        Some(e) => e,
-        None => return Ok((None, 0.0)),
-    };
-
+) -> Result<(Array2<i64>, Array2<i64>, usize)> {
     let input_text = format!(
         "[{}] {} [SEP] [{}] {}",
         src_collection, src_fact, tgt_collection, tgt_fact
@@ -157,6 +142,16 @@ pub fn classify_edge(
     let input_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), input_ids)?;
     let attention_mask_arr = Array2::<i64>::from_shape_vec((1, seq_len), attention_mask)?;
 
+    Ok((input_ids_arr, attention_mask_arr, seq_len))
+}
+
+/// Executes the ONNX graph session to compute raw logits.
+fn run_inference(
+    engine: &EdgeClassifierEngine,
+    input_ids_arr: Array2<i64>,
+    attention_mask_arr: Array2<i64>,
+    seq_len: usize,
+) -> Result<Vec<f32>> {
     let input_ids_tensor = ort::value::Tensor::from_array(input_ids_arr)?;
     let attention_mask_tensor = ort::value::Tensor::from_array(attention_mask_arr)?;
 
@@ -183,13 +178,15 @@ pub fn classify_edge(
         .ok_or_else(|| anyhow!("ONNX model output missing logits tensor key"))?;
 
     let logits_array = outputs[output_key].try_extract_array::<f32>()?;
-    let logits_slice: Vec<f32> = logits_array.iter().copied().collect();
+    Ok(logits_array.iter().copied().collect())
+}
 
+/// Computes softmax probabilities over logits and identifies the highest-probability class index.
+fn compute_softmax(logits_slice: &[f32]) -> (usize, f32) {
     if logits_slice.is_empty() {
-        return Ok((None, 0.0));
+        return (0, 0.0);
     }
 
-    // Softmax calculation across output logits
     let max_logit = logits_slice
         .iter()
         .cloned()
@@ -214,7 +211,37 @@ pub fn classify_edge(
         }
     }
 
-    // Spec §4.2 Label Mapping: 0: SHAPES, 1: DEPENDS_ON, 2: CONFLICTS_WITH, 3: NONE
+    (max_idx, max_prob)
+}
+
+/// Classifies an inter-collection candidate pair using ModernBERT INT8 ONNX sequence classification.
+pub fn classify_edge(
+    src_collection: &str,
+    src_fact: &str,
+    _src_context: Option<&str>,
+    tgt_collection: &str,
+    tgt_fact: &str,
+    _tgt_context: Option<&str>,
+) -> Result<(Option<String>, f32)> {
+    if !is_valid_inter_collection_pair(src_collection, tgt_collection) {
+        return Ok((None, 0.0));
+    }
+
+    if !is_edge_classifier_loaded() {
+        ensure_edge_classifier_loaded()?;
+    }
+
+    let lock = EDGE_ENGINE.read();
+    let engine = match lock.as_ref() {
+        Some(e) => e,
+        None => return Ok((None, 0.0)),
+    };
+
+    let (input_ids, attention_mask, seq_len) =
+        tokenize_input(engine, src_collection, src_fact, tgt_collection, tgt_fact)?;
+    let logits = run_inference(engine, input_ids, attention_mask, seq_len)?;
+    let (max_idx, max_prob) = compute_softmax(&logits);
+
     let predicted_label = match max_idx {
         0 => crate::core::constants::PM_RELATION_SHAPES,
         1 => crate::core::constants::PM_RELATION_DEPENDS_ON,
@@ -235,7 +262,6 @@ mod tests {
 
     #[test]
     fn test_special_state_collections_reject_inter_collection_edges() {
-        // Narrative is pure context chaining history and must not originate inter-collection edges
         for &coll in PM_COLLECTIONS {
             assert!(
                 !is_valid_inter_collection_pair("Narrative", coll),

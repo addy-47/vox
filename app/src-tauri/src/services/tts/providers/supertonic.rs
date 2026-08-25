@@ -12,15 +12,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
-/// Minimum quality steps (fast but slurred).
 const MIN_QUALITY_STEPS: u32 = 2;
-/// Maximum quality steps (highest quality).
 const MAX_QUALITY_STEPS: u32 = 12;
-/// Minimum speed factor.
 const MIN_SPEED: f32 = 0.7;
-/// Maximum speed factor.
 const MAX_SPEED: f32 = 2.0;
-
 const SUPER_SAMPLE_RATE: u32 = 44100;
 
 struct BiquadFilter {
@@ -36,8 +31,8 @@ struct BiquadFilter {
 }
 
 impl BiquadFilter {
+    /// Creates a 2nd-order Butterworth low-pass filter at 11kHz cutoff for 44.1kHz audio.
     fn new_lpf_11k() -> Self {
-        // 2nd-order Butterworth LPF at fc = 11000 Hz, fs = 44100 Hz
         Self {
             b0: 0.291851,
             b1: 0.583701,
@@ -51,6 +46,7 @@ impl BiquadFilter {
         }
     }
 
+    /// Processes an individual audio sample through the direct form biquad filter.
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
         let output = self.b0 * input + self.b1 * self.x1 + self.b2 * self.x2
@@ -64,12 +60,12 @@ impl BiquadFilter {
     }
 }
 
+/// Applies 11kHz anti-aliasing filter and resamples 44.1kHz audio down to standard 24kHz.
 fn resample_44100_to_24000(input: &[f32], lpf: &mut BiquadFilter) -> Vec<f32> {
     let ratio = SUPER_SAMPLE_RATE as f32 / 24000.0;
     let out_len = (input.len() as f32 / ratio) as usize;
     let mut output = Vec::with_capacity(out_len);
 
-    // Low-pass filter input to avoid aliasing above 12kHz Nyquist frequency
     let filtered: Vec<f32> = input.iter().map(|&x| lpf.process(x)).collect();
 
     let mut src_idx: f32 = 0.0;
@@ -83,46 +79,39 @@ fn resample_44100_to_24000(input: &[f32], lpf: &mut BiquadFilter) -> Vec<f32> {
     output
 }
 
+/// Speech synthesis engine wrapping the Supertonic ONNX model via Sherpa-ONNX.
 pub struct TtsEngine {
-    /// The sherpa-onnx OfflineTts handle, wrapped in a Mutex for interior mutability.
     tts: Mutex<OfflineTts>,
-    /// Current quality / diffusion steps (2-12).
     quality_steps: AtomicU32,
-    /// Current speed factor (0.7-2.0).
     speed: AtomicF32,
-    /// Voice SID (0-9) — set at construction time, requires restart to change.
     voice: i32,
 }
 
-/// Wrapper around `std::sync::atomic::AtomicU32` for f32 values.
-/// Provides atomic load/store with f32 bit-pattern casting.
 struct AtomicF32 {
     inner: AtomicU32,
 }
 
 impl AtomicF32 {
+    /// Creates a new atomic float from an initial f32 value.
     const fn new(val: f32) -> Self {
         Self {
             inner: AtomicU32::new(val.to_bits()),
         }
     }
 
+    /// Loads the current float value with the given atomic memory ordering.
     fn load(&self, order: Ordering) -> f32 {
         f32::from_bits(self.inner.load(order))
     }
 
+    /// Stores a float value with the given atomic memory ordering.
     fn store(&self, val: f32, order: Ordering) {
         self.inner.store(val.to_bits(), order);
     }
 }
 
 impl TtsEngine {
-    /// Create a new Supertonic TTS engine.
-    ///
-    /// `model_path` — directory containing the Supertonic model files.
-    /// `voice` — speaker ID (0-9).
-    /// `quality_steps` — diffusion / quality steps (clamped to 2-12).
-    /// `speed` — speed factor (clamped to 0.7-2.0).
+    /// Initializes Supertonic ONNX offline TTS components from the specified model directory.
     pub fn new(model_path: &Path, voice: i32, quality_steps: u32, speed: f32) -> Result<Self> {
         let mp = |f: &str| -> String { model_path.join(f).to_string_lossy().into() };
 
@@ -169,6 +158,7 @@ impl TtsEngine {
 }
 
 impl TtsProvider for TtsEngine {
+    /// Hot-updates the number of Supertonic diffusion quality steps.
     fn set_quality_steps(&self, steps: u32) {
         self.quality_steps.store(
             steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS),
@@ -176,20 +166,23 @@ impl TtsProvider for TtsEngine {
         );
     }
 
+    /// Hot-updates the playback speed factor.
     fn set_speed(&self, speed: f32) {
         self.speed
             .store(speed.clamp(MIN_SPEED, MAX_SPEED), Ordering::Relaxed);
     }
 
+    /// Returns the TtsProviderKind::Supertonic variant identifier.
     fn kind(&self) -> TtsProviderKind {
         TtsProviderKind::Supertonic
     }
 
+    /// Returns true confirming the engine is loaded in memory.
     fn health_check(&self) -> bool {
-        // Local engine is always healthy if constructed successfully.
         true
     }
 
+    /// Synthesizes text chunk, resamples stream to 24kHz in real-time, and dispatches chunk events.
     fn synthesize_chunk(
         &self,
         text: &str,
@@ -250,14 +243,16 @@ impl TtsProvider for TtsEngine {
                     return true;
                 }
                 let samples_24k = resample_44100_to_24000(raw_samples, &mut lpf);
-                let _ = event_tx_cb.send(VoxEvent::TtsChunk {
+                if let Err(e) = event_tx_cb.send(VoxEvent::TtsChunk {
                     turn_id,
                     samples: samples_24k,
-                });
+                }) {
+                    log::warn!("[Supertonic] Error sending TtsChunk: {:?}", e);
+                }
                 true
             }),
         );
-        drop(tts_guard); // release the Mutex lock
+        drop(tts_guard);
 
         let elapsed = start.elapsed().as_secs_f32();
 
@@ -284,7 +279,9 @@ impl TtsProvider for TtsEngine {
             rtf
         );
 
-        let _ = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf });
+        if let Err(e) = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf }) {
+            log::warn!("[Supertonic] Error sending TtsFinished: {:?}", e);
+        }
         Ok(())
     }
 }

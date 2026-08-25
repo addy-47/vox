@@ -6,12 +6,14 @@ use serde::Serialize;
 use std::sync::atomic::Ordering;
 use tauri::State;
 
+/// Representation of a conflicting fact pair.
 #[derive(Debug, Serialize, Clone)]
 pub struct MemoryConflict {
     pub fact_a: MemoryNodeTopology,
     pub fact_b: MemoryNodeTopology,
 }
 
+/// Retrieve all unresolved memory fact conflicts from the graph.
 #[tauri::command]
 pub async fn get_unresolved_conflicts(
     _state: State<'_, std::sync::Arc<AppState>>,
@@ -21,7 +23,6 @@ pub async fn get_unresolved_conflicts(
         .await
         .map_err(|e| format!("DB open failed: {}", e))?;
 
-    // Single JOIN query replacing N+1 topology subqueries
     let mut rows = conn
         .query(
             "SELECT r.from_id, f1.collection, f1.created_at,
@@ -72,6 +73,7 @@ pub async fn get_unresolved_conflicts(
     Ok(conflicts)
 }
 
+/// Resolve a memory conflict by marking the loser as superseded and linking the winner.
 #[tauri::command]
 pub async fn resolve_memory_conflict(
     state: State<'_, std::sync::Arc<AppState>>,
@@ -93,7 +95,6 @@ pub async fn resolve_memory_conflict(
         .map_err(|e| e.to_string())?;
 
     let result: Result<(), String> = async {
-        // Mark loser node status as superseded
         conn.execute(
             "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
             (loser_id.clone(),),
@@ -101,7 +102,6 @@ pub async fn resolve_memory_conflict(
         .await
         .map_err(|e| e.to_string())?;
 
-        // Insert SUPERSEDES edge winner -> loser
         conn.execute(
             "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at) VALUES (?, ?, ?, 'USER', ?)",
             (winner_id, loser_id, PM_RELATION_SUPERSEDES.to_string(), now),
@@ -113,12 +113,17 @@ pub async fn resolve_memory_conflict(
     }
     .await;
 
-    if result.is_ok() {
-        let _ = conn.execute("COMMIT;", ()).await;
-        state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    } else {
-        let _ = conn.execute("ROLLBACK;", ()).await;
-        result
+    if let Err(err) = result {
+        if let Err(e) = conn.execute("ROLLBACK;", ()).await {
+            log::warn!("[Memory] Failed to rollback transaction: {}", e);
+        }
+        return Err(err);
     }
+
+    conn.execute("COMMIT;", ())
+        .await
+        .map_err(|e| format!("Failed to commit memory transaction: {}", e))?;
+
+    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
+    Ok(())
 }

@@ -1,7 +1,3 @@
-//! ============================================================================
-//! src/services/dictation/output_router.rs — Output Destination Dispatcher
-//! ============================================================================
-
 use crate::core::error::DictationError;
 use crate::core::settings::DictationOutputMode;
 use crate::core::state::{AppState, InteractionOwner};
@@ -13,14 +9,13 @@ use tauri::{AppHandle, Emitter, Manager, State};
 pub async fn route_transcript(app: &AppHandle, text: &str) -> Result<(), DictationError> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    // 1. Always cache the latest transcript for recovery queries (FR-08)
     *state.dictation_last_transcript.lock() = Some(text.to_string());
 
-    // 2. Resolve configured output mode
-    let output_mode = {
-        let s = state.settings.read().unwrap();
-        s.dictation.output_mode.clone()
-    };
+    let output_mode = state
+        .settings
+        .read()
+        .map(|s| s.dictation.output_mode.clone())
+        .unwrap_or(DictationOutputMode::Paste);
 
     log::info!(
         "[Dictation::Router] Routing transcript ({} chars) to mode: {:?}",
@@ -29,72 +24,101 @@ pub async fn route_transcript(app: &AppHandle, text: &str) -> Result<(), Dictati
     );
 
     match output_mode {
-        DictationOutputMode::Tray => {
-            // Deliver to Tray HUD overlay window (ensure webview exists)
-            let _ = crate::tray::ensure_tray_window(app);
-            let _ = app.emit_to(
-                "tray",
-                "transcript_final",
-                serde_json::json!({
-                    "text": text,
-                    "turn_id": state.pipeline.turn_id.load(std::sync::atomic::Ordering::Relaxed),
-                    "owner": InteractionOwner::Dictation,
-                }),
-            );
-            log::debug!("[Dictation::Router] Emitted final transcript to Tray HUD window.");
-            Ok(())
-        }
+        DictationOutputMode::Tray => dispatch_to_tray(app, text, &state),
+        DictationOutputMode::Clipboard => dispatch_to_clipboard(app, text),
+        DictationOutputMode::Paste => dispatch_to_paste(app, text).await,
+    }
+}
 
-        DictationOutputMode::Clipboard => {
-            // Write directly to OS clipboard
-            clipboard::set_text(text)?;
-            let _ = app.emit(
+/// Emits final transcript to the Tray HUD overlay window.
+fn dispatch_to_tray(app: &AppHandle, text: &str, state: &AppState) -> Result<(), DictationError> {
+    if let Err(e) = crate::tray::ensure_tray_window(app) {
+        log::warn!("[Dictation::Router] Failed to ensure tray window: {}", e);
+    }
+
+    if let Err(e) = app.emit_to(
+        "tray",
+        "transcript_final",
+        serde_json::json!({
+            "text": text,
+            "turn_id": state.pipeline.turn_id.load(std::sync::atomic::Ordering::Relaxed),
+            "owner": InteractionOwner::Dictation,
+        }),
+    ) {
+        log::warn!(
+            "[Dictation::Router] Failed to emit transcript_final to Tray HUD: {}",
+            e
+        );
+    }
+
+    log::debug!("[Dictation::Router] Emitted final transcript to Tray HUD window.");
+    Ok(())
+}
+
+/// Sets transcript directly on system clipboard and broadcasts success event.
+fn dispatch_to_clipboard(app: &AppHandle, text: &str) -> Result<(), DictationError> {
+    clipboard::set_text(text)?;
+
+    if let Err(e) = app.emit(
+        "dictation_success",
+        serde_json::json!({
+            "mode": "clipboard",
+            "length": text.len()
+        }),
+    ) {
+        log::warn!(
+            "[Dictation::Router] Failed to emit dictation_success: {}",
+            e
+        );
+    }
+
+    log::info!("[Dictation::Router] Transcript written to system clipboard.");
+    Ok(())
+}
+
+/// Simulates OS paste into active window with fallback clipboard preservation on failure.
+async fn dispatch_to_paste(app: &AppHandle, text: &str) -> Result<(), DictationError> {
+    let input_adapter = create_input_adapter();
+    let paste_result =
+        clipboard::with_clipboard_safe(text, || async { input_adapter.simulate_paste() }).await;
+
+    match paste_result {
+        Ok(()) => {
+            if let Err(e) = app.emit(
                 "dictation_success",
                 serde_json::json!({
-                    "mode": "clipboard",
+                    "mode": "paste",
                     "length": text.len()
                 }),
+            ) {
+                log::warn!(
+                    "[Dictation::Router] Failed to emit dictation_success: {}",
+                    e
+                );
+            }
+            log::info!(
+                "[Dictation::Router] Transcript successfully pasted into focused application."
             );
-            log::info!("[Dictation::Router] Transcript written to system clipboard.");
             Ok(())
         }
-
-        DictationOutputMode::Paste => {
-            let input_adapter = create_input_adapter();
-
-            // Safely write to clipboard, simulate OS paste, and restore prior clipboard if successful
-            let paste_result =
-                clipboard::with_clipboard_safe(text, || async { input_adapter.simulate_paste() })
-                    .await;
-
-            match paste_result {
-                Ok(()) => {
-                    let _ = app.emit(
-                        "dictation_success",
-                        serde_json::json!({
-                            "mode": "paste",
-                            "length": text.len()
-                        }),
-                    );
-                    log::info!("[Dictation::Router] Transcript successfully pasted into focused application.");
-                    Ok(())
-                }
-                Err(e) => {
-                    log::warn!(
-                        "[Dictation::Router] Paste simulation failed ({:?}). Transcript is preserved on clipboard.",
-                        e
-                    );
-                    let _ = app.emit(
-                        "dictation_recovery_available",
-                        serde_json::json!({
-                            "text": text,
-                            "error": format!("{}", e)
-                        }),
-                    );
-                    // Do not bubble up as an uncaught crash — the transcript is safely preserved on clipboard
-                    Ok(())
-                }
+        Err(e) => {
+            log::warn!(
+                "[Dictation::Router] Paste simulation failed ({:?}). Transcript is preserved on clipboard.",
+                e
+            );
+            if let Err(emit_err) = app.emit(
+                "dictation_recovery_available",
+                serde_json::json!({
+                    "text": text,
+                    "error": format!("{}", e)
+                }),
+            ) {
+                log::warn!(
+                    "[Dictation::Router] Failed to emit dictation_recovery_available: {}",
+                    emit_err
+                );
             }
+            Ok(())
         }
     }
 }

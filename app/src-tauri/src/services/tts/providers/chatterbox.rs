@@ -1,14 +1,3 @@
-//! Chatterbox TTS provider — wraps `chatterbox-rs` Engine.
-//!
-//! ## Config knobs from Vox settings
-//! - `language` — set at construction (fixed, requires restart)
-//! - `quality_steps` → `cfm_steps` — hot-updatable via `set_quality_steps()`
-//! - `speed` — applied as time-stretch on output PCM via linear interpolation
-//! - `voice` — not applicable (uses built-in reference voice)
-//!
-//! ## Output format
-//! Native 24 kHz f32 mono PCM — no resampling needed.
-
 use super::{TtsProvider, TtsProviderKind};
 use crate::core::events::VoxEvent;
 use anyhow::{anyhow, Result};
@@ -19,38 +8,22 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
-/// Minimum quality steps (fast, lower audio quality).
 const MIN_QUALITY_STEPS: u32 = 2;
-/// Maximum quality steps (highest quality).
 const MAX_QUALITY_STEPS: u32 = 10;
-
-/// Minimum speed factor.
 const MIN_SPEED: f32 = 0.7;
-/// Maximum speed factor.
 const MAX_SPEED: f32 = 2.0;
 
+/// Speech synthesis engine wrapping the local Chatterbox GGUF model via chatterbox-rs.
 pub struct ChatterboxEngine {
-    /// The chatterbox-rs Engine, wrapped in a Mutex for interior mutability.
     engine: Mutex<Engine>,
-    /// CFM steps (quality / diffusion steps), clamped 2-10.
     quality_steps: AtomicU32,
-    /// Speed factor applied via time-stretch, clamped 0.7-2.0.
-    speed: AtomicU32, // stored as f32 bits
-    /// Language code — fixed at construction.
+    speed: AtomicU32,
     #[allow(dead_code)]
     language: String,
 }
 
 impl ChatterboxEngine {
-    /// Create a new Chatterbox TTS engine.
-    ///
-    /// `model_path` — directory containing chatterbox GGUFs (expects
-    ///   `t3-q4_0.gguf` and `s3gen-f16.gguf`).
-    /// `language` — language code ("en", "es", "fr", etc.).
-    /// `quality_steps` — CFM steps (clamped 2-10).
-    /// `speed` — playback speed factor (clamped 0.7-2.0, applied as time-stretch).
-    /// `reference_audio` — optional absolute path to a source WAV for voice cloning.
-    ///   `None` = use Chatterbox's built-in reference voice.
+    /// Loads Chatterbox T3 and S3Gen GGUF models and initializes the inference engine.
     pub fn new(
         model_path: &Path,
         language: &str,
@@ -75,9 +48,8 @@ impl ChatterboxEngine {
         }
 
         let cfm = quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS) as i32;
-
-        // Validate reference audio path if provided, and warn if missing.
         let ref_audio = reference_audio.unwrap_or("").to_string();
+
         if !ref_audio.is_empty() {
             if std::path::Path::new(&ref_audio).exists() {
                 log::info!(
@@ -103,9 +75,9 @@ impl ChatterboxEngine {
             t3_gguf_path: t3_path.to_string_lossy().into_owned(),
             s3gen_gguf_path: s3_path.to_string_lossy().into_owned(),
             language: language.to_string(),
-            n_gpu_layers: 0, // Vox is CPU-only
+            n_gpu_layers: 0,
             cfm_steps: cfm,
-            seed: 42, // reproducible by default
+            seed: 42,
             temperature: 0.8,
             top_k: 1000,
             top_p: 0.95,
@@ -135,7 +107,7 @@ impl ChatterboxEngine {
         })
     }
 
-    /// Apply time-stretch via linear interpolation.
+    /// Applies time-stretch playback rate scaling on 24kHz audio via linear interpolation.
     fn apply_speed(samples: &[f32], speed: f32) -> Vec<f32> {
         if (speed - 1.0).abs() < 0.01 || samples.is_empty() {
             return samples.to_vec();
@@ -159,27 +131,31 @@ impl ChatterboxEngine {
 }
 
 impl TtsProvider for ChatterboxEngine {
+    /// Hot-updates the number of diffusion quality steps.
     fn set_quality_steps(&self, steps: u32) {
         let clamped = steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS);
         self.quality_steps.store(clamped, Ordering::Relaxed);
         log::info!("[Chatterbox] Quality steps set to {} (cfm_steps)", clamped);
     }
 
+    /// Hot-updates the speech playback speed factor.
     fn set_speed(&self, speed: f32) {
         let clamped = speed.clamp(MIN_SPEED, MAX_SPEED);
         self.speed.store(clamped.to_bits(), Ordering::Relaxed);
         log::info!("[Chatterbox] Speed set to {:.2}", clamped);
     }
 
+    /// Returns the TtsProviderKind::Chatterbox variant identifier.
     fn kind(&self) -> TtsProviderKind {
         TtsProviderKind::Chatterbox
     }
 
+    /// Returns true confirming the engine is initialized and available.
     fn health_check(&self) -> bool {
-        // Engine is always healthy if constructed successfully.
         true
     }
 
+    /// Synthesizes text chunk into 24kHz audio and dispatches chunk events in 2048-sample blocks.
     fn synthesize_chunk(
         &self,
         text: &str,
@@ -187,11 +163,7 @@ impl TtsProvider for ChatterboxEngine {
         cancel: Arc<AtomicBool>,
         event_tx: Sender<VoxEvent>,
     ) -> Result<()> {
-        if cancel.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-
-        if text.trim().is_empty() {
+        if cancel.load(Ordering::Relaxed) || text.trim().is_empty() {
             return Ok(());
         }
 
@@ -203,7 +175,6 @@ impl TtsProvider for ChatterboxEngine {
 
         let start = std::time::Instant::now();
 
-        // Lock engine, synthesize, release lock before sending events.
         let pcm = {
             let engine = self.engine.lock();
             let result = engine
@@ -217,18 +188,13 @@ impl TtsProvider for ChatterboxEngine {
         }
 
         let elapsed = start.elapsed().as_secs_f32();
-
-        // Apply speed time-stretch.
-        let speed_bits = self.speed.load(Ordering::Relaxed);
-        let speed = f32::from_bits(speed_bits);
+        let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
         let output = if (speed - 1.0).abs() >= 0.01 {
             Self::apply_speed(&pcm, speed)
         } else {
             pcm
         };
 
-        // Send PCM in 2048-sample chunks (≈85 ms at 24 kHz).
-        // This avoids starving the playback engine and keeps TTFA low.
         const CHUNK_SIZE: usize = 2048;
         for chunk in output.chunks(CHUNK_SIZE) {
             if cancel.load(Ordering::Relaxed) {
@@ -246,7 +212,6 @@ impl TtsProvider for ChatterboxEngine {
             }
         }
 
-        // Compute and report RTF.
         let audio_duration = output.len() as f32 / 24000.0;
         let rtf = if audio_duration > 0.0 {
             elapsed / audio_duration
@@ -262,7 +227,9 @@ impl TtsProvider for ChatterboxEngine {
             speed,
         );
 
-        let _ = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf });
+        if let Err(e) = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf }) {
+            log::warn!("[Chatterbox] Error dispatching TtsFinished: {:?}", e);
+        }
 
         Ok(())
     }

@@ -12,6 +12,7 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Detected local daemon backend flavor for an OpenAI-compatible endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LocalBackendKind {
     Ollama,
@@ -19,6 +20,7 @@ pub enum LocalBackendKind {
     StandardOpenAi,
 }
 
+/// Unified provider adapter for OpenAI-compatible local and remote LLM endpoints.
 pub struct OpenAiCompatProvider {
     base_url: String,
     model: String,
@@ -30,6 +32,7 @@ pub struct OpenAiCompatProvider {
 }
 
 impl OpenAiCompatProvider {
+    /// Creates a new OpenAI-compatible provider with resolved base URL and client settings.
     pub fn new(
         base_url: &str,
         model: &str,
@@ -86,6 +89,7 @@ impl OpenAiCompatProvider {
         }
     }
 
+    /// Injects authentication and provider headers into a request builder.
     pub fn inject_headers(&self, mut builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         if let Some(ref name) = self.provider_name {
             let name_lower = name.to_lowercase();
@@ -103,11 +107,11 @@ impl OpenAiCompatProvider {
         builder
     }
 
+    /// Probes the endpoint to detect whether it is Ollama, LM Studio, or standard OpenAI.
     pub fn detect_backend_kind(&self) -> LocalBackendKind {
         *self.backend_kind.get_or_init(|| {
             let mut detected = LocalBackendKind::StandardOpenAi;
 
-            // Try to probe Ollama
             let ollama_url = format!("{}/api/tags", self.base_url);
             let mut builder = self
                 .async_client
@@ -129,7 +133,6 @@ impl OpenAiCompatProvider {
                 );
                 detected = LocalBackendKind::Ollama;
             } else {
-                // Try to probe LM Studio
                 let lms_url = format!("{}/v1/models", self.base_url);
                 let mut builder = self
                     .async_client
@@ -213,6 +216,7 @@ struct OllamaModelDetails {
 }
 
 impl LlmProvider for OpenAiCompatProvider {
+    /// Streams tokens for the generation request from the configured endpoint.
     fn generate<'a>(
         &'a self,
         request: GenerationRequest,
@@ -384,7 +388,9 @@ impl LlmProvider for OpenAiCompatProvider {
                     }
                 } => {
                     log::info!("[OpenAiCompat] Generation cancelled during connect phase for turn {}", turn_id);
-                    let _ = tx.send(VoxEvent::Cancelled { turn_id });
+                    if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
+                        log::warn!("[OpenAiCompat] Failed to send Cancelled: {}", e);
+                    }
                     return Ok(());
                 }
             };
@@ -408,7 +414,9 @@ impl LlmProvider for OpenAiCompatProvider {
             loop {
                 if cancel_flag.load(Ordering::Relaxed) {
                     log::info!("[OpenAiCompat] Generation cancelled for turn {}", turn_id);
-                    let _ = tx.send(VoxEvent::Cancelled { turn_id });
+                    if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
+                        log::warn!("[OpenAiCompat] Failed to send Cancelled: {}", e);
+                    }
                     return Ok(());
                 }
 
@@ -453,19 +461,23 @@ impl LlmProvider for OpenAiCompatProvider {
             }
 
             if !finished && cancel_flag.load(Ordering::Relaxed) {
-                let _ = tx.send(VoxEvent::Cancelled { turn_id });
-            } else {
-                let _ = tx.send(VoxEvent::LlmFinished { turn_id });
+                if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
+                    log::warn!("[OpenAiCompat] Failed to send Cancelled: {}", e);
+                }
+            } else if let Err(e) = tx.send(VoxEvent::LlmFinished { turn_id }) {
+                log::warn!("[OpenAiCompat] Failed to send LlmFinished: {}", e);
             }
 
             Ok(())
         })
     }
 
+    /// Returns static capabilities of the OpenAI compatibility layer.
     fn capabilities(&self) -> &ProviderCapabilities {
         &self.capabilities
     }
 
+    /// Health checks the remote endpoint via models query.
     fn health_check(&self) -> bool {
         let kind = self.detect_backend_kind();
         match kind {
@@ -489,11 +501,9 @@ impl LlmProvider for OpenAiCompatProvider {
         }
     }
 
+    /// Lists models exposed by the remote daemon or API service.
     fn list_models(&self) -> Result<Vec<LlmModelInfo>, LlmError> {
-        use crate::core::settings::LlmModelInfo;
-
         block_on(async {
-            // Try Ollama-specific /api/tags first
             let ollama_url = format!("{}/api/tags", self.base_url);
             let mut builder = self
                 .async_client
@@ -534,7 +544,6 @@ impl LlmProvider for OpenAiCompatProvider {
                 }
             }
 
-            // Fallback: standard /v1/models
             let url = if self.base_url.ends_with("/v1") || self.base_url.ends_with("/openai") {
                 format!("{}/models", self.base_url)
             } else {
@@ -579,11 +588,13 @@ impl LlmProvider for OpenAiCompatProvider {
         })
     }
 
+    /// Returns ProviderKind::OpenAiCompat.
     fn kind(&self) -> ProviderKind {
         ProviderKind::OpenAiCompat
     }
 }
 
+/// Helper function to execute an async future synchronously from sync context.
 fn block_on<F: std::future::Future + Send>(future: F) -> F::Output
 where
     F::Output: Send,
@@ -614,10 +625,12 @@ where
     }
 }
 
+/// Checks if a text string is an empty or synthetic warmup token.
 fn user_text_is_warmup(text: &str) -> bool {
     text.is_empty() || text == "[WARMUP]"
 }
 
+/// Parses an SSE or raw JSON response line and sends extracted tokens over channel.
 fn process_line(line: &str, turn_id: u32, tx: &mpsc::Sender<VoxEvent>, finished: &mut bool) {
     if line.is_empty() {
         return;
@@ -634,16 +647,17 @@ fn process_line(line: &str, turn_id: u32, tx: &mpsc::Sender<VoxEvent>, finished:
             if let Some(choice) = chunk.choices.first() {
                 if let Some(token) = &choice.delta.content {
                     if !token.is_empty() {
-                        let _ = tx.send(VoxEvent::LlmToken {
+                        if let Err(e) = tx.send(VoxEvent::LlmToken {
                             turn_id,
                             token: token.clone(),
-                        });
+                        }) {
+                            log::warn!("[OpenAiCompat] Send token error: {}", e);
+                        }
                     }
                 }
             }
         }
     } else {
-        // Try parsing as native Ollama chat stream event
         #[derive(Deserialize)]
         struct OllamaMessage {
             content: String,
@@ -656,10 +670,12 @@ fn process_line(line: &str, turn_id: u32, tx: &mpsc::Sender<VoxEvent>, finished:
         if let Ok(chunk) = serde_json::from_str::<OllamaChatChunk>(line) {
             if let Some(msg) = chunk.message {
                 if !msg.content.is_empty() {
-                    let _ = tx.send(VoxEvent::LlmToken {
+                    if let Err(e) = tx.send(VoxEvent::LlmToken {
                         turn_id,
                         token: msg.content,
-                    });
+                    }) {
+                        log::warn!("[OpenAiCompat] Send Ollama token error: {}", e);
+                    }
                 }
             }
             if chunk.done.unwrap_or(false) {
@@ -668,15 +684,16 @@ fn process_line(line: &str, turn_id: u32, tx: &mpsc::Sender<VoxEvent>, finished:
             return;
         }
 
-        // Try parsing as raw JSON ChatCompletionChunk
         if let Ok(chunk) = serde_json::from_str::<ChatCompletionChunk>(line) {
             if let Some(choice) = chunk.choices.first() {
                 if let Some(token) = &choice.delta.content {
                     if !token.is_empty() {
-                        let _ = tx.send(VoxEvent::LlmToken {
+                        if let Err(e) = tx.send(VoxEvent::LlmToken {
                             turn_id,
                             token: token.clone(),
-                        });
+                        }) {
+                            log::warn!("[OpenAiCompat] Send raw token error: {}", e);
+                        }
                     }
                 }
             }
@@ -684,6 +701,7 @@ fn process_line(line: &str, turn_id: u32, tx: &mpsc::Sender<VoxEvent>, finished:
     }
 }
 
+/// Parses model ID into a human-friendly name, quantization level, and model family.
 fn parse_heuristic_metadata(id: &str) -> (String, Option<String>, Option<String>) {
     let id_lower = id.to_lowercase();
     let quantization =

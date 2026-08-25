@@ -33,22 +33,35 @@ where Tier 2 is recommended for users
 ### 1.1 Module Organization
 - **Domain over type:** Group code by domain (`services/memory/nli.rs`), never by Rust construct (`models.rs`).
 - **Single responsibility:** 1 responsibility per file. If a file cannot be described in 1 sentence, split it.
-- **File size ceiling:** Flag and justify files exceeding ~600 lines. Current large files: `services/pipeline.rs` (1742), `ipc/pipeline.rs` (1327), `ipc/settings.rs` (1026), `core/settings.rs` (957).
+- **File size ceiling:** Flag and justify files exceeding ~600 lines.
 - **`mod.rs` & `lib.rs`:** `mod.rs` is for module declarations + re-exports only. Zero business logic. `lib.rs` is for module declarations + Tauri app setup only. Zero business logic.
 - **Visibility:** Use `pub(crate)` over `pub` unless crossing the crate boundary (IPC or integration tests).
 
-### 1.2 Error Handling
+### 1.2 Function Standards
+- **Function line cap (soft):** No function exceeds 50 lines without documented justification. Flag and review at review time.
+- **No step-comment sequences:** If a function body needs numbered step comments (`// 1. do X`, `// 2. do Y`), each step must become a named private function. Step comments are compensating for missing abstraction.
+- **No toggle functions:** A function named `engage()` must only engage. `if condition { engage } else { disengage }` in one function body is banned. Use two explicitly named functions.
+- **Comment policy:** One `///` doc comment per function that states: what it does, what it takes, what it returns. No per-line comments inside function bodies. Runtime trace belongs in `log::info!` / `log::warn!`, not inline comments.
+- **Builder pattern for large constructors:** Any `new()` taking more than 8 arguments must use a builder pattern or be redesigned. `#[allow(clippy::too_many_arguments)]` is banned as a substitute.
+
+### 1.3 Error Handling
 - **No `unwrap()` in `src/`:** Banned except on `RwLock`/`Mutex` guards (poisoned lock = unrecoverable).
 - **Propagation:** Use `?` with `.context("...")` (`anyhow`) in services and persistence.
 - **IPC boundary:** Errors returned across Tauri IPC must be typed enums using `thiserror`.
-- **No silent error swallowing:** Never `let _ = res`. Log discarded errors: `if let Err(e) = ... { tracing::warn!(...) }`.
+- **No silent error swallowing:** `let _ = result` is banned. Every channel send or fallible call must either propagate with `?` or log on error: `if let Err(e) = tx.send(...) { log::warn!("[Module] Channel send failed: {}", e); }`.
+- **No backward-compatibility or fallback chains:** No `if path A fails, try path B, try path C`. One deterministic path per operation. If the path fails, return `Err(...)` or log a warning. Silent retry/fallback paths hide real failures.
 
-### 1.3 Async & Concurrency
+### 1.4 Async & Concurrency
 - **Non-blocking executor:** Never execute CPU-heavy work (inference, audio decode) on Tokio worker threads. Use `tokio::task::spawn_blocking`.
 - **Channels over locks:** Use Tokio/crossbeam channels for inter-service communication. Avoid new `Arc<Mutex<T>>`.
 - **Audio Hot Path:** VAD → STT → LLM → TTS hot path must be zero allocations and zero lock acquisitions. Use snapshotted values.
+- **Canonical lock order:** When acquiring multiple `Mutex`/`RwLock` guards, always acquire in this order: `state.engine` → `state.realtime_engine`. Never reversed. Lock order inversion is a confirmed deadlock source.
+- **No polling where events suffice:** If a subsystem knows when its state changes (e.g. `PlaybackEngine` knows when it starts/drains), it must emit a `VoxEvent` rather than relying on a caller to poll an atomic on a timer.
 
-### 1.4 Linting & Verification
+### 1.5 Routing Context
+- **No inline settings re-reads per handler:** When an IPC handler needs `pipeline_mode`, `interaction_mode`, and `owner`, these must be resolved once into a `RoutingContext` struct, not duplicated across each handler with an inline `state.settings.read().unwrap()` block.
+
+### 1.6 Linting & Verification
 - `cargo check`: Mandatory zero errors.
 - `cargo clippy --all-targets`: Mandatory zero warnings. Never suppress with `#[allow(...)]` without an explanatory comment.
 - `cargo fmt`: Must be run before committing.

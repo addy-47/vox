@@ -13,11 +13,13 @@ use std::path::Path;
 
 use symphonia_core::audio::Audio;
 use symphonia_core::audio::GenericAudioBufferRef;
+use symphonia_core::codecs::audio::AudioDecoder;
 use symphonia_core::codecs::audio::AudioDecoderOptions;
 use symphonia_core::codecs::CodecParameters;
 use symphonia_core::errors::Error;
 use symphonia_core::formats::probe::Hint;
 use symphonia_core::formats::FormatOptions;
+use symphonia_core::formats::FormatReader;
 use symphonia_core::io::MediaSourceStream;
 use symphonia_core::meta::MetadataOptions;
 
@@ -35,6 +37,7 @@ pub struct DecodedAudio {
     pub duration_secs: f32,
 }
 
+/// Decode raw in-memory audio bytes to 24 kHz mono f32 PCM given a format hint.
 pub fn decode_bytes_to_24khz_mono(bytes: &[u8], format_hint: &str) -> DecodeResult<DecodedAudio> {
     let cursor = std::io::Cursor::new(bytes.to_vec());
     let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
@@ -45,13 +48,7 @@ pub fn decode_bytes_to_24khz_mono(bytes: &[u8], format_hint: &str) -> DecodeResu
     decode_mss(mss, hint)
 }
 
-/// Decode any supported audio file to 24 kHz mono f32 PCM.
-///
-/// Supports formats: WAV, MP3, FLAC, M4A (AAC), OGG, etc. — anything
-/// that `symphonia` can decode.
-///
-/// # Errors
-/// Returns `Err` if the file cannot be opened, decoded, or contains no audio.
+/// Decode any supported audio file on disk to 24 kHz mono f32 PCM.
 pub fn decode_to_24khz_mono<P: AsRef<Path>>(path: P) -> DecodeResult<DecodedAudio> {
     let path = path.as_ref();
     let file =
@@ -66,6 +63,7 @@ pub fn decode_to_24khz_mono<P: AsRef<Path>>(path: P) -> DecodeResult<DecodedAudi
     decode_mss(mss, hint)
 }
 
+/// Decode an audio media stream into 24 kHz mono f32 PCM using format probing.
 fn decode_mss(mss: MediaSourceStream, hint: Hint) -> DecodeResult<DecodedAudio> {
     let mut format = symphonia::default::get_probe()
         .probe(
@@ -92,10 +90,35 @@ fn decode_mss(mss: MediaSourceStream, hint: Hint) -> DecodeResult<DecodedAudio> 
 
     let track_id = track.id;
     let input_sample_rate = codec_params.sample_rate.unwrap_or(24000);
+    let raw_samples = decode_packets(format.as_mut(), decoder.as_mut(), track_id)?;
 
+    if raw_samples.is_empty() {
+        return Err("Decoded audio contains no samples".to_string());
+    }
+
+    let resampled = if input_sample_rate != 24000 {
+        resample_linear(&raw_samples, input_sample_rate, 24000)
+    } else {
+        raw_samples
+    };
+
+    let duration_secs = resampled.len() as f32 / 24000.0;
+
+    Ok(DecodedAudio {
+        samples: resampled,
+        sample_rate: 24000,
+        duration_secs,
+    })
+}
+
+/// Decode format packets for the selected track into raw mono f32 samples.
+fn decode_packets(
+    format: &mut dyn FormatReader,
+    decoder: &mut dyn AudioDecoder,
+    track_id: u32,
+) -> DecodeResult<Vec<f32>> {
     let mut raw_samples: Vec<f32> = Vec::new();
 
-    // Decode loop
     loop {
         let packet = match format.next_packet() {
             Ok(Some(packet)) => packet,
@@ -119,88 +142,79 @@ fn decode_mss(mss: MediaSourceStream, hint: Hint) -> DecodeResult<DecodedAudio> 
             Err(e) => return Err(format!("Decoder error: {}", e)),
         };
 
-        // Convert to f32 mono
-        match decoded {
-            GenericAudioBufferRef::F32(buf) => {
-                let channels = buf.spec().channels().count();
-                let frames = buf.frames();
-                for f in 0..frames {
-                    let mut sum = 0.0f32;
-                    for c in 0..channels {
-                        sum += buf[c][f];
-                    }
-                    raw_samples.push(sum / channels as f32);
-                }
-            }
-            GenericAudioBufferRef::U8(buf) => {
-                let channels = buf.spec().channels().count();
-                let frames = buf.frames();
-                for f in 0..frames {
-                    let mut sum = 0.0f32;
-                    for c in 0..channels {
-                        sum += (buf[c][f] as f32 / 128.0) - 1.0;
-                    }
-                    raw_samples.push(sum / channels as f32);
-                }
-            }
-            GenericAudioBufferRef::U16(buf) => {
-                let channels = buf.spec().channels().count();
-                let frames = buf.frames();
-                for f in 0..frames {
-                    let mut sum = 0.0f32;
-                    for c in 0..channels {
-                        sum += (buf[c][f] as f32 / 32768.0) - 1.0;
-                    }
-                    raw_samples.push(sum / channels as f32);
-                }
-            }
-            GenericAudioBufferRef::S16(buf) => {
-                let channels = buf.spec().channels().count();
-                let frames = buf.frames();
-                for f in 0..frames {
-                    let mut sum = 0.0f32;
-                    for c in 0..channels {
-                        sum += buf[c][f] as f32 / 32768.0;
-                    }
-                    raw_samples.push(sum / channels as f32);
-                }
-            }
-            GenericAudioBufferRef::S32(buf) => {
-                let channels = buf.spec().channels().count();
-                let frames = buf.frames();
-                for f in 0..frames {
-                    let mut sum = 0.0f32;
-                    for c in 0..channels {
-                        sum += buf[c][f] as f32 / 2147483648.0;
-                    }
-                    raw_samples.push(sum / channels as f32);
-                }
-            }
-            _ => return Err("Unsupported sample buffer type (24-bit or other)".to_string()),
-        }
+        append_samples_as_f32_mono(&decoded, &mut raw_samples)?;
     }
 
-    if raw_samples.is_empty() {
-        return Err("Decoded audio contains no samples".to_string());
-    }
-
-    // Resample to 24000 Hz if necessary
-    let resampled = if input_sample_rate != 24000 {
-        resample_linear(&raw_samples, input_sample_rate, 24000)
-    } else {
-        raw_samples
-    };
-
-    let duration_secs = resampled.len() as f32 / 24000.0;
-
-    Ok(DecodedAudio {
-        samples: resampled,
-        sample_rate: 24000,
-        duration_secs,
-    })
+    Ok(raw_samples)
 }
 
-/// Simple linear interpolation resampler.
+/// Convert decoded audio buffer frames across supported sample types into mono f32 samples.
+fn append_samples_as_f32_mono(
+    decoded: &GenericAudioBufferRef<'_>,
+    raw_samples: &mut Vec<f32>,
+) -> DecodeResult<()> {
+    match decoded {
+        GenericAudioBufferRef::F32(buf) => {
+            let channels = buf.spec().channels().count();
+            let frames = buf.frames();
+            for f in 0..frames {
+                let mut sum = 0.0f32;
+                for c in 0..channels {
+                    sum += buf[c][f];
+                }
+                raw_samples.push(sum / channels as f32);
+            }
+        }
+        GenericAudioBufferRef::U8(buf) => {
+            let channels = buf.spec().channels().count();
+            let frames = buf.frames();
+            for f in 0..frames {
+                let mut sum = 0.0f32;
+                for c in 0..channels {
+                    sum += (buf[c][f] as f32 / 128.0) - 1.0;
+                }
+                raw_samples.push(sum / channels as f32);
+            }
+        }
+        GenericAudioBufferRef::U16(buf) => {
+            let channels = buf.spec().channels().count();
+            let frames = buf.frames();
+            for f in 0..frames {
+                let mut sum = 0.0f32;
+                for c in 0..channels {
+                    sum += (buf[c][f] as f32 / 32768.0) - 1.0;
+                }
+                raw_samples.push(sum / channels as f32);
+            }
+        }
+        GenericAudioBufferRef::S16(buf) => {
+            let channels = buf.spec().channels().count();
+            let frames = buf.frames();
+            for f in 0..frames {
+                let mut sum = 0.0f32;
+                for c in 0..channels {
+                    sum += buf[c][f] as f32 / 32768.0;
+                }
+                raw_samples.push(sum / channels as f32);
+            }
+        }
+        GenericAudioBufferRef::S32(buf) => {
+            let channels = buf.spec().channels().count();
+            let frames = buf.frames();
+            for f in 0..frames {
+                let mut sum = 0.0f32;
+                for c in 0..channels {
+                    sum += buf[c][f] as f32 / 2147483648.0;
+                }
+                raw_samples.push(sum / channels as f32);
+            }
+        }
+        _ => return Err("Unsupported sample buffer type (24-bit or other)".to_string()),
+    }
+    Ok(())
+}
+
+/// Resample an f32 audio slice from one sample rate to another using linear interpolation.
 fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
     let ratio = from_rate as f64 / to_rate as f64;
     let num_out = (input.len() as f64 / ratio) as usize;
@@ -218,8 +232,7 @@ fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
     out
 }
 
-/// Truncate audio to a maximum duration (in seconds).
-/// If already shorter, returns the original.
+/// Truncate decoded audio samples to a maximum duration in seconds.
 pub fn truncate_to(audio: DecodedAudio, max_secs: f32) -> DecodedAudio {
     let max_samples = (max_secs * 24000.0) as usize;
     if audio.samples.len() > max_samples {
@@ -233,7 +246,7 @@ pub fn truncate_to(audio: DecodedAudio, max_secs: f32) -> DecodedAudio {
     }
 }
 
-/// Write f32 PCM samples as a 24 kHz mono 16-bit WAV file using `hound`.
+/// Write f32 PCM samples as a 16-bit integer mono WAV file at the target sample rate.
 pub fn write_wav_f32<P: AsRef<Path>>(
     path: P,
     samples: &[f32],
@@ -265,8 +278,7 @@ pub fn write_wav_f32<P: AsRef<Path>>(
     Ok(())
 }
 
-/// Write f32 PCM samples as a 24 kHz mono 32-bit float WAV file using `hound`.
-/// This preserves the full precision for reference audio used in voice cloning.
+/// Write f32 PCM samples as a 32-bit floating point mono WAV file preserving full precision.
 pub fn write_wav_f32_raw<P: AsRef<Path>>(
     path: P,
     samples: &[f32],
@@ -301,6 +313,7 @@ pub fn write_wav_f32_raw<P: AsRef<Path>>(
 mod tests {
     use super::*;
 
+    /// Helper to generate a temporary 44.1 kHz sine wave WAV file for unit tests.
     fn create_test_wav() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.wav");

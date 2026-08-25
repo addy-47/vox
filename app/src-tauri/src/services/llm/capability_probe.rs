@@ -49,7 +49,21 @@ struct ChunkDelta {
     content: Option<String>,
 }
 
+/// Metadata collected during probe execution for an endpoint.
+#[derive(Default)]
+struct EndpointMeta {
+    supports_tools: bool,
+    context_window: Option<u32>,
+    server_has_gpu: bool,
+    is_gpu_accelerated: bool,
+    vram_bytes: Option<u64>,
+    family: Option<String>,
+    parameter_size: Option<String>,
+    quantization: Option<String>,
+}
+
 impl CapabilityProbeEngine {
+    /// Dispatches active capability probes across embedded GGUF or remote OpenAI-compatible endpoints.
     pub async fn probe_capabilities(
         config: &LlmProviderConfig,
         target_model_id: Option<&str>,
@@ -68,41 +82,7 @@ impl CapabilityProbeEngine {
                 let model_id = target_model_id
                     .unwrap_or(crate::core::defaults::DEFAULT_LLM_MODEL)
                     .to_string();
-                log::info!(
-                    "[CapabilityProbe] Probing Local Embedded GGUF model '{}'...",
-                    model_id
-                );
-
-                let (family, supports_tools, supports_devanagari) =
-                    Self::heuristic_embedded_caps(&model_id);
-
-                let caps = ModelCapabilities {
-                    model_id: model_id.clone(),
-                    provider_kind: "embedded".to_string(),
-                    supports_tools,
-                    supports_latin: true,
-                    supports_devanagari,
-                    context_window: Some(4096),
-                    tps: None,
-                    ttft_ms: None,
-                    server_has_gpu: false,
-                    is_gpu_accelerated: false,
-                    gpu_status: "Local CPU / In-Process".to_string(),
-                    vram_bytes: None,
-                    parameter_size: None,
-                    quantization: None,
-                    family: Some(family),
-                    tested_at_epoch: now,
-                };
-
-                log::info!(
-                    "[CapabilityProbe] Completed local probe for '{}': tools={}, devanagari={}",
-                    model_id,
-                    caps.supports_tools,
-                    caps.supports_devanagari
-                );
-
-                Ok(caps)
+                Ok(Self::probe_local_embedded(&model_id, now))
             }
             LlmProviderConfig::OpenAiCompat {
                 base_url,
@@ -112,211 +92,249 @@ impl CapabilityProbeEngine {
             } => {
                 let model_id = target_model_id.unwrap_or(model).to_string();
                 let prov_name = provider_name.as_deref().unwrap_or("").to_lowercase();
-                let is_cloud = Self::is_cloud_provider(base_url, &prov_name);
-
-                log::info!(
-                    "[CapabilityProbe] Initiating capability probe for model '{}' on endpoint '{}' (provider_name: '{}', is_cloud: {})...",
-                    model_id,
-                    base_url,
-                    prov_name,
-                    is_cloud
-                );
-
-                // Phase 1: Streaming Inference Probe for TTFT, TPS & Multi-lingual capabilities
-                log::info!(
-                    "[CapabilityProbe] Phase 1: Executing streaming inference probe via /v1/chat/completions..."
-                );
-
-                let (
-                    supports_latin,
-                    supports_devanagari,
-                    tps,
-                    ttft_ms,
-                    headers_indicate_gpu,
-                    header_context_window,
-                ) = Self::streaming_inference_probe(
+                Self::probe_openai_compat_endpoint(
                     &client,
                     base_url,
                     &model_id,
+                    &prov_name,
                     api_key.as_deref(),
+                    now,
                 )
-                .await;
-
-                log::info!(
-                    "[CapabilityProbe] Phase 1 Complete: ttft={:?}ms, tps={:?}, devanagari={}, latin={}",
-                    ttft_ms,
-                    tps,
-                    supports_devanagari,
-                    supports_latin
-                );
-
-                // Phase 2: Structured Tool Calling Probe (lookup_user JSON schema with tool_choice: "auto")
-                log::info!(
-                    "[CapabilityProbe] Phase 2: Testing structured JSON tool/function calling capabilities..."
-                );
-
-                let tool_probe_success =
-                    Self::structured_tool_probe(&client, base_url, &model_id, api_key.as_deref())
-                        .await;
-
-                log::info!(
-                    "[CapabilityProbe] Phase 2 Complete: tool_probe_success={}",
-                    tool_probe_success
-                );
-
-                // Phase 3: Metadata & GPU Offloading Verification
-                let mut supports_tools = tool_probe_success;
-                let mut context_window: Option<u32> = header_context_window;
-                let mut server_has_gpu = is_cloud || headers_indicate_gpu;
-                let mut is_gpu_accelerated = is_cloud;
-                let mut vram_bytes: Option<u64> = None;
-                let mut family: Option<String> = None;
-                let mut parameter_size: Option<String> = None;
-                let mut quantization: Option<String> = None;
-
-                if is_cloud {
-                    log::info!("[CapabilityProbe] Target is Cloud API. Preserving Cloud GPU Cluster designation.");
-                } else {
-                    // Local self-hosted endpoints (e.g. Ollama, LM Studio, vLLM on localhost)
-                    log::info!("[CapabilityProbe] Target is local/self-hosted. Querying /api/show and /api/ps...");
-
-                    let show_url = format!("{}/api/show", base_url.trim_end_matches('/'));
-                    let ps_url = format!("{}/api/ps", base_url.trim_end_matches('/'));
-
-                    // Query /api/show (Ollama)
-                    if let Ok(resp) = client
-                        .post(&show_url)
-                        .json(&json!({ "name": model_id }))
-                        .send()
-                        .await
-                    {
-                        if resp.status().is_success() {
-                            if let Ok(show_data) = resp.json::<OllamaShowResponse>().await {
-                                log::info!("[CapabilityProbe] Successfully retrieved /api/show metadata for '{}'", model_id);
-                                if let Some(caps) = show_data.capabilities {
-                                    if caps.iter().any(|c| c.to_lowercase() == "tools") {
-                                        supports_tools = true;
-                                    }
-                                }
-
-                                if let Some(details) = show_data.details {
-                                    family = details.family;
-                                    parameter_size = details.parameter_size;
-                                    quantization = details.quantization_level;
-                                }
-
-                                if let Some(ref info) = show_data.model_info {
-                                    for (k, v) in info {
-                                        if k.contains("context_length") {
-                                            if let Some(ctx_val) = v.as_u64() {
-                                                context_window = Some(ctx_val as u32);
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Query /api/ps (Ollama)
-                    if let Ok(resp) = client.get(&ps_url).send().await {
-                        if resp.status().is_success() {
-                            if let Ok(ps_data) = resp.json::<OllamaPsResponse>().await {
-                                if let Some(models) = ps_data.models {
-                                    if !models.is_empty() {
-                                        server_has_gpu = true;
-                                    }
-                                    for m in models {
-                                        if m.name == model_id || m.name.starts_with(&model_id) {
-                                            server_has_gpu = true;
-                                            if let Some(vram) = m.size_vram {
-                                                if vram > 0 {
-                                                    is_gpu_accelerated = true;
-                                                    vram_bytes = Some(vram);
-                                                    log::info!(
-                                                        "[CapabilityProbe] Model '{}' is GPU offloaded in VRAM: {} bytes",
-                                                        model_id,
-                                                        vram
-                                                    );
-                                                }
-                                            }
-                                            if context_window.is_none()
-                                                && m.context_length.is_some()
-                                            {
-                                                context_window = m.context_length;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // TPS heuristic for non-Ollama local GPU inference (vLLM / LM Studio CUDA)
-                    if !is_gpu_accelerated && tps.unwrap_or(0.0) > 20.0 {
-                        server_has_gpu = true;
-                        is_gpu_accelerated = true;
-                        log::info!("[CapabilityProbe] TPS > 20.0 indicates GPU acceleration.");
-                    }
-                }
-
-                // Build human-readable GPU status
-                let gpu_status = if is_cloud {
-                    if prov_name.contains("nvidia") || base_url.contains("nvidia") {
-                        "NVIDIA Cloud GPU Cluster".to_string()
-                    } else if prov_name.contains("groq") || base_url.contains("groq") {
-                        "Groq LPU Cloud Acceleration".to_string()
-                    } else if !prov_name.is_empty() {
-                        format!("{} Cloud Cluster", Self::title_case(&prov_name))
-                    } else {
-                        "Cloud GPU/TPU Cluster".to_string()
-                    }
-                } else if is_gpu_accelerated {
-                    if let Some(vram) = vram_bytes {
-                        format!("GPU Accelerated (VRAM: {} MB)", vram / (1024 * 1024))
-                    } else {
-                        "GPU Accelerated".to_string()
-                    }
-                } else if server_has_gpu {
-                    "Server GPU Present (Model CPU-Bound)".to_string()
-                } else {
-                    "Local Host CPU".to_string()
-                };
-
-                let final_caps = ModelCapabilities {
-                    model_id: model_id.clone(),
-                    provider_kind: "open_ai_compat".to_string(),
-                    supports_tools,
-                    supports_latin,
-                    supports_devanagari,
-                    context_window, // Exact verified or None (Endpoint Managed)
-                    tps,
-                    ttft_ms,
-                    server_has_gpu,
-                    is_gpu_accelerated,
-                    gpu_status,
-                    vram_bytes,
-                    parameter_size,
-                    quantization,
-                    family,
-                    tested_at_epoch: now,
-                };
-
-                log::info!(
-                    "[CapabilityProbe] Probe finalized for model '{}': tools={}, devanagari={}, ctx={:?}, gpu_status='{}'",
-                    model_id,
-                    final_caps.supports_tools,
-                    final_caps.supports_devanagari,
-                    final_caps.context_window,
-                    final_caps.gpu_status
-                );
-
-                Ok(final_caps)
+                .await
             }
         }
     }
 
+    /// Builds the capability matrix for a local embedded model via static family heuristics.
+    fn probe_local_embedded(model_id: &str, now: u64) -> ModelCapabilities {
+        log::info!(
+            "[CapabilityProbe] Probing Local Embedded GGUF model '{}'...",
+            model_id
+        );
+
+        let (family, supports_tools, supports_devanagari) = Self::heuristic_embedded_caps(model_id);
+
+        let caps = ModelCapabilities {
+            model_id: model_id.to_string(),
+            provider_kind: "embedded".to_string(),
+            supports_tools,
+            supports_latin: true,
+            supports_devanagari,
+            context_window: Some(4096),
+            tps: None,
+            ttft_ms: None,
+            server_has_gpu: false,
+            is_gpu_accelerated: false,
+            gpu_status: "Local CPU / In-Process".to_string(),
+            vram_bytes: None,
+            parameter_size: None,
+            quantization: None,
+            family: Some(family),
+            tested_at_epoch: now,
+        };
+
+        log::info!(
+            "[CapabilityProbe] Completed local probe for '{}': tools={}, devanagari={}",
+            model_id,
+            caps.supports_tools,
+            caps.supports_devanagari
+        );
+
+        caps
+    }
+
+    /// Executes multi-stage streaming and tool probes on an OpenAI-compatible endpoint.
+    async fn probe_openai_compat_endpoint(
+        client: &Client,
+        base_url: &str,
+        model_id: &str,
+        prov_name: &str,
+        api_key: Option<&str>,
+        now: u64,
+    ) -> Result<ModelCapabilities, Box<dyn std::error::Error + Send + Sync>> {
+        let is_cloud = Self::is_cloud_provider(base_url, prov_name);
+
+        log::info!(
+            "[CapabilityProbe] Initiating capability probe for model '{}' on endpoint '{}' (provider: '{}', cloud: {})...",
+            model_id,
+            base_url,
+            prov_name,
+            is_cloud
+        );
+
+        let (
+            supports_latin,
+            supports_devanagari,
+            tps,
+            ttft_ms,
+            headers_indicate_gpu,
+            header_context_window,
+        ) = Self::streaming_inference_probe(client, base_url, model_id, api_key).await;
+
+        let tool_probe_success =
+            Self::structured_tool_probe(client, base_url, model_id, api_key).await;
+
+        let mut meta = EndpointMeta {
+            supports_tools: tool_probe_success,
+            context_window: header_context_window,
+            server_has_gpu: is_cloud || headers_indicate_gpu,
+            is_gpu_accelerated: is_cloud,
+            ..Default::default()
+        };
+
+        if !is_cloud {
+            Self::probe_ollama_metadata(client, base_url, model_id, &mut meta, tps).await;
+        }
+
+        let gpu_status = Self::resolve_gpu_status(
+            is_cloud,
+            prov_name,
+            base_url,
+            meta.is_gpu_accelerated,
+            meta.server_has_gpu,
+            meta.vram_bytes,
+        );
+
+        let final_caps = ModelCapabilities {
+            model_id: model_id.to_string(),
+            provider_kind: "open_ai_compat".to_string(),
+            supports_tools: meta.supports_tools,
+            supports_latin,
+            supports_devanagari,
+            context_window: meta.context_window,
+            tps,
+            ttft_ms,
+            server_has_gpu: meta.server_has_gpu,
+            is_gpu_accelerated: meta.is_gpu_accelerated,
+            gpu_status,
+            vram_bytes: meta.vram_bytes,
+            parameter_size: meta.parameter_size,
+            quantization: meta.quantization,
+            family: meta.family,
+            tested_at_epoch: now,
+        };
+
+        log::info!(
+            "[CapabilityProbe] Probe finalized for model '{}': tools={}, devanagari={}, ctx={:?}, gpu='{}'",
+            model_id,
+            final_caps.supports_tools,
+            final_caps.supports_devanagari,
+            final_caps.context_window,
+            final_caps.gpu_status
+        );
+
+        Ok(final_caps)
+    }
+
+    /// Queries local Ollama daemon endpoints (/api/show and /api/ps) to extract hardware & model metadata.
+    async fn probe_ollama_metadata(
+        client: &Client,
+        base_url: &str,
+        model_id: &str,
+        meta: &mut EndpointMeta,
+        tps: Option<f32>,
+    ) {
+        let show_url = format!("{}/api/show", base_url.trim_end_matches('/'));
+        let ps_url = format!("{}/api/ps", base_url.trim_end_matches('/'));
+
+        if let Ok(resp) = client
+            .post(&show_url)
+            .json(&json!({ "name": model_id }))
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(show_data) = resp.json::<OllamaShowResponse>().await {
+                    if let Some(caps) = show_data.capabilities {
+                        if caps.iter().any(|c| c.to_lowercase() == "tools") {
+                            meta.supports_tools = true;
+                        }
+                    }
+                    if let Some(details) = show_data.details {
+                        meta.family = details.family;
+                        meta.parameter_size = details.parameter_size;
+                        meta.quantization = details.quantization_level;
+                    }
+                    if let Some(ref info) = show_data.model_info {
+                        for (k, v) in info {
+                            if k.contains("context_length") {
+                                if let Some(ctx_val) = v.as_u64() {
+                                    meta.context_window = Some(ctx_val as u32);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Ok(resp) = client.get(&ps_url).send().await {
+            if resp.status().is_success() {
+                if let Ok(ps_data) = resp.json::<OllamaPsResponse>().await {
+                    if let Some(models) = ps_data.models {
+                        if !models.is_empty() {
+                            meta.server_has_gpu = true;
+                        }
+                        for m in models {
+                            if m.name == model_id || m.name.starts_with(model_id) {
+                                meta.server_has_gpu = true;
+                                if let Some(vram) = m.size_vram {
+                                    if vram > 0 {
+                                        meta.is_gpu_accelerated = true;
+                                        meta.vram_bytes = Some(vram);
+                                    }
+                                }
+                                if meta.context_window.is_none() && m.context_length.is_some() {
+                                    meta.context_window = m.context_length;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !meta.is_gpu_accelerated && tps.unwrap_or(0.0) > 20.0 {
+            meta.server_has_gpu = true;
+            meta.is_gpu_accelerated = true;
+            log::info!("[CapabilityProbe] TPS > 20.0 indicates GPU acceleration.");
+        }
+    }
+
+    /// Formats human-readable GPU acceleration status strings.
+    fn resolve_gpu_status(
+        is_cloud: bool,
+        prov_name: &str,
+        base_url: &str,
+        is_gpu_accelerated: bool,
+        server_has_gpu: bool,
+        vram_bytes: Option<u64>,
+    ) -> String {
+        if is_cloud {
+            if prov_name.contains("nvidia") || base_url.contains("nvidia") {
+                "NVIDIA Cloud GPU Cluster".to_string()
+            } else if prov_name.contains("groq") || base_url.contains("groq") {
+                "Groq LPU Cloud Acceleration".to_string()
+            } else if !prov_name.is_empty() {
+                format!("{} Cloud Cluster", Self::title_case(prov_name))
+            } else {
+                "Cloud GPU/TPU Cluster".to_string()
+            }
+        } else if is_gpu_accelerated {
+            if let Some(vram) = vram_bytes {
+                format!("GPU Accelerated (VRAM: {} MB)", vram / (1024 * 1024))
+            } else {
+                "GPU Accelerated".to_string()
+            }
+        } else if server_has_gpu {
+            "Server GPU Present (Model CPU-Bound)".to_string()
+        } else {
+            "Local Host CPU".to_string()
+        }
+    }
+
+    /// Resolves canonical chat completions endpoint URL from a base URL string.
     fn resolve_chat_url(base_url: &str) -> String {
         let trimmed = base_url.trim_end_matches('/');
         if trimmed.ends_with("/chat/completions") {
@@ -370,7 +388,7 @@ impl CapabilityProbeEngine {
         let status = resp.status();
 
         if status.is_success() {
-            return Ok(None); // Validated successfully
+            return Ok(None);
         }
 
         let err_text = resp.text().await.unwrap_or_default();
@@ -380,8 +398,6 @@ impl CapabilityProbeEngine {
             err_text
         );
 
-        // Regex parsing to extract the server's true ceiling
-        // Handles: "greater than maximum allowed 16384", "> 8192", "exceeds maximum supported output tokens (16384)"
         if let Some(ceiling) = Self::parse_token_ceiling_from_error(&err_text) {
             return Ok(Some(ceiling));
         }
@@ -393,6 +409,7 @@ impl CapabilityProbeEngine {
         ))
     }
 
+    /// Determines whether the given endpoint or provider corresponds to a cloud-hosted LLM service.
     fn is_cloud_provider(base_url: &str, provider_name: &str) -> bool {
         let b = base_url.to_lowercase();
         let p = provider_name.to_lowercase();
@@ -418,6 +435,7 @@ impl CapabilityProbeEngine {
             || b.contains("anthropic")
     }
 
+    /// Converts a lowercase string to title case for display.
     fn title_case(s: &str) -> String {
         s.split_whitespace()
             .map(|word| {
@@ -431,6 +449,7 @@ impl CapabilityProbeEngine {
             .join(" ")
     }
 
+    /// Returns family name, tool calling, and Devanagari script support based on embedded model ID.
     fn heuristic_embedded_caps(model_id: &str) -> (String, bool, bool) {
         let lower = model_id.to_lowercase();
         if lower.contains("qwen") {
@@ -444,6 +463,7 @@ impl CapabilityProbeEngine {
         }
     }
 
+    /// Parses the server maximum token ceiling from an HTTP 400 error message.
     fn parse_token_ceiling_from_error(err_text: &str) -> Option<u32> {
         let lower = err_text.to_lowercase();
 
@@ -470,6 +490,7 @@ impl CapabilityProbeEngine {
         None
     }
 
+    /// Executes streaming chat completions to evaluate TTFT, TPS, and multilingual output.
     async fn streaming_inference_probe(
         client: &Client,
         base_url: &str,
@@ -634,6 +655,7 @@ impl CapabilityProbeEngine {
         )
     }
 
+    /// Sends a synthetic tool-calling request to evaluate function calling capabilities.
     async fn structured_tool_probe(
         client: &Client,
         base_url: &str,

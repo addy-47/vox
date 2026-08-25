@@ -9,10 +9,10 @@ interface TriggerModeCardProps {
 }
 
 export const TriggerModeCard = memo(({ layoutMode }: TriggerModeCardProps) => {
-  const mainAppMode = useSettingsStore((s) => s.draftSettings?.interaction.main_app_mode ?? "Passive");
+  const mode = useSettingsStore((s) => s.draftSettings?.interaction.mode ?? "Passive");
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
-  const isPassive = mainAppMode === "Passive";
+  const isPassive = mode === "Passive";
 
   return (
     <ToggleTile
@@ -24,7 +24,7 @@ export const TriggerModeCard = memo(({ layoutMode }: TriggerModeCardProps) => {
       inactiveSublabel={TRIGGER_MODE_COPY.pttSub}
       icon={isPassive ? Activity : Radio}
       onToggle={() =>
-        updateDraft("interaction", "main_app_mode", isPassive ? "PTT" : "Passive")
+        updateDraft("interaction", "mode", isPassive ? "PTT" : "Passive")
       }
       layoutMode={layoutMode}
       visualizer={

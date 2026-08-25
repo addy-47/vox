@@ -11,6 +11,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::sync::Arc;
 
+/// Provider implementation running in-process GGUF models via llama.cpp.
 pub struct EmbeddedProvider {
     worker: LlmWorker,
     model_path: PathBuf,
@@ -18,6 +19,7 @@ pub struct EmbeddedProvider {
 }
 
 impl EmbeddedProvider {
+    /// Creates a new in-process embedded LLM provider instance.
     pub fn new(model_path: &Path, ctx_size: u32, n_threads: u32) -> anyhow::Result<Self> {
         let worker = LlmWorker::new(model_path, ctx_size, n_threads)?;
         Ok(Self {
@@ -29,6 +31,7 @@ impl EmbeddedProvider {
 }
 
 impl LlmProvider for EmbeddedProvider {
+    /// Dispatches generation request to the underlying embedded LlmWorker.
     fn generate<'a>(
         &'a self,
         request: GenerationRequest,
@@ -48,14 +51,17 @@ impl LlmProvider for EmbeddedProvider {
         })
     }
 
+    /// Returns static capabilities of the embedded engine.
     fn capabilities(&self) -> &ProviderCapabilities {
         &self.capabilities
     }
 
+    /// Checks if the configured GGUF model file exists on disk.
     fn health_check(&self) -> bool {
         self.model_path.exists()
     }
 
+    /// Lists GGUF model files present in the active model directory.
     fn list_models(&self) -> Result<Vec<LlmModelInfo>, LlmError> {
         if let Some(parent) = self.model_path.parent() {
             Self::list_models_in_dir(parent).map_err(LlmError::Other)
@@ -64,16 +70,19 @@ impl LlmProvider for EmbeddedProvider {
         }
     }
 
+    /// Returns ProviderKind::Embedded.
     fn kind(&self) -> ProviderKind {
         ProviderKind::Embedded
     }
 
+    /// Returns maximum supported context tokens configured for the worker.
     fn max_context_tokens(&self) -> usize {
         self.worker.ctx_size() as usize
     }
 }
 
 impl EmbeddedProvider {
+    /// Scans a directory for .gguf model files and parses heuristic metadata.
     pub fn list_models_in_dir(dir: &Path) -> anyhow::Result<Vec<LlmModelInfo>> {
         let mut models = Vec::new();
         if dir.exists() {

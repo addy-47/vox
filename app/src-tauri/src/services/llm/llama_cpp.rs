@@ -1,19 +1,24 @@
 use crate::core::events::VoxEvent;
 use crate::services::llm::LlmEngine;
+use crate::services::memory::{ChatMessage, ConversationContext, Role};
 use anyhow::{anyhow, Result};
 use llama_cpp_4::{
     context::params::LlamaContextParams,
+    context::LlamaContext,
     llama_backend::LlamaBackend,
     llama_batch::LlamaBatch,
     model::{params::LlamaModelParams, AddBos, LlamaModel},
     sampling::LlamaSampler,
     token::data_array::LlamaTokenDataArray,
+    token::LlamaToken,
 };
+use parking_lot::Mutex;
 use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+/// Supported LLM model families for architecture-specific prompt formatting and stop token handling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelFamily {
@@ -25,6 +30,7 @@ pub enum ModelFamily {
 }
 
 impl ModelFamily {
+    /// Detects model family from the model file path name.
     pub fn detect(path: &Path) -> Self {
         let filename = path
             .file_name()
@@ -45,55 +51,38 @@ impl ModelFamily {
         }
     }
 
+    /// Formats a system prompt string according to family-specific special tokens.
     pub fn format_system_prompt(&self, system_prompt: &str) -> String {
         match self {
-            ModelFamily::Gemma => {
-                format!("<|turn>system {}<turn|>\n", system_prompt)
-            }
-            ModelFamily::Qwen => {
-                format!("<|im_start|>system\n{}<|im_end|>\n", system_prompt)
-            }
-            ModelFamily::Llama3 => {
-                format!(
-                    "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{}<|eot_id|>",
-                    system_prompt
-                )
-            }
-            ModelFamily::Nemotron => {
-                format!("<extra_id_0>System\n{}\n", system_prompt)
-            }
-            ModelFamily::Unknown => {
-                format!("System: {}\n", system_prompt)
-            }
+            ModelFamily::Gemma => format!("<|turn>system {}<turn|>\n", system_prompt),
+            ModelFamily::Qwen => format!("<|im_start|>system\n{}<|im_end|>\n", system_prompt),
+            ModelFamily::Llama3 => format!(
+                "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{}<|eot_id|>",
+                system_prompt
+            ),
+            ModelFamily::Nemotron => format!("<extra_id_0>System\n{}\n", system_prompt),
+            ModelFamily::Unknown => format!("System: {}\n", system_prompt),
         }
     }
 
+    /// Formats a user prompt string according to family-specific special tokens.
     pub fn format_user_prompt(&self, text: &str) -> String {
         match self {
-            ModelFamily::Gemma => {
-                format!("<|turn>user {}<turn|>\n<|turn>model\n", text)
-            }
-            ModelFamily::Qwen => {
-                format!(
-                    "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
-                    text
-                )
-            }
-            ModelFamily::Llama3 => {
-                format!(
-                    "<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
-                    text
-                )
-            }
-            ModelFamily::Nemotron => {
-                format!("<extra_id_1>User\n{}\n<extra_id_1>Assistant\n", text)
-            }
-            ModelFamily::Unknown => {
-                format!("User: {}\nAssistant: ", text)
-            }
+            ModelFamily::Gemma => format!("<|turn>user {}<turn|>\n<|turn>model\n", text),
+            ModelFamily::Qwen => format!(
+                "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+                text
+            ),
+            ModelFamily::Llama3 => format!(
+                "<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+                text
+            ),
+            ModelFamily::Nemotron => format!("<extra_id_1>User\n{}\n<extra_id_1>Assistant\n", text),
+            ModelFamily::Unknown => format!("User: {}\nAssistant: ", text),
         }
     }
 
+    /// Combines system and user prompt segments into a complete turn prompt.
     pub fn format_prompt(&self, text: &str, system_prompt: &str) -> String {
         format!(
             "{}{}",
@@ -102,28 +91,27 @@ impl ModelFamily {
         )
     }
 
-    pub fn format_conversation(&self, messages: &[crate::services::memory::ChatMessage]) -> String {
+    /// Formats an entire conversation history into a structured prompt.
+    pub fn format_conversation(&self, messages: &[ChatMessage]) -> String {
         let mut prompt = String::new();
         for msg in messages {
             match msg.role {
-                crate::services::memory::Role::System => {
-                    prompt.push_str(&self.format_system_prompt(&msg.content));
-                }
-                crate::services::memory::Role::User => {
-                    prompt.push_str(&self.format_user_prompt(&msg.content));
-                }
-                crate::services::memory::Role::Assistant => match self {
+                Role::System => prompt.push_str(&self.format_system_prompt(&msg.content)),
+                Role::User => prompt.push_str(&self.format_user_prompt(&msg.content)),
+                Role::Assistant => match self {
                     ModelFamily::Gemma => prompt.push_str(&format!("{}<turn|>\n", msg.content)),
                     ModelFamily::Qwen => prompt.push_str(&format!("{}<|im_end|>\n", msg.content)),
                     ModelFamily::Llama3 => prompt.push_str(&format!("{}<|eot_id|>", msg.content)),
-                    ModelFamily::Nemotron => prompt.push_str(&format!("{}\n", msg.content)),
-                    ModelFamily::Unknown => prompt.push_str(&format!("{}\n", msg.content)),
+                    ModelFamily::Nemotron | ModelFamily::Unknown => {
+                        prompt.push_str(&format!("{}\n", msg.content))
+                    }
                 },
             }
         }
         prompt
     }
 
+    /// Returns family-specific generation stop sequence substrings.
     pub fn stop_sequences(&self) -> &'static [&'static str] {
         match self {
             ModelFamily::Gemma => &["<end", "<eos>", "<|turn>", "turn|>"],
@@ -140,6 +128,7 @@ impl ModelFamily {
         }
     }
 
+    /// Returns list of special token tags to strip from streaming assistant text output.
     pub fn tags_to_strip(&self) -> &'static [&'static str] {
         match self {
             ModelFamily::Gemma => &[
@@ -183,6 +172,7 @@ impl ModelFamily {
         }
     }
 
+    /// Strips model-specific special tokens and thinking blocks from output text.
     pub fn strip_tags_raw(&self, text: &str) -> String {
         let mut cleaned = text.to_string();
 
@@ -209,7 +199,7 @@ impl ModelFamily {
                     .get_or_init(|| regex::Regex::new(r"(?s)<think>.*?</think>").unwrap());
                 cleaned = re_think.replace_all(&cleaned, "").to_string();
 
-                let tags = vec![
+                let tags = [
                     "<|im_start|>",
                     "<|im_end|>",
                     "<|turn|>",
@@ -221,12 +211,10 @@ impl ModelFamily {
                 for tag in tags {
                     cleaned = cleaned.replace(tag, "");
                 }
-
-                // Backup cleanup of open/close tags
                 cleaned = cleaned.replace("<think>", "").replace("</think>", "");
             }
             ModelFamily::Llama3 => {
-                let tags = vec![
+                let tags = [
                     "<|begin_of_text|>",
                     "<|start_header_id|>",
                     "<|end_header_id|>",
@@ -240,7 +228,7 @@ impl ModelFamily {
                 }
             }
             ModelFamily::Nemotron => {
-                let tags = vec![
+                let tags = [
                     "<extra_id_0>",
                     "<extra_id_1>",
                     "User\n",
@@ -257,30 +245,34 @@ impl ModelFamily {
         cleaned
     }
 
+    /// Strips special tokens and trims whitespace from output text.
     pub fn strip_tags(&self, text: &str) -> String {
         self.strip_tags_raw(text).trim().to_string()
     }
 }
 
+/// In-memory KV cache tracking state for prompt prefix reuse.
 struct CacheState {
     system_prompt: String,
     system_tokens_len: usize,
     current_seq_tokens_len: usize,
 }
 
+/// In-process llama.cpp model worker executing token generation.
 pub struct LlmWorker {
     model: LlamaModel,
     _backend: &'static LlamaBackend,
     ctx_size: u32,
     _n_threads: u32,
     family: ModelFamily,
-    ctx: parking_lot::Mutex<Option<llama_cpp_4::context::LlamaContext<'static>>>,
-    cache_state: parking_lot::Mutex<Option<CacheState>>,
+    ctx: Mutex<Option<LlamaContext<'static>>>,
+    cache_state: Mutex<Option<CacheState>>,
 }
 
 unsafe impl Send for LlmWorker {}
 unsafe impl Sync for LlmWorker {}
 
+/// Detects the length of a partial trailing tag suffix to hold back during streaming.
 fn partial_tag_len(text: &str, tags: &[&str]) -> usize {
     for (i, _) in text.char_indices() {
         let suffix = &text[i..];
@@ -294,6 +286,7 @@ fn partial_tag_len(text: &str, tags: &[&str]) -> usize {
 }
 
 impl LlmWorker {
+    /// Loads a local GGUF model and constructs an in-process llama.cpp worker.
     pub fn new(model_path: &Path, ctx_size: u32, n_threads: u32) -> Result<Self> {
         log::info!("[LLM] >>> Initializing llama.cpp backend...");
 
@@ -324,27 +317,31 @@ impl LlmWorker {
             ctx_size,
             n_threads
         );
+
         Ok(Self {
             model,
             _backend: backend,
             ctx_size,
             _n_threads: n_threads,
             family,
-            ctx: parking_lot::Mutex::new(None),
-            cache_state: parking_lot::Mutex::new(None),
+            ctx: Mutex::new(None),
+            cache_state: Mutex::new(None),
         })
     }
 
-    fn token_to_bytes(&self, token: llama_cpp_4::token::LlamaToken) -> Vec<u8> {
+    /// Converts a llama token ID into its raw UTF-8 byte representation.
+    fn token_to_bytes(&self, token: LlamaToken) -> Vec<u8> {
         self.model
             .token_to_bytes(token, llama_cpp_4::model::Special::Plaintext)
             .unwrap_or_default()
     }
 
+    /// Returns the configured context size in tokens.
     pub fn ctx_size(&self) -> u32 {
         self.ctx_size
     }
 
+    /// Runs the persistent command worker loop for generation requests.
     pub fn run_loop(
         &self,
         rx: std::sync::mpsc::Receiver<super::actor::LlmCommand>,
@@ -359,17 +356,19 @@ impl LlmWorker {
                     turn_id,
                     cancel_flag,
                 } => {
-                    let ctx = crate::services::memory::ConversationContext {
+                    let ctx = ConversationContext {
                         messages: request.input.messages,
                         token_count: 0,
                         kv_cache_index: 0,
                     };
                     if let Err(e) = self.generate(&ctx, turn_id, &cancel_flag, &tx) {
                         log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
-                        let _ = tx.send(VoxEvent::Error {
+                        if let Err(send_err) = tx.send(VoxEvent::Error {
                             turn_id,
                             message: e.to_string(),
-                        });
+                        }) {
+                            log::warn!("[LLM Worker] Failed to dispatch error event: {}", send_err);
+                        }
                     }
                 }
                 super::actor::LlmCommand::Shutdown => {
@@ -381,11 +380,33 @@ impl LlmWorker {
 
         log::info!("[LLM Worker] Loop exited. Model will be dropped.");
     }
+
+    /// Ensures the LlamaContext is lazily initialized on demand.
+    fn init_context(&self) -> Result<()> {
+        let mut ctx_lock = self.ctx.lock();
+        if ctx_lock.is_none() {
+            log::info!("[LLM] Lazy initializing LlamaContext on stable execution address...");
+            let ctx_params = LlamaContextParams::default()
+                .with_n_ctx(Some(NonZeroU32::new(self.ctx_size).unwrap()))
+                .with_n_threads(self._n_threads as i32)
+                .with_n_threads_batch(self._n_threads as i32)
+                .with_n_batch(self.ctx_size)
+                .with_n_ubatch(self.ctx_size);
+
+            let ctx = self
+                .model
+                .new_context(self._backend, ctx_params)
+                .map_err(|e| anyhow!("[LLM] Lazy context creation failed: {}", e))?;
+
+            let static_ctx: LlamaContext<'static> = unsafe { std::mem::transmute(ctx) };
+            *ctx_lock = Some(static_ctx);
+        }
+        Ok(())
+    }
 }
 
-use crate::services::memory::ConversationContext;
-
 impl LlmEngine for LlmWorker {
+    /// Generates tokens for the conversation context and streams them via `tx`.
     fn generate(
         &self,
         conv_ctx: &ConversationContext,
@@ -393,6 +414,11 @@ impl LlmEngine for LlmWorker {
         cancel_flag: &Arc<AtomicBool>,
         tx: &std::sync::mpsc::Sender<VoxEvent>,
     ) -> Result<()> {
+        self.init_context()?;
+
+        let mut ctx_lock = self.ctx.lock();
+        let ctx = ctx_lock.as_mut().unwrap();
+
         let start_time = std::time::Instant::now();
         let mut ttft: Option<std::time::Duration> = None;
         let mut tokens_generated = 0;
@@ -409,29 +435,7 @@ impl LlmEngine for LlmWorker {
             .map(|m| m.content.as_str())
             .unwrap_or("You are Vox.");
 
-        let mut ctx_lock = self.ctx.lock();
-        if ctx_lock.is_none() {
-            log::info!("[LLM] Lazy initializing LlamaContext on stable execution address...");
-            let ctx_params = LlamaContextParams::default()
-                .with_n_ctx(Some(NonZeroU32::new(self.ctx_size).unwrap()))
-                .with_n_threads(self._n_threads as i32)
-                .with_n_threads_batch(self._n_threads as i32)
-                .with_n_batch(self.ctx_size)
-                .with_n_ubatch(self.ctx_size);
-
-            let ctx = self
-                .model
-                .new_context(self._backend, ctx_params)
-                .map_err(|e| anyhow!("[LLM] Lazy context creation failed: {}", e))?;
-
-            let static_ctx: llama_cpp_4::context::LlamaContext<'static> =
-                unsafe { std::mem::transmute(ctx) };
-            *ctx_lock = Some(static_ctx);
-        }
-        let ctx = ctx_lock.as_mut().unwrap();
-
         let mut cache_lock = self.cache_state.lock();
-
         if conv_ctx.kv_cache_index == 0 {
             log::info!("[LLM] kv_cache_index is 0. Resetting KV cache state...");
             *cache_lock = None;
@@ -550,12 +554,7 @@ impl LlmEngine for LlmWorker {
 
         let mut qwen_sampler = if self.family == ModelFamily::Qwen {
             Some(LlamaSampler::chain_simple([
-                LlamaSampler::penalties(
-                    self.ctx_size as i32,
-                    1.0, // repetition penalty
-                    0.0, // frequency penalty
-                    2.0, // presence penalty
-                ),
+                LlamaSampler::penalties(self.ctx_size as i32, 1.0, 0.0, 2.0),
                 LlamaSampler::top_k(20),
                 LlamaSampler::top_p(1.0, 1),
                 LlamaSampler::min_p(0.0, 1),
@@ -570,7 +569,9 @@ impl LlmEngine for LlmWorker {
             if cancel_flag.load(Ordering::Relaxed) {
                 log::info!("[LLM] Cancelled at token {} (turn: {})", n_cur, turn_id);
                 *cache_lock = None;
-                let _ = tx.send(VoxEvent::Cancelled { turn_id });
+                if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
+                    log::warn!("[LLM] Failed to send Cancelled event: {}", e);
+                }
                 return Ok(());
             }
 
@@ -622,10 +623,12 @@ impl LlmEngine for LlmWorker {
                         if cleaned_trimmed.len() > emitted_clean_len {
                             let delta = &cleaned_trimmed[emitted_clean_len..];
                             if !delta.is_empty() {
-                                let _ = tx.send(VoxEvent::LlmToken {
+                                if let Err(e) = tx.send(VoxEvent::LlmToken {
                                     turn_id,
                                     token: delta.to_string(),
-                                });
+                                }) {
+                                    log::warn!("[LLM] Failed to send stop LlmToken: {}", e);
+                                }
                             }
                             emitted_clean_len = cleaned_trimmed.len();
                         }
@@ -643,7 +646,6 @@ impl LlmEngine for LlmWorker {
                 }
 
                 let cleaned = self.family.strip_tags_raw(&raw_gen_buf);
-
                 let tags = self.family.tags_to_strip();
                 let holdback = partial_tag_len(&cleaned, tags);
                 let clean_len = cleaned.len().saturating_sub(holdback);
@@ -651,10 +653,12 @@ impl LlmEngine for LlmWorker {
                 if clean_len > emitted_clean_len {
                     let delta = &cleaned[emitted_clean_len..clean_len];
                     if !delta.is_empty() {
-                        let _ = tx.send(VoxEvent::LlmToken {
+                        if let Err(e) = tx.send(VoxEvent::LlmToken {
                             turn_id,
                             token: delta.to_string(),
-                        });
+                        }) {
+                            log::warn!("[LLM] Failed to send LlmToken: {}", e);
+                        }
                     }
                     emitted_clean_len = clean_len;
                 }
@@ -683,7 +687,6 @@ impl LlmEngine for LlmWorker {
             sample_ith = 0;
         }
 
-        // Flush any remaining un-emitted text in raw_gen_buf
         let mut final_cleaned = self.family.strip_tags_raw(&raw_gen_buf);
         if let Some(think_pos) = final_cleaned.find("<think>") {
             final_cleaned.truncate(think_pos);
@@ -692,14 +695,15 @@ impl LlmEngine for LlmWorker {
         if final_trimmed.len() > emitted_clean_len {
             let delta = &final_trimmed[emitted_clean_len..];
             if !delta.is_empty() {
-                let _ = tx.send(VoxEvent::LlmToken {
+                if let Err(e) = tx.send(VoxEvent::LlmToken {
                     turn_id,
                     token: delta.to_string(),
-                });
+                }) {
+                    log::warn!("[LLM] Failed to send final LlmToken: {}", e);
+                }
             }
         }
 
-        // Update KV cache sequence length
         if let Some(state) = &mut *cache_lock {
             state.current_seq_tokens_len = n_cur as usize;
         }
@@ -715,7 +719,10 @@ impl LlmEngine for LlmWorker {
             tps
         );
 
-        let _ = tx.send(VoxEvent::LlmFinished { turn_id });
+        if let Err(e) = tx.send(VoxEvent::LlmFinished { turn_id }) {
+            log::warn!("[LLM] Failed to send LlmFinished: {}", e);
+        }
+
         Ok(())
     }
 }

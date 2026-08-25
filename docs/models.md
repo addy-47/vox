@@ -271,7 +271,7 @@ Legend: ✅ resident · ❌ not loaded · ↺ lazy/on-demand (loaded on first wa
 | 4 | **MainWindow engaged** (`engage()`) | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | n/a | auto-sleep → #5; idle sweep → #6 |
 | 5 | **Auto-sleep** reached (idle > `auto_sleep_timeout`) | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | per owner | new activity re-warms LLM+TTS → #3b/#4 |
 | 6 | **Idle memory sweep** (mem pipeline on + queue + 30s idle) | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ transient | — | any activity evicts sweep ONNX → #5 |
-| 7 | **Realtime S2S** session active | ✅ | ✅ | — | — | ✅ | ❌ | — | cloud WebSocket — no local model |
+| 7 | **Realtime S2S** session active | ✅ | ❌ | — | — | ❌ | ❌ | — | cloud WebSocket — no local model |
 | 8 | **stop_engine** / app quit (dictation off or disengage) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | hidden | everything evicted + `trim_heap()` |
 
 ² *Scope Clf* = MemoryScope Classifier (ModernBERT). Loaded only by `engage()` (`ensure_scope_classifier_loaded`), i.e. the **main-window** conversational session — not by dictation PTT/passive, which need only transcription.
@@ -279,13 +279,15 @@ Legend: ✅ resident · ❌ not loaded · ↺ lazy/on-demand (loaded on first wa
 **The three things that actually change your RAM footprint:**
 
 - **`dictation.enabled = false`** → boots with **zero models and zero webviews**. Nothing loads until the user engages the main window (#1 → #4).
-- **`dictation.enabled = true` + `interaction_mode = Ptt`** → still **zero RAM at boot** (#2). The audio/STT engine lazy-launches on the *first* hotkey press and then stays warm (VAD+STT resident) so subsequent presses are instant; LLM/TTS only spin up per turn and cool on auto-sleep.
-- **`dictation.enabled = true` + `interaction_mode = Passive`** → engine **auto-launches at boot**, so VAD+STT are resident immediately (#3a). Cheapest to *use*, costs the most RAM at idle.
+- **`dictation.enabled = true` + `interaction_mode = Ptt`** → still **zero RAM at boot** (#2). The audio/STT engine lazy-launches on the *first* hotkey press and then stays warm (VAD resident, STT lazy) so subsequent presses are instant; LLM/TTS only spin up per turn and cool on auto-sleep.
+- **`dictation.enabled = true` + `interaction_mode = Passive`** → engine **auto-launches at boot**, so VAD is resident immediately (#3a). STT warms up on first speech.
+- **`interaction.pipeline_mode = Realtime`** → launches audio capture and VAD routing without loading STT or LLM/TTS weights (0 MB local models).
 
 **Transliteration (ONNX)** is orthogonal to the above: it loads on the first Devanagari string seen in *any* state (`transliterate` → `init_transliteration_engine`) and stays resident until `stop_engine`.
 
 **Reference — load entry points** (for tracing in code):
-- VAD / STT: `ipc/pipeline/engine_launch.rs` (`launch_engine`) — eager at engine launch.
+- VAD: `ipc/pipeline/engine_launch.rs` (`launch_engine`) — eager at engine launch.
+- STT: `services/stt/providers/embedded.rs` (`ensure_loaded`) — lazy on first `transcribe`/`transcribe_chunk` turn.
 - LLM / TTS: `services/pipeline/{llm,tts}_lifecycle.rs` (`warm_up_*`) — lazy on `VoxEvent::WarmUp` / first turn; `cool_down_*` on auto-sleep.
 - Scope Clf: `ipc/pipeline/lifecycle.rs` (`engage` → `ensure_scope_classifier_loaded`).
 - Embedding / NLI / Edge: `services/memory/**` + `persistence/memory_worker.rs` — idle sweep only.

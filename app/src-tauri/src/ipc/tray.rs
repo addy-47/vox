@@ -50,19 +50,12 @@ pub async fn toggle_hud_visibility(app: AppHandle) {
 #[cfg(target_os = "linux")]
 use gtk::prelude::*;
 
-#[tauri::command]
-pub async fn hide_tray_window(app: AppHandle) {
-    let state: State<'_, std::sync::Arc<AppState>> = app.state();
-    let mut hud_lock = state.hud_visible.lock().await;
-    if *hud_lock {
-        *hud_lock = false;
-        log::info!("[Tray] Ending Tray user session (Tray window hidden).");
-    }
-
+async fn cancel_active_dictation_turn(state: &AppState) {
     let owner: crate::core::state::InteractionOwner = state
         .owner
         .load(std::sync::atomic::Ordering::Relaxed)
         .into();
+
     if owner == crate::core::state::InteractionOwner::Dictation {
         state
             .pipeline
@@ -73,29 +66,50 @@ pub async fn hide_tray_window(app: AppHandle) {
                 .pipeline
                 .turn_id
                 .load(std::sync::atomic::Ordering::Relaxed);
-            let _ = engine
+            if let Err(e) = engine
                 .pipeline_tx
-                .send(crate::core::events::VoxEvent::Cancelled { turn_id });
-            let _ = engine
+                .send(crate::core::events::VoxEvent::Cancelled { turn_id })
+            {
+                log::warn!("[Tray] Failed to send VoxEvent::Cancelled: {}", e);
+            }
+            if let Err(e) = engine
                 .stt_tx
-                .send(crate::services::stt::SttCommand::ResetStream);
+                .send(crate::services::stt::SttCommand::ResetStream)
+            {
+                log::warn!("[Tray] Failed to send SttCommand::ResetStream: {}", e);
+            }
             engine.playback_engine.cancel();
         }
     }
+}
+
+/// Hide the tray HUD overlay window and cancel active dictation turns.
+#[tauri::command]
+pub async fn hide_tray_window(app: AppHandle) {
+    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    let mut hud_lock = state.hud_visible.lock().await;
+    if *hud_lock {
+        *hud_lock = false;
+        log::info!("[Tray] Ending Tray user session (Tray window hidden).");
+    }
+
+    cancel_active_dictation_turn(&state).await;
 
     if let Some(window) = app.get_webview_window("tray") {
         let _ = window.hide();
     }
 }
 
+/// Synchronize the tray HUD overlay visibility with interaction owner and VAD routing.
 #[tauri::command]
 pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    let dictation_enabled = {
-        let s = state.settings.read().unwrap();
-        s.dictation.enabled
-    };
+    let dictation_enabled = state
+        .settings
+        .read()
+        .map(|s| s.dictation.enabled)
+        .unwrap_or(false);
     if !dictation_enabled && visible {
         return;
     }
@@ -112,43 +126,30 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
         }
     }
 
-    // Sync owner state and VAD actor
     if visible {
         state.owner.store(
             crate::core::state::InteractionOwner::Dictation as u32,
             std::sync::atomic::Ordering::Relaxed,
         );
         if let Some(engine) = state.engine.lock().await.as_ref() {
-            let _ = engine
+            if let Err(e) = engine
                 .vad_tx
                 .send(crate::core::state::VadCommand::UpdateOwner(
                     crate::core::state::InteractionOwner::Dictation,
-                ));
-        }
-    } else {
-        let owner: crate::core::state::InteractionOwner = state
-            .owner
-            .load(std::sync::atomic::Ordering::Relaxed)
-            .into();
-        if owner == crate::core::state::InteractionOwner::Dictation {
-            state
-                .pipeline
-                .cancel_flag
-                .store(true, std::sync::atomic::Ordering::Relaxed);
-            if let Some(engine) = state.engine.lock().await.as_ref() {
-                let turn_id = state
-                    .pipeline
-                    .turn_id
-                    .load(std::sync::atomic::Ordering::Relaxed);
-                let _ = engine
-                    .pipeline_tx
-                    .send(crate::core::events::VoxEvent::Cancelled { turn_id });
-                let _ = engine
-                    .stt_tx
-                    .send(crate::services::stt::SttCommand::ResetStream);
-                engine.playback_engine.cancel();
+                ))
+            {
+                log::warn!(
+                    "[Tray] Failed to send VadCommand::UpdateOwner(Dictation): {}",
+                    e
+                );
             }
         }
+        if let Ok(window) = crate::tray::ensure_tray_window(&app) {
+            let _ = window.show();
+            let _ = position_tray_window(&window).await;
+        }
+    } else {
+        cancel_active_dictation_turn(&state).await;
 
         if state
             .pipeline
@@ -160,22 +161,23 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
                 std::sync::atomic::Ordering::Relaxed,
             );
             if let Some(engine) = state.engine.lock().await.as_ref() {
-                let _ = engine
+                if let Err(e) = engine
                     .vad_tx
                     .send(crate::core::state::VadCommand::UpdateOwner(
                         crate::core::state::InteractionOwner::MainWindow,
-                    ));
+                    ))
+                {
+                    log::warn!(
+                        "[Tray] Failed to send VadCommand::UpdateOwner(MainWindow): {}",
+                        e
+                    );
+                }
             }
         }
-    }
 
-    if visible {
-        if let Ok(window) = crate::tray::ensure_tray_window(&app) {
-            let _ = window.show();
-            let _ = position_tray_window(&window).await;
+        if let Some(window) = app.get_webview_window("tray") {
+            let _ = window.hide();
         }
-    } else if let Some(window) = app.get_webview_window("tray") {
-        let _ = window.hide();
     }
 
     let item_lock = state.hud_menu_item.lock().await;
@@ -184,6 +186,7 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
     }
 }
 
+/// Set whether the tray HUD overlay should ignore mouse cursor input events.
 #[tauri::command]
 pub fn set_hud_ignore_cursor(window: WebviewWindow, ignore: bool) {
     #[cfg(target_os = "linux")]
@@ -202,6 +205,36 @@ pub fn set_hud_ignore_cursor(window: WebviewWindow, ignore: bool) {
     }
 }
 
+fn evaluate_main_mode_engine_lifecycle(app: AppHandle, state: &AppState) {
+    let (dictation_enabled, is_engaged, is_passive) = state
+        .settings
+        .read()
+        .map(|s| {
+            (
+                s.dictation.enabled,
+                state
+                    .pipeline
+                    .is_engaged
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                s.interaction.mode == InteractionMode::Passive,
+            )
+        })
+        .unwrap_or((false, false, false));
+
+    if !dictation_enabled && !is_engaged && !is_passive {
+        log::info!("[Settings] Main App mode changed to non-passive and Dictation is disabled. Stopping engine...");
+        tauri::async_runtime::spawn(async move {
+            let _ = crate::ipc::pipeline::stop_engine(app).await;
+        });
+    } else if is_passive {
+        log::info!("[Settings] Main App mode changed to Passive. Ensuring engine is launched...");
+        tauri::async_runtime::spawn(async move {
+            let _ = crate::ipc::pipeline::launch_engine(app).await;
+        });
+    }
+}
+
+/// Update interaction mode (PTT vs Passive) for main or tray windows and sync VAD.
 #[tauri::command]
 pub async fn update_interaction_mode(
     app: AppHandle,
@@ -217,7 +250,6 @@ pub async fn update_interaction_mode(
 
     {
         let mut settings = state.settings.write().map_err(|e| e.to_string())?;
-
         match target.to_lowercase().as_str() {
             "main" => {
                 settings.interaction.mode = new_mode.clone();
@@ -232,11 +264,9 @@ pub async fn update_interaction_mode(
             }
             _ => return Err(format!("Invalid target window: {}", target)),
         }
-
         let _ = settings.save();
     }
 
-    // 1. VAD Actor synchronization on owner match
     let owner: crate::core::state::InteractionOwner = state
         .owner
         .load(std::sync::atomic::Ordering::Relaxed)
@@ -248,41 +278,17 @@ pub async fn update_interaction_mode(
 
     if owner == current_target {
         if let Some(engine) = state.engine.lock().await.as_ref() {
-            let _ = engine
+            if let Err(e) = engine
                 .vad_tx
-                .send(crate::core::state::VadCommand::UpdateMode(new_mode));
+                .send(crate::core::state::VadCommand::UpdateMode(new_mode))
+            {
+                log::warn!("[Tray] Failed to send VadCommand::UpdateMode: {}", e);
+            }
         }
     }
 
-    // 2. Engine lifecycle check for main window mode changes
     if target.to_lowercase() == "main" {
-        let (dictation_enabled, is_engaged, is_passive) = {
-            let s = state.settings.read().unwrap();
-            (
-                s.dictation.enabled,
-                state
-                    .pipeline
-                    .is_engaged
-                    .load(std::sync::atomic::Ordering::Relaxed),
-                s.interaction.mode == InteractionMode::Passive,
-            )
-        };
-
-        if !dictation_enabled && !is_engaged && !is_passive {
-            log::info!("[Settings] Main App mode changed to non-passive and Dictation is disabled. Stopping engine...");
-            let app_clone = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let _ = crate::ipc::pipeline::stop_engine(app_clone).await;
-            });
-        } else if is_passive {
-            log::info!(
-                "[Settings] Main App mode changed to Passive. Ensuring engine is launched..."
-            );
-            let app_clone = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let _ = crate::ipc::pipeline::launch_engine(app_clone).await;
-            });
-        }
+        evaluate_main_mode_engine_lifecycle(app.clone(), &state);
     }
 
     let event_name = format!("mode_changed_{}", target.to_lowercase());

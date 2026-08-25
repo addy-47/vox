@@ -15,7 +15,7 @@ pub fn get_runtime_history(state: State<'_, std::sync::Arc<AppState>>) -> Vec<Ru
     state.monitoring.get_history()
 }
 
-/// Clear the monitoring history history.
+/// Clear the accumulated runtime monitoring history.
 #[tauri::command]
 pub fn clear_runtime_history(state: State<'_, std::sync::Arc<AppState>>) {
     state.monitoring.clear();
