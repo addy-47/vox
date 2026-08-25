@@ -126,7 +126,10 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                 };
                 if let Some(tx) = opt_tx {
                     if let Err(e) = tx.send(msg) {
-                        log::warn!("[DeepgramVoiceAgent] Failed to forward audio packet: {:?}", e);
+                        log::warn!(
+                            "[DeepgramVoiceAgent] Failed to forward audio packet: {:?}",
+                            e
+                        );
                     }
                 }
                 packet_count += 1;
@@ -155,7 +158,10 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                 };
                 if let Some(tx) = opt_tx {
                     if let Err(e) = tx.send(Message::Text(msg.into())) {
-                        log::warn!("[DeepgramVoiceAgent] Failed to forward control event: {:?}", e);
+                        log::warn!(
+                            "[DeepgramVoiceAgent] Failed to forward control event: {:?}",
+                            e
+                        );
                     }
                 }
             }
@@ -182,7 +188,10 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                 if let Some(tx) = opt_tx {
                     log::debug!("[DeepgramVoiceAgent] Sending KeepAlive message.");
                     if let Err(e) = tx.send(Message::Text(keepalive_msg.into())) {
-                        log::warn!("[DeepgramVoiceAgent] Failed to send KeepAlive message: {:?}", e);
+                        log::warn!(
+                            "[DeepgramVoiceAgent] Failed to send KeepAlive message: {:?}",
+                            e
+                        );
                     }
                 }
             }
@@ -666,7 +675,10 @@ fn handle_deepgram_server_message(
                 let mut s_lock = state.lock();
                 s_lock.last_assistant_text.clear();
                 if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id: 0 }) {
-                    log::warn!("[DeepgramVoiceAgent] Failed to send Cancelled event: {:?}", e);
+                    log::warn!(
+                        "[DeepgramVoiceAgent] Failed to send Cancelled event: {:?}",
+                        e
+                    );
                 }
             }
             "ConversationText" => {
@@ -677,10 +689,12 @@ fn handle_deepgram_server_message(
                     log::debug!("[DeepgramVoiceAgent] User final transcript: {:?}", content);
                     if let Err(e) = event_tx.send(VoxEvent::TranscriptFinal {
                         turn_id: 0,
-                        owner: crate::core::state::InteractionOwner::MainWindow,
                         text: content.to_string(),
                     }) {
-                        log::warn!("[DeepgramVoiceAgent] Failed to send TranscriptFinal event: {:?}", e);
+                        log::warn!(
+                            "[DeepgramVoiceAgent] Failed to send TranscriptFinal event: {:?}",
+                            e
+                        );
                     }
                 } else if role == "assistant" {
                     log::debug!("[DeepgramVoiceAgent] Assistant transcript: {:?}", content);
@@ -693,7 +707,10 @@ fn handle_deepgram_server_message(
                                 turn_id: 0,
                                 token: delta.to_string(),
                             }) {
-                                log::warn!("[DeepgramVoiceAgent] Failed to send LlmToken event: {:?}", e);
+                                log::warn!(
+                                    "[DeepgramVoiceAgent] Failed to send LlmToken event: {:?}",
+                                    e
+                                );
                             }
                         }
                     } else {
@@ -701,7 +718,10 @@ fn handle_deepgram_server_message(
                             turn_id: 0,
                             token: content.to_string(),
                         }) {
-                            log::warn!("[DeepgramVoiceAgent] Failed to send LlmToken event: {:?}", e);
+                            log::warn!(
+                                "[DeepgramVoiceAgent] Failed to send LlmToken event: {:?}",
+                                e
+                            );
                         }
                     }
                     s_lock.last_assistant_text = content.to_string();
@@ -712,7 +732,10 @@ fn handle_deepgram_server_message(
                 let mut s_lock = state.lock();
                 s_lock.last_assistant_text.clear();
                 if let Err(e) = event_tx.send(VoxEvent::LlmFinished { turn_id: 0 }) {
-                    log::warn!("[DeepgramVoiceAgent] Failed to send LlmFinished event: {:?}", e);
+                    log::warn!(
+                        "[DeepgramVoiceAgent] Failed to send LlmFinished event: {:?}",
+                        e
+                    );
                 }
             }
             "Error" | "Warning" => {

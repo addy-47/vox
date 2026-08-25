@@ -84,15 +84,11 @@ impl EdgeTtsProvider {
     }
 }
 
-type EdgeWsStream = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type EdgeWsStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 /// Connects to the Microsoft Speech Platform ReadAloud WebSocket with retries.
-async fn connect_edge_websocket(
-    event_tx: &Sender<VoxEvent>,
-    turn_id: u32,
-) -> Option<EdgeWsStream> {
+async fn connect_edge_websocket(event_tx: &Sender<VoxEvent>, turn_id: u32) -> Option<EdgeWsStream> {
     for attempt in 1..=3 {
         let conn_id = uuid::Uuid::new_v4().simple().to_string();
         let sec_ms_gec = generate_sec_ms_gec();
@@ -152,7 +148,9 @@ async fn send_ssml_request(
     event_tx: &Sender<VoxEvent>,
     turn_id: u32,
 ) -> Result<()> {
-    let now = chrono::Utc::now().format("%a %b %d %Y %H:%M:%S GMT+0000 (Coordinated Universal Time)").to_string();
+    let now = chrono::Utc::now()
+        .format("%a %b %d %Y %H:%M:%S GMT+0000 (Coordinated Universal Time)")
+        .to_string();
 
     let cfg_msg = format!(
         "X-Timestamp:{}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{{\"context\":{{\"synthesis\":{{\"audio\":{{\"metadataoptions\":{{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"}},\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}}}}}\r\n",
@@ -160,12 +158,18 @@ async fn send_ssml_request(
     );
 
     if let Err(e) = ws_stream.send(Message::Text(cfg_msg.into())).await {
-        let _ = event_tx.send(VoxEvent::Error { turn_id, message: format!("Edge TTS config send error: {}", e) });
+        let _ = event_tx.send(VoxEvent::Error {
+            turn_id,
+            message: format!("Edge TTS config send error: {}", e),
+        });
         return Err(e.into());
     }
 
     let req_id = uuid::Uuid::new_v4().simple().to_string();
-    let escaped_text = text_clean.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let escaped_text = text_clean
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
     let ssml_body = format!(
         "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='{}'><prosody pitch='+0Hz' rate='{}' volume='+0%'>{}</prosody></voice></speak>",
         full_voice, speed_pct, escaped_text
@@ -176,7 +180,10 @@ async fn send_ssml_request(
     );
 
     if let Err(e) = ws_stream.send(Message::Text(ssml_msg.into())).await {
-        let _ = event_tx.send(VoxEvent::Error { turn_id, message: format!("Edge TTS SSML send error: {}", e) });
+        let _ = event_tx.send(VoxEvent::Error {
+            turn_id,
+            message: format!("Edge TTS SSML send error: {}", e),
+        });
         return Err(e.into());
     }
 
@@ -257,9 +264,16 @@ impl TtsProvider for EdgeTtsProvider {
                 None => return,
             };
 
-            if send_ssml_request(&mut ws_stream, text_clean, &full_voice, &speed_pct, &event_tx, turn_id)
-                .await
-                .is_err()
+            if send_ssml_request(
+                &mut ws_stream,
+                text_clean,
+                &full_voice,
+                &speed_pct,
+                &event_tx,
+                turn_id,
+            )
+            .await
+            .is_err()
             {
                 return;
             }
@@ -271,7 +285,11 @@ impl TtsProvider for EdgeTtsProvider {
                     Ok(decoded) => {
                         let total_dur = decoded.duration_secs;
                         let proc_time = start_time.elapsed().as_secs_f32();
-                        let rtf = if total_dur > 0.0 { proc_time / total_dur } else { 0.0 };
+                        let rtf = if total_dur > 0.0 {
+                            proc_time / total_dur
+                        } else {
+                            0.0
+                        };
 
                         if let Err(e) = event_tx.send(VoxEvent::TtsChunk {
                             turn_id,

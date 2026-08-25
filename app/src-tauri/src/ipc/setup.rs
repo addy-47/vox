@@ -182,22 +182,9 @@ pub async fn complete_setup_wizard(
         let _ = wizard_win.close();
     }
 
-    let state_clone = state.inner().clone();
     let app_clone = app.clone();
 
     tauri::async_runtime::spawn(async move {
-        state_clone.owner.store(
-            crate::core::state::InteractionOwner::Dictation as u32,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        if let Some(engine) = state_clone.engine.lock().await.as_ref() {
-            let _ = engine
-                .vad_tx
-                .send(crate::core::state::VadCommand::UpdateOwner(
-                    crate::core::state::InteractionOwner::Dictation,
-                ));
-        }
-
         if let Some(main_win) = app_clone.get_webview_window("main") {
             let _ = main_win.eval("window.location.replace('/')");
             let _ = main_win.show();

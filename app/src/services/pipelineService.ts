@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 // ─── Engine & Pipeline Types ───────────────────────────────────────────────
 
-export type InteractionOwner = "Tray" | "MainWindow" | "Ptt" | "Wizard";
+export type InteractionOwner = "Assistant" | "Dictation";
 
 export interface RuntimeSnapshot {
   pipeline_state: string;
@@ -68,32 +68,32 @@ export function launchEngine(): Promise<void> {
   return invoke("launch_engine");
 }
 
-export function engage(): Promise<void> {
-  return invoke("engage");
+export function startSession(): Promise<void> {
+  return invoke("start_session");
 }
 
-export function startRealtimeSession(): Promise<void> {
-  return invoke("start_realtime_session");
+export function endSession(): Promise<void> {
+  return invoke("end_session");
 }
 
-export function stopRealtimeSession(): Promise<void> {
-  return invoke("stop_realtime_session");
+export function pauseSession(): Promise<void> {
+  return invoke("pause_session");
 }
 
-export function pausePipeline(): Promise<void> {
-  return invoke("pause_pipeline");
+export function resumeSession(): Promise<void> {
+  return invoke("resume_session");
 }
 
-export function resumePipeline(): Promise<void> {
-  return invoke("resume_pipeline");
+export function pttStart(): Promise<void> {
+  return invoke("ptt_start");
 }
 
-export function pttStart(owner: InteractionOwner): Promise<void> {
-  return invoke("ptt_start", { owner });
+export function pttStop(): Promise<void> {
+  return invoke("ptt_stop");
 }
 
-export function pttStop(owner: InteractionOwner): Promise<void> {
-  return invoke("ptt_stop", { owner });
+export function pttCancel(): Promise<void> {
+  return invoke("ptt_cancel");
 }
 
 export function testClip(clipId: string): Promise<void> {

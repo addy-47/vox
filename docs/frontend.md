@@ -80,8 +80,8 @@ Raw `@tauri-apps/api` `invoke` calls are **banned inside components** (code-styl
 | Service file | Responsibility |
 |---|---|
 | `services/settingsService.ts` | Boot state, settings get/update, model catalog, provider health, input devices |
-| `services/pipelineService.ts` | Engine lifecycle (`engage`, `stopEngine`, `launchEngine`), realtime session, PTT, runtime snapshots, voice library |
-| `services/eventsService.ts` | Typed Tauri `listen` wrappers for all pipeline events (see §9) |
+| `services/pipelineService.ts` | Engine lifecycle (`stopEngine`, `launchEngine`), discrete session verbs (`startSession`, `endSession`, `pauseSession`, `resumeSession`), PTT (`pttStart`, `pttStop`, `pttCancel`), runtime snapshots, voice library |
+| `services/eventsService.ts` | Typed Tauri `listen` wrappers for canonical 7-state events, telemetry, transcripts |
 | `services/historyService.ts` | Session/turn CRUD, transcript history, delete |
 | `services/memoryService.ts` | Memory graph topology, stats, fact mutations, ingestion control |
 | `services/memoryProfilerService.ts` | Multi-dimensional RAM/heap/DOM profiling snapshots |
@@ -94,13 +94,11 @@ Raw `@tauri-apps/api` `invoke` calls are **banned inside components** (code-styl
 
 | Page | Entry | Key components (under `shared/components/`) | Notes |
 |---|---|---|---|
-| Home (Orb) | `pages/Home.tsx` | `home/AdvancedOrb`, `home/PipelineField`, `home/StatusCapsule`, `home/ActiveTranscript` | Orchestrates engage/pause/PTT via `hooks/useHomePage.ts`. Modular vs realtime pipeline mode; three-button control group. Marks down realtime session-cache resume. |
+| Home (Orb) | `pages/Home.tsx` | `home/AdvancedOrb`, `home/PipelineField`, `home/StatusCapsule`, `home/ActiveTranscript` | Orchestrates engage/pause/PTT via `VoiceSessionContext` + `hooks/useHomePage.ts`. Mode-adaptive toolbar (Passive vs. PTT hold-to-talk); canonical 7-state ambient mood sync. |
 | History | `pages/History.tsx` | `history/OrbitCarousel`, `history/CentralClockNode`, `history/VoiceDial`, `history/DetailPanel` | 2.5D single-ring CSS ellipse carousel (`history/orbitMath.ts`), windowed chunking, holographic dialogue in a global `Drawer`. |
 | Memory | `pages/Memory.tsx` | `memory/MemoryGraph`, `memory/MemoryNodeTooltip`, `memory/MemoryPipelineDrawer`, `memory/SearchBar` | Custom Three.js InstancedMesh WebGL engine. Deep-dive + invariants: `features/memory-architecture.md` §1 and `features/performance-memory-optimizations.md` §2.5–2.7. |
 | Settings | `pages/Settings.tsx` | `settings/RadialHub` + domain cards (`appearance/`, `interaction/`, `models/`, `memory/`, `persona/`, `history/`, `realtime/`) | Radial hub of cards; flat underline tab strips for providers; `RealtimeConfigDesk` for duplex S2S provider & API key config; prewarmed at boot. |
 | Monitoring | `pages/Monitoring.tsx` | `monitoring/MetricCarousel`, `monitoring/LiquidChamber` + `profiler/*` | Runtime metrics dashboard; offload/reload dual-button engine control; 30 FPS throttled canvas. |
-
-Component responsibilities and the "no new component that already exists in the design system" rule are in `frontend-engineer.md`.
 
 ## 8. Shared layer
 
@@ -116,8 +114,8 @@ Component responsibilities and the "no new component that already exists in the 
   - `useTelemetry`, `useMonitoringMetrics`, `useMemoryProfiler`, `useMemoryTrace`, `useVoxFootprint`, `useHomePage`, `useSettingsPage`.
 - **`shared/ui/`** — primitives: `Drawer` (the single bottom-sheet, `position="page"|"global"`), `Tooltip` (the **only** sanctioned tooltip — native `title` banned for tooltips), `Card`, `SegmentedControl`, `SliderField`, `RotaryKnob`, `Badge`, `SearchInput`, `ProgressBar`, `icons/VendorLogos`.
 - **`shared/lib/`** — `overlayStack.ts` (global FILO dismissal authority), `fuzzy.ts` (catalog search), `utils.ts` (`cn`, `hexToRgb`).
-- **`shared/context/`** — `SettingsContext` (adapter), `MemoryProfilerContext`.
-- **`shared/data/`** — all static copy/labels (zero hardcoded text in components — code-style-guide §2).
+- **`shared/context/`** — `VoiceSessionContext` (root pipeline state & discrete session verbs), `SettingsContext` (adapter), `MemoryProfilerContext`.
+- **`shared/data/`** — all static copy (homeCopy, settingsCopy, memoryCopy, ...)
 
 ## 9. IPC & events — consumer view
 
@@ -125,7 +123,7 @@ The Rust event contract is authoritative in `docs/backend.md` §8. The frontend 
 
 | Event | Payload source | Consumer surface |
 |---|---|---|
-| `state_changed` | `InteractionState` (core/state.rs) | Main + Tray (mood sync) |
+| `state_changed` | `InteractionState` (`"Idle" | "Listening" | "UserSpeaking" | "Thinking" | "AssistantSpeaking" | "Paused" | "Error"`) | Main + Tray (mood sync) |
 | `audio_energy` | `{ energy }` | Orb waveform, Tray HUD |
 | `transcript_partial` / `transcript_final` | `TranscriptPayload` | ActiveTranscript, Tray |
 | `ptt_status` | `PttStatusPayload` | Main PTT button, Tray |

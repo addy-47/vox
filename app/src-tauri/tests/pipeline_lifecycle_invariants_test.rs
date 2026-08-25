@@ -59,7 +59,7 @@ fn test_engage_idle_to_engaged_transition() {
     // Engage (matching lifecycle.rs engage branch).
     pipeline.is_engaged.store(true, Ordering::Relaxed);
     pipeline.cancel_flag.store(false, Ordering::Relaxed);
-    owner_atomic.store(InteractionOwner::MainWindow as u32, Ordering::Relaxed);
+    owner_atomic.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
 
     assert!(
         pipeline.is_engaged.load(Ordering::Relaxed),
@@ -72,15 +72,15 @@ fn test_engage_idle_to_engaged_transition() {
     let engaged_owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
     assert_eq!(
         engaged_owner,
-        InteractionOwner::MainWindow,
-        "Engage MUST reassign owner to MainWindow!"
+        InteractionOwner::Assistant,
+        "Engage MUST reassign owner to Assistant!"
     );
 }
 
 #[test]
 fn test_disengage_engaged_to_cancelled_and_idle_transition() {
     let pipeline = PipelineAtomics::new();
-    let owner_atomic = AtomicU32::new(InteractionOwner::MainWindow as u32);
+    let owner_atomic = AtomicU32::new(InteractionOwner::Assistant as u32);
     pipeline.is_engaged.store(true, Ordering::Relaxed);
     pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
@@ -404,26 +404,26 @@ fn test_resume_pipeline_state_machine_by_mode() {
 }
 
 #[test]
-fn test_owner_transition_dictation_to_main_window_when_engaged() {
+fn test_owner_transition_dictation_to_assistant_when_engaged() {
     let owner_atomic = AtomicU32::new(InteractionOwner::Dictation as u32);
     let is_engaged = AtomicBool::new(true);
 
-    // While pipeline is engaged -> owner reverts to MainWindow.
+    // While pipeline is engaged -> owner reverts to Assistant.
     if is_engaged.load(Ordering::Relaxed) {
-        owner_atomic.store(InteractionOwner::MainWindow as u32, Ordering::Relaxed);
+        owner_atomic.store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
     }
 
     let owner: InteractionOwner = owner_atomic.load(Ordering::Relaxed).into();
     assert_eq!(
         owner,
-        InteractionOwner::MainWindow,
-        "Engaged pipeline MUST switch owner to MainWindow!"
+        InteractionOwner::Assistant,
+        "Engaged pipeline MUST switch owner to Assistant!"
     );
 }
 
 #[test]
 fn test_owner_transition_main_to_dictation_when_unengaged() {
-    let owner_atomic = AtomicU32::new(InteractionOwner::MainWindow as u32);
+    let owner_atomic = AtomicU32::new(InteractionOwner::Assistant as u32);
     let is_engaged = AtomicBool::new(false);
 
     // Pipeline unengaged -> owner falls back to Dictation on disengage.
