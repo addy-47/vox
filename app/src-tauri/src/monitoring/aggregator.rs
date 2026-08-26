@@ -1,5 +1,8 @@
+use crate::monitoring::TELEMETRY_AGGREGATOR_CHANNEL_CAPACITY;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use serde::Serialize;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 /// Structured telemetry events emitted by various engine subsystems.
 #[derive(Debug, Clone, Serialize)]
@@ -31,47 +34,42 @@ pub enum TelemetryEvent {
 }
 
 /// A dedicated background worker that aggregates telemetry events.
-///
-/// Uses crossbeam_channel for lock-free, zero-async-overhead operation.
-/// Critical: the sender is cloned into VAD and audio hot-path threads.
-///
-/// In Phase 6.2: Events are logged to the tracing file.
-/// In Phase 6.3: Events will be persisted to SQLite.
 pub struct TelemetryAggregator {
     rx: Receiver<TelemetryEvent>,
-    latest_energy: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    latest_vad_prob: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    latest_low: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    latest_mid: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    latest_high: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    latest_sys_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    latest_sys_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    latest_vox_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    latest_vox_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    latest_stt_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    latest_ttft_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    dropped_events: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    latest_energy: Arc<std::sync::atomic::AtomicU32>,
+    latest_vad_prob: Arc<std::sync::atomic::AtomicU32>,
+    latest_low: Arc<std::sync::atomic::AtomicU32>,
+    latest_mid: Arc<std::sync::atomic::AtomicU32>,
+    latest_high: Arc<std::sync::atomic::AtomicU32>,
+    latest_sys_cpu: Arc<std::sync::atomic::AtomicU32>,
+    latest_sys_ram: Arc<std::sync::atomic::AtomicU32>,
+    latest_vox_cpu: Arc<std::sync::atomic::AtomicU32>,
+    latest_vox_ram: Arc<std::sync::atomic::AtomicU32>,
+    latest_stt_ms: Arc<std::sync::atomic::AtomicU32>,
+    latest_ttft_ms: Arc<std::sync::atomic::AtomicU32>,
+    dropped_events: Arc<std::sync::atomic::AtomicU64>,
 }
 
 /// Target atomics updated by the telemetry aggregator loop.
 pub struct TelemetryAggregatorHandles {
-    pub latest_energy: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    pub latest_vad_prob: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    pub latest_low: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    pub latest_mid: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    pub latest_high: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    pub latest_sys_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    pub latest_sys_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    pub latest_vox_cpu: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    pub latest_vox_ram: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    pub latest_stt_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    pub latest_ttft_ms: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    pub dropped_events: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    pub latest_energy: Arc<std::sync::atomic::AtomicU32>,
+    pub latest_vad_prob: Arc<std::sync::atomic::AtomicU32>,
+    pub latest_low: Arc<std::sync::atomic::AtomicU32>,
+    pub latest_mid: Arc<std::sync::atomic::AtomicU32>,
+    pub latest_high: Arc<std::sync::atomic::AtomicU32>,
+    pub latest_sys_cpu: Arc<std::sync::atomic::AtomicU32>,
+    pub latest_sys_ram: Arc<std::sync::atomic::AtomicU32>,
+    pub latest_vox_cpu: Arc<std::sync::atomic::AtomicU32>,
+    pub latest_vox_ram: Arc<std::sync::atomic::AtomicU32>,
+    pub latest_stt_ms: Arc<std::sync::atomic::AtomicU32>,
+    pub latest_ttft_ms: Arc<std::sync::atomic::AtomicU32>,
+    pub dropped_events: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl TelemetryAggregator {
+    /// Creates a new TelemetryAggregator and bounded Sender channel.
     pub fn new(handles: TelemetryAggregatorHandles) -> (Self, Sender<TelemetryEvent>) {
-        let (tx, rx) = bounded(4096);
+        let (tx, rx) = bounded(TELEMETRY_AGGREGATOR_CHANNEL_CAPACITY);
         (
             Self {
                 rx,
@@ -93,52 +91,88 @@ impl TelemetryAggregator {
     }
 
     /// Spawns the aggregator loop on a dedicated OS thread.
-    ///
-    /// Using a standard OS thread with a blocking recv() is more efficient than
-    /// an async task for this workload, as it consumes 0% CPU while idle and
-    /// eliminates the overhead of a sleep/poll loop.
     pub fn start(self) {
         std::thread::Builder::new()
             .name("vox-telemetry".to_string())
             .spawn(move || {
-                tracing::info!("[Telemetry] Aggregator worker started.");
+                log::info!("[Monitoring::Aggregator] Aggregator worker started");
 
                 while let Ok(event) = self.rx.recv() {
-                    use std::sync::atomic::Ordering;
-                    match &event {
-                        TelemetryEvent::InteractionMetric { conversation_id, turn_id, stt_latency_ms, ttft_ms, .. } => {
-                            tracing::info!(target: "telemetry", conversation_id = %conversation_id, turn_id = %turn_id, "Interaction metrics: {:?}", event);
-                            self.latest_stt_ms.store(*stt_latency_ms, Ordering::Relaxed);
-                            self.latest_ttft_ms.store(*ttft_ms, Ordering::Relaxed);
-                        }
-                        TelemetryEvent::SystemHealth { system_cpu, system_ram_pct, vox_cpu, vox_ram_mb } => {
-                            tracing::debug!(target: "telemetry", "System Health: {:?}", event);
-                            self.latest_sys_cpu.store(system_cpu.to_bits(), Ordering::Relaxed);
-                            self.latest_sys_ram.store(system_ram_pct.to_bits(), Ordering::Relaxed);
-                            self.latest_vox_cpu.store(vox_cpu.to_bits(), Ordering::Relaxed);
-                            self.latest_vox_ram.store(*vox_ram_mb, Ordering::Relaxed);
-
-                            // Periodically log dropped events (Architect correction: avoid hot-path logging)
-                            let dropped = self.dropped_events.load(Ordering::Relaxed);
-                            if dropped > 0 {
-                                tracing::warn!(target: "telemetry", "Dropped {} telemetry events due to channel saturation.", dropped);
-                            }
-                        }
-                        TelemetryEvent::AudioEnergy { energy, vad_prob, low, mid, high } => {
-                            // High-frequency debug only
-                            tracing::debug!(target: "telemetry", "Audio Energy: {:?}", event);
-                            // Update shared atomics for monitoring collector
-                            use std::sync::atomic::Ordering;
-                            self.latest_energy.store(energy.to_bits(), Ordering::Relaxed);
-                            self.latest_vad_prob.store(vad_prob.to_bits(), Ordering::Relaxed);
-                            self.latest_low.store(low.to_bits(), Ordering::Relaxed);
-                            self.latest_mid.store(mid.to_bits(), Ordering::Relaxed);
-                            self.latest_high.store(high.to_bits(), Ordering::Relaxed);
-                        }
-                    }
+                    self.handle_event(event);
                 }
-                tracing::info!("[Telemetry] Channel disconnected. Aggregator exiting.");
+                log::info!("[Monitoring::Aggregator] Channel disconnected. Aggregator exiting");
             })
-            .expect("[Telemetry] Failed to spawn aggregator thread");
+            .expect("[Monitoring::Aggregator] Failed to spawn aggregator thread");
+    }
+
+    fn handle_event(&self, event: TelemetryEvent) {
+        match event {
+            TelemetryEvent::InteractionMetric {
+                conversation_id,
+                turn_id,
+                stt_latency_ms,
+                ttft_ms,
+                tts_rtf,
+            } => {
+                log::info!(
+                    "[Monitoring::Aggregator] Interaction metrics conv_id={} turn_id={} stt_ms={} ttft_ms={} tts_rtf={}",
+                    conversation_id,
+                    turn_id,
+                    stt_latency_ms,
+                    ttft_ms,
+                    tts_rtf
+                );
+                self.latest_stt_ms.store(stt_latency_ms, Ordering::Relaxed);
+                self.latest_ttft_ms.store(ttft_ms, Ordering::Relaxed);
+            }
+            TelemetryEvent::SystemHealth {
+                system_cpu,
+                system_ram_pct,
+                vox_cpu,
+                vox_ram_mb,
+            } => {
+                log::debug!(
+                    "[Monitoring::Aggregator] System health sys_cpu={}% sys_ram={}% vox_cpu={}% vox_ram={}MB",
+                    system_cpu,
+                    system_ram_pct,
+                    vox_cpu,
+                    vox_ram_mb
+                );
+                self.latest_sys_cpu.store(system_cpu.to_bits(), Ordering::Relaxed);
+                self.latest_sys_ram.store(system_ram_pct.to_bits(), Ordering::Relaxed);
+                self.latest_vox_cpu.store(vox_cpu.to_bits(), Ordering::Relaxed);
+                self.latest_vox_ram.store(vox_ram_mb, Ordering::Relaxed);
+
+                let dropped = self.dropped_events.load(Ordering::Relaxed);
+                if dropped > 0 {
+                    log::warn!(
+                        "[Monitoring::Aggregator] Dropped {} telemetry events due to channel saturation",
+                        dropped
+                    );
+                }
+            }
+            TelemetryEvent::AudioEnergy {
+                energy,
+                vad_prob,
+                low,
+                mid,
+                high,
+            } => {
+                log::debug!(
+                    "[Monitoring::Aggregator] Audio energy e={} vad={} low={} mid={} high={}",
+                    energy,
+                    vad_prob,
+                    low,
+                    mid,
+                    high
+                );
+                self.latest_energy.store(energy.to_bits(), Ordering::Relaxed);
+                self.latest_vad_prob.store(vad_prob.to_bits(), Ordering::Relaxed);
+                self.latest_low.store(low.to_bits(), Ordering::Relaxed);
+                self.latest_mid.store(mid.to_bits(), Ordering::Relaxed);
+                self.latest_high.store(high.to_bits(), Ordering::Relaxed);
+            }
+        }
     }
 }
+

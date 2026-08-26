@@ -1,12 +1,11 @@
+use crate::services::memory::{
+    EMBEDDING_TOKENIZER_FILENAME, NLI_CONTRADICTION_THRESHOLD, NLI_ENTAILMENT_THRESHOLD,
+    NLI_MODEL_DIR, NLI_MODEL_FILENAME,
+};
 use anyhow::{anyhow, Result};
 use ndarray::Array2;
 use std::path::Path;
 use tokenizers::Tokenizer;
-
-/// Threshold above which an NLI prediction is classified as Contradiction.
-pub const NLI_CONTRADICTION_THRESHOLD: f32 = 0.85;
-/// Threshold above which an NLI prediction is classified as Entailment.
-pub const NLI_ENTAILMENT_THRESHOLD: f32 = 0.85;
 
 /// Output classification classes produced by the Natural Language Inference model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -42,10 +41,6 @@ pub enum NliRelation {
     Neutral,
 }
 
-pub const NLI_MODEL_DIR: &str = "nli-deberta-v3-base";
-pub const NLI_MODEL_FILENAME: &str = "model_quantized.onnx";
-pub const TOKENIZER_FILENAME: &str = "tokenizer.json";
-
 /// ONNX session container for running Natural Language Inference models with dynamic calibration.
 pub struct NliEngine {
     session: parking_lot::Mutex<ort::session::Session>,
@@ -59,14 +54,14 @@ static NLI_ENGINE: parking_lot::RwLock<Option<NliEngine>> = parking_lot::RwLock:
 /// Loads the NLI model from disk and runs calibration to determine output label indices.
 pub fn init_nli_engine(model_dir: &Path) -> Result<bool> {
     let model_path = model_dir.join(NLI_MODEL_FILENAME);
-    let tokenizer_path = model_dir.join(TOKENIZER_FILENAME);
+    let tokenizer_path = model_dir.join(EMBEDDING_TOKENIZER_FILENAME);
 
     if !model_path.exists() || !tokenizer_path.exists() {
         log::warn!(
             "[NliEngine] NLI model or tokenizer file missing in {:?}. Expected model: {}, tokenizer: {}. Skipping init.",
             model_dir,
             NLI_MODEL_FILENAME,
-            TOKENIZER_FILENAME
+            EMBEDDING_TOKENIZER_FILENAME
         );
         return Ok(false);
     }

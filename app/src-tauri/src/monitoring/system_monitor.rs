@@ -1,6 +1,9 @@
-use sysinfo::System;
+use crate::monitoring::SYSTEM_MONITOR_INTERVAL;
+use std::sync::atomic::Ordering;
+use sysinfo::{Pid, System};
 use tauri::{AppHandle, Emitter, Manager};
 
+/// Spawns the background system monitor task to collect and broadcast CPU and RAM statistics.
 pub fn spawn_system_monitor(app: AppHandle) {
     let state_arc: std::sync::Arc<crate::core::state::AppState> = app
         .state::<std::sync::Arc<crate::core::state::AppState>>()
@@ -10,110 +13,141 @@ pub fn spawn_system_monitor(app: AppHandle) {
     let pid = sysinfo::get_current_pid().ok();
 
     tauri::async_runtime::spawn(async move {
-        tracing::info!("[Telemetry] Dual-Stream System monitor started (Throttled: 10s).");
+        log::info!("[Monitoring::SystemMonitor] System monitor task started");
         let mut sys = System::new_all();
 
         loop {
-            // High Throttle as per Architect Correction: 30000ms (30 seconds)
-            tokio::time::sleep(std::time::Duration::from_millis(30000)).await;
+            tokio::time::sleep(SYSTEM_MONITOR_INTERVAL).await;
 
             sys.refresh_all();
 
-            // 1. Global System Metrics
             let system_cpu = sys.global_cpu_info().cpu_usage();
             let system_ram_pct = (sys.used_memory() as f32 / sys.total_memory() as f32) * 100.0;
+            let (vox_cpu, vox_ram_mb, thread_count) = collect_process_metrics(&sys, pid);
 
-            // 2. Vox Process Metrics (recursive aggregation of parent + child Webview processes)
-            let (vox_cpu, vox_ram_mb, thread_count): (f32, u32, u32) = if let Some(target_pid) = pid
-            {
-                let mut total_memory: u64 = 0;
-                let mut total_cpu: f32 = 0.0;
-                let mut total_threads: u32 = 0;
-
-                for (&p_pid, proc) in sys.processes() {
-                    #[cfg(target_os = "linux")]
-                    {
-                        if proc.tasks().is_none() {
-                            continue;
-                        }
-                    }
-
-                    let mut is_descendant = false;
-
-                    if p_pid == target_pid {
-                        is_descendant = true;
-                    } else {
-                        let mut curr = proc;
-                        while let Some(parent_pid) = curr.parent() {
-                            if parent_pid == target_pid {
-                                is_descendant = true;
-                                break;
-                            }
-                            if let Some(parent_proc) = sys.process(parent_pid) {
-                                curr = parent_proc;
-                            } else {
-                                break;
-                            }
-                        }
-                    }
-
-                    if is_descendant {
-                        total_memory += proc.memory();
-                        total_cpu += proc.cpu_usage();
-                        total_threads += proc.tasks().map(|t| t.len()).unwrap_or(0) as u32;
-                    }
-                }
-
-                (
-                    total_cpu / sys.cpus().len() as f32,
-                    (total_memory / 1024 / 1024) as u32,
-                    total_threads,
-                )
-            } else {
-                (0.0, 0, 0)
-            };
-
-            // Update Shared Atomics for real-time monitoring
-            use std::sync::atomic::Ordering;
-            state_arc
-                .latest_sys_cpu
-                .store(system_cpu.to_bits(), Ordering::Relaxed);
-            state_arc
-                .latest_sys_ram
-                .store(system_ram_pct.to_bits(), Ordering::Relaxed);
-            state_arc
-                .latest_vox_cpu
-                .store(vox_cpu.to_bits(), Ordering::Relaxed);
-            state_arc
-                .latest_vox_ram
-                .store(vox_ram_mb, Ordering::Relaxed);
-            state_arc
-                .latest_threads
-                .store(thread_count, Ordering::Relaxed);
-
-            // Emit to IPC for real-time dashboard (Monitoring Page)
-            let _ = app.emit(
-                "system_stats",
-                serde_json::json!({
-                    "system_cpu": system_cpu,
-                    "system_ram_pct": system_ram_pct,
-                    "vox_cpu": vox_cpu,
-                    "vox_ram_mb": vox_ram_mb,
-                    "threads": thread_count,
-                    "total_memory_gb": sys.total_memory() / 1024 / 1024 / 1024,
-                    "cpu_count": sys.cpus().len(),
-                }),
+            update_shared_metrics(
+                &state_arc,
+                system_cpu,
+                system_ram_pct,
+                vox_cpu,
+                vox_ram_mb,
+                thread_count,
             );
 
-            // Send to aggregator for structured telemetry
-            let _ = telemetry_tx.send(
+            emit_system_stats(&app, &sys, system_cpu, system_ram_pct, vox_cpu, vox_ram_mb, thread_count);
+
+            if let Err(e) = telemetry_tx.send(
                 crate::monitoring::aggregator::TelemetryEvent::SystemHealth {
                     system_cpu,
                     system_ram_pct,
                     vox_cpu,
                     vox_ram_mb,
                 },
-            );
+            ) {
+                log::warn!("[Monitoring::SystemMonitor] Failed to send SystemHealth to telemetry aggregator: {}", e);
+            }
         }
     });
 }
+
+fn collect_process_metrics(sys: &System, pid: Option<Pid>) -> (f32, u32, u32) {
+    let target_pid = match pid {
+        Some(p) => p,
+        None => return (0.0, 0, 0),
+    };
+
+    let mut total_memory: u64 = 0;
+    let mut total_cpu: f32 = 0.0;
+    let mut total_threads: u32 = 0;
+
+    for (&p_pid, proc) in sys.processes() {
+        #[cfg(target_os = "linux")]
+        {
+            if proc.tasks().is_none() {
+                continue;
+            }
+        }
+
+        if is_descendant_process(sys, p_pid, target_pid) {
+            total_memory += proc.memory();
+            total_cpu += proc.cpu_usage();
+            total_threads += proc.tasks().map(|t| t.len()).unwrap_or(0) as u32;
+        }
+    }
+
+    let cpu_cores = sys.cpus().len().max(1) as f32;
+    (
+        total_cpu / cpu_cores,
+        (total_memory / 1024 / 1024) as u32,
+        total_threads,
+    )
+}
+
+fn is_descendant_process(sys: &System, p_pid: Pid, target_pid: Pid) -> bool {
+    if p_pid == target_pid {
+        return true;
+    }
+    let mut curr = sys.process(p_pid);
+    while let Some(proc) = curr {
+        if let Some(parent_pid) = proc.parent() {
+            if parent_pid == target_pid {
+                return true;
+            }
+            curr = sys.process(parent_pid);
+        } else {
+            break;
+        }
+    }
+    false
+}
+
+fn update_shared_metrics(
+    state: &crate::core::state::AppState,
+    system_cpu: f32,
+    system_ram_pct: f32,
+    vox_cpu: f32,
+    vox_ram_mb: u32,
+    thread_count: u32,
+) {
+    state
+        .latest_sys_cpu
+        .store(system_cpu.to_bits(), Ordering::Relaxed);
+    state
+        .latest_sys_ram
+        .store(system_ram_pct.to_bits(), Ordering::Relaxed);
+    state
+        .latest_vox_cpu
+        .store(vox_cpu.to_bits(), Ordering::Relaxed);
+    state
+        .latest_vox_ram
+        .store(vox_ram_mb, Ordering::Relaxed);
+    state
+        .latest_threads
+        .store(thread_count, Ordering::Relaxed);
+}
+
+fn emit_system_stats(
+    app: &AppHandle,
+    sys: &System,
+    system_cpu: f32,
+    system_ram_pct: f32,
+    vox_cpu: f32,
+    vox_ram_mb: u32,
+    thread_count: u32,
+) {
+    if let Err(e) = app.emit(
+        "system_stats",
+        serde_json::json!({
+            "system_cpu": system_cpu,
+            "system_ram_pct": system_ram_pct,
+            "vox_cpu": vox_cpu,
+            "vox_ram_mb": vox_ram_mb,
+            "threads": thread_count,
+            "total_memory_gb": sys.total_memory() / 1024 / 1024 / 1024,
+            "cpu_count": sys.cpus().len(),
+        }),
+    ) {
+        log::warn!("[Monitoring::SystemMonitor] Failed to emit system_stats: {}", e);
+    }
+}
+

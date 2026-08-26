@@ -80,8 +80,9 @@ pub fn init_with_root(root: PathBuf) {
         root,
     };
 
-    // Ignore error if already initialized
-    let _ = PATHS.set(paths);
+    if PATHS.set(paths).is_err() {
+        log::debug!("[Paths] VoxPaths singleton was already initialized; skipping re-initialization.");
+    }
 }
 
 /// Returns the initialized `VoxPaths` singleton if initialized, or None.

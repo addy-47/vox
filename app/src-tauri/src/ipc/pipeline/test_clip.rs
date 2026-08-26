@@ -104,8 +104,12 @@ pub async fn test_clip(
         .ok_or_else(|| "Engine failed to start after launch".to_string())?;
 
     let turn_id = state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
-    let _ = engine.pipeline_tx.send(VoxEvent::WarmUp);
-    let _ = engine.pipeline_tx.send(VoxEvent::SpeechStart { turn_id });
+    if let Err(e) = engine.pipeline_tx.send(VoxEvent::WarmUp) {
+        log::warn!("[TestClip] Failed to send WarmUp event: {}", e);
+    }
+    if let Err(e) = engine.pipeline_tx.send(VoxEvent::SpeechStart { turn_id }) {
+        log::warn!("[TestClip] Failed to send SpeechStart event: {}", e);
+    }
 
     engine
         .stt_tx
@@ -126,8 +130,12 @@ pub async fn test_clip_cancel(
 
     if let Some(engine) = state.engine.lock().await.as_ref() {
         let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
-        let _ = engine.pipeline_tx.send(VoxEvent::Cancelled { turn_id });
-        let _ = engine.stt_tx.send(SttCommand::ResetStream);
+        if let Err(e) = engine.pipeline_tx.send(VoxEvent::Cancelled { turn_id }) {
+            log::warn!("[TestClip] Failed to send Cancelled event: {}", e);
+        }
+        if let Err(e) = engine.stt_tx.send(SttCommand::ResetStream) {
+            log::warn!("[TestClip] Failed to send ResetStream command: {}", e);
+        }
     }
 
     log::info!("[TestClip] Test clip execution cancelled");

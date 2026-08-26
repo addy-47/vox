@@ -1,10 +1,9 @@
+use crate::services::memory::{
+    CLASSIFIER_MODEL_FILENAME, CLASSIFIER_TOKENIZER_FILENAME, MEMORY_SCOPE_MODEL_DIR,
+};
 use anyhow::{anyhow, Result};
 use query_sieve::{MemoryScope, MemoryScopeClassifier};
 use std::path::Path;
-
-pub const MEMORY_SCOPE_MODEL_DIR: &str = "modernbert_memory_scope";
-pub const CLASSIFIER_MODEL_FILENAME: &str = "model_quantized.onnx";
-pub const CLASSIFIER_TOKENIZER_FILENAME: &str = "tokenizer.json";
 
 /// Engine wrapper for the ModernBERT 4-Class MemoryScope Classifier.
 pub struct QueryScopeClassifier {

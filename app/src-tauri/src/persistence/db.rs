@@ -1,4 +1,5 @@
 use crate::core::error::PersistenceError;
+use crate::persistence::SQLITE_BUSY_TIMEOUT_MS;
 use turso::{Builder, Connection};
 
 /// Global static cell to hold the main Tokio runtime handle.
@@ -12,16 +13,15 @@ pub fn get_tokio_handle() -> tokio::runtime::Handle {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .expect("Failed to create fallback tokio runtime");
+                .expect("[Persistence::Db] Failed to create fallback tokio runtime");
             let handle = rt.handle().clone();
-            // Leaking the runtime keeps it alive for the duration of the process
             Box::leak(Box::new(rt));
             handle
         })
     })
 }
 
-/// Async database connection wrapper for the Turso (Limbo) engine.
+/// Async database connection wrapper for the Turso engine.
 pub struct VoxDb;
 
 impl VoxDb {
@@ -33,16 +33,24 @@ impl VoxDb {
             .build()
             .await?;
         let conn = db.connect()?;
-        // Optimize SQLite concurrency characteristics
-        let _ = conn.execute("PRAGMA journal_mode = WAL;", ()).await;
-        let _ = conn.execute("PRAGMA busy_timeout = 5000;", ()).await;
-        let _ = conn.execute("PRAGMA foreign_keys = ON;", ()).await;
+
+        if let Err(e) = conn.execute("PRAGMA journal_mode = WAL;", ()).await {
+            log::warn!("[Persistence::Db] Failed to set journal_mode WAL: {}", e);
+        }
+        let timeout_pragma = format!("PRAGMA busy_timeout = {};", SQLITE_BUSY_TIMEOUT_MS);
+        if let Err(e) = conn.execute(&timeout_pragma, ()).await {
+            log::warn!("[Persistence::Db] Failed to set busy_timeout: {}", e);
+        }
+        if let Err(e) = conn.execute("PRAGMA foreign_keys = ON;", ()).await {
+            log::warn!("[Persistence::Db] Failed to enable foreign_keys: {}", e);
+        }
+
         Ok(conn)
     }
 
     /// Open a connection for IPC history queries.
-    /// In Turso, since connections are cheap and safe, this behaves exactly like `open`.
     pub async fn open_readonly(path: &std::path::Path) -> Result<Connection, PersistenceError> {
         Self::open(path).await
     }
 }
+

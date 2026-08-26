@@ -121,13 +121,17 @@ pub fn warm_up_llm(
     }
 
     log::info!("[LLM Actor] Warming up LLM worker");
-    let _ = app.emit(EVENT_MODEL_LOADING, "LLM");
+    if let Err(e) = app.emit(EVENT_MODEL_LOADING, "LLM") {
+        log::warn!("[LLM Actor] Failed to emit EVENT_MODEL_LOADING: {}", e);
+    }
 
     let provider = match create_llm_provider(settings, llm_path) {
         Ok(p) => p,
         Err(e) => {
             log::error!("[LLM Actor] Failed to create provider: {}", e);
-            let _ = app.emit(EVENT_MODEL_FAILED, format!("LLM: {}", e));
+            if let Err(emit_err) = app.emit(EVENT_MODEL_FAILED, format!("LLM: {}", e)) {
+                log::warn!("[LLM Actor] Failed to emit EVENT_MODEL_FAILED: {}", emit_err);
+            }
             handles.is_loaded.store(false, Ordering::Relaxed);
             return Err(e);
         }

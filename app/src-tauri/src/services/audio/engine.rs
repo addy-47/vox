@@ -1,4 +1,6 @@
-use crate::core::constants::{EVENT_MODEL_FAILED, EVENT_MODEL_LOADING, EVENT_MODEL_READY};
+use crate::core::constants::{
+    EVENT_MODEL_FAILED, EVENT_MODEL_LOADING, EVENT_MODEL_READY, RING_BUFFER_SIZE,
+};
 use crate::core::events::VoxEvent;
 use crate::core::state::{AppState, InteractionOwner, InteractionState, VadCommand, VoxEngine};
 use crate::services::audio::{AudioStream, PlaybackEngine};
@@ -18,7 +20,7 @@ use tauri::{AppHandle, Emitter, Manager};
 fn ensure_persistence_worker(state: &AppState) {
     let mut persist_lock = state.persist_tx.lock();
     if persist_lock.is_none() {
-        log::info!("[AudioEngine] Spawning persistence worker");
+        log::info!("[Audio::Engine] Spawning persistence worker");
         let tx = crate::persistence::worker::spawn_persistence_worker(
             paths::get().db.clone(),
             Arc::clone(&state.is_db_healthy),
@@ -57,19 +59,23 @@ fn create_stt_instance(
     match asr_provider {
         crate::core::settings::SttProviderConfig::Embedded { ref model_type } => {
             let path = match model_type.as_str() {
-                "nvidia_nemotron" => models_dir.join(crate::services::stt::MODEL_DIR_STT_NEMOTRON),
-                _ => models_dir.join(crate::services::stt::MODEL_DIR_STT_QWEN),
+                "nvidia_nemotron" => models_dir.join(crate::services::stt::NEMOTRON_MODEL_DIR),
+                _ => models_dir.join(crate::services::stt::QWEN_ASR_MODEL_DIR),
             };
             create_stt_provider(&asr_provider, &path).map_err(|e| {
-                let _ = app.emit(EVENT_MODEL_FAILED, format!("STT: {}", e));
-                format!("[AudioEngine] STT provider creation failed: {}", e)
+                if let Err(emit_err) = app.emit(EVENT_MODEL_FAILED, format!("STT: {}", e)) {
+                    log::warn!("[Audio::Engine] Failed to emit EVENT_MODEL_FAILED: {}", emit_err);
+                }
+                format!("[Audio::Engine] STT provider creation failed: {}", e)
             })
         }
         crate::core::settings::SttProviderConfig::Cloud { .. } => {
             let path = models_dir.join("stt");
             create_stt_provider(&asr_provider, &path).map_err(|e| {
-                let _ = app.emit(EVENT_MODEL_FAILED, format!("STT: {}", e));
-                format!("[AudioEngine] STT provider creation failed: {}", e)
+                if let Err(emit_err) = app.emit(EVENT_MODEL_FAILED, format!("STT: {}", e)) {
+                    log::warn!("[Audio::Engine] Failed to emit EVENT_MODEL_FAILED: {}", emit_err);
+                }
+                format!("[Audio::Engine] STT provider creation failed: {}", e)
             })
         }
     }
@@ -84,12 +90,16 @@ async fn create_vad_instance(app: &AppHandle, state: &AppState) -> Result<VadBac
 
     match vad_backend {
         crate::core::settings::VadBackendOption::Earshot => {
-            log::info!("[AudioEngine] Initializing Earshot VAD");
+            log::info!("[Audio::Engine] Initializing Earshot VAD");
             let engine = EarshotVadEngine::new(threshold).map_err(|e| {
-                let _ = app.emit(EVENT_MODEL_FAILED, format!("VAD: {}", e));
+                if let Err(emit_err) = app.emit(EVENT_MODEL_FAILED, format!("VAD: {}", e)) {
+                    log::warn!("[Audio::Engine] Failed to emit EVENT_MODEL_FAILED: {}", emit_err);
+                }
                 e.to_string()
             })?;
-            let _ = app.emit(EVENT_MODEL_READY, "VAD");
+            if let Err(e) = app.emit(EVENT_MODEL_READY, "VAD") {
+                log::warn!("[Audio::Engine] Failed to emit EVENT_MODEL_READY: {}", e);
+            }
             Ok(VadBackend::Earshot(engine))
         }
         crate::core::settings::VadBackendOption::TenVad => {
@@ -106,12 +116,16 @@ async fn create_vad_instance(app: &AppHandle, state: &AppState) -> Result<VadBac
                         .join(crate::services::vad::MODEL_FILE_VAD)
                 });
 
-            log::info!("[AudioEngine] Initializing TenVAD at {:?}", vad_path);
+            log::info!("[Audio::Engine] Initializing TenVAD at {:?}", vad_path);
             let engine = TenVadEngine::new(&vad_path, threshold).map_err(|e| {
-                let _ = app.emit(EVENT_MODEL_FAILED, format!("VAD: {}", e));
+                if let Err(emit_err) = app.emit(EVENT_MODEL_FAILED, format!("VAD: {}", e)) {
+                    log::warn!("[Audio::Engine] Failed to emit EVENT_MODEL_FAILED: {}", emit_err);
+                }
                 e.to_string()
             })?;
-            let _ = app.emit(EVENT_MODEL_READY, "VAD");
+            if let Err(e) = app.emit(EVENT_MODEL_READY, "VAD") {
+                log::warn!("[Audio::Engine] Failed to emit EVENT_MODEL_READY: {}", e);
+            }
             Ok(VadBackend::Ten(engine))
         }
     }
@@ -132,7 +146,7 @@ fn create_playback_engine(state: &AppState) -> Result<Arc<PlaybackEngine>, Strin
         },
     )
     .map(Arc::new)
-    .map_err(|e| format!("[AudioEngine] PlaybackEngine initialization failed: {}", e))
+    .map_err(|e| format!("[Audio::Engine] PlaybackEngine initialization failed: {}", e))
 }
 
 /// Spawns background forwarder routing channel events to active Tauri webview windows.
@@ -147,7 +161,7 @@ fn spawn_event_forwarder(app: AppHandle, mut rx: tokio::sync::mpsc::Receiver<ser
                     InteractionOwner::Dictation => "tray",
                 };
                 if let Err(e) = app.emit_to(target, msg_type, &event) {
-                    log::warn!("[AudioEngine] Failed to emit UI event {}: {}", msg_type, e);
+                    log::warn!("[Audio::Engine] Failed to emit UI event {}: {}", msg_type, e);
                 }
             }
         }
@@ -161,7 +175,7 @@ pub async fn start_audio_engine(app: &AppHandle, state: &AppState) -> Result<(),
         return Ok(());
     }
 
-    log::info!("[AudioEngine] Starting 3-Tier Audio Engine");
+    log::info!("[Audio::Engine] Starting 3-Tier Audio Engine");
     state
         .pipeline
         .engine_shutdown
@@ -171,7 +185,9 @@ pub async fn start_audio_engine(app: &AppHandle, state: &AppState) -> Result<(),
     ensure_persistence_worker(state);
     ensure_manifest_loaded(state).await;
 
-    let _ = app.emit(EVENT_MODEL_LOADING, "VAD");
+    if let Err(e) = app.emit(EVENT_MODEL_LOADING, "VAD") {
+        log::warn!("[Audio::Engine] Failed to emit EVENT_MODEL_LOADING: {}", e);
+    }
 
     let stt_provider = create_stt_instance(app, state)?;
     let vad = create_vad_instance(app, state).await?;
@@ -181,17 +197,18 @@ pub async fn start_audio_engine(app: &AppHandle, state: &AppState) -> Result<(),
     let (vad_tx, vad_rx) = std::sync::mpsc::channel::<VadCommand>();
     let (vox_event_tx, vox_event_rx) = std::sync::mpsc::channel::<VoxEvent>();
 
-    let stt_handle = spawn_stt_worker(
-        app.clone(),
-        stt_rx,
-        stt_provider,
-        Some(vox_event_tx.clone()),
-        Arc::clone(&state.pipeline.cancel_flag),
-        Arc::clone(&state.is_stt_loaded),
-        Arc::clone(&state.pipeline.engine_shutdown),
-    )?;
+    let stt_channels = crate::services::stt::SttActorChannels {
+        rx: stt_rx,
+        pipeline_event_tx: Some(vox_event_tx.clone()),
+    };
+    let stt_handles = crate::services::stt::SttActorHandles {
+        cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
+        is_loaded: Arc::clone(&state.is_stt_loaded),
+        engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
+    };
+    let stt_handle = spawn_stt_worker(app.clone(), stt_channels, stt_provider, stt_handles)?;
 
-    let (producer, consumer) = ringbuf::HeapRb::<f32>::new(16000 * 4).split();
+    let (producer, consumer) = ringbuf::HeapRb::<f32>::new(RING_BUFFER_SIZE).split();
 
     let (threshold, noise_gate, mode, audio_mode) = {
         let settings = state.settings.read().unwrap();
@@ -260,7 +277,7 @@ pub async fn start_audio_engine(app: &AppHandle, state: &AppState) -> Result<(),
                 handles,
                 config,
             ) {
-                log::error!("[AudioEngine] VAD worker crashed: {}", e);
+                log::error!("[Audio::Engine] VAD worker crashed: {}", e);
             }
         })
         .map_err(|e| e.to_string())?;
@@ -291,7 +308,7 @@ pub async fn start_audio_engine(app: &AppHandle, state: &AppState) -> Result<(),
         orchestrator_handle: Some(orchestrator_handle),
     });
 
-    log::info!("[AudioEngine] 3-Tier Audio Engine online");
+    log::info!("[Audio::Engine] 3-Tier Audio Engine online");
     Ok(())
 }
 
@@ -299,7 +316,7 @@ pub async fn start_audio_engine(app: &AppHandle, state: &AppState) -> Result<(),
 pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
     let mut lock = state.engine.lock().await;
     if let Some(mut engine) = lock.take() {
-        log::info!("[AudioEngine] Shutting down audio engine threads");
+        log::info!("[Audio::Engine] Shutting down audio engine threads");
 
         state
             .pipeline
@@ -312,32 +329,42 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
         state.pipeline.set_state(InteractionState::Idle);
 
         if let Err(e) = engine.pipeline_tx.send(VoxEvent::Shutdown) {
-            log::warn!("[AudioEngine] Failed to send Shutdown to pipeline: {}", e);
+            log::warn!("[Audio::Engine] Failed to send Shutdown to pipeline: {}", e);
         }
         if let Err(e) = engine.stt_tx.send(SttCommand::Shutdown) {
-            log::warn!("[AudioEngine] Failed to send Shutdown to STT: {}", e);
+            log::warn!("[Audio::Engine] Failed to send Shutdown to STT: {}", e);
         }
         if let Err(e) = engine.vad_tx.send(VadCommand::Shutdown) {
-            log::warn!("[AudioEngine] Failed to send Shutdown to VAD: {}", e);
+            log::warn!("[Audio::Engine] Failed to send Shutdown to VAD: {}", e);
         }
 
         crate::services::llm::actor::cool_down_llm(&mut engine.llm_tx);
         crate::services::tts::actor::cool_down_tts(&mut engine.tts_tx);
 
         if let Some(h) = engine.llm_handle.take() {
-            let _ = h.join();
+            if let Err(e) = h.join() {
+                log::warn!("[Audio::Engine] Failed to join LLM handle: {:?}", e);
+            }
         }
         if let Some(h) = engine.tts_handle.take() {
-            let _ = h.join();
+            if let Err(e) = h.join() {
+                log::warn!("[Audio::Engine] Failed to join TTS handle: {:?}", e);
+            }
         }
         if let Some(h) = engine.orchestrator_handle.take() {
-            let _ = h.join();
+            if let Err(e) = h.join() {
+                log::warn!("[Audio::Engine] Failed to join orchestrator handle: {:?}", e);
+            }
         }
         if let Some(h) = engine.stt_handle.take() {
-            let _ = h.join();
+            if let Err(e) = h.join() {
+                log::warn!("[Audio::Engine] Failed to join STT handle: {:?}", e);
+            }
         }
         if let Some(h) = engine.vad_handle.take() {
-            let _ = h.join();
+            if let Err(e) = h.join() {
+                log::warn!("[Audio::Engine] Failed to join VAD handle: {:?}", e);
+            }
         }
 
         {
@@ -345,7 +372,7 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
             if let Some(tx) = persist_lock.take() {
                 if let Err(e) = tx.send(crate::persistence::events::PersistenceEvent::Shutdown) {
                     log::warn!(
-                        "[AudioEngine] Failed to send Shutdown to persistence: {}",
+                        "[Audio::Engine] Failed to send Shutdown to persistence: {}",
                         e
                     );
                 }
@@ -354,7 +381,7 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
 
         crate::services::memory::unload_all_onnx_models();
         crate::services::memory::trim_heap("stop_audio_engine");
-        log::info!("[AudioEngine] Audio engine resources cleanly released");
+        log::info!("[Audio::Engine] Audio engine resources cleanly released");
     }
     Ok(())
 }

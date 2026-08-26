@@ -65,7 +65,9 @@ async fn execute_model_setup_task(
     let total_count = target_models.len();
     if total_count == 0 {
         log::warn!("[SETUP] No models selected for setup. Emitting completion immediately.");
-        let _ = app.emit("model_setup_complete", true);
+        if let Err(e) = app.emit("model_setup_complete", true) {
+            log::warn!("[Setup] Failed to emit model_setup_complete: {}", e);
+        }
         *state.setup_running.lock().await = false;
         return;
     }
@@ -79,7 +81,9 @@ async fn execute_model_setup_task(
         );
         if let Err(e) = manager.setup_model(model, &base_url, &models_dir).await {
             log::error!("[SETUP] Failed to setup model {}: {}", model.id, e);
-            let _ = app.emit::<String>("model_setup_error", e.to_string());
+            if let Err(emit_err) = app.emit::<String>("model_setup_error", e.to_string()) {
+                log::warn!("[Setup] Failed to emit model_setup_error: {}", emit_err);
+            }
             *state.setup_running.lock().await = false;
             return;
         }
@@ -90,7 +94,9 @@ async fn execute_model_setup_task(
         total_count
     );
     *state.setup_running.lock().await = false;
-    let _ = app.emit("model_setup_complete", true);
+    if let Err(e) = app.emit("model_setup_complete", true) {
+        log::warn!("[Setup] Failed to emit model_setup_complete: {}", e);
+    }
 }
 
 /// Begin downloading and verifying required or selected models in the background.
@@ -179,16 +185,24 @@ pub async fn complete_setup_wizard(
     }
 
     if let Some(wizard_win) = app.get_webview_window("wizard") {
-        let _ = wizard_win.close();
+        if let Err(e) = wizard_win.close() {
+            log::warn!("[Setup] Failed to close wizard window: {}", e);
+        }
     }
 
     let app_clone = app.clone();
 
     tauri::async_runtime::spawn(async move {
         if let Some(main_win) = app_clone.get_webview_window("main") {
-            let _ = main_win.eval("window.location.replace('/')");
-            let _ = main_win.show();
-            let _ = main_win.set_focus();
+            if let Err(e) = main_win.eval("window.location.replace('/')") {
+                log::warn!("[Setup] Failed to eval replace on main window: {}", e);
+            }
+            if let Err(e) = main_win.show() {
+                log::warn!("[Setup] Failed to show main window: {}", e);
+            }
+            if let Err(e) = main_win.set_focus() {
+                log::warn!("[Setup] Failed to focus main window: {}", e);
+            }
         }
     });
 
@@ -216,7 +230,9 @@ async fn ensure_manifest_loaded(state: &State<'_, Arc<AppState>>) -> Result<(), 
             .map_err(|e| format!("Manifest not loaded and failed to fetch: {}", e))?;
 
         if let Ok(serialized) = serde_json::to_string_pretty(&manifest) {
-            let _ = std::fs::write(&manifest_path, serialized);
+            if let Err(e) = std::fs::write(&manifest_path, serialized) {
+                log::warn!("[Setup] Failed to write manifest to disk: {}", e);
+            }
         }
 
         *m = Some(manifest);
@@ -279,7 +295,9 @@ fn is_model_file_present(
                     .as_millis() as u64,
                 expected_size: file.size_bytes,
             };
-            let _ = marker.save(&verified_path);
+            if let Err(e) = marker.save(&verified_path) {
+                log::warn!("[Setup] Failed to save verification marker: {}", e);
+            }
             return true;
         }
     }
@@ -340,11 +358,15 @@ pub async fn download_optional_model(
         for model in target_models {
             if let Err(e) = manager.setup_model(&model, base_url, &p.models).await {
                 log::error!("[SETUP] Failed to setup optional model {}: {}", model.id, e);
-                let _ = app.emit("optional_model_failed", (model_id.clone(), e.to_string()));
+                if let Err(emit_err) = app.emit("optional_model_failed", (model_id.clone(), e.to_string())) {
+                    log::warn!("[Setup] Failed to emit optional_model_failed: {}", emit_err);
+                }
                 return;
             }
         }
-        let _ = app.emit("optional_model_complete", model_id);
+        if let Err(e) = app.emit("optional_model_complete", model_id) {
+            log::warn!("[Setup] Failed to emit optional_model_complete: {}", e);
+        }
     });
 
     Ok(())
@@ -354,8 +376,12 @@ pub async fn download_optional_model(
 #[tauri::command]
 pub async fn reveal_wizard(app: AppHandle) -> Result<(), String> {
     if let Some(wizard_win) = app.get_webview_window("wizard") {
-        let _ = wizard_win.show();
-        let _ = wizard_win.set_focus();
+        if let Err(e) = wizard_win.show() {
+            log::warn!("[Setup] Failed to show wizard window: {}", e);
+        }
+        if let Err(e) = wizard_win.set_focus() {
+            log::warn!("[Setup] Failed to focus wizard window: {}", e);
+        }
     }
     Ok(())
 }
@@ -365,14 +391,18 @@ fn delete_model_file(file: &crate::setup::manifest::ModelEntry, models_dir: &std
     let verified_path = models_dir.join(&file.path).with_extension("verified");
 
     if verified_path.exists() {
-        let _ = std::fs::remove_file(&verified_path);
+        if let Err(e) = std::fs::remove_file(&verified_path) {
+            log::warn!("[Setup] Failed to remove verified marker {:?}: {}", verified_path, e);
+        }
     }
 
     if dest_path.exists() {
         if dest_path.is_dir() {
-            let _ = std::fs::remove_dir_all(&dest_path);
-        } else {
-            let _ = std::fs::remove_file(&dest_path);
+            if let Err(e) = std::fs::remove_dir_all(&dest_path) {
+                log::warn!("[Setup] Failed to remove model directory {:?}: {}", dest_path, e);
+            }
+        } else if let Err(e) = std::fs::remove_file(&dest_path) {
+            log::warn!("[Setup] Failed to remove model file {:?}: {}", dest_path, e);
         }
     }
 
@@ -380,7 +410,9 @@ fn delete_model_file(file: &crate::setup::manifest::ModelEntry, models_dir: &std
         if parent.exists() && parent != models_dir {
             if let Ok(entries) = std::fs::read_dir(parent) {
                 if entries.count() == 0 {
-                    let _ = std::fs::remove_dir(parent);
+                    if let Err(e) = std::fs::remove_dir(parent) {
+                        log::warn!("[Setup] Failed to remove empty parent directory {:?}: {}", parent, e);
+                    }
                 }
             }
         }

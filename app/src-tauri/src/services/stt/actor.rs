@@ -1,3 +1,7 @@
+use super::{
+    STT_DEFAULT_INFERENCE_DURATION_MS, STT_MIN_PARTIAL_THROTTLE_MS, STT_PARTIAL_ERROR_PENALTY_MS,
+    STT_WORKER_RECV_TIMEOUT_MS, STT_WORKER_THREAD_PRIORITY,
+};
 use crate::core::events::VoxEvent;
 use crate::services::stt::providers::SttProvider;
 use std::sync::atomic::AtomicBool;
@@ -10,6 +14,17 @@ pub enum SttCommand {
     Final(u32, Vec<f32>),
     ResetStream,
     Shutdown,
+}
+
+pub struct SttActorChannels {
+    pub rx: std::sync::mpsc::Receiver<SttCommand>,
+    pub pipeline_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
+}
+
+pub struct SttActorHandles {
+    pub cancel_flag: Arc<AtomicBool>,
+    pub is_loaded: Arc<AtomicBool>,
+    pub engine_shutdown: Arc<AtomicBool>,
 }
 
 struct WorkerState {
@@ -56,6 +71,26 @@ fn coalesce_partials(
     }
 }
 
+/// Dispatches a partial transcript event to the pipeline event channel if changed.
+fn emit_partial_event(
+    ctx: &WorkerContext<'_>,
+    tid: u32,
+    text: String,
+    state: &mut WorkerState,
+) {
+    if !text.is_empty() && text != state.last_transcript {
+        if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
+            if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptPartial {
+                turn_id: tid,
+                text: text.clone(),
+            }) {
+                log::warn!("[STT] Error dispatching partial transcript: {:?}", e);
+            }
+        }
+        state.last_transcript = text;
+    }
+}
+
 /// Processes incoming partial speech frames with dynamic throttling and emits partial events.
 fn handle_partial_command(
     ctx: &WorkerContext<'_>,
@@ -78,7 +113,7 @@ fn handle_partial_command(
 
     let dynamic_throttle = state
         .last_inference_duration
-        .max(Duration::from_millis(300));
+        .max(Duration::from_millis(STT_MIN_PARTIAL_THROTTLE_MS));
     if state.last_emit_time.elapsed() < dynamic_throttle {
         return;
     }
@@ -104,25 +139,41 @@ fn handle_partial_command(
                 return;
             }
 
-            if !text.is_empty() && text != state.last_transcript {
-                if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
-                    if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptPartial {
-                        turn_id: tid,
-                        text: text.clone(),
-                    }) {
-                        log::warn!("[STT] Error dispatching partial transcript: {:?}", e);
-                    }
-                }
-                state.last_transcript = text;
-            }
+            emit_partial_event(ctx, tid, text, state);
         }
         Err(e) => {
             log::error!("[STT] Partial transcription failed: {}", e);
-            state.last_inference_duration = Duration::from_millis(500);
+            state.last_inference_duration = Duration::from_millis(STT_PARTIAL_ERROR_PENALTY_MS);
         }
     }
 
     state.last_emit_time = Instant::now();
+}
+
+/// Emits the final or cancelled turn event to the pipeline event channel.
+fn emit_final_events(ctx: &WorkerContext<'_>, tid: u32, transcript: String) {
+    if transcript.trim().is_empty() {
+        log::info!("[STT] Discarding empty final transcript.");
+        if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
+            if let Err(e) = pipeline_tx.send(VoxEvent::Cancelled { turn_id: tid }) {
+                log::warn!("[STT] Error sending cancelled event: {:?}", e);
+            }
+        }
+    } else if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
+        if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptFinal {
+            turn_id: tid,
+            text: transcript,
+        }) {
+            log::warn!("[STT] Error sending final transcript event: {:?}", e);
+        }
+    }
+
+    if let Err(e) = ctx
+        .app
+        .emit_to("main", "ptt_status", serde_json::json!({ "state": "IDLE" }))
+    {
+        log::warn!("[STT] Error emitting ptt_status idle event: {:?}", e);
+    }
 }
 
 /// Transcribes final speech buffer, dispatches final events, and resets worker state.
@@ -154,28 +205,7 @@ fn handle_final_command(
         log::warn!("[STT] Error resetting provider state post-final: {:?}", e);
     }
 
-    if transcript.trim().is_empty() {
-        log::info!("[STT] Discarding empty final transcript.");
-        if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
-            if let Err(e) = pipeline_tx.send(VoxEvent::Cancelled { turn_id: tid }) {
-                log::warn!("[STT] Error sending cancelled event: {:?}", e);
-            }
-        }
-    } else if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
-        if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptFinal {
-            turn_id: tid,
-            text: transcript,
-        }) {
-            log::warn!("[STT] Error sending final transcript event: {:?}", e);
-        }
-    }
-
-    if let Err(e) = ctx
-        .app
-        .emit_to("main", "ptt_status", serde_json::json!({ "state": "IDLE" }))
-    {
-        log::warn!("[STT] Error emitting ptt_status idle event: {:?}", e);
-    }
+    emit_final_events(ctx, tid, transcript);
 
     state.last_transcript.clear();
     state.last_emit_time = Instant::now();
@@ -201,82 +231,89 @@ fn drain_reset_stream(
     false
 }
 
+/// Executes the core event polling and dispatch loop for speech recognition commands.
+fn run_worker_loop(
+    app: &AppHandle,
+    provider: &dyn SttProvider,
+    channels: SttActorChannels,
+    handles: SttActorHandles,
+) {
+    let ctx = WorkerContext {
+        app,
+        provider,
+        pipeline_event_tx: &channels.pipeline_event_tx,
+        cancel_flag: &handles.cancel_flag,
+    };
+
+    let mut state = WorkerState {
+        last_emit_time: Instant::now(),
+        last_transcript: String::new(),
+        current_active_turn: 0u32,
+        last_inference_duration: Duration::from_millis(STT_DEFAULT_INFERENCE_DURATION_MS),
+    };
+    let mut pending_cmd = None;
+
+    loop {
+        if handles.engine_shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+            log::info!("[STT] Engine shutdown flag detected. Exiting loop.");
+            break;
+        }
+
+        let raw_cmd = if let Some(c) = pending_cmd.take() {
+            c
+        } else {
+            match channels.rx.recv_timeout(Duration::from_millis(STT_WORKER_RECV_TIMEOUT_MS)) {
+                Ok(c) => c,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        };
+
+        let cmd = coalesce_partials(raw_cmd, &channels.rx, &mut pending_cmd);
+
+        match cmd {
+            SttCommand::Shutdown => {
+                log::info!("[STT] Shutdown signal received. Exiting worker thread.");
+                break;
+            }
+            SttCommand::Partial(tid, utterance) => {
+                handle_partial_command(&ctx, tid, &utterance, &mut state);
+            }
+            SttCommand::Final(tid, utterance) => {
+                handle_final_command(&ctx, tid, &utterance, &mut state);
+            }
+            SttCommand::ResetStream => {
+                if drain_reset_stream(&channels.rx, ctx.provider, &mut state) {
+                    break;
+                }
+            }
+        }
+    }
+    handles.is_loaded.store(false, std::sync::atomic::Ordering::Relaxed);
+    log::info!("[STT] Worker thread exiting.");
+}
+
 /// Spawns dedicated OS worker thread for speech recognition inference and event dispatching.
 pub fn spawn_stt_worker(
     app: AppHandle,
-    rx: std::sync::mpsc::Receiver<SttCommand>,
+    channels: SttActorChannels,
     provider: Box<dyn SttProvider>,
-    pipeline_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
-    cancel_flag: Arc<AtomicBool>,
-    is_loaded: Arc<AtomicBool>,
-    engine_shutdown: Arc<AtomicBool>,
+    handles: SttActorHandles,
 ) -> Result<std::thread::JoinHandle<()>, String> {
     std::thread::Builder::new()
         .name("vox-stt-worker".to_string())
         .spawn(move || {
             use thread_priority::*;
             if let Err(e) = set_current_thread_priority(ThreadPriority::Crossplatform(
-                ThreadPriorityValue::try_from(80u8).unwrap(),
+                ThreadPriorityValue::try_from(STT_WORKER_THREAD_PRIORITY).unwrap(),
             )) {
                 log::warn!("[STT] Failed to set high priority: {:?}", e);
             }
 
             log::info!("[STT] >>> Dedicated worker thread started.");
-            is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
+            handles.is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
 
-            let ctx = WorkerContext {
-                app: &app,
-                provider: &*provider,
-                pipeline_event_tx: &pipeline_event_tx,
-                cancel_flag: &cancel_flag,
-            };
-
-            let mut state = WorkerState {
-                last_emit_time: Instant::now(),
-                last_transcript: String::new(),
-                current_active_turn: 0u32,
-                last_inference_duration: Duration::from_millis(300),
-            };
-            let mut pending_cmd = None;
-
-            loop {
-                if engine_shutdown.load(std::sync::atomic::Ordering::Relaxed) {
-                    log::info!("[STT] Engine shutdown flag detected. Exiting loop.");
-                    break;
-                }
-
-                let raw_cmd = if let Some(c) = pending_cmd.take() {
-                    c
-                } else {
-                    match rx.recv_timeout(Duration::from_millis(150)) {
-                        Ok(c) => c,
-                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-                    }
-                };
-
-                let cmd = coalesce_partials(raw_cmd, &rx, &mut pending_cmd);
-
-                match cmd {
-                    SttCommand::Shutdown => {
-                        log::info!("[STT] Shutdown signal received. Exiting worker thread.");
-                        break;
-                    }
-                    SttCommand::Partial(tid, utterance) => {
-                        handle_partial_command(&ctx, tid, &utterance, &mut state);
-                    }
-                    SttCommand::Final(tid, utterance) => {
-                        handle_final_command(&ctx, tid, &utterance, &mut state);
-                    }
-                    SttCommand::ResetStream => {
-                        if drain_reset_stream(&rx, &*provider, &mut state) {
-                            break;
-                        }
-                    }
-                }
-            }
-            is_loaded.store(false, std::sync::atomic::Ordering::Relaxed);
-            log::info!("[STT] Worker thread exiting.");
+            run_worker_loop(&app, &*provider, channels, handles);
         })
         .map_err(|e| e.to_string())
 }

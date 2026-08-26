@@ -2,7 +2,7 @@ use crate::core::constants::{
     collection_type, PM_QUEUE_STATUS_PAUSED, PM_QUEUE_STATUS_STAGED_PENDING,
     PM_RELATION_SUPERSEDES, PM_SOURCE_USER, PM_TYPE_SEMANTIC_GRAPH,
 };
-use crate::persistence::encode_f32_blob;
+use crate::persistence::{encode_f32_blob, MAX_QUEUE_RETRY_ATTEMPTS};
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use turso::Connection;
@@ -49,18 +49,22 @@ pub async fn enqueue_personal_facts(
 }
 
 /// Marks a queue item failure in `personal_memory_queue`, incrementing `retry_count`.
-/// Transitions to status `'failed'` when `retry_count >= 3`.
 pub async fn mark_job_failed(conn: &Connection, job_id: i64, err_msg: &str) {
-    let _ = conn
-        .execute(
-            "UPDATE personal_memory_queue
-             SET retry_count = retry_count + 1,
-                 error_msg = ?,
-                 status = CASE WHEN retry_count + 1 >= 3 THEN 'failed' ELSE 'staged_pending' END
-             WHERE id = ?",
-            (err_msg.to_string(), job_id),
-        )
-        .await;
+    let query = format!(
+        "UPDATE personal_memory_queue
+         SET retry_count = retry_count + 1,
+             error_msg = ?,
+             status = CASE WHEN retry_count + 1 >= {} THEN 'failed' ELSE 'staged_pending' END
+         WHERE id = ?",
+        MAX_QUEUE_RETRY_ATTEMPTS
+    );
+    if let Err(e) = conn.execute(&query, (err_msg.to_string(), job_id)).await {
+        log::warn!(
+            "[Persistence::Mutations] Failed to update failed job status for job_id={}: {}",
+            job_id,
+            e
+        );
+    }
 }
 
 /// Atomically transitions paused facts for session to pending, and saves session Context memory.
@@ -90,7 +94,7 @@ pub async fn session_end_consolidation(
                  VALUES (?, 'operational', 'Context', ?, 'LLM', 'active', ?, ?)",
                 (context_id, session_context_raw.trim().to_string(), now, session_id.to_string()),
             ).await?;
-            tracing::info!("[Repository] Saved session Context memory for session_id={}", session_id);
+            log::info!("[Persistence::Mutations] Saved session Context memory for session_id={}", session_id);
         }
         anyhow::Ok(())
     }.await {
@@ -99,7 +103,9 @@ pub async fn session_end_consolidation(
             Ok(())
         }
         Err(e) => {
-            let _ = conn.execute("ROLLBACK;", ()).await;
+            if let Err(rollback_err) = conn.execute("ROLLBACK;", ()).await {
+                log::warn!("[Persistence::Mutations] Rollback failed during session consolidation: {}", rollback_err);
+            }
             Err(anyhow!("Session consolidation transaction failed: {}", e))
         }
     }
@@ -196,6 +202,7 @@ pub async fn record_stage_metrics(
     Ok(())
 }
 
+/// Writes deduplication audit log to personal_memory_queue.
 pub async fn write_dedup_audit(
     conn: &Connection,
     item_id: i64,
@@ -210,6 +217,7 @@ pub async fn write_dedup_audit(
     Ok(())
 }
 
+/// Writes candidate scoring audit log to personal_memory_queue.
 pub async fn write_candidate_audit(
     conn: &Connection,
     item_id: i64,
@@ -223,3 +231,4 @@ pub async fn write_candidate_audit(
     .await?;
     Ok(())
 }
+

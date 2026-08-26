@@ -77,32 +77,24 @@ impl SttProvider for EmbeddedSttProvider {
         let mut inner = self.inner.lock();
         inner.ensure_loaded()?;
 
-        if let Some(ref engine) = inner.nemotron_engine {
-            let transcript = engine.transcribe(chunk)?;
-            if !transcript.is_empty() {
-                inner.stitched_transcript = transcript;
-            }
-            if is_final {
-                let result = std::mem::take(&mut inner.stitched_transcript);
-                inner.stt_audio_buffer.clear();
-                Ok(result)
-            } else {
-                Ok(inner.stitched_transcript.clone())
-            }
+        let transcript = if let Some(ref engine) = inner.nemotron_engine {
+            engine.transcribe(chunk)?
         } else if let Some(ref engine) = inner.qwen_engine {
-            let transcript = engine.transcribe(chunk)?;
-            if !transcript.is_empty() {
-                inner.stitched_transcript = transcript;
-            }
-            if is_final {
-                let result = std::mem::take(&mut inner.stitched_transcript);
-                inner.stt_audio_buffer.clear();
-                Ok(result)
-            } else {
-                Ok(inner.stitched_transcript.clone())
-            }
+            engine.transcribe(chunk)?
         } else {
             anyhow::bail!("No STT engine initialized");
+        };
+
+        if !transcript.is_empty() {
+            inner.stitched_transcript = transcript;
+        }
+
+        if is_final {
+            let result = std::mem::take(&mut inner.stitched_transcript);
+            inner.stt_audio_buffer.clear();
+            Ok(result)
+        } else {
+            Ok(inner.stitched_transcript.clone())
         }
     }
 

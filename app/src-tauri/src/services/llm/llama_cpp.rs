@@ -505,7 +505,7 @@ impl LlmEngine for LlmWorker {
                 .unwrap_or(0);
 
             if !prompt_tokens.is_empty() {
-                let n_batch_chunk = 512;
+                let n_batch_chunk = super::DEFAULT_BATCH_CHUNK_SIZE;
                 let total = prompt_tokens.len();
                 let mut offset = 0;
                 while offset < total {
@@ -549,7 +549,10 @@ impl LlmEngine for LlmWorker {
         let stop_seqs = self.family.stop_sequences();
         let mut byte_buf = Vec::new();
 
-        let mut batch = LlamaBatch::new(total_input_tokens + 512, 1);
+        let mut batch = LlamaBatch::new(
+            total_input_tokens + super::DEFAULT_MAX_GENERATION_SAFETY_TOKENS,
+            1,
+        );
         let mut sample_ith = last_sample_ith;
 
         let mut qwen_sampler = if self.family == ModelFamily::Qwen {
@@ -677,7 +680,7 @@ impl LlmEngine for LlmWorker {
                 .map_err(|e| anyhow!("[LLM] Batch add (gen) failed: {}", e))?;
             n_cur += 1;
 
-            if n_cur > (total_input_tokens as i32 + 512) {
+            if n_cur > (total_input_tokens + super::DEFAULT_MAX_GENERATION_SAFETY_TOKENS) as i32 {
                 log::warn!("[LLM] Safety limit reached (512 tokens).");
                 break;
             }

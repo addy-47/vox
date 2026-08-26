@@ -158,7 +158,9 @@ pub async fn toggle_pipeline_processing(
 
     if let Ok(mut settings) = state.settings.write() {
         settings.memory.pipeline_processing_enabled = !new_paused;
-        let _ = settings.save();
+        if let Err(e) = settings.save() {
+            log::warn!("[Memory::Ingestion] Failed to save settings: {}", e);
+        }
     }
 
     log::info!(

@@ -1,8 +1,7 @@
-//! Playback Runtime — CPAL audio output with jitter buffer and 2x upsampling.
-//!
-//! Architecture:
-//!   TtsChunk (24kHz f32) → upsample_2x() → ring buffer → CPAL callback (48kHz)
-
+use super::{
+    PLAYBACK_BUFFER_SAMPLES, PLAYBACK_CHANNELS, PLAYBACK_DEFAULT_VOLUME, PLAYBACK_ENERGY_EXPONENT,
+    PLAYBACK_ENERGY_MULTIPLIER, PLAYBACK_SAMPLE_RATE, PLAYBACK_VOLUME_RAMP_STEP,
+};
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
@@ -12,7 +11,7 @@ use ringbuf::{HeapCons, HeapProd};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-/// Upsample 24kHz mono PCM → 48kHz via cubic Hermite interpolation (exact 2× ratio).
+/// Upsample 24kHz mono PCM to 48kHz via cubic Hermite interpolation.
 #[inline]
 pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
     if input.is_empty() {
@@ -36,19 +35,12 @@ pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
 
 /// Core audio output playback engine managing CPAL stream draining and telemetry.
 pub struct PlaybackEngine {
-    /// Producer half of the lock-free ring buffer (Mono 48kHz).
     producer: Mutex<HeapProd<f32>>,
-    /// True while CPAL is actively draining audio output.
     playback_active: Arc<AtomicBool>,
-    /// Set true to clear the buffer and halt playback.
     cancel_flag: Arc<AtomicBool>,
-    /// Set true to discard all queued buffered audio on the next callback.
     discard_request: Arc<AtomicBool>,
-    /// Active CPAL output stream kept alive until cancelled.
     _stream: Option<cpal::Stream>,
-    /// Current sample count in buffer.
     buffer_samples: Arc<std::sync::atomic::AtomicUsize>,
-    /// Total samples ingested during turn.
     total_samples_ingested: Arc<std::sync::atomic::AtomicUsize>,
 }
 
@@ -73,7 +65,7 @@ impl PlaybackEngine {
         is_assistant_speaking: Arc<AtomicBool>,
         telemetry: PlaybackTelemetryHandles,
     ) -> Result<Self> {
-        let rb = ringbuf::HeapRb::<f32>::new(48_000 * 30);
+        let rb = ringbuf::HeapRb::<f32>::new(PLAYBACK_BUFFER_SAMPLES);
         let (producer, consumer) = rb.split();
         let buffer_samples = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let discard_request = Arc::new(AtomicBool::new(false));
@@ -111,7 +103,7 @@ impl PlaybackEngine {
         let pushed = prod.push_slice(&upsampled);
         if pushed < upsampled.len() {
             log::warn!(
-                "[Playback] Buffer overflow — dropped {} samples",
+                "[Audio::Playback] Buffer overflow — dropped {} samples",
                 upsampled.len() - pushed
             );
         }
@@ -130,7 +122,7 @@ impl PlaybackEngine {
             let current_len = self.buffer_samples.load(Ordering::SeqCst);
             if current_len > 0 {
                 log::info!(
-                    "[Playback] start_playback requested ({} samples buffered) — starting output",
+                    "[Audio::Playback] start_playback requested ({} samples buffered) — starting output",
                     current_len
                 );
                 self.playback_active.store(true, Ordering::Relaxed);
@@ -144,7 +136,7 @@ impl PlaybackEngine {
         self.playback_active.store(false, Ordering::Relaxed);
         self.discard_request.store(true, Ordering::Relaxed);
         self.buffer_samples.store(0, Ordering::SeqCst);
-        log::info!("[Playback] Cancelled — buffer signal sent");
+        log::info!("[Audio::Playback] Cancelled — buffer signal sent");
     }
 
     /// Returns whether playback is currently idle.
@@ -193,8 +185,8 @@ impl PlaybackEngine {
             is_assistant_speaking,
             buffer_samples,
             last_sample: 0.0,
-            current_volume: 1.0,
-            filter_bank: crate::utils::audio_filters::FilterBank::new(48_000.0),
+            current_volume: PLAYBACK_DEFAULT_VOLUME,
+            filter_bank: crate::utils::audio_filters::FilterBank::new(PLAYBACK_SAMPLE_RATE as f32),
         };
 
         let stream = device
@@ -204,16 +196,19 @@ impl PlaybackEngine {
                     cb_ctx.process_output_buffer(output);
                 },
                 move |err| {
-                    log::error!("[Playback] CPAL output error: {}", err);
+                    log::error!("[Audio::Playback] CPAL output error: {}", err);
                 },
                 None,
             )
-            .map_err(|e| anyhow!("[Playback] Failed to build output stream: {}", e))?;
+            .map_err(|e| anyhow!("[Audio::Playback] Failed to build output stream: {}", e))?;
 
         stream
             .play()
-            .map_err(|e| anyhow!("[Playback] Failed to start stream: {}", e))?;
-        log::info!("[Playback] CPAL stream started (48kHz stereo f32)");
+            .map_err(|e| anyhow!("[Audio::Playback] Failed to start stream: {}", e))?;
+        log::info!(
+            "[Audio::Playback] CPAL stream started ({}Hz stereo f32)",
+            PLAYBACK_SAMPLE_RATE
+        );
 
         Ok(stream)
     }
@@ -223,28 +218,31 @@ impl PlaybackEngine {
 fn resolve_output_device_and_config(host: &cpal::Host) -> Result<(cpal::Device, StreamConfig)> {
     let device = host
         .default_output_device()
-        .ok_or_else(|| anyhow!("[Playback] No default output device found"))?;
+        .ok_or_else(|| anyhow!("[Audio::Playback] No default output device found"))?;
 
-    log::info!("[Playback] Output device: {:?}", device.name());
+    log::info!("[Audio::Playback] Output device: {:?}", device.name());
 
     let config = StreamConfig {
-        channels: 2,
-        sample_rate: cpal::SampleRate(48_000),
+        channels: PLAYBACK_CHANNELS,
+        sample_rate: cpal::SampleRate(PLAYBACK_SAMPLE_RATE),
         buffer_size: cpal::BufferSize::Default,
     };
 
     let supported = device
         .supported_output_configs()
-        .map_err(|e| anyhow!("[Playback] Failed to query output configs: {}", e))?
+        .map_err(|e| anyhow!("[Audio::Playback] Failed to query output configs: {}", e))?
         .find(|c| {
-            c.channels() == 2
+            c.channels() == PLAYBACK_CHANNELS
                 && c.sample_format() == SampleFormat::F32
-                && c.min_sample_rate().0 <= 48_000
-                && c.max_sample_rate().0 >= 48_000
+                && c.min_sample_rate().0 <= PLAYBACK_SAMPLE_RATE
+                && c.max_sample_rate().0 >= PLAYBACK_SAMPLE_RATE
         });
 
     if supported.is_none() {
-        log::warn!("[Playback] 48kHz stereo f32 not reported as supported — trying anyway");
+        log::warn!(
+            "[Audio::Playback] {}Hz stereo f32 not reported as supported — trying anyway",
+            PLAYBACK_SAMPLE_RATE
+        );
     }
 
     Ok((device, config))
@@ -295,13 +293,13 @@ impl PlaybackStreamContext {
     /// Resets filter bank and smoothing state when playback stops or is discarded.
     fn reset_telemetry_state(&mut self) {
         self.last_sample = 0.0;
-        self.current_volume = 1.0;
+        self.current_volume = PLAYBACK_DEFAULT_VOLUME;
         self.filter_bank.reset();
     }
 
     /// Drains ringbuf audio frames, applies click-free volume ramp, and calculates telemetry.
     fn drain_and_telemetry(&mut self, output: &mut [f32]) {
-        let frames = output.len() / 2;
+        let frames = output.len() / PLAYBACK_CHANNELS as usize;
         let mut sum_sq = 0.0;
         let mut sum_low_sq = 0.0;
         let mut sum_mid_sq = 0.0;
@@ -314,16 +312,17 @@ impl PlaybackStreamContext {
                 Some(s) => {
                     read_count += 1;
                     self.last_sample = s;
-                    (s, 1.0)
+                    (s, PLAYBACK_DEFAULT_VOLUME)
                 }
                 None => (self.last_sample, 0.0),
             };
 
-            let step = 0.002f32;
             if self.current_volume < target_volume {
-                self.current_volume = (self.current_volume + step).min(target_volume);
+                self.current_volume =
+                    (self.current_volume + PLAYBACK_VOLUME_RAMP_STEP).min(target_volume);
             } else if self.current_volume > target_volume {
-                self.current_volume = (self.current_volume - step).max(target_volume);
+                self.current_volume =
+                    (self.current_volume - PLAYBACK_VOLUME_RAMP_STEP).max(target_volume);
             }
 
             let played_sample = sample * self.current_volume;
@@ -370,7 +369,7 @@ impl PlaybackStreamContext {
         sum_high_sq: f32,
     ) {
         let raw_energy = (sum_sq / frames as f32).sqrt();
-        let energy = (raw_energy * 15.0).clamp(0.0, 1.0);
+        let energy = (raw_energy * PLAYBACK_ENERGY_MULTIPLIER).clamp(0.0, 1.0);
         self.playback_energy
             .store(energy.to_bits(), Ordering::Relaxed);
 
@@ -378,9 +377,15 @@ impl PlaybackStreamContext {
         let raw_mid = (sum_mid_sq / frames as f32).sqrt();
         let raw_high = (sum_high_sq / frames as f32).sqrt();
 
-        let low_val = (raw_low * 15.0).clamp(0.0, 1.0).powf(0.5);
-        let mid_val = (raw_mid * 15.0).clamp(0.0, 1.0).powf(0.5);
-        let high_val = (raw_high * 15.0).clamp(0.0, 1.0).powf(0.5);
+        let low_val = (raw_low * PLAYBACK_ENERGY_MULTIPLIER)
+            .clamp(0.0, 1.0)
+            .powf(PLAYBACK_ENERGY_EXPONENT);
+        let mid_val = (raw_mid * PLAYBACK_ENERGY_MULTIPLIER)
+            .clamp(0.0, 1.0)
+            .powf(PLAYBACK_ENERGY_EXPONENT);
+        let high_val = (raw_high * PLAYBACK_ENERGY_MULTIPLIER)
+            .clamp(0.0, 1.0)
+            .powf(PLAYBACK_ENERGY_EXPONENT);
 
         self.playback_low
             .store(low_val.to_bits(), Ordering::Relaxed);

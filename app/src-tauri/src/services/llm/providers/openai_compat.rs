@@ -64,8 +64,12 @@ impl OpenAiCompatProvider {
         }
 
         let async_client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(180))
+            .connect_timeout(Duration::from_secs(
+                crate::services::llm::DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS,
+            ))
+            .timeout(Duration::from_secs(
+                crate::services::llm::DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS,
+            ))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
@@ -384,7 +388,10 @@ impl LlmProvider for OpenAiCompatProvider {
                 }
                 _ = async {
                     while !cancel_flag.load(Ordering::Relaxed) {
-                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        tokio::time::sleep(Duration::from_millis(
+                            crate::services::llm::DEFAULT_CANCEL_POLL_INTERVAL_MS,
+                        ))
+                        .await;
                     }
                 } => {
                     log::info!("[OpenAiCompat] Generation cancelled during connect phase for turn {}", turn_id);
@@ -420,8 +427,14 @@ impl LlmProvider for OpenAiCompatProvider {
                     return Ok(());
                 }
 
-                let chunk_opt =
-                    match tokio::time::timeout(Duration::from_millis(150), stream.next()).await {
+                let chunk_opt = match tokio::time::timeout(
+                    Duration::from_millis(
+                        crate::services::llm::DEFAULT_STREAM_CHUNK_TIMEOUT_MS,
+                    ),
+                    stream.next(),
+                )
+                .await
+                {
                         Ok(Some(chunk_result)) => match chunk_result {
                             Ok(c) => Some(c),
                             Err(e) => {

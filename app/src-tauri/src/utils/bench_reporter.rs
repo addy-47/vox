@@ -10,9 +10,6 @@ pub struct MemorySnapshot {
     pub virt_mb: u64,
 }
 
-#[derive(Serialize, Default, Debug)]
-pub struct BenchMetrics {} // Deprecated, keeping as placeholder if needed elsewhere
-
 pub struct BenchReporter {
     pub run_dir: PathBuf,
 }
@@ -65,6 +62,4 @@ impl BenchReporter {
             MemorySnapshot::default()
         }
     }
-
-    // Memory peak tracking moved to background thread in vox-bench.rs
 }

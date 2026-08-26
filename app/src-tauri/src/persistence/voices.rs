@@ -2,8 +2,6 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use turso::Connection;
 
-// ─── Domain types ─────────────────────────────────────────────────────────────
-
 /// A user-created cloned voice entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceEntry {
@@ -11,22 +9,17 @@ pub struct VoiceEntry {
     pub id: String,
     /// User-visible display name.
     pub name: String,
-    /// `"reference_audio"` — engine runs VoiceEncoder at init time.
-    /// `"pre_baked"` — engine loads pre-computed .npy tensors (Phase B).
+    /// `"reference_audio"` or `"pre_baked"`.
     pub source_kind: String,
     /// Absolute path to `~/.vox/voices/{id}/source.wav`.
-    /// Always preserved even if pre_baked tensors exist.
     pub wav_path: Option<String>,
-    /// Absolute path to `~/.vox/voices/{id}/baked/` (Phase B only).
+    /// Absolute path to `~/.vox/voices/{id}/baked/`.
     pub voice_dir: Option<String>,
     /// Unix epoch seconds at creation.
     pub created_at: i64,
     /// Absolute path to a short synthesized preview WAV.
-    /// `None` until `preview_voice` IPC command is called.
     pub preview_wav: Option<String>,
 }
-
-// ─── CRUD ────────────────────────────────────────────────────────────────────
 
 /// Returns all voice entries ordered by creation date (newest first).
 pub async fn list_voices(conn: &Connection) -> Result<Vec<VoiceEntry>> {
@@ -81,8 +74,7 @@ pub async fn get_voice(conn: &Connection, id: &str) -> Result<Option<VoiceEntry>
     }
 }
 
-/// Inserts a new voice entry. Caller is responsible for creating the voice
-/// directory on disk before calling this.
+/// Inserts a new voice entry.
 pub async fn insert_voice(conn: &Connection, entry: &VoiceEntry) -> Result<()> {
     conn.execute(
         "INSERT INTO voices (id, name, source_kind, wav_path, voice_dir, created_at, preview_wav)
@@ -102,7 +94,6 @@ pub async fn insert_voice(conn: &Connection, entry: &VoiceEntry) -> Result<()> {
 }
 
 /// Deletes a voice entry by ID from the database.
-/// Caller is responsible for removing the voice directory from disk.
 pub async fn delete_voice(conn: &Connection, id: &str) -> Result<()> {
     let affected = conn
         .execute("DELETE FROM voices WHERE id = ?", (id.to_string(),))
@@ -131,7 +122,7 @@ pub async fn rename_voice(conn: &Connection, id: &str, name: &str) -> Result<()>
     Ok(())
 }
 
-/// Records the path to a synthesized preview WAV after `preview_voice` IPC runs.
+/// Records the path to a synthesized preview WAV after preview generation.
 pub async fn update_preview_wav(conn: &Connection, id: &str, path: &str) -> Result<()> {
     conn.execute(
         "UPDATE voices SET preview_wav = ? WHERE id = ?",
@@ -140,3 +131,4 @@ pub async fn update_preview_wav(conn: &Connection, id: &str, path: &str) -> Resu
     .await?;
     Ok(())
 }
+

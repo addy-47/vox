@@ -1,3 +1,5 @@
+use super::estimate_tokens;
+use super::NARRATIVE_CHAIN_SOFT_CAP_SHARE;
 use crate::core::constants::{TRANSITION_MESSAGES_EN, TRANSITION_MESSAGES_HI};
 use crate::services::llm::{LlmProvider, ProviderKind};
 use serde::{Deserialize, Serialize};
@@ -5,8 +7,6 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-pub const NARRATIVE_CHAIN_SOFT_CAP_SHARE: f32 = 0.05;
 
 /// Conversational message participant roles.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -42,8 +42,6 @@ pub struct ConversationContext {
     pub token_count: usize,
     pub kv_cache_index: usize,
 }
-
-use super::estimate_tokens;
 
 /// Computes the current Unix timestamp in milliseconds.
 fn current_timestamp_ms() -> u64 {

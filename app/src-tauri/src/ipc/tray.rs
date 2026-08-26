@@ -9,13 +9,16 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 pub async fn toggle_hud_visibility(app: AppHandle) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
-    let (setup_completed, dictation_enabled, is_tray_mode) = {
-        let s = state.settings.read().unwrap();
-        (
+    let (setup_completed, dictation_enabled, is_tray_mode) = match state.settings.read() {
+        Ok(s) => (
             s.system.setup_completed,
             s.dictation.enabled,
             s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
-        )
+        ),
+        Err(e) => {
+            log::warn!("[Tray] Failed to acquire settings read lock: {}", e);
+            return;
+        }
     };
     if !setup_completed {
         log::warn!("[Tray] Blocked toggle_hud_visibility: Setup not completed.");
@@ -32,18 +35,28 @@ pub async fn toggle_hud_visibility(app: AppHandle) {
 
     if new_state {
         if let Ok(window) = crate::tray::ensure_tray_window(&app) {
-            let _ = window.show();
+            if let Err(e) = window.show() {
+                log::warn!("[Tray] Failed to show tray window: {}", e);
+            }
             position_tray_window(&window).await;
-            let _ = app.emit("toggle_hud", ());
+            if let Err(e) = app.emit("toggle_hud", ()) {
+                log::warn!("[Tray] Failed to emit toggle_hud: {}", e);
+            }
         }
     } else if let Some(window) = app.get_webview_window("tray") {
-        let _ = window.hide();
-        let _ = app.emit("toggle_hud", ());
+        if let Err(e) = window.hide() {
+            log::warn!("[Tray] Failed to hide tray window: {}", e);
+        }
+        if let Err(e) = app.emit("toggle_hud", ()) {
+            log::warn!("[Tray] Failed to emit toggle_hud: {}", e);
+        }
     }
 
     let item_lock = state.hud_menu_item.lock().await;
     if let Some(item) = &*item_lock {
-        let _ = item.set_checked(new_state);
+        if let Err(e) = item.set_checked(new_state) {
+            log::warn!("[Tray] Failed to set menu item checked state: {}", e);
+        }
     }
 }
 #[cfg(target_os = "linux")]
@@ -95,7 +108,9 @@ pub async fn hide_tray_window(app: AppHandle) {
     cancel_active_dictation_turn(&state).await;
 
     if let Some(window) = app.get_webview_window("tray") {
-        let _ = window.hide();
+        if let Err(e) = window.hide() {
+            log::warn!("[Tray] Failed to hide tray window: {}", e);
+        }
     }
 }
 
@@ -131,8 +146,10 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
             std::sync::atomic::Ordering::Relaxed,
         );
         if let Ok(window) = crate::tray::ensure_tray_window(&app) {
-            let _ = window.show();
-            let _ = position_tray_window(&window).await;
+            if let Err(e) = window.show() {
+                log::warn!("[Tray] Failed to show tray window: {}", e);
+            }
+            position_tray_window(&window).await;
         }
     } else {
         cancel_active_dictation_turn(&state).await;
@@ -149,13 +166,17 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
         }
 
         if let Some(window) = app.get_webview_window("tray") {
-            let _ = window.hide();
+            if let Err(e) = window.hide() {
+                log::warn!("[Tray] Failed to hide tray window: {}", e);
+            }
         }
     }
 
     let item_lock = state.hud_menu_item.lock().await;
     if let Some(item) = &*item_lock {
-        let _ = item.set_checked(visible);
+        if let Err(e) = item.set_checked(visible) {
+            log::warn!("[Tray] Failed to set menu item checked state: {}", e);
+        }
     }
 }
 
@@ -174,7 +195,9 @@ pub fn set_hud_ignore_cursor(window: WebviewWindow, ignore: bool) {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = window.set_ignore_cursor_events(ignore);
+        if let Err(e) = window.set_ignore_cursor_events(ignore) {
+            log::warn!("[Tray] Failed to set ignore cursor events: {}", e);
+        }
     }
 }
 
@@ -197,12 +220,16 @@ fn evaluate_main_mode_engine_lifecycle(app: AppHandle, state: &AppState) {
     if !dictation_enabled && !is_engaged && !is_passive {
         log::info!("[Settings] Main App mode changed to non-passive and Dictation is disabled. Stopping engine...");
         tauri::async_runtime::spawn(async move {
-            let _ = crate::ipc::pipeline::stop_engine(app).await;
+            if let Err(e) = crate::ipc::pipeline::stop_engine(app).await {
+                log::warn!("[Tray] Failed to stop engine: {}", e);
+            }
         });
     } else if is_passive {
         log::info!("[Settings] Main App mode changed to Passive. Ensuring engine is launched...");
         tauri::async_runtime::spawn(async move {
-            let _ = crate::ipc::pipeline::launch_engine(app).await;
+            if let Err(e) = crate::ipc::pipeline::launch_engine(app).await {
+                log::warn!("[Tray] Failed to launch engine: {}", e);
+            }
         });
     }
 }
@@ -237,7 +264,9 @@ pub async fn update_interaction_mode(
             }
             _ => return Err(format!("Invalid target window: {}", target)),
         }
-        let _ = settings.save();
+        if let Err(e) = settings.save() {
+            log::warn!("[Tray] Failed to save settings on interaction mode update: {}", e);
+        }
     }
 
     let owner: crate::core::state::InteractionOwner = state
@@ -265,9 +294,15 @@ pub async fn update_interaction_mode(
     }
 
     let event_name = format!("mode_changed_{}", target.to_lowercase());
-    let _ = app.emit(&event_name, mode.clone());
-    let _ = app.emit("mode_changed", mode);
-    let _ = app.emit("settings-updated", ());
+    if let Err(e) = app.emit(&event_name, mode.clone()) {
+        log::warn!("[Tray] Failed to emit {}: {}", event_name, e);
+    }
+    if let Err(e) = app.emit("mode_changed", mode) {
+        log::warn!("[Tray] Failed to emit mode_changed: {}", e);
+    }
+    if let Err(e) = app.emit("settings-updated", ()) {
+        log::warn!("[Tray] Failed to emit settings-updated: {}", e);
+    }
 
     Ok(())
 }

@@ -37,18 +37,18 @@ pub async fn check_llm_provider_health(
                         models_dir.join(&file.path)
                     } else {
                         models_dir
-                            .join(crate::services::llm::MODEL_DIR_LLM)
-                            .join(crate::services::llm::MODEL_FILE_LLM_GGUF)
+                            .join(crate::services::llm::QWEN_MODEL_DIR)
+                            .join(crate::services::llm::QWEN_MODEL_FILE)
                     }
                 } else {
                     models_dir
-                        .join(crate::services::llm::MODEL_DIR_LLM)
-                        .join(crate::services::llm::MODEL_FILE_LLM_GGUF)
+                        .join(crate::services::llm::QWEN_MODEL_DIR)
+                        .join(crate::services::llm::QWEN_MODEL_FILE)
                 }
             } else {
                 models_dir
-                    .join(crate::services::llm::MODEL_DIR_LLM)
-                    .join(crate::services::llm::MODEL_FILE_LLM_GGUF)
+                    .join(crate::services::llm::QWEN_MODEL_DIR)
+                    .join(crate::services::llm::QWEN_MODEL_FILE)
             };
 
             Ok(llm_path.exists())
@@ -92,8 +92,8 @@ pub async fn check_stt_provider_health(
         SttProviderConfig::Embedded { model_type } => {
             let models_dir = paths::get().models.clone();
             let model_path = match model_type.as_str() {
-                "nvidia_nemotron" => models_dir.join(crate::services::stt::MODEL_DIR_STT_NEMOTRON),
-                _ => models_dir.join(crate::services::stt::MODEL_DIR_STT_QWEN),
+                "nvidia_nemotron" => models_dir.join(crate::services::stt::NEMOTRON_MODEL_DIR),
+                _ => models_dir.join(crate::services::stt::QWEN_ASR_MODEL_DIR),
             };
             Ok(model_path.exists())
         }
@@ -135,12 +135,12 @@ pub async fn check_tts_provider_health(
     match config {
         TtsProviderConfig::Supertonic => {
             let models_dir = paths::get().models.clone();
-            let model_path = models_dir.join(crate::services::tts::MODEL_DIR_TTS_SUPER);
+            let model_path = models_dir.join(crate::services::tts::SUPERTONIC_MODEL_DIR);
             Ok(model_path.exists())
         }
         TtsProviderConfig::Chatterbox { .. } => {
             let models_dir = paths::get().models.clone();
-            let model_path = models_dir.join(crate::services::tts::MODEL_DIR_TTS_CHATTERBOX);
+            let model_path = models_dir.join(crate::services::tts::CHATTERBOX_MODEL_DIR);
             Ok(model_path.exists())
         }
         TtsProviderConfig::ChatterboxRemote { ref endpoint, .. } => {
@@ -189,7 +189,7 @@ pub async fn list_llm_models(
         LlmProviderConfig::Embedded => {
             let llm_dir = paths::get()
                 .models
-                .join(crate::services::llm::MODEL_DIR_LLM);
+                .join(crate::services::llm::QWEN_MODEL_DIR);
             let models =
                 EmbeddedProvider::list_models_in_dir(&llm_dir).map_err(|e| e.to_string())?;
             Ok(models)
@@ -259,7 +259,9 @@ pub async fn probe_model_capabilities(
     let caps_clone = caps.clone();
 
     tokio::spawn(async move {
-        let _ = tokio::fs::create_dir_all(&cache_dir).await;
+        if let Err(e) = tokio::fs::create_dir_all(&cache_dir).await {
+            log::warn!("[Settings::Health] Failed to create cache directory {:?}: {}", cache_dir, e);
+        }
         let mut map: std::collections::HashMap<String, crate::core::settings::ModelCapabilities> =
             if cache_file.exists() {
                 tokio::fs::read_to_string(&cache_file)
@@ -277,7 +279,9 @@ pub async fn probe_model_capabilities(
         if let Ok(json) = serde_json::to_string_pretty(&map) {
             let tmp = cache_file.with_extension("tmp");
             if tokio::fs::write(&tmp, json).await.is_ok() {
-                let _ = tokio::fs::rename(tmp, cache_file).await;
+                if let Err(e) = tokio::fs::rename(&tmp, &cache_file).await {
+                    log::warn!("[Settings::Health] Failed to rename temp cache file: {}", e);
+                }
             }
         }
     });
@@ -392,10 +396,12 @@ async fn run_remote_ssh_task(
         Err(e) => {
             let err_msg = format!("Failed to spawn ssh command: {}", e);
             log::error!("{}", err_msg);
-            let _ = app.emit(
+            if let Err(e) = app.emit(
                 "remote_setup_status",
                 serde_json::json!({ "step": "failed", "progress": 0, "log_line": err_msg.clone(), "error": err_msg }),
-            );
+            ) {
+                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
+            }
             return;
         }
     };
@@ -405,26 +411,32 @@ async fn run_remote_ssh_task(
             if let Err(e) = stdin.write_all(script_content.as_bytes()).await {
                 log::warn!("Failed to write script to ssh stdin: {}", e);
             }
-            let _ = stdin.flush().await;
+            if let Err(e) = stdin.flush().await {
+                log::warn!("[Settings::Health] Failed to flush ssh stdin: {}", e);
+            }
         }
     }
 
     let Some(stdout) = child.stdout.take() else {
         let err_msg = "Failed to capture SSH stdout stream".to_string();
         log::error!("[SetupRemote] {}", err_msg);
-        let _ = app.emit(
+        if let Err(e) = app.emit(
             "remote_setup_status",
             serde_json::json!({ "step": "failed", "progress": 0, "log_line": err_msg.clone(), "error": err_msg }),
-        );
+        ) {
+            log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
+        }
         return;
     };
     let Some(stderr) = child.stderr.take() else {
         let err_msg = "Failed to capture SSH stderr stream".to_string();
         log::error!("[SetupRemote] {}", err_msg);
-        let _ = app.emit(
+        if let Err(e) = app.emit(
             "remote_setup_status",
             serde_json::json!({ "step": "failed", "progress": 0, "log_line": err_msg.clone(), "error": err_msg }),
-        );
+        ) {
+            log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
+        }
         return;
     };
     let mut stdout_reader = BufReader::new(stdout).lines();
@@ -435,10 +447,12 @@ async fn run_remote_ssh_task(
         while let Ok(Some(line)) = stdout_reader.next_line().await {
             log::info!("[RemoteSetup stdout] {}", line);
             let (step, progress) = parse_setup_progress(&line);
-            let _ = app_out.emit(
+            if let Err(e) = app_out.emit(
                 "remote_setup_status",
                 serde_json::json!({ "step": step, "progress": progress, "log_line": line }),
-            );
+            ) {
+                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
+            }
         }
     };
 
@@ -446,10 +460,12 @@ async fn run_remote_ssh_task(
     let stderr_loop = async move {
         while let Ok(Some(line)) = stderr_reader.next_line().await {
             log::warn!("[RemoteSetup stderr] {}", line);
-            let _ = app_err.emit(
+            if let Err(e) = app_err.emit(
                 "remote_setup_status",
                 serde_json::json!({ "step": "log", "progress": 0, "log_line": line }),
-            );
+            ) {
+                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
+            }
         }
     };
 
@@ -458,26 +474,32 @@ async fn run_remote_ssh_task(
     match child.wait().await {
         Ok(status) if status.success() => {
             log::info!("[SetupRemote] Setup completed successfully.");
-            let _ = app.emit(
+            if let Err(e) = app.emit(
                 "remote_setup_status",
                 serde_json::json!({ "step": "complete", "progress": 100, "log_line": "Remote setup completed successfully!" }),
-            );
+            ) {
+                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
+            }
         }
         Ok(status) => {
             let err_msg = format!("SSH command exited with code: {:?}", status.code());
             log::error!("[SetupRemote] {}", err_msg);
-            let _ = app.emit(
+            if let Err(e) = app.emit(
                 "remote_setup_status",
                 serde_json::json!({ "step": "failed", "progress": 0, "log_line": err_msg.clone(), "error": err_msg }),
-            );
+            ) {
+                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
+            }
         }
         Err(e) => {
             let err_msg = format!("Failed to wait for SSH child: {}", e);
             log::error!("[SetupRemote] {}", err_msg);
-            let _ = app.emit(
+            if let Err(e) = app.emit(
                 "remote_setup_status",
                 serde_json::json!({ "step": "failed", "progress": 0, "log_line": err_msg.clone(), "error": err_msg }),
-            );
+            ) {
+                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
+            }
         }
     }
 }
