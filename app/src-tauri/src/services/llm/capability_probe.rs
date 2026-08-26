@@ -720,3 +720,124 @@ impl CapabilityProbeEngine {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests URL normalization and idempotency across trailing slashes, /v1, and full endpoint paths.
+    #[test]
+    fn test_resolve_chat_url_normalization() {
+        let expected = "http://localhost:11434/v1/chat/completions";
+        assert_eq!(
+            CapabilityProbeEngine::resolve_chat_url("http://localhost:11434"),
+            expected
+        );
+        assert_eq!(
+            CapabilityProbeEngine::resolve_chat_url("http://localhost:11434/"),
+            expected
+        );
+        assert_eq!(
+            CapabilityProbeEngine::resolve_chat_url("http://localhost:11434/v1"),
+            expected
+        );
+        assert_eq!(
+            CapabilityProbeEngine::resolve_chat_url("http://localhost:11434/v1/"),
+            expected
+        );
+        assert_eq!(
+            CapabilityProbeEngine::resolve_chat_url("http://localhost:11434/v1/chat/completions"),
+            expected
+        );
+        assert_eq!(
+            CapabilityProbeEngine::resolve_chat_url("http://localhost:11434/v1/chat/completions/"),
+            expected
+        );
+
+        let normalized = CapabilityProbeEngine::resolve_chat_url("http://api.openai.com");
+        assert_eq!(
+            CapabilityProbeEngine::resolve_chat_url(&normalized),
+            normalized
+        );
+    }
+
+    /// Tests regex extraction of token ceilings from HTTP 400 server error payloads.
+    #[test]
+    fn test_parse_token_ceiling_from_error() {
+        assert_eq!(
+            CapabilityProbeEngine::parse_token_ceiling_from_error(
+                "Error: maximum allowed tokens is 4096 for this model"
+            ),
+            Some(4096)
+        );
+        assert_eq!(
+            CapabilityProbeEngine::parse_token_ceiling_from_error(
+                "Invalid request: max_tokens cannot exceed 8192"
+            ),
+            Some(8192)
+        );
+        assert_eq!(
+            CapabilityProbeEngine::parse_token_ceiling_from_error("Requested tokens > 32768"),
+            Some(32768)
+        );
+        assert_eq!(
+            CapabilityProbeEngine::parse_token_ceiling_from_error(
+                "Payload size is greater than maximum allowed 65536 tokens"
+            ),
+            Some(65536)
+        );
+    }
+
+    /// Tests that invalid ranges and unrelated error strings return None.
+    #[test]
+    fn test_parse_token_ceiling_boundaries() {
+        assert_eq!(
+            CapabilityProbeEngine::parse_token_ceiling_from_error(
+                "maximum allowed tokens is 128"
+            ),
+            None
+        );
+        assert_eq!(
+            CapabilityProbeEngine::parse_token_ceiling_from_error(
+                "maximum allowed tokens is 5000000"
+            ),
+            None
+        );
+        assert_eq!(
+            CapabilityProbeEngine::parse_token_ceiling_from_error("Internal server error: timeout"),
+            None
+        );
+        assert_eq!(
+            CapabilityProbeEngine::parse_token_ceiling_from_error(""),
+            None
+        );
+    }
+
+    /// Tests heuristic capability determination for local embedded model identifiers.
+    #[test]
+    fn test_heuristic_embedded_caps() {
+        let (family_q, tools_q, dev_q) =
+            CapabilityProbeEngine::heuristic_embedded_caps("Qwen2.5-0.5B-Instruct");
+        assert_eq!(family_q, "Qwen");
+        assert!(tools_q);
+        assert!(dev_q);
+
+        let (family_g, tools_g, dev_g) =
+            CapabilityProbeEngine::heuristic_embedded_caps("gemma-2-2b-it");
+        assert_eq!(family_g, "Gemma");
+        assert!(tools_g);
+        assert!(dev_g);
+
+        let (family_l, tools_l, dev_l) =
+            CapabilityProbeEngine::heuristic_embedded_caps("Llama-3.2-1B-Instruct");
+        assert_eq!(family_l, "Llama");
+        assert!(tools_l);
+        assert!(dev_l);
+
+        let (family_u, tools_u, dev_u) =
+            CapabilityProbeEngine::heuristic_embedded_caps("custom-bert-v1");
+        assert_eq!(family_u, "Unknown");
+        assert!(!tools_u);
+        assert!(!dev_u);
+    }
+}

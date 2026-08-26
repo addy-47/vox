@@ -38,39 +38,31 @@ Vox prioritizes conversational rhythm and tactile edge execution over cloud depe
 
 ## 🏗️ Technical Architecture
 
-Vox is built on a sequential, multi-threaded pipeline using Rust. The pipeline processes complete utterances end-to-end: audio capture → VAD → full STT transcription → LLM generation → chunked TTS synthesis → playback.
-
-
+Vox is built on a **domain-partitioned, event-driven pipeline in Rust**. A central non-blocking router (`services/pipeline/router.rs`) dispatches `VoxEvent`s to 5 dedicated handlers — no God loop — each with discrete lifecycle (`start_session`/`end_session`/`pause_session`/`ptt_*`).
 
 ```mermaid
-
 graph TD
-
-    Mic[Audio Input Device] --> VAD[Ten VAD / Earshot]
-
-    VAD --> Pipeline[Orchestration Pipeline]
-
-    Pipeline --> STT[Nemotron-3.5 ASR]
-
-    STT --> HUD[Vox Live HUD / UI]
-
-    STT --> LLM[Llama 3.2 1B Instruct / Gemma 4]
-
-    LLM --> TTS[Supertonic 3 TTS]
-
-    TTS --> Speaker[Audio Output Device]
-
+    Mic[Audio Input 16kHz f32 SPSC 4s] --> VAD[VAD Actor Earshot ~1ms / TenVAD ~15ms]
+    VAD --> Router[Central Router vox-router]
+    Router --> MP[Modular Passive<br/>VAD→STT→LLM→TTS→Playback]
+    Router --> MPTT[Modular PTT<br/>gated buffer→STT→LLM→TTS]
+    Router --> RP[Realtime Passive<br/>PCM→Gemini Live / Deepgram WS]
+    Router --> RPTT[Realtime PTT<br/>gated WS ghost-suppressed]
+    Router --> Dict[Dictation<br/>STT→Output Router Paste/Clipboard/Tray<br/>0 LLM/TTS]
+    MP --> Speaker
+    MPTT --> Speaker
+    RP --> Speaker
+    RPTT --> Speaker
+    MP --> HUD[Vox Live HUD / UI]
+    Dict --> HUD
 ```
 
-
-
-*   **VAD Engine**: Powered by Ten VAD (ONNX FP32, ~15ms/frame) or Earshot (native energy-based, ~1ms/frame). Both dispatchable via `VadBackend` enum.
-
-*   **Speech-To-Text**: Nemotron-3.5 (INT8 ONNX, ~1,265 MB) — optimized chunked transcription with 8960-sample windows preserving context across chunks.
-
-*   **LLM**: Llama-3.2-1B-Instruct (GGUF Q6_K) — CPU-first, 2.5–4.4 TPS, 100% stability across benchmark suite. Language detection routes Devanagari STT to Hindi prompts.
-
-*   **TTS**: Supertonic 3 (sherpa-onnx native, INT8, 99M params) — sole TTS engine with 31 languages, 10 voices, and `<laugh>/<breath>/<sigh>` emotion tag support.
+*   **VAD**: Earshot (native Rust, ~1ms/frame) or TenVAD (ONNX ~15ms/frame) via `VadBackend` enum; decoupled actor emits `VoxEvent::SpeechStart/SpeechEnd`.
+*   **STT**: Nemotron-3.5 (INT8 ONNX, ~2.5GB, 0.02–0.35× RTF, 8960-sample stateful windows) or Qwen3-ASR 0.6B; optional Google Chirp 3 cloud (`stt.cloud`). Partials throttled at 800ms.
+*   **LLM**: Local Qwen3 0.8B (default) / Llama 3.2 1B / Gemma3 4B via llama.cpp, or remote via OpenAiCompat (OpenAI, Gemini, Anthropic, Nvidia `integrate.api.nvidia.com`, Groq) — capability probing measures TTFT/TPS + tool-calling.
+*   **TTS**: Edge TTS (0 MB, WebSocket, 3.3× RTF) default; Supertonic 3 (99M, 31 languages), Chatterbox (340M Q4, voice cloning) local or remote. Clause chunker flushes sub-sentence by dynamic TPS.
+*   **Realtime S2S**: Gemini Live / Deepgram Voice Agent via `RealtimeVoiceProvider` + `RealtimeSession` traits.
+*   **Dictation**: System-wide hotkey `Alt+Space`, 0ms LLM/TTS fast path through `output_router` (Paste/Clipboard/Tray).
 
 
 ---
@@ -130,26 +122,20 @@ Configure system behaviors, inspect live telemetry, select models, and view tran
 Vox manages models locally using manifest validation. On first startup, the app validates your local models folder and downloads missing dependencies dynamically:
 
 | Engine | Model | Format | File Size | Memory (RSS) | Latency | Required |
-
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-
-| **VAD** | Ten VAD | ONNX FP32 | ~330 KB | ~50 MB | ~15ms/frame | Yes (Core) |
-
-| **VAD** | Earshot | Native Rust | Zero | ~0 MB | ~1ms/frame | Optional |
-
-| **Translit** | Vox Translit RNN | ONNX | ~16 MB | ~16 MB | ~5ms | Yes (Core) |
-
-| **STT** | Nemotron-3.5 (Default) | ONNX INT8 | ~756 MB | ~1,265 MB | 0.02–0.35× RTF | Yes (Core) |
-
-| **STT** | Qwen3-ASR (Legacy) | ONNX INT8 | ~986 MB | ~1,177 MB | 0.38–4.63× RTF | Optional |
-
+| **VAD** | Earshot | Native Rust | Zero | ~0 MB | ~1ms/frame | Default |
+| **VAD** | Ten VAD | ONNX INT8 | ~15 MB | ~50 MB | ~15ms/frame | Optional (legacy) |
+| **Translit** | Vox Translit RNN | ONNX | ~16 MB | ~16 MB | ~5ms | Lazy (first Devanagari) |
+| **STT** | Nemotron-3.5 (Default) | ONNX INT8 | ~756 MB | ~2.5 GB | 0.02–0.35× RTF | Yes (Core) |
+| **STT** | Qwen3-ASR (Legacy) | ONNX INT8 | ~986 MB | ~800 MB | 0.38–4.63× RTF | Optional |
+| **STT** | Google Chirp 3 | Cloud | — | 0 MB | network | Optional |
+| **LLM** | Qwen3 0.8B (Default) | GGUF Q4_K_M | ~600 MB | ~600 MB | 6–12 TPS | Default |
 | **LLM** | Llama 3.2 1B Instruct | GGUF Q6_K | ~1.02 GB | ~970 MB | 2.5–4.4 TPS | Optional |
-
-| **LLM** | Gemma 4 2B Instruct | GGUF Q4_K_M | ~3.46 GB | ~4,092 MB | 9 TPS | Optional |
-
-| **LLM** | MiniCPM5-1B | GGUF Q4_K_M | ~688 MB | ~654 MB | 6.5 TPS | Optional |
-
-| **TTS** | Supertonic 3 | ONNX INT8 (7 files) | ~144 MB | ~21 MB | 0.79–1.50× RTF | Yes (Core) |
+| **LLM** | Gemma3 4B | GGUF Q4_K_M | ~2.5 GB | ~2.5 GB | 9 TPS | Optional |
+| **LLM** | Cloud (Nvidia/OpenAI/Gemini) | HTTP | — | 0 MB | network | Optional (Tier 2B default) |
+| **TTS** | Edge TTS (Default) | WebSocket | — | 0 MB | 0.30× RTF | Default |
+| **TTS** | Supertonic 3 | ONNX INT8 | ~144 MB | ~144 MB | 1.76× RTF | Optional |
+| **TTS** | Chatterbox | GGML Q4 | ~340M | ~1.1 GB | variable | Optional (voice cloning) |
 
 
 ---

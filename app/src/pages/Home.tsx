@@ -1,8 +1,8 @@
 import React, { memo, useMemo } from "react";
-import { VoxOrb, PipelineField, StatusCapsule } from "@/shared/components/home";
+import { VoxOrb, PipelineField, StatusCapsule, TestClipsPopover } from "@/shared/components/home";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
 import { ErrorBoundary } from "@/shared/components/common";
-import { TEST_CLIPS, GOVERNOR_LABELS } from "@/data/homeCopy";
+import { GOVERNOR_LABELS } from "@/data/homeCopy";
 import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/shared/lib/utils";
@@ -343,35 +343,12 @@ export const Home = memo(() => {
       {/* ── Test Mode Panel ──────────────── */}
       <AnimatePresence>
         {testMode && !isEngaged && (
-          <motion.div
-            key="test-mode-panel"
-            ref={testPanelRef}
-            initial={{ opacity: 0, y: 8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.98 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1], opacity: { duration: 0.1 } }}
-            className="fixed bottom-16 right-4 w-56 p-2 flex flex-col gap-1 z-50 glass-card no-blur"
-          >
-            <div className="px-2 py-1 border-b border-[rgba(var(--accent),0.1)] mb-1">
-              <span className="text-[11px] tracking-widest text-[rgb(var(--accent))] uppercase block">
-                Select Test Input
-              </span>
-            </div>
-            {TEST_CLIPS.map((clip) => (
-              <button
-                key={clip.id}
-                onClick={() => handleTestClip(clip.id)}
-                className="w-full text-left p-2 rounded-xl hover:bg-[rgb(var(--accent))]/10 transition-colors border border-transparent hover:border-[rgb(var(--accent))]/15 flex flex-col cursor-pointer"
-              >
-                <span className="text-[14px] font-semibold text-[rgb(var(--foreground))]">
-                  {clip.label}
-                </span>
-                <span className="text-[12px] text-[rgb(var(--foreground-muted))] mt-0.5">
-                  {clip.desc}
-                </span>
-              </button>
-            ))}
-          </motion.div>
+          <TestClipsPopover
+            panelRef={testPanelRef}
+            onSelectClip={handleTestClip}
+            onClose={() => setTestMode(false)}
+            testingClip={testingClip}
+          />
         )}
       </AnimatePresence>
     </div>

@@ -5,7 +5,26 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
-/// Decodes a WAV file to mono f32 samples.
+/// Resamples audio samples linearly from source sample rate to 16kHz for STT.
+fn resample_to_16k(samples: &[f32], source_rate: u32) -> Vec<f32> {
+    if source_rate == 16000 || samples.is_empty() {
+        return samples.to_vec();
+    }
+    let ratio = 16000.0 / source_rate as f64;
+    let target_len = (samples.len() as f64 * ratio).round() as usize;
+    let mut out = Vec::with_capacity(target_len);
+    for i in 0..target_len {
+        let src_pos = i as f64 / ratio;
+        let idx0 = src_pos.floor() as usize;
+        let frac = (src_pos - idx0 as f64) as f32;
+        let s0 = samples[idx0.min(samples.len() - 1)];
+        let s1 = samples[(idx0 + 1).min(samples.len() - 1)];
+        out.push(s0 + frac * (s1 - s0));
+    }
+    out
+}
+
+/// Decodes a WAV file to mono f32 samples resampled to 16kHz.
 fn decode_wav_to_mono_f32(path: &std::path::Path) -> Result<Vec<f32>, String> {
     let mut reader = hound::WavReader::open(path)
         .map_err(|e| format!("Failed to open WAV '{}': {}", path.display(), e))?;
@@ -32,27 +51,29 @@ fn decode_wav_to_mono_f32(path: &std::path::Path) -> Result<Vec<f32>, String> {
         samples
     };
 
-    Ok(mono)
+    let resampled = resample_to_16k(&mono, spec.sample_rate);
+    Ok(resampled)
 }
 
 /// Resolves the filesystem path for a designated QA test clip.
 fn resolve_clip_path(clip_id: &str) -> Result<std::path::PathBuf, String> {
-    let filename = match clip_id {
-        "short" => "sample_short.wav",
-        "medium" => "sample_medium.wav",
-        "long" => "sample_long.wav",
-        "question" => "sample_question.wav",
-        other => return Err(format!("Unknown clip_id: '{}'", other)),
+    let filename = if clip_id.ends_with(".wav") {
+        clip_id.to_string()
+    } else {
+        format!("{}.wav", clip_id)
     };
 
     let candidate_dirs = [
+        std::path::PathBuf::from("test-clips"),
+        std::path::PathBuf::from("app/src-tauri/test-clips"),
         crate::utils::paths::get().models.join("test_clips"),
+        crate::utils::paths::get().models.join("test-clips"),
         crate::utils::paths::cache_dir().join("test_clips"),
-        std::path::PathBuf::from("test_clips"),
+        crate::utils::paths::cache_dir().join("test-clips"),
     ];
 
     for dir in &candidate_dirs {
-        let candidate = dir.join(filename);
+        let candidate = dir.join(&filename);
         if candidate.exists() {
             return Ok(candidate);
         }
