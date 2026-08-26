@@ -1,7 +1,7 @@
 ---
 title: "Vox Model Inventory & Specifications"
 audience: "Internal — ML/model-config contributors, backend engineers, agents"
-last_updated: 2026-08-21
+last_updated: 2026-08-25
 owners: "ml-research-engineer role"
 related_docs:
   - "docs/backend.md — Engines, threading, lifecycle"
@@ -35,11 +35,12 @@ related_docs:
 | **VAD** (legacy) | TenVAD | `ten_vad` | — | INT8 | ~15 MB | sherpa-onnx ONNX | `~/.vox/models/vad/ten_vad.onnx` | ✅ |
 | **STT** (primary) | Nvidia Nemotron-3.5 | `nvidia_nemotron` | ~1B | INT8 | ~2.5 GB | parakeet-rs ONNX | `~/.vox/models/stt/nemotron-3.5/` | ✅ |
 | **STT** (fallback) | Qwen3-ASR-0.6B | `qwen3_asr` | 0.6B | INT8 | ~800 MB | sherpa-onnx ONNX | `~/.vox/models/stt/qwen3-asr/` | ✅ |
-| **LLM** (default) | Llama 3.2 1B Instruct | `llama_3_2_reasoning_q4` | 1B | Q4_K_M | ~750 MB | llama.cpp GGUF | `~/.vox/models/llm/llama/` | ✅ |
-| **LLM** (high quality) | Llama 3.2 1B Instruct | `llama_3_2_reasoning` | 1B | Q6_K | ~1.0 GB | llama.cpp GGUF | `~/.vox/models/llm/llama/` | ✅ |
-| **LLM** (alternative) | Gemma 4 E2B-it | `gemma_4_reasoning` | ~2B | Q4_K_M | ~1.4 GB | llama.cpp GGUF | `~/.vox/models/llm/gemma4/` | ✅ |
-| **LLM** (uncensored) | Gemma 4 Uncensored | `gemma_4_uncensored` | ~2B | Q2_K_P | ~2.9 GB | llama.cpp GGUF | `~/.vox/models/llm/gemma4/` | ✅ |
-| **LLM** (cloud) | OpenAI / Gemini / Anthropic | provider-config | — | — | 0 MB (local) | HTTP (reqwest) | Remote API | N/A |
+| **STT** (cloud) | Google Chirp 3 | `chirp_3` | Cloud | — | 0 MB | HTTP | `stt.cloud` (`google`) | N/A |
+| **LLM** (default) | Qwen3 0.8B | `qwen_3_5_0_8b` | 0.8B | Q4_K_M | ~600 MB | llama.cpp GGUF | `~/.vox/models/llm/qwen3/` | ✅ |
+| **LLM** (alternative) | Llama 3.2 1B Instruct | `llama_3_2_reasoning_q4` / `q6` | 1B | Q4_K_M / Q6_K | ~750 MB / 1.0 GB | llama.cpp GGUF | `~/.vox/models/llm/llama/` | ✅ |
+| **LLM** (alternative) | Gemma3 4B | `gemma3:4b` | 4B | Q4_K_M | ~2.5 GB | llama.cpp GGUF | `~/.vox/models/llm/gemma3/` | ✅ |
+| **LLM** (server) | Ollama / LM Studio | `ollama` / `lm_studio` | — | — | 0 MB (local) | HTTP (reqwest) | `http://localhost:11434` | N/A |
+| **LLM** (cloud) | OpenAI / Gemini / Anthropic / Nvidia | provider-config | — | — | 0 MB (local) | HTTP (reqwest) | Remote API (`integrate.api.nvidia.com/v1` default) | N/A |
 | **TTS** (default) | Microsoft Edge TTS | `edge_tts` | Remote | — | **0 MB** | Pure Rust (`tokio-tungstenite`) | Remote WebSocket | N/A |
 | **TTS** (local) | Supertonic 3 | `supertonic_tts` | 99M | INT8 | ~144 MB | sherpa-onnx ONNX | `~/.vox/models/tts/supertonic-3/` | ✅ |
 | **TTS** (local clone) | Chatterbox Local | `chatterbox_tts` | 340M | Q4 GGML | ~1.1 GB | chatterbox-rs GGML | `~/.vox/models/tts/chatterbox/` | ✅ |
@@ -340,4 +341,4 @@ The three idle-sweep memory models (Embedding, NLI, Edge Classifier) are **not c
 
 ---
 
-**Last Updated:** 2026-08-21
+**Last Updated:** 2026-08-25

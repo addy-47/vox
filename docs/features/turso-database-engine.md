@@ -13,7 +13,7 @@ Turso is a **modern embeddable database engine** — a clean-room Rust rewrite o
 | **Production** | Beta | Production-ready |
 | **Future** | All new development | Maintenance mode |
 
-Vox uses the **`turso` crate v0.7.1** as its primary embedded persistence layer for local memory storage, graph relations, voice management, session tracking, and staging queues.
+Vox uses the **`turso` crate v0.7.2** as its primary embedded persistence layer for local memory storage, graph relations, voice management, session tracking, and staging queues (tracking the upcoming `v0.8.0` MVCC stabilization milestone).
 
 ---
 

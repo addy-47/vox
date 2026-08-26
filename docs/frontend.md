@@ -1,7 +1,7 @@
 ---
 title: "Vox Frontend Architecture"
 audience: "Internal — agents & contributors needing quick, accurate context"
-last_updated: 2026-08-21
+last_updated: 2026-08-25
 owners: "frontend-engineer role"
 related_docs:
   - "docs/design.md            — Authoritative design system (tokens, type, elevation)"
@@ -80,8 +80,8 @@ Raw `@tauri-apps/api` `invoke` calls are **banned inside components** (code-styl
 | Service file | Responsibility |
 |---|---|
 | `services/settingsService.ts` | Boot state, settings get/update, model catalog, provider health, input devices |
-| `services/pipelineService.ts` | Engine lifecycle (`stopEngine`, `launchEngine`), discrete session verbs (`startSession`, `endSession`, `pauseSession`, `resumeSession`), PTT (`pttStart`, `pttStop`, `pttCancel`), runtime snapshots, voice library |
-| `services/eventsService.ts` | Typed Tauri `listen` wrappers for canonical 7-state events, telemetry, transcripts |
+| `services/pipelineService.ts` | Engine lifecycle (`stopEngine`, `launchEngine`), discrete session verbs (`startSession`, `endSession`, `pauseSession`, `resumeSession`), PTT (`pttStart`, `pttStop`, `pttCancel`), test clips (`testClip`, `testClipCancel`), runtime snapshots, voice library, realtime cache, remote deploy |
+| `services/eventsService.ts` | Typed Tauri `listen` wrappers for canonical 7-state events, telemetry, transcripts — `on<T>` sync-cleanup wrapper with `beforeunload`/`pagehide` registry |
 | `services/historyService.ts` | Session/turn CRUD, transcript history, delete |
 | `services/memoryService.ts` | Memory graph topology, stats, fact mutations, ingestion control |
 | `services/memoryProfilerService.ts` | Multi-dimensional RAM/heap/DOM profiling snapshots |
@@ -94,10 +94,10 @@ Raw `@tauri-apps/api` `invoke` calls are **banned inside components** (code-styl
 
 | Page | Entry | Key components (under `shared/components/`) | Notes |
 |---|---|---|---|
-| Home (Orb) | `pages/Home.tsx` | `home/AdvancedOrb`, `home/PipelineField`, `home/StatusCapsule`, `home/ActiveTranscript` | Orchestrates engage/pause/PTT via `VoiceSessionContext` + `hooks/useHomePage.ts`. Mode-adaptive toolbar (Passive vs. PTT hold-to-talk); canonical 7-state ambient mood sync. |
-| History | `pages/History.tsx` | `history/OrbitCarousel`, `history/CentralClockNode`, `history/VoiceDial`, `history/DetailPanel` | 2.5D single-ring CSS ellipse carousel (`history/orbitMath.ts`), windowed chunking, holographic dialogue in a global `Drawer`. |
+| Home (Orb) | `pages/Home.tsx` | `home/AdvancedOrb`, `home/PipelineField`, `home/StatusCapsule`, `home/ActiveTranscript`, `home/TestClipsPopover` | Orchestrates engage/pause/PTT via `VoiceSessionContext` + `hooks/useHomePage.ts`. Mode-adaptive toolbar (Passive: Pause/Resume + Disengage; PTT: central hold-to-talk Orb); canonical 7-state ambient mood sync + Space/Escape global PTT bindings; decoupled test clips simulation popover. |
+| History | `pages/History.tsx` | `history/HistoryListView`, `history/OrbitCarousel`, `history/CentralClockNode`, `history/VoiceDial`, `history/DetailPanel`, `history/ChamberOrbitRings` | Dual-view via `ViewSelector` — list + holographic 2.5D single-ring CSS ellipse carousel (`history/orbitMath.ts`), windowed chunking, global `Drawer` detail. |
 | Memory | `pages/Memory.tsx` | `memory/MemoryGraph`, `memory/MemoryNodeTooltip`, `memory/MemoryPipelineDrawer`, `memory/SearchBar` | Custom Three.js InstancedMesh WebGL engine. Deep-dive + invariants: `features/memory-architecture.md` §1 and `features/performance-memory-optimizations.md` §2.5–2.7. |
-| Settings | `pages/Settings.tsx` | `settings/RadialHub` + domain cards (`appearance/`, `interaction/`, `models/`, `memory/`, `persona/`, `history/`, `realtime/`) | Radial hub of cards; flat underline tab strips for providers; `RealtimeConfigDesk` for duplex S2S provider & API key config; prewarmed at boot. |
+| Settings | `pages/Settings.tsx` | `settings/RadialHub` + domain cards (`appearance/`, `interaction/`, `models/`, `memory/`, `persona/`, `history/`, `realtime/`) | Radial hub of cards; flat underline tab strips for providers; `RealtimeConfigDesk` + `LlmCatalogView`/`LlmSettingsView` for duplex S2S & catalog discovery; prewarmed at boot. |
 | Monitoring | `pages/Monitoring.tsx` | `monitoring/MetricCarousel`, `monitoring/LiquidChamber` + `profiler/*` | Runtime metrics dashboard; offload/reload dual-button engine control; 30 FPS throttled canvas. |
 
 ## 8. Shared layer
@@ -111,32 +111,37 @@ Raw `@tauri-apps/api` `invoke` calls are **banned inside components** (code-styl
   - `useVisibility` — Tray HUD ephemeral state machine (`HIDDEN→APPEARING→ACTIVE→FADING`).
   - `useStreamingRenderer` — character-stream animation for transcripts.
   - `useOverlay` — registers a surface with the global `overlayStack`.
-  - `useTelemetry`, `useMonitoringMetrics`, `useMemoryProfiler`, `useMemoryTrace`, `useVoxFootprint`, `useHomePage`, `useSettingsPage`.
+  - `useHomePage` — `toMood()` + mode-adaptive toolbar derivation (`shared/hooks/useHomePage.ts`).
+  - `useTelemetry`, `useMonitoringMetrics`, `useMemoryProfiler`, `useMemoryTrace`, `useVoxFootprint`, `useSettings`, `useSettingsPage`.
 - **`shared/ui/`** — primitives: `Drawer` (the single bottom-sheet, `position="page"|"global"`), `Tooltip` (the **only** sanctioned tooltip — native `title` banned for tooltips), `Card`, `SegmentedControl`, `SliderField`, `RotaryKnob`, `Badge`, `SearchInput`, `ProgressBar`, `icons/VendorLogos`.
 - **`shared/lib/`** — `overlayStack.ts` (global FILO dismissal authority), `fuzzy.ts` (catalog search), `utils.ts` (`cn`, `hexToRgb`).
-- **`shared/context/`** — `VoiceSessionContext` (root pipeline state & discrete session verbs), `SettingsContext` (adapter), `MemoryProfilerContext`.
+- **`shared/context/`** — `VoiceSessionContext` (root pipeline state, discrete session verbs `engage`/`disengage`/`pause`/`resume` + PTT `handlePttStart/Stop/Cancel` + `togglePtt` + `handleTestClip`, global Space/Escape bindings, throttled transcript/llm_token listeners), `SettingsContext` (adapter), `MemoryProfilerContext`.
 - **`shared/data/`** — all static copy (homeCopy, settingsCopy, memoryCopy, ...)
 
 ## 9. IPC & events — consumer view
 
-The Rust event contract is authoritative in `docs/backend.md` §8. The frontend consumes it through typed wrappers in `services/eventsService.ts` (e.g. `onStateChanged`, `onTranscriptPartial`, `onRealtimeSessionStarted`). Key events and their consumers:
+The Rust event contract is authoritative in `docs/backend.md` §8. The frontend consumes it through typed wrappers in `services/eventsService.ts` — `on<T>` provides synchronous `unlisten` via `beforeunload`/`pagehide` registry (`eventsService.ts:110-161`). Key events and their consumers:
 
 | Event | Payload source | Consumer surface |
 |---|---|---|
-| `state_changed` | `InteractionState` (`"Idle" | "Ready" | "Listening" | "Thinking" | "Speaking" | "Paused" | "Error"`) | Main + Tray (mood sync) |
-| `audio_energy` | `{ energy }` | Orb waveform, Tray HUD |
-| `transcript_partial` / `transcript_final` | `TranscriptPayload` | ActiveTranscript, Tray |
-| `ptt_status` | `PttStatusPayload` | Main PTT button, Tray |
-| `pipeline_paused` / `pipeline_resumed` | — | Main controls |
-| `realtime_session_started` / `ended` / `resumed` | — | Main lifecycle + Tray |
+| `state_changed` | `InteractionState` (`"Idle" | "Ready" | "Listening" | "Thinking" | "Speaking" | "Paused" | "Error"`) | Main + Tray (mood sync via `VoiceSessionContext` `state_changed` handler + `useHomePage.toMood`) |
+| `audio_energy` / `telemetry` | `{ energy }` / `TelemetryData` | Orb waveform, Tray HUD, `useTelemetry` |
+| `transcript_partial` / `transcript_final` | `TranscriptPayload { turn_id, text, owner }` | ActiveTranscript, Tray (throttled 30ms in context) |
+| `llm_token` | `string` | Holographic dialogue stream (throttled 30ms) |
+| `ptt_status` | `PttStatusPayload { state: IDLE\|RECORDING\|PROCESSING }` | Main PTT button, Tray, `isThinking = state==='Thinking' \|\| pttStatus==='PROCESSING'` |
+| `pipeline_paused` / `pipeline_resumed` | — | Main controls (Passive only) |
+| `realtime_session_started` / `ended` / `resumed` | — + reason | Main lifecycle + Tray |
 | `realtime_interrupted` | — | Barge-in flash |
 | `realtime_idle_warning` | `{ seconds_remaining }` | StatusCapsule countdown |
-| `pipeline_error` | `String` | Error toasts |
+| `pipeline_error` | `String` | Error toasts (`errorAlert` in context) |
 | `speech_start` / `speech_end` | `SpeechEventPayload` | Tray visibility + interaction |
-| `mode_changed_main` / `mode_changed_tray` | `String` | Cross-surface mode sync |
-| `model_setup_status` | `ModelSetupStatusPayload` | Wizard steps |
+| `mode_changed_main` / `mode_changed_tray` / `mode_changed` | `String` | Cross-surface mode sync (`pipelineMode`/`interactionMode`) |
+| `pipeline_mode_changed` | `String` | Pipeline mode sync |
+| `cpu_governor_warning` | `{ governor, optimal }` | Banner toast |
+| `model_setup_status` / `model_setup_complete` | `ModelSetupStatusPayload` | Wizard steps, catalog progress |
+| `playback_finished` | `Record<string,unknown>` latency report | History turn commit |
 
-Commands are issued via the service modules in §6 (never bare `invoke` in components). Full command list and reload policies: `docs/backend.md` §10.
+Commands are issued via the service modules in §6 — `pipelineService.ts:63-97` (`startSession`→`start_session`, `endSession`→`end_session`, `pauseSession`→`pause_session`, `pttStart`→`ptt_start`, etc.) (never bare `invoke` in components). Full command list and reload policies: `docs/backend.md` §10. Frontend never branches on `pipeline_mode` for lifecycle — always calls the same verbs; backend `RoutingContext` resolves the domain.
 
 ## 10. Design system consumption
 
@@ -211,4 +216,4 @@ app/src/
 
 ---
 
-**Last Updated:** 2026-08-21
+**Last Updated:** 2026-08-25

@@ -31,7 +31,7 @@ pub fn should_flush(buf: &str, word_count: usize, elapsed_ms: u128, tps: f32) ->
     let tps_clamped = tps.clamp(0.5, 6.0);
     let tps_norm = (tps_clamped - 0.5) / (6.0 - 0.5);
 
-    if matches!(last, ',' | ';') || trimmed.ends_with(" — ") || trimmed.ends_with(" - ") {
+    if matches!(last, ',' | ';' | '—' | '–') || trimmed.ends_with(" —") || trimmed.ends_with(" -") {
         let clause_tps_high = 5.0;
         let clause_tps_low = 3.0;
         let clause_norm_low = (clause_tps_low - 0.5) / (6.0 - 0.5);
@@ -315,5 +315,92 @@ pub fn stitch_transcripts(prefix: &str, suffix: &str) -> String {
         result_words.join(" ")
     } else {
         format!("{} {}", p_clean, s_clean)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests immediate flushing on terminal sentence punctuation regardless of elapsed time.
+    #[test]
+    fn test_should_flush_sentence_terminals() {
+        assert!(should_flush("Hello world.", 2, 0, 1.0));
+        assert!(should_flush("This is a test!", 4, 0, 1.0));
+        assert!(should_flush("Is this working?", 3, 0, 1.0));
+        assert!(should_flush("यह एक परीक्षण है।", 4, 0, 1.0));
+        assert!(should_flush("Ending with dot.  ", 3, 0, 1.0));
+    }
+
+    /// Tests dynamic clause punctuation scaling and threshold cutoff at high TPS.
+    #[test]
+    fn test_should_flush_clause_scaling() {
+        assert!(should_flush("one, two, three,", 3, 50, 0.5));
+        assert!(should_flush("one; two; three;", 3, 50, 3.0));
+        assert!(should_flush("one — two — three — ", 3, 50, 3.0));
+        assert!(!should_flush("one, two,", 2, 50, 0.5));
+        assert!(!should_flush("one, two, three,", 3, 50, 6.0));
+    }
+
+    /// Tests timeout starvation triggering strictly at word boundaries and rejecting mid-word tokens.
+    #[test]
+    fn test_should_flush_timeout_and_word_boundaries() {
+        assert!(should_flush("the quick brown ", 3, 1500, 0.5));
+        assert!(!should_flush("the quick bro", 3, 1500, 0.5));
+        assert!(!should_flush("the quick brown ", 3, 500, 0.5));
+    }
+
+    /// Tests TPS extreme boundary clamping without arithmetic overflow or panics.
+    #[test]
+    fn test_should_flush_tps_clamping_boundaries() {
+        assert!(should_flush("terminal punctuation.", 2, 0, -100.0));
+        assert!(should_flush("terminal punctuation.", 2, 0, 100.0));
+        assert!(!should_flush("no punctuation incomplete", 3, 50, -5.0));
+        assert!(!should_flush("no punctuation incomplete", 3, 50, 50.0));
+    }
+
+    /// Tests empty string handling for prefix and suffix transcript stitching.
+    #[test]
+    fn test_stitch_transcripts_empty_inputs() {
+        assert_eq!(stitch_transcripts("", "hello world"), "hello world");
+        assert_eq!(stitch_transcripts("hello world", ""), "hello world");
+        assert_eq!(stitch_transcripts("   ", "hello world"), "hello world");
+        assert_eq!(stitch_transcripts("hello world", "   "), "hello world");
+    }
+
+    /// Tests soft subslice containment returning prefix text unmodified.
+    #[test]
+    fn test_stitch_transcripts_subslice_containment() {
+        let prefix = "The quick brown fox jumps over the lazy dog";
+        let suffix = "brown fox jumps";
+        assert_eq!(stitch_transcripts(prefix, suffix), prefix);
+    }
+
+    /// Tests multi-word alignment matching and sequential overlap stitching.
+    #[test]
+    fn test_stitch_transcripts_overlap_alignment() {
+        let p1 = "The quick brown fox jumps over the lazy dog";
+        let s1 = "jumps over the lazy dog and runs into the woods";
+        assert_eq!(
+            stitch_transcripts(p1, s1),
+            "The quick brown fox jumps over the lazy dog and runs into the woods"
+        );
+
+        let p2 = "hello world there";
+        let s2 = "there friend";
+        assert_eq!(stitch_transcripts(p2, s2), "hello world there friend");
+    }
+
+    /// Tests disjoint non-overlapping transcripts concatenation and case/punctuation normalization.
+    #[test]
+    fn test_stitch_transcripts_disjoint_and_variations() {
+        assert_eq!(
+            stitch_transcripts("hello world", "apple banana"),
+            "hello world apple banana"
+        );
+        assert_eq!(
+            stitch_transcripts("Hello, World!", "world! How are you?"),
+            "Hello, World! How are you?"
+        );
     }
 }

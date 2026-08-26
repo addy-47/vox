@@ -79,13 +79,14 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ### 5.1 Architecture & Design Specifications (SSOT)
 All state machines, routing topologies, data flows, and IPC schemas are documented in:
-- **Backend Orchestration & Routing SSOT:** [`docs/plans/phase10/pipeline_orchestration_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/pipeline_orchestration_spec.md) (7 canonical states, 4 pipeline domains, silence gating, barge-in, ownership rules).
+- **Backend Orchestration & Routing SSOT:** [`docs/plans/phase10/pipeline_orchestration_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/pipeline_orchestration_spec.md) (7 canonical states, 4 pipeline domains + dictation, silence gating, barge-in, ownership rules).
 - **Frontend Integration SSOT:** [`docs/plans/phase10/frontend_orchestration_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/frontend_orchestration_spec.md) (Discrete IPC action mapping, root `VoiceSessionContext`, mode-adaptive UI controls).
 - **Core Architecture & Feature Ledgers:**
-  - [`docs/features/backend.md`](file:///home/addy/projects/apps/vox/docs/features/backend.md) (Domain modules, actor lifecycle, audio streaming).
-  - [`docs/features/voice-flow.md`](file:///home/addy/projects/apps/vox/docs/features/voice-flow.md) (Modular Passive, Modular PTT, Realtime Passive, Realtime PTT, Dictation).
-  - [`docs/features/models.md`](file:///home/addy/projects/apps/vox/docs/features/models.md) (STT/LLM/TTS models manifest & tier allocation).
-  - [`docs/features/frontend.md`](file:///home/addy/projects/apps/vox/docs/features/frontend.md) (Component layout & interaction states).
+  - [`docs/backend.md`](file:///home/addy/projects/apps/vox/docs/backend.md) (4-layer architecture, provider traits, router, lifecycle — last updated 2026-08-25).
+  - [`docs/features/voice-flow.md`](file:///home/addy/projects/apps/vox/docs/features/voice-flow.md) (Modular Passive, Modular PTT, Realtime Passive, Realtime PTT, Dictation — last updated 2026-08-25).
+  - [`docs/models.md`](file:///home/addy/projects/apps/vox/docs/models.md) (STT/LLM/TTS models manifest & tier allocation — last updated 2026-08-25).
+  - [`docs/frontend.md`](file:///home/addy/projects/apps/vox/docs/frontend.md) (Component layout & 7-state interaction — last updated 2026-08-25).
+  - [`docs/features/dictation.md`](file:///home/addy/projects/apps/vox/docs/features/dictation.md) (Unified dictation, output router, hotkey — last updated 2026-08-25).
 
 ---
 
@@ -102,7 +103,9 @@ All state machines, routing topologies, data flows, and IPC schemas are document
 ### 5.3 Completed Refactor Summary
 - **Domain Modules:** Decoupled legacy God loop into dedicated domain handlers (`modular_passive.rs`, `modular_ptt.rs`, `realtime_passive.rs`, `realtime_ptt.rs`, `dictation.rs`) driven by a central non-blocking `router.rs`.
 - **Decoupled Actors & Lifecycle:** Extracted `services/audio/engine.rs`, `services/vad/actor.rs`, `services/llm/actor.rs`, and `services/tts/actor.rs` with dedicated warm-up/cool-down lifecycles.
-- **Frontend State Alignment:** Aligned all TypeScript stores, hooks, and UI components to canonical 7 states (`Idle`, `Listening`, `UserSpeaking`, `Thinking`, `AssistantSpeaking`, `Paused`, `Error`) with non-toggle discrete Tauri IPC commands.
+- **Frontend State Alignment:** Aligned all TypeScript stores, hooks, and UI components to canonical 7 states (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`) with non-toggle discrete Tauri IPC commands (`start_session`/`end_session`/`pause_session`/`ptt_*`).
 - **Code Quality Baseline:** Clean slate on testing; zero `#[allow(...)]` suppressions; zero dead `_` fields; 100% clean compilation on `cargo clippy --all-targets` (0 warnings) and `pnpm build`.
+- **Phase 10 Unit Test Suite:** 33 unit tests implemented across 8 core backend modules per `docs/plans/phase10/unit_test_spec.md`. 100% passing (`cargo test --lib`), microsecond execution (~0.02s), zero network/file I/O dependencies.
+
 
 

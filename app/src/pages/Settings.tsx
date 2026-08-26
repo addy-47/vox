@@ -143,7 +143,6 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
   const settings = useSettingsStore((s) => s.settings);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const commitChanges = useSettingsStore((s) => s.commitChanges);
-  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
 
   const hasChanges = useSettingsStore(useCallback((s: any) => Boolean(s.isDomainDirty(domain.id)), [domain.id]));
 
@@ -165,12 +164,6 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
     return false;
   }, [domain.id, settings, draftSettings]);
 
-  useEffect(() => {
-    if (!hasChanges) {
-      setShowRestartConfirm(false);
-    }
-  }, [hasChanges]);
-
   const isCloudLlmMissingKey =
     draftSettings?.llm?.active === "cloud" &&
     !draftSettings?.llm?.cloud?.api_key?.trim();
@@ -185,12 +178,7 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
 
   const handleSave = () => {
     if (isMissingCloudKey) return;
-    if (requiresRestart && !showRestartConfirm) {
-      setShowRestartConfirm(true);
-    } else {
-      commitChanges();
-      setShowRestartConfirm(false);
-    }
+    commitChanges();
   };
 
   const isAutoSavedHere = useSettingsStore((s) => s.autoSavedDomain === domain.id);

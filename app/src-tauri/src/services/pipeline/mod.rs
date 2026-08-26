@@ -68,3 +68,15 @@ pub fn transition(
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests that interaction owner maps strictly to the correct Tauri webview window label.
+    #[test]
+    fn test_target_window_routing() {
+        assert_eq!(target_window(InteractionOwner::Dictation), "tray");
+        assert_eq!(target_window(InteractionOwner::Assistant), "main");
+    }
+}
