@@ -1,6 +1,17 @@
+---
+title: "Vox Voice Pipeline Flow"
+audience: "Internal — backend & frontend contributors, system architects"
+last_updated: 2026-08-25
+owners: "backend-engineer role"
+related_docs:
+  - "docs/backend.md §3, §8 — Module layout & event contract"
+  - "docs/plans/phase10/pipeline_orchestration_spec.md — SSOT for routing & invariants"
+  - "docs/frontend.md §9 — Frontend event consumers"
+---
+
 # Vox — End-to-End Voice Pipeline Flow & Architecture
 
-> **Purpose:** Canonical reference and trace for all voice interaction flows in Vox, documenting every domain's lifecycle, state transitions, audio routing, data formats, and latency characteristics.
+> **Purpose:** Canonical reference and trace for all voice interaction flows in Vox, documenting every domain's lifecycle, state transitions, audio routing, data formats, and latency characteristics. Phase 10 domain-partitioned architecture — router + 5 handlers, not a God loop.
 
 ---
 
@@ -64,15 +75,17 @@ All surfaces (Main Window, Ambient Orb, Tray HUD, Status Capsules) and both Rust
 
 ### State Semantics
 
-| State | Canonical Role | `is_engaged` | VAD Audio Capture | Description |
-|---|---|:---:|:---:|---|
-| **`Idle`** | Cold / Standby | `false` | Dormant | Session is dormant; no conversational turns active. |
-| **`Ready`** | Warm / Standby | `true` | Active | Session is active, awaiting speech onset (Passive) or PTT hold. |
-| **`Listening`** | Active Ingestion | `true` | Streaming | User is actively speaking; mic audio is buffered. |
-| **`Thinking`** | Processing | `true` | Gated | Speech ended; STT / RAG context compaction / LLM reasoning active. |
-| **`Speaking`** | System Playback | `true` | Monitored | Assistant audio playback actively streaming through speakers. |
-| **`Paused`** | Explicit Hold | `true` / `false` | Discarded | User paused interaction; audio input discarded. |
-| **`Error`** | Failure State | Current | Discarded | Recoverable or unrecoverable error encountered. |
+| State | Canonical Role | `is_engaged` | VAD Audio Capture | Owner window | Description |
+|---|---|:---:|:---:|:---:|---|
+| **`Idle`** | Cold / Standby | `false` | Dormant (or background dictation) | `main`/`tray` | Session dormant; no conversational turns active. |
+| **`Ready`** | Warm / Standby | `true` | Active (Passive) or Standby (PTT) | `main` | Session engaged, engines warm, awaiting speech or PTT hold. |
+| **`Listening`** | Active Ingestion | `true` | Streaming | `main`/`tray` | User is actively speaking; mic audio is buffered. |
+| **`Thinking`** | Processing | `true` | Gated | `main` | Speech ended; STT / RAG context compaction / LLM reasoning active. |
+| **`Speaking`** | System Playback | `true` | Ducked (Speaker) / Active (Headset, PTT) | `main` | Assistant audio playback actively streaming through speakers. |
+| **`Paused`** | Explicit Hold | `true` | Discarded | `main` | User paused; audio muted. Only valid in Passive mode. |
+| **`Error`** | Failure State | current | Discarded | `main`/`tray` | Recoverable or unrecoverable error; surfaced via `pipeline_error`. |
+
+Ownership is binary: `InteractionOwner::Assistant (1)` vs `Dictation (0)` (`core/state.rs:10`). Transitions go through `services/pipeline/mod::transition` which sets `PipelineAtomics::current_state_atomic` and emits `state_changed` to `target_window(owner)` (`services/pipeline/mod.rs:46-70`).
 
 ---
 
@@ -198,18 +211,18 @@ Gemini Live and other conversational WebSocket providers can hallucinate or outp
 
 ## 8. Domain 5: Unified Dictation Pipeline (`services/pipeline/dictation.rs`)
 
-Designed for system-wide speech-to-text dictation across any application on the operating system.
+Designed for system-wide speech-to-text dictation across any application on the operating system. Passive and PTT dictation are unified in a single handler (`services/pipeline/dictation.rs`); `InteractionOwner::Dictation` routes events away from Assistant domains via `router::route_event` (`services/pipeline/router.rs:10-31`).
 
 ```
-[Global Hotkey Press (Alt+Space)] ──► State: Listening (Tray HUD Active)
+[Global Hotkey Press (Alt+Space)] ──► State: Listening (Tray HUD if output_mode=Tray)
       │
-[User Releases Hotkey] ──► State: Thinking ──► Whisper/Sherpa STT
+[User Releases Hotkey] ──► State: Thinking ──► Embedded STT (Nemotron/Qwen) → transliterate_if_hi
       │
-[Final Transcript] ──► OS Input Simulation (enigo paste/type) ──► State: Idle
+[Final Transcript] ──► output_router::route_transcript (Paste/Clipboard/Tray) ──► State: Idle
 ```
 
 ### 0ms LLM / TTS Fast Path:
-Dictation bypasses LLM prompting, context compilation, and TTS synthesis entirely. Final transcripts are sent directly to `services/dictation/output_router.rs` for immediate clipboard restoration and simulated keystrokes.
+Dictation bypasses LLM prompting, context compilation, and TTS synthesis entirely. Final transcripts are sent directly to `services/dictation/output_router.rs` for immediate clipboard restoration and simulated keystrokes. The owner is `InteractionOwner::Dictation`; Assistant has exclusive mic priority — hotkey presses while `owner==Assistant` are suppressed with a debug log (`docs/plans/phase10/pipeline_orchestration_spec.md §5.2`).
 
 ---
 
@@ -230,9 +243,16 @@ Thresholds are dynamically computed based on observed LLM Tokens Per Second (TPS
 
 ---
 
-## 10. Tauri IPC Command Matrix
+## 10. Central Router & Ownership Invariants
 
-All interaction is dispatched via discrete non-toggle commands in [`ipc/pipeline/assistant.rs`](file:///home/addy/projects/apps/vox/app/src-tauri/src/ipc/pipeline/assistant.rs):
+- **Router** (`services/pipeline/router.rs:34-56`): `spawn_router` spawns a `vox-router` OS thread with a blocking `mpsc::Receiver::recv()` loop; `route_event` snapshots `RoutingContext::from_app_state` once per `VoxEvent` and dispatches to the active domain. No `recv_timeout` polling.
+- **RoutingContext** (`services/pipeline/mod.rs:14-43`): `{ pipeline_mode, interaction_mode, owner }` derived from `settings.read()` + `owner.load()`. For dictation, `interaction_mode` is mapped from `dictation.interaction_mode` (`Passive`↔`Passive`, `Ptt`↔`PTT`).
+- **Canonical lock order**: `state.engine` before `state.realtime_engine` (AGENTS.md §5.2). No silent `let _ = tx.send(..)` — all channel sends log `warn!` on failure.
+- **Thin IPC adapters**: `ipc/pipeline/assistant.rs:8-136` and `ipc/pipeline/dictation.rs` are pure 1-line dispatchers that snapshot `RoutingContext` and delegate to the domain handler. Zero business logic in IPC files.
+
+## 11. Tauri IPC Command Matrix
+
+All interaction is dispatched via discrete non-toggle commands in [`ipc/pipeline/assistant.rs`](file:///home/addy/projects/apps/vox/app/src-tauri/src/ipc/pipeline/assistant.rs) and [`ipc/pipeline/dictation.rs`] — thin adapters over `services/pipeline/*`:
 
 | Command | Signature | Description |
 |---|---|---|
@@ -243,6 +263,12 @@ All interaction is dispatched via discrete non-toggle commands in [`ipc/pipeline
 | `ptt_start` | `() -> Result<(), String>` | Starts Push-To-Talk recording, transitions to `Listening`. |
 | `ptt_stop` | `() -> Result<(), String>` | Stops Push-To-Talk recording, evaluates speech, transitions to `Thinking`/`Ready`. |
 | `ptt_cancel` | `() -> Result<(), String>` | Cancels in-flight Push-To-Talk recording, resets to `Ready`. |
-| `launch_engine` | `() -> Result<(), String>` | Starts audio stream for Setup Wizard / diagnostics. |
-| `stop_engine` | `() -> Result<(), String>` | Stops hardware audio stream and unloads models. |
-| `check_engine_status` | `() -> EngineStatus` | Returns whether audio engine is currently running. |
+| `launch_engine` | `() -> Result<(), String>` | Starts audio stream for Setup Wizard / diagnostics (`services/audio/engine::start_audio_engine`). |
+| `stop_engine` | `() -> Result<(), String>` | Stops hardware audio stream and unloads all ONNX models + `trim_heap` (`services/audio/engine::stop_audio_engine`). |
+| `check_engine_status` | `() -> bool` | Returns whether audio engine is currently running (`state.engine.lock().await.is_some()`). |
+
+Frontend mapping lives in `services/pipelineService.ts:63-97` (`startSession`→`start_session`, `pttStart`→`ptt_start`, etc.) and `services/eventsService.ts:164-280` (`onStateChanged`, `onTranscriptPartial`, etc.). Frontend never branches on `pipeline_mode` for lifecycle — same verbs regardless; backend `RoutingContext` resolves the domain. Dictation recovery commands (`get_last_dictation_transcript`, `copy_last_dictation_transcript`, `get_dictation_settings`) live in `ipc/pipeline/dictation.rs`.
+
+---
+
+**Last Updated:** 2026-08-25

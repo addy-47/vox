@@ -97,3 +97,93 @@ impl VadEngine for EarshotVadEngine {
         is_active
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests that speech start is only confirmed after 15 consecutive active frames.
+    #[test]
+    fn test_earshot_vad_speech_start_debouncing() {
+        let mut engine = EarshotVadEngine::new(-1.0).unwrap();
+        let frame = [0.0f32; 256];
+
+        for _ in 0..14 {
+            let active = engine.predict(&frame);
+            assert!(active);
+            assert!(!engine.is_speech);
+        }
+        assert_eq!(engine.active_frames, 14);
+
+        let active_15 = engine.predict(&frame);
+        assert!(active_15);
+        assert!(engine.is_speech);
+        assert_eq!(engine.active_frames, 15);
+    }
+
+    /// Tests that silence hangover preserves speech state until 40 consecutive inactive frames pass.
+    #[test]
+    fn test_earshot_vad_silence_hangover_debouncing() {
+        let mut engine = EarshotVadEngine::new(-1.0).unwrap();
+        let frame = [0.0f32; 256];
+
+        for _ in 0..15 {
+            engine.predict(&frame);
+        }
+        assert!(engine.is_speech);
+
+        engine.update_threshold(1.0);
+
+        for _ in 0..39 {
+            let active = engine.predict(&frame);
+            assert!(!active);
+            assert!(engine.is_speech);
+        }
+        assert_eq!(engine.inactive_frames, 39);
+
+        let active_40 = engine.predict(&frame);
+        assert!(!active_40);
+        assert!(!engine.is_speech);
+        assert_eq!(engine.inactive_frames, 40);
+    }
+
+    /// Tests that short transient noise bursts (<15 frames) are discarded without triggering speech state.
+    #[test]
+    fn test_earshot_vad_noise_burst_rejection() {
+        let mut engine = EarshotVadEngine::new(-1.0).unwrap();
+        let frame = [0.0f32; 256];
+
+        for _ in 0..3 {
+            engine.predict(&frame);
+            assert!(!engine.is_speech);
+        }
+        assert_eq!(engine.active_frames, 3);
+
+        engine.update_threshold(1.0);
+        let active = engine.predict(&frame);
+        assert!(!active);
+        assert_eq!(engine.active_frames, 0);
+        assert_eq!(engine.inactive_frames, 1);
+        assert!(!engine.is_speech);
+    }
+
+    /// Tests that flushing the engine resets all debouncer state and frame counters.
+    #[test]
+    fn test_earshot_vad_flush_and_threshold_update() {
+        let mut engine = EarshotVadEngine::new(-1.0).unwrap();
+        let frame = [0.0f32; 256];
+
+        for _ in 0..15 {
+            engine.predict(&frame);
+        }
+        assert!(engine.is_speech);
+
+        engine.flush();
+        assert!(!engine.is_speech);
+        assert_eq!(engine.active_frames, 0);
+        assert_eq!(engine.inactive_frames, 0);
+
+        engine.update_threshold(0.7);
+        assert!((engine.threshold - 0.7).abs() < 1e-5);
+    }
+}

@@ -89,3 +89,96 @@ pub fn format_user_profile_context(sections: &UserProfileSections<'_>) -> String
     out.push_str("</user_profile>");
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests relative timestamp humanization across minute, hour, day, and week intervals with clock-skew protection.
+    #[test]
+    fn test_format_relative_timestamp_buckets() {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+
+        assert_eq!(format_relative_timestamp(now_ms), "Just now");
+        assert_eq!(format_relative_timestamp(now_ms + 50_000), "Just now");
+        assert_eq!(
+            format_relative_timestamp(now_ms - 60_000),
+            "1 minute ago"
+        );
+        assert_eq!(
+            format_relative_timestamp(now_ms - 5 * 60_000),
+            "5 minutes ago"
+        );
+        assert_eq!(
+            format_relative_timestamp(now_ms - 3_600_000),
+            "1 hour ago"
+        );
+        assert_eq!(
+            format_relative_timestamp(now_ms - 4 * 3_600_000),
+            "4 hours ago"
+        );
+        assert_eq!(format_relative_timestamp(now_ms - 86_400_000), "Yesterday");
+        assert_eq!(
+            format_relative_timestamp(now_ms - 3 * 86_400_000),
+            "3 days ago"
+        );
+        assert_eq!(
+            format_relative_timestamp(now_ms - 7 * 86_400_000),
+            "1 week ago"
+        );
+        assert_eq!(
+            format_relative_timestamp(now_ms - 21 * 86_400_000),
+            "3 weeks ago"
+        );
+    }
+
+    /// Tests XML user profile assembly with all populated sections.
+    #[test]
+    fn test_format_user_profile_context_full() {
+        let sections = UserProfileSections {
+            manifest_header: "Header Info\n",
+            conflict_block: "Conflict detail\n",
+            identity_block: "User is a developer\n",
+            constraints_block: "Never output markdown tables\n",
+            tasks_block: "Refactor voice flow\n",
+            goals_block: "Ship sub-200ms latency\n",
+            context_block: "Working on Linux\n",
+            semantic_block: "Notes on Rust audio\n",
+        };
+
+        let formatted = format_user_profile_context(&sections);
+        assert!(formatted.starts_with("<user_profile>\n"));
+        assert!(formatted.contains("[Unresolved Contradictions]\nConflict detail\n"));
+        assert!(formatted.contains("[Identity]\nUser is a developer\n"));
+        assert!(formatted.contains("[Constraints]\nNever output markdown tables\n"));
+        assert!(formatted.contains("[Active Tasks]\nRefactor voice flow\n"));
+        assert!(formatted.contains("[Active Goals]\nShip sub-200ms latency\n"));
+        assert!(formatted.contains("[User Context]\nWorking on Linux\n"));
+        assert!(formatted.contains("[Knowledge & Notes]\nNotes on Rust audio\n"));
+        assert!(formatted.ends_with("</user_profile>"));
+    }
+
+    /// Tests XML user profile assembly omitting empty section blocks cleanly.
+    #[test]
+    fn test_format_user_profile_context_sparse() {
+        let sections = UserProfileSections {
+            manifest_header: "Header Info\n",
+            identity_block: "User is a developer\n",
+            ..Default::default()
+        };
+
+        let formatted = format_user_profile_context(&sections);
+        assert!(formatted.contains("<user_profile>\nHeader Info\n"));
+        assert!(formatted.contains("[Identity]\nUser is a developer\n"));
+        assert!(!formatted.contains("[Unresolved Contradictions]"));
+        assert!(!formatted.contains("[Constraints]"));
+        assert!(!formatted.contains("[Active Tasks]"));
+        assert!(!formatted.contains("[Active Goals]"));
+        assert!(!formatted.contains("[User Context]"));
+        assert!(!formatted.contains("[Knowledge & Notes]"));
+        assert!(formatted.ends_with("</user_profile>"));
+    }
+}

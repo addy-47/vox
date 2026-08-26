@@ -95,3 +95,71 @@ impl FilterBank {
         self.lp_high.reset();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests LowPass filter DC steady-state unity gain and high-frequency attenuation.
+    #[test]
+    fn test_low_pass_dc_and_attenuation() {
+        let mut lp = LowPass::new(250.0, 16000.0);
+
+        let mut y = 0.0;
+        for _ in 0..1000 {
+            y = lp.tick(1.0);
+        }
+        assert!((y - 1.0).abs() < 1e-3);
+
+        lp.reset();
+        let mut nyquist_y = 0.0;
+        for i in 0..200 {
+            let x = if i % 2 == 0 { 1.0 } else { -1.0 };
+            nyquist_y = lp.tick(x);
+        }
+        assert!(nyquist_y.abs() < 0.1);
+    }
+
+    /// Tests subtractive filter bank mathematical identity: low + mid + high == input.
+    #[test]
+    fn test_filter_bank_subtractive_identity() {
+        let mut fb = FilterBank::new(16000.0);
+
+        for i in 0..500 {
+            let t = i as f32 / 16000.0;
+            let x = (2.0 * std::f32::consts::PI * 440.0 * t).sin()
+                + 0.5 * (2.0 * std::f32::consts::PI * 3000.0 * t).sin();
+            let (low, mid, high) = fb.tick(x);
+            let sum = low + mid + high;
+            assert!(
+                (sum - x).abs() < 1e-5,
+                "Subtractive filter bank identity failed: sum={}, x={}",
+                sum,
+                x
+            );
+        }
+    }
+
+    /// Tests chunk RMS calculations, empty slice safety, and silence handling.
+    #[test]
+    fn test_filter_bank_process_chunk_and_boundaries() {
+        let mut fb = FilterBank::new(16000.0);
+
+        assert_eq!(fb.process_chunk(&[]), (0.0, 0.0, 0.0));
+
+        let silence = [0.0f32; 256];
+        let (rms_l, rms_m, rms_h) = fb.process_chunk(&silence);
+        assert!(rms_l.abs() < 1e-5);
+        assert!(rms_m.abs() < 1e-5);
+        assert!(rms_h.abs() < 1e-5);
+
+        let mut signal = [0.0f32; 256];
+        for (i, sample) in signal.iter_mut().enumerate() {
+            let t = i as f32 / 16000.0;
+            *sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin();
+        }
+        let (r_l, r_m, r_h) = fb.process_chunk(&signal);
+        assert!(r_l >= 0.0 && r_m >= 0.0 && r_h >= 0.0);
+        assert!(r_m > 0.05);
+    }
+}
