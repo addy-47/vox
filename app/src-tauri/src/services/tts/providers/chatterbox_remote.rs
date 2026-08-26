@@ -6,12 +6,9 @@ use std::sync::Arc;
 
 use super::{TtsProvider, TtsProviderKind};
 use crate::core::events::VoxEvent;
-
-const MIN_QUALITY_STEPS: u32 = 2;
-const MAX_QUALITY_STEPS: u32 = 10;
-const MIN_SPEED: f32 = 0.7;
-const MAX_SPEED: f32 = 2.0;
-const CHUNK_SIZE: usize = 2048;
+use crate::services::tts::{
+    MAX_QUALITY_STEPS_CHATTERBOX, MIN_QUALITY_STEPS, MIN_SPEED, TTS_CHUNK_SIZE, TTS_SAMPLE_RATE,
+};
 
 /// Remote speech synthesis provider offloading Chatterbox inference to a GPU server via HTTP streaming.
 pub struct ChatterboxRemoteProvider {
@@ -42,9 +39,13 @@ impl ChatterboxRemoteProvider {
             endpoint: endpoint.to_string(),
             language: language.to_string(),
             quality_steps: AtomicU32::new(
-                quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS),
+                quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_CHATTERBOX),
             ),
-            speed: AtomicU32::new(speed.clamp(MIN_SPEED, MAX_SPEED).to_bits()),
+            speed: AtomicU32::new(
+                speed
+                    .clamp(MIN_SPEED, crate::services::tts::MAX_SPEED)
+                    .to_bits(),
+            ),
         };
 
         if !prov.health_check() {
@@ -166,12 +167,13 @@ fn stream_pcm_response(
                     byte_buf.drain(..consumed_bytes);
                 }
 
-                while raw_pcm_samples.len() >= CHUNK_SIZE {
+                while raw_pcm_samples.len() >= TTS_CHUNK_SIZE {
                     if cancel.load(Ordering::Relaxed) {
                         return Ok(total_samples_received);
                     }
 
-                    let chunk_samples = raw_pcm_samples.drain(..CHUNK_SIZE).collect::<Vec<f32>>();
+                    let chunk_samples =
+                        raw_pcm_samples.drain(..TTS_CHUNK_SIZE).collect::<Vec<f32>>();
                     total_samples_received += chunk_samples.len();
 
                     let stretched_chunk = if (speed - 1.0).abs() >= 0.01 {
@@ -219,14 +221,14 @@ fn stream_pcm_response(
 impl TtsProvider for ChatterboxRemoteProvider {
     /// Hot-updates the number of remote diffusion quality steps.
     fn set_quality_steps(&self, steps: u32) {
-        let clamped = steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS);
+        let clamped = steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_CHATTERBOX);
         self.quality_steps.store(clamped, Ordering::Relaxed);
         log::info!("[ChatterboxRemote] Quality steps set to {}", clamped);
     }
 
     /// Hot-updates the remote speech playback speed factor.
     fn set_speed(&self, speed: f32) {
-        let clamped = speed.clamp(MIN_SPEED, MAX_SPEED);
+        let clamped = speed.clamp(MIN_SPEED, crate::services::tts::MAX_SPEED);
         self.speed.store(clamped.to_bits(), Ordering::Relaxed);
         log::info!("[ChatterboxRemote] Speed set to {:.2}", clamped);
     }
@@ -307,7 +309,7 @@ impl TtsProvider for ChatterboxRemoteProvider {
         let total_samples = stream_pcm_response(response, speed, turn_id, &cancel, &event_tx)?;
 
         let elapsed = start.elapsed().as_secs_f32();
-        let audio_duration = total_samples as f32 / 24000.0;
+        let audio_duration = total_samples as f32 / TTS_SAMPLE_RATE as f32;
         let rtf = if audio_duration > 0.0 {
             elapsed / audio_duration
         } else {

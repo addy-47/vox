@@ -134,7 +134,9 @@ impl ModelManager {
                     entry.size_bytes,
                     Some(e.to_string()),
                 );
-                let _ = std::fs::remove_file(&temp_path);
+                if let Err(err) = std::fs::remove_file(&temp_path) {
+                    log::debug!("[ModelManager] Temp file cleanup notice: {}", err);
+                }
                 return Err(e);
             }
         };
@@ -168,7 +170,9 @@ impl ModelManager {
                 entry.size_bytes,
                 Some(err.clone()),
             );
-            let _ = std::fs::remove_file(&temp_path);
+            if let Err(cleanup_err) = std::fs::remove_file(&temp_path) {
+                log::debug!("[ModelManager] Temp file cleanup notice: {}", cleanup_err);
+            }
             return Err(anyhow::anyhow!(err));
         }
 
@@ -211,7 +215,9 @@ impl ModelManager {
                         entry.size_bytes,
                         Some(e.to_string()),
                     );
-                    let _ = std::fs::remove_file(&temp_path);
+                    if let Err(cleanup_err) = std::fs::remove_file(&temp_path) {
+                        log::debug!("[ModelManager] Temp file cleanup notice: {}", cleanup_err);
+                    }
                     return Err(e);
                 }
                 Err(e) => {
@@ -224,11 +230,15 @@ impl ModelManager {
                         entry.size_bytes,
                         Some(err.clone()),
                     );
-                    let _ = std::fs::remove_file(&temp_path);
+                    if let Err(cleanup_err) = std::fs::remove_file(&temp_path) {
+                        log::debug!("[ModelManager] Temp file cleanup notice: {}", cleanup_err);
+                    }
                     return Err(anyhow::anyhow!(err));
                 }
             }
-            let _ = std::fs::remove_file(&temp_path);
+            if let Err(cleanup_err) = std::fs::remove_file(&temp_path) {
+                log::debug!("[ModelManager] Temp file cleanup notice: {}", cleanup_err);
+            }
         } else {
             // Direct model file
             std::fs::rename(&temp_path, &dest_path)?;
@@ -341,7 +351,7 @@ impl ModelManager {
         error: Option<String>,
     ) {
         if let Some(app) = &self.app {
-            let _ = app.emit(
+            if let Err(e) = app.emit(
                 "model_setup_status",
                 ModelSetupStatus {
                     model_id: model_id.to_string(),
@@ -351,7 +361,9 @@ impl ModelManager {
                     total_bytes: total,
                     error,
                 },
-            );
+            ) {
+                log::warn!("[ModelManager] Failed to emit model_setup_status: {}", e);
+            }
         }
     }
 
@@ -396,12 +408,16 @@ impl ModelManager {
                     let model_file_path = verified_path.with_extension("");
                     if model_file_path.exists() {
                         if model_file_path.is_dir() {
-                            let _ = std::fs::remove_dir_all(&model_file_path);
-                        } else {
-                            let _ = std::fs::remove_file(&model_file_path);
+                            if let Err(e) = std::fs::remove_dir_all(&model_file_path) {
+                                log::warn!("[ModelManager] Failed to remove outdated dir {:?}: {}", model_file_path, e);
+                            }
+                        } else if let Err(e) = std::fs::remove_file(&model_file_path) {
+                            log::warn!("[ModelManager] Failed to remove outdated file {:?}: {}", model_file_path, e);
                         }
                     }
-                    let _ = std::fs::remove_file(&verified_path);
+                    if let Err(e) = std::fs::remove_file(&verified_path) {
+                        log::warn!("[ModelManager] Failed to remove outdated marker {:?}: {}", verified_path, e);
+                    }
                 }
             }
         }

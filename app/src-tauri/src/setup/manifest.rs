@@ -4,12 +4,12 @@ use std::path::Path;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelEntry {
     pub id: String,
-    pub path: String, // Relative path in repo
+    pub path: String, 
     #[serde(rename = "size")]
     pub size_bytes: u64,
     pub sha256: String,
     #[serde(rename = "archive")]
-    pub archive_type: Option<String>, // "zip", "tar.gz", or None
+    pub archive_type: Option<String>,
     #[serde(default)]
     pub required: bool,
 }
@@ -57,14 +57,12 @@ impl VoxManifest {
         for group in &self.model_groups {
             for model in &group.files {
                 required += model.size_bytes;
-                // If it's an archive, assume it needs another ~50% space for extraction
                 if model.archive_type.is_some() {
                     required += model.size_bytes / 2;
                 }
             }
         }
 
-        // Add 1GB safety buffer
         required + (1024 * 1024 * 1024)
     }
 
@@ -111,7 +109,7 @@ impl VoxManifest {
 pub struct VerifiedMarker {
     pub model_id: Option<String>,
     pub sha256: String,
-    pub verified_at: u64, // epoch ms
+    pub verified_at: u64,
     pub expected_size: u64,
 }
 

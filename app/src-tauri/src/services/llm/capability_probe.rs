@@ -69,7 +69,9 @@ impl CapabilityProbeEngine {
         target_model_id: Option<&str>,
     ) -> Result<ModelCapabilities, Box<dyn std::error::Error + Send + Sync>> {
         let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(12))
+            .timeout(std::time::Duration::from_secs(
+                super::DEFAULT_PROBE_TIMEOUT_SECS,
+            ))
             .build()?;
 
         let now = std::time::SystemTime::now()
@@ -366,7 +368,9 @@ impl CapabilityProbeEngine {
 
         let model_id = target_model_id.unwrap_or(model);
         let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(6))
+            .timeout(std::time::Duration::from_secs(
+                super::DEFAULT_VALIDATION_TIMEOUT_SECS,
+            ))
             .build()
             .map_err(|e| e.to_string())?;
 
@@ -510,8 +514,8 @@ impl CapabilityProbeEngine {
             "messages": [
                 { "role": "user", "content": "Write 'नमस्ते' in Devanagari script and 'Hello' in English." }
             ],
-            "max_tokens": 40,
-            "temperature": 0.1,
+            "max_tokens": super::DEFAULT_PROBE_MAX_TOKENS,
+            "temperature": super::DEFAULT_PROBE_TEMPERATURE,
             "stream": true
         });
 
@@ -524,7 +528,6 @@ impl CapabilityProbeEngine {
 
         let start = Instant::now();
         if let Ok(resp) = req.send().await {
-            // Inspect HTTP Headers
             let headers = resp.headers();
             if let Some(server_hdr) = headers.get("server").and_then(|v| v.to_str().ok()) {
                 let s = server_hdr.to_lowercase();
@@ -583,7 +586,6 @@ impl CapabilityProbeEngine {
                     }
                 }
 
-                // Check generated text
                 if full_text
                     .chars()
                     .any(|c| ('\u{0900}'..='\u{097F}').contains(&c))
@@ -592,7 +594,6 @@ impl CapabilityProbeEngine {
                 }
                 supports_latin = true;
 
-                // Calculate streaming TPS
                 if let Some(first_time) = first_chunk_time {
                     let gen_duration = first_time.elapsed().as_secs_f32();
                     if gen_duration > 0.05 && token_chunks > 1 {
@@ -602,15 +603,14 @@ impl CapabilityProbeEngine {
             }
         }
 
-        // Fallback for non-streaming server responses
         if ttft_ms.is_none() {
             let non_stream_payload = json!({
                 "model": model_id,
                 "messages": [
                     { "role": "user", "content": "Write 'नमस्ते' in Devanagari script and 'Hello' in English." }
                 ],
-                "max_tokens": 40,
-                "temperature": 0.1
+                "max_tokens": super::DEFAULT_PROBE_MAX_TOKENS,
+                "temperature": super::DEFAULT_PROBE_TEMPERATURE
             });
 
             let mut req2 = client.post(&chat_url).json(&non_stream_payload);
@@ -685,7 +685,7 @@ impl CapabilityProbeEngine {
                 }
             ],
             "tool_choice": "auto",
-            "max_tokens": 80
+            "max_tokens": super::DEFAULT_TOOL_PROBE_MAX_TOKENS
         });
 
         let mut req = client.post(&chat_url).json(&tool_payload);

@@ -4,8 +4,16 @@ pub mod ten_onnx;
 
 pub use actor::spawn_vad_actor;
 
+// ─── VAD Subsystem Constants ─────────────────────────────────────────────────
 pub const MODEL_DIR_VAD: &str = "vad";
 pub const MODEL_FILE_VAD: &str = "ten_vad.onnx";
+pub const VAD_CHUNK_SIZE: usize = 256;
+pub const VAD_PRE_ROLL_CAPACITY: usize = 8000;
+pub const VAD_SPEECH_START_FRAMES: usize = 2;
+pub const VAD_SPEECH_END_FRAMES: usize = 50;
+pub const VAD_MIN_UTTERANCE_SAMPLES: usize = 4800;
+pub const VAD_PARTIAL_INTERVAL_SAMPLES: usize = 12800;
+pub const VAD_MAX_PARTIAL_WINDOW_SAMPLES: usize = 240000;
 
 /// Voice Activity Detection engine contract.
 pub trait VadEngine {

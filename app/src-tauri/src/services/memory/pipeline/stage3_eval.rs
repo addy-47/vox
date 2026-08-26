@@ -7,19 +7,15 @@ use crate::core::constants::{
 use crate::persistence::{decode_f32_blob, queries};
 use crate::services::memory::classifiers::inter_edge_classifier;
 use crate::services::memory::classifiers::intra_edge_classifier::{
-    classify_batch, ensure_nli_loaded, relation_from_result, NliRelation, NLI_MODEL_DIR,
+    classify_batch, ensure_nli_loaded, relation_from_result, NliRelation,
+};
+use crate::services::memory::{
+    INTER_COLLECTION_CANDIDATE_SEARCH, NLI_CONTRADICTION_CONFIDENCE_THRESHOLD,
+    NLI_CONTRADICTION_MARGIN_THRESHOLD, NLI_ENTAILMENT_CONFIDENCE_THRESHOLD, NLI_MODEL_DIR,
+    SAME_COLLECTION_CANDIDATE_SEARCH, STAGE3_BATCH_SIZE,
 };
 use anyhow::Result;
 use turso::Connection;
-
-pub const STAGE3_BATCH_SIZE: usize = 16;
-pub const SAME_COLLECTION_CANDIDATE_SEARCH: f32 = 0.60;
-pub const INTER_COLLECTION_CANDIDATE_SEARCH: f32 = 0.40;
-pub const SUBFLOOR_CANDIDATE_FLOOR: f32 = 0.25;
-
-pub const NLI_CONTRADICTION_CONFIDENCE_THRESHOLD: f32 = 0.85;
-pub const NLI_CONTRADICTION_MARGIN_THRESHOLD: f32 = 0.20;
-pub const NLI_ENTAILMENT_CONFIDENCE_THRESHOLD: f32 = 0.85;
 
 /// Claimed item pending stage 3 NLI and edge classification.
 #[derive(Debug, Clone)]
@@ -386,12 +382,15 @@ async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()
     .await?;
 
     if !eval_result.candidate_logs.is_empty() {
-        let _ = crate::persistence::mutations::write_candidate_audit(
+        if let Err(e) = crate::persistence::mutations::write_candidate_audit(
             conn,
             item.id,
             &eval_result.candidate_logs,
         )
-        .await;
+        .await
+        {
+            log::warn!("[MemoryPipeline::Stage3] Failed to write candidate audit: {}", e);
+        }
     }
 
     Ok(())
@@ -425,8 +424,8 @@ pub async fn run_stage3_eval_with_metrics_seq(
     }
 
     let items_claimed = items.len();
-    tracing::info!(
-        "[MemoryPipeline] [Stage 3 NLI/Edge Eval] Claimed {} embedded items for DeBERTa/ModernBERT evaluation",
+    log::info!(
+        "[MemoryPipeline::Stage3] Claimed {} embedded items for DeBERTa/ModernBERT evaluation",
         items_claimed
     );
     let session_id = items
@@ -452,7 +451,9 @@ pub async fn run_stage3_eval_with_metrics_seq(
             error_count: 0,
             duration_ms,
         };
-        let _ = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await;
+        if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {
+            log::warn!("[MemoryPipeline::Stage3] Failed to record stage metrics: {}", e);
+        }
     }
 
     Ok(processed_count)

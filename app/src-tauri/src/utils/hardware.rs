@@ -53,15 +53,12 @@ pub fn detect_local_gpu() -> LocalHardwareGpuInfo {
 
     #[cfg(target_os = "windows")]
     {
-        // Probe GPU via `wmic` — zero new dependencies, stdlib subprocess only.
-        // wmic path Win32_VideoController get Name /value returns lines like: Name=NVIDIA GeForce RTX 3060
         let probe = std::process::Command::new("wmic")
             .args(["path", "Win32_VideoController", "get", "Name", "/value"])
             .output();
 
         if let Ok(out) = probe {
             let text = String::from_utf8_lossy(&out.stdout);
-            // Find the first non-empty Name= line
             for line in text.lines() {
                 let line = line.trim();
                 if let Some(name_raw) = line.strip_prefix("Name=") {
@@ -69,7 +66,6 @@ pub fn detect_local_gpu() -> LocalHardwareGpuInfo {
                     if name.is_empty() {
                         continue;
                     }
-                    // Classify vendor by keyword matching
                     let name_lower = name.to_lowercase();
                     let (has_gpu, vendor, tier) = if name_lower.contains("nvidia") {
                         (true, "NVIDIA", "Tier 1B (Local GPU Available)")
@@ -83,10 +79,8 @@ pub fn detect_local_gpu() -> LocalHardwareGpuInfo {
                         || name_lower.contains("virtual")
                         || name_lower.contains("llvm")
                     {
-                        // Virtual/software renderer — treat as CPU-only
                         (false, "Software", "Tier 1A (CPU Only)")
                     } else {
-                        // Unknown adapter present — conservatively flag as available
                         (true, "Unknown", "Tier 1B (Local GPU Available)")
                     };
 
@@ -100,7 +94,6 @@ pub fn detect_local_gpu() -> LocalHardwareGpuInfo {
             }
         }
 
-        // wmic failed or returned no adapter — fall back to CPU-only
         LocalHardwareGpuInfo {
             has_gpu: false,
             vendor: "None".to_string(),

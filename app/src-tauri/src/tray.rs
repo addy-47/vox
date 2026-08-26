@@ -39,7 +39,9 @@ pub fn ensure_tray_window(app: &AppHandle) -> Result<WebviewWindow, String> {
 pub fn destroy_tray_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("tray") {
         log::info!("[Tray] Destroying 'tray' HUD webview window to save RAM.");
-        let _ = window.close();
+        if let Err(e) = window.close() {
+            log::warn!("[Tray] Failed to close tray window: {}", e);
+        }
     }
 }
 
@@ -96,8 +98,12 @@ pub fn sync_live_menu_item(app: &AppHandle<tauri::Wry>, live_i: &CheckMenuItem<t
         )
     };
     let is_clickable = dictation_enabled && is_tray_mode;
-    let _ = live_i.set_enabled(is_clickable);
-    let _ = live_i.set_checked(hud_visible && is_clickable);
+    if let Err(e) = live_i.set_enabled(is_clickable) {
+        log::debug!("[Tray] Failed to set menu item enabled: {}", e);
+    }
+    if let Err(e) = live_i.set_checked(hud_visible && is_clickable) {
+        log::debug!("[Tray] Failed to set menu item checked: {}", e);
+    }
 }
 
 /// Rebuilds the main tray menu (honoring the crash flag) and re-applies it to the
@@ -112,17 +118,29 @@ pub fn refresh_tray_menu(app: &AppHandle<tauri::Wry>) {
     };
     sync_live_menu_item(app, &live_i);
     if let Some(tray) = app.tray_by_id("vox-tray") {
-        let _ = tray.set_menu(Some(tray_menu));
+        if let Err(e) = tray.set_menu(Some(tray_menu)) {
+            log::warn!("[Tray] Failed to update tray menu: {}", e);
+        }
     }
 }
 
 /// Configures the tray window with standard HUD settings: frameless, always-on-top, etc.
 pub fn setup_tray_window(window: &WebviewWindow) {
-    let _ = window.set_decorations(false);
-    let _ = window.set_always_on_top(true);
-    let _ = window.set_shadow(false);
-    let _ = window.set_skip_taskbar(true);
-    let _ = window.set_resizable(false);
+    if let Err(e) = window.set_decorations(false) {
+        log::debug!("[Tray] Failed to set window decorations: {}", e);
+    }
+    if let Err(e) = window.set_always_on_top(true) {
+        log::debug!("[Tray] Failed to set window always on top: {}", e);
+    }
+    if let Err(e) = window.set_shadow(false) {
+        log::debug!("[Tray] Failed to set window shadow: {}", e);
+    }
+    if let Err(e) = window.set_skip_taskbar(true) {
+        log::debug!("[Tray] Failed to set window skip taskbar: {}", e);
+    }
+    if let Err(e) = window.set_resizable(false) {
+        log::debug!("[Tray] Failed to set window resizable: {}", e);
+    }
 }
 
 // ─── Positioning Logic ───────────────────────────────────────────────────────
@@ -133,7 +151,9 @@ pub fn setup_tray_window(window: &WebviewWindow) {
 pub async fn position_tray_window(window: &WebviewWindow) {
     #[cfg(target_os = "linux")]
     {
-        let _ = window.show();
+        if let Err(e) = window.show() {
+            log::debug!("[Tray] Failed to show tray window during positioning: {}", e);
+        }
         let win_clone = window.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(Duration::from_millis(200)).await;
@@ -144,8 +164,12 @@ pub async fn position_tray_window(window: &WebviewWindow) {
     #[cfg(not(target_os = "linux"))]
     {
         use tauri_plugin_positioner::{Position, WindowExt};
-        let _ = window.move_window(Position::TopRight);
-        let _ = window.show();
+        if let Err(e) = window.move_window(Position::TopRight) {
+            log::debug!("[Tray] Failed to position window: {}", e);
+        }
+        if let Err(e) = window.show() {
+            log::debug!("[Tray] Failed to show window: {}", e);
+        }
     }
 }
 
@@ -173,9 +197,15 @@ pub fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &
 
         // RCA: Making the window fullscreen is what prevents dragging on Linux/Wayland.
         if cur_size.width != size.width || cur_size.height != size.height {
-            let _ = window.set_size(tauri::Size::Physical(*size));
-            let _ = window.set_position(tauri::Position::Physical(*mon.position()));
-            let _ = window.set_always_on_top(true);
+            if let Err(e) = window.set_size(tauri::Size::Physical(*size)) {
+                log::debug!("[Tray] Failed to set window size: {}", e);
+            }
+            if let Err(e) = window.set_position(tauri::Position::Physical(*mon.position())) {
+                log::debug!("[Tray] Failed to set window position: {}", e);
+            }
+            if let Err(e) = window.set_always_on_top(true) {
+                log::debug!("[Tray] Failed to set window always on top: {}", e);
+            }
         }
 
         if let Ok(gtk_window) = window.gtk_window() {

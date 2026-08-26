@@ -1,5 +1,9 @@
 use super::{TtsProvider, TtsProviderKind};
 use crate::core::events::VoxEvent;
+use crate::services::tts::{
+    MAX_QUALITY_STEPS_SUPERTONIC, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED, SUPER_SAMPLE_RATE,
+    TTS_SAMPLE_RATE,
+};
 use anyhow::{anyhow, Result};
 use parking_lot::Mutex;
 use sherpa_onnx::{
@@ -11,12 +15,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
-
-const MIN_QUALITY_STEPS: u32 = 2;
-const MAX_QUALITY_STEPS: u32 = 12;
-const MIN_SPEED: f32 = 0.7;
-const MAX_SPEED: f32 = 2.0;
-const SUPER_SAMPLE_RATE: u32 = 44100;
 
 struct BiquadFilter {
     b0: f32,
@@ -62,7 +60,7 @@ impl BiquadFilter {
 
 /// Applies 11kHz anti-aliasing filter and resamples 44.1kHz audio down to standard 24kHz.
 fn resample_44100_to_24000(input: &[f32], lpf: &mut BiquadFilter) -> Vec<f32> {
-    let ratio = SUPER_SAMPLE_RATE as f32 / 24000.0;
+    let ratio = SUPER_SAMPLE_RATE as f32 / TTS_SAMPLE_RATE as f32;
     let out_len = (input.len() as f32 / ratio) as usize;
     let mut output = Vec::with_capacity(out_len);
 
@@ -149,7 +147,7 @@ impl TtsEngine {
         Ok(Self {
             tts: Mutex::new(tts),
             quality_steps: AtomicU32::new(
-                quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS),
+                quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_SUPERTONIC),
             ),
             speed: AtomicF32::new(speed.clamp(MIN_SPEED, MAX_SPEED)),
             voice: voice.clamp(0, 9),
@@ -161,15 +159,17 @@ impl TtsProvider for TtsEngine {
     /// Hot-updates the number of Supertonic diffusion quality steps.
     fn set_quality_steps(&self, steps: u32) {
         self.quality_steps.store(
-            steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS),
+            steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_SUPERTONIC),
             Ordering::Relaxed,
         );
     }
 
     /// Hot-updates the playback speed factor.
     fn set_speed(&self, speed: f32) {
-        self.speed
-            .store(speed.clamp(MIN_SPEED, MAX_SPEED), Ordering::Relaxed);
+        self.speed.store(
+            speed.clamp(MIN_SPEED, MAX_SPEED),
+            Ordering::Relaxed,
+        );
     }
 
     /// Returns the TtsProviderKind::Supertonic variant identifier.
@@ -235,7 +235,7 @@ impl TtsProvider for TtsEngine {
         let audio = tts_guard.generate_with_config(
             text,
             &gen_config,
-            Some(move |raw_samples: &[f32], _progress: f32| -> bool {
+            Some(move |raw_samples: &[f32], _progress| -> bool {
                 if cancel_cb.load(Ordering::Relaxed) {
                     return false;
                 }

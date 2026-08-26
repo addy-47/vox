@@ -1,4 +1,9 @@
-use super::{transition, RoutingContext};
+use super::{
+    transition, RoutingContext, END_REASON_USER, EVENT_LLM_FINISHED, EVENT_LLM_TOKEN,
+    EVENT_PIPELINE_ERROR, EVENT_PIPELINE_PAUSED, EVENT_PIPELINE_RESUMED, EVENT_PLAYBACK_FINISHED,
+    EVENT_PLAYBACK_STARTED, EVENT_SESSION_ENDED, EVENT_SESSION_STARTED, EVENT_SPEECH_END,
+    EVENT_SPEECH_START, EVENT_TRANSCRIPT_FINAL, EVENT_TRANSCRIPT_PARTIAL, WINDOW_MAIN,
+};
 use crate::core::events::VoxEvent;
 use crate::core::state::{AppState, InteractionOwner, InteractionState};
 use crate::services::audio::PlaybackEngine;
@@ -22,9 +27,9 @@ async fn ensure_modular_workers(app: &AppHandle, state: &AppState) -> Result<(),
         let s = state.settings.read().unwrap().clone();
         let models_dir = crate::utils::paths::get().models.clone();
         let llm = models_dir
-            .join(crate::services::llm::MODEL_DIR_LLM)
-            .join(crate::services::llm::MODEL_FILE_LLM_GGUF);
-        let tts = models_dir.join(crate::services::tts::MODEL_DIR_TTS_SUPER);
+            .join(crate::services::llm::QWEN_MODEL_DIR)
+            .join(crate::services::llm::QWEN_MODEL_FILE);
+        let tts = models_dir.join(crate::services::tts::SUPERTONIC_MODEL_DIR);
         (llm, tts, s)
     };
 
@@ -83,19 +88,21 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     {
         let persist_lock = state.persist_tx.lock();
         if let Some(ref tx) = *persist_lock {
-            let _ = tx.send(
+            if let Err(e) = tx.send(
                 crate::persistence::events::PersistenceEvent::SessionStarted {
                     id: conv_id,
                     timestamp_ms: now,
                 },
-            );
+            ) {
+                log::warn!("[ModularPassive] Failed to send SessionStarted to persist: {}", e);
+            }
         }
     }
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "session_started", conv_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SESSION_STARTED, conv_id) {
         log::warn!("[ModularPassive] Failed to emit session_started: {}", e);
     }
 
@@ -111,7 +118,7 @@ pub async fn pause_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Paused, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "pipeline_paused", ()) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PIPELINE_PAUSED, ()) {
         log::warn!("[ModularPassive] Failed to emit pipeline_paused: {}", e);
     }
 
@@ -127,7 +134,7 @@ pub async fn resume_session(app: &AppHandle, state: &AppState) -> Result<(), Str
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "pipeline_resumed", ()) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PIPELINE_RESUMED, ()) {
         log::warn!("[ModularPassive] Failed to emit pipeline_resumed: {}", e);
     }
 
@@ -148,10 +155,12 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
     {
         let persist_lock = state.persist_tx.lock();
         if let Some(ref tx) = *persist_lock {
-            let _ = tx.send(crate::persistence::events::PersistenceEvent::SessionEnded {
+            if let Err(e) = tx.send(crate::persistence::events::PersistenceEvent::SessionEnded {
                 id: conv_id,
                 timestamp_ms: now,
-            });
+            }) {
+                log::warn!("[ModularPassive] Failed to send SessionEnded to persist: {}", e);
+            }
         }
     }
 
@@ -167,7 +176,7 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Idle, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "session_ended", "user".to_string()) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SESSION_ENDED, END_REASON_USER.to_string()) {
         log::warn!("[ModularPassive] Failed to emit session_ended: {}", e);
     }
 
@@ -190,7 +199,7 @@ fn on_speech_start(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Listening, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "speech_start", turn_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SPEECH_START, turn_id) {
         log::warn!("[ModularPassive] Failed to emit speech_start: {}", e);
     }
 }
@@ -207,7 +216,7 @@ fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Thinking, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "speech_end", turn_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SPEECH_END, turn_id) {
         log::warn!("[ModularPassive] Failed to emit speech_end: {}", e);
     }
 }
@@ -215,8 +224,8 @@ fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState) {
 /// Handles interim partial speech recognition results.
 fn on_transcript_partial(turn_id: u32, text: String, app: &AppHandle) {
     if let Err(e) = app.emit_to(
-        "main",
-        "transcript_partial",
+        WINDOW_MAIN,
+        EVENT_TRANSCRIPT_PARTIAL,
         serde_json::json!({
             "turn_id": turn_id,
             "text": text,
@@ -235,8 +244,8 @@ fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppS
     }
 
     if let Err(e) = app.emit_to(
-        "main",
-        "transcript_final",
+        WINDOW_MAIN,
+        EVENT_TRANSCRIPT_FINAL,
         serde_json::json!({
             "turn_id": turn_id,
             "text": text,
@@ -289,8 +298,8 @@ fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppS
 /// Handles streamed LLM token emissions, accumulates clauses, and dispatches TTS synthesis.
 fn on_llm_token(turn_id: u32, token: String, app: &AppHandle, state: &AppState) {
     if let Err(e) = app.emit_to(
-        "main",
-        "llm_token",
+        WINDOW_MAIN,
+        EVENT_LLM_TOKEN,
         serde_json::json!({
             "turn_id": turn_id,
             "token": token,
@@ -338,7 +347,7 @@ fn on_llm_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
         }
     }
 
-    if let Err(e) = app.emit_to("main", "llm_finished", turn_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_LLM_FINISHED, turn_id) {
         log::warn!("[ModularPassive] Failed to emit llm_finished: {}", e);
     }
 }
@@ -358,7 +367,7 @@ fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Speaking, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "playback_started", turn_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PLAYBACK_STARTED, turn_id) {
         log::warn!("[ModularPassive] Failed to emit playback_started: {}", e);
     }
 }
@@ -368,7 +377,7 @@ fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "playback_finished", turn_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PLAYBACK_FINISHED, turn_id) {
         log::warn!("[ModularPassive] Failed to emit playback_finished: {}", e);
     }
 }
@@ -380,8 +389,8 @@ fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
     transition(InteractionState::Error, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
-        "main",
-        "pipeline_error",
+        WINDOW_MAIN,
+        EVENT_PIPELINE_ERROR,
         serde_json::json!({
             "turn_id": turn_id,
             "message": message,

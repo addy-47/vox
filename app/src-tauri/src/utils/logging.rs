@@ -3,42 +3,27 @@ use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Initializes the tracing-based logging system.
-///
-/// Sets up:
-/// 1. A daily rolling file appender in `~/.vox/logs/`
-/// 2. A non-blocking writer to avoid stalling real-time threads
-/// 3. A console layer for development (stdout)
-/// 4. An EnvFilter to control verbosity via `RUST_LOG`
-///
-/// Returns a `WorkerGuard` which MUST be held in `AppState` to ensure logs
-/// are flushed to disk before the app exits.
 pub fn init(log_dir: PathBuf) -> WorkerGuard {
-    // Ensure log directory exists
-    let _ = std::fs::create_dir_all(&log_dir);
 
-    // Cleanup old logs (keep max 5)
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+        eprintln!("[Logging] Failed to create log directory {:?}: {}", log_dir, e);
+    }
+
     cleanup_old_logs(&log_dir, 5);
 
-    // Daily rolling appender: vox.log, vox.log.2026-05-10, etc.
-    // Retains max 5 log files by default.
     let file_appender = tracing_appender::rolling::daily(log_dir, "vox.log");
 
-    // Wrap in non-blocking writer (dedicated background thread)
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
-    // Build the subscriber
     tracing_subscriber::registry()
-        // Filter based on RUST_LOG env var or default to info, but suppress verbose ONNX/ORT crates
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
             EnvFilter::new("info,ort=warn,onnxruntime=warn,sherpa_onnx=warn,ort_sys=warn,onnx=warn")
         }))
-        // Console layer (stdout)
         .with(fmt::layer().with_ansi(true).with_target(false))
-        // File layer (non-blocking)
         .with(
             fmt::layer()
                 .with_writer(non_blocking)
-                .with_ansi(false) // No ANSI codes in files
+                .with_ansi(false)
                 .with_target(true)
                 .with_thread_ids(true),
         )
@@ -64,12 +49,13 @@ fn cleanup_old_logs(log_dir: &std::path::Path, max_files: usize) {
     };
 
     if files.len() > max_files {
-        // Sort by modification time (oldest first)
         files.sort_by_key(|&(_, m)| m);
 
         let to_delete = files.len() - max_files;
         for (path, _) in files.iter().take(to_delete) {
-            let _ = std::fs::remove_file(path);
+            if let Err(e) = std::fs::remove_file(path) {
+                log::debug!("[Logging] Old log deletion notice for {:?}: {}", path, e);
+            }
         }
     }
 }

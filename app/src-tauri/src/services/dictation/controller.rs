@@ -28,10 +28,12 @@ impl DictationController {
             .pipeline
             .cancel_flag
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        let _ = app.emit(
+        if let Err(e) = app.emit(
             "ptt_status",
             serde_json::json!({ "state": "IDLE", "owner": "dictation" }),
-        );
+        ) {
+            log::warn!("[Dictation::Controller] Failed to emit ptt_status: {}", e);
+        }
         Ok(())
     }
 }

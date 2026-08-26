@@ -4,6 +4,10 @@ use rubato::{
     Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
     WindowFunction,
 };
+use super::{
+    PCM_INT16_DIVISOR_FLOAT, PCM_INT16_MAX_FLOAT, SINC_CUTOFF_FREQUENCY, SINC_OVERSAMPLING_FACTOR,
+    SINC_WINDOW_LEN,
+};
 
 /// High-quality sinc interpolation audio resampler based on Rubato.
 pub struct AudioResampler {
@@ -19,10 +23,10 @@ impl AudioResampler {
     pub fn new(from_hz: u32, to_hz: u32, chunk_size: usize) -> Result<Self> {
         let ratio = to_hz as f64 / from_hz as f64;
         let params = SincInterpolationParameters {
-            sinc_len: 256,
-            f_cutoff: 0.95,
+            sinc_len: SINC_WINDOW_LEN,
+            f_cutoff: SINC_CUTOFF_FREQUENCY,
             interpolation: SincInterpolationType::Linear,
-            oversampling_factor: 128,
+            oversampling_factor: SINC_OVERSAMPLING_FACTOR,
             window: WindowFunction::BlackmanHarris2,
         };
 
@@ -44,7 +48,7 @@ impl AudioResampler {
 
     /// Resamples an input slice of 16-bit PCM integer samples and returns the converted buffer.
     pub fn process_i16(&mut self, input: &[i16]) -> Result<Vec<i16>> {
-        let f32_samples = input.iter().map(|&s| s as f32 / 32768.0);
+        let f32_samples = input.iter().map(|&s| s as f32 / PCM_INT16_DIVISOR_FLOAT);
         self.input_buf.extend(f32_samples);
 
         let mut output_samples = Vec::new();
@@ -77,7 +81,7 @@ impl AudioResampler {
             .iter()
             .map(|&s| {
                 let clamped = s.clamp(-1.0, 1.0);
-                (clamped * 32767.0) as i16
+                (clamped * PCM_INT16_MAX_FLOAT) as i16
             })
             .collect();
 

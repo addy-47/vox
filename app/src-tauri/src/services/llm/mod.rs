@@ -18,13 +18,25 @@ pub use probe::ActiveProbeEngine;
 pub use providers::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider, ProviderKind};
 pub use types::*;
 
-// ─── LLM Model & Context Constants ───────────────────────────────────────────────────
 pub const CTX_FLOOR_NON_EMBEDDED: u32 = 8_192;
 pub const DEFAULT_CLOUD_MODEL_CTX: u32 = 1_000_000;
-pub const MODEL_DIR_LLM: &str = "llm/qwen";
-pub const MODEL_FILE_LLM_GGUF: &str = "qwen-3.5-0.8b-q4_k_m.gguf";
-pub const MODEL_DIR_LLM_GEMMA: &str = "llm/gemma4";
-pub const MODEL_FILE_LLM_GEMMA_GGUF: &str = "gemma-4-e2b-q4_k_m.gguf";
+pub const QWEN_MODEL_DIR: &str = "llm/qwen";
+pub const QWEN_MODEL_FILE: &str = "qwen-3.5-0.8b-q4_k_m.gguf";
+pub const GEMMA_MODEL_DIR: &str = "llm/gemma4";
+pub const GEMMA_MODEL_FILE: &str = "gemma-4-e2b-q4_k_m.gguf";
+
+pub const DEFAULT_MAX_CONTEXT_TOKENS: usize = 2048;
+pub const DEFAULT_BATCH_CHUNK_SIZE: usize = 512;
+pub const DEFAULT_MAX_GENERATION_SAFETY_TOKENS: usize = 512;
+pub const DEFAULT_PROBE_TIMEOUT_SECS: u64 = 12;
+pub const DEFAULT_VALIDATION_TIMEOUT_SECS: u64 = 6;
+pub const DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS: u64 = 5;
+pub const DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS: u64 = 180;
+pub const DEFAULT_STREAM_CHUNK_TIMEOUT_MS: u64 = 150;
+pub const DEFAULT_CANCEL_POLL_INTERVAL_MS: u64 = 50;
+pub const DEFAULT_PROBE_MAX_TOKENS: u32 = 40;
+pub const DEFAULT_TOOL_PROBE_MAX_TOKENS: u32 = 80;
+pub const DEFAULT_PROBE_TEMPERATURE: f32 = 0.1;
 
 /// Large Language Model engine contract.
 ///

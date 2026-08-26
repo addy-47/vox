@@ -1,5 +1,5 @@
-use crate::services::llm::{MODEL_DIR_LLM, MODEL_FILE_LLM_GGUF};
-use crate::services::stt::{MODEL_DIR_STT_NEMOTRON, MODEL_DIR_STT_QWEN, MODEL_FILE_ASR_ENCODER};
+use crate::services::llm::{QWEN_MODEL_DIR, QWEN_MODEL_FILE};
+use crate::services::stt::{MODEL_FILE_ASR_ENCODER, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR};
 use crate::services::vad::{MODEL_DIR_VAD, MODEL_FILE_VAD};
 use crate::utils::paths;
 
@@ -23,69 +23,52 @@ pub fn ensure_wizard_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .resizable(true)
         .visible(false)
         .center()
-        .zoom_hotkeys_enabled(false)
         .build()
         .map_err(|e| format!("Failed to create wizard window: {}", e))?;
 
-    setup_wizard_window(&window);
     Ok(window)
-}
-
-/// Configures the wizard window with specific attributes.
-pub fn setup_wizard_window(window: &WebviewWindow) {
-    let _ = window.set_min_size(Some(tauri::LogicalSize::new(900.0, 650.0)));
-    let _ = window.set_max_size(Some(tauri::LogicalSize::new(900.0, 650.0)));
-    let _ = window.set_resizable(true);
-    let _ = window.set_decorations(false);
-    let _ = window.set_always_on_top(false);
-    let _ = window.center();
 }
 
 /// Checks if all required models for a functional Vox experience are present on disk.
 pub fn check_setup_health() -> bool {
     let p = paths::get();
 
-    // 1. Manifest
-    if !p.models.join("models_manifest.json").exists() {
+    let vad_ok = p
+        .models
+        .join(MODEL_DIR_VAD)
+        .join(MODEL_FILE_VAD)
+        .exists();
+    if !vad_ok {
         return false;
     }
 
-    // 2. VAD
-    if !p.models.join(MODEL_DIR_VAD).join(MODEL_FILE_VAD).exists() {
-        return false;
-    }
-
-    // 3. STT — check whichever model is configured (Nemotron or Qwen)
     let stt_ok = p
         .models
-        .join(MODEL_DIR_STT_NEMOTRON)
+        .join(NEMOTRON_MODEL_DIR)
         .join(MODEL_FILE_ASR_ENCODER)
         .exists()
         || p.models
-            .join(MODEL_DIR_STT_QWEN)
+            .join(QWEN_ASR_MODEL_DIR)
             .join(MODEL_FILE_ASR_ENCODER)
             .exists();
     if !stt_ok {
         return false;
     }
 
-    // 4. LLM
     if !p
         .models
-        .join(MODEL_DIR_LLM)
-        .join(MODEL_FILE_LLM_GGUF)
+        .join(QWEN_MODEL_DIR)
+        .join(QWEN_MODEL_FILE)
         .exists()
     {
         return false;
     }
 
-    // 5. TTS (Edge TTS cloud or Supertonic 3 local)
-    let tts_ok = true; // Edge TTS is cloud-based and always available
+    let tts_ok = true;
     if !tts_ok {
         return false;
     }
 
-    // 6. MemoryScope Classifier & NLI
     let memory_scope_ok = p
         .models
         .join("classifier/modernbert_memory_scope/model_quantized.onnx")

@@ -1,9 +1,5 @@
+use super::{COSINE_HARD_MATCH_THRESHOLD, JACCARD_EXACT_MATCH_THRESHOLD};
 use std::collections::HashSet;
-
-/// Cosine similarity threshold for Phase 1 hard deduplication merge (>= 0.98 or Jaccard == 1.0).
-pub const COSINE_HARD_MATCH_THRESHOLD: f32 = 0.98;
-/// Jaccard token set similarity threshold for exact match.
-pub const JACCARD_EXACT_MATCH_THRESHOLD: f32 = 1.0;
 
 /// Calculates Jaccard Word-Set Overlap Similarity between two strings.
 /// Formula: J(A, B) = |A ∩ B| / |A ∪ B| on alphanumeric lowercased word tokens.

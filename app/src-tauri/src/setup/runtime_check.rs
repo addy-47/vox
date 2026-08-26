@@ -24,37 +24,22 @@ pub struct RuntimeReport {
 }
 
 /// Performs system validation.
-///
 /// If a manifest is provided, it calculates required disk space dynamically.
 /// Otherwise, it uses a conservative 6GB fallback as per Part 1/2 directives.
 pub fn verify_runtime(manifest: Option<&VoxManifest>) -> RuntimeReport {
     let p = paths::get();
 
-    // 1. Write Access
     let write_access = check_write_access(&p.root);
-
-    // 2. Disk Space Calculation
     let required_bytes = manifest
         .map(|m| m.calculate_required_space())
-        .unwrap_or(6 * 1024 * 1024 * 1024); // Fallback to 6GB if no manifest
-
+        .unwrap_or(6 * 1024 * 1024 * 1024);
     let required_gb = required_bytes as f32 / 1024.0 / 1024.0 / 1024.0;
     let (available_gb, total_gb, space_ok) = check_disk_space(&p.root, required_bytes);
-
-    // 3. Mic Access
     let mic_access = check_mic_access();
-
-    // 3.5 System Resources
     let (ram_gb, cpu_cores) = get_system_info();
-
-    // 4. File Existence
     let settings_exists = p.settings.exists();
     let models_dir_exists = p.models.exists();
-
-    // 5. Model Verification
     let (missing, models_verified) = check_model_integrity(&p.models, manifest);
-
-    // 6. Setup Status
     let setup_completed = p.settings.exists() && {
         let settings = crate::core::settings::VoxSettings::load();
         settings.system.setup_completed
@@ -89,7 +74,9 @@ fn check_write_access(path: &Path) -> bool {
     let test_file = path.join(".write_test");
     match std::fs::write(&test_file, "vox") {
         Ok(_) => {
-            let _ = std::fs::remove_file(test_file);
+            if let Err(e) = std::fs::remove_file(test_file) {
+                log::debug!("[RuntimeCheck] Write test file cleanup notice: {}", e);
+            }
             true
         }
         Err(_) => false,
@@ -116,8 +103,6 @@ fn check_disk_space(path: &Path, required_bytes: u64) -> (f32, f32, bool) {
         let total_gb = total as f32 / 1024.0 / 1024.0 / 1024.0;
         (available_gb, total_gb, available >= required_bytes)
     } else {
-        // Fallback for cases where sysinfo fails to match a mount point (common in some containers/Linux setups)
-        // We try to find the root "/" disk as a last resort.
         for disk in &disks {
             if disk.mount_point() == Path::new("/") {
                 let available = disk.available_space();
@@ -126,7 +111,6 @@ fn check_disk_space(path: &Path, required_bytes: u64) -> (f32, f32, bool) {
                 return (available_gb, total_gb, available >= required_bytes);
             }
         }
-        // If still nothing, we assume it's OK but log a warning (risky, but better than a hard block on valid systems)
         log::warn!("[verify_runtime] Could not determine disk space for path {:?}. Proceeding with fallback.", path);
         (100.0, 100.0, true)
     }
@@ -178,14 +162,12 @@ fn check_model_integrity(models_dir: &Path, manifest: Option<&VoxManifest>) -> (
 
             let verified_path = models_dir.join(&entry.path).with_extension("verified");
 
-            // 1. Existence check
             if !model_path.exists() {
                 missing.push(entry.id.clone());
                 all_verified = false;
                 continue;
             }
 
-            // 2. Size check (skip for extracted archives since size on disk is different)
             if !is_archive {
                 if let Ok(metadata) = std::fs::metadata(&model_path) {
                     if metadata.len() != entry.size_bytes {
@@ -200,7 +182,6 @@ fn check_model_integrity(models_dir: &Path, manifest: Option<&VoxManifest>) -> (
                 }
             }
 
-            // 3. Verified marker check
             if !verified_path.exists() {
                 all_verified = false;
                 continue;

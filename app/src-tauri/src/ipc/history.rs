@@ -23,7 +23,7 @@ pub async fn commit_session_to_history(
         if history.front() != Some(&text) {
             history.push_front(text);
             let limit = {
-                let settings = state.settings.read().unwrap();
+                let settings = state.settings.read().map_err(|e| e.to_string())?;
                 settings.history.tray_history_limit as usize
             };
             while history.len() > limit {

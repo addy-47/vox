@@ -1,3 +1,5 @@
+use crate::core::constants::SAMPLE_RATE;
+use super::{INGESTION_BUFFER_CAPACITY_SAMPLES, INGESTION_OVERFLOW_LOG_INTERVAL};
 use anyhow::Result;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::traits::*;
@@ -21,10 +23,14 @@ impl AudioStream {
         let channels = config.channels as usize;
 
         log::info!(
-            "[AUDIO] Using input device: {}",
+            "[Audio::Device] Using input device: {}",
             device.name().unwrap_or_else(|_| "Unknown".into())
         );
-        log::info!("[AUDIO] Config: {}Hz, {} channels", sample_rate, channels);
+        log::info!(
+            "[Audio::Device] Config: {}Hz, {} channels",
+            sample_rate,
+            channels
+        );
 
         let stream = build_input_stream(device, &config, channels, sample_rate, producer)?;
         Ok(Self { _stream: stream })
@@ -32,7 +38,7 @@ impl AudioStream {
 
     /// Starts the hardware audio stream.
     pub fn start(&self) -> Result<()> {
-        log::info!("[AUDIO] Starting hardware ingestion...");
+        log::info!("[Audio::Device] Starting hardware ingestion");
         self._stream.play()?;
         Ok(())
     }
@@ -41,15 +47,15 @@ impl AudioStream {
 /// Resolves the default audio host and queries the requested or fallback input device.
 fn resolve_input_device(device_name: Option<&str>) -> Result<(cpal::Device, cpal::StreamConfig)> {
     let host = resolve_audio_host();
-    log::info!("[AUDIO] Using audio host: {:?}", host.id());
+    log::info!("[Audio::Device] Using audio host: {:?}", host.id());
 
     let device = if let Some(name) = device_name {
-        log::info!("[AUDIO] Attempting to use requested device: {}", name);
+        log::info!("[Audio::Device] Attempting to use requested device: {}", name);
         host.input_devices()?
             .find(|d| d.name().map(|n| n == name).unwrap_or(false))
             .or_else(|| {
                 log::warn!(
-                    "[AUDIO] Requested device '{}' not found, falling back to default",
+                    "[Audio::Device] Requested device '{}' not found, falling back to default",
                     name
                 );
                 host.default_input_device()
@@ -80,9 +86,9 @@ where
     P: Producer<Item = f32> + Send + 'static,
 {
     let mut source_index: f32 = 0.0;
-    let resample_ratio = sample_rate as f32 / 16000.0;
-    let mut mono_buffer = Vec::with_capacity(8192);
-    let mut resampled_buffer = Vec::with_capacity(8192);
+    let resample_ratio = sample_rate as f32 / SAMPLE_RATE as f32;
+    let mut mono_buffer = Vec::with_capacity(INGESTION_BUFFER_CAPACITY_SAMPLES);
+    let mut resampled_buffer = Vec::with_capacity(INGESTION_BUFFER_CAPACITY_SAMPLES);
 
     let stream = device.build_input_stream(
         config,
@@ -113,9 +119,9 @@ where
                     static DROP_COUNT: std::sync::atomic::AtomicU32 =
                         std::sync::atomic::AtomicU32::new(0);
                     let prev = DROP_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    if prev.is_multiple_of(100) {
+                    if prev.is_multiple_of(INGESTION_OVERFLOW_LOG_INTERVAL) {
                         log::warn!(
-                            "[AUDIO] Ring buffer overflow! Dropped {} chunks so far.",
+                            "[Audio::Device] Ring buffer overflow! Dropped {} chunks so far",
                             prev + 1
                         );
                     }
@@ -123,7 +129,7 @@ where
             }
         },
         move |err| {
-            log::error!("[AUDIO] Stream error: {}", err);
+            log::error!("[Audio::Device] Stream error: {}", err);
         },
         None,
     )?;
@@ -134,9 +140,9 @@ where
 impl Drop for AudioStream {
     /// Ensures the hardware stream is paused cleanly when dropping.
     fn drop(&mut self) {
-        log::info!("[AUDIO] Dropping hardware stream. Ensuring mic is released.");
+        log::info!("[Audio::Device] Dropping hardware stream. Ensuring mic is released");
         if let Err(e) = self._stream.pause() {
-            log::warn!("[AUDIO] Failed to pause stream on drop: {}", e);
+            log::warn!("[Audio::Device] Failed to pause stream on drop: {}", e);
         }
     }
 }

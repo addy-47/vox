@@ -1,4 +1,9 @@
-use super::{transition, RoutingContext};
+use super::{
+    transition, RoutingContext, END_REASON_USER, EVENT_LLM_FINISHED, EVENT_LLM_TOKEN,
+    EVENT_PIPELINE_ERROR, EVENT_PLAYBACK_FINISHED, EVENT_PLAYBACK_STARTED, EVENT_PTT_STATUS,
+    EVENT_SESSION_ENDED, EVENT_SESSION_STARTED, EVENT_TRANSCRIPT_FINAL, EVENT_TRANSCRIPT_PARTIAL,
+    STATUS_IDLE, STATUS_PROCESSING, STATUS_RECORDING, WINDOW_MAIN,
+};
 use crate::core::events::VoxEvent;
 use crate::core::state::{AppState, InteractionOwner, InteractionState};
 use crate::services::audio::PlaybackEngine;
@@ -25,9 +30,9 @@ async fn ensure_modular_workers(app: &AppHandle, state: &AppState) -> Result<(),
         let s = state.settings.read().unwrap().clone();
         let models_dir = crate::utils::paths::get().models.clone();
         let llm = models_dir
-            .join(crate::services::llm::MODEL_DIR_LLM)
-            .join(crate::services::llm::MODEL_FILE_LLM_GGUF);
-        let tts = models_dir.join(crate::services::tts::MODEL_DIR_TTS_SUPER);
+            .join(crate::services::llm::QWEN_MODEL_DIR)
+            .join(crate::services::llm::QWEN_MODEL_FILE);
+        let tts = models_dir.join(crate::services::tts::SUPERTONIC_MODEL_DIR);
         (llm, tts, s)
     };
 
@@ -86,19 +91,21 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     {
         let persist_lock = state.persist_tx.lock();
         if let Some(ref tx) = *persist_lock {
-            let _ = tx.send(
+            if let Err(e) = tx.send(
                 crate::persistence::events::PersistenceEvent::SessionStarted {
                     id: conv_id,
                     timestamp_ms: now,
                 },
-            );
+            ) {
+                log::warn!("[ModularPTT] Failed to send SessionStarted to persist: {}", e);
+            }
         }
     }
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "session_started", conv_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SESSION_STARTED, conv_id) {
         log::warn!("[ModularPTT] Failed to emit session_started: {}", e);
     }
 
@@ -123,10 +130,12 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
     {
         let persist_lock = state.persist_tx.lock();
         if let Some(ref tx) = *persist_lock {
-            let _ = tx.send(crate::persistence::events::PersistenceEvent::SessionEnded {
+            if let Err(e) = tx.send(crate::persistence::events::PersistenceEvent::SessionEnded {
                 id: conv_id,
                 timestamp_ms: now,
-            });
+            }) {
+                log::warn!("[ModularPTT] Failed to send SessionEnded to persist: {}", e);
+            }
         }
     }
 
@@ -142,7 +151,7 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Idle, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "session_ended", "user".to_string()) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SESSION_ENDED, END_REASON_USER.to_string()) {
         log::warn!("[ModularPTT] Failed to emit session_ended: {}", e);
     }
 
@@ -166,10 +175,10 @@ pub fn handle_ptt_start(app: &AppHandle, state: &AppState) -> Result<(), String>
     transition(InteractionState::Listening, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
-        "main",
-        "ptt_status",
+        WINDOW_MAIN,
+        EVENT_PTT_STATUS,
         serde_json::json!({
-            "state": "RECORDING",
+            "state": STATUS_RECORDING,
             "turn_id": turn_id,
         }),
     ) {
@@ -192,7 +201,13 @@ pub fn handle_ptt_stop(app: &AppHandle, state: &AppState) -> Result<(), String> 
     if buffer.is_empty() {
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Ready, &ctx, app, state);
-        let _ = app.emit_to("main", "ptt_status", serde_json::json!({ "state": "IDLE" }));
+        if let Err(e) = app.emit_to(
+            WINDOW_MAIN,
+            EVENT_PTT_STATUS,
+            serde_json::json!({ "state": STATUS_IDLE }),
+        ) {
+            log::warn!("[ModularPTT] Failed to emit ptt_status IDLE: {}", e);
+        }
         return Ok(());
     }
 
@@ -201,10 +216,10 @@ pub fn handle_ptt_stop(app: &AppHandle, state: &AppState) -> Result<(), String> 
     transition(InteractionState::Thinking, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
-        "main",
-        "ptt_status",
+        WINDOW_MAIN,
+        EVENT_PTT_STATUS,
         serde_json::json!({
-            "state": "PROCESSING",
+            "state": STATUS_PROCESSING,
             "turn_id": turn_id,
         }),
     ) {
@@ -236,7 +251,11 @@ pub fn handle_ptt_cancel(app: &AppHandle, state: &AppState) -> Result<(), String
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "ptt_status", serde_json::json!({ "state": "IDLE" })) {
+    if let Err(e) = app.emit_to(
+        WINDOW_MAIN,
+        EVENT_PTT_STATUS,
+        serde_json::json!({ "state": STATUS_IDLE }),
+    ) {
         log::warn!("[ModularPTT] Failed to emit ptt_status IDLE: {}", e);
     }
 
@@ -247,8 +266,8 @@ pub fn handle_ptt_cancel(app: &AppHandle, state: &AppState) -> Result<(), String
 /// Handles interim partial speech recognition results.
 fn on_transcript_partial(turn_id: u32, text: String, app: &AppHandle) {
     if let Err(e) = app.emit_to(
-        "main",
-        "transcript_partial",
+        WINDOW_MAIN,
+        EVENT_TRANSCRIPT_PARTIAL,
         serde_json::json!({
             "turn_id": turn_id,
             "text": text,
@@ -263,13 +282,19 @@ fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppS
     if text.trim().is_empty() {
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Ready, &ctx, app, state);
-        let _ = app.emit_to("main", "ptt_status", serde_json::json!({ "state": "IDLE" }));
+        if let Err(e) = app.emit_to(
+            WINDOW_MAIN,
+            EVENT_PTT_STATUS,
+            serde_json::json!({ "state": STATUS_IDLE }),
+        ) {
+            log::warn!("[ModularPTT] Failed to emit ptt_status IDLE: {}", e);
+        }
         return;
     }
 
     if let Err(e) = app.emit_to(
-        "main",
-        "transcript_final",
+        WINDOW_MAIN,
+        EVENT_TRANSCRIPT_FINAL,
         serde_json::json!({
             "turn_id": turn_id,
             "text": text,
@@ -319,8 +344,8 @@ fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppS
 /// Handles streamed LLM token emissions, accumulates clauses, and dispatches TTS synthesis.
 fn on_llm_token(turn_id: u32, token: String, app: &AppHandle, state: &AppState) {
     if let Err(e) = app.emit_to(
-        "main",
-        "llm_token",
+        WINDOW_MAIN,
+        EVENT_LLM_TOKEN,
         serde_json::json!({
             "turn_id": turn_id,
             "token": token,
@@ -365,7 +390,7 @@ fn on_llm_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
         }
     }
 
-    if let Err(e) = app.emit_to("main", "llm_finished", turn_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_LLM_FINISHED, turn_id) {
         log::warn!("[ModularPTT] Failed to emit llm_finished: {}", e);
     }
 }
@@ -385,7 +410,7 @@ fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Speaking, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "playback_started", turn_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PLAYBACK_STARTED, turn_id) {
         log::warn!("[ModularPTT] Failed to emit playback_started: {}", e);
     }
 }
@@ -395,11 +420,17 @@ fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "playback_finished", turn_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PLAYBACK_FINISHED, turn_id) {
         log::warn!("[ModularPTT] Failed to emit playback_finished: {}", e);
     }
 
-    let _ = app.emit_to("main", "ptt_status", serde_json::json!({ "state": "IDLE" }));
+    if let Err(e) = app.emit_to(
+        WINDOW_MAIN,
+        EVENT_PTT_STATUS,
+        serde_json::json!({ "state": STATUS_IDLE }),
+    ) {
+        log::warn!("[ModularPTT] Failed to emit ptt_status IDLE: {}", e);
+    }
 }
 
 /// Logs pipeline errors and transitions state machine to error condition.
@@ -409,8 +440,8 @@ fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
     transition(InteractionState::Error, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
-        "main",
-        "pipeline_error",
+        WINDOW_MAIN,
+        EVENT_PIPELINE_ERROR,
         serde_json::json!({
             "turn_id": turn_id,
             "message": message,
@@ -419,7 +450,13 @@ fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
         log::warn!("[ModularPTT] Failed to emit pipeline_error: {}", e);
     }
 
-    let _ = app.emit_to("main", "ptt_status", serde_json::json!({ "state": "IDLE" }));
+    if let Err(e) = app.emit_to(
+        WINDOW_MAIN,
+        EVENT_PTT_STATUS,
+        serde_json::json!({ "state": STATUS_IDLE }),
+    ) {
+        log::warn!("[ModularPTT] Failed to emit ptt_status IDLE: {}", e);
+    }
 }
 
 /// Main event dispatcher for the modular Push-To-Talk pipeline domain.

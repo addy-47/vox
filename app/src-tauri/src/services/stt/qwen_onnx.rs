@@ -1,13 +1,11 @@
-use super::SttEngine as SttEngineTrait;
-use crate::services::stt::{
-    MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_ENCODER, MODEL_FILE_ASR_FRONTEND,
-    MODEL_FILE_ASR_TOKENIZER,
+use super::{
+    SttEngine as SttEngineTrait, MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_ENCODER,
+    MODEL_FILE_ASR_FRONTEND, MODEL_FILE_ASR_TOKENIZER, QWEN_MAX_NEW_TOKENS, QWEN_MAX_TOTAL_LEN,
+    QWEN_NUM_THREADS, SAMPLE_RATE,
 };
 use anyhow::{anyhow, Result};
 use sherpa_onnx::{OfflineQwen3ASRModelConfig, OfflineRecognizer, OfflineRecognizerConfig};
 use std::path::Path;
-
-pub const SAMPLE_RATE: i32 = 16000;
 
 /// Speech-to-text inference engine wrapping Sherpa-ONNX Qwen3-ASR offline recognizer.
 pub struct SttEngine {
@@ -49,12 +47,12 @@ impl SttEngine {
                     .to_string_lossy()
                     .into(),
             ),
-            max_total_len: 2048,
-            max_new_tokens: 128,
+            max_total_len: QWEN_MAX_TOTAL_LEN,
+            max_new_tokens: QWEN_MAX_NEW_TOKENS,
             ..Default::default()
         };
 
-        config.model_config.num_threads = 4;
+        config.model_config.num_threads = QWEN_NUM_THREADS;
         config.model_config.debug = false;
         config.model_config.provider = Some("cpu".into());
 
@@ -95,7 +93,7 @@ impl SttEngineTrait for SttEngine {
         let start = std::time::Instant::now();
 
         let stream = self.recognizer.create_stream();
-        stream.accept_waveform(SAMPLE_RATE, audio);
+        stream.accept_waveform(SAMPLE_RATE as i32, audio);
 
         self.recognizer.decode(&stream);
 

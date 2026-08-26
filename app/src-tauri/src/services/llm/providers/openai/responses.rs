@@ -175,8 +175,14 @@ impl ResponsesAdapter {
                 return Ok(());
             }
 
-            let chunk_opt =
-                match tokio::time::timeout(Duration::from_millis(150), stream.next()).await {
+            let chunk_opt = match tokio::time::timeout(
+                Duration::from_millis(
+                    crate::services::llm::DEFAULT_STREAM_CHUNK_TIMEOUT_MS,
+                ),
+                stream.next(),
+            )
+            .await
+            {
                     Ok(Some(chunk_result)) => match chunk_result {
                         Ok(c) => Some(c),
                         Err(e) => {

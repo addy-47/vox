@@ -6,8 +6,6 @@ pub mod logging;
 pub mod paths;
 
 /// Checks the Linux CPU frequency governor. Returns `true` if it's "performance",
-/// `false` if it's something else (e.g. "powersave"), `None` if unable to detect
-/// (non-Linux or file unreadable).
 pub fn check_cpu_governor() -> Option<String> {
     #[cfg(target_os = "linux")]
     {

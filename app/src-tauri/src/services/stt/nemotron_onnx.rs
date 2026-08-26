@@ -1,10 +1,8 @@
-use super::SttEngine as SttEngineTrait;
+use super::{SttEngine as SttEngineTrait, NEMOTRON_STRIDE_SAMPLES, SAMPLE_RATE};
 use anyhow::{anyhow, Result};
 use parakeet_rs::Nemotron;
 use parking_lot::Mutex;
 use std::path::Path;
-
-const STRIDE_SAMPLES: usize = 8960;
 
 /// Speech-to-text inference engine wrapping NVIDIA Nemotron-3.5 via parakeet-rs.
 pub struct SttEngine {
@@ -31,13 +29,13 @@ impl SttEngine {
     }
 }
 
-/// Transcribes audio frames in discrete 8960-sample strides with final partial chunk padding.
+/// Transcribes audio frames in discrete Nemotron stride intervals with final partial chunk padding.
 fn transcribe_strides(model: &mut Nemotron, audio: &[f32]) -> Result<String> {
     let mut full_text = String::new();
     let mut offset = 0usize;
 
-    while offset + STRIDE_SAMPLES <= audio.len() {
-        let chunk = &audio[offset..offset + STRIDE_SAMPLES];
+    while offset + NEMOTRON_STRIDE_SAMPLES <= audio.len() {
+        let chunk = &audio[offset..offset + NEMOTRON_STRIDE_SAMPLES];
         let text = model.transcribe_chunk(chunk).map_err(|e| {
             anyhow!(
                 "Nemotron transcription failed at offset {}: {:?}",
@@ -48,14 +46,14 @@ fn transcribe_strides(model: &mut Nemotron, audio: &[f32]) -> Result<String> {
         if !text.trim().is_empty() {
             full_text.push_str(&text);
         }
-        offset += STRIDE_SAMPLES;
+        offset += NEMOTRON_STRIDE_SAMPLES;
     }
 
     let remaining = audio.len() - offset;
     if remaining > 0 {
-        let mut pad = Vec::with_capacity(STRIDE_SAMPLES);
+        let mut pad = Vec::with_capacity(NEMOTRON_STRIDE_SAMPLES);
         pad.extend_from_slice(&audio[offset..]);
-        pad.resize(STRIDE_SAMPLES, 0.0);
+        pad.resize(NEMOTRON_STRIDE_SAMPLES, 0.0);
         let text = model
             .transcribe_chunk(&pad)
             .map_err(|e| anyhow!("Nemotron final partial chunk failed: {:?}", e))?;
@@ -82,7 +80,7 @@ impl SttEngineTrait for SttEngine {
         model_lock.reset();
 
         let elapsed = start.elapsed().as_secs_f32();
-        let audio_duration = audio.len() as f32 / 16000.0;
+        let audio_duration = audio.len() as f32 / SAMPLE_RATE as f32;
         let rtf = if audio_duration > 0.0 {
             elapsed / audio_duration
         } else {

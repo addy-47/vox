@@ -3,11 +3,10 @@ use crate::core::constants::{
     collection_type, PM_QUEUE_STATUS_EVALUATED, PM_QUEUE_STATUS_PROCESSING_COMMIT,
     PM_QUEUE_STATUS_SUPERSEDED,
 };
+use crate::services::memory::STAGE4_BATCH_SIZE;
 use anyhow::Result;
 use std::collections::HashMap;
 use turso::Connection;
-
-pub const STAGE4_BATCH_SIZE: usize = 32;
 
 /// Claimed item pending stage 4 SQL database commit and queue deletion.
 #[derive(Debug, Clone)]
@@ -159,8 +158,8 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
     }
 
     let items_claimed = items.len();
-    tracing::info!(
-        "[MemoryPipeline] [Stage 4 Commit] Claimed {} evaluated/superseded items for SQLite commit",
+    log::info!(
+        "[MemoryPipeline::Stage4] Claimed {} evaluated/superseded items for SQLite commit",
         items_claimed
     );
     let session_id = items
@@ -200,7 +199,9 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
     .await;
 
     if let Err(e) = commit_res {
-        let _ = conn.execute("ROLLBACK", ()).await;
+        if let Err(rb_err) = conn.execute("ROLLBACK", ()).await {
+            log::warn!("[MemoryPipeline::Stage4] Rollback failed: {}", rb_err);
+        }
         return Err(e);
     }
 
@@ -219,7 +220,9 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
             error_count: 0,
             duration_ms,
         };
-        let _ = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await;
+        if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {
+            log::warn!("[MemoryPipeline::Stage4] Failed to record stage metrics: {}", e);
+        }
     }
 
     Ok(processed_count)

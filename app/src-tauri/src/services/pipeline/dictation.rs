@@ -1,4 +1,8 @@
-use super::{transition, RoutingContext};
+use super::{
+    transition, RoutingContext, EVENT_PIPELINE_ERROR, EVENT_PTT_STATUS, EVENT_SPEECH_END,
+    EVENT_SPEECH_START, EVENT_TRANSCRIPT_FINAL, EVENT_TRANSCRIPT_PARTIAL, OWNER_DICTATION,
+    STATUS_IDLE, STATUS_PROCESSING, STATUS_RECORDING, WINDOW_TRAY,
+};
 use crate::core::events::VoxEvent;
 use crate::core::state::{AppState, InteractionState};
 use parking_lot::Mutex;
@@ -22,12 +26,12 @@ pub async fn handle_hotkey_press(app: &AppHandle, state: &AppState) -> Result<()
     transition(InteractionState::Listening, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
-        "tray",
-        "ptt_status",
+        WINDOW_TRAY,
+        EVENT_PTT_STATUS,
         serde_json::json!({
-            "state": "RECORDING",
+            "state": STATUS_RECORDING,
             "turn_id": turn_id,
-            "owner": "dictation",
+            "owner": OWNER_DICTATION,
         }),
     ) {
         log::warn!("[Dictation] Failed to emit ptt_status RECORDING: {}", e);
@@ -49,11 +53,13 @@ pub async fn handle_hotkey_release(app: &AppHandle, state: &AppState) -> Result<
     if buffer.is_empty() {
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Idle, &ctx, app, state);
-        let _ = app.emit_to(
-            "tray",
-            "ptt_status",
-            serde_json::json!({ "state": "IDLE", "owner": "dictation" }),
-        );
+        if let Err(e) = app.emit_to(
+            WINDOW_TRAY,
+            EVENT_PTT_STATUS,
+            serde_json::json!({ "state": STATUS_IDLE, "owner": OWNER_DICTATION }),
+        ) {
+            log::warn!("[Dictation] Failed to emit ptt_status IDLE: {}", e);
+        }
         return Ok(());
     }
 
@@ -61,12 +67,12 @@ pub async fn handle_hotkey_release(app: &AppHandle, state: &AppState) -> Result<
     transition(InteractionState::Thinking, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
-        "tray",
-        "ptt_status",
+        WINDOW_TRAY,
+        EVENT_PTT_STATUS,
         serde_json::json!({
-            "state": "PROCESSING",
+            "state": STATUS_PROCESSING,
             "turn_id": turn_id,
-            "owner": "dictation",
+            "owner": OWNER_DICTATION,
         }),
     ) {
         log::warn!("[Dictation] Failed to emit ptt_status PROCESSING: {}", e);
@@ -91,11 +97,11 @@ fn on_speech_start(turn_id: u32, app: &AppHandle, state: &AppState) {
     transition(InteractionState::Listening, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
-        "tray",
-        "speech_start",
+        WINDOW_TRAY,
+        EVENT_SPEECH_START,
         serde_json::json!({
             "turn_id": turn_id,
-            "owner": "dictation",
+            "owner": OWNER_DICTATION,
         }),
     ) {
         log::warn!("[Dictation] Failed to emit speech_start: {}", e);
@@ -108,11 +114,11 @@ fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState) {
     transition(InteractionState::Thinking, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
-        "tray",
-        "speech_end",
+        WINDOW_TRAY,
+        EVENT_SPEECH_END,
         serde_json::json!({
             "turn_id": turn_id,
-            "owner": "dictation",
+            "owner": OWNER_DICTATION,
         }),
     ) {
         log::warn!("[Dictation] Failed to emit speech_end: {}", e);
@@ -122,12 +128,12 @@ fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState) {
 /// Handles interim partial speech recognition results for dictation.
 fn on_transcript_partial(turn_id: u32, text: String, app: &AppHandle) {
     if let Err(e) = app.emit_to(
-        "tray",
-        "transcript_partial",
+        WINDOW_TRAY,
+        EVENT_TRANSCRIPT_PARTIAL,
         serde_json::json!({
             "turn_id": turn_id,
             "text": text,
-            "owner": "dictation",
+            "owner": OWNER_DICTATION,
         }),
     ) {
         log::warn!("[Dictation] Failed to emit transcript_partial: {}", e);
@@ -152,12 +158,12 @@ fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppS
     transition(InteractionState::Idle, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
-        "tray",
-        "transcript_final",
+        WINDOW_TRAY,
+        EVENT_TRANSCRIPT_FINAL,
         serde_json::json!({
             "turn_id": turn_id,
             "text": text,
-            "owner": "dictation",
+            "owner": OWNER_DICTATION,
         }),
     ) {
         log::warn!("[Dictation] Failed to emit transcript_final: {}", e);
@@ -171,12 +177,12 @@ fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
     transition(InteractionState::Error, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
-        "tray",
-        "pipeline_error",
+        WINDOW_TRAY,
+        EVENT_PIPELINE_ERROR,
         serde_json::json!({
             "turn_id": turn_id,
             "message": message,
-            "owner": "dictation",
+            "owner": OWNER_DICTATION,
         }),
     ) {
         log::warn!("[Dictation] Failed to emit pipeline_error: {}", e);

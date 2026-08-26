@@ -1,4 +1,9 @@
-use super::{transition, RoutingContext};
+use super::{
+    transition, RoutingContext, END_REASON_USER, EVENT_PIPELINE_ERROR, EVENT_PIPELINE_PAUSED,
+    EVENT_PIPELINE_RESUMED, EVENT_PLAYBACK_FINISHED, EVENT_PLAYBACK_STARTED, EVENT_SESSION_ENDED,
+    EVENT_SESSION_STARTED, EVENT_SPEECH_END, EVENT_SPEECH_START, EVENT_TRANSCRIPT_FINAL,
+    WINDOW_MAIN,
+};
 use crate::core::events::VoxEvent;
 use crate::core::settings::RealtimeProviderKind;
 use crate::core::state::{AppState, InteractionOwner, InteractionState, VadCommand};
@@ -55,7 +60,9 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     let mut rt_guard = state.realtime_engine.lock().await;
     if let Some(mut old_rt) = rt_guard.take() {
         old_rt.stop();
-        let _ = vad_tx.send(VadCommand::StopRealtime);
+        if let Err(e) = vad_tx.send(VadCommand::StopRealtime) {
+            log::warn!("[RealtimePassive] Failed to send StopRealtime: {}", e);
+        }
     }
 
     let provider = create_realtime_provider(state)?;
@@ -74,10 +81,12 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
         .get_audio_sender()
         .ok_or("Failed to obtain realtime audio sender")?;
 
-    let _ = vad_tx.send(VadCommand::StartRealtime {
+    if let Err(e) = vad_tx.send(VadCommand::StartRealtime {
         tx: audio_tx,
         is_ptt: false,
-    });
+    }) {
+        log::warn!("[RealtimePassive] Failed to send StartRealtime: {}", e);
+    }
 
     state.pipeline.is_engaged.store(true, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
@@ -87,7 +96,7 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "session_started", 0) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SESSION_STARTED, 0) {
         log::warn!("[RealtimePassive] Failed to emit session_started: {}", e);
     }
 
@@ -103,7 +112,7 @@ pub async fn pause_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Paused, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "pipeline_paused", ()) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PIPELINE_PAUSED, ()) {
         log::warn!("[RealtimePassive] Failed to emit pipeline_paused: {}", e);
     }
 
@@ -119,7 +128,7 @@ pub async fn resume_session(app: &AppHandle, state: &AppState) -> Result<(), Str
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "pipeline_resumed", ()) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PIPELINE_RESUMED, ()) {
         log::warn!("[RealtimePassive] Failed to emit pipeline_resumed: {}", e);
     }
 
@@ -130,7 +139,9 @@ pub async fn resume_session(app: &AppHandle, state: &AppState) -> Result<(), Str
 /// Ends the active real-time speech-to-speech session and tears down the WebSocket connection.
 pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
     if let Some(engine) = state.engine.lock().await.as_ref() {
-        let _ = engine.vad_tx.send(VadCommand::StopRealtime);
+        if let Err(e) = engine.vad_tx.send(VadCommand::StopRealtime) {
+            log::warn!("[RealtimePassive] Failed to send StopRealtime: {}", e);
+        }
         engine.playback_engine.cancel();
     }
 
@@ -159,7 +170,7 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Idle, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "session_ended", "user".to_string()) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SESSION_ENDED, END_REASON_USER.to_string()) {
         log::warn!("[RealtimePassive] Failed to emit session_ended: {}", e);
     }
 
@@ -185,7 +196,7 @@ fn on_speech_start(
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Listening, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "speech_start", turn_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SPEECH_START, turn_id) {
         log::warn!("[RealtimePassive] Failed to emit speech_start: {}", e);
     }
 }
@@ -201,7 +212,7 @@ fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Thinking, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "speech_end", turn_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SPEECH_END, turn_id) {
         log::warn!("[RealtimePassive] Failed to emit speech_end: {}", e);
     }
 }
@@ -209,8 +220,8 @@ fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState) {
 /// Handles incoming final transcription from the real-time server.
 fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppState) {
     if let Err(e) = app.emit_to(
-        "main",
-        "transcript_final",
+        WINDOW_MAIN,
+        EVENT_TRANSCRIPT_FINAL,
         serde_json::json!({
             "turn_id": turn_id,
             "text": text,
@@ -225,8 +236,8 @@ fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppS
 /// Handles streamed token delta from the real-time server.
 fn on_llm_token(turn_id: u32, token: String, app: &AppHandle) {
     if let Err(e) = app.emit_to(
-        "main",
-        "llm_token",
+        WINDOW_MAIN,
+        super::EVENT_LLM_TOKEN,
         serde_json::json!({
             "turn_id": turn_id,
             "token": token,
@@ -241,7 +252,7 @@ fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Speaking, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "playback_started", turn_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PLAYBACK_STARTED, turn_id) {
         log::warn!("[RealtimePassive] Failed to emit playback_started: {}", e);
     }
 }
@@ -251,7 +262,7 @@ fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    if let Err(e) = app.emit_to("main", "playback_finished", turn_id) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PLAYBACK_FINISHED, turn_id) {
         log::warn!("[RealtimePassive] Failed to emit playback_finished: {}", e);
     }
 }
@@ -263,8 +274,8 @@ fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
     transition(InteractionState::Error, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
-        "main",
-        "pipeline_error",
+        WINDOW_MAIN,
+        EVENT_PIPELINE_ERROR,
         serde_json::json!({
             "turn_id": turn_id,
             "message": message,
