@@ -1,5 +1,8 @@
-use super::VadBackend;
-use super::VadEngine as _;
+use super::{
+    VadBackend, VadEngine as _, VAD_CHUNK_SIZE, VAD_MAX_PARTIAL_WINDOW_SAMPLES,
+    VAD_MIN_UTTERANCE_SAMPLES, VAD_PARTIAL_INTERVAL_SAMPLES, VAD_PRE_ROLL_CAPACITY,
+    VAD_SPEECH_END_FRAMES, VAD_SPEECH_START_FRAMES,
+};
 use crate::core::events::VoxEvent;
 use crate::core::settings::{AudioOutputMode, InteractionMode};
 use crate::core::state::{InteractionOwner, VadCommand};
@@ -49,7 +52,7 @@ impl VadActorState {
             inactive_frames: 0,
             samples_since_partial: 0,
             utterance_buffer: Vec::new(),
-            pre_roll_buffer: PreRollBuffer::new(8000),
+            pre_roll_buffer: PreRollBuffer::new(VAD_PRE_ROLL_CAPACITY),
             realtime_tx: None,
             realtime_is_ptt: false,
             ui_emit_counter: 0,
@@ -172,7 +175,9 @@ fn emit_audio_telemetry(
             InteractionOwner::Assistant => "main",
             InteractionOwner::Dictation => "tray",
         };
-        let _ = app.emit_to(target, "audio_energy", energy);
+        if let Err(e) = app.emit_to(target, "audio_energy", energy) {
+            log::trace!("[VAD Actor] Failed to emit audio_energy to {}: {}", target, e);
+        }
         state.ui_emit_counter = 0;
     }
 
@@ -187,7 +192,9 @@ fn stream_passive_realtime(chunk: &[f32], state: &VadActorState) {
                 .iter()
                 .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
                 .collect();
-            let _ = tx.try_send(i16_samples);
+            if let Err(e) = tx.try_send(i16_samples) {
+                log::trace!("[VAD Actor] Passive realtime audio queue full or disconnected: {}", e);
+            }
         }
     }
 }
@@ -237,10 +244,12 @@ fn handle_speech_start(
         }
     }
 
-    let _ = event_tx.try_send(json!({
+    if let Err(e) = event_tx.try_send(json!({
         "type": "speech_start",
         "session_id": state.current_turn_id
-    }));
+    })) {
+        log::trace!("[VAD Actor] Speech start event dropped: {}", e);
+    }
 
     state.utterance_buffer.clear();
     state
@@ -275,14 +284,16 @@ fn handle_speech_end(
         }
     }
 
-    let _ = event_tx.try_send(json!({
+    if let Err(e) = event_tx.try_send(json!({
         "type": "speech_end",
         "session_id": state.current_turn_id
-    }));
+    })) {
+        log::trace!("[VAD Actor] Speech end event dropped: {}", e);
+    }
 
     vad.flush();
 
-    if state.utterance_buffer.len() >= 4800 && state.realtime_tx.is_none() {
+    if state.utterance_buffer.len() >= VAD_MIN_UTTERANCE_SAMPLES && state.realtime_tx.is_none() {
         if let Err(e) = stt_tx.send(SttCommand::Final(
             state.current_turn_id,
             state.utterance_buffer.clone(),
@@ -309,12 +320,17 @@ fn accumulate_speech_frames(
             .iter()
             .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
             .collect();
-        let _ = tx.try_send(i16_samples);
+        if let Err(e) = tx.try_send(i16_samples) {
+            log::trace!("[VAD Actor] Active realtime audio stream full: {}", e);
+        }
     }
 
-    if state.samples_since_partial >= 12800 {
+    if state.samples_since_partial >= VAD_PARTIAL_INTERVAL_SAMPLES {
         if state.realtime_tx.is_none() {
-            let start_idx = state.utterance_buffer.len().saturating_sub(240000);
+            let start_idx = state
+                .utterance_buffer
+                .len()
+                .saturating_sub(VAD_MAX_PARTIAL_WINDOW_SAMPLES);
             if let Err(e) = stt_tx.send(SttCommand::Partial(
                 state.current_turn_id,
                 state.utterance_buffer[start_idx..].to_vec(),
@@ -380,7 +396,7 @@ fn process_speech_frame(
         state.active_frames += 1;
         state.inactive_frames = 0;
 
-        if !state.in_speech && state.active_frames >= 2 {
+        if !state.in_speech && state.active_frames >= VAD_SPEECH_START_FRAMES {
             handle_speech_start(
                 state,
                 ctx.turn_id_atomic,
@@ -394,7 +410,7 @@ fn process_speech_frame(
         state.inactive_frames += 1;
         state.active_frames = 0;
 
-        if state.in_speech && state.inactive_frames >= 50 {
+        if state.in_speech && state.inactive_frames >= VAD_SPEECH_END_FRAMES {
             handle_speech_end(
                 vad,
                 state,
@@ -440,7 +456,7 @@ where
     );
     let is_earshot = matches!(vad, VadBackend::Earshot(_));
     let mut filter_bank = FilterBank::new(16000.0);
-    let mut chunk = vec![0.0f32; 256];
+    let mut chunk = vec![0.0f32; VAD_CHUNK_SIZE];
     handles.is_loaded.store(true, Ordering::Relaxed);
 
     loop {
@@ -455,7 +471,7 @@ where
             return Ok(());
         }
 
-        if consumer.occupied_len() >= 256 {
+        if consumer.occupied_len() >= VAD_CHUNK_SIZE {
             consumer.pop_slice(&mut chunk);
 
             let owner: InteractionOwner = handles.owner_atomic.load(Ordering::Relaxed).into();

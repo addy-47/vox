@@ -1,7 +1,6 @@
 pub mod audio;
 pub mod history;
 pub mod memory;
-pub mod memory_profiler;
 pub mod monitoring;
 pub mod pipeline;
 pub mod settings;

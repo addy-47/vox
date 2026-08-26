@@ -47,8 +47,9 @@ use tauri::{Emitter, Manager, State};
 /// engine on startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Install default crypto provider for rustls (required in rustls 0.23+ for WebSocket / TLS)
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
+        log::debug!("[Crypto] Ring default provider already installed or failed: {:?}", e);
+    }
 
     // Suppress ALSA/Jack noisy logs on Linux
     #[cfg(target_os = "linux")]
@@ -68,7 +69,9 @@ pub fn run() {
             // Capture the Tokio runtime handle early
             tauri::async_runtime::spawn(async {
                 if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    let _ = crate::persistence::db::TOKIO_HANDLE.set(handle);
+                    if crate::persistence::db::TOKIO_HANDLE.set(handle).is_err() {
+                        log::debug!("[Persistence] Tokio handle already initialized.");
+                    }
                 }
             });
 
@@ -88,8 +91,11 @@ pub fn run() {
                     Ok(manifest) => {
                         let path = cache_dir.join("app_manifest.json");
                         if let Ok(content) = serde_json::to_string_pretty(&manifest) {
-                            let _ = std::fs::write(path, content);
-                            log::info!("[BOOTSTRAP] Successfully cached app manifest.");
+                            if let Err(e) = std::fs::write(&path, content) {
+                                log::warn!("[BOOTSTRAP] Failed to write app manifest cache: {}", e);
+                            } else {
+                                log::info!("[BOOTSTRAP] Successfully cached app manifest.");
+                            }
                         }
                     }
                     Err(e) => log::warn!("[BOOTSTRAP] Failed to fetch/cache app manifest at boot: {}", e),
@@ -100,8 +106,11 @@ pub fn run() {
                     Ok(manifest) => {
                         let path = cache_dir.join("models_manifest.json");
                         if let Ok(content) = serde_json::to_string_pretty(&manifest) {
-                            let _ = std::fs::write(path, content);
-                            log::info!("[BOOTSTRAP] Successfully cached models manifest.");
+                            if let Err(e) = std::fs::write(&path, content) {
+                                log::warn!("[BOOTSTRAP] Failed to write models manifest cache: {}", e);
+                            } else {
+                                log::info!("[BOOTSTRAP] Successfully cached models manifest.");
+                            }
                         }
                     }
                     Err(e) => log::warn!("[BOOTSTRAP] Failed to fetch/cache models manifest at boot: {}", e),
@@ -267,7 +276,9 @@ pub fn run() {
                     "launch" => {
                         let handle = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            let _ = show_main_window(handle).await;
+                            if let Err(e) = show_main_window(handle).await {
+                                log::warn!("[Tray] Failed to show main window: {}", e);
+                            }
                         });
                     }
                     "live" => {
@@ -290,7 +301,9 @@ pub fn run() {
                         };
                         if dictation_enabled {
                             tauri::async_runtime::spawn(async move {
-                                let _ = launch_engine(app).await;
+                                if let Err(e) = launch_engine(app).await {
+                                    log::warn!("[Tray] Failed to launch engine on tray click: {}", e);
+                                }
                             });
                         }
                     }
@@ -314,11 +327,13 @@ pub fn run() {
                              Consider: echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
                             governor
                         );
-                        let _ = app.emit("cpu_governor_warning", serde_json::json!({
+                        if let Err(e) = app.emit("cpu_governor_warning", serde_json::json!({
                             "governor": governor,
                             "optimal": is_optimal,
                             "advice": "Switch to 'performance' governor for best voice pipeline performance"
-                        }));
+                        })) {
+                            log::warn!("[BOOTSTRAP] Failed to emit cpu_governor_warning: {}", e);
+                        }
                     }
                 }
             }
@@ -368,7 +383,9 @@ pub fn run() {
                     if !settings.system.setup_completed && wizard::check_setup_health() {
                         log::info!("[BOOTSTRAP] Existing models detected. Auto-completing setup.");
                         settings.system.setup_completed = true;
-                        let _ = settings.save();
+                        if let Err(e) = settings.save() {
+                            log::warn!("[BOOTSTRAP] Failed to save settings on auto-completion: {}", e);
+                        }
                     }
 
                     (
@@ -388,7 +405,9 @@ pub fn run() {
                 } else if !setup_completed {
                     log::info!("[BOOTSTRAP] Setup not completed. Launching onboarding wizard...");
                     if let Ok(wizard_win) = crate::wizard::ensure_wizard_window(&handle) {
-                        let _ = wizard_win.show();
+                        if let Err(e) = wizard_win.show() {
+                            log::warn!("[BOOTSTRAP] Failed to show wizard window: {}", e);
+                        }
                     }
                 } else {
                     log::info!("[BOOTSTRAP] Dictation disabled. Skipping engine auto-launch to save resources.");
@@ -411,7 +430,9 @@ pub fn run() {
                 // Instead of closing, hide the main window to keep app running
                 if window.label() == "main" {
                     log::info!("[Window] Close requested for main, hiding instead of closing window.");
-                    let _ = window.hide();
+                    if let Err(e) = window.hide() {
+                        log::warn!("[Window] Failed to hide main window on close request: {}", e);
+                    }
                     api.prevent_close();
 
                     // Evaluate engine offload if the main window is hidden
@@ -425,7 +446,9 @@ pub fn run() {
 
                         if !dictation_enabled && !is_engaged {
                             log::info!("[Window] Main window hidden, Dictation is disabled, and app is disengaged. Offloading engine...");
-                            let _ = crate::ipc::pipeline::stop_engine(handle).await;
+                            if let Err(e) = crate::ipc::pipeline::stop_engine(handle).await {
+                                log::warn!("[Window] Failed to stop engine on window hide: {}", e);
+                            }
                         } else {
                             log::info!("[Window] Main window hidden. Engine kept alive. Dictation enabled: {}, Engaged: {}", dictation_enabled, is_engaged);
                         }
@@ -482,12 +505,12 @@ pub fn run() {
             crate::ipc::voices::start_backend_recording,
             crate::ipc::voices::stop_backend_recording,
             crate::ipc::voices::delete_voice,
-            // Monitoring
+            // Monitoring & Profiler
             crate::ipc::monitoring::get_runtime_snapshot,
             crate::ipc::monitoring::get_runtime_history,
             crate::ipc::monitoring::clear_runtime_history,
-            crate::ipc::memory_profiler::get_profiler_snapshot,
-            crate::ipc::memory_profiler::record_memory_profile_event,
+            crate::ipc::monitoring::get_profiler_snapshot,
+            crate::ipc::monitoring::record_memory_profile_event,
             // Setup
             crate::ipc::setup::fetch_manifest,
             crate::ipc::setup::check_for_updates,
@@ -533,9 +556,15 @@ pub fn run() {
                     // Clear engine (this will drop VoxEngine and close channels)
                     let mut engine_lock = state.engine.blocking_lock();
                     if let Some(engine) = engine_lock.take() {
-                        let _ = engine.pipeline_tx.send(crate::core::events::VoxEvent::Shutdown);
-                        let _ = engine.stt_tx.send(crate::services::stt::SttCommand::Shutdown);
-                        let _ = engine.vad_tx.send(crate::core::state::VadCommand::Shutdown);
+                        if let Err(e) = engine.pipeline_tx.send(crate::core::events::VoxEvent::Shutdown) {
+                            log::trace!("[Vox] Pipeline worker already closed: {}", e);
+                        }
+                        if let Err(e) = engine.stt_tx.send(crate::services::stt::SttCommand::Shutdown) {
+                            log::trace!("[Vox] STT worker already closed: {}", e);
+                        }
+                        if let Err(e) = engine.vad_tx.send(crate::core::state::VadCommand::Shutdown) {
+                            log::trace!("[Vox] VAD worker already closed: {}", e);
+                        }
                     }
 
                     // Gracefully signal background memory worker to flush and shutdown
@@ -543,7 +572,9 @@ pub fn run() {
                         let mut memory_tx_lock = state.memory_tx.lock();
                         if let Some(tx) = memory_tx_lock.take() {
                             log::info!("[Vox] Sending Shutdown signal to memory worker...");
-                            let _ = tx.send(crate::persistence::memory_worker::MemoryWorkerEvent::Shutdown);
+                            if let Err(e) = tx.send(crate::persistence::memory_worker::MemoryWorkerEvent::Shutdown) {
+                                log::trace!("[Vox] Memory worker already closed: {}", e);
+                            }
                         }
                     }
 
@@ -552,7 +583,9 @@ pub fn run() {
                         let mut persist_tx_lock = state.persist_tx.lock();
                         if let Some(tx) = persist_tx_lock.take() {
                             log::info!("[Vox] Sending Shutdown signal to persistence worker...");
-                            let _ = tx.send(crate::persistence::events::PersistenceEvent::Shutdown);
+                            if let Err(e) = tx.send(crate::persistence::events::PersistenceEvent::Shutdown) {
+                                log::trace!("[Vox] Persistence worker already closed: {}", e);
+                            }
                         }
                     }
 

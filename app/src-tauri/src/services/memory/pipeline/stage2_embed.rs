@@ -5,11 +5,9 @@ use crate::core::constants::{
 };
 use crate::persistence::{encode_f32_blob, mutations, queries};
 use crate::services::memory::embedder::{ensure_embedder_loaded, generate_embedding};
+use crate::services::memory::{SOFT_VECTOR_DEDUP_THRESHOLD, STAGE2_BATCH_SIZE};
 use anyhow::Result;
 use turso::Connection;
-
-pub const STAGE2_BATCH_SIZE: usize = 16;
-pub const SOFT_VECTOR_DEDUP_THRESHOLD: f32 = 0.95;
 
 /// Claimed item pending stage 2 vector embedding and soft deduplication.
 #[derive(Debug, Clone)]
@@ -126,17 +124,21 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                         matched_fact: match_fact.clone(),
                         score: *sim,
                     };
-                    let _ =
-                        crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
+                    if let Err(e) = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await {
+                        log::warn!("[MemoryPipeline::Stage2] Failed to write dedup audit: {}", e);
+                    }
                 } else {
                     for (m_id, _, _, _) in &soft_dups {
                         if !m_id.starts_with("item_") {
-                            let _ = conn
+                            if let Err(e) = conn
                                 .execute(
                                     "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
                                     (m_id.as_str(),),
                                 )
-                                .await;
+                                .await
+                            {
+                                log::warn!("[MemoryPipeline::Stage2] Failed to supersede existing memory fact: {}", e);
+                            }
                         }
                     }
                     conn.execute(
@@ -156,8 +158,9 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                         matched_fact: match_fact.clone(),
                         score: *sim,
                     };
-                    let _ =
-                        crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await;
+                    if let Err(e) = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await {
+                        log::warn!("[MemoryPipeline::Stage2] Failed to write dedup audit: {}", e);
+                    }
                 }
             } else {
                 conn.execute(
@@ -199,8 +202,8 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
     }
 
     let items_claimed = items.len();
-    tracing::info!(
-        "[MemoryPipeline] [Stage 2 Embed] Claimed {} deduped items for MiniLM embedding generation",
+    log::info!(
+        "[MemoryPipeline::Stage2] Claimed {} deduped items for MiniLM embedding generation",
         items_claimed
     );
     ensure_embedder_loaded(true)?;
@@ -224,7 +227,9 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
             error_count: 0,
             duration_ms,
         };
-        let _ = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await;
+        if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {
+            log::warn!("[MemoryPipeline::Stage2] Failed to record stage metrics: {}", e);
+        }
     }
 
     Ok(processed_count)

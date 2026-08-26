@@ -13,7 +13,6 @@ pub fn clean_json_content(content: &str) -> String {
         cleaned.truncate(cleaned.len() - 3);
         cleaned = cleaned.trim().to_string();
     }
-    // Extract JSON block between first '{' and last '}'
     if let (Some(start_idx), Some(end_idx)) = (cleaned.find('{'), cleaned.rfind('}')) {
         if start_idx < end_idx {
             cleaned = cleaned[start_idx..=end_idx].to_string();
@@ -130,7 +129,6 @@ pub fn escape_control_chars_in_json(input: &str) -> String {
                 '\r' => output.push_str("\\r"),
                 '\t' => output.push_str("\\t"),
                 _ if c.is_control() => {
-                    // ignore control characters
                 }
                 _ => output.push(c),
             }

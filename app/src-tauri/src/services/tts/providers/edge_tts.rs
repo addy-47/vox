@@ -14,11 +14,11 @@ use tokio_tungstenite::tungstenite::Message;
 use super::{TtsProvider, TtsProviderKind};
 use crate::core::events::VoxEvent;
 use crate::services::audio::decode::decode_bytes_to_24khz_mono;
-
-const SEC_MS_GEC_VERSION: &str = "1-143.0.3650.75";
-const ORIGIN_HEADER: &str = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
-const USER_AGENT_HEADER: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0";
-const WIN_EPOCH: u64 = 11_644_473_600;
+use crate::services::tts::{
+    EDGE_TTS_DEFAULT_VOICE, EDGE_TTS_HOST, EDGE_TTS_ORIGIN, EDGE_TTS_PORT,
+    EDGE_TTS_SEC_MS_GEC_VERSION, EDGE_TTS_USER_AGENT, EDGE_TTS_WIN_EPOCH, EDGE_TTS_WS_URL_BASE,
+    MIN_SPEED_EDGE, MAX_SPEED_EDGE,
+};
 
 /// Returns the Microsoft Edge ReadAloud client token bytes as a decoded UTF-8 string.
 pub fn get_trusted_client_token() -> String {
@@ -32,12 +32,11 @@ pub fn get_trusted_client_token() -> String {
 
 /// Generates the SHA-256 hash token required for Microsoft Edge ReadAloud authentication.
 pub fn generate_sec_ms_gec() -> String {
-    use std::fmt::Write;
     let unix_ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let mut ticks = unix_ts + WIN_EPOCH;
+    let mut ticks = unix_ts + EDGE_TTS_WIN_EPOCH;
     ticks -= ticks % 300;
     let ticks_ns = (ticks as u128) * 10_000_000;
     let str_to_hash = format!("{}{}", ticks_ns, get_trusted_client_token());
@@ -46,7 +45,10 @@ pub fn generate_sec_ms_gec() -> String {
     let hash = hasher.finalize();
     let mut hex_str = String::with_capacity(64);
     for b in hash {
-        let _ = write!(hex_str, "{:02X}", b);
+        use std::fmt::Write;
+        if let Err(e) = write!(hex_str, "{:02X}", b) {
+            log::warn!("[EdgeTTS] Failed to format hash byte: {}", e);
+        }
     }
     hex_str
 }
@@ -78,7 +80,7 @@ impl EdgeTtsProvider {
     /// Creates a new EdgeTtsProvider configured with the given voice name or default Aria.
     pub fn new(voice: Option<&str>) -> Self {
         Self {
-            voice: voice.unwrap_or("en-US-AriaNeural").to_string(),
+            voice: voice.unwrap_or(EDGE_TTS_DEFAULT_VOICE).to_string(),
             speed: AtomicU32::new(1.0f32.to_bits()),
         }
     }
@@ -93,30 +95,50 @@ async fn connect_edge_websocket(event_tx: &Sender<VoxEvent>, turn_id: u32) -> Op
         let conn_id = uuid::Uuid::new_v4().simple().to_string();
         let sec_ms_gec = generate_sec_ms_gec();
         let url_str = format!(
-            "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken={}&ConnectionId={}&Sec-MS-GEC={}&Sec-MS-GEC-Version={}",
-            get_trusted_client_token(), conn_id, sec_ms_gec, SEC_MS_GEC_VERSION
+            "{}?TrustedClientToken={}&ConnectionId={}&Sec-MS-GEC={}&Sec-MS-GEC-Version={}",
+            EDGE_TTS_WS_URL_BASE,
+            get_trusted_client_token(),
+            conn_id,
+            sec_ms_gec,
+            EDGE_TTS_SEC_MS_GEC_VERSION
         );
 
         let mut req = match url_str.into_client_request() {
             Ok(r) => r,
             Err(e) => {
-                let _ = event_tx.send(VoxEvent::Error {
+                if let Err(send_err) = event_tx.send(VoxEvent::Error {
                     turn_id,
                     message: format!("Edge TTS URL parse error: {}", e),
-                });
+                }) {
+                    log::warn!("[EdgeTTS] Failed to emit error event: {}", send_err);
+                }
                 return None;
             }
         };
 
         let muid = uuid::Uuid::new_v4().simple().to_string().to_uppercase();
         let headers = req.headers_mut();
-        let _ = headers.insert("Host", "speech.platform.bing.com".parse().unwrap());
-        let _ = headers.insert("User-Agent", USER_AGENT_HEADER.parse().unwrap());
-        let _ = headers.insert("Origin", ORIGIN_HEADER.parse().unwrap());
-        let _ = headers.insert("Pragma", "no-cache".parse().unwrap());
-        let _ = headers.insert("Cache-Control", "no-cache".parse().unwrap());
-        let _ = headers.insert("Accept-Language", "en-US,en;q=0.9".parse().unwrap());
-        let _ = headers.insert("Cookie", format!("muid={};", muid).parse().unwrap());
+        if let Ok(val) = EDGE_TTS_HOST.parse() {
+            headers.insert("Host", val);
+        }
+        if let Ok(val) = EDGE_TTS_USER_AGENT.parse() {
+            headers.insert("User-Agent", val);
+        }
+        if let Ok(val) = EDGE_TTS_ORIGIN.parse() {
+            headers.insert("Origin", val);
+        }
+        if let Ok(val) = "no-cache".parse() {
+            headers.insert("Pragma", val);
+        }
+        if let Ok(val) = "no-cache".parse() {
+            headers.insert("Cache-Control", val);
+        }
+        if let Ok(val) = "en-US,en;q=0.9".parse() {
+            headers.insert("Accept-Language", val);
+        }
+        if let Ok(val) = format!("muid={};", muid).parse() {
+            headers.insert("Cookie", val);
+        }
 
         match connect_async(req).await {
             Ok((ws, _)) => {
@@ -126,10 +148,12 @@ async fn connect_edge_websocket(event_tx: &Sender<VoxEvent>, turn_id: u32) -> Op
             Err(e) => {
                 log::warn!("[EdgeTTS] Connection attempt {} failed: {:?}", attempt, e);
                 if attempt == 3 {
-                    let _ = event_tx.send(VoxEvent::Error {
+                    if let Err(send_err) = event_tx.send(VoxEvent::Error {
                         turn_id,
                         message: format!("Edge TTS WebSocket connect error (attempt 3/3): {:?}", e),
-                    });
+                    }) {
+                        log::warn!("[EdgeTTS] Failed to emit error event: {}", send_err);
+                    }
                     return None;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(150)).await;
@@ -158,10 +182,12 @@ async fn send_ssml_request(
     );
 
     if let Err(e) = ws_stream.send(Message::Text(cfg_msg.into())).await {
-        let _ = event_tx.send(VoxEvent::Error {
+        if let Err(send_err) = event_tx.send(VoxEvent::Error {
             turn_id,
             message: format!("Edge TTS config send error: {}", e),
-        });
+        }) {
+            log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
+        }
         return Err(e.into());
     }
 
@@ -180,10 +206,12 @@ async fn send_ssml_request(
     );
 
     if let Err(e) = ws_stream.send(Message::Text(ssml_msg.into())).await {
-        let _ = event_tx.send(VoxEvent::Error {
+        if let Err(send_err) = event_tx.send(VoxEvent::Error {
             turn_id,
             message: format!("Edge TTS SSML send error: {}", e),
-        });
+        }) {
+            log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
+        }
         return Err(e.into());
     }
 
@@ -248,15 +276,19 @@ impl TtsProvider for EdgeTtsProvider {
             Ok(r) => r,
             Err(e) => {
                 log::error!("[EdgeTTS] Failed to build Tokio runtime: {}", e);
-                let _ = event_tx.send(VoxEvent::Error {
+                if let Err(send_err) = event_tx.send(VoxEvent::Error {
                     turn_id,
                     message: format!("Edge TTS Tokio runtime error: {}", e),
-                });
+                }) {
+                    log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
+                }
                 return Err(e.into());
             }
         };
 
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
+            log::debug!("[EdgeTTS] Ring crypto provider already set or error: {:?}", e);
+        }
 
         rt.block_on(async move {
             let mut ws_stream = match connect_edge_websocket(&event_tx, turn_id).await {
@@ -302,10 +334,12 @@ impl TtsProvider for EdgeTtsProvider {
                         }
                     }
                     Err(e) => {
-                        let _ = event_tx.send(VoxEvent::Error {
+                        if let Err(send_err) = event_tx.send(VoxEvent::Error {
                             turn_id,
                             message: format!("Edge TTS MP3 decode error: {}", e),
-                        });
+                        }) {
+                            log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
+                        }
                     }
                 }
             }
@@ -316,7 +350,7 @@ impl TtsProvider for EdgeTtsProvider {
 
     /// Hot-updates the speech playback speed factor.
     fn set_speed(&self, speed: f32) {
-        let clamped = speed.clamp(0.5, 2.0);
+        let clamped = speed.clamp(MIN_SPEED_EDGE, MAX_SPEED_EDGE);
         self.speed.store(clamped.to_bits(), Ordering::Relaxed);
     }
 
@@ -328,7 +362,8 @@ impl TtsProvider for EdgeTtsProvider {
     /// Checks network reachability against Microsoft Speech Platform endpoint.
     fn health_check(&self) -> bool {
         use std::net::ToSocketAddrs;
-        if let Ok(mut addrs) = "speech.platform.bing.com:443".to_socket_addrs() {
+        let host_port = format!("{}:{}", EDGE_TTS_HOST, EDGE_TTS_PORT);
+        if let Ok(mut addrs) = host_port.to_socket_addrs() {
             if let Some(addr) = addrs.next() {
                 return std::net::TcpStream::connect_timeout(
                     &addr,

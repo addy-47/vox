@@ -47,9 +47,13 @@ async fn handle_dictation_side_effects(
         let is_clickable = enabled && is_tray_mode;
         let menu_item_lock = state.hud_menu_item.lock().await;
         if let Some(ref live_i) = *menu_item_lock {
-            let _ = live_i.set_enabled(is_clickable);
+            if let Err(e) = live_i.set_enabled(is_clickable) {
+                log::warn!("[Settings::Mutation] Failed to set menu item enabled: {}", e);
+            }
             let hud_visible = *state.hud_visible.lock().await;
-            let _ = live_i.set_checked(hud_visible && is_clickable);
+            if let Err(e) = live_i.set_checked(hud_visible && is_clickable) {
+                log::warn!("[Settings::Mutation] Failed to set menu item checked: {}", e);
+            }
         }
 
         if !enabled {
@@ -62,12 +66,16 @@ async fn handle_dictation_side_effects(
             if !is_engaged {
                 let state_clone = app.state::<std::sync::Arc<AppState>>().inner().clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = crate::services::audio::stop_audio_engine(&state_clone).await;
+                    if let Err(e) = crate::services::audio::stop_audio_engine(&state_clone).await {
+                        log::warn!("[Settings::Mutation] Failed to stop audio engine: {}", e);
+                    }
                 });
             }
         } else {
             if is_tray_mode {
-                let _ = crate::tray::ensure_tray_window(app);
+                if let Err(e) = crate::tray::ensure_tray_window(app) {
+                    log::warn!("[Settings::Mutation] Failed to ensure tray window: {}", e);
+                }
             }
             let app_clone = app.clone();
             let state_clone = app.state::<std::sync::Arc<AppState>>().inner().clone();
@@ -90,13 +98,19 @@ async fn handle_dictation_side_effects(
 
         let menu_item_lock = state.hud_menu_item.lock().await;
         if let Some(ref live_i) = *menu_item_lock {
-            let _ = live_i.set_enabled(is_clickable);
+            if let Err(e) = live_i.set_enabled(is_clickable) {
+                log::warn!("[Settings::Mutation] Failed to set menu item enabled: {}", e);
+            }
             let hud_visible = *state.hud_visible.lock().await;
-            let _ = live_i.set_checked(hud_visible && is_clickable);
+            if let Err(e) = live_i.set_checked(hud_visible && is_clickable) {
+                log::warn!("[Settings::Mutation] Failed to set menu item checked: {}", e);
+            }
         }
 
         if enabled && is_tray_mode {
-            let _ = crate::tray::ensure_tray_window(app);
+            if let Err(e) = crate::tray::ensure_tray_window(app) {
+                log::warn!("[Settings::Mutation] Failed to ensure tray window: {}", e);
+            }
         } else if !is_tray_mode {
             crate::tray::destroy_tray_window(app);
         }
@@ -128,12 +142,16 @@ async fn handle_interaction_side_effects(
         if !dictation_enabled && !is_engaged && !is_passive {
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = crate::ipc::pipeline::stop_engine(app_clone).await;
+                if let Err(e) = crate::ipc::pipeline::stop_engine(app_clone).await {
+                    log::warn!("[Settings::Mutation] Failed to stop engine: {}", e);
+                }
             });
         } else if is_passive {
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = crate::ipc::pipeline::launch_engine(app_clone).await;
+                if let Err(e) = crate::ipc::pipeline::launch_engine(app_clone).await {
+                    log::warn!("[Settings::Mutation] Failed to launch engine: {}", e);
+                }
             });
         }
 
@@ -179,8 +197,12 @@ async fn handle_setting_side_effects(
         log::info!("[Settings] VAD backend changed. Hot-swapping 3-Tier Engine...");
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
-            let _ = crate::ipc::pipeline::stop_engine(app_clone.clone()).await;
-            let _ = crate::ipc::pipeline::launch_engine(app_clone).await;
+            if let Err(e) = crate::ipc::pipeline::stop_engine(app_clone.clone()).await {
+                log::warn!("[Settings::Mutation] Failed to stop engine on VAD swap: {}", e);
+            }
+            if let Err(e) = crate::ipc::pipeline::launch_engine(app_clone).await {
+                log::warn!("[Settings::Mutation] Failed to launch engine on VAD swap: {}", e);
+            }
         });
     }
 }
@@ -230,20 +252,27 @@ pub async fn update_setting(
     log::info!("[Settings] Updated: {}", message);
 
     if domain == "appearance" && key == "theme" {
-        let _ = app.emit("theme-changed", value.as_str().unwrap_or("dark"));
+        if let Err(e) = app.emit("theme-changed", value.as_str().unwrap_or("dark")) {
+            log::warn!("[Settings::Mutation] Failed to emit theme-changed: {}", e);
+        }
     }
 
     if let Some(engine) = state.engine.lock().await.as_ref() {
         if let Ok(current_settings) = state.settings.read() {
-            let _ = engine
+            if let Err(e) = engine
                 .pipeline_tx
                 .send(crate::core::events::VoxEvent::SettingsUpdated(Box::new(
                     current_settings.clone(),
-                )));
+                )))
+            {
+                log::warn!("[Settings::Mutation] Failed to send SettingsUpdated event: {}", e);
+            }
         }
     }
 
-    let _ = app.emit("settings-updated", ());
+    if let Err(e) = app.emit("settings-updated", ()) {
+        log::warn!("[Settings::Mutation] Failed to emit settings-updated: {}", e);
+    }
 
     Ok(SettingUpdateResult {
         applied: true,
@@ -263,7 +292,9 @@ pub async fn update_theme(app: AppHandle, theme: String) -> Result<(), String> {
         }
         settings.appearance.theme = theme.clone();
     }
-    let _ = app.emit("theme-changed", theme);
+    if let Err(e) = app.emit("theme-changed", theme) {
+        log::warn!("[Settings::Mutation] Failed to emit theme-changed: {}", e);
+    }
     schedule_debounced_save(state.clone()).await;
     Ok(())
 }
@@ -279,7 +310,9 @@ pub async fn reset_settings(app: AppHandle) -> Result<VoxSettings, String> {
     }
 
     // Immediate apply for theme and other hot settings
-    let _ = app.emit("theme-changed", defaults.appearance.theme.clone());
+    if let Err(e) = app.emit("theme-changed", defaults.appearance.theme.clone()) {
+        log::warn!("[Settings::Mutation] Failed to emit theme-changed: {}", e);
+    }
 
     schedule_debounced_save(state.clone()).await;
 

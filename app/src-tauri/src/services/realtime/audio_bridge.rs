@@ -1,4 +1,7 @@
-use crate::services::realtime::{resampler::AudioResampler, RealtimeAudioConfig, RealtimeSession};
+use crate::services::realtime::{
+    resampler::AudioResampler, RealtimeAudioConfig, RealtimeSession, BRIDGE_CHANNEL_CAPACITY,
+    DEFAULT_INPUT_SAMPLE_RATE, LOG_INTERVAL_PACKETS, SINC_CHUNK_SIZE_INPUT,
+};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc::{channel, Sender};
@@ -30,12 +33,16 @@ impl AudioBridge {
         config: RealtimeAudioConfig,
         handle: &tokio::runtime::Handle,
     ) {
-        let (tx, mut rx) = channel::<Vec<i16>>(100);
+        let (tx, mut rx) = channel::<Vec<i16>>(BRIDGE_CHANNEL_CAPACITY);
         self.tx = Some(tx);
 
         handle.spawn(async move {
             let mut resampler = if config.requires_input_resampling {
-                match AudioResampler::new(16000, config.input_sample_rate, 320) {
+                match AudioResampler::new(
+                    DEFAULT_INPUT_SAMPLE_RATE,
+                    config.input_sample_rate,
+                    SINC_CHUNK_SIZE_INPUT,
+                ) {
                     Ok(r) => Some(r),
                     Err(e) => {
                         log::error!("[AudioBridge] Failed to create input resampler: {:?}", e);
@@ -84,7 +91,7 @@ impl AudioBridge {
                 match e {
                     tokio::sync::mpsc::error::TrySendError::Full(_) => {
                         let prev = DROP_COUNT.fetch_add(1, Ordering::Relaxed);
-                        if prev.is_multiple_of(100) {
+                        if (prev as u64).is_multiple_of(LOG_INTERVAL_PACKETS) {
                             log::warn!(
                                 "[AudioBridge] Channel buffer full, dropping input audio chunk. Dropped {} chunks so far.",
                                 prev + 1

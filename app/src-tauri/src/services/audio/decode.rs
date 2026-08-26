@@ -1,16 +1,11 @@
 //! Audio decoding utilities — convert any supported format to 24 kHz mono f32 WAV.
-//!
-//! Wraps the `symphonia` crate to decode MP3, FLAC, M4A, WAV, and other formats
-//! into a uniform representation suitable for voice cloning pipelines.
-//!
-//! # Output format
-//! - Sample rate: 24000 Hz
-//! - Channels: mono
-//! - Sample type: `f32`, normalized to [-1.0, 1.0]
 
 use std::fs::File;
 use std::path::Path;
 
+use super::{
+    CLONE_SAMPLE_RATE, PCM_I16_SCALE, PCM_S16_SCALE, PCM_S32_SCALE, PCM_U16_SCALE, PCM_U8_SCALE,
+};
 use symphonia_core::audio::Audio;
 use symphonia_core::audio::GenericAudioBufferRef;
 use symphonia_core::codecs::audio::AudioDecoder;
@@ -89,24 +84,24 @@ fn decode_mss(mss: MediaSourceStream, hint: Hint) -> DecodeResult<DecodedAudio> 
         .map_err(|e| format!("Failed to initialize audio decoder: {}", e))?;
 
     let track_id = track.id;
-    let input_sample_rate = codec_params.sample_rate.unwrap_or(24000);
+    let input_sample_rate = codec_params.sample_rate.unwrap_or(CLONE_SAMPLE_RATE);
     let raw_samples = decode_packets(format.as_mut(), decoder.as_mut(), track_id)?;
 
     if raw_samples.is_empty() {
         return Err("Decoded audio contains no samples".to_string());
     }
 
-    let resampled = if input_sample_rate != 24000 {
-        resample_linear(&raw_samples, input_sample_rate, 24000)
+    let resampled = if input_sample_rate != CLONE_SAMPLE_RATE {
+        resample_linear(&raw_samples, input_sample_rate, CLONE_SAMPLE_RATE)
     } else {
         raw_samples
     };
 
-    let duration_secs = resampled.len() as f32 / 24000.0;
+    let duration_secs = resampled.len() as f32 / CLONE_SAMPLE_RATE as f32;
 
     Ok(DecodedAudio {
         samples: resampled,
-        sample_rate: 24000,
+        sample_rate: CLONE_SAMPLE_RATE,
         duration_secs,
     })
 }
@@ -136,7 +131,10 @@ fn decode_packets(
         let decoded = match decoder.decode(&packet) {
             Ok(decoded) => decoded,
             Err(Error::DecodeError(err)) => {
-                log::warn!("[Decode] skipping packet with decode error: {}", err);
+                log::warn!(
+                    "[Audio::Decode] skipping packet with decode error: {}",
+                    err
+                );
                 continue;
             }
             Err(e) => return Err(format!("Decoder error: {}", e)),
@@ -171,7 +169,7 @@ fn append_samples_as_f32_mono(
             for f in 0..frames {
                 let mut sum = 0.0f32;
                 for c in 0..channels {
-                    sum += (buf[c][f] as f32 / 128.0) - 1.0;
+                    sum += (buf[c][f] as f32 / PCM_U8_SCALE) - 1.0;
                 }
                 raw_samples.push(sum / channels as f32);
             }
@@ -182,7 +180,7 @@ fn append_samples_as_f32_mono(
             for f in 0..frames {
                 let mut sum = 0.0f32;
                 for c in 0..channels {
-                    sum += (buf[c][f] as f32 / 32768.0) - 1.0;
+                    sum += (buf[c][f] as f32 / PCM_U16_SCALE) - 1.0;
                 }
                 raw_samples.push(sum / channels as f32);
             }
@@ -193,7 +191,7 @@ fn append_samples_as_f32_mono(
             for f in 0..frames {
                 let mut sum = 0.0f32;
                 for c in 0..channels {
-                    sum += buf[c][f] as f32 / 32768.0;
+                    sum += buf[c][f] as f32 / PCM_S16_SCALE;
                 }
                 raw_samples.push(sum / channels as f32);
             }
@@ -204,7 +202,7 @@ fn append_samples_as_f32_mono(
             for f in 0..frames {
                 let mut sum = 0.0f32;
                 for c in 0..channels {
-                    sum += buf[c][f] as f32 / 2147483648.0;
+                    sum += buf[c][f] as f32 / PCM_S32_SCALE;
                 }
                 raw_samples.push(sum / channels as f32);
             }
@@ -234,7 +232,7 @@ fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
 
 /// Truncate decoded audio samples to a maximum duration in seconds.
 pub fn truncate_to(audio: DecodedAudio, max_secs: f32) -> DecodedAudio {
-    let max_samples = (max_secs * 24000.0) as usize;
+    let max_samples = (max_secs * CLONE_SAMPLE_RATE as f32) as usize;
     if audio.samples.len() > max_samples {
         DecodedAudio {
             samples: audio.samples[..max_samples].to_vec(),
@@ -267,7 +265,7 @@ pub fn write_wav_f32<P: AsRef<Path>>(
     for &sample in samples {
         let clamped = sample.clamp(-1.0, 1.0);
         writer
-            .write_sample((clamped * 32767.0) as i16)
+            .write_sample((clamped * PCM_I16_SCALE) as i16)
             .map_err(|e| format!("Failed to write WAV sample: {}", e))?;
     }
 

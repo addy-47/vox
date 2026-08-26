@@ -24,7 +24,6 @@ pub async fn run_pipeline_cycle_with_id_seq(
         return Ok(0);
     }
 
-    // Quick exit if queue is empty to avoid logging and queries
     let count = match conn
         .query("SELECT COUNT(*) FROM personal_memory_queue", ())
         .await
@@ -41,59 +40,55 @@ pub async fn run_pipeline_cycle_with_id_seq(
 
     let mut total_processed = 0;
 
-    tracing::info!(
-        "[MemoryPipeline] === Starting consolidation cycle (Run ID: {}) ===",
+    log::info!(
+        "[MemoryPipeline] Starting consolidation cycle run_id={}",
         run_id
     );
 
-    // Stage 1: Dedup
     let n1 = run_stage1_dedup_with_metrics(conn, run_id).await?;
     total_processed += n1;
     if n1 > 0 {
-        tracing::info!("[MemoryPipeline] Stage 1 (Dedup): Processed {} items.", n1);
+        log::info!("[MemoryPipeline] Stage 1 (Dedup) processed_items={}", n1);
     }
     if cancel_flag.load(Ordering::Relaxed) {
-        tracing::info!("[MemoryPipeline] Consolidation canceled after Stage 1.");
+        log::info!("[MemoryPipeline] Consolidation canceled after Stage 1.");
         return Ok(total_processed);
     }
 
-    // Stage 2: Embed
     let n2 = run_stage2_embed_with_metrics(conn, run_id).await?;
     total_processed += n2;
     if n2 > 0 {
-        tracing::info!("[MemoryPipeline] Stage 2 (Embed): Processed {} items.", n2);
+        log::info!("[MemoryPipeline] Stage 2 (Embed) processed_items={}", n2);
     }
     if cancel_flag.load(Ordering::Relaxed) {
-        tracing::info!("[MemoryPipeline] Consolidation canceled after Stage 2.");
+        log::info!("[MemoryPipeline] Consolidation canceled after Stage 2.");
         return Ok(total_processed);
     }
 
-    // Stage 3: Eval
     let n3 = run_stage3_eval_with_metrics_seq(conn, run_id, stage3_batch_seq).await?;
     total_processed += n3;
     if n3 > 0 {
-        tracing::info!(
-            "[MemoryPipeline] Stage 3 (NLI Eval): Processed {} items.",
+        log::info!(
+            "[MemoryPipeline] Stage 3 (NLI Eval) processed_items={}",
             n3
         );
     }
     if cancel_flag.load(Ordering::Relaxed) {
-        tracing::info!("[MemoryPipeline] Consolidation canceled after Stage 3.");
+        log::info!("[MemoryPipeline] Consolidation canceled after Stage 3.");
         return Ok(total_processed);
     }
 
-    // Stage 4: Commit & Prune
     let n4 = run_stage4_commit_with_metrics(conn, run_id).await?;
     total_processed += n4;
     if n4 > 0 {
-        tracing::info!(
-            "[MemoryPipeline] Stage 4 (Commit & Prune): Committed {} facts.",
+        log::info!(
+            "[MemoryPipeline] Stage 4 (Commit & Prune) committed_facts={}",
             n4
         );
     }
 
-    tracing::info!(
-        "[MemoryPipeline] === Completed consolidation cycle: {} total items processed ===",
+    log::info!(
+        "[MemoryPipeline] Completed consolidation cycle total_processed={}",
         total_processed
     );
 

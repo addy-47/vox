@@ -11,6 +11,10 @@ use crate::core::events::VoxEvent;
 use crate::core::settings::DeepgramVoiceAgentConfig;
 use crate::services::realtime::{
     RealtimeAudioConfig, RealtimeProviderKind, RealtimeSession, RealtimeVoiceProvider,
+    DEEPGRAM_DEFAULT_WS_URL, DEEPGRAM_HEALTH_CHECK_ADDR, DEFAULT_INPUT_SAMPLE_RATE,
+    DEFAULT_OUTPUT_SAMPLE_RATE, LOG_INTERVAL_PACKETS, MAX_RECONNECT_ATTEMPTS,
+    RECONNECT_BASE_DELAY_SECS, RECONNECT_FACTOR_SECS, WS_HEALTH_CHECK_TIMEOUT,
+    WS_KEEPALIVE_INTERVAL,
 };
 
 type WsWriter = futures_util::stream::SplitSink<
@@ -53,8 +57,8 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
     /// Returns audio sampling configuration for Deepgram (16kHz in, 24kHz out).
     fn audio_config(&self) -> RealtimeAudioConfig {
         RealtimeAudioConfig {
-            input_sample_rate: 16000,
-            output_sample_rate: 24000,
+            input_sample_rate: DEFAULT_INPUT_SAMPLE_RATE,
+            output_sample_rate: DEFAULT_OUTPUT_SAMPLE_RATE,
             requires_input_resampling: false,
             requires_output_resampling: false,
         }
@@ -67,7 +71,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         playback_tx: tokio::sync::mpsc::Sender<Vec<i16>>,
         event_tx: Sender<VoxEvent>,
     ) -> Result<Box<dyn RealtimeSession>> {
-        let _ = interaction_mode;
+        log::debug!("[DeepgramVoiceAgent] Connecting with interaction_mode: {:?}", interaction_mode);
         let handle = tokio::runtime::Handle::current();
 
         if self.config.api_key.is_empty() {
@@ -76,9 +80,8 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
 
         let api_key = &self.config.api_key;
         let url = std::env::var("DEEPGRAM_AGENT_ENDPOINT_OVERRIDE")
-            .unwrap_or_else(|_| "wss://agent.deepgram.com/v1/agent/converse".to_string());
+            .unwrap_or_else(|_| DEEPGRAM_DEFAULT_WS_URL.to_string());
 
-        // Perform initial connection and setup handshake synchronously
         let (mut ws_write, mut ws_read) = tokio::task::block_in_place(|| {
             handle.block_on(async {
                 perform_handshake(&url, api_key, &self.config, &self.system_prompt).await
@@ -114,9 +117,8 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         let ws_sender_audio = ws_sender.clone();
         let ws_sender_control = ws_sender.clone();
 
-        // Spawn persistent Audio Sender Task
         let audio_sender_task = handle.spawn(async move {
-            let mut packet_count = 0;
+            let mut packet_count: u64 = 0;
             while let Some(pcm) = audio_rx.recv().await {
                 let bytes: Vec<u8> = pcm.iter().flat_map(|&s| s.to_le_bytes()).collect();
                 let msg = Message::Binary(bytes.into());
@@ -134,7 +136,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                     }
                 }
                 packet_count += 1;
-                if packet_count % 100 == 0 {
+                if packet_count.is_multiple_of(LOG_INTERVAL_PACKETS) {
                     log::debug!(
                         "[DeepgramVoiceAgent] Sent {} raw audio blocks to WebSocket.",
                         packet_count
@@ -143,7 +145,6 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
             }
         });
 
-        // Spawn persistent Control Sender Task
         let control_sender_task = handle.spawn(async move {
             while let Some(evt) = control_rx.recv().await {
                 let msg = match evt {
@@ -168,12 +169,11 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
             }
         });
 
-        // Spawn periodic KeepAlive Task to prevent CLIENT_MESSAGE_TIMEOUT from Deepgram
         let ws_sender_keepalive = ws_sender.clone();
         let ws_connected_keepalive = ws_connected.clone();
         let keepalive_task = handle.spawn(async move {
             while ws_connected_keepalive.load(Ordering::SeqCst) {
-                tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+                tokio::time::sleep(WS_KEEPALIVE_INTERVAL).await;
                 if !ws_connected_keepalive.load(Ordering::SeqCst) {
                     break;
                 }
@@ -198,7 +198,6 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
             }
         });
 
-        // Set up the first active connection
         let (ws_write_tx, mut ws_write_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
         *ws_sender.lock() = Some(ws_write_tx);
 
@@ -257,19 +256,16 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
             ws_connected_clone.store(false, Ordering::SeqCst);
             if is_paused_clone.load(Ordering::SeqCst) {
                 log::info!("[DeepgramVoiceAgent] WebSocket disconnected silently during pause.");
-            } else {
-                if let Some(tx) = reconnect_tx_opt.take() {
-                    let _ = tx.send(());
+            } else if let Some(tx) = reconnect_tx_opt.take() {
+                if tx.send(()).is_err() {
+                    log::warn!("[DeepgramVoiceAgent] Failed to send reconnect notification (receiver dropped).");
                 }
             }
         });
 
-        // Spawn connection lifecycle orchestrator to handle future reconnects in background
         handle.spawn(async move {
             let mut active_write_task = Some(write_task);
             let mut active_receiver_task = Some(receiver_task);
-
-            let max_reconnect_attempts = 3;
 
             'reconnect_loop: loop {
                 tokio::select! {
@@ -291,18 +287,18 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                     }
                 }
 
-                // Attempt reconnect
                 let mut reconnect_attempts = 0;
                 let mut reconnected = false;
 
-                while reconnect_attempts < max_reconnect_attempts {
+                while reconnect_attempts < MAX_RECONNECT_ATTEMPTS {
                     log::info!(
                         "[DeepgramVoiceAgent] Reconnecting to Deepgram Voice Agent (attempt {}/{})...",
                         reconnect_attempts + 1,
-                        max_reconnect_attempts
+                        MAX_RECONNECT_ATTEMPTS
                     );
 
-                    tokio::time::sleep(std::time::Duration::from_secs(2 * reconnect_attempts as u64 + 1)).await;
+                    let delay_secs = RECONNECT_FACTOR_SECS * (reconnect_attempts as u64) + RECONNECT_BASE_DELAY_SECS;
+                    tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
 
                     let system_prompt_clone = system_prompt_clone.clone();
                     match perform_handshake(&url_clone, &api_key_clone, &config_clone, &system_prompt_clone).await {
@@ -365,9 +361,9 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                                 ws_conn_rec.store(false, Ordering::SeqCst);
                                 if is_paused_rec.load(Ordering::SeqCst) {
                                     log::info!("[DeepgramVoiceAgent] Reconnected WebSocket disconnected silently during pause.");
-                                } else {
-                                    if let Some(tx) = reconnect_tx_opt.take() {
-                                        let _ = tx.send(());
+                                } else if let Some(tx) = reconnect_tx_opt.take() {
+                                    if tx.send(()).is_err() {
+                                        log::warn!("[DeepgramVoiceAgent] Failed to send reconnected reconnect signal.");
                                     }
                                 }
                             });
@@ -385,10 +381,12 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
 
                 if !reconnected {
                     log::error!("[DeepgramVoiceAgent] Max reconnection attempts reached. Terminating session.");
-                    let _ = event_tx_clone.send(VoxEvent::Error {
+                    if let Err(e) = event_tx_clone.send(VoxEvent::Error {
                         turn_id: 0,
                         message: "Deepgram connection lost permanently after multiple retries.".to_string(),
-                    });
+                    }) {
+                        log::warn!("[DeepgramVoiceAgent] Failed to send permanent error event: {:?}", e);
+                    }
                     *ws_sender.lock() = None;
                     audio_sender_task.abort();
                     control_sender_task.abort();
@@ -409,11 +407,11 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
     /// Performs a network health check by probing the Deepgram Voice Agent TCP endpoint.
     fn health_check(&self) -> bool {
         use std::net::ToSocketAddrs;
-        if let Ok(mut addrs) = "agent.deepgram.com:443".to_socket_addrs() {
+        if let Ok(mut addrs) = DEEPGRAM_HEALTH_CHECK_ADDR.to_socket_addrs() {
             if let Some(addr) = addrs.next() {
                 return std::net::TcpStream::connect_timeout(
                     &addr,
-                    std::time::Duration::from_secs(2),
+                    WS_HEALTH_CHECK_TIMEOUT,
                 )
                 .is_ok();
             }
@@ -480,11 +478,11 @@ async fn perform_handshake(
         "audio": {
             "input": {
                 "encoding": "linear16",
-                "sample_rate": 16000
+                "sample_rate": DEFAULT_INPUT_SAMPLE_RATE
             },
             "output": {
                 "encoding": "linear16",
-                "sample_rate": 24000,
+                "sample_rate": DEFAULT_OUTPUT_SAMPLE_RATE,
                 "container": "none"
             }
         },
@@ -527,7 +525,7 @@ async fn perform_handshake(
     let mut welcome_received = false;
     let mut settings_applied_received = false;
 
-    let handshake_timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    let handshake_timeout = tokio::time::timeout(crate::services::realtime::WS_HANDSHAKE_TIMEOUT, async {
         while let Some(res) = ws_read.next().await {
             match res {
                 Ok(Message::Text(text)) => {
@@ -575,7 +573,7 @@ async fn perform_handshake(
             Ok((ws_write, ws_read))
         }
         Ok(Err(e)) => Err(e),
-        Err(_) => Err(anyhow!("Handshake timed out after 5 seconds")),
+        Err(_) => Err(anyhow!("Handshake timed out after {} seconds", crate::services::realtime::WS_HANDSHAKE_TIMEOUT.as_secs())),
     }
 }
 

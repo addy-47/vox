@@ -12,7 +12,7 @@ pub struct UpdateReport {
 
 /// Helper function to perform robust semver comparisons without external crates.
 fn is_newer_version(remote: &str, local: &str) -> bool {
-    // Strip any pre-release tags like "-test1" or "-rc" for standard numeric checks
+
     let remote_clean = remote.split('-').next().unwrap_or(remote);
     let local_clean = local.split('-').next().unwrap_or(local);
 
@@ -35,7 +35,6 @@ fn is_newer_version(remote: &str, local: &str) -> bool {
             return false;
         }
     }
-    // If numeric parts are equal, check if remote does not have a pre-release tag when local does (e.g. remote is release, local is pre-release)
     if remote.contains('-') && !local.contains('-') {
         return false;
     }

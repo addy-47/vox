@@ -1,15 +1,13 @@
+use super::{
+    EMBEDDING_DIM, EMBEDDING_TOKENIZER_FILENAME, FALLBACK_EMBEDDING_MODEL_DIR,
+    FALLBACK_EMBEDDING_MODEL_FILENAME, PRIMARY_EMBEDDING_MODEL_DIR,
+    PRIMARY_EMBEDDING_MODEL_FILENAME,
+};
 use anyhow::Result;
 use ndarray::Array2;
 use parking_lot::Mutex;
 use std::path::Path;
 use tokenizers::Tokenizer;
-
-pub const EMBEDDING_DIM: usize = 384;
-pub const PRIMARY_MODEL_DIR: &str = "minilm-l12-v2";
-pub const PRIMARY_MODEL_FILENAME: &str = "model_int8.onnx";
-pub const FALLBACK_MODEL_DIR: &str = "bge-m3";
-pub const FALLBACK_MODEL_FILENAME: &str = "model_quantized.onnx";
-pub const TOKENIZER_FILENAME: &str = "tokenizer.json";
 
 /// ONNX session container for running dense sentence text embeddings.
 pub struct TextEmbedder {
@@ -23,19 +21,19 @@ static EMBEDDER: parking_lot::RwLock<Option<TextEmbedder>> = parking_lot::RwLock
 /// Initializes the text embedding model singleton.
 pub fn init_embedder(model_dir: &Path, is_primary: bool) -> Result<bool> {
     let model_filename = if is_primary {
-        PRIMARY_MODEL_FILENAME
+        PRIMARY_EMBEDDING_MODEL_FILENAME
     } else {
-        FALLBACK_MODEL_FILENAME
+        FALLBACK_EMBEDDING_MODEL_FILENAME
     };
     let model_path = model_dir.join(model_filename);
-    let tokenizer_path = model_dir.join(TOKENIZER_FILENAME);
+    let tokenizer_path = model_dir.join(EMBEDDING_TOKENIZER_FILENAME);
 
     if !model_path.exists() || !tokenizer_path.exists() {
         log::warn!(
             "[Embedder] Model assets missing at {:?}. Required model: {}, tokenizer: {}. Skipping init.",
             model_dir,
             model_filename,
-            TOKENIZER_FILENAME
+            EMBEDDING_TOKENIZER_FILENAME
         );
         return Ok(false);
     }
@@ -111,11 +109,11 @@ pub fn ensure_embedder_loaded(memory_enabled: bool) -> Result<bool> {
             .join("models")
     };
 
-    let minilm_dir = models_dir.join("embedding").join(PRIMARY_MODEL_DIR);
-    if minilm_dir.join(PRIMARY_MODEL_FILENAME).exists() {
+    let minilm_dir = models_dir.join("embedding").join(PRIMARY_EMBEDDING_MODEL_DIR);
+    if minilm_dir.join(PRIMARY_EMBEDDING_MODEL_FILENAME).exists() {
         init_embedder(&minilm_dir, true)
     } else {
-        let bge_dir = models_dir.join("embedding").join(FALLBACK_MODEL_DIR);
+        let bge_dir = models_dir.join("embedding").join(FALLBACK_EMBEDDING_MODEL_DIR);
         init_embedder(&bge_dir, false)
     }
 }

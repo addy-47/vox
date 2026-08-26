@@ -1,5 +1,8 @@
 use crate::services::audio::PlaybackEngine;
-use crate::services::realtime::{resampler::AudioResampler, RealtimeAudioConfig};
+use crate::services::realtime::{
+    resampler::AudioResampler, RealtimeAudioConfig, BRIDGE_CHANNEL_CAPACITY,
+    DEFAULT_OUTPUT_SAMPLE_RATE, PCM_INT16_DIVISOR_FLOAT, SINC_CHUNK_SIZE_OUTPUT,
+};
 use std::sync::Arc;
 use tokio::sync::mpsc::{channel, Sender};
 
@@ -28,25 +31,30 @@ impl PlaybackBridge {
         config: RealtimeAudioConfig,
         handle: &tokio::runtime::Handle,
     ) {
-        let (tx, mut rx) = channel::<Vec<i16>>(100);
+        let (tx, mut rx) = channel::<Vec<i16>>(BRIDGE_CHANNEL_CAPACITY);
         self.tx = Some(tx);
 
         handle.spawn(async move {
-            let mut resampler =
-                if config.requires_output_resampling && config.output_sample_rate != 24000 {
-                    match AudioResampler::new(config.output_sample_rate, 24000, 512) {
-                        Ok(r) => Some(r),
-                        Err(e) => {
-                            log::error!(
-                                "[PlaybackBridge] Failed to create output resampler: {:?}",
-                                e
-                            );
-                            None
-                        }
+            let mut resampler = if config.requires_output_resampling
+                && config.output_sample_rate != DEFAULT_OUTPUT_SAMPLE_RATE
+            {
+                match AudioResampler::new(
+                    config.output_sample_rate,
+                    DEFAULT_OUTPUT_SAMPLE_RATE,
+                    SINC_CHUNK_SIZE_OUTPUT,
+                ) {
+                    Ok(r) => Some(r),
+                    Err(e) => {
+                        log::error!(
+                            "[PlaybackBridge] Failed to create output resampler: {:?}",
+                            e
+                        );
+                        None
                     }
-                } else {
-                    None
-                };
+                }
+            } else {
+                None
+            };
 
             while let Some(pcm) = rx.recv().await {
                 let pcm_24k = if let Some(ref mut r) = resampler {
@@ -61,7 +69,10 @@ impl PlaybackBridge {
                     pcm
                 };
 
-                let f32_chunk: Vec<f32> = pcm_24k.iter().map(|&x| x as f32 / 32768.0).collect();
+                let f32_chunk: Vec<f32> = pcm_24k
+                    .iter()
+                    .map(|&x| x as f32 / PCM_INT16_DIVISOR_FLOAT)
+                    .collect();
 
                 playback_engine.ingest_chunk(&f32_chunk);
                 playback_engine.start_playback();

@@ -123,7 +123,7 @@ pub fn create_tts_provider(
             voice_id,
         } => {
             log::info!("[TTS Actor] Initializing Chatterbox engine");
-            let chatterbox_path = crate::utils::paths::model_dir("tts").join("chatterbox");
+            let chatterbox_path = crate::utils::paths::model_dir(super::CHATTERBOX_MODEL_DIR);
             let ref_audio = resolve_reference_audio(voice_id.as_deref());
             ChatterboxEngine::new(
                 &chatterbox_path,
