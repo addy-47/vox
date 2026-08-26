@@ -124,27 +124,15 @@ debug = false
 name = "voice_clone"
 
 [[example]]
-name = "vops_tts"
-
-[[example]]
 name = "generate_simulation_dataset_clips"
-
-[[example]]
-name = "query_embeddings"
-
-[[example]]
-name = "modernbert_zeroshot_probe"
-
-[[example]]
-name = "edge_classifier_probe"
 
 [[example]]
 name = "eval_compaction"
 path = "evals/eval_compaction.rs"
 
 [[example]]
-name = "eval_pipeline"
-path = "evals/eval_pipeline.rs"
+name = "eval_memory_pipeline"
+path = "evals/eval_memory_pipeline.rs"
 
 [[example]]
 name = "eval_retrieval"

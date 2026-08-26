@@ -37,3 +37,49 @@ pub fn jaccard_similarity(s1: &str, s2: &str) -> f32 {
 pub fn is_exact_duplicate(cosine_sim: f32, jaccard_sim: f32) -> bool {
     cosine_sim >= COSINE_HARD_MATCH_THRESHOLD || jaccard_sim >= JACCARD_EXACT_MATCH_THRESHOLD
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests that word casing and punctuation normalization produce exact similarity for identical token sets.
+    #[test]
+    fn test_jaccard_similarity_normalization() {
+        let s1 = "The quick, brown fox jumps!";
+        let s2 = "the QUICK brown FOX jumps.";
+        let sim = jaccard_similarity(s1, s2);
+        assert!((sim - 1.0).abs() < 1e-5);
+
+        let hi1 = "नमस्ते दुनिया।";
+        let hi2 = "नमस्ते दुनिया";
+        let sim_hi = jaccard_similarity(hi1, hi2);
+        assert!((sim_hi - 1.0).abs() < 1e-5);
+    }
+
+    /// Tests that completely disjoint token sets yield zero similarity.
+    #[test]
+    fn test_jaccard_similarity_disjoint() {
+        let s1 = "apple banana cherry";
+        let s2 = "dog elephant fox";
+        let sim = jaccard_similarity(s1, s2);
+        assert!((sim - 0.0).abs() < 1e-5);
+    }
+
+    /// Tests edge case boundaries with empty strings preventing division by zero.
+    #[test]
+    fn test_jaccard_similarity_empty_boundaries() {
+        assert!((jaccard_similarity("", "") - 1.0).abs() < 1e-5);
+        assert!((jaccard_similarity("hello", "") - 0.0).abs() < 1e-5);
+        assert!((jaccard_similarity("", "world") - 0.0).abs() < 1e-5);
+    }
+
+    /// Tests hard match decision threshold boundaries for cosine and Jaccard metrics.
+    #[test]
+    fn test_is_exact_duplicate_thresholds() {
+        assert!(is_exact_duplicate(0.98, 0.5));
+        assert!(is_exact_duplicate(0.99, 0.0));
+        assert!(is_exact_duplicate(0.50, 1.0));
+        assert!(!is_exact_duplicate(0.97, 0.99));
+        assert!(!is_exact_duplicate(0.0, 0.0));
+    }
+}

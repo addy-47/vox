@@ -336,3 +336,23 @@ impl AppState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests bidirectional conversions between u32 and InteractionOwner with unknown value fallback.
+    #[test]
+    fn test_interaction_owner_conversions() {
+        assert_eq!(InteractionOwner::from(0), InteractionOwner::Dictation);
+        assert_eq!(InteractionOwner::from(1), InteractionOwner::Assistant);
+        assert_eq!(InteractionOwner::from(42), InteractionOwner::Dictation);
+        assert_eq!(
+            InteractionOwner::from(u32::MAX),
+            InteractionOwner::Dictation
+        );
+
+        assert_eq!(u32::from(InteractionOwner::Dictation), 0);
+        assert_eq!(u32::from(InteractionOwner::Assistant), 1);
+    }
+}

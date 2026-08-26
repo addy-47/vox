@@ -1,4 +1,15 @@
-# 📄 `dictation.md` — Realtime Dictation Subsystem & Output Architecture (Phase 9)
+---
+title: "Vox Dictation Subsystem"
+audience: "Internal — backend & frontend contributors"
+last_updated: 2026-08-25
+owners: "backend-engineer role"
+related_docs:
+  - "docs/backend.md §3, §8 — Pipeline & events"
+  - "docs/features/voice-flow.md §8 — Dictation domain"
+  - "docs/plans/phase10/pipeline_orchestration_spec.md §7.5 — Dictation domain SSOT"
+---
+
+# 📄 `dictation.md` — Realtime Dictation Subsystem & Output Architecture (Phase 10)
 
 ---
 
@@ -6,7 +17,7 @@
 
 **Realtime Dictation** is a system-level, high-throughput speech-to-text pipeline in Vox inspired by Wispr-flow. It delivers instant, zero-latency transcription directly into any application on the operating system without incurring LLM reasoning or TTS synthesis overhead.
 
-In Phase 9, Dictation is **fully decoupled from the desktop Tray HUD**:
+In Phase 10, Dictation is **fully decoupled from the desktop Tray HUD and unified**: Passive and PTT share a single `services/pipeline/dictation.rs` handler (no split files). `services/dictation/` holds the reusable primitives (clipboard, input adapters, output_router, hotkey, controller):
 - **Dictation Core**: The native audio capture, VAD gating, STT acoustic transcription, and Devanagari transliteration engine.
 - **Output Mediums**: The transcription capability routes to mutually exclusive output destinations, where the desktop Tray HUD is simply one visual presentation medium among others.
 
@@ -77,9 +88,8 @@ Every output mode is **mutually exclusive** — at any given moment, transcripti
 
 ## 3. Fast-Path Pipeline Interception
 
-When dictation is active, the pipeline owner is set to `InteractionOwner::Dictation`.
+When dictation is active, the pipeline owner is `InteractionOwner::Dictation` (`core/state.rs:11`). The central router dispatches all `VoxEvent`s to `services/pipeline/dictation.rs::handle_event` (`services/pipeline/router.rs:10-31`). On `VoxEvent::TranscriptFinal`:
 
-In `services/pipeline/dictation.rs`, upon receiving `VoxEvent::TranscriptFinal`:
 ```rust
 // Dispatches to OS input router and resets state to Idle
 tauri::async_runtime::spawn(async move {
@@ -93,6 +103,8 @@ tauri::async_runtime::spawn(async move {
 
 transition(InteractionState::Idle, &ctx, app, state);
 ```
+
+Dictation has no `start_session`/`end_session` — it rides on the audio engine lifecycle (`lib.rs:360-395` auto-launch for Passive, lazy `ensure_engine_running` for PTT) and the router ownership check. While `owner==Assistant`, global hotkey presses are suppressed with a debug log (pipeline_orchestration_spec §5.2).
 
 **Benefits**:
 - **0ms LLM Overhead**: No prompt templating, context construction, token generation, or quantization lag.
@@ -274,3 +286,7 @@ enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 
 > See [`performance-memory-optimizations.md`](./performance-memory-optimizations.md) for the
 > full cross-platform heap trimming strategy (`trim_heap`) applied after model eviction.
+
+---
+
+**Last Updated:** 2026-08-25
