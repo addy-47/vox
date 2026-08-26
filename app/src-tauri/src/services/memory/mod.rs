@@ -9,6 +9,41 @@ pub mod scope_router;
 pub mod tokenizer;
 pub mod working_memory;
 
+pub const COSINE_HARD_MATCH_THRESHOLD: f32 = 0.98;
+pub const JACCARD_EXACT_MATCH_THRESHOLD: f32 = 1.0;
+pub const SOFT_VECTOR_DEDUP_THRESHOLD: f32 = 0.95;
+pub const SAME_COLLECTION_CANDIDATE_SEARCH: f32 = 0.60;
+pub const INTER_COLLECTION_CANDIDATE_SEARCH: f32 = 0.40;
+pub const SUBFLOOR_CANDIDATE_FLOOR: f32 = 0.25;
+
+pub const NLI_CONTRADICTION_THRESHOLD: f32 = 0.85;
+pub const NLI_ENTAILMENT_THRESHOLD: f32 = 0.85;
+pub const NLI_CONTRADICTION_CONFIDENCE_THRESHOLD: f32 = 0.85;
+pub const NLI_CONTRADICTION_MARGIN_THRESHOLD: f32 = 0.20;
+pub const NLI_ENTAILMENT_CONFIDENCE_THRESHOLD: f32 = 0.85;
+
+pub const EDGE_CLASSIFIER_THRESHOLD: f32 = 0.80;
+
+pub const STAGE1_BATCH_CEILING: usize = 128;
+pub const STAGE2_BATCH_SIZE: usize = 16;
+pub const STAGE3_BATCH_SIZE: usize = 16;
+pub const STAGE4_BATCH_SIZE: usize = 32;
+
+pub const NARRATIVE_CHAIN_SOFT_CAP_SHARE: f32 = 0.05;
+pub const EMBEDDING_DIM: usize = 384;
+pub const PRIMARY_EMBEDDING_MODEL_DIR: &str = "minilm-l12-v2";
+pub const PRIMARY_EMBEDDING_MODEL_FILENAME: &str = "model_int8.onnx";
+pub const FALLBACK_EMBEDDING_MODEL_DIR: &str = "bge-m3";
+pub const FALLBACK_EMBEDDING_MODEL_FILENAME: &str = "model_quantized.onnx";
+pub const EMBEDDING_TOKENIZER_FILENAME: &str = "tokenizer.json";
+pub const NLI_MODEL_DIR: &str = "nli-deberta-v3-base";
+pub const NLI_MODEL_FILENAME: &str = "model_quantized.onnx";
+pub const EDGE_CLASSIFIER_MODEL_DIR: &str = "classifier/modernbert_edge_creation";
+pub const EDGE_CLASSIFIER_MODEL_FILENAME: &str = "model_quantized.onnx";
+pub const MEMORY_SCOPE_MODEL_DIR: &str = "modernbert_memory_scope";
+pub const CLASSIFIER_MODEL_FILENAME: &str = "model_quantized.onnx";
+pub const CLASSIFIER_TOKENIZER_FILENAME: &str = "tokenizer.json";
+
 pub use crate::core::error::MemoryError;
 
 pub use classifiers::inter_edge_classifier::{
@@ -16,7 +51,7 @@ pub use classifiers::inter_edge_classifier::{
 };
 pub use classifiers::intra_edge_classifier::{
     classify_batch, ensure_nli_loaded, init_nli_engine, is_nli_loaded, relation_from_result,
-    NliLabel, NliRelation, NLI_CONTRADICTION_THRESHOLD, NLI_ENTAILMENT_THRESHOLD, NLI_MODEL_DIR,
+    NliLabel, NliRelation,
 };
 pub use classifiers::query_classifier::{
     classify_scope, ensure_scope_classifier_loaded, init_scope_classifier,
@@ -51,14 +86,6 @@ pub fn unload_all_onnx_models() {
 }
 
 /// Releases physical memory pages back to the OS after model eviction.
-///
-/// Platform behavior:
-/// - **Linux:**  `malloc_trim(0)` — returns free glibc arena pages immediately.
-/// - **Windows:** `EmptyWorkingSet` — moves freed pages from the process working set
-///   to the OS standby list, reducing physical RAM usage without extra allocations.
-/// - **macOS:**  No stable public trim API. Apple's libmalloc returns pages to the kernel
-///   autonomously under memory pressure. A no-op here is correct and safe.
-///   See: https://github.com/apple-oss-distributions/libmalloc (pressure_relief is internal).
 pub(crate) fn trim_heap(caller: &str) {
     #[cfg(target_os = "linux")]
     {
@@ -70,8 +97,6 @@ pub(crate) fn trim_heap(caller: &str) {
 
     #[cfg(target_os = "windows")]
     {
-        // EmptyWorkingSet via raw FFI — zero new crate dependencies.
-        // Declared here rather than globally to keep the unsafe surface minimal.
         extern "system" {
             fn GetCurrentProcess() -> *mut std::ffi::c_void;
             fn EmptyWorkingSet(hProcess: *mut std::ffi::c_void) -> i32;
@@ -89,14 +114,9 @@ pub(crate) fn trim_heap(caller: &str) {
 
     #[cfg(target_os = "macos")]
     {
-        // macOS: libmalloc has no stable public trim API (malloc_zone_pressure_relief is
-        // an internal symbol and must not be called externally). The OS allocator releases
-        // pages to the kernel on its own schedule when memory pressure is detected.
-        // PLATFORM_LIMITATION: no explicit trim possible on macOS without private API.
         log::debug!(
             "[Heap] trim_heap no-op on macOS (called from {}). OS allocator self-manages.",
             caller
         );
-        let _ = caller;
     }
 }

@@ -1,17 +1,17 @@
 use crate::core::state::AppState;
 use crate::monitoring::snapshot::RuntimeSnapshot;
+use crate::monitoring::COLLECTOR_TICK_INTERVAL;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Spawn the Monitoring Collector on a dedicated OS thread.
-/// Runs at 10Hz (100ms ticks).
 pub fn spawn_monitoring_collector(state: Arc<AppState>) {
     thread::Builder::new()
         .name("vox-monitor".to_string())
         .spawn(move || {
-            tracing::info!("[Monitoring] Collector worker started (10Hz).");
+            log::info!("[Monitoring::Collector] Collector worker started (10Hz)");
 
             let sys = sysinfo::System::new_with_specifics(
                 sysinfo::RefreshKind::new()
@@ -25,10 +25,59 @@ pub fn spawn_monitoring_collector(state: Arc<AppState>) {
                 let threads = state.latest_threads.load(Ordering::Relaxed);
                 let snapshot = collect_snapshot(&state, threads, total_ram_mb, cpu_cores);
                 state.monitoring.push(snapshot);
-                thread::sleep(Duration::from_millis(100));
+                thread::sleep(COLLECTOR_TICK_INTERVAL);
             }
         })
-        .expect("Failed to spawn monitoring collector thread");
+        .expect("[Monitoring::Collector] Failed to spawn monitoring collector thread");
+}
+
+fn map_pipeline_state_string(state_u32: u32) -> String {
+    match state_u32 {
+        0 => "Idle".to_string(),
+        1 => "Ready".to_string(),
+        2 => "Listening".to_string(),
+        3 => "Thinking".to_string(),
+        4 => "Speaking".to_string(),
+        5 => "Paused".to_string(),
+        6 => "Error".to_string(),
+        _ => "Unknown".to_string(),
+    }
+}
+
+fn get_playback_buffer_samples(state: &AppState) -> usize {
+    if let Ok(lock) = state.engine.try_lock() {
+        if let Some(engine) = lock.as_ref() {
+            engine.playback_engine.buffer_len()
+        } else {
+            0
+        }
+    } else {
+        0
+    }
+}
+
+fn get_llm_provider_kind(state: &AppState) -> String {
+    let settings = match state.settings.read() {
+        Ok(s) => s,
+        Err(_) => return "embedded".to_string(),
+    };
+    match settings.llm.active {
+        crate::core::settings::LlmActiveProvider::Embedded => "embedded".to_string(),
+        crate::core::settings::LlmActiveProvider::Server => {
+            if let Some(ref name) = settings.llm.server.provider_name {
+                format!("server:{}", name.to_lowercase())
+            } else {
+                "server".to_string()
+            }
+        }
+        crate::core::settings::LlmActiveProvider::Cloud => {
+            if let Some(ref name) = settings.llm.cloud.provider_name {
+                format!("cloud:{}", name.to_lowercase())
+            } else {
+                "cloud".to_string()
+            }
+        }
+    }
 }
 
 fn collect_snapshot(
@@ -43,55 +92,13 @@ fn collect_snapshot(
         .as_millis() as u64;
 
     let pa = &state.pipeline;
-    let pipeline_state_u32 = pa.current_state_atomic.load(Ordering::Relaxed);
-    let pipeline_state = match pipeline_state_u32 {
-        0 => "Idle".to_string(),
-        1 => "Ready".to_string(),
-        2 => "Listening".to_string(),
-        3 => "Thinking".to_string(),
-        4 => "Speaking".to_string(),
-        5 => "Paused".to_string(),
-        6 => "Error".to_string(),
-        _ => "Unknown".to_string(),
-    };
-
+    let pipeline_state = map_pipeline_state_string(pa.current_state_atomic.load(Ordering::Relaxed));
     let owner_enum: crate::core::state::InteractionOwner =
         state.owner.load(Ordering::Relaxed).into();
     let owner = format!("{:?}", owner_enum);
-    let buffer_samples = {
-        if let Ok(lock) = state.engine.try_lock() {
-            if let Some(engine) = lock.as_ref() {
-                engine.playback_engine.buffer_len()
-            } else {
-                0
-            }
-        } else {
-            0
-        }
-    };
-
+    let buffer_samples = get_playback_buffer_samples(state);
     let sys_ram_pct = f32::from_bits(state.latest_sys_ram.load(Ordering::Relaxed));
-
-    let llm_provider_kind = {
-        let settings = state.settings.read().unwrap();
-        match settings.llm.active {
-            crate::core::settings::LlmActiveProvider::Embedded => "embedded".to_string(),
-            crate::core::settings::LlmActiveProvider::Server => {
-                if let Some(ref name) = settings.llm.server.provider_name {
-                    format!("server:{}", name.to_lowercase())
-                } else {
-                    "server".to_string()
-                }
-            }
-            crate::core::settings::LlmActiveProvider::Cloud => {
-                if let Some(ref name) = settings.llm.cloud.provider_name {
-                    format!("cloud:{}", name.to_lowercase())
-                } else {
-                    "cloud".to_string()
-                }
-            }
-        }
-    };
+    let llm_provider_kind = get_llm_provider_kind(state);
 
     RuntimeSnapshot {
         pipeline_state,
@@ -178,3 +185,4 @@ fn collect_snapshot(
         timestamp_ms: now,
     }
 }
+

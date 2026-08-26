@@ -1,13 +1,12 @@
 use crate::core::constants::is_valid_inter_collection_pair;
+use crate::services::memory::{
+    EDGE_CLASSIFIER_MODEL_DIR, EDGE_CLASSIFIER_MODEL_FILENAME, EDGE_CLASSIFIER_THRESHOLD,
+    EMBEDDING_TOKENIZER_FILENAME,
+};
 use anyhow::{anyhow, Result};
 use ndarray::Array2;
 use std::path::Path;
 use tokenizers::Tokenizer;
-
-pub const EDGE_CLASSIFIER_MODEL_DIR: &str = "classifier/modernbert_edge_creation";
-pub const MODEL_FILENAME: &str = "model_quantized.onnx";
-pub const TOKENIZER_FILENAME: &str = "tokenizer.json";
-pub const EDGE_CLASSIFIER_THRESHOLD: f32 = 0.80;
 
 /// Runtime state container holding the ONNX inference session and tokenizer for edge classification.
 pub struct EdgeClassifierEngine {
@@ -21,15 +20,15 @@ static EDGE_ENGINE: parking_lot::RwLock<Option<EdgeClassifierEngine>> =
 
 /// Initializes the ModernBERT INT8 ONNX Edge Classifier Engine from model directory.
 pub fn init_edge_classifier(model_dir: &Path) -> Result<bool> {
-    let model_path = model_dir.join(MODEL_FILENAME);
-    let tokenizer_path = model_dir.join(TOKENIZER_FILENAME);
+    let model_path = model_dir.join(EDGE_CLASSIFIER_MODEL_FILENAME);
+    let tokenizer_path = model_dir.join(EMBEDDING_TOKENIZER_FILENAME);
 
     if !model_path.exists() || !tokenizer_path.exists() {
         log::warn!(
             "[EdgeClassifier] Model or tokenizer file missing in {:?}. Expected model: {}, tokenizer: {}. Skipping init.",
             model_dir,
-            MODEL_FILENAME,
-            TOKENIZER_FILENAME
+            EDGE_CLASSIFIER_MODEL_FILENAME,
+            EMBEDDING_TOKENIZER_FILENAME
         );
         return Ok(false);
     }

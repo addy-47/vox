@@ -45,7 +45,7 @@ pub trait LlmProvider: Send + Sync {
 
     /// Maximum supported context size in tokens.
     fn max_context_tokens(&self) -> usize {
-        2048
+        super::DEFAULT_MAX_CONTEXT_TOKENS
     }
 }
 

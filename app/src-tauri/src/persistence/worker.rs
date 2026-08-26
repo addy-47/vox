@@ -1,32 +1,28 @@
-use crossbeam_channel::{bounded, Sender};
+use crossbeam_channel::{bounded, Receiver, Sender};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::persistence::db::VoxDb;
 use crate::persistence::events::PersistenceEvent;
 use crate::persistence::schema;
+use crate::persistence::{
+    PERSISTENCE_CHANNEL_CAPACITY, PERSISTENCE_RATE_INTERVAL, WORKER_EVENT_POLL_TIMEOUT,
+};
 
 /// Spawn the persistence worker on a dedicated OS thread.
-///
-/// Returns a bounded SyncSender. The pipeline uses try_send() exclusively —
-/// it never blocks. If the channel is full (128 events), the event is dropped
-/// with a warning rather than stalling the real-time pipeline.
-///
-/// The worker thread is the ONLY thread that writes to the database.
-/// All reads happen on separate connections in IPC handlers.
 pub fn spawn_persistence_worker(
     db_path: PathBuf,
     is_db_healthy: Arc<AtomicBool>,
     persistence_rate: Arc<AtomicU32>,
     is_private_mode: Arc<AtomicBool>,
 ) -> Sender<PersistenceEvent> {
-    let (tx, rx) = bounded::<PersistenceEvent>(128);
+    let (tx, rx) = bounded::<PersistenceEvent>(PERSISTENCE_CHANNEL_CAPACITY);
 
     std::thread::Builder::new()
         .name("vox-persistence".to_string())
         .spawn(move || {
-            // Get the global/fallback Tokio runtime handle
             let rt_handle = crate::persistence::db::get_tokio_handle();
 
             let db = match rt_handle.block_on(VoxDb::open(&db_path)) {
@@ -36,107 +32,123 @@ pub fn spawn_persistence_worker(
                 }
                 Err(e) => {
                     is_db_healthy.store(false, Ordering::Relaxed);
-                    tracing::error!("[Persistence] Failed to open DB at {:?}: {}", db_path, e);
+                    log::error!("[Persistence::Worker] Failed to open DB at {:?}: {}", db_path, e);
                     return;
                 }
             };
 
             if let Err(e) = rt_handle.block_on(schema::run_migrations(&db)) {
-                tracing::error!("[Persistence] Migration failed: {}", e);
+                log::error!("[Persistence::Worker] Migration failed: {}", e);
                 return;
             }
 
-            // Startup sweep: clean up zero-activity sessions from previous runs
-            if let Err(e) = rt_handle.block_on(cleanup_zero_turn_sessions(&db)) {
-                tracing::warn!(
-                    "[Persistence] Zero-turn startup cleanup failed (non-fatal): {}",
-                    e
-                );
-            }
+            run_startup_sweeps(&db, &rt_handle);
+            log::info!("[Persistence::Worker] Worker started. DB at {:?}", db_path);
 
-            if let Err(e) = rt_handle.block_on(cleanup_stuck_queue_items(&db)) {
-                tracing::warn!(
-                    "[Persistence] Stuck queue items startup cleanup failed (non-fatal): {}",
-                    e
-                );
-            }
-
-            tracing::info!("[Persistence] Worker started. DB at {:?}", db_path);
-
-            let mut writes_last_second = 0u32;
-            let mut last_tick = std::time::Instant::now();
-
-            // Main event loop — blocking recv, never panic
-            loop {
-                let event = match rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                    Ok(e) => e,
-                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
-                        // Update rate at 1Hz
-                        if last_tick.elapsed() >= std::time::Duration::from_secs(1) {
-                            persistence_rate.store(
-                                (writes_last_second as f32).to_bits(),
-                                Ordering::Relaxed,
-                            );
-                            writes_last_second = 0;
-                            last_tick = std::time::Instant::now();
-                        }
-                        continue;
-                    }
-                    Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
-                        tracing::info!("[Persistence] Channel disconnected. Worker exiting.");
-                        break;
-                    }
-                };
-
-                // Respect Private Mode — skip all writes
-                if is_private_mode.load(Ordering::Relaxed) {
-                    match &event {
-                        PersistenceEvent::SessionStarted { id, .. } => {
-                            tracing::info!(
-                                "[Persistence] Private Mode active: skipping session start (id={})",
-                                id
-                            );
-                        }
-                        PersistenceEvent::TurnCompleted {
-                            conversation_id,
-                            turn_id,
-                            ..
-                        } => {
-                            tracing::info!(
-                                "[Persistence] Private Mode active: skipping turn record (session={}, turn={})",
-                                conversation_id,
-                                turn_id
-                            );
-                        }
-                        _ => {}
-                    }
-                    continue;
-                }
-
-                if let Err(e) = rt_handle.block_on(process_event(&db, event)) {
-                    if e.to_string() == "SHUTDOWN" {
-                        break;
-                    }
-                    is_db_healthy.store(false, Ordering::Relaxed);
-                    // Log and continue — persistence errors must never crash the app
-                    tracing::error!("[Persistence] Event processing error: {}", e);
-                } else {
-                    is_db_healthy.store(true, Ordering::Relaxed);
-                    writes_last_second += 1;
-                }
-
-                // Periodic rate update if we're busy
-                if last_tick.elapsed() >= std::time::Duration::from_secs(1) {
-                    persistence_rate
-                        .store((writes_last_second as f32).to_bits(), Ordering::Relaxed);
-                    writes_last_second = 0;
-                    last_tick = std::time::Instant::now();
-                }
-            }
+            run_event_loop(
+                rx,
+                &db,
+                &rt_handle,
+                &is_db_healthy,
+                &persistence_rate,
+                &is_private_mode,
+            );
         })
-        .expect("[Persistence] Failed to spawn worker thread");
+        .expect("[Persistence::Worker] Failed to spawn worker thread");
 
     tx
+}
+
+fn run_startup_sweeps(db: &turso::Connection, rt_handle: &tokio::runtime::Handle) {
+    if let Err(e) = rt_handle.block_on(cleanup_zero_turn_sessions(db)) {
+        log::warn!(
+            "[Persistence::Worker] Zero-turn startup cleanup failed (non-fatal): {}",
+            e
+        );
+    }
+
+    if let Err(e) = rt_handle.block_on(cleanup_stuck_queue_items(db)) {
+        log::warn!(
+            "[Persistence::Worker] Stuck queue items startup cleanup failed (non-fatal): {}",
+            e
+        );
+    }
+}
+
+fn run_event_loop(
+    rx: Receiver<PersistenceEvent>,
+    db: &turso::Connection,
+    rt_handle: &tokio::runtime::Handle,
+    is_db_healthy: &Arc<AtomicBool>,
+    persistence_rate: &Arc<AtomicU32>,
+    is_private_mode: &Arc<AtomicBool>,
+) {
+    let mut writes_last_second = 0u32;
+    let mut last_tick = Instant::now();
+
+    loop {
+        let event = match rx.recv_timeout(WORKER_EVENT_POLL_TIMEOUT) {
+            Ok(e) => e,
+            Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                maybe_flush_rate(&mut writes_last_second, &mut last_tick, persistence_rate);
+                continue;
+            }
+            Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                log::info!("[Persistence::Worker] Channel disconnected. Worker exiting");
+                break;
+            }
+        };
+
+        if is_private_mode.load(Ordering::Relaxed) {
+            log_skipped_private_event(&event);
+            continue;
+        }
+
+        if let Err(e) = rt_handle.block_on(process_event(db, event)) {
+            if e.to_string() == "SHUTDOWN" {
+                break;
+            }
+            is_db_healthy.store(false, Ordering::Relaxed);
+            log::error!("[Persistence::Worker] Event processing error: {}", e);
+        } else {
+            is_db_healthy.store(true, Ordering::Relaxed);
+            writes_last_second += 1;
+        }
+
+        maybe_flush_rate(&mut writes_last_second, &mut last_tick, persistence_rate);
+    }
+}
+
+fn maybe_flush_rate(
+    writes: &mut u32,
+    last_tick: &mut Instant,
+    rate_atomic: &Arc<AtomicU32>,
+) {
+    if last_tick.elapsed() >= PERSISTENCE_RATE_INTERVAL {
+        rate_atomic.store((*writes as f32).to_bits(), Ordering::Relaxed);
+        *writes = 0;
+        *last_tick = Instant::now();
+    }
+}
+
+fn log_skipped_private_event(event: &PersistenceEvent) {
+    match event {
+        PersistenceEvent::SessionStarted { id, .. } => {
+            log::info!("[Persistence::Worker] Private Mode active: skipping session start (id={})", id);
+        }
+        PersistenceEvent::TurnCompleted {
+            conversation_id,
+            turn_id,
+            ..
+        } => {
+            log::info!(
+                "[Persistence::Worker] Private Mode active: skipping turn record (session={}, turn={})",
+                conversation_id,
+                turn_id
+            );
+        }
+        _ => {}
+    }
 }
 
 async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> anyhow::Result<()> {
@@ -147,16 +159,14 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
                 (id as i64, timestamp_ms as i64),
             )
             .await?;
-            tracing::debug!("[Persistence] SessionStarted: id={}", id);
+            log::debug!("[Persistence::Worker] SessionStarted: id={}", id);
         }
-
         PersistenceEvent::SessionEnded { id, timestamp_ms } => {
             conn.execute(
                 "UPDATE sessions SET ended_at = ? WHERE id = ?",
                 (timestamp_ms as i64, id as i64),
             )
             .await?;
-            // Immediately delete zero-activity sessions (user engaged but never spoke)
             let deleted = conn
                 .execute(
                     "DELETE FROM sessions WHERE id = ? AND turn_count = 0",
@@ -164,12 +174,11 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
                 )
                 .await?;
             if deleted > 0 {
-                tracing::info!("[Persistence] Cleaned up zero-activity session id={}", id);
+                log::info!("[Persistence::Worker] Cleaned up zero-activity session id={}", id);
             } else {
-                tracing::debug!("[Persistence] SessionEnded: id={}", id);
+                log::debug!("[Persistence::Worker] SessionEnded: id={}", id);
             }
         }
-
         PersistenceEvent::TurnCompleted {
             conversation_id,
             turn_id,
@@ -178,7 +187,6 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
             stt_latency_ms,
             ttft_ms,
         } => {
-            // Ignore events from Tray mode (conversation_id == 0)
             if conversation_id == 0 {
                 return Ok(());
             }
@@ -187,7 +195,6 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
                 .unwrap_or_default()
                 .as_millis() as i64;
 
-            // RCA Fix: Ensure session exists before inserting turn.
             conn.execute(
                 "INSERT OR IGNORE INTO sessions (id, started_at) VALUES (?, ?)",
                 (conversation_id as i64, conversation_id as i64),
@@ -209,22 +216,20 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
             )
             .await?;
 
-            // Increment turn_count on parent session
             conn.execute(
                 "UPDATE sessions SET turn_count = turn_count + 1 WHERE id = ?",
                 (conversation_id as i64,),
             )
             .await?;
 
-            tracing::info!(
-                "[Persistence] TurnCompleted: session={}, turn={}, stt={:?}ms, ttft={:?}ms",
+            log::info!(
+                "[Persistence::Worker] TurnCompleted: session={}, turn={}, stt={:?}ms, ttft={:?}ms",
                 conversation_id,
                 turn_id,
                 stt_latency_ms,
                 ttft_ms
             );
         }
-
         PersistenceEvent::TurnCancelled {
             conversation_id,
             turn_id,
@@ -232,36 +237,33 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
             if conversation_id == 0 {
                 return Ok(());
             }
-            tracing::debug!(
-                "[Persistence] TurnCancelled: session={}, turn={}",
+            log::debug!(
+                "[Persistence::Worker] TurnCancelled: session={}, turn={}",
                 conversation_id,
                 turn_id
             );
         }
-
         PersistenceEvent::Shutdown => {
-            tracing::info!("[Persistence] Shutdown event received. Exiting.");
+            log::info!("[Persistence::Worker] Shutdown event received. Exiting");
             return Err(anyhow::anyhow!("SHUTDOWN"));
         }
     }
     Ok(())
 }
 
-/// Deletes sessions where the user engaged but never completed a turn.
 async fn cleanup_zero_turn_sessions(conn: &turso::Connection) -> anyhow::Result<()> {
     let deleted = conn
         .execute("DELETE FROM sessions WHERE turn_count = 0", ())
         .await?;
     if deleted > 0 {
-        tracing::info!(
-            "[Persistence] Startup cleanup: removed {} zero-activity session(s)",
+        log::info!(
+            "[Persistence::Worker] Startup cleanup: removed {} zero-activity session(s)",
             deleted
         );
     }
     Ok(())
 }
 
-/// Resets memory queue items stuck in 'processing' status to 'pending' (Bug #3).
 async fn cleanup_stuck_queue_items(conn: &turso::Connection) -> anyhow::Result<()> {
     let reset = conn
         .execute(
@@ -270,10 +272,11 @@ async fn cleanup_stuck_queue_items(conn: &turso::Connection) -> anyhow::Result<(
         )
         .await?;
     if reset > 0 {
-        tracing::info!(
-            "[Persistence] Startup cleanup: reset {} stuck memory queue item(s) to pending",
+        log::info!(
+            "[Persistence::Worker] Startup cleanup: reset {} stuck memory queue item(s) to pending",
             reset
         );
     }
     Ok(())
 }
+

@@ -1,4 +1,4 @@
-use super::RoutingContext;
+use super::{RoutingContext, ROUTER_THREAD_NAME};
 use crate::core::events::VoxEvent;
 use crate::core::settings::{InteractionMode, PipelineMode};
 use crate::core::state::{AppState, InteractionOwner};
@@ -37,7 +37,7 @@ pub fn spawn_router(
     playback: Arc<PlaybackEngine>,
 ) -> Result<std::thread::JoinHandle<()>, String> {
     std::thread::Builder::new()
-        .name("vox-router".to_string())
+        .name(ROUTER_THREAD_NAME.to_string())
         .spawn(move || {
             let app_state: tauri::State<'_, Arc<AppState>> = app.state();
             log::info!("[Router] Central VoxEvent router pump started");

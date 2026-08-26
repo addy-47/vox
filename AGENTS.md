@@ -57,7 +57,9 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 > 🛑 **MANDATORY CONTEXT GATE:**
 >
-> - **WRITE TASK (Adding/editing code, refactoring, fixing bugs):** You MUST read `.agents/rules/code-style-guide.md` AND the relevant role rule file (e.g. `.agents/rules/backend-engineer.md` or `frontend-engineer.md`) BEFORE modifying code.
+> - **WRITE TASK (Backend Rust):** You MUST read `.agents/rules/backend-style-guide.md` AND `.agents/rules/backend-engineer.md` BEFORE modifying Rust backend code.
+> - **WRITE TASK (Frontend React/TS):** You MUST read `.agents/rules/frontend-style-guide.md` AND `.agents/rules/frontend-engineer.md` BEFORE modifying frontend code.
+> - **WRITE TASK (Tests/Benches/Evals):** You MUST read `.agents/rules/testing-style-guide.md` AND `.agents/rules/test-engineer.md` BEFORE authoring tests or benchmarks.
 > - **READ-ONLY TASK (Auditing, answering questions, running tests/benchmarks, searching code):** DO NOT read code style files. Save context tokens.
 
 ---
@@ -104,8 +106,13 @@ All state machines, routing topologies, data flows, and IPC schemas are document
 - **Domain Modules:** Decoupled legacy God loop into dedicated domain handlers (`modular_passive.rs`, `modular_ptt.rs`, `realtime_passive.rs`, `realtime_ptt.rs`, `dictation.rs`) driven by a central non-blocking `router.rs`.
 - **Decoupled Actors & Lifecycle:** Extracted `services/audio/engine.rs`, `services/vad/actor.rs`, `services/llm/actor.rs`, and `services/tts/actor.rs` with dedicated warm-up/cool-down lifecycles.
 - **Frontend State Alignment:** Aligned all TypeScript stores, hooks, and UI components to canonical 7 states (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`) with non-toggle discrete Tauri IPC commands (`start_session`/`end_session`/`pause_session`/`ptt_*`).
+- **Code Style & Subsystem Constants Sweep:** Decoupled style guides into domain-specific guides (`backend-style-guide.md`, `testing-style-guide.md`, `frontend-style-guide.md`). Centralized all subsystem domain constants into respective `services/<subsystem>/mod.rs` (`audio`, `vad`, `stt`, `llm`, `tts`, `pipeline`, `realtime`, `memory`, `monitoring`, `persistence`, `ipc`). Eliminated magic numbers, silent error swallows (`let _ =`), and enforced function length and single `///` docstring standards across 100% of Rust files.
+- **Model Constants Standardized:** Renamed all subsystem model constants to clear directory/file prefixes without namespace stuttering (`QWEN_MODEL_DIR`, `GEMMA_MODEL_DIR`, `QWEN_ASR_MODEL_DIR`, `NEMOTRON_MODEL_DIR`, `SUPERTONIC_MODEL_DIR`, `CHATTERBOX_MODEL_DIR`).
+- **Memory Profiler Service Migration:** Decoupled process tree inspection and disk logging from `ipc/memory_profiler.rs` into `monitoring/profiler.rs`, consolidating thin IPC dispatchers into `ipc/monitoring.rs`.
+- **Zero Deprecated/Dead Code Standard:** Purged deprecated structs (e.g. `BenchMetrics`), dummy closures, and unused placeholders across all backend modules.
 - **Code Quality Baseline:** Clean slate on testing; zero `#[allow(...)]` suppressions; zero dead `_` fields; 100% clean compilation on `cargo clippy --all-targets` (0 warnings) and `pnpm build`.
 - **Phase 10 Unit Test Suite:** 33 unit tests implemented across 8 core backend modules per `docs/plans/phase10/unit_test_spec.md`. 100% passing (`cargo test --lib`), microsecond execution (~0.02s), zero network/file I/O dependencies.
+
 
 
 

@@ -946,12 +946,16 @@ impl VoxSettings {
                 "[Settings] Corrupt settings.json — backing up to {:?} and restoring defaults",
                 bak
             );
-            let _ = fs::rename(&path, &bak);
+            if let Err(e) = fs::rename(&path, &bak) {
+                log::warn!("[Settings] Failed to backup corrupt settings file: {}", e);
+            }
         }
 
         log::info!("[Settings] No valid settings.json found. Using system defaults.");
         let settings = Self::default();
-        let _ = settings.save();
+        if let Err(e) = settings.save() {
+            log::warn!("[Settings] Failed to persist initial default settings: {}", e);
+        }
         settings
     }
 
@@ -959,7 +963,9 @@ impl VoxSettings {
         let path = paths::get().settings.clone();
 
         if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
+            if let Err(e) = fs::create_dir_all(parent) {
+                log::warn!("[Settings] Failed to create settings parent directory: {}", e);
+            }
         }
 
         let content = serde_json::to_string_pretty(self)?;

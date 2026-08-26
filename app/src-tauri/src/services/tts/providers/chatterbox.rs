@@ -1,5 +1,9 @@
 use super::{TtsProvider, TtsProviderKind};
 use crate::core::events::VoxEvent;
+use crate::services::tts::{
+    MAX_QUALITY_STEPS_CHATTERBOX, MIN_QUALITY_STEPS, MIN_SPEED, MODEL_FILE_TTS_CHATTERBOX_S3GEN,
+    MODEL_FILE_TTS_CHATTERBOX_T3, TTS_CHUNK_SIZE, TTS_SAMPLE_RATE,
+};
 use anyhow::{anyhow, Result};
 use chatterbox_rs::{Engine, EngineOptions};
 use parking_lot::Mutex;
@@ -7,11 +11,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
-
-const MIN_QUALITY_STEPS: u32 = 2;
-const MAX_QUALITY_STEPS: u32 = 10;
-const MIN_SPEED: f32 = 0.7;
-const MAX_SPEED: f32 = 2.0;
 
 /// Speech synthesis engine wrapping the local Chatterbox GGUF model via chatterbox-rs.
 pub struct ChatterboxEngine {
@@ -29,8 +28,8 @@ impl ChatterboxEngine {
         speed: f32,
         reference_audio: Option<&str>,
     ) -> Result<Self> {
-        let t3_path = model_path.join("t3-q4_0.gguf");
-        let s3_path = model_path.join("s3gen-f16.gguf");
+        let t3_path = model_path.join(MODEL_FILE_TTS_CHATTERBOX_T3);
+        let s3_path = model_path.join(MODEL_FILE_TTS_CHATTERBOX_S3GEN);
 
         if !t3_path.exists() {
             return Err(anyhow!(
@@ -45,7 +44,7 @@ impl ChatterboxEngine {
             ));
         }
 
-        let cfm = quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS) as i32;
+        let cfm = quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_CHATTERBOX) as i32;
         let ref_audio = reference_audio.unwrap_or("").to_string();
 
         if !ref_audio.is_empty() {
@@ -130,14 +129,14 @@ impl ChatterboxEngine {
 impl TtsProvider for ChatterboxEngine {
     /// Hot-updates the number of diffusion quality steps.
     fn set_quality_steps(&self, steps: u32) {
-        let clamped = steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS);
+        let clamped = steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_CHATTERBOX);
         self.quality_steps.store(clamped, Ordering::Relaxed);
         log::info!("[Chatterbox] Quality steps set to {} (cfm_steps)", clamped);
     }
 
     /// Hot-updates the speech playback speed factor.
     fn set_speed(&self, speed: f32) {
-        let clamped = speed.clamp(MIN_SPEED, MAX_SPEED);
+        let clamped = speed.clamp(MIN_SPEED, crate::services::tts::MAX_SPEED);
         self.speed.store(clamped.to_bits(), Ordering::Relaxed);
         log::info!("[Chatterbox] Speed set to {:.2}", clamped);
     }
@@ -192,8 +191,7 @@ impl TtsProvider for ChatterboxEngine {
             pcm
         };
 
-        const CHUNK_SIZE: usize = 2048;
-        for chunk in output.chunks(CHUNK_SIZE) {
+        for chunk in output.chunks(TTS_CHUNK_SIZE) {
             if cancel.load(Ordering::Relaxed) {
                 return Ok(());
             }
@@ -209,7 +207,7 @@ impl TtsProvider for ChatterboxEngine {
             }
         }
 
-        let audio_duration = output.len() as f32 / 24000.0;
+        let audio_duration = output.len() as f32 / TTS_SAMPLE_RATE as f32;
         let rtf = if audio_duration > 0.0 {
             elapsed / audio_duration
         } else {

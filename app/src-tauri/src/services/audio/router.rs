@@ -1,3 +1,6 @@
+use super::{
+    PCM_I16_SCALE, ROUTER_CHUNK_SIZE, ROUTER_IDLE_POLL_INTERVAL_MS, ROUTER_OVERFLOW_LOG_INTERVAL,
+};
 use anyhow::Result;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -43,21 +46,21 @@ impl AudioRouter {
             .spawn(move || {
                 if let Err(e) = set_current_thread_priority(ThreadPriority::Max) {
                     log::warn!(
-                        "[AudioRouter] Failed to set max priority (non-root/cap_sys_nice): {:?}",
+                        "[Audio::Router] Failed to set max priority (non-root/cap_sys_nice): {:?}",
                         e
                     );
                 }
 
-                log::info!("[AudioRouter] Thread started.");
+                log::info!("[Audio::Router] Thread started");
 
                 let mut mode = RouteMode::LocalVad;
                 let mut realtime_tx: Option<UnboundedSender<Vec<i16>>> = None;
-                let mut chunk = vec![0.0f32; 256];
+                let mut chunk = vec![0.0f32; ROUTER_CHUNK_SIZE];
 
                 while !engine_shutdown.load(Ordering::Relaxed) {
                     handle_router_commands(&cmd_rx, &mut mode, &mut realtime_tx);
 
-                    if consumer.occupied_len() >= 256 {
+                    if consumer.occupied_len() >= ROUTER_CHUNK_SIZE {
                         consumer.pop_slice(&mut chunk);
 
                         if is_paused.load(Ordering::SeqCst) {
@@ -66,11 +69,13 @@ impl AudioRouter {
 
                         route_audio_chunk(&chunk, mode, &mut vad_producer, &realtime_tx);
                     } else {
-                        std::thread::sleep(std::time::Duration::from_millis(5));
+                        std::thread::sleep(std::time::Duration::from_millis(
+                            ROUTER_IDLE_POLL_INTERVAL_MS,
+                        ));
                     }
                 }
 
-                log::info!("[AudioRouter] Shutdown flag detected. Exiting loop.");
+                log::info!("[Audio::Router] Shutdown flag detected. Exiting loop");
             })?;
 
         Ok(Self {
@@ -82,7 +87,7 @@ impl AudioRouter {
     /// Sets the active routing destination mode.
     pub fn set_mode(&self, mode: RouteMode) {
         if let Err(e) = self.cmd_tx.send(RouterCommand::SetMode(mode)) {
-            log::warn!("[AudioRouter] Failed to dispatch SetMode command: {}", e);
+            log::warn!("[Audio::Router] Failed to dispatch SetMode command: {}", e);
         }
     }
 
@@ -90,7 +95,7 @@ impl AudioRouter {
     pub fn start_realtime(&self, tx: UnboundedSender<Vec<i16>>) {
         if let Err(e) = self.cmd_tx.send(RouterCommand::StartRealtime(tx)) {
             log::warn!(
-                "[AudioRouter] Failed to dispatch StartRealtime command: {}",
+                "[Audio::Router] Failed to dispatch StartRealtime command: {}",
                 e
             );
         }
@@ -100,7 +105,7 @@ impl AudioRouter {
     pub fn stop_realtime(&self) {
         if let Err(e) = self.cmd_tx.send(RouterCommand::StopRealtime) {
             log::warn!(
-                "[AudioRouter] Failed to dispatch StopRealtime command: {}",
+                "[Audio::Router] Failed to dispatch StopRealtime command: {}",
                 e
             );
         }
@@ -116,15 +121,15 @@ fn handle_router_commands(
     while let Ok(cmd) = cmd_rx.try_recv() {
         match cmd {
             RouterCommand::SetMode(m) => {
-                log::info!("[AudioRouter] Mode switched to {:?}", m);
+                log::info!("[Audio::Router] Mode switched to {:?}", m);
                 *mode = m;
             }
             RouterCommand::StartRealtime(tx) => {
-                log::info!("[AudioRouter] Routing directly to Realtime.");
+                log::info!("[Audio::Router] Routing directly to Realtime");
                 *realtime_tx = Some(tx);
             }
             RouterCommand::StopRealtime => {
-                log::info!("[AudioRouter] Realtime routing stopped.");
+                log::info!("[Audio::Router] Realtime routing stopped");
                 *realtime_tx = None;
             }
         }
@@ -147,9 +152,9 @@ fn route_audio_chunk<P>(
                 static OVERFLOW_COUNT: std::sync::atomic::AtomicU32 =
                     std::sync::atomic::AtomicU32::new(0);
                 let prev = OVERFLOW_COUNT.fetch_add(1, Ordering::Relaxed);
-                if prev.is_multiple_of(100) {
+                if prev.is_multiple_of(ROUTER_OVERFLOW_LOG_INTERVAL) {
                     log::warn!(
-                        "[AudioRouter] VAD queue overflow! Dropped {} chunks.",
+                        "[Audio::Router] VAD queue overflow! Dropped {} chunks",
                         prev + 1
                     );
                 }
@@ -161,12 +166,12 @@ fn route_audio_chunk<P>(
                     .iter()
                     .map(|&x| {
                         let clamped = x.clamp(-1.0, 1.0);
-                        (clamped * 32767.0) as i16
+                        (clamped * PCM_I16_SCALE) as i16
                     })
                     .collect();
 
                 if let Err(e) = tx.send(i16_samples) {
-                    log::debug!("[AudioRouter] Failed to send PCM to WS: {:?}", e);
+                    log::debug!("[Audio::Router] Failed to send PCM to WS: {:?}", e);
                 }
             }
         }

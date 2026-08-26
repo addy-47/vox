@@ -17,7 +17,7 @@ use turso::Builder;
 use vox_lib::core::constants::{is_valid_inter_collection_pair, PM_SEMANTIC_GRAPH_COLLECTIONS};
 use vox_lib::persistence::{decode_f32_blob, mutations, queries};
 use vox_lib::services::memory::pipeline::batch_result::{CandidateAuditLog, DedupAuditLog};
-use vox_lib::services::memory::pipeline::stage3_eval::{
+use vox_lib::services::memory::{
     INTER_COLLECTION_CANDIDATE_SEARCH, SAME_COLLECTION_CANDIDATE_SEARCH, SUBFLOOR_CANDIDATE_FLOOR,
 };
 

@@ -1,6 +1,12 @@
 //! Voice service for audio validation, decoding, resampling, speaker pre-baking, and recording.
 
 use crate::services::tts::providers::TtsProvider;
+use crate::services::tts::{
+    CHATTERBOX_MODEL_DIR, EDGE_TTS_USER_AGENT, EDGE_TTS_VOICES_URL_BASE,
+    MIN_VOICE_CLONE_DURATION_SECS, MODEL_FILE_TTS_CHATTERBOX_S3GEN,
+    MODEL_FILE_TTS_CHATTERBOX_T3, PREVIEW_QUALITY_STEPS, PREVIEW_TEXT,
+    TARGET_VOICE_SAMPLE_DURATION_SECS, TTS_SAMPLE_RATE,
+};
 use crate::symphonia_core::audio::Audio;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use once_cell::sync::Lazy;
@@ -8,8 +14,6 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
-
-// ─── Edge TTS Voice DTO ───────────────────────────────────────────────────────
 
 /// Metadata describing an online Edge TTS neural voice.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,8 +24,6 @@ pub struct EdgeTtsVoiceEntry {
     pub locale: String,
     pub friendly_name: String,
 }
-
-// ─── WAV File Validation ──────────────────────────────────────────────────────
 
 /// Validate that a WAV file is readable and satisfies a minimum duration.
 pub fn validate_wav_file(path: &str, min_duration_secs: f32) -> Result<(u32, f32), String> {
@@ -41,8 +43,6 @@ pub fn validate_wav_file(path: &str, min_duration_secs: f32) -> Result<(u32, f32
     }
     Ok((spec.sample_rate, duration))
 }
-
-// ─── Multi-Format Audio Decoding & Resampling ─────────────────────────────────
 
 fn extract_mono_f32_samples(
     buf_ref: crate::symphonia_core::audio::GenericAudioBufferRef<'_>,
@@ -131,7 +131,7 @@ fn decode_audio_stream(src_path: &str) -> Result<(Vec<f32>, u32), String> {
         .map_err(|e| format!("Failed to initialize decoder: {}", e))?;
 
     let track_id = track.id;
-    let input_sample_rate = codec_params.sample_rate.unwrap_or(24000);
+    let input_sample_rate = codec_params.sample_rate.unwrap_or(TTS_SAMPLE_RATE);
     let mut raw_samples = Vec::new();
 
     loop {
@@ -214,18 +214,18 @@ pub fn write_f32_wav(dest_path: &Path, samples: &[f32], sample_rate: u32) -> Res
 /// Decode any supported audio file to mono 24kHz f32 WAV with 30s auto-stitching/truncation.
 pub fn convert_and_validate_audio(src_path: &str, dest_path: &Path) -> Result<(), String> {
     let (raw_samples, src_rate) = decode_audio_stream(src_path)?;
-    let resampled = resample_linear(&raw_samples, src_rate, 24000);
+    let resampled = resample_linear(&raw_samples, src_rate, TTS_SAMPLE_RATE);
 
-    let duration_secs = resampled.len() as f32 / 24000.0;
-    if duration_secs < 1.0 {
+    let duration_secs = resampled.len() as f32 / TTS_SAMPLE_RATE as f32;
+    if duration_secs < MIN_VOICE_CLONE_DURATION_SECS {
         return Err(format!(
-            "Audio too short ({:.1}s). Minimum is 1.0s for voice cloning.",
-            duration_secs
+            "Audio too short ({:.1}s). Minimum is {}s for voice cloning.",
+            duration_secs, MIN_VOICE_CLONE_DURATION_SECS
         ));
     }
 
-    let final_samples = pad_or_truncate_audio(&resampled, 24000, 30.0);
-    write_f32_wav(dest_path, &final_samples, 24000)
+    let final_samples = pad_or_truncate_audio(&resampled, TTS_SAMPLE_RATE, TARGET_VOICE_SAMPLE_DURATION_SECS);
+    write_f32_wav(dest_path, &final_samples, TTS_SAMPLE_RATE)
 }
 
 /// Write in-memory PCM float samples as a 30s auto-stitched WAV file.
@@ -234,13 +234,11 @@ pub fn write_pcm_to_wav(
     sample_rate: u32,
     dest_path: &Path,
 ) -> Result<usize, String> {
-    let final_samples = pad_or_truncate_audio(pcm_f32, sample_rate, 30.0);
+    let final_samples = pad_or_truncate_audio(pcm_f32, sample_rate, TARGET_VOICE_SAMPLE_DURATION_SECS);
     let len = final_samples.len();
     write_f32_wav(dest_path, &final_samples, sample_rate)?;
     Ok(len)
 }
-
-// ─── Speaker Embedding Pre-Baking ─────────────────────────────────────────────
 
 /// Pre-bake Chatterbox speaker embedding tensors from a source reference WAV.
 pub fn pre_bake_speaker_tensors(source_wav: &Path, baked_dir: &Path) -> Result<(), String> {
@@ -250,9 +248,9 @@ pub fn pre_bake_speaker_tensors(source_wav: &Path, baked_dir: &Path) -> Result<(
         .map_err(|e| format!("Failed to create baked voice directory: {}", e))?;
 
     let tts_model_dir =
-        crate::utils::paths::model_dir("tts").join(crate::services::tts::MODEL_DIR_TTS_CHATTERBOX);
-    let t3_path = tts_model_dir.join(crate::services::tts::MODEL_FILE_TTS_CHATTERBOX_T3);
-    let s3_path = tts_model_dir.join(crate::services::tts::MODEL_FILE_TTS_CHATTERBOX_S3GEN);
+        crate::utils::paths::model_dir(CHATTERBOX_MODEL_DIR);
+    let t3_path = tts_model_dir.join(MODEL_FILE_TTS_CHATTERBOX_T3);
+    let s3_path = tts_model_dir.join(MODEL_FILE_TTS_CHATTERBOX_S3GEN);
 
     if !t3_path.exists() || !s3_path.exists() {
         return Err("Chatterbox models not found on disk. Ensure setup is complete.".to_string());
@@ -278,21 +276,23 @@ pub fn pre_bake_speaker_tensors(source_wav: &Path, baked_dir: &Path) -> Result<(
     Ok(())
 }
 
-// ─── Preview Clip Synthesis ───────────────────────────────────────────────────
-
 /// Synthesize a short preview clip with reference audio and save to destination WAV.
 pub fn synthesize_preview_clip(wav_path: &str, preview_path: &Path) -> Result<(), String> {
-    let chatterbox_path = crate::utils::paths::model_dir("tts").join("chatterbox");
-    let engine =
-        crate::services::tts::ChatterboxEngine::new(&chatterbox_path, "en", 8, 1.0, Some(wav_path))
-            .map_err(|e| format!("Failed to create preview engine: {}", e))?;
+    let chatterbox_path = crate::utils::paths::model_dir(CHATTERBOX_MODEL_DIR);
+    let engine = crate::services::tts::ChatterboxEngine::new(
+        &chatterbox_path,
+        "en",
+        PREVIEW_QUALITY_STEPS,
+        1.0,
+        Some(wav_path),
+    )
+    .map_err(|e| format!("Failed to create preview engine: {}", e))?;
 
-    let preview_text = "Hello, I'm your Vox assistant.";
     let (tx, rx) = std::sync::mpsc::channel::<crate::core::events::VoxEvent>();
     let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     engine
-        .synthesize_chunk(preview_text, 0, cancel, tx)
+        .synthesize_chunk(PREVIEW_TEXT, 0, cancel, tx)
         .map_err(|e| format!("Preview synthesis failed: {}", e))?;
 
     let mut pcm: Vec<f32> = Vec::new();
@@ -306,10 +306,8 @@ pub fn synthesize_preview_clip(wav_path: &str, preview_path: &Path) -> Result<()
         return Err("Preview synthesis produced no audio".to_string());
     }
 
-    write_f32_wav(preview_path, &pcm, 24000)
+    write_f32_wav(preview_path, &pcm, TTS_SAMPLE_RATE)
 }
-
-// ─── CPAL Audio Recording Service ─────────────────────────────────────────────
 
 struct ActiveRecorder {
     _stream: cpal::Stream,
@@ -398,8 +396,6 @@ pub fn stop_recording() -> Result<(Vec<f32>, u32), String> {
     Ok((samples, sample_rate))
 }
 
-// ─── Edge TTS Remote Query ────────────────────────────────────────────────────
-
 /// Query Microsoft's Read Aloud endpoint for available Edge TTS voices.
 pub async fn fetch_remote_edge_voices() -> Result<Vec<EdgeTtsVoiceEntry>, String> {
     let client = reqwest::Client::builder()
@@ -408,16 +404,10 @@ pub async fn fetch_remote_edge_voices() -> Result<Vec<EdgeTtsVoiceEntry>, String
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
     let token = crate::services::tts::providers::edge_tts::get_trusted_client_token();
-    let url = format!(
-        "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken={}",
-        token
-    );
+    let url = format!("{}{}", EDGE_TTS_VOICES_URL_BASE, token);
     let resp = client
         .get(url)
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
-        )
+        .header("User-Agent", EDGE_TTS_USER_AGENT)
         .send()
         .await
         .map_err(|e| format!("Network error reaching Edge TTS endpoint: {}", e))?;

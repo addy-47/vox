@@ -2,54 +2,6 @@ use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 use sysinfo::System;
 
-/// Robustly resolves the workspace `temp` directory across any execution working directory.
-pub fn resolve_temp_dir() -> std::path::PathBuf {
-    let candidates = [
-        std::path::PathBuf::from("temp"),
-        std::path::PathBuf::from("../temp"),
-        std::path::PathBuf::from("../../temp"),
-    ];
-    for candidate in &candidates {
-        if candidate.is_dir() {
-            return candidate.clone();
-        }
-    }
-    if let Ok(mut dir) = std::env::current_dir() {
-        for _ in 0..5 {
-            let temp_candidate = dir.join("temp");
-            if temp_candidate.is_dir() {
-                return temp_candidate;
-            }
-            if !dir.pop() {
-                break;
-            }
-        }
-    }
-    let fallback = std::path::PathBuf::from("temp");
-    let _ = std::fs::create_dir_all(&fallback);
-    fallback
-}
-
-/// Sanitizes route path into a clean page identifier (e.g. "/history" -> "history", "/" -> "home").
-pub fn sanitize_page_name(route: &str) -> String {
-    let clean = route.trim_matches('/').replace('/', "_").to_lowercase();
-    let sanitized: String = clean
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if sanitized.is_empty() {
-        "home".to_string()
-    } else {
-        sanitized
-    }
-}
-
 /// Process memory entry capturing RSS, CPU, and assigned role in the application tree.
 #[derive(Debug, Clone, serde::Deserialize, Serialize)]
 pub struct ProcessMemoryEntry {
@@ -79,6 +31,77 @@ pub struct ProfilerSnapshot {
     pub process_tree: Vec<ProcessMemoryEntry>,
     pub timestamp_ms: u64,
     pub accuracy: &'static str,
+}
+
+/// Telemetry event payload recorded during frontend route transitions and component renders.
+#[derive(Debug, Clone, serde::Deserialize, Serialize)]
+pub struct MemoryProfileLogEvent {
+    pub route: String,
+    pub event_type: String,
+    pub baseline_ram_mb: Option<f32>,
+    pub current_ram_mb: f32,
+    pub peak_ram_mb: Option<f32>,
+    pub peak_delta_mb: Option<f32>,
+    pub retained_ram_mb: Option<f32>,
+    pub retained_delta_mb: Option<f32>,
+    pub main_webview_ram_mb: Option<f32>,
+    pub tray_webview_ram_mb: Option<f32>,
+    pub active_components: Vec<String>,
+    pub dom_node_count: usize,
+    pub font_face_count: usize,
+    pub timestamp_ms: u64,
+    #[serde(default)]
+    pub process_tree: Option<Vec<ProcessMemoryEntry>>,
+}
+
+/// Robustly resolves the workspace `temp` directory across any execution working directory.
+pub fn resolve_temp_dir() -> std::path::PathBuf {
+    let candidates = [
+        std::path::PathBuf::from("temp"),
+        std::path::PathBuf::from("../temp"),
+        std::path::PathBuf::from("../../temp"),
+    ];
+    for candidate in &candidates {
+        if candidate.is_dir() {
+            return candidate.clone();
+        }
+    }
+    if let Ok(mut dir) = std::env::current_dir() {
+        for _ in 0..5 {
+            let temp_candidate = dir.join("temp");
+            if temp_candidate.is_dir() {
+                return temp_candidate;
+            }
+            if !dir.pop() {
+                break;
+            }
+        }
+    }
+    let fallback = std::path::PathBuf::from("temp");
+    if let Err(e) = std::fs::create_dir_all(&fallback) {
+        tracing::warn!(target: "memory_profiler", "Failed to create fallback temp directory {:?}: {}", fallback, e);
+    }
+    fallback
+}
+
+/// Sanitizes route path into a clean page identifier (e.g. "/history" -> "history", "/" -> "home").
+pub fn sanitize_page_name(route: &str) -> String {
+    let clean = route.trim_matches('/').replace('/', "_").to_lowercase();
+    let sanitized: String = clean
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if sanitized.is_empty() {
+        "home".to_string()
+    } else {
+        sanitized
+    }
 }
 
 fn extract_descendant_processes(
@@ -196,7 +219,8 @@ fn assign_webview_roles(
     (main_ram, tray_ram, wizard_ram)
 }
 
-fn collect_profiler_snapshot_internal(
+/// Public helper for gathering profiler snapshot metrics with known window states.
+pub fn collect_profiler_snapshot(
     has_main: bool,
     has_tray: bool,
     has_wizard: bool,
@@ -251,105 +275,56 @@ fn collect_profiler_snapshot_internal(
     }
 }
 
-/// Public helper for gathering profiler snapshot metrics with known window states.
-pub fn collect_profiler_snapshot(
-    has_main: bool,
-    has_tray: bool,
-    has_wizard: bool,
-) -> ProfilerSnapshot {
-    collect_profiler_snapshot_internal(has_main, has_tray, has_wizard)
-}
+/// Persists and logs a structured frontend memory profile event.
+pub fn persist_memory_profile_event(event: &MemoryProfileLogEvent) -> Result<(), String> {
+    if event.event_type != "poll" {
+        tracing::info!(
+            target: "memory_profiler",
+            "[MEMORY_PROFILE] Route: {} | Event: {} | Current: {:.1}MB | Peak: {:?}MB (Δ{:?}MB) | Retained: {:?}MB (Δ{:?}MB) | WebViews: Main={:?}MB, Tray={:?}MB | DOM Nodes: {} | Components: {:?}",
+            event.route,
+            event.event_type,
+            event.current_ram_mb,
+            event.peak_ram_mb,
+            event.peak_delta_mb,
+            event.retained_ram_mb,
+            event.retained_delta_mb,
+            event.main_webview_ram_mb,
+            event.tray_webview_ram_mb,
+            event.dom_node_count,
+            event.active_components,
+        );
+    }
 
-/// Fetch an immediate, on-demand high-accuracy memory snapshot of the Vox process tree.
-#[tauri::command]
-pub async fn get_profiler_snapshot(app: tauri::AppHandle) -> Result<ProfilerSnapshot, String> {
-    use tauri::Manager;
-    let has_main = app.get_webview_window("main").is_some();
-    let has_tray = app.get_webview_window("tray").is_some();
-    let has_wizard = app.get_webview_window("wizard").is_some();
+    let serialized = serde_json::to_string(event).map_err(|e| e.to_string())?;
+    use std::io::Write;
+    let temp_dir = resolve_temp_dir();
+    let page = sanitize_page_name(&event.route);
+    let ts = if event.timestamp_ms > 0 {
+        event.timestamp_ms / 1000
+    } else {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+    };
+    let filename = format!("{}-{}.jsonl", ts, page);
+    let file_path = temp_dir.join(&filename);
 
-    tokio::task::spawn_blocking(move || {
-        collect_profiler_snapshot_internal(has_main, has_tray, has_wizard)
-    })
-    .await
-    .map_err(|e| format!("Failed to collect memory profiler snapshot: {e}"))
-}
-
-/// Telemetry event payload recorded during frontend route transitions and component renders.
-#[derive(Debug, Clone, serde::Deserialize, Serialize)]
-pub struct MemoryProfileLogEvent {
-    pub route: String,
-    pub event_type: String,
-    pub baseline_ram_mb: Option<f32>,
-    pub current_ram_mb: f32,
-    pub peak_ram_mb: Option<f32>,
-    pub peak_delta_mb: Option<f32>,
-    pub retained_ram_mb: Option<f32>,
-    pub retained_delta_mb: Option<f32>,
-    pub main_webview_ram_mb: Option<f32>,
-    pub tray_webview_ram_mb: Option<f32>,
-    pub active_components: Vec<String>,
-    pub dom_node_count: usize,
-    pub font_face_count: usize,
-    pub timestamp_ms: u64,
-    #[serde(default)]
-    pub process_tree: Option<Vec<ProcessMemoryEntry>>,
-}
-
-/// Record a structured frontend memory profile event to tracing and persisted JSONL log.
-#[tauri::command]
-pub async fn record_memory_profile_event(event: MemoryProfileLogEvent) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        if event.event_type != "poll" {
-            tracing::info!(
-                target: "memory_profiler",
-                "[MEMORY_PROFILE] Route: {} | Event: {} | Current: {:.1}MB | Peak: {:?}MB (Δ{:?}MB) | Retained: {:?}MB (Δ{:?}MB) | WebViews: Main={:?}MB, Tray={:?}MB | DOM Nodes: {} | Components: {:?}",
-                event.route,
-                event.event_type,
-                event.current_ram_mb,
-                event.peak_ram_mb,
-                event.peak_delta_mb,
-                event.retained_ram_mb,
-                event.retained_delta_mb,
-                event.main_webview_ram_mb,
-                event.tray_webview_ram_mb,
-                event.dom_node_count,
-                event.active_components,
-            );
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file_path)
+    {
+        if let Err(e) = writeln!(file, "{}", serialized) {
+            tracing::warn!(target: "memory_profiler", "Failed to write to snapshot JSONL: {}", e);
         }
+    } else {
+        tracing::warn!(target: "memory_profiler", "Failed to open snapshot JSONL file at {:?}", file_path);
+    }
 
-        if let Ok(serialized) = serde_json::to_string(&event) {
-            use std::io::Write;
-            let temp_dir = resolve_temp_dir();
-            let page = sanitize_page_name(&event.route);
-            let ts = if event.timestamp_ms > 0 {
-                event.timestamp_ms / 1000
-            } else {
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs()
-            };
-            let filename = format!("{}-{}.jsonl", ts, page);
-            let file_path = temp_dir.join(&filename);
+    if let Err(e) = std::fs::write(temp_dir.join("memory_profile_latest.json"), &serialized) {
+        tracing::warn!(target: "memory_profiler", "Failed to write latest snapshot JSON: {}", e);
+    }
 
-            if let Ok(mut file) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&file_path)
-            {
-                if let Err(e) = writeln!(file, "{}", serialized) {
-                    tracing::warn!(target: "memory_profiler", "Failed to write to snapshot JSONL: {}", e);
-                }
-            } else {
-                tracing::warn!(target: "memory_profiler", "Failed to open snapshot JSONL file at {:?}", file_path);
-            }
-
-            if let Err(e) = std::fs::write(temp_dir.join("memory_profile_latest.json"), &serialized) {
-                tracing::warn!(target: "memory_profiler", "Failed to write latest snapshot JSON: {}", e);
-            }
-        }
-    })
-    .await
-    .map_err(|e| format!("Failed to record memory event: {e}"))
+    Ok(())
 }
