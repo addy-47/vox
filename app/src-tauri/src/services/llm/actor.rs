@@ -19,8 +19,8 @@ pub enum LlmCommand {
 }
 
 /// Spawns the dedicated LLM generation worker thread and runs its command loop.
-pub fn spawn_llm_worker(
-    app: tauri::AppHandle,
+pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
+    app: tauri::AppHandle<R>,
     rx: std::sync::mpsc::Receiver<LlmCommand>,
     provider: Box<dyn LlmProvider>,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
@@ -109,8 +109,8 @@ pub struct LlmWarmUpHandles<'a> {
 }
 
 /// Spawns and initializes a persistent LLM worker actor thread.
-pub fn warm_up_llm(
-    app: &tauri::AppHandle,
+pub fn warm_up_llm<R: tauri::Runtime + 'static>(
+    app: &tauri::AppHandle<R>,
     handles: LlmWarmUpHandles<'_>,
     settings: &VoxSettings,
     llm_path: &Path,

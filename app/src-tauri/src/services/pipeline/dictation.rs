@@ -12,8 +12,25 @@ use tauri::{AppHandle, Emitter};
 static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 static DICTATION_BUFFER: Mutex<Vec<f32>> = Mutex::new(Vec::new());
 
+/// Ingests audio samples into the dictation Push-To-Talk buffer when recording is active.
+pub fn ingest_audio(chunk: &[f32]) {
+    if IS_RECORDING.load(Ordering::Relaxed) {
+        DICTATION_BUFFER.lock().extend_from_slice(chunk);
+    }
+}
+
+/// Returns true if dictation Push-To-Talk audio recording is currently active.
+pub fn is_recording() -> bool {
+    IS_RECORDING.load(Ordering::Relaxed)
+}
+
+/// Returns the current sample count in the dictation Push-To-Talk buffer.
+pub fn get_buffer_len() -> usize {
+    DICTATION_BUFFER.lock().len()
+}
+
 /// Starts Push-To-Talk dictation recording on hotkey press.
-pub async fn handle_hotkey_press(app: &AppHandle, state: &AppState) -> Result<(), String> {
+pub async fn handle_hotkey_press<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     if IS_RECORDING.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
@@ -41,8 +58,12 @@ pub async fn handle_hotkey_press(app: &AppHandle, state: &AppState) -> Result<()
     Ok(())
 }
 
-/// Finalizes Push-To-Talk dictation recording on hotkey release and dispatches to STT.
-pub async fn handle_hotkey_release(app: &AppHandle, state: &AppState) -> Result<(), String> {
+/// Finalizes Push-To-Talk dictation recording with optional direct STT command sender override for testing.
+pub async fn handle_hotkey_release_with_sender<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    stt_tx: Option<&std::sync::mpsc::Sender<crate::services::stt::SttCommand>>,
+) -> Result<(), String> {
     if !IS_RECORDING.swap(false, Ordering::SeqCst) {
         return Ok(());
     }
@@ -78,7 +99,11 @@ pub async fn handle_hotkey_release(app: &AppHandle, state: &AppState) -> Result<
         log::warn!("[Dictation] Failed to emit ptt_status PROCESSING: {}", e);
     }
 
-    if let Some(ref engine) = *state.engine.lock().await {
+    if let Some(tx) = stt_tx {
+        if let Err(e) = tx.send(crate::services::stt::SttCommand::Final(turn_id, buffer)) {
+            log::warn!("[Dictation] Failed to dispatch Final audio to direct STT sender: {}", e);
+        }
+    } else if let Some(ref engine) = *state.engine.lock().await {
         if let Err(e) = engine
             .stt_tx
             .send(crate::services::stt::SttCommand::Final(turn_id, buffer))
@@ -91,8 +116,13 @@ pub async fn handle_hotkey_release(app: &AppHandle, state: &AppState) -> Result<
     Ok(())
 }
 
+/// Finalizes Push-To-Talk dictation recording on hotkey release and dispatches to STT.
+pub async fn handle_hotkey_release<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+    handle_hotkey_release_with_sender(app, state, None).await
+}
+
 /// Handles user speech onset for background passive dictation.
-fn on_speech_start(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_speech_start<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Listening, &ctx, app, state);
 
@@ -109,7 +139,7 @@ fn on_speech_start(turn_id: u32, app: &AppHandle, state: &AppState) {
 }
 
 /// Handles user speech completion for background passive dictation.
-fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_speech_end<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Thinking, &ctx, app, state);
 
@@ -126,7 +156,7 @@ fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState) {
 }
 
 /// Handles interim partial speech recognition results for dictation.
-fn on_transcript_partial(turn_id: u32, text: String, app: &AppHandle) {
+fn on_transcript_partial<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>) {
     if let Err(e) = app.emit_to(
         WINDOW_TRAY,
         EVENT_TRANSCRIPT_PARTIAL,
@@ -141,7 +171,7 @@ fn on_transcript_partial(turn_id: u32, text: String, app: &AppHandle) {
 }
 
 /// Routes finalized transcript directly to OS input simulation without invoking LLM or TTS.
-fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppState) {
+fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     let app_handle = app.clone();
     let text_clone = text.clone();
@@ -171,7 +201,7 @@ fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppS
 }
 
 /// Logs dictation errors and updates tray state.
-fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
+fn on_error<R: tauri::Runtime>(turn_id: u32, message: String, app: &AppHandle<R>, state: &AppState) {
     log::error!("[Dictation] Error on turn {}: {}", turn_id, message);
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Error, &ctx, app, state);
@@ -190,7 +220,7 @@ fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
 }
 
 /// Main event dispatcher for the unified dictation domain.
-pub fn handle_event(app: &AppHandle, state: &AppState, event: VoxEvent) {
+pub fn handle_event<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, event: VoxEvent) {
     match event {
         VoxEvent::SpeechStart { turn_id } => on_speech_start(turn_id, app, state),
         VoxEvent::SpeechEnd { turn_id, .. } => on_speech_end(turn_id, app, state),

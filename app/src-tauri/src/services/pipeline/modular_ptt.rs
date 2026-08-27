@@ -24,8 +24,28 @@ static PTT_BUFFER: Mutex<Vec<f32>> = Mutex::new(Vec::new());
 static CHUNKER: LazyLock<Mutex<TtsClauseChunker>> =
     LazyLock::new(|| Mutex::new(TtsClauseChunker::new()));
 
+/// Ingests streaming audio frames into the Push-To-Talk buffer when recording is active.
+pub fn ingest_audio(chunk: &[f32]) {
+    if IS_RECORDING.load(Ordering::Relaxed) {
+        PTT_BUFFER.lock().extend_from_slice(chunk);
+    }
+}
+
+/// Returns true if Push-To-Talk audio recording is currently active.
+pub fn is_recording() -> bool {
+    IS_RECORDING.load(Ordering::Relaxed)
+}
+
+/// Returns the current sample count in the Push-To-Talk buffer.
+pub fn get_buffer_len() -> usize {
+    PTT_BUFFER.lock().len()
+}
+
 /// Initializes and warms up the LLM and TTS actor threads if not already loaded.
-async fn ensure_modular_workers(app: &AppHandle, state: &AppState) -> Result<(), String> {
+async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
+    app: &AppHandle<R>,
+    state: &AppState,
+) -> Result<(), String> {
     let (llm_path, tts_path, settings) = {
         let s = state.settings.read().unwrap().clone();
         let models_dir = crate::utils::paths::get().models.clone();
@@ -160,7 +180,7 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
 }
 
 /// Initiates Push-To-Talk speech recording and interrupts ongoing playback.
-pub fn handle_ptt_start(app: &AppHandle, state: &AppState) -> Result<(), String> {
+pub fn handle_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     if IS_RECORDING.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
@@ -189,8 +209,12 @@ pub fn handle_ptt_start(app: &AppHandle, state: &AppState) -> Result<(), String>
     Ok(())
 }
 
-/// Finalizes Push-To-Talk recording and triggers STT recognition if speech was captured.
-pub fn handle_ptt_stop(app: &AppHandle, state: &AppState) -> Result<(), String> {
+/// Finalizes Push-To-Talk recording with an optional direct STT command sender override for testing.
+pub fn handle_ptt_stop_with_sender<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    stt_tx: Option<&std::sync::mpsc::Sender<crate::services::stt::SttCommand>>,
+) -> Result<(), String> {
     if !IS_RECORDING.swap(false, Ordering::SeqCst) {
         return Ok(());
     }
@@ -226,7 +250,11 @@ pub fn handle_ptt_stop(app: &AppHandle, state: &AppState) -> Result<(), String> 
         log::warn!("[ModularPTT] Failed to emit ptt_status PROCESSING: {}", e);
     }
 
-    if let Ok(guard) = state.engine.try_lock() {
+    if let Some(tx) = stt_tx {
+        if let Err(e) = tx.send(crate::services::stt::SttCommand::Final(turn_id, buffer)) {
+            log::warn!("[ModularPTT] Failed to dispatch Final audio to direct STT sender: {}", e);
+        }
+    } else if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             if let Err(e) = engine
                 .stt_tx
@@ -241,8 +269,13 @@ pub fn handle_ptt_stop(app: &AppHandle, state: &AppState) -> Result<(), String> 
     Ok(())
 }
 
+/// Finalizes Push-To-Talk recording and triggers STT recognition if speech was captured.
+pub fn handle_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+    handle_ptt_stop_with_sender(app, state, None)
+}
+
 /// Cancels an in-progress Push-To-Talk recording and discards audio buffers.
-pub fn handle_ptt_cancel(app: &AppHandle, state: &AppState) -> Result<(), String> {
+pub fn handle_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     IS_RECORDING.store(false, Ordering::Relaxed);
     SPEECH_DETECTED.store(false, Ordering::Relaxed);
     PTT_BUFFER.lock().clear();
@@ -264,7 +297,7 @@ pub fn handle_ptt_cancel(app: &AppHandle, state: &AppState) -> Result<(), String
 }
 
 /// Handles interim partial speech recognition results.
-fn on_transcript_partial(turn_id: u32, text: String, app: &AppHandle) {
+fn on_transcript_partial<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>) {
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         EVENT_TRANSCRIPT_PARTIAL,
@@ -278,7 +311,7 @@ fn on_transcript_partial(turn_id: u32, text: String, app: &AppHandle) {
 }
 
 /// Handles finalized speech transcript and initiates LLM generation workflow.
-fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppState) {
+fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
     if text.trim().is_empty() {
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Ready, &ctx, app, state);
@@ -342,7 +375,7 @@ fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppS
 }
 
 /// Handles streamed LLM token emissions, accumulates clauses, and dispatches TTS synthesis.
-fn on_llm_token(turn_id: u32, token: String, app: &AppHandle, state: &AppState) {
+fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<R>, state: &AppState) {
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         EVENT_LLM_TOKEN,
@@ -374,7 +407,7 @@ fn on_llm_token(turn_id: u32, token: String, app: &AppHandle, state: &AppState) 
 }
 
 /// Handles completed LLM text synthesis, flushes trailing clauses to TTS, and notifies UI.
-fn on_llm_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_llm_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
     if let Some(remainder) = CHUNKER.lock().flush() {
         if let Ok(guard) = state.engine.try_lock() {
             if let Some(ref engine) = *guard {
@@ -406,7 +439,7 @@ fn on_tts_finished(rtf: f32, state: &AppState) {
 }
 
 /// Transitions pipeline state to assistant speaking when audio playback begins.
-fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_playback_started<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Speaking, &ctx, app, state);
 
@@ -416,7 +449,7 @@ fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
 }
 
 /// Finalizes assistant response playback and transitions pipeline back to idle resting state.
-fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
@@ -434,7 +467,7 @@ fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
 }
 
 /// Logs pipeline errors and transitions state machine to error condition.
-fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
+fn on_error<R: tauri::Runtime>(turn_id: u32, message: String, app: &AppHandle<R>, state: &AppState) {
     log::error!("[ModularPTT] Error on turn {}: {}", turn_id, message);
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Error, &ctx, app, state);
@@ -460,8 +493,8 @@ fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
 }
 
 /// Main event dispatcher for the modular Push-To-Talk pipeline domain.
-pub fn handle_event(
-    app: &AppHandle,
+pub fn handle_event<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     state: &AppState,
     playback: &Arc<PlaybackEngine>,
     event: VoxEvent,

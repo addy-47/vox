@@ -123,3 +123,25 @@ Immediately after the title, include:
 - **Convention:** how claims are cited (`path/file.rs` pointers; no invented code blocks).
 - **Non-goals:** what it is explicitly NOT (with cross-links).
 - **SSOT:** where the authoritative detail lives.
+
+---
+
+## 9. Testability Seams, Inversion of Control & Runtime Generics (MANDATORY)
+
+Every backend actor, worker, pipeline domain, and router must be designed with explicit consideration of how it will be instantiated and tested in isolated unit and integration test harnesses:
+
+1. **Generic Tauri Runtime (`AppHandle<R: tauri::Runtime>`)**:
+   - Never bind actor functions, worker threads, domain routers, or lifecycle helpers to the concrete default Tauri runtime (`AppHandle` which defaults to `Wry`).
+   - Always parameterize with `<R: tauri::Runtime>` (or `R: tauri::Runtime + 'static` for spawned threads):
+     ```rust
+     pub fn spawn_actor<R: tauri::Runtime + 'static>(app: AppHandle<R>, ...) -> Result<JoinHandle<()>, String>
+     ```
+   - This enables integration test suites to pass `tauri::test::mock_app().handle()` without requiring live OS webview windows or X11/Wayland event loops.
+
+2. **Decoupled Ingestion & Dispatch Seams (No Isolated Module Statics)**:
+   - Module-level statics (`static PTT_BUFFER: Mutex<...>`, `static IS_RECORDING: AtomicBool`) must never form isolated black boxes that upstream actors cannot feed or tests cannot observe.
+   - Expose explicit ingress/egress seam functions (e.g. `ingest_audio(&[f32])`, `is_recording() -> bool`, `handle_ptt_stop_with_sender(...)`) so that upstream workers (like the VAD actor) can feed audio buffers and tests can drive turns without booting full audio hardware.
+
+3. **Inversion of Control for Hardware Dependencies**:
+   - High-level orchestrators that dispatch commands to downstream channels (`stt_tx`, `llm_tx`, `tts_tx`, `realtime_engine`) must support optional sender overrides or fallback gracefully when executing in headless test environments where hardware audio drivers (CPAL) are absent.
+

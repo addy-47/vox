@@ -233,6 +233,7 @@ PTT UX (User Gated):
 
 ### 7.1 `modular_passive.rs`
 
+```rust
 // ─── EVENT 1: Start Session (Idle -> Ready) ─────────────────────────────────
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Ensure engine is launched (CPAL stream + VAD + STT worker active)
@@ -312,11 +313,12 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), VoxErr
     //         - If dictation.enabled == false -> Stop engine, evict ONNX models, trim heap
     // Step 4: Transition InteractionState to Idle & broadcast to UI
 }
-
+```
 ---
 
 ### 7.2 `modular_ptt.rs`
 
+```rust
 // ─── EVENT 1: Start Session (Idle -> Ready) ──────────────────────────────────
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Ensure engine is launched (CPAL stream + VAD + STT worker active)
@@ -371,11 +373,13 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), VoxErr
     // Step 3: Stop or maintain engine based on dictation.enabled
     // Step 4: Transition InteractionState to Idle
 }
+```
 
 ---
 
 ### 7.3 `realtime_passive.rs`
 
+```rust
 // ─── EVENT 1: Start Session (Idle -> Ready) ──────────────────────────────────
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), VoxError> {
     // Step 1: Ensure engine is launched

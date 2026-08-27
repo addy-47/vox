@@ -22,7 +22,10 @@ static CHUNKER: LazyLock<Mutex<TtsClauseChunker>> =
     LazyLock::new(|| Mutex::new(TtsClauseChunker::new()));
 
 /// Initializes and warms up the LLM and TTS actor threads if not already loaded.
-async fn ensure_modular_workers(app: &AppHandle, state: &AppState) -> Result<(), String> {
+async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
+    app: &AppHandle<R>,
+    state: &AppState,
+) -> Result<(), String> {
     let (llm_path, tts_path, settings) = {
         let s = state.settings.read().unwrap().clone();
         let models_dir = crate::utils::paths::get().models.clone();
@@ -111,7 +114,7 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
 }
 
 /// Pauses the active modular passive voice pipeline.
-pub async fn pause_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
+pub async fn pause_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     state.pipeline.is_paused.store(true, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
 
@@ -127,7 +130,7 @@ pub async fn pause_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
 }
 
 /// Resumes a paused modular passive voice pipeline.
-pub async fn resume_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
+pub async fn resume_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     state.pipeline.is_paused.store(false, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
@@ -185,7 +188,7 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
 }
 
 /// Handles user speech detection onset and aborts ongoing assistant playback.
-fn on_speech_start(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_speech_start<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
     if !state.pipeline.is_engaged.load(Ordering::Relaxed)
         || state.pipeline.is_paused.load(Ordering::Relaxed)
     {
@@ -205,7 +208,7 @@ fn on_speech_start(turn_id: u32, app: &AppHandle, state: &AppState) {
 }
 
 /// Handles user speech completion and transitions the pipeline state to thinking.
-fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_speech_end<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
     if !state.pipeline.is_engaged.load(Ordering::Relaxed)
         || state.pipeline.is_paused.load(Ordering::Relaxed)
     {
@@ -222,7 +225,7 @@ fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState) {
 }
 
 /// Handles interim partial speech recognition results.
-fn on_transcript_partial(turn_id: u32, text: String, app: &AppHandle) {
+fn on_transcript_partial<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>) {
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         EVENT_TRANSCRIPT_PARTIAL,
@@ -236,7 +239,7 @@ fn on_transcript_partial(turn_id: u32, text: String, app: &AppHandle) {
 }
 
 /// Handles finalized speech transcript and initiates LLM generation workflow.
-fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppState) {
+fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
     if text.trim().is_empty() {
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Ready, &ctx, app, state);
@@ -296,7 +299,7 @@ fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppS
 }
 
 /// Handles streamed LLM token emissions, accumulates clauses, and dispatches TTS synthesis.
-fn on_llm_token(turn_id: u32, token: String, app: &AppHandle, state: &AppState) {
+fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<R>, state: &AppState) {
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         EVENT_LLM_TOKEN,
@@ -331,7 +334,7 @@ fn on_llm_token(turn_id: u32, token: String, app: &AppHandle, state: &AppState) 
 }
 
 /// Handles completed LLM text synthesis, flushes trailing clauses to TTS, and notifies UI.
-fn on_llm_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_llm_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
     if let Some(remainder) = CHUNKER.lock().flush() {
         if let Ok(guard) = state.engine.try_lock() {
             if let Some(ref engine) = *guard {
@@ -363,7 +366,7 @@ fn on_tts_finished(rtf: f32, state: &AppState) {
 }
 
 /// Transitions pipeline state to assistant speaking when audio playback begins.
-fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_playback_started<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Speaking, &ctx, app, state);
 
@@ -373,7 +376,7 @@ fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
 }
 
 /// Transitions pipeline state back to listening upon playback completion.
-fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
@@ -383,7 +386,7 @@ fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
 }
 
 /// Logs pipeline errors and transitions state machine to error condition.
-fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
+fn on_error<R: tauri::Runtime>(turn_id: u32, message: String, app: &AppHandle<R>, state: &AppState) {
     log::error!("[ModularPassive] Error on turn {}: {}", turn_id, message);
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Error, &ctx, app, state);
@@ -401,8 +404,8 @@ fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
 }
 
 /// Main event dispatcher for the modular passive pipeline domain.
-pub fn handle_event(
-    app: &AppHandle,
+pub fn handle_event<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     state: &AppState,
     playback: &Arc<PlaybackEngine>,
     event: VoxEvent,
