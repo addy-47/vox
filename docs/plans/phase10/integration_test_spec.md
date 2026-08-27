@@ -24,15 +24,23 @@ app/src-tauri/
 │   │   └── harness.rs      # spawn_stt_worker, spawn_vad_actor, event drain helpers
 │   ├── assets/
 │   │   ├── supertonic_01_en_briefing.wav   # TTS golden ref (Supertonic, EN)
-│   │   └── supertonic_07_hi_weather.wav    # TTS golden ref (Supertonic, HI)
+│   │   ├── supertonic_07_hi_weather.wav    # TTS golden ref (Supertonic, HI)
+│   │   ├── compaction_100_turns.json       # 100-turn dataset subset for Compaction eval
+│   │   └── memory_pipeline_prefill.db      # Pre-populated SQLite DB for pipeline & retrieval tests
 │   ├── stt_test.rs                → REFACTOR: split into seam files below, helpers → common/
-│   ├── passive_streaming_test.rs  # Seam 1
-│   ├── modular_ptt_test.rs        # Seam 2
-│   ├── realtime_ptt_test.rs       # Seam 3 + Ghost Audio Gate (Seam 6)
-│   ├── tts_test.rs                # Seam 4
-│   ├── llm_test.rs                # Seam 5
-│   ├── vad_ducking_test.rs        # Seam 7
-│   └── dictation_ptt_test.rs      # Seam 8
+│   ├── passive_streaming_test.rs      # Seam 1
+│   ├── modular_ptt_test.rs            # Seam 2
+│   ├── realtime_ptt_test.rs           # Seam 3 + Ghost Audio Gate (Seam 6)
+│   ├── tts_test.rs                    # Seam 4
+│   ├── llm_test.rs                    # Seam 5
+│   ├── vad_ducking_test.rs            # Seam 7
+│   ├── dictation_ptt_test.rs          # Seam 8
+│   ├── memory_compaction_test.rs      # Seam 9 (#[ignore] - Nvidia API)
+│   ├── memory_ingestion_test.rs       # Seam 10 (4-Stage Pipeline)
+│   ├── memory_retrieval_test.rs       # Seam 11 (Scope Routing & BFS Graph)
+│   ├── settings_persistence_test.rs   # Seam 12 (SQLite Settings Round-trip)
+│   ├── model_eviction_test.rs         # Seam 13 (Zero Idle RAM & Lifecycle)
+│   └── model_manager_test.rs          # Seam 14 (Model Integrity & Verified Marker)
 ```
 
 ### `common/audio.rs` — Required Functions
@@ -636,6 +644,362 @@ fn test_dictation_does_not_invoke_llm() { ... }
 
 ---
 
+## Seam 9 — Memory Compaction: 100-Turn History → LLM Extraction → Validated Fact Schema
+
+**File:** `tests/memory_compaction_test.rs`  
+**Status:** ⚠️ Requires Nvidia API Key (`temp/.env`) → Annotated with `#[ignore]` by default.
+
+### Phase 1 — Production Path Trace
+
+```
+SUT: run_compaction() sends multi-turn conversation history to LLM, extracts 6 collection
+     facts + narrative summary, and validates output against schema/quality constraints.
+
+Production Entry Seam:
+  run_compaction(provider, history_messages, settings)
+
+Direction Check: PASS — run_compaction() is the upstream extraction trigger.
+
+Production Path:
+  Load 100-turn dataset from tests/assets/compaction_100_turns.json
+  → build_compaction_request(history_messages, settings)
+  → provider.generate() (Nvidia LLM API call)
+  → stream tokens → parse_compaction_json(response)
+  → populate CompactionResult { context_summary, personal_memory, diff_to_enqueue }
+
+Observable Exit:
+  1. CompactionResult returned without error
+  2. All 6 core collections present: Identity, Directives, Narrative, Profile, Entities, Constraints
+  3. Narrative summary is a non-empty string (> 20 chars)
+  4. Zero single-word or trivial facts (all fact strings length >= 15 chars)
+  5. Total facts extracted >= 5 across collections
+
+Production functions called:
+  setup:   LlmProvider instance initialized with Nvidia API credentials from temp/.env
+  entry:   run_compaction(&provider, &history_messages, Some(&settings))
+  observe: CompactionResult fields and fact string invariants
+```
+
+### Phase 2b — False-Green Table
+
+| Defect | Would test fail? |
+|---|---|
+| **LLM returns malformed JSON or markdown fences that fail parsing** | **Yes — run_compaction retry fails, returns Err** |
+| LLM drops required collections (e.g. Identity or Profile missing) | Yes — collection presence assertion fails |
+| LLM extracts trivial / 1-word hallucinated tokens | Yes — minimum fact length (> 15 chars) fails |
+| Narrative is empty or formatted as array instead of string | Yes — narrative structure assertion fails |
+
+### Test Functions
+
+```rust
+/// Primary: 100-turn history compaction against Nvidia LLM provider
+/// Contacts Nvidia API. Load credentials from temp/.env. Run: cargo test -- --ignored
+#[ignore]
+#[test]
+fn test_memory_compaction_100_turns_nvidia() { ... }
+```
+
+---
+
+## Seam 10 — Memory Ingestion: staged_pending Queue → 4-Stage Pipeline → Active DB Facts
+
+**File:** `tests/memory_ingestion_test.rs`  
+**Status:** ✅ Unblocked (uses local MiniLM, DeBERTa, ModernBERT ONNX models; zero network).
+
+### Phase 1 — Production Path Trace
+
+```
+SUT: 4-stage pipeline (Dedup -> Embed -> NLI Eval -> Commit & Prune) processes queued facts
+     into persistent SQLite tables with graph relations.
+
+Production Entry Seam:
+  Pre-populated SQLite database in tests/assets/memory_pipeline_prefill.db containing known
+  staged_pending rows in personal_memory_queue (or dynamically inserted staged facts).
+  Invoked via drain_pipeline_queue(conn, &cancel_flag).
+
+Direction Check: PASS — drain_pipeline_queue() processes from the queue entry boundary.
+
+Production Path:
+  staged_pending rows in personal_memory_queue
+  → Stage 1 (Dedup): Jaccard exact match against active facts + queue items → status='deduped'
+  → Stage 2 (Embed): MiniLM-L12 generates 384-dim vector, soft cosine dedup (0.95) → status='embedded'
+  → Stage 3 (Eval): DeBERTa v3 NLI (intra) + ModernBERT (inter) produce relations_json → status='evaluated'
+  → Stage 4 (Commit): INSERT into memory_facts (status='active'), INSERT vectors into memory_facts_vectors,
+                      INSERT relations into memory_relations, DELETE processed rows from queue
+
+Observable Exit:
+  1. personal_memory_queue count == 0 (fully drained)
+  2. memory_facts contains active rows matching deduplicated input
+  3. memory_facts_vectors populated with 384-dim non-zero embeddings
+  4. memory_relations contains expected structural edges (e.g. SHAPES, DEPENDS_ON, SUPERSEDES)
+  5. Inactive/superseded facts correctly marked status='superseded'
+
+Production functions called:
+  setup:   open_test_turso_db(), ensure_embedder_loaded(), ensure_nli_loaded(), ensure_edge_classifier_loaded()
+  entry:   drain_pipeline_queue(&conn, &cancel_flag)
+  observe: Direct SQL queries on memory_facts, memory_facts_vectors, memory_relations, personal_memory_queue
+```
+
+### Phase 2b — False-Green Table
+
+| Defect | Would test fail? |
+|---|---|
+| **Stage 1 drops all facts or halts queue** | **Yes — personal_memory_queue remains > 0, memory_facts empty** |
+| Stage 2 fails to generate valid 384-dim vectors | Yes — memory_facts_vectors missing rows or dim != 384 |
+| Stage 3 edge classifier produces corrupted relations JSON | Yes — Stage 4 transaction rollback, queue items stranded |
+| Stage 4 fails to delete processed queue items | Yes — personal_memory_queue count assertion fails |
+
+### Test Functions
+
+```rust
+// Primary: full 4-stage pipeline execution from staged_pending fixture to committed graph
+#[test]
+fn test_memory_pipeline_4_stage_drain() { ... }
+
+// Guard: Stage 1 exact Jaccard duplicate suppression
+#[test]
+fn test_memory_pipeline_stage1_exact_dedup() { ... }
+
+// Guard: Stage 2 soft cosine vector dedup (>= 0.95)
+#[test]
+fn test_memory_pipeline_stage2_soft_vector_dedup() { ... }
+
+// Guard: Stage 3 NLI contradiction (SUPERSEDES edge + old fact deactivation)
+#[test]
+fn test_memory_pipeline_stage3_nli_contradiction_supersedes() { ... }
+```
+
+---
+
+## Seam 11 — Memory Retrieval: Query → Scope Classifier → Vector Search → BFS Graph → Context Budget
+
+**File:** `tests/memory_retrieval_test.rs`  
+**Status:** ✅ Unblocked (uses local ModernBERT & MiniLM models).
+
+### Phase 1 — Production Path Trace
+
+```
+SUT: retrieve_personal_context_v7() classifies query scope, executes scoped SQL/vector
+     retrieval, expands 2-hop BFS graph edges, and formats output within 15% token budget.
+
+Production Entry Seam:
+  retrieve_personal_context_v7(conn, query, settings, app_state)
+
+Direction Check: PASS — retrieve_personal_context_v7() is the primary retrieval API.
+
+Production Path:
+  classify_scope(query) via ModernBERT → MemoryScope { ChitChat, User, Domain, Temporal }
+  → route_scope(scope) maps to target SQL & Vector collections
+  → SQL Branch (Temporal): fetches narrative/directives within budget
+  → Vector Branch (User/Domain): semantic search on memory_facts_vectors (similarity >= 0.40)
+  → BFS Expansion: 2-hop neighbor traversal via memory_relations (parent_quota allocation)
+  → Token Budget: strictly caps formatted <user_profile> to max_personal_memory_share (15%)
+
+Observable Exit:
+  1. ChitChat query (e.g. "Hello", "How are you?") → returns empty string "" (zero context injection)
+  2. Domain query with known entities in DB → returns <user_profile><semantic_graph> block
+  3. BFS 2-hop connected facts rendered with "  ↳ --[{relation}]--> [{collection}] {fact}"
+  4. estimate_tokens(result) <= context_window * max_personal_memory_share
+
+Production functions called:
+  setup:   open_test_turso_db_with_fixtures(), ensure_scope_classifier_loaded(), ensure_embedder_loaded()
+  entry:   retrieve_personal_context_v7(&conn, query, &settings, &app_state)
+  observe: Formatted context string structure, XML tags, and token count calculation
+```
+
+### Phase 2b — False-Green Table
+
+| Defect | Would test fail? |
+|---|---|
+| **ChitChat queries erroneously trigger vector search & inject memory** | **Yes — non-empty string returned, assertion fails** |
+| BFS graph expansion traversal broken (0-hop only) | Yes — child relation arrow "↳" absent from output |
+| Token budget arithmetic overflows context window | Yes — estimate_tokens > budget threshold assertion fails |
+| Identity facts fetched dynamically in SQL branch (violates boot pre-load) | Yes — Identity tag found in dynamic output |
+
+### Test Functions
+
+```rust
+// Primary: ChitChat query returns zero context
+#[test]
+fn test_retrieval_chitchat_scope_returns_empty() { ... }
+
+// Primary: Domain query retrieves seed facts + 2-hop BFS graph expansion
+#[test]
+fn test_retrieval_domain_scope_with_bfs_expansion() { ... }
+
+// Primary: Temporal query retrieves narrative and directive blocks
+#[test]
+fn test_retrieval_temporal_scope_narrative_directives() { ... }
+
+// Guard: Massive candidate result set is hard-capped to 15% token budget
+#[test]
+fn test_retrieval_token_budget_enforcement() { ... }
+```
+
+---
+
+## Seam 12 — Settings Persistence: Mutation → SQLite DB Write → Reload Round-trip
+
+**File:** `tests/settings_persistence_test.rs`  
+**Status:** ✅ Unblocked (pure SQLite persistence; no models, no network).
+
+### Phase 1 — Production Path Trace
+
+```
+SUT: save_settings() writes modified application configuration to SQLite settings table,
+     and load_settings() restores exact configuration across restarts.
+
+Production Entry Seam:
+  save_settings(conn, &modified_settings) / load_settings(conn)
+
+Direction Check: PASS — save_settings() is the persistence entry point.
+
+Production Path:
+  Mutate Voice, LLM, TTS, VAD, and Memory settings fields
+  → save_settings(conn, &settings) executes serialized UPSERT into SQLite
+  → Drop in-memory structs
+  → load_settings(conn) reads and deserializes fresh AppSettings struct from DB
+
+Observable Exit:
+  1. save_settings() returns Ok(())
+  2. load_settings() produces AppSettings identical to modified input across all fields
+
+Production functions called:
+  setup:   open_memory_sqlite_db()
+  entry:   save_settings(&conn, &settings) → load_settings(&conn)
+  observe: Direct field equality comparisons on reloaded struct
+```
+
+### Phase 2b — False-Green Table
+
+| Defect | Would test fail? |
+|---|---|
+| **save_settings is a no-op or silently ignores nested struct fields** | **Yes — reloaded struct matches default, not modified input** |
+| Serialization format mismatch corrupts settings on disk | Yes — load_settings returns Err or default fallback |
+
+### Test Functions
+
+```rust
+// Primary: round-trip persistence of custom Voice, LLM, TTS, VAD, and Memory settings
+#[test]
+fn test_settings_sqlite_roundtrip_persistence() { ... }
+```
+
+---
+
+## Seam 13 — Model Eviction & Zero Idle RAM: Load Singletons → unload_all_onnx_models() → State Reset
+
+**File:** `tests/model_eviction_test.rs`  
+**Status:** ✅ Unblocked (local model weights required).
+
+### Phase 1 — Production Path Trace
+
+```
+SUT: Model singletons initialize ONNX runtime sessions and unload_all_onnx_models() drops
+     sessions, resets RwLocks to None, and triggers heap trimming.
+
+Production Entry Seam:
+  ensure_*_loaded() followed by unload_all_onnx_models()
+
+Direction Check: PASS — Lifecycle management functions are the direct SUT.
+
+Production Path:
+  ensure_embedder_loaded() + ensure_nli_loaded() + ensure_edge_classifier_loaded() + ensure_scope_classifier_loaded()
+  → All is_*_loaded() return true, RwLocks hold Some(Engine)
+  → unload_all_onnx_models() called
+  → Singletons write lock set to None (dropping Session & Environment)
+  → trim_heap("MemorySubsystem::unload_all_onnx_models") executes
+  → All is_*_loaded() return false
+
+Observable Exit:
+  1. Prior to unload: is_embedder_loaded(), is_nli_loaded(), is_edge_classifier_loaded(), is_scope_classifier_loaded() all == true
+  2. Post unload: all 4 is_*_loaded() functions return false
+  3. No panic during heap trim across target OS
+
+Production functions called:
+  setup:   paths::get() resolution
+  entry:   ensure_*_loaded() → unload_all_onnx_models()
+  observe: is_*_loaded() query helpers
+```
+
+### Phase 2b — False-Green Table
+
+| Defect | Would test fail? |
+|---|---|
+| **unload_all_onnx_models does not reset RwLock singletons** | **Yes — is_*_loaded() remains true** |
+| Drop implementation panics on active runtime sessions | Yes — test panics and fails |
+
+### Test Functions
+
+```rust
+// Primary: initialize all memory ONNX singletons, verify loaded, unload, verify unloaded
+#[test]
+fn test_onnx_model_singleton_lifecycle_eviction() { ... }
+```
+
+---
+
+## Seam 14 — Model Manager: Manifest Parsing → Hash Verification → .verified Marker Lifecycle
+
+**File:** `tests/model_manager_test.rs`  
+**Status:** ✅ Unblocked for local fixture & hash verification. Full remote download tests `#[ignore]`.
+
+### Phase 1 — Production Path Trace
+
+```
+SUT: ModelManager verifies file integrity against SHA256 manifest, generates .verified marker
+     on success, detects corrupted archives, and cleans up files on model removal.
+
+Production Entry Seam:
+  ModelManager::setup_model() / verification helper functions.
+
+Direction Check: PASS — ModelManager methods are the entry seam for asset management.
+
+Production Path:
+  Synthetic model directory created with valid test payload + matching SHA256 manifest entry
+  → Verification calculates SHA256 and creates .verified JSON marker
+  → Corrupted payload (tampered byte) calculates mismatched SHA256 → returns VerificationError
+  → Removal deletes model directory and .verified marker
+
+Observable Exit:
+  1. Valid file → .verified marker file created with correct sha256 and timestamp
+  2. Corrupted file → Verification fails with explicit hash mismatch error; no .verified marker
+  3. Model deletion → Directory and marker removed from disk
+
+Production functions called:
+  setup:   ModelManager::new(None), tempfile directory setup
+  entry:   setup_model() or verify_and_mark()
+  observe: Filesystem status, marker JSON content, Result error types
+```
+
+### Phase 2b — False-Green Table
+
+| Defect | Would test fail? |
+|---|---|
+| **Hash verification skipped and .verified created unconditionally** | **Yes — corrupted payload test succeeds instead of failing** |
+| .verified marker contains wrong metadata schema | Yes — marker JSON parsing assertion fails |
+| Model deletion leaves orphan .verified marker | Yes — marker existence check fails |
+
+### Test Functions
+
+```rust
+// Primary: synthetic valid payload creates .verified marker
+#[test]
+fn test_model_manager_valid_payload_verification() { ... }
+
+// Guard: corrupted payload fails hash verification and blocks .verified creation
+#[test]
+fn test_model_manager_corrupted_payload_detection() { ... }
+
+// Remote happy path: live download from manifest entry
+// Contacts CDN/remote server. Run: cargo test -- --ignored
+#[ignore]
+#[test]
+fn test_model_manager_live_download_nemotron() { ... }
+```
+
+---
+
 ## Seam X — LLM → TTS Clause Chunking
 
 **File:** `tests/llm_tts_chunking_test.rs`  
@@ -645,15 +1009,142 @@ fn test_dictation_does_not_invoke_llm() { ... }
 
 ---
 
-## Execution Priority
+## Execution Priority Matrix (Seams 1–14)
 
-| Priority | Seam | Test File | Status |
+| Priority | Seam | Test File | Status | Notes |
+|---|---|---|---|---|
+| **P0** | Shared Test Infra & Refactor | `tests/common/` | ✅ Done | Audio, scoring, paths, harness |
+| **P1** | Seam 1: Passive Streaming | `passive_streaming_test.rs` | ✅ Ready | Ring buffer -> VAD -> STT |
+| **P1** | Seam 2: Modular PTT | `modular_ptt_test.rs` | ✅ Ready | `ingest_audio` + `handle_ptt_stop_with_sender` |
+| **P1** | Seam 7: VAD Ducking | `vad_ducking_test.rs` | ✅ Ready | `should_suppress_audio` gate |
+| **P1** | Seam 8: Dictation PTT | `dictation_ptt_test.rs` | ✅ Ready | Hotkey -> STT -> OutputRouter |
+| **P2** | Seam 3 + 6: Realtime PTT & Ghost Gate | `realtime_ptt_test.rs` | ✅ Ready | `ingest_audio` + `handle_ptt_stop_with_engine` |
+| **P2** | Seam 4: TTS Actor | `tts_test.rs` | ✅ Ready | Aubio acoustic regression vs golden WAVs |
+| **P2** | Seam 5: LLM Actor | `llm_test.rs` | ✅ Ready | Qwen token streaming & LlmFinished |
+| **P2** | Seam 10: Memory Ingestion | `memory_ingestion_test.rs` | ✅ Ready | 4-stage pipeline drain |
+| **P2** | Seam 11: Memory Retrieval | `memory_retrieval_test.rs` | ✅ Ready | Scope routing + 2-hop BFS graph |
+| **P3** | Seam 12: Settings Persistence | `settings_persistence_test.rs` | ✅ Ready | SQLite settings round-trip |
+| **P3** | Seam 13: Model Eviction | `model_eviction_test.rs` | ✅ Ready | Zero Idle RAM & RwLock drop |
+| **P3** | Seam 14: Model Manager | `model_manager_test.rs` | ✅ Ready | Hash verification & .verified marker |
+| **P3** | Seam 9: Memory Compaction | `memory_compaction_test.rs` | ⚠️ `#[ignore]` | 100-turn eval (Nvidia API key) |
+| **P4** | Seam X: Clause Chunking | `llm_tts_chunking_test.rs` | 🔶 Pending | TTFA vs Prosody design session |
+
+---
+
+## Mutation Testing Scope (Seams 1–8)
+
+> **Prerequisite:** `/mutate` skill governs the full protocol (Extract → Mutate → Assert RED → Revert & Assert GREEN → Score). Read it before running any mutation cycle. This section supplies only what the skill cannot derive: the production file target per seam, the Tier 1 vs Tier 2 scoping decision, and the Vox-specific invocation commands.
+
+### Scope Table
+
+| Seam | Test File | Production File(s) to Mutate | Tier 2 (`cargo-mutants`)? | Reason |
+|---|---|---|---|---|
+| 1 — Passive Streaming | `passive_streaming_test.rs` | `services/vad/actor.rs` | ❌ No | VAD actor warm-up per mutant is prohibitive |
+| 2 — Modular PTT | `modular_ptt_test.rs` | `services/pipeline/modular_ptt.rs` | ✅ Yes | Pure logic: buffer accumulation, IS_RECORDING gate, sender dispatch |
+| 3 — Realtime PTT | `realtime_ptt_test.rs` | `services/pipeline/realtime_ptt.rs` | ✅ Yes | Pure logic: SPEECH_DETECTED gate, engine_override dispatch |
+| 4 — TTS Actor | `tts_test.rs` | `services/tts/actor.rs` | ❌ No | TTS model warm-up per mutant is prohibitive |
+| 5 — LLM Actor | `llm_test.rs` | `services/llm/actor.rs` | ❌ No | LLM inference per mutant is prohibitive |
+| 6 — Ghost Audio Gate | `realtime_ptt_test.rs` | `services/pipeline/realtime_ptt.rs` | ✅ Yes | Merged into Seam 3 — same file, same Tier 2 scope |
+| 7 — VAD Ducking | `vad_ducking_test.rs` | `services/vad/actor.rs` (suppress fn only) | ✅ Yes | Suppress function is pure logic; scope strictly to `should_suppress_audio()` |
+| 8 — Dictation PTT | `dictation_ptt_test.rs` | `services/pipeline/dictation.rs` | ✅ Yes | Pure logic: IS_RECORDING gate, buffer accumulation, routing fork |
+
+### Tier 1 — Phase 2b Manual Mutant Targets (All Seams)
+
+Each row in a seam's Phase 2b table maps to exactly one mutant. The governing rule from `/mutate`: if the row would only produce a crash/compile error, it is not a valid mutant — rewrite it to produce silent wrong behavior. The table below resolves the highest-priority rows per seam into concrete edits.
+
+| Seam | Phase 2b Row | Mutant Category | Concrete Edit |
 |---|---|---|---|
-| **P0** | Refactor `stt_test.rs` + build `tests/common/` | Split + extract | Do now |
-| **P1** | Seam 2: Modular PTT | `modular_ptt_test.rs` | ✅ Unblocked |
-| **P1** | Seam 7: VAD Ducking | `vad_ducking_test.rs` | ✅ Unblocked |
-| **P1** | Seam 8: Dictation PTT | `dictation_ptt_test.rs` | ✅ Unblocked |
-| **P2** | Seam 3 + 6: Realtime PTT + Ghost Audio | `realtime_ptt_test.rs` | ✅ Unblocked (gate tests); `#[ignore]` for cloud tests |
-| **P2** | Seam 4: TTS Actor | `tts_test.rs` | ✅ Unblocked |
-| **P2** | Seam 5: LLM Actor | `llm_test.rs` | ✅ Unblocked |
-| **P4** | Seam X: Clause Chunking | `llm_tts_chunking_test.rs` | 🔶 Pending design |
+| 1 | VAD actor never pops ring buffer | Silent drop | Delete the `pop_slice()` call inside the VAD loop body; keep the surrounding logic |
+| 2 | `IS_RECORDING=false` → frames silently dropped | Gate inversion | Replace `if IS_RECORDING.load(Ordering::Relaxed)` body with `return;` unconditionally |
+| 2 | `SttCommand::Final` never sent | Silent drop | Delete `tx.send(SttCommand::Final(...))` but keep `Ok(())` return |
+| 3 | `SPEECH_DETECTED=false` check missing → buffer always flushed | Gate inversion | Replace `if !SPEECH_DETECTED.load(Ordering::Relaxed)` guard with `if false` (gate never fires) |
+| 3 | Ghost gate fires but `push_audio()` still called | Routing/destination swap | Move `engine.push_audio(&buffer)` above the `SPEECH_DETECTED` check |
+| 4 | TTS receives command but synthesis never runs | Silent drop | Delete the provider `synthesize()` call, emit `PlaybackStarted` + `PlaybackFinished` immediately |
+| 5 | LLM actor reads channel but tokens not forwarded | Silent drop | Delete `pipeline_event_tx.send(VoxEvent::LlmToken {...})` inside the token loop |
+| 7 | `should_suppress_audio()` returns false during playback | Boolean inversion | Replace function body with `return false;` unconditionally |
+| 8 | `ingest_audio` writes to buffer but IS_RECORDING=false | Gate inversion | Replace `if IS_RECORDING.load(Ordering::Relaxed)` in `dictation::ingest_audio` with `if false` |
+| 8 | Transcript routed to LLM instead of `output_router` | Routing swap | In `on_transcript_final`, replace `output_router::route_transcript(...)` call with a no-op |
+
+### Tier 2 — `cargo-mutants` Invocation (Seams 2, 3, 7, 8 only)
+
+> [!IMPORTANT]
+> Run Tier 1 for all seams first. Only run Tier 2 after all Tier 1 mutants are killed or documented. Never run `cargo-mutants` globally — scope it to a single file with a single test target.
+
+**Mandatory thread allocation prefix for all Tier 2 invocations:**
+
+```bash
+RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) \
+  cargo mutants \
+  --file <SOURCE_FILE> \
+  --test-tool cargo \
+  -- --test <TEST_FILE> --release -- --test-threads=1
+```
+
+**Per-seam invocations:**
+
+```bash
+# Seam 2 — Modular PTT
+RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) \
+  cargo mutants \
+  --file app/src-tauri/src/services/pipeline/modular_ptt.rs \
+  --test-tool cargo \
+  -- --test modular_ptt_test --release -- --test-threads=1 --nocapture
+
+# Seam 3 + 6 — Realtime PTT & Ghost Audio Gate
+RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) \
+  cargo mutants \
+  --file app/src-tauri/src/services/pipeline/realtime_ptt.rs \
+  --test-tool cargo \
+  -- --test realtime_ptt_test --release -- --test-threads=1 --nocapture
+
+# Seam 7 — VAD Ducking (suppress function only — use function filter if supported)
+RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) \
+  cargo mutants \
+  --file app/src-tauri/src/services/vad/actor.rs \
+  --test-tool cargo \
+  -- --test vad_ducking_test --release -- --test-threads=1 --nocapture
+
+# Seam 8 — Dictation PTT
+RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) \
+  cargo mutants \
+  --file app/src-tauri/src/services/pipeline/dictation.rs \
+  --test-tool cargo \
+  -- --test dictation_ptt_test --release -- --test-threads=1 --nocapture
+```
+
+> [!WARNING]
+> Verify the `cargo-mutants` flag syntax against the currently installed version before running. Flags such as `--file`, `--test-tool`, and filter options vary across versions. Run `cargo mutants --help` first.
+
+### Clean-Revert Invariant (Mandatory Between Every Mutant)
+
+After step 4 (Revert) of each mutation cycle, the following must both be true before the next mutant is started. **Never stack mutations.**
+
+```bash
+# Assert diff is clean — no leftover edits
+git diff --stat
+# Expected output: empty (nothing printed)
+
+# Assert baseline is still green
+RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) \
+  cargo test --test <target_test_file> --release -- --nocapture --test-threads=1
+# Expected: all tests pass, 0 failures
+```
+
+If `git diff` is not empty, the mutation was not fully reverted. Do not proceed. Fix the revert first.
+
+### Score Output Format
+
+Report results in this format after all mutants for a seam are run:
+
+```
+Seam: [name]
+Mutants attempted: N
+Killed:    K  (failing assertion logged for each)
+Survivors: S  (row source, edit made, resolution: test strengthened / equivalent mutant discarded)
+Mutation score: K/N
+
+Tier 2 (cargo-mutants): [ran / skipped]
+  If ran: survivors from automated sweep (edit, test, resolution)
+```
+
+A survivor is a real finding — treat it the same as a production bug. Either the test assertion is too weak (strengthen it) or the mutant is behaviourally equivalent (document why and exclude from count).
