@@ -9,6 +9,10 @@ pub mod scope_router;
 pub mod tokenizer;
 pub mod working_memory;
 
+pub const RESERVED_GENERATION_TOKENS: usize = 512;
+pub const CONTEXT_CRITICAL_THRESHOLD: f32 = 0.85;
+pub const CONTEXT_SOFT_THRESHOLD: f32 = 0.65;
+
 pub const COSINE_HARD_MATCH_THRESHOLD: f32 = 0.98;
 pub const JACCARD_EXACT_MATCH_THRESHOLD: f32 = 1.0;
 pub const SOFT_VECTOR_DEDUP_THRESHOLD: f32 = 0.95;

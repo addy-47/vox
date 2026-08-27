@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tauri::Emitter;
 
 /// Commands processed by the background LLM worker thread.
+#[derive(Debug)]
 pub enum LlmCommand {
     Generate {
         request: GenerationRequest,

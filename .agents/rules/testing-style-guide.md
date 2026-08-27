@@ -101,3 +101,24 @@ Immediately after the title, include:
 - **Convention:** how claims are cited (`path/file.rs` pointers; no invented code blocks).
 - **Non-goals:** what it is explicitly NOT (with cross-links).
 - **SSOT:** where the authoritative detail lives.
+
+---
+
+## 7. Multi-Threaded, Async & Model Test Invariants (Mandatory)
+
+### 7.1 Hard Timeout Enforcement per Test Function
+- **Zero Unbounded Receives or Awaits:** NEVER use unbounded `.recv()` on channels or unbounded `.await` on tasks.
+- **Top-Level Timeout Wrapper:** Every `#[tokio::test]` MUST be wrapped in a top-level `tokio::time::timeout(Duration::from_secs(N), ...)` to guarantee that deadlocks, missing events, or infinite loops terminate immediately with a clear panic rather than hanging the test suite indefinitely.
+- **Synchronous Test Deadline:** In synchronous `#[test]` functions, bounded channel loops (`recv_timeout`) MUST have an explicit `Instant::now() + Duration::from_secs(N)` overall deadline that panics if exceeded.
+
+### 7.2 Zero Silent Background Panics
+- **Thread Handle Joins:** Every background worker thread spawned in test harnesses (`std::thread::spawn`) MUST have its `JoinHandle` saved, gracefully shut down, joined via `.join().expect("Worker thread panicked")`, and asserted for clean execution during test teardown.
+- **No False Greens on Crashing Workers:** If a background actor or async task panics or aborts mid-test, the test must catch and report this failure rather than silently passing.
+
+### 7.3 Single Worker Lifecycle per Model Provider (No Re-warming in Same Process)
+- **Do NOT Re-warm C++/ONNX/GGUF Backends:** Initializing and tearing down Sherpa-ONNX, llama.cpp, or ONNX Runtime multiple times across isolated `#[test]` functions within the same process leads to singleton state corruption, thread pool races, and SIGSEGV panics.
+- **Consolidated Matrix Tests:** Group test scenarios for a given provider (e.g., English speech, Hindi speech, empty guards) into a single session test function that initializes the worker once, runs the test matrix sequentially, and shuts down cleanly.
+
+### 7.4 Correct Audio Resampling & Acoustic Tolerances
+- **Resampling Discipline:** Downsampling/upsampling audio (e.g. 24kHz to 16kHz) MUST use valid resampling interpolation (or test against 24kHz golden fixtures directly). Never use naive index stride slicing which corrupts audio duration calculations.
+- **Exact Golden Fixtures:** Reference clips and their expected durations must be verified against actual asset properties in `tests/assets/` and `test-clips/`.
