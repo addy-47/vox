@@ -11,10 +11,11 @@
 mod common;
 
 use common::audio::decode_wav_to_mono_16k;
-use common::harness::{get_test_app_handle, get_test_app_state};
+use common::harness::get_test_app_and_state;
 use common::paths::get_asset_path;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{InteractionMode, RealtimeProviderKind};
 use vox_lib::services::audio::playback::PlaybackTelemetryHandles;
@@ -81,15 +82,12 @@ impl RealtimeVoiceProvider for MockProvider {
     }
 }
 
-fn create_mock_engine(
-    counter: Arc<AtomicUsize>,
-    tokio_handle: tokio::runtime::Handle,
-) -> RealtimeEngine {
-    let provider = Box::new(MockProvider {
-        send_audio_counter: counter,
+fn create_mock_engine(push_counter: Arc<AtomicUsize>, handle: tokio::runtime::Handle) -> RealtimeEngine {
+    let mock_provider = Box::new(MockProvider {
+        send_audio_counter: push_counter,
     });
-    let mut engine = RealtimeEngine::new(provider, tokio_handle);
-    let (event_tx, _event_rx) = std::sync::mpsc::channel();
+    let mut engine = RealtimeEngine::new(mock_provider, handle);
+
     let telemetry = PlaybackTelemetryHandles {
         energy: Arc::new(AtomicU32::new(0)),
         low: Arc::new(AtomicU32::new(0)),
@@ -106,6 +104,8 @@ fn create_mock_engine(
         )
         .expect("Failed to initialize PlaybackEngine"),
     );
+
+    let (event_tx, _event_rx) = std::sync::mpsc::channel::<VoxEvent>();
     engine
         .start(InteractionMode::PTT, playback_engine, event_tx)
         .expect("Failed to start mock RealtimeEngine");
@@ -115,98 +115,121 @@ fn create_mock_engine(
 /// Guard (NEGATIVE): Silence/noise PTT hold where SPEECH_DETECTED=false must be rejected at the Ghost Audio Gate.
 #[tokio::test]
 async fn test_realtime_ptt_ghost_audio_gate_rejects_non_speech() {
-    let app = get_test_app_handle();
-    let state = get_test_app_state();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let (app, state) = get_test_app_and_state();
 
-    let push_counter = Arc::new(AtomicUsize::new(0));
-    let mock_engine = create_mock_engine(push_counter.clone(), tokio::runtime::Handle::current());
+        let push_counter = Arc::new(AtomicUsize::new(0));
+        let mock_engine = create_mock_engine(push_counter.clone(), tokio::runtime::Handle::current());
 
-    // 1. Upstream Trigger: Start Realtime PTT recording
-    handle_ptt_start(&app, &state).expect("handle_ptt_start failed");
-    assert!(is_recording(), "IS_RECORDING must be true after start");
-    assert!(!is_speech_detected(), "SPEECH_DETECTED must be false initially");
+        // 1. Upstream Trigger: Start Realtime PTT recording
+        handle_ptt_start(&app, &state).expect("handle_ptt_start failed");
+        assert!(is_recording(), "IS_RECORDING must be true after start");
+        assert!(!is_speech_detected(), "SPEECH_DETECTED must be false initially");
 
-    // 2. Ingest 10 frames of silence / background noise (SPEECH_DETECTED remains false)
-    let silence_chunk = vec![0.0001f32; VAD_CHUNK_SIZE];
-    for _ in 0..10 {
-        ingest_audio(&silence_chunk);
-    }
-    assert_eq!(get_buffer_len(), 10 * VAD_CHUNK_SIZE, "Buffer must contain ingested frames");
+        // 2. Ingest 10 frames of silence / background noise (SPEECH_DETECTED remains false)
+        let silence_chunk = vec![0.0001f32; VAD_CHUNK_SIZE];
+        for _ in 0..10 {
+            ingest_audio(&silence_chunk);
+        }
+        assert_eq!(get_buffer_len(), 10 * VAD_CHUNK_SIZE, "Buffer must contain ingested frames");
 
-    // 3. Stop PTT hold with mock engine injection
-    handle_ptt_stop_with_engine(&app, &state, Some(&mock_engine))
-        .expect("handle_ptt_stop_with_engine failed");
+        // 3. Stop PTT hold with mock engine injection
+        handle_ptt_stop_with_engine(&app, &state, Some(&mock_engine))
+            .expect("handle_ptt_stop_with_engine failed");
 
-    // 4. Assertions: Ghost Audio Gate activated -> Buffer cleared, ZERO cloud pushes
-    assert!(!is_recording(), "IS_RECORDING must be false after stop");
-    assert_eq!(get_buffer_len(), 0, "REALTIME_PTT_BUFFER must be cleared without dispatch");
-    assert_eq!(
-        push_counter.load(Ordering::Relaxed),
-        0,
-        "Ghost Audio Gate must prevent any audio from being pushed to RealtimeEngine"
-    );
+        // Allow any asynchronous background tasks (such as AudioBridge channel dispatch) to settle
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // 4. Assertions: Ghost Audio Gate activated -> Buffer cleared, ZERO cloud pushes
+        assert!(!is_recording(), "IS_RECORDING must be false after stop");
+        assert_eq!(get_buffer_len(), 0, "REALTIME_PTT_BUFFER must be cleared without dispatch");
+        assert_eq!(
+            push_counter.load(Ordering::Relaxed),
+            0,
+            "Ghost Audio Gate must prevent any audio from being pushed to RealtimeEngine"
+        );
+    })
+    .await
+    .expect("test_realtime_ptt_ghost_audio_gate_rejects_non_speech timed out");
 }
 
 /// Tests that when speech is detected during PTT hold, audio is dispatched to RealtimeEngine.
 #[tokio::test]
 async fn test_realtime_ptt_speech_detected_flushes_to_engine() {
-    let clip_path = get_asset_path("edgetts_01_en_briefing.wav");
-    let audio = decode_wav_to_mono_16k(&clip_path).expect("Failed to decode EN WAV");
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let clip_path = get_asset_path("edgetts_01_en_briefing.wav");
+        let audio = decode_wav_to_mono_16k(&clip_path).expect("Failed to decode EN WAV");
 
-    let app = get_test_app_handle();
-    let state = get_test_app_state();
+        let (app, state) = get_test_app_and_state();
 
-    let push_counter = Arc::new(AtomicUsize::new(0));
-    let mock_engine = create_mock_engine(push_counter.clone(), tokio::runtime::Handle::current());
+        let push_counter = Arc::new(AtomicUsize::new(0));
+        let mock_engine = create_mock_engine(push_counter.clone(), tokio::runtime::Handle::current());
 
-    // 1. Upstream Trigger: Start Realtime PTT recording
-    handle_ptt_start(&app, &state).expect("handle_ptt_start failed");
-    assert!(is_recording(), "IS_RECORDING must be true");
+        // 1. Start Realtime PTT recording
+        handle_ptt_start(&app, &state).expect("handle_ptt_start failed");
+        assert!(is_recording(), "IS_RECORDING must be true after start");
 
-    // 2. Ingest speech frames
-    for chunk in audio.chunks(VAD_CHUNK_SIZE) {
-        ingest_audio(chunk);
-    }
+        // 2. Ingest speech audio frames and flag speech detection
+        for chunk in audio.chunks(VAD_CHUNK_SIZE) {
+            ingest_audio(chunk);
+        }
+        set_speech_detected(true);
+        assert!(get_buffer_len() >= audio.len(), "Buffer must contain ingested audio");
 
-    // 3. Simulate VAD speech detection confirmation
-    set_speech_detected(true);
-    assert!(is_speech_detected(), "SPEECH_DETECTED must be true");
+        // 3. Stop PTT hold -> should flush accumulated audio to engine
+        handle_ptt_stop_with_engine(&app, &state, Some(&mock_engine))
+            .expect("handle_ptt_stop_with_engine failed");
 
-    // 4. Stop PTT hold
-    handle_ptt_stop_with_engine(&app, &state, Some(&mock_engine))
-        .expect("handle_ptt_stop_with_engine failed");
+        tokio::time::sleep(Duration::from_millis(50)).await;
 
-    // Allow background audio bridge worker to forward PCM
-    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
-    // 5. Assertions: Audio flushed to engine
-    assert!(!is_recording(), "IS_RECORDING must be false");
-    assert_eq!(get_buffer_len(), 0, "Buffer must be drained on dispatch");
-    assert!(
-        push_counter.load(Ordering::Relaxed) > 0,
-        "Audio must be pushed to RealtimeEngine when SPEECH_DETECTED is true"
-    );
+        assert!(!is_recording(), "IS_RECORDING must be false after stop");
+        assert!(!is_speech_detected(), "SPEECH_DETECTED must reset to false");
+        assert_eq!(get_buffer_len(), 0, "Buffer must be drained on release");
+        assert!(
+            push_counter.load(Ordering::Relaxed) > 0,
+            "RealtimeEngine should have received pushed audio chunks"
+        );
+    })
+    .await
+    .expect("test_realtime_ptt_speech_detected_flushes_to_engine timed out");
 }
 
-/// Guard (NEGATIVE): Cancelling Realtime PTT clears the buffer and discards dispatch.
-#[test]
-fn test_realtime_ptt_cancel_discards_buffer() {
-    let app = get_test_app_handle();
-    let state = get_test_app_state();
+/// Guard (NEGATIVE): Cancelling Realtime PTT must clear buffer and abort dispatch.
+#[tokio::test]
+async fn test_realtime_ptt_cancel_discards_audio() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let clip_path = get_asset_path("edgetts_01_en_briefing.wav");
+        let audio = decode_wav_to_mono_16k(&clip_path).expect("Failed to decode EN WAV");
 
-    // 1. Start PTT recording
-    handle_ptt_start(&app, &state).expect("handle_ptt_start failed");
-    assert!(is_recording(), "IS_RECORDING must be true");
+        let (app, state) = get_test_app_and_state();
 
-    // 2. Ingest audio frames
-    let chunk = vec![0.1f32; VAD_CHUNK_SIZE];
-    for _ in 0..5 {
-        ingest_audio(&chunk);
-    }
-    assert_eq!(get_buffer_len(), 5 * VAD_CHUNK_SIZE);
+        let push_counter = Arc::new(AtomicUsize::new(0));
+        let _mock_engine = create_mock_engine(push_counter.clone(), tokio::runtime::Handle::current());
 
-    // 3. Cancel PTT
-    handle_ptt_cancel(&app, &state).expect("handle_ptt_cancel failed");
-    assert!(!is_recording(), "IS_RECORDING must be false after cancel");
-    assert_eq!(get_buffer_len(), 0, "Buffer must be cleared on cancel");
+        // 1. Start Realtime PTT recording
+        handle_ptt_start(&app, &state).expect("handle_ptt_start failed");
+        assert!(is_recording(), "IS_RECORDING must be true");
+
+        // 2. Ingest audio frames
+        for chunk in audio.chunks(VAD_CHUNK_SIZE) {
+            ingest_audio(chunk);
+        }
+        set_speech_detected(true);
+        assert!(get_buffer_len() > 0, "Buffer must contain audio frames");
+
+        // 3. Cancel PTT
+        handle_ptt_cancel(&app, &state).expect("handle_ptt_cancel failed");
+
+        // 4. Assertions
+        assert!(!is_recording(), "IS_RECORDING must be false after cancel");
+        assert!(!is_speech_detected(), "SPEECH_DETECTED must be false after cancel");
+        assert_eq!(get_buffer_len(), 0, "Buffer must be cleared on cancel");
+        assert_eq!(
+            push_counter.load(Ordering::Relaxed),
+            0,
+            "RealtimeEngine must receive 0 chunks when PTT is cancelled"
+        );
+    })
+    .await
+    .expect("test_realtime_ptt_cancel_discards_audio timed out");
 }

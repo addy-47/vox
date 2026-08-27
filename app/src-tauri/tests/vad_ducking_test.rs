@@ -20,7 +20,7 @@ use common::harness::{
 use common::paths::get_asset_path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{AudioOutputMode, InteractionMode};
 use vox_lib::core::state::{InteractionOwner, VadCommand};
@@ -31,6 +31,9 @@ use vox_lib::services::vad::VAD_SPEECH_END_FRAMES;
 /// Guard (NEGATIVE): When audio_mode is Speaker and playback_active is true, speech frames must be suppressed.
 #[test]
 fn test_vad_ducking_suppresses_audio_during_playback() {
+    let start_time = Instant::now();
+    let max_test_duration = Duration::from_secs(15);
+
     let clip_path = get_asset_path("edgetts_01_en_briefing.wav");
     let audio = decode_wav_to_mono_16k(&clip_path).expect("Failed to decode EN WAV");
 
@@ -74,13 +77,21 @@ fn test_vad_ducking_suppresses_audio_during_playback() {
     let _ = vad_cmd_tx.send(VadCommand::Shutdown);
     let _ = stt_tx.send(SttCommand::Shutdown);
     engine_shutdown.store(true, Ordering::Relaxed);
-    let _ = vad_handle.join();
-    let _ = stt_handle.join();
+    vad_handle.join().expect("VAD worker panicked during ducking suppression test");
+    stt_handle.join().expect("STT worker panicked during ducking suppression test");
+
+    assert!(
+        start_time.elapsed() < max_test_duration,
+        "VAD ducking suppression test exceeded hard timeout of 15s"
+    );
 }
 
 /// Tests that once playback finishes (playback_active=false), speech detection immediately resumes.
 #[test]
 fn test_vad_ducking_resumes_after_playback() {
+    let start_time = Instant::now();
+    let max_test_duration = Duration::from_secs(15);
+
     let clip_path = get_asset_path("edgetts_01_en_briefing.wav");
     let audio = decode_wav_to_mono_16k(&clip_path).expect("Failed to decode EN WAV");
 
@@ -138,13 +149,21 @@ fn test_vad_ducking_resumes_after_playback() {
     let _ = vad_cmd_tx.send(VadCommand::Shutdown);
     let _ = stt_tx.send(SttCommand::Shutdown);
     engine_shutdown.store(true, Ordering::Relaxed);
-    let _ = vad_handle.join();
-    let _ = stt_handle.join();
+    vad_handle.join().expect("VAD worker panicked during ducking resume test");
+    stt_handle.join().expect("STT worker panicked during ducking resume test");
+
+    assert!(
+        start_time.elapsed() < max_test_duration,
+        "VAD ducking resume test exceeded hard timeout of 15s"
+    );
 }
 
 /// Tests that in Headset mode, playback does not suppress VAD (barge-in is always active).
 #[test]
 fn test_vad_headset_mode_no_suppression_during_playback() {
+    let start_time = Instant::now();
+    let max_test_duration = Duration::from_secs(15);
+
     let clip_path = get_asset_path("edgetts_01_en_briefing.wav");
     let audio = decode_wav_to_mono_16k(&clip_path).expect("Failed to decode EN WAV");
 
@@ -183,11 +202,16 @@ fn test_vad_headset_mode_no_suppression_during_playback() {
         }
     }
 
-    assert!(speech_started, "Headset mode must allow speech detection even during active playback");
+    assert!(speech_started, "SpeechStart must fire during playback in Headset mode");
 
     let _ = vad_cmd_tx.send(VadCommand::Shutdown);
     let _ = stt_tx.send(SttCommand::Shutdown);
     engine_shutdown.store(true, Ordering::Relaxed);
-    let _ = vad_handle.join();
-    let _ = stt_handle.join();
+    vad_handle.join().expect("VAD worker panicked during headset test");
+    stt_handle.join().expect("STT worker panicked during headset test");
+
+    assert!(
+        start_time.elapsed() < max_test_duration,
+        "Headset test exceeded hard timeout of 15s"
+    );
 }

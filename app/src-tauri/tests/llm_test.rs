@@ -49,131 +49,134 @@ fn setup_test_llm_worker() -> (
     warm_up_llm(&app, handles, &settings, &llm_path, event_tx)
         .expect("Failed to warm up LLM worker");
 
-    (llm_tx.expect("llm_tx initialized"), event_rx, llm_handle)
+    (tts_tx_handle(llm_tx), event_rx, llm_handle)
 }
 
-/// Tests that the LLM actor generates response tokens and terminates with LlmFinished.
+fn tts_tx_handle(llm_tx: Option<std::sync::mpsc::Sender<LlmCommand>>) -> std::sync::mpsc::Sender<LlmCommand> {
+    llm_tx.expect("llm_tx initialized")
+}
+
+/// Consolidated LLM Generation & Cancellation Matrix with Single Lifecycle & Hard Timeout.
 #[test]
-fn test_llm_generates_response_en() {
+fn test_llm_generation_and_cancel_matrix() {
+    let start_time = std::time::Instant::now();
+    let max_test_duration = Duration::from_secs(35);
+
     let (llm_tx, event_rx, llm_handle) = setup_test_llm_worker();
-    let cancel_flag = Arc::new(AtomicBool::new(false));
 
-    let request = GenerationRequest {
-        input: ConversationInput {
-            messages: vec![ChatMessage {
-                role: Role::User,
-                content: "Respond with the word 'READY' and nothing else.".to_string(),
-                timestamp_ms: 0,
-            }],
-        },
-        options: GenerationOptions {
-            max_output_tokens: Some(16),
-            temperature: Some(0.1),
-            ..Default::default()
-        },
-        output: OutputConstraint::Text,
-        purpose: GenerationPurpose::Conversation,
-    };
+    // 1. Positive Generation: English Prompt -> Token Stream -> LlmFinished
+    {
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let request = GenerationRequest {
+            input: ConversationInput {
+                messages: vec![ChatMessage {
+                    role: Role::User,
+                    content: "Respond with the word 'READY' and nothing else.".to_string(),
+                    timestamp_ms: 0,
+                }],
+            },
+            options: GenerationOptions {
+                max_output_tokens: Some(16),
+                temperature: Some(0.1),
+                ..Default::default()
+            },
+            output: OutputConstraint::Text,
+            purpose: GenerationPurpose::Conversation,
+        };
 
-    // 1. Upstream Trigger: Send LlmCommand::Generate
-    llm_tx
-        .send(LlmCommand::Generate {
-            request,
-            turn_id: 1,
-            cancel_flag: cancel_flag.clone(),
-        })
-        .expect("Failed to send LlmCommand");
+        llm_tx
+            .send(LlmCommand::Generate {
+                request,
+                turn_id: 1,
+                cancel_flag: cancel_flag.clone(),
+            })
+            .expect("Failed to send LlmCommand");
 
-    // 2. Collect emitted VoxEvents
-    let mut tokens_received = Vec::new();
-    let mut finished = false;
-    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        let mut tokens_received = Vec::new();
+        let mut finished = false;
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
 
-    while std::time::Instant::now() < deadline && !finished {
-        if let Ok(event) = event_rx.recv_timeout(Duration::from_millis(100)) {
-            match event {
-                VoxEvent::LlmToken { token, turn_id, .. } => {
-                    assert_eq!(turn_id, 1);
-                    tokens_received.push(token);
+        while std::time::Instant::now() < deadline && !finished {
+            if let Ok(event) = event_rx.recv_timeout(Duration::from_millis(100)) {
+                match event {
+                    VoxEvent::LlmToken { token, turn_id, .. } => {
+                        assert_eq!(turn_id, 1);
+                        tokens_received.push(token);
+                    }
+                    VoxEvent::LlmFinished { turn_id } => {
+                        assert_eq!(turn_id, 1);
+                        finished = true;
+                    }
+                    _ => {}
                 }
-                VoxEvent::LlmFinished { turn_id } => {
-                    assert_eq!(turn_id, 1);
-                    finished = true;
-                }
-                _ => {}
             }
         }
+
+        let full_response = tokens_received.concat();
+        println!("\n=== [LLM Response Matrix] ===");
+        println!("Tokens Received: {}", tokens_received.len());
+        println!("Response Text  : {}", full_response.trim());
+
+        assert!(
+            !tokens_received.is_empty(),
+            "LLM actor must emit at least one LlmToken"
+        );
+        assert!(finished, "LLM actor must emit VoxEvent::LlmFinished");
     }
 
-    let full_response = tokens_received.concat();
-    println!("\n=== [LLM Response] ===");
-    println!("Tokens Received: {}", tokens_received.len());
-    println!("Response Text  : {}", full_response.trim());
+    // 2. Negative Invariant: Pre-cancelled request halts immediately
+    {
+        let cancel_flag = Arc::new(AtomicBool::new(true)); // Pre-set cancel flag
+        let request = GenerationRequest {
+            input: ConversationInput {
+                messages: vec![ChatMessage {
+                    role: Role::User,
+                    content: "Write a long essay about the solar system and planets.".to_string(),
+                    timestamp_ms: 0,
+                }],
+            },
+            options: GenerationOptions {
+                max_output_tokens: Some(128),
+                temperature: Some(0.7),
+                ..Default::default()
+            },
+            output: OutputConstraint::Text,
+            purpose: GenerationPurpose::Conversation,
+        };
 
-    assert!(
-        !tokens_received.is_empty(),
-        "LLM actor must emit at least one LlmToken"
-    );
-    assert!(finished, "LLM actor must emit VoxEvent::LlmFinished");
+        llm_tx
+            .send(LlmCommand::Generate {
+                request,
+                turn_id: 2,
+                cancel_flag: cancel_flag.clone(),
+            })
+            .expect("Failed to send LlmCommand");
 
-    let mut tx_opt = Some(llm_tx);
-    cool_down_llm(&mut tx_opt);
-    if let Some(handle) = llm_handle {
-        let _ = handle.join();
-    }
-}
+        let mut tokens_received = 0;
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
 
-/// Guard (NEGATIVE): When cancel_flag is set true mid-generation, LLM must stop emitting.
-#[test]
-fn test_llm_cancel_mid_generation() {
-    let (llm_tx, event_rx, llm_handle) = setup_test_llm_worker();
-    let cancel_flag = Arc::new(AtomicBool::new(true)); // Pre-set cancel flag
-
-    let request = GenerationRequest {
-        input: ConversationInput {
-            messages: vec![ChatMessage {
-                role: Role::User,
-                content: "Write a long essay about the solar system and planets.".to_string(),
-                timestamp_ms: 0,
-            }],
-        },
-        options: GenerationOptions {
-            max_output_tokens: Some(128),
-            temperature: Some(0.7),
-            ..Default::default()
-        },
-        output: OutputConstraint::Text,
-        purpose: GenerationPurpose::Conversation,
-    };
-
-    // 1. Dispatch generation with pre-cancelled flag
-    llm_tx
-        .send(LlmCommand::Generate {
-            request,
-            turn_id: 2,
-            cancel_flag: cancel_flag.clone(),
-        })
-        .expect("Failed to send LlmCommand");
-
-    // 2. Assert zero or minimal tokens emitted before halting
-    let mut tokens_received = 0;
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-
-    while std::time::Instant::now() < deadline {
-        if let Ok(VoxEvent::LlmToken { .. }) = event_rx.recv_timeout(Duration::from_millis(50)) {
-            tokens_received += 1;
+        while std::time::Instant::now() < deadline {
+            if let Ok(VoxEvent::LlmToken { .. }) = event_rx.recv_timeout(Duration::from_millis(50)) {
+                tokens_received += 1;
+            }
         }
+
+        println!("\n=== [LLM Cancel Guard] Tokens Emitted: {} ===", tokens_received);
+        assert!(
+            tokens_received <= 1,
+            "Cancelled LLM generation must halt token generation immediately"
+        );
     }
 
-    println!("\n=== [LLM Cancel Guard] Tokens Emitted: {} ===", tokens_received);
-    assert!(
-        tokens_received <= 1,
-        "Cancelled LLM generation must halt token generation immediately"
-    );
-
+    // 3. Graceful Teardown & Panic Verification
     let mut tx_opt = Some(llm_tx);
     cool_down_llm(&mut tx_opt);
     if let Some(handle) = llm_handle {
-        let _ = handle.join();
+        handle.join().expect("LLM worker thread panicked during shutdown");
     }
+
+    assert!(
+        start_time.elapsed() < max_test_duration,
+        "LLM matrix test exceeded hard timeout of 35s"
+    );
 }

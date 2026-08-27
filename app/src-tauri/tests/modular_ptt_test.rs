@@ -12,8 +12,8 @@ mod common;
 
 use common::audio::decode_wav_to_mono_16k;
 use common::harness::{
-    assert_channel_empty_after, collect_all_final_transcripts, get_test_app_handle,
-    get_test_app_state, setup_stt_worker,
+    assert_channel_empty_after, collect_all_final_transcripts, get_test_app_and_state,
+    setup_stt_worker,
 };
 use common::paths::get_asset_path;
 use common::scoring::calculate_similarity;
@@ -30,18 +30,18 @@ const EN_GROUND_TRUTH: &str =
     "Hey Vox, good morning! Can you check my calendar and give me a quick briefing on today's scheduled meetings?";
 const MIN_SIMILARITY_THRESHOLD: f32 = 0.90;
 
-/// Tests audio accumulation during PTT recording and successful dispatch to STT on release.
+/// Tests audio accumulation during PTT recording and successful dispatch to STT on release with hard timeout.
 #[test]
 fn test_modular_ptt_audio_accumulation_en() {
+    let start_time = Instant::now();
+    let max_test_duration = Duration::from_secs(30);
+
     let clip_path = get_asset_path("edgetts_01_en_briefing.wav");
     let audio = decode_wav_to_mono_16k(&clip_path).expect("Failed to decode EN WAV");
     let audio_duration_sec = audio.len() as f32 / 16000.0;
 
-    let app = get_test_app_handle();
-    let state = get_test_app_state();
+    let (app, state) = get_test_app_and_state();
     let (stt_tx, pipeline_event_rx, engine_shutdown, stt_handle) = setup_stt_worker(&app);
-
-    let start_time = Instant::now();
 
     // 1. Upstream Trigger: Start PTT recording
     handle_ptt_start(&app, &state).expect("handle_ptt_start failed");
@@ -63,13 +63,13 @@ fn test_modular_ptt_audio_accumulation_en() {
         "PTT_BUFFER must contain accumulated audio frames"
     );
 
-    // 3. Trigger PTT stop with direct STT sender injection
+    // 3. Stop PTT recording with direct STT sender injection
     handle_ptt_stop_with_sender(&app, &state, Some(&stt_tx)).expect("handle_ptt_stop_with_sender failed");
     assert!(!is_recording(), "IS_RECORDING should be false after stop");
     assert_eq!(get_buffer_len(), 0, "PTT_BUFFER must be drained after stop");
 
-    // 4. Collect final STT transcript (single turn for discrete PTT utterance)
-    let transcript = collect_all_final_transcripts(&pipeline_event_rx, 1, Duration::from_secs(25));
+    // 4. Collect final STT transcript
+    let transcript = collect_all_final_transcripts(&pipeline_event_rx, 1, Duration::from_secs(20));
     let elapsed = start_time.elapsed().as_secs_f32();
     let rtf = elapsed / audio_duration_sec;
     let similarity = calculate_similarity(&transcript, EN_GROUND_TRUTH);
@@ -89,14 +89,21 @@ fn test_modular_ptt_audio_accumulation_en() {
 
     let _ = stt_tx.send(SttCommand::Shutdown);
     engine_shutdown.store(true, Ordering::Relaxed);
-    let _ = stt_handle.join();
+    stt_handle.join().expect("STT worker thread panicked during PTT teardown");
+
+    assert!(
+        start_time.elapsed() < max_test_duration,
+        "Modular PTT EN test exceeded hard timeout of 30s"
+    );
 }
 
 /// Guard (NEGATIVE): Starting and stopping PTT with an empty audio buffer must NOT emit STT commands.
 #[test]
 fn test_modular_ptt_empty_buffer_guard() {
-    let app = get_test_app_handle();
-    let state = get_test_app_state();
+    let start_time = Instant::now();
+    let max_test_duration = Duration::from_secs(10);
+
+    let (app, state) = get_test_app_and_state();
     let (stt_tx, pipeline_event_rx, engine_shutdown, stt_handle) = setup_stt_worker(&app);
 
     // 1. Start PTT recording
@@ -117,17 +124,24 @@ fn test_modular_ptt_empty_buffer_guard() {
 
     let _ = stt_tx.send(SttCommand::Shutdown);
     engine_shutdown.store(true, Ordering::Relaxed);
-    let _ = stt_handle.join();
+    stt_handle.join().expect("STT worker thread panicked during empty buffer teardown");
+
+    assert!(
+        start_time.elapsed() < max_test_duration,
+        "Empty buffer guard test exceeded hard timeout of 10s"
+    );
 }
 
 /// Guard (NEGATIVE): Cancelling PTT recording must clear accumulated audio and discard dispatch.
 #[test]
 fn test_modular_ptt_cancel_discards_audio() {
+    let start_time = Instant::now();
+    let max_test_duration = Duration::from_secs(10);
+
     let clip_path = get_asset_path("edgetts_01_en_briefing.wav");
     let audio = decode_wav_to_mono_16k(&clip_path).expect("Failed to decode EN WAV");
 
-    let app = get_test_app_handle();
-    let state = get_test_app_state();
+    let (app, state) = get_test_app_and_state();
     let (stt_tx, pipeline_event_rx, engine_shutdown, stt_handle) = setup_stt_worker(&app);
 
     // 1. Start PTT recording
@@ -154,5 +168,10 @@ fn test_modular_ptt_cancel_discards_audio() {
 
     let _ = stt_tx.send(SttCommand::Shutdown);
     engine_shutdown.store(true, Ordering::Relaxed);
-    let _ = stt_handle.join();
+    stt_handle.join().expect("STT worker thread panicked during cancel teardown");
+
+    assert!(
+        start_time.elapsed() < max_test_duration,
+        "PTT cancel guard test exceeded hard timeout of 10s"
+    );
 }
