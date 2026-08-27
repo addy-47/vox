@@ -42,13 +42,30 @@ pub fn decode_wav_to_mono_16k(path: &Path) -> Result<Vec<f32>, String> {
         }
     };
 
-    if spec.channels > 1 {
-        Ok(samples
+    let mono: Vec<f32> = if spec.channels > 1 {
+        samples
             .chunks(spec.channels as usize)
             .map(|chunk| chunk.iter().sum::<f32>() / chunk.len() as f32)
-            .collect())
+            .collect()
     } else {
-        Ok(samples)
+        samples
+    };
+
+    if spec.sample_rate == 16000 || mono.is_empty() {
+        Ok(mono)
+    } else {
+        let ratio = 16000.0 / spec.sample_rate as f64;
+        let target_len = (mono.len() as f64 * ratio).round() as usize;
+        let mut out = Vec::with_capacity(target_len);
+        for i in 0..target_len {
+            let src_pos = i as f64 / ratio;
+            let idx0 = src_pos.floor() as usize;
+            let frac = (src_pos - idx0 as f64) as f32;
+            let s0 = mono[idx0.min(mono.len() - 1)];
+            let s1 = mono[(idx0 + 1).min(mono.len() - 1)];
+            out.push(s0 + frac * (s1 - s0));
+        }
+        Ok(out)
     }
 }
 

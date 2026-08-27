@@ -246,6 +246,7 @@ pub fn handle_ptt_stop_with_engine<R: tauri::Runtime>(
         return Ok(());
     }
 
+    SPEECH_DETECTED.store(false, Ordering::Relaxed);
     let buffer = REALTIME_PTT_BUFFER.lock().split_off(0);
     if let Some(engine) = engine_override {
         engine.push_audio(&buffer);
