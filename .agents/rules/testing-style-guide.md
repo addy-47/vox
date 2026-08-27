@@ -35,33 +35,28 @@ Architecture capabilities and memory ceilings are gated by hardware tier. Tests 
 
 ---
 
-## 3. Testing Principles (Zero Noise Policy)
+## 3. Testing Principles
 
-1. **Never test trivial language invariants or compiler guarantees:**
-   - **Banned:** Tests that solely construct a struct with default values and assert `field == expected`.
-   - **Banned:** Tests that serialize/deserialize an enum and assert string equality (serde derive handles this).
-   - **Banned:** Tests that assert enum discriminants or trivial `From` implementations with zero business logic.
-   - **Banned:** Instantiating an ad-hoc local `Mutex` or fake struct in a test and claiming it tests a subsystem cache.
-2. **Unit Tests (`#[cfg(test)] mod tests`)**:
-   - Must test non-trivial algorithmic logic, state machine transitions, text sanitization, parsing, math, or error edge cases.
-3. **Integration Tests (`app/src-tauri/tests/<feature>_test.rs`)**:
-   - Must test subsystem interaction, lifecycle contracts, concurrency, and error recovery using public `vox_lib` APIs.
-   - Must test real failure modes: what happens when a dependency fails, when state races occur, or when buffers overflow.
-4. **Performance Benchmarks (`app/src-tauri/benches/<feature>_bench.rs`)**:
-   - **Banned:** Micro-benchmarks measuring simple struct serde or isolated mutex locking in a tight loop.
-   - Must execute real pipelines: ingest real inputs (e.g. WAV audio, text corpora), invoke actual ML inference or service dispatch, and record per-stage and end-to-end latency ($T_{\text{stt}}$, $T_{\text{dispatch}}$, $T_{\text{e2e}}$) and throughput.
-   - Must support CLI arguments via `clap` (e.g. `--clip`, `--mode`) so developers and CI can test realistic workloads.
+A test earns its place by covering behavior that could fail in production in a way that would matter. The test taxonomy in §2 defines where each test lives; these principles define what makes each type worth having.
+
+**Unit tests** earn their place by covering non-trivial algorithmic logic: state machine transitions, parsing edge cases, arithmetic boundaries, sanitization rules, error path behavior. A unit test that only verifies a struct's default values or a `From` implementation with no branching is measuring the compiler, not the code.
+
+**Integration tests** earn their place by exercising real subsystem boundaries through the public `vox_lib` API: what happens when a dependency fails, when a buffer fills under load, when two components race on shared state, when an upstream producer emits an unexpected shape. An integration test that calls a leaf provider function directly, bypassing the actors and channels that connect it to the rest of the system in production, is not an integration test — it is a unit test with larger inputs.
+
+**Performance benchmarks** earn their place by measuring real pipeline latency on real inputs: audio clips through the full STT stack, retrieval queries against a populated index, dispatch round-trips under concurrent load. A benchmark that measures isolated struct serialization in a tight loop produces numbers that do not map to user-observable latency.
 
 ---
 
-## 4. Benchmark & Latency Execution Rules (MANDATORY)
+## 4. Benchmark & Evaluation Execution Standards
 
-1. **NEVER RUN BENCHMARK PROBES IN PARALLEL:**
-   - Running multiple GGUF or ONNX inference commands concurrently causes CPU thread contention and invalidates per-pair latency metrics.
-   - Always execute benchmark probes **strictly sequentially, one model at a time**.
-2. **NEVER RUN BENCHMARKS OR EVALUATION SCRIPTS IN DEBUG MODE:**
-   - Debug builds (`dev` profile without `--release`) omit SIMD vectorization, ONNX graph optimizations, and LTO, producing invalid latency metrics (up to 7x slower).
-   - Always execute evaluation scripts and benchmarks using `--release` mode.
+The sequential execution and optimized build requirements in `AGENTS.md §2.1` apply to all Vox tests, benchmarks, and evaluations. Vox-specific elaboration:
+
+- Benchmark probes run one model configuration at a time. Concurrent GGUF/ONNX inference causes CPU thread contention that invalidates per-model latency comparisons.
+- Evaluation scripts and benchmarks use `cargo run --release` or `cargo test --release`. The `dev` profile omits SIMD vectorization, ONNX graph optimizations, and LTO — producing latency numbers up to 7× slower than production.
+- Benchmarks record per-stage latency ($T_{\text{stt}}$, $T_{\text{llm}}$, $T_{\text{tts}}$, $T_{\text{e2e}}$), not only end-to-end. A passing E2E time with a regressed stage is a hidden performance bug.
+- Benchmarks accept CLI arguments via `clap` (`--clip`, `--mode`, `--threshold`) so developers and CI can probe realistic workloads without recompiling.
+
+**Ground truth verification standard for model output (STT / LLM / TTS):** Assert normalized string similarity ≥ 0.90 (Levenshtein) or WER ≤ 0.10 against clean, labelled ground truth fixtures. Asserting the presence of 1–2 keywords is not sufficient — it does not distinguish a correct transcript from a partially-correct one, and it will not catch a regression that changes meaning while preserving keywords.
 
 ---
 

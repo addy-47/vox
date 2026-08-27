@@ -7,7 +7,12 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
 /// Routes a pipeline event to the active domain handler based on snapshot context.
-fn route_event(app: &AppHandle, state: &AppState, playback: &Arc<PlaybackEngine>, event: VoxEvent) {
+fn route_event<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    playback: &Arc<PlaybackEngine>,
+    event: VoxEvent,
+) {
     let ctx = RoutingContext::from_app_state(state);
     match ctx.owner {
         InteractionOwner::Dictation => {
@@ -31,8 +36,8 @@ fn route_event(app: &AppHandle, state: &AppState, playback: &Arc<PlaybackEngine>
 }
 
 /// Spawns the central non-blocking event pump thread for VoxEvent routing.
-pub fn spawn_router(
-    app: AppHandle,
+pub fn spawn_router<R: tauri::Runtime + 'static>(
+    app: AppHandle<R>,
     event_rx: std::sync::mpsc::Receiver<VoxEvent>,
     playback: Arc<PlaybackEngine>,
 ) -> Result<std::thread::JoinHandle<()>, String> {

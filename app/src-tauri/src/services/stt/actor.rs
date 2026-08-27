@@ -34,8 +34,8 @@ struct WorkerState {
     last_inference_duration: Duration,
 }
 
-struct WorkerContext<'a> {
-    app: &'a AppHandle,
+struct WorkerContext<'a, R: tauri::Runtime> {
+    app: &'a AppHandle<R>,
     provider: &'a dyn SttProvider,
     pipeline_event_tx: &'a Option<std::sync::mpsc::Sender<VoxEvent>>,
     cancel_flag: &'a Arc<AtomicBool>,
@@ -72,8 +72,8 @@ fn coalesce_partials(
 }
 
 /// Dispatches a partial transcript event to the pipeline event channel if changed.
-fn emit_partial_event(
-    ctx: &WorkerContext<'_>,
+fn emit_partial_event<R: tauri::Runtime>(
+    ctx: &WorkerContext<'_, R>,
     tid: u32,
     text: String,
     state: &mut WorkerState,
@@ -92,8 +92,8 @@ fn emit_partial_event(
 }
 
 /// Processes incoming partial speech frames with dynamic throttling and emits partial events.
-fn handle_partial_command(
-    ctx: &WorkerContext<'_>,
+fn handle_partial_command<R: tauri::Runtime>(
+    ctx: &WorkerContext<'_, R>,
     tid: u32,
     utterance: &[f32],
     state: &mut WorkerState,
@@ -151,7 +151,7 @@ fn handle_partial_command(
 }
 
 /// Emits the final or cancelled turn event to the pipeline event channel.
-fn emit_final_events(ctx: &WorkerContext<'_>, tid: u32, transcript: String) {
+fn emit_final_events<R: tauri::Runtime>(ctx: &WorkerContext<'_, R>, tid: u32, transcript: String) {
     if transcript.trim().is_empty() {
         log::info!("[STT] Discarding empty final transcript.");
         if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
@@ -177,8 +177,8 @@ fn emit_final_events(ctx: &WorkerContext<'_>, tid: u32, transcript: String) {
 }
 
 /// Transcribes final speech buffer, dispatches final events, and resets worker state.
-fn handle_final_command(
-    ctx: &WorkerContext<'_>,
+fn handle_final_command<R: tauri::Runtime>(
+    ctx: &WorkerContext<'_, R>,
     tid: u32,
     utterance: &[f32],
     state: &mut WorkerState,
@@ -216,15 +216,20 @@ fn drain_reset_stream(
     rx: &std::sync::mpsc::Receiver<SttCommand>,
     provider: &dyn SttProvider,
     state: &mut WorkerState,
+    pending_cmd: &mut Option<SttCommand>,
 ) -> bool {
     log::info!("[STT] ResetStream received. Aggressively clearing state.");
     state.last_transcript.clear();
     if let Err(e) = provider.reset_state() {
         log::warn!("[STT] Error resetting provider on stream reset: {:?}", e);
     }
-    while let Ok(pending_cmd) = rx.try_recv() {
-        match pending_cmd {
-            SttCommand::Partial(..) | SttCommand::Final(..) | SttCommand::ResetStream => continue,
+    while let Ok(cmd) = rx.try_recv() {
+        match cmd {
+            SttCommand::Partial(..) | SttCommand::ResetStream => continue,
+            SttCommand::Final(..) => {
+                *pending_cmd = Some(cmd);
+                break;
+            }
             SttCommand::Shutdown => return true,
         }
     }
@@ -232,8 +237,8 @@ fn drain_reset_stream(
 }
 
 /// Executes the core event polling and dispatch loop for speech recognition commands.
-fn run_worker_loop(
-    app: &AppHandle,
+fn run_worker_loop<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     provider: &dyn SttProvider,
     channels: SttActorChannels,
     handles: SttActorHandles,
@@ -283,7 +288,7 @@ fn run_worker_loop(
                 handle_final_command(&ctx, tid, &utterance, &mut state);
             }
             SttCommand::ResetStream => {
-                if drain_reset_stream(&channels.rx, ctx.provider, &mut state) {
+                if drain_reset_stream(&channels.rx, ctx.provider, &mut state, &mut pending_cmd) {
                     break;
                 }
             }
@@ -294,8 +299,8 @@ fn run_worker_loop(
 }
 
 /// Spawns dedicated OS worker thread for speech recognition inference and event dispatching.
-pub fn spawn_stt_worker(
-    app: AppHandle,
+pub fn spawn_stt_worker<R: tauri::Runtime + 'static>(
+    app: AppHandle<R>,
     channels: SttActorChannels,
     provider: Box<dyn SttProvider>,
     handles: SttActorHandles,
@@ -317,3 +322,4 @@ pub fn spawn_stt_worker(
         })
         .map_err(|e| e.to_string())
 }
+
