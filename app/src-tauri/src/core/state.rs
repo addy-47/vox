@@ -256,8 +256,8 @@ pub struct AppStateTelemetryHandles {
 }
 
 impl AppState {
-    pub fn new(
-        app_handle: &tauri::AppHandle,
+    pub fn new<R: tauri::Runtime>(
+        app_handle: &tauri::AppHandle<R>,
         log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
         telemetry: AppStateTelemetryHandles,
     ) -> Self {

@@ -105,7 +105,7 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
 }
 
 /// Pauses the active real-time voice pipeline.
-pub async fn pause_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
+pub async fn pause_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     state.pipeline.is_paused.store(true, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
 
@@ -121,7 +121,7 @@ pub async fn pause_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
 }
 
 /// Resumes a paused real-time voice pipeline.
-pub async fn resume_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
+pub async fn resume_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     state.pipeline.is_paused.store(false, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
@@ -179,9 +179,9 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
 }
 
 /// Handles user speech detection and transitions state machine to speaking.
-fn on_speech_start(
+fn on_speech_start<R: tauri::Runtime>(
     turn_id: u32,
-    app: &AppHandle,
+    app: &AppHandle<R>,
     state: &AppState,
     playback: &Arc<PlaybackEngine>,
 ) {
@@ -202,7 +202,7 @@ fn on_speech_start(
 }
 
 /// Handles speech end and transitions state machine to thinking.
-fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_speech_end<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
     if !state.pipeline.is_engaged.load(Ordering::Relaxed)
         || state.pipeline.is_paused.load(Ordering::Relaxed)
     {
@@ -218,7 +218,7 @@ fn on_speech_end(turn_id: u32, app: &AppHandle, state: &AppState) {
 }
 
 /// Handles incoming final transcription from the real-time server.
-fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppState) {
+fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         EVENT_TRANSCRIPT_FINAL,
@@ -234,7 +234,7 @@ fn on_transcript_final(turn_id: u32, text: String, app: &AppHandle, state: &AppS
 }
 
 /// Handles streamed token delta from the real-time server.
-fn on_llm_token(turn_id: u32, token: String, app: &AppHandle) {
+fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<R>) {
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         super::EVENT_LLM_TOKEN,
@@ -248,7 +248,7 @@ fn on_llm_token(turn_id: u32, token: String, app: &AppHandle) {
 }
 
 /// Transitions pipeline state to assistant speaking when audio playback begins.
-fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_playback_started<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Speaking, &ctx, app, state);
 
@@ -258,7 +258,7 @@ fn on_playback_started(turn_id: u32, app: &AppHandle, state: &AppState) {
 }
 
 /// Transitions pipeline state back to listening upon playback completion.
-fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
+fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
@@ -268,7 +268,7 @@ fn on_playback_finished(turn_id: u32, app: &AppHandle, state: &AppState) {
 }
 
 /// Logs pipeline errors and transitions state machine to error condition.
-fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
+fn on_error<R: tauri::Runtime>(turn_id: u32, message: String, app: &AppHandle<R>, state: &AppState) {
     log::error!("[RealtimePassive] Error on turn {}: {}", turn_id, message);
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Error, &ctx, app, state);
@@ -286,8 +286,8 @@ fn on_error(turn_id: u32, message: String, app: &AppHandle, state: &AppState) {
 }
 
 /// Main event dispatcher for the realtime passive pipeline domain.
-pub fn handle_event(
-    app: &AppHandle,
+pub fn handle_event<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     state: &AppState,
     playback: &Arc<PlaybackEngine>,
     event: VoxEvent,
