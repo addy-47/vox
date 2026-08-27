@@ -19,8 +19,8 @@ pub enum TtsCommand {
 }
 
 /// Spawns a dedicated OS worker thread processing speech synthesis tasks in a blocking loop.
-pub fn spawn_tts_worker(
-    app: tauri::AppHandle,
+pub fn spawn_tts_worker<R: tauri::Runtime + 'static>(
+    app: tauri::AppHandle<R>,
     rx: std::sync::mpsc::Receiver<TtsCommand>,
     provider: Box<dyn TtsProvider>,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
@@ -171,8 +171,8 @@ pub struct TtsWarmUpHandles<'a> {
 }
 
 /// Spawns and initializes a persistent TTS worker actor thread.
-pub fn warm_up_tts(
-    app: &tauri::AppHandle,
+pub fn warm_up_tts<R: tauri::Runtime + 'static>(
+    app: &tauri::AppHandle<R>,
     handles: TtsWarmUpHandles<'_>,
     settings: &VoxSettings,
     super_tts_path: &Path,

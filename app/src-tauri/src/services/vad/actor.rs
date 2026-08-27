@@ -117,10 +117,10 @@ fn process_vad_commands(
 }
 
 /// Calculates and emits audio energy telemetry to the monitoring pipeline and UI.
-fn emit_audio_telemetry(
+fn emit_audio_telemetry<R: tauri::Runtime>(
     chunk: &[f32],
     state: &mut VadActorState,
-    app: &AppHandle,
+    app: &AppHandle<R>,
     owner: InteractionOwner,
     filter_bank: &mut FilterBank,
     telemetry_tx: &crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
@@ -430,9 +430,9 @@ fn process_speech_frame(
 }
 
 /// Spawns the synchronous, low-latency VAD actor thread.
-pub fn spawn_vad_actor<C>(
+pub fn spawn_vad_actor<R: tauri::Runtime, C>(
     mut vad: VadBackend,
-    app: tauri::AppHandle,
+    app: tauri::AppHandle<R>,
     mut consumer: C,
     channels: VadActorChannels,
     handles: VadActorHandles,
@@ -494,17 +494,53 @@ where
                 state.mode.clone()
             };
 
-            if effective_mode == InteractionMode::PTT {
-                state.pre_roll_buffer.push(&chunk);
-                if state.in_speech {
-                    state.in_speech = false;
-                    state.utterance_buffer.clear();
-                    state.samples_since_partial = 0;
-                }
+            if should_suppress_audio(
+                owner,
+                &handles.playback_active,
+                &handles.is_dictation_enabled,
+                &state,
+            ) {
                 continue;
             }
 
-            if should_suppress_audio(owner, &handles.playback_active, &handles.is_dictation_enabled, &state) {
+            if effective_mode == InteractionMode::PTT {
+                match owner {
+                    InteractionOwner::Dictation => {
+                        crate::services::pipeline::dictation::ingest_audio(&chunk);
+                    }
+                    InteractionOwner::Assistant => {
+                        if state.realtime_tx.is_some() {
+                            crate::services::pipeline::realtime_ptt::ingest_audio(&chunk);
+                        } else {
+                            crate::services::pipeline::modular_ptt::ingest_audio(&chunk);
+                        }
+                    }
+                }
+
+                if state.realtime_tx.is_some() {
+                    let frame_ctx = VadFrameContext {
+                        is_earshot,
+                        turn_id_atomic: &handles.turn_id_atomic,
+                        owner,
+                        stt_tx: &channels.stt_tx,
+                        vox_event_tx: channels.vox_event_tx.as_ref(),
+                        event_tx: &channels.event_tx,
+                    };
+                    process_speech_frame(
+                        &chunk,
+                        raw_energy,
+                        &mut vad,
+                        &mut state,
+                        &frame_ctx,
+                    );
+                } else {
+                    state.pre_roll_buffer.push(&chunk);
+                    if state.in_speech {
+                        state.in_speech = false;
+                        state.utterance_buffer.clear();
+                        state.samples_since_partial = 0;
+                    }
+                }
                 continue;
             }
 

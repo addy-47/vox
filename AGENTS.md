@@ -41,15 +41,20 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
-## 2.1 Benchmark & Latency Execution Rules (MANDATORY)
+## 2.1 Sequential Execution & Build Mode (All Agents)
 
-1. **NEVER RUN BENCHMARK PROBES IN PARALLEL**:
-   - Running multiple GGUF or ONNX inference commands concurrently causes CPU thread contention and invalidates per-pair latency metrics.
-   - Always execute benchmark probes **strictly sequentially, one model at a time**.
+These rules apply to any long-running task — benchmarks, evaluations, inference probes, test suites, or any task that measures or depends on resource-sensitive performance.
 
-2. **NEVER RUN BENCHMARKS OR EVALUATION SCRIPTS IN DEBUG MODE**:
-   - Debug builds (`dev` profile without `--release`) omit SIMD vectorization, ONNX graph optimizations, and LTO, producing invalid latency metrics (up to 7x slower).
-   - Always execute evaluation scripts and benchmarks using `--release` mode (e.g. `cargo run --release --example <eval_name>`).
+1. **Run long-running tasks sequentially, one at a time.** Concurrent execution causes resource contention (CPU threads, memory bandwidth, I/O) that corrupts timing and accuracy measurements. Complete each task fully before starting the next.
+
+2. **Use optimized builds for any performance-sensitive task.** Unoptimized or debug builds omit critical compiler and runtime optimizations, producing metrics that are invalid by up to an order of magnitude. Any task whose output informs a performance-based decision must run in release or optimized mode.
+
+3. **Tests requiring external API keys (Nvidia, Gemini, Deepgram, OpenAI, ElevenLabs, etc.) MUST be annotated with `#[ignore]` by default.** They must never run in the automated test loop. They require explicit user approval before running. To run them manually, load credentials from `temp/.env` and execute with `cargo test -- --ignored`.
+
+4. **Explicit Thread Pool Allocation for Inference Commands (Critical Pitfall):** Subshells spawned in automated agent environments do not inherit terminal thread defaults, causing ONNX Runtime, OpenMP, and Rayon to fall back to single-core execution (1 core instead of all available cores). Always prefix test and benchmark execution commands with explicit thread allocation:
+   ```bash
+   RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo test --test <test_file> --release -- --nocapture --test-threads=1
+   ```
 
 ---
 
@@ -79,40 +84,31 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ## 5. Current Phase 10: Architecture & Orchestration Refactor
 
-### 5.1 Architecture & Design Specifications (SSOT)
-All state machines, routing topologies, data flows, and IPC schemas are documented in:
-- **Backend Orchestration & Routing SSOT:** [`docs/plans/phase10/pipeline_orchestration_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/pipeline_orchestration_spec.md) (7 canonical states, 4 pipeline domains + dictation, silence gating, barge-in, ownership rules).
-- **Frontend Integration SSOT:** [`docs/plans/phase10/frontend_orchestration_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/frontend_orchestration_spec.md) (Discrete IPC action mapping, root `VoiceSessionContext`, mode-adaptive UI controls).
-- **Core Architecture & Feature Ledgers:**
-  - [`docs/backend.md`](file:///home/addy/projects/apps/vox/docs/backend.md) (4-layer architecture, provider traits, router, lifecycle — last updated 2026-08-25).
-  - [`docs/features/voice-flow.md`](file:///home/addy/projects/apps/vox/docs/features/voice-flow.md) (Modular Passive, Modular PTT, Realtime Passive, Realtime PTT, Dictation — last updated 2026-08-25).
-  - [`docs/models.md`](file:///home/addy/projects/apps/vox/docs/models.md) (STT/LLM/TTS models manifest & tier allocation — last updated 2026-08-25).
-  - [`docs/frontend.md`](file:///home/addy/projects/apps/vox/docs/frontend.md) (Component layout & 7-state interaction — last updated 2026-08-25).
-  - [`docs/features/dictation.md`](file:///home/addy/projects/apps/vox/docs/features/dictation.md) (Unified dictation, output router, hotkey — last updated 2026-08-25).
+### 5.1 Architecture & Specifications (SSOT)
+
+- **Integration Test Plan:** [`docs/plans/phase10/integration_test_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/integration_test_spec.md) (Seams 1–8 integration matrix).
 
 ---
 
-### 5.2 Refactor Standards & Invariants
-1. **Thin IPC Adapters (`ipc/pipeline/assistant.rs` & `dictation.rs`):** IPC handlers are pure 1-line dispatchers. Zero business logic in IPC files.
-2. **Soft 50-Line Function Cap & Docstrings:** Functions must not exceed 50 lines without documented justification. Exactly one function-level `///` docstring per function. Zero per-line body comments.
-3. **No Toggle Functions:** Discrete single-purpose functions only (e.g. separate `start_session()` and `end_session()`).
-4. **Canonical Mutex Lock Order:** Strictly acquire `state.engine` before `state.realtime_engine`. Lock inversion is banned.
-5. **No Silent Error Swallows or Fallbacks:** Zero `let _ = tx.send(...)`. All channel sends and fallible operations must log warnings on error or propagate.
-6. **Zero Lint Suppressions & Clean Signatures:** `#[allow(...)]` is strictly banned. Parameter lists with >5 arguments are bundled into typed structs. Masking unused parameters with `_` is banned except for genuine RAII drop guards (`_stream`, `_log_guard`, `_thread_handle`).
+### 5.2 Core Refactor Standards & Invariants
+1. **Thin IPC Adapters:** IPC handlers are pure 1-line dispatchers. Zero business logic.
+2. **Soft 50-Line Cap & Docstrings:** Max 50 lines per function. Exactly one `///` docstring per function. Zero body comments.
+3. **Discrete Actions:** No toggle functions (`start_session()` / `end_session()`).
+4. **Mutex Lock Order:** Acquire `state.engine` strictly before `state.realtime_engine`.
+5. **No Silent Swallows:** Zero `let _ = tx.send(...)`. All errors logged or propagated.
+6. **Zero Suppressions & Testability Seams:** Zero `#[allow(...)]`. Generics `<R: tauri::Runtime>` on all actors/routers for `MockRuntime` testing. Audio ingestion seams and engine/sender injection across all domains.
 
 ---
 
-### 5.3 Completed Refactor Summary
-- **Domain Modules:** Decoupled legacy God loop into dedicated domain handlers (`modular_passive.rs`, `modular_ptt.rs`, `realtime_passive.rs`, `realtime_ptt.rs`, `dictation.rs`) driven by a central non-blocking `router.rs`.
-- **Decoupled Actors & Lifecycle:** Extracted `services/audio/engine.rs`, `services/vad/actor.rs`, `services/llm/actor.rs`, and `services/tts/actor.rs` with dedicated warm-up/cool-down lifecycles.
-- **Frontend State Alignment:** Aligned all TypeScript stores, hooks, and UI components to canonical 7 states (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`) with non-toggle discrete Tauri IPC commands (`start_session`/`end_session`/`pause_session`/`ptt_*`).
-- **Code Style & Subsystem Constants Sweep:** Decoupled style guides into domain-specific guides (`backend-style-guide.md`, `testing-style-guide.md`, `frontend-style-guide.md`). Centralized all subsystem domain constants into respective `services/<subsystem>/mod.rs` (`audio`, `vad`, `stt`, `llm`, `tts`, `pipeline`, `realtime`, `memory`, `monitoring`, `persistence`, `ipc`). Eliminated magic numbers, silent error swallows (`let _ =`), and enforced function length and single `///` docstring standards across 100% of Rust files.
-- **Model Constants Standardized:** Renamed all subsystem model constants to clear directory/file prefixes without namespace stuttering (`QWEN_MODEL_DIR`, `GEMMA_MODEL_DIR`, `QWEN_ASR_MODEL_DIR`, `NEMOTRON_MODEL_DIR`, `SUPERTONIC_MODEL_DIR`, `CHATTERBOX_MODEL_DIR`).
-- **Memory Profiler Service Migration:** Decoupled process tree inspection and disk logging from `ipc/memory_profiler.rs` into `monitoring/profiler.rs`, consolidating thin IPC dispatchers into `ipc/monitoring.rs`.
-- **Zero Deprecated/Dead Code Standard:** Purged deprecated structs (e.g. `BenchMetrics`), dummy closures, and unused placeholders across all backend modules.
-- **Code Quality Baseline:** Clean slate on testing; zero `#[allow(...)]` suppressions; zero dead `_` fields; 100% clean compilation on `cargo clippy --all-targets` (0 warnings) and `pnpm build`.
-- **Phase 10 Unit Test Suite:** 33 unit tests implemented across 8 core backend modules per `docs/plans/phase10/unit_test_spec.md`. 100% passing (`cargo test --lib`), microsecond execution (~0.02s), zero network/file I/O dependencies.
-
+### 5.3 Completed Work Summary
+- **Domain Modules & Lifecycle Extraction:** Decoupled God loop into `modular_passive.rs`, `modular_ptt.rs`, `realtime_passive.rs`, `realtime_ptt.rs`, and `dictation.rs` with central `router.rs` pump and decoupled actor lifecycles (`audio`, `vad`, `llm`, `tts`).
+- **Frontend 7-State Realignment:** Converted all stores, hooks, and UI components to canonical 7 states (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`) with non-toggle discrete IPC.
+- **Backend Testability Seams (Seams 2, 3, 6, 8):** Added `ingest_audio`, buffer inspectors, and fallback sender/engine injection (`handle_ptt_stop_with_sender`, `handle_ptt_stop_with_engine`, `handle_hotkey_release_with_sender`) across Modular PTT, Realtime PTT, and Dictation to decouple live audio/network hardware in tests.
+- **Runtime Generics (`<R: tauri::Runtime>`):** Generified `pipeline`, `router`, `modular_ptt`, `realtime_ptt`, `modular_passive`, `realtime_passive`, `dictation`, `output_router`, `llm::actor`, `tts::actor`, and `tray` to support Tauri `MockRuntime` in test harnesses.
+- **VAD & STT Queue Fixes:** Fixed unbuffered audio dropping in VAD actor PTT mode; routed frames to domain buffers with speech boundary detection for ghost audio gating; fixed `drain_reset_stream` in `stt/actor.rs` to preserve pending `SttCommand::Final` items.
+- **Backend Style Guide Enhancement:** Added Section 9 (Testability Seams, Inversion of Control & Runtime Generics) in `.agents/rules/backend-style-guide.md` to prevent mock/hardware blockers in future implementations.
+- **Integration Test Suite Delivery (Seams 1–8):** Built, audited, and verified 6 integration test suites (`passive_streaming_test.rs`, `modular_ptt_test.rs`, `vad_ducking_test.rs`, `dictation_ptt_test.rs`, `realtime_ptt_test.rs`, `tts_test.rs`, and `llm_test.rs`) covering all 8 seams. Extracted test harness & helpers into `tests/common/` (`harness.rs`, `audio.rs`, `scoring.rs`, `paths.rs`).
+- **Quality & Verification Baseline:** 49 passing tests (33 unit tests + 16 integration tests in release mode), 0 clippy warnings (`cargo clippy --all-targets`), 1.0000 STT similarity, and verified zero-leak resource lifecycles across VAD, STT, LLM, TTS, and Realtime engines.
 
 
 

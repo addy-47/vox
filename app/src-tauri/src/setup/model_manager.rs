@@ -31,6 +31,8 @@ pub struct ModelSetupStatus {
     pub error: Option<String>,
 }
 
+pub type ModelStatusEmitter = Arc<dyn Fn(&str, ModelSetupStatus) + Send + Sync>;
+
 /// Orchestrates model downloads, extraction, and verification.
 ///
 /// Implements Part 2 Directives:
@@ -39,15 +41,24 @@ pub struct ModelSetupStatus {
 /// - Post-download hashing only
 /// - Structured .verified marker
 pub struct ModelManager {
-    app: Option<AppHandle>,
+    app_emitter: Option<ModelStatusEmitter>,
     client: Client,
     pub cancel_flag: Arc<AtomicBool>,
 }
 
 impl ModelManager {
-    pub fn new(app: Option<AppHandle>) -> Self {
+    pub fn new<R: tauri::Runtime>(app: Option<AppHandle<R>>) -> Self {
+        let app_emitter: Option<ModelStatusEmitter> =
+            app.map(|handle| {
+                Arc::new(move |event_name: &str, payload: ModelSetupStatus| {
+                    if let Err(e) = handle.emit(event_name, payload) {
+                        log::warn!("[ModelManager] Failed to emit {}: {}", event_name, e);
+                    }
+                }) as ModelStatusEmitter
+            });
+
         Self {
-            app,
+            app_emitter,
             client: Client::new(),
             cancel_flag: Arc::new(AtomicBool::new(false)),
         }
@@ -350,8 +361,8 @@ impl ModelManager {
         total: u64,
         error: Option<String>,
     ) {
-        if let Some(app) = &self.app {
-            if let Err(e) = app.emit(
+        if let Some(ref emitter) = self.app_emitter {
+            emitter(
                 "model_setup_status",
                 ModelSetupStatus {
                     model_id: model_id.to_string(),
@@ -361,9 +372,7 @@ impl ModelManager {
                     total_bytes: total,
                     error,
                 },
-            ) {
-                log::warn!("[ModelManager] Failed to emit model_setup_status: {}", e);
-            }
+            );
         }
     }
 

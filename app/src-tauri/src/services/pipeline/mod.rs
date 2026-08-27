@@ -79,10 +79,10 @@ pub fn target_window(owner: InteractionOwner) -> &'static str {
 }
 
 /// Transitions the pipeline turn state, updates atomic flags, and emits state_changed events.
-pub fn transition(
+pub fn transition<R: tauri::Runtime>(
     new_state: InteractionState,
     ctx: &RoutingContext,
-    app: &AppHandle,
+    app: &AppHandle<R>,
     state: &AppState,
 ) {
     state.pipeline.set_state(new_state);

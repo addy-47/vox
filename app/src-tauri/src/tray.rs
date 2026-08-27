@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder}
 use gtk::prelude::WidgetExt;
 
 /// Ensures the "tray" WebviewWindow exists, lazily constructing it if it was closed to save RAM.
-pub fn ensure_tray_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+pub fn ensure_tray_window<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, String> {
     if let Some(existing) = app.get_webview_window("tray") {
         return Ok(existing);
     }
@@ -36,7 +36,7 @@ pub fn ensure_tray_window(app: &AppHandle) -> Result<WebviewWindow, String> {
 }
 
 /// Safely closes and destroys the tray window to reclaim memory when Tray mode is inactive.
-pub fn destroy_tray_window(app: &AppHandle) {
+pub fn destroy_tray_window<R: tauri::Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("tray") {
         log::info!("[Tray] Destroying 'tray' HUD webview window to save RAM.");
         if let Err(e) = window.close() {
@@ -125,7 +125,7 @@ pub fn refresh_tray_menu(app: &AppHandle<tauri::Wry>) {
 }
 
 /// Configures the tray window with standard HUD settings: frameless, always-on-top, etc.
-pub fn setup_tray_window(window: &WebviewWindow) {
+pub fn setup_tray_window<R: tauri::Runtime>(window: &WebviewWindow<R>) {
     if let Err(e) = window.set_decorations(false) {
         log::debug!("[Tray] Failed to set window decorations: {}", e);
     }
@@ -148,7 +148,7 @@ pub fn setup_tray_window(window: &WebviewWindow) {
 /// Positions the tray window at the top-right of the screen.
 ///
 /// On Linux, this triggers the "virtual layer" setup for click-through support.
-pub async fn position_tray_window(window: &WebviewWindow) {
+pub async fn position_tray_window<R: tauri::Runtime>(window: &WebviewWindow<R>) {
     #[cfg(target_os = "linux")]
     {
         if let Err(e) = window.show() {
