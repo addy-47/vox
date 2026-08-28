@@ -6,8 +6,7 @@
 use crate::persistence::voices::{self, VoiceEntry};
 use crate::services::tts::voice::{
     convert_and_validate_audio, fetch_remote_edge_voices, pre_bake_speaker_tensors,
-    start_recording, stop_recording, synthesize_preview_clip, validate_wav_file, write_pcm_to_wav,
-    EdgeTtsVoiceEntry,
+    start_recording, stop_recording, write_pcm_to_wav, EdgeTtsVoiceEntry,
 };
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -56,13 +55,6 @@ fn now_epoch() -> i64 {
 
 // ─── Commands ────────────────────────────────────────────────────────────────
 
-/// Validate a WAV file's readability and minimum duration requirements.
-#[tauri::command]
-pub async fn validate_wav(path: String, min_duration_secs: f32) -> Result<(u32, f32), String> {
-    tokio::task::spawn_blocking(move || validate_wav_file(&path, min_duration_secs))
-        .await
-        .map_err(|e| format!("Task panicked: {}", e))?
-}
 
 /// Return all saved voices ordered by creation date (newest first).
 #[tauri::command]
@@ -227,41 +219,6 @@ pub async fn rename_voice(id: String, name: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Synthesize a short preview audio clip using the specified cloned voice.
-#[tauri::command]
-pub async fn preview_voice(id: String) -> Result<String, String> {
-    let conn = open_db().await?;
-    let entry = voices::get_voice(&conn, &id)
-        .await
-        .map_err(|e| format!("DB error: {}", e))?
-        .ok_or_else(|| format!("Voice not found: {}", id))?;
-
-    let wav_path = entry
-        .wav_path
-        .as_deref()
-        .ok_or("Voice has no source WAV")?
-        .to_string();
-
-    if !std::path::Path::new(&wav_path).exists() {
-        return Err(format!("Source WAV not found: {}", wav_path));
-    }
-
-    log::info!("[Voices] Generating preview for voice {} ...", id);
-    let preview_path = crate::utils::paths::voice_dir(&id).join("preview.wav");
-    let preview_path_clone = preview_path.clone();
-
-    tokio::task::spawn_blocking(move || synthesize_preview_clip(&wav_path, &preview_path_clone))
-        .await
-        .map_err(|e| format!("Task panicked: {}", e))??;
-
-    let path_str = preview_path.to_string_lossy().into_owned();
-    voices::update_preview_wav(&conn, &id, &path_str)
-        .await
-        .map_err(|e| format!("Failed to record preview path: {}", e))?;
-
-    log::info!("[Voices] Preview generated for voice {}: {}", id, path_str);
-    Ok(path_str)
-}
 
 /// Start backend microphone recording for voice cloning.
 #[tauri::command]

@@ -261,13 +261,6 @@ pub fn l2_normalize_in_place(v: &mut [f32]) {
     }
 }
 
-/// L2 normalizes a vector, returning a new normalized vector.
-pub fn l2_normalize(v: &[f32]) -> Vec<f32> {
-    let mut out = v.to_vec();
-    l2_normalize_in_place(&mut out);
-    out
-}
-
 /// Calculates the cosine similarity between two float vectors.
 pub fn cosine_similarity(u: &[f32], v: &[f32]) -> f32 {
     if u.len() != v.len() || u.is_empty() {

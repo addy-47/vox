@@ -66,16 +66,6 @@ impl VoxManifest {
         required + (1024 * 1024 * 1024)
     }
 
-    /// Finds a model entry by ID.
-    pub fn get_model(&self, id: &str) -> Option<&ModelEntry> {
-        for group in &self.model_groups {
-            if let Some(m) = group.files.iter().find(|m| m.id == id) {
-                return Some(m);
-            }
-        }
-        None
-    }
-
     /// Fetches the manifest from the Hugging Face repository.
     pub async fn fetch() -> anyhow::Result<Self> {
         let url = "https://huggingface.co/addyo07/vox-models/resolve/main/models_manifest.json";

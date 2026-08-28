@@ -1,6 +1,6 @@
 use crate::core::error::DictationError;
-use crate::services::dictation::controller::DictationController;
-use tauri::{AppHandle, Emitter};
+use crate::core::state::AppState;
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 /// Register the global dictation shortcut with press and release listener hooks.
@@ -38,14 +38,16 @@ pub fn register_global_hotkey(app: &AppHandle, shortcut_str: &str) -> Result<(),
             match event.state() {
                 ShortcutState::Pressed => {
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = DictationController::handle_press(&handle).await {
+                        let state: State<'_, std::sync::Arc<AppState>> = handle.state();
+                        if let Err(e) = crate::services::pipeline::dictation::handle_hotkey_press(&handle, &state).await {
                             log::error!("[Dictation::Hotkey] Error in handle_press: {}", e);
                         }
                     });
                 }
                 ShortcutState::Released => {
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = DictationController::handle_release(&handle).await {
+                        let state: State<'_, std::sync::Arc<AppState>> = handle.state();
+                        if let Err(e) = crate::services::pipeline::dictation::handle_hotkey_release(&handle, &state).await {
                             log::error!("[Dictation::Hotkey] Error in handle_release: {}", e);
                         }
                     });

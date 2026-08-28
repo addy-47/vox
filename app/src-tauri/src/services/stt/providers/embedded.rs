@@ -86,7 +86,11 @@ impl SttProvider for EmbeddedSttProvider {
         };
 
         if !transcript.is_empty() {
-            inner.stitched_transcript = transcript;
+            inner.stitched_transcript = if inner.stitched_transcript.is_empty() {
+                transcript
+            } else {
+                crate::services::stt::stitch_transcripts(&inner.stitched_transcript, &transcript)
+            };
         }
 
         if is_final {

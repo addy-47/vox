@@ -12,10 +12,6 @@ pub const PLAYBACK_ENERGY_EXPONENT: f32 = 0.5;
 pub const INGESTION_BUFFER_CAPACITY_SAMPLES: usize = 8192;
 pub const INGESTION_OVERFLOW_LOG_INTERVAL: u32 = 100;
 
-pub const ROUTER_CHUNK_SIZE: usize = 256;
-pub const ROUTER_IDLE_POLL_INTERVAL_MS: u64 = 5;
-pub const ROUTER_OVERFLOW_LOG_INTERVAL: u32 = 100;
-
 pub const PCM_I16_SCALE: f32 = 32767.0;
 pub const PCM_U8_SCALE: f32 = 128.0;
 pub const PCM_U16_SCALE: f32 = 32768.0;
@@ -26,7 +22,6 @@ pub mod decode;
 pub mod device;
 pub mod engine;
 pub mod playback;
-pub mod router;
 
 pub use crate::core::error::AudioError;
 pub use decode::{
@@ -36,4 +31,3 @@ pub use decode::{
 pub use device::AudioStream;
 pub use engine::{start_audio_engine, stop_audio_engine};
 pub use playback::PlaybackEngine;
-pub use router::{AudioRouter, RouteMode};

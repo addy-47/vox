@@ -284,16 +284,6 @@ pub fn inverse_edge_for_relation(relation: &str) -> &'static str {
     }
 }
 
-/// Returns the deterministic inverse relation string for an NLI relation (spec §4.3.1).
-pub fn nli_inverse_edge(relation: &str) -> &'static str {
-    match relation {
-        PM_RELATION_SUPPORTS => "supported_by",
-        PM_RELATION_SUPERSEDES => "superseded_by",
-        PM_RELATION_CONFLICTS => "conflicts_with",
-        _ => "related_to",
-    }
-}
-
 // ─── Fact Sources ─────────────────────────────────────────────────────────────
 pub const PM_SOURCE_LLM: &str = "LLM";
 pub const PM_SOURCE_USER: &str = "User";

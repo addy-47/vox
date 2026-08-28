@@ -1,6 +1,6 @@
 use super::{RoutingContext, ROUTER_THREAD_NAME};
 use crate::core::events::VoxEvent;
-use crate::core::settings::{InteractionMode, PipelineMode};
+use crate::core::settings::PipelineMode;
 use crate::core::state::{AppState, InteractionOwner};
 use crate::services::audio::PlaybackEngine;
 use std::sync::Arc;
@@ -18,18 +18,12 @@ fn route_event<R: tauri::Runtime>(
         InteractionOwner::Dictation => {
             super::dictation::handle_event(app, state, event);
         }
-        InteractionOwner::Assistant => match (ctx.pipeline_mode, ctx.interaction_mode) {
-            (PipelineMode::Modular, InteractionMode::Passive) => {
-                super::modular_passive::handle_event(app, state, playback, event);
+        InteractionOwner::Assistant => match ctx.pipeline_mode {
+            PipelineMode::Modular => {
+                super::modular::handle_event(ctx.interaction_mode, app, state, playback, event);
             }
-            (PipelineMode::Modular, InteractionMode::PTT) => {
-                super::modular_ptt::handle_event(app, state, playback, event);
-            }
-            (PipelineMode::Realtime, InteractionMode::Passive) => {
-                super::realtime_passive::handle_event(app, state, playback, event);
-            }
-            (PipelineMode::Realtime, InteractionMode::PTT) => {
-                super::realtime_ptt::handle_event(app, state, playback, event);
+            PipelineMode::Realtime => {
+                super::realtime::handle_event(ctx.interaction_mode, app, state, playback, event);
             }
         },
     }
