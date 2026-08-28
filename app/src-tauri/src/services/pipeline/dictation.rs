@@ -156,13 +156,16 @@ fn on_speech_end<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &Ap
 }
 
 /// Handles interim partial speech recognition results for dictation.
-fn on_transcript_partial<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>) {
+fn on_transcript_partial<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
+    let transliterate_enabled = state.settings.read().unwrap().stt.transliterate_enabled;
+    let processed_text = crate::services::translit::transliterate_if_hi(&text, false, transliterate_enabled);
+
     if let Err(e) = app.emit_to(
         WINDOW_TRAY,
         EVENT_TRANSCRIPT_PARTIAL,
         serde_json::json!({
             "turn_id": turn_id,
-            "text": text,
+            "text": processed_text,
             "owner": OWNER_DICTATION,
         }),
     ) {
@@ -172,9 +175,12 @@ fn on_transcript_partial<R: tauri::Runtime>(turn_id: u32, text: String, app: &Ap
 
 /// Routes finalized transcript directly to OS input simulation without invoking LLM or TTS.
 fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
+    let transliterate_enabled = state.settings.read().unwrap().stt.transliterate_enabled;
+    let processed_text = crate::services::translit::transliterate_if_hi(&text, true, transliterate_enabled);
+
     let ctx = RoutingContext::from_app_state(state);
     let app_handle = app.clone();
-    let text_clone = text.clone();
+    let text_clone = processed_text.clone();
 
     tauri::async_runtime::spawn(async move {
         if let Err(e) =
@@ -192,7 +198,7 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
         EVENT_TRANSCRIPT_FINAL,
         serde_json::json!({
             "turn_id": turn_id,
-            "text": text,
+            "text": processed_text,
             "owner": OWNER_DICTATION,
         }),
     ) {
@@ -224,7 +230,9 @@ pub fn handle_event<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, eve
     match event {
         VoxEvent::SpeechStart { turn_id } => on_speech_start(turn_id, app, state),
         VoxEvent::SpeechEnd { turn_id, .. } => on_speech_end(turn_id, app, state),
-        VoxEvent::TranscriptPartial { turn_id, text } => on_transcript_partial(turn_id, text, app),
+        VoxEvent::TranscriptPartial { turn_id, text } => {
+            on_transcript_partial(turn_id, text, app, state)
+        }
         VoxEvent::TranscriptFinal { turn_id, text } => {
             on_transcript_final(turn_id, text, app, state)
         }

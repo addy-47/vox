@@ -114,16 +114,8 @@ pub fn ensure_dirs() -> std::io::Result<()> {
 
 // ─── Required API ────────────────────────────────────────────────────────────
 
-pub fn vox_dir() -> PathBuf {
-    get().root.clone()
-}
-
 pub fn models_dir() -> PathBuf {
     get().models.clone()
-}
-
-pub fn logs_dir() -> PathBuf {
-    get().logs.clone()
 }
 
 pub fn db_path() -> PathBuf {
@@ -138,19 +130,10 @@ pub fn cache_dir() -> PathBuf {
     get().cache.clone()
 }
 
-pub fn temp_dir() -> PathBuf {
-    get().temp.clone()
-}
-
 /// Returns the absolute path to a specific model subdirectory.
 /// e.g. `model_dir("kokoro")` → `~/.vox/models/kokoro/`
 pub fn model_dir(name: &str) -> PathBuf {
     get().models.join(name)
-}
-
-/// Returns the voices root directory: `~/.vox/voices/`
-pub fn voices_dir() -> PathBuf {
-    get().voices.clone()
 }
 
 /// Returns the directory for a specific voice entry: `~/.vox/voices/{id}/`

@@ -257,6 +257,19 @@ pub async fn update_setting(
         }
     }
 
+    if domain == "llm" && (key == "context_window" || key == "provider" || key == "active") {
+        if let Ok(settings_guard) = state.settings.read() {
+            let max_ctx = settings_guard.llm.context_window as usize;
+            state.conversation_manager.lock().set_max_context_tokens(max_ctx);
+        }
+    }
+
+    if domain == "persona" && key == "modular_prompt" {
+        if let Some(prompt_str) = value.as_str() {
+            state.conversation_manager.lock().update_system_prompt(prompt_str);
+        }
+    }
+
     if let Some(engine) = state.engine.lock().await.as_ref() {
         if let Ok(current_settings) = state.settings.read() {
             if let Err(e) = engine
@@ -281,24 +294,6 @@ pub async fn update_setting(
     })
 }
 
-/// Convenience command for theme changes (kept for backward compat with existing frontend).
-#[tauri::command]
-pub async fn update_theme(app: AppHandle, theme: String) -> Result<(), String> {
-    let state: State<'_, std::sync::Arc<AppState>> = app.state();
-    {
-        let mut settings = state.settings.write().map_err(|e| e.to_string())?;
-        if settings.appearance.theme == theme {
-            return Ok(());
-        }
-        settings.appearance.theme = theme.clone();
-    }
-    if let Err(e) = app.emit("theme-changed", theme) {
-        log::warn!("[Settings::Mutation] Failed to emit theme-changed: {}", e);
-    }
-    schedule_debounced_save(state.clone()).await;
-    Ok(())
-}
-
 /// Resets all settings to system defaults.
 #[tauri::command]
 pub async fn reset_settings(app: AppHandle) -> Result<VoxSettings, String> {
@@ -308,6 +303,10 @@ pub async fn reset_settings(app: AppHandle) -> Result<VoxSettings, String> {
         let mut settings = state.settings.write().map_err(|e| e.to_string())?;
         *settings = defaults.clone();
     }
+
+    let max_ctx = defaults.llm.context_window as usize;
+    state.conversation_manager.lock().set_max_context_tokens(max_ctx);
+    state.conversation_manager.lock().update_system_prompt(&defaults.persona.modular_prompt);
 
     // Immediate apply for theme and other hot settings
     if let Err(e) = app.emit("theme-changed", defaults.appearance.theme.clone()) {

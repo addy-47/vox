@@ -41,7 +41,6 @@ pub struct PlaybackEngine {
     discard_request: Arc<AtomicBool>,
     _stream: Option<cpal::Stream>,
     buffer_samples: Arc<std::sync::atomic::AtomicUsize>,
-    total_samples_ingested: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 /// Telemetry and visualization atomics passed to the playback engine.
@@ -87,7 +86,6 @@ impl PlaybackEngine {
             discard_request,
             _stream: Some(stream),
             buffer_samples,
-            total_samples_ingested: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         })
     }
 
@@ -109,8 +107,6 @@ impl PlaybackEngine {
         }
 
         self.buffer_samples.fetch_add(pushed, Ordering::SeqCst);
-        self.total_samples_ingested
-            .fetch_add(pushed, Ordering::SeqCst);
     }
 
     /// Explicitly triggers CPAL playback if samples are available in the buffer.
@@ -147,16 +143,6 @@ impl PlaybackEngine {
     /// Returns the number of unplayed audio samples remaining in the buffer.
     pub fn buffer_len(&self) -> usize {
         self.buffer_samples.load(Ordering::Relaxed)
-    }
-
-    /// Returns total samples ingested during the current session turn.
-    pub fn total_samples_ingested(&self) -> usize {
-        self.total_samples_ingested.load(Ordering::Relaxed)
-    }
-
-    /// Resets the total ingested sample counter back to zero.
-    pub fn reset_samples_ingested(&self) {
-        self.total_samples_ingested.store(0, Ordering::Relaxed);
     }
 
     /// Builds and starts the CPAL 48kHz stereo output stream.

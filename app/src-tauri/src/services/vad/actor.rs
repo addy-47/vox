@@ -510,9 +510,9 @@ where
                     }
                     InteractionOwner::Assistant => {
                         if state.realtime_tx.is_some() {
-                            crate::services::pipeline::realtime_ptt::ingest_audio(&chunk);
+                            crate::services::pipeline::realtime::ptt::ingest_audio(&chunk);
                         } else {
-                            crate::services::pipeline::modular_ptt::ingest_audio(&chunk);
+                            crate::services::pipeline::modular::ptt::ingest_audio(&chunk);
                         }
                     }
                 }

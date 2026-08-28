@@ -14,9 +14,19 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use turso::Builder;
 use vox_lib::core::settings::MemorySettings;
-use vox_lib::services::memory::embedder::l2_normalize;
 use vox_lib::services::memory::estimate_tokens;
 use vox_lib::services::memory::retrieval::retrieve_personal_context_v7;
+
+fn l2_normalize(v: &[f32]) -> Vec<f32> {
+    let mut out = v.to_vec();
+    let norm: f32 = out.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm > 0.0 && norm.is_finite() {
+        for val in out.iter_mut() {
+            *val /= norm;
+        }
+    }
+    out
+}
 
 const OLLAMA_GPU_SERVER_URL: &str = "http://100.86.62.14:11434/v1/chat/completions";
 

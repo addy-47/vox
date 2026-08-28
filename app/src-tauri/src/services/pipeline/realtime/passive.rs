@@ -1,43 +1,20 @@
-use super::{
-    transition, RoutingContext, END_REASON_USER, EVENT_PIPELINE_ERROR, EVENT_PIPELINE_PAUSED,
-    EVENT_PIPELINE_RESUMED, EVENT_PLAYBACK_FINISHED, EVENT_PLAYBACK_STARTED, EVENT_SESSION_ENDED,
-    EVENT_SESSION_STARTED, EVENT_SPEECH_END, EVENT_SPEECH_START, EVENT_TRANSCRIPT_FINAL,
-    WINDOW_MAIN,
+use super::super::{
+    transition, RoutingContext, END_REASON_USER, EVENT_LLM_TOKEN, EVENT_PIPELINE_ERROR,
+    EVENT_PIPELINE_PAUSED, EVENT_PIPELINE_RESUMED, EVENT_PLAYBACK_FINISHED, EVENT_PLAYBACK_STARTED,
+    EVENT_SESSION_ENDED, EVENT_SESSION_STARTED, EVENT_SPEECH_END, EVENT_SPEECH_START,
+    EVENT_TRANSCRIPT_FINAL, WINDOW_MAIN,
 };
 use crate::core::events::VoxEvent;
-use crate::core::settings::RealtimeProviderKind;
 use crate::core::state::{AppState, InteractionOwner, InteractionState, VadCommand};
 use crate::services::audio::PlaybackEngine;
 use crate::services::realtime::engine::RealtimeEngine;
-use crate::services::realtime::providers::deepgram_live::DeepgramVoiceAgentProvider;
-use crate::services::realtime::providers::gemini_live::GeminiLiveProvider;
-use crate::services::realtime::RealtimeVoiceProvider;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter};
 
-/// Instantiates the configured cloud real-time voice provider.
-fn create_realtime_provider(state: &AppState) -> Result<Box<dyn RealtimeVoiceProvider>, String> {
-    let settings = state.settings.read().unwrap().clone();
-    match settings.realtime.active {
-        RealtimeProviderKind::GeminiLive => Ok(Box::new(GeminiLiveProvider::new(
-            settings.realtime.gemini_live.clone(),
-            settings.persona.realtime_prompt.clone(),
-            state.pipeline.is_paused.clone(),
-        ))),
-        RealtimeProviderKind::DeepgramVoiceAgent => Ok(Box::new(DeepgramVoiceAgentProvider::new(
-            settings.realtime.deepgram_voice_agent.clone(),
-            settings.persona.realtime_prompt.clone(),
-            state.pipeline.is_paused.clone(),
-        ))),
-        RealtimeProviderKind::OpenAiRealtime => {
-            Err("OpenAI Realtime provider is not implemented".to_string())
-        }
-        RealtimeProviderKind::ElevenLabsConvai => {
-            Err("ElevenLabs Conversational AI provider is not implemented".to_string())
-        }
-    }
-}
+static CURRENT_ASSISTANT_RESPONSE: LazyLock<Mutex<String>> =
+    LazyLock::new(|| Mutex::new(String::new()));
 
 /// Starts an autonomous real-time WebSocket speech-to-speech assistant session.
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
@@ -65,7 +42,7 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
         }
     }
 
-    let provider = create_realtime_provider(state)?;
+    let provider = super::session::create_realtime_provider(state)?;
     let tokio_handle = tokio::runtime::Handle::current();
     let mut rt_engine = RealtimeEngine::new(provider, tokio_handle);
 
@@ -92,6 +69,9 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
     state.pipeline.is_paused.store(false, Ordering::Relaxed);
     *rt_guard = Some(rt_engine);
+
+    let prompt = state.settings.read().unwrap().persona.realtime_prompt.clone();
+    super::super::init_new_session(state, &prompt).await;
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
@@ -191,7 +171,8 @@ fn on_speech_start<R: tauri::Runtime>(
         return;
     }
 
-    playback.cancel();
+    super::session::realtime_barge_in(state, playback);
+
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Listening, &ctx, app, state);
@@ -230,14 +211,16 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
         log::warn!("[RealtimePassive] Failed to emit transcript_final: {}", e);
     }
 
+    CURRENT_ASSISTANT_RESPONSE.lock().clear();
     state.conversation_manager.lock().push_user_turn(text);
 }
 
 /// Handles streamed token delta from the real-time server.
 fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<R>) {
+    CURRENT_ASSISTANT_RESPONSE.lock().push_str(&token);
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
-        super::EVENT_LLM_TOKEN,
+        EVENT_LLM_TOKEN,
         serde_json::json!({
             "turn_id": turn_id,
             "token": token,
@@ -259,6 +242,14 @@ fn on_playback_started<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, stat
 
 /// Transitions pipeline state back to listening upon playback completion.
 fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+    let full_text = CURRENT_ASSISTANT_RESPONSE.lock().split_off(0);
+    if !full_text.trim().is_empty() {
+        state
+            .conversation_manager
+            .lock()
+            .push_assistant_turn(full_text);
+    }
+
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 

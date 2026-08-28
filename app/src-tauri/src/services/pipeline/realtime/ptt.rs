@@ -1,25 +1,23 @@
-use super::{
-    transition, RoutingContext, END_REASON_USER, EVENT_PIPELINE_ERROR, EVENT_PLAYBACK_FINISHED,
-    EVENT_PLAYBACK_STARTED, EVENT_PTT_STATUS, EVENT_SESSION_ENDED, EVENT_SESSION_STARTED,
-    EVENT_SPEECH_END, EVENT_SPEECH_START, EVENT_TRANSCRIPT_FINAL, STATUS_IDLE, STATUS_PROCESSING,
-    STATUS_RECORDING, WINDOW_MAIN,
+use super::super::{
+    transition, RoutingContext, END_REASON_USER, EVENT_LLM_TOKEN, EVENT_PIPELINE_ERROR,
+    EVENT_PLAYBACK_FINISHED, EVENT_PLAYBACK_STARTED, EVENT_PTT_STATUS, EVENT_SESSION_ENDED,
+    EVENT_SESSION_STARTED, EVENT_SPEECH_END, EVENT_SPEECH_START, EVENT_TRANSCRIPT_FINAL,
+    STATUS_IDLE, STATUS_PROCESSING, STATUS_RECORDING, WINDOW_MAIN,
 };
 use crate::core::events::VoxEvent;
-use crate::core::settings::RealtimeProviderKind;
 use crate::core::state::{AppState, InteractionOwner, InteractionState, VadCommand};
 use crate::services::audio::PlaybackEngine;
 use crate::services::realtime::engine::RealtimeEngine;
-use crate::services::realtime::providers::deepgram_live::DeepgramVoiceAgentProvider;
-use crate::services::realtime::providers::gemini_live::GeminiLiveProvider;
-use crate::services::realtime::RealtimeVoiceProvider;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tauri::{AppHandle, Emitter};
 
 static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 static SPEECH_DETECTED: AtomicBool = AtomicBool::new(false);
 static REALTIME_PTT_BUFFER: Mutex<Vec<i16>> = Mutex::new(Vec::new());
+static CURRENT_ASSISTANT_RESPONSE: LazyLock<Mutex<String>> =
+    LazyLock::new(|| Mutex::new(String::new()));
 
 /// Ingests f32 audio samples into the realtime Push-To-Talk buffer when recording is active.
 pub fn ingest_audio(chunk: &[f32]) {
@@ -32,54 +30,14 @@ pub fn ingest_audio(chunk: &[f32]) {
     }
 }
 
-/// Ingests i16 audio samples into the realtime Push-To-Talk buffer when recording is active.
-pub fn ingest_audio_i16(chunk: &[i16]) {
-    if IS_RECORDING.load(Ordering::Relaxed) {
-        REALTIME_PTT_BUFFER.lock().extend_from_slice(chunk);
-    }
-}
-
 /// Returns true if Push-To-Talk audio recording is currently active.
 pub fn is_recording() -> bool {
     IS_RECORDING.load(Ordering::Relaxed)
 }
 
-/// Sets whether speech activity has been detected during the current Push-To-Talk hold.
-pub fn set_speech_detected(detected: bool) {
-    SPEECH_DETECTED.store(detected, Ordering::Relaxed);
-}
-
-/// Returns true if speech activity was detected during the current Push-To-Talk hold.
-pub fn is_speech_detected() -> bool {
-    SPEECH_DETECTED.load(Ordering::Relaxed)
-}
-
 /// Returns the current sample count in the realtime Push-To-Talk buffer.
 pub fn get_buffer_len() -> usize {
     REALTIME_PTT_BUFFER.lock().len()
-}
-
-/// Instantiates the configured cloud real-time voice provider.
-fn create_realtime_provider(state: &AppState) -> Result<Box<dyn RealtimeVoiceProvider>, String> {
-    let settings = state.settings.read().unwrap().clone();
-    match settings.realtime.active {
-        RealtimeProviderKind::GeminiLive => Ok(Box::new(GeminiLiveProvider::new(
-            settings.realtime.gemini_live.clone(),
-            settings.persona.realtime_prompt.clone(),
-            state.pipeline.is_paused.clone(),
-        ))),
-        RealtimeProviderKind::DeepgramVoiceAgent => Ok(Box::new(DeepgramVoiceAgentProvider::new(
-            settings.realtime.deepgram_voice_agent.clone(),
-            settings.persona.realtime_prompt.clone(),
-            state.pipeline.is_paused.clone(),
-        ))),
-        RealtimeProviderKind::OpenAiRealtime => {
-            Err("OpenAI Realtime provider is not implemented".to_string())
-        }
-        RealtimeProviderKind::ElevenLabsConvai => {
-            Err("ElevenLabs Conversational AI provider is not implemented".to_string())
-        }
-    }
 }
 
 /// Starts a user-gated real-time Push-To-Talk speech-to-speech assistant session.
@@ -108,7 +66,7 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
         }
     }
 
-    let provider = create_realtime_provider(state)?;
+    let provider = super::session::create_realtime_provider(state)?;
     let tokio_handle = tokio::runtime::Handle::current();
     let mut rt_engine = RealtimeEngine::new(provider, tokio_handle);
 
@@ -134,6 +92,9 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     state.pipeline.is_engaged.store(true, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
     *rt_guard = Some(rt_engine);
+
+    let prompt = state.settings.read().unwrap().persona.realtime_prompt.clone();
+    super::super::init_new_session(state, &prompt).await;
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
@@ -187,7 +148,7 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
     Ok(())
 }
 
-/// Initiates real-time Push-To-Talk speech streaming and interrupts ongoing playback.
+/// Initiates real-time Push-To-Talk speech streaming and interrupts ongoing playback and cloud response.
 pub fn handle_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     if IS_RECORDING.swap(true, Ordering::SeqCst) {
         return Ok(());
@@ -196,6 +157,12 @@ pub fn handle_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState)
     SPEECH_DETECTED.store(false, Ordering::Relaxed);
     REALTIME_PTT_BUFFER.lock().clear();
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+
+    if let Ok(guard) = state.engine.try_lock() {
+        if let Some(ref engine) = *guard {
+            super::session::realtime_barge_in(state, &engine.playback_engine);
+        }
+    }
 
     let turn_id = state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
     let ctx = RoutingContext::from_app_state(state);
@@ -212,16 +179,12 @@ pub fn handle_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState)
         log::warn!("[RealtimePTT] Failed to emit ptt_status RECORDING: {}", e);
     }
 
-    log::info!("[RealtimePTT] PTT recording started (Turn: {})", turn_id);
+    log::info!("[RealtimePTT] PTT recording started with cloud interrupt (Turn: {})", turn_id);
     Ok(())
 }
 
-/// Finalizes real-time Push-To-Talk recording with optional direct RealtimeEngine override for testing.
-pub fn handle_ptt_stop_with_engine<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    state: &AppState,
-    engine_override: Option<&RealtimeEngine>,
-) -> Result<(), String> {
+/// Finalizes real-time Push-To-Talk recording with silence gating and ghost audio protection.
+pub fn handle_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     if !IS_RECORDING.swap(false, Ordering::SeqCst) {
         return Ok(());
     }
@@ -248,9 +211,7 @@ pub fn handle_ptt_stop_with_engine<R: tauri::Runtime>(
 
     SPEECH_DETECTED.store(false, Ordering::Relaxed);
     let buffer = REALTIME_PTT_BUFFER.lock().split_off(0);
-    if let Some(engine) = engine_override {
-        engine.push_audio(&buffer);
-    } else if let Ok(guard) = state.realtime_engine.try_lock() {
+    if let Ok(guard) = state.realtime_engine.try_lock() {
         if let Some(ref rt_engine) = *guard {
             rt_engine.push_audio(&buffer);
         }
@@ -275,11 +236,6 @@ pub fn handle_ptt_stop_with_engine<R: tauri::Runtime>(
     Ok(())
 }
 
-/// Finalizes real-time Push-To-Talk recording with silence gating and ghost audio protection.
-pub fn handle_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    handle_ptt_stop_with_engine(app, state, None)
-}
-
 /// Cancels an in-progress real-time Push-To-Talk stream and resets state to idle.
 pub fn handle_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     IS_RECORDING.store(false, Ordering::Relaxed);
@@ -302,8 +258,14 @@ pub fn handle_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState
 }
 
 /// Handles speech onset detection and marks speech active for PTT gating.
-pub fn on_speech_start<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, playback: &Arc<PlaybackEngine>) {
-    playback.cancel();
+pub fn on_speech_start<R: tauri::Runtime>(
+    turn_id: u32,
+    app: &AppHandle<R>,
+    state: &AppState,
+    playback: &Arc<PlaybackEngine>,
+) {
+    super::session::realtime_barge_in(state, playback);
+
     if IS_RECORDING.load(Ordering::Relaxed) {
         SPEECH_DETECTED.store(true, Ordering::Relaxed);
     }
@@ -341,14 +303,16 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
         log::warn!("[RealtimePTT] Failed to emit transcript_final: {}", e);
     }
 
+    CURRENT_ASSISTANT_RESPONSE.lock().clear();
     state.conversation_manager.lock().push_user_turn(text);
 }
 
 /// Handles streamed token delta from the real-time server.
 fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<R>) {
+    CURRENT_ASSISTANT_RESPONSE.lock().push_str(&token);
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
-        super::EVENT_LLM_TOKEN,
+        EVENT_LLM_TOKEN,
         serde_json::json!({
             "turn_id": turn_id,
             "token": token,
@@ -370,6 +334,14 @@ fn on_playback_started<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, stat
 
 /// Transitions pipeline state back to idle resting state upon playback completion.
 fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+    let full_text = CURRENT_ASSISTANT_RESPONSE.lock().split_off(0);
+    if !full_text.trim().is_empty() {
+        state
+            .conversation_manager
+            .lock()
+            .push_assistant_turn(full_text);
+    }
+
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
@@ -420,7 +392,9 @@ pub fn handle_event<R: tauri::Runtime>(
     event: VoxEvent,
 ) {
     match event {
-        VoxEvent::SpeechStart { turn_id } => on_speech_start(turn_id, app, playback),
+        VoxEvent::SpeechStart { turn_id } => {
+            on_speech_start(turn_id, app, state, playback)
+        }
         VoxEvent::SpeechEnd {
             turn_id,
             audio_buffer,

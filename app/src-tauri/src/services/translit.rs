@@ -299,3 +299,87 @@ pub fn transliterate(word: &str) -> String {
         word.to_string()
     }
 }
+
+/// Returns true if the string contains any Devanagari Unicode characters (U+0900..=U+097F).
+pub fn is_devanagari(text: &str) -> bool {
+    text.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c))
+}
+
+#[derive(Debug)]
+enum ScriptToken {
+    Devanagari(String),
+    Other(String),
+}
+
+/// Partitions a text string into contiguous Devanagari and non-Devanagari character slices.
+fn tokenize_devanagari_slices(text: &str) -> Vec<ScriptToken> {
+    let mut tokens = Vec::new();
+    let mut current_token = String::new();
+    let mut in_devanagari = false;
+
+    for c in text.chars() {
+        let is_c_devanagari = ('\u{0900}'..='\u{097F}').contains(&c);
+        if is_c_devanagari {
+            if !in_devanagari && !current_token.is_empty() {
+                tokens.push(ScriptToken::Other(current_token));
+                current_token = String::new();
+            }
+            in_devanagari = true;
+        } else {
+            if in_devanagari && !current_token.is_empty() {
+                tokens.push(ScriptToken::Devanagari(current_token));
+                current_token = String::new();
+            }
+            in_devanagari = false;
+        }
+        current_token.push(c);
+    }
+
+    if !current_token.is_empty() {
+        if in_devanagari {
+            tokens.push(ScriptToken::Devanagari(current_token));
+        } else {
+            tokens.push(ScriptToken::Other(current_token));
+        }
+    }
+
+    tokens
+}
+
+/// Transliterates Devanagari Hindi text to Roman script with trailing incomplete word protection.
+pub fn transliterate_if_hi(text: &str, is_final: bool, transliterate_enabled: bool) -> String {
+    if !transliterate_enabled || !is_devanagari(text) {
+        return text.to_string();
+    }
+
+    let ends_with_boundary = if is_final {
+        true
+    } else if let Some(last_char) = text.chars().last() {
+        last_char.is_whitespace() || last_char.is_ascii_punctuation() || last_char == '।'
+    } else {
+        true
+    };
+
+    let tokens = tokenize_devanagari_slices(text);
+    let mut result = String::new();
+    let num_tokens = tokens.len();
+
+    for (i, token) in tokens.into_iter().enumerate() {
+        match token {
+            ScriptToken::Devanagari(word) => {
+                let is_last = i == num_tokens - 1;
+                if is_last && !ends_with_boundary {
+                    result.push_str(&word);
+                } else {
+                    let raw_trans = transliterate(&word);
+                    result.push_str(&raw_trans);
+                }
+            }
+            ScriptToken::Other(other) => {
+                result.push_str(&other);
+            }
+        }
+    }
+
+    result
+}

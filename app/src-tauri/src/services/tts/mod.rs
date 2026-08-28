@@ -30,8 +30,6 @@ pub const DEFAULT_SPEED: f32 = 1.0;
 // ─── Voice Cloning & Pre-Baking Constants ────────────────────────────────────
 pub const MIN_VOICE_CLONE_DURATION_SECS: f32 = 1.0;
 pub const TARGET_VOICE_SAMPLE_DURATION_SECS: f32 = 30.0;
-pub const PREVIEW_QUALITY_STEPS: u32 = 8;
-pub const PREVIEW_TEXT: &str = "Hello, I'm your Vox assistant.";
 
 // ─── Network & Remote Endpoints ──────────────────────────────────────────────
 pub const EDGE_TTS_HOST: &str = "speech.platform.bing.com";
