@@ -55,6 +55,9 @@ fn current_timestamp_ms() -> u64 {
 pub struct ConversationManager {
     messages: Vec<ChatMessage>,
     system_prompt: ChatMessage,
+    base_system_prompt: String,
+    identity_facts: Vec<String>,
+    dynamic_user_profile: Option<String>,
 
     total_token_count: usize,
     max_context_tokens: usize,
@@ -74,9 +77,10 @@ pub struct ConversationManager {
 impl ConversationManager {
     /// Creates a new ConversationManager instance with the specified context capacity.
     pub fn new(max_context_tokens: usize) -> Self {
+        let base_system_prompt = crate::core::constants::SYSTEM_PROMPT_MODULAR.to_string();
         let default_sys_prompt = ChatMessage {
             role: Role::System,
-            content: crate::core::constants::SYSTEM_PROMPT_MODULAR.to_string(),
+            content: base_system_prompt.clone(),
             timestamp_ms: current_timestamp_ms(),
         };
 
@@ -85,6 +89,9 @@ impl ConversationManager {
         Self {
             messages: vec![default_sys_prompt.clone()],
             system_prompt: default_sys_prompt,
+            base_system_prompt,
+            identity_facts: Vec::new(),
+            dynamic_user_profile: None,
             total_token_count: sys_tokens,
             max_context_tokens,
             reserved_generation_tokens: super::RESERVED_GENERATION_TOKENS,
@@ -95,6 +102,62 @@ impl ConversationManager {
             latest_compaction_facts: HashMap::new(),
             opportunistic_active: false,
             opportunistic_cancel: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Assembles the complete system prompt from base prompt, identity facts, and dynamic profile.
+    fn assemble_system_prompt(&self) -> String {
+        let mut sections = Vec::new();
+        if !self.identity_facts.is_empty() {
+            let identity_lines: Vec<String> = self
+                .identity_facts
+                .iter()
+                .map(|f| format!("- {}", f))
+                .collect();
+            sections.push(format!("[Identity]\n{}", identity_lines.join("\n")));
+        }
+
+        if let Some(ref dyn_profile) = self.dynamic_user_profile {
+            let trimmed = dyn_profile.trim();
+            if !trimmed.is_empty() {
+                let inner = if trimmed.starts_with("<user_profile>")
+                    && trimmed.ends_with("</user_profile>")
+                {
+                    trimmed[14..trimmed.len() - 15].trim()
+                } else {
+                    trimmed
+                };
+                if !inner.is_empty() {
+                    sections.push(inner.to_string());
+                }
+            }
+        }
+
+        if sections.is_empty() {
+            self.base_system_prompt.clone()
+        } else {
+            format!(
+                "{}\n\n<user_profile>\n{}\n</user_profile>",
+                self.base_system_prompt.trim_end(),
+                sections.join("\n\n")
+            )
+        }
+    }
+
+    /// Updates the dynamic user profile context retrieved from semantic search for the active turn.
+    pub fn update_dynamic_user_profile(&mut self, profile: Option<String>) {
+        if self.dynamic_user_profile != profile {
+            self.dynamic_user_profile = profile;
+            let assembled = self.assemble_system_prompt();
+            let old_sys_tokens = estimate_tokens(&self.system_prompt.content);
+            let sys_tokens = estimate_tokens(&assembled);
+            self.system_prompt.content = assembled.clone();
+            if !self.messages.is_empty() && self.messages[0].role == Role::System {
+                self.messages[0].content = assembled;
+            }
+            self.total_token_count =
+                self.total_token_count.saturating_sub(old_sys_tokens) + sys_tokens;
+            self.kv_synced_index = 0;
         }
     }
 
@@ -114,6 +177,24 @@ impl ConversationManager {
         }
     }
 
+    /// Sets active Identity facts and reassembles the system prompt.
+    pub fn set_identity_facts(&mut self, identity_facts: Vec<String>) {
+        self.identity_facts = identity_facts;
+        let assembled = self.assemble_system_prompt();
+        let old_tokens = estimate_tokens(&self.system_prompt.content);
+        let new_tokens = estimate_tokens(&assembled);
+        self.system_prompt.content = assembled.clone();
+        if !self.messages.is_empty() && self.messages[0].role == Role::System {
+            self.messages[0].content = assembled;
+        }
+        self.total_token_count = self.total_token_count.saturating_sub(old_tokens) + new_tokens;
+        self.kv_synced_index = 0;
+        log::info!(
+            "[WorkingMemory] Successfully preloaded {} Identity facts into System Prompt.",
+            self.identity_facts.len()
+        );
+    }
+
     /// Preloads active Identity facts into the base system prompt block.
     pub async fn load_identity_into_system_prompt(
         &mut self,
@@ -121,44 +202,21 @@ impl ConversationManager {
     ) -> anyhow::Result<()> {
         let active_identities =
             crate::persistence::queries::fetch_all_active_identity(conn).await?;
-        if !active_identities.is_empty() {
-            let mut base_prompt = self.system_prompt.content.clone();
-            if let Some(start_idx) = base_prompt.find("\n\n<user_profile>") {
-                base_prompt.truncate(start_idx);
-            } else if let Some(start_idx) = base_prompt.find("<user_profile>") {
-                base_prompt.truncate(start_idx);
-            }
-
-            let identity_lines: Vec<String> = active_identities
-                .iter()
-                .map(|f| format!("- {}", f.fact))
-                .collect();
-            let user_profile_block = format!(
-                "\n\n<user_profile>\n{}\n</user_profile>",
-                identity_lines.join("\n")
-            );
-            let updated_content = format!("{}{}", base_prompt.trim_end(), user_profile_block);
-            self.system_prompt.content = updated_content.clone();
-            if !self.messages.is_empty() && self.messages[0].role == Role::System {
-                self.messages[0].content = updated_content;
-            }
-            self.total_token_count = estimate_tokens(&self.system_prompt.content);
-            log::info!(
-                "[WorkingMemory] Successfully preloaded {} Identity facts into System Prompt.",
-                active_identities.len()
-            );
-        }
+        let facts = active_identities.into_iter().map(|f| f.fact).collect();
+        self.set_identity_facts(facts);
         Ok(())
     }
 
     /// Resets conversational history and initializes a new session.
     pub fn new_session(&mut self, system_prompt: &str) {
+        self.base_system_prompt = system_prompt.to_string();
+        let assembled = self.assemble_system_prompt();
         let sys_msg = ChatMessage {
             role: Role::System,
-            content: system_prompt.to_string(),
+            content: assembled.clone(),
             timestamp_ms: current_timestamp_ms(),
         };
-        let sys_tokens = estimate_tokens(system_prompt);
+        let sys_tokens = estimate_tokens(&assembled);
 
         self.system_prompt = sys_msg.clone();
         self.messages = vec![sys_msg];
@@ -194,16 +252,18 @@ impl ConversationManager {
     }
 
     /// Replaces the active system prompt content and updates token calculations.
-    pub fn update_system_prompt(&mut self, new_system_prompt: &str) {
-        if self.system_prompt.content != new_system_prompt {
-            let sys_tokens = estimate_tokens(new_system_prompt);
+    pub fn update_system_prompt(&mut self, new_base_prompt: &str) {
+        self.base_system_prompt = new_base_prompt.to_string();
+        let assembled = self.assemble_system_prompt();
+        if self.system_prompt.content != assembled {
             let old_sys_tokens = estimate_tokens(&self.system_prompt.content);
-            self.system_prompt.content = new_system_prompt.to_string();
+            let sys_tokens = estimate_tokens(&assembled);
+            self.system_prompt.content = assembled.clone();
             if !self.messages.is_empty() && self.messages[0].role == Role::System {
-                self.messages[0].content = new_system_prompt.to_string();
-                self.total_token_count =
-                    self.total_token_count.saturating_sub(old_sys_tokens) + sys_tokens;
+                self.messages[0].content = assembled;
             }
+            self.total_token_count =
+                self.total_token_count.saturating_sub(old_sys_tokens) + sys_tokens;
             self.kv_synced_index = 0;
         }
     }
@@ -578,9 +638,6 @@ impl ConversationManager {
         true
     }
 
-    /// Handles idle pipeline transitions.
-    pub fn on_pipeline_idle(&mut self) {}
-
     /// Cancels active opportunistic compaction on speech detection.
     pub fn on_speech_start(&mut self) {
         self.cancel_opportunistic();
@@ -594,19 +651,36 @@ impl ConversationManager {
             log::info!("[WorkingMemory] Opportunistic compaction cancelled.");
         }
     }
+}
 
-    /// Returns the most recent compaction summary string if present in history.
-    pub fn latest_summary(&self) -> String {
-        for msg in self.messages.iter().rev() {
-            if msg.role == Role::System {
-                if let Some(s) = msg.content.strip_prefix("[Compacted History Summary: ") {
-                    return s.strip_suffix("]").unwrap_or(s).to_string();
-                }
-                if let Some(s) = msg.content.strip_prefix("[Summary of prior context: ") {
-                    return s.strip_suffix("]").unwrap_or(s).to_string();
-                }
-            }
-        }
-        String::new()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests dynamic max_context_tokens budget mutation.
+    #[test]
+    fn test_set_max_context_tokens() {
+        let mut cm = ConversationManager::new(2048);
+        assert_eq!(cm.max_context_tokens, 2048);
+        cm.set_max_context_tokens(4096);
+        assert_eq!(cm.max_context_tokens, 4096);
+        cm.set_max_context_tokens(0);
+        assert_eq!(cm.max_context_tokens, 4096);
+    }
+
+    /// Tests system prompt update while preserving identity facts structure.
+    #[test]
+    fn test_update_system_prompt_with_identity() {
+        let mut cm = ConversationManager::new(2048);
+        cm.identity_facts = vec!["User lives in Seattle.".to_string()];
+        cm.update_system_prompt("You are Vox Assistant.");
+
+        assert!(cm.system_prompt.content.starts_with("You are Vox Assistant."));
+        assert!(cm.system_prompt.content.contains("<user_profile>\n[Identity]\n- User lives in Seattle.\n</user_profile>"));
+
+        cm.new_session("You are a helpful coding assistant.");
+        assert!(cm.system_prompt.content.starts_with("You are a helpful coding assistant."));
+        assert!(cm.system_prompt.content.contains("<user_profile>\n[Identity]\n- User lives in Seattle.\n</user_profile>"));
+        assert_eq!(cm.messages.len(), 1);
     }
 }

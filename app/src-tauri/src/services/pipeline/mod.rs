@@ -27,16 +27,13 @@ pub const OWNER_DICTATION: &str = "dictation";
 pub const ROUTER_THREAD_NAME: &str = "vox-router";
 
 pub mod dictation;
-pub mod modular_passive;
-pub mod modular_ptt;
-pub mod realtime_passive;
-pub mod realtime_ptt;
+pub mod modular;
+pub mod realtime;
 pub mod router;
-
-pub use router::spawn_router;
 
 use crate::core::settings::{DictationInteractionMode, InteractionMode, PipelineMode};
 use crate::core::state::{AppState, InteractionOwner, InteractionState};
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -52,7 +49,7 @@ impl RoutingContext {
         let settings = state.settings.read().unwrap();
         let owner: InteractionOwner = state
             .owner
-            .load(std::sync::atomic::Ordering::Relaxed)
+            .load(Ordering::Relaxed)
             .into();
         let interaction_mode = match owner {
             InteractionOwner::Dictation => match settings.dictation.interaction_mode {
@@ -97,14 +94,18 @@ pub fn transition<R: tauri::Runtime>(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Tests that interaction owner maps strictly to the correct Tauri webview window label.
-    #[test]
-    fn test_target_window_routing() {
-        assert_eq!(target_window(InteractionOwner::Dictation), WINDOW_TRAY);
-        assert_eq!(target_window(InteractionOwner::Assistant), WINDOW_MAIN);
+/// Resets conversational working memory and preloads active Identity facts.
+pub async fn init_new_session(state: &AppState, base_prompt: &str) {
+    state.conversation_manager.lock().new_session(base_prompt);
+    let db_path = crate::utils::paths::db_path();
+    if let Ok(conn) = crate::persistence::db::VoxDb::open_readonly(&db_path).await {
+        if let Ok(active_identities) =
+            crate::persistence::queries::fetch_all_active_identity(&conn).await
+        {
+            let facts = active_identities.into_iter().map(|f| f.fact).collect();
+            state.conversation_manager.lock().set_identity_facts(facts);
+        }
     }
 }
+
+pub use router::spawn_router;

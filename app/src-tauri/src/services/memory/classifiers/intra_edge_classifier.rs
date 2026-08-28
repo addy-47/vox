@@ -349,14 +349,6 @@ pub fn ensure_nli_loaded(model_name: &str) -> Result<bool> {
     init_nli_engine(&nli_model_dir)
 }
 
-/// Performs NLI classification between a single premise and hypothesis.
-pub fn classify_pair(premise: &str, hypothesis: &str) -> Result<NliResult> {
-    let mut results = classify_batch(&[(premise, hypothesis)])?;
-    results
-        .pop()
-        .ok_or_else(|| anyhow!("Empty prediction result"))
-}
-
 /// Performs batched NLI classification for a slice of (premise, hypothesis) pairs.
 pub fn classify_batch(pairs: &[(&str, &str)]) -> Result<Vec<NliResult>> {
     if pairs.is_empty() {
@@ -411,22 +403,4 @@ pub fn relation_from_result(result: &NliResult) -> NliRelation {
     } else {
         NliRelation::Neutral
     }
-}
-
-/// Returns the calibrated class mapping ([index 0, index 1, index 2]) if the engine is loaded.
-pub fn get_calibrated_class_mapping() -> Option<[NliLabel; 3]> {
-    let lock = NLI_ENGINE.read();
-    lock.as_ref().map(|engine| engine.class_mapping)
-}
-
-/// Returns the calibrated class mapping as string labels if the engine is loaded.
-pub fn get_calibrated_class_mapping_strings() -> Option<Vec<&'static str>> {
-    let lock = NLI_ENGINE.read();
-    lock.as_ref().map(|engine| {
-        engine
-            .class_mapping
-            .iter()
-            .map(|label: &NliLabel| label.as_str())
-            .collect()
-    })
 }

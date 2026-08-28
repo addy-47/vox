@@ -1,11 +1,9 @@
 //! Voice service for audio validation, decoding, resampling, speaker pre-baking, and recording.
 
-use crate::services::tts::providers::TtsProvider;
 use crate::services::tts::{
     CHATTERBOX_MODEL_DIR, EDGE_TTS_USER_AGENT, EDGE_TTS_VOICES_URL_BASE,
     MIN_VOICE_CLONE_DURATION_SECS, MODEL_FILE_TTS_CHATTERBOX_S3GEN,
-    MODEL_FILE_TTS_CHATTERBOX_T3, PREVIEW_QUALITY_STEPS, PREVIEW_TEXT,
-    TARGET_VOICE_SAMPLE_DURATION_SECS, TTS_SAMPLE_RATE,
+    MODEL_FILE_TTS_CHATTERBOX_T3, TARGET_VOICE_SAMPLE_DURATION_SECS, TTS_SAMPLE_RATE,
 };
 use crate::symphonia_core::audio::Audio;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -25,24 +23,6 @@ pub struct EdgeTtsVoiceEntry {
     pub friendly_name: String,
 }
 
-/// Validate that a WAV file is readable and satisfies a minimum duration.
-pub fn validate_wav_file(path: &str, min_duration_secs: f32) -> Result<(u32, f32), String> {
-    let reader =
-        hound::WavReader::open(path).map_err(|e| format!("Cannot read WAV file: {}", e))?;
-    let spec = reader.spec();
-    let num_samples = reader.len();
-    if spec.sample_rate == 0 {
-        return Err("WAV file has invalid sample rate (0)".to_string());
-    }
-    let duration = num_samples as f32 / spec.sample_rate as f32;
-    if duration < min_duration_secs {
-        return Err(format!(
-            "Audio too short ({:.1}s). Minimum is {}s for voice cloning.",
-            duration, min_duration_secs
-        ));
-    }
-    Ok((spec.sample_rate, duration))
-}
 
 fn extract_mono_f32_samples(
     buf_ref: crate::symphonia_core::audio::GenericAudioBufferRef<'_>,
@@ -276,38 +256,6 @@ pub fn pre_bake_speaker_tensors(source_wav: &Path, baked_dir: &Path) -> Result<(
     Ok(())
 }
 
-/// Synthesize a short preview clip with reference audio and save to destination WAV.
-pub fn synthesize_preview_clip(wav_path: &str, preview_path: &Path) -> Result<(), String> {
-    let chatterbox_path = crate::utils::paths::model_dir(CHATTERBOX_MODEL_DIR);
-    let engine = crate::services::tts::ChatterboxEngine::new(
-        &chatterbox_path,
-        "en",
-        PREVIEW_QUALITY_STEPS,
-        1.0,
-        Some(wav_path),
-    )
-    .map_err(|e| format!("Failed to create preview engine: {}", e))?;
-
-    let (tx, rx) = std::sync::mpsc::channel::<crate::core::events::VoxEvent>();
-    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-
-    engine
-        .synthesize_chunk(PREVIEW_TEXT, 0, cancel, tx)
-        .map_err(|e| format!("Preview synthesis failed: {}", e))?;
-
-    let mut pcm: Vec<f32> = Vec::new();
-    while let Ok(event) = rx.try_recv() {
-        if let crate::core::events::VoxEvent::TtsChunk { samples, .. } = event {
-            pcm.extend_from_slice(&samples);
-        }
-    }
-
-    if pcm.is_empty() {
-        return Err("Preview synthesis produced no audio".to_string());
-    }
-
-    write_f32_wav(preview_path, &pcm, TTS_SAMPLE_RATE)
-}
 
 struct ActiveRecorder {
     _stream: cpal::Stream,

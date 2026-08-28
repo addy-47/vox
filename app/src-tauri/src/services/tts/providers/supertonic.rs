@@ -194,7 +194,7 @@ impl TtsProvider for TtsEngine {
             return Ok(());
         }
 
-        let lang = if crate::services::utils::is_devanagari(text) {
+        let lang = if crate::services::translit::is_devanagari(text) {
             "hi"
         } else {
             "en"

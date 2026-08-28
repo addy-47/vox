@@ -82,15 +82,6 @@ impl ModelFamily {
         }
     }
 
-    /// Combines system and user prompt segments into a complete turn prompt.
-    pub fn format_prompt(&self, text: &str, system_prompt: &str) -> String {
-        format!(
-            "{}{}",
-            self.format_system_prompt(system_prompt),
-            self.format_user_prompt(text)
-        )
-    }
-
     /// Formats an entire conversation history into a structured prompt.
     pub fn format_conversation(&self, messages: &[ChatMessage]) -> String {
         let mut prompt = String::new();
@@ -339,46 +330,6 @@ impl LlmWorker {
     /// Returns the configured context size in tokens.
     pub fn ctx_size(&self) -> u32 {
         self.ctx_size
-    }
-
-    /// Runs the persistent command worker loop for generation requests.
-    pub fn run_loop(
-        &self,
-        rx: std::sync::mpsc::Receiver<super::actor::LlmCommand>,
-        tx: std::sync::mpsc::Sender<VoxEvent>,
-    ) {
-        log::info!("[LLM Worker] Persistent loop started.");
-
-        while let Ok(cmd) = rx.recv() {
-            match cmd {
-                super::actor::LlmCommand::Generate {
-                    request,
-                    turn_id,
-                    cancel_flag,
-                } => {
-                    let ctx = ConversationContext {
-                        messages: request.input.messages,
-                        token_count: 0,
-                        kv_cache_index: 0,
-                    };
-                    if let Err(e) = self.generate(&ctx, turn_id, &cancel_flag, &tx) {
-                        log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
-                        if let Err(send_err) = tx.send(VoxEvent::Error {
-                            turn_id,
-                            message: e.to_string(),
-                        }) {
-                            log::warn!("[LLM Worker] Failed to dispatch error event: {}", send_err);
-                        }
-                    }
-                }
-                super::actor::LlmCommand::Shutdown => {
-                    log::info!("[LLM Worker] Shutdown command received. Exiting loop.");
-                    break;
-                }
-            }
-        }
-
-        log::info!("[LLM Worker] Loop exited. Model will be dropped.");
     }
 
     /// Ensures the LlamaContext is lazily initialized on demand.

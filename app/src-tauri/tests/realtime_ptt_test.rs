@@ -20,9 +20,9 @@ use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{InteractionMode, RealtimeProviderKind};
 use vox_lib::services::audio::playback::PlaybackTelemetryHandles;
 use vox_lib::services::audio::PlaybackEngine;
-use vox_lib::services::pipeline::realtime_ptt::{
-    get_buffer_len, handle_ptt_cancel, handle_ptt_start, handle_ptt_stop_with_engine,
-    ingest_audio, is_recording, is_speech_detected, set_speech_detected,
+use vox_lib::services::pipeline::realtime::ptt::{
+    get_buffer_len, handle_event, handle_ptt_cancel, handle_ptt_start, handle_ptt_stop,
+    ingest_audio, is_recording,
 };
 use vox_lib::services::realtime::engine::RealtimeEngine;
 use vox_lib::services::realtime::{RealtimeAudioConfig, RealtimeSession, RealtimeVoiceProvider};
@@ -82,12 +82,7 @@ impl RealtimeVoiceProvider for MockProvider {
     }
 }
 
-fn create_mock_engine(push_counter: Arc<AtomicUsize>, handle: tokio::runtime::Handle) -> RealtimeEngine {
-    let mock_provider = Box::new(MockProvider {
-        send_audio_counter: push_counter,
-    });
-    let mut engine = RealtimeEngine::new(mock_provider, handle);
-
+fn create_mock_playback_engine() -> Arc<PlaybackEngine> {
     let telemetry = PlaybackTelemetryHandles {
         energy: Arc::new(AtomicU32::new(0)),
         low: Arc::new(AtomicU32::new(0)),
@@ -95,7 +90,7 @@ fn create_mock_engine(push_counter: Arc<AtomicUsize>, handle: tokio::runtime::Ha
         high: Arc::new(AtomicU32::new(0)),
         underruns: Arc::new(AtomicU64::new(0)),
     };
-    let playback_engine = Arc::new(
+    Arc::new(
         PlaybackEngine::new(
             Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicBool::new(false)),
@@ -103,8 +98,15 @@ fn create_mock_engine(push_counter: Arc<AtomicUsize>, handle: tokio::runtime::Ha
             telemetry,
         )
         .expect("Failed to initialize PlaybackEngine"),
-    );
+    )
+}
 
+fn create_mock_engine(push_counter: Arc<AtomicUsize>, handle: tokio::runtime::Handle) -> RealtimeEngine {
+    let mock_provider = Box::new(MockProvider {
+        send_audio_counter: push_counter,
+    });
+    let mut engine = RealtimeEngine::new(mock_provider, handle);
+    let playback_engine = create_mock_playback_engine();
     let (event_tx, _event_rx) = std::sync::mpsc::channel::<VoxEvent>();
     engine
         .start(InteractionMode::PTT, playback_engine, event_tx)
@@ -120,22 +122,21 @@ async fn test_realtime_ptt_ghost_audio_gate_rejects_non_speech() {
 
         let push_counter = Arc::new(AtomicUsize::new(0));
         let mock_engine = create_mock_engine(push_counter.clone(), tokio::runtime::Handle::current());
+        *state.realtime_engine.lock().await = Some(mock_engine);
 
         // 1. Upstream Trigger: Start Realtime PTT recording
         handle_ptt_start(&app, &state).expect("handle_ptt_start failed");
         assert!(is_recording(), "IS_RECORDING must be true after start");
-        assert!(!is_speech_detected(), "SPEECH_DETECTED must be false initially");
 
-        // 2. Ingest 10 frames of silence / background noise (SPEECH_DETECTED remains false)
+        // 2. Ingest 10 frames of silence / background noise (speech start event not dispatched)
         let silence_chunk = vec![0.0001f32; VAD_CHUNK_SIZE];
         for _ in 0..10 {
             ingest_audio(&silence_chunk);
         }
         assert_eq!(get_buffer_len(), 10 * VAD_CHUNK_SIZE, "Buffer must contain ingested frames");
 
-        // 3. Stop PTT hold with mock engine injection
-        handle_ptt_stop_with_engine(&app, &state, Some(&mock_engine))
-            .expect("handle_ptt_stop_with_engine failed");
+        // 3. Stop PTT hold with production state.realtime_engine dispatch
+        handle_ptt_stop(&app, &state).expect("handle_ptt_stop failed");
 
         // Allow any asynchronous background tasks (such as AudioBridge channel dispatch) to settle
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -164,26 +165,31 @@ async fn test_realtime_ptt_speech_detected_flushes_to_engine() {
 
         let push_counter = Arc::new(AtomicUsize::new(0));
         let mock_engine = create_mock_engine(push_counter.clone(), tokio::runtime::Handle::current());
+        *state.realtime_engine.lock().await = Some(mock_engine);
 
         // 1. Start Realtime PTT recording
         handle_ptt_start(&app, &state).expect("handle_ptt_start failed");
         assert!(is_recording(), "IS_RECORDING must be true after start");
 
-        // 2. Ingest speech audio frames and flag speech detection
+        // 2. Ingest speech audio frames and dispatch speech onset event
         for chunk in audio.chunks(VAD_CHUNK_SIZE) {
             ingest_audio(chunk);
         }
-        set_speech_detected(true);
+        let playback_engine = create_mock_playback_engine();
+        handle_event(
+            &app,
+            &state,
+            &playback_engine,
+            VoxEvent::SpeechStart { turn_id: 1 },
+        );
         assert!(get_buffer_len() >= audio.len(), "Buffer must contain ingested audio");
 
         // 3. Stop PTT hold -> should flush accumulated audio to engine
-        handle_ptt_stop_with_engine(&app, &state, Some(&mock_engine))
-            .expect("handle_ptt_stop_with_engine failed");
+        handle_ptt_stop(&app, &state).expect("handle_ptt_stop failed");
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         assert!(!is_recording(), "IS_RECORDING must be false after stop");
-        assert!(!is_speech_detected(), "SPEECH_DETECTED must reset to false");
         assert_eq!(get_buffer_len(), 0, "Buffer must be drained on release");
         assert!(
             push_counter.load(Ordering::Relaxed) > 0,
@@ -204,17 +210,24 @@ async fn test_realtime_ptt_cancel_discards_audio() {
         let (app, state) = get_test_app_and_state();
 
         let push_counter = Arc::new(AtomicUsize::new(0));
-        let _mock_engine = create_mock_engine(push_counter.clone(), tokio::runtime::Handle::current());
+        let mock_engine = create_mock_engine(push_counter.clone(), tokio::runtime::Handle::current());
+        *state.realtime_engine.lock().await = Some(mock_engine);
 
         // 1. Start Realtime PTT recording
         handle_ptt_start(&app, &state).expect("handle_ptt_start failed");
         assert!(is_recording(), "IS_RECORDING must be true");
 
-        // 2. Ingest audio frames
+        // 2. Ingest audio frames and dispatch speech onset event
         for chunk in audio.chunks(VAD_CHUNK_SIZE) {
             ingest_audio(chunk);
         }
-        set_speech_detected(true);
+        let playback_engine = create_mock_playback_engine();
+        handle_event(
+            &app,
+            &state,
+            &playback_engine,
+            VoxEvent::SpeechStart { turn_id: 1 },
+        );
         assert!(get_buffer_len() > 0, "Buffer must contain audio frames");
 
         // 3. Cancel PTT
@@ -222,7 +235,6 @@ async fn test_realtime_ptt_cancel_discards_audio() {
 
         // 4. Assertions
         assert!(!is_recording(), "IS_RECORDING must be false after cancel");
-        assert!(!is_speech_detected(), "SPEECH_DETECTED must be false after cancel");
         assert_eq!(get_buffer_len(), 0, "Buffer must be cleared on cancel");
         assert_eq!(
             push_counter.load(Ordering::Relaxed),

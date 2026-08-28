@@ -1,6 +1,3 @@
-use serde::de::Visitor;
-use serde::Deserializer;
-use std::fmt;
 
 pub fn clean_json_content(content: &str) -> String {
     let mut cleaned = content.trim().to_string();
@@ -137,72 +134,6 @@ pub fn escape_control_chars_in_json(input: &str) -> String {
         }
     }
     output
-}
-
-pub fn deserialize_value_resilient<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    struct ValueVisitor;
-
-    impl<'de> Visitor<'de> for ValueVisitor {
-        type Value = String;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a string, boolean, or number")
-        }
-
-        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(v.to_string())
-        }
-
-        fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(v)
-        }
-
-        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(v.to_string())
-        }
-
-        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(v.to_string())
-        }
-
-        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(v.to_string())
-        }
-
-        fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(v.to_string())
-        }
-
-        fn visit_unit<E>(self) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok("".to_string())
-        }
-    }
-
-    deserializer.deserialize_any(ValueVisitor)
 }
 
 pub fn parse_compaction_json(

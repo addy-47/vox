@@ -6,7 +6,7 @@ use ringbuf::traits::*;
 
 /// Manages the low-level CPAL hardware audio stream.
 pub struct AudioStream {
-    _stream: cpal::Stream,
+    _stream: Option<cpal::Stream>,
 }
 
 unsafe impl Send for AudioStream {}
@@ -33,13 +33,20 @@ impl AudioStream {
         );
 
         let stream = build_input_stream(device, &config, channels, sample_rate, producer)?;
-        Ok(Self { _stream: stream })
+        Ok(Self { _stream: Some(stream) })
+    }
+
+    /// Creates a mock AudioStream for integration testing without audio hardware.
+    pub fn mock() -> Self {
+        Self { _stream: None }
     }
 
     /// Starts the hardware audio stream.
     pub fn start(&self) -> Result<()> {
-        log::info!("[Audio::Device] Starting hardware ingestion");
-        self._stream.play()?;
+        if let Some(ref stream) = self._stream {
+            log::info!("[Audio::Device] Starting hardware ingestion");
+            stream.play()?;
+        }
         Ok(())
     }
 }
@@ -141,8 +148,10 @@ impl Drop for AudioStream {
     /// Ensures the hardware stream is paused cleanly when dropping.
     fn drop(&mut self) {
         log::info!("[Audio::Device] Dropping hardware stream. Ensuring mic is released");
-        if let Err(e) = self._stream.pause() {
-            log::warn!("[Audio::Device] Failed to pause stream on drop: {}", e);
+        if let Some(ref stream) = self._stream {
+            if let Err(e) = stream.pause() {
+                log::warn!("[Audio::Device] Failed to pause stream on drop: {}", e);
+            }
         }
     }
 }
