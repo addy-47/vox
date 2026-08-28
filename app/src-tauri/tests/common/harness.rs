@@ -289,3 +289,47 @@ pub fn get_test_app_state() -> vox_lib::core::state::AppState {
     let app = get_test_app_handle();
     vox_lib::core::state::AppState::new(&app, None, telemetry)
 }
+
+/// Attaches a mock VoxEngine to the managed AppState for testing full production pipeline flows.
+pub fn attach_mock_engine_to_state<R: tauri::Runtime>(
+    _app: &AppHandle<R>,
+    state: &vox_lib::core::state::AppState,
+    stt_tx: Sender<SttCommand>,
+) {
+    let (vad_tx, _) = std::sync::mpsc::channel();
+    let (pipeline_tx, _) = std::sync::mpsc::channel();
+    let (telemetry_tx, _) = crossbeam_channel::unbounded();
+    let playback_engine = Arc::new(
+        vox_lib::services::audio::PlaybackEngine::new(
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            vox_lib::services::audio::playback::PlaybackTelemetryHandles {
+                energy: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                low: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                mid: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                high: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                underruns: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            },
+        )
+        .expect("Failed to create mock PlaybackEngine"),
+    );
+
+    let engine = vox_lib::core::state::VoxEngine {
+        audio_stream: vox_lib::services::audio::AudioStream::mock(),
+        stt_tx,
+        vad_tx,
+        llm_tx: None,
+        tts_tx: None,
+        telemetry_tx,
+        pipeline_tx,
+        playback_engine,
+        stt_handle: None,
+        vad_handle: None,
+        llm_handle: None,
+        tts_handle: None,
+        orchestrator_handle: None,
+    };
+    *state.engine.blocking_lock() = Some(engine);
+    state.pipeline.is_engaged.store(true, std::sync::atomic::Ordering::Relaxed);
+}

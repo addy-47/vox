@@ -155,7 +155,7 @@ fn main() -> Result<()> {
         let sid = prompt.sid % tts.num_speakers().max(1);
         print!("  Synthesizing {} (Voice: {}, sid={})... ", prompt.id, prompt.voice_name, sid);
 
-        let lang = if vox_lib::services::utils::is_devanagari(prompt.text) {
+        let lang = if vox_lib::services::translit::is_devanagari(prompt.text) {
             "hi"
         } else {
             "en"

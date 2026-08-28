@@ -1,20 +1,14 @@
 pub mod actor;
-pub mod capabilities;
 pub mod capability_probe;
 pub mod llama_cpp;
 pub mod policy;
-pub mod probe;
 pub mod providers;
 pub mod types;
 
 pub use actor::{cool_down_llm, create_llm_provider, spawn_llm_worker, warm_up_llm, LlmCommand};
-pub use capabilities::{
-    CapabilityObservation, CapabilityRegistry, CapabilitySource, ModelCapabilities,
-};
 pub use capability_probe::CapabilityProbeEngine;
 pub use llama_cpp::LlmWorker;
 pub use policy::GenerationPolicy;
-pub use probe::ActiveProbeEngine;
 pub use providers::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider, ProviderKind};
 pub use types::*;
 

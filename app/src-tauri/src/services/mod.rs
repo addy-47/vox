@@ -7,5 +7,4 @@ pub mod realtime;
 pub mod stt;
 pub mod translit;
 pub mod tts;
-pub mod utils;
 pub mod vad;
