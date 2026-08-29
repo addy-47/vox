@@ -44,7 +44,7 @@ pub fn get_buffer_len() -> usize {
 
 /// Starts a user-gated real-time Push-To-Talk speech-to-speech assistant session.
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
-    crate::services::audio::start_audio_engine(app, state).await?;
+    crate::core::start_audio_engine(app, state).await?;
 
     let (vad_tx, pipeline_tx, playback_engine) = {
         let guard = state.engine.lock().await;
@@ -200,7 +200,7 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
             .owner
             .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
     } else {
-        crate::services::audio::stop_audio_engine(state).await?;
+        crate::core::stop_audio_engine(state).await?;
     }
 
     let ctx = RoutingContext::from_app_state(state);
@@ -227,6 +227,7 @@ pub fn handle_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState)
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             super::session::realtime_barge_in(state, &engine.playback_engine);
+            let _ = engine.vad_tx.send(VadCommand::StartWindowValidation);
         }
     }
 
@@ -256,15 +257,56 @@ pub fn handle_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) 
     }
 
     let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
+    let raw_buffer = REALTIME_PTT_BUFFER.lock().split_off(0);
 
-    if !SPEECH_DETECTED.load(Ordering::Relaxed) {
-        REALTIME_PTT_BUFFER.lock().clear();
+    if raw_buffer.is_empty() {
+        SPEECH_DETECTED.store(false, Ordering::Relaxed);
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Ready, &ctx, app, state);
         if let Err(e) = app.emit_to(
             WINDOW_MAIN,
             EVENT_PTT_STATUS,
-            PTT_PAYLOAD_IDLE,
+            serde_json::json!({
+                "state": PTT_PAYLOAD_IDLE,
+                "turn_id": turn_id,
+            }),
+        ) {
+            log::warn!("[RealtimePTT] Failed to emit ptt_status IDLE: {}", e);
+        }
+        return Ok(());
+    }
+
+    let validation_result = if let Ok(guard) = state.engine.try_lock() {
+        if let Some(ref engine) = *guard {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            if engine.vad_tx.send(VadCommand::StopWindowValidation { response_tx: tx }).is_ok() {
+                rx.blocking_recv().ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let is_speech = match validation_result {
+        Some(ref val) => val.is_speech_detected,
+        None => SPEECH_DETECTED.load(Ordering::Relaxed),
+    };
+
+    if !is_speech {
+        SPEECH_DETECTED.store(false, Ordering::Relaxed);
+        let ctx = RoutingContext::from_app_state(state);
+        transition(InteractionState::Ready, &ctx, app, state);
+        if let Err(e) = app.emit_to(
+            WINDOW_MAIN,
+            EVENT_PTT_STATUS,
+            serde_json::json!({
+                "state": PTT_PAYLOAD_IDLE,
+                "turn_id": turn_id,
+            }),
         ) {
             log::warn!("[RealtimePTT] Failed to emit ptt_status IDLE: {}", e);
         }
@@ -275,11 +317,23 @@ pub fn handle_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) 
         return Ok(());
     }
 
+    let buffer_to_send = match validation_result {
+        Some(ref val) => {
+            let start = val.speech_start_sample.min(raw_buffer.len());
+            let end = val.speech_end_sample.min(raw_buffer.len());
+            if start < end && (end - start) >= 256 {
+                raw_buffer[start..end].to_vec()
+            } else {
+                raw_buffer
+            }
+        }
+        None => raw_buffer,
+    };
+
     SPEECH_DETECTED.store(false, Ordering::Relaxed);
-    let buffer = REALTIME_PTT_BUFFER.lock().split_off(0);
     if let Ok(guard) = state.realtime_engine.try_lock() {
         if let Some(ref rt_engine) = *guard {
-            rt_engine.push_audio(&buffer);
+            rt_engine.push_audio(&buffer_to_send);
         }
     }
 
@@ -304,9 +358,20 @@ pub fn handle_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) 
 
 /// Cancels an in-progress real-time Push-To-Talk stream and resets state to idle.
 pub fn handle_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    IS_RECORDING.store(false, Ordering::Relaxed);
+    if !IS_RECORDING.swap(false, Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
     SPEECH_DETECTED.store(false, Ordering::Relaxed);
     REALTIME_PTT_BUFFER.lock().clear();
+
+    if let Ok(guard) = state.engine.try_lock() {
+        if let Some(ref engine) = *guard {
+            let (tx, _) = tokio::sync::oneshot::channel();
+            let _ = engine.vad_tx.send(VadCommand::StopWindowValidation { response_tx: tx });
+        }
+    }
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
@@ -314,12 +379,15 @@ pub fn handle_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         EVENT_PTT_STATUS,
-        PTT_PAYLOAD_IDLE,
+        serde_json::json!({
+            "state": PTT_PAYLOAD_IDLE,
+            "turn_id": turn_id,
+        }),
     ) {
         log::warn!("[RealtimePTT] Failed to emit ptt_status IDLE: {}", e);
     }
 
-    log::info!("[RealtimePTT] PTT recording cancelled");
+    log::info!("[RealtimePTT] PTT recording cancelled (Turn: {})", turn_id);
     Ok(())
 }
 
@@ -342,7 +410,8 @@ pub fn on_speech_start<R: tauri::Runtime>(
 }
 
 /// Handles speech end detection and emits speech_end event.
-pub fn on_speech_end<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, _audio: Vec<f32>) {
+pub fn on_speech_end<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, audio: Vec<f32>) {
+    drop(audio);
     if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SPEECH_END, turn_id) {
         log::warn!("[RealtimePTT] Failed to emit speech_end: {}", e);
     }

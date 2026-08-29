@@ -20,7 +20,7 @@ static CURRENT_USER_TRANSCRIPT: LazyLock<Mutex<String>> =
 
 /// Starts an autonomous real-time WebSocket speech-to-speech assistant session.
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
-    crate::services::audio::start_audio_engine(app, state).await?;
+    crate::core::start_audio_engine(app, state).await?;
 
     let (vad_tx, pipeline_tx, playback_engine) = {
         let guard = state.engine.lock().await;
@@ -210,7 +210,7 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
             .owner
             .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
     } else {
-        crate::services::audio::stop_audio_engine(state).await?;
+        crate::core::stop_audio_engine(state).await?;
     }
 
     let ctx = RoutingContext::from_app_state(state);

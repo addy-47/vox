@@ -41,6 +41,17 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
         engine.pipeline_tx.clone(),
     )?;
 
+    let voice_id = match settings.tts.active {
+        crate::core::settings::TtsActiveProvider::Chatterbox => {
+            settings.tts.chatterbox.voice_id.as_deref()
+        }
+        crate::core::settings::TtsActiveProvider::ChatterboxRemote => {
+            settings.tts.chatterbox_remote.voice_id.as_deref()
+        }
+        _ => None,
+    };
+    let reference_audio = crate::services::tts::resolve_reference_audio(voice_id).await;
+
     crate::services::tts::actor::warm_up_tts(
         app,
         crate::services::tts::actor::TtsWarmUpHandles {
@@ -52,6 +63,7 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
         },
         &settings,
         &tts_path,
+        reference_audio.as_deref(),
         engine.pipeline_tx.clone(),
     )?;
 
@@ -64,8 +76,9 @@ pub async fn build_generation_request(
     cm_arc: &Arc<Mutex<ConversationManager>>,
     conv_id: u64,
     text: &str,
-    _turn_id: u32,
+    turn_id: u32,
 ) -> (GenerationRequest, Option<String>) {
+    log::debug!("[Modular::Context] Building generation request for turn {} (conv_id: {})", turn_id, conv_id);
     let is_deva = crate::services::translit::is_devanagari(text);
 
     let db_path = crate::utils::paths::db_path();

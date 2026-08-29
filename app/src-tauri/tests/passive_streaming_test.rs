@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{AudioOutputMode, InteractionMode};
-use vox_lib::core::state::{InteractionOwner, VadCommand};
+use vox_lib::core::state::VadCommand;
 use vox_lib::services::stt::actor::SttCommand;
 use vox_lib::services::vad::actor::VadActorConfig;
 use vox_lib::services::vad::VAD_SPEECH_END_FRAMES;
@@ -49,11 +49,10 @@ fn test_passive_streaming_pipeline() {
     let playback_active = Arc::new(AtomicBool::new(false));
 
     let (vad_cmd_tx, vox_event_rx, mut producer, vad_handle) = setup_vad_actor(
-        &app,
         stt_tx.clone(),
         vad_config,
         playback_active,
-        InteractionOwner::Assistant,
+        Arc::new(AtomicBool::new(false)),
         engine_shutdown.clone(),
     );
 
