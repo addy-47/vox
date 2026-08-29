@@ -34,15 +34,36 @@ pub enum RuntimeStatus {
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[repr(u32)]
 pub enum InteractionState {
-    Idle,
-    Ready,
-    Listening,
-    Thinking,
-    Speaking,
-    Paused,
-    Error,
+    Idle = 0,
+    Ready = 1,
+    Listening = 2,
+    Thinking = 3,
+    Speaking = 4,
+    Paused = 5,
+    Error = 6,
+}
+
+impl From<u32> for InteractionState {
+    fn from(v: u32) -> Self {
+        match v {
+            1 => InteractionState::Ready,
+            2 => InteractionState::Listening,
+            3 => InteractionState::Thinking,
+            4 => InteractionState::Speaking,
+            5 => InteractionState::Paused,
+            6 => InteractionState::Error,
+            _ => InteractionState::Idle,
+        }
+    }
+}
+
+impl From<InteractionState> for u32 {
+    fn from(state: InteractionState) -> Self {
+        state as u32
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -81,6 +102,7 @@ pub struct VoxEngine {
     pub llm_handle: Option<std::thread::JoinHandle<()>>,
     pub tts_handle: Option<std::thread::JoinHandle<()>>,
     pub orchestrator_handle: Option<std::thread::JoinHandle<()>>,
+    pub forwarder_handle: Option<tauri::async_runtime::JoinHandle<()>>,
 }
 
 pub struct PipelineAtomics {
@@ -90,7 +112,6 @@ pub struct PipelineAtomics {
     pub llm_generating: Arc<AtomicBool>,
     pub tts_generating: Arc<AtomicBool>,
     pub turn_id: Arc<AtomicU32>,
-    pub state: Arc<parking_lot::Mutex<InteractionState>>,
     pub is_engaged: Arc<AtomicBool>,
     pub transcript_history: Arc<parking_lot::Mutex<VecDeque<String>>>,
     pub playback_underruns: Arc<std::sync::atomic::AtomicU64>,
@@ -114,7 +135,6 @@ impl PipelineAtomics {
             llm_generating: Arc::new(AtomicBool::new(false)),
             tts_generating: Arc::new(AtomicBool::new(false)),
             turn_id: Arc::new(AtomicU32::new(0)),
-            state: Arc::new(parking_lot::Mutex::new(InteractionState::Idle)),
             is_engaged: Arc::new(AtomicBool::new(false)),
             transcript_history: Arc::new(parking_lot::Mutex::new(VecDeque::with_capacity(
                 crate::core::constants::TRANSCRIPT_HISTORY_LIMIT,
@@ -128,10 +148,13 @@ impl PipelineAtomics {
         }
     }
 
+    /// Returns the current interaction state derived from the canonical atomic state.
+    pub fn state(&self) -> InteractionState {
+        InteractionState::from(self.current_state_atomic.load(Ordering::Relaxed))
+    }
+
     /// Updates internal interaction state atomics.
     pub fn set_state(&self, new_state: InteractionState) {
-        let mut state_lock = self.state.lock();
-        *state_lock = new_state;
         self.is_assistant_speaking.store(
             new_state == InteractionState::Speaking,
             Ordering::Relaxed,
@@ -165,38 +188,16 @@ pub struct AppState {
     pub engine: Mutex<Option<VoxEngine>>,
     pub realtime_engine: Mutex<Option<crate::services::realtime::engine::RealtimeEngine>>,
     pub owner: Arc<AtomicU32>,
-    pub hud_visible: Mutex<bool>,
+    pub hud_visible: Arc<AtomicBool>,
     pub memory: MemoryAppState,
     pub settings: Arc<RwLock<VoxSettings>>,
-    pub hud_menu_item: Mutex<Option<tauri::menu::CheckMenuItem<tauri::Wry>>>,
+    pub hud_menu_item: parking_lot::Mutex<Option<tauri::menu::CheckMenuItem<tauri::Wry>>>,
     pub pipeline: PipelineAtomics,
     pub save_debounce: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     pub _log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
-    pub telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
+    pub telemetry: Arc<TelemetryState>,
     pub dictation_last_transcript: parking_lot::Mutex<Option<String>>,
     pub conversation_id: Arc<AtomicU64>,
-    pub latest_energy: Arc<AtomicU32>,
-    pub latest_vad_prob: Arc<AtomicU32>,
-    pub latest_low: Arc<AtomicU32>,
-    pub latest_mid: Arc<AtomicU32>,
-    pub latest_high: Arc<AtomicU32>,
-    pub latest_playback_energy: Arc<AtomicU32>,
-    pub latest_playback_low: Arc<AtomicU32>,
-    pub latest_playback_mid: Arc<AtomicU32>,
-    pub latest_playback_high: Arc<AtomicU32>,
-    pub latest_sys_cpu: Arc<AtomicU32>,
-    pub latest_sys_ram: Arc<AtomicU32>,
-    pub latest_vox_cpu: Arc<AtomicU32>,
-    pub latest_vox_ram: Arc<AtomicU32>,
-    pub latest_stt_ms: Arc<AtomicU32>,
-    pub latest_ttft_ms: Arc<AtomicU32>,
-    pub latest_voice_latency_ms: Arc<AtomicU32>,
-    pub latest_threads: Arc<AtomicU32>,
-    pub latest_tts_rtf: Arc<AtomicU32>,
-    pub latest_playback_start_ms: Arc<AtomicU32>,
-    pub latest_persistence_rate: Arc<AtomicU32>,
-    pub is_db_healthy: Arc<AtomicBool>,
-    pub is_private_mode: Arc<AtomicBool>,
     pub is_dictation_enabled: Arc<AtomicBool>,
     pub is_llm_loaded: Arc<AtomicBool>,
     pub is_tts_loaded: Arc<AtomicBool>,
@@ -217,7 +218,6 @@ pub struct AppState {
         Option<crossbeam_channel::Sender<crate::persistence::memory_worker::MemoryWorkerEvent>>,
     >,
     pub dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
-    pub dropped_telemetry_events: Arc<std::sync::atomic::AtomicU64>,
     pub monitoring: Arc<crate::monitoring::runtime_state::MonitoringState>,
     pub model_manager: Arc<crate::setup::model_manager::ModelManager>,
     pub manifest: Arc<tokio::sync::RwLock<Option<crate::setup::manifest::VoxManifest>>>,
@@ -227,8 +227,9 @@ pub struct AppState {
     pub conversation_manager: Arc<parking_lot::Mutex<crate::services::memory::ConversationManager>>,
 }
 
-/// Telemetry handles and health atomics bundled for AppState initialization.
-pub struct AppStateTelemetryHandles {
+/// Telemetry handles and health atomics bundled for AppState and monitoring workers.
+#[derive(Clone)]
+pub struct TelemetryState {
     pub telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
     pub latest_energy: Arc<AtomicU32>,
     pub latest_vad_prob: Arc<AtomicU32>,
@@ -259,7 +260,7 @@ impl AppState {
     pub fn new<R: tauri::Runtime>(
         app_handle: &tauri::AppHandle<R>,
         log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
-        telemetry: AppStateTelemetryHandles,
+        telemetry: Arc<TelemetryState>,
     ) -> Self {
         let settings = VoxSettings::load();
         let dictation_enabled = settings.dictation.enabled;
@@ -275,39 +276,16 @@ impl AppState {
             engine: Mutex::new(None),
             realtime_engine: Mutex::new(None),
             owner: Arc::new(AtomicU32::new(InteractionOwner::Dictation as u32)),
-            hud_visible: Mutex::new(true),
+            hud_visible: Arc::new(AtomicBool::new(true)),
             memory: MemoryAppState::new(),
             settings: Arc::new(RwLock::new(settings)),
-            hud_menu_item: Mutex::new(None),
+            hud_menu_item: parking_lot::Mutex::new(None),
             pipeline: PipelineAtomics::new(),
             save_debounce: Mutex::new(None),
             _log_guard: log_guard,
-            telemetry_tx: telemetry.telemetry_tx,
+            telemetry: Arc::clone(&telemetry),
             dictation_last_transcript: parking_lot::Mutex::new(None),
             conversation_id: Arc::new(AtomicU64::new(0)),
-            latest_energy: telemetry.latest_energy,
-            latest_vad_prob: telemetry.latest_vad_prob,
-            latest_low: telemetry.latest_low,
-            latest_mid: telemetry.latest_mid,
-            latest_high: telemetry.latest_high,
-            latest_playback_energy: telemetry.latest_playback_energy,
-            latest_playback_low: telemetry.latest_playback_low,
-            latest_playback_mid: telemetry.latest_playback_mid,
-            latest_playback_high: telemetry.latest_playback_high,
-            latest_sys_cpu: telemetry.latest_sys_cpu,
-            latest_sys_ram: telemetry.latest_sys_ram,
-            latest_vox_cpu: telemetry.latest_vox_cpu,
-            latest_vox_ram: telemetry.latest_vox_ram,
-            latest_stt_ms: telemetry.latest_stt_ms,
-            latest_ttft_ms: telemetry.latest_ttft_ms,
-            latest_voice_latency_ms: telemetry.latest_voice_latency_ms,
-            latest_threads: telemetry.latest_threads,
-            latest_tts_rtf: telemetry.latest_tts_rtf,
-            latest_playback_start_ms: telemetry.latest_playback_start_ms,
-            latest_persistence_rate: telemetry.latest_persistence_rate,
-            is_db_healthy: telemetry.is_db_healthy,
-            is_private_mode: telemetry.is_private_mode,
-            dropped_telemetry_events: telemetry.dropped_telemetry_events,
             is_dictation_enabled: Arc::new(AtomicBool::new(dictation_enabled)),
             is_llm_loaded: Arc::new(AtomicBool::new(false)),
             is_tts_loaded: Arc::new(AtomicBool::new(false)),
@@ -327,7 +305,7 @@ impl AppState {
             monitoring: Arc::new(crate::monitoring::runtime_state::MonitoringState::new()),
             model_manager,
             manifest,
-            cpu_governor: parking_lot::Mutex::new(String::new()),
+            cpu_governor: parking_lot::Mutex::new("ondemand".into()),
             cpu_governor_optimal: Arc::new(AtomicBool::new(true)),
             setup_running: Arc::new(Mutex::new(false)),
             conversation_manager: Arc::new(parking_lot::Mutex::new(

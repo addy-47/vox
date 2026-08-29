@@ -36,7 +36,7 @@ impl PlaybackBridge {
 
         handle.spawn(async move {
             let mut resampler = if config.requires_output_resampling
-                && config.output_sample_rate != DEFAULT_OUTPUT_SAMPLE_RATE
+                || config.output_sample_rate != DEFAULT_OUTPUT_SAMPLE_RATE
             {
                 match AudioResampler::new(
                     config.output_sample_rate,
@@ -56,6 +56,7 @@ impl PlaybackBridge {
                 None
             };
 
+            let mut f32_chunk = Vec::with_capacity(1024);
             while let Some(pcm) = rx.recv().await {
                 let pcm_24k = if let Some(ref mut r) = resampler {
                     match r.process_i16(&pcm) {
@@ -69,10 +70,8 @@ impl PlaybackBridge {
                     pcm
                 };
 
-                let f32_chunk: Vec<f32> = pcm_24k
-                    .iter()
-                    .map(|&x| x as f32 / PCM_INT16_DIVISOR_FLOAT)
-                    .collect();
+                f32_chunk.clear();
+                f32_chunk.extend(pcm_24k.iter().map(|&x| x as f32 / PCM_INT16_DIVISOR_FLOAT));
 
                 playback_engine.ingest_chunk(&f32_chunk);
                 playback_engine.start_playback();

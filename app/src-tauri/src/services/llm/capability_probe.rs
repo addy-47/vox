@@ -122,7 +122,7 @@ impl CapabilityProbeEngine {
             supports_tools,
             supports_latin: true,
             supports_devanagari,
-            context_window: Some(4096),
+            context_window: Some(super::DEFAULT_MAX_CONTEXT_TOKENS as u32),
             tps: None,
             ttft_ms: None,
             server_has_gpu: false,
@@ -469,23 +469,27 @@ impl CapabilityProbeEngine {
 
     /// Parses the server maximum token ceiling from an HTTP 400 error message.
     fn parse_token_ceiling_from_error(err_text: &str) -> Option<u32> {
+        static RE_PATTERNS: std::sync::LazyLock<Vec<regex::Regex>> = std::sync::LazyLock::new(|| {
+            let patterns = [
+                r"(?:maximum(?: allowed)?|supported|limit|cap)[^\d]*(\d{3,7})",
+                r">\s*(\d{3,7})",
+                r"cannot exceed\s*(\d{3,7})",
+                r"greater than (?:maximum allowed )?(\d{3,7})",
+            ];
+            patterns
+                .iter()
+                .filter_map(|p| regex::Regex::new(p).ok())
+                .collect()
+        });
+
         let lower = err_text.to_lowercase();
 
-        let re_patterns = [
-            r"(?:maximum(?: allowed)?|supported|limit|cap)[^\d]*(\d{3,7})",
-            r">\s*(\d{3,7})",
-            r"cannot exceed\s*(\d{3,7})",
-            r"greater than (?:maximum allowed )?(\d{3,7})",
-        ];
-
-        for pat in re_patterns {
-            if let Ok(re) = regex::Regex::new(pat) {
-                if let Some(caps) = re.captures(&lower) {
-                    if let Some(m) = caps.get(1) {
-                        if let Ok(val) = m.as_str().parse::<u32>() {
-                            if (256..=2_000_000).contains(&val) {
-                                return Some(val);
-                            }
+        for re in RE_PATTERNS.iter() {
+            if let Some(caps) = re.captures(&lower) {
+                if let Some(m) = caps.get(1) {
+                    if let Ok(val) = m.as_str().parse::<u32>() {
+                        if (256..=2_000_000).contains(&val) {
+                            return Some(val);
                         }
                     }
                 }
@@ -538,7 +542,6 @@ impl CapabilityProbeEngine {
 
             if resp.status().is_success() {
                 let mut bytes_stream = resp.bytes_stream();
-                let mut full_text = String::new();
                 let mut first_chunk_time: Option<Instant> = None;
                 let mut token_chunks = 0;
                 let mut line_buffer = Vec::new();
@@ -574,7 +577,11 @@ impl CapabilityProbeEngine {
                                                             start.elapsed().as_millis() as u32
                                                         );
                                                     }
-                                                    full_text.push_str(text);
+                                                    if !supports_devanagari
+                                                        && text.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c))
+                                                    {
+                                                        supports_devanagari = true;
+                                                    }
                                                     token_chunks += 1;
                                                 }
                                             }
@@ -586,12 +593,6 @@ impl CapabilityProbeEngine {
                     }
                 }
 
-                if full_text
-                    .chars()
-                    .any(|c| ('\u{0900}'..='\u{097F}').contains(&c))
-                {
-                    supports_devanagari = true;
-                }
                 supports_latin = true;
 
                 if let Some(first_time) = first_chunk_time {

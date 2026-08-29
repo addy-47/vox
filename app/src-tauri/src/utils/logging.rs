@@ -17,7 +17,7 @@ pub fn init(log_dir: PathBuf) -> WorkerGuard {
 
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            EnvFilter::new("info,ort=warn,onnxruntime=warn,sherpa_onnx=warn,ort_sys=warn,onnx=warn")
+            EnvFilter::new("info,ort=warn,onnxruntime=warn,sherpa_onnx=warn,ort_sys=warn,onnx=warn,turso=warn,cpal=warn")
         }))
         .with(fmt::layer().with_ansi(true).with_target(false))
         .with(

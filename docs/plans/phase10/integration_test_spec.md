@@ -1152,3 +1152,12 @@ Tier 2 (cargo-mutants): [ran / skipped]
 ```
 
 A survivor is a real finding — treat it the same as a production bug. Either the test assertion is too weak (strengthen it) or the mutant is behaviourally equivalent (document why and exclude from count).
+
+
+### After Running Mutation Tests (Seams 1-8):
+[test-engineer.md](rule;file:///home/addy/projects/apps/vox/.agents/rules/test-engineer.md) 
+I want you to help me essentially review  the integration test spec  , as you know we defered the seams 9 -14 .
+BUt before we start implementing them  , i want your analysis first of the current tests and seams defined , all 1 -14 , are they still correct after the refacotr or should they be changed ? Read all the relevant docs  also their false greens are very crucial too so focus on them as we need to define our logic for mutation testing . 
+There are two seams noted in seam X intentionally skipped , and actually make this into seam X and seam Y  , as i realised there are two here 
+one LLM to TTS and other TTS to playback. they are completely deferd for now. 
+[/grill-me](slashCommand;grill-me) after you explore and lets finalise all seams and is there any critical one missing that should be added .

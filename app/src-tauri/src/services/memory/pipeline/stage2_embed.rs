@@ -209,9 +209,15 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
     ensure_embedder_loaded(true)?;
 
     let mut processed_count = 0;
+    let mut error_count = 0;
     for item in items {
-        if process_stage2_item(conn, &item).await? {
-            processed_count += 1;
+        match process_stage2_item(conn, &item).await {
+            Ok(true) => processed_count += 1,
+            Ok(false) => {},
+            Err(e) => {
+                log::error!("[MemoryPipeline::Stage2] Error embedding item {}: {}", item.id, e);
+                error_count += 1;
+            }
         }
     }
 
@@ -224,7 +230,7 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
             session_id: String::new(),
             batch_seq: 0,
             items_claimed,
-            error_count: 0,
+            error_count,
             duration_ms,
         };
         if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {

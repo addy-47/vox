@@ -157,7 +157,7 @@ fn on_speech_end<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &Ap
 
 /// Handles interim partial speech recognition results for dictation.
 fn on_transcript_partial<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
-    let transliterate_enabled = state.settings.read().unwrap().stt.transliterate_enabled;
+    let transliterate_enabled = state.settings.read().unwrap_or_else(|p| p.into_inner()).stt.transliterate_enabled;
     let processed_text = crate::services::translit::transliterate_if_hi(&text, false, transliterate_enabled);
 
     if let Err(e) = app.emit_to(
@@ -175,7 +175,7 @@ fn on_transcript_partial<R: tauri::Runtime>(turn_id: u32, text: String, app: &Ap
 
 /// Routes finalized transcript directly to OS input simulation without invoking LLM or TTS.
 fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
-    let transliterate_enabled = state.settings.read().unwrap().stt.transliterate_enabled;
+    let transliterate_enabled = state.settings.read().unwrap_or_else(|p| p.into_inner()).stt.transliterate_enabled;
     let processed_text = crate::services::translit::transliterate_if_hi(&text, true, transliterate_enabled);
 
     let ctx = RoutingContext::from_app_state(state);
@@ -225,6 +225,13 @@ fn on_error<R: tauri::Runtime>(turn_id: u32, message: String, app: &AppHandle<R>
     }
 }
 
+/// Handles cancellation event and resets state machine to Ready.
+fn on_cancelled<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+    log::info!("[Dictation] Interaction cancelled on turn {}", turn_id);
+    let ctx = RoutingContext::from_app_state(state);
+    transition(InteractionState::Ready, &ctx, app, state);
+}
+
 /// Main event dispatcher for the unified dictation domain.
 pub fn handle_event<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, event: VoxEvent) {
     match event {
@@ -236,6 +243,7 @@ pub fn handle_event<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, eve
         VoxEvent::TranscriptFinal { turn_id, text } => {
             on_transcript_final(turn_id, text, app, state)
         }
+        VoxEvent::Cancelled { turn_id } => on_cancelled(turn_id, app, state),
         VoxEvent::Error { turn_id, message } => on_error(turn_id, message, app, state),
         _ => {}
     }

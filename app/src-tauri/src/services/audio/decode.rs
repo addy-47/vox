@@ -34,7 +34,7 @@ pub struct DecodedAudio {
 
 /// Decode raw in-memory audio bytes to 24 kHz mono f32 PCM given a format hint.
 pub fn decode_bytes_to_24khz_mono(bytes: &[u8], format_hint: &str) -> DecodeResult<DecodedAudio> {
-    let cursor = std::io::Cursor::new(bytes.to_vec());
+    let cursor = std::io::Cursor::new(bytes);
     let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
 
     let mut hint = Hint::new();
@@ -155,6 +155,7 @@ fn append_samples_as_f32_mono(
         GenericAudioBufferRef::F32(buf) => {
             let channels = buf.spec().channels().count();
             let frames = buf.frames();
+            raw_samples.reserve(frames);
             for f in 0..frames {
                 let mut sum = 0.0f32;
                 for c in 0..channels {
@@ -166,6 +167,7 @@ fn append_samples_as_f32_mono(
         GenericAudioBufferRef::U8(buf) => {
             let channels = buf.spec().channels().count();
             let frames = buf.frames();
+            raw_samples.reserve(frames);
             for f in 0..frames {
                 let mut sum = 0.0f32;
                 for c in 0..channels {
@@ -177,6 +179,7 @@ fn append_samples_as_f32_mono(
         GenericAudioBufferRef::U16(buf) => {
             let channels = buf.spec().channels().count();
             let frames = buf.frames();
+            raw_samples.reserve(frames);
             for f in 0..frames {
                 let mut sum = 0.0f32;
                 for c in 0..channels {
@@ -188,6 +191,7 @@ fn append_samples_as_f32_mono(
         GenericAudioBufferRef::S16(buf) => {
             let channels = buf.spec().channels().count();
             let frames = buf.frames();
+            raw_samples.reserve(frames);
             for f in 0..frames {
                 let mut sum = 0.0f32;
                 for c in 0..channels {
@@ -199,6 +203,7 @@ fn append_samples_as_f32_mono(
         GenericAudioBufferRef::S32(buf) => {
             let channels = buf.spec().channels().count();
             let frames = buf.frames();
+            raw_samples.reserve(frames);
             for f in 0..frames {
                 let mut sum = 0.0f32;
                 for c in 0..channels {
@@ -214,14 +219,18 @@ fn append_samples_as_f32_mono(
 
 /// Resample an f32 audio slice from one sample rate to another using linear interpolation.
 fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+    if input.is_empty() {
+        return Vec::new();
+    }
     let ratio = from_rate as f64 / to_rate as f64;
     let num_out = (input.len() as f64 / ratio) as usize;
     let mut out = Vec::with_capacity(num_out);
+    let max_idx = input.len().saturating_sub(1);
 
     for i in 0..num_out {
         let src_idx = i as f64 * ratio;
         let idx_floor = src_idx.floor() as usize;
-        let idx_ceil = (idx_floor + 1).min(input.len() - 1);
+        let idx_ceil = (idx_floor + 1).min(max_idx);
         let frac = src_idx - idx_floor as f64;
         let sample = (1.0 - frac) as f32 * input[idx_floor] + frac as f32 * input[idx_ceil];
         out.push(sample);

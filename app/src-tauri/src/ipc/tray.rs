@@ -29,9 +29,8 @@ pub async fn toggle_hud_visibility(app: AppHandle) {
         return;
     }
 
-    let mut hud_lock = state.hud_visible.lock().await;
-    let new_state = !*hud_lock;
-    *hud_lock = new_state;
+    let new_state = !state.hud_visible.load(std::sync::atomic::Ordering::Relaxed);
+    state.hud_visible.store(new_state, std::sync::atomic::Ordering::Relaxed);
 
     if new_state {
         if let Ok(window) = crate::tray::ensure_tray_window(&app) {
@@ -52,7 +51,7 @@ pub async fn toggle_hud_visibility(app: AppHandle) {
         }
     }
 
-    let item_lock = state.hud_menu_item.lock().await;
+    let item_lock = state.hud_menu_item.lock();
     if let Some(item) = &*item_lock {
         if let Err(e) = item.set_checked(new_state) {
             log::warn!("[Tray] Failed to set menu item checked state: {}", e);
@@ -99,9 +98,8 @@ async fn cancel_active_dictation_turn(state: &AppState) {
 #[tauri::command]
 pub async fn hide_tray_window(app: AppHandle) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
-    let mut hud_lock = state.hud_visible.lock().await;
-    if *hud_lock {
-        *hud_lock = false;
+    let was_visible = state.hud_visible.swap(false, std::sync::atomic::Ordering::Relaxed);
+    if was_visible {
         log::info!("[Tray] Ending Tray user session (Tray window hidden).");
     }
 
@@ -128,9 +126,7 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
         return;
     }
 
-    let mut hud_lock = state.hud_visible.lock().await;
-    let old_visible = *hud_lock;
-    *hud_lock = visible;
+    let old_visible = state.hud_visible.swap(visible, std::sync::atomic::Ordering::Relaxed);
 
     if old_visible != visible {
         if visible {
@@ -172,7 +168,7 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
         }
     }
 
-    let item_lock = state.hud_menu_item.lock().await;
+    let item_lock = state.hud_menu_item.lock();
     if let Some(item) = &*item_lock {
         if let Err(e) = item.set_checked(visible) {
             log::warn!("[Tray] Failed to set menu item checked state: {}", e);

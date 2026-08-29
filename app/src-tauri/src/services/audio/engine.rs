@@ -23,9 +23,9 @@ fn ensure_persistence_worker(state: &AppState) {
         log::info!("[Audio::Engine] Spawning persistence worker");
         let tx = crate::persistence::worker::spawn_persistence_worker(
             paths::get().db.clone(),
-            Arc::clone(&state.is_db_healthy),
-            Arc::clone(&state.latest_persistence_rate),
-            Arc::clone(&state.is_private_mode),
+            Arc::clone(&state.telemetry.is_db_healthy),
+            Arc::clone(&state.telemetry.latest_persistence_rate),
+            Arc::clone(&state.telemetry.is_private_mode),
         );
         *persist_lock = Some(tx);
     }
@@ -53,7 +53,12 @@ fn create_stt_instance(
     app: &AppHandle,
     state: &AppState,
 ) -> Result<Box<dyn crate::services::stt::providers::SttProvider>, String> {
-    let asr_provider = state.settings.read().unwrap().stt.to_provider_config();
+    let asr_provider = state
+        .settings
+        .read()
+        .map_err(|e| format!("[Audio::Engine] Settings lock poisoned: {}", e))?
+        .stt
+        .to_provider_config();
     let models_dir = paths::get().models.clone();
 
     match asr_provider {
@@ -84,7 +89,10 @@ fn create_stt_instance(
 /// Resolves and instantiates the active VAD backend engine.
 async fn create_vad_instance(app: &AppHandle, state: &AppState) -> Result<VadBackend, String> {
     let (vad_backend, threshold) = {
-        let s = state.settings.read().unwrap();
+        let s = state
+            .settings
+            .read()
+            .map_err(|e| format!("[Audio::Engine] Settings lock poisoned: {}", e))?;
         (s.vad.vad_backend.clone(), s.vad.threshold)
     };
 
@@ -138,10 +146,10 @@ fn create_playback_engine(state: &AppState) -> Result<Arc<PlaybackEngine>, Strin
         Arc::clone(&state.pipeline.cancel_flag),
         Arc::clone(&state.pipeline.is_assistant_speaking),
         crate::services::audio::playback::PlaybackTelemetryHandles {
-            energy: Arc::clone(&state.latest_playback_energy),
-            low: Arc::clone(&state.latest_playback_low),
-            mid: Arc::clone(&state.latest_playback_mid),
-            high: Arc::clone(&state.latest_playback_high),
+            energy: Arc::clone(&state.telemetry.latest_playback_energy),
+            low: Arc::clone(&state.telemetry.latest_playback_low),
+            mid: Arc::clone(&state.telemetry.latest_playback_mid),
+            high: Arc::clone(&state.telemetry.latest_playback_high),
             underruns: Arc::clone(&state.pipeline.playback_underruns),
         },
     )
@@ -150,7 +158,10 @@ fn create_playback_engine(state: &AppState) -> Result<Arc<PlaybackEngine>, Strin
 }
 
 /// Spawns background forwarder routing channel events to active Tauri webview windows.
-fn spawn_event_forwarder(app: AppHandle, mut rx: tokio::sync::mpsc::Receiver<serde_json::Value>) {
+fn spawn_event_forwarder(
+    app: AppHandle,
+    mut rx: tokio::sync::mpsc::Receiver<serde_json::Value>,
+) -> tauri::async_runtime::JoinHandle<()> {
     tauri::async_runtime::spawn(async move {
         let app_state: tauri::State<'_, Arc<AppState>> = app.state();
         while let Some(event) = rx.recv().await {
@@ -165,7 +176,7 @@ fn spawn_event_forwarder(app: AppHandle, mut rx: tokio::sync::mpsc::Receiver<ser
                 }
             }
         }
-    });
+    })
 }
 
 /// Initializes and starts all real-time audio threads, STT/VAD actors, and central router.
@@ -211,7 +222,10 @@ pub async fn start_audio_engine(app: &AppHandle, state: &AppState) -> Result<(),
     let (producer, consumer) = ringbuf::HeapRb::<f32>::new(RING_BUFFER_SIZE).split();
 
     let (threshold, noise_gate, mode, audio_mode) = {
-        let settings = state.settings.read().unwrap();
+        let settings = state
+            .settings
+            .read()
+            .map_err(|e| format!("[Audio::Engine] Settings lock poisoned: {}", e))?;
         let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
         let mode = match owner {
             InteractionOwner::Dictation => match settings.dictation.interaction_mode {
@@ -234,7 +248,7 @@ pub async fn start_audio_engine(app: &AppHandle, state: &AppState) -> Result<(),
 
     let app_vad = app.clone();
     let stt_vad_tx = stt_tx.clone();
-    let telemetry_vad_tx = state.telemetry_tx.clone();
+    let telemetry_vad_tx = state.telemetry.telemetry_tx.clone();
     let vox_vad_tx = vox_event_tx.clone();
     let is_vad_loaded = Arc::clone(&state.is_vad_loaded);
     let playback_active = Arc::clone(&state.pipeline.playback_active);
@@ -242,7 +256,7 @@ pub async fn start_audio_engine(app: &AppHandle, state: &AppState) -> Result<(),
     let owner_atomic = Arc::clone(&state.owner);
     let is_dictation_enabled = Arc::clone(&state.is_dictation_enabled);
     let engine_shutdown = Arc::clone(&state.pipeline.engine_shutdown);
-    let dropped_counter = Arc::clone(&state.dropped_telemetry_events);
+    let dropped_counter = Arc::clone(&state.telemetry.dropped_telemetry_events);
 
     let vad_handle = std::thread::Builder::new()
         .name("vox-vad-worker".to_string())
@@ -282,9 +296,15 @@ pub async fn start_audio_engine(app: &AppHandle, state: &AppState) -> Result<(),
         })
         .map_err(|e| e.to_string())?;
 
-    spawn_event_forwarder(app.clone(), event_rx);
+    let forwarder_handle = spawn_event_forwarder(app.clone(), event_rx);
 
-    let input_device = state.settings.read().unwrap().audio.input_device.clone();
+    let input_device = state
+        .settings
+        .read()
+        .map_err(|e| format!("[Audio::Engine] Settings lock poisoned: {}", e))?
+        .audio
+        .input_device
+        .clone();
     let audio_stream = AudioStream::new(producer, input_device).map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
@@ -298,7 +318,7 @@ pub async fn start_audio_engine(app: &AppHandle, state: &AppState) -> Result<(),
         vad_tx,
         llm_tx: None,
         tts_tx: None,
-        telemetry_tx: state.telemetry_tx.clone(),
+        telemetry_tx: state.telemetry.telemetry_tx.clone(),
         pipeline_tx: vox_event_tx,
         playback_engine,
         stt_handle: Some(stt_handle),
@@ -306,6 +326,7 @@ pub async fn start_audio_engine(app: &AppHandle, state: &AppState) -> Result<(),
         llm_handle: None,
         tts_handle: None,
         orchestrator_handle: Some(orchestrator_handle),
+        forwarder_handle: Some(forwarder_handle),
     });
 
     log::info!("[Audio::Engine] 3-Tier Audio Engine online");
@@ -341,6 +362,9 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
         crate::services::llm::actor::cool_down_llm(&mut engine.llm_tx);
         crate::services::tts::actor::cool_down_tts(&mut engine.tts_tx);
 
+        if let Some(h) = engine.forwarder_handle.take() {
+            h.abort();
+        }
         if let Some(h) = engine.llm_handle.take() {
             if let Err(e) = h.join() {
                 log::warn!("[Audio::Engine] Failed to join LLM handle: {:?}", e);

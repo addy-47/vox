@@ -67,9 +67,6 @@ impl OpenAiCompatProvider {
             .connect_timeout(Duration::from_secs(
                 crate::services::llm::DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS,
             ))
-            .timeout(Duration::from_secs(
-                crate::services::llm::DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS,
-            ))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 

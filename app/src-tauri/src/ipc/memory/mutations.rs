@@ -17,17 +17,30 @@ pub async fn edit_fact_content(
         return Err("Fact content cannot be empty".to_string());
     }
 
+    let memory_enabled = state
+        .settings
+        .read()
+        .map(|s| s.memory.pipeline_processing_enabled || s.memory.context_retrieval_enabled)
+        .unwrap_or(false);
+    if !memory_enabled {
+        return Err("Memory subsystem is disabled".to_string());
+    }
+
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
         .map_err(|e| format!("DB open failed: {}", e))?;
 
-    crate::services::memory::ensure_embedder_loaded(true)
-        .map_err(|e| format!("Embedder loading failed: {}", e))?;
-
-    let embedding = crate::services::memory::generate_embedding(trimmed)
-        .map_err(|e| format!("Embedding generation failed: {}", e))?
-        .ok_or_else(|| "Failed to generate embedding vector".to_string())?;
+    let trimmed_clone = trimmed.to_string();
+    let embedding = tokio::task::spawn_blocking(move || {
+        crate::services::memory::ensure_embedder_loaded(true)
+            .map_err(|e| format!("Embedder loading failed: {}", e))?;
+        crate::services::memory::generate_embedding(&trimmed_clone)
+            .map_err(|e| format!("Embedding generation failed: {}", e))?
+            .ok_or_else(|| "Failed to generate embedding vector".to_string())
+    })
+    .await
+    .map_err(|e| format!("Task panicked: {}", e))??;
 
     let blob_bytes = encode_f32_blob(&embedding);
 
@@ -46,11 +59,7 @@ pub async fn edit_fact_content(
         .ok_or_else(|| format!("Fact not found: {}", fact_id))?;
     let collection: String = row.get(0).map_err(|e| e.to_string())?;
 
-    conn.execute("BEGIN TRANSACTION;", ())
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let result: Result<(), String> = async {
+    VoxDb::with_transaction(&conn, async {
         conn.execute(
             "UPDATE memory_facts SET fact = ? WHERE id = ?",
             (trimmed.to_string(), fact_id.clone()),
@@ -67,19 +76,8 @@ pub async fn edit_fact_content(
         .map_err(|e| e.to_string())?;
 
         Ok(())
-    }
-    .await;
-
-    if let Err(err) = result {
-        if let Err(e) = conn.execute("ROLLBACK;", ()).await {
-            log::warn!("[Memory] Failed to rollback transaction: {}", e);
-        }
-        return Err(err);
-    }
-
-    conn.execute("COMMIT;", ())
-        .await
-        .map_err(|e| format!("Failed to commit memory transaction: {}", e))?;
+    })
+    .await?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(())
@@ -149,11 +147,7 @@ pub async fn soft_delete_fact(
         .as_millis() as i64;
     let tombstone_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
 
-    conn.execute("BEGIN TRANSACTION;", ())
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let result: Result<(), String> = async {
+    VoxDb::with_transaction(&conn, async {
         conn.execute(
             "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
             (fact_id.clone(),),
@@ -176,19 +170,8 @@ pub async fn soft_delete_fact(
         .map_err(|e| e.to_string())?;
 
         Ok(())
-    }
-    .await;
-
-    if let Err(err) = result {
-        if let Err(e) = conn.execute("ROLLBACK;", ()).await {
-            log::warn!("[Memory] Failed to rollback transaction: {}", e);
-        }
-        return Err(err);
-    }
-
-    conn.execute("COMMIT;", ())
-        .await
-        .map_err(|e| format!("Failed to commit memory transaction: {}", e))?;
+    })
+    .await?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(())
@@ -212,11 +195,7 @@ pub async fn user_edit_memory(
         .await
         .map_err(|e| format!("DB open failed: {}", e))?;
 
-    conn.execute("BEGIN TRANSACTION;", ())
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let result: Result<String, String> = async {
+    let new_id = VoxDb::with_transaction(&conn, async {
         let res = crate::persistence::mutations::supersede_user_fact(
             &conn,
             &old_fact_id,
@@ -226,22 +205,8 @@ pub async fn user_edit_memory(
         .await
         .map_err(|e| e.to_string())?;
         Ok(res)
-    }
-    .await;
-
-    let new_id = match result {
-        Ok(id) => id,
-        Err(err) => {
-            if let Err(e) = conn.execute("ROLLBACK;", ()).await {
-                log::warn!("[Memory] Failed to rollback user edit transaction: {}", e);
-            }
-            return Err(err);
-        }
-    };
-
-    conn.execute("COMMIT;", ())
-        .await
-        .map_err(|e| format!("Failed to commit user edit transaction: {}", e))?;
+    })
+    .await?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     log::info!(

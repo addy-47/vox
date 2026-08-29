@@ -14,6 +14,7 @@ pub struct TextEmbedder {
     session: Mutex<ort::session::Session>,
     tokenizer: Tokenizer,
     has_token_type_ids: bool,
+    dim: usize,
 }
 
 static EMBEDDER: parking_lot::RwLock<Option<TextEmbedder>> = parking_lot::RwLock::new(None);
@@ -71,6 +72,7 @@ pub fn init_embedder(model_dir: &Path, is_primary: bool) -> Result<bool> {
         session: Mutex::new(session),
         tokenizer,
         has_token_type_ids,
+        dim: if is_primary { EMBEDDING_DIM } else { 1024 },
     };
 
     *lock = Some(embedder);
@@ -204,7 +206,7 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
     let tensors = encode_text(embedder, text)?;
 
     if tensors.seq_len == 0 {
-        return Ok(Some(vec![0.0f32; EMBEDDING_DIM]));
+        return Ok(Some(vec![0.0f32; embedder.dim]));
     }
 
     let input_ids_tensor = ort::value::Tensor::from_array(tensors.input_ids)
@@ -249,6 +251,15 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
 /// Returns true if the text embedder model is loaded and ready.
 pub fn is_embedder_loaded() -> bool {
     EMBEDDER.read().is_some()
+}
+
+/// Returns the output embedding dimension for the active embedder model.
+pub fn embedding_dim() -> usize {
+    EMBEDDER
+        .read()
+        .as_ref()
+        .map(|e| e.dim)
+        .unwrap_or(EMBEDDING_DIM)
 }
 
 /// L2 normalizes a slice of floats in-place.

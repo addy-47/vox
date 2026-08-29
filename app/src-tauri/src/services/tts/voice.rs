@@ -5,8 +5,8 @@ use crate::services::tts::{
     MIN_VOICE_CLONE_DURATION_SECS, MODEL_FILE_TTS_CHATTERBOX_S3GEN,
     MODEL_FILE_TTS_CHATTERBOX_T3, TARGET_VOICE_SAMPLE_DURATION_SECS, TTS_SAMPLE_RATE,
 };
-use crate::symphonia_core::audio::Audio;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use symphonia_core::audio::Audio;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::fs::File;

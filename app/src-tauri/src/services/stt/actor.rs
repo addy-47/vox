@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 pub enum SttCommand {
-    Partial(u32, Vec<f32>),
+    Partial(u32, Arc<[f32]>),
     Final(u32, Vec<f32>),
     ResetStream,
     Shutdown,

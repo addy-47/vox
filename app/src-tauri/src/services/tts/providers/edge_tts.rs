@@ -272,25 +272,21 @@ impl TtsProvider for EdgeTtsProvider {
         let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
         let speed_pct = format!("{:+}%", ((speed - 1.0) * 100.0) as i32);
 
-        let rt = match tokio::runtime::Runtime::new() {
-            Ok(r) => r,
-            Err(e) => {
-                log::error!("[EdgeTTS] Failed to build Tokio runtime: {}", e);
-                if let Err(send_err) = event_tx.send(VoxEvent::Error {
-                    turn_id,
-                    message: format!("Edge TTS Tokio runtime error: {}", e),
-                }) {
-                    log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
-                }
-                return Err(e.into());
-            }
-        };
+        static EDGE_TTS_RUNTIME: std::sync::LazyLock<tokio::runtime::Runtime> =
+            std::sync::LazyLock::new(|| {
+                tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(2)
+                    .enable_all()
+                    .thread_name("vox-edge-tts")
+                    .build()
+                    .expect("Failed to build Edge TTS shared Tokio runtime")
+            });
 
         if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
             log::debug!("[EdgeTTS] Ring crypto provider already set or error: {:?}", e);
         }
 
-        rt.block_on(async move {
+        EDGE_TTS_RUNTIME.block_on(async move {
             let mut ws_stream = match connect_edge_websocket(&event_tx, turn_id).await {
                 Some(ws) => ws,
                 None => return,
@@ -323,14 +319,24 @@ impl TtsProvider for EdgeTtsProvider {
                             0.0
                         };
 
-                        if let Err(e) = event_tx.send(VoxEvent::TtsChunk {
-                            turn_id,
-                            samples: decoded.samples,
-                        }) {
-                            log::warn!("[EdgeTTS] Error sending TtsChunk: {:?}", e);
+                        for chunk in decoded.samples.chunks(crate::services::tts::TTS_CHUNK_SIZE) {
+                            if cancel.load(Ordering::Relaxed) {
+                                log::info!("[EdgeTTS] Synthesis cancelled mid-emission (turn {})", turn_id);
+                                break;
+                            }
+                            if let Err(e) = event_tx.send(VoxEvent::TtsChunk {
+                                turn_id,
+                                samples: chunk.to_vec(),
+                            }) {
+                                log::warn!("[EdgeTTS] Error sending TtsChunk: {:?}", e);
+                                break;
+                            }
                         }
-                        if let Err(e) = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf }) {
-                            log::warn!("[EdgeTTS] Error sending TtsFinished: {:?}", e);
+
+                        if !cancel.load(Ordering::Relaxed) {
+                            if let Err(e) = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf }) {
+                                log::warn!("[EdgeTTS] Error sending TtsFinished: {:?}", e);
+                            }
                         }
                     }
                     Err(e) => {

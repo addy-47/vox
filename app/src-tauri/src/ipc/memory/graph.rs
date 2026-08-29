@@ -171,12 +171,23 @@ pub async fn get_memory_graph_topology(
         });
     }
 
-    let edges = fetch_memory_relations(
+    let all_edges = fetch_memory_relations(
         &conn,
         "SELECT id, from_id, to_id, relation, created_at FROM memory_relations ORDER BY id ASC",
         (),
     )
     .await?;
+
+    let edges = if filter.is_some() {
+        let node_ids: std::collections::HashSet<String> =
+            nodes.iter().map(|n| n.id.clone()).collect();
+        all_edges
+            .into_iter()
+            .filter(|e| node_ids.contains(&e.from_id) && node_ids.contains(&e.to_id))
+            .collect()
+    } else {
+        all_edges
+    };
 
     let version = state
         .memory

@@ -15,6 +15,8 @@ use tauri::{AppHandle, Emitter};
 
 static CURRENT_ASSISTANT_RESPONSE: LazyLock<Mutex<String>> =
     LazyLock::new(|| Mutex::new(String::new()));
+static CURRENT_USER_TRANSCRIPT: LazyLock<Mutex<String>> =
+    LazyLock::new(|| Mutex::new(String::new()));
 
 /// Starts an autonomous real-time WebSocket speech-to-speech assistant session.
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
@@ -70,17 +72,49 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     state.pipeline.is_paused.store(false, Ordering::Relaxed);
     *rt_guard = Some(rt_engine);
 
-    let prompt = state.settings.read().unwrap().persona.realtime_prompt.clone();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let conv_id = now;
+    state.conversation_id.store(conv_id, Ordering::Relaxed);
+
+    {
+        let persist_lock = state.persist_tx.lock();
+        if let Some(ref tx) = *persist_lock {
+            if let Err(e) = tx.try_send(
+                crate::persistence::events::PersistenceEvent::SessionStarted {
+                    id: conv_id,
+                    timestamp_ms: now,
+                },
+            ) {
+                log::warn!("[RealtimePassive] Failed to send SessionStarted to persist: {}", e);
+            }
+        }
+    }
+
+    {
+        let mem_lock = state.memory_tx.lock();
+        if let Some(ref tx) = *mem_lock {
+            if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::ActiveSessionChanged {
+                session_id: conv_id,
+            }) {
+                log::trace!("[RealtimePassive] Failed to send ActiveSessionChanged to memory worker: {}", e);
+            }
+        }
+    }
+
+    let prompt = state.settings.read().unwrap_or_else(|p| p.into_inner()).persona.realtime_prompt.clone();
     super::super::init_new_session(state, &prompt).await;
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SESSION_STARTED, 0) {
+    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SESSION_STARTED, conv_id) {
         log::warn!("[RealtimePassive] Failed to emit session_started: {}", e);
     }
 
-    log::info!("[RealtimePassive] Realtime passive session started");
+    log::info!("[RealtimePassive] Realtime passive session started (ID: {})", conv_id);
     Ok(())
 }
 
@@ -132,6 +166,38 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
 
     state.pipeline.is_engaged.store(false, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+
+    let conv_id = state.conversation_id.load(Ordering::Relaxed);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    {
+        let persist_lock = state.persist_tx.lock();
+        if let Some(ref tx) = *persist_lock {
+            if let Err(e) = tx.try_send(
+                crate::persistence::events::PersistenceEvent::SessionEnded {
+                    id: conv_id,
+                    timestamp_ms: now,
+                },
+            ) {
+                log::warn!("[RealtimePassive] Failed to send SessionEnded to persist: {}", e);
+            }
+        }
+    }
+
+    {
+        let mem_lock = state.memory_tx.lock();
+        if let Some(ref tx) = *mem_lock {
+            if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
+                session_id: conv_id.to_string(),
+                summary: String::new(),
+            }) {
+                log::trace!("[RealtimePassive] Failed to send SessionEnd to memory worker: {}", e);
+            }
+        }
+    }
 
     let dictation_enabled = state
         .settings
@@ -212,7 +278,13 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
     }
 
     CURRENT_ASSISTANT_RESPONSE.lock().clear();
-    state.conversation_manager.lock().push_user_turn(text);
+    *CURRENT_USER_TRANSCRIPT.lock() = text.clone();
+    {
+        let mut cm = state.conversation_manager.lock();
+        if !cm.is_duplicate_user_turn(&text) {
+            cm.push_user_turn(text);
+        }
+    }
 }
 
 /// Handles streamed token delta from the real-time server.
@@ -247,7 +319,23 @@ fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, sta
         state
             .conversation_manager
             .lock()
-            .push_assistant_turn(full_text);
+            .push_assistant_turn(full_text.clone());
+
+        let conv_id = state.conversation_id.load(Ordering::Relaxed);
+        let user_text = CURRENT_USER_TRANSCRIPT.lock().clone();
+        let persist_lock = state.persist_tx.lock();
+        if let Some(ref tx) = *persist_lock {
+            if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCompleted {
+                conversation_id: conv_id,
+                turn_id,
+                user_text,
+                assistant_text: full_text,
+                stt_latency_ms: 0,
+                ttft_ms: 0,
+            }) {
+                log::warn!("[RealtimePassive] Failed to send TurnCompleted to persist: {}", e);
+            }
+        }
     }
 
     let ctx = RoutingContext::from_app_state(state);
@@ -276,6 +364,13 @@ fn on_error<R: tauri::Runtime>(turn_id: u32, message: String, app: &AppHandle<R>
     }
 }
 
+/// Handles cancellation event and resets state machine to Ready.
+fn on_cancelled<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+    log::info!("[RealtimePassive] Interaction cancelled on turn {}", turn_id);
+    let ctx = RoutingContext::from_app_state(state);
+    transition(InteractionState::Ready, &ctx, app, state);
+}
+
 /// Main event dispatcher for the realtime passive pipeline domain.
 pub fn handle_event<R: tauri::Runtime>(
     app: &AppHandle<R>,
@@ -292,6 +387,7 @@ pub fn handle_event<R: tauri::Runtime>(
         VoxEvent::LlmToken { turn_id, token } => on_llm_token(turn_id, token, app),
         VoxEvent::PlaybackStarted { turn_id } => on_playback_started(turn_id, app, state),
         VoxEvent::PlaybackFinished { turn_id } => on_playback_finished(turn_id, app, state),
+        VoxEvent::Cancelled { turn_id } => on_cancelled(turn_id, app, state),
         VoxEvent::Error { turn_id, message } => on_error(turn_id, message, app, state),
         _ => {}
     }

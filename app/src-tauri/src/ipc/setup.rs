@@ -338,19 +338,36 @@ pub async fn download_optional_model(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    {
+        let mut setup_lock = state.setup_running.lock().await;
+        if *setup_lock {
+            return Err("Model download or setup is already in progress".to_string());
+        }
+        *setup_lock = true;
+    }
+
     let (target_models, manager) = {
         let manifest_guard = state.manifest.read().await;
-        let manifest = manifest_guard.as_ref().ok_or("Manifest not loaded")?;
+        let manifest = match manifest_guard.as_ref() {
+            Some(m) => m,
+            None => {
+                *state.setup_running.lock().await = false;
+                return Err("Manifest not loaded".to_string());
+            }
+        };
 
-        let group = manifest
-            .model_groups
-            .iter()
-            .find(|g| g.id == model_id)
-            .ok_or_else(|| format!("Model group {} not found in manifest", model_id))?;
+        let group = match manifest.model_groups.iter().find(|g| g.id == model_id) {
+            Some(g) => g,
+            None => {
+                *state.setup_running.lock().await = false;
+                return Err(format!("Model group {} not found in manifest", model_id));
+            }
+        };
 
         (group.files.clone(), state.inner().model_manager.clone())
     };
 
+    let setup_running = Arc::clone(&state.setup_running);
     tauri::async_runtime::spawn(async move {
         let p = crate::utils::paths::get();
         let base_url = "https://huggingface.co/addyo07/vox-models/resolve/main";
@@ -361,12 +378,14 @@ pub async fn download_optional_model(
                 if let Err(emit_err) = app.emit("optional_model_failed", (model_id.clone(), e.to_string())) {
                     log::warn!("[Setup] Failed to emit optional_model_failed: {}", emit_err);
                 }
+                *setup_running.lock().await = false;
                 return;
             }
         }
         if let Err(e) = app.emit("optional_model_complete", model_id) {
             log::warn!("[Setup] Failed to emit optional_model_complete: {}", e);
         }
+        *setup_running.lock().await = false;
     });
 
     Ok(())

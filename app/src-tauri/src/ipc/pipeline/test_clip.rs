@@ -1,14 +1,18 @@
 use crate::core::events::VoxEvent;
 use crate::core::state::{AppState, InteractionOwner};
 use crate::services::stt::SttCommand;
+use std::borrow::Cow;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 /// Resamples audio samples linearly from source sample rate to 16kHz for STT.
-fn resample_to_16k(samples: &[f32], source_rate: u32) -> Vec<f32> {
-    if source_rate == 16000 || samples.is_empty() {
-        return samples.to_vec();
+fn resample_to_16k(samples: &[f32], source_rate: u32) -> Cow<'_, [f32]> {
+    if source_rate == 0 || samples.is_empty() {
+        return Cow::Borrowed(&[]);
+    }
+    if source_rate == 16000 {
+        return Cow::Borrowed(samples);
     }
     let ratio = 16000.0 / source_rate as f64;
     let target_len = (samples.len() as f64 * ratio).round() as usize;
@@ -21,7 +25,7 @@ fn resample_to_16k(samples: &[f32], source_rate: u32) -> Vec<f32> {
         let s1 = samples[(idx0 + 1).min(samples.len() - 1)];
         out.push(s0 + frac * (s1 - s0));
     }
-    out
+    Cow::Owned(out)
 }
 
 /// Decodes a WAV file to mono f32 samples resampled to 16kHz.
@@ -29,6 +33,13 @@ fn decode_wav_to_mono_f32(path: &std::path::Path) -> Result<Vec<f32>, String> {
     let mut reader = hound::WavReader::open(path)
         .map_err(|e| format!("Failed to open WAV '{}': {}", path.display(), e))?;
     let spec = reader.spec();
+
+    if spec.sample_rate == 0 {
+        return Err(format!(
+            "Invalid WAV '{}': sample rate cannot be 0",
+            path.display()
+        ));
+    }
 
     let samples: Vec<f32> = match spec.sample_format {
         hound::SampleFormat::Float => reader.samples::<f32>().filter_map(|s| s.ok()).collect(),
@@ -51,12 +62,16 @@ fn decode_wav_to_mono_f32(path: &std::path::Path) -> Result<Vec<f32>, String> {
         samples
     };
 
-    let resampled = resample_to_16k(&mono, spec.sample_rate);
+    let resampled = resample_to_16k(&mono, spec.sample_rate).into_owned();
     Ok(resampled)
 }
 
 /// Resolves the filesystem path for a designated QA test clip.
 fn resolve_clip_path(clip_id: &str) -> Result<std::path::PathBuf, String> {
+    if clip_id.contains('/') || clip_id.contains('\\') || clip_id.contains("..") {
+        return Err("Invalid clip ID: directory traversal not permitted".into());
+    }
+
     let filename = if clip_id.ends_with(".wav") {
         clip_id.to_string()
     } else {
@@ -74,8 +89,12 @@ fn resolve_clip_path(clip_id: &str) -> Result<std::path::PathBuf, String> {
 
     for dir in &candidate_dirs {
         let candidate = dir.join(&filename);
-        if candidate.exists() {
-            return Ok(candidate);
+        if let Ok(canon) = candidate.canonicalize() {
+            if let Ok(canon_dir) = dir.canonicalize() {
+                if canon.starts_with(&canon_dir) && canon.exists() {
+                    return Ok(canon);
+                }
+            }
         }
     }
 
@@ -92,16 +111,30 @@ pub async fn test_clip(
     let clip_path = resolve_clip_path(&clip_id)?;
     let audio = decode_wav_to_mono_f32(&clip_path)?;
 
-    crate::services::audio::start_audio_engine(&app, &state).await?;
+    if let Err(e) = crate::services::audio::start_audio_engine(&app, &state).await {
+        state
+            .owner
+            .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
+        state.pipeline.is_engaged.store(false, Ordering::Relaxed);
+        return Err(e);
+    }
+
     state
         .owner
         .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
     state.pipeline.is_engaged.store(true, Ordering::Relaxed);
 
     let engine_lock = state.engine.lock().await;
-    let engine = engine_lock
-        .as_ref()
-        .ok_or_else(|| "Engine failed to start after launch".to_string())?;
+    let engine = match engine_lock.as_ref() {
+        Some(e) => e,
+        None => {
+            state
+                .owner
+                .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
+            state.pipeline.is_engaged.store(false, Ordering::Relaxed);
+            return Err("Engine failed to start after launch".to_string());
+        }
+    };
 
     let turn_id = state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
     if let Err(e) = engine.pipeline_tx.send(VoxEvent::WarmUp) {
@@ -111,10 +144,13 @@ pub async fn test_clip(
         log::warn!("[TestClip] Failed to send SpeechStart event: {}", e);
     }
 
-    engine
-        .stt_tx
-        .send(SttCommand::Final(turn_id, audio))
-        .map_err(|e| format!("STT channel closed: {}", e))?;
+    if let Err(e) = engine.stt_tx.send(SttCommand::Final(turn_id, audio)) {
+        state
+            .owner
+            .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
+        state.pipeline.is_engaged.store(false, Ordering::Relaxed);
+        return Err(format!("STT channel closed: {}", e));
+    }
 
     log::info!("[TestClip] Injected turn_id={} into pipeline", turn_id);
     Ok(())
@@ -127,6 +163,9 @@ pub async fn test_clip_cancel(
 ) -> Result<(), String> {
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
     state.pipeline.is_engaged.store(false, Ordering::Relaxed);
+    state
+        .owner
+        .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
 
     if let Some(engine) = state.engine.lock().await.as_ref() {
         let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);

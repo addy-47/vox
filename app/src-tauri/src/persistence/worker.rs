@@ -162,11 +162,6 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
             log::debug!("[Persistence::Worker] SessionStarted: id={}", id);
         }
         PersistenceEvent::SessionEnded { id, timestamp_ms } => {
-            conn.execute(
-                "UPDATE sessions SET ended_at = ? WHERE id = ?",
-                (timestamp_ms as i64, id as i64),
-            )
-            .await?;
             let deleted = conn
                 .execute(
                     "DELETE FROM sessions WHERE id = ? AND turn_count = 0",
@@ -176,6 +171,11 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
             if deleted > 0 {
                 log::info!("[Persistence::Worker] Cleaned up zero-activity session id={}", id);
             } else {
+                conn.execute(
+                    "UPDATE sessions SET ended_at = ? WHERE id = ? AND turn_count > 0",
+                    (timestamp_ms as i64, id as i64),
+                )
+                .await?;
                 log::debug!("[Persistence::Worker] SessionEnded: id={}", id);
             }
         }
@@ -267,13 +267,13 @@ async fn cleanup_zero_turn_sessions(conn: &turso::Connection) -> anyhow::Result<
 async fn cleanup_stuck_queue_items(conn: &turso::Connection) -> anyhow::Result<()> {
     let reset = conn
         .execute(
-            "UPDATE personal_memory_queue SET status = 'pending' WHERE status = 'processing'",
+            "UPDATE personal_memory_queue SET status = 'staged_pending' WHERE status = 'processing'",
             (),
         )
         .await?;
     if reset > 0 {
         log::info!(
-            "[Persistence::Worker] Startup cleanup: reset {} stuck memory queue item(s) to pending",
+            "[Persistence::Worker] Startup cleanup: reset {} stuck memory queue item(s) to staged_pending",
             reset
         );
     }

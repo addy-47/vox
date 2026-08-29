@@ -82,6 +82,9 @@ pub fn run() {
             crate::utils::paths::init();
             crate::utils::paths::ensure_dirs().ok();
 
+            // ── 0.1 Logging (must be initialized immediately after paths) ───────────
+            let log_guard = crate::utils::logging::init(crate::utils::paths::get().logs.clone());
+
             // ── Background Manifest Caching (fetches once at boot) ──────────────────
             tauri::async_runtime::spawn(async {
                 let cache_dir = crate::utils::paths::cache_dir();
@@ -116,9 +119,6 @@ pub fn run() {
                     Err(e) => log::warn!("[BOOTSTRAP] Failed to fetch/cache models manifest at boot: {}", e),
                 }
             });
-
-            // ── 0.5 Logging (must be second, relies on paths) ───────────────────────
-            let log_guard = crate::utils::logging::init(crate::utils::paths::get().logs.clone());
 
             // ── 0.6 Telemetry Aggregator ───────────────────────────────────────────
             let latest_energy = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
@@ -163,44 +163,46 @@ pub fn run() {
             );
             telemetry_worker.start();
 
+            let telemetry_state = std::sync::Arc::new(crate::core::state::TelemetryState {
+                telemetry_tx,
+                latest_energy,
+                latest_vad_prob,
+                latest_low,
+                latest_mid,
+                latest_high,
+                latest_playback_energy,
+                latest_playback_low,
+                latest_playback_mid,
+                latest_playback_high,
+                latest_sys_cpu,
+                latest_sys_ram,
+                latest_vox_cpu,
+                latest_vox_ram,
+                latest_stt_ms,
+                latest_ttft_ms,
+                latest_voice_latency_ms,
+                latest_threads,
+                latest_tts_rtf,
+                latest_playback_start_ms,
+                latest_persistence_rate,
+                is_db_healthy,
+                is_private_mode,
+                dropped_telemetry_events,
+            });
+
             // ── 0.7 Persistence Worker ─────────────────────────────────────────────
             let persist_tx = crate::persistence::worker::spawn_persistence_worker(
                 crate::utils::paths::get().db.clone(),
-                std::sync::Arc::clone(&is_db_healthy),
-                std::sync::Arc::clone(&latest_persistence_rate),
-                std::sync::Arc::clone(&is_private_mode),
+                std::sync::Arc::clone(&telemetry_state.is_db_healthy),
+                std::sync::Arc::clone(&telemetry_state.latest_persistence_rate),
+                std::sync::Arc::clone(&telemetry_state.is_private_mode),
             );
 
             // ── 1. App State ────────────────────────────────────────────────────────
             let mut app_state = AppState::new(
                 app.handle(),
                 Some(log_guard),
-                crate::core::state::AppStateTelemetryHandles {
-                    telemetry_tx,
-                    latest_energy,
-                    latest_vad_prob,
-                    latest_low,
-                    latest_mid,
-                    latest_high,
-                    latest_playback_energy,
-                    latest_playback_low,
-                    latest_playback_mid,
-                    latest_playback_high,
-                    latest_sys_cpu,
-                    latest_sys_ram,
-                    latest_vox_cpu,
-                    latest_vox_ram,
-                    latest_stt_ms,
-                    latest_ttft_ms,
-                    latest_voice_latency_ms,
-                    latest_threads,
-                    latest_tts_rtf,
-                    latest_playback_start_ms,
-                    latest_persistence_rate,
-                    is_db_healthy,
-                    is_private_mode: is_private_mode.clone(),
-                    dropped_telemetry_events,
-                },
+                std::sync::Arc::clone(&telemetry_state),
             );
             app_state.persist_tx = parking_lot::Mutex::new(Some(persist_tx));
 
@@ -222,7 +224,7 @@ pub fn run() {
             if memory_enabled && local_gpu_info.has_gpu {
                 let memory_tx = crate::persistence::memory_worker::spawn_memory_worker(
                     crate::utils::paths::get().db.clone(),
-                    std::sync::Arc::clone(&is_private_mode),
+                    std::sync::Arc::clone(&telemetry_state.is_private_mode),
                     std::sync::Arc::clone(&app_state.settings),
                     app_state.memory.graph_version.clone(),
                 );

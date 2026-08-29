@@ -82,8 +82,8 @@ pub async fn session_end_consolidation(
     match async {
         conn.execute(
             "UPDATE personal_memory_queue 
-             SET status = 'pending' 
-             WHERE session_id = ? AND (status = 'staged' OR status = 'paused')",
+             SET status = 'staged_pending' 
+             WHERE session_id = ? AND (status = 'staged_pending' OR status = 'paused' OR status = 'staged')",
             (session_id.to_string(),),
         ).await?;
 
@@ -126,50 +126,66 @@ pub async fn supersede_user_fact(
     let new_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
     let fact_type = collection_type(collection);
 
-    conn.execute(
-        "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?)",
-        (
-            new_id.clone(),
-            fact_type.to_string(),
-            collection.to_string(),
-            new_fact_text.to_string(),
-            PM_SOURCE_USER.to_string(),
-            now,
-        ),
-    ).await?;
-
-    if fact_type == PM_TYPE_SEMANTIC_GRAPH {
-        crate::services::memory::ensure_embedder_loaded(true)?;
-        let embedding = match crate::services::memory::generate_embedding(new_fact_text)? {
-            Some(v) => v,
-            None => return Err(anyhow!("Failed to generate embedding for edited fact.")),
-        };
-
-        let blob_bytes = encode_f32_blob(&embedding);
+    conn.execute("BEGIN TRANSACTION;", ()).await?;
+    let res: Result<String> = async {
         conn.execute(
-            "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES (?, ?, ?)",
-            (new_id.clone(), collection.to_string(), blob_bytes),
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?)",
+            (
+                new_id.clone(),
+                fact_type.to_string(),
+                collection.to_string(),
+                new_fact_text.to_string(),
+                PM_SOURCE_USER.to_string(),
+                now,
+            ),
+        ).await?;
+
+        if fact_type == PM_TYPE_SEMANTIC_GRAPH {
+            crate::services::memory::ensure_embedder_loaded(true)?;
+            let embedding = match crate::services::memory::generate_embedding(new_fact_text)? {
+                Some(v) => v,
+                None => return Err(anyhow!("Failed to generate embedding for edited fact.")),
+            };
+
+            let blob_bytes = encode_f32_blob(&embedding);
+            conn.execute(
+                "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES (?, ?, ?)",
+                (new_id.clone(), collection.to_string(), blob_bytes),
+            )
+            .await?;
+        }
+
+        conn.execute(
+            "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at) VALUES (?, ?, ?, 'USER', ?)",
+            (
+                new_id.clone(),
+                old_id.to_string(),
+                PM_RELATION_SUPERSEDES.to_string(),
+                now,
+            ),
+        ).await?;
+
+        conn.execute(
+            "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
+            (old_id.to_string(),),
         )
         .await?;
+
+        Ok(new_id.clone())
+    }.await;
+
+    match res {
+        Ok(id) => {
+            conn.execute("COMMIT;", ()).await?;
+            Ok(id)
+        }
+        Err(err) => {
+            if let Err(e) = conn.execute("ROLLBACK;", ()).await {
+                log::warn!("[Persistence::Mutations] Failed to rollback supersede_user_fact: {}", e);
+            }
+            Err(err)
+        }
     }
-
-    conn.execute(
-        "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at) VALUES (?, ?, ?, 'USER', ?)",
-        (
-            new_id.clone(),
-            old_id.to_string(),
-            PM_RELATION_SUPERSEDES.to_string(),
-            now,
-        ),
-    ).await?;
-
-    conn.execute(
-        "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
-        (old_id.to_string(),),
-    )
-    .await?;
-
-    Ok(new_id)
 }
 
 /// Records operational pipeline stage metrics into `memory_pipeline_metrics`.

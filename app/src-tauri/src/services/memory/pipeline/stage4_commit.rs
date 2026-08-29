@@ -208,6 +208,7 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
     conn.execute("COMMIT", ()).await?;
 
     let processed_count = committed_ids.len();
+    let error_count = items_claimed.saturating_sub(processed_count);
     let duration_ms = start_time.elapsed().as_millis();
 
     if !run_id.is_empty() {
@@ -217,7 +218,7 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
             session_id,
             batch_seq: 0,
             items_claimed,
-            error_count: 0,
+            error_count,
             duration_ms,
         };
         if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {

@@ -88,11 +88,7 @@ pub async fn resolve_memory_conflict(
         .unwrap_or_default()
         .as_millis() as i64;
 
-    conn.execute("BEGIN TRANSACTION;", ())
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let result: Result<(), String> = async {
+    VoxDb::with_transaction(&conn, async {
         conn.execute(
             "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
             (loser_id.clone(),),
@@ -108,19 +104,8 @@ pub async fn resolve_memory_conflict(
         .map_err(|e| e.to_string())?;
 
         Ok(())
-    }
-    .await;
-
-    if let Err(err) = result {
-        if let Err(e) = conn.execute("ROLLBACK;", ()).await {
-            log::warn!("[Memory] Failed to rollback transaction: {}", e);
-        }
-        return Err(err);
-    }
-
-    conn.execute("COMMIT;", ())
-        .await
-        .map_err(|e| format!("Failed to commit memory transaction: {}", e))?;
+    })
+    .await?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(())

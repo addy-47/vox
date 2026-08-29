@@ -214,12 +214,12 @@ pub fn assert_channel_empty_after<T: std::fmt::Debug>(
 /// Constructs an AppHandle and managed AppState pair tailored for testing environments.
 pub fn get_test_app_and_state() -> (AppHandle<tauri::test::MockRuntime>, Arc<vox_lib::core::state::AppState>) {
     use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
-    use vox_lib::core::state::AppStateTelemetryHandles;
+    use vox_lib::core::state::TelemetryState;
     use tauri::Manager;
 
     let app = get_test_app_handle();
     let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();
-    let telemetry = AppStateTelemetryHandles {
+    let telemetry = Arc::new(TelemetryState {
         telemetry_tx,
         latest_energy: Arc::new(AtomicU32::new(0)),
         latest_vad_prob: Arc::new(AtomicU32::new(0)),
@@ -244,7 +244,7 @@ pub fn get_test_app_and_state() -> (AppHandle<tauri::test::MockRuntime>, Arc<vox
         is_db_healthy: Arc::new(AtomicBool::new(true)),
         is_private_mode: Arc::new(AtomicBool::new(false)),
         dropped_telemetry_events: Arc::new(AtomicU64::new(0)),
-    };
+    });
 
     vox_lib::utils::paths::init();
     let state = Arc::new(vox_lib::core::state::AppState::new(&app, None, telemetry));
@@ -255,10 +255,10 @@ pub fn get_test_app_and_state() -> (AppHandle<tauri::test::MockRuntime>, Arc<vox
 /// Constructs an AppState instance tailored for testing environments.
 pub fn get_test_app_state() -> vox_lib::core::state::AppState {
     use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
-    use vox_lib::core::state::AppStateTelemetryHandles;
+    use vox_lib::core::state::TelemetryState;
 
     let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();
-    let telemetry = AppStateTelemetryHandles {
+    let telemetry = Arc::new(TelemetryState {
         telemetry_tx,
         latest_energy: Arc::new(AtomicU32::new(0)),
         latest_vad_prob: Arc::new(AtomicU32::new(0)),
@@ -283,7 +283,7 @@ pub fn get_test_app_state() -> vox_lib::core::state::AppState {
         is_db_healthy: Arc::new(AtomicBool::new(true)),
         is_private_mode: Arc::new(AtomicBool::new(false)),
         dropped_telemetry_events: Arc::new(AtomicU64::new(0)),
-    };
+    });
 
     vox_lib::utils::paths::init();
     let app = get_test_app_handle();
@@ -329,6 +329,7 @@ pub fn attach_mock_engine_to_state<R: tauri::Runtime>(
         llm_handle: None,
         tts_handle: None,
         orchestrator_handle: None,
+        forwarder_handle: None,
     };
     *state.engine.blocking_lock() = Some(engine);
     state.pipeline.is_engaged.store(true, std::sync::atomic::Ordering::Relaxed);

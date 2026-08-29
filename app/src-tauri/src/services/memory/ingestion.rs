@@ -69,31 +69,38 @@ fn execute_compaction_attempt(
 ) -> Result<String> {
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let (tx, rx) = std::sync::mpsc::channel();
-    let fut = provider.generate(request.clone(), 999_999, &cancel_flag, &tx);
+    let fut = provider.generate(
+        request.clone(),
+        crate::core::constants::COMPACTION_SENTINEL_TURN_ID,
+        &cancel_flag,
+        &tx,
+    );
 
-    let res = match tokio::runtime::Handle::try_current() {
+    let res: Result<(), crate::services::llm::types::LlmError> = match tokio::runtime::Handle::try_current() {
         Ok(h) => {
             if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
                 tokio::task::block_in_place(|| h.block_on(fut))
             } else {
                 std::thread::scope(|s| {
                     s.spawn(|| {
-                        tokio::runtime::Builder::new_current_thread()
+                        let rt = tokio::runtime::Builder::new_current_thread()
                             .enable_all()
                             .build()
-                            .expect("Failed to build worker runtime")
-                            .block_on(fut)
+                            .map_err(|e| crate::services::llm::types::LlmError::Other(anyhow::anyhow!("Failed to build worker runtime: {}", e)))?;
+                        Ok(rt.block_on(fut))
                     })
                     .join()
-                    .unwrap()
-                })
+                    .unwrap_or_else(|_| Err(crate::services::llm::types::LlmError::Other(anyhow::anyhow!("Worker runtime thread panicked"))))
+                })?
             }
         }
-        Err(_) => tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to build temporary tokio runtime")
-            .block_on(fut),
+        Err(_) => {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| crate::services::llm::types::LlmError::Other(anyhow::anyhow!("Failed to build temporary tokio runtime: {}", e)))?;
+            rt.block_on(fut)
+        }
     };
 
     let mut summary_content = String::new();

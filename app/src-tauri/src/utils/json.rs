@@ -23,34 +23,38 @@ pub fn fix_missing_commas_in_json(input: &str) -> String {
     let mut output = String::with_capacity(input.len() + 16);
     let mut in_string = false;
     let mut escaped = false;
+    let mut last_non_ws: Option<char> = None;
 
     let chars = input.chars().collect::<Vec<char>>();
     let mut i = 0;
+
+    let keys = [
+        "\"summary\"",
+        "\"profile_updates\"",
+        "\"memory_updates\"",
+        "\"category\"",
+        "\"key\"",
+        "\"value\"",
+        "\"confidence\"",
+    ];
+    let parsed_keys: Vec<Vec<char>> = keys.iter().map(|k| k.chars().collect()).collect();
 
     while i < chars.len() {
         let c = chars[i];
         if escaped {
             output.push(c);
+            last_non_ws = Some(c);
             escaped = false;
             i += 1;
         } else if c == '\\' {
             escaped = true;
             output.push(c);
+            last_non_ws = Some(c);
             i += 1;
         } else if c == '"' {
             if !in_string {
-                let keys = &[
-                    "\"summary\"",
-                    "\"profile_updates\"",
-                    "\"memory_updates\"",
-                    "\"category\"",
-                    "\"key\"",
-                    "\"value\"",
-                    "\"confidence\"",
-                ];
                 let mut matched_key = None;
-                for &k in keys {
-                    let k_chars = k.chars().collect::<Vec<char>>();
+                for k_chars in &parsed_keys {
                     if i + k_chars.len() <= chars.len() {
                         let sub = &chars[i..i + k_chars.len()];
                         if sub == k_chars.as_slice() {
@@ -66,17 +70,9 @@ pub fn fix_missing_commas_in_json(input: &str) -> String {
                     }
                 }
 
-                if let Some(ref k_chars) = matched_key {
-                    let mut last_non_ws = None;
-                    for prev_char in output.chars().rev() {
-                        if !prev_char.is_whitespace() {
-                            last_non_ws = Some(prev_char);
-                            break;
-                        }
-                    }
-
+                if let Some(k_chars) = matched_key {
                     if let Some(p) = last_non_ws {
-                        if p != '{' && p != ',' && p != '[' {
+                        if p != '{' && p != ',' && p != '[' && p != ':' {
                             output.push(',');
                         }
                     }
@@ -84,6 +80,7 @@ pub fn fix_missing_commas_in_json(input: &str) -> String {
                     for kc in k_chars {
                         output.push(*kc);
                     }
+                    last_non_ws = Some('"');
                     i += k_chars.len();
                     continue;
                 }
@@ -91,9 +88,13 @@ pub fn fix_missing_commas_in_json(input: &str) -> String {
 
             in_string = !in_string;
             output.push(c);
+            last_non_ws = Some(c);
             i += 1;
         } else {
             output.push(c);
+            if !c.is_whitespace() {
+                last_non_ws = Some(c);
+            }
             i += 1;
         }
     }

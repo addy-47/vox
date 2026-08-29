@@ -12,16 +12,25 @@ pub async fn get_transcript_history(
     Ok(history.iter().cloned().collect())
 }
 
+const MAX_HISTORY_TEXT_CHARS: usize = 10_000;
+
 /// Commits a completed session's full text to the ephemeral history buffer.
 #[tauri::command]
 pub async fn commit_session_to_history(
     text: String,
     state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<Vec<String>, String> {
-    if !text.trim().is_empty() {
+) -> Result<(), String> {
+    let trimmed = text.trim();
+    if !trimmed.is_empty() {
+        let bounded_text: String = if trimmed.chars().count() > MAX_HISTORY_TEXT_CHARS {
+            trimmed.chars().take(MAX_HISTORY_TEXT_CHARS).collect()
+        } else {
+            trimmed.to_string()
+        };
+
         let mut history = state.pipeline.transcript_history.lock();
-        if history.front() != Some(&text) {
-            history.push_front(text);
+        if history.front() != Some(&bounded_text) {
+            history.push_front(bounded_text);
             let limit = {
                 let settings = state.settings.read().map_err(|e| e.to_string())?;
                 settings.history.tray_history_limit as usize
@@ -31,8 +40,7 @@ pub async fn commit_session_to_history(
             }
         }
     }
-    let history = state.pipeline.transcript_history.lock();
-    Ok(history.iter().cloned().collect())
+    Ok(())
 }
 
 /// Representation of a stored conversation session.
@@ -71,7 +79,7 @@ pub async fn get_sessions() -> Result<Vec<SessionRow>, String> {
             "SELECT s.id, s.started_at, s.ended_at, s.turn_count,
                     (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message
              FROM sessions s
-             ORDER BY s.started_at DESC",
+             ORDER BY s.started_at DESC LIMIT 500",
             (),
         )
         .await

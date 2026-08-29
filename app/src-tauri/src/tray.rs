@@ -84,15 +84,15 @@ pub fn build_main_tray_menu(
 pub fn sync_live_menu_item(app: &AppHandle<tauri::Wry>, live_i: &CheckMenuItem<tauri::Wry>) {
     let state = app.state::<std::sync::Arc<crate::core::state::AppState>>();
     {
-        let mut menu_item_lock = tauri::async_runtime::block_on(state.hud_menu_item.lock());
+        let mut menu_item_lock = state.hud_menu_item.lock();
         *menu_item_lock = Some(live_i.clone());
     }
 
     let (hud_visible, dictation_enabled, is_tray_mode) = {
         let s = state.settings.read().unwrap();
-        let v = tauri::async_runtime::block_on(state.hud_visible.lock());
+        let v = state.hud_visible.load(std::sync::atomic::Ordering::Relaxed);
         (
-            *v,
+            v,
             s.dictation.enabled,
             s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
         )
