@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 pub struct VadEngine {
     detector: VoiceActivityDetector,
     model_path: PathBuf,
+    threshold: f32,
 }
 
 impl VadEngine {
@@ -19,6 +20,7 @@ impl VadEngine {
         Ok(Self {
             detector,
             model_path: model_path_buf,
+            threshold,
         })
     }
 
@@ -53,9 +55,13 @@ impl VadEngine {
         })
     }
 
-    /// Hot-updates the detector instance with a new speech threshold.
+    /// Hot-updates the detector instance with a new speech threshold if changed.
     pub fn update_detector(&mut self, threshold: f32) -> Result<()> {
+        if (self.threshold - threshold).abs() < 1e-4 {
+            return Ok(());
+        }
         self.detector = Self::create_detector(&self.model_path, threshold)?;
+        self.threshold = threshold;
         Ok(())
     }
 

@@ -37,9 +37,11 @@ impl AudioResampler {
         let resampler_in_buf = vec![vec![0.0f32; inner.input_frames_max()]; 1];
         let resampler_out_buf = vec![vec![0.0f32; inner.output_frames_max()]; 1];
 
+        let input_buf = Vec::with_capacity(nbr_frames_needed * 2);
+
         Ok(Self {
             inner,
-            input_buf: Vec::new(),
+            input_buf,
             resampler_in_buf,
             resampler_out_buf,
             nbr_frames_needed,
@@ -86,5 +88,42 @@ impl AudioResampler {
             .collect();
 
         Ok(output_i16)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audio_resampler_16k_to_24k() {
+        let mut resampler = AudioResampler::new(16000, 24000, 320).expect("Resampler init");
+        let input: Vec<i16> = (0..640).map(|i| ((i as f32 * 0.1).sin() * 10000.0) as i16).collect();
+        let output = resampler.process_i16(&input).expect("Process i16");
+        assert!(!output.is_empty(), "Output should contain resampled frames");
+    }
+
+    #[test]
+    fn test_audio_resampler_24k_to_16k() {
+        let mut resampler = AudioResampler::new(24000, 16000, 512).expect("Resampler init");
+        let input: Vec<i16> = (0..960).map(|i| ((i as f32 * 0.1).sin() * 10000.0) as i16).collect();
+        let output = resampler.process_i16(&input).expect("Process i16");
+        assert!(!output.is_empty(), "Output should contain resampled frames");
+    }
+
+    #[test]
+    fn test_audio_resampler_44k_to_16k() {
+        let mut resampler = AudioResampler::new(44100, 16000, 882).expect("Resampler init");
+        let input: Vec<i16> = (0..1764).map(|i| ((i as f32 * 0.1).sin() * 10000.0) as i16).collect();
+        let output = resampler.process_i16(&input).expect("Process i16");
+        assert!(!output.is_empty(), "Output should contain resampled frames");
+    }
+
+    #[test]
+    fn test_audio_resampler_8k_to_16k() {
+        let mut resampler = AudioResampler::new(8000, 16000, 160).expect("Resampler init");
+        let input: Vec<i16> = (0..320).map(|i| ((i as f32 * 0.1).sin() * 10000.0) as i16).collect();
+        let output = resampler.process_i16(&input).expect("Process i16");
+        assert!(!output.is_empty(), "Output should contain resampled frames");
     }
 }

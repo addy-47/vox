@@ -1,8 +1,8 @@
 use super::batch_result::{BatchEvaluationResult, CandidateAuditLog, RelationEdge};
 use crate::core::constants::{
-    is_valid_inter_collection_pair, PM_QUEUE_STATUS_EMBEDDED, PM_QUEUE_STATUS_EVALUATED,
-    PM_QUEUE_STATUS_PROCESSING_EVAL, PM_QUEUE_STATUS_SUPERSEDED, PM_RELATION_CONFLICTS,
-    PM_RELATION_SUPERSEDES, PM_RELATION_SUPPORTS, PM_SEMANTIC_GRAPH_COLLECTIONS,
+    is_valid_inter_collection_pair, MemoryCollection, PM_QUEUE_STATUS_EMBEDDED,
+    PM_QUEUE_STATUS_EVALUATED, PM_QUEUE_STATUS_PROCESSING_EVAL, PM_QUEUE_STATUS_SUPERSEDED,
+    PM_RELATION_CONFLICTS, PM_RELATION_SUPERSEDES, PM_RELATION_SUPPORTS,
 };
 use crate::persistence::{decode_f32_blob, queries};
 use crate::services::memory::classifiers::inter_edge_classifier;
@@ -302,6 +302,15 @@ async fn claim_embedded_items(conn: &Connection, now: i64) -> Result<Vec<Stage3I
 
 /// Concurrently evaluates a single Stage 3 item across NLI and ModernBERT sub-branches.
 async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()> {
+    if item.vector.is_empty() {
+        conn.execute(
+            "UPDATE personal_memory_queue SET status = ?, relations_json = '[]' WHERE id = ?",
+            (PM_QUEUE_STATUS_EVALUATED, item.id),
+        )
+        .await?;
+        return Ok(());
+    }
+
     let nli_candidates = queries::fetch_intra_collection_candidates(
         conn,
         &item.collection,
@@ -312,7 +321,7 @@ async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()
     .await
     .unwrap_or_default();
 
-    let policy_targets: Vec<&'static str> = PM_SEMANTIC_GRAPH_COLLECTIONS
+    let policy_targets: Vec<&'static str> = MemoryCollection::SEMANTIC_GRAPH_NAMES
         .iter()
         .copied()
         .filter(|&tgt| {
@@ -434,9 +443,15 @@ pub async fn run_stage3_eval_with_metrics_seq(
         .unwrap_or_default();
 
     let mut processed_count = 0;
+    let mut error_count = 0;
     for item in &items {
-        evaluate_stage3_item(conn, item).await?;
-        processed_count += 1;
+        match evaluate_stage3_item(conn, item).await {
+            Ok(()) => processed_count += 1,
+            Err(e) => {
+                log::error!("[MemoryPipeline::Stage3] Error evaluating item {}: {}", item.id, e);
+                error_count += 1;
+            }
+        }
     }
 
     let duration_ms = start_time.elapsed().as_millis();
@@ -448,7 +463,7 @@ pub async fn run_stage3_eval_with_metrics_seq(
             session_id,
             batch_seq,
             items_claimed,
-            error_count: 0,
+            error_count,
             duration_ms,
         };
         if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {

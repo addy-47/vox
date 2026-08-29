@@ -40,8 +40,15 @@ pub fn encode_f32_blob(floats: &[f32]) -> Vec<u8> {
     floats.iter().flat_map(|f| f.to_le_bytes()).collect()
 }
 
-/// Decodes byte-blob into a float vector.
+/// Decodes byte-blob into a float vector. Returns empty vector and logs warning if misaligned.
 pub fn decode_f32_blob(bytes: &[u8]) -> Vec<f32> {
+    if !bytes.len().is_multiple_of(4) {
+        log::warn!(
+            "[Persistence] Misaligned f32 blob length {} (not a multiple of 4)",
+            bytes.len()
+        );
+        return Vec::new();
+    }
     bytes
         .chunks_exact(4)
         .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap_or_default()))

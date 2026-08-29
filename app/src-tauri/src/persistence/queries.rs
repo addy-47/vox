@@ -167,7 +167,8 @@ pub async fn fetch_intra_collection_candidates(
     threshold: f32,
     limit: Option<i64>,
 ) -> Result<Vec<(String, String, f32)>> {
-    let query_blob = encode_f32_blob(query_embedding);
+    let b1 = turso::Value::Blob(encode_f32_blob(query_embedding));
+    let b2 = b1.clone();
 
     let (query_str, params) = match limit {
         Some(lim) if lim > 0 => (
@@ -184,9 +185,9 @@ pub async fn fetch_intra_collection_candidates(
                 WHERE q.collection = ? AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
              ) WHERE sim >= ? ORDER BY sim DESC LIMIT ?".to_string(),
             vec![
-                turso::Value::Blob(query_blob.clone()),
+                b1,
                 turso::Value::Text(collection.to_string()),
-                turso::Value::Blob(query_blob.clone()),
+                b2,
                 turso::Value::Text(collection.to_string()),
                 turso::Value::Real(threshold as f64),
                 turso::Value::Integer(lim),
@@ -206,9 +207,9 @@ pub async fn fetch_intra_collection_candidates(
                 WHERE q.collection = ? AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
              ) WHERE sim >= ? ORDER BY sim DESC".to_string(),
             vec![
-                turso::Value::Blob(query_blob.clone()),
+                b1,
                 turso::Value::Text(collection.to_string()),
-                turso::Value::Blob(query_blob.clone()),
+                b2,
                 turso::Value::Text(collection.to_string()),
                 turso::Value::Real(threshold as f64),
             ],
@@ -236,7 +237,8 @@ pub async fn fetch_cross_collection_candidates(
     threshold: f32,
     limit: Option<i64>,
 ) -> Result<Vec<(String, String, String, f32)>> {
-    let query_blob = encode_f32_blob(query_embedding);
+    let b1 = turso::Value::Blob(encode_f32_blob(query_embedding));
+    let b2 = b1.clone();
 
     let (query_str, params) = match limit {
         Some(lim) if lim > 0 => (
@@ -253,8 +255,8 @@ pub async fn fetch_cross_collection_candidates(
                 WHERE q.collection IN ('Identity', 'Constraints', 'Directives', 'Profile', 'Entities') AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
              ) WHERE sim >= ? ORDER BY sim DESC LIMIT ?".to_string(),
             vec![
-                turso::Value::Blob(query_blob.clone()),
-                turso::Value::Blob(query_blob.clone()),
+                b1,
+                b2,
                 turso::Value::Real(threshold as f64),
                 turso::Value::Integer(lim),
             ],
@@ -273,8 +275,8 @@ pub async fn fetch_cross_collection_candidates(
                 WHERE q.collection IN ('Identity', 'Constraints', 'Directives', 'Profile', 'Entities') AND q.status IN ('embedded', 'evaluated') AND q.vector IS NOT NULL
              ) WHERE sim >= ? ORDER BY sim DESC".to_string(),
             vec![
-                turso::Value::Blob(query_blob.clone()),
-                turso::Value::Blob(query_blob.clone()),
+                b1,
+                b2,
                 turso::Value::Real(threshold as f64),
             ],
         ),
@@ -307,7 +309,8 @@ pub async fn fetch_inter_collection_candidates(
         return Ok(Vec::new());
     }
 
-    let query_blob = encode_f32_blob(query_embedding);
+    let b1 = turso::Value::Blob(encode_f32_blob(query_embedding));
+    let b2 = b1.clone();
     let placeholders = vec!["?"; target_collections.len()].join(",");
 
     let has_limit = matches!(limit, Some(lim) if lim > 0);
@@ -347,11 +350,11 @@ pub async fn fetch_inter_collection_candidates(
     };
 
     let mut params: Vec<turso::Value> = Vec::new();
-    params.push(turso::Value::Blob(query_blob.clone()));
+    params.push(b1);
     for col in target_collections {
         params.push(turso::Value::Text(col.to_string()));
     }
-    params.push(turso::Value::Blob(query_blob.clone()));
+    params.push(b2);
     for col in target_collections {
         params.push(turso::Value::Text(col.to_string()));
     }

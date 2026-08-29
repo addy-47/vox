@@ -14,6 +14,8 @@ pub const VAD_SPEECH_END_FRAMES: usize = 50;
 pub const VAD_MIN_UTTERANCE_SAMPLES: usize = 4800;
 pub const VAD_PARTIAL_INTERVAL_SAMPLES: usize = 12800;
 pub const VAD_MAX_PARTIAL_WINDOW_SAMPLES: usize = 240000;
+/// Earshot pure-Rust energy model noise gate calibration multiplier to compensate for dynamic range scale differences.
+pub const EARSHOT_NOISE_GATE_MULTIPLIER: f32 = 1.5;
 
 /// Voice Activity Detection engine contract.
 pub trait VadEngine {

@@ -9,7 +9,7 @@ pub fn spawn_system_monitor(app: AppHandle) {
         .state::<std::sync::Arc<crate::core::state::AppState>>()
         .inner()
         .clone();
-    let telemetry_tx = state_arc.telemetry_tx.clone();
+    let telemetry_tx = state_arc.telemetry.telemetry_tx.clone();
     let pid = sysinfo::get_current_pid().ok();
 
     tauri::async_runtime::spawn(async move {
@@ -36,7 +36,7 @@ pub fn spawn_system_monitor(app: AppHandle) {
 
             emit_system_stats(&app, &sys, system_cpu, system_ram_pct, vox_cpu, vox_ram_mb, thread_count);
 
-            if let Err(e) = telemetry_tx.send(
+            if let Err(e) = telemetry_tx.try_send(
                 crate::monitoring::aggregator::TelemetryEvent::SystemHealth {
                     system_cpu,
                     system_ram_pct,
@@ -110,18 +110,23 @@ fn update_shared_metrics(
     thread_count: u32,
 ) {
     state
+        .telemetry
         .latest_sys_cpu
         .store(system_cpu.to_bits(), Ordering::Relaxed);
     state
+        .telemetry
         .latest_sys_ram
         .store(system_ram_pct.to_bits(), Ordering::Relaxed);
     state
+        .telemetry
         .latest_vox_cpu
         .store(vox_cpu.to_bits(), Ordering::Relaxed);
     state
+        .telemetry
         .latest_vox_ram
         .store(vox_ram_mb, Ordering::Relaxed);
     state
+        .telemetry
         .latest_threads
         .store(thread_count, Ordering::Relaxed);
 }

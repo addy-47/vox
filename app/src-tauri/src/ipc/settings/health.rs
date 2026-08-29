@@ -163,7 +163,16 @@ pub async fn check_tts_provider_health(
                 Err(_) => Ok(false),
             }
         }
-        TtsProviderConfig::EdgeTts { .. } => Ok(true),
+        TtsProviderConfig::EdgeTts { .. } => {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(2))
+                .build()
+                .map_err(|e| e.to_string())?;
+            match client.head("https://speech.platform.bing.com").send().await {
+                Ok(resp) => Ok(resp.status().is_success() || resp.status().as_u16() < 500),
+                Err(_) => Ok(false),
+            }
+        }
     }
 }
 
@@ -358,6 +367,17 @@ fn parse_setup_progress(line: &str) -> (&'static str, u32) {
     }
 }
 
+static REMOTE_SETUP_RUNNING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+struct RemoteSetupGuard;
+
+impl Drop for RemoteSetupGuard {
+    fn drop(&mut self) {
+        REMOTE_SETUP_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 async fn run_remote_ssh_task(
     app: tauri::AppHandle,
     script_path: std::path::PathBuf,
@@ -367,6 +387,7 @@ async fn run_remote_ssh_task(
     remote_path: String,
     server_port: u16,
 ) {
+    let _guard = RemoteSetupGuard;
     use std::process::Stdio;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::process::Command;
@@ -406,65 +427,72 @@ async fn run_remote_ssh_task(
         }
     };
 
-    if let Some(mut stdin) = child.stdin.take() {
-        if let Ok(script_content) = tokio::fs::read_to_string(&script_path).await {
-            if let Err(e) = stdin.write_all(script_content.as_bytes()).await {
-                log::warn!("Failed to write script to ssh stdin: {}", e);
+    let script_content = match tokio::fs::read(&script_path).await {
+        Ok(c) => c,
+        Err(e) => {
+            let err_msg = format!("Failed to read setup script: {}", e);
+            log::error!("{}", err_msg);
+            if let Err(e) = app.emit(
+                "remote_setup_status",
+                serde_json::json!({ "step": "failed", "progress": 0, "log_line": err_msg.clone(), "error": err_msg }),
+            ) {
+                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
             }
-            if let Err(e) = stdin.flush().await {
-                log::warn!("[Settings::Health] Failed to flush ssh stdin: {}", e);
-            }
+            return;
         }
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let app_clone = app.clone();
+        tokio::spawn(async move {
+            if let Err(e) = stdin.write_all(&script_content).await {
+                log::error!("[SetupRemote] Failed to write script to stdin: {}", e);
+                if let Err(emit_err) = app_clone.emit(
+                    "remote_setup_status",
+                    serde_json::json!({ "step": "failed", "progress": 0, "log_line": format!("Failed to stream script: {}", e) }),
+                ) {
+                    log::warn!("[SetupRemote] Failed to emit remote_setup_status error: {}", emit_err);
+                }
+            }
+        });
     }
 
-    let Some(stdout) = child.stdout.take() else {
-        let err_msg = "Failed to capture SSH stdout stream".to_string();
-        log::error!("[SetupRemote] {}", err_msg);
-        if let Err(e) = app.emit(
-            "remote_setup_status",
-            serde_json::json!({ "step": "failed", "progress": 0, "log_line": err_msg.clone(), "error": err_msg }),
-        ) {
-            log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
-        }
-        return;
-    };
-    let Some(stderr) = child.stderr.take() else {
-        let err_msg = "Failed to capture SSH stderr stream".to_string();
-        log::error!("[SetupRemote] {}", err_msg);
-        if let Err(e) = app.emit(
-            "remote_setup_status",
-            serde_json::json!({ "step": "failed", "progress": 0, "log_line": err_msg.clone(), "error": err_msg }),
-        ) {
-            log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
-        }
-        return;
-    };
-    let mut stdout_reader = BufReader::new(stdout).lines();
-    let mut stderr_reader = BufReader::new(stderr).lines();
-
-    let app_out = app.clone();
-    let stdout_loop = async move {
-        while let Ok(Some(line)) = stdout_reader.next_line().await {
-            log::info!("[RemoteSetup stdout] {}", line);
-            let (step, progress) = parse_setup_progress(&line);
-            if let Err(e) = app_out.emit(
-                "remote_setup_status",
-                serde_json::json!({ "step": step, "progress": progress, "log_line": line }),
-            ) {
-                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
+    let stdout_loop = {
+        let stdout = child.stdout.take();
+        let app_clone = app.clone();
+        async move {
+            if let Some(out) = stdout {
+                let mut reader = BufReader::new(out).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    log::info!("[SetupRemote:STDOUT] {}", line);
+                    let (step, progress) = parse_setup_progress(&line);
+                    if let Err(e) = app_clone.emit(
+                        "remote_setup_status",
+                        serde_json::json!({ "step": step, "progress": progress, "log_line": line }),
+                    ) {
+                        log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
+                    }
+                }
             }
         }
     };
 
-    let app_err = app.clone();
-    let stderr_loop = async move {
-        while let Ok(Some(line)) = stderr_reader.next_line().await {
-            log::warn!("[RemoteSetup stderr] {}", line);
-            if let Err(e) = app_err.emit(
-                "remote_setup_status",
-                serde_json::json!({ "step": "log", "progress": 0, "log_line": line }),
-            ) {
-                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
+    let stderr_loop = {
+        let stderr = child.stderr.take();
+        let app_clone = app.clone();
+        async move {
+            if let Some(err) = stderr {
+                let mut reader = BufReader::new(err).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    log::warn!("[SetupRemote:STDERR] {}", line);
+                    let (step, progress) = parse_setup_progress(&line);
+                    if let Err(e) = app_clone.emit(
+                        "remote_setup_status",
+                        serde_json::json!({ "step": step, "progress": progress, "log_line": line }),
+                    ) {
+                        log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
+                    }
+                }
             }
         }
     };
@@ -514,6 +542,18 @@ pub async fn setup_remote_server(
     remote_path: String,
     server_port: u16,
 ) -> Result<(), String> {
+    if REMOTE_SETUP_RUNNING
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+        )
+        .is_err()
+    {
+        return Err("Remote server setup is already in progress".to_string());
+    }
+
     log::info!(
         "[SetupRemote] Triggering remote server setup. connection_string={}, remote_path={}, server_port={}",
         connection_string,
@@ -521,7 +561,13 @@ pub async fn setup_remote_server(
         server_port
     );
 
-    let script_path = resolve_setup_script(&app)?;
+    let script_path = match resolve_setup_script(&app) {
+        Ok(p) => p,
+        Err(e) => {
+            REMOTE_SETUP_RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+            return Err(e);
+        }
+    };
 
     tauri::async_runtime::spawn(run_remote_ssh_task(
         app,

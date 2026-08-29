@@ -13,6 +13,23 @@ pub async fn run_pipeline_cycle(conn: &Connection, cancel_flag: &Arc<AtomicBool>
     run_pipeline_cycle_with_id_seq(conn, cancel_flag, &uuid::Uuid::new_v4().to_string(), 0).await
 }
 
+/// Recovers orphaned items stuck in transient `processing_%` states from prior app crashes or abnormal restarts.
+pub async fn recover_stuck_pipeline_jobs(conn: &Connection) -> Result<usize> {
+    let res = conn
+        .execute(
+            "UPDATE personal_memory_queue SET status = 'staged_pending' WHERE status LIKE 'processing_%'",
+            (),
+        )
+        .await?;
+    if res > 0 {
+        log::warn!(
+            "[MemoryPipeline] Recovered {} orphaned personal_memory_queue items from transient processing state to 'staged_pending'.",
+            res
+        );
+    }
+    Ok(res as usize)
+}
+
 /// Executes a single consolidation pipeline cycle with a specific run ID and batch sequence counter.
 pub async fn run_pipeline_cycle_with_id_seq(
     conn: &Connection,
@@ -22,6 +39,10 @@ pub async fn run_pipeline_cycle_with_id_seq(
 ) -> Result<usize> {
     if cancel_flag.load(Ordering::Relaxed) {
         return Ok(0);
+    }
+
+    if let Err(e) = recover_stuck_pipeline_jobs(conn).await {
+        log::warn!("[MemoryPipeline] Failed to recover stuck pipeline jobs: {}", e);
     }
 
     let count = match conn

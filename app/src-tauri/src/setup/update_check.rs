@@ -54,7 +54,18 @@ async fn get_app_manifest() -> anyhow::Result<AppManifest> {
             }
         }
     }
-    AppManifest::fetch().await
+    let m = AppManifest::fetch().await?;
+    if let Ok(serialized) = serde_json::to_string_pretty(&m) {
+        if let Some(parent) = cache_path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                log::warn!("[UpdateCheck] Failed to create cache directory: {}", e);
+            }
+        }
+        if let Err(e) = std::fs::write(&cache_path, serialized) {
+            log::warn!("[UpdateCheck] Failed to write app manifest cache: {}", e);
+        }
+    }
+    Ok(m)
 }
 
 /// Helper to load the cached VoxManifest, falling back to network fetch if not cached.
@@ -69,7 +80,18 @@ async fn get_models_manifest() -> anyhow::Result<VoxManifest> {
             }
         }
     }
-    VoxManifest::fetch().await
+    let m = VoxManifest::fetch().await?;
+    if let Ok(serialized) = serde_json::to_string_pretty(&m) {
+        if let Some(parent) = cache_path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                log::warn!("[UpdateCheck] Failed to create cache directory: {}", e);
+            }
+        }
+        if let Err(e) = std::fs::write(&cache_path, serialized) {
+            log::warn!("[UpdateCheck] Failed to write models manifest cache: {}", e);
+        }
+    }
+    Ok(m)
 }
 
 /// Performs a version comparison check by fetching the remote AppManifest from GitHub Pages

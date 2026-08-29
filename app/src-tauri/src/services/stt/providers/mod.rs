@@ -17,9 +17,6 @@ pub enum SttProviderKind {
 
 /// Abstract contract for speech-to-text inference providers.
 pub trait SttProvider: Send {
-    /// Transcribes an entire audio frame slice in a single pass.
-    fn transcribe(&self, audio: &[f32]) -> anyhow::Result<String>;
-
     /// Transcribes an incoming audio chunk in streaming mode.
     fn transcribe_chunk(&self, chunk: &[f32], is_final: bool) -> anyhow::Result<String>;
 

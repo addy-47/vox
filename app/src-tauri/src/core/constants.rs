@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 // ─── Audio Constraints ───────────────────────────────────────────────────────
@@ -65,7 +66,9 @@ You're Vox — always listening, never hovering. You talk like someone who's bee
 - If [Compacted History Summary] is present as Message 1, it provides a chronological narrative summary of earlier turns in this session.\n\
 - If <user_profile> is present, use it for personal context.\n\
 - The <memory_manifest> shows total stored records per collection in database.\n\
-</memory_context>"; // ─── Transition Speech Assets (Working Memory Maintenance) ──────────────────
+</memory_context>";
+
+// ─── Transition Speech Assets (Working Memory Maintenance) ──────────────────
 
 pub const TRANSITION_MESSAGES_EN: &[&str] = &[
     "Give me a moment while I organize our conversation.",
@@ -157,8 +160,6 @@ Hard, non-negotiable limits, safety boundaries, security rules, health/dietary r
 - Do not output any markdown codeblock formatting or surrounding commentary outside the JSON object.
 </output_requirements>"#;
 
-use serde::{Deserialize, Serialize};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum MemoryCollection {
@@ -171,6 +172,30 @@ pub enum MemoryCollection {
 }
 
 impl MemoryCollection {
+    pub const ALL: [MemoryCollection; 6] = [
+        MemoryCollection::Identity,
+        MemoryCollection::Directives,
+        MemoryCollection::Narrative,
+        MemoryCollection::Profile,
+        MemoryCollection::Entities,
+        MemoryCollection::Constraints,
+    ];
+
+    pub const SPECIAL_STATE: [MemoryCollection; 3] = [
+        MemoryCollection::Identity,
+        MemoryCollection::Directives,
+        MemoryCollection::Narrative,
+    ];
+
+    pub const SEMANTIC_GRAPH: [MemoryCollection; 3] = [
+        MemoryCollection::Profile,
+        MemoryCollection::Entities,
+        MemoryCollection::Constraints,
+    ];
+
+    pub const SEMANTIC_GRAPH_NAMES: &'static [&'static str] =
+        &["Profile", "Entities", "Constraints"];
+
     pub fn priority(&self) -> u8 {
         match self {
             Self::Identity => 6,
@@ -219,22 +244,11 @@ impl std::fmt::Display for MemoryCollection {
     }
 }
 
-// ─── Personal Memory Collections & Taxonomy ─────────────────────────────
-pub const PM_COLLECTIONS: &[&str] = &[
-    "Identity",
-    "Directives",
-    "Narrative",
-    "Profile",
-    "Entities",
-    "Constraints",
-];
-
 // ─── Collection Structural Classes ───────────────────────────────────────────
 pub const PM_TYPE_SPECIAL_STATE: &str = "special_state";
 pub const PM_TYPE_SEMANTIC_GRAPH: &str = "semantic_graph";
 
-pub const PM_SPECIAL_STATE_COLLECTIONS: &[&str] = &["Identity", "Directives", "Narrative"];
-pub const PM_SEMANTIC_GRAPH_COLLECTIONS: &[&str] = &["Profile", "Entities", "Constraints"];
+pub const PM_SEMANTIC_GRAPH_COLLECTIONS: &[&str] = MemoryCollection::SEMANTIC_GRAPH_NAMES;
 
 /// Returns the structural type for a given collection name.
 pub fn collection_type(collection: &str) -> &'static str {
@@ -276,10 +290,15 @@ pub fn has_inter_collection_relationship(col1: &str, col2: &str) -> bool {
 pub fn inverse_edge_for_relation(relation: &str) -> &'static str {
     match relation {
         PM_RELATION_SHAPES => "shaped_by",
+        "shaped_by" => PM_RELATION_SHAPES,
         PM_RELATION_DEPENDS_ON => "dependency_of",
-        PM_RELATION_CONFLICTS | "CONFLICTS_WITH" => "conflicts_with",
+        "dependency_of" => PM_RELATION_DEPENDS_ON,
+        PM_RELATION_CONFLICTS => "conflicts_with",
+        "conflicts_with" => PM_RELATION_CONFLICTS,
         PM_RELATION_SUPPORTS => "supported_by",
+        "supported_by" => PM_RELATION_SUPPORTS,
         PM_RELATION_SUPERSEDES => "superseded_by",
+        "superseded_by" => PM_RELATION_SUPERSEDES,
         _ => "related_to",
     }
 }
@@ -303,3 +322,6 @@ pub const PM_QUEUE_STATUS_SUPERSEDED: &str = "superseded";
 pub const PM_QUEUE_STATUS_COMPLETED: &str = "completed";
 pub const PM_QUEUE_STATUS_FAILED: &str = "failed";
 pub const PM_QUEUE_STATUS_PAUSED: &str = "paused";
+
+/// Sentinel turn ID used for background memory compaction and consolidation LLM requests.
+pub const COMPACTION_SENTINEL_TURN_ID: u32 = 999_999;

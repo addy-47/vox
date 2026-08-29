@@ -13,6 +13,26 @@ fn route_event<R: tauri::Runtime>(
     playback: &Arc<PlaybackEngine>,
     event: VoxEvent,
 ) {
+    match &event {
+        VoxEvent::SpeechStart { .. } | VoxEvent::WarmUp => {
+            let mem_lock = state.memory_tx.lock();
+            if let Some(ref tx) = *mem_lock {
+                if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::PipelineActive) {
+                    log::trace!("[Pipeline::Router] Failed to send PipelineActive to memory worker: {}", e);
+                }
+            }
+        }
+        VoxEvent::SpeechEnd { .. } | VoxEvent::PlaybackFinished { .. } | VoxEvent::Cancelled { .. } => {
+            let mem_lock = state.memory_tx.lock();
+            if let Some(ref tx) = *mem_lock {
+                if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::PipelineIdle) {
+                    log::trace!("[Pipeline::Router] Failed to send PipelineIdle to memory worker: {}", e);
+                }
+            }
+        }
+        _ => {}
+    }
+
     let ctx = RoutingContext::from_app_state(state);
     match ctx.owner {
         InteractionOwner::Dictation => {

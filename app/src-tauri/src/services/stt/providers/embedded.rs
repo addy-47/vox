@@ -8,7 +8,6 @@ struct EmbeddedSttProviderInner {
     model_type: String,
     nemotron_engine: Option<super::super::nemotron_onnx::SttEngine>,
     qwen_engine: Option<super::super::qwen_onnx::SttEngine>,
-    stt_audio_buffer: Vec<f32>,
     stitched_transcript: String,
 }
 
@@ -51,7 +50,6 @@ impl EmbeddedSttProvider {
                 model_type: model_type.to_string(),
                 nemotron_engine: None,
                 qwen_engine: None,
-                stt_audio_buffer: Vec::new(),
                 stitched_transcript: String::new(),
             }),
         })
@@ -59,19 +57,6 @@ impl EmbeddedSttProvider {
 }
 
 impl SttProvider for EmbeddedSttProvider {
-    /// Transcribes an entire audio frame buffer in a single offline pass.
-    fn transcribe(&self, audio: &[f32]) -> anyhow::Result<String> {
-        let mut inner = self.inner.lock();
-        inner.ensure_loaded()?;
-        if let Some(ref engine) = inner.nemotron_engine {
-            engine.transcribe(audio)
-        } else if let Some(ref engine) = inner.qwen_engine {
-            engine.transcribe(audio)
-        } else {
-            anyhow::bail!("No STT engine initialized");
-        }
-    }
-
     /// Transcribes streaming audio chunks with transcript stitching and final turn flushing.
     fn transcribe_chunk(&self, chunk: &[f32], is_final: bool) -> anyhow::Result<String> {
         let mut inner = self.inner.lock();
@@ -95,17 +80,15 @@ impl SttProvider for EmbeddedSttProvider {
 
         if is_final {
             let result = std::mem::take(&mut inner.stitched_transcript);
-            inner.stt_audio_buffer.clear();
             Ok(result)
         } else {
             Ok(inner.stitched_transcript.clone())
         }
     }
 
-    /// Clears internal audio buffers and accumulated stitched transcripts.
+    /// Clears internal accumulated stitched transcripts.
     fn reset_state(&self) -> anyhow::Result<()> {
         let mut inner = self.inner.lock();
-        inner.stt_audio_buffer.clear();
         inner.stitched_transcript.clear();
         Ok(())
     }
