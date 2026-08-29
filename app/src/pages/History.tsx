@@ -91,6 +91,22 @@ export const History: React.FC = () => {
     return currentWindowSessions.map((s) => String(s.id));
   }, [currentWindowSessions]);
 
+  const monthWindowProgress = React.useMemo(
+    () => ({
+      index: monthWindowIndex,
+      count: monthWindows.length,
+    }),
+    [monthWindowIndex, monthWindows.length]
+  );
+
+  const dayWindowProgress = React.useMemo(
+    () => ({
+      index: dayWindowIndex,
+      count: dayWindows.length,
+    }),
+    [dayWindowIndex, dayWindows.length]
+  );
+
   const renderMonthNode = React.useCallback(
     (dayKey: string) => {
       const day = currentMonthGroup?.days.find((d) => d.dayKey === dayKey);
@@ -124,17 +140,6 @@ export const History: React.FC = () => {
       onClick={handleStageClick}
       className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none"
     >
-      {/* Top Floating Title (Left) — only in Orbit View */}
-      {isOrbitViewport && (
-        <div className="absolute top-4 left-6 z-30 pointer-events-auto flex flex-col">
-          <h1 className="text-[15px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
-            {HISTORY_COPY.headerTitle}
-          </h1>
-          <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] mt-0.5">
-            {HISTORY_COPY.headerSubtitle}
-          </p>
-        </div>
-      )}
 
       {/* Delete Error Notification Banner */}
       <AnimatePresence>
@@ -232,10 +237,7 @@ export const History: React.FC = () => {
                 memoriesCount={monthTurnsCount}
                 timeSpanLabel={currentMonthWindow?.label}
                 windowLabel={currentMonthWindow?.label}
-                windowProgress={{
-                  index: monthWindowIndex,
-                  count: monthWindows.length,
-                }}
+                windowProgress={monthWindowProgress}
                 canPrev={monthWindowIndex > 0 || monthIndex > 0}
                 canNext={
                   monthWindowIndex < monthWindows.length - 1 ||
@@ -278,10 +280,7 @@ export const History: React.FC = () => {
                 memoriesCount={dayTurnsCount}
                 timeSpanLabel={dayTimeSpan || currentWindow?.label}
                 windowLabel={currentWindow?.label}
-                windowProgress={{
-                  index: dayWindowIndex,
-                  count: dayWindows.length,
-                }}
+                windowProgress={dayWindowProgress}
                 canPrev={dayWindowIndex > 0 || dateIndex > 0}
                 canNext={
                   dayWindowIndex < dayWindows.length - 1 ||

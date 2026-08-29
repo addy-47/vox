@@ -293,7 +293,7 @@ Legend: ✅ resident · ❌ not loaded · ↺ lazy/on-demand (loaded on first wa
 - Scope Clf: `services/intent/` (`ensure_scope_classifier_loaded`).
 - Embedding / NLI / Edge: `services/memory/**` + `persistence/memory_worker.rs` — idle sweep only.
 - Transliteration: `services/translit.rs`.
-- Realtime S2S: `services/pipeline/realtime_passive.rs` & `services/pipeline/realtime_ptt.rs` — cloud WebSocket, no local weights.
+- Realtime S2S: `services/pipeline/realtime/` (`passive.rs`, `ptt.rs`, `session.rs`) — cloud WebSocket, no local weights.
 - Full teardown: `services/audio/engine.rs` (`stop_audio_engine` → `unload_all_onnx_models` + `trim_heap`).
 
 ### Auto-Sleep Cooldown

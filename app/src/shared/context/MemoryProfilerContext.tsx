@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
+import React, { createContext, useContext, useState, useCallback, useMemo, useRef, ReactNode } from "react";
 
 export interface ComponentTraceData {
   componentName: string;
@@ -69,17 +69,26 @@ export const MemoryProfilerProvider: React.FC<{ children: ReactNode }> = ({ chil
     setComponentTraces({});
   }, []);
 
+  const value = useMemo(
+    () => ({
+      isProfilerActive,
+      setIsProfilerActive,
+      componentTraces,
+      registerMount,
+      registerUnmount,
+      resetTraces,
+    }),
+    [
+      isProfilerActive,
+      componentTraces,
+      registerMount,
+      registerUnmount,
+      resetTraces,
+    ]
+  );
+
   return (
-    <MemoryProfilerContext.Provider
-      value={{
-        isProfilerActive,
-        setIsProfilerActive,
-        componentTraces,
-        registerMount,
-        registerUnmount,
-        resetTraces,
-      }}
-    >
+    <MemoryProfilerContext.Provider value={value}>
       {children}
     </MemoryProfilerContext.Provider>
   );

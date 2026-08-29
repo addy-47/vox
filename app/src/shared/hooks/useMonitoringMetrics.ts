@@ -10,7 +10,10 @@ export function useMonitoringMetrics(enabled = true) {
 
   const latest = history[history.length - 1] ?? null;
   const latestRef = useRef<RuntimeSnapshot | null>(latest);
-  latestRef.current = latest;
+
+  useEffect(() => {
+    latestRef.current = latest;
+  }, [latest]);
 
   const inFlightRef = useRef(false);
 
@@ -19,13 +22,14 @@ export function useMonitoringMetrics(enabled = true) {
     if (!enabled) return;
 
     let intervalId: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
 
     const poll = async () => {
-      if (document.hidden || inFlightRef.current) return;
+      if (cancelled || document.hidden || inFlightRef.current) return;
       inFlightRef.current = true;
       try {
         const snap = await getRuntimeSnapshot();
-        if (snap) {
+        if (snap && !cancelled) {
           setHistory((prev) => {
             const next = [...prev, { ...snap, localTime: performance.now() }];
             return next.length > MAX_SAMPLES ? next.slice(next.length - MAX_SAMPLES) : next;
@@ -66,6 +70,7 @@ export function useMonitoringMetrics(enabled = true) {
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
+      cancelled = true;
       stop();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };

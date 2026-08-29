@@ -41,12 +41,6 @@ export interface PttStatusPayload {
   session_id?: number;
 }
 
-/** `speech_start` / `speech_end` payload (services/vad/actor.rs, re-emitted in ipc/pipeline.rs:529). */
-export interface SpeechEventPayload {
-  type: "speech_start" | "speech_end";
-  session_id: number;
-}
-
 /** `cpu_governor_warning` payload (lib.rs:322). */
 export interface CpuGovernorWarningPayload {
   governor: string;
@@ -97,12 +91,6 @@ export interface ModelSetupStatusPayload {
   total_bytes: number;
   error: string | null;
 }
-
-/**
- * `playback_finished` payload — the per-turn latency report JSON
- * (services/pipeline.rs:1546; core/metrics.rs `latency_report`).
- */
-export type PlaybackFinishedPayload = Record<string, unknown>;
 
 /**
  * Active listener registry to guarantee synchronous teardown before webview unloads/reloads.
@@ -160,115 +148,8 @@ export function on<T>(eventName: string, handler: (payload: T) => void): () => v
   return cleanup;
 }
 
-
-export function onStateChanged(handler: (state: InteractionState) => void): () => void {
-  return on("state_changed", handler);
-}
-
-export function onTranscriptPartial(handler: (payload: TranscriptPayload) => void): () => void {
-  return on("transcript_partial", handler);
-}
-
-export function onTranscriptFinal(handler: (payload: TranscriptPayload) => void): () => void {
-  return on("transcript_final", handler);
-}
-
-export function onLlmToken(handler: (token: string) => void): () => void {
-  return on("llm_token", handler);
-}
-
-export function onPttStatus(handler: (payload: PttStatusPayload) => void): () => void {
-  return on("ptt_status", handler);
-}
-
-export function onAudioEnergy(handler: (energy: number) => void): () => void {
-  return on("audio_energy", handler);
-}
-
-export function onTelemetry(handler: (payload: TelemetryData) => void): () => void {
-  return on("telemetry", handler);
-}
-
-export function onAutoSleepState(handler: (sleeping: boolean) => void): () => void {
-  return on("auto_sleep_state", handler);
-}
-
-export function onCpuGovernorWarning(handler: (payload: CpuGovernorWarningPayload) => void): () => void {
-  return on("cpu_governor_warning", handler);
-}
-
-export function onPlaybackFinished(handler: (payload: PlaybackFinishedPayload) => void): () => void {
-  return on("playback_finished", handler);
-}
-
-export function onPipelineError(handler: (message: string) => void): () => void {
-  return on("pipeline_error", handler);
-}
-
-export function onPipelinePaused(handler: () => void): () => void {
-  return on("pipeline_paused", handler);
-}
-
-export function onPipelineResumed(handler: () => void): () => void {
-  return on("pipeline_resumed", handler);
-}
-
-export function onRealtimeSessionStarted(handler: () => void): () => void {
-  return on("realtime_session_started", handler);
-}
-
-export function onRealtimeSessionResumed(handler: () => void): () => void {
-  return on("realtime_session_resumed", handler);
-}
-
-export function onRealtimeSessionEnded(handler: (reason: string) => void): () => void {
-  return on("realtime_session_ended", handler);
-}
-
-export function onRealtimeIdleWarning(handler: (payload: RealtimeIdleWarningPayload) => void): () => void {
-  return on("realtime_idle_warning", handler);
-}
-
-/** `mode_changed_main` / `mode_changed_tray` (dynamically named, ipc/tray.rs:250). */
-export function onModeChanged(target: "main" | "tray", handler: (mode: string) => void): () => void {
-  return on(`mode_changed_${target}`, handler);
-}
-
-/** Global `mode_changed` event (ipc/tray.rs:251). */
-export function onModeChangedGlobal(handler: (mode: string) => void): () => void {
-  return on("mode_changed", handler);
-}
-
-export function onThemeChanged(handler: (theme: string) => void): () => void {
-  return on("theme-changed", handler);
-}
-
-export function onSettingsUpdated(handler: () => void): () => void {
-  return on("settings-updated", handler);
-}
-
-export function onToggleHud(handler: () => void): () => void {
-  return on("toggle_hud", handler);
-}
-
-export function onSpeechStart(handler: (payload: SpeechEventPayload) => void): () => void {
-  return on("speech_start", handler);
-}
-
-export function onSpeechEnd(handler: (payload: SpeechEventPayload) => void): () => void {
-  return on("speech_end", handler);
-}
-
 export function onModelSetupStatus(handler: (payload: ModelSetupStatusPayload) => void): () => void {
   return on("model_setup_status", handler);
-}
-
-export function onModelSetupComplete(handler: (completed: boolean) => void): () => void {
-  return on("model_setup_complete", handler);
-}
-
-export function onModelSetupError(handler: (message: string) => void): () => void {
-  return on("model_setup_error", handler);
 }
 
 export function onOptionalModelComplete(handler: (modelId: string) => void): () => void {

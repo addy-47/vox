@@ -1,6 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Focus, Eye, EyeOff, GitCompare, Cpu, RefreshCw, Plus, Minus } from "lucide-react";
+import {
+  Focus,
+  Eye,
+  EyeOff,
+  GitCompare,
+  Cpu,
+  RefreshCw,
+  Plus,
+  Minus,
+  MousePointerClick,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+} from "lucide-react";
 import { MemoryGraph, MemoryGraphRef } from "@/shared/components/memory/MemoryGraph";
 import { SearchBar } from "@/shared/components/memory/SearchBar";
 import { MemoryLegendCard } from "@/shared/components/memory/MemoryLegendCard";
@@ -31,7 +44,6 @@ export const Memory: React.FC = () => {
   const [nodes, setNodes] = useState<MemoryNodeTopology[]>([]);
   const [edges, setEdges] = useState<MemoryEdgeTopology[]>([]);
 
-
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCollection, setSelectedCollection] = useState("all");
   const [selectedRelation, setSelectedRelation] = useState("all");
@@ -41,9 +53,12 @@ export const Memory: React.FC = () => {
   const [nodePos, setNodePos] = useState<{ x: number; y: number } | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  const [selectMode, setSelectMode] = useState(false);
   const [includeInactive, setIncludeInactive] = useState(false);
   const [conflictsMode, setConflictsMode] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mobileDockExpanded, setMobileDockExpanded] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
 
   const [queueSummary, setQueueSummary] = useState<MemoryQueueSummary | null>(null);
   const [conflicts, setConflicts] = useState<{ fact_a: MemoryNodeTopology; fact_b: MemoryNodeTopology }[]>([]);
@@ -94,6 +109,13 @@ export const Memory: React.FC = () => {
     [includeInactive]
   );
 
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
   // Explicit user-triggered Graph Refresh with version check
   const handleRefreshGraph = useCallback(async () => {
     setIsRefreshing(true);
@@ -103,8 +125,9 @@ export const Memory: React.FC = () => {
       if (currentVer > lastVersionRef.current) {
         await fetchTopology(true);
       } else {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
         setUpToDateToast(true);
-        setTimeout(() => setUpToDateToast(false), 2500);
+        toastTimerRef.current = setTimeout(() => setUpToDateToast(false), 2500);
       }
     } finally {
       setIsRefreshing(false);
@@ -125,13 +148,12 @@ export const Memory: React.FC = () => {
     }
   }, []);
 
-  // Fetch topology ONCE on mount. Polling is disabled for graph topology; only auxiliary queue stats poll when drawer is open.
+  // Fetch auxiliary queue stats on mount
   useEffect(() => {
-    fetchTopology(true);
     fetchAuxiliaryData();
-  }, [fetchTopology, fetchAuxiliaryData]);
+  }, [fetchAuxiliaryData]);
 
-  // Re-fetch topology when includeInactive toggle changes
+  // Fetch topology on mount and when includeInactive toggle changes
   useEffect(() => {
     fetchTopology(true);
   }, [includeInactive, fetchTopology]);
@@ -142,6 +164,12 @@ export const Memory: React.FC = () => {
   // Lazy load full fact detail when a node is selected (toggles off if clicking selected node again)
   const handleSelectNode = useCallback(
     async (nodeId: string | null, pos?: { x: number; y: number }) => {
+      const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : false;
+      // On small layout, direct node tap only opens tooltip when selectMode is active (or clearing selection)
+      if (isMobile && nodeId && !selectMode) {
+        return;
+      }
+
       if (nodeId && nodeId === selectedNodeIdRef.current) {
         setSelectedNodeId(null);
         setSelectedFactDetail(null);
@@ -173,8 +201,20 @@ export const Memory: React.FC = () => {
         setDetailLoading(false);
       }
     },
-    []
+    [selectMode]
   );
+
+  const handleCloseTooltip = useCallback(() => {
+    handleSelectNode(null);
+  }, [handleSelectNode]);
+
+  const handleRefreshTopology = useCallback(() => {
+    fetchTopology(true);
+  }, [fetchTopology]);
+
+  const handleCloseDrawer = useCallback(() => {
+    setDrawerOpen(false);
+  }, []);
 
   return (
     <div className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none">
@@ -244,11 +284,8 @@ export const Memory: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Search Bar & Popover */}
-      <SearchBar nodes={nodes} onCommitSearch={setSearchQuery} onSelectNode={handleSelectNode} />
-
-      {/* Top-Left: Legend Card (hidden on small layouts) */}
-      <div className="absolute top-4 left-4 z-20 pointer-events-auto hidden sm:block">
+      {/* ── Desktop Legend Card (bottom-right corner aligned with EdgeNav, hidden on < 640px) ── */}
+      <div className="absolute bottom-4 right-6 z-30 pointer-events-auto hidden sm:block">
         <MemoryLegendCard
           selectedCollection={selectedCollection}
           onSelectCollection={setSelectedCollection}
@@ -257,8 +294,18 @@ export const Memory: React.FC = () => {
         />
       </div>
 
-      {/* Top-Right: Zoom Controls Dock */}
-      <div className="absolute top-4 right-6 z-20 pointer-events-auto flex items-center gap-1.5 p-1.5 rounded-2xl glass-card border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-2xl shadow-2xl">
+      {/* ── Desktop Search Bar (sm: >= 640px) ─────────────────────────────── */}
+      <div className="hidden sm:block">
+        <SearchBar
+          variant="full"
+          nodes={nodes}
+          onCommitSearch={setSearchQuery}
+          onSelectNode={handleSelectNode}
+        />
+      </div>
+
+      {/* ── Desktop Zoom Controls Dock (sm: >= 640px) ─────────────────────── */}
+      <div className="absolute top-4 right-6 z-20 pointer-events-auto hidden sm:flex items-center gap-1.5 p-1.5 rounded-2xl glass-card border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-2xl shadow-2xl">
         <button
           onClick={() => graphRef.current?.zoomIn()}
           aria-label={MEMORY_COPY.zoomIn}
@@ -284,8 +331,174 @@ export const Memory: React.FC = () => {
         </button>
       </div>
 
-      {/* Right Action Dock */}
-      <div className="absolute top-1/2 -translate-y-1/2 right-6 z-20 pointer-events-auto flex flex-col gap-3 p-2 rounded-2xl glass-card border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-2xl shadow-2xl">
+      {/* ── Small / Mobile Layout Header & Horizontal Action Bar (< 640px) ── */}
+      <AnimatePresence mode="wait">
+        {isMobileSearchOpen ? (
+          /* Mobile Search Overlay: Smoothly Expands Across Top Header */
+          <motion.div
+            key="mobile-search-overlay"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="absolute top-4 left-4 right-4 z-40 pointer-events-auto sm:hidden"
+          >
+            <SearchBar
+              variant="full"
+              className="w-full"
+              nodes={nodes}
+              onCommitSearch={setSearchQuery}
+              onSelectNode={handleSelectNode}
+              onClose={() => {
+                setIsMobileSearchOpen(false);
+                setSearchQuery("");
+              }}
+              autoFocus
+            />
+          </motion.div>
+        ) : (
+          /* Mobile Header with Horizontal Dynamic Action Tray */
+          <motion.div
+            key="mobile-header-bar"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute top-4 left-4 right-4 z-20 pointer-events-none sm:hidden flex items-center justify-between gap-2"
+          >
+            {/* Top-Left Title */}
+            <div className="flex flex-col pointer-events-auto shrink-0">
+              <h1 className="text-[14px] font-display font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]">
+                {MEMORY_COPY.memoryTitle}
+              </h1>
+              <span className="text-[10px] font-mono font-bold text-[rgb(var(--accent))] uppercase tracking-wider">
+                {MEMORY_COPY.memorySubtitle}
+              </span>
+            </div>
+
+            {/* Top-Right Horizontal Dynamic Action Tray */}
+            <div className="pointer-events-auto flex items-center gap-1 p-1 rounded-2xl glass-card border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-2xl shadow-2xl overflow-hidden max-w-[calc(100vw-150px)]">
+              {/* Search Trigger */}
+              <button
+                onClick={() => setIsMobileSearchOpen(true)}
+                aria-label={MEMORY_COPY.searchMemories}
+                className="w-8 h-8 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer shrink-0"
+              >
+                <Search size={15} />
+              </button>
+
+              {/* Recenter */}
+              <button
+                onClick={() => graphRef.current?.recenter()}
+                aria-label={MEMORY_COPY.recenterView}
+                className="w-8 h-8 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer shrink-0"
+              >
+                <Focus size={15} />
+              </button>
+
+              {/* Select Mode */}
+              <button
+                onClick={() => {
+                  setSelectMode((prev) => {
+                    if (prev) {
+                      setSelectedNodeId(null);
+                      setSelectedFactDetail(null);
+                      setNodePos(null);
+                    }
+                    return !prev;
+                  });
+                }}
+                className={cn(
+                  "w-8 h-8 flex items-center justify-center rounded-xl transition-all cursor-pointer shrink-0",
+                  selectMode
+                    ? "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/25 border border-[rgb(var(--accent))]/50 shadow-[0_0_12px_rgba(var(--accent),0.35)]"
+                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/10"
+                )}
+                aria-label={selectMode ? MEMORY_COPY.disableSelectMode : MEMORY_COPY.enableSelectMode}
+              >
+                <MousePointerClick size={15} />
+              </button>
+
+              {/* Dynamic Horizontal Expander */}
+              <AnimatePresence initial={false}>
+                {mobileDockExpanded && (
+                  <motion.div
+                    initial={{ width: 0, opacity: 0 }}
+                    animate={{ width: "auto", opacity: 1 }}
+                    exit={{ width: 0, opacity: 0 }}
+                    transition={{ duration: 0.18, ease: "easeOut" }}
+                    className="flex items-center gap-1 overflow-hidden"
+                  >
+                    <div className="w-[1px] h-4 bg-[rgba(var(--border),0.2)] shrink-0" />
+
+                    <button
+                      onClick={handleRefreshGraph}
+                      disabled={isRefreshing}
+                      className="w-8 h-8 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer disabled:opacity-40 shrink-0"
+                      aria-label="Refresh Memories"
+                    >
+                      <RefreshCw size={15} className={cn(isRefreshing && "animate-spin")} />
+                    </button>
+
+                    <button
+                      onClick={() => setIncludeInactive((prev) => !prev)}
+                      className={cn(
+                        "w-8 h-8 flex items-center justify-center rounded-xl transition-all cursor-pointer shrink-0",
+                        includeInactive
+                          ? "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/40"
+                          : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/10"
+                      )}
+                      aria-label={includeInactive ? MEMORY_COPY.hideInactive : MEMORY_COPY.showInactive}
+                    >
+                      {includeInactive ? <Eye size={15} /> : <EyeOff size={15} />}
+                    </button>
+
+                    <button
+                      onClick={() => setConflictsMode((prev) => !prev)}
+                      className={cn(
+                        "w-8 h-8 flex items-center justify-center rounded-xl transition-all cursor-pointer relative shrink-0",
+                        conflictsMode
+                          ? "text-red-400 bg-red-500/20 border border-red-500/40"
+                          : "text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-[rgb(var(--foreground))]/10"
+                      )}
+                      aria-label={`${MEMORY_COPY.unresolvedConflicts} (${conflicts.length})`}
+                    >
+                      <GitCompare size={15} />
+                      {conflicts.length > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[9px] font-mono font-bold text-white shadow-xs">
+                          {conflicts.length}
+                        </span>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => setDrawerOpen((v) => !v)}
+                      className="w-8 h-8 flex items-center justify-center rounded-xl transition-all cursor-pointer text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/40 hover:bg-[rgb(var(--accent))]/30 shadow-xs shrink-0"
+                      aria-label={MEMORY_COPY.ingestionQueue}
+                    >
+                      <Cpu size={15} />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Chevron Button (Expands/Collapses horizontally) */}
+              <button
+                onClick={() => setMobileDockExpanded((v) => !v)}
+                aria-label={mobileDockExpanded ? "Collapse controls" : "Expand controls"}
+                className={cn(
+                  "w-8 h-8 flex items-center justify-center rounded-xl transition-all cursor-pointer text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 shrink-0",
+                  mobileDockExpanded && "bg-[rgb(var(--accent))]/15"
+                )}
+              >
+                {mobileDockExpanded ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Desktop Right Action Dock (sm: >= 640px) ─────────────────────────── */}
+      <div className="absolute top-1/2 -translate-y-1/2 right-6 z-20 pointer-events-auto hidden sm:flex flex-col gap-3 p-2 rounded-2xl glass-card border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-2xl shadow-2xl">
         <button
           onClick={handleRefreshGraph}
           disabled={isRefreshing}
@@ -359,15 +572,15 @@ export const Memory: React.FC = () => {
           factDetail={selectedFactDetail}
           isLoading={detailLoading}
           pos={nodePos}
-          onClose={() => handleSelectNode(null)}
-          onRefresh={() => fetchTopology(true)}
+          onClose={handleCloseTooltip}
+          onRefresh={handleRefreshTopology}
         />
       )}
 
       {/* Ingestion Queue Slide-in Drawer */}
       <MemoryPipelineDrawer
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={handleCloseDrawer}
         summary={queueSummary}
         nodes={nodes}
         edges={edges}

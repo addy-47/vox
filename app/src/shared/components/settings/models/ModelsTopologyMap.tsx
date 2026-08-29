@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { Activity, Sparkles, Brain, Volume2, Layers } from "lucide-react";
+import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
 
 export type PipelineTab = "vad" | "asr" | "llm" | "tts" | "auxiliary";
@@ -26,11 +27,13 @@ export const ModelsTopologyMap = memo(
     isTtsVerified = true,
     isAuxiliaryVerified = true,
   }: ModelsTopologyMapProps) => {
+    const isCategoryDirty = useSettingsStore((s) => s.isCategoryDirty);
+
     const PIPELINE_NODES = [
       { id: "vad" as PipelineTab, label: "Voice Detection", Icon: Activity, isVerified: isVadVerified },
-      { id: "asr" as PipelineTab, label: "Speech to Text", Icon: Sparkles, isVerified: isAsrVerified },
+      { id: "asr" as PipelineTab, label: "Listening", Icon: Sparkles, isVerified: isAsrVerified },
       { id: "llm" as PipelineTab, label: "Reasoning", Icon: Brain, isVerified: isLlmDownloaded },
-      { id: "tts" as PipelineTab, label: "Speech", Icon: Volume2, isVerified: isTtsVerified },
+      { id: "tts" as PipelineTab, label: "Speaking", Icon: Volume2, isVerified: isTtsVerified },
       { id: "auxiliary" as PipelineTab, label: "Support", Icon: Layers, isVerified: isAuxiliaryVerified },
     ];
 
@@ -43,33 +46,43 @@ export const ModelsTopologyMap = memo(
             : "grid grid-cols-5"
         )}
       >
-        {PIPELINE_NODES.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => onChangeTab(id)}
-            className={cn(
-              "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden cursor-pointer",
-              activeTab === id
-                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
-                : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1"
-            )}
-          >
-            <Icon
-              size={18}
+        {PIPELINE_NODES.map(({ id, label, Icon }) => {
+          const isDirty = isCategoryDirty(id === "asr" ? "stt" : id);
+
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onChangeTab(id)}
               className={cn(
-                "transition-colors shrink-0",
+                "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden cursor-pointer",
                 activeTab === id
-                  ? "text-[rgb(var(--accent))]"
-                  : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]"
+                  ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
+                  : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+                layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1"
               )}
-            />
-            <span className="text-[11px] font-bold text-[rgb(var(--foreground))] tracking-tight truncate max-w-full leading-tight">
-              {label}
-            </span>
-          </button>
-        ))}
+            >
+              {isDirty && (
+                <span
+                  title="Unsaved changes in this category"
+                  className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)] shrink-0"
+                />
+              )}
+              <Icon
+                size={18}
+                className={cn(
+                  "transition-colors shrink-0",
+                  activeTab === id
+                    ? "text-[rgb(var(--accent))]"
+                    : "text-[rgb(var(--foreground-muted))]/80 group-hover:text-[rgb(var(--foreground))]"
+                )}
+              />
+              <span className="text-[11px] font-bold text-[rgb(var(--foreground))] tracking-tight truncate max-w-full leading-tight">
+                {label}
+              </span>
+            </button>
+          );
+        })}
       </div>
     );
   }

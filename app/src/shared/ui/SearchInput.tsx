@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Search, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
@@ -10,7 +10,7 @@ export interface SearchInputProps extends Omit<React.InputHTMLAttributes<HTMLInp
   className?: string;
 }
 
-export const SearchInput: React.FC<SearchInputProps> = ({
+export const SearchInput = memo<SearchInputProps>(({
   value,
   onChange,
   onClear,
@@ -56,4 +56,6 @@ export const SearchInput: React.FC<SearchInputProps> = ({
       )}
     </div>
   );
-};
+});
+
+SearchInput.displayName = "SearchInput";

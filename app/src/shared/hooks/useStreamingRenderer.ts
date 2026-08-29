@@ -9,6 +9,8 @@ export const useStreamingRenderer = (targetText: string) => {
   const currentLengthRef = useRef(0);
   const animationFrameRef = useRef<number | null>(null);
   const prevTextRef = useRef("");
+  const targetTextRef = useRef(targetText);
+  targetTextRef.current = targetText;
 
   useEffect(() => {
     const prevText = prevTextRef.current;
@@ -29,12 +31,13 @@ export const useStreamingRenderer = (targetText: string) => {
 
     // Start or continue the animation loop
     const tick = () => {
-      const targetLen = targetText.length;
+      const currentTarget = targetTextRef.current;
+      const targetLen = currentTarget.length;
       const curLen = currentLengthRef.current;
 
       if (document.hidden) {
         currentLengthRef.current = targetLen;
-        setDisplayText(targetText);
+        setDisplayText(currentTarget);
         animationFrameRef.current = null;
         return;
       }
@@ -45,7 +48,7 @@ export const useStreamingRenderer = (targetText: string) => {
         const nextLen = Math.min(targetLen, curLen + step);
         currentLengthRef.current = nextLen;
 
-        setDisplayText(targetText.slice(0, Math.floor(nextLen)));
+        setDisplayText(currentTarget.slice(0, Math.floor(nextLen)));
         animationFrameRef.current = requestAnimationFrame(tick);
       } else {
         animationFrameRef.current = null;
