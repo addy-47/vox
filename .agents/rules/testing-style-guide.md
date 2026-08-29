@@ -122,3 +122,24 @@ Immediately after the title, include:
 ### 7.4 Correct Audio Resampling & Acoustic Tolerances
 - **Resampling Discipline:** Downsampling/upsampling audio (e.g. 24kHz to 16kHz) MUST use valid resampling interpolation (or test against 24kHz golden fixtures directly). Never use naive index stride slicing which corrupts audio duration calculations.
 - **Exact Golden Fixtures:** Reference clips and their expected durations must be verified against actual asset properties in `tests/assets/` and `test-clips/`.
+
+---
+
+## 8. Benchmark, Evaluation & Example Artifact Persistence Standards (Mandatory)
+
+Test results, benchmark runs, and evaluation metrics must NEVER be discarded or lost solely to stdout.
+
+### 8.1 Results Directory Layout
+All benchmarks, evals, and CLI simulation tools must serialize structured JSON reports into their respective categorized directories:
+- **Benchmarks (`benches/`):** `benches/results/<bench_name>/<run_id>/report.json` + `benches/results/<bench_name>/latest.json`
+- **Evaluations (`evals/`):** `evals/results/<eval_name>/<run_id>/report.json` + `evals/results/<eval_name>/latest.json`
+- **Simulation Examples (`examples/`):** `examples/results/<example_name>/<run_id>/report.json` + `examples/results/<example_name>/latest.json`
+
+### 8.2 Run ID & Schema Rules
+- **Unique Timestamped Run IDs:** Run IDs must follow the format `<YYYYMMDD_HHMMSS>_<short_uuid>` (e.g. `20260829_120530_a1b2c3d4`).
+- **Standardized Metadata:** Every report artifact must record `run_id`, `timestamp_utc`, `system_info` (OS, CPU cores, physical RAM), per-stage/per-clip latency, RTF, throughput, accuracy similarity, and process RSS memory.
+- **Latest Symlink / Mirror:** Each execution MUST overwrite `latest.json` in the tool's base results directory so downstream CI and developer inspection tools can immediately reference the latest run without scanning subdirectories.
+
+### 8.3 Common Harness Decoupling (`benches/common/` & `tests/common/`)
+- Shared audio parsing, Levenshtein scoring, streaming ring-buffer feeders, bounded channel drains, and report writers MUST live in decoupled modules (`benches/common/` and `tests/common/`), NEVER duplicated inside standalone benchmark or test files.
+
