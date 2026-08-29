@@ -12,7 +12,7 @@ mod common;
 
 use clap::Parser;
 use common::audio::{load_wav, resolve_clip_path};
-use common::harness::{benchmark_streaming_provider, get_test_app_handle, BenchmarkClip};
+use common::harness::{benchmark_streaming_provider, BenchmarkClip};
 use common::reporting::{generate_run_id, save_benchmark_report, BenchmarkReport, BenchmarkSystemInfo};
 use std::path::PathBuf;
 use vox_lib::services::stt::providers::{EmbeddedSttProvider, SttProvider};
@@ -195,7 +195,6 @@ fn main() {
     println!("Vox Realtime Passive Streaming STT Benchmark Harness");
     println!("================================================================================");
 
-    let app = get_test_app_handle();
     let home = dirs::home_dir().expect("Unable to find home dir");
     let nemotron_dir = home.join(".vox/models/stt/nemotron-3.5");
     let qwen_dir = home.join(".vox/models/stt/qwen3-asr");
@@ -227,7 +226,6 @@ fn main() {
             ) as Box<dyn SttProvider>;
 
             let run = benchmark_streaming_provider(
-                &app,
                 "Nemotron-3.5 Streaming (Production Sherpa-ONNX 1.13.6)",
                 "nvidia_nemotron",
                 &nemotron_dir.to_string_lossy(),
@@ -249,7 +247,6 @@ fn main() {
             ) as Box<dyn SttProvider>;
 
             let run = benchmark_streaming_provider(
-                &app,
                 "Qwen3-ASR Streaming (Production Sherpa-ONNX 1.13.6)",
                 "qwen3_asr",
                 &qwen_dir.to_string_lossy(),

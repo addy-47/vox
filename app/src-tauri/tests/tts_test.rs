@@ -70,7 +70,7 @@ fn setup_test_tts_worker(
         is_sleeping,
     };
 
-    warm_up_tts(&app, handles, &settings, &super_tts_path, event_tx)
+    warm_up_tts(&app, handles, &settings, &super_tts_path, None, event_tx)
         .expect("Failed to warm up TTS worker");
 
     (tts_tx.expect("tts_tx initialized"), event_rx, tts_handle)
