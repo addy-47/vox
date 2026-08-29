@@ -109,7 +109,15 @@ The `wiring_memory_pipeline_refactor_spec.md` is the checklist; this subsection 
 
 ### 5.4 Frontend Refactor — Summary
 
-- **7-State Alignment:** UI unified to `Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`. Canonical `vad_backend` field standardized across Rust (`core::settings::VadSettings`), IPC, settings store, and UI — eliminating dual `backend`/`vad_backend` drift.
-- **UI Standardization:** unified page headers/nav for small viewports (`Settings`, `History`, `Monitoring`, `Memory`); 6 settings cards with unified typography; `LlmSettingsView` subtab redesign; `InteractionCard` 2-level drilldown (Level 1: full-width `CategorySelector` text carousel $\to$ `ProviderSelectorView` compact pills with persistent saved active highlight; Level 2: full-height `LlmConfigDesk` with standard left-aligned `← Providers` breadcrumbs + title, right-aligned status badge, high-density hardware/runtime spec cards dynamically bound to `modelCatalog` with zero hardcoded model names, and auto-discard on back or category switch); `MemoryCard` redesign (top two `ToggleTile` cards for Conversational Recall and Background Auto-Save $\to$ dedicated 5-subtab `MemoryConfigDesk` with `Depth`, `Cutoff`, `Graph`, `Budget`, `Window` following HistoryCard side-by-side ergonomics); `TtsVoiceManager` redesign (2 distributed tabs `Select Voice` \| `Speech Speed`, paragraph-embedded inline accent region carousel `‹ ALL ›`, and in-place search); `ModelsCard` responsive sizing; calibrated mobile settings layout (`space-y-5 sm:space-y-6`, `p-4 sm:p-5`, expanded header separation).
-- **Dead-Code & Tech-Debt Purge:** 26 uncalled listeners in `eventsService.ts`, legacy CRUD/graph in `memoryService.ts`, `listOutputDevices`, 4 unreferenced UI primitives (`VendorLogos`, `AudioLevelMeter`, `GlassSkeleton`, `StatusDot`); palette constants encapsulated in `MemoryGraph.tsx`; `knip` `lint:dead` wired. 10 test suites (98 tests) + `pnpm build` green.
-- **Full ledger:** `docs/features/performance-memory-optimizations.md`and `docs/frontend.md`.
+- **7-State Alignment & UI Standardization:** Unified state machine (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`), standardized canonical `vad_backend` field across IPC and store, redesigned navigation/cards (`LlmConfigDesk`, `MemoryConfigDesk`, `TtsVoiceManager`), calibrated responsive viewport layouts.
+- **Dead-Code Purge:** Cleaned 26 uncalled listeners, unused primitives, and stale services; `knip` `lint:dead` wired. 10 test suites (98 tests) + `pnpm build` green.
+- **Ledger:** [`docs/features/performance-memory-optimizations.md`](file:///home/addy/projects/apps/vox/docs/features/performance-memory-optimizations.md) and [`docs/frontend.md`](file:///home/addy/projects/apps/vox/docs/frontend.md).
+
+### 5.5 STT Streaming Benchmark & Engine Consolidation — Summary
+
+- **Streaming Benchmark Runner (`app/src-tauri/benches/stt_bench.rs`):** CLI harness (`--model`, `--clip`, `--input-dir`, `--output-dir`, `--min-similarity`) simulating 256-sample streaming through `VadActor` $\to$ `SttWorker` across 10 canonical test clips, persisting reports to `benches/results/stt_bench/<run_id>/report.json` + `latest.json`.
+- **Sherpa-ONNX 1.13.6 Consolidation:** Replaced `parakeet-rs` with `sherpa-onnx` `OnlineRecognizer` using multilingual Nemotron-3.5 transducer (`0.497x RTF`, `97.1% accuracy` [EN: 99.0%, HI: 95.2%], `~71 MB RSS`, 10/10 clips passing `>= 0.90` gate). Removed `parakeet-rs` crate; all STT, TTS, and VAD standardized on `sherpa-onnx 1.13.6`.
+- **Ledger:** [`docs/benchmarks/stt_benchmark.md`](file:///home/addy/projects/apps/vox/docs/benchmarks/stt_benchmark.md).
+
+
+

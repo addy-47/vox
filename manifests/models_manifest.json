@@ -104,31 +104,31 @@
       "is_remote": false,
       "files": [
         {
-          "id": "stt_nemotron_config",
-          "path": "stt/nemotron-3.5/config.json",
-          "size": 602,
-          "sha256": "0592a224f30670e00f5e0f1f106f0171428b0abde0fd4cbc64237b02c2241502",
-          "required": true
-        },
-        {
-          "id": "stt_nemotron_decoder_joint",
-          "path": "stt/nemotron-3.5/decoder_joint.onnx",
-          "size": 97590054,
-          "sha256": "634dfadf24cb4f73c2fae170b36611d68db48186426882cbc8f7e02ed9f2bb29",
-          "required": true
-        },
-        {
           "id": "stt_nemotron_encoder",
-          "path": "stt/nemotron-3.5/encoder.onnx",
-          "size": 657572215,
-          "sha256": "e653d494a4855ee87f6251e8a9677416a73edf6f36578841316fa2b77a53cda7",
+          "path": "stt/nemotron-3.5/encoder.int8.onnx",
+          "size": 657601403,
+          "sha256": "012e9321373af99021415e0b0eb3ec827b4be3153be6f30d9b448fe65e896e68",
           "required": true
         },
         {
-          "id": "stt_nemotron_tokenizer",
-          "path": "stt/nemotron-3.5/tokenizer.model",
-          "size": 406554,
-          "sha256": "ce3895e40806f02a26c3a225161b96ef682d6c0054bae32a245dec4258d7d291",
+          "id": "stt_nemotron_decoder",
+          "path": "stt/nemotron-3.5/decoder.int8.onnx",
+          "size": 14978075,
+          "sha256": "19f9c98fc6d0a2c33a65a43b36fdb2e914c26c0aa9764be3aebc502a1e982fb0",
+          "required": true
+        },
+        {
+          "id": "stt_nemotron_joiner",
+          "path": "stt/nemotron-3.5/joiner.int8.onnx",
+          "size": 9504438,
+          "sha256": "4101c7c679a0bc30483794b27a059e34e79232aa2068d78d51231a22c8b0d7ce",
+          "required": true
+        },
+        {
+          "id": "stt_nemotron_tokens",
+          "path": "stt/nemotron-3.5/tokens.txt",
+          "size": 131440,
+          "sha256": "729cc103155bafa785f9cd45746cd41cabe97eab7182fc04d594129587958f8a",
           "required": true
         }
       ]

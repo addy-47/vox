@@ -1,83 +1,70 @@
-use super::{SttEngine as SttEngineTrait, NEMOTRON_STRIDE_SAMPLES, SAMPLE_RATE};
+use super::{
+    SttEngine as SttEngineTrait, MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_ENCODER,
+    MODEL_FILE_ASR_JOINER, MODEL_FILE_ASR_TOKENS, NEMOTRON_NUM_THREADS, SAMPLE_RATE,
+};
 use anyhow::{anyhow, Result};
-use parakeet_rs::Nemotron;
 use parking_lot::Mutex;
+use sherpa_onnx::{OnlineRecognizer, OnlineRecognizerConfig};
 use std::path::Path;
 
-/// Speech-to-text inference engine wrapping NVIDIA Nemotron-3.5 via parakeet-rs.
+/// Speech-to-text inference engine wrapping Sherpa-ONNX Nemotron-3.5 online streaming transducer.
 pub struct SttEngine {
-    model: Mutex<Nemotron>,
+    recognizer: Mutex<OnlineRecognizer>,
 }
 
 impl SttEngine {
-    /// Loads the pretrained Nemotron-3.5 ONNX model weights from the specified directory.
+    /// Loads Nemotron-3.5 streaming transducer ONNX model components and initializes the Sherpa recognizer.
     pub fn new(model_dir: &Path) -> Result<Self> {
-        log::info!("[STT] >>> Initializing parakeet-rs Nemotron-3.5 Engine...");
+        log::info!("[STT] >>> Initializing Sherpa-ONNX Nemotron-3.5 Transducer Engine...");
 
-        let model = Nemotron::from_pretrained(model_dir, None).map_err(|e| {
+        let encoder_path = model_dir.join(MODEL_FILE_ASR_ENCODER);
+        let decoder_path = model_dir.join(MODEL_FILE_ASR_DECODER);
+        let joiner_path = model_dir.join(MODEL_FILE_ASR_JOINER);
+        let tokens_path = model_dir.join(MODEL_FILE_ASR_TOKENS);
+
+        let mut config = OnlineRecognizerConfig::default();
+        config.model_config.transducer.encoder = Some(encoder_path.to_string_lossy().to_string());
+        config.model_config.transducer.decoder = Some(decoder_path.to_string_lossy().to_string());
+        config.model_config.transducer.joiner = Some(joiner_path.to_string_lossy().to_string());
+        config.model_config.tokens = Some(tokens_path.to_string_lossy().to_string());
+        config.model_config.num_threads = NEMOTRON_NUM_THREADS;
+        config.model_config.provider = Some("cpu".to_string());
+        config.decoding_method = Some("greedy_search".to_string());
+
+        let recognizer = OnlineRecognizer::create(&config).ok_or_else(|| {
             anyhow!(
-                "Failed to load Nemotron model from {:?}: {:?}",
-                model_dir,
-                e
+                "Failed to initialize Sherpa-ONNX OnlineRecognizer for Nemotron at {:?}",
+                model_dir
             )
         })?;
 
-        log::info!("[STT] Nemotron-3.5 Engine loaded successfully.");
+        log::info!("[STT] Nemotron-3.5 Transducer Engine loaded successfully.");
         Ok(Self {
-            model: Mutex::new(model),
+            recognizer: Mutex::new(recognizer),
         })
     }
 }
 
-/// Transcribes audio frames in discrete Nemotron stride intervals with final partial chunk padding.
-fn transcribe_strides(model: &mut Nemotron, audio: &[f32]) -> Result<String> {
-    let mut full_text = String::new();
-    let mut offset = 0usize;
-
-    while offset + NEMOTRON_STRIDE_SAMPLES <= audio.len() {
-        let chunk = &audio[offset..offset + NEMOTRON_STRIDE_SAMPLES];
-        let text = model.transcribe_chunk(chunk).map_err(|e| {
-            anyhow!(
-                "Nemotron transcription failed at offset {}: {:?}",
-                offset,
-                e
-            )
-        })?;
-        if !text.trim().is_empty() {
-            full_text.push_str(&text);
-        }
-        offset += NEMOTRON_STRIDE_SAMPLES;
-    }
-
-    let remaining = audio.len() - offset;
-    if remaining > 0 {
-        let mut pad = Vec::with_capacity(NEMOTRON_STRIDE_SAMPLES);
-        pad.extend_from_slice(&audio[offset..]);
-        pad.resize(NEMOTRON_STRIDE_SAMPLES, 0.0);
-        let text = model
-            .transcribe_chunk(&pad)
-            .map_err(|e| anyhow!("Nemotron final partial chunk failed: {:?}", e))?;
-        if !text.trim().is_empty() {
-            full_text.push_str(&text);
-        }
-    }
-
-    Ok(full_text)
-}
-
 impl SttEngineTrait for SttEngine {
-    /// Transcribes complete audio buffer and logs latency and real-time factor metrics.
+    /// Transcribes audio buffer using Sherpa OnlineRecognizer streaming graph and logs latency metrics.
     fn transcribe(&self, audio: &[f32]) -> Result<String> {
         if audio.is_empty() {
             return Ok(String::new());
         }
 
         let start = std::time::Instant::now();
-        let mut model_lock = self.model.lock();
-        model_lock.reset();
+        let recognizer = self.recognizer.lock();
+        let stream = recognizer.create_stream();
 
-        let full_text = transcribe_strides(&mut model_lock, audio)?;
-        model_lock.reset();
+        stream.accept_waveform(SAMPLE_RATE as i32, audio);
+        stream.input_finished();
+
+        while recognizer.is_ready(&stream) {
+            recognizer.decode(&stream);
+        }
+
+        let result = recognizer.get_result(&stream);
+        let full_text = result.map(|r| r.text).unwrap_or_default();
 
         let elapsed = start.elapsed().as_secs_f32();
         let audio_duration = audio.len() as f32 / SAMPLE_RATE as f32;
@@ -88,8 +75,11 @@ impl SttEngineTrait for SttEngine {
         };
 
         log::info!(
-            "[STT-Nemotron] Transcribed (Offline): {:?}. (Audio: {:.2}s, Latency: {:.2}s, RTF: {:.3})",
-            full_text, audio_duration, elapsed, rtf
+            "[STT-Nemotron] Transcribed: {:?}. (Audio: {:.2}s, Latency: {:.2}s, RTF: {:.3})",
+            full_text,
+            audio_duration,
+            elapsed,
+            rtf
         );
 
         Ok(full_text)

@@ -183,13 +183,13 @@ Runtime selection via `VadBackendOption` in `core/settings.rs:VadSettings`; acto
 
 ### 4.2 STT — Speech-to-Text
 
-| Engine | Type | Memory | RTF | Strategy |
+| Engine | Type | Memory (RSS) | RTF (avg) | Strategy |
 |--------|------|-------:|:---:|----------|
-| **Nemotron-3.5** (primary, `nvidia_nemotron`) | ONNX INT8, parakeet-rs | ~2.5 GB | 0.02–0.35× | 8960-sample windows, stateful FastConformer-RNNT |
-| **Qwen3-ASR-0.6B** (legacy) | ONNX INT8, sherpa-onnx | ~800 MB | 0.38–4.63× | Rolling overlap window |
+| **Nemotron-3.5** (primary, `nvidia_nemotron`) | ONNX INT8, sherpa-onnx 1.13.6 | ~1.05 GB | 0.429× (2.33× RT) | Online streaming transducer (`OnlineRecognizer`) |
+| **Qwen3-ASR-0.6B** (alternative) | ONNX INT8, sherpa-onnx 1.13.6 | ~1.91 GB | 0.515× (1.94× RT) | Rolling overlap window |
 | **Cloud** (`stt.cloud` — Google Chirp3 default) | HTTP | 0 MB local | network | `SttProviderConfig::Cloud` via `services/stt/providers/mod.rs` |
 
-Throttling: partials capped at 1 per 800ms (`STT_THROTTLE_MS` in `core/constants.rs`). Provider construction at `services/stt/providers/embedded.rs:ensure_loaded` (lazy).
+Throttling: partials dynamically throttled with floor at 300ms (`STT_MIN_PARTIAL_THROTTLE_MS` in `services/stt/mod.rs`). Provider construction at `services/stt/providers/embedded.rs:ensure_loaded` (lazy). Baseline and comparison metrics documented in [`docs/benchmarks/stt_benchmark.md`](file:///home/addy/projects/apps/vox/docs/benchmarks/stt_benchmark.md).
 
 ### 4.3 LLM — Language Model
 
