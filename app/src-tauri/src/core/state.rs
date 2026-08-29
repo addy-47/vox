@@ -80,6 +80,12 @@ pub enum VadCommand {
     UpdateNoiseGate(f32),
     UpdateMode(crate::core::settings::InteractionMode),
     UpdateAudioMode(crate::core::settings::AudioOutputMode),
+    SetOperationalMode(crate::services::vad::VadOperationalMode),
+    SetAudioSink(Option<tokio::sync::mpsc::Sender<Vec<f32>>>),
+    StartWindowValidation,
+    StopWindowValidation {
+        response_tx: tokio::sync::oneshot::Sender<crate::services::vad::VadValidationResult>,
+    },
     Shutdown,
     StartRealtime {
         tx: tokio::sync::mpsc::Sender<Vec<i16>>,

@@ -250,7 +250,7 @@ pub fn run() {
             {
                 let s = state_arc.settings.read().unwrap();
                 if s.dictation.enabled {
-                    if let Err(e) = crate::services::dictation::hotkey::register_global_hotkey(
+                    if let Err(e) = crate::services::pipeline::dictation::init_dictation_hotkey_listener(
                         app.handle(),
                         &s.dictation.hotkey,
                     ) {

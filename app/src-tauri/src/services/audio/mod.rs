@@ -20,7 +20,6 @@ pub const PCM_S32_SCALE: f32 = 2147483648.0;
 
 pub mod decode;
 pub mod device;
-pub mod engine;
 pub mod playback;
 
 pub use decode::{
@@ -28,5 +27,4 @@ pub use decode::{
     DecodedAudio,
 };
 pub use device::AudioStream;
-pub use engine::{start_audio_engine, stop_audio_engine};
 pub use playback::PlaybackEngine;

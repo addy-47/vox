@@ -66,19 +66,15 @@ pub fn spawn_tts_worker<R: tauri::Runtime + 'static>(
 }
 
 /// Resolves a voice UUID to a WAV file path for Chatterbox voice conditioning.
-pub fn resolve_reference_audio(voice_id: Option<&str>) -> Option<String> {
+pub async fn resolve_reference_audio(voice_id: Option<&str>) -> Option<String> {
     let id = voice_id?;
     let db_path = crate::utils::paths::db_path();
-    let rt = crate::persistence::db::get_tokio_handle();
 
-    let conn = rt.block_on(async {
-        crate::persistence::db::VoxDb::open_readonly(&db_path)
-            .await
-            .ok()
-    })?;
+    let conn = crate::persistence::db::VoxDb::open_readonly(&db_path)
+        .await
+        .ok()?;
 
-    let entry =
-        rt.block_on(async { crate::persistence::voices::get_voice(&conn, id).await.ok() })??;
+    let entry = crate::persistence::voices::get_voice(&conn, id).await.ok()??;
 
     if let Some(ref dir) = entry.voice_dir {
         let path = std::path::Path::new(dir);
@@ -103,6 +99,7 @@ pub fn resolve_reference_audio(voice_id: Option<&str>) -> Option<String> {
 pub fn create_tts_provider(
     settings: &VoxSettings,
     super_tts_path: &Path,
+    reference_audio: Option<&str>,
 ) -> Result<Box<dyn TtsProvider>, String> {
     let provider_config = settings.tts.to_provider_config();
     let voice = settings.tts.voice_index;
@@ -120,17 +117,16 @@ pub fn create_tts_provider(
             language,
             quality_steps: cb_quality,
             speed: cb_speed,
-            voice_id,
+            voice_id: _,
         } => {
             log::info!("[TTS Actor] Initializing Chatterbox engine");
             let chatterbox_path = crate::utils::paths::model_dir(super::CHATTERBOX_MODEL_DIR);
-            let ref_audio = resolve_reference_audio(voice_id.as_deref());
             ChatterboxEngine::new(
                 &chatterbox_path,
                 language,
                 *cb_quality,
                 *cb_speed,
-                ref_audio.as_deref(),
+                reference_audio,
             )
             .map(|e| Box::new(e) as Box<dyn TtsProvider>)
             .map_err(|e| format!("Failed to create Chatterbox engine: {}", e))
@@ -176,6 +172,7 @@ pub fn warm_up_tts<R: tauri::Runtime + 'static>(
     handles: TtsWarmUpHandles<'_>,
     settings: &VoxSettings,
     super_tts_path: &Path,
+    reference_audio: Option<&str>,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
 ) -> Result<(), String> {
     if handles.tts_tx.is_some() {
@@ -183,7 +180,7 @@ pub fn warm_up_tts<R: tauri::Runtime + 'static>(
     }
 
     log::info!("[TTS Actor] Warming up TTS worker");
-    let provider = create_tts_provider(settings, super_tts_path)?;
+    let provider = create_tts_provider(settings, super_tts_path, reference_audio)?;
 
     let (tx, rx) = std::sync::mpsc::channel::<TtsCommand>();
     *handles.tts_tx = Some(tx);

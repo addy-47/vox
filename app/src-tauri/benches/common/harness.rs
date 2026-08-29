@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{AudioOutputMode, InteractionMode};
-use vox_lib::core::state::{InteractionOwner, VadCommand};
+use vox_lib::core::state::VadCommand;
 use vox_lib::services::stt::actor::{
     spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand,
 };
@@ -41,7 +41,6 @@ pub fn get_test_app_handle() -> AppHandle<tauri::test::MockRuntime> {
 
 /// Executes streaming benchmark on an STT provider across a list of audio clips.
 pub fn benchmark_streaming_provider(
-    app: &AppHandle<tauri::test::MockRuntime>,
     engine_name: &str,
     model_type: &str,
     model_path: &str,
@@ -69,7 +68,7 @@ pub fn benchmark_streaming_provider(
         engine_shutdown: engine_shutdown.clone(),
     };
 
-    let stt_handle = spawn_stt_worker(app.clone(), channels, provider, handles)
+    let stt_handle = spawn_stt_worker(channels, provider, handles)
         .expect("Failed to spawn STT worker");
 
     let rb = HeapRb::<f32>::new(65536);
@@ -100,8 +99,7 @@ pub fn benchmark_streaming_provider(
         is_loaded: Arc::new(AtomicBool::new(false)),
         playback_active,
         turn_id_atomic: Arc::new(AtomicU32::new(0)),
-        owner_atomic: Arc::new(AtomicU32::new(InteractionOwner::Assistant as u32)),
-        is_dictation_enabled: Arc::new(AtomicBool::new(false)),
+        audio_suppressed: Arc::new(AtomicBool::new(false)),
         engine_shutdown: engine_shutdown.clone(),
         dropped_counter: Arc::new(AtomicU64::new(0)),
     };
@@ -111,13 +109,11 @@ pub fn benchmark_streaming_provider(
     ).expect("Failed to create EarshotVadEngine");
     let vad_backend = vox_lib::services::vad::VadBackend::Earshot(earshot_engine);
 
-    let app_clone = app.clone();
     let vad_handle = std::thread::Builder::new()
         .name("bench-vad-actor".to_string())
         .spawn(move || {
             let _ = spawn_vad_actor(
                 vad_backend,
-                app_clone,
                 consumer,
                 vad_channels,
                 vad_handles,
