@@ -33,8 +33,8 @@ related_docs:
 | :--- | :--- | :--- | :---: | :---: | :---: | :--- | :--- | :---: |
 | **VAD** (default) | Earshot VAD | `earshot` | Embedded | — | < 1 MB | Rust-native | Embedded (no file) | ❌ |
 | **VAD** (legacy) | TenVAD | `ten_vad` | — | INT8 | ~15 MB | sherpa-onnx ONNX | `~/.vox/models/vad/ten_vad.onnx` | ✅ |
-| **STT** (primary) | Nvidia Nemotron-3.5 | `nvidia_nemotron` | ~1B | INT8 | ~2.5 GB | parakeet-rs ONNX | `~/.vox/models/stt/nemotron-3.5/` | ✅ |
-| **STT** (fallback) | Qwen3-ASR-0.6B | `qwen3_asr` | 0.6B | INT8 | ~800 MB | sherpa-onnx ONNX | `~/.vox/models/stt/qwen3-asr/` | ✅ |
+| **STT** (primary) | Nvidia Nemotron-3.5 | `nvidia_nemotron` | ~0.6B | INT8 | ~750 MB (RAM: ~1.05 GB) | sherpa-onnx 1.13.6 ONNX | `~/.vox/models/stt/nemotron-3.5/` | ✅ |
+| **STT** (alternative) | Qwen3-ASR-0.6B | `qwen3_asr` | 0.6B | INT8 | ~980 MB (RAM: ~1.91 GB) | sherpa-onnx 1.13.6 ONNX | `~/.vox/models/stt/qwen3-asr/` | ✅ |
 | **STT** (cloud) | Google Chirp 3 | `chirp_3` | Cloud | — | 0 MB | HTTP | `stt.cloud` (`google`) | N/A |
 | **LLM** (default) | Qwen3 0.8B | `qwen_3_5_0_8b` | 0.8B | Q4_K_M | ~600 MB | llama.cpp GGUF | `~/.vox/models/llm/qwen3/` | ✅ |
 | **LLM** (alternative) | Llama 3.2 1B Instruct | `llama_3_2_reasoning_q4` / `q6` | 1B | Q4_K_M / Q6_K | ~750 MB / 1.0 GB | llama.cpp GGUF | `~/.vox/models/llm/llama/` | ✅ |

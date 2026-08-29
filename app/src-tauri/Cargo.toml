@@ -41,7 +41,6 @@ llama-cpp-4 = { version = "0.2.61", default-features = false, features = ["openm
 llama-cpp-sys-4 = { version = "0.2.61", default-features = false }                             # Low-level llama.cpp C++ bindings
 ort = { version = "2.0.0-rc.12", features = ["download-binaries", "ndarray"] }                # ONNX Runtime bindings
 ndarray = "0.17.2"                                                                            # N-dimensional array processing for ONNX tensors
-parakeet-rs = "0.3.6"                                                                         # FastConformer RNNT STT inference (Nemotron)
 chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "2fa6883", default-features = false } # Local voice cloning TTS
 query-sieve = { git = "https://github.com/addy-47/query-sieve-rs.git" }                       # ModernBERT intent classifier
 tokenizers = { version = "0.21.0", default-features = false, features = ["fancy-regex"] }    # HuggingFace tokenizers (BPE / WordPiece)
@@ -104,10 +103,10 @@ enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
-sherpa-onnx = { version = "1.13.2", default-features = false, features = ["static"] }
+sherpa-onnx = { version = "1.13.6", default-features = false, features = ["static"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-sherpa-onnx = { version = "1.13.2", default-features = false, features = ["shared"] }
+sherpa-onnx = { version = "1.13.6", default-features = false, features = ["shared"] }
 
 [dev-dependencies]
 tempfile = "3"
@@ -137,3 +136,8 @@ path = "evals/eval_memory_pipeline.rs"
 [[example]]
 name = "eval_retrieval"
 path = "evals/eval_retrieval.rs"
+
+[[bench]]
+name = "stt_bench"
+harness = false
+
