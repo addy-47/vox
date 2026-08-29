@@ -12,7 +12,7 @@ use crate::core::settings::GeminiRealtimeConfig;
 use crate::services::realtime::{
     RealtimeAudioConfig, RealtimeProviderKind, RealtimeSession, RealtimeVoiceProvider,
     DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE, GEMINI_DEFAULT_WS_URL_BASE,
-    GEMINI_HEALTH_CHECK_ADDR, GEMINI_HEALTH_CHECK_FALLBACK_IP, LOG_INTERVAL_PACKETS,
+    GEMINI_HEALTH_CHECK_ADDR, GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR, LOG_INTERVAL_PACKETS,
     MAX_RECONNECT_ATTEMPTS, PTT_INTERRUPT_GAP, RECONNECT_BASE_DELAY_SECS, RECONNECT_FACTOR_SECS,
     SESSION_CACHE_FILENAME, WS_HEALTH_CHECK_TIMEOUT,
 };
@@ -135,14 +135,29 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         let ws_sender: Arc<Mutex<Option<UnboundedSender<Message>>>> = Arc::new(Mutex::new(None));
         let ws_sender_audio = ws_sender.clone();
         let ws_sender_control = ws_sender.clone();
+        let state_control = state.clone();
+        let terminated = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let terminated_clone = terminated.clone();
 
         let audio_sender_task = handle.spawn(async move {
             let mut packet_count: u64 = 0;
             while let Some(pcm) = audio_rx.recv().await {
+                let mut pcm_batch = pcm;
+                while pcm_batch.len() < 960 {
+                    if let Ok(extra) = audio_rx.try_recv() {
+                        pcm_batch.extend(extra);
+                    } else {
+                        break;
+                    }
+                }
+
+                let mut byte_buf = Vec::with_capacity(pcm_batch.len() * 2);
+                for &sample in &pcm_batch {
+                    byte_buf.extend_from_slice(&sample.to_le_bytes());
+                }
+
                 let base64_audio =
-                    base64::Engine::encode(&base64::prelude::BASE64_STANDARD, unsafe {
-                        std::slice::from_raw_parts(pcm.as_ptr() as *const u8, pcm.len() * 2)
-                    });
+                    base64::Engine::encode(&base64::prelude::BASE64_STANDARD, &byte_buf);
                 let msg = serde_json::json!({
                     "realtimeInput": {
                         "audio": {
@@ -188,35 +203,34 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                     })
                     .to_string(),
                     ControlEvent::Interrupt => {
-                        if is_ptt {
-                            let start_msg = serde_json::json!({
-                                "realtimeInput": {
-                                    "activityStart": {}
-                                }
-                            })
-                            .to_string();
-
-                            let opt_tx = {
-                                let guard = ws_sender_control.lock();
-                                guard.clone()
-                            };
-                            if let Some(ref tx) = opt_tx {
-                                if let Err(e) = tx.send(Message::Text(start_msg.into())) {
-                                    log::warn!("[GeminiLive] Failed to send activityStart on interrupt: {:?}", e);
-                                }
+                        state_control.lock().interrupt_active = true;
+                        let start_msg = serde_json::json!({
+                            "realtimeInput": {
+                                "activityStart": {}
                             }
+                        })
+                        .to_string();
 
-                            tokio::time::sleep(PTT_INTERRUPT_GAP).await;
-                            let end_msg = serde_json::json!({
-                                "realtimeInput": {
-                                    "activityEnd": {}
-                                }
-                            })
-                            .to_string();
-                            if let Some(ref tx) = opt_tx {
-                                if let Err(e) = tx.send(Message::Text(end_msg.into())) {
-                                    log::warn!("[GeminiLive] Failed to send activityEnd on interrupt: {:?}", e);
-                                }
+                        let opt_tx = {
+                            let guard = ws_sender_control.lock();
+                            guard.clone()
+                        };
+                        if let Some(ref tx) = opt_tx {
+                            if let Err(e) = tx.send(Message::Text(start_msg.into())) {
+                                log::warn!("[GeminiLive] Failed to send activityStart on interrupt: {:?}", e);
+                            }
+                        }
+
+                        tokio::time::sleep(PTT_INTERRUPT_GAP).await;
+                        let end_msg = serde_json::json!({
+                            "realtimeInput": {
+                                "activityEnd": {}
+                            }
+                        })
+                        .to_string();
+                        if let Some(ref tx) = opt_tx {
+                            if let Err(e) = tx.send(Message::Text(end_msg.into())) {
+                                log::warn!("[GeminiLive] Failed to send activityEnd on interrupt: {:?}", e);
                             }
                         }
                         continue;
@@ -262,10 +276,16 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                 match res {
                     Ok(Message::Text(text)) => {
                         let text_str: &str = &text;
-                        if let Err(e) = handle_gemini_server_message(text_str, &playback_tx_recv, &event_tx_recv, &state_recv) {
+                        let val: serde_json::Value = match serde_json::from_str(text_str) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                log::error!("[GeminiLive] Failed to parse message JSON: {:?}", e);
+                                continue;
+                            }
+                        };
+                        if let Err(e) = handle_gemini_server_message(&val, &playback_tx_recv, &event_tx_recv, &state_recv).await {
                             log::error!("[GeminiLive] Message handling error: {:?}", e);
                         }
-                        let val: serde_json::Value = serde_json::from_str(text_str).unwrap_or_default();
                         if val.get("goAway").is_some() {
                             log::warn!("[GeminiLive] Server requested session termination (goAway). Reconnecting...");
                             ws_connected_clone.store(false, Ordering::SeqCst);
@@ -283,10 +303,16 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                     Ok(Message::Binary(bytes)) => {
                         let text = String::from_utf8_lossy(&bytes);
                         let text_str = &*text;
-                        if let Err(e) = handle_gemini_server_message(text_str, &playback_tx_recv, &event_tx_recv, &state_recv) {
+                        let val: serde_json::Value = match serde_json::from_str(text_str) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                log::error!("[GeminiLive] Failed to parse binary message JSON: {:?}", e);
+                                continue;
+                            }
+                        };
+                        if let Err(e) = handle_gemini_server_message(&val, &playback_tx_recv, &event_tx_recv, &state_recv).await {
                             log::error!("[GeminiLive] Message handling error: {:?}", e);
                         }
-                        let val: serde_json::Value = serde_json::from_str(text_str).unwrap_or_default();
                         if val.get("goAway").is_some() {
                             log::warn!("[GeminiLive] Server requested session termination (goAway). Reconnecting...");
                             ws_connected_clone.store(false, Ordering::SeqCst);
@@ -397,10 +423,16 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                                     match res {
                                         Ok(Message::Text(text)) => {
                                             let text_str: &str = &text;
-                                            if let Err(e) = handle_gemini_server_message(text_str, &new_playback_tx, &new_event_tx, &new_state_recv) {
+                                            let val: serde_json::Value = match serde_json::from_str(text_str) {
+                                                Ok(v) => v,
+                                                Err(e) => {
+                                                    log::error!("[GeminiLive] Reconnected JSON parse error: {:?}", e);
+                                                    continue;
+                                                }
+                                            };
+                                            if let Err(e) = handle_gemini_server_message(&val, &new_playback_tx, &new_event_tx, &new_state_recv).await {
                                                 log::error!("[GeminiLive] Reconnected Message handling error: {:?}", e);
                                             }
-                                            let val: serde_json::Value = serde_json::from_str(text_str).unwrap_or_default();
                                             if val.get("goAway").is_some() {
                                                 log::warn!("[GeminiLive] Reconnected Server requested session termination (goAway).");
                                                 ws_conn_rec.store(false, Ordering::SeqCst);
@@ -418,10 +450,16 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                                         Ok(Message::Binary(bytes)) => {
                                             let text = String::from_utf8_lossy(&bytes);
                                             let text_str = &*text;
-                                            if let Err(e) = handle_gemini_server_message(text_str, &new_playback_tx, &new_event_tx, &new_state_recv) {
+                                            let val: serde_json::Value = match serde_json::from_str(text_str) {
+                                                Ok(v) => v,
+                                                Err(e) => {
+                                                    log::error!("[GeminiLive] Reconnected Binary JSON parse error: {:?}", e);
+                                                    continue;
+                                                }
+                                            };
+                                            if let Err(e) = handle_gemini_server_message(&val, &new_playback_tx, &new_event_tx, &new_state_recv).await {
                                                 log::error!("[GeminiLive] Reconnected Message handling error: {:?}", e);
                                             }
-                                            let val: serde_json::Value = serde_json::from_str(text_str).unwrap_or_default();
                                             if val.get("goAway").is_some() {
                                                 log::warn!("[GeminiLive] Reconnected Server requested session termination (goAway).");
                                                 ws_conn_rec.store(false, Ordering::SeqCst);
@@ -484,6 +522,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                     }) {
                         log::warn!("[GeminiLive] Failed to send permanent error event: {:?}", e);
                     }
+                    terminated_clone.store(true, Ordering::SeqCst);
                     *ws_sender.lock() = None;
                     audio_sender_task.abort();
                     control_sender_task.abort();
@@ -498,14 +537,17 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
             shutdown_tx: parking_lot::Mutex::new(Some(shutdown_tx)),
             ws_connected,
             last_activity_time: last_activity_time_sender,
+            terminated,
         }))
     }
 
     /// Performs TCP health check against Gemini Live endpoint.
     fn health_check(&self) -> bool {
-        let addr = match GEMINI_HEALTH_CHECK_ADDR.parse() {
-            Ok(sa) => sa,
-            Err(_) => GEMINI_HEALTH_CHECK_FALLBACK_IP.parse().expect("Valid fallback socket addr"),
+        use std::net::ToSocketAddrs;
+        let addr = if let Ok(mut addrs) = GEMINI_HEALTH_CHECK_ADDR.to_socket_addrs() {
+            addrs.next().unwrap_or(GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR)
+        } else {
+            GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR
         };
         std::net::TcpStream::connect_timeout(&addr, WS_HEALTH_CHECK_TIMEOUT).is_ok()
     }
@@ -714,11 +756,15 @@ pub struct GeminiLiveSession {
     shutdown_tx: parking_lot::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     ws_connected: Arc<std::sync::atomic::AtomicBool>,
     last_activity_time: Arc<std::sync::atomic::AtomicU64>,
+    terminated: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl RealtimeSession for GeminiLiveSession {
     /// Enqueues PCM audio chunk for transmission to Gemini Live.
     fn send_audio(&self, pcm: &[i16]) -> Result<()> {
+        if self.terminated.load(Ordering::Relaxed) {
+            bail!("Gemini Live session is terminated");
+        }
         self.last_activity_time.store(
             chrono::Utc::now().timestamp_millis() as u64,
             std::sync::atomic::Ordering::Relaxed,
@@ -784,14 +830,12 @@ impl RealtimeSession for GeminiLiveSession {
 }
 
 /// Parses and routes incoming Gemini Live BidiGenerateContent JSON protocol messages.
-fn handle_gemini_server_message(
-    text: &str,
+async fn handle_gemini_server_message(
+    val: &serde_json::Value,
     playback_tx: &tokio::sync::mpsc::Sender<Vec<i16>>,
     event_tx: &Sender<VoxEvent>,
     state: &Arc<Mutex<SessionState>>,
 ) -> Result<()> {
-    let val: serde_json::Value = serde_json::from_str(text)?;
-
     {
         let s_lock = state.lock();
         s_lock.last_activity_time.store(
@@ -841,22 +885,25 @@ fn handle_gemini_server_message(
     }
 
     if let Some(server_content) = val.get("serverContent") {
-        let mut s_lock = state.lock();
-
-        if server_content
+        let is_interrupted = server_content
             .get("interrupted")
             .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
-            log::info!("[GeminiLive] Interruption confirmed by Gemini Live server.");
-            s_lock.interrupt_active = false;
-            if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id: 0 }) {
-                log::warn!("[GeminiLive] Failed to send Cancelled event: {:?}", e);
+            .unwrap_or(false);
+
+        let interrupt_active = {
+            let mut s_lock = state.lock();
+            if is_interrupted {
+                log::info!("[GeminiLive] Interruption confirmed by Gemini Live server.");
+                s_lock.interrupt_active = false;
+                if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id: 0 }) {
+                    log::warn!("[GeminiLive] Failed to send Cancelled event: {:?}", e);
+                }
             }
-        }
+            s_lock.interrupt_active
+        };
 
         if let Some(model_turn) = server_content.get("modelTurn") {
-            if s_lock.interrupt_active {
+            if interrupt_active {
                 return Ok(());
             }
 
@@ -876,11 +923,11 @@ fn handle_gemini_server_message(
                                     )?;
                                     let pcm: Vec<i16> = decoded
                                         .chunks_exact(2)
-                                        .map(|c| i16::from_ne_bytes([c[0], c[1]]))
+                                        .map(|c| i16::from_le_bytes([c[0], c[1]]))
                                         .collect();
-                                    if let Err(e) = playback_tx.try_send(pcm) {
+                                    if let Err(e) = playback_tx.send(pcm).await {
                                         log::warn!(
-                                            "[GeminiLive] Playback bridge buffer full: {:?}",
+                                            "[GeminiLive] Playback bridge channel closed: {:?}",
                                             e
                                         );
                                     } else {
@@ -909,7 +956,7 @@ fn handle_gemini_server_message(
         }
 
         if let Some(input_transcription) = server_content.get("inputTranscription") {
-            if !s_lock.interrupt_active {
+            if !interrupt_active {
                 if let Some(text) = input_transcription.get("text").and_then(|t| t.as_str()) {
                     log::debug!(
                         "[GeminiLive] Received input transcription (ASR): {:?}",
@@ -926,7 +973,7 @@ fn handle_gemini_server_message(
         }
 
         if let Some(output_transcription) = server_content.get("outputTranscription") {
-            if !s_lock.interrupt_active {
+            if !interrupt_active {
                 if let Some(text) = output_transcription.get("text").and_then(|t| t.as_str()) {
                     log::debug!(
                         "[GeminiLive] Received output transcription (TTS): {:?}",
@@ -948,7 +995,7 @@ fn handle_gemini_server_message(
             .unwrap_or(false)
         {
             log::debug!("[GeminiLive] Turn completed.");
-            s_lock.interrupt_active = false;
+            state.lock().interrupt_active = false;
             if let Err(e) = event_tx.send(VoxEvent::LlmFinished { turn_id: 0 }) {
                 log::warn!("[GeminiLive] Failed to send LlmFinished event: {:?}", e);
             }

@@ -24,6 +24,15 @@ pub const STATUS_IDLE: &str = "IDLE";
 pub const END_REASON_USER: &str = "user";
 pub const OWNER_DICTATION: &str = "dictation";
 
+#[derive(serde::Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PttStatusPayload {
+    pub state: &'static str,
+}
+
+pub const PTT_PAYLOAD_RECORDING: PttStatusPayload = PttStatusPayload { state: STATUS_RECORDING };
+pub const PTT_PAYLOAD_PROCESSING: PttStatusPayload = PttStatusPayload { state: STATUS_PROCESSING };
+pub const PTT_PAYLOAD_IDLE: PttStatusPayload = PttStatusPayload { state: STATUS_IDLE };
+
 pub const ROUTER_THREAD_NAME: &str = "vox-router";
 
 pub mod dictation;
@@ -44,23 +53,29 @@ pub struct RoutingContext {
 }
 
 impl RoutingContext {
-    /// Snapshots the active routing context from settings and current owner.
+    /// Snapshots the active routing context from settings and current owner with poison-safety.
     pub fn from_app_state(state: &AppState) -> Self {
-        let settings = state.settings.read().unwrap();
+        let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
         let owner: InteractionOwner = state
             .owner
             .load(Ordering::Relaxed)
             .into();
-        let interaction_mode = match owner {
-            InteractionOwner::Dictation => match settings.dictation.interaction_mode {
-                DictationInteractionMode::Passive => InteractionMode::Passive,
-                DictationInteractionMode::Ptt => InteractionMode::PTT,
-            },
-            InteractionOwner::Assistant => settings.interaction.mode.clone(),
+        let (pipeline_mode, interaction_mode) = match owner {
+            InteractionOwner::Dictation => {
+                let im = match settings.dictation.interaction_mode {
+                    DictationInteractionMode::Passive => InteractionMode::Passive,
+                    DictationInteractionMode::Ptt => InteractionMode::PTT,
+                };
+                (settings.interaction.pipeline_mode.clone(), im)
+            }
+            InteractionOwner::Assistant => (
+                settings.interaction.pipeline_mode.clone(),
+                settings.interaction.mode.clone(),
+            ),
         };
 
         Self {
-            pipeline_mode: settings.interaction.pipeline_mode.clone(),
+            pipeline_mode,
             interaction_mode,
             owner,
         }

@@ -16,7 +16,7 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
     state: &AppState,
 ) -> Result<(), String> {
     let (llm_path, tts_path, settings) = {
-        let s = state.settings.read().unwrap().clone();
+        let s = state.settings.read().unwrap_or_else(|p| p.into_inner()).clone();
         let models_dir = crate::utils::paths::get().models.clone();
         let llm = models_dir
             .join(crate::services::llm::QWEN_MODEL_DIR)
@@ -68,15 +68,21 @@ pub async fn build_generation_request(
 ) -> (GenerationRequest, Option<String>) {
     let is_deva = crate::services::translit::is_devanagari(text);
 
+    let db_path = crate::utils::paths::db_path();
+    let conn_opt = if settings.memory.context_retrieval_enabled || settings.memory.pipeline_processing_enabled {
+        crate::persistence::db::VoxDb::open(&db_path).await.ok()
+    } else {
+        None
+    };
+
     let mut retrieved_profile = None;
     if settings.memory.context_retrieval_enabled {
         let scope = crate::services::memory::classify_scope(text);
         if scope != query_sieve::MemoryScope::ChitChat {
             if let Ok(Some(query_embedding)) = crate::services::memory::generate_embedding(text) {
-                let db_path = crate::utils::paths::db_path();
-                if let Ok(conn) = crate::persistence::db::VoxDb::open_readonly(&db_path).await {
+                if let Some(ref conn) = conn_opt {
                     if let Ok(profile) = crate::services::memory::retrieve_personal_context(
-                        &conn,
+                        conn,
                         &query_embedding,
                         scope,
                         &settings.memory,
@@ -107,20 +113,27 @@ pub async fn build_generation_request(
     };
 
     if !personal_memory.is_empty() {
-        let db_path = crate::utils::paths::db_path();
         let session_id = conv_id.to_string();
         tauri::async_runtime::spawn(async move {
-            if let Ok(conn) = crate::persistence::db::VoxDb::open(&db_path).await {
-                if let Err(e) = crate::persistence::mutations::enqueue_personal_facts(
-                    &conn,
-                    personal_memory,
-                    &session_id,
-                    true,
-                )
-                .await
-                {
-                    log::warn!("[Modular::Context] Failed to enqueue personal memory: {}", e);
-                }
+            let conn = match conn_opt {
+                Some(c) => c,
+                None => match crate::persistence::db::VoxDb::open(&db_path).await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        log::warn!("[Modular::Context] Failed to open DB for memory enqueue: {}", e);
+                        return;
+                    }
+                },
+            };
+            if let Err(e) = crate::persistence::mutations::enqueue_personal_facts(
+                &conn,
+                personal_memory,
+                &session_id,
+                true,
+            )
+            .await
+            {
+                log::warn!("[Modular::Context] Failed to enqueue personal memory: {}", e);
             }
         });
     }

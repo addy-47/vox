@@ -285,6 +285,14 @@ impl ConversationManager {
         );
     }
 
+    /// Checks if the last message in working memory is a user turn with identical content.
+    pub fn is_duplicate_user_turn(&self, text: &str) -> bool {
+        self.messages
+            .last()
+            .map(|m| m.role == Role::User && m.content == text)
+            .unwrap_or(false)
+    }
+
     /// Appends a new assistant turn to working memory.
     pub fn push_assistant_turn(&mut self, text: String) {
         if text.trim().is_empty() {
@@ -379,12 +387,23 @@ impl ConversationManager {
             return;
         }
 
-        let base_prompt = &self.system_prompt.content;
-        let consolidated_prompt = if let Some(idx) = base_prompt.find("<user_profile>") {
-            let (prefix, suffix) = base_prompt.split_at(idx);
+        let base_content = &self.system_prompt.content;
+        let cleaned_base = if let (Some(start), Some(end)) = (
+            base_content.find("<session_history>"),
+            base_content.find("</session_history>"),
+        ) {
+            let before = &base_content[..start];
+            let after = &base_content[end + "</session_history>".len()..];
+            format!("{}{}", before.trim_end(), after)
+        } else {
+            base_content.clone()
+        };
+
+        let consolidated_prompt = if let Some(idx) = cleaned_base.find("<user_profile>") {
+            let (prefix, suffix) = cleaned_base.split_at(idx);
             format!("{}\n{}\n\n{}", prefix.trim_end(), session_history, suffix)
         } else {
-            format!("{}\n\n{}", base_prompt, session_history)
+            format!("{}\n\n{}", cleaned_base.trim_end(), session_history)
         };
 
         let old_sys_tokens = estimate_tokens(&self.messages[0].content);
@@ -682,5 +701,38 @@ mod tests {
         assert!(cm.system_prompt.content.starts_with("You are a helpful coding assistant."));
         assert!(cm.system_prompt.content.contains("<user_profile>\n[Identity]\n- User lives in Seattle.\n</user_profile>"));
         assert_eq!(cm.messages.len(), 1);
+    }
+
+    /// Tests safety of pop_last_user_turn during assistant greeting and normal user turns.
+    #[test]
+    fn test_pop_last_user_turn_safety() {
+        let mut cm = ConversationManager::new(2048);
+        cm.new_session("System prompt");
+        // Messages has 1 System message
+        assert_eq!(cm.messages.len(), 1);
+        assert_eq!(cm.messages[0].role, Role::System);
+
+        // Popping on greeting / initial assistant state must NO-OP
+        cm.pop_last_user_turn();
+        assert_eq!(cm.messages.len(), 1);
+
+        // Push assistant greeting
+        cm.push_assistant_turn("Hello, how can I help?".to_string());
+        assert_eq!(cm.messages.len(), 2);
+        assert_eq!(cm.messages[1].role, Role::Assistant);
+
+        // Popping on assistant turn must NO-OP (does not delete assistant response)
+        cm.pop_last_user_turn();
+        assert_eq!(cm.messages.len(), 2);
+
+        // Push user turn
+        cm.push_user_turn("What is the weather?".to_string());
+        assert_eq!(cm.messages.len(), 3);
+        assert_eq!(cm.messages[2].role, Role::User);
+
+        // Popping on user turn must pop the user turn
+        cm.pop_last_user_turn();
+        assert_eq!(cm.messages.len(), 2);
+        assert_eq!(cm.messages[1].role, Role::Assistant);
     }
 }

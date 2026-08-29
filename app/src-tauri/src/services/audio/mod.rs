@@ -23,7 +23,6 @@ pub mod device;
 pub mod engine;
 pub mod playback;
 
-pub use crate::core::error::AudioError;
 pub use decode::{
     decode_bytes_to_24khz_mono, decode_to_24khz_mono, truncate_to, write_wav_f32, write_wav_f32_raw,
     DecodedAudio,

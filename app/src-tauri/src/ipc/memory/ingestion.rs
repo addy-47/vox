@@ -205,6 +205,9 @@ pub async fn retry_failed_queue_items(
     if item_ids.is_empty() {
         return Ok(0);
     }
+    if item_ids.len() > 1000 {
+        return Err("Too many items in retry batch. Maximum allowed is 1000.".to_string());
+    }
 
     if state.memory.pipeline_paused.load(Ordering::SeqCst) {
         return Err("Memory pipeline processing is currently paused. Please enable processing before retrying.".to_string());

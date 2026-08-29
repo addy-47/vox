@@ -40,7 +40,7 @@ pub struct RuntimeSnapshot {
     pub playback_buffer_samples: usize,
     pub playback_underruns: u64,
 
-    /// Current interaction owner (Tray, MainWindow, Ptt).
+    /// Current interaction owner (Dictation, Assistant).
     pub active_owner: String,
 
     /// Extended Monitoring Metrics

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 /// Instantiates the configured cloud real-time voice provider.
 pub fn create_realtime_provider(state: &AppState) -> Result<Box<dyn RealtimeVoiceProvider>, String> {
-    let settings = state.settings.read().unwrap().clone();
+    let settings = state.settings.read().unwrap_or_else(|p| p.into_inner()).clone();
     match settings.realtime.active {
         RealtimeProviderKind::GeminiLive => Ok(Box::new(GeminiLiveProvider::new(
             settings.realtime.gemini_live.clone(),

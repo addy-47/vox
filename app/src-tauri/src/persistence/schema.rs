@@ -3,106 +3,144 @@ use turso::Connection;
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
+const SCHEMA_VERSION: u32 = 1;
+
 /// Runs the CREATE TABLE IF NOT EXISTS migrations against the given connection.
 pub async fn run_migrations(conn: &Connection) -> Result<()> {
-    let statements = [
-        "CREATE TABLE IF NOT EXISTS sessions (
-            id               INTEGER PRIMARY KEY,
-            started_at       INTEGER NOT NULL,
-            ended_at         INTEGER,
-            turn_count       INTEGER NOT NULL DEFAULT 0
-        );",
-        "CREATE TABLE IF NOT EXISTS turns (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id      INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-            turn_id         INTEGER NOT NULL,
-            user_text       TEXT    NOT NULL DEFAULT '',
-            assistant_text  TEXT    NOT NULL DEFAULT '',
-            stt_latency_ms  INTEGER,
-            ttft_ms         INTEGER,
-            created_at      INTEGER NOT NULL
-        );",
-        "CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);",
-        "CREATE TABLE IF NOT EXISTS voices (
-            id          TEXT    PRIMARY KEY,
-            name        TEXT    NOT NULL,
-            source_kind TEXT    NOT NULL,
-            wav_path    TEXT,
-            voice_dir   TEXT,
-            created_at  INTEGER NOT NULL,
-            preview_wav TEXT
-        );",
-        "CREATE INDEX IF NOT EXISTS idx_voices_created ON voices(created_at DESC);",
-        "CREATE TABLE IF NOT EXISTS memory_facts (
-            id           TEXT PRIMARY KEY,
-            type         TEXT NOT NULL,
-            collection   TEXT NOT NULL,
-            fact         TEXT NOT NULL,
-            source       TEXT NOT NULL DEFAULT 'LLM',
-            status       TEXT NOT NULL DEFAULT 'active',
-            session_id   TEXT NOT NULL DEFAULT '',
-            turn_id      TEXT NOT NULL DEFAULT '',
-            created_at   INTEGER NOT NULL
-        );",
-        "CREATE TABLE IF NOT EXISTS memory_facts_vectors (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            fact_id     TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
-            collection  TEXT NOT NULL,
-            embedding   F32_BLOB(384) NOT NULL
-        );",
-        "CREATE TABLE IF NOT EXISTS memory_relations (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            from_id     TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
-            to_id       TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
-            relation    TEXT NOT NULL,
-            source      TEXT NOT NULL DEFAULT 'NLI',
-            created_at  INTEGER NOT NULL,
-            UNIQUE(from_id, to_id, relation)
-        );",
-        "CREATE TABLE IF NOT EXISTS personal_memory_queue (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            fact             TEXT NOT NULL,
-            collection       TEXT NOT NULL,
-            source           TEXT NOT NULL DEFAULT 'LLM',
-            session_id       TEXT NOT NULL DEFAULT '',
-            status           TEXT NOT NULL DEFAULT 'staged_pending',
-            attempts         INTEGER NOT NULL DEFAULT 0,
-            retry_count      INTEGER NOT NULL DEFAULT 0,
-            error_msg        TEXT,
-            created_at       INTEGER NOT NULL,
-            processed_at     INTEGER,
-            claimed_at       INTEGER,
-            vector           F32_BLOB(384),
-            relations_json   TEXT,
-            dedup_match_json TEXT,
-            audit_json       TEXT
-        );",
-        "CREATE TABLE IF NOT EXISTS memory_pipeline_metrics (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id        TEXT    NOT NULL,
-            stage_name    TEXT    NOT NULL,
-            session_id    TEXT    NOT NULL DEFAULT '',
-            batch_seq     INTEGER NOT NULL DEFAULT 0,
-            items_claimed INTEGER NOT NULL DEFAULT 0,
-            error_count   INTEGER NOT NULL DEFAULT 0,
-            duration_ms   INTEGER NOT NULL,
-            created_at    INTEGER NOT NULL
-        );",
-        "CREATE INDEX IF NOT EXISTS idx_mf_type_status ON memory_facts(type, status);",
-        "CREATE INDEX IF NOT EXISTS idx_mf_collection_status ON memory_facts(collection, status);",
-        "CREATE INDEX IF NOT EXISTS idx_mf_created ON memory_facts(created_at DESC);",
-        "CREATE INDEX IF NOT EXISTS idx_mfv_collection ON memory_facts_vectors(collection);",
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_mfv_fact_id ON memory_facts_vectors(fact_id);",
-        "CREATE INDEX IF NOT EXISTS idx_mr_from ON memory_relations(from_id, relation);",
-        "CREATE INDEX IF NOT EXISTS idx_mr_to ON memory_relations(to_id, relation);",
-        "CREATE INDEX IF NOT EXISTS idx_pmq_status ON personal_memory_queue(status, created_at ASC);",
-        "CREATE INDEX IF NOT EXISTS idx_pmq_session ON personal_memory_queue(session_id);",
-        "CREATE INDEX IF NOT EXISTS idx_mpm_run_stage ON memory_pipeline_metrics(run_id, stage_name);",
-        "CREATE INDEX IF NOT EXISTS idx_mpm_batch_seq ON memory_pipeline_metrics(run_id, stage_name, batch_seq);",
-    ];
+    let mut rows = conn.query("PRAGMA user_version;", ()).await?;
+    let current_version: u32 = if let Some(row) = rows.next().await? {
+        row.get(0).unwrap_or(0)
+    } else {
+        0
+    };
 
-    for stmt in statements {
-        conn.execute(stmt, ()).await?;
+    if current_version < SCHEMA_VERSION {
+        log::info!(
+            "[Persistence::Schema] Migrating database schema from v{} to v{}",
+            current_version,
+            SCHEMA_VERSION
+        );
+
+        let statements = [
+            "CREATE TABLE IF NOT EXISTS sessions (
+                id               INTEGER PRIMARY KEY,
+                started_at       INTEGER NOT NULL,
+                ended_at         INTEGER,
+                turn_count       INTEGER NOT NULL DEFAULT 0
+            );",
+            "CREATE TABLE IF NOT EXISTS turns (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id      INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                turn_id         INTEGER NOT NULL,
+                user_text       TEXT    NOT NULL DEFAULT '',
+                assistant_text  TEXT    NOT NULL DEFAULT '',
+                stt_latency_ms  INTEGER,
+                ttft_ms         INTEGER,
+                created_at      INTEGER NOT NULL
+            );",
+            "CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);",
+            "CREATE TABLE IF NOT EXISTS voices (
+                id          TEXT    PRIMARY KEY,
+                name        TEXT    NOT NULL,
+                source_kind TEXT    NOT NULL,
+                wav_path    TEXT,
+                voice_dir   TEXT,
+                created_at  INTEGER NOT NULL,
+                preview_wav TEXT
+            );",
+            "CREATE INDEX IF NOT EXISTS idx_voices_created ON voices(created_at DESC);",
+            "CREATE TABLE IF NOT EXISTS memory_facts (
+                id           TEXT PRIMARY KEY,
+                type         TEXT NOT NULL,
+                collection   TEXT NOT NULL,
+                fact         TEXT NOT NULL,
+                source       TEXT NOT NULL DEFAULT 'LLM',
+                status       TEXT NOT NULL DEFAULT 'active',
+                session_id   TEXT NOT NULL DEFAULT '',
+                turn_id      TEXT NOT NULL DEFAULT '',
+                created_at   INTEGER NOT NULL
+            );",
+            "CREATE TABLE IF NOT EXISTS memory_facts_vectors (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                fact_id     TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
+                collection  TEXT NOT NULL,
+                embedding   F32_BLOB(384) NOT NULL
+            );",
+            "CREATE TABLE IF NOT EXISTS memory_relations (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_id     TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
+                to_id       TEXT NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
+                relation    TEXT NOT NULL,
+                source      TEXT NOT NULL DEFAULT 'NLI',
+                created_at  INTEGER NOT NULL,
+                UNIQUE(from_id, to_id, relation)
+            );",
+            "CREATE TABLE IF NOT EXISTS personal_memory_queue (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                fact             TEXT NOT NULL,
+                collection       TEXT NOT NULL,
+                source           TEXT NOT NULL DEFAULT 'LLM',
+                session_id       TEXT NOT NULL DEFAULT '',
+                status           TEXT NOT NULL DEFAULT 'staged_pending',
+                attempts         INTEGER NOT NULL DEFAULT 0,
+                retry_count      INTEGER NOT NULL DEFAULT 0,
+                error_msg        TEXT,
+                created_at       INTEGER NOT NULL,
+                processed_at     INTEGER,
+                claimed_at       INTEGER,
+                vector           F32_BLOB(384),
+                relations_json   TEXT,
+                dedup_match_json TEXT,
+                audit_json       TEXT
+            );",
+            "CREATE TABLE IF NOT EXISTS memory_pipeline_metrics (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id        TEXT    NOT NULL,
+                stage_name    TEXT    NOT NULL,
+                session_id    TEXT    NOT NULL DEFAULT '',
+                batch_seq     INTEGER NOT NULL DEFAULT 0,
+                items_claimed INTEGER NOT NULL DEFAULT 0,
+                error_count   INTEGER NOT NULL DEFAULT 0,
+                duration_ms   INTEGER NOT NULL,
+                created_at    INTEGER NOT NULL
+            );",
+            "CREATE INDEX IF NOT EXISTS idx_mf_type_status ON memory_facts(type, status);",
+            "CREATE INDEX IF NOT EXISTS idx_mf_collection_status ON memory_facts(collection, status);",
+            "CREATE INDEX IF NOT EXISTS idx_mf_created ON memory_facts(created_at DESC);",
+            "CREATE INDEX IF NOT EXISTS idx_mfv_collection ON memory_facts_vectors(collection);",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_mfv_fact_id ON memory_facts_vectors(fact_id);",
+            "CREATE INDEX IF NOT EXISTS idx_mr_from ON memory_relations(from_id, relation);",
+            "CREATE INDEX IF NOT EXISTS idx_mr_to ON memory_relations(to_id, relation);",
+            "CREATE INDEX IF NOT EXISTS idx_pmq_status ON personal_memory_queue(status, created_at ASC);",
+            "CREATE INDEX IF NOT EXISTS idx_pmq_session ON personal_memory_queue(session_id);",
+            "CREATE INDEX IF NOT EXISTS idx_mpm_run_stage ON memory_pipeline_metrics(run_id, stage_name);",
+            "CREATE INDEX IF NOT EXISTS idx_mpm_batch_seq ON memory_pipeline_metrics(run_id, stage_name, batch_seq);",
+        ];
+
+        conn.execute("BEGIN TRANSACTION;", ()).await?;
+        let migration_res: Result<()> = async {
+            for stmt in statements {
+                conn.execute(stmt, ()).await?;
+            }
+            conn.execute(&format!("PRAGMA user_version = {};", SCHEMA_VERSION), ()).await?;
+            Ok(())
+        }.await;
+
+        match migration_res {
+            Ok(_) => {
+                conn.execute("COMMIT;", ()).await?;
+                log::info!(
+                    "[Persistence::Schema] Database schema migration to v{} committed successfully",
+                    SCHEMA_VERSION
+                );
+            }
+            Err(e) => {
+                if let Err(rollback_err) = conn.execute("ROLLBACK;", ()).await {
+                    log::warn!("[Persistence::Schema] Failed to rollback migration: {}", rollback_err);
+                }
+                return Err(e);
+            }
+        }
     }
 
     if let Err(e) = seed_packaged_voices(conn).await {

@@ -3,7 +3,7 @@ use crate::core::constants::{
     PM_QUEUE_STATUS_DEDUPED, PM_QUEUE_STATUS_PROCESSING_DEDUP, PM_QUEUE_STATUS_STAGED_PENDING,
     PM_QUEUE_STATUS_SUPERSEDED,
 };
-use crate::services::memory::deduplication::{is_exact_duplicate, jaccard_similarity};
+use crate::services::memory::deduplication::jaccard_similarity;
 use crate::services::memory::STAGE1_BATCH_CEILING;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -113,13 +113,18 @@ async fn dedup_item_against_active(
 ) -> Result<()> {
     let trimmed_fact = item.fact.trim();
     if trimmed_fact.is_empty() {
-        superseded_ids.push(item.id);
+        if let Err(e) = conn
+            .execute("DELETE FROM personal_memory_queue WHERE id = ?", (item.id,))
+            .await
+        {
+            log::warn!("[MemoryPipeline::Stage1] Failed to delete empty queue item: {}", e);
+        }
         let log = DedupAuditLog {
             queue_item_id: item.id,
             item_fact: item.fact.clone(),
             item_collection: item.collection.clone(),
             stage: "stage1_jaccard".to_string(),
-            action: "empty_fact_dropped".to_string(),
+            action: "empty_fact_deleted".to_string(),
             matched_fact_id: String::new(),
             matched_fact_coll: String::new(),
             matched_fact: String::new(),
@@ -141,7 +146,7 @@ async fn dedup_item_against_active(
                 .iter()
                 .find_map(|(cand_id, cand_coll, cand_fact)| {
                     let jacc_sim = jaccard_similarity(trimmed_fact, cand_fact);
-                    if is_exact_duplicate(0.0, jacc_sim) {
+                    if jacc_sim >= crate::services::memory::JACCARD_EXACT_MATCH_THRESHOLD {
                         Some((
                             cand_id.clone(),
                             cand_coll.clone(),
@@ -348,6 +353,7 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
     commit_dedup_statuses(conn, &deduped_ids, &superseded_ids).await?;
 
     let processed_count = items.len();
+    let error_count = items_claimed.saturating_sub(processed_count);
     let duration_ms = start_time.elapsed().as_millis();
 
     if !run_id.is_empty() {
@@ -357,7 +363,7 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
             session_id,
             batch_seq: 0,
             items_claimed,
-            error_count: 0,
+            error_count,
             duration_ms,
         };
         if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {
