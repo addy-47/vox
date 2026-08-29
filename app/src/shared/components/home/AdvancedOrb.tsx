@@ -376,10 +376,16 @@ export const VoxOrb = React.memo(({
   // ── Theme observer to prevent Layout Thrashing during 60fps rendering ────
   useEffect(() => {
     let observer: MutationObserver | null = null;
+    let lastTheme = '';
+    let lastAccentStr = '';
 
     const updateTheme = () => {
       if (typeof document === 'undefined') return;
       const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+      const rawAccent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+      if (currentTheme === lastTheme && rawAccent === lastAccentStr) return;
+      lastTheme = currentTheme;
+      lastAccentStr = rawAccent;
       const accent = getCSSColor('--accent', '#00dbe9');
       const glow = accent.clone().multiplyScalar(currentTheme === 'light' ? 0.70 : 0.40);
 
@@ -751,6 +757,7 @@ export const VoxOrb = React.memo(({
       outerGeo.dispose();
       outerMat.dispose();
       discMats.forEach((m) => m.dispose());
+      renderer.forceContextLoss();
       renderer.dispose();
     };
   }, []);

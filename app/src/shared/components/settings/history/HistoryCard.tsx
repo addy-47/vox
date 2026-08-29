@@ -30,22 +30,14 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
       )}
     >
       {/* Header */}
-      {!isSmall ? (
-        <div className="flex items-center justify-between mb-2 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-1.5 w-full">
-          <div className="flex items-center gap-2">
-            <History className="text-[rgb(var(--accent))]" size={16} />
-            <span className="font-display text-[12px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
-              History & Storage
-            </span>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-center justify-between mb-4 w-full shrink-0">
-          <span className="font-display text-[13px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]/80">
-            History Settings
+      <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
+        <div className="flex items-center gap-2">
+          <History className="text-[rgb(var(--accent))]" size={17} />
+          <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
+            History & Storage
           </span>
         </div>
-      )}
+      </div>
 
       {/* Card Content */}
       <div className="flex-1 flex flex-col justify-between min-h-0 pt-1 gap-3">
@@ -78,7 +70,6 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
           {/* Rotary Knob for HUD History Limit */}
           <div className="shrink-0 flex items-center justify-center pl-1">
             <RotaryKnob
-              label="HUD Limit"
               value={history.tray_history_limit ?? 5}
               min={1}
               max={15}

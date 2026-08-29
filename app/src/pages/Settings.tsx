@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, memo, Suspense, lazy } from "react";
-import { RotateCcw, AlertCircle, Check, RefreshCw } from "lucide-react";
+import { RotateCcw, AlertCircle, Check, RefreshCw, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
@@ -152,7 +152,7 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
       const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
       if (isRealtime) return false;
       return (
-        settings.vad.backend !== draftSettings.vad.backend ||
+        settings.vad.vad_backend !== draftSettings.vad.vad_backend ||
         settings.stt.active !== draftSettings.stt.active ||
         settings.stt.embedded.model !== draftSettings.stt.embedded.model ||
         settings.llm.active !== draftSettings.llm.active ||
@@ -289,12 +289,43 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
 SettingsCardWrapper.displayName = "SettingsCardWrapper";
 
 export const Settings: React.FC = () => {
+  const settings = useSettingsStore((s) => s.settings);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const commitChanges = useSettingsStore((s) => s.commitChanges);
   const discardChanges = useSettingsStore((s) => s.discardChanges);
   const hasChanges = useSettingsStore((s) => s.hasChanges);
+  const autoSavedDomain = useSettingsStore((s) => s.autoSavedDomain);
+  const isAutoSaved = !!autoSavedDomain;
   const restoreDefaults = useSettingsStore((s) => s.restoreDefaults);
   const [isMobileConfirmRestore, setIsMobileConfirmRestore] = useState(false);
+
+  const requiresRestart = useMemo(() => {
+    if (!settings || !draftSettings) return false;
+    const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+    if (isRealtime) return false;
+    return (
+      settings.vad.vad_backend !== draftSettings.vad.vad_backend ||
+      settings.stt.active !== draftSettings.stt.active ||
+      settings.stt.embedded.model !== draftSettings.stt.embedded.model ||
+      settings.llm.active !== draftSettings.llm.active ||
+      settings.llm.context_window !== draftSettings.llm.context_window ||
+      settings.llm.threads !== draftSettings.llm.threads ||
+      settings.tts.active !== draftSettings.tts.active
+    );
+  }, [settings, draftSettings]);
+
+  const isCloudLlmMissingKey =
+    draftSettings?.llm?.active === "cloud" &&
+    !draftSettings?.llm?.cloud?.api_key?.trim();
+  const isCloudSttMissingKey =
+    draftSettings?.stt?.active === "cloud" &&
+    !draftSettings?.stt?.cloud?.api_key?.trim();
+  const isRealtimeMissingKey =
+    draftSettings?.interaction?.pipeline_mode === "realtime" &&
+    ((draftSettings?.realtime?.active === "gemini_live" && !(draftSettings?.realtime?.gemini_live?.api_key || (draftSettings?.realtime as any)?.gemini?.api_key)?.trim()) ||
+     (draftSettings?.realtime?.active === "deepgram_voice_agent" && !(draftSettings?.realtime?.deepgram_voice_agent?.api_key || (draftSettings?.realtime as any)?.deepgram?.api_key)?.trim()));
+  const isMissingCloudKey = isCloudLlmMissingKey || isCloudSttMissingKey || isRealtimeMissingKey;
+
   const {
     containerRef,
     activeDomains,
@@ -334,7 +365,7 @@ export const Settings: React.FC = () => {
   const hasSelection = activeDomains.length > 0;
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none p-6 lg:pb-[72px]">
+    <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none p-0 lg:p-6 lg:pb-[72px]">
 
       {/* ── Desktop & Tablet Hexagon/Grid Layout (>= 1024px) ────────────────── */}
       {!isCompact ? (
@@ -465,37 +496,79 @@ export const Settings: React.FC = () => {
         </div>
       ) : (
         /* ── Mobile & Compact Layout (Single vertical scroll list) ─────────── */
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full">
-          {/* Sticky Header - Always Visible */}
-          <div className="flex items-center justify-between pb-3 border-b border-[rgba(var(--accent),0.12)] mb-4 px-1 shrink-0">
-            <span className="text-[11px] font-black uppercase tracking-[0.15em] text-[rgb(var(--foreground))]/75">
-              {SETTINGS_COPY.settingsTitle}
-            </span>
-            <div className="flex gap-2 items-center">
-              <button
-                onClick={() => commitChanges()}
-                disabled={!hasChanges}
-                className={cn(
-                  "px-3.5 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all duration-300 shadow-md",
-                  hasChanges
-                    ? "hover:brightness-110 active:scale-95 cursor-pointer bg-[rgb(var(--accent))] text-black dark:text-white font-black"
-                    : "bg-[rgb(var(--foreground))]/5 border border-[rgba(var(--border),0.08)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden w-full px-3.5 sm:px-5 pt-3.5 sm:pt-4">
+          {/* Sticky Header - Standardized Across All Pages */}
+          <div className="flex items-center justify-between pb-3 sm:pb-3.5 border-b border-[rgba(var(--accent),0.12)] mb-4 sm:mb-5 shrink-0">
+            <div className="flex flex-col">
+              <h1 className="text-[15px] sm:text-[16px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
+                {SETTINGS_COPY.settingsTitle}
+              </h1>
+              <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))] uppercase tracking-wider">
+                {SETTINGS_COPY.settingsSubtitle}
+              </span>
+            </div>
+
+            <div className="flex gap-1.5 items-center">
+              {/* Auto-synced Toast Badge on Routine Saves */}
+              <AnimatePresence>
+                {!hasChanges && isAutoSaved && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[rgba(var(--accent),0.1)] border border-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))]"
+                  >
+                    <Check size={13} />
+                    <span className="text-[11px] font-mono font-bold uppercase tracking-wider">
+                      {SETTINGS_COPY.autoSynced}
+                    </span>
+                  </motion.div>
                 )}
-              >
-                Save
-              </button>
-              <button
-                onClick={() => discardChanges()}
-                disabled={!hasChanges}
-                className={cn(
-                  "px-3.5 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all duration-300",
-                  hasChanges
-                    ? "bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 cursor-pointer"
-                    : "bg-[rgb(var(--foreground))]/5 border-[rgba(var(--border),0.04)] text-[rgb(var(--foreground-muted))]/40 cursor-not-allowed"
-                )}
-              >
-                Discard
-              </button>
+              </AnimatePresence>
+
+              {/* Manual Changes Actions: Tick First (Commit) & Cross Second (Discard) */}
+              {hasChanges && (
+                <>
+                  {/* Tick First: Commit Changes */}
+                  <Tooltip
+                    label={
+                      isMissingCloudKey
+                        ? SETTINGS_COPY.apiKeyRequired
+                        : requiresRestart
+                        ? SETTINGS_COPY.applyAndReload
+                        : SETTINGS_COPY.saveChanges
+                    }
+                    side="bottom"
+                  >
+                    <button
+                      onClick={() => commitChanges()}
+                      disabled={isMissingCloudKey}
+                      className={cn(
+                        "p-1.5 rounded-xl border transition-all cursor-pointer flex items-center justify-center shrink-0",
+                        isMissingCloudKey
+                          ? "border-[rgba(var(--border),0.1)] bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/30 cursor-not-allowed"
+                          : "border-emerald-500/30 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+                      )}
+                      aria-label={SETTINGS_COPY.saveChanges}
+                    >
+                      <Check size={14} />
+                    </button>
+                  </Tooltip>
+
+                  {/* Cross Second: Discard Changes */}
+                  <Tooltip label={SETTINGS_COPY.discardChanges} side="bottom">
+                    <button
+                      onClick={() => discardChanges()}
+                      className="p-1.5 rounded-xl border border-rose-500/20 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-all cursor-pointer flex items-center justify-center shrink-0"
+                      aria-label={SETTINGS_COPY.discardChanges}
+                    >
+                      <X size={14} />
+                    </button>
+                  </Tooltip>
+                </>
+              )}
+
+              {/* Restore Defaults with confirm state */}
               <Tooltip
                 label={isMobileConfirmRestore ? "Tap again to confirm reset" : SETTINGS_COPY.restoreDefaults}
                 side="bottom"
@@ -516,7 +589,7 @@ export const Settings: React.FC = () => {
                       ? "bg-[rgba(var(--danger),0.18)] border-[rgb(var(--danger))]/60 text-[rgb(var(--danger))]"
                       : "bg-[rgb(var(--foreground))]/[0.03] border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground-muted))] hover:bg-[rgb(var(--accent))]/10 hover:text-[rgb(var(--accent))]"
                   )}
-                  aria-label="Restore Defaults"
+                  aria-label={SETTINGS_COPY.restoreDefaults}
                 >
                   <RotateCcw size={14} />
                 </button>
@@ -524,38 +597,17 @@ export const Settings: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex-1 w-full overflow-y-auto custom-scrollbar px-3 py-4 pb-[85px] space-y-7 animate-fade-in">
+          <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[95px] space-y-5 sm:space-y-6 animate-fade-in pr-0.5">
             {[...DOMAINS].sort((a, b) => {
-              const order = ["interaction", "models", "appearance", "memory","history", "persona"];
+              const order = ["interaction", "models", "appearance", "memory", "history", "persona"];
               return order.indexOf(a.id) - order.indexOf(b.id);
-            }).map((domain) => {
-              const Icon = domain.icon;
-              return (
-                <div key={domain.id} className="w-full glass-card rounded-2xl p-4 md:p-5 space-y-4">
-                  {/* Category Header */}
-                  <div className="flex items-center gap-2.5 px-1">
-                    <div className="p-2 rounded-lg bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.15)] flex items-center justify-center">
-                      <Icon size={18} />
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-[16px] font-display font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]">
-                        {domain.label}
-                      </span>
-                      <span className="text-[11px] font-semibold tracking-wider uppercase text-[rgb(var(--foreground-muted))]">
-                        {domain.sublabel}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Divider and Content */}
-                  <div className="border-t border-[rgba(var(--accent),0.05)] pt-4">
-                    <ErrorBoundary name={`SettingsMobile:${domain.id}`}>
-                      <DomainContent domain={domain.id} layoutMode="small" />
-                    </ErrorBoundary>
-                  </div>
-                </div>
-              );
-            })}
+            }).map((domain) => (
+              <div key={domain.id} className="w-full glass-card rounded-2xl p-4 sm:p-5">
+                <ErrorBoundary name={`SettingsMobile:${domain.id}`}>
+                  <DomainContent domain={domain.id} layoutMode="small" />
+                </ErrorBoundary>
+              </div>
+            ))}
           </div>
         </div>
       )}

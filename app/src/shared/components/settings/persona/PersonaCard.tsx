@@ -252,6 +252,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
   const activePrompt = activeTab === "modular" ? modularPrompt : realtimePrompt;
 
   const tagSpans = useMemo(() => getProtectedXmlTagSpans(activePrompt), [activePrompt]);
+  const highlightedContent = useMemo(() => renderSyntaxHighlightedText(activePrompt), [activePrompt]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -327,30 +328,20 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
         )
       )}
     >
-      {/* Header & Tabs (Full Desktop Mode) */}
-      {!isSmall && (
-        <div className="flex items-center justify-between mb-2.5 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full gap-2">
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <UserCircle className="text-[rgb(var(--accent))]" size={17} />
-            <span className="font-display text-[12.5px] sm:text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
-              {PERSONA_COPY.cardTitle}
-            </span>
-          </div>
-          
-          <div className="flex items-center gap-2 shrink-0">
-            <SegmentedControl options={INSTRUCTION_TABS} value={activeTab} onChange={setActiveTab} size="sm" />
-            <SegmentedControl options={VIEW_TABS} value={viewMode} onChange={setViewMode} size="sm" />
-          </div>
+      {/* Header & Controls */}
+      <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full gap-2 flex-wrap sm:flex-nowrap">
+        <div className="flex items-center gap-2 shrink-0">
+          <UserCircle className="text-[rgb(var(--accent))]" size={17} />
+          <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
+            {PERSONA_COPY.cardTitle}
+          </span>
         </div>
-      )}
-
-      {/* Small Layout Pills Header */}
-      {isSmall && (
-        <div className="flex items-center justify-end mb-2.5 shrink-0 w-full gap-2">
+        
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <SegmentedControl options={INSTRUCTION_TABS} value={activeTab} onChange={setActiveTab} size="sm" />
           <SegmentedControl options={VIEW_TABS} value={viewMode} onChange={setViewMode} size="sm" />
         </div>
-      )}
+      </div>
 
       {/* Main Body */}
       <div className={cn("flex-1 flex flex-col justify-between gap-2", isSmall ? "min-h-[220px]" : "min-h-[160px]")}>
@@ -365,7 +356,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
                 layoutMode === "full-max" ? "h-[160px]" : isSmall ? "h-[200px]" : "h-[120px]"
               )}
             >
-              {renderSyntaxHighlightedText(activePrompt)}
+              {highlightedContent}
             </div>
 
             {/* Foreground Editable Transparent Textarea */}

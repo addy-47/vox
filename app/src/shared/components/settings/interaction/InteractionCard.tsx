@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, memo } from "react";
+import { useState, useEffect, useRef, memo, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { Sliders, Mic, MicOff, Activity, Radio } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
@@ -6,6 +6,7 @@ import { SegmentedControl, ToggleTile } from "@/shared/ui";
 import { TriggerModeCard } from "./TriggerModeCard";
 import { PipelineModeCard } from "./PipelineModeCard";
 import { CategorySelector } from "./CategorySelector";
+import { ProviderSelectorView } from "./ProviderSelectorView";
 import { LlmConfigDesk } from "./LlmConfigDesk";
 import { RealtimeConfigDesk } from "./RealtimeConfigDesk";
 import { DictationConfigDesk } from "./DictationConfigDesk";
@@ -26,9 +27,11 @@ export const InteractionCard = memo(
     const settings = useSettingsStore((s) => s.settings);
     const draftSettings = useSettingsStore((s) => s.draftSettings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
+    const discardCategoryChanges = useSettingsStore((s) => s.discardCategoryChanges);
 
     const [activeView, setActiveView] = useState<"assistant" | "dictation">("assistant");
     const [activeCategory, setActiveCategory] = useState<"STT" | "LLM" | "TTS">("LLM");
+    const [drillDownProvider, setDrillDownProvider] = useState<"local" | "remote" | "cloud" | null>(null);
     const [sttPillOverride, setSttPillOverride] = useState<"local" | "remote" | "cloud" | null>(null);
     const [ttsPillOverride, setTtsPillOverride] = useState<"local" | "remote" | "cloud" | null>(null);
 
@@ -39,11 +42,42 @@ export const InteractionCard = memo(
 
     const dictationEnabled = dictation?.enabled ?? true;
     const dictationInteractionMode = dictation?.interaction_mode ?? "ptt";
-    const activeLlm = llm.active || "embedded";
-    const activeRemoteUrl = activeLlm === "server" ? llm.server?.base_url : activeLlm === "cloud" ? llm.cloud?.base_url : "";
-    const isCloudUrl = checkIfCloudUrl(activeRemoteUrl || "");
+    const isModular = interaction.pipeline_mode === "modular";
 
-    const providerPill =
+    // ─── 1. Saved / Persisted Provider (holds the active indicator highlight) ───
+    const savedLlm = settings.llm?.active || "embedded";
+    const savedLlmRemoteUrl = savedLlm === "server" ? settings.llm?.server?.base_url : savedLlm === "cloud" ? settings.llm?.cloud?.base_url : "";
+    const isSavedCloudUrl = checkIfCloudUrl(savedLlmRemoteUrl || "");
+    const savedLlmPill =
+      savedLlm === "embedded"
+        ? "local"
+        : savedLlm === "cloud"
+        ? "cloud"
+        : isSavedCloudUrl
+        ? "cloud"
+        : "remote";
+
+    const savedSttPill = settings.stt?.active === "cloud" ? "cloud" : "local";
+    const savedTtsKind = settings.tts?.active || "supertonic";
+    const savedTtsPill =
+      savedTtsKind === "chatterbox_remote"
+        ? "remote"
+        : savedTtsKind === "supertonic" || savedTtsKind === "chatterbox"
+        ? "local"
+        : "cloud";
+
+    const savedPill =
+      activeCategory === "STT"
+        ? savedSttPill
+        : activeCategory === "LLM"
+        ? savedLlmPill
+        : savedTtsPill;
+
+    // ─── 2. Draft / Inspected Provider (for Level 2 config & model catalog sync) ───
+    const activeLlm = llm?.active || "embedded";
+    const activeRemoteUrl = activeLlm === "server" ? llm?.server?.base_url : activeLlm === "cloud" ? llm?.cloud?.base_url : "";
+    const isCloudUrl = checkIfCloudUrl(activeRemoteUrl || "");
+    const draftLlmPill =
       activeLlm === "embedded"
         ? "local"
         : activeLlm === "cloud"
@@ -52,28 +86,44 @@ export const InteractionCard = memo(
         ? "cloud"
         : "remote";
 
-    const isModular = interaction.pipeline_mode === "modular";
-
-    const sttPill = sttPillOverride || "local";
-    const llmPill = providerPill;
-    const ttsKind = draftSettings.tts?.active || "supertonic";
-    const ttsPill =
+    const draftSttPill = sttPillOverride || (draftSettings.stt?.active === "cloud" ? "cloud" : "local");
+    const draftTtsKind = draftSettings.tts?.active || "supertonic";
+    const draftTtsPill =
       ttsPillOverride ||
-      (ttsKind === "chatterbox_remote"
+      (draftTtsKind === "chatterbox_remote"
         ? "remote"
-        : ttsKind === "supertonic" || ttsKind === "chatterbox"
-          ? "local"
-          : "cloud");
-    const activePill =
-      activeCategory === "STT"
-        ? sttPill
-        : activeCategory === "LLM"
-          ? llmPill
-          : ttsPill;
+        : draftTtsKind === "supertonic" || draftTtsKind === "chatterbox"
+        ? "local"
+        : "cloud");
 
-    const cycleCategory = () => {
-      setActiveCategory((prev) => (prev === "STT" ? "LLM" : prev === "LLM" ? "TTS" : "STT"));
-    };
+    const draftPill =
+      activeCategory === "STT"
+        ? draftSttPill
+        : activeCategory === "LLM"
+        ? draftLlmPill
+        : draftTtsPill;
+
+    // Auto-discard unsaved draft changes when leaving Level 2 back to Level 1
+    const handleBackFromLevel2 = useCallback(() => {
+      discardCategoryChanges(activeCategory.toLowerCase());
+      setSttPillOverride(null);
+      setTtsPillOverride(null);
+      setDrillDownProvider(null);
+    }, [activeCategory, discardCategoryChanges]);
+
+    // Auto-discard unsaved draft changes when switching category tabs
+    const handleSetCategory = useCallback(
+      (cat: "STT" | "LLM" | "TTS") => {
+        if (drillDownProvider !== null) {
+          discardCategoryChanges(activeCategory.toLowerCase());
+          setSttPillOverride(null);
+          setTtsPillOverride(null);
+        }
+        setActiveCategory(cat);
+        setDrillDownProvider(null);
+      },
+      [activeCategory, discardCategoryChanges, drillDownProvider]
+    );
 
     // Guard sync_pipeline_tab event dispatch to prevent ping-pong loop
     useEffect(() => {
@@ -92,14 +142,20 @@ export const InteractionCard = memo(
         if (cat === "stt" || cat === "llm" || cat === "tts") {
           const upperCat = cat.toUpperCase() as "STT" | "LLM" | "TTS";
           if (prevCategoryRef.current !== upperCat) {
+            if (drillDownProvider !== null) {
+              discardCategoryChanges(activeCategory.toLowerCase());
+              setSttPillOverride(null);
+              setTtsPillOverride(null);
+            }
             prevCategoryRef.current = upperCat;
             setActiveCategory(upperCat);
+            setDrillDownProvider(null);
           }
         }
       };
       window.addEventListener("sync_interaction_category", handleSync);
       return () => window.removeEventListener("sync_interaction_category", handleSync);
-    }, []);
+    }, [activeCategory, discardCategoryChanges, drillDownProvider]);
 
     const handleLlmPillChange = (value: string) => {
       if (value === "local") {
@@ -133,6 +189,11 @@ export const InteractionCard = memo(
       }
     };
 
+    const handleSelectProvider = (pill: "local" | "remote" | "cloud") => {
+      handlePillChange(pill);
+      setDrillDownProvider(pill);
+    };
+
     return (
       <div
         className={cn(
@@ -150,8 +211,8 @@ export const InteractionCard = memo(
         {/* Header Section */}
         <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
           <div className="flex items-center gap-2">
-            <Sliders className="text-[rgb(var(--accent))]" size={layoutMode === "small" ? 15 : 18} />
-            <span className="text-[12px] sm:text-[13px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
+            <Sliders className="text-[rgb(var(--accent))]" size={17} />
+            <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
               Interaction
             </span>
           </div>
@@ -180,29 +241,43 @@ export const InteractionCard = memo(
 
               {/* Category & Provider Selector Subcomponent or Realtime Config Desk */}
               {isModular ? (
-                <div
-                  className={cn(
-                    "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)] justify-between",
-                    layoutMode === "small" ? "h-auto" : "h-full"
-                  )}
-                >
-                  <CategorySelector
-                    activeCategory={activeCategory}
-                    activePill={activePill}
-                    onCycleCategory={cycleCategory}
-                    onSetCategory={setActiveCategory}
-                    onPillChange={handlePillChange}
-                    layoutMode={layoutMode}
-                  />
-
-                  {/* Configuration Desk Subcomponent */}
-                  <LlmConfigDesk
-                    activeCategory={activeCategory}
-                    activePill={activePill}
-                    isModular={isModular}
-                    layoutMode={layoutMode}
-                  />
-                </div>
+                drillDownProvider !== null ? (
+                  /* ── LEVEL 2: Full-height config desk, category selector hidden ── */
+                  <div
+                    className={cn(
+                      "flex-1 w-full flex flex-col min-h-0 rounded-xl relative animate-fade-in",
+                      layoutMode === "small" ? "h-auto" : "h-full"
+                    )}
+                  >
+                    <LlmConfigDesk
+                      activeCategory={activeCategory}
+                      activePill={drillDownProvider || draftPill}
+                      isModular={isModular}
+                      onBack={handleBackFromLevel2}
+                      layoutMode={layoutMode}
+                    />
+                  </div>
+                ) : (
+                  /* ── LEVEL 1: Category carousel + provider pills ── */
+                  <div
+                    className={cn(
+                      "flex-1 w-full flex flex-col min-h-0 rounded-xl p-2.5 sm:p-3 relative border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] justify-between mt-0.5",
+                      layoutMode === "small" ? "h-auto" : "h-full"
+                    )}
+                  >
+                    <CategorySelector
+                      activeCategory={activeCategory}
+                      onSetCategory={handleSetCategory}
+                      layoutMode={layoutMode}
+                    />
+                    <ProviderSelectorView
+                      activeCategory={activeCategory}
+                      activePill={savedPill}
+                      onSelectProvider={handleSelectProvider}
+                      layoutMode={layoutMode}
+                    />
+                  </div>
+                )
               ) : (
                 <div
                   className={cn(
@@ -215,6 +290,7 @@ export const InteractionCard = memo(
               )}
             </>
           ) : (
+
             <>
               {/* Dictation Mode Controls */}
               <div

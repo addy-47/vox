@@ -18,6 +18,7 @@ import {
 import { getCollectionColor, getRelationStyle } from "@/shared/components/memory/MemoryGraph";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useOverlay } from "@/shared/hooks/useOverlay";
+import { cn } from "@/shared/lib/utils";
 
 interface MemoryNodeTooltipProps {
   factDetail: MemoryFactDetail | null;
@@ -63,6 +64,13 @@ export const MemoryNodeTooltip = memo(({
 
   // Escape + outside-click dismissal via the global overlay stack.
   useOverlay({ onClose, ref: tooltipRef, dismissOnOutside: true });
+
+  const [, setResizeTick] = useState(0);
+  useEffect(() => {
+    const handleResize = () => setResizeTick((t) => (t + 1) % 1000);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     if (factDetail) {
@@ -122,8 +130,14 @@ export const MemoryNodeTooltip = memo(({
 
   if (!pos) return null;
 
-  const clampedX = Math.min(window.innerWidth - 360, Math.max(16, pos.x + 15));
-  const clampedY = Math.min(window.innerHeight - 440, Math.max(70, pos.y - 40));
+  const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : false;
+  const tooltipWidth = typeof window !== "undefined" ? Math.min(380, window.innerWidth - 32) : 380;
+  const clampedX = isMobile
+    ? (typeof window !== "undefined" ? (window.innerWidth - tooltipWidth) / 2 : 16)
+    : Math.min(window.innerWidth - tooltipWidth - 16, Math.max(16, pos.x + 15));
+  const clampedY = isMobile
+    ? (typeof window !== "undefined" ? Math.min(window.innerHeight - 380, Math.max(80, pos.y - 20)) : 80)
+    : Math.min(window.innerHeight - 460, Math.max(70, pos.y - 40));
 
   const colPalette = factDetail
     ? getCollectionColor(factDetail.collection, factDetail.is_superseded)
@@ -159,11 +173,27 @@ export const MemoryNodeTooltip = memo(({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.94, y: 6 }}
         transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-        style={{
-          left: clampedX,
-          top: clampedY,
-        }}
-        className="fixed z-40 w-[400px] p-5 rounded-3xl border border-[rgba(var(--accent),0.25)] bg-white dark:bg-[rgba(var(--glass-navy),0.98)] shadow-2xl flex flex-col gap-4 pointer-events-auto text-[rgb(var(--foreground))]"
+        style={
+          isMobile
+            ? {
+                left: "16px",
+                right: "16px",
+                bottom: "76px",
+                maxWidth: "380px",
+                margin: "0 auto",
+              }
+            : {
+                left: clampedX,
+                top: clampedY,
+                width: `${tooltipWidth}px`,
+              }
+        }
+        className={cn(
+          "fixed z-40 p-4 sm:p-5 rounded-3xl border border-[rgba(var(--accent),0.25)] bg-[rgb(var(--card))]/98 backdrop-blur-2xl shadow-2xl flex flex-col gap-3.5 pointer-events-auto text-[rgb(var(--foreground))]",
+          isMobile
+            ? "max-h-[calc(100vh-150px)] overflow-y-auto custom-scrollbar"
+            : "max-h-[520px] overflow-y-auto custom-scrollbar"
+        )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header — Clean single-line entity title */}

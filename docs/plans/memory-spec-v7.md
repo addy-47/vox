@@ -2,7 +2,7 @@
 
 **Status**: Frozen Master Architectural Specification  
 **Version**: 7.11 (Functional Memory Architecture Specification)  
-**Target Systems**: `app/src-tauri/src/services/memory/` (Rust Backend)  
+**Target Systems**: `app/src-tauri/src/services/memory/` (Rust Backend)
 
 ---
 
@@ -16,6 +16,7 @@ The v7 memory architecture provides a unified, deterministic, and domain-agnosti
 4. **Dynamic Waterfall Token Allocation Under 15% Cap**: Personal memory context prompt rendering is capped at `max_personal_memory_share = 0.15` (15% of total LLM Context Window). Token allocation flows dynamically through a scope-specific waterfall hierarchy.
 
 ### 1.1 System Invariable Rules & Provenance Mandate
+
 1. **15% Context Share Hard Cap Rule**: Personal memory prompt rendering MUST NOT exceed `max_personal_memory_share = 0.15` (15% of total LLM context window).
 2. **Non-Deletion Provenance Mandate**: Zero `DELETE FROM memory_facts` during pipeline execution. Inactive facts set `status = 'inactive'`, soft-deleted user facts set `status = 'deleted'`. All relations remain preserved in Turso DB for auditability.
 3. **Deterministic System Prompt Identity Rule**: Active `Identity` facts MUST be pre-loaded at session startup into the System Prompt template across all LLM inference providers. Dynamic RAG waterfalls exclude dynamic `Identity` SQL queries unless ephemeral mid-session identity deltas exist.
@@ -41,32 +42,32 @@ Memory is partitioned into two distinct structural collection classes:
 
 ### 2.1 Collection Specification & Retrieval Matrix
 
-| Collection Name | Collection Class | Primary Retrieval Engine | Retrieval Behavior |
-| :--- | :--- | :--- | :--- |
-| **`Identity`** | Special State | System Prompt Prefill | Pre-loaded at session startup into base System Prompt (`WHERE collection = 'Identity' AND status = 'active'`). Available across 100% of turns (including `ChitChat`) across all providers with 0ms SQL overhead. Excluded from dynamic per-turn RAG SQL queries unless ephemeral mid-session deltas exist. |
-| **`Directives`** | Special State | Vector Search (Domain) / Recency SQL (Temporal) | **Domain Scope**: Vector search ($\text{cos} \ge 0.40$, max `top_k_facts` = 5) alongside `Entities` & `Constraints`, participating in BFS seed graph expansion.<br>**Temporal Scope**: Recency SQL (`WHERE collection = 'Directives' AND status = 'active' ORDER BY created_at DESC LIMIT 5`). |
-| **`Narrative`** | Special State | Context Chaining | Prepending session summary chain (`context_chaining_window_hours`) inside `retrieve_personal_context_v7()` waterfall under 15% budget cap. Triggered exclusively in `Temporal` scope. |
-| **`Profile`** | Semantic Graph | Vector Search + Graph | Vector search ($\text{cos} \ge 0.40$), truncated to `top_k_facts` (5). Triggered exclusively in `User` scope. |
-| **`Entities`** | Semantic Graph | Vector Search + Graph | Vector search ($\text{cos} \ge 0.40$), truncated to `top_k_facts` (5). Triggered exclusively in `Domain` scope. |
-| **`Constraints`** | Semantic Graph | Vector Search + Graph | Vector search ($\text{cos} \ge 0.40$), truncated to `top_k_facts` (5). Triggered in `User`, `Domain`, and `Temporal` scopes. |
+| Collection Name   | Collection Class | Primary Retrieval Engine                        | Retrieval Behavior                                                                                                                                                                                                                                                                                         |
+| :---------------- | :--------------- | :---------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`Identity`**    | Special State    | System Prompt Prefill                           | Pre-loaded at session startup into base System Prompt (`WHERE collection = 'Identity' AND status = 'active'`). Available across 100% of turns (including `ChitChat`) across all providers with 0ms SQL overhead. Excluded from dynamic per-turn RAG SQL queries unless ephemeral mid-session deltas exist. |
+| **`Directives`**  | Special State    | Vector Search (Domain) / Recency SQL (Temporal) | **Domain Scope**: Vector search ($\text{cos} \ge 0.40$, max `top_k_facts` = 5) alongside `Entities` & `Constraints`, participating in BFS seed graph expansion.<br>**Temporal Scope**: Recency SQL (`WHERE collection = 'Directives' AND status = 'active' ORDER BY created_at DESC LIMIT 5`).             |
+| **`Narrative`**   | Special State    | Context Chaining                                | Prepending session summary chain (`context_chaining_window_hours`) inside `retrieve_personal_context()` waterfall under 15% budget cap. Triggered exclusively in `Temporal` scope.                                                                                                                         |
+| **`Profile`**     | Semantic Graph   | Vector Search + Graph                           | Vector search ($\text{cos} \ge 0.40$), truncated to `top_k_facts` (5). Triggered exclusively in `User` scope.                                                                                                                                                                                              |
+| **`Entities`**    | Semantic Graph   | Vector Search + Graph                           | Vector search ($\text{cos} \ge 0.40$), truncated to `top_k_facts` (5). Triggered exclusively in `Domain` scope.                                                                                                                                                                                            |
+| **`Constraints`** | Semantic Graph   | Vector Search + Graph                           | Vector search ($\text{cos} \ge 0.40$), truncated to `top_k_facts` (5). Triggered in `User`, `Domain`, and `Temporal` scopes.                                                                                                                                                                               |
 
 ---
 
 ## 3. Calibration Settings & System Constants
 
-| Threshold Constant | Value | Config / Source Location | Target System / Purpose |
-| :--- | :---: | :--- | :--- |
-| `primary_embedding_model` | **`MiniLM-L12`** | `~/.vox/models/embedding/` | 384d INT8 ONNX dense vector engine (~10ms CPU). |
-| `soft_vector_dedup_threshold` | **`0.95`** | Frozen Ingestion Rule | Soft vector deduplication threshold in Stage 2 (`SOFT_VECTOR_DEDUP_THRESHOLD`). |
-| `SAME_COLLECTION_CANDIDATE_SEARCH` | **`0.60`** | Frozen Ingestion Rule | Pre-filter cutoff to select candidate facts for intra-collection NLI state resolution. |
-| `INTER_COLLECTION_CANDIDATE_SEARCH`| **`0.40`**| Connection Policy Matrix | Pre-filter cutoff for inter-collection directed Edge Classification. |
-| `NLI_CONTRADICTION_THRESHOLD` | **`0.85`** | `nli-deberta-v3-base` ONNX | Minimum probability required for NLI `SUPERSEDES` / `CONFLICTS` classification. |
-| `NLI_ENTAILMENT_THRESHOLD` | **`0.85`** | `nli-deberta-v3-base` ONNX | Minimum probability required for NLI `SUPPORTS` classification. |
-| `EDGE_CONFIDENCE_THRESHOLD` | **`0.80`** | `modernbert-base` INT8 ONNX | Minimum positive edge probability required for graph relation creation (below 0.80 defaults to `NONE`). |
-| `semantic_similarity_cutoff` | **`0.40`** | `MemorySettings.semantic_similarity_cutoff` | Cutoff floor for Turn Query RAG vector retrieval. |
-| `top_k_facts` | **`5`** | `MemorySettings.top_k_facts` | **Turn Query RAG vector retrieval seed limit per target collection (Profile, Entities, Directives, Constraints).** |
-| `max_hops` | **`2`** | `MemorySettings.max_hops` | Maximum graph expansion depth during Seed-and-Expand BFS. |
-| `max_personal_memory_share` | **`0.15`** | `MemorySettings.max_personal_memory_share` | **Hard context window budget cap (15% of total LLM prompt window).** |
+| Threshold Constant                  |      Value       | Config / Source Location                    | Target System / Purpose                                                                                            |
+| :---------------------------------- | :--------------: | :------------------------------------------ | :----------------------------------------------------------------------------------------------------------------- |
+| `primary_embedding_model`           | **`MiniLM-L12`** | `~/.vox/models/embedding/`                  | 384d INT8 ONNX dense vector engine (~10ms CPU).                                                                    |
+| `soft_vector_dedup_threshold`       |    **`0.95`**    | Frozen Ingestion Rule                       | Soft vector deduplication threshold in Stage 2 (`SOFT_VECTOR_DEDUP_THRESHOLD`).                                    |
+| `SAME_COLLECTION_CANDIDATE_SEARCH`  |    **`0.60`**    | Frozen Ingestion Rule                       | Pre-filter cutoff to select candidate facts for intra-collection NLI state resolution.                             |
+| `INTER_COLLECTION_CANDIDATE_SEARCH` |    **`0.40`**    | Connection Policy Matrix                    | Pre-filter cutoff for inter-collection directed Edge Classification.                                               |
+| `NLI_CONTRADICTION_THRESHOLD`       |    **`0.85`**    | `nli-deberta-v3-base` ONNX                  | Minimum probability required for NLI `SUPERSEDES` / `CONFLICTS` classification.                                    |
+| `NLI_ENTAILMENT_THRESHOLD`          |    **`0.85`**    | `nli-deberta-v3-base` ONNX                  | Minimum probability required for NLI `SUPPORTS` classification.                                                    |
+| `EDGE_CONFIDENCE_THRESHOLD`         |    **`0.80`**    | `modernbert-base` INT8 ONNX                 | Minimum positive edge probability required for graph relation creation (below 0.80 defaults to `NONE`).            |
+| `semantic_similarity_cutoff`        |    **`0.40`**    | `MemorySettings.semantic_similarity_cutoff` | Cutoff floor for Turn Query RAG vector retrieval.                                                                  |
+| `top_k_facts`                       |     **`5`**      | `MemorySettings.top_k_facts`                | **Turn Query RAG vector retrieval seed limit per target collection (Profile, Entities, Directives, Constraints).** |
+| `max_hops`                          |     **`2`**      | `MemorySettings.max_hops`                   | Maximum graph expansion depth during Seed-and-Expand BFS.                                                          |
+| `max_personal_memory_share`         |    **`0.15`**    | `MemorySettings.max_personal_memory_share`  | **Hard context window budget cap (15% of total LLM prompt window).**                                               |
 
 ---
 
@@ -78,28 +79,28 @@ NLI processing evaluates formal logical relationships strictly within stateful/i
 
 1. **`Identity` & `Directives` Domains**:
    - Candidate facts selected via threshold filtering (`SAME_COLLECTION_CANDIDATE_SEARCH = 0.60`).
-   - **`ENTAILMENT` (>= 0.85)**: New fact *refines/extends* the existing fact. Writes `SUPPORTS` edge (`new_fact → SUPPORTS → existing_fact`). **Both facts remain `status = 'active'`**. The existing fact (parent) pulls the new fact (child) alongside it during RAG retrieval.
-   - **`CONTRADICTION` (>= 0.85)**: New fact *contradicts/replaces* the existing fact. Writes `SUPERSEDES` edge (`new_fact → SUPERSEDES → existing_fact`). Existing fact `status` updated to `'inactive'`.
+   - **`ENTAILMENT` (>= 0.85)**: New fact _refines/extends_ the existing fact. Writes `SUPPORTS` edge (`new_fact → SUPPORTS → existing_fact`). **Both facts remain `status = 'active'`**. The existing fact (parent) pulls the new fact (child) alongside it during RAG retrieval.
+   - **`CONTRADICTION` (>= 0.85)**: New fact _contradicts/replaces_ the existing fact. Writes `SUPERSEDES` edge (`new_fact → SUPERSEDES → existing_fact`). Existing fact `status` updated to `'inactive'`.
    - **`NEUTRAL`**: No edge written. Both facts remain active.
 
 2. **`Constraints` Domain**:
-   - **`ENTAILMENT` (>= 0.85)**: New constraint *refines* existing constraint. Writes `SUPPORTS` edge (`new_fact → SUPPORTS → existing_fact`). Both remain `status = 'active'`; new constraint (child) is rendered indented under its parent constraint during RAG retrieval.
+   - **`ENTAILMENT` (>= 0.85)**: New constraint _refines_ existing constraint. Writes `SUPPORTS` edge (`new_fact → SUPPORTS → existing_fact`). Both remain `status = 'active'`; new constraint (child) is rendered indented under its parent constraint during RAG retrieval.
    - **`CONTRADICTION` (>= 0.85)**: Conflict detected between hard constraints. Writes `CONFLICTS` edge (`new_fact → CONFLICTS → existing_fact`). **Neither constraint is deactivated**. Both remain `status = 'active'` and trigger an `[Unresolved Conflicts]` warning block in prompt context.
    - **`NEUTRAL`**: No edge written. Both facts remain active.
 
-### 4.2  Inter-Domain Connection Policy Matrix (Stage 3B)
+### 4.2 Inter-Domain Connection Policy Matrix (Stage 3B)
 
 Cross-domain graph connections generated by the ModernBERT INT8 ONNX sequence classifier dynamically evaluate output prediction logits across 4 operational edge labels (`SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE`) across 7 sanctioned collection pairs:
 
-| Source Domain | Target Domain | Pre-Filter Threshold (cos >= cutoff) | Allowed Operational Predictions | Deterministic Traversal Behavior |
-| :--- | :--- | :---: | :--- | :--- |
-| **`Identity`** | `Profile` | `>= 0.40` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Bridge from core identity into user profile traits. |
-| **`Directives`** | `Constraints` | `>= 0.40` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Connects active tasks to hard system boundaries. |
-| **`Directives`** | `Entities` | `>= 0.40` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Core agent work $\rightarrow$ tool/codebase project dependency. |
-| **`Entities`** | `Constraints` | `>= 0.40` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Entity/tool specific hard boundary link. |
-| **`Entities`** | `Profile` | `>= 0.40` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Connects codebase/tool experience to user profile skills. |
-| **`Entities`** | `Entities` | `>= 0.40` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Inter-tool & inter-codebase dependency graph. |
-| **`Profile`** | `Profile` | `>= 0.40` | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Intra-user trait topology & preference constraints. |
+| Source Domain    | Target Domain | Pre-Filter Threshold (cos >= cutoff) | Allowed Operational Predictions                  | Deterministic Traversal Behavior                                |
+| :--------------- | :------------ | :----------------------------------: | :----------------------------------------------- | :-------------------------------------------------------------- |
+| **`Identity`**   | `Profile`     |              `>= 0.40`               | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Bridge from core identity into user profile traits.             |
+| **`Directives`** | `Constraints` |              `>= 0.40`               | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Connects active tasks to hard system boundaries.                |
+| **`Directives`** | `Entities`    |              `>= 0.40`               | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Core agent work $\rightarrow$ tool/codebase project dependency. |
+| **`Entities`**   | `Constraints` |              `>= 0.40`               | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Entity/tool specific hard boundary link.                        |
+| **`Entities`**   | `Profile`     |              `>= 0.40`               | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Connects codebase/tool experience to user profile skills.       |
+| **`Entities`**   | `Entities`    |              `>= 0.40`               | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Inter-tool & inter-codebase dependency graph.                   |
+| **`Profile`**    | `Profile`     |              `>= 0.40`               | `SHAPES`, `DEPENDS_ON`, `CONFLICTS_WITH`, `NONE` | Intra-user trait topology & preference constraints.             |
 
 ### 4.3 Model Output → Edge Created → Inverse Edge Reference
 
@@ -107,13 +108,13 @@ This section provides a definitive 3-column lookup for every model signal produc
 
 #### 4.3.1 Sub-Branch A: NLI Engine (DeBERTa-v3) — Intra-Domain State Resolution
 
-| NLI Model Output | Collection Domain | Edge Written (`new → existing`) | Inverse Edge (`existing → new`) | Downstream Behavior |
-| :--- | :--- | :--- | :--- | :--- |
-| **`ENTAILMENT`** (>= 0.85) | `Identity`, `Directives` | `SUPPORTS` | `supported_by` | Both facts remain `active`. Parent (existing) pulls child (new) alongside during RAG retrieval. |
-| **`CONTRADICTION`** (>= 0.85) | `Identity`, `Directives` | `SUPERSEDES` | `superseded_by` | Existing (old) fact set to `status = 'inactive'`. New fact is the replacement. |
-| **`ENTAILMENT`** (>= 0.85) | `Constraints` | `SUPPORTS` | `supported_by` | Both facts remain `active`. New (child) constraint rendered indented under existing (parent) in prompt context. |
-| **`CONTRADICTION`** (>= 0.85) | `Constraints` | `CONFLICTS` | `conflicts_with` | Both facts remain `active`. Triggers `[Unresolved Conflicts]` warning block in retrieval output. |
-| **`NEUTRAL`** | All | *(no edge)* | *(no edge)* | No status change. No edge written. |
+| NLI Model Output              | Collection Domain        | Edge Written (`new → existing`) | Inverse Edge (`existing → new`) | Downstream Behavior                                                                                             |
+| :---------------------------- | :----------------------- | :------------------------------ | :------------------------------ | :-------------------------------------------------------------------------------------------------------------- |
+| **`ENTAILMENT`** (>= 0.85)    | `Identity`, `Directives` | `SUPPORTS`                      | `supported_by`                  | Both facts remain `active`. Parent (existing) pulls child (new) alongside during RAG retrieval.                 |
+| **`CONTRADICTION`** (>= 0.85) | `Identity`, `Directives` | `SUPERSEDES`                    | `superseded_by`                 | Existing (old) fact set to `status = 'inactive'`. New fact is the replacement.                                  |
+| **`ENTAILMENT`** (>= 0.85)    | `Constraints`            | `SUPPORTS`                      | `supported_by`                  | Both facts remain `active`. New (child) constraint rendered indented under existing (parent) in prompt context. |
+| **`CONTRADICTION`** (>= 0.85) | `Constraints`            | `CONFLICTS`                     | `conflicts_with`                | Both facts remain `active`. Triggers `[Unresolved Conflicts]` warning block in retrieval output.                |
+| **`NEUTRAL`**                 | All                      | _(no edge)_                     | _(no edge)_                     | No status change. No edge written.                                                                              |
 
 > **Note on inverse edges for NLI:** The NLI sub-branch writes only the forward edge (`new_fact → relation → existing_fact`). The inverse label above is the conceptual reverse relationship readable from the `existing_fact`'s perspective and may be used during bidirectional BFS graph traversal in retrieval.
 
@@ -121,12 +122,12 @@ This section provides a definitive 3-column lookup for every model signal produc
 
 The Edge Classifier outputs one of 4 labels. When a positive edge is predicted (confidence >= `EDGE_CONFIDENCE_THRESHOLD = 0.80`), **both the forward and inverse edges are written** into `memory_relations` in a single atomic write.
 
-| Classifier Output Label | Forward Edge Written (`source → target`) | Inverse Edge Written (`target → source`) | Symmetric? | Semantic Meaning |
-| :--- | :--- | :--- | :---: | :--- |
-| **`SHAPES`** | `SHAPES` | `shaped_by` | No | Source collection fact shapes/influences the target fact. |
-| **`DEPENDS_ON`** | `DEPENDS_ON` | `dependency_of` | No | Source collection fact depends on or is constrained by the target fact. |
-| **`CONFLICTS_WITH`** | `CONFLICTS_WITH` | `conflicts_with` | Yes | Mutual conflict between facts in different domains. Both directions use the same label. |
-| **`NONE`** | *(no edge written)* | *(no edge written)* | — | Classifier found no meaningful cross-domain relationship. |
+| Classifier Output Label | Forward Edge Written (`source → target`) | Inverse Edge Written (`target → source`) | Symmetric? | Semantic Meaning                                                                        |
+| :---------------------- | :--------------------------------------- | :--------------------------------------- | :--------: | :-------------------------------------------------------------------------------------- |
+| **`SHAPES`**            | `SHAPES`                                 | `shaped_by`                              |     No     | Source collection fact shapes/influences the target fact.                               |
+| **`DEPENDS_ON`**        | `DEPENDS_ON`                             | `dependency_of`                          |     No     | Source collection fact depends on or is constrained by the target fact.                 |
+| **`CONFLICTS_WITH`**    | `CONFLICTS_WITH`                         | `conflicts_with`                         |    Yes     | Mutual conflict between facts in different domains. Both directions use the same label. |
+| **`NONE`**              | _(no edge written)_                      | _(no edge written)_                      |     —      | Classifier found no meaningful cross-domain relationship.                               |
 
 ---
 
@@ -145,12 +146,12 @@ pub enum MemoryScope {
 
 ### 5.1 Scope Variant Execution & Pruning Matrix
 
-| `MemoryScope` Variant | Triggers & Intent | System Prompt Identity | Deterministic / SQL Fetches | Vector Search Collections | Pruning & Exclusions |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`ChitChat`** | Casual greetings, banter (*"hello"*, *"thanks"*). | **Inherited (Pre-loaded)** | **None** | **None** | All dynamic memory RAG retrieval skipped. 0 per-turn SQL overhead. System prompt identity inherited automatically. |
-| **`User`** | Persona, identity, preferences, personal rules (*"my role"*, *"I prefer Python"*). | **Inherited (Pre-loaded)** | Ephemeral `Identity` deltas (if any) | `Profile` + `Constraints` | `Entities`, `Directives`, and `Narrative` pruned from vector search. |
-| **`Domain`** *(Primary Default)* | Projects, codebase, tools, tasks, technical Q&A (*"Vox"*, *"Rust error"*). | **Inherited (Pre-loaded)** | Ephemeral `Identity` deltas | `Entities` + `Directives` + `Constraints` | `Profile` and `Narrative` pruned from search. |
-| **`Temporal`** | Session continuity, temporal recap (*"yesterday"*, *"where were we"*). | **Inherited (Pre-loaded)** | Ephemeral `Identity` deltas + `Narrative` (Chaining) + `Directives` (Recency SQL, limit 5) | `Constraints` | `Profile` and `Entities` pruned from vector search. |
+| `MemoryScope` Variant            | Triggers & Intent                                                                  | System Prompt Identity     | Deterministic / SQL Fetches                                                                | Vector Search Collections                 | Pruning & Exclusions                                                                                               |
+| :------------------------------- | :--------------------------------------------------------------------------------- | :------------------------- | :----------------------------------------------------------------------------------------- | :---------------------------------------- | :----------------------------------------------------------------------------------------------------------------- |
+| **`ChitChat`**                   | Casual greetings, banter (_"hello"_, _"thanks"_).                                  | **Inherited (Pre-loaded)** | **None**                                                                                   | **None**                                  | All dynamic memory RAG retrieval skipped. 0 per-turn SQL overhead. System prompt identity inherited automatically. |
+| **`User`**                       | Persona, identity, preferences, personal rules (_"my role"_, _"I prefer Python"_). | **Inherited (Pre-loaded)** | Ephemeral `Identity` deltas (if any)                                                       | `Profile` + `Constraints`                 | `Entities`, `Directives`, and `Narrative` pruned from vector search.                                               |
+| **`Domain`** _(Primary Default)_ | Projects, codebase, tools, tasks, technical Q&A (_"Vox"_, _"Rust error"_).         | **Inherited (Pre-loaded)** | Ephemeral `Identity` deltas                                                                | `Entities` + `Directives` + `Constraints` | `Profile` and `Narrative` pruned from search.                                                                      |
+| **`Temporal`**                   | Session continuity, temporal recap (_"yesterday"_, _"where were we"_).             | **Inherited (Pre-loaded)** | Ephemeral `Identity` deltas + `Narrative` (Chaining) + `Directives` (Recency SQL, limit 5) | `Constraints`                             | `Profile` and `Entities` pruned from vector search.                                                                |
 
 ---
 
@@ -186,6 +187,7 @@ Memory prompt rendering is capped by a single setting: **`max_personal_memory_sh
 ### 6.1 Step-by-Step Waterfall Execution Per Scope
 
 #### A. Scope: `User`
+
 1. **Step 1 (Ephemeral Identity Delta Deduction)**: Render and deduct ephemeral mid-session `Identity` deltas (if any exist).
 2. **Step 2 (Scope Target Entrypoint Seeds + Intra-Edges)**:
    - Perform vector search on `Profile` and `Constraints` ($\text{cos} \ge 0.40$, max `top_k_facts` = 5 per collection).
@@ -195,6 +197,7 @@ Memory prompt rendering is capped by a single setting: **`max_personal_memory_sh
 4. **Step 4 (Dynamic Redistribution)**: Unused token quota redistributes to subsequent seed trees.
 
 #### B. Scope: `Domain` (Primary Fallback Default)
+
 1. **Step 1 (Ephemeral Identity Delta Deduction)**: Render and deduct ephemeral mid-session `Identity` deltas (if any exist).
 2. **Step 2 (Scope Target Entrypoint Seeds + Intra-Edges)**:
    - Perform vector search on `Entities`, `Directives`, and `Constraints` ($\text{cos} \ge 0.40$, max `top_k_facts` = 5 per collection). `Profile` is EXCLUDED.
@@ -203,9 +206,10 @@ Memory prompt rendering is capped by a single setting: **`max_personal_memory_sh
 4. **Step 4 (Dynamic Redistribution)**: Unused token quota redistributes to subsequent seed trees.
 
 #### C. Scope: `Temporal`
+
 1. **Step 1 (Deterministic Identity Deduction)**: Deduct ephemeral mid-session `Identity` deltas (if any exist).
 2. **Step 2 (Scope Target Entrypoint Seeds + Intra-Edges)**:
-   - Fetch `Narrative` history via Backward Context Chaining (`context_chaining_window_hours`) inside `retrieve_personal_context_v7()` waterfall and deduct tokens from remaining budget.
+   - Fetch `Narrative` history via Backward Context Chaining (`context_chaining_window_hours`) inside `retrieve_personal_context()` waterfall and deduct tokens from remaining budget.
    - Fetch Latest 5 active `Directives` via Recency SQL (`ORDER BY created_at DESC LIMIT 5`).
    - Perform vector search on `Constraints` ($\text{cos} \ge 0.40$, max `top_k_facts` = 5).
    - Integrate `Directives` and `Constraints` seeds into the seed set for intra-edge resolution. Deduct seed tokens from remaining budget.
@@ -213,6 +217,7 @@ Memory prompt rendering is capped by a single setting: **`max_personal_memory_sh
 4. **Step 4 (Dynamic Redistribution)**: Unused token quota redistributes to subsequent seed trees.
 
 ### 6.2 Dynamic Fair-Share Parent Formula
+
 $$\text{parent\_quota\_tokens} = \max\left(30, \frac{\text{remaining\_scope\_budget}}{\max(1, \text{remaining\_parents})}\right)$$
 
 ---

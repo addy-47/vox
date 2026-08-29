@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState, memo } from "react";
 import {
   Mic,
   Brain,
@@ -18,7 +18,7 @@ interface MetricCarouselProps {
   formatLatency: (ms: number | null) => string;
 }
 
-export const MetricCarousel: React.FC<MetricCarouselProps> = ({
+export const MetricCarousel = memo<MetricCarouselProps>(({
   latest,
   colors,
   formatLatency,
@@ -163,4 +163,6 @@ export const MetricCarousel: React.FC<MetricCarouselProps> = ({
       </div>
     </div>
   );
-};
+});
+
+MetricCarousel.displayName = "MetricCarousel";

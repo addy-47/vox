@@ -19,7 +19,7 @@ related_docs:
 
 In Phase 10, Dictation is **fully decoupled from the desktop Tray HUD and unified**: Passive and PTT share a single `services/pipeline/dictation.rs` handler (no split files). `services/dictation/` holds the reusable primitives (clipboard, input adapters, output_router, hotkey, controller):
 - **Dictation Core**: The native audio capture, VAD gating, STT acoustic transcription, and Devanagari transliteration engine.
-- **Output Mediums**: The transcription capability routes to mutually exclusive output destinations, where the desktop Tray HUD is simply one visual presentation medium among others.
+- **Output Mediums**: The transcription capability routes to mutually exclusive output destinations, where the desktop Tray HUD is simply one visual presentation medium among others. Note: the old `services/dictation/controller.rs` was deleted in the Phase-10 refactor; the unified handler is `services/pipeline/dictation.rs` and reusable primitives now live in `services/dictation/` (`clipboard.rs`, `input.rs`, `output_router.rs`, `hotkey.rs`, `mod.rs`).
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
@@ -61,7 +61,7 @@ Dictation configuration is governed by two independent, orthogonal settings axes
 ### Axis 1: Interaction Mode (`interaction_mode`)
 - **`Ptt` (Push-To-Talk, Default)**:
   - Triggered via global system shortcut (default `Alt+Space`).
-  - **Zero Idle RAM Guarantee**: 0 ONNX models loaded on boot; `DictationController` lazily initializes audio/STT pipeline on-demand when the hotkey is first pressed.
+  - **Zero Idle RAM Guarantee**: 0 ONNX models loaded on boot; the unified dictation handler (`services/pipeline/dictation.rs`) lazily initializes audio/STT pipeline on-demand when the hotkey is first pressed.
   - Recording captures speech while held/toggled, and finishes on release.
 - **`Passive` (Continuous Sense)**:
   - Audio engine is pre-warmed on application boot.

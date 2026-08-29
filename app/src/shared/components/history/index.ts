@@ -1,7 +1,6 @@
 export * from "./VoiceRippleNode";
 export * from "./DetailPanel";
 export * from "./OrbitCarousel";
-export * from "./VoiceDial";
 export * from "./CentralClockNode";
 export * from "./ChamberOrbitRings";
 export * from "./MonthDayCard";

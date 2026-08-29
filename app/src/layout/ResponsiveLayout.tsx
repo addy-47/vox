@@ -132,42 +132,58 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           rippleShape={location.pathname === "/history" ? "orbit" : "circle"}
         />
 
-        {/* Bottom navigation */}
-        <EdgeNav />
+        {/* Page content */}
+        <main
+          style={{
+            position: "relative",
+            zIndex: 30,
+            flex: 1,
+            height: "100%",
+            overflow: "hidden",
+            width: "100%",
+            contain: "layout style",
+          }}
+        >
+          <div className="h-full w-full overflow-hidden flex flex-col">
+            {children || <Outlet />}
+          </div>
+        </main>
 
         {/* ── Engine Monitor Area — bottom-left ───────────────────────────── */}
-        <div className="hidden lg:flex fixed bottom-4 left-4 z-50 items-center gap-2.5">
-          {/* Monitor toggle button */}
-          <button
-            ref={monitorBtnRef}
-            onClick={() => setMonitorOpen((v) => !v)}
-            className={cn(
-              "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 hover:scale-105 cursor-pointer glass-card",
-              monitorOpen
-                ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/60"
-                : "bg-transparent border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
-            )}
-            aria-label="Engine Monitor"
-            aria-expanded={monitorOpen}
-            aria-haspopup="dialog"
-          >
-            <Activity size={24} strokeWidth={2} />
-          </button>
+        <div className="hidden lg:flex fixed bottom-4 left-4 z-40 items-center gap-2.5 pointer-events-none">
+          <div className="pointer-events-auto flex items-center gap-2.5">
+            {/* Monitor toggle button */}
+            <button
+              ref={monitorBtnRef}
+              onClick={() => setMonitorOpen((v) => !v)}
+              className={cn(
+                "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 hover:scale-105 cursor-pointer glass-card",
+                monitorOpen
+                  ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/60"
+                  : "bg-transparent border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
+              )}
+              aria-label="Engine Monitor"
+              aria-expanded={monitorOpen}
+              aria-haspopup="dialog"
+            >
+              <Activity size={24} strokeWidth={2} />
+            </button>
 
-          {/* Mini footprint HUD — CPU% · RAM MB (Click to launch Memory Profiler) */}
-          {isReady && (
-            <Tooltip label="Open UI Memory Profiler">
-              <button
-                onClick={() => {
-                  setMonitorOpen(false);
-                  openProfiler();
-                }}
-                className="text-[14px] font-mono text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] hover:bg-white/[0.04] px-2 py-1 rounded-lg transition-all leading-none select-none tabular-nums cursor-pointer border border-transparent hover:border-[rgba(var(--border),0.15)]"
-              >
-                {voxCpu.toFixed(1)}% · {Math.round(voxRam)} MB
-              </button>
-            </Tooltip>
-          )}
+            {/* Mini footprint HUD — CPU% · RAM MB (Click to launch Memory Profiler) */}
+            {isReady && (
+              <Tooltip label="Open UI Memory Profiler">
+                <button
+                  onClick={() => {
+                    setMonitorOpen(false);
+                    openProfiler();
+                  }}
+                  className="text-[14px] font-mono text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--accent))] hover:bg-white/[0.04] px-2 py-1 rounded-lg transition-all leading-none select-none tabular-nums cursor-pointer border border-transparent hover:border-[rgba(var(--border),0.15)]"
+                >
+                  {voxCpu.toFixed(1)}% · {Math.round(voxRam)} MB
+                </button>
+              </Tooltip>
+            )}
+          </div>
         </div>
 
         {/* Monitoring Popover */}
@@ -182,29 +198,17 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
         {/* ── Status Info & Default Reset Controls Area — bottom-right ── */}
         {isSettings && (
-          <div className="hidden lg:flex fixed bottom-4 right-4 z-50 items-center gap-2 lg:gap-3 px-3 lg:px-4 py-2.5 bg-transparent border-transparent shadow-none max-w-[calc(100vw-320px)]">
-            <ModelStatusOverlay />
-            <div className="w-px h-4 bg-[rgba(var(--accent),0.15)] shrink-0" />
-            <RestoreDefaultsButton />
+          <div className="hidden lg:flex fixed bottom-4 right-4 z-40 pointer-events-none items-center gap-2 lg:gap-3 px-3 lg:px-4 py-2.5 bg-transparent border-transparent shadow-none max-w-[calc(50vw-180px)]">
+            <div className="pointer-events-auto flex items-center gap-2 lg:gap-3">
+              <ModelStatusOverlay />
+              <div className="w-px h-4 bg-[rgba(var(--accent),0.15)] shrink-0" />
+              <RestoreDefaultsButton />
+            </div>
           </div>
         )}
 
-        {/* Page content */}
-        <main
-          style={{
-            position: "relative",
-            zIndex: 10,
-            flex: 1,
-            height: "100%",
-            overflow: "hidden",
-            width: "100%",
-            contain: "layout style",
-          }}
-        >
-          <div className="h-full w-full overflow-hidden flex flex-col">
-            {children || <Outlet />}
-          </div>
-        </main>
+        {/* Bottom navigation (topmost in bottom layer) */}
+        <EdgeNav />
       </div>
     </div>
   );

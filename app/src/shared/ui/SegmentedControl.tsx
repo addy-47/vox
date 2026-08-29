@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "./Tooltip";
 
@@ -18,7 +18,7 @@ export interface SegmentedControlProps<T extends string = string> {
   className?: string;
 }
 
-export function SegmentedControl<T extends string = string>({
+function SegmentedControlInner<T extends string = string>({
   options,
   value,
   onChange,
@@ -75,3 +75,6 @@ export function SegmentedControl<T extends string = string>({
     </div>
   );
 }
+
+export const SegmentedControl = memo(SegmentedControlInner) as typeof SegmentedControlInner;
+(SegmentedControl as React.FC).displayName = "SegmentedControl";

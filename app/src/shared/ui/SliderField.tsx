@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Badge } from "./Badge";
 
@@ -16,7 +16,7 @@ export interface SliderFieldProps {
   className?: string;
 }
 
-export const SliderField: React.FC<SliderFieldProps> = ({
+export const SliderField = memo<SliderFieldProps>(({
   label,
   sublabel,
   value,
@@ -71,4 +71,6 @@ export const SliderField: React.FC<SliderFieldProps> = ({
       />
     </div>
   );
-};
+});
+
+SliderField.displayName = "SliderField";

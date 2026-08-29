@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo, ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   startSession,
@@ -273,54 +273,84 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     setErrorAlert(null);
   }, []);
 
-  // Global Keyboard Shortcuts
+  const kbStateRef = useRef({
+    interactionMode,
+    isEngaged,
+    isPaused,
+    pttStatus,
+    engage,
+    disengage,
+    pause,
+    resume,
+    handlePttStart,
+    handlePttStop,
+    handlePttCancel,
+  });
+  kbStateRef.current = {
+    interactionMode,
+    isEngaged,
+    isPaused,
+    pttStatus,
+    engage,
+    disengage,
+    pause,
+    resume,
+    handlePttStart,
+    handlePttStop,
+    handlePttCancel,
+  };
+
+  // Global Keyboard Shortcuts (bound once on mount, zero listener churn)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       const key = e.key.toLowerCase();
+      const s = kbStateRef.current;
       if (e.code === "Space") {
-        if (interactionMode === "PTT" && isEngaged && !isPaused) {
+        if (s.interactionMode === "PTT" && s.isEngaged && !s.isPaused) {
           e.preventDefault();
           if (!isSpacePressedRef.current) {
             isSpacePressedRef.current = true;
-            handlePttStart().catch(() => {
+            s.handlePttStart().catch(() => {
               isSpacePressedRef.current = false;
             });
           }
         }
       } else if (e.key === "Escape") {
-        if (interactionMode === "PTT" && isEngaged && pttStatus === "RECORDING") {
+        if (s.interactionMode === "PTT" && s.isEngaged && s.pttStatus === "RECORDING") {
           e.preventDefault();
           isSpacePressedRef.current = false;
-          handlePttCancel();
+          s.handlePttCancel();
         }
       } else if (key === "s") {
         e.preventDefault();
-        if (isEngaged) disengage();
-        else engage();
+        if (s.isEngaged) s.disengage();
+        else s.engage();
       } else if (key === "p") {
         e.preventDefault();
-        pause();
+        s.pause();
       } else if (key === "r") {
         e.preventDefault();
-        resume();
+        s.resume();
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      const s = kbStateRef.current;
       if (e.code === "Space" && isSpacePressedRef.current) {
         isSpacePressedRef.current = false;
-        if (interactionMode === "PTT" && isEngaged && !isPaused) {
+        if (s.interactionMode === "PTT" && s.isEngaged && !s.isPaused) {
           e.preventDefault();
-          handlePttStop();
+          s.handlePttStop();
         }
       }
     };
 
     const handleBlur = () => {
-      if (isSpacePressedRef.current && interactionMode === "PTT" && isEngaged && !isPaused) {
+      const s = kbStateRef.current;
+      if (isSpacePressedRef.current && s.interactionMode === "PTT" && s.isEngaged && !s.isPaused) {
         isSpacePressedRef.current = false;
-        handlePttStop();
+        s.handlePttStop();
       }
     };
 
@@ -332,7 +362,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [isEngaged, isPaused, interactionMode, pttStatus, engage, disengage, pause, resume, handlePttStart, handlePttStop, handlePttCancel]);
+  }, []);
 
   // Session Cache Check
   useEffect(() => {
@@ -379,7 +409,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
             if (engaged && snapshot.conversation_id && snapshot.conversation_id !== 0) {
               const turns = await getTurns(snapshot.conversation_id);
               if (isMounted) {
-                const history: DialogueTurn[] = turns.map((t) => ({
+                const history: DialogueTurn[] = turns.slice(-100).map((t) => ({
                   user: t.user_text,
                   assistant: t.assistant_text,
                   id: t.turn_id,
@@ -536,47 +566,80 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     };
   }, [archiveCurrentTurn]);
 
-  const value: VoiceSessionContextValue = {
-    interactionState,
-    setInteractionState,
-    interactionMode,
-    setInteractionMode,
-    pipelineMode,
-    setPipelineMode,
-    isEngaged,
-    isSleeping,
-    isPaused,
-    hasCachedSession,
-    pttStatus,
-    isLaunching,
-    transcript,
-    assistantText,
-    cpuWarning,
-    idleTimeout,
-    testMode,
-    setTestMode,
-    testingClip,
-    dialogueHistory,
-    setDialogueHistory,
-    errorAlert,
-    setErrorAlert,
-    isThinking,
-    engage,
-    disengage,
-    pause,
-    resume,
-    handlePttStart,
-    handlePttStop,
-    handlePttCancel,
-    handleEngage: engage,
-    handleEnd: disengage,
-    handlePause: pause,
-    handleResume: resume,
-    togglePtt,
-    handleTestClip,
-    clearHistory,
-    dismissError,
-  };
+  const value: VoiceSessionContextValue = useMemo(
+    () => ({
+      interactionState,
+      setInteractionState,
+      interactionMode,
+      setInteractionMode,
+      pipelineMode,
+      setPipelineMode,
+      isEngaged,
+      isSleeping,
+      isPaused,
+      hasCachedSession,
+      pttStatus,
+      isLaunching,
+      transcript,
+      assistantText,
+      cpuWarning,
+      idleTimeout,
+      testMode,
+      setTestMode,
+      testingClip,
+      dialogueHistory,
+      setDialogueHistory,
+      errorAlert,
+      setErrorAlert,
+      isThinking,
+      engage,
+      disengage,
+      pause,
+      resume,
+      handlePttStart,
+      handlePttStop,
+      handlePttCancel,
+      handleEngage: engage,
+      handleEnd: disengage,
+      handlePause: pause,
+      handleResume: resume,
+      togglePtt,
+      handleTestClip,
+      clearHistory,
+      dismissError,
+    }),
+    [
+      interactionState,
+      interactionMode,
+      pipelineMode,
+      isEngaged,
+      isSleeping,
+      isPaused,
+      hasCachedSession,
+      pttStatus,
+      isLaunching,
+      transcript,
+      assistantText,
+      cpuWarning,
+      idleTimeout,
+      testMode,
+      testingClip,
+      dialogueHistory,
+      errorAlert,
+      isThinking,
+      engage,
+      disengage,
+      pause,
+      resume,
+      handlePttStart,
+      handlePttStop,
+      handlePttCancel,
+      togglePtt,
+      handleTestClip,
+      clearHistory,
+      dismissError,
+    ]
+  );
 
   return <VoiceSessionContext.Provider value={value}>{children}</VoiceSessionContext.Provider>;
 };

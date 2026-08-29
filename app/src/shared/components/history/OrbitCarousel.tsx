@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { memo, useCallback, useEffect, useRef } from "react";
 import {
   depthFromAngle,
   distributeAngles,
@@ -32,14 +32,14 @@ const MOMENTUM_STOP = 0.00025;
 const MOMENTUM_MAX_MS = 1000;
 const DRAG_THRESHOLD_PX = 3;
 
-export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
+export const OrbitCarousel = memo(({
   nodeIds,
   radius,
   selectedId = null,
   paused = false,
   onDragStateChange,
   renderNode,
-}) => {
+}: OrbitCarouselProps) => {
   useMemoryTrace("OrbitCarousel (3D Ellipse)");
   const containerRef = useRef<HTMLDivElement>(null);
   const cardsContainerRef = useRef<HTMLDivElement>(null);
@@ -209,11 +209,6 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
     rafRef.current = requestAnimationFrame(loop);
   }, [loop, setBlurDisabled]);
 
-  // Project once when the ring is resized or content changes (resting state)
-  useEffect(() => {
-    projectFrame();
-  }, [projectFrame, radius, nodeIds]);
-
   useEffect(() => stopLoop, [stopLoop]);
 
   // ── Reduced-motion awareness ───────────────────────────────────────────────
@@ -336,8 +331,16 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
     []
   );
 
-  const registerRefCb = useCallback(
-    (id: string) => (el: HTMLDivElement | null) => handleRegisterNode(id, el),
+  const refCallbacksMapRef = useRef<Map<string, (el: HTMLDivElement | null) => void>>(new Map());
+  const getRefCb = useCallback(
+    (id: string) => {
+      let cb = refCallbacksMapRef.current.get(id);
+      if (!cb) {
+        cb = (el: HTMLDivElement | null) => handleRegisterNode(id, el);
+        refCallbacksMapRef.current.set(id, cb);
+      }
+      return cb;
+    },
     [handleRegisterNode]
   );
 
@@ -360,7 +363,7 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
           nodeIds.map((id) => (
             <div
               key={id}
-              ref={registerRefCb(id)}
+              ref={getRefCb(id)}
               className="absolute left-0 top-0 pointer-events-auto opacity-0"
               style={{ transform: "translate3d(-9999px, -9999px, 0)" }}
             >
@@ -370,6 +373,6 @@ export const OrbitCarousel: React.FC<OrbitCarouselProps> = ({
       </div>
     </div>
   );
-};
+});
 
 OrbitCarousel.displayName = "OrbitCarousel";

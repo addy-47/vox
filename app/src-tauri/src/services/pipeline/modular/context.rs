@@ -75,7 +75,7 @@ pub async fn build_generation_request(
             if let Ok(Some(query_embedding)) = crate::services::memory::generate_embedding(text) {
                 let db_path = crate::utils::paths::db_path();
                 if let Ok(conn) = crate::persistence::db::VoxDb::open_readonly(&db_path).await {
-                    if let Ok(profile) = crate::services::memory::retrieve_personal_context_v7(
+                    if let Ok(profile) = crate::services::memory::retrieve_personal_context(
                         &conn,
                         &query_embedding,
                         scope,

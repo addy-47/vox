@@ -20,8 +20,6 @@ export const SETTINGS_DOMAINS: SettingsDomain[] = [
   { id: "interaction", label: "Interaction", sublabel: "Activation & cloud key", icon: Sliders, angle: -150 },
 ];
 
-export const MOBILE_SETTINGS_ORDER = ["interaction", "history", "models", "appearance", "memory", "persona"] as const;
-
 export type SettingsScope =
   | "appearance"
   | "audio"
@@ -40,7 +38,7 @@ export type SettingsScope =
 export const SETTINGS_SCOPE_KEYS: Record<SettingsScope, readonly string[]> = {
   appearance: ["theme", "accent_seed"],
   audio: ["output_mode", "input_device"],
-  vad: ["threshold", "ptt_noise_gate", "backend"],
+  vad: ["threshold", "ptt_noise_gate", "vad_backend"],
   stt: ["active", "transliterate_enabled", "embedded", "cloud"],
   llm: [
     "active",
@@ -145,9 +143,14 @@ export const TRIGGER_MODE_COPY = {
 
 export const SETTINGS_COPY = {
   settingsTitle: "Settings",
+  settingsSubtitle: "System Configuration",
   unsavedChanges: "Unsaved Changes",
   saveChanges: "Save",
   discardChanges: "Discard",
+  applyAndReload: "Apply & Reload",
+  changesSaved: "Changes Saved",
+  autoSynced: "Auto-synced",
+  apiKeyRequired: "API Key Required for Cloud Provider",
   restartRequired: "Restart Required to Apply Changes",
   restoreDefaults: "Restore All Defaults",
   confirmRestoreTitle: "Are you sure you want to restore defaults?",
@@ -202,5 +205,129 @@ export const PERSONA_COPY = {
   modularFooterHint: "Supports <lang> and <script> template variables, dynamically resolved based on user speech language.",
   realtimeFooterHint: "Instructions supplied to duplex cloud speech-to-speech models (e.g. Gemini Live).",
   emptyPrompt: "No instructions defined. Switch to Edit to write prompt directives.",
+};
+
+export const INTERACTION_CONFIG_DESK_COPY = {
+  integrated: {
+    title: "Integrated Voice Engine",
+    badge: "Sub-200ms",
+    description: "Streaming STT, LLM inference, and TTS audio synthesis run tightly coupled in unified process memory for minimal perceived latency.",
+  },
+  stt: {
+    local: {
+      title: "Embedded Speech Recognition",
+      description: "Speech recognition models run 100% locally inside Vox using on-device neural engines. Voice audio is processed entirely on your hardware with zero external network transmission.",
+    },
+    remote: {
+      title: "Remote Speech Server",
+      badge: "Coming Soon",
+      description: "Stream microphone audio frames directly to a self-hosted or dedicated remote ASR inference node over secure WebSocket connection.",
+    },
+    cloud: {
+      title: "Cloud Speech API",
+      badge: "Coming Soon",
+      description: "Ultra-low latency streaming cloud transcription powered by hosted speech-to-text API endpoints.",
+    },
+  },
+  llm: {
+    local: {
+      title: "Embedded Neural LLM",
+      description: "Language models run directly on your local hardware using Vox's embedded inference engine. All conversational context and prompt reasoning remain completely offline and private.",
+    },
+    remote: {
+      title: "Self-Hosted / Ollama Server",
+      urlLabel: "Server URL",
+      urlPlaceholder: "http://127.0.0.1:11434",
+      apiKeyLabel: "API Key (Optional)",
+      apiKeyPlaceholder: "Bearer token...",
+    },
+    cloud: {
+      title: "Cloud Provider API",
+      providerLabel: "Cloud Provider",
+      apiKeyLabel: "API Key (Required)",
+    },
+  },
+  tts: {
+    local: {
+      title: "Embedded Voice Synthesizer",
+      description: "Voice generation models execute entirely on-device for crisp, realtime offline audio synthesis with zero cloud latency or external API costs.",
+    },
+    remote: {
+      title: "Chatterbox GPU Server",
+      urlLabel: "Server HTTP URL",
+      urlPlaceholder: "http://127.0.0.1:7860",
+      pathLabel: "Remote Path",
+      pathPlaceholder: "~/.vox",
+    },
+    cloud: {
+      title: "Cloud Voice Engine",
+      badge: "Zero Config",
+      description: "Natural multi-voice speech synthesis streamed over the web with high-fidelity pronunciation, global accent selection, and zero API key setup.",
+    },
+  },
+};
+
+export const MEMORY_CONFIG_DESK_COPY = {
+  cardTitle: "Memory Stack",
+  recallToggle: {
+    title: "Retrieval",
+    activeLabel: "Recall Active",
+    inactiveLabel: "Recall Paused",
+    activeSublabel: "Context Injected",
+    inactiveSublabel: "Turn Bypassed",
+  },
+  pipelineToggle: {
+    title: "Processing",
+    activeLabel: "Pipeline Active",
+    inactiveLabel: "Pipeline Paused",
+    activeSublabel: "Background Ingestion",
+    inactiveSublabel: "Queue Staged Only",
+  },
+  tabs: {
+    depth: "Depth",
+    cutoff: "Cutoff",
+    graph: "Graph",
+    budget: "Budget",
+    window: "Window",
+  },
+  depth: {
+    title: "Recall Fact Limit",
+    description: "Maximum number of long-term facts and memories injected into context for each conversation turn.",
+    unit: "facts",
+  },
+  cutoff: {
+    title: "Relevance Cutoff",
+    description: "Minimum semantic similarity score required for a past fact to be recalled and sent to the model.",
+    knobLabel: "Cutoff Floor",
+  },
+  graph: {
+    title: "Knowledge Graph Hops",
+    description: "Maximum relationship connections explored across entity nodes to discover linked memories.",
+  },
+  budget: {
+    title: "Context Budget",
+    description: "Maximum percentage of LLM prompt window allocated to memory facts and user profile context.",
+  },
+  window: {
+    title: "Conversation Window",
+    description: "Duration over which past dialogue turns are chained together as continuous active context.",
+  },
+};
+
+export const TTS_VOICE_MANAGER_COPY = {
+  tabs: {
+    selectVoice: "Select Voice",
+    speechSpeed: "Speech Speed",
+  },
+  voice: {
+    title: "Voice Profile",
+    prefix: "Choose an AI voice persona from the",
+    suffix: "region to synthesize natural audio responses.",
+    localDescription: "Select an on-device neural voice profile for offline speech synthesis.",
+  },
+  speed: {
+    title: "Playback Rate",
+    description: "Fine-tune speech synthesis playback tempo and velocity across assistant responses without pitch distortion.",
+  },
 };
 

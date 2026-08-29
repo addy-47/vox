@@ -23,8 +23,7 @@ export const AuxiliaryWorkspace = memo(
     startDownload,
     deleteModel,
   }: AuxiliaryWorkspaceProps) => {
-    const { modelCatalog } = useSettingsStore();
-    const auxiliaryModels = modelCatalog?.auxiliary || [];
+    const auxiliaryModels = useSettingsStore((s) => s.modelCatalog?.auxiliary) ?? [];
 
     return (
       <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1">

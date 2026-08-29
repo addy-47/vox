@@ -1,15 +1,18 @@
 # Function Inventory Checklist (Total: 572 functions across 94 files)
 
 ## `app/src-tauri/src/ipc/audio.rs` (78 lines, 2 functions)
+
 - [x] `L  12`: `list_input_devices` [Production]
 - [x] `L  46`: `list_output_devices` [Production]
 
 ## `app/src-tauri/src/ipc/dictation.rs` (45 lines, 3 functions)
+
 - [x] `L  12`: `get_dictation_settings` [Production]
 - [x] `L  21`: `get_last_dictation_transcript` [Production]
 - [x] `L  30`: `copy_last_dictation_transcript` [Production]
 
 ## `app/src-tauri/src/ipc/history.rs` (154 lines, 5 functions)
+
 - [x] `L   8`: `get_transcript_history` [Production]
 - [x] `L  17`: `commit_session_to_history` [Production]
 - [x] `L  64`: `get_sessions` [Production]
@@ -17,16 +20,19 @@
 - [x] `L 138`: `delete_session` [Production]
 
 ## `app/src-tauri/src/ipc/memory/conflicts.rs` (124 lines, 2 functions)
+
 - [x] `L  16`: `get_unresolved_conflicts` [Production]
 - [x] `L  76`: `resolve_memory_conflict` [Production]
 
 ## `app/src-tauri/src/ipc/memory/graph.rs` (283 lines, 4 functions)
+
 - [x] `L  67`: `get_graph_version` [Production]
 - [x] `L  76`: `get_memory_graph_topology` [Production] (Updated with parameterized collection filtering)
 - [x] `L 186`: `get_memory_fact_detail` [Production]
 - [x] `L 278`: `get_memory_stats` [Production]
 
 ## `app/src-tauri/src/ipc/memory/ingestion.rs` (215 lines, 5 functions)
+
 - [x] `L  45`: `get_memory_relations` [Production]
 - [x] `L  78`: `get_memory_queue_status` [Production]
 - [x] `L 150`: `toggle_pipeline_processing` [Production] (Unified enable/pause with settings sync)
@@ -34,6 +40,7 @@
 - [x] `L 204`: `retry_failed_queue_items` [Production] (Guarded against paused pipeline)
 
 ## `app/src-tauri/src/ipc/memory/mutations.rs` (229 lines, 5 functions)
+
 - [x] `L  10`: `edit_fact_content` [Production]
 - [x] `L  89`: `reassign_fact_collection` [Production]
 - [x] `L 136`: `soft_delete_fact` [Production]
@@ -41,6 +48,7 @@
 - [x] `L 223`: `user_delete_memory` [Production]
 
 ## `app/src-tauri/src/ipc/memory_profiler.rs` (356 lines, 6 functions)
+
 - [x] `L   6`: `resolve_temp_dir` [Production]
 - [x] `L  34`: `sanitize_page_name` [Production]
 - [x] `L  84`: `extract_descendant_processes` [Production] (Extracted helper ≤50 lines)
@@ -51,14 +59,17 @@
 - [x] `L 313`: `record_memory_profile_event` [Production]
 
 ## `app/src-tauri/src/ipc/monitoring.rs` (22 lines, 3 functions)
+
 - [x] `L   8`: `get_runtime_snapshot` [Production]
 - [x] `L  14`: `get_runtime_history` [Production]
 - [x] `L  20`: `clear_runtime_history` [Production]
 
 ## `app/src-tauri/src/ipc/pipeline/engine_launch.rs` (394 lines, 1 functions)
+
 - [x] `L  22`: `launch_engine` [Disaster] (394-line monolithic launcher orchestrating 5+ workers in IPC layer; queued for Layer 2 rewrite)
 
 ## `app/src-tauri/src/ipc/pipeline/lifecycle.rs` (416 lines, 5 functions)
+
 - [x] `L  14`: `check_engine_status` [Production]
 - [x] `L  22`: `stop_engine` [Bad Code] (58 lines orchestrating model eviction, thread joins, persistence shutdown; queued for Layer 2)
 - [x] `L  82`: `engage` [Disaster] (202 lines, toggle function violation, direct persistence channel sends, ONNX lazy loads; queued for Layer 2 rewrite)
@@ -66,22 +77,26 @@
 - [x] `L 342`: `resume_pipeline` [Bad Code] (74 lines, lazy reconnect & inline settings/state resolution; queued for Layer 2)
 
 ## `app/src-tauri/src/ipc/pipeline/realtime.rs` (408 lines, 4 functions)
+
 - [x] `L  17`: `start_realtime_session_internal` [Disaster] (296 lines, complex session initialization, resumption token parsing, idle timeout loop; queued for Layer 2)
 - [x] `L 317`: `start_realtime_session` [Production]
 - [x] `L 329`: `get_realtime_session_cache` [Production]
 - [x] `L 360`: `stop_realtime_session` [Production]
 
 ## `app/src-tauri/src/ipc/pipeline/test_clip.rs` (203 lines, 3 functions)
+
 - [x] `L  13`: `decode_wav_to_mono_f32` [Production]
 - [x] `L  58`: `test_clip` [Bad Code] (109 lines, handles engine orchestration directly in IPC; queued for Layer 2)
 - [x] `L 171`: `test_clip_cancel` [Production]
 
 ## `app/src-tauri/src/ipc/settings/catalog.rs` (135 lines, 3 functions)
+
 - [x] `L  39`: `request_boot_state` [Production]
 - [x] `L  59`: `request_model_catalog` [Production]
 - [x] `L 127`: `get_settings` [Production]
 
 ## `app/src-tauri/src/ipc/settings/health.rs` (515 lines, 8 functions)
+
 - [x] `L   9`: `check_llm_provider_health` [Production]
 - [x] `L  77`: `check_stt_provider_health` [Production]
 - [x] `L 120`: `check_tts_provider_health` [Production]
@@ -95,6 +110,7 @@
 - [x] `L 488`: `setup_remote_server` [Production] (Thin IPC dispatcher ≤50 lines)
 
 ## `app/src-tauri/src/ipc/settings/mutation.rs` (819 lines, 9 functions)
+
 - [x] `L  30`: `handle_dictation_side_effects` [Production] (Extracted helper ≤50 lines)
 - [x] `L  93`: `handle_interaction_side_effects` [Production] (Extracted helper ≤50 lines)
 - [x] `L 135`: `handle_setting_side_effects` [Production] (Extracted dispatcher ≤50 lines)
@@ -106,10 +122,12 @@
 - [x] `L 796`: `schedule_debounced_save` [Production]
 
 ## `app/src-tauri/src/ipc/settings/tests.rs` (106 lines, 2 functions)
+
 - [x] `L  12`: `test_apply_setting_mutation_type_safety` [Production]
 - [x] `L  50`: `test_setting_numeric_bounds` [Production]
 
 ## `app/src-tauri/src/ipc/setup.rs` (423 lines, 15 functions)
+
 - [x] `L  11`: `check_for_updates` [Production]
 - [x] `L  19`: `check_for_model_updates` [Production]
 - [x] `L  27`: `fetch_manifest` [Production]
@@ -129,6 +147,7 @@
 - [x] `L 348`: `delete_model` [Production] (Thin deletion coordinator ≤50 lines)
 
 ## `app/src-tauri/src/ipc/tray.rs` (273 lines, 8 functions)
+
 - [x] `L   9`: `toggle_hud_visibility` [Production] (Valid UI toggle for HUD overlay checkmark)
 - [x] `L  53`: `cancel_active_dictation_turn` [Production] (Extracted helper ≤50 lines)
 - [x] `L  87`: `hide_tray_window` [Production]
@@ -139,6 +158,7 @@
 - [x] `L 268`: `show_main_window` [Production]
 
 ## `app/src-tauri/src/ipc/voices.rs` (215 lines, 13 functions)
+
 - [x] `L  29`: `from` [Production]
 - [x] `L  42`: `open_db` [Production]
 - [x] `L  49`: `now_epoch` [Production]
@@ -154,6 +174,7 @@
 - [x] `L 241`: `fetch_edge_tts_voices` [Production]
 
 ## `app/src-tauri/src/services/tts/voice.rs` (360 lines, 10 functions)
+
 - [x] `L  24`: `validate_wav_file` [Production]
 - [x] `L  42`: `extract_mono_f32_samples` [Production]
 - [x] `L  85`: `decode_audio_stream` [Production]
@@ -169,6 +190,7 @@
 - [x] `L 357`: `fetch_remote_edge_voices` [Production]
 
 ## `app/src-tauri/src/services/audio/decode.rs` (371 lines, 13 functions)
+
 - [x] `L  41`: `decode_bytes_to_24khz_mono` [Production]
 - [x] `L  52`: `decode_to_24khz_mono` [Production]
 - [x] `L  67`: `decode_mss` [Production]
@@ -184,6 +206,7 @@
 - [x] `L 357`: `test_write_and_read_back` [Production]
 
 ## `app/src-tauri/src/services/audio/device.rs` (176 lines, 6 functions)
+
 - [x] `L  19`: `new` [Production]
 - [x] `L  37`: `start` [Production]
 - [x] `L  45`: `resolve_input_device` [Production] (Extracted helper)
@@ -192,6 +215,7 @@
 - [x] `L 154`: `drop` [Production]
 
 ## `app/src-tauri/src/services/audio/playback.rs` (497 lines, 19 functions)
+
 - [x] `L  16`: `upsample_2x` [Production]
 - [x] `L  60`: `new` [Production]
 - [x] `L 108`: `ingest_chunk` [Production]
@@ -213,6 +237,7 @@
 - [x] `L 478`: `test_playback_barge_in_discard` [Production]
 
 ## `app/src-tauri/src/services/audio/router.rs` (152 lines, 6 functions)
+
 - [x] `L  26`: `spawn` [Production]
 - [x] `L  79`: `set_mode` [Production]
 - [x] `L  86`: `start_realtime` [Production]
@@ -221,11 +246,13 @@
 - [x] `L 124`: `route_audio_chunk` [Production] (Extracted helper)
 
 ## `app/src-tauri/src/services/dictation/clipboard.rs` (73 lines, 3 functions)
+
 - [x] `L   5`: `get_text` [Production]
 - [x] `L  27`: `set_text` [Production]
 - [x] `L  48`: `with_clipboard_safe` [Production]
 
 ## `app/src-tauri/src/services/dictation/controller.rs` (215 lines, 6 functions)
+
 - [x] `L  14`: `handle_press` [Production]
 - [x] `L  47`: `handle_release` [Production]
 - [x] `L  78`: `handle_cancel` [Production]
@@ -235,9 +262,11 @@
 - [x] `L 186`: `finalize_dictation_audio` [Production] (Extracted helper)
 
 ## `app/src-tauri/src/services/dictation/hotkey.rs` (76 lines, 1 functions)
+
 - [x] `L  11`: `register_global_hotkey` [Production]
 
 ## `app/src-tauri/src/services/dictation/input.rs` (210 lines, 6 functions)
+
 - [x] `L  10`: `simulate_paste` [Production]
 - [x] `L  17`: `simulate_paste` (X11) [Production]
 - [x] `L  59`: `simulate_paste` (Wayland) [Production]
@@ -246,15 +275,18 @@
 - [x] `L 169`: `create_input_adapter` [Production]
 
 ## `app/src-tauri/src/services/dictation/output_router.rs` (105 lines, 4 functions)
+
 - [x] `L  13`: `route_transcript` [Production]
 - [x] `L  38`: `dispatch_to_tray` [Production] (Extracted helper)
 - [x] `L  60`: `dispatch_to_clipboard` [Production] (Extracted helper)
 - [x] `L  75`: `dispatch_to_paste` [Production] (Extracted helper)
 
 ## `app/src-tauri/src/services/llm/actor.rs` (63 lines, 1 functions)
+
 - [x] `L  16`: `spawn_llm_worker` [Production]
 
 ## `app/src-tauri/src/services/llm/capabilities.rs` (141 lines, 7 functions)
+
 - [x] `L  30`: `static_supported` [Production]
 - [x] `L  40`: `static_unsupported` [Production]
 - [x] `L  49`: `unknown` [Production]
@@ -264,6 +296,7 @@
 - [x] `L 129`: `update_observation` [Production]
 
 ## `app/src-tauri/src/services/llm/capability_probe.rs` (970 lines, 19 functions)
+
 - [x] `L  53`: `probe_capabilities` [Production]
 - [x] `L  88`: `probe_local_embedded` [Production] (Extracted helper)
 - [x] `L 124`: `probe_openai_compat_endpoint` [Production] (Extracted helper)
@@ -286,6 +319,7 @@
 - [x] `L 926`: `test_parse_token_ceiling_bounds_and_edge_cases` [Production]
 
 ## `app/src-tauri/src/services/llm/llama_cpp.rs` (721 lines, 16 functions)
+
 - [x] `L  28`: `detect` [Production]
 - [x] `L  48`: `format_system_prompt` [Production]
 - [x] `L  71`: `format_user_prompt` [Production]
@@ -304,10 +338,12 @@
 - [x] `L 410`: `generate` [Production]
 
 ## `app/src-tauri/src/services/llm/mod.rs` (59 lines, 2 functions)
+
 - [x] `L  36`: `generate` [Production]
 - [x] `L  52`: `global_llama_backend` [Production]
 
 ## `app/src-tauri/src/services/llm/policy.rs` (113 lines, 5 functions)
+
 - [x] `L  10`: `calculate_compaction_max_tokens` [Production]
 - [x] `L  41`: `from_settings` [Production]
 - [x] `L  60`: `build_request` [Production]
@@ -315,11 +351,13 @@
 - [x] `L  97`: `test_policy_compaction_budget_clamped_for_cloud` [Production]
 
 ## `app/src-tauri/src/services/llm/probe.rs` (103 lines, 3 functions)
+
 - [x] `L  12`: `new` [Production]
 - [x] `L  22`: `registry` [Production]
 - [x] `L  27`: `probe_top_k` [Production]
 
 ## `app/src-tauri/src/services/llm/providers/embedded.rs` (133 lines, 8 functions)
+
 - [x] `L  21`: `new` [Production]
 - [x] `L  32`: `generate` [Production]
 - [x] `L  51`: `capabilities` [Production]
@@ -330,6 +368,7 @@
 - [x] `L  77`: `list_models_in_dir` [Production]
 
 ## `app/src-tauri/src/services/llm/providers/lm_studio.rs` (218 lines, 5 functions)
+
 - [x] `L  21`: `new` [Production]
 - [x] `L  39`: `capabilities` [Production]
 - [x] `L  43`: `generate` [Production]
@@ -337,6 +376,7 @@
 - [x] `L 142`: `stream_response` [Production] (Extracted helper)
 
 ## `app/src-tauri/src/services/llm/providers/mod.rs` (56 lines, 6 functions)
+
 - [x] `L  25`: `generate` [Production]
 - [x] `L  34`: `capabilities` [Production]
 - [x] `L  37`: `health_check` [Production]
@@ -345,6 +385,7 @@
 - [x] `L  46`: `max_context_tokens` [Production]
 
 ## `app/src-tauri/src/services/llm/providers/ollama.rs` (194 lines, 5 functions)
+
 - [x] `L  21`: `new` [Production]
 - [x] `L  39`: `capabilities` [Production]
 - [x] `L  43`: `generate` [Production]
@@ -352,6 +393,7 @@
 - [x] `L 125`: `stream_response` [Production] (Extracted helper)
 
 ## `app/src-tauri/src/services/llm/providers/openai/chat_completions.rs` (246 lines, 6 functions)
+
 - [x] `L  23`: `new` [Production]
 - [x] `L  49`: `capabilities` [Production]
 - [x] `L  53`: `inject_headers` [Production]
@@ -360,6 +402,7 @@
 - [x] `L 165`: `stream_response` [Production] (Extracted helper)
 
 ## `app/src-tauri/src/services/llm/providers/openai/responses.rs` (221 lines, 6 functions)
+
 - [x] `L  22`: `new` [Production]
 - [x] `L  46`: `capabilities` [Production]
 - [x] `L  50`: `inject_headers` [Production]
@@ -368,6 +411,7 @@
 - [x] `L 142`: `stream_response` [Production] (Extracted helper)
 
 ## `app/src-tauri/src/services/llm/providers/openai_compat.rs` (713 lines, 12 functions)
+
 - [x] `L  33`: `new` [Production]
 - [x] `L  89`: `inject_headers` [Production]
 - [x] `L 106`: `detect_backend_kind` [Production]
@@ -382,9 +426,11 @@
 - [x] `L 687`: `parse_heuristic_metadata` [Production]
 
 ## `app/src-tauri/src/services/llm/types.rs` (126 lines, 1 functions)
+
 - [x] `L  74`: `default` [Production]
 
 ## `app/src-tauri/src/services/memory/classifiers/inter_edge_classifier.rs` (269 lines, 10 functions)
+
 - [x] `L  22`: `init_edge_classifier` [Production]
 - [x] `L  86`: `unload_edge_classifier` [Production]
 - [x] `L  94`: `is_edge_classifier_loaded` [Production]
@@ -397,6 +443,7 @@
 - [x] `L 249`: `test_class_c_taxonomy_connection_matrix_compliance` [Production]
 
 ## `app/src-tauri/src/services/memory/classifiers/intra_edge_classifier.rs` (415 lines, 14 functions)
+
 - [x] `L  19`: `as_str` [Production]
 - [x] `L  56`: `init_nli_engine` [Production]
 - [x] `L 127`: `unload_nli_engine` [Production]
@@ -413,6 +460,7 @@
 - [x] `L 406`: `get_calibrated_class_mapping_strings` [Production]
 
 ## `app/src-tauri/src/services/memory/classifiers/query_classifier.rs` (140 lines, 9 functions)
+
 - [x] `L  16`: `load` [Production]
 - [x] `L  30`: `classify` [Production]
 - [x] `L  42`: `init_scope_classifier` [Production]
@@ -424,6 +472,7 @@
 - [x] `L 135`: `test_classifier_path_constants` [Production]
 
 ## `app/src-tauri/src/services/memory/deduplication.rs` (68 lines, 5 functions)
+
 - [x] `L  10`: `jaccard_similarity` [Production]
 - [x] `L  36`: `is_exact_duplicate` [Production]
 - [x] `L  45`: `test_jaccard_similarity` [Production]
@@ -431,6 +480,7 @@
 - [x] `L  63`: `test_exact_duplicate_checks` [Production]
 
 ## `app/src-tauri/src/services/memory/embedder.rs` (370 lines, 13 functions)
+
 - [x] `L  27`: `init_embedder` [Production]
 - [x] `L  91`: `unload_embedder` [Production]
 - [x] `L 102`: `ensure_embedder_loaded` [Production]
@@ -446,10 +496,12 @@
 - [x] `L 319`: `test_cosine_similarity_edge_cases` [Production]
 
 ## `app/src-tauri/src/services/memory/formatter.rs` (88 lines, 2 functions)
+
 - [x] `L   5`: `format_relative_timestamp` [Production]
 - [x] `L  44`: `format_user_profile_context` [Production]
 
 ## `app/src-tauri/src/services/memory/ingestion.rs` (227 lines, 9 functions)
+
 - [x] `L  19`: `build_compaction_request` [Production] (Extracted helper)
 - [x] `L  62`: `execute_compaction_attempt` [Production] (Extracted helper)
 - [x] `L 104`: `run_compaction` [Production]
@@ -461,6 +513,7 @@
 - [x] `L 200`: `generate` [Production]
 
 ## `app/src-tauri/src/services/memory/mod.rs` (102 lines, 5 functions)
+
 - [x] `L  36`: `unload_memory_pipeline_onnx_models` [Production]
 - [x] `L  45`: `unload_all_onnx_models` [Production]
 - [x] `L  62`: `trim_heap` [Production]
@@ -468,12 +521,14 @@
 - [x] `L  77`: `EmptyWorkingSet` [Production]
 
 ## `app/src-tauri/src/services/memory/pipeline/runner.rs` (130 lines, 4 functions)
+
 - [x] `L  12`: `run_pipeline_cycle` [Production]
 - [x] `L  16`: `run_pipeline_cycle_with_id_seq` [Production]
 - [x] `L 103`: `drain_pipeline_queue` [Production]
 - [x] `L 110`: `drain_pipeline_queue_with_run_id` [Production]
 
 ## `app/src-tauri/src/services/memory/pipeline/stage1_dedup.rs` (329 lines, 6 functions)
+
 - [x] `L  24`: `claim_staged_items` [Production] (Extracted helper)
 - [x] `L  58`: `load_active_and_queue_facts` [Production] (Extracted helper)
 - [x] `L  92`: `dedup_item_against_active` [Production] (Extracted helper)
@@ -482,12 +537,14 @@
 - [x] `L 216`: `run_stage1_dedup_with_metrics` [Production]
 
 ## `app/src-tauri/src/services/memory/pipeline/stage2_embed.rs` (236 lines, 4 functions)
+
 - [x] `L  25`: `claim_deduped_items` [Production] (Extracted helper)
 - [x] `L  56`: `process_stage2_item` [Production] (Extracted helper)
 - [x] `L 162`: `run_stage2_embed` [Production]
 - [x] `L 166`: `run_stage2_embed_with_metrics` [Production]
 
 ## `app/src-tauri/src/services/memory/pipeline/stage3_eval.rs` (483 lines, 8 functions)
+
 - [x] `L  34`: `eval_subbranch_a_nli_sync` [Production]
 - [x] `L 157`: `eval_subbranch_b_edges_sync` [Production]
 - [x] `L 268`: `claim_embedded_items` [Production] (Extracted helper)
@@ -498,18 +555,21 @@
 - [x] `L 468`: `test_bidirectional_trigger_policy` [Production]
 
 ## `app/src-tauri/src/services/memory/pipeline/stage4_commit.rs` (213 lines, 4 functions)
+
 - [x] `L  27`: `claim_commit_candidates` [Production] (Extracted helper)
 - [x] `L  62`: `commit_item_to_storage` [Production] (Extracted helper)
 - [x] `L 134`: `run_stage4_commit` [Production]
 - [x] `L 138`: `run_stage4_commit_with_metrics` [Production]
 
 ## `app/src-tauri/src/services/memory/retrieval.rs` (224 lines, 4 functions)
+
 - [x] `L  22`: `collect_sql_sections` [Production] (Extracted helper)
 - [x] `L  68`: `collect_vector_graph_sections` [Production] (Extracted helper)
-- [x] `L 156`: `retrieve_personal_context_v7` [Production]
+- [x] `L 156`: `retrieve_personal_context` [Production]
 - [x] `L 218`: `test_vector_distance_ranking_order` [Production]
 
 ## `app/src-tauri/src/services/memory/scope_router.rs` (83 lines, 5 functions)
+
 - [x] `L  11`: `route_scope` [Production]
 - [x] `L  41`: `test_chitchat_scope_prunes_all_collections` [Production]
 - [x] `L  48`: `test_user_scope_routing` [Production]
@@ -517,11 +577,13 @@
 - [x] `L  72`: `test_temporal_scope_routing` [Production]
 
 ## `app/src-tauri/src/services/memory/tokenizer.rs` (58 lines, 3 functions)
+
 - [x] `L   8`: `get_bpe` [Production]
 - [x] `L  17`: `estimate_tokens` [Production]
 - [x] `L  44`: `test_bpe_english_and_devanagari_token_counts` [Production]
 
 ## `app/src-tauri/src/services/memory/working_memory.rs` (824 lines, 38 functions)
+
 - [x] `L  23`: `fmt` [Production]
 - [x] `L  47`: `current_timestamp_ms` [Production]
 - [x] `L  74`: `new` [Production]
@@ -563,22 +625,27 @@
 - [x] `L 784`: `test_single_system_message_and_9_collection_session_history` [Production]
 
 ## `app/src-tauri/src/services/pipeline/event_loop.rs` (1161 lines, 1 functions)
+
 - [x] `L  17`: `run_event_loop` [Disaster] (Queued untouched for Layer 2 rewrite)
 
 ## `app/src-tauri/src/services/pipeline/handlers.rs` (316 lines, 4 functions)
+
 - [x] `L  15`: `update_interaction_state` [Bad Code] (Queued untouched for Layer 2 rewrite)
 - [x] `L  54`: `get_idle_state` [Bad Code] (Queued untouched for Layer 2 rewrite)
 - [x] `L  62`: `get_current_owner` [Bad Code] (Queued untouched for Layer 2 rewrite)
 - [x] `L  71`: `on_transcript_final` [Bad Code] (Queued untouched for Layer 2 rewrite)
 
 ## `app/src-tauri/src/services/pipeline/llm_lifecycle.rs` (100 lines, 2 functions)
+
 - [x] `L  11`: `warm_up_llm` [Bad Code] (Queued untouched for Layer 2 rewrite)
 - [x] `L  93`: `cool_down_llm` [Bad Code] (Queued untouched for Layer 2 rewrite)
 
 ## `app/src-tauri/src/services/pipeline/mod.rs` (119 lines, 1 functions)
+
 - [x] `L  66`: `new` [Bad Code] (Queued untouched for Layer 2 rewrite)
 
 ## `app/src-tauri/src/services/pipeline/tests.rs` (157 lines, 5 functions)
+
 - [x] `L  14`: `test_pipeline_state_variants_and_default` [Bad Code] (Queued untouched for Layer 2 rewrite)
 - [x] `L  32`: `test_interaction_owner_conversions` [Bad Code] (Queued untouched for Layer 2 rewrite)
 - [x] `L  69`: `test_cancellation_flag_and_atomic_turn_bumping` [Bad Code] (Queued untouched for Layer 2 rewrite)
@@ -586,13 +653,16 @@
 - [x] `L 136`: `test_barge_in_cancellation_flow` [Bad Code] (Queued untouched for Layer 2 rewrite)
 
 ## `app/src-tauri/src/services/pipeline/tts_lifecycle.rs` (124 lines, 2 functions)
+
 - [x] `L  15`: `warm_up_tts` [Bad Code] (Queued untouched for Layer 2 rewrite)
 - [x] `L 119`: `cool_down_tts` [Bad Code] (Queued untouched for Layer 2 rewrite)
 
 ## `app/src-tauri/src/services/pipeline/types.rs` (83 lines, 1 functions)
+
 - [x] `L  42`: `resolve_reference_audio` [Bad Code] (Queued untouched for Layer 2 rewrite)
 
 ## `app/src-tauri/src/services/ptt.rs` (521 lines, 7 functions)
+
 - [x] `L  11`: `ptt_start` [Disaster] (Queued untouched for Layer 2 domain module decomposition)
 - [x] `L 134`: `ptt_stop` [Disaster] (Queued untouched for Layer 2 domain module decomposition)
 - [x] `L 244`: `ptt_cancel` [Disaster] (Queued untouched for Layer 2 domain module decomposition)
@@ -602,6 +672,7 @@
 - [x] `L 495`: `test_ptt_state_reset_and_discard` [Disaster] (Queued untouched for Layer 2 domain module decomposition)
 
 ## `app/src-tauri/src/services/realtime/audio_bridge.rs` (144 lines, 8 functions)
+
 - [x] `L  13`: `default` [Production]
 - [x] `L  19`: `new` [Production]
 - [x] `L  23`: `start` [Production]
@@ -612,6 +683,7 @@
 - [x] `L 132`: `test_audio_bridge_closed_channel_safety` [Production]
 
 ## `app/src-tauri/src/services/realtime/engine.rs` (126 lines, 10 functions)
+
 - [x] `L  20`: `new` [Production]
 - [x] `L  33`: `start` [Production]
 - [x] `L  63`: `stop` [Production]
@@ -624,6 +696,7 @@
 - [x] `L 119`: `last_activity_time` [Production]
 
 ## `app/src-tauri/src/services/realtime/mod.rs` (44 lines, 11 functions)
+
 - [x] `L  21`: `kind` [Production]
 - [x] `L  22`: `audio_config` [Production]
 - [x] `L  23`: `connect` [Production]
@@ -637,6 +710,7 @@
 - [x] `L  41`: `last_activity_time` [Production]
 
 ## `app/src-tauri/src/services/realtime/playback_bridge.rs` (75 lines, 5 functions)
+
 - [x] `L  11`: `default` [Production]
 - [x] `L  17`: `new` [Production]
 - [x] `L  21`: `start` [Production]
@@ -644,6 +718,7 @@
 - [x] `L  72`: `get_sender` [Production]
 
 ## `app/src-tauri/src/services/realtime/providers/deepgram_live.rs` (698 lines, 14 functions)
+
 - [x] `L  32`: `new` [Production]
 - [x] `L  46`: `kind` [Production]
 - [x] `L  50`: `audio_config` [Production]
@@ -660,6 +735,7 @@
 - [x] `L 622`: `handle_deepgram_server_message` [Production]
 
 ## `app/src-tauri/src/services/realtime/providers/gemini_live.rs` (945 lines, 14 functions)
+
 - [x] `L  32`: `new` [Production]
 - [x] `L  46`: `kind` [Production]
 - [x] `L  50`: `audio_config` [Production]
@@ -676,6 +752,7 @@
 - [x] `L 772`: `handle_gemini_server_message` [Production]
 
 ## `app/src-tauri/src/services/realtime/resampler.rs` (154 lines, 6 functions)
+
 - [x] `L  17`: `new` [Production]
 - [x] `L  51`: `process_i16` [Production]
 - [x] `L 105`: `test_resampler_process_exact_sample_count` [Production]
@@ -684,6 +761,7 @@
 - [x] `L 146`: `test_resampler_downsampling` [Production]
 
 ## `app/src-tauri/src/services/stt/actor.rs` (233 lines, 5 functions)
+
 - [x] `L  30`: `coalesce_partials` [Production] (Extracted helper)
 - [x] `L  60`: `handle_partial_command` [Production] (Extracted helper)
 - [x] `L 125`: `handle_final_command` [Production] (Extracted helper)
@@ -691,11 +769,13 @@
 - [x] `L 205`: `spawn_stt_worker` [Production]
 
 ## `app/src-tauri/src/services/stt/mod.rs` (29 lines, 3 functions)
+
 - [x] `L  24`: `transcribe` [Production]
 - [x] `L  26`: `transcribe_chunk` [Production]
 - [x] `L  28`: `reset_state` [Production]
 
 ## `app/src-tauri/src/services/stt/nemotron_onnx.rs` (113 lines, 5 functions)
+
 - [x] `L  12`: `new` [Production]
 - [x] `L  32`: `transcribe_strides` [Production] (Extracted helper)
 - [x] `L  65`: `transcribe` [Production]
@@ -703,6 +783,7 @@
 - [x] `L 108`: `reset_state` [Production]
 
 ## `app/src-tauri/src/services/stt/providers/embedded.rs` (141 lines, 7 functions)
+
 - [x] `L  32`: `ensure_loaded` [Production]
 - [x] `L  64`: `new` [Production]
 - [x] `L  80`: `transcribe` [Production]
@@ -712,6 +793,7 @@
 - [x] `L 138`: `kind` [Production]
 
 ## `app/src-tauri/src/services/stt/providers/mod.rs` (68 lines, 6 functions)
+
 - [x] `L  34`: `transcribe` [Production]
 - [x] `L  41`: `transcribe_chunk` [Production]
 - [x] `L  44`: `reset_state` [Production]
@@ -720,6 +802,7 @@
 - [x] `L  56`: `create_stt_provider` [Production]
 
 ## `app/src-tauri/src/services/stt/qwen_onnx.rs` (130 lines, 5 functions)
+
 - [x] `L  17`: `new` [Production]
 - [x] `L  71`: `strip_cjk` [Production]
 - [x] `L  86`: `transcribe` [Production]
@@ -727,6 +810,7 @@
 - [x] `L 127`: `reset_state` [Production]
 
 ## `app/src-tauri/src/services/translit.rs` (329 lines, 10 functions)
+
 - [x] `L  16`: `new` [Production]
 - [x] `L  74`: `encode_source_ids` [Production] (Extracted helper)
 - [x] `L  92`: `decode_autoregressive` [Production] (Extracted helper)
@@ -739,6 +823,7 @@
 - [x] `L 300`: `test_transliteration_engine_local_models` [Production]
 
 ## `app/src-tauri/src/services/tts/actor.rs` (315 lines, 13 functions)
+
 - [x] `L  31`: `spawn_tts_worker` [Production]
 - [x] `L  90`: `new` [Production]
 - [x] `L  97`: `push_str` [Production]
@@ -754,6 +839,7 @@
 - [x] `L 287`: `test_tts_turn_cancel_clears_buffer` [Production]
 
 ## `app/src-tauri/src/services/tts/providers/chatterbox.rs` (269 lines, 7 functions)
+
 - [x] `L  54`: `new` [Production]
 - [x] `L 139`: `apply_speed` [Production]
 - [x] `L 162`: `set_quality_steps` [Production]
@@ -763,6 +849,7 @@
 - [x] `L 183`: `synthesize_chunk` [Production]
 
 ## `app/src-tauri/src/services/tts/providers/chatterbox_remote.rs` (330 lines, 8 functions)
+
 - [x] `L  32`: `new` [Production]
 - [x] `L 118`: `apply_speed_stretch` [Production]
 - [x] `L 145`: `stream_pcm_response` [Production] (Extracted helper)
@@ -773,6 +860,7 @@
 - [x] `L 226`: `synthesize_chunk` [Production]
 
 ## `app/src-tauri/src/services/tts/providers/edge_tts.rs` (310 lines, 12 functions)
+
 - [x] `L  25`: `get_trusted_client_token` [Production]
 - [x] `L  39`: `generate_sec_ms_gec` [Production]
 - [x] `L  59`: `resolve_full_voice_name` [Production]
@@ -787,6 +875,7 @@
 - [x] `L 325`: `test_edge_tts_synthesis` [Production]
 
 ## `app/src-tauri/src/services/tts/providers/mod.rs` (76 lines, 5 functions)
+
 - [x] `L  54`: `synthesize_chunk` [Production]
 - [x] `L  63`: `set_quality_steps` [Production]
 - [x] `L  66`: `set_speed` [Production]
@@ -794,6 +883,7 @@
 - [x] `L  75`: `health_check` [Production]
 
 ## `app/src-tauri/src/services/tts/providers/supertonic.rs` (290 lines, 12 functions)
+
 - [x] `L  39`: `new_lpf_11k` [Production]
 - [x] `L  55`: `process` [Production]
 - [x] `L  67`: `resample_44100_to_24000` [Production]
@@ -808,6 +898,7 @@
 - [x] `L 193`: `synthesize_chunk` [Production]
 
 ## `app/src-tauri/src/services/utils.rs` (678 lines, 19 functions)
+
 - [x] `L   4`: `ends_at_word_boundary` [Production]
 - [x] `L  18`: `lerp` [Production]
 - [x] `L  24`: `should_flush` [Production]
@@ -829,6 +920,7 @@
 - [x] `L 595`: `test_devanagari_matra_normalization` [Production]
 
 ## `app/src-tauri/src/services/vad/actor.rs` (662 lines, 9 functions)
+
 - [x] `L  13`: `spawn_vad_actor` [Disaster] (Queued for Layer 2 rewrite per spec)
 - [x] `L 534`: `new` [Disaster] (Queued for Layer 2 rewrite per spec)
 - [x] `L 542`: `push` [Disaster] (Queued for Layer 2 rewrite per spec)
@@ -840,21 +932,23 @@
 - [x] `L 618`: `test_noise_gate_rms_threshold` [Disaster] (Queued for Layer 2 rewrite per spec)
 
 ## `app/src-tauri/src/services/vad/earshot_vad.rs` (134 lines, 4 functions)
+
 - [x] `L  36`: `new` [Production]
 - [x] `L  57`: `update_threshold` [Production]
 - [x] `L  73`: `flush` [Production]
 - [x] `L  87`: `predict` [Production]
 
 ## `app/src-tauri/src/services/vad/mod.rs` (56 lines, 4 functions)
+
 - [x] `L  13`: `predict (VadEngine)` [Production]
 - [x] `L  26`: `predict (VadBackend)` [Production]
 - [x] `L  39`: `update_threshold` [Production]
 - [x] `L  50`: `flush` [Production]
 
 ## `app/src-tauri/src/services/vad/ten_onnx.rs` (70 lines, 5 functions)
+
 - [x] `L  12`: `new` [Production]
 - [x] `L  23`: `create_detector` [Production]
 - [x] `L  54`: `update_detector` [Production]
 - [x] `L  60`: `flush` [Production]
 - [x] `L  66`: `predict` [Production]
-

@@ -132,7 +132,7 @@ export const SubModelCard = memo<SubModelCardProps>(({
         }
       }}
       className={cn(
-        "p-4 rounded-lg border transition-all duration-300 flex flex-col justify-between gap-2.5 glass-card min-h-[105px]",
+        "p-3 sm:p-3.5 rounded-lg border transition-all duration-300 flex flex-col justify-between gap-2 glass-card min-h-[96px] sm:min-h-[100px]",
         isDownloaded && !isActive && "cursor-pointer hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.02)]",
         isActive && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 shadow-md"
       )}

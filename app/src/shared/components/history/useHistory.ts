@@ -10,10 +10,6 @@ import {
 import {
   chunkDaysIntoWindows,
   chunkSessionsIntoWindows,
-  dayNumberFromKey,
-  dayToDialAngle,
-  daysInMonthKey,
-  dialDotRadius,
   groupSessionsByDay,
   groupDaysByMonth,
   formatDayHeroLabel,
@@ -26,11 +22,17 @@ import {
   formatMonthFullLabel,
   orbitCapacityFor,
   ringRadiusFor,
-  timeToDialAngle,
-  type DialDot,
+  type DayGroup,
   type HistoryView,
 } from "@/shared/components/history";
 import { HISTORY_COPY } from "@/data/historyCopy";
+
+const EMPTY_DAY_GROUP: DayGroup = {
+  dayKey: "",
+  dayLabel: formatDateTime(0),
+  latestTimestamp: 0,
+  sessions: [],
+};
 
 function getErrorMessage(e: unknown, fallback: string): string {
   if (e instanceof Error) return e.message;
@@ -51,6 +53,8 @@ export function useHistory() {
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<SessionRow | null>(null);
+  const selectedSessionRef = useRef<SessionRow | null>(selectedSession);
+  selectedSessionRef.current = selectedSession;
   const [turns, setTurns] = useState<TurnRow[]>([]);
   const [turnsLoading, setTurnsLoading] = useState(false);
   const [turnsError, setTurnsError] = useState<string | null>(null);
@@ -123,12 +127,7 @@ export function useHistory() {
   const effectiveDateIndex = Math.min(dateIndex, totalDates - 1);
   const effectiveMonthIndex = Math.min(monthIndex, totalMonths - 1);
 
-  const currentGroup = dayGroups[effectiveDateIndex] || {
-    dayKey: "",
-    dayLabel: formatDateTime(Date.now()),
-    latestTimestamp: Date.now(),
-    sessions: [],
-  };
+  const currentGroup = dayGroups[effectiveDateIndex] || EMPTY_DAY_GROUP;
   const currentDateSessions = currentGroup.sessions;
   const currentMonthGroup = monthGroups[effectiveMonthIndex];
 
@@ -165,52 +164,12 @@ export function useHistory() {
   const currentWindowSessions = currentWindow?.sessions ?? [];
   const currentMonthWindow = monthWindows[effectiveMonthWindowIndex];
 
-  const windowSessionIds = useMemo(
-    () => new Set(currentWindowSessions.map((s) => String(s.id))),
-    [currentWindowSessions]
-  );
-  const windowDayKeys = useMemo(
-    () => new Set((currentMonthWindow?.days ?? []).map((d) => d.dayKey)),
-    [currentMonthWindow]
-  );
-
   const sessionById = useMemo(
     () => new Map(currentWindowSessions.map((s) => [String(s.id), s])),
     [currentWindowSessions]
   );
 
-  // Dial dots
-  const dayDialDots = useMemo<DialDot[]>(
-    () =>
-      currentDateSessions.map((s) => ({
-        key: String(s.id),
-        angle: timeToDialAngle(s.started_at),
-        size: dialDotRadius(s.turn_count),
-        highlighted: windowSessionIds.has(String(s.id)),
-      })),
-    [currentDateSessions, windowSessionIds]
-  );
-
-  const monthDialDots = useMemo<DialDot[]>(() => {
-    if (!currentMonthGroup) return [];
-    const total = daysInMonthKey(currentMonthGroup.monthKey);
-    return currentMonthGroup.days.map((d) => ({
-      key: d.dayKey,
-      angle: dayToDialAngle(dayNumberFromKey(d.dayKey), total),
-      size: dialDotRadius(d.sessions.reduce((sum, s) => sum + s.turn_count, 0)),
-      highlighted: windowDayKeys.has(d.dayKey),
-    }));
-  }, [currentMonthGroup, windowDayKeys]);
-
   const isCompactHeight = dimensions.height < 640;
-  const dialRadius = useMemo(() => {
-    const discRadius = isCompactHeight
-      ? 96
-      : dimensions.width >= 640
-        ? 144
-        : 128;
-    return discRadius + 32;
-  }, [isCompactHeight, dimensions.width]);
 
   const isOrbitViewport = dimensions.width >= 680;
   const effectiveView: HistoryView = isOrbitViewport ? view : "day";
@@ -295,18 +254,25 @@ export function useHistory() {
 
   const retryFetchTurns = useCallback(() => {
     if (!selectedSession) return;
+    const targetSessionId = selectedSession.id;
     setTurnsLoading(true);
     setTurnsError(null);
-    getTurns(selectedSession.id)
+    getTurns(targetSessionId)
       .then((data) => {
-        setTurns(data);
+        if (selectedSessionRef.current?.id === targetSessionId) {
+          setTurns(data);
+        }
       })
       .catch((e: unknown) => {
-        console.error("Failed to fetch turns:", e);
-        setTurnsError(getErrorMessage(e, "Failed to load session transcript turns."));
+        if (selectedSessionRef.current?.id === targetSessionId) {
+          console.error("Failed to fetch turns:", e);
+          setTurnsError(getErrorMessage(e, "Failed to load session transcript turns."));
+        }
       })
       .finally(() => {
-        setTurnsLoading(false);
+        if (selectedSessionRef.current?.id === targetSessionId) {
+          setTurnsLoading(false);
+        }
       });
   }, [selectedSession]);
 
@@ -420,18 +386,26 @@ export function useHistory() {
   const isMeasuring = dimensions.width === 0;
   const showLoading = sessionsLoading || isMeasuring;
 
-  const dayMetaLabel = `${currentWindowSessions.length} ${
-    currentWindowSessions.length === 1
-      ? HISTORY_COPY.sessionSingular
-      : HISTORY_COPY.sessionPlural
-  }`;
+  const dayMetaLabel = useMemo(
+    () =>
+      `${currentWindowSessions.length} ${
+        currentWindowSessions.length === 1
+          ? HISTORY_COPY.sessionSingular
+          : HISTORY_COPY.sessionPlural
+      }`,
+    [currentWindowSessions.length]
+  );
 
-  const monthDaysCount = currentMonthWindow?.days.length ?? 0;
-  const monthMetaLabel = `${monthDaysCount} ${
-    monthDaysCount === 1 ? HISTORY_COPY.daySingular : HISTORY_COPY.dayPlural
-  } · ${currentMonthWindow?.days.reduce((sum, d) => sum + d.sessions.length, 0) ?? 0} ${
-    monthDaysCount === 1 ? HISTORY_COPY.sessionSingular : HISTORY_COPY.sessionPlural
-  }`;
+  const monthMetaLabel = useMemo(() => {
+    const monthDaysCount = currentMonthWindow?.days.length ?? 0;
+    const totalSessions =
+      currentMonthWindow?.days.reduce((sum, d) => sum + d.sessions.length, 0) ?? 0;
+    return `${monthDaysCount} ${
+      monthDaysCount === 1 ? HISTORY_COPY.daySingular : HISTORY_COPY.dayPlural
+    } · ${totalSessions} ${
+      monthDaysCount === 1 ? HISTORY_COPY.sessionSingular : HISTORY_COPY.sessionPlural
+    }`;
+  }, [currentMonthWindow]);
 
   const hintText =
     effectiveView === "month" ? HISTORY_COPY.monthHint : HISTORY_COPY.clickHint;
@@ -486,9 +460,6 @@ export function useHistory() {
     currentMonthWindow,
     sessionById,
     ringRadius,
-    dialRadius,
-    dayDialDots,
-    monthDialDots,
     dayWindowIndex: effectiveDayWindowIndex,
     monthWindowIndex: effectiveMonthWindowIndex,
     dayWindows,

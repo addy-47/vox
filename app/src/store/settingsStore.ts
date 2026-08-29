@@ -8,7 +8,7 @@ import {
   getCachedCapabilities,
 } from "@/services/settingsService";
 import { hexToRgb } from "@/shared/lib/utils";
-import { DOMAIN_DIRTY_KEYS, type SettingsDomainId } from "@/data/settingsCopy";
+import { DOMAIN_DIRTY_KEYS, SETTINGS_SCOPE_KEYS, type SettingsDomainId, type SettingsScope } from "@/data/settingsCopy";
 
 export type PipelineMode = "modular" | "realtime";
 export type LlmActiveProvider = "embedded" | "server" | "cloud";
@@ -131,8 +131,7 @@ export interface AudioSettings {
 export interface VadSettings {
   threshold: number;
   ptt_noise_gate: number;
-  backend: "earshot" | "ten_vad";
-  vad_backend?: "earshot" | "ten_vad";
+  vad_backend: "earshot" | "ten_vad";
 }
 
 export interface SttEmbeddedConfig {
@@ -329,6 +328,8 @@ interface SettingsState {
   discardChanges: () => void;
   isDomainDirty: (domainId: string) => boolean;
   discardDomainChanges: (domainId: string) => void;
+  isCategoryDirty: (category: string) => boolean;
+  discardCategoryChanges: (category: string) => void;
   restoreDefaults: () => Promise<void>;
   toggleTheme: () => void;
   isCommitting: boolean;
@@ -469,7 +470,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       (domain === "llm" && key === "context_window") ||
       (domain === "llm" && key === "threads") ||
       (domain === "tts" && key === "active") ||
-      (domain === "vad" && key === "backend") ||
+      (domain === "vad" && key === "vad_backend") ||
       (domain === "audio" && key === "input_device");
 
     if (!requiresRestart) {
@@ -538,6 +539,49 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
 
     return false;
+  },
+
+  isCategoryDirty: (category: string) => {
+    const { settings, draftSettings } = get();
+    if (!settings || !draftSettings) return false;
+
+    const cat = category.toLowerCase();
+    const scope = (cat === "asr" ? "stt" : cat) as keyof VoxSettings;
+    const draftScope = (draftSettings as any)?.[scope];
+    const savedScope = (settings as any)?.[scope];
+
+    if (!draftScope && !savedScope) return false;
+    if (!draftScope || !savedScope) return true;
+
+    const keys = SETTINGS_SCOPE_KEYS[scope as SettingsScope];
+    if (keys && keys.length > 0) {
+      for (const k of keys) {
+        const draftVal = draftScope[k];
+        const savedVal = savedScope[k];
+        if (JSON.stringify(draftVal) !== JSON.stringify(savedVal)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    return JSON.stringify(draftScope) !== JSON.stringify(savedScope);
+  },
+
+  discardCategoryChanges: (category: string) => {
+    const { settings, updateDraft } = get();
+    if (!settings) return;
+
+    const cat = category.toLowerCase();
+    const scope = (cat === "asr" ? "stt" : cat) as keyof VoxSettings;
+    const savedScope = (settings as any)?.[scope];
+    if (!savedScope) return;
+
+    const keys = SETTINGS_SCOPE_KEYS[scope as SettingsScope];
+    if (keys && keys.length > 0) {
+      keys.forEach((k: string) => updateDraft(scope, k, savedScope[k]));
+    } else {
+      Object.keys(savedScope).forEach((k: string) => updateDraft(scope, k, savedScope[k]));
+    }
   },
 
   discardDomainChanges: (domainId: string) => {

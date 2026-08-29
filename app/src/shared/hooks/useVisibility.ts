@@ -11,8 +11,11 @@ export const useVisibility = () => {
   const [state, setState] = useState<VisibilityState>('HIDDEN');
   const [isHovered, setIsHovered] = useState(false);
   
-  const fadeTimer = useRef<NodeJS.Timeout | null>(null);
+  const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isHoveredRef = useRef(false);
+  const stateRef = useRef<VisibilityState>('HIDDEN');
+  stateRef.current = state;
 
   const setIsHoveredWithRef = useCallback((hovered: boolean) => {
     isHoveredRef.current = hovered;
@@ -24,18 +27,25 @@ export const useVisibility = () => {
       clearTimeout(fadeTimer.current);
       fadeTimer.current = null;
     }
+    if (appearTimer.current) {
+      clearTimeout(appearTimer.current);
+      appearTimer.current = null;
+    }
   }, []);
 
   // Transition to ACTIVE (e.g. on first non-empty partial)
   const show = useCallback(() => {
     clearTimers();
-    setState(prev => {
-      if (prev === 'HIDDEN' || prev === 'FADING') {
-        setTimeout(() => setState(s => s === 'APPEARING' ? 'ACTIVE' : s), 50);
-        return 'APPEARING';
-      }
-      return 'ACTIVE';
-    });
+    const cur = stateRef.current;
+    if (cur === 'HIDDEN' || cur === 'FADING') {
+      setState('APPEARING');
+      appearTimer.current = setTimeout(() => {
+        setState(s => (s === 'APPEARING' ? 'ACTIVE' : s));
+        appearTimer.current = null;
+      }, 50);
+    } else {
+      setState('ACTIVE');
+    }
   }, [clearTimers]);
 
   // Transition to FADING (triggered strictly by auto-sleep)
@@ -78,6 +88,10 @@ export const useVisibility = () => {
       // otherwise stay active
     }
   }, [isHovered, state, clearTimers]);
+
+  useEffect(() => {
+    return () => clearTimers();
+  }, [clearTimers]);
 
   return {
     state,

@@ -16,7 +16,7 @@ import {
   listLlmModels,
 } from "@/services/settingsService";
 import * as eventsService from "@/services/eventsService";
-import { Database } from "lucide-react";
+import { Database, Loader2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SegmentedControl } from "@/shared/ui";
 import { LlmModelInfo, ModelCapabilities, LlmProviderConfig } from "@/store/settingsStore";
@@ -93,9 +93,12 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
   const capabilitiesCache = useSettingsStore((s) => s.capabilitiesCache);
 
-  // Load disk capabilities cache on initial mount
+  // Load disk capabilities cache and model catalog on initial mount
   useEffect(() => {
     useSettingsStore.getState().loadCapabilitiesCache();
+    if (!useSettingsStore.getState().modelCatalog) {
+      useSettingsStore.getState().loadModelCatalog();
+    }
   }, []);
 
   // Sync disk capabilities cache into component state on mount / update
@@ -528,7 +531,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
   // Topology verification flags (dynamically checking configured active models and providers)
   const isVadVerified =
-    draftSettings?.vad?.backend === "earshot" ||
+    draftSettings?.vad?.vad_backend === "earshot" ||
     !!modelPresence[modelCatalog?.vad?.[0]?.id || "ten_vad"];
 
   const isAsrVerified =
@@ -571,10 +574,10 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     >
       <div className="flex flex-col gap-2.5 flex-1 min-h-0">
         {/* Header with Model vs Settings Toggle */}
-        <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1.5 w-full shrink-0">
+        <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
           <div className="flex items-center gap-2">
-            <Database className="text-[rgb(var(--accent))]" size={18} />
-            <span className="font-display text-[13px] font-black uppercase tracking-[0.22em] text-[rgb(var(--foreground))]">
+            <Database className="text-[rgb(var(--accent))]" size={17} />
+            <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
               Model Hub
             </span>
           </div>
@@ -624,129 +627,137 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         <div
           className={cn(
             "flex-1 w-full flex flex-col min-h-0 rounded-xl p-3 relative border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]",
-            layoutMode === "small" ? "h-[290px] max-h-[290px]" : "h-full"
+            layoutMode === "small" ? "h-auto max-h-[235px]" : "h-full"
           )}
         >
-          {activePipelineTab === "vad" && (
-            <VadWorkspace
-              activeCategoryTab={activeCategoryTab}
-              layoutMode={layoutMode}
-              confirmDeleteId={confirmDeleteId}
-              setConfirmDeleteId={setConfirmDeleteId}
-              modelPresence={modelPresence}
-              downloadStatuses={downloadStatuses}
-              startDownload={startDownload}
-              deleteModel={handleDeleteModelGroup}
-            />
-          )}
-
-          {activePipelineTab === "asr" && (
-            <AsrWorkspace
-              layoutMode={layoutMode}
-              confirmDeleteId={confirmDeleteId}
-              setConfirmDeleteId={setConfirmDeleteId}
-              modelPresence={modelPresence}
-              downloadStatuses={downloadStatuses}
-              startDownload={startDownload}
-              deleteModel={handleDeleteModelGroup}
-              isGroupRequired={isGroupRequired}
-            />
-          )}
-
-          {activePipelineTab === "llm" && (
-            activeCategoryTab === "settings" ? (
-              <LlmSettingsView
-                layoutMode={layoutMode}
-                isRemoteLlm={isRemoteLlm}
-                provider={provider}
-              />
-            ) : (
-              <LlmCatalogView
-                layoutMode={layoutMode}
-                selectedLlmId={
-                  (draftSettings.llm.active === "embedded"
-                    ? draftSettings.llm.embedded?.model
-                    : draftSettings.llm.active === "server"
-                    ? draftSettings.llm.server?.model
-                    : draftSettings.llm.cloud?.model) || ""
-                }
-                modelPresence={modelPresence}
-                downloadStatuses={downloadStatuses}
-                confirmDeleteId={confirmDeleteId}
-                setConfirmDeleteId={setConfirmDeleteId}
-                startDownload={startDownload}
-                handleDeleteModelGroup={handleDeleteModelGroup}
-                isGroupRequired={isGroupRequired}
-                isRemoteLlm={isRemoteLlm}
-                provider={provider}
-                remoteModels={remoteModels}
-                loadingRemoteModels={loadingRemoteModels}
-                remoteModelsError={remoteModelsError}
-                probingMap={probingMap}
-                handleProbeCapabilities={handleProbeCapabilities}
-                customModelId={customModelId}
-                setCustomModelId={setCustomModelId}
-                customModelStatus={customModelStatus}
-                handleValidateCustomModel={handleValidateCustomModel}
-              />
-            )
-          )}
-
-          {activePipelineTab === "tts" && (
+          {!modelCatalog ? (
+            <div className="flex-1 flex items-center justify-center py-12">
+              <Loader2 className="animate-spin text-[rgb(var(--accent))]" size={24} />
+            </div>
+          ) : (
             <>
-              {activeCategoryTab === "model" ? (
-                draftSettings.tts.provider?.kind === "chatterbox_remote" && isRemoteTtsHealthy !== true ? (
-                  <RemoteServerSetup
-                    sshConnectionString={sshConnectionString}
-                    setSshConnectionString={setSshConnectionString}
-                    sshPort={sshPort}
-                    setSshPort={setSshPort}
-                    sshIdentityKey={sshIdentityKey}
-                    setSshIdentityKey={setSshIdentityKey}
-                    setupStatus={setupStatus}
-                    triggerRemoteSetup={triggerRemoteSetup}
-                    isRemoteTtsHealthy={isRemoteTtsHealthy}
+              {activePipelineTab === "vad" && (
+                <VadWorkspace
+                  activeCategoryTab={activeCategoryTab}
+                  layoutMode={layoutMode}
+                  confirmDeleteId={confirmDeleteId}
+                  setConfirmDeleteId={setConfirmDeleteId}
+                  modelPresence={modelPresence}
+                  downloadStatuses={downloadStatuses}
+                  startDownload={startDownload}
+                  deleteModel={handleDeleteModelGroup}
+                />
+              )}
+
+              {activePipelineTab === "asr" && (
+                <AsrWorkspace
+                  layoutMode={layoutMode}
+                  confirmDeleteId={confirmDeleteId}
+                  setConfirmDeleteId={setConfirmDeleteId}
+                  modelPresence={modelPresence}
+                  downloadStatuses={downloadStatuses}
+                  startDownload={startDownload}
+                  deleteModel={handleDeleteModelGroup}
+                  isGroupRequired={isGroupRequired}
+                />
+              )}
+
+              {activePipelineTab === "llm" && (
+                activeCategoryTab === "settings" ? (
+                  <LlmSettingsView
+                    layoutMode={layoutMode}
+                    isRemoteLlm={isRemoteLlm}
+                    provider={provider}
                   />
                 ) : (
-                  <TtsModelWorkspace
+                  <LlmCatalogView
                     layoutMode={layoutMode}
-                    confirmDeleteId={confirmDeleteId}
-                    setConfirmDeleteId={setConfirmDeleteId}
+                    selectedLlmId={
+                      (draftSettings?.llm?.active === "embedded"
+                        ? draftSettings.llm.embedded?.model
+                        : draftSettings?.llm?.active === "server"
+                        ? draftSettings.llm.server?.model
+                        : draftSettings?.llm?.cloud?.model) || ""
+                    }
                     modelPresence={modelPresence}
                     downloadStatuses={downloadStatuses}
+                    confirmDeleteId={confirmDeleteId}
+                    setConfirmDeleteId={setConfirmDeleteId}
                     startDownload={startDownload}
-                    deleteModel={handleDeleteModelGroup}
-                    isRemoteTtsHealthy={isRemoteTtsHealthy}
-                    checkingTtsHealth={checkingTtsHealth}
+                    handleDeleteModelGroup={handleDeleteModelGroup}
+                    isGroupRequired={isGroupRequired}
+                    isRemoteLlm={isRemoteLlm}
+                    provider={provider}
+                    remoteModels={remoteModels}
+                    loadingRemoteModels={loadingRemoteModels}
+                    remoteModelsError={remoteModelsError}
+                    probingMap={probingMap}
+                    handleProbeCapabilities={handleProbeCapabilities}
+                    customModelId={customModelId}
+                    setCustomModelId={setCustomModelId}
+                    customModelStatus={customModelStatus}
+                    handleValidateCustomModel={handleValidateCustomModel}
                   />
                 )
-              ) : (
-                <TtsVoiceManager
+              )}
+
+              {activePipelineTab === "tts" && (
+                <>
+                  {activeCategoryTab === "model" ? (
+                    draftSettings?.tts?.provider?.kind === "chatterbox_remote" && isRemoteTtsHealthy !== true ? (
+                      <RemoteServerSetup
+                        sshConnectionString={sshConnectionString}
+                        setSshConnectionString={setSshConnectionString}
+                        sshPort={sshPort}
+                        setSshPort={setSshPort}
+                        sshIdentityKey={sshIdentityKey}
+                        setSshIdentityKey={setSshIdentityKey}
+                        setupStatus={setupStatus}
+                        triggerRemoteSetup={triggerRemoteSetup}
+                        isRemoteTtsHealthy={isRemoteTtsHealthy}
+                      />
+                    ) : (
+                      <TtsModelWorkspace
+                        layoutMode={layoutMode}
+                        confirmDeleteId={confirmDeleteId}
+                        setConfirmDeleteId={setConfirmDeleteId}
+                        modelPresence={modelPresence}
+                        downloadStatuses={downloadStatuses}
+                        startDownload={startDownload}
+                        deleteModel={handleDeleteModelGroup}
+                        isRemoteTtsHealthy={isRemoteTtsHealthy}
+                        checkingTtsHealth={checkingTtsHealth}
+                      />
+                    )
+                  ) : (
+                    <TtsVoiceManager
+                      layoutMode={layoutMode}
+                      customVoices={customVoices}
+                      loadCustomVoices={loadCustomVoices}
+                      chatterboxIsAdding={chatterboxIsAdding}
+                      setChatterboxIsAdding={setChatterboxIsAdding}
+                      edgeTtsVoices={edgeTtsVoices}
+                      edgeTtsError={edgeTtsError}
+                      loadingEdgeVoices={loadingEdgeVoices}
+                      loadEdgeVoices={loadEdgeVoices}
+                      activeCategoryTab={activeCategoryTab}
+                    />
+                  )}
+                </>
+              )}
+
+              {activePipelineTab === "auxiliary" && (
+                <AuxiliaryWorkspace
                   layoutMode={layoutMode}
-                  customVoices={customVoices}
-                  loadCustomVoices={loadCustomVoices}
-                  chatterboxIsAdding={chatterboxIsAdding}
-                  setChatterboxIsAdding={setChatterboxIsAdding}
-                  edgeTtsVoices={edgeTtsVoices}
-                  edgeTtsError={edgeTtsError}
-                  loadingEdgeVoices={loadingEdgeVoices}
-                  loadEdgeVoices={loadEdgeVoices}
-                  activeCategoryTab={activeCategoryTab}
+                  confirmDeleteId={confirmDeleteId}
+                  setConfirmDeleteId={setConfirmDeleteId}
+                  modelPresence={modelPresence}
+                  downloadStatuses={downloadStatuses}
+                  startDownload={startDownload}
+                  deleteModel={handleDeleteModelGroup}
                 />
               )}
             </>
-          )}
-
-          {activePipelineTab === "auxiliary" && (
-            <AuxiliaryWorkspace
-              layoutMode={layoutMode}
-              confirmDeleteId={confirmDeleteId}
-              setConfirmDeleteId={setConfirmDeleteId}
-              modelPresence={modelPresence}
-              downloadStatuses={downloadStatuses}
-              startDownload={startDownload}
-              deleteModel={handleDeleteModelGroup}
-            />
           )}
         </div>
       </div>

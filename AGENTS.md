@@ -41,20 +41,17 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
-## 2.1 Sequential Execution & Build Mode (All Agents)
+## 2.1 Execution & Testing Invariants (All Agents)
 
-These rules apply to any long-running task — benchmarks, evaluations, inference probes, test suites, or any task that measures or depends on resource-sensitive performance.
-
-1. **Run long-running tasks sequentially, one at a time.** Concurrent execution causes resource contention (CPU threads, memory bandwidth, I/O) that corrupts timing and accuracy measurements. Complete each task fully before starting the next.
-
-2. **Use optimized builds for any performance-sensitive task.** Unoptimized or debug builds omit critical compiler and runtime optimizations, producing metrics that are invalid by up to an order of magnitude. Any task whose output informs a performance-based decision must run in release or optimized mode.
-
-3. **Tests requiring external API keys (Nvidia, Gemini, Deepgram, OpenAI, ElevenLabs, etc.) MUST be annotated with `#[ignore]` by default.** They must never run in the automated test loop. They require explicit user approval before running. To run them manually, load credentials from `temp/.env` and execute with `cargo test -- --ignored`.
-
-4. **Explicit Thread Pool Allocation for Inference Commands (Critical Pitfall):** Subshells spawned in automated agent environments do not inherit terminal thread defaults, causing ONNX Runtime, OpenMP, and Rayon to fall back to single-core execution (1 core instead of all available cores). Always prefix test and benchmark execution commands with explicit thread allocation:
+1. **Sequential Execution:** Run performance-sensitive tasks (benchmarks, evals, test suites) strictly one at a time to prevent CPU, memory, and I/O contention.
+2. **Release / Optimized Mode:** Always run performance measurements and benchmarks under release mode (`--release`). Debug builds produce invalid metrics.
+3. **Isolated Test Runner (`cargo-nextest`):** Always use `cargo-nextest run` with explicit thread pool allocation and single-thread isolation:
    ```bash
-   RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo test --test <test_file> --release -- --nocapture --test-threads=1
+   RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1
    ```
+   _Single test:_ `cargo nextest run --test <test_file> --release --nocapture --test-threads=1`  
+   _Timeouts:_ 60s per individual test, 90s full suite (baseline runtime is ~28.8s).
+4. **External API Keys (`#[ignore]`):** Cloud provider tests (Nvidia, Gemini Live, Deepgram, OpenAI, ElevenLabs) must be marked `#[ignore]` and run manually only with explicit user approval: `cargo nextest -- --ignored`.
 
 ---
 
@@ -84,31 +81,35 @@ These rules apply to any long-running task — benchmarks, evaluations, inferenc
 
 ## 5. Current Phase 10: Architecture & Orchestration Refactor
 
-### 5.1 Architecture & Specifications (SSOT)
+> **Status:** Phase 10 is in progress, all major refactor work is complete. The two SSOT specs are `docs/plans/phase10/integration_test_spec.md` (Seams 1–14) and `docs/plans/phase10/wiring_memory_pipeline_refactor_spec.md` (Sprints 01–44 + Special).
 
-- **Integration Test Plan:** [`docs/plans/phase10/integration_test_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/integration_test_spec.md) (Seams 1–8 integration matrix).
+### 5.1 How Phase 10 Started 
 
----
+- Built the **unit test suite** for Vox (UT layer).
+- Authored the **Integration Test Spec** (`docs/plans/phase10/integration_test_spec.md`, Seams 1–8) and implemented those integration tests.
+- Ran **mutation testing** on the suite — results in `docs/benchmarks/test_suite_bench.md`.
+- Deferred seams 9-14 for later due to the discovery of uncalled functions and tangled backend code and frontend code.
+- Discovered the backend was in **horrible shape** (uncalled functions, dead code, tangled audio/LLM routing).
+- Refactored the **full backend** per `docs/plans/phase10/wiring_memory_pipeline_refactor_spec.md`.
+- Refactored the **frontend** (see §5.4 and `docs/features/performance-memory-optimizations.md`).
 
-### 5.2 Core Refactor Standards & Invariants
-1. **Thin IPC Adapters:** IPC handlers are pure 1-line dispatchers. Zero business logic.
-2. **Soft 50-Line Cap & Docstrings:** Max 50 lines per function. Exactly one `///` docstring per function. Zero body comments.
-3. **Discrete Actions:** No toggle functions (`start_session()` / `end_session()`).
-4. **Mutex Lock Order:** Acquire `state.engine` strictly before `state.realtime_engine`.
-5. **No Silent Swallows:** Zero `let _ = tx.send(...)`. All errors logged or propagated.
-6. **Zero Suppressions & Testability Seams:** Zero `#[allow(...)]`. Generics `<R: tauri::Runtime>` on all actors/routers for `MockRuntime` testing. Audio ingestion seams and engine/sender injection across all domains.
+### 5.2 Backend Refactor
 
----
+The `wiring_memory_pipeline_refactor_spec.md` is the checklist; this subsection summarizes the completed work.
 
-### 5.3 Completed Work Summary
-- **Domain Modules & Lifecycle Extraction:** Decoupled God loop into `modular_passive.rs`, `modular_ptt.rs`, `realtime_passive.rs`, `realtime_ptt.rs`, and `dictation.rs` with central `router.rs` pump and decoupled actor lifecycles (`audio`, `vad`, `llm`, `tts`).
-- **Frontend 7-State Realignment:** Converted all stores, hooks, and UI components to canonical 7 states (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`) with non-toggle discrete IPC.
-- **Backend Testability Seams (Seams 2, 3, 6, 8):** Added `ingest_audio`, buffer inspectors, and fallback sender/engine injection (`handle_ptt_stop_with_sender`, `handle_ptt_stop_with_engine`, `handle_hotkey_release_with_sender`) across Modular PTT, Realtime PTT, and Dictation to decouple live audio/network hardware in tests.
-- **Runtime Generics (`<R: tauri::Runtime>`):** Generified `pipeline`, `router`, `modular_ptt`, `realtime_ptt`, `modular_passive`, `realtime_passive`, `dictation`, `output_router`, `llm::actor`, `tts::actor`, and `tray` to support Tauri `MockRuntime` in test harnesses.
-- **VAD & STT Queue Fixes:** Fixed unbuffered audio dropping in VAD actor PTT mode; routed frames to domain buffers with speech boundary detection for ghost audio gating; fixed `drain_reset_stream` in `stt/actor.rs` to preserve pending `SttCommand::Final` items.
-- **Backend Style Guide Enhancement:** Added Section 9 (Testability Seams, Inversion of Control & Runtime Generics) in `.agents/rules/backend-style-guide.md` to prevent mock/hardware blockers in future implementations.
-- **Integration Test Suite Delivery (Seams 1–8):** Built, audited, and verified 6 integration test suites (`passive_streaming_test.rs`, `modular_ptt_test.rs`, `vad_ducking_test.rs`, `dictation_ptt_test.rs`, `realtime_ptt_test.rs`, `tts_test.rs`, and `llm_test.rs`) covering all 8 seams. Extracted test harness & helpers into `tests/common/` (`harness.rs`, `audio.rs`, `scoring.rs`, `paths.rs`).
-- **Quality & Verification Baseline:** 49 passing tests (33 unit tests + 16 integration tests in release mode), 0 clippy warnings (`cargo clippy --all-targets`), 1.0000 STT similarity, and verified zero-leak resource lifecycles across VAD, STT, LLM, TTS, and Realtime engines.
+- **Decoupled Pipeline Architecture:** Domain modules fully decoupled under `services/pipeline/modular/` (`context.rs`, `passive.rs`, `ptt.rs`) and `services/pipeline/realtime/` (`session.rs`, `passive.rs`, `ptt.rs`), orchestrated by central `router.rs` (`spawn_router` / `route_event`) and thin IPC dispatchers (`ipc/pipeline/assistant.rs`). Deleted flat files: `services/audio/router.rs`, `services/ptt.rs`, `services/dictation/controller.rs`, `services/utils.rs`, `core/metrics.rs`, `services/llm/{capabilities,probe}.rs`, `utils/bench_reporter.rs`.
+- **Central Router + VAD-actor PTT routing:** cpal audio → `VadActor` (OS thread) → domain `ingest_audio`. **No AudioRouter thread** exists.
+- **Capability Probing SSOT:** `services/llm/capability_probe.rs` replaces deleted `probe.rs` + `capabilities.rs`.
+- **Dynamic Memory Retrieval & Working Memory:** `classify_scope` (ModernBERT) → `generate_embedding` (MiniLM) → `retrieve_personal_context` (Turso hybrid SQL + vector + BFS graph) → `ConversationManager::assemble_system_prompt` (`<user_profile>` injection) → opportunistic background compaction on `vox-memory-worker`.
+- **Uncalled Functions Resolution (Sprints 01–44 + Special) — COMPLETE:**
+  - **11 Retained & Wired:** `set_max_context_tokens`, `load_identity_into_system_prompt`, `new_session`, `update_system_prompt`, `push_assistant_turn`, `build_context` (dynamic memory retrieval + non-blocking filler queue), `try_trigger_opportunistic`, `commit_opportunistic`, `barge_in` (client + server interrupts), `transliterate_if_hi`, `stitch_transcripts`.
+  - **5 Eval / Test Seams:** `l2_normalize`, `set_speech_detected`, `is_speech_detected`, `fetch_intra_subfloor_candidates`, `fetch_inter_subfloor_candidates` relocated to `evals/` or converted to black-box event assertions.
+  - **30 Dead Code Purges (7 files deleted):** `services/utils.rs`, `services/dictation/controller.rs`, `services/audio/router.rs`, `services/llm/capabilities.rs`, `services/llm/probe.rs`, `core/metrics.rs`, `utils/bench_reporter.rs`.
+- **Quality Gate:** 45 tests across 9 binaries green via `cargo-nextest --release --test-threads=1`; clean `cargo clippy --all-targets` (0 warnings).
 
+### 5.4 Frontend Refactor — Summary
 
-
+- **7-State Alignment:** UI unified to `Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`. Canonical `vad_backend` field standardized across Rust (`core::settings::VadSettings`), IPC, settings store, and UI — eliminating dual `backend`/`vad_backend` drift.
+- **UI Standardization:** unified page headers/nav for small viewports (`Settings`, `History`, `Monitoring`, `Memory`); 6 settings cards with unified typography; `LlmSettingsView` subtab redesign; `InteractionCard` 2-level drilldown (Level 1: full-width `CategorySelector` text carousel $\to$ `ProviderSelectorView` compact pills with persistent saved active highlight; Level 2: full-height `LlmConfigDesk` with standard left-aligned `← Providers` breadcrumbs + title, right-aligned status badge, high-density hardware/runtime spec cards dynamically bound to `modelCatalog` with zero hardcoded model names, and auto-discard on back or category switch); `MemoryCard` redesign (top two `ToggleTile` cards for Conversational Recall and Background Auto-Save $\to$ dedicated 5-subtab `MemoryConfigDesk` with `Depth`, `Cutoff`, `Graph`, `Budget`, `Window` following HistoryCard side-by-side ergonomics); `TtsVoiceManager` redesign (2 distributed tabs `Select Voice` \| `Speech Speed`, paragraph-embedded inline accent region carousel `‹ ALL ›`, and in-place search); `ModelsCard` responsive sizing; calibrated mobile settings layout (`space-y-5 sm:space-y-6`, `p-4 sm:p-5`, expanded header separation).
+- **Dead-Code & Tech-Debt Purge:** 26 uncalled listeners in `eventsService.ts`, legacy CRUD/graph in `memoryService.ts`, `listOutputDevices`, 4 unreferenced UI primitives (`VendorLogos`, `AudioLevelMeter`, `GlassSkeleton`, `StatusDot`); palette constants encapsulated in `MemoryGraph.tsx`; `knip` `lint:dead` wired. 10 test suites (98 tests) + `pnpm build` green.
+- **Full ledger:** `docs/features/performance-memory-optimizations.md`and `docs/frontend.md`.

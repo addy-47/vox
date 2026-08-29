@@ -202,7 +202,7 @@ async fn collect_vector_graph_sections(
 }
 
 /// Executes Scope-Pruned Waterfall Retrieval with dynamic budget allocation and graph expansion.
-pub async fn retrieve_personal_context_v7(
+pub async fn retrieve_personal_context(
     conn: &Connection,
     query_embedding: &[f32],
     scope: MemoryScope,

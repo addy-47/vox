@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { cn } from "@/shared/lib/utils";
 
 export interface ToggleTileProps {
@@ -16,7 +16,7 @@ export interface ToggleTileProps {
   className?: string;
 }
 
-export const ToggleTile: React.FC<ToggleTileProps> = ({
+export const ToggleTile = memo<ToggleTileProps>(({
   title,
   active,
   activeLabel,
@@ -113,4 +113,6 @@ export const ToggleTile: React.FC<ToggleTileProps> = ({
       </div>
     </div>
   );
-};
+});
+
+ToggleTile.displayName = "ToggleTile";
