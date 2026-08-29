@@ -23,7 +23,7 @@ static CURRENT_USER_TRANSCRIPT: LazyLock<Mutex<String>> =
 
 /// Starts an autonomous modular passive voice assistant session.
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
-    crate::services::audio::start_audio_engine(app, state).await?;
+    crate::core::start_audio_engine(app, state).await?;
     super::context::ensure_modular_workers(app, state).await?;
 
     state
@@ -161,9 +161,9 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
             engine.playback_engine.cancel();
         }
         drop(guard);
-        crate::services::audio::stop_audio_engine(state).await?;
+        crate::core::stop_audio_engine(state).await?;
     } else {
-        crate::services::audio::stop_audio_engine(state).await?;
+        crate::core::stop_audio_engine(state).await?;
     }
 
     let ctx = RoutingContext::from_app_state(state);
@@ -390,10 +390,14 @@ fn on_llm_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &
 /// Forwards synthesized audio samples to the audio playback buffer.
 fn on_tts_chunk(samples: Vec<f32>, playback: &Arc<PlaybackEngine>) {
     playback.ingest_chunk(&samples);
+    if playback.buffer_len() >= 12000 {
+        playback.start_playback();
+    }
 }
 
-/// Updates latest TTS real-time factor metrics upon synthesis completion.
-fn on_tts_finished(rtf: f32, state: &AppState) {
+/// Updates latest TTS real-time factor metrics upon synthesis completion and begins playback.
+fn on_tts_finished(rtf: f32, state: &AppState, playback: &Arc<PlaybackEngine>) {
+    playback.start_playback();
     state.telemetry.latest_tts_rtf.store(rtf.to_bits(), Ordering::Relaxed);
 }
 
@@ -463,7 +467,7 @@ pub fn handle_event<R: tauri::Runtime>(
         VoxEvent::LlmToken { turn_id, token } => on_llm_token(turn_id, token, app, state),
         VoxEvent::LlmFinished { turn_id } => on_llm_finished(turn_id, app, state),
         VoxEvent::TtsChunk { samples, .. } => on_tts_chunk(samples, playback),
-        VoxEvent::TtsFinished { rtf, .. } => on_tts_finished(rtf, state),
+        VoxEvent::TtsFinished { rtf, .. } => on_tts_finished(rtf, state, playback),
         VoxEvent::PlaybackStarted { turn_id } => on_playback_started(turn_id, app, state),
         VoxEvent::PlaybackFinished { turn_id } => on_playback_finished(turn_id, app, state),
         VoxEvent::Cancelled { turn_id } => on_cancelled(turn_id, app, state),
