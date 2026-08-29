@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use turso::Builder;
 use vox_lib::core::settings::MemorySettings;
 use vox_lib::services::memory::estimate_tokens;
-use vox_lib::services::memory::retrieval::retrieve_personal_context_v7;
+use vox_lib::services::memory::retrieval::retrieve_personal_context;
 
 fn l2_normalize(v: &[f32]) -> Vec<f32> {
     let mut out = v.to_vec();
@@ -215,7 +215,7 @@ async fn main() -> Result<()> {
 
         let start_time = std::time::Instant::now();
         let rendered_context =
-            retrieve_personal_context_v7(&conn, &norm_vec, scope, &settings, context_window_size)
+            retrieve_personal_context(&conn, &norm_vec, scope, &settings, context_window_size)
                 .await?;
         let elapsed_ms = start_time.elapsed().as_millis();
 

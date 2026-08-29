@@ -161,14 +161,14 @@ Functions written in test file: None — all helpers live in common/.
 
 ### Phase 2b — False-Green Table
 
-| Defect | Would test fail? |
-|---|---|
-| **VAD actor never pops from ring buffer** | **Yes — SpeechStart never fires** |
-| Speech onset detection broken | Yes — SpeechStart assertion fails |
-| Speech offset detection broken | Yes — SpeechEnd assertion fails; transcript timeout |
-| SttCommand::Final never dispatched on offset | Yes — transcript timeout |
-| STT produces wrong text | Yes — similarity assertion fails |
-| VAD runs in wrong mode (PTT suppresses audio) | Yes — audio suppressed, no speech events |
+| Defect                                        | Would test fail?                                    |
+| --------------------------------------------- | --------------------------------------------------- |
+| **VAD actor never pops from ring buffer**     | **Yes — SpeechStart never fires**                   |
+| Speech onset detection broken                 | Yes — SpeechStart assertion fails                   |
+| Speech offset detection broken                | Yes — SpeechEnd assertion fails; transcript timeout |
+| SttCommand::Final never dispatched on offset  | Yes — transcript timeout                            |
+| STT produces wrong text                       | Yes — similarity assertion fails                    |
+| VAD runs in wrong mode (PTT suppresses audio) | Yes — audio suppressed, no speech events            |
 
 ### Test Functions
 
@@ -197,6 +197,7 @@ fn test_passive_streaming_silence_only() { ... }
 ### Sanity Check Findings
 
 Backend engineer added:
+
 - `pub fn ingest_audio(chunk: &[f32])` at line 28 — writes to `PTT_BUFFER` when `IS_RECORDING=true`. This is the production path that was missing.
 - `pub fn handle_ptt_stop_with_sender<R>(app, state, stt_tx: Option<&Sender<SttCommand>>)` at line 213 — accepts injected `stt_tx`, bypasses `state.engine` for tests.
 - `pub fn is_recording() -> bool` and `pub fn get_buffer_len() -> usize` — observable state for test assertions.
@@ -238,13 +239,13 @@ Note on ingest_audio: Call it with VAD_CHUNK_SIZE-sized chunks as production doe
 
 ### Phase 2b — False-Green Table
 
-| Defect | Would test fail? |
-|---|---|
+| Defect                                                                   | Would test fail?                                            |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------- |
 | **ingest_audio called but IS_RECORDING=false (frames silently dropped)** | **Yes — empty buffer → no SttCommand → transcript timeout** |
-| handle_ptt_stop_with_sender called before ingest_audio (empty buffer) | Yes — empty buffer guard fires → transcript timeout |
-| PTT_BUFFER populated but SttCommand never sent | Yes — transcript timeout |
-| STT produces wrong text | Yes — similarity assertion fails |
-| Chunk size mismatch (wrong granularity passed to ingest_audio) | Yes — VAD_CHUNK_SIZE constraint catches this |
+| handle_ptt_stop_with_sender called before ingest_audio (empty buffer)    | Yes — empty buffer guard fires → transcript timeout         |
+| PTT_BUFFER populated but SttCommand never sent                           | Yes — transcript timeout                                    |
+| STT produces wrong text                                                  | Yes — similarity assertion fails                            |
+| Chunk size mismatch (wrong granularity passed to ingest_audio)           | Yes — VAD_CHUNK_SIZE constraint catches this                |
 
 ### Test Functions
 
@@ -274,6 +275,7 @@ fn test_modular_ptt_cancel_discards_audio() { ... }
 ### Sanity Check Findings
 
 Backend engineer added:
+
 - `pub fn ingest_audio(chunk: &[f32])` — converts f32 to i16 and writes to `REALTIME_PTT_BUFFER` when `IS_RECORDING=true`.
 - `pub fn ingest_audio_i16(chunk: &[i16])` — direct i16 path for test efficiency.
 - `pub fn set_speech_detected(detected: bool)` — directly controllable from tests.
@@ -314,13 +316,13 @@ Production Path (happy, cloud):
 
 ### Phase 2b — False-Green Table
 
-| Defect | Would test fail? |
-|---|---|
+| Defect                                                                   | Would test fail?                                         |
+| ------------------------------------------------------------------------ | -------------------------------------------------------- |
 | **SPEECH_DETECTED=false check missing → buffer always flushed to cloud** | **Yes — mock_engine.push_audio called, assertion fails** |
-| ingest_audio writes to buffer but SPEECH_DETECTED never checked | Yes — above |
-| set_speech_detected(true) required but buffer still not flushed | Yes — push_audio count == 0 |
-| PTT state machine emits STATUS_PROCESSING instead of STATUS_IDLE | Yes — ptt_status event assertion fails |
-| Buffer not cleared after ghost gate (memory leak) | Yes — get_buffer_len()==0 assertion |
+| ingest_audio writes to buffer but SPEECH_DETECTED never checked          | Yes — above                                              |
+| set_speech_detected(true) required but buffer still not flushed          | Yes — push_audio count == 0                              |
+| PTT state machine emits STATUS_PROCESSING instead of STATUS_IDLE         | Yes — ptt_status event assertion fails                   |
+| Buffer not cleared after ghost gate (memory leak)                        | Yes — get_buffer_len()==0 assertion                      |
 
 ### Test Functions
 
@@ -352,6 +354,7 @@ fn test_realtime_ptt_transcript_en() { ... }
 **Status:** ✅ Unblocked (requires Supertonic model + golden WAVs in `tests/assets/`)
 
 **Golden reference clips:**
+
 - `test-clips/clip_01_en_briefing.wav` (Edge TTS, EN) — resolved via `get_test_clip_path()`
 - `test-clips/clip_07_hi_weather.wav` (Edge TTS, HI)
 - `tests/assets/supertonic_01_en_briefing.wav` (Supertonic, EN) — resolved via `get_asset_path()`
@@ -391,13 +394,13 @@ Functions written in test file: None — acoustic comparison via common::scoring
 
 ### Phase 2b — False-Green Table
 
-| Defect | Would test fail? |
-|---|---|
-| **TTS actor receives command but synthesis never runs** | **Yes — no PlaybackStarted** |
-| Synthesis runs but audio is silent (provider bug) | Yes — RMS energy assertion fails |
-| Audio produced but not forwarded to output | Yes — PlaybackStarted absent |
-| Model produces degraded audio (wrong voice/language) | Yes — F0/MFCC delta outside tolerance |
-| Duration wildly wrong (synthesis crashed mid-word) | Yes — duration tolerance check fails |
+| Defect                                                  | Would test fail?                      |
+| ------------------------------------------------------- | ------------------------------------- |
+| **TTS actor receives command but synthesis never runs** | **Yes — no PlaybackStarted**          |
+| Synthesis runs but audio is silent (provider bug)       | Yes — RMS energy assertion fails      |
+| Audio produced but not forwarded to output              | Yes — PlaybackStarted absent          |
+| Model produces degraded audio (wrong voice/language)    | Yes — F0/MFCC delta outside tolerance |
+| Duration wildly wrong (synthesis crashed mid-word)      | Yes — duration tolerance check fails  |
 
 ### Test Functions
 
@@ -425,13 +428,13 @@ fn test_tts_empty_text_guard() { ... }
 
 **Starting acoustic tolerances (tune after first golden run):**
 
-| Feature | Tolerance |
-|---|---|
-| Duration | ±20% of golden |
-| Mean RMS | ±30% of golden |
-| Voiced/silence ratio | ±15 percentage points |
-| Mean F0 (voiced frames only) | ±20% of golden |
-| MFCC DTW distance | < 2.0 (tune empirically) |
+| Feature                      | Tolerance                |
+| ---------------------------- | ------------------------ |
+| Duration                     | ±20% of golden           |
+| Mean RMS                     | ±30% of golden           |
+| Voiced/silence ratio         | ±15 percentage points    |
+| Mean F0 (voiced frames only) | ±20% of golden           |
+| MFCC DTW distance            | < 2.0 (tune empirically) |
 
 ---
 
@@ -468,13 +471,13 @@ Production functions called:
 
 ### Phase 2b — False-Green Table
 
-| Defect | Would test fail? |
-|---|---|
+| Defect                                                 | Would test fail?                      |
+| ------------------------------------------------------ | ------------------------------------- |
 | **LLM actor receives command but never reads channel** | **Yes — no LlmToken events, timeout** |
-| Tokens generated but not forwarded to event channel | Yes — no LlmToken events |
-| LlmFinished never emitted (actor stalls) | Yes — collection timeout |
-| Response is empty (zero tokens) | Yes — token count assertion |
-| Cancel flag race: generation stops before first token | Yes — token count = 0 |
+| Tokens generated but not forwarded to event channel    | Yes — no LlmToken events              |
+| LlmFinished never emitted (actor stalls)               | Yes — collection timeout              |
+| Response is empty (zero tokens)                        | Yes — token count assertion           |
+| Cancel flag race: generation stops before first token  | Yes — token count = 0                 |
 
 ### Test Functions
 
@@ -535,12 +538,12 @@ Production functions called:
 
 ### Phase 2b — False-Green Table
 
-| Defect | Would test fail? |
-|---|---|
-| **should_suppress_audio() returns false during playback** | **Yes — SpeechStart fires, assertion fails** |
-| playback_active flag ignored entirely | Yes — SpeechStart fires |
-| VAD suppresses first chunk but processes subsequent ones | Yes — SpeechStart fires for later chunks |
-| Suppression works but SpeechStart emitted via a different code path | Yes — event channel captures all emissions |
+| Defect                                                              | Would test fail?                             |
+| ------------------------------------------------------------------- | -------------------------------------------- |
+| **should_suppress_audio() returns false during playback**           | **Yes — SpeechStart fires, assertion fails** |
+| playback_active flag ignored entirely                               | Yes — SpeechStart fires                      |
+| VAD suppresses first chunk but processes subsequent ones            | Yes — SpeechStart fires for later chunks     |
+| Suppression works but SpeechStart emitted via a different code path | Yes — event channel captures all emissions   |
 
 ### Test Functions
 
@@ -571,6 +574,7 @@ fn test_vad_ducking_does_not_suppress_user_owner() { ... }
 ### Sanity Check Findings
 
 Backend engineer added (in `services/pipeline/dictation.rs`):
+
 - `pub fn ingest_audio(chunk: &[f32])` — writes to `DICTATION_BUFFER` when `IS_RECORDING=true`.
 - `pub fn handle_hotkey_release_with_sender<R>(app, state, stt_tx: Option<&Sender<SttCommand>>)` — injectable sender, bypasses `state.engine`.
 - `pub fn is_recording() -> bool` and `pub fn get_buffer_len() -> usize`.
@@ -616,13 +620,13 @@ Production functions called:
 
 ### Phase 2b — False-Green Table
 
-| Defect | Would test fail? |
-|---|---|
+| Defect                                                                    | Would test fail?                             |
+| ------------------------------------------------------------------------- | -------------------------------------------- |
 | **ingest_audio writes to buffer but IS_RECORDING=false (frames dropped)** | **Yes — empty buffer guard → no transcript** |
-| Transcript produced but routed to LLM instead of output_router | Yes — llm_tx assertion catches it |
-| on_transcript_final never called (event dispatch broken) | Yes — dictation_success event absent |
-| output_router::route_transcript panics silently | Yes — dictation_success absent |
-| Empty buffer guard incorrectly fires despite non-empty audio | Yes — transcript timeout |
+| Transcript produced but routed to LLM instead of output_router            | Yes — llm_tx assertion catches it            |
+| on_transcript_final never called (event dispatch broken)                  | Yes — dictation_success event absent         |
+| output_router::route_transcript panics silently                           | Yes — dictation_success absent               |
+| Empty buffer guard incorrectly fires despite non-empty audio              | Yes — transcript timeout                     |
 
 ### Test Functions
 
@@ -682,12 +686,12 @@ Production functions called:
 
 ### Phase 2b — False-Green Table
 
-| Defect | Would test fail? |
-|---|---|
+| Defect                                                              | Would test fail?                                  |
+| ------------------------------------------------------------------- | ------------------------------------------------- |
 | **LLM returns malformed JSON or markdown fences that fail parsing** | **Yes — run_compaction retry fails, returns Err** |
-| LLM drops required collections (e.g. Identity or Profile missing) | Yes — collection presence assertion fails |
-| LLM extracts trivial / 1-word hallucinated tokens | Yes — minimum fact length (> 15 chars) fails |
-| Narrative is empty or formatted as array instead of string | Yes — narrative structure assertion fails |
+| LLM drops required collections (e.g. Identity or Profile missing)   | Yes — collection presence assertion fails         |
+| LLM extracts trivial / 1-word hallucinated tokens                   | Yes — minimum fact length (> 15 chars) fails      |
+| Narrative is empty or formatted as array instead of string          | Yes — narrative structure assertion fails         |
 
 ### Test Functions
 
@@ -742,12 +746,12 @@ Production functions called:
 
 ### Phase 2b — False-Green Table
 
-| Defect | Would test fail? |
-|---|---|
-| **Stage 1 drops all facts or halts queue** | **Yes — personal_memory_queue remains > 0, memory_facts empty** |
-| Stage 2 fails to generate valid 384-dim vectors | Yes — memory_facts_vectors missing rows or dim != 384 |
-| Stage 3 edge classifier produces corrupted relations JSON | Yes — Stage 4 transaction rollback, queue items stranded |
-| Stage 4 fails to delete processed queue items | Yes — personal_memory_queue count assertion fails |
+| Defect                                                    | Would test fail?                                                |
+| --------------------------------------------------------- | --------------------------------------------------------------- |
+| **Stage 1 drops all facts or halts queue**                | **Yes — personal_memory_queue remains > 0, memory_facts empty** |
+| Stage 2 fails to generate valid 384-dim vectors           | Yes — memory_facts_vectors missing rows or dim != 384           |
+| Stage 3 edge classifier produces corrupted relations JSON | Yes — Stage 4 transaction rollback, queue items stranded        |
+| Stage 4 fails to delete processed queue items             | Yes — personal_memory_queue count assertion fails               |
 
 ### Test Functions
 
@@ -779,13 +783,13 @@ fn test_memory_pipeline_stage3_nli_contradiction_supersedes() { ... }
 ### Phase 1 — Production Path Trace
 
 ```
-SUT: retrieve_personal_context_v7() classifies query scope, executes scoped SQL/vector
+SUT: retrieve_personal_context() classifies query scope, executes scoped SQL/vector
      retrieval, expands 2-hop BFS graph edges, and formats output within 15% token budget.
 
 Production Entry Seam:
-  retrieve_personal_context_v7(conn, query, settings, app_state)
+  retrieve_personal_context(conn, query, settings, app_state)
 
-Direction Check: PASS — retrieve_personal_context_v7() is the primary retrieval API.
+Direction Check: PASS — retrieve_personal_context() is the primary retrieval API.
 
 Production Path:
   classify_scope(query) via ModernBERT → MemoryScope { ChitChat, User, Domain, Temporal }
@@ -803,18 +807,18 @@ Observable Exit:
 
 Production functions called:
   setup:   open_test_turso_db_with_fixtures(), ensure_scope_classifier_loaded(), ensure_embedder_loaded()
-  entry:   retrieve_personal_context_v7(&conn, query, &settings, &app_state)
+  entry:   retrieve_personal_context(&conn, query, &settings, &app_state)
   observe: Formatted context string structure, XML tags, and token count calculation
 ```
 
 ### Phase 2b — False-Green Table
 
-| Defect | Would test fail? |
-|---|---|
-| **ChitChat queries erroneously trigger vector search & inject memory** | **Yes — non-empty string returned, assertion fails** |
-| BFS graph expansion traversal broken (0-hop only) | Yes — child relation arrow "↳" absent from output |
-| Token budget arithmetic overflows context window | Yes — estimate_tokens > budget threshold assertion fails |
-| Identity facts fetched dynamically in SQL branch (violates boot pre-load) | Yes — Identity tag found in dynamic output |
+| Defect                                                                    | Would test fail?                                         |
+| ------------------------------------------------------------------------- | -------------------------------------------------------- |
+| **ChitChat queries erroneously trigger vector search & inject memory**    | **Yes — non-empty string returned, assertion fails**     |
+| BFS graph expansion traversal broken (0-hop only)                         | Yes — child relation arrow "↳" absent from output        |
+| Token budget arithmetic overflows context window                          | Yes — estimate_tokens > budget threshold assertion fails |
+| Identity facts fetched dynamically in SQL branch (violates boot pre-load) | Yes — Identity tag found in dynamic output               |
 
 ### Test Functions
 
@@ -872,10 +876,10 @@ Production functions called:
 
 ### Phase 2b — False-Green Table
 
-| Defect | Would test fail? |
-|---|---|
+| Defect                                                                | Would test fail?                                              |
+| --------------------------------------------------------------------- | ------------------------------------------------------------- |
 | **save_settings is a no-op or silently ignores nested struct fields** | **Yes — reloaded struct matches default, not modified input** |
-| Serialization format mismatch corrupts settings on disk | Yes — load_settings returns Err or default fallback |
+| Serialization format mismatch corrupts settings on disk               | Yes — load_settings returns Err or default fallback           |
 
 ### Test Functions
 
@@ -924,10 +928,10 @@ Production functions called:
 
 ### Phase 2b — False-Green Table
 
-| Defect | Would test fail? |
-|---|---|
-| **unload_all_onnx_models does not reset RwLock singletons** | **Yes — is_*_loaded() remains true** |
-| Drop implementation panics on active runtime sessions | Yes — test panics and fails |
+| Defect                                                      | Would test fail?                        |
+| ----------------------------------------------------------- | --------------------------------------- |
+| **unload_all_onnx_models does not reset RwLock singletons** | **Yes — is\_\*\_loaded() remains true** |
+| Drop implementation panics on active runtime sessions       | Yes — test panics and fails             |
 
 ### Test Functions
 
@@ -974,11 +978,11 @@ Production functions called:
 
 ### Phase 2b — False-Green Table
 
-| Defect | Would test fail? |
-|---|---|
+| Defect                                                              | Would test fail?                                             |
+| ------------------------------------------------------------------- | ------------------------------------------------------------ |
 | **Hash verification skipped and .verified created unconditionally** | **Yes — corrupted payload test succeeds instead of failing** |
-| .verified marker contains wrong metadata schema | Yes — marker JSON parsing assertion fails |
-| Model deletion leaves orphan .verified marker | Yes — marker existence check fails |
+| .verified marker contains wrong metadata schema                     | Yes — marker JSON parsing assertion fails                    |
+| Model deletion leaves orphan .verified marker                       | Yes — marker existence check fails                           |
 
 ### Test Functions
 
@@ -1011,23 +1015,23 @@ fn test_model_manager_live_download_nemotron() { ... }
 
 ## Execution Priority Matrix (Seams 1–14)
 
-| Priority | Seam | Test File | Status | Notes |
-|---|---|---|---|---|
-| **P0** | Shared Test Infra & Refactor | `tests/common/` | ✅ Done | Audio, scoring, paths, harness |
-| **P1** | Seam 1: Passive Streaming | `passive_streaming_test.rs` | ✅ Ready | Ring buffer -> VAD -> STT |
-| **P1** | Seam 2: Modular PTT | `modular_ptt_test.rs` | ✅ Ready | `ingest_audio` + `handle_ptt_stop_with_sender` |
-| **P1** | Seam 7: VAD Ducking | `vad_ducking_test.rs` | ✅ Ready | `should_suppress_audio` gate |
-| **P1** | Seam 8: Dictation PTT | `dictation_ptt_test.rs` | ✅ Ready | Hotkey -> STT -> OutputRouter |
-| **P2** | Seam 3 + 6: Realtime PTT & Ghost Gate | `realtime_ptt_test.rs` | ✅ Ready | `ingest_audio` + `handle_ptt_stop_with_engine` |
-| **P2** | Seam 4: TTS Actor | `tts_test.rs` | ✅ Ready | Aubio acoustic regression vs golden WAVs |
-| **P2** | Seam 5: LLM Actor | `llm_test.rs` | ✅ Ready | Qwen token streaming & LlmFinished |
-| **P2** | Seam 10: Memory Ingestion | `memory_ingestion_test.rs` | ✅ Ready | 4-stage pipeline drain |
-| **P2** | Seam 11: Memory Retrieval | `memory_retrieval_test.rs` | ✅ Ready | Scope routing + 2-hop BFS graph |
-| **P3** | Seam 12: Settings Persistence | `settings_persistence_test.rs` | ✅ Ready | SQLite settings round-trip |
-| **P3** | Seam 13: Model Eviction | `model_eviction_test.rs` | ✅ Ready | Zero Idle RAM & RwLock drop |
-| **P3** | Seam 14: Model Manager | `model_manager_test.rs` | ✅ Ready | Hash verification & .verified marker |
-| **P3** | Seam 9: Memory Compaction | `memory_compaction_test.rs` | ⚠️ `#[ignore]` | 100-turn eval (Nvidia API key) |
-| **P4** | Seam X: Clause Chunking | `llm_tts_chunking_test.rs` | 🔶 Pending | TTFA vs Prosody design session |
+| Priority | Seam                                  | Test File                      | Status         | Notes                                          |
+| -------- | ------------------------------------- | ------------------------------ | -------------- | ---------------------------------------------- |
+| **P0**   | Shared Test Infra & Refactor          | `tests/common/`                | ✅ Done        | Audio, scoring, paths, harness                 |
+| **P1**   | Seam 1: Passive Streaming             | `passive_streaming_test.rs`    | ✅ Ready       | Ring buffer -> VAD -> STT                      |
+| **P1**   | Seam 2: Modular PTT                   | `modular_ptt_test.rs`          | ✅ Ready       | `ingest_audio` + `handle_ptt_stop_with_sender` |
+| **P1**   | Seam 7: VAD Ducking                   | `vad_ducking_test.rs`          | ✅ Ready       | `should_suppress_audio` gate                   |
+| **P1**   | Seam 8: Dictation PTT                 | `dictation_ptt_test.rs`        | ✅ Ready       | Hotkey -> STT -> OutputRouter                  |
+| **P2**   | Seam 3 + 6: Realtime PTT & Ghost Gate | `realtime_ptt_test.rs`         | ✅ Ready       | `ingest_audio` + `handle_ptt_stop_with_engine` |
+| **P2**   | Seam 4: TTS Actor                     | `tts_test.rs`                  | ✅ Ready       | Aubio acoustic regression vs golden WAVs       |
+| **P2**   | Seam 5: LLM Actor                     | `llm_test.rs`                  | ✅ Ready       | Qwen token streaming & LlmFinished             |
+| **P2**   | Seam 10: Memory Ingestion             | `memory_ingestion_test.rs`     | ✅ Ready       | 4-stage pipeline drain                         |
+| **P2**   | Seam 11: Memory Retrieval             | `memory_retrieval_test.rs`     | ✅ Ready       | Scope routing + 2-hop BFS graph                |
+| **P3**   | Seam 12: Settings Persistence         | `settings_persistence_test.rs` | ✅ Ready       | SQLite settings round-trip                     |
+| **P3**   | Seam 13: Model Eviction               | `model_eviction_test.rs`       | ✅ Ready       | Zero Idle RAM & RwLock drop                    |
+| **P3**   | Seam 14: Model Manager                | `model_manager_test.rs`        | ✅ Ready       | Hash verification & .verified marker           |
+| **P3**   | Seam 9: Memory Compaction             | `memory_compaction_test.rs`    | ⚠️ `#[ignore]` | 100-turn eval (Nvidia API key)                 |
+| **P4**   | Seam X: Clause Chunking               | `llm_tts_chunking_test.rs`     | 🔶 Pending     | TTFA vs Prosody design session                 |
 
 ---
 
@@ -1037,33 +1041,33 @@ fn test_model_manager_live_download_nemotron() { ... }
 
 ### Scope Table
 
-| Seam | Test File | Production File(s) to Mutate | Tier 2 (`cargo-mutants`)? | Reason |
-|---|---|---|---|---|
-| 1 — Passive Streaming | `passive_streaming_test.rs` | `services/vad/actor.rs` | ❌ No | VAD actor warm-up per mutant is prohibitive |
-| 2 — Modular PTT | `modular_ptt_test.rs` | `services/pipeline/modular_ptt.rs` | ✅ Yes | Pure logic: buffer accumulation, IS_RECORDING gate, sender dispatch |
-| 3 — Realtime PTT | `realtime_ptt_test.rs` | `services/pipeline/realtime_ptt.rs` | ✅ Yes | Pure logic: SPEECH_DETECTED gate, engine_override dispatch |
-| 4 — TTS Actor | `tts_test.rs` | `services/tts/actor.rs` | ❌ No | TTS model warm-up per mutant is prohibitive |
-| 5 — LLM Actor | `llm_test.rs` | `services/llm/actor.rs` | ❌ No | LLM inference per mutant is prohibitive |
-| 6 — Ghost Audio Gate | `realtime_ptt_test.rs` | `services/pipeline/realtime_ptt.rs` | ✅ Yes | Merged into Seam 3 — same file, same Tier 2 scope |
-| 7 — VAD Ducking | `vad_ducking_test.rs` | `services/vad/actor.rs` (suppress fn only) | ✅ Yes | Suppress function is pure logic; scope strictly to `should_suppress_audio()` |
-| 8 — Dictation PTT | `dictation_ptt_test.rs` | `services/pipeline/dictation.rs` | ✅ Yes | Pure logic: IS_RECORDING gate, buffer accumulation, routing fork |
+| Seam                  | Test File                   | Production File(s) to Mutate               | Tier 2 (`cargo-mutants`)? | Reason                                                                       |
+| --------------------- | --------------------------- | ------------------------------------------ | ------------------------- | ---------------------------------------------------------------------------- |
+| 1 — Passive Streaming | `passive_streaming_test.rs` | `services/vad/actor.rs`                    | ❌ No                     | VAD actor warm-up per mutant is prohibitive                                  |
+| 2 — Modular PTT       | `modular_ptt_test.rs`       | `services/pipeline/modular_ptt.rs`         | ✅ Yes                    | Pure logic: buffer accumulation, IS_RECORDING gate, sender dispatch          |
+| 3 — Realtime PTT      | `realtime_ptt_test.rs`      | `services/pipeline/realtime_ptt.rs`        | ✅ Yes                    | Pure logic: SPEECH_DETECTED gate, engine_override dispatch                   |
+| 4 — TTS Actor         | `tts_test.rs`               | `services/tts/actor.rs`                    | ❌ No                     | TTS model warm-up per mutant is prohibitive                                  |
+| 5 — LLM Actor         | `llm_test.rs`               | `services/llm/actor.rs`                    | ❌ No                     | LLM inference per mutant is prohibitive                                      |
+| 6 — Ghost Audio Gate  | `realtime_ptt_test.rs`      | `services/pipeline/realtime_ptt.rs`        | ✅ Yes                    | Merged into Seam 3 — same file, same Tier 2 scope                            |
+| 7 — VAD Ducking       | `vad_ducking_test.rs`       | `services/vad/actor.rs` (suppress fn only) | ✅ Yes                    | Suppress function is pure logic; scope strictly to `should_suppress_audio()` |
+| 8 — Dictation PTT     | `dictation_ptt_test.rs`     | `services/pipeline/dictation.rs`           | ✅ Yes                    | Pure logic: IS_RECORDING gate, buffer accumulation, routing fork             |
 
 ### Tier 1 — Phase 2b Manual Mutant Targets (All Seams)
 
 Each row in a seam's Phase 2b table maps to exactly one mutant. The governing rule from `/mutate`: if the row would only produce a crash/compile error, it is not a valid mutant — rewrite it to produce silent wrong behavior. The table below resolves the highest-priority rows per seam into concrete edits.
 
-| Seam | Phase 2b Row | Mutant Category | Concrete Edit |
-|---|---|---|---|
-| 1 | VAD actor never pops ring buffer | Silent drop | Delete the `pop_slice()` call inside the VAD loop body; keep the surrounding logic |
-| 2 | `IS_RECORDING=false` → frames silently dropped | Gate inversion | Replace `if IS_RECORDING.load(Ordering::Relaxed)` body with `return;` unconditionally |
-| 2 | `SttCommand::Final` never sent | Silent drop | Delete `tx.send(SttCommand::Final(...))` but keep `Ok(())` return |
-| 3 | `SPEECH_DETECTED=false` check missing → buffer always flushed | Gate inversion | Replace `if !SPEECH_DETECTED.load(Ordering::Relaxed)` guard with `if false` (gate never fires) |
-| 3 | Ghost gate fires but `push_audio()` still called | Routing/destination swap | Move `engine.push_audio(&buffer)` above the `SPEECH_DETECTED` check |
-| 4 | TTS receives command but synthesis never runs | Silent drop | Delete the provider `synthesize()` call, emit `PlaybackStarted` + `PlaybackFinished` immediately |
-| 5 | LLM actor reads channel but tokens not forwarded | Silent drop | Delete `pipeline_event_tx.send(VoxEvent::LlmToken {...})` inside the token loop |
-| 7 | `should_suppress_audio()` returns false during playback | Boolean inversion | Replace function body with `return false;` unconditionally |
-| 8 | `ingest_audio` writes to buffer but IS_RECORDING=false | Gate inversion | Replace `if IS_RECORDING.load(Ordering::Relaxed)` in `dictation::ingest_audio` with `if false` |
-| 8 | Transcript routed to LLM instead of `output_router` | Routing swap | In `on_transcript_final`, replace `output_router::route_transcript(...)` call with a no-op |
+| Seam | Phase 2b Row                                                  | Mutant Category          | Concrete Edit                                                                                    |
+| ---- | ------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------ |
+| 1    | VAD actor never pops ring buffer                              | Silent drop              | Delete the `pop_slice()` call inside the VAD loop body; keep the surrounding logic               |
+| 2    | `IS_RECORDING=false` → frames silently dropped                | Gate inversion           | Replace `if IS_RECORDING.load(Ordering::Relaxed)` body with `return;` unconditionally            |
+| 2    | `SttCommand::Final` never sent                                | Silent drop              | Delete `tx.send(SttCommand::Final(...))` but keep `Ok(())` return                                |
+| 3    | `SPEECH_DETECTED=false` check missing → buffer always flushed | Gate inversion           | Replace `if !SPEECH_DETECTED.load(Ordering::Relaxed)` guard with `if false` (gate never fires)   |
+| 3    | Ghost gate fires but `push_audio()` still called              | Routing/destination swap | Move `engine.push_audio(&buffer)` above the `SPEECH_DETECTED` check                              |
+| 4    | TTS receives command but synthesis never runs                 | Silent drop              | Delete the provider `synthesize()` call, emit `PlaybackStarted` + `PlaybackFinished` immediately |
+| 5    | LLM actor reads channel but tokens not forwarded              | Silent drop              | Delete `pipeline_event_tx.send(VoxEvent::LlmToken {...})` inside the token loop                  |
+| 7    | `should_suppress_audio()` returns false during playback       | Boolean inversion        | Replace function body with `return false;` unconditionally                                       |
+| 8    | `ingest_audio` writes to buffer but IS_RECORDING=false        | Gate inversion           | Replace `if IS_RECORDING.load(Ordering::Relaxed)` in `dictation::ingest_audio` with `if false`   |
+| 8    | Transcript routed to LLM instead of `output_router`           | Routing swap             | In `on_transcript_final`, replace `output_router::route_transcript(...)` call with a no-op       |
 
 ### Tier 2 — `cargo-mutants` Invocation (Seams 2, 3, 7, 8 only)
 

@@ -9,7 +9,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import {
-  Activity,
   RefreshCw,
   X,
   Skull,
@@ -31,6 +30,7 @@ import {
 } from "@/shared/components/monitoring";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { ErrorBoundary } from "@/shared/components/common";
+import { MONITORING_COPY } from "@/data/monitoringCopy";
 
 interface MonitoringProps {
   popover?: boolean;
@@ -203,35 +203,14 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   const containerContent = (
     <div className="flex flex-col h-full w-full select-none">
       {/* ── 1. Top Header Bar ── */}
-      <div className="flex items-center justify-between pb-3 border-b border-[rgba(var(--border),0.08)] shrink-0">
+      <div className="flex items-center justify-between pb-3 border-b border-[rgba(var(--accent),0.12)] shrink-0 mb-3">
         <div className="flex items-center gap-3">
-          <div
-            style={{
-              backgroundColor: `rgba(${colors.primary}, 0.12)`,
-              borderColor: `rgba(${colors.primary}, 0.35)`,
-            }}
-            className="w-8 h-8 rounded-2xl border flex items-center justify-center shadow-lg"
-          >
-            <Activity size={17} style={{ color: `rgb(${colors.primary})` }} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-[13px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
-                SYSTEM MONITOR
-              </h2>
-              <span className="flex h-2 w-2 relative">
-                <span
-                  style={{ backgroundColor: `rgb(${colors.primary})` }}
-                  className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                />
-                <span
-                  style={{ backgroundColor: `rgb(${colors.primary})` }}
-                  className="relative inline-flex rounded-full h-2 w-2"
-                />
-              </span>
-            </div>
-            <span className="text-[11px] text-[rgb(var(--foreground-muted))] tracking-wider">
-              Real-time usage
+          <div className="flex flex-col">
+            <h1 className="text-[15px] sm:text-[16px] font-display font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
+              {MONITORING_COPY.monitoringTitle}
+            </h1>
+            <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))] uppercase tracking-wider">
+              {MONITORING_COPY.monitoringSubtitle}
             </span>
           </div>
         </div>
@@ -260,7 +239,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
 
           {/* Unload / Load Models Button with Skull Icon when Loaded */}
           <Tooltip
-            label={isEngineLoaded ? "Unload all models from memory" : "Load models into memory"}
+            label={isEngineLoaded ? MONITORING_COPY.forceOffloadDesc : MONITORING_COPY.reloadModelsDesc}
           >
             <button
               onClick={handleToggleEngine}

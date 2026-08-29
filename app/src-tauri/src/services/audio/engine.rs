@@ -85,7 +85,7 @@ fn create_stt_instance(
 async fn create_vad_instance(app: &AppHandle, state: &AppState) -> Result<VadBackend, String> {
     let (vad_backend, threshold) = {
         let s = state.settings.read().unwrap();
-        (s.vad.backend.clone(), s.vad.threshold)
+        (s.vad.vad_backend.clone(), s.vad.threshold)
     };
 
     match vad_backend {

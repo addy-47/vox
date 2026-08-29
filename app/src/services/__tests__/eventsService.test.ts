@@ -8,13 +8,9 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import {
   on,
-  onStateChanged,
-  onTranscriptFinal,
-  onPttStatus,
-  onModeChanged,
-  onTelemetry,
-  onPipelineError,
   onModelSetupStatus,
+  onOptionalModelComplete,
+  onRemoteSetupStatus,
 } from "../eventsService";
 
 describe("eventsService", () => {
@@ -28,9 +24,9 @@ describe("eventsService", () => {
       mockListen.mockResolvedValueOnce(mockUnlisten);
 
       const handler = vi.fn();
-      const unlistenFn = onStateChanged(handler);
+      const unlistenFn = onOptionalModelComplete(handler);
 
-      expect(mockListen).toHaveBeenCalledWith("state_changed", expect.any(Function));
+      expect(mockListen).toHaveBeenCalledWith("optional_model_complete", expect.any(Function));
 
       // Wait for promise resolution inside on()
       await new Promise((r) => setTimeout(r, 10));
@@ -63,7 +59,7 @@ describe("eventsService", () => {
   });
 
   describe("Event Payload Propagation", () => {
-    it("should invoke handler with event payload when Tauri emits event", async () => {
+    it("should correctly handle model_setup_status events", async () => {
       let registeredCallback: ((event: { payload: unknown }) => void) | null = null;
       mockListen.mockImplementationOnce((_evt: string, callback: (event: { payload: unknown }) => void) => {
         registeredCallback = callback;
@@ -71,55 +67,34 @@ describe("eventsService", () => {
       });
 
       const handler = vi.fn();
-      onTranscriptFinal(handler);
+      onModelSetupStatus(handler);
 
-      expect(registeredCallback).not.toBeNull();
-      registeredCallback!({ payload: { text: "Hello Vox", turn_id: 1, owner: "Assistant" } });
-
-      expect(handler).toHaveBeenCalledWith({
-        text: "Hello Vox",
-        turn_id: 1,
-        owner: "Assistant",
-      });
-    });
-
-    it("should correctly route ptt_status event payload", async () => {
-      let registeredCallback: ((event: { payload: unknown }) => void) | null = null;
-      mockListen.mockImplementationOnce((_evt: string, callback: (event: { payload: unknown }) => void) => {
-        registeredCallback = callback;
-        return Promise.resolve(vi.fn());
-      });
-
-      const handler = vi.fn();
-      onPttStatus(handler);
-
-      expect(mockListen).toHaveBeenCalledWith("ptt_status", expect.any(Function));
-      registeredCallback!({ payload: { state: "RECORDING", session_id: 42 } });
-      expect(handler).toHaveBeenCalledWith({ state: "RECORDING", session_id: 42 });
-    });
-
-    it("should correctly format target-specific mode_changed event names", async () => {
-      mockListen.mockResolvedValue(vi.fn());
-      const handler = vi.fn();
-
-      onModeChanged("main", handler);
-      expect(mockListen).toHaveBeenCalledWith("mode_changed_main", expect.any(Function));
-
-      onModeChanged("tray", handler);
-      expect(mockListen).toHaveBeenCalledWith("mode_changed_tray", expect.any(Function));
-    });
-
-    it("should correctly handle telemetry, pipeline_error, and model_setup_status events", async () => {
-      mockListen.mockResolvedValue(vi.fn());
-
-      onTelemetry(vi.fn());
-      expect(mockListen).toHaveBeenCalledWith("telemetry", expect.any(Function));
-
-      onPipelineError(vi.fn());
-      expect(mockListen).toHaveBeenCalledWith("pipeline_error", expect.any(Function));
-
-      onModelSetupStatus(vi.fn());
       expect(mockListen).toHaveBeenCalledWith("model_setup_status", expect.any(Function));
+      registeredCallback!({
+        payload: {
+          model_id: "qwen2.5-0.5b",
+          step: "Downloading",
+          progress: 50,
+          bytes_downloaded: 500,
+          total_bytes: 1000,
+          error: null,
+        },
+      });
+      expect(handler).toHaveBeenCalledWith({
+        model_id: "qwen2.5-0.5b",
+        step: "Downloading",
+        progress: 50,
+        bytes_downloaded: 500,
+        total_bytes: 1000,
+        error: null,
+      });
+    });
+
+    it("should correctly handle remote_setup_status events", async () => {
+      mockListen.mockResolvedValue(vi.fn());
+
+      onRemoteSetupStatus(vi.fn());
+      expect(mockListen).toHaveBeenCalledWith("remote_setup_status", expect.any(Function));
     });
   });
 });

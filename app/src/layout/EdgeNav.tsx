@@ -15,14 +15,14 @@ export const EdgeNav: React.FC = () => {
     <>
       {/* Soft glass/fade mask backdrop behind floating nav for small-screen layouts */}
       <div
-        className="lg:hidden fixed bottom-0 left-0 right-0 h-[110px] pointer-events-none z-40 bg-gradient-to-b from-transparent via-[rgb(var(--background))]/60 to-[rgb(var(--background))]/95 backdrop-blur-[16px]"
+        className="lg:hidden fixed bottom-0 left-0 right-0 h-[110px] pointer-events-none z-20 bg-gradient-to-b from-transparent via-[rgb(var(--background))]/60 to-[rgb(var(--background))]/95 backdrop-blur-[16px]"
         style={{
           WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 35%, black 100%)",
           maskImage: "linear-gradient(to bottom, transparent 0%, black 35%, black 100%)",
         }}
       />
 
-      <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-1.5 h-[56px] glass-card border border-[rgba(var(--accent),0.15)] rounded-full shadow-2xl">
+      <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] pointer-events-auto flex items-center gap-2 px-3 py-1.5 h-[56px] glass-card border border-[rgba(var(--accent),0.15)] rounded-full shadow-2xl">
         {navItems.map((item) => (
           <NavLink
             key={item.label}

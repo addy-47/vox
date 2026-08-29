@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useMemo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { dayNumberFromKey, type DayGroup } from "./orbitMath";
 import { HISTORY_COPY } from "@/data/historyCopy";
@@ -19,7 +19,10 @@ function monthShortLabel(dayKey: string): string {
 }
 
 export const MonthDayCard = memo(({ day, onOpen }: MonthDayCardProps) => {
-  const turnTotal = day.sessions.reduce((sum, s) => sum + s.turn_count, 0);
+  const turnTotal = useMemo(
+    () => day.sessions.reduce((sum, s) => sum + s.turn_count, 0),
+    [day.sessions]
+  );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") {

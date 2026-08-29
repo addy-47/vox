@@ -18,7 +18,7 @@ export interface RotaryKnobProps {
 }
 
 export const RotaryKnob = memo(({
-  label = "Speed",
+  label,
   value,
   min,
   max,
@@ -62,7 +62,7 @@ export const RotaryKnob = memo(({
     (e: MouseEvent) => {
       const deltaY = startYRef.current - e.clientY;
       const range = max - min;
-      const deltaVal = (deltaY / 100) * range;
+      const deltaVal = (deltaY / 280) * range;
       const rawVal = startValRef.current + deltaVal;
       const newVal = Math.round(rawVal / step) * step;
       const clampedVal = clamp(newVal);
@@ -94,14 +94,6 @@ export const RotaryKnob = memo(({
     window.addEventListener("mouseup", handleMouseUp);
   };
 
-  // Wheel interaction handler
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const dir = e.deltaY < 0 ? 1 : -1;
-    const newVal = Math.round((value + dir * step) / step) * step;
-    onChange(clamp(newVal));
-  };
-
   // Step adjusters
   const stepDown = () => onChange(clamp(Math.round((value - step) / step) * step));
   const stepUp = () => onChange(clamp(Math.round((value + step) / step) * step));
@@ -130,10 +122,9 @@ export const RotaryKnob = memo(({
         </Tooltip>
 
         {/* Interactive Rotary Dial */}
-        <Tooltip label="Drag up/down, scroll mouse wheel, or double-click to reset">
+        <Tooltip label="Drag up/down or use - / + steppers. Double-click to reset">
         <div
           onMouseDown={handleMouseDown}
-          onWheel={handleWheel}
           onDoubleClick={resetDefault}
           className={cn(
             "relative w-20 h-20 rounded-full flex items-center justify-center transition-transform duration-150 ease-out group cursor-grab active:cursor-grabbing transform-gpu",

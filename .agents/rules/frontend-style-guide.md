@@ -43,7 +43,57 @@ The frontend reflects the active hardware tier and dynamic model degradation/upg
 
 ---
 
-## 4. Liquid Space Design System & Layout Rules
+## 4. Mandatory React Performance & Lifecycle Invariants (Universal Across All Pages)
+
+These invariants apply to every component, hook, context, and page in `app/src/`. Violating any invariant is a blocking defect.
+
+### 4.1 Context Value & Identity Stability
+- **Zero Raw Object Context Values:** Passing unmemoized object literals (`<Context.Provider value={{ a, b }}>`) or closures to a Provider is strictly banned. Context values MUST be wrapped in `useMemo`.
+- **Split Volatile State from Actions:** When context state updates frequently (e.g., streaming transcripts, timestamps), separate volatile data from stable dispatcher actions to prevent unnecessary subtree re-renders.
+
+### 4.2 Zustand Selector Discipline
+- **Zero Full-Store Destructuring:** Invoking `const { a, b } = useSettingsStore()` is strictly banned. Full-store destructuring subscribes the component to every state change across the entire store.
+- **Mandatory Fine-Grained Selectors:** Always use targeted atomic selectors `useSettingsStore((s) => s.draftSettings?.domain)` or shallow equality via `useShallow`.
+
+### 4.3 Async Effect & Event Listener Lifecycle (React 19 / StrictMode Safe)
+- **Mandatory `isMounted` Guard for Async Setup:** Every async setup function inside `useEffect` (e.g., Tauri `listen`) must guard state mutations and listener registrations with an `isMounted` flag.
+- **Safe Unmount Listener Teardown:** If an async listener resolves after component unmount, invoke the resulting `unlisten()` callback immediately:
+  ```ts
+  useEffect(() => {
+    let isMounted = true;
+    let unlisten: (() => void) | null = null;
+    const setup = async () => {
+      const u = await win.listen(...);
+      if (isMounted) unlisten = u;
+      else u();
+    };
+    setup();
+    return () => { isMounted = false; if (unlisten) unlisten(); };
+  }, []);
+  ```
+
+### 4.4 Timers, Intervals & rAF Hygiene
+- **Zero Side-Effects in State Updaters:** Calling `setTimeout`, `setInterval`, or IPC triggers inside a `setState(prev => ...)` updater is strictly prohibited.
+- **Track All Nested Timers:** If a timer triggers a subsequent `setInterval` (e.g. staggered polling), both timer references must be stored and cleared in the `useEffect` cleanup.
+- **Stable rAF Mutable Target Capture:** `requestAnimationFrame` interpolation loops MUST read target values from a mutable ref (`targetTextRef.current`) rather than closing over a render-scoped variable, preventing early termination or animation stalls.
+
+### 4.5 Component & Leaf Primitive Memoization
+- **Mandatory Memo for Shared Leaf Controls:** All shared inputs and leaf controls (`ToggleTile`, `SegmentedControl`, `SliderField`, `Button`, `SearchInput`, `SubModelCard`) must be wrapped in `React.memo` with an explicit `displayName`.
+- **Stable Callback References:** Callbacks passed to memoized children must be stabilized with `useCallback`. Avoid passing inline arrow functions in render loops.
+
+### 4.6 WebGL & GPU Resource Teardown
+- **Mandatory Force Context Loss:** Every Three.js WebGLRenderer must execute `renderer.forceContextLoss()` prior to `renderer.dispose()` during unmount cleanup, ensuring the WebGL context is released by the browser/webview engine.
+- **Geometry & Material Disposals:** All Three.js geometries, instanced meshes, and materials must be explicitly disposed in `useEffect` cleanup.
+
+### 4.7 DOM Ref Callbacks in Loops
+- **Zero Inline Ref Callbacks in `.map()`:** Passing inline arrow functions to `ref` inside loops (`ref={(el) => ...}`) forces React to detach (`null`) and reattach every element on every render. Use a stable ref callback cache (`Map<string, (el) => void>`) or dataset query.
+
+### 4.8 Input Debounce & WebGL Buffer Invariant
+- **Debounce Heavy Compute/Filter Inputs:** Text inputs driving graph filtering, full-text searches, or WebGL buffer updates must debounce parent state commits by >= 150ms to preserve 60 FPS typing responsiveness.
+
+---
+
+## 5. Liquid Space Design System & Layout Rules
 
 - **Desktop Layout:** Floating bottom `EdgeNav` capsule, monitoring panel as popover bottom-left.
 - **Mobile Layout:** Monitoring moves to `/monitoring` route with solid background. Nav capsule gets a 4th tab.
@@ -54,11 +104,11 @@ The frontend reflects the active hardware tier and dynamic model degradation/upg
 
 ---
 
-## 5. Documentation Standards
+## 6. Documentation Standards
 
 Root architecture and feature docs in `docs/*.md` follow a uniform frontmatter + "How to read" convention:
 
-### 5.1 Required Frontmatter (YAML)
+### 6.1 Required Frontmatter (YAML)
 ```yaml
 ---
 title: "Doc Title"
@@ -70,7 +120,7 @@ related_docs:
 ---
 ```
 
-### 5.2 Required "How to read this doc" Section
+### 6.2 Required "How to read this doc" Section
 Immediately after the title, include:
 - **Audience:** who the doc is for.
 - **Scope:** what it covers.

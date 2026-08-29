@@ -193,7 +193,7 @@ async fn handle_setting_side_effects(
         handle_dictation_side_effects(app, state, key, value).await;
     } else if domain == "interaction" {
         handle_interaction_side_effects(app, state, key, value).await;
-    } else if domain == "vad" && (key == "backend" || key == "vad_backend") {
+    } else if domain == "vad" && key == "vad_backend" {
         log::info!("[Settings] VAD backend changed. Hot-swapping 3-Tier Engine...");
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
@@ -362,8 +362,8 @@ pub(crate) fn apply_setting_mutation(
             settings.vad.ptt_noise_gate =
                 value.as_f64().ok_or("ptt_noise_gate must be a number")? as f32;
         }
-        ("vad", "backend" | "vad_backend") => {
-            settings.vad.backend = serde_json::from_value(value.clone())
+        ("vad", "vad_backend") => {
+            settings.vad.vad_backend = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid vad backend: {}", e))?;
         }
 

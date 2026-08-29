@@ -81,21 +81,32 @@ src/
 │   ├── defaults.rs         # Centralized default values for all 13 settings domains
 │   ├── error.rs            # Unified VoxError + domain-specific errors
 │   ├── events.rs           # VoxEvent enum (14 variants)
-│   ├── metrics.rs          # PipelineMetrics, MetricField
 │   ├── settings.rs         # VoxSettings (13 domains: appearance, audio, vad, stt, llm, tts, realtime, interaction, dictation, history, memory, persona, system)
 │   └── state.rs            # AppState, VoxEngine, PipelineAtomics, InteractionState, InteractionOwner (Dictation=0, Assistant=1)
 ├── services/
-│   ├── audio/              # engine (start/stop, spawn_router), device (cpal), playback (Cubic Hermite 2× upsample), router (VAD/Realtime routing), decode
+│   ├── audio/              # engine (start/stop), device (cpal), playback (Cubic Hermite 2× upsample), decode
 │   ├── vad/                # VadEngine trait + VadBackend enum dispatch (Earshot / TenVAD) + actor
-│   ├── stt/                # SttEngine trait + EmbeddedSttProvider (Nemotron-3.5 / Qwen3-ASR) + actor
+│   ├── stt/                # SttEngine trait + EmbeddedSttProvider (Nemotron-3.5 / Qwen3-ASR) + actor + stitcher
 │   ├── llm/                # LlmProvider trait (Embedded / OpenAiCompat / Ollama / LMStudio), actor, capability_probe, policy
-│   ├── tts/                # TtsProvider trait (EdgeTTS / Supertonic3 / Chatterbox / ChatterboxRemote), actor, voice
+│   ├── tts/                # TtsProvider trait (EdgeTTS / Supertonic3 / Chatterbox / ChatterboxRemote), actor (TtsClauseChunker), voice
 │   ├── realtime/           # RealtimeVoiceProvider + RealtimeSession traits, engine, audio_bridge, playback_bridge (Gemini Live, Deepgram)
-│   ├── dictation/          # controller, clipboard (with_clipboard_safe), input (per-OS enigo adapters), output_router, hotkey
+│   ├── dictation/          # clipboard (with_clipboard_safe), input (per-OS enigo adapters), output_router, hotkey
 │   ├── memory/             # classifiers/ (intra/inter edge, query), deduplication, embedder, formatter, ingestion, retrieval, scope_router, tokenizer, working_memory, pipeline/{runner,stage1-4}
-│   ├── pipeline/           # router (central VoxEvent pump), modular_passive, modular_ptt, realtime_passive, realtime_ptt, dictation, mod (RoutingContext, transition, target_window)
-│   ├── translit.rs         # Devanagari→Roman ONNX encoder-decoder (evictable singleton)
-│   └── utils.rs            # should_flush, count_words, is_devanagari, transliterate_if_hi, stitch_transcripts
+│   ├── pipeline/           # Central router, discrete domain orchestrators, and shared context
+│   │   ├── modular/        # Modular pipeline domain
+│   │   │   ├── context.rs  # Context compilation, dynamic memory retrieval, worker warmup, opportunistic compaction
+│   │   │   ├── passive.rs  # Autonomous conversational loop state machine
+│   │   │   ├── ptt.rs      # Push-To-Talk conversational loop state machine
+│   │   │   └── mod.rs      # Modular domain dispatcher
+│   │   ├── realtime/       # Realtime Speech-to-Speech WebSocket domain
+│   │   │   ├── session.rs  # Realtime provider instantiation & bidirectional barge-in
+│   │   │   ├── passive.rs  # Full-duplex WebSocket stream handler
+│   │   │   ├── ptt.rs      # Push-To-Talk WebSocket handler with ghost audio rejection
+│   │   │   └── mod.rs      # Realtime domain dispatcher
+│   │   ├── dictation.rs    # Unified passive/PTT OS-wide speech-to-text dictation
+│   │   ├── router.rs       # Central VoxEvent dispatcher thread (spawn_router, route_event)
+│   │   └── mod.rs          # RoutingContext, transition, target_window, init_new_session
+│   └── translit.rs         # Devanagari→Roman ONNX encoder-decoder (evictable singleton)
 ├── ipc/                    # Tauri command handlers
 │   ├── pipeline/           # assistant (start/end/pause/resume/ptt_* + engine), dictation (settings, recovery, clipboard copy), test_clip
 │   ├── settings/           # catalog, health (probe, validate_token_cap, hardware), mutation (update_setting, dispatch_worker_command)
@@ -104,7 +115,7 @@ src/
 ├── persistence/            # VoxDb (Turso/libSQL), schema, queries, mutations, voices, worker, memory_worker, events
 ├── monitoring/             # aggregator (crossbeam bounded 4096), collector, system_monitor (/proc/stat), snapshot, runtime_state, telemetry_emitter
 ├── setup/                  # manifest (AppManifest/VoxManifest fetch+cache), model_manager, runtime_check, update_check
-├── utils/                  # paths singleton, logging (tracing + file rotation), audio_filters, bench_reporter, hardware (detect_local_gpu)
+├── utils/                  # paths singleton, logging (tracing + file rotation), audio_filters, hardware (detect_local_gpu)
 ├── tray.rs                 # Tray menu, overlay window management, Linux virtual layer
 ├── wizard.rs               # Setup wizard window config + model health checks
 ├── window_main.rs          # ensure_main_window (lazy recreate after crash)
@@ -121,11 +132,11 @@ audio(cpal 16kHz f32 SPSC ring 4s) → VAD actor (256-sample frames) → VoxEven
         ▼
   Central Router (services/pipeline/router.rs — spawn_router, route_event)
         │  RoutingContext { owner, pipeline_mode, interaction_mode } derived once per event
-        ├── Assistant / Modular / Passive → STT actor → WorkingMemory + RAG → LLM actor → TTS clause chunker → Playback (24kHz→48kHz 2× Hermite)
-        ├── Assistant / Modular / PTT     → PTT gated buffer → STT → LLM → TTS → Playback
+        ├── Assistant / Modular / Passive → STT actor → Dynamic Memory Scope Retrieval (ModernBERT→MiniLM→Turso) → LLM actor → TTS clause chunker → Playback (24kHz→48kHz 2× Hermite)
+        ├── Assistant / Modular / PTT     → PTT gated buffer → STT → Dynamic Memory Retrieval → LLM → TTS → Playback
         ├── Assistant / Realtime / Passive→ Realtime S2S WebSocket (Gemini Live / Deepgram)
-        ├── Assistant / Realtime / PTT    → Gated Realtime buffer (ghost-audio suppressed) → WS
-        └── Dictation (Passive+PTT unified) → STT → output_router (Paste/Clipboard/Tray) — 0 LLM/TTS
+        ├── Assistant / Realtime / PTT    → Gated Realtime buffer (ghost-audio suppressed + server interrupt) → WS
+        └── Dictation (Passive+PTT unified) → STT → transliterate_if_hi → output_router (Paste/Clipboard/Tray) — 0 LLM/TTS
 ```
 
 ### Pipeline State Machine (7 Canonical Turn States)
@@ -135,16 +146,16 @@ audio(cpal 16kHz f32 SPSC ring 4s) → VAD actor (256-sample frames) → VoxEven
 | `Idle` | Dormant / unengaged (`is_engaged = false`) | `false` | Standby (or background dictation) | No conversational turns active. |
 | `Ready` | Warm / awaiting speech or PTT hold | `true` | Active (VAD) or PTT standby | Session engaged, engines warm. |
 | `Listening` | User is actively speaking; Vox is capturing voice | `true` | Streaming | Mic audio buffered/streamed. |
-| `Thinking` | Turn complete; LLM inference or RAG compaction active | `true` | Gated | STT→RAG→LLM reasoning active. |
+| `Thinking` | Turn complete; dynamic memory retrieval or LLM inference active | `true` | Gated | STT→Dynamic Memory Retrieval→LLM reasoning active. |
 | `Speaking` | System audio playback actively streaming through speakers | `true` | Ducked (Speaker) or Active (Headset/PTT) | Playback engine draining. |
 | `Paused` | User explicitly paused session | `true` | Discarded | Audio muted, pipeline halted. |
 | `Error` | Recoverable or unrecoverable subsystem error | current | Discarded | Surfaced via `pipeline_error`. |
 
 States are defined in `core/state.rs:InteractionState` and mirrored in `services/eventsService.ts:InteractionState`. Ownership is binary: `InteractionOwner::Dictation (0)` vs `Assistant (1)` (`core/state.rs:10-28`).
 
-### Sub-Sentence Chunking (should_flush)
+### Sub-Sentence Chunking (`TtsClauseChunker`)
 
-Tokens flush to TTS via a fully dynamic algorithm in `services/utils.rs` — all thresholds are continuous functions of observed TPS (tokens/sec), not hardcoded categories:
+Tokens flush to TTS via a dynamic algorithm in `services/tts/actor.rs` (`TtsClauseChunker`, `static CHUNKER` instantiated per domain) — all thresholds are continuous functions of observed TPS (tokens/sec), not hardcoded categories:
 
 | Condition | Slow TPS (1) | Medium (3.5) | Fast (6) |
 |-----------|:---:|:---:|:---:|
@@ -268,8 +279,8 @@ Remaining: audio (Tier 1, Max priority), VAD (Tier 2, high priority)
 | Thread | Priority | Type |
 |--------|----------|------|
 | Audio capture (cpal callback) | `ThreadPriority::Max` | OS callback |
-| AudioRouter | `ThreadPriority::Max` | OS thread |
 | VAD actor | Crossplatform(80) | OS thread |
+| ↳ PTT routing | — | OS thread — VAD actor dispatches PTT audio directly to domain `ingest_audio` (replaces deleted `services/audio/router.rs`; there is **no AudioRouter thread**) |
 | STT worker | Crossplatform(80) | OS thread |
 | LLM worker | Default | OS thread |
 | TTS worker | Default | OS thread |
@@ -311,7 +322,7 @@ Flow:       Cancelled { turn_id }, Error { turn_id, message }
 | `ptt_status` | `PttStatusPayload { state: IDLE\|RECORDING\|PROCESSING }` | PTT domains | PTT button state |
 | `audio_energy` | `{ energy: f32 }` | VAD actor | Mic level for Orb waveform |
 | `telemetry` | `TelemetryData` | aggregator | Full telemetry tick |
-| `pipeline_paused` / `pipeline_resumed` | — | `modular_passive` | Audio halt/resume (Passive only) |
+| `pipeline_paused` / `pipeline_resumed` | — | `modular/passive` | Audio halt/resume (Passive only) |
 | `realtime_session_started/ended/resumed` | — + reason | `realtime_*` | S2S session lifecycle |
 | `realtime_idle_warning` | `{ seconds_remaining }` | Realtime | Timeout countdown |
 | `realtime_interrupted` | — | Realtime | Barge-in confirmed |
@@ -380,7 +391,7 @@ Any ──(realtime mode)──────────→ WS (no local LLM/STT/
 - **Cold state**: 0 ONNX models loaded on boot (~50 MB base RAM) when dictation disabled. `is_dictation_enabled` false → 0 webviews beyond main, 0 engines until `engage()` (`lib.rs:360-395`).
 - **PTT dictation warm**: `Alt+Space` first press lazily calls `ensure_engine_running` + `start_audio_engine`; VAD resident, STT lazy; stays warm for subsequent presses.
 - **Passive dictation warm**: `start_audio_engine` at boot (`lib.rs:381-385`), VAD resident immediately, STT warms on first speech.
-- **Main-window engaged warm**: `start_session` per domain (`modular_passive::start_session`, etc.) sets `owner=Assistant`, `is_engaged=true`, warms LLM+TTS via `spawn_llm_worker`/`spawn_tts_worker`, transitions to `Ready`.
+- **Main-window engaged warm**: `start_session` per domain (`modular::passive::start_session`, etc.) sets `owner=Assistant`, `is_engaged=true`, warms LLM+TTS via `ensure_modular_workers`, transitions to `Ready`.
 - **Memory Pipeline Eviction**: Pipeline ONNX models (Embedder, NLI, Edge Classifier) lazy-load during 30s idle sweeps **only if pending queue items exist** (`memory_worker.rs`), and evict back to 0 MB RAM on voice engagement, disengage, or batch completion.
 - **Auto-sleep**: Driven by `interaction.auto_sleep_timeout` (default 400s in `core/defaults.rs:51`). Router sets `is_sleeping` and runs tiered offload via `cool_down_llm`/`cool_down_tts`. VAD and STT stay resident.
 - **Realtime S2S**: Audio capture + VAD routing without loading STT or LLM/TTS weights (0 MB local models); bridged via `services/realtime/{audio_bridge,playback_bridge}`.

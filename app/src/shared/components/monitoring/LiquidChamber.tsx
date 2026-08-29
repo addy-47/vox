@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, memo } from "react";
 import { Brain, Mic, Volume2 } from "lucide-react";
 import { type RuntimeSnapshot } from "@/services/pipelineService";
 import { type DynamicColors } from "./colorUtils";
@@ -22,7 +22,7 @@ interface LiquidChamberProps {
   open?: boolean;
 }
 
-export const LiquidChamber: React.FC<LiquidChamberProps> = ({
+export const LiquidChamber = memo<LiquidChamberProps>(({
   latest,
   colors,
   isEngineLoaded,
@@ -85,8 +85,8 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
     let lastFrameTime = 0;
     const targetInterval = 1000 / 30; // 30 FPS for fluid sinusoidal waves
 
-    const initialRamMb = metricsRef.current.ramMb > 0 ? metricsRef.current.ramMb : metricsRef.current.ramPct * 81.92;
-    let curRamFill = 0.12 + Math.min(1, Math.max(0, initialRamMb / 3500)) * 0.72;
+    const initialRamPct = Math.min(100, Math.max(0, metricsRef.current.ramPct || 0));
+    let curRamFill = 0.10 + (initialRamPct / 100) * 0.75;
     let curCpuFill = 0.08 + Math.min(1, Math.max(0, metricsRef.current.cpuPct / 100)) * 0.70;
 
     const bubbles = Array.from({ length: 22 }, () => ({
@@ -148,15 +148,9 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
 
       const curColors = colorsRef.current;
 
-      // Real dynamic water level scaling based on Vox RAM
-      // ~150MB baseline idle -> ~0.15 fill
-      // ~1.5GB models loaded -> ~0.45 fill
-      // ~3.5GB heavy pipeline -> ~0.84 fill
-      const effectiveRamMb = metricsRef.current.ramMb > 0
-        ? metricsRef.current.ramMb
-        : metricsRef.current.ramPct * 81.92;
-      const normalizedRamRatio = Math.min(1, Math.max(0, effectiveRamMb / 3500));
-      const targetRamFill = 0.12 + normalizedRamRatio * 0.72;
+      // Dynamic water level scaling based on Vox RAM percentage
+      const effectiveRamPct = Math.min(100, Math.max(0, metricsRef.current.ramPct || 0));
+      const targetRamFill = 0.10 + (effectiveRamPct / 100) * 0.75;
 
       const normalizedCpuRatio = Math.min(1, Math.max(0, metricsRef.current.cpuPct / 100));
       const targetCpuFill = 0.08 + normalizedCpuRatio * 0.70;
@@ -522,4 +516,6 @@ export const LiquidChamber: React.FC<LiquidChamberProps> = ({
       </div>
     </div>
   );
-};
+});
+
+LiquidChamber.displayName = "LiquidChamber";

@@ -232,8 +232,7 @@ impl Default for AudioSettings {
 pub struct VadSettings {
     pub threshold: f32,
     pub ptt_noise_gate: f32,
-    #[serde(alias = "vad_backend")]
-    pub backend: VadBackendOption,
+    pub vad_backend: VadBackendOption,
 }
 
 impl Default for VadSettings {
@@ -241,7 +240,7 @@ impl Default for VadSettings {
         Self {
             threshold: crate::core::defaults::DEFAULT_VAD_THRESHOLD,
             ptt_noise_gate: crate::core::defaults::DEFAULT_VAD_PTT_NOISE_GATE,
-            backend: VadBackendOption::TenVad,
+            vad_backend: VadBackendOption::TenVad,
         }
     }
 }

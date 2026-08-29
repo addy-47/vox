@@ -1,4 +1,13 @@
 export const MEMORY_COPY = {
+  memoryTitle: "Memory",
+  memorySubtitle: "Knowledge Graph",
+  searchPlaceholder: "Search your memories...",
+  clearSearch: "Clear search",
+  searchMemories: "Search memories",
+  selectModeActive: "Select Mode (Active)",
+  selectModeInactive: "Select Node Mode",
+  enableSelectMode: "Enable Node Selection",
+  disableSelectMode: "Disable Node Selection",
   ingestionQueue: "Memory Inbox",
   backgroundDaemon: "Memory Saver (running in background)",
   runConsolidation: "Organize Memory Now",

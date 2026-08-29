@@ -38,13 +38,16 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
 
   const apiKey = activeConfig.api_key || "";
 
-  const handleApiKeyChange = (key: string) => {
-    const updated = {
-      ...activeConfig,
-      api_key: key,
-    };
-    updateDraft("realtime", activeSubkey, updated);
-  };
+  const handleApiKeyChange = useCallback(
+    (key: string) => {
+      const updated = {
+        ...activeConfig,
+        api_key: key,
+      };
+      updateDraft("realtime", activeSubkey, updated);
+    },
+    [activeConfig, activeSubkey, updateDraft]
+  );
 
   const handleProviderCycle = useCallback(
     (direction: "left" | "right") => {

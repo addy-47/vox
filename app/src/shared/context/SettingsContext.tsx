@@ -28,26 +28,39 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   useEffect(() => {
     let unlisteners: (() => void)[] = [];
-    let debounceTimer: any = null;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let isMounted = true;
 
     const setup = async () => {
-      const win = getCurrentWindow();
-      const u1 = await win.listen<string>("theme-changed", () => {
-        useSettingsStore.getState().loadSettings();
-      });
-      const u2 = await win.listen("settings-updated", () => {
-        if (useSettingsStore.getState().isCommitting) return;
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          if (useSettingsStore.getState().isCommitting) return;
+      try {
+        const win = getCurrentWindow();
+        const u1 = await win.listen<string>("theme-changed", () => {
+          if (!isMounted) return;
           useSettingsStore.getState().loadSettings();
-        }, 80);
-      });
-      unlisteners = [u1, u2];
+        });
+        const u2 = await win.listen("settings-updated", () => {
+          if (!isMounted || useSettingsStore.getState().isCommitting) return;
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            if (!isMounted || useSettingsStore.getState().isCommitting) return;
+            useSettingsStore.getState().loadSettings();
+          }, 80);
+        });
+
+        if (isMounted) {
+          unlisteners = [u1, u2];
+        } else {
+          u1();
+          u2();
+        }
+      } catch (err) {
+        console.warn("[SettingsContext] Failed to bind listeners:", err);
+      }
     };
     setup();
-    return () => { 
-      unlisteners.forEach(u => u()); 
+    return () => {
+      isMounted = false;
+      unlisteners.forEach((u) => u());
       if (debounceTimer) clearTimeout(debounceTimer);
     };
   }, []);

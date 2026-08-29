@@ -102,6 +102,16 @@ export const Drawer = memo(
       };
     }, [open]);
 
+    const dragCleanupRef = useRef<(() => void) | null>(null);
+    useEffect(() => {
+      return () => {
+        if (dragCleanupRef.current) {
+          dragCleanupRef.current();
+          dragCleanupRef.current = null;
+        }
+      };
+    }, []);
+
     const handleDragStart = useCallback(
       (e: React.PointerEvent<HTMLDivElement>) => {
         if (!resizable) return;
@@ -124,17 +134,23 @@ export const Drawer = memo(
           }
         };
 
+        const cleanup = () => {
+          try {
+            target.releasePointerCapture(e.pointerId);
+          } catch {}
+          target.removeEventListener("pointermove", onPointerMove);
+          target.removeEventListener("pointerup", onPointerUp);
+          target.removeEventListener("pointercancel", onPointerUp);
+          dragCleanupRef.current = null;
+        };
+        dragCleanupRef.current = cleanup;
+
         const onPointerUp = (upEvent: PointerEvent) => {
           upEvent.preventDefault();
           upEvent.stopPropagation();
           setIsDragging(false);
           setHeightPercent(lastHeight);
-          try {
-            target.releasePointerCapture(upEvent.pointerId);
-          } catch {}
-          target.removeEventListener("pointermove", onPointerMove);
-          target.removeEventListener("pointerup", onPointerUp);
-          target.removeEventListener("pointercancel", onPointerUp);
+          cleanup();
         };
 
         target.addEventListener("pointermove", onPointerMove);
