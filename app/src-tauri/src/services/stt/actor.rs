@@ -7,7 +7,6 @@ use crate::services::stt::providers::SttProvider;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
 
 pub enum SttCommand {
     Partial(u32, Arc<[f32]>),
@@ -34,11 +33,10 @@ struct WorkerState {
     last_inference_duration: Duration,
 }
 
-struct WorkerContext<'a, R: tauri::Runtime> {
-    app: &'a AppHandle<R>,
-    provider: &'a dyn SttProvider,
-    pipeline_event_tx: &'a Option<std::sync::mpsc::Sender<VoxEvent>>,
-    cancel_flag: &'a Arc<AtomicBool>,
+struct WorkerContext<'a> {
+    pub provider: &'a dyn SttProvider,
+    pub pipeline_event_tx: &'a Option<std::sync::mpsc::Sender<VoxEvent>>,
+    pub cancel_flag: &'a Arc<AtomicBool>,
 }
 
 /// Drains subsequent partial commands from the channel and returns the latest audio slice.
@@ -72,8 +70,8 @@ fn coalesce_partials(
 }
 
 /// Dispatches a partial transcript event to the pipeline event channel if changed.
-fn emit_partial_event<R: tauri::Runtime>(
-    ctx: &WorkerContext<'_, R>,
+fn emit_partial_event(
+    ctx: &WorkerContext<'_>,
     tid: u32,
     text: String,
     state: &mut WorkerState,
@@ -92,8 +90,8 @@ fn emit_partial_event<R: tauri::Runtime>(
 }
 
 /// Processes incoming partial speech frames with dynamic throttling and emits partial events.
-fn handle_partial_command<R: tauri::Runtime>(
-    ctx: &WorkerContext<'_, R>,
+fn handle_partial_command(
+    ctx: &WorkerContext<'_>,
     tid: u32,
     utterance: &[f32],
     state: &mut WorkerState,
@@ -151,7 +149,7 @@ fn handle_partial_command<R: tauri::Runtime>(
 }
 
 /// Emits the final or cancelled turn event to the pipeline event channel.
-fn emit_final_events<R: tauri::Runtime>(ctx: &WorkerContext<'_, R>, tid: u32, transcript: String) {
+fn emit_final_events(ctx: &WorkerContext<'_>, tid: u32, transcript: String) {
     if transcript.trim().is_empty() {
         log::info!("[STT] Discarding empty final transcript.");
         if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
@@ -167,18 +165,11 @@ fn emit_final_events<R: tauri::Runtime>(ctx: &WorkerContext<'_, R>, tid: u32, tr
             log::warn!("[STT] Error sending final transcript event: {:?}", e);
         }
     }
-
-    if let Err(e) = ctx
-        .app
-        .emit_to("main", "ptt_status", serde_json::json!({ "state": "IDLE" }))
-    {
-        log::warn!("[STT] Error emitting ptt_status idle event: {:?}", e);
-    }
 }
 
 /// Transcribes final speech buffer, dispatches final events, and resets worker state.
-fn handle_final_command<R: tauri::Runtime>(
-    ctx: &WorkerContext<'_, R>,
+fn handle_final_command(
+    ctx: &WorkerContext<'_>,
     tid: u32,
     utterance: &[f32],
     state: &mut WorkerState,
@@ -237,14 +228,12 @@ fn drain_reset_stream(
 }
 
 /// Executes the core event polling and dispatch loop for speech recognition commands.
-fn run_worker_loop<R: tauri::Runtime>(
-    app: &AppHandle<R>,
+fn run_worker_loop(
     provider: &dyn SttProvider,
     channels: SttActorChannels,
     handles: SttActorHandles,
 ) {
     let ctx = WorkerContext {
-        app,
         provider,
         pipeline_event_tx: &channels.pipeline_event_tx,
         cancel_flag: &handles.cancel_flag,
@@ -299,8 +288,7 @@ fn run_worker_loop<R: tauri::Runtime>(
 }
 
 /// Spawns dedicated OS worker thread for speech recognition inference and event dispatching.
-pub fn spawn_stt_worker<R: tauri::Runtime + 'static>(
-    app: AppHandle<R>,
+pub fn spawn_stt_worker(
     channels: SttActorChannels,
     provider: Box<dyn SttProvider>,
     handles: SttActorHandles,
@@ -318,7 +306,7 @@ pub fn spawn_stt_worker<R: tauri::Runtime + 'static>(
             log::info!("[STT] >>> Dedicated worker thread started.");
             handles.is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
 
-            run_worker_loop(&app, &*provider, channels, handles);
+            run_worker_loop(&*provider, channels, handles);
         })
         .map_err(|e| e.to_string())
 }

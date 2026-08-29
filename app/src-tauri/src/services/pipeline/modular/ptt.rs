@@ -40,8 +40,9 @@ pub fn is_recording() -> bool {
 pub fn get_buffer_len() -> usize {
     PTT_BUFFER.lock().len()
 }
+
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
-    crate::services::audio::start_audio_engine(app, state).await?;
+    crate::core::start_audio_engine(app, state).await?;
     super::context::ensure_modular_workers(app, state).await?;
 
     state
@@ -143,9 +144,9 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
             engine.playback_engine.cancel();
         }
         drop(guard);
-        crate::services::audio::stop_audio_engine(state).await?;
+        crate::core::stop_audio_engine(state).await?;
     } else {
-        crate::services::audio::stop_audio_engine(state).await?;
+        crate::core::stop_audio_engine(state).await?;
     }
 
     let ctx = RoutingContext::from_app_state(state);
@@ -165,7 +166,10 @@ pub fn handle_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState)
         return Err("Modular PTT session not active".to_string());
     }
 
-    IS_RECORDING.store(true, Ordering::Relaxed);
+    if IS_RECORDING.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+
     SPEECH_DETECTED.store(false, Ordering::Relaxed);
     PTT_BUFFER.lock().clear();
     CHUNKER.lock().clear();
@@ -174,55 +178,108 @@ pub fn handle_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState)
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             engine.playback_engine.cancel();
+            let _ = engine.vad_tx.send(crate::core::state::VadCommand::StartWindowValidation);
         }
     }
 
+    let turn_id = state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Listening, &ctx, app, state);
 
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         EVENT_PTT_STATUS,
-        PTT_PAYLOAD_RECORDING,
+        serde_json::json!({
+            "state": PTT_PAYLOAD_RECORDING,
+            "turn_id": turn_id,
+        }),
     ) {
         log::warn!("[ModularPTT] Failed to emit ptt_status RECORDING: {}", e);
     }
 
-    log::info!("[ModularPTT] PTT recording started");
+    log::info!("[ModularPTT] PTT recording started (Turn: {})", turn_id);
     Ok(())
 }
 
-/// Finalizes PTT recording, dispatches audio buffer to STT actor, and transitions to thinking.
+/// Finalizes PTT recording, evaluates VAD window speech bounds, and dispatches trimmed audio to STT actor.
 pub fn handle_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    if !IS_RECORDING.swap(false, Ordering::Relaxed) {
+    if !IS_RECORDING.swap(false, Ordering::SeqCst) {
         return Ok(());
     }
 
-    let audio = PTT_BUFFER.lock().clone();
+    let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
+    let raw_audio = PTT_BUFFER.lock().clone();
     PTT_BUFFER.lock().clear();
 
-    if audio.is_empty() {
+    if raw_audio.is_empty() {
         SPEECH_DETECTED.store(false, Ordering::Relaxed);
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Ready, &ctx, app, state);
         if let Err(e) = app.emit_to(
             WINDOW_MAIN,
             EVENT_PTT_STATUS,
-            PTT_PAYLOAD_IDLE,
+            serde_json::json!({
+                "state": PTT_PAYLOAD_IDLE,
+                "turn_id": turn_id,
+            }),
         ) {
             log::warn!("[ModularPTT] Failed to emit ptt_status IDLE: {}", e);
         }
-        log::info!("[ModularPTT] Empty PTT hold discarded without STT request");
+        log::info!("[ModularPTT] Empty PTT hold discarded without STT request (Turn: {})", turn_id);
         return Ok(());
     }
 
-    SPEECH_DETECTED.store(false, Ordering::Relaxed);
-
     let guard = state.engine.try_lock().map_err(|_| "Engine lock busy")?;
     let engine = guard.as_ref().ok_or("Audio engine not ready")?;
-    let turn_id = state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed);
 
-    if let Err(e) = engine.stt_tx.send(crate::services::stt::SttCommand::Final(turn_id, audio)) {
+    // Query VAD window validation result
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let validation_result = if engine.vad_tx.send(crate::core::state::VadCommand::StopWindowValidation { response_tx: tx }).is_ok() {
+        rx.blocking_recv().ok()
+    } else {
+        None
+    };
+
+    let is_speech = match validation_result {
+        Some(ref val) => val.is_speech_detected,
+        None => true,
+    };
+
+    if !is_speech {
+        log::info!("[ModularPTT] Non-speech PTT hold discarded without STT request (Turn: {})", turn_id);
+        SPEECH_DETECTED.store(false, Ordering::Relaxed);
+        let ctx = RoutingContext::from_app_state(state);
+        transition(InteractionState::Ready, &ctx, app, state);
+        if let Err(e) = app.emit_to(
+            WINDOW_MAIN,
+            EVENT_PTT_STATUS,
+            serde_json::json!({
+                "state": PTT_PAYLOAD_IDLE,
+                "turn_id": turn_id,
+            }),
+        ) {
+            log::warn!("[ModularPTT] Failed to emit ptt_status IDLE: {}", e);
+        }
+        return Ok(());
+    }
+
+    let audio_to_send = match validation_result {
+        Some(ref val) => {
+            let start = val.speech_start_sample.min(raw_audio.len());
+            let end = val.speech_end_sample.min(raw_audio.len());
+            if start < end && (end - start) >= 256 {
+                log::debug!("[ModularPTT] Trimming speech window: {}..{} (total: {})", start, end, raw_audio.len());
+                raw_audio[start..end].to_vec()
+            } else {
+                raw_audio
+            }
+        }
+        None => raw_audio,
+    };
+
+    SPEECH_DETECTED.store(false, Ordering::Relaxed);
+
+    if let Err(e) = engine.stt_tx.send(crate::services::stt::SttCommand::Final(turn_id, audio_to_send)) {
         log::warn!("[ModularPTT] Failed to send Final to STT: {}", e);
     }
 
@@ -232,7 +289,10 @@ pub fn handle_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) 
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         EVENT_PTT_STATUS,
-        PTT_PAYLOAD_PROCESSING,
+        serde_json::json!({
+            "state": PTT_PAYLOAD_PROCESSING,
+            "turn_id": turn_id,
+        }),
     ) {
         log::warn!("[ModularPTT] Failed to emit ptt_status PROCESSING: {}", e);
     }
@@ -243,13 +303,21 @@ pub fn handle_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) 
 
 /// Cancels ongoing PTT recording without dispatching inference.
 pub fn handle_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    if !IS_RECORDING.swap(false, Ordering::Relaxed) {
+    if !IS_RECORDING.swap(false, Ordering::SeqCst) {
         return Ok(());
     }
 
+    let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
     SPEECH_DETECTED.store(false, Ordering::Relaxed);
     PTT_BUFFER.lock().clear();
     CHUNKER.lock().clear();
+
+    if let Ok(guard) = state.engine.try_lock() {
+        if let Some(ref engine) = *guard {
+            let (tx, _) = tokio::sync::oneshot::channel();
+            let _ = engine.vad_tx.send(crate::core::state::VadCommand::StopWindowValidation { response_tx: tx });
+        }
+    }
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
@@ -257,12 +325,15 @@ pub fn handle_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         EVENT_PTT_STATUS,
-        PTT_PAYLOAD_IDLE,
+        serde_json::json!({
+            "state": PTT_PAYLOAD_IDLE,
+            "turn_id": turn_id,
+        }),
     ) {
         log::warn!("[ModularPTT] Failed to emit ptt_status IDLE: {}", e);
     }
 
-    log::info!("[ModularPTT] PTT recording cancelled");
+    log::info!("[ModularPTT] PTT recording cancelled (Turn: {})", turn_id);
     Ok(())
 }
 
@@ -432,10 +503,14 @@ fn on_llm_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &
 /// Forwards synthesized audio samples to the audio playback buffer.
 fn on_tts_chunk(samples: Vec<f32>, playback: &Arc<PlaybackEngine>) {
     playback.ingest_chunk(&samples);
+    if playback.buffer_len() >= 12000 {
+        playback.start_playback();
+    }
 }
 
-/// Updates latest TTS real-time factor metrics upon synthesis completion.
-fn on_tts_finished(rtf: f32, state: &AppState) {
+/// Updates latest TTS real-time factor metrics upon synthesis completion and begins playback.
+fn on_tts_finished(rtf: f32, state: &AppState, playback: &Arc<PlaybackEngine>) {
+    playback.start_playback();
     state.telemetry.latest_tts_rtf.store(rtf.to_bits(), Ordering::Relaxed);
 }
 
@@ -519,7 +594,7 @@ pub fn handle_event<R: tauri::Runtime>(
         VoxEvent::LlmToken { turn_id, token } => on_llm_token(turn_id, token, app, state),
         VoxEvent::LlmFinished { turn_id } => on_llm_finished(turn_id, app, state),
         VoxEvent::TtsChunk { samples, .. } => on_tts_chunk(samples, playback),
-        VoxEvent::TtsFinished { rtf, .. } => on_tts_finished(rtf, state),
+        VoxEvent::TtsFinished { rtf, .. } => on_tts_finished(rtf, state, playback),
         VoxEvent::PlaybackStarted { turn_id } => on_playback_started(turn_id, app, state),
         VoxEvent::PlaybackFinished { turn_id } => on_playback_finished(turn_id, app, state),
         VoxEvent::Cancelled { turn_id } => on_cancelled(turn_id, app, state),

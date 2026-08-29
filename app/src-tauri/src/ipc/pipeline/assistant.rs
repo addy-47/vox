@@ -15,14 +15,14 @@ pub async fn check_engine_status(state: State<'_, Arc<AppState>>) -> Result<bool
 #[tauri::command]
 pub async fn launch_engine(app: AppHandle) -> Result<(), String> {
     let state: State<'_, Arc<AppState>> = app.state();
-    crate::services::audio::start_audio_engine(&app, &state).await
+    crate::core::start_audio_engine(&app, &state).await
 }
 
 /// Shuts down the 3-tier audio engine and unloads models.
 #[tauri::command]
 pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
     let state: State<'_, Arc<AppState>> = app.state();
-    crate::services::audio::stop_audio_engine(&state).await
+    crate::core::stop_audio_engine(&state).await
 }
 
 /// Starts the voice assistant session based on current pipeline settings.
