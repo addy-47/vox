@@ -111,7 +111,7 @@ pub async fn test_clip(
     let clip_path = resolve_clip_path(&clip_id)?;
     let audio = decode_wav_to_mono_f32(&clip_path)?;
 
-    if let Err(e) = crate::services::audio::start_audio_engine(&app, &state).await {
+    if let Err(e) = crate::core::start_audio_engine(&app, &state).await {
         state
             .owner
             .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);

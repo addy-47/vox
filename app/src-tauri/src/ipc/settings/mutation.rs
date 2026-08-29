@@ -66,7 +66,7 @@ async fn handle_dictation_side_effects(
             if !is_engaged {
                 let state_clone = app.state::<std::sync::Arc<AppState>>().inner().clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = crate::services::audio::stop_audio_engine(&state_clone).await {
+                    if let Err(e) = crate::core::stop_audio_engine(&state_clone).await {
                         log::warn!("[Settings::Mutation] Failed to stop audio engine: {}", e);
                     }
                 });
@@ -81,7 +81,7 @@ async fn handle_dictation_side_effects(
             let state_clone = app.state::<std::sync::Arc<AppState>>().inner().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) =
-                    crate::services::audio::start_audio_engine(&app_clone, &state_clone).await
+                    crate::core::start_audio_engine(&app_clone, &state_clone).await
                 {
                     log::error!("[Settings] Failed to launch engine for dictation: {}", e);
                 }

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use vox_lib::core::events::VoxEvent;
-use vox_lib::core::state::{InteractionOwner, VadCommand};
+use vox_lib::core::state::VadCommand;
 use vox_lib::services::stt::actor::{
     spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand,
 };
@@ -31,7 +31,7 @@ pub fn get_test_app_handle() -> AppHandle<tauri::test::MockRuntime> {
 
 /// Spawns the production STT worker with local Nemotron model.
 pub fn setup_stt_worker<R: tauri::Runtime + 'static>(
-    app: &AppHandle<R>,
+    _app: &AppHandle<R>,
 ) -> (
     Sender<SttCommand>,
     Receiver<VoxEvent>,
@@ -62,19 +62,18 @@ pub fn setup_stt_worker<R: tauri::Runtime + 'static>(
         engine_shutdown: engine_shutdown.clone(),
     };
 
-    let join_handle = spawn_stt_worker(app.clone(), channels, provider, handles)
+    let join_handle = spawn_stt_worker(channels, provider, handles)
         .expect("Failed to spawn STT worker");
 
     (stt_tx, pipeline_event_rx, engine_shutdown, join_handle)
 }
 
 /// Spawns the production VAD actor and returns the ring buffer producer along with channels.
-pub fn setup_vad_actor<R: tauri::Runtime + 'static>(
-    app: &AppHandle<R>,
+pub fn setup_vad_actor(
     stt_tx: Sender<SttCommand>,
     config: VadActorConfig,
     playback_active: Arc<AtomicBool>,
-    owner: InteractionOwner,
+    audio_suppressed: Arc<AtomicBool>,
     engine_shutdown: Arc<AtomicBool>,
 ) -> (
     Sender<VadCommand>,
@@ -106,19 +105,16 @@ pub fn setup_vad_actor<R: tauri::Runtime + 'static>(
         is_loaded: Arc::new(AtomicBool::new(false)),
         playback_active,
         turn_id_atomic: Arc::new(AtomicU32::new(0)),
-        owner_atomic: Arc::new(AtomicU32::new(owner as u32)),
-        is_dictation_enabled: Arc::new(AtomicBool::new(false)),
+        audio_suppressed,
         engine_shutdown,
         dropped_counter: Arc::new(AtomicU64::new(0)),
     };
 
-    let app_clone = app.clone();
     let join_handle = std::thread::Builder::new()
         .name("test-vad-actor".to_string())
         .spawn(move || {
             let _ = spawn_vad_actor(
                 vad_backend,
-                app_clone,
                 consumer,
                 vad_channels,
                 vad_handles,

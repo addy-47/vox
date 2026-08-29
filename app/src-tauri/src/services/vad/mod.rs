@@ -1,8 +1,13 @@
 pub mod actor;
 pub mod earshot_vad;
+pub mod telemetry;
 pub mod ten_onnx;
+pub mod utils;
 
-pub use actor::spawn_vad_actor;
+pub use actor::{
+    spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles, VadValidationResult,
+};
+pub use utils::PreRollBuffer;
 
 // ─── VAD Subsystem Constants ─────────────────────────────────────────────────
 pub const MODEL_DIR_VAD: &str = "vad";
@@ -16,6 +21,17 @@ pub const VAD_PARTIAL_INTERVAL_SAMPLES: usize = 12800;
 pub const VAD_MAX_PARTIAL_WINDOW_SAMPLES: usize = 240000;
 /// Earshot pure-Rust energy model noise gate calibration multiplier to compensate for dynamic range scale differences.
 pub const EARSHOT_NOISE_GATE_MULTIPLIER: f32 = 1.5;
+
+/// Generic operational modes supported by the decoupled VAD actor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VadOperationalMode {
+    /// Autonomous neural speech onset/offset segmentation with utterance dispatch.
+    ContinuousSegmentation,
+    /// Caller-gated window evaluation (evaluates voice presence for caller-owned recording windows).
+    WindowedValidation,
+    /// Low-latency direct audio chunk forwarding to a configured realtime sender.
+    StreamPassthrough,
+}
 
 /// Voice Activity Detection engine contract.
 pub trait VadEngine {
