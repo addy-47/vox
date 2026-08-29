@@ -506,12 +506,7 @@ impl LlmSettings {
     }
 
     pub fn effective_ctx_size(&self) -> u32 {
-        match self.active {
-            LlmActiveProvider::Embedded => self.context_window,
-            LlmActiveProvider::Server | LlmActiveProvider::Cloud => self
-                .context_window
-                .max(crate::services::llm::CTX_FLOOR_NON_EMBEDDED),
-        }
+        self.context_window
     }
 
     pub fn to_provider_config(&self) -> LlmProviderConfig {

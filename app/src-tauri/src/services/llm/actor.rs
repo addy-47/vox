@@ -1,4 +1,4 @@
-use super::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider, ProviderKind};
+use super::{EmbeddedProvider, LlmProvider, ProviderKind, RemoteTransport};
 use crate::core::constants::{EVENT_MODEL_FAILED, EVENT_MODEL_LOADING, EVENT_MODEL_READY};
 use crate::core::events::VoxEvent;
 use crate::core::settings::{LlmProviderConfig, VoxSettings};
@@ -90,12 +90,13 @@ pub fn create_llm_provider(
             api_key,
             provider_name,
         } => {
-            let provider = OpenAiCompatProvider::new(
+            let conn_cfg = super::config::ConnectionConfig::new(
                 &base_url,
                 &model,
                 api_key.as_deref(),
                 provider_name.as_deref(),
             );
+            let provider = RemoteTransport::new(conn_cfg);
             Ok(Box::new(provider) as Box<dyn LlmProvider>)
         }
     }
