@@ -1,4 +1,4 @@
-import React from "react";
+import { memo } from "react";
 import { cn } from "@/shared/lib/utils";
 
 interface StatusCapsuleProps {
@@ -7,7 +7,7 @@ interface StatusCapsuleProps {
   testing?: boolean;
 }
 
-export const StatusCapsule: React.FC<StatusCapsuleProps> = ({ label, dotActive, testing }) => (
+export const StatusCapsule = memo<StatusCapsuleProps>(({ label, dotActive, testing }) => (
   <div
     role="status"
     aria-live="polite"
@@ -29,4 +29,6 @@ export const StatusCapsule: React.FC<StatusCapsuleProps> = ({ label, dotActive, 
       {testing ? "Testing" : label}
     </span>
   </div>
-);
+));
+
+StatusCapsule.displayName = "StatusCapsule";

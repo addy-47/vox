@@ -82,6 +82,12 @@ export const LlmSettingsView = memo(({
 
   // Determine creativity / temperature preset (default: 0.7 / balanced)
   const currentTemp = llmSettings?.temperature ?? 0.7;
+  const currentTempPreset = useMemo(() => {
+    if (Math.abs(currentTemp - 0.2) < 0.05) return "precise";
+    if (Math.abs(currentTemp - 0.7) < 0.05) return "balanced";
+    if (Math.abs(currentTemp - 1.0) < 0.05) return "creative";
+    return "custom";
+  }, [currentTemp]);
   const currentContext = llmSettings?.context_window ?? 2048;
 
   const handleVerifyCustomCap = async (capVal: number) => {
@@ -138,118 +144,76 @@ export const LlmSettingsView = memo(({
 
   return (
     <div className="w-full flex-1 flex flex-col justify-between select-none animate-fade-in">
-      {/* ─── Layer 1: Top Ribbon Navigation (CategorySelector Style) ─── */}
-      <div className="flex flex-wrap items-center justify-between gap-y-1.5 gap-x-1 w-full pt-1.5 pb-2.5 shrink-0 px-0.5">
-        {/* Left: Mode Title */}
-        <div className="flex items-center shrink-0 pr-0.5 sm:pr-1">
-          <div className="flex items-center gap-1 sm:gap-1.5 select-none">
-            <span className="text-[12px] sm:text-[13px] font-black tracking-wider uppercase text-[rgb(var(--accent))] animate-fade-in">
-              Config
-            </span>
-          </div>
-        </div>
-
-        {/* Center Connector: Crisp clean straight arrow */}
-        <div className="flex flex-1 items-center px-1 min-w-[8px] pointer-events-none select-none overflow-hidden">
-          <svg
-            className="w-full h-2.5 sm:h-3 text-[rgb(var(--accent))]/50 overflow-visible"
-            viewBox="0 0 100 12"
-            preserveAspectRatio="none"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <line
-              x1="0"
-              y1="6"
-              x2="97"
-              y2="6"
-              stroke="currentColor"
-              strokeWidth="1.25"
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-            />
-            <path
-              d="M 92 2.5 L 98.5 6 L 92 9.5"
-              stroke="currentColor"
-              strokeWidth="1.25"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
-        </div>
-
-        {/* Right: COMPUTE | TOKENS | CONTEXT | TEMP Tabs */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 pl-0.5 sm:pl-1">
-          {tabs.map((tab, idx, arr) => {
-            const isActive = activeSubTab === tab.id;
-            return (
-              <div key={tab.id} className="flex items-center gap-1.5 sm:gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setActiveSubTab(tab.id)}
-                  className={cn(
-                    "flex items-center justify-center gap-1 pb-0.5 sm:pb-1 border-b-2 transition-all duration-200 bg-transparent text-[11px] sm:text-[12px] font-black uppercase tracking-[0.08em] sm:tracking-[0.12em] outline-none cursor-pointer",
-                    isActive
-                      ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
-                      : "text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]"
-                  )}
-                >
-                  <span>{tab.label}</span>
-                </button>
-                {idx < arr.length - 1 && (
-                  <span className="text-[11px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/25 font-light select-none pb-0.5 sm:pb-1">
-                    |
-                  </span>
+      {/* ─── Layer 1: Subtab Navigation (Full-Width Distributed Tabs) ─── */}
+      <div className="w-full flex items-center justify-between pt-0.5 pb-2 shrink-0 border-b border-[rgba(var(--accent),0.08)] mb-2 px-0.5">
+        {tabs.map((tab, idx, arr) => {
+          const isActive = activeSubTab === tab.id;
+          return (
+            <div key={tab.id} className="flex-1 flex items-center justify-center">
+              <button
+                type="button"
+                onClick={() => setActiveSubTab(tab.id)}
+                className={cn(
+                  "w-full flex items-center justify-center pb-1 border-b-2 transition-all duration-200 bg-transparent text-[11px] sm:text-[12px] font-black uppercase tracking-[0.08em] sm:tracking-[0.12em] outline-none cursor-pointer text-center",
+                  isActive
+                    ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
+                    : "text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]"
                 )}
-              </div>
-            );
-          })}
-        </div>
+              >
+                <span>{tab.label}</span>
+              </button>
+              {idx < arr.length - 1 && (
+                <span className="text-[11px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/25 font-light select-none pb-1 shrink-0 px-1 sm:px-2">
+                  |
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* ─── Layer 2: Workspace Content (Single Surface) ─── */}
       <div
         className={cn(
-          "w-full flex flex-col flex-1 min-h-0 pt-2.5 pb-0.5 justify-between",
+          "w-full flex flex-col flex-1 min-h-0 pt-0.5 pb-0.5 justify-between",
           layoutMode === "small"
-            ? "h-auto max-h-none py-2 space-y-3"
-            : "h-[120px] max-h-[120px]"
+            ? "h-auto max-h-none py-1 space-y-2.5"
+            : "h-[128px] max-h-[128px]"
         )}
       >
         {/* TAB 1: COMPUTE */}
         {activeSubTab === "compute" && (
-          <div className="flex flex-col gap-2 h-full justify-between animate-fade-in">
+          <div className="flex flex-col gap-2 h-full justify-between animate-fade-in p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)]">
             {!isRemoteLlm ? (
               <>
-                <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
-                  <span className="font-bold text-[13px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
-                    <Cpu size={16} className="text-[rgb(var(--accent))]" />
+                <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1.5 shrink-0">
+                  <span className="font-bold text-[11px] sm:text-[11.5px] uppercase tracking-wider text-[rgb(var(--foreground))]/80 flex items-center gap-1.5">
+                    <Cpu size={14} className="text-[rgb(var(--accent))]" />
                     CPU Thread Allocation
                   </span>
-                  <span className="text-[12px] font-mono font-bold px-2 py-0.5 rounded text-[rgb(var(--accent))]">
+                  <span className="text-[10px] sm:text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                     {currentThreads} / {totalCores} Cores
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2.5 flex-1 items-center pb-0.5">
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 flex-1 items-center pb-0.5">
                   <button
                     type="button"
                     onClick={() => updateDraft("llm", "threads", optimalThreads)}
                     className={cn(
-                      "p-2.5 rounded-lg border text-left transition-all duration-200 cursor-pointer flex flex-col justify-between h-[56px]",
+                      "p-2 sm:p-2.5 rounded-xl border text-left transition-all duration-200 cursor-pointer flex flex-col justify-between min-h-[46px] sm:h-[54px]",
                       currentProfile === "auto"
                         ? "bg-[rgba(var(--accent),0.08)] border-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]/30"
                         : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.08)] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.02)]"
                     )}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-[13px] flex items-center gap-1 text-[rgb(var(--foreground))]">
-                        <Zap size={13} className="text-[rgb(var(--accent))]" /> Auto
+                      <span className="font-bold text-[12px] sm:text-[13px] flex items-center gap-1 text-[rgb(var(--foreground))]">
+                        <Zap size={13} className="text-[rgb(var(--accent))] shrink-0" /> Auto
                       </span>
-                      {currentProfile === "auto" && <Check size={14} className="text-[rgb(var(--accent))]" />}
+                      {currentProfile === "auto" && <Check size={13} className="text-[rgb(var(--accent))] shrink-0" />}
                     </div>
-                    <span className="text-[12px] text-[rgb(var(--foreground-muted))] font-medium">
+                    <span className="text-[10px] sm:text-[11px] text-[rgb(var(--foreground-muted))] font-medium truncate">
                       {optimalThreads} cores (Balanced)
                     </span>
                   </button>
@@ -258,19 +222,19 @@ export const LlmSettingsView = memo(({
                     type="button"
                     onClick={() => updateDraft("llm", "threads", powerSaverThreads)}
                     className={cn(
-                      "p-2.5 rounded-lg border text-left transition-all duration-200 cursor-pointer flex flex-col justify-between h-[56px]",
+                      "p-2 sm:p-2.5 rounded-xl border text-left transition-all duration-200 cursor-pointer flex flex-col justify-between min-h-[46px] sm:h-[54px]",
                       currentProfile === "power"
                         ? "bg-[rgba(var(--accent),0.08)] border-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]/30"
                         : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.08)] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.02)]"
                     )}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-[13px] flex items-center gap-1 text-[rgb(var(--foreground))]">
-                        <Battery size={13} className="text-emerald-400" /> Eco
+                      <span className="font-bold text-[12px] sm:text-[13px] flex items-center gap-1 text-[rgb(var(--foreground))]">
+                        <Battery size={13} className="text-emerald-400 shrink-0" /> Eco
                       </span>
-                      {currentProfile === "power" && <Check size={14} className="text-[rgb(var(--accent))]" />}
+                      {currentProfile === "power" && <Check size={13} className="text-[rgb(var(--accent))] shrink-0" />}
                     </div>
-                    <span className="text-[12px] text-[rgb(var(--foreground-muted))] font-medium">
+                    <span className="text-[10px] sm:text-[11px] text-[rgb(var(--foreground-muted))] font-medium truncate">
                       {powerSaverThreads} cores (Cooler)
                     </span>
                   </button>
@@ -279,44 +243,40 @@ export const LlmSettingsView = memo(({
                     type="button"
                     onClick={() => updateDraft("llm", "threads", totalCores)}
                     className={cn(
-                      "p-2.5 rounded-lg border text-left transition-all duration-200 cursor-pointer flex flex-col justify-between h-[56px]",
+                      "p-2 sm:p-2.5 rounded-xl border text-left transition-all duration-200 cursor-pointer flex flex-col justify-between min-h-[46px] sm:h-[54px]",
                       currentProfile === "max"
                         ? "bg-[rgba(var(--accent),0.08)] border-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]/30"
                         : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.08)] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.02)]"
                     )}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-[13px] flex items-center gap-1 text-[rgb(var(--foreground))]">
-                        <Cpu size={13} className="text-amber-400" /> Max
+                      <span className="font-bold text-[12px] sm:text-[13px] flex items-center gap-1 text-[rgb(var(--foreground))]">
+                        <Cpu size={13} className="text-amber-400 shrink-0" /> Max
                       </span>
-                      {currentProfile === "max" && <Check size={14} className="text-[rgb(var(--accent))]" />}
+                      {currentProfile === "max" && <Check size={13} className="text-[rgb(var(--accent))] shrink-0" />}
                     </div>
-                    <span className="text-[12px] text-[rgb(var(--foreground-muted))] font-medium">
+                    <span className="text-[10px] sm:text-[11px] text-[rgb(var(--foreground-muted))] font-medium truncate">
                       {totalCores} cores (Full)
                     </span>
                   </button>
                 </div>
               </>
             ) : (
-              <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-1">
-                <div className="flex-1 flex items-center justify-center relative min-w-[70px] h-full">
-                  <div className="w-9 h-9 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/40 flex items-center justify-center relative z-10">
-                    <Server className="text-[rgb(var(--accent))]" size={18} />
-                  </div>
-                </div>
-                <div className="flex-[2] flex flex-col justify-center gap-1.5 h-full">
-                  <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1">
-                    <span className="text-[13px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+              <div className="flex flex-col justify-between h-full gap-2 animate-fade-in px-0.5">
+                <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0 gap-2">
+                  <span className="font-bold text-[11px] sm:text-[11.5px] uppercase tracking-wider text-[rgb(var(--foreground))]/80 flex items-center gap-1.5 truncate">
+                    <Server size={14} className="text-[rgb(var(--accent))] shrink-0" />
+                    <span className="truncate">
                       {isCloudProvider ? "Cloud Infrastructure" : "Remote Server Compute"}
                     </span>
-                    <span className="text-[12px] font-bold text-emerald-400 flex items-center gap-1">
-                      <Check size={13} /> Active
-                    </span>
-                  </div>
-                  <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed font-medium">
-                    Inference computation is offloaded entirely to the remote provider. Zero local CPU or RAM is consumed.
-                  </p>
+                  </span>
+                  <span className="text-[10px] sm:text-[11px] font-bold text-emerald-400 flex items-center gap-1 shrink-0">
+                    <Check size={13} /> Active
+                  </span>
                 </div>
+                <p className="text-[11px] sm:text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed font-medium">
+                  Inference computation is offloaded entirely to the remote provider. Zero local CPU or RAM is consumed.
+                </p>
               </div>
             )}
           </div>
@@ -324,17 +284,17 @@ export const LlmSettingsView = memo(({
 
         {/* TAB 2: TOKENS */}
         {activeSubTab === "tokens" && (
-          <div className="flex flex-col gap-2 h-full justify-between animate-fade-in">
-            {/* Header Line with Custom Cap Trigger to the Left of Badge */}
-            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
-              <span className="font-bold text-[13px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
-                <Sparkles size={16} className="text-[rgb(var(--accent))]" />
-                Response Token Limit
+          <div className="flex flex-col gap-2 h-full justify-between animate-fade-in p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)]">
+            {/* Header Line with Custom Cap Trigger */}
+            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1.5 shrink-0 gap-2">
+              <span className="font-bold text-[11px] sm:text-[11.5px] uppercase tracking-wider text-[rgb(var(--foreground))]/80 flex items-center gap-1.5 truncate">
+                <Sparkles size={14} className="text-[rgb(var(--accent))] shrink-0" />
+                <span className="truncate">Response Token Limit</span>
               </span>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 shrink-0">
                 {showCustomTokens ? (
-                  <div className="flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in">
+                  <div className="flex items-center gap-1 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in max-w-[180px] sm:max-w-xs">
                     <input
                       type="number"
                       min="1"
@@ -354,22 +314,22 @@ export const LlmSettingsView = memo(({
                           setShowCustomTokens(false);
                         }
                       }}
-                      placeholder="Enter tokens (e.g. 4096)..."
-                      className="w-48 bg-transparent border-none outline-none text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      placeholder="e.g. 4096"
+                      className="w-20 sm:w-36 bg-transparent border-none outline-none text-[11px] sm:text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                     {isRemoteLlm && (
                       <button
                         type="button"
                         disabled={!customTokenInput || isVerifyingCap}
                         onClick={() => handleVerifyCustomCap(parseInt(customTokenInput, 10))}
-                        className="text-[11px] font-bold text-[rgb(var(--accent))] hover:underline cursor-pointer disabled:opacity-40"
+                        className="text-[11px] font-bold text-[rgb(var(--accent))] hover:underline cursor-pointer disabled:opacity-40 shrink-0"
                         title="Smoke Test"
                       >
                         {isVerifyingCap ? <Loader2 size={11} className="animate-spin" /> : "Test"}
                       </button>
                     )}
                     {capValidationResult.status === "valid" && (
-                      <span title="Valid cap verified">
+                      <span title="Valid cap verified" className="shrink-0">
                         <Check size={13} className="text-emerald-400" />
                       </span>
                     )}
@@ -383,7 +343,7 @@ export const LlmSettingsView = memo(({
                             setCapValidationResult({ status: "valid" });
                           }
                         }}
-                        className="text-[11px] underline text-amber-300 font-bold cursor-pointer"
+                        className="text-[11px] underline text-amber-300 font-bold cursor-pointer shrink-0"
                         title="Auto clamp to server ceiling"
                       >
                         Clamp
@@ -392,7 +352,7 @@ export const LlmSettingsView = memo(({
                     <button
                       type="button"
                       onClick={() => setShowCustomTokens(false)}
-                      className="p-0.5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                      className="p-0.5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer shrink-0"
                     >
                       <X size={13} />
                     </button>
@@ -401,10 +361,10 @@ export const LlmSettingsView = memo(({
                   <button
                     type="button"
                     onClick={() => setShowCustomTokens(true)}
-                    className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] hover:brightness-125 px-1.5 py-0.5 bg-[rgb(var(--accent))]/5 hover:bg-[rgb(var(--accent))]/10 transition-all cursor-pointer"
+                    className="flex items-center gap-1 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] hover:brightness-125 px-1.5 py-0.5 bg-[rgb(var(--accent))]/5 hover:bg-[rgb(var(--accent))]/10 transition-all cursor-pointer rounded"
                     title="Set custom token cap"
                   >
-                    <Plus size={12} strokeWidth={2.5} />
+                    <Plus size={11} strokeWidth={2.5} />
                     <span>Custom</span>
                   </button>
                 )}
@@ -412,7 +372,7 @@ export const LlmSettingsView = memo(({
             </div>
 
             {/* Presets */}
-            <div className="grid grid-cols-3 gap-2.5 flex-1 items-center pb-0.5">
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 flex-1 items-center pb-0.5">
               <button
                 type="button"
                 onClick={() => {
@@ -421,17 +381,17 @@ export const LlmSettingsView = memo(({
                   setCapValidationResult({ status: null });
                 }}
                 className={cn(
-                  "p-2.5 rounded-lg border text-left transition-all cursor-pointer flex flex-col justify-between h-[56px]",
+                  "p-2 sm:p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[46px] sm:h-[54px]",
                   currentTokenPreset === "concise"
                     ? "bg-[rgba(var(--accent),0.08)] border-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]/30"
                     : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.08)] hover:border-[rgba(var(--accent),0.3)]"
                 )}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-[13px] text-[rgb(var(--foreground))]">Voice Concise</span>
-                  {currentTokenPreset === "concise" && <Check size={14} className="text-[rgb(var(--accent))]" />}
+                  <span className="font-bold text-[12px] sm:text-[13px] text-[rgb(var(--foreground))]">Concise</span>
+                  {currentTokenPreset === "concise" && <Check size={13} className="text-[rgb(var(--accent))]" />}
                 </div>
-                <span className="text-[12px] text-[rgb(var(--foreground-muted))] font-medium">~300 tokens (Fast)</span>
+                <span className="text-[10px] sm:text-[11px] text-[rgb(var(--foreground-muted))] font-medium truncate">~300 tokens (Fast)</span>
               </button>
 
               <button
@@ -442,17 +402,17 @@ export const LlmSettingsView = memo(({
                   setCapValidationResult({ status: null });
                 }}
                 className={cn(
-                  "p-2.5 rounded-lg border text-left transition-all cursor-pointer flex flex-col justify-between h-[56px]",
+                  "p-2 sm:p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[46px] sm:h-[54px]",
                   currentTokenPreset === "conversational"
                     ? "bg-[rgba(var(--accent),0.08)] border-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]/30"
                     : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.08)] hover:border-[rgba(var(--accent),0.3)]"
                 )}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-[13px] text-[rgb(var(--foreground))]">Conversational</span>
-                  {currentTokenPreset === "conversational" && <Check size={14} className="text-[rgb(var(--accent))]" />}
+                  <span className="font-bold text-[12px] sm:text-[13px] text-[rgb(var(--foreground))]">Convo</span>
+                  {currentTokenPreset === "conversational" && <Check size={13} className="text-[rgb(var(--accent))]" />}
                 </div>
-                <span className="text-[12px] text-[rgb(var(--foreground-muted))] font-medium">~1,000 tokens (Depth)</span>
+                <span className="text-[10px] sm:text-[11px] text-[rgb(var(--foreground-muted))] font-medium truncate">~1,000 tokens</span>
               </button>
 
               <button
@@ -463,17 +423,17 @@ export const LlmSettingsView = memo(({
                   setCapValidationResult({ status: null });
                 }}
                 className={cn(
-                  "p-2.5 rounded-lg border text-left transition-all cursor-pointer flex flex-col justify-between h-[56px]",
+                  "p-2 sm:p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[46px] sm:h-[54px]",
                   currentTokenPreset === "native"
                     ? "bg-[rgba(var(--accent),0.08)] border-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]/30"
                     : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.08)] hover:border-[rgba(var(--accent),0.3)]"
                 )}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-[13px] text-[rgb(var(--foreground))]">Native Full</span>
-                  {currentTokenPreset === "native" && <Check size={14} className="text-[rgb(var(--accent))]" />}
+                  <span className="font-bold text-[12px] sm:text-[13px] text-[rgb(var(--foreground))]">Native</span>
+                  {currentTokenPreset === "native" && <Check size={13} className="text-[rgb(var(--accent))]" />}
                 </div>
-                <span className="text-[12px] text-[rgb(var(--foreground-muted))] font-medium">Uncapped capacity</span>
+                <span className="text-[10px] sm:text-[11px] text-[rgb(var(--foreground-muted))] font-medium truncate">Uncapped full</span>
               </button>
             </div>
           </div>
@@ -481,17 +441,17 @@ export const LlmSettingsView = memo(({
 
         {/* TAB 3: CONTEXT */}
         {activeSubTab === "context" && (
-          <div className="flex flex-col gap-2 h-full justify-between animate-fade-in">
-            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
-              <span className="font-bold text-[13px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
-                <Layers size={16} className="text-[rgb(var(--accent))]" />
-                Context Window Budget
+          <div className="flex flex-col gap-2 h-full justify-between animate-fade-in p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)]">
+            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1.5 shrink-0 gap-2">
+              <span className="font-bold text-[11px] sm:text-[11.5px] uppercase tracking-wider text-[rgb(var(--foreground))]/80 flex items-center gap-1.5 truncate">
+                <Layers size={14} className="text-[rgb(var(--accent))] shrink-0" />
+                <span className="truncate">Context Window Budget</span>
               </span>
 
               {!isRemoteLlm ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
                   {showCustomContext ? (
-                    <div className="flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in">
+                    <div className="flex items-center gap-1 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in max-w-[180px] sm:max-w-xs">
                       <input
                         type="number"
                         min="512"
@@ -506,13 +466,13 @@ export const LlmSettingsView = memo(({
                             updateDraft("llm", "context_window", parsed);
                           }
                         }}
-                        placeholder="Enter context tokens (512–128k)..."
-                        className="w-56 bg-transparent border-none outline-none text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        placeholder="e.g. 8192"
+                        className="w-20 sm:w-36 bg-transparent border-none outline-none text-[11px] sm:text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                       <button
                         type="button"
                         onClick={() => setShowCustomContext(false)}
-                        className="p-0.5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                        className="p-0.5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer shrink-0"
                       >
                         <X size={13} />
                       </button>
@@ -521,23 +481,23 @@ export const LlmSettingsView = memo(({
                     <button
                       type="button"
                       onClick={() => setShowCustomContext(true)}
-                      className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] hover:brightness-125 px-1.5 py-0.5 bg-[rgb(var(--accent))]/5 hover:bg-[rgb(var(--accent))]/10 transition-all cursor-pointer"
+                      className="flex items-center gap-1 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] hover:brightness-125 px-1.5 py-0.5 bg-[rgb(var(--accent))]/5 hover:bg-[rgb(var(--accent))]/10 transition-all cursor-pointer rounded"
                       title="Set custom context window"
                     >
-                      <Plus size={12} strokeWidth={2.5} />
+                      <Plus size={11} strokeWidth={2.5} />
                       <span>Custom</span>
                     </button>
                   )}
                 </div>
               ) : (
-                <span className="text-[12px] font-bold text-emerald-400 flex items-center gap-1">
+                <span className="text-[10px] sm:text-[11px] font-bold text-emerald-400 flex items-center gap-1 shrink-0">
                   <Check size={13} /> Provider Managed
                 </span>
               )}
             </div>
 
             {!isRemoteLlm ? (
-              <div className="grid grid-cols-4 gap-2.5 flex-1 items-center pb-0.5">
+              <div className="grid grid-cols-4 gap-1.5 sm:gap-2.5 flex-1 items-center pb-0.5">
                 {[2048, 4096, 8192, 16384].map((size) => {
                   const isSelected = currentContext === size;
                   return (
@@ -549,30 +509,23 @@ export const LlmSettingsView = memo(({
                         setCustomContextInput("");
                       }}
                       className={cn(
-                        "py-2 rounded-lg border text-center transition-all cursor-pointer font-mono font-bold text-[13px] h-[52px] flex flex-col items-center justify-center",
+                        "py-1.5 sm:py-2 px-1 rounded-xl border text-center transition-all cursor-pointer font-mono font-bold text-[12px] sm:text-[13px] min-h-[44px] sm:h-[52px] flex flex-col items-center justify-center",
                         isSelected
                           ? "bg-[rgba(var(--accent),0.08)] border-[rgb(var(--accent))] text-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]/30"
                           : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.08)] text-[rgb(var(--foreground-muted))] hover:border-[rgba(var(--accent),0.3)] hover:text-[rgb(var(--foreground))]"
                       )}
                     >
                       <span>{size >= 1024 ? `${size / 1024}k` : size}</span>
-                      <span className="text-[11px] font-sans font-normal opacity-70">RAM Budget</span>
+                      <span className="text-[10px] sm:text-[11px] font-sans font-normal opacity-70">Budget</span>
                     </button>
                   );
                 })}
               </div>
             ) : (
-              <div className="flex items-center justify-between h-full gap-4 animate-fade-in px-1">
-                <div className="flex-1 flex items-center justify-center relative min-w-[70px] h-full">
-                  <div className="w-9 h-9 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/40 flex items-center justify-center relative z-10">
-                    <Layers className="text-[rgb(var(--accent))]" size={18} />
-                  </div>
-                </div>
-                <div className="flex-[2] flex flex-col justify-center gap-1 h-full">
-                  <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed font-medium">
-                    The remote endpoint dynamically manages architectural context capacity with zero client-side truncation.
-                  </p>
-                </div>
+              <div className="flex flex-col justify-center gap-1.5 h-full animate-fade-in px-0.5 py-1">
+                <p className="text-[11px] sm:text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed font-medium">
+                  The remote endpoint dynamically manages architectural context capacity with zero client-side truncation.
+                </p>
               </div>
             )}
           </div>
@@ -580,16 +533,16 @@ export const LlmSettingsView = memo(({
 
         {/* TAB 4: CREATIVITY / TEMP */}
         {activeSubTab === "creativity" && (
-          <div className="flex flex-col gap-2 h-full justify-between animate-fade-in">
-            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1 shrink-0">
-              <span className="font-bold text-[13px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
-                <Gauge size={16} className="text-[rgb(var(--accent))]" />
-                Temperature (Creativity)
+          <div className="flex flex-col gap-2 h-full justify-between animate-fade-in p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)]">
+            <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1.5 shrink-0 gap-2">
+              <span className="font-bold text-[11px] sm:text-[11.5px] uppercase tracking-wider text-[rgb(var(--foreground))]/80 flex items-center gap-1.5 truncate">
+                <Gauge size={14} className="text-[rgb(var(--accent))] shrink-0" />
+                <span className="truncate">Temperature (Creativity)</span>
               </span>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 shrink-0">
                 {showCustomTemp ? (
-                  <div className="flex items-center gap-1.5 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in">
+                  <div className="flex items-center gap-1 border-b border-[rgb(var(--accent))] pb-0.5 animate-fade-in max-w-[180px] sm:max-w-xs">
                     <input
                       type="number"
                       min="0.0"
@@ -604,13 +557,18 @@ export const LlmSettingsView = memo(({
                           updateDraft("llm", "temperature", parsed);
                         }
                       }}
-                      placeholder="Enter temp (0.0 to 2.0)..."
-                      className="w-48 bg-transparent border-none outline-none text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          setShowCustomTemp(false);
+                        }
+                      }}
+                      placeholder="e.g. 0.70"
+                      className="w-20 sm:w-36 bg-transparent border-none outline-none text-[11px] sm:text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                     <button
                       type="button"
                       onClick={() => setShowCustomTemp(false)}
-                      className="p-0.5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                      className="p-0.5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer shrink-0"
                     >
                       <X size={13} />
                     </button>
@@ -619,46 +577,76 @@ export const LlmSettingsView = memo(({
                   <button
                     type="button"
                     onClick={() => setShowCustomTemp(true)}
-                    className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] hover:brightness-125 px-1.5 py-0.5  bg-[rgb(var(--accent))]/5 hover:bg-[rgb(var(--accent))]/10 transition-all cursor-pointer"
+                    className="flex items-center gap-1 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--accent))] hover:brightness-125 px-1.5 py-0.5 bg-[rgb(var(--accent))]/5 hover:bg-[rgb(var(--accent))]/10 transition-all cursor-pointer rounded"
                     title="Set custom temperature"
                   >
-                    <Plus size={12} strokeWidth={2.5} />
+                    <Plus size={11} strokeWidth={2.5} />
                     <span>Custom</span>
                   </button>
                 )}
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2.5 flex-1 items-center pb-0.5">
-              {[
-                { label: "Precise", val: 0.2, desc: "Factual & exact" },
-                { label: "Balanced", val: 0.7, desc: "Natural flow" },
-                { label: "Creative", val: 1.0, desc: "Expressive & rich" },
-              ].map((preset) => {
-                const isSelected = Math.abs(currentTemp - preset.val) < 0.05;
-                return (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => {
-                      updateDraft("llm", "temperature", preset.val);
-                      setCustomTempInput("");
-                    }}
-                    className={cn(
-                      "p-2.5 rounded-lg border text-left transition-all cursor-pointer flex flex-col justify-between h-[56px]",
-                      isSelected
-                        ? "bg-[rgba(var(--accent),0.08)] border-[rgb(var(--accent))] text-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]/30"
-                        : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.08)] text-[rgb(var(--foreground-muted))] hover:border-[rgba(var(--accent),0.3)] hover:text-[rgb(var(--foreground))]"
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-[13px]">{preset.label}</span>
-                      {isSelected && <Check size={14} className="text-[rgb(var(--accent))]" />}
-                    </div>
-                    <span className="text-[12px] opacity-80 font-medium">{preset.desc}</span>
-                  </button>
-                );
-              })}
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5 flex-1 items-center pb-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  updateDraft("llm", "temperature", 0.2);
+                  setCustomTempInput("");
+                }}
+                className={cn(
+                  "p-2 sm:p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[46px] sm:h-[54px]",
+                  currentTempPreset === "precise"
+                    ? "bg-[rgba(var(--accent),0.08)] border-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]/30"
+                    : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.08)] hover:border-[rgba(var(--accent),0.3)]"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-[12px] sm:text-[13px] text-[rgb(var(--foreground))]">Precise</span>
+                  {currentTempPreset === "precise" && <Check size={13} className="text-[rgb(var(--accent))]" />}
+                </div>
+                <span className="text-[10px] sm:text-[11px] text-[rgb(var(--foreground-muted))] font-medium truncate">0.2 (Factual)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  updateDraft("llm", "temperature", 0.7);
+                  setCustomTempInput("");
+                }}
+                className={cn(
+                  "p-2 sm:p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[46px] sm:h-[54px]",
+                  currentTempPreset === "balanced"
+                    ? "bg-[rgba(var(--accent),0.08)] border-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]/30"
+                    : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.08)] hover:border-[rgba(var(--accent),0.3)]"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-[12px] sm:text-[13px] text-[rgb(var(--foreground))]">Balanced</span>
+                  {currentTempPreset === "balanced" && <Check size={13} className="text-[rgb(var(--accent))]" />}
+                </div>
+                <span className="text-[10px] sm:text-[11px] text-[rgb(var(--foreground-muted))] font-medium truncate">0.7 (Default)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  updateDraft("llm", "temperature", 1.0);
+                  setCustomTempInput("");
+                }}
+                className={cn(
+                  "p-2 sm:p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[46px] sm:h-[54px]",
+                  currentTempPreset === "creative"
+                    ? "bg-[rgba(var(--accent),0.08)] border-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]/30"
+                    : "bg-[rgba(var(--foreground),0.02)] border-[rgba(var(--foreground),0.08)] hover:border-[rgba(var(--accent),0.3)]"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-[12px] sm:text-[13px] text-[rgb(var(--foreground))]">Creative</span>
+                  {currentTempPreset === "creative" && <Check size={13} className="text-[rgb(var(--accent))]" />}
+                </div>
+                <span className="text-[10px] sm:text-[11px] text-[rgb(var(--foreground-muted))] font-medium truncate">1.0 (Dynamic)</span>
+              </button>
             </div>
           </div>
         )}

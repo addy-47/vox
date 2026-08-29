@@ -5,6 +5,7 @@ import React, {
   useRef,
   useImperativeHandle,
   forwardRef,
+  memo,
   Component,
   ErrorInfo,
   ReactNode,
@@ -129,7 +130,7 @@ export interface MemoryGraphRef {
 const nodePosCache = new Map<string, { x: number; y: number; z: number }>();
 
 // Theme-Aware Vibrant Color Palettes (Dark vs Light contrast optimized)
-export const DARK_COLLECTION_COLORS: Record<string, { main: string; glow: string; text: string; desc: string }> = {
+const DARK_COLLECTION_COLORS: Record<string, { main: string; glow: string; text: string; desc: string }> = {
   Identity: {
     main: "#38bdf8",
     glow: "rgba(56, 189, 248, 0.4)",
@@ -174,7 +175,7 @@ export const DARK_COLLECTION_COLORS: Record<string, { main: string; glow: string
   },
 };
 
-export const LIGHT_COLLECTION_COLORS: Record<string, { main: string; glow: string; text: string; desc: string }> = {
+const LIGHT_COLLECTION_COLORS: Record<string, { main: string; glow: string; text: string; desc: string }> = {
   Identity: {
     main: "#0369a1", // Deep Sapphire
     glow: "rgba(3, 105, 161, 0.45)",
@@ -219,7 +220,7 @@ export const LIGHT_COLLECTION_COLORS: Record<string, { main: string; glow: strin
   },
 };
 
-export function getThemeCollectionColors(isLight: boolean) {
+function getThemeCollectionColors(isLight: boolean) {
   return isLight ? LIGHT_COLLECTION_COLORS : DARK_COLLECTION_COLORS;
 }
 
@@ -294,112 +295,142 @@ interface MemoryGraphProps {
   clearCacheOnUnmount?: boolean;
 }
 
-export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
-  (
-    {
-      nodes,
-      edges,
-      width,
-      height,
-      searchQuery,
-      selectedCollection,
-      selectedRelation,
-      onSelectNode,
-      selectedFactId,
-      selectedFactDetail,
-      conflictPairs = [],
-      clearCacheOnUnmount = false,
-    },
-    ref
-  ) => {
-    useMemoryTrace("MemoryGraph (WebGL InstancedMesh)");
+export const MemoryGraph = memo(
+  forwardRef<MemoryGraphRef, MemoryGraphProps>(
+    (
+      {
+        nodes,
+        edges,
+        width,
+        height,
+        searchQuery,
+        selectedCollection,
+        selectedRelation,
+        onSelectNode,
+        selectedFactId,
+        selectedFactDetail,
+        conflictPairs = [],
+        clearCacheOnUnmount = false,
+      },
+      ref
+    ) => {
+      useMemoryTrace("MemoryGraph (WebGL InstancedMesh)");
 
-    const canvasContainerRef = useRef<HTMLDivElement>(null);
-    const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-    const sceneRef = useRef<THREE.Scene | null>(null);
-    const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-    const controlsRef = useRef<OrbitControls | null>(null);
+      const canvasContainerRef = useRef<HTMLDivElement>(null);
+      const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+      const sceneRef = useRef<THREE.Scene | null>(null);
+      const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+      const controlsRef = useRef<OrbitControls | null>(null);
 
-    const instancedMeshRef = useRef<THREE.InstancedMesh | null>(null);
-    const instancedRingRef = useRef<THREE.InstancedMesh | null>(null);
-    const lineSegmentsRef = useRef<THREE.LineSegments | null>(null);
+      const instancedMeshRef = useRef<THREE.InstancedMesh | null>(null);
+      const instancedRingRef = useRef<THREE.InstancedMesh | null>(null);
+      const lineSegmentsRef = useRef<THREE.LineSegments | null>(null);
 
-    const [clusterBadges, setClusterBadges] = useState<ClusterBadgeData[]>([]);
-    const [expandedBadge, setExpandedBadge] = useState<string | null>(null);
-    const [isLayoutStable, setIsLayoutStable] = useState(false);
-    const [isLightMode, setIsLightMode] = useState(false);
+      const gNodesRef = useRef<GNode[]>([]);
+      const gLinksRef = useRef<GLink[]>([]);
+      const idToNodeIndexMap = useRef<Map<string, number>>(new Map());
+      const mouseVecRef = useRef(new THREE.Vector2());
+      const raycasterRef = useRef(new THREE.Raycaster());
+      const tempVecRef = useRef(new THREE.Vector3());
+      const isSettledRef = useRef(false);
+      const ticksRef = useRef(0);
+      const animFrameRef = useRef<number | null>(null);
+      const isRenderingRef = useRef(false);
+      const wakeRenderLoopRef = useRef<() => void>(() => {});
+      const userHasNavigatedCameraRef = useRef(false);
+      const hasFittedInitialCameraRef = useRef(false);
+      const lastBadgeUpdateRef = useRef(0);
 
-    // Props Refs to avoid Three.js Scene Setup useEffect re-creation on node clicks/filters
-    const selectedFactIdRef = useRef(selectedFactId);
-    selectedFactIdRef.current = selectedFactId;
+      // Reusable Three.js math objects to eliminate per-frame allocations in updateWebGLBuffers
+      const dummyObjRef = useRef(new THREE.Object3D());
+      const colorObjRef = useRef(new THREE.Color());
 
-    const selectedFactDetailRef = useRef(selectedFactDetail);
-    selectedFactDetailRef.current = selectedFactDetail;
+      const [clusterBadges, setClusterBadges] = useState<ClusterBadgeData[]>([]);
+      const [expandedBadge, setExpandedBadge] = useState<string | null>(null);
+      const [isLayoutStable, setIsLayoutStable] = useState(false);
+      const [isLightMode, setIsLightMode] = useState(false);
 
-    const searchQueryRef = useRef(searchQuery);
-    searchQueryRef.current = searchQuery;
+      // Props Refs to avoid Three.js Scene Setup useEffect re-creation on node clicks/filters
+      const selectedFactIdRef = useRef(selectedFactId);
+      selectedFactIdRef.current = selectedFactId;
 
-    const selectedCollectionRef = useRef(selectedCollection);
-    selectedCollectionRef.current = selectedCollection;
+      const selectedFactDetailRef = useRef(selectedFactDetail);
+      selectedFactDetailRef.current = selectedFactDetail;
 
-    const selectedRelationRef = useRef(selectedRelation);
-    selectedRelationRef.current = selectedRelation;
+      const searchQueryRef = useRef(searchQuery);
+      searchQueryRef.current = searchQuery;
 
-    const gNodesRef = useRef<GNode[]>([]);
-    const gLinksRef = useRef<GLink[]>([]);
-    const idToNodeIndexMap = useRef<Map<string, number>>(new Map());
+      const selectedCollectionRef = useRef(selectedCollection);
+      selectedCollectionRef.current = selectedCollection;
 
-    const hasFittedInitialCameraRef = useRef(false);
-    const userHasNavigatedCameraRef = useRef(false);
-    const tempVecRef = useRef(new THREE.Vector3());
-    const animFrameRef = useRef<number | null>(null);
-    const raycasterRef = useRef(new THREE.Raycaster());
-    const mouseVecRef = useRef(new THREE.Vector2());
-    const lastBadgeUpdateRef = useRef(0);
-    const isRenderingRef = useRef(false);
-    const isSettledRef = useRef(false);
-    const ticksRef = useRef(0);
-    const wakeRenderLoopRef = useRef<() => void>(() => {});
+      const selectedRelationRef = useRef(selectedRelation);
+      selectedRelationRef.current = selectedRelation;
 
-    // Detect Theme Changes
-    useEffect(() => {
-      const checkTheme = () => {
-        const theme = document.documentElement.getAttribute("data-theme");
-        setIsLightMode(theme === "light");
-      };
-      checkTheme();
+      // Detect dark / light mode from documentElement class attribute
+      useEffect(() => {
+        const updateTheme = () => {
+          setIsLightMode(document.documentElement.classList.contains("light"));
+        };
+        updateTheme();
+        const observer = new MutationObserver(updateTheme);
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+        return () => observer.disconnect();
+      }, []);
 
-      const observer = new MutationObserver(checkTheme);
-      observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-      return () => observer.disconnect();
-    }, []);
+      // Cache eviction on unmount or excessive size
+      useEffect(() => {
+        return () => {
+          if (clearCacheOnUnmount || nodePosCache.size > 2000) {
+            nodePosCache.clear();
+          }
+        };
+      }, [clearCacheOnUnmount]);
 
-    const conflictNodeIds = useMemo(() => {
-      const set = new Set<string>();
-      conflictPairs.forEach((pair) => {
-        set.add(pair.fact_a.id);
-        set.add(pair.fact_b.id);
-      });
-      return set;
-    }, [conflictPairs]);
+      const conflictNodeIds = useMemo(() => {
+        const set = new Set<string>();
+        conflictPairs.forEach((pair) => {
+          set.add(pair.fact_a.id);
+          set.add(pair.fact_b.id);
+        });
+        return set;
+      }, [conflictPairs]);
 
-    const isNodeVisible = useCallback((node: GNode) => {
-      const selRel = selectedRelationRef.current;
-      const selCol = selectedCollectionRef.current;
+      // Precomputed relation adjacency map: UpperRelation -> Set of Node IDs (O(1) lookups)
+      const relationAdjacencyMap = useMemo(() => {
+        const map = new Map<string, Set<string>>();
+        for (const e of edges) {
+          const relUpper = e.relation.toUpperCase();
+          let set = map.get(relUpper);
+          if (!set) {
+            set = new Set();
+            map.set(relUpper, set);
+          }
+          set.add(e.from_id);
+          set.add(e.to_id);
+        }
+        return map;
+      }, [edges]);
 
-      if (selRel !== "all") {
-        const hasRel = edges.some(
-          (e) =>
-            (e.from_id === node.id || e.to_id === node.id) &&
-            e.relation.toUpperCase().includes(selRel.toUpperCase())
-        );
-        if (!hasRel) return false;
-      }
+      const isNodeVisible = useCallback((node: GNode) => {
+        const selRel = selectedRelationRef.current;
+        const selCol = selectedCollectionRef.current;
 
-      if (selCol === "all") return true;
-      if (selCol === "Inactive") return node.status === "inactive";
-      return node.collection.toLowerCase().includes(selCol.toLowerCase());
-    }, [edges]);
+        if (selRel !== "all") {
+          const selRelUpper = selRel.toUpperCase();
+          let hasRel = false;
+          for (const [relKey, nodeSet] of relationAdjacencyMap.entries()) {
+            if (relKey.includes(selRelUpper) && nodeSet.has(node.id)) {
+              hasRel = true;
+              break;
+            }
+          }
+          if (!hasRel) return false;
+        }
+
+        if (selCol === "all") return true;
+        if (selCol === "Inactive") return node.status === "inactive";
+        return node.collection.toLowerCase().includes(selCol.toLowerCase());
+      }, [relationAdjacencyMap]);
 
     const isNodeMatchingSearch = useCallback((node: GNode) => {
       const sq = searchQueryRef.current.trim().toLowerCase();
@@ -788,8 +819,8 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
 
       if (!instancedMesh || !instancedRing || !lineSegments) return;
 
-      const dummy = new THREE.Object3D();
-      const color = new THREE.Color();
+      const dummy = dummyObjRef.current;
+      const color = colorObjRef.current;
 
       // Update Node Instances
       let visibleNodeCount = 0;
@@ -1041,6 +1072,10 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
       scene.add(lineSegments);
       lineSegmentsRef.current = lineSegments;
 
+      // Initial buffer population
+      updateWebGLBuffersRef.current();
+      updateCentroidBadgesSyncRef.current(true);
+
       // Demand-Driven Animation & Simulation Loop
       const render = () => {
         isRenderingRef.current = true;
@@ -1176,6 +1211,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
           sceneRef.current = null;
         }
 
+        renderer.forceContextLoss();
         renderer.dispose();
         rendererRef.current = null;
         if (container && renderer.domElement && container.contains(renderer.domElement)) {
@@ -1186,7 +1222,7 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
           nodePosCache.clear();
         }
       };
-    }, [stepSimulation, width, height, clearCacheOnUnmount]);
+    }, [stepSimulation, clearCacheOnUnmount]);
 
     // Dedicated lightweight camera & renderer resize effect (prevents WebGL scene teardown)
     useEffect(() => {
@@ -1197,6 +1233,8 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
+      updateCentroidBadgesSyncRef.current(true);
+      wakeRenderLoopRef.current();
     }, [width, height]);
 
     // Dismiss expanded cluster badge card on click outside
@@ -1286,10 +1324,25 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
           return;
         }
 
+        if (expandedBadge) {
+          setExpandedBadge(null);
+        }
+
         onSelectNode(null);
       },
-      [onSelectNode, isNodeVisible, width, height]
+      [onSelectNode, isNodeVisible, width, height, expandedBadge]
     );
+
+    useEffect(() => {
+      if (!expandedBadge) return;
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          setExpandedBadge(null);
+        }
+      };
+      window.addEventListener("keydown", handleKeyDown);
+      return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [expandedBadge]);
 
     return (
       <GraphErrorBoundary>
@@ -1322,178 +1375,207 @@ export const MemoryGraph = forwardRef<MemoryGraphRef, MemoryGraphProps>(
             <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
               {clusterBadges.map((badge) => {
                 const IconComp = getCollectionIcon(badge.collection);
-                const isExpanded = expandedBadge === badge.collection;
+                const isSelected = expandedBadge === badge.collection;
 
                 return (
                   <div
                     key={badge.collection}
-                    id={`badge-card-${badge.collection}`}
+                    id={`badge-pill-${badge.collection}`}
                     style={{
                       left: `${badge.screenX}px`,
                       top: `${badge.screenY}px`,
                       transform: "translate(-50%, -50%)",
                     }}
-                    className={cn(
-                      "absolute pointer-events-auto",
-                      isExpanded ? "z-40" : "z-20"
-                    )}
+                    className="absolute pointer-events-auto z-20"
                   >
-                    <AnimatePresence mode="wait" initial={false}>
-                      {!isExpanded ? (
-                        /* Compact Button View */
-                        <motion.button
-                          key="compact"
-                          initial={{ opacity: 0, scale: 0.92 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.92 }}
-                          transition={{ duration: 0.12, ease: "easeOut" }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpandedBadge(badge.collection);
-                          }}
-                          style={{
-                            backgroundColor: isLightMode ? "#ffffff" : "rgba(var(--glass-navy), 0.98)",
-                            border: `1.5px solid ${badge.color}70`,
-                            boxShadow: isLightMode
-                              ? "0 4px 14px -2px rgba(15, 23, 42, 0.12), 0 1px 4px -1px rgba(0, 0, 0, 0.06)"
-                              : "0 6px 18px -2px rgba(0, 0, 0, 0.6), 0 2px 4px -1px rgba(0, 0, 0, 0.4)",
-                          }}
-                          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full hover:scale-105 transition-transform cursor-pointer select-none text-[rgb(var(--foreground))]"
-                        >
-                          <IconComp size={16} style={{ color: badge.color }} className="shrink-0" />
-                          <span className="text-[12px] font-sans font-black tracking-wider text-[rgb(var(--foreground))] uppercase">
-                            {badge.collection}
-                          </span>
-                          <span
-                            className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full shadow-xs"
-                            style={{ backgroundColor: `${badge.color}25`, color: badge.color }}
-                          >
-                            {badge.factCount}
-                          </span>
-                        </motion.button>
-                      ) : (
-                        /* Expanded Badge Card View */
-                        <motion.div
-                          key="expanded"
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.95 }}
-                          transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-                          onClick={(e) => e.stopPropagation()}
-                          style={{
-                            backgroundColor: isLightMode ? "#ffffff" : "rgba(var(--glass-navy), 0.98)",
-                            border: `1.5px solid ${badge.color}`,
-                            boxShadow: isLightMode
-                              ? "0 12px 32px -4px rgba(15, 23, 42, 0.20), 0 3px 8px -1px rgba(0, 0, 0, 0.10)"
-                              : "0 16px 40px -4px rgba(0, 0, 0, 0.85), 0 3px 8px -1px rgba(0, 0, 0, 0.5)",
-                          }}
-                          className="w-[320px] p-4 rounded-3xl cursor-default select-none text-[rgb(var(--foreground))]"
-                        >
-                          <div className="flex flex-col gap-3 w-full">
-                            {/* Header with Close Button */}
-                            <div className="flex items-center justify-between border-b pb-2.5" style={{ borderColor: `${badge.color}25` }}>
-                              <div className="flex items-center gap-2.5">
-                                <div
-                                  className="p-2 rounded-xl flex items-center justify-center shrink-0 shadow-xs"
-                                  style={{ backgroundColor: `${badge.color}20`, color: badge.color }}
-                                >
-                                  <IconComp size={16} />
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-[12px] font-sans font-black tracking-wider uppercase text-[rgb(var(--foreground))]">
-                                    {badge.collection}
-                                  </span>
-                                  <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-                                    {badge.activeFacts} Active Facts
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-full shadow-xs"
-                                  style={{ backgroundColor: `${badge.color}25`, color: badge.color }}
-                                >
-                                  {badge.factCount} Memories
-                                </span>
-                                <Tooltip label="Close details">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setExpandedBadge(null);
-                                    }}
-                                    className="p-1.5 rounded-xl hover:bg-black/10 dark:hover:bg-white/10 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
-                                  >
-                                    <X size={14} />
-                                  </button>
-                                </Tooltip>
-                              </div>
-                            </div>
-
-                            {/* Description */}
-                            <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] leading-relaxed">
-                              {badge.desc}
-                            </p>
-
-                            {/* Cross-Collection Directed Edges */}
-                            {badge.crossRelations.length > 0 && (
-                              <div className="flex flex-col gap-1.5 pt-2 border-t" style={{ borderColor: `${badge.color}20` }}>
-                                <div className="flex items-center justify-between px-0.5">
-                                  <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: badge.color }}>
-                                    Connected Clusters
-                                  </span>
-                                  <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-                                    {badge.totalRelations} Edges
-                                  </span>
-                                </div>
-
-                                <div className="flex flex-col gap-1.5">
-                                  {badge.crossRelations.map((rel, idx) => {
-                                    const targetColColor = getCollectionColor(rel.targetCollection, false, isLightMode).main;
-                                    return (
-                                      <div
-                                        key={idx}
-                                        className={cn(
-                                          "flex items-center justify-between text-[11px] font-sans p-2 rounded-xl border shadow-xs",
-                                          isLightMode
-                                            ? "bg-slate-100 border-slate-200 text-slate-800"
-                                            : "bg-white/[0.06] border-white/10 text-white"
-                                        )}
-                                      >
-                                        <div className="flex items-center gap-1.5 font-mono text-[11px] truncate">
-                                          <span className="font-bold" style={{ color: badge.color }}>
-                                            {rel.relation}
-                                          </span>
-                                          <span className="text-[rgb(var(--foreground-muted))]">➔</span>
-                                          <span className="font-semibold text-[rgb(var(--foreground))] truncate" style={{ color: targetColColor }}>
-                                            {rel.targetCollection}
-                                          </span>
-                                        </div>
-                                        <span
-                                          className="font-mono font-bold text-[11px] px-2 py-0.5 rounded-full shrink-0 shadow-xs"
-                                          style={{ backgroundColor: `${badge.color}20`, color: badge.color }}
-                                        >
-                                          {rel.count}
-                                        </span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    {/* Persistent Badge Button */}
+                    <motion.button
+                      type="button"
+                      initial={{ opacity: 0, scale: 0.92 }}
+                      animate={{ opacity: 1, scale: isSelected ? 1.06 : 1 }}
+                      exit={{ opacity: 0, scale: 0.92 }}
+                      transition={{ duration: 0.12, ease: "easeOut" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedBadge(isSelected ? null : badge.collection);
+                      }}
+                      style={{
+                        backgroundColor: isLightMode ? "#ffffff" : "rgba(var(--glass-navy), 0.98)",
+                        border: `1.5px solid ${badge.color}${isSelected ? "ff" : "70"}`,
+                        boxShadow: isSelected
+                          ? `0 0 16px ${badge.color}60`
+                          : isLightMode
+                          ? "0 4px 14px -2px rgba(15, 23, 42, 0.12), 0 1px 4px -1px rgba(0, 0, 0, 0.06)"
+                          : "0 6px 18px -2px rgba(0, 0, 0, 0.6), 0 2px 4px -1px rgba(0, 0, 0, 0.4)",
+                      }}
+                      className="flex items-center gap-2 px-3.5 py-1.5 rounded-full hover:scale-105 transition-transform cursor-pointer select-none text-[rgb(var(--foreground))]"
+                    >
+                      <IconComp size={16} style={{ color: badge.color }} className="shrink-0" />
+                      <span className="text-[12px] font-sans font-black tracking-wider text-[rgb(var(--foreground))] uppercase">
+                        {badge.collection}
+                      </span>
+                      <span
+                        className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full shadow-xs"
+                        style={{ backgroundColor: `${badge.color}25`, color: badge.color }}
+                      >
+                        {badge.factCount}
+                      </span>
+                    </motion.button>
                   </div>
                 );
               })}
+
+              {/* Separate Floating / Fixed Bottom Overlay Card */}
+              <AnimatePresence>
+                {expandedBadge && (() => {
+                  const activeBadge = clusterBadges.find((b) => b.collection === expandedBadge);
+                  if (!activeBadge) return null;
+                  const IconComp = getCollectionIcon(activeBadge.collection);
+                  const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : false;
+
+                  return (
+                    <motion.div
+                      key={`expanded-card-${activeBadge.collection}`}
+                      id={`badge-card-${activeBadge.collection}`}
+                      initial={{ opacity: 0, scale: 0.94, y: 8 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.94, y: 8 }}
+                      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                      onClick={(e) => e.stopPropagation()}
+                      style={
+                        isMobile
+                          ? {
+                              left: "16px",
+                              right: "16px",
+                              bottom: "76px",
+                              maxWidth: "380px",
+                              margin: "0 auto",
+                              backgroundColor: isLightMode ? "#ffffff" : "rgba(var(--glass-navy), 0.98)",
+                              border: `1.5px solid ${activeBadge.color}`,
+                              boxShadow: isLightMode
+                                ? "0 12px 32px -4px rgba(15, 23, 42, 0.20), 0 3px 8px -1px rgba(0, 0, 0, 0.10)"
+                                : "0 16px 40px -4px rgba(0, 0, 0, 0.85), 0 3px 8px -1px rgba(0, 0, 0, 0.5)",
+                            }
+                          : {
+                              left: `${Math.min(typeof window !== "undefined" ? window.innerWidth - 340 : 500, Math.max(20, activeBadge.screenX - 160))}px`,
+                              top: `${Math.min(typeof window !== "undefined" ? window.innerHeight - 380 : 400, Math.max(80, activeBadge.screenY + 24))}px`,
+                              backgroundColor: isLightMode ? "#ffffff" : "rgba(var(--glass-navy), 0.98)",
+                              border: `1.5px solid ${activeBadge.color}`,
+                              boxShadow: isLightMode
+                                ? "0 12px 32px -4px rgba(15, 23, 42, 0.20), 0 3px 8px -1px rgba(0, 0, 0, 0.10)"
+                                : "0 16px 40px -4px rgba(0, 0, 0, 0.85), 0 3px 8px -1px rgba(0, 0, 0, 0.5)",
+                            }
+                      }
+                      className={cn(
+                        "fixed z-40 p-4 sm:p-5 rounded-3xl cursor-default select-none text-[rgb(var(--foreground))] pointer-events-auto shadow-2xl",
+                        isMobile
+                          ? "max-h-[calc(100vh-150px)] overflow-y-auto custom-scrollbar"
+                          : "w-[320px] max-h-[520px] overflow-y-auto custom-scrollbar"
+                      )}
+                    >
+                      <div className="flex flex-col gap-3 w-full">
+                        {/* Header with Close Button */}
+                        <div className="flex items-center justify-between border-b pb-2.5" style={{ borderColor: `${activeBadge.color}25` }}>
+                          <div className="flex items-center gap-2.5">
+                            <div
+                              className="p-2 rounded-xl flex items-center justify-center shrink-0 shadow-xs"
+                              style={{ backgroundColor: `${activeBadge.color}20`, color: activeBadge.color }}
+                            >
+                              <IconComp size={16} />
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-[12px] font-sans font-black tracking-wider uppercase text-[rgb(var(--foreground))]">
+                                {activeBadge.collection}
+                              </span>
+                              <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
+                                {activeBadge.activeFacts} Active Facts
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-full shadow-xs"
+                              style={{ backgroundColor: `${activeBadge.color}25`, color: activeBadge.color }}
+                            >
+                              {activeBadge.factCount} Memories
+                            </span>
+                            <Tooltip label="Close details">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedBadge(null);
+                                }}
+                                className="p-1.5 rounded-xl hover:bg-black/10 dark:hover:bg-white/10 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                              >
+                                <X size={14} />
+                              </button>
+                            </Tooltip>
+                          </div>
+                        </div>
+
+                        {/* Description */}
+                        <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] leading-relaxed">
+                          {activeBadge.desc}
+                        </p>
+
+                        {/* Cross-Collection Directed Edges */}
+                        {activeBadge.crossRelations.length > 0 && (
+                          <div className="flex flex-col gap-1.5 pt-2 border-t" style={{ borderColor: `${activeBadge.color}20` }}>
+                            <div className="flex items-center justify-between px-0.5">
+                              <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: activeBadge.color }}>
+                                Connected Clusters
+                              </span>
+                              <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
+                                {activeBadge.totalRelations} Edges
+                              </span>
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                              {activeBadge.crossRelations.map((rel) => {
+                                const targetColColor = getCollectionColor(rel.targetCollection, false, isLightMode).main;
+                                return (
+                                  <div
+                                    key={`${activeBadge.collection}-${rel.relation}-${rel.targetCollection}`}
+                                    className={cn(
+                                      "flex items-center justify-between text-[11px] font-sans p-2 rounded-xl border shadow-xs",
+                                      isLightMode
+                                        ? "bg-slate-100 border-slate-200 text-slate-800"
+                                        : "bg-white/[0.06] border-white/10 text-white"
+                                    )}
+                                  >
+                                    <div className="flex items-center gap-1.5 font-mono text-[11px] truncate">
+                                      <span className="font-bold" style={{ color: activeBadge.color }}>
+                                        {rel.relation}
+                                      </span>
+                                      <span className="text-[rgb(var(--foreground-muted))]">➔</span>
+                                      <span className="font-semibold text-[rgb(var(--foreground))] truncate" style={{ color: targetColColor }}>
+                                        {rel.targetCollection}
+                                      </span>
+                                    </div>
+                                    <span
+                                      className="font-mono font-bold text-[11px] px-2 py-0.5 rounded-full shrink-0 shadow-xs"
+                                      style={{ backgroundColor: `${activeBadge.color}20`, color: activeBadge.color }}
+                                    >
+                                      {rel.count}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })()}
+              </AnimatePresence>
             </div>
           )}
         </div>
       </GraphErrorBoundary>
     );
-  }
+  })
 );
 
 MemoryGraph.displayName = "MemoryGraph";

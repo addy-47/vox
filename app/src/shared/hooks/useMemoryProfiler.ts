@@ -156,6 +156,7 @@ export function useMemoryProfiler(enabled = true) {
   // ─── Track Route Changes for UI Display (No Disk Snapshot Writes on Drawer Open) ──────
   useEffect(() => {
     if (!enabled) return;
+    let isCancelled = false;
     const route = location.pathname;
 
     const activeComponents = Object.keys(componentTracesRef.current).filter(
@@ -165,7 +166,7 @@ export function useMemoryProfiler(enabled = true) {
     // Capture memory state for UI inspection only (without writing files to disk)
     (async () => {
       const snap = await captureSnapshot({ isManual: false });
-      if (!snap) return;
+      if (!snap || isCancelled) return;
 
       setPageRecords((prev) => {
         const prevRec = prev[route];
@@ -185,6 +186,10 @@ export function useMemoryProfiler(enabled = true) {
         };
       });
     })();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [location.pathname, enabled, captureSnapshot]);
 
   // ─── Initial Snapshot on Open (No periodic auto-polling; manual snapshots on-demand) ─────
@@ -233,14 +238,16 @@ export function useMemoryProfiler(enabled = true) {
       }
     };
 
-    // Stagger by 2.5s so poll events don't collide with the UI refresh IPC call
+    let intervalId: ReturnType<typeof setInterval> | null = null;
     const timerId = setTimeout(() => {
       diagPoll();
-      const id = setInterval(diagPoll, DIAG_INTERVAL_MS);
-      return () => clearInterval(id);
+      intervalId = setInterval(diagPoll, DIAG_INTERVAL_MS);
     }, 2500);
 
-    return () => clearTimeout(timerId);
+    return () => {
+      clearTimeout(timerId);
+      if (intervalId) clearInterval(intervalId);
+    };
   }, [enabled, captureSnapshot]);
 
   const clearHistory = useCallback(() => {

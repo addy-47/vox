@@ -67,7 +67,7 @@ pub use embedder::{
 };
 pub use formatter::format_relative_timestamp;
 pub use query_sieve::MemoryScope;
-pub use retrieval::{retrieve_personal_context_v7, MemoryFact};
+pub use retrieval::{retrieve_personal_context, MemoryFact};
 pub use tokenizer::estimate_tokens;
 pub use working_memory::{ChatMessage, ConversationContext, ConversationManager, Role};
 

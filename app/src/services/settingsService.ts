@@ -100,11 +100,6 @@ export function listInputDevices(): Promise<AudioDevice[]> {
   return invoke("list_input_devices");
 }
 
-/** List audio output devices (ipc/audio.rs). */
-export function listOutputDevices(): Promise<AudioDevice[]> {
-  return invoke("list_output_devices");
-}
-
 /** Mark setup wizard as completed (ipc/settings.rs). */
 export function completeSetupWizard(): Promise<void> {
   return invoke("complete_setup_wizard");
