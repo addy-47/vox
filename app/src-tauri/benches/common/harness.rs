@@ -135,7 +135,6 @@ pub fn benchmark_streaming_provider(
         let stream_start = Instant::now();
         let mut partials_count = 0;
         let mut final_utterances: Vec<String> = Vec::new();
-        let final_transcript;
 
         // 1. Stream 256-sample chunks to VAD ring buffer
         let mut speech_ends_seen = 0;
@@ -246,7 +245,7 @@ pub fn benchmark_streaming_provider(
             }
         }
 
-        final_transcript = final_utterances.join(" ");
+        let final_transcript = final_utterances.join(" ");
 
         // Clean isolation between clips: ensure queues are fully empty before next clip
         std::thread::sleep(Duration::from_millis(100));

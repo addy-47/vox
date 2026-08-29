@@ -299,8 +299,20 @@ impl LlmWorker {
             .with_use_mlock(true);
 
         log::info!("[LLM] Loading GGUF: {:?}", resolved);
-        let model = LlamaModel::load_from_file(backend, &resolved, &model_params)
-            .map_err(|e| anyhow!("[LLM] Failed to load model: {}", e))?;
+        let model = match LlamaModel::load_from_file(backend, &resolved, &model_params) {
+            Ok(m) => m,
+            Err(e) => {
+                log::warn!(
+                    "[LLM] Failed to load model with mlock: {}. Retrying without mlock...",
+                    e
+                );
+                let fallback_params = LlamaModelParams::default()
+                    .with_n_gpu_layers(0)
+                    .with_use_mlock(false);
+                LlamaModel::load_from_file(backend, &resolved, &fallback_params)
+                    .map_err(|e2| anyhow!("[LLM] Failed to load model without mlock: {}", e2))?
+            }
+        };
 
         log::info!(
             "[LLM] Model loaded. family={:?} ctx_size={} n_threads={}",
@@ -337,12 +349,13 @@ impl LlmWorker {
         let mut ctx_lock = self.ctx.lock();
         if ctx_lock.is_none() {
             log::info!("[LLM] Lazy initializing LlamaContext on stable execution address...");
+            let effective_ctx = self.ctx_size.max(512);
             let ctx_params = LlamaContextParams::default()
-                .with_n_ctx(Some(NonZeroU32::new(self.ctx_size).unwrap()))
+                .with_n_ctx(NonZeroU32::new(effective_ctx))
                 .with_n_threads(self.n_threads as i32)
                 .with_n_threads_batch(self.n_threads as i32)
-                .with_n_batch(self.ctx_size)
-                .with_n_ubatch(self.ctx_size);
+                .with_n_batch(super::DEFAULT_BATCH_CHUNK_SIZE as u32)
+                .with_n_ubatch(super::DEFAULT_BATCH_CHUNK_SIZE as u32);
 
             let ctx = self
                 .model
@@ -387,11 +400,6 @@ impl LlmEngine for LlmWorker {
             .unwrap_or("You are Vox.");
 
         let mut cache_lock = self.cache_state.lock();
-        if conv_ctx.kv_cache_index == 0 {
-            log::info!("[LLM] kv_cache_index is 0. Resetting KV cache state...");
-            *cache_lock = None;
-        }
-
         let mut system_tokens_len = 0;
         let mut initial_seq_len = 0;
         let mut cache_hit = false;
@@ -420,6 +428,16 @@ impl LlmEngine for LlmWorker {
                     .map_err(|e| anyhow!("[LLM] Tokenize user prompt failed: {}", e))?;
 
                 if !user_tokens.is_empty() {
+                    if cancel_flag.load(Ordering::Relaxed) {
+                        log::info!("[LLM] Generation cancelled during user prompt tokenization/decode.");
+                        *cache_lock = None;
+                        ctx.clear_kv_cache();
+                        if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
+                            log::warn!("[LLM] Failed to send Cancelled event during user decode: {}", e);
+                        }
+                        return Ok(());
+                    }
+
                     let total_input_tokens = initial_seq_len + user_tokens.len();
                     let mut batch = LlamaBatch::new(user_tokens.len(), 1);
 
@@ -439,7 +457,7 @@ impl LlmEngine for LlmWorker {
                 }
             }
         } else {
-            log::info!("[LLM] KV cache miss or index 0. Prefilling full conversation context...");
+            log::info!("[LLM] KV cache miss or new system prompt. Prefilling full conversation context...");
             ctx.clear_kv_cache();
 
             let full_prompt = self.family.format_conversation(&conv_ctx.messages);
@@ -460,6 +478,15 @@ impl LlmEngine for LlmWorker {
                 let total = prompt_tokens.len();
                 let mut offset = 0;
                 while offset < total {
+                    if cancel_flag.load(Ordering::Relaxed) {
+                        log::info!("[LLM] Generation cancelled during prefill decode phase.");
+                        *cache_lock = None;
+                        ctx.clear_kv_cache();
+                        if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
+                            log::warn!("[LLM] Failed to send Cancelled event during prefill: {}", e);
+                        }
+                        return Ok(());
+                    }
                     let end = (offset + n_batch_chunk).min(total);
                     let chunk = &prompt_tokens[offset..end];
                     let mut batch = LlamaBatch::new(chunk.len(), 1);

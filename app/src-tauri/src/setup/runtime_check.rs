@@ -111,8 +111,8 @@ fn check_disk_space(path: &Path, required_bytes: u64) -> (f32, f32, bool) {
                 return (available_gb, total_gb, available >= required_bytes);
             }
         }
-        log::warn!("[verify_runtime] Could not determine disk space for path {:?}. Proceeding with fallback.", path);
-        (100.0, 100.0, true)
+        log::warn!("[verify_runtime] Could not determine disk space for path {:?}. Failing verification.", path);
+        (0.0, 0.0, false)
     }
 }
 

@@ -117,7 +117,24 @@ The `wiring_memory_pipeline_refactor_spec.md` is the checklist; this subsection 
 
 - **Streaming Benchmark Runner (`app/src-tauri/benches/stt_bench.rs`):** CLI harness (`--model`, `--clip`, `--input-dir`, `--output-dir`, `--min-similarity`) simulating 256-sample streaming through `VadActor` $\to$ `SttWorker` across 10 canonical test clips, persisting reports to `benches/results/stt_bench/<run_id>/report.json` + `latest.json`.
 - **Sherpa-ONNX 1.13.6 Consolidation:** Replaced `parakeet-rs` with `sherpa-onnx` `OnlineRecognizer` using multilingual Nemotron-3.5 transducer (`0.497x RTF`, `97.1% accuracy` [EN: 99.0%, HI: 95.2%], `~71 MB RSS`, 10/10 clips passing `>= 0.90` gate). Removed `parakeet-rs` crate; all STT, TTS, and VAD standardized on `sherpa-onnx 1.13.6`.
-- **Ledger:** [`docs/benchmarks/stt_benchmark.md`](file:///home/addy/projects/apps/vox/docs/benchmarks/stt_benchmark.md).
 
+### 5.6 Backend Codebase Review & Resolution Specification — Summary
 
-
+- **Complete 188-Sprint Second-Pass Audit (`docs/plans/phase10/backend_review_resolution_spec.md`):** Translated all 11 backend review modules into an actionable, engineer-ready implementation spec across 188 individual sprints using the `/feedback-review` and `/grill-me` protocol.
+- **Master Checklist SSOT (`docs/plans/phase10/backend_review_sprints.md`):** 100% completed (`188/188` sprints verified and marked `[x]`).
+- **Core Architecture Alignments & Review Banners:**
+  1. *LLM Provider Consolidation (Sprints 085, 086, 088):* Dedicated review flag for unified `OpenAiCompatProvider` consolidation.
+  2. *PTT Realtime Audio Ownership (Sprint 072):* Dedicated review flag for audio ownership alignment between `realtime::ptt` and local VAD.
+  3. *Memory Formatting & Context Assembly (Sprints 109, 110):* Dedicated review flag for single `<user_profile>` context assembler SSOT.
+  4. *Turn ID Synchronization Architecture (Sprints 115, 121, 126):* Authoritative turn ID minting lifecycle eliminating `turn_id: 0` resets.
+  5. *Streaming STT & Transliteration Lifecycle:* Transliteration lifecycle locked 1:1 with STT under 8GB RAM constraints; streaming state carried via `sherpa-onnx` 1.13.6 transducer.
+  6. *Latency Telemetry & Monitoring:* Wired `InteractionMetric` pipeline turn-completion producer for real-time sub-200ms KPI tracking.
+  7. *Standalone Architecture Specs:*
+     - [`llm_tts_playback_streaming_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/llm_tts_playback_streaming_spec.md) (LLM-to-TTS-to-Playback streaming, Chatterbox/EdgeTTS refactors, and 4-case dynamic buffering roadmap).
+     - [`llm_provider_consolidation_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/llm_provider_consolidation_spec.md) (Unified `OpenAiCompatProvider`).
+     - [`turn_id_sync_architecture_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/turn_id_sync_architecture_spec.md) (Monotonic Turn ID lifecycle).
+     - [`memory_formatting_context_assembly_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/memory_formatting_context_assembly_spec.md) (`<user_profile>` context assembler SSOT).
+     - [`audio_ownership_domain_decoupling_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/audio_ownership_domain_decoupling_spec.md) (VAD 3-role primitives, PTT audio ownership, and full service decoupling).
+- **Ledgers:** [`docs/plans/phase10/backend_review_resolution_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/backend_review_resolution_spec.md) and [`docs/plans/phase10/backend_review_sprints.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/backend_review_sprints.md).
+- **Implementation Sprint Execution Progress:**
+  - `IS-01` through `IS-38-E` (Review Sprints 001–188, Modules 01–11: Core + Shell + IPC + Persistence + Audio + VAD/Dictation + LLM + Memory + Pipeline Orchestration + Realtime Providers + STT/TTS Engines + Monitoring/Setup/Evals/Benchmarks Complete): **100% COMPLETED and verified** (all 188 review sprints executed, full `cargo-nextest` suite green in release mode, 0 clippy warnings).

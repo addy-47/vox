@@ -11,14 +11,15 @@ use ringbuf::{HeapCons, HeapProd};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-/// Upsample 24kHz mono PCM to 48kHz via cubic Hermite interpolation.
+/// Upsample 24kHz mono PCM to 48kHz via cubic Hermite interpolation into a reusable buffer.
 #[inline]
-pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
+pub fn upsample_2x_into(input: &[f32], out: &mut Vec<f32>) {
+    out.clear();
     if input.is_empty() {
-        return Vec::new();
+        return;
     }
     let len = input.len();
-    let mut out = Vec::with_capacity(len * 2);
+    out.reserve(len * 2);
     for i in 0..len {
         let p1 = input[i];
         out.push(p1);
@@ -30,17 +31,23 @@ pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
         let midpoint = (-p0 + 9.0 * p1 + 9.0 * p2 - p3) / 16.0;
         out.push(midpoint);
     }
+}
+
+/// Upsample 24kHz mono PCM to 48kHz via cubic Hermite interpolation.
+#[inline]
+pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
+    let mut out = Vec::with_capacity(input.len() * 2);
+    upsample_2x_into(input, &mut out);
     out
 }
 
 /// Core audio output playback engine managing CPAL stream draining and telemetry.
 pub struct PlaybackEngine {
-    producer: Mutex<HeapProd<f32>>,
+    producer: Mutex<(HeapProd<f32>, Vec<f32>)>,
     playback_active: Arc<AtomicBool>,
     cancel_flag: Arc<AtomicBool>,
     discard_request: Arc<AtomicBool>,
     _stream: Option<cpal::Stream>,
-    buffer_samples: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 /// Telemetry and visualization atomics passed to the playback engine.
@@ -66,7 +73,6 @@ impl PlaybackEngine {
     ) -> Result<Self> {
         let rb = ringbuf::HeapRb::<f32>::new(PLAYBACK_BUFFER_SAMPLES);
         let (producer, consumer) = rb.split();
-        let buffer_samples = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let discard_request = Arc::new(AtomicBool::new(false));
 
         let stream = Self::build_cpal_stream(
@@ -75,17 +81,15 @@ impl PlaybackEngine {
             Arc::clone(&cancel_flag),
             Arc::clone(&discard_request),
             Arc::clone(&is_assistant_speaking),
-            Arc::clone(&buffer_samples),
             &telemetry,
         )?;
 
         Ok(Self {
-            producer: Mutex::new(producer),
+            producer: Mutex::new((producer, Vec::with_capacity(4096))),
             playback_active,
             cancel_flag,
             discard_request,
             _stream: Some(stream),
-            buffer_samples,
         })
     }
 
@@ -95,18 +99,17 @@ impl PlaybackEngine {
             return;
         }
 
-        let upsampled = upsample_2x(chunk_24khz);
-        let mut prod = self.producer.lock();
+        let mut guard = self.producer.lock();
+        let (ref mut prod, ref mut scratch) = *guard;
+        upsample_2x_into(chunk_24khz, scratch);
 
-        let pushed = prod.push_slice(&upsampled);
-        if pushed < upsampled.len() {
+        let pushed = prod.push_slice(scratch);
+        if pushed < scratch.len() {
             log::warn!(
                 "[Audio::Playback] Buffer overflow — dropped {} samples",
-                upsampled.len() - pushed
+                scratch.len() - pushed
             );
         }
-
-        self.buffer_samples.fetch_add(pushed, Ordering::SeqCst);
     }
 
     /// Explicitly triggers CPAL playback if samples are available in the buffer.
@@ -115,7 +118,7 @@ impl PlaybackEngine {
             return;
         }
         if !self.playback_active.load(Ordering::Relaxed) {
-            let current_len = self.buffer_samples.load(Ordering::SeqCst);
+            let current_len = self.producer.lock().0.occupied_len();
             if current_len > 0 {
                 log::info!(
                     "[Audio::Playback] start_playback requested ({} samples buffered) — starting output",
@@ -131,18 +134,12 @@ impl PlaybackEngine {
         self.cancel_flag.store(true, Ordering::Relaxed);
         self.playback_active.store(false, Ordering::Relaxed);
         self.discard_request.store(true, Ordering::Relaxed);
-        self.buffer_samples.store(0, Ordering::SeqCst);
         log::info!("[Audio::Playback] Cancelled — buffer signal sent");
-    }
-
-    /// Returns whether playback is currently idle.
-    pub fn is_idle(&self) -> bool {
-        !self.playback_active.load(Ordering::Relaxed)
     }
 
     /// Returns the number of unplayed audio samples remaining in the buffer.
     pub fn buffer_len(&self) -> usize {
-        self.buffer_samples.load(Ordering::Relaxed)
+        self.producer.lock().0.occupied_len()
     }
 
     /// Builds and starts the CPAL 48kHz stereo output stream.
@@ -152,7 +149,6 @@ impl PlaybackEngine {
         cancel_flag: Arc<AtomicBool>,
         discard_request: Arc<AtomicBool>,
         is_assistant_speaking: Arc<AtomicBool>,
-        buffer_samples: Arc<std::sync::atomic::AtomicUsize>,
         telemetry: &PlaybackTelemetryHandles,
     ) -> Result<cpal::Stream> {
         let host = cpal::default_host();
@@ -169,7 +165,6 @@ impl PlaybackEngine {
             playback_high: Arc::clone(&telemetry.high),
             playback_underruns: Arc::clone(&telemetry.underruns),
             is_assistant_speaking,
-            buffer_samples,
             last_sample: 0.0,
             current_volume: PLAYBACK_DEFAULT_VOLUME,
             filter_bank: crate::utils::audio_filters::FilterBank::new(PLAYBACK_SAMPLE_RATE as f32),
@@ -246,7 +241,6 @@ struct PlaybackStreamContext {
     playback_high: Arc<std::sync::atomic::AtomicU32>,
     playback_underruns: Arc<std::sync::atomic::AtomicU64>,
     is_assistant_speaking: Arc<AtomicBool>,
-    buffer_samples: Arc<std::sync::atomic::AtomicUsize>,
     last_sample: f32,
     current_volume: f32,
     filter_bank: crate::utils::audio_filters::FilterBank,
@@ -257,7 +251,6 @@ impl PlaybackStreamContext {
     fn process_output_buffer(&mut self, output: &mut [f32]) {
         if self.discard_request.load(Ordering::Relaxed) {
             self.consumer.skip(self.consumer.occupied_len());
-            self.buffer_samples.store(0, Ordering::SeqCst);
             self.discard_request.store(false, Ordering::Relaxed);
             self.reset_telemetry_state();
         }
@@ -266,7 +259,6 @@ impl PlaybackStreamContext {
         {
             if self.cancel_flag.load(Ordering::Relaxed) {
                 self.consumer.skip(self.consumer.occupied_len());
-                self.buffer_samples.store(0, Ordering::SeqCst);
             }
             self.reset_telemetry_state();
             output.fill(0.0);
@@ -290,13 +282,11 @@ impl PlaybackStreamContext {
         let mut sum_low_sq = 0.0;
         let mut sum_mid_sq = 0.0;
         let mut sum_high_sq = 0.0;
-        let mut read_count = 0;
 
         for frame in 0..frames {
             let sample_opt = self.consumer.try_pop();
             let (sample, target_volume) = match sample_opt {
                 Some(s) => {
-                    read_count += 1;
                     self.last_sample = s;
                     (s, PLAYBACK_DEFAULT_VOLUME)
                 }
@@ -323,11 +313,6 @@ impl PlaybackStreamContext {
             output[frame * 2 + 1] = played_sample;
         }
 
-        self.buffer_samples.fetch_sub(
-            read_count.min(self.buffer_samples.load(Ordering::Relaxed)),
-            Ordering::SeqCst,
-        );
-
         self.update_energy_metrics(frames, sum_sq, sum_low_sq, sum_mid_sq, sum_high_sq);
 
         if self.consumer.is_empty() {
@@ -340,7 +325,6 @@ impl PlaybackStreamContext {
             self.playback_low.store(0f32.to_bits(), Ordering::Relaxed);
             self.playback_mid.store(0f32.to_bits(), Ordering::Relaxed);
             self.playback_high.store(0f32.to_bits(), Ordering::Relaxed);
-            self.buffer_samples.store(0, Ordering::SeqCst);
             self.reset_telemetry_state();
         }
     }

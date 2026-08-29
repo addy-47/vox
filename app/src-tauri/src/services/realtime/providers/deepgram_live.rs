@@ -116,6 +116,8 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         let ws_sender: Arc<Mutex<Option<UnboundedSender<Message>>>> = Arc::new(Mutex::new(None));
         let ws_sender_audio = ws_sender.clone();
         let ws_sender_control = ws_sender.clone();
+        let terminated = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let terminated_clone = terminated.clone();
 
         let audio_sender_task = handle.spawn(async move {
             let mut packet_count: u64 = 0;
@@ -238,8 +240,8 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                             .chunks_exact(2)
                             .map(|c| i16::from_le_bytes([c[0], c[1]]))
                             .collect();
-                        if let Err(e) = playback_tx_recv.try_send(pcm) {
-                            log::warn!("[DeepgramVoiceAgent] Playback bridge buffer full: {:?}", e);
+                        if let Err(e) = playback_tx_recv.send(pcm).await {
+                            log::warn!("[DeepgramVoiceAgent] Playback bridge channel closed: {:?}", e);
                         }
                     }
                     Ok(Message::Close(cf)) => {
@@ -343,8 +345,8 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                                                 .chunks_exact(2)
                                                 .map(|c| i16::from_le_bytes([c[0], c[1]]))
                                                 .collect();
-                                            if let Err(e) = new_playback_tx.try_send(pcm) {
-                                                log::warn!("[DeepgramVoiceAgent] Reconnected Playback bridge buffer full: {:?}", e);
+                                            if let Err(e) = new_playback_tx.send(pcm).await {
+                                                log::warn!("[DeepgramVoiceAgent] Reconnected Playback bridge channel closed: {:?}", e);
                                             }
                                         }
                                         Ok(Message::Close(cf)) => {
@@ -387,6 +389,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                     }) {
                         log::warn!("[DeepgramVoiceAgent] Failed to send permanent error event: {:?}", e);
                     }
+                    terminated_clone.store(true, Ordering::SeqCst);
                     *ws_sender.lock() = None;
                     audio_sender_task.abort();
                     control_sender_task.abort();
@@ -401,6 +404,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
             shutdown_tx: parking_lot::Mutex::new(Some(shutdown_tx)),
             ws_connected,
             last_activity_time: last_activity_time_sender,
+            terminated,
         }))
     }
 
@@ -593,11 +597,15 @@ pub struct DeepgramVoiceAgentSession {
     shutdown_tx: parking_lot::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     ws_connected: Arc<std::sync::atomic::AtomicBool>,
     last_activity_time: Arc<std::sync::atomic::AtomicU64>,
+    terminated: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl RealtimeSession for DeepgramVoiceAgentSession {
     /// Enqueues PCM audio chunk for transmission to Deepgram.
     fn send_audio(&self, pcm: &[i16]) -> Result<()> {
+        if self.terminated.load(Ordering::Relaxed) {
+            bail!("Deepgram Voice Agent session is terminated");
+        }
         self.last_activity_time.store(
             chrono::Utc::now().timestamp_millis() as u64,
             Ordering::Relaxed,
@@ -628,13 +636,17 @@ impl RealtimeSession for DeepgramVoiceAgentSession {
         Ok(())
     }
 
-    /// Signals start of speech activity.
+    /// Signals start of speech activity. Deepgram Voice Agent operates continuous streaming with server-side VAD (flux model),
+    /// so client-side speech start is an intentional no-op.
     fn activity_start(&self) -> Result<()> {
+        log::trace!("[DeepgramVoiceAgent] activity_start (no-op on continuous VAD agent)");
         Ok(())
     }
 
-    /// Signals end of speech activity.
+    /// Signals end of speech activity. Deepgram Voice Agent operates continuous streaming with server-side VAD (flux model),
+    /// so client-side speech end is an intentional no-op.
     fn activity_end(&self) -> Result<()> {
+        log::trace!("[DeepgramVoiceAgent] activity_end (no-op on continuous VAD agent)");
         Ok(())
     }
 
@@ -666,6 +678,7 @@ fn handle_deepgram_server_message(
     }
 
     if let Some(msg_type) = val.get("type").and_then(|v| v.as_str()) {
+        log::trace!("[DeepgramVoiceAgent] Inbound message type: {}", msg_type);
         match msg_type {
             "UserStartedSpeaking" => {
                 log::info!("[DeepgramVoiceAgent] User started speaking (barge-in).");
@@ -681,6 +694,7 @@ fn handle_deepgram_server_message(
             "ConversationText" => {
                 let role = val.get("role").and_then(|v| v.as_str()).unwrap_or("");
                 let content = val.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                log::trace!("[DeepgramVoiceAgent] ConversationText role={}: {:?}", role, content);
 
                 if role == "user" {
                     log::debug!("[DeepgramVoiceAgent] User final transcript: {:?}", content);

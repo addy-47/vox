@@ -20,39 +20,34 @@ impl MonitoringState {
 
     /// Adds a new snapshot to the history, evicting the oldest if capacity is exceeded.
     pub fn push(&self, snapshot: RuntimeSnapshot) {
-        if let Ok(mut latest) = self.latest.write() {
-            *latest = Some(snapshot.clone());
-        }
+        let mut latest = self.latest.write().unwrap_or_else(|e| e.into_inner());
+        *latest = Some(snapshot.clone());
 
-        if let Ok(mut history) = self.history.write() {
-            history.push_back(snapshot);
-            if history.len() > MAX_SNAPSHOT_HISTORY {
-                history.pop_front();
-            }
+        let mut history = self.history.write().unwrap_or_else(|e| e.into_inner());
+        history.push_back(snapshot);
+        if history.len() > MAX_SNAPSHOT_HISTORY {
+            history.pop_front();
         }
     }
 
     /// Gets the most recent snapshot if available.
     pub fn get_latest(&self) -> Option<RuntimeSnapshot> {
-        self.latest.read().ok().and_then(|guard| guard.clone())
+        let guard = self.latest.read().unwrap_or_else(|e| e.into_inner());
+        guard.clone()
     }
 
     /// Gets the full history of recorded snapshots.
     pub fn get_history(&self) -> Vec<RuntimeSnapshot> {
-        self.history
-            .read()
-            .map(|guard| guard.iter().cloned().collect())
-            .unwrap_or_default()
+        let guard = self.history.read().unwrap_or_else(|e| e.into_inner());
+        guard.iter().cloned().collect()
     }
 
     /// Clears all recorded snapshot history and latest state.
     pub fn clear(&self) {
-        if let Ok(mut history) = self.history.write() {
-            history.clear();
-        }
-        if let Ok(mut latest) = self.latest.write() {
-            *latest = None;
-        }
+        let mut history = self.history.write().unwrap_or_else(|e| e.into_inner());
+        history.clear();
+        let mut latest = self.latest.write().unwrap_or_else(|e| e.into_inner());
+        *latest = None;
     }
 }
 

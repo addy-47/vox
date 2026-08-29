@@ -45,12 +45,12 @@ async fn handle_dictation_side_effects(
             .is_dictation_enabled
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
         let is_clickable = enabled && is_tray_mode;
-        let menu_item_lock = state.hud_menu_item.lock().await;
+        let menu_item_lock = state.hud_menu_item.lock();
         if let Some(ref live_i) = *menu_item_lock {
             if let Err(e) = live_i.set_enabled(is_clickable) {
                 log::warn!("[Settings::Mutation] Failed to set menu item enabled: {}", e);
             }
-            let hud_visible = *state.hud_visible.lock().await;
+            let hud_visible = state.hud_visible.load(std::sync::atomic::Ordering::Relaxed);
             if let Err(e) = live_i.set_checked(hud_visible && is_clickable) {
                 log::warn!("[Settings::Mutation] Failed to set menu item checked: {}", e);
             }
@@ -96,12 +96,12 @@ async fn handle_dictation_side_effects(
         let is_tray_mode = output_mode == crate::core::settings::DictationOutputMode::Tray;
         let is_clickable = enabled && is_tray_mode;
 
-        let menu_item_lock = state.hud_menu_item.lock().await;
+        let menu_item_lock = state.hud_menu_item.lock();
         if let Some(ref live_i) = *menu_item_lock {
             if let Err(e) = live_i.set_enabled(is_clickable) {
                 log::warn!("[Settings::Mutation] Failed to set menu item enabled: {}", e);
             }
-            let hud_visible = *state.hud_visible.lock().await;
+            let hud_visible = state.hud_visible.load(std::sync::atomic::Ordering::Relaxed);
             if let Err(e) = live_i.set_checked(hud_visible && is_clickable) {
                 log::warn!("[Settings::Mutation] Failed to set menu item checked: {}", e);
             }
@@ -186,6 +186,7 @@ async fn handle_setting_side_effects(
     if domain == "history" && key == "private_mode" {
         let is_private = value.as_bool().unwrap_or(false);
         state
+            .telemetry
             .is_private_mode
             .store(is_private, std::sync::atomic::Ordering::Relaxed);
         log::info!("[Settings] Privacy Mode updated: enabled={}", is_private);
@@ -320,76 +321,99 @@ pub async fn reset_settings(app: AppHandle) -> Result<VoxSettings, String> {
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
 
-/// Applies a mutation to the settings struct by domain+key routing.
-/// Returns `true` if the key was recognized and applied.
-pub(crate) fn apply_setting_mutation(
+fn apply_appearance_mutation(
     settings: &mut VoxSettings,
-    domain: &str,
     key: &str,
     value: &serde_json::Value,
 ) -> Result<bool, String> {
-    match (domain, key) {
-        // Appearance
-        ("appearance", "theme") => {
+    match key {
+        "theme" => {
             settings.appearance.theme = value.as_str().ok_or("theme must be a string")?.to_string();
         }
-        ("appearance", "accent_seed") => {
+        "accent_seed" => {
             settings.appearance.accent_seed = value
                 .as_str()
                 .ok_or("accent_seed must be a string")?
                 .to_string();
         }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
 
-        // Audio
-        ("audio", "output_mode") => {
+fn apply_audio_mutation(
+    settings: &mut VoxSettings,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match key {
+        "output_mode" => {
             settings.audio.output_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid output_mode: {}", e))?;
         }
-        ("audio", "input_device") => {
+        "input_device" => {
             settings.audio.input_device = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid input_device: {}", e))?;
         }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
 
-        // VAD
-        ("vad", "threshold") => {
+fn apply_vad_mutation(
+    settings: &mut VoxSettings,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match key {
+        "threshold" => {
             let threshold = value.as_f64().ok_or("threshold must be a number")? as f32;
             if !(0.0..=1.0).contains(&threshold) {
                 return Err("threshold must be between 0.0 and 1.0".to_string());
             }
             settings.vad.threshold = threshold;
         }
-        ("vad", "ptt_noise_gate") => {
+        "ptt_noise_gate" => {
             settings.vad.ptt_noise_gate =
                 value.as_f64().ok_or("ptt_noise_gate must be a number")? as f32;
         }
-        ("vad", "vad_backend") => {
+        "vad_backend" => {
             settings.vad.vad_backend = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid vad backend: {}", e))?;
         }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
 
-        // STT
-        ("stt", "active") => {
+fn apply_stt_mutation(
+    settings: &mut VoxSettings,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match key {
+        "active" => {
             settings.stt.active = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid STT active provider: {}", e))?;
         }
-        ("stt", "model") => {
+        "model" => {
             settings.stt.embedded.model =
                 value.as_str().ok_or("model must be a string")?.to_string();
         }
-        ("stt", "transliterate_enabled") => {
+        "transliterate_enabled" => {
             settings.stt.transliterate_enabled = value
                 .as_bool()
                 .ok_or("transliterate_enabled must be a boolean")?;
         }
-        ("stt", "embedded") => {
+        "embedded" => {
             settings.stt.embedded = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid STT embedded config: {}", e))?;
         }
-        ("stt", "cloud") => {
+        "cloud" => {
             settings.stt.cloud = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid STT cloud config: {}", e))?;
         }
-        ("stt", "provider") => {
+        "provider" => {
             if let Ok(config) =
                 serde_json::from_value::<crate::core::settings::SttProviderConfig>(value.clone())
             {
@@ -423,13 +447,22 @@ pub(crate) fn apply_setting_mutation(
                 }
             }
         }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
 
-        // LLM
-        ("llm", "active") => {
+fn apply_llm_mutation(
+    settings: &mut VoxSettings,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match key {
+        "active" => {
             settings.llm.active = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid LLM active provider: {}", e))?;
         }
-        ("llm", "model") => {
+        "model" => {
             let model_str = value.as_str().ok_or("model must be a string")?.to_string();
             match settings.llm.active {
                 crate::core::settings::LlmActiveProvider::Embedded => {
@@ -443,22 +476,26 @@ pub(crate) fn apply_setting_mutation(
                 }
             }
         }
-        ("llm", "temperature") => {
+        "temperature" => {
             settings.llm.temperature = value.as_f64().ok_or("temperature must be a number")? as f32;
         }
-        ("llm", "compaction_temperature") => {
+        "compaction_temperature" => {
             settings.llm.compaction_temperature = value
                 .as_f64()
                 .ok_or("compaction_temperature must be a number")?
                 as f32;
         }
-        ("llm", "max_output_tokens") => {
-            settings.llm.max_output_tokens = value
+        "max_output_tokens" => {
+            let val = value
                 .as_u64()
                 .ok_or("max_output_tokens must be a positive integer")?
                 as u32;
+            if !(1..=32768).contains(&val) {
+                return Err("max_output_tokens must be between 1 and 32768".to_string());
+            }
+            settings.llm.max_output_tokens = val;
         }
-        ("llm", "context_window") => {
+        "context_window" => {
             let val = value
                 .as_u64()
                 .ok_or("context_window must be a positive integer")? as u32;
@@ -475,23 +512,26 @@ pub(crate) fn apply_setting_mutation(
             }
             settings.llm.context_window = val;
         }
-        ("llm", "threads") => {
-            settings.llm.threads =
-                value.as_u64().ok_or("threads must be a positive integer")? as u32;
+        "threads" => {
+            let val = value.as_u64().ok_or("threads must be a positive integer")? as u32;
+            if !(1..=64).contains(&val) {
+                return Err("threads must be between 1 and 64".to_string());
+            }
+            settings.llm.threads = val;
         }
-        ("llm", "embedded") => {
+        "embedded" => {
             settings.llm.embedded = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid LLM embedded config: {}", e))?;
         }
-        ("llm", "server") => {
+        "server" => {
             settings.llm.server = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid LLM server config: {}", e))?;
         }
-        ("llm", "cloud") => {
+        "cloud" => {
             settings.llm.cloud = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid LLM cloud config: {}", e))?;
         }
-        ("llm", "provider") => {
+        "provider" => {
             if let Ok(prov) =
                 serde_json::from_value::<crate::core::settings::LlmProviderConfig>(value.clone())
             {
@@ -536,41 +576,58 @@ pub(crate) fn apply_setting_mutation(
                 }
             }
         }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
 
-        // TTS
-        ("tts", "active") => {
+fn apply_tts_mutation(
+    settings: &mut VoxSettings,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match key {
+        "active" => {
             settings.tts.active = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid TTS active provider: {}", e))?;
         }
-        ("tts", "voice" | "voice_index") => {
-            settings.tts.voice_index = value.as_i64().ok_or("voice must be an integer")? as i32;
+        "voice" | "voice_index" => {
+            let val = value.as_i64().ok_or("voice must be an integer")? as i32;
+            if !(0..=1000).contains(&val) {
+                return Err("voice index must be between 0 and 1000".to_string());
+            }
+            settings.tts.voice_index = val;
         }
-        ("tts", "quality_steps") => {
-            settings.tts.quality_steps = value
+        "quality_steps" => {
+            let val = value
                 .as_u64()
                 .ok_or("quality_steps must be a positive integer")?
                 as u32;
+            if !(1..=20).contains(&val) {
+                return Err("quality_steps must be between 1 and 20".to_string());
+            }
+            settings.tts.quality_steps = val;
         }
-        ("tts", "speed") => {
+        "speed" => {
             settings.tts.speed = value.as_f64().ok_or("speed must be a number")? as f32;
         }
-        ("tts", "edge_tts") => {
+        "edge_tts" => {
             settings.tts.edge_tts = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid edge_tts config: {}", e))?;
         }
-        ("tts", "supertonic") => {
+        "supertonic" => {
             settings.tts.supertonic = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid supertonic config: {}", e))?;
         }
-        ("tts", "chatterbox") => {
+        "chatterbox" => {
             settings.tts.chatterbox = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid chatterbox config: {}", e))?;
         }
-        ("tts", "chatterbox_remote") => {
+        "chatterbox_remote" => {
             settings.tts.chatterbox_remote = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid chatterbox_remote config: {}", e))?;
         }
-        ("tts", "provider") => {
+        "provider" => {
             if let Ok(prov) =
                 serde_json::from_value::<crate::core::settings::TtsProviderConfig>(value.clone())
             {
@@ -614,113 +671,167 @@ pub(crate) fn apply_setting_mutation(
                 }
             }
         }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
 
-        // Interaction
-        ("interaction", "mode") => {
+fn apply_interaction_mutation(
+    settings: &mut VoxSettings,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match key {
+        "mode" => {
             settings.interaction.mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid interaction mode: {}", e))?;
         }
-        ("interaction", "auto_sleep_timeout") => {
+        "auto_sleep_timeout" => {
             settings.interaction.auto_sleep_timeout = value
                 .as_u64()
                 .ok_or("auto_sleep_timeout must be a positive integer")?
                 as u32;
         }
-        ("interaction", "pipeline_mode") => {
+        "pipeline_mode" => {
             settings.interaction.pipeline_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid pipeline_mode: {}", e))?;
         }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
 
-        // Dictation
-        ("dictation", "enabled") => {
+fn apply_dictation_mutation(
+    settings: &mut VoxSettings,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match key {
+        "enabled" => {
             settings.dictation.enabled = value.as_bool().ok_or("enabled must be a boolean")?;
         }
-        ("dictation", "interaction_mode") => {
+        "interaction_mode" => {
             settings.dictation.interaction_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid interaction_mode: {}", e))?;
         }
-        ("dictation", "hotkey") => {
+        "hotkey" => {
             settings.dictation.hotkey =
                 value.as_str().ok_or("hotkey must be a string")?.to_string();
         }
-        ("dictation", "output_mode") => {
+        "output_mode" => {
             settings.dictation.output_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid output_mode: {}", e))?;
         }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
 
-        // History
-        ("history", "private_mode") => {
+fn apply_history_mutation(
+    settings: &mut VoxSettings,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match key {
+        "private_mode" => {
             settings.history.private_mode =
                 value.as_bool().ok_or("private_mode must be a boolean")?;
         }
-        ("history", "tray_history_limit") => {
+        "tray_history_limit" => {
             settings.history.tray_history_limit = value
                 .as_u64()
                 .ok_or("tray_history_limit must be a positive integer")?
                 as u32;
         }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
 
-        // Persona
-        ("persona", "modular_prompt") => {
+fn apply_persona_mutation(
+    settings: &mut VoxSettings,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match key {
+        "modular_prompt" => {
             settings.persona.modular_prompt = value
                 .as_str()
                 .ok_or("modular_prompt must be a string")?
                 .to_string();
         }
-        ("persona", "realtime_prompt") => {
+        "realtime_prompt" => {
             settings.persona.realtime_prompt = value
                 .as_str()
                 .ok_or("realtime_prompt must be a string")?
                 .to_string();
         }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
 
-        // Realtime
-        ("realtime", "active" | "provider") => {
+fn apply_realtime_mutation(
+    settings: &mut VoxSettings,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match key {
+        "active" | "provider" => {
             settings.realtime.active = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid realtime provider: {}", e))?;
         }
-        ("realtime", "gemini" | "gemini_live") => {
+        "gemini" | "gemini_live" => {
             settings.realtime.gemini_live = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid gemini config: {}", e))?;
         }
-        ("realtime", "openai" | "openai_realtime") => {
+        "openai" | "openai_realtime" => {
             settings.realtime.openai_realtime = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid openai config: {}", e))?;
         }
-        ("realtime", "deepgram" | "deepgram_voice_agent") => {
+        "deepgram" | "deepgram_voice_agent" => {
             settings.realtime.deepgram_voice_agent = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid deepgram config: {}", e))?;
         }
-        ("realtime", "elevenlabs" | "elevenlabs_convai") => {
+        "elevenlabs" | "elevenlabs_convai" => {
             settings.realtime.elevenlabs_convai = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid elevenlabs config: {}", e))?;
         }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
 
-        // Memory
-        ("memory", "context_retrieval_enabled") => {
+fn apply_memory_mutation(
+    settings: &mut VoxSettings,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match key {
+        "context_retrieval_enabled" => {
             settings.memory.context_retrieval_enabled = value
                 .as_bool()
                 .ok_or("context_retrieval_enabled must be a boolean")?;
         }
-        ("memory", "pipeline_processing_enabled") => {
+        "pipeline_processing_enabled" => {
             settings.memory.pipeline_processing_enabled = value
                 .as_bool()
                 .ok_or("pipeline_processing_enabled must be a boolean")?;
         }
-        ("memory", "max_context_share") => {
+        "max_context_share" => {
             let val = value.as_f64().ok_or("max_context_share must be a number")? as f32;
             if !(0.0..=1.0).contains(&val) {
                 return Err("max_context_share must be between 0.0 and 1.0".to_string());
             }
             settings.memory.max_context_share = val;
         }
-        ("memory", "context_chaining_window_hours") => {
+        "context_chaining_window_hours" => {
             settings.memory.context_chaining_window_hours = value
                 .as_u64()
                 .ok_or("context_chaining_window_hours must be a positive integer")?
                 as u32;
         }
-        ("memory", "top_k_facts") => {
+        "top_k_facts" => {
             let top_k = value
                 .as_u64()
                 .ok_or("top_k_facts must be a positive integer")? as u32;
@@ -729,7 +840,7 @@ pub(crate) fn apply_setting_mutation(
             }
             settings.memory.top_k_facts = top_k;
         }
-        ("memory", "max_hops") => {
+        "max_hops" => {
             let max_hops = value
                 .as_u64()
                 .ok_or("max_hops must be a positive integer")? as u32;
@@ -738,7 +849,7 @@ pub(crate) fn apply_setting_mutation(
             }
             settings.memory.max_hops = max_hops;
         }
-        ("memory", "semantic_similarity_cutoff") => {
+        "semantic_similarity_cutoff" => {
             let val = value
                 .as_f64()
                 .ok_or("semantic_similarity_cutoff must be a number")? as f32;
@@ -747,27 +858,61 @@ pub(crate) fn apply_setting_mutation(
             }
             settings.memory.semantic_similarity_cutoff = val;
         }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
 
-        // System
-        ("system", "telemetry_enabled") => {
+fn apply_system_mutation(
+    settings: &mut VoxSettings,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match key {
+        "telemetry_enabled" => {
             settings.system.telemetry_enabled = value
                 .as_bool()
                 .ok_or("telemetry_enabled must be a boolean")?;
         }
-        ("system", "log_level") => {
+        "log_level" => {
             settings.system.log_level = value
                 .as_str()
                 .ok_or("log_level must be a string")?
                 .to_string();
         }
-        ("system", "setup_completed") => {
+        "setup_completed" => {
             settings.system.setup_completed =
                 value.as_bool().ok_or("setup_completed must be a boolean")?;
         }
-
         _ => return Ok(false),
     }
     Ok(true)
+}
+
+/// Applies a mutation to the settings struct by domain+key routing.
+/// Returns `true` if the key was recognized and applied.
+pub(crate) fn apply_setting_mutation(
+    settings: &mut VoxSettings,
+    domain: &str,
+    key: &str,
+    value: &serde_json::Value,
+) -> Result<bool, String> {
+    match domain {
+        "appearance" => apply_appearance_mutation(settings, key, value),
+        "audio" => apply_audio_mutation(settings, key, value),
+        "vad" => apply_vad_mutation(settings, key, value),
+        "stt" => apply_stt_mutation(settings, key, value),
+        "llm" => apply_llm_mutation(settings, key, value),
+        "tts" => apply_tts_mutation(settings, key, value),
+        "interaction" => apply_interaction_mutation(settings, key, value),
+        "dictation" => apply_dictation_mutation(settings, key, value),
+        "history" => apply_history_mutation(settings, key, value),
+        "persona" => apply_persona_mutation(settings, key, value),
+        "realtime" => apply_realtime_mutation(settings, key, value),
+        "memory" => apply_memory_mutation(settings, key, value),
+        "system" => apply_system_mutation(settings, key, value),
+        _ => Ok(false),
+    }
 }
 
 /// Dispatches a hot-update command to the appropriate worker thread.

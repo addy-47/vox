@@ -126,7 +126,10 @@ impl TransliterationEngine {
                 ])
                 .map_err(|e| format!("Decoder run failed: {}", e))?;
 
-            let logits_view = decoder_outputs["logits"]
+            let logits_tensor = decoder_outputs
+                .get("logits")
+                .ok_or_else(|| "Missing 'logits' tensor in decoder outputs".to_string())?;
+            let logits_view = logits_tensor
                 .try_extract_array::<f32>()
                 .map_err(|e| format!("Failed to extract logits: {}", e))?;
 
@@ -166,12 +169,27 @@ impl TransliterationEngine {
 
             dec_input[[0]] = next_char_idx as i64;
 
-            let next_h_view = decoder_outputs["h"]
+            let next_h_tensor = decoder_outputs
+                .get("h")
+                .ok_or_else(|| "Missing 'h' tensor in decoder outputs".to_string())?;
+            let next_h_view = next_h_tensor
                 .try_extract_array::<f32>()
                 .map_err(|e| format!("Failed to extract decoder h: {}", e))?;
-            let next_c_view = decoder_outputs["c"]
+            let h_shape = next_h_view.shape();
+            if h_shape.len() < 3 || h_shape[0] < 2 || h_shape[2] < 256 {
+                return Err(format!("Unexpected decoder h shape: {:?}", h_shape));
+            }
+
+            let next_c_tensor = decoder_outputs
+                .get("c")
+                .ok_or_else(|| "Missing 'c' tensor in decoder outputs".to_string())?;
+            let next_c_view = next_c_tensor
                 .try_extract_array::<f32>()
                 .map_err(|e| format!("Failed to extract decoder c: {}", e))?;
+            let c_shape = next_c_view.shape();
+            if c_shape.len() < 3 || c_shape[0] < 2 || c_shape[2] < 256 {
+                return Err(format!("Unexpected decoder c shape: {:?}", c_shape));
+            }
 
             for i in 0..2 {
                 for j in 0..256 {
@@ -197,7 +215,10 @@ impl TransliterationEngine {
             ])
             .map_err(|e| format!("Encoder run failed: {}", e))?;
 
-        let enc_outputs_view = enc_outputs["encoder_outputs"]
+        let enc_outputs_tensor = enc_outputs
+            .get("encoder_outputs")
+            .ok_or_else(|| "Missing 'encoder_outputs' in encoder outputs".to_string())?;
+        let enc_outputs_view = enc_outputs_tensor
             .try_extract_array::<f32>()
             .map_err(|e| format!("Failed to extract encoder_outputs: {}", e))?;
 
@@ -206,12 +227,27 @@ impl TransliterationEngine {
             .into_dimensionality::<ndarray::Dim<[usize; 3]>>()
             .map_err(|e| format!("Failed to reshape encoder_outputs: {}", e))?;
 
-        let enc_h_view = enc_outputs["h_states"]
+        let enc_h_tensor = enc_outputs
+            .get("h_states")
+            .ok_or_else(|| "Missing 'h_states' in encoder outputs".to_string())?;
+        let enc_h_view = enc_h_tensor
             .try_extract_array::<f32>()
             .map_err(|e| format!("Failed to extract h_states: {}", e))?;
-        let enc_c_view = enc_outputs["c_states"]
+        let enc_h_shape = enc_h_view.shape();
+        if enc_h_shape.len() < 3 || enc_h_shape[0] < 4 || enc_h_shape[2] < 256 {
+            return Err(format!("Unexpected encoder h_states shape: {:?}", enc_h_shape));
+        }
+
+        let enc_c_tensor = enc_outputs
+            .get("c_states")
+            .ok_or_else(|| "Missing 'c_states' in encoder outputs".to_string())?;
+        let enc_c_view = enc_c_tensor
             .try_extract_array::<f32>()
             .map_err(|e| format!("Failed to extract c_states: {}", e))?;
+        let enc_c_shape = enc_c_view.shape();
+        if enc_c_shape.len() < 3 || enc_c_shape[0] < 4 || enc_c_shape[2] < 256 {
+            return Err(format!("Unexpected encoder c_states shape: {:?}", enc_c_shape));
+        }
 
         let mut dec_h = Array3::<f32>::zeros((2, 1, 256));
         let mut dec_c = Array3::<f32>::zeros((2, 1, 256));
@@ -271,15 +307,25 @@ pub fn is_transliteration_engine_loaded() -> bool {
 
 /// Transliterates a Devanagari string with lazy engine initialization and raw word fallback.
 pub fn transliterate(word: &str) -> String {
-    {
-        let lock = TRANSLITERATION_ENGINE.read();
-        if lock.is_none() {
-            drop(lock);
-            if let Err(e) = init_transliteration_engine() {
-                log::warn!("[Translit] Lazy initialization failed: {}", e);
-                return word.to_string();
+    let lock = TRANSLITERATION_ENGINE.read();
+    if let Some(engine) = lock.as_ref() {
+        return match engine.transliterate_word(word) {
+            Ok(res) => res,
+            Err(e) => {
+                log::warn!(
+                    "[Translit] Transliteration failed for '{}': {}. Falling back to raw word.",
+                    word,
+                    e
+                );
+                word.to_string()
             }
-        }
+        };
+    }
+    drop(lock);
+
+    if let Err(e) = init_transliteration_engine() {
+        log::warn!("[Translit] Lazy initialization failed: {}", e);
+        return word.to_string();
     }
 
     let lock = TRANSLITERATION_ENGINE.read();

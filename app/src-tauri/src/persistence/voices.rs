@@ -122,13 +122,3 @@ pub async fn rename_voice(conn: &Connection, id: &str, name: &str) -> Result<()>
     Ok(())
 }
 
-/// Records the path to a synthesized preview WAV after preview generation.
-pub async fn update_preview_wav(conn: &Connection, id: &str, path: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE voices SET preview_wav = ? WHERE id = ?",
-        (path.to_string(), id.to_string()),
-    )
-    .await?;
-    Ok(())
-}
-

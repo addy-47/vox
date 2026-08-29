@@ -37,7 +37,9 @@ impl AudioBridge {
         self.tx = Some(tx);
 
         handle.spawn(async move {
-            let mut resampler = if config.requires_input_resampling {
+            let mut resampler = if config.requires_input_resampling
+                || config.input_sample_rate != DEFAULT_INPUT_SAMPLE_RATE
+            {
                 match AudioResampler::new(
                     DEFAULT_INPUT_SAMPLE_RATE,
                     config.input_sample_rate,

@@ -15,11 +15,9 @@ pub enum AudioOutputMode {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum VadBackendOption {
-    /// Earshot — pure Rust, no ONNX dependency, embedded NN weights.
-    /// ~20x faster than TenVAD. Default starting from Phase 8.
+    /// Earshot — pure Rust, no ONNX dependency, embedded neural weights.
     Earshot,
-    /// TenVAD — ONNX-based, requires ten_vad.onnx model file.
-    /// Legacy option, kept for user preference.
+    /// TenVAD — ONNX-based standard VAD engine. Default engine for Vox.
     #[default]
     TenVad,
 }
@@ -935,14 +933,42 @@ impl VoxSettings {
         let path = paths::get().settings.clone();
 
         if let Ok(content) = fs::read_to_string(&path) {
+            // Fast path: clean monolithic deserialization
             if let Ok(settings) = serde_json::from_str::<Self>(&content) {
                 log::info!("[Settings] Loaded configuration from {:?}", path);
                 return settings;
             }
 
-            let bak = path.with_extension("json.bak");
+            // Layered recovery path: attempt partial recovery section-by-section via serde_json::Value
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                log::warn!("[Settings] Partial corruption or schema drift detected in settings.json — attempting section recovery.");
+                let mut settings = Self::default();
+                if let Some(obj) = val.as_object() {
+                    if let Some(v) = obj.get("audio").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.audio = v; }
+                    if let Some(v) = obj.get("vad").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.vad = v; }
+                    if let Some(v) = obj.get("stt").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.stt = v; }
+                    if let Some(v) = obj.get("llm").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.llm = v; }
+                    if let Some(v) = obj.get("tts").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.tts = v; }
+                    if let Some(v) = obj.get("realtime").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.realtime = v; }
+                    if let Some(v) = obj.get("interaction").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.interaction = v; }
+                    if let Some(v) = obj.get("dictation").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.dictation = v; }
+                    if let Some(v) = obj.get("history").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.history = v; }
+                    if let Some(v) = obj.get("appearance").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.appearance = v; }
+                    if let Some(v) = obj.get("memory").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.memory = v; }
+                    if let Some(v) = obj.get("persona").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.persona = v; }
+                    if let Some(v) = obj.get("system").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.system = v; }
+                }
+                return settings;
+            }
+
+            // Total JSON parse failure: backup to timestamped file without clobbering prior backups
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let bak = path.with_file_name(format!("settings.corrupt.{}.json", ts));
             log::error!(
-                "[Settings] Corrupt settings.json — backing up to {:?} and restoring defaults",
+                "[Settings] Corrupt settings.json — backing up to {:?} and restoring in-memory defaults",
                 bak
             );
             if let Err(e) = fs::rename(&path, &bak) {
@@ -950,12 +976,8 @@ impl VoxSettings {
             }
         }
 
-        log::info!("[Settings] No valid settings.json found. Using system defaults.");
-        let settings = Self::default();
-        if let Err(e) = settings.save() {
-            log::warn!("[Settings] Failed to persist initial default settings: {}", e);
-        }
-        settings
+        log::info!("[Settings] No valid settings.json found. Using in-memory system defaults.");
+        Self::default()
     }
 
     pub fn save(&self) -> Result<()> {
@@ -968,9 +990,23 @@ impl VoxSettings {
         }
 
         let content = serde_json::to_string_pretty(self)?;
-        let tmp_path = path.with_extension("tmp");
-        fs::write(&tmp_path, content)?;
-        fs::rename(tmp_path, path)?;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let tmp_path = path.with_file_name(format!("settings.{}.tmp", nanos));
+        if let Err(e) = fs::write(&tmp_path, content) {
+            if let Err(rm_err) = fs::remove_file(&tmp_path) {
+                log::trace!("[Settings] Failed to remove temporary settings file: {}", rm_err);
+            }
+            return Err(e.into());
+        }
+        if let Err(e) = fs::rename(&tmp_path, &path) {
+            if let Err(rm_err) = fs::remove_file(&tmp_path) {
+                log::trace!("[Settings] Failed to remove temporary settings file: {}", rm_err);
+            }
+            return Err(e.into());
+        }
 
         Ok(())
     }

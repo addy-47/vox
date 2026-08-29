@@ -1,6 +1,6 @@
 use crate::services::memory::{
-    EMBEDDING_TOKENIZER_FILENAME, NLI_CONTRADICTION_THRESHOLD, NLI_ENTAILMENT_THRESHOLD,
-    NLI_MODEL_DIR, NLI_MODEL_FILENAME,
+    NLI_CONTRADICTION_THRESHOLD, NLI_ENTAILMENT_THRESHOLD, NLI_MODEL_DIR, NLI_MODEL_FILENAME,
+    NLI_TOKENIZER_FILENAME,
 };
 use anyhow::{anyhow, Result};
 use ndarray::Array2;
@@ -54,14 +54,14 @@ static NLI_ENGINE: parking_lot::RwLock<Option<NliEngine>> = parking_lot::RwLock:
 /// Loads the NLI model from disk and runs calibration to determine output label indices.
 pub fn init_nli_engine(model_dir: &Path) -> Result<bool> {
     let model_path = model_dir.join(NLI_MODEL_FILENAME);
-    let tokenizer_path = model_dir.join(EMBEDDING_TOKENIZER_FILENAME);
+    let tokenizer_path = model_dir.join(NLI_TOKENIZER_FILENAME);
 
     if !model_path.exists() || !tokenizer_path.exists() {
         log::warn!(
             "[NliEngine] NLI model or tokenizer file missing in {:?}. Expected model: {}, tokenizer: {}. Skipping init.",
             model_dir,
             NLI_MODEL_FILENAME,
-            EMBEDDING_TOKENIZER_FILENAME
+            NLI_TOKENIZER_FILENAME
         );
         return Ok(false);
     }

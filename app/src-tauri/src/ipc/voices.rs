@@ -66,12 +66,30 @@ pub async fn list_voices() -> Result<Vec<VoiceEntryDto>, String> {
         .map_err(|e| format!("Failed to list voices: {}", e))
 }
 
+const MAX_VOICE_RECORDING_SAMPLES: usize = 1_600_000; // ~100s at 16kHz (~6.4 MB)
+
 /// Add a new cloned voice from an existing audio file.
 #[tauri::command]
 pub async fn add_voice_from_file(name: String, file_path: String) -> Result<VoiceEntryDto, String> {
     let name = name.trim().to_string();
     if name.is_empty() {
         return Err("Voice name cannot be empty".to_string());
+    }
+
+    let path = std::path::Path::new(&file_path);
+    if !path.is_file() {
+        return Err("Selected path is not a valid regular file".to_string());
+    }
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    if !matches!(ext.as_str(), "wav" | "mp3" | "m4a" | "ogg" | "flac" | "aac") {
+        return Err(format!(
+            "Unsupported audio format '.{}'. Supported formats: wav, mp3, m4a, ogg, flac, aac",
+            ext
+        ));
     }
 
     let id = uuid::Uuid::new_v4().to_string();
@@ -129,6 +147,12 @@ pub async fn add_voice_from_recording(
     }
     if sample_rate == 0 {
         return Err("Invalid sample rate (0)".to_string());
+    }
+    if pcm_f32.len() > MAX_VOICE_RECORDING_SAMPLES {
+        return Err(format!(
+            "Voice recording payload exceeds maximum allowed size ({} samples).",
+            MAX_VOICE_RECORDING_SAMPLES
+        ));
     }
 
     let duration = pcm_f32.len() as f32 / sample_rate as f32;

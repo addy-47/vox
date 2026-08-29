@@ -15,6 +15,7 @@ pub const DEFAULT_DICTATION_ENABLED: bool = true;
 pub const DEFAULT_DICTATION_HOTKEY: &str = "Alt+Space";
 
 // ─── VAD Defaults ────────────────────────────────────────────────────────────
+pub const DEFAULT_VAD_BACKEND: &str = "ten_vad";
 pub const DEFAULT_VAD_THRESHOLD: f32 = 0.5;
 pub const DEFAULT_VAD_PTT_NOISE_GATE: f32 = 0.005;
 

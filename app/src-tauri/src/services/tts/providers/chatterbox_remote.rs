@@ -29,7 +29,8 @@ impl ChatterboxRemoteProvider {
         remote_path: &str,
     ) -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
-            .timeout(None)
+            .timeout(Some(std::time::Duration::from_secs(30)))
+            .connect_timeout(std::time::Duration::from_secs(5))
             .pool_max_idle_per_host(5)
             .build()
             .map_err(|e| anyhow!("Failed to build reqwest client: {}", e))?;
@@ -279,11 +280,13 @@ impl TtsProvider for ChatterboxRemoteProvider {
 
         let start = std::time::Instant::now();
         let quality_steps = self.quality_steps.load(Ordering::Relaxed);
+        let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
 
         let payload = serde_json::json!({
             "text": text,
             "language": self.language,
-            "quality_steps": quality_steps
+            "quality_steps": quality_steps,
+            "speed": speed
         });
 
         let url = format!("{}/tts/stream-pcm", self.endpoint.trim_end_matches('/'));
