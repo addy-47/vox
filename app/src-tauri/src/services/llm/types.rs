@@ -86,6 +86,14 @@ impl Default for ProviderCapabilities {
     }
 }
 
+/// Identifies the runtime engine type of an LLM provider.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderKind {
+    Embedded,
+    OpenAiCompat,
+}
+
 /// Structured, normalized errors produced by LLM providers.
 #[derive(Debug, thiserror::Error)]
 pub enum LlmError {
@@ -112,6 +120,9 @@ pub enum LlmError {
 
     #[error("Transport error: {0}")]
     Transport(String),
+
+    #[error("Engine error: {0}")]
+    Engine(String),
 
     #[error("Provider error ({status}): {message}")]
     Provider { status: u16, message: String },

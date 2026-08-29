@@ -11,7 +11,7 @@ pub async fn check_llm_provider_health(
     provider: Option<crate::core::settings::LlmProviderConfig>,
 ) -> Result<bool, String> {
     use crate::core::settings::LlmProviderConfig;
-    use crate::services::llm::{LlmProvider, OpenAiCompatProvider};
+    use crate::services::llm::{LlmProvider, RemoteTransport};
     use crate::utils::paths;
 
     let (config, llm_model) = {
@@ -59,15 +59,14 @@ pub async fn check_llm_provider_health(
             api_key,
             provider_name,
         } => {
-            let provider = OpenAiCompatProvider::new(
+            let conn_cfg = crate::services::llm::ConnectionConfig::new(
                 &base_url,
                 &model,
                 api_key.as_deref(),
                 provider_name.as_deref(),
             );
-            let healthy = tokio::task::spawn_blocking(move || provider.health_check())
-                .await
-                .map_err(|e| e.to_string())?;
+            let provider = RemoteTransport::new(conn_cfg);
+            let healthy = provider.health_check().await.is_ok();
             Ok(healthy)
         }
     }
@@ -182,7 +181,7 @@ pub async fn list_llm_models(
     provider: Option<crate::core::settings::LlmProviderConfig>,
 ) -> Result<Vec<crate::core::settings::LlmModelInfo>, String> {
     use crate::core::settings::LlmProviderConfig;
-    use crate::services::llm::{EmbeddedProvider, LlmProvider, OpenAiCompatProvider};
+    use crate::services::llm::{EmbeddedProvider, LlmProvider, RemoteTransport};
     use crate::utils::paths;
 
     let config = {
@@ -209,16 +208,14 @@ pub async fn list_llm_models(
             api_key,
             provider_name,
         } => {
-            let provider = OpenAiCompatProvider::new(
+            let conn_cfg = crate::services::llm::ConnectionConfig::new(
                 &base_url,
                 &model,
                 api_key.as_deref(),
                 provider_name.as_deref(),
             );
-            let models = tokio::task::spawn_blocking(move || provider.list_models())
-                .await
-                .map_err(|e| e.to_string())?
-                .map_err(|e| e.to_string())?;
+            let provider = RemoteTransport::new(conn_cfg);
+            let models = provider.list_models().await.map_err(|e| e.to_string())?;
             Ok(models)
         }
     }
