@@ -132,7 +132,7 @@ Auxiliary control states:
 ## 5. Granular 12-Sprint Implementation Plan
 
 To ensure rigorous execution without cutting corners or taking shortcuts, the refactoring is decomposed into **12 targeted sprints**:
-
+where  there are three more docs that this backend md should refer
 - **Sprint 01:** Delete dead atomics (`llm_generating`, `tts_generating`) across `core/state.rs` and `monitoring/collector.rs`.
 - **Sprint 02:** Remove `is_assistant_speaking` and replace all read sites (`playback.rs`, `telemetry_emitter.rs`) with direct `state == InteractionState::Speaking` checks.
 - **Sprint 03:** Remove `playback_active` and replace all read sites (`vad/actor.rs`, `engine.rs`, `services/audio/`) with direct `state == InteractionState::Speaking` checks.

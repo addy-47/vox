@@ -73,6 +73,10 @@ pub fn transition<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
 ) {
+    if state.pipeline.state() == new_state {
+        return;
+    }
+
     state.pipeline.set_state(new_state);
     let target = target_window(ctx.owner);
 

@@ -1,4 +1,4 @@
-use crate::services::memory::harness::buffer::{ChatMessage, Role};
+use crate::services::harness::buffer::{ChatMessage, Role};
 
 /// Prompt instructions instructing the LLM to extract durable facts into the 6 memory collections.
 pub const COMPACTION_SYSTEM_PROMPT: &str = r#"<role>

@@ -4,11 +4,8 @@ use super::{
 };
 use crate::core::events::VoxEvent;
 use crate::core::state::{AppState, DictationState};
-use parking_lot::Mutex;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager};
-
-static DICTATION_BUFFER: Mutex<Vec<f32>> = Mutex::new(Vec::new());
 
 fn emit_dictation_state<R: tauri::Runtime>(
     app: &AppHandle<R>,
@@ -34,25 +31,12 @@ fn emit_dictation_state<R: tauri::Runtime>(
     }
 }
 
-/// Ingests audio samples into the dictation Push-To-Talk buffer when recording is active.
-pub fn ingest_audio(chunk: &[f32], state: &AppState) {
-    if state.pipeline.dictation_state() == DictationState::Recording {
-        DICTATION_BUFFER.lock().extend_from_slice(chunk);
-    }
-}
-
-/// Returns the current sample count in the dictation Push-To-Talk buffer.
-pub fn get_buffer_len() -> usize {
-    DICTATION_BUFFER.lock().len()
-}
-
 /// Starts Push-To-Talk dictation recording on hotkey press.
 pub async fn handle_hotkey_press<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     if state.pipeline.dictation_state() == DictationState::Recording {
         return Ok(());
     }
 
-    DICTATION_BUFFER.lock().clear();
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
     if let Some(ref engine) = *state.engine.lock().await {
@@ -79,20 +63,13 @@ pub async fn handle_hotkey_release_with_sender<R: tauri::Runtime>(
         return Ok(());
     }
 
-    let raw_buffer = DICTATION_BUFFER.lock().split_off(0);
     let turn_id = state.pipeline.peek_turn_id();
-
-    if raw_buffer.is_empty() {
-        state.pipeline.set_dictation_state(DictationState::Idle);
-        emit_dictation_state(app, DictationState::Idle, turn_id);
-        return Ok(());
-    }
 
     let engine_guard = state.engine.lock().await;
     let validation_result = if let Some(ref engine) = *engine_guard {
         let (tx, rx) = std::sync::mpsc::channel();
         if engine.vad_tx.send(crate::core::state::VadCommand::StopWindowValidation { response_tx: tx }).is_ok() {
-            rx.recv_timeout(std::time::Duration::from_millis(100)).ok()
+            rx.recv_timeout(std::time::Duration::from_millis(500)).ok()
         } else {
             None
         }
@@ -100,40 +77,27 @@ pub async fn handle_hotkey_release_with_sender<R: tauri::Runtime>(
         None
     };
 
-    let is_speech = match validation_result {
-        Some(ref val) => val.is_speech_detected,
-        None => true,
+    let (is_speech, audio) = match validation_result {
+        Some(val) => (val.is_speech_detected, val.audio),
+        None => (false, Vec::new()),
     };
 
-    if !is_speech {
+    if !is_speech || audio.is_empty() {
         log::info!("[Dictation] Non-speech hotkey hold discarded (Turn: {})", turn_id);
         state.pipeline.set_dictation_state(DictationState::Idle);
         emit_dictation_state(app, DictationState::Idle, turn_id);
         return Ok(());
     }
 
-    let buffer_to_send = match validation_result {
-        Some(ref val) => {
-            let start = val.speech_start_sample.min(raw_buffer.len());
-            let end = val.speech_end_sample.min(raw_buffer.len());
-            if start < end && (end - start) >= 256 {
-                raw_buffer[start..end].to_vec()
-            } else {
-                raw_buffer
-            }
-        }
-        None => raw_buffer,
-    };
-
     state.pipeline.set_dictation_state(DictationState::Transcribing);
     emit_dictation_state(app, DictationState::Transcribing, turn_id);
 
     if let Some(tx) = stt_tx {
-        if let Err(e) = tx.send(crate::services::stt::SttCommand::Final(turn_id, buffer_to_send)) {
+        if let Err(e) = tx.send(crate::services::stt::SttCommand::Final(turn_id, audio)) {
             log::warn!("[Dictation] Failed to dispatch Final audio to direct STT sender: {}", e);
         }
     } else if let Some(ref engine) = *engine_guard {
-        if let Err(e) = engine.stt_tx.send(crate::services::stt::SttCommand::Final(turn_id, buffer_to_send)) {
+        if let Err(e) = engine.stt_tx.send(crate::services::stt::SttCommand::Final(turn_id, audio)) {
             log::warn!("[Dictation] Failed to dispatch Final audio to STT: {}", e);
         }
     }

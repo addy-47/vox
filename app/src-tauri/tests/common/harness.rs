@@ -110,13 +110,14 @@ pub fn setup_vad_actor(
     let join_handle = std::thread::Builder::new()
         .name("test-vad-actor".to_string())
         .spawn(move || {
-            let _ = spawn_vad_actor(
+            spawn_vad_actor(
                 vad_backend,
                 consumer,
                 vad_channels,
                 vad_handles,
                 config,
-            );
+            )
+            .expect("VAD actor failed");
         })
         .expect("Failed to spawn VAD actor thread");
 
@@ -283,13 +284,13 @@ pub fn get_test_app_state() -> vox_lib::core::state::AppState {
     vox_lib::core::state::AppState::new(&app, None, telemetry)
 }
 
-/// Attaches a mock VoxEngine to the managed AppState for testing full production pipeline flows.
-pub fn attach_mock_engine_to_state<R: tauri::Runtime>(
+/// Attaches a mock VoxEngine with a specified VAD command sender to the managed AppState.
+pub fn attach_mock_engine_with_vad_to_state<R: tauri::Runtime>(
     _app: &AppHandle<R>,
     state: &vox_lib::core::state::AppState,
     stt_tx: std::sync::mpsc::Sender<SttCommand>,
+    vad_tx: std::sync::mpsc::Sender<VadCommand>,
 ) {
-    let (vad_tx, _) = std::sync::mpsc::channel();
     let (pipeline_tx, _) = std::sync::mpsc::channel();
     let (telemetry_tx, _) = crossbeam_channel::unbounded();
     let playback_engine = Arc::new(
@@ -322,6 +323,20 @@ pub fn attach_mock_engine_to_state<R: tauri::Runtime>(
         tts_handle: None,
         orchestrator_handle: None,
     };
-    *state.engine.blocking_lock() = Some(engine);
+    if let Ok(mut guard) = state.engine.try_lock() {
+        *guard = Some(engine);
+    } else {
+        *state.engine.blocking_lock() = Some(engine);
+    }
     state.pipeline.set_state(vox_lib::core::state::InteractionState::Ready);
+}
+
+/// Attaches a mock VoxEngine to the managed AppState for testing full production pipeline flows.
+pub fn attach_mock_engine_to_state<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &vox_lib::core::state::AppState,
+    stt_tx: std::sync::mpsc::Sender<SttCommand>,
+) {
+    let (vad_tx, _) = std::sync::mpsc::channel();
+    attach_mock_engine_with_vad_to_state(app, state, stt_tx, vad_tx);
 }
