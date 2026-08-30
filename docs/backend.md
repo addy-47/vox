@@ -79,25 +79,24 @@ src/
 ├── core/                   # Shared infrastructure
 │   ├── constants.rs        # Model paths, system prompts, timing, memory taxonomy
 │   ├── defaults.rs         # Centralized default values for all 13 settings domains
+│   ├── engine.rs           # System engine lifecycle (start_audio_engine, stop_audio_engine, worker joining)
 │   ├── error.rs            # Unified VoxError + domain-specific errors
 │   ├── events.rs           # VoxEvent enum (14 variants)
 │   ├── settings.rs         # VoxSettings (13 domains: appearance, audio, vad, stt, llm, tts, realtime, interaction, dictation, history, memory, persona, system)
 │   └── state.rs            # AppState, VoxEngine, PipelineAtomics, InteractionState, InteractionOwner (Dictation=0, Assistant=1)
 ├── services/
-│   ├── audio/              # engine (start/stop), device (cpal), playback (Cubic Hermite 2× upsample), decode
-│   ├── vad/                # VadEngine trait + VadBackend enum dispatch (Earshot / TenVAD) + actor
+│   ├── audio/              # device (cpal AudioStream), playback (PlaybackEngine, Cubic Hermite 2× upsample), decode
+│   ├── vad/                # VadEngine trait + VadBackend (Earshot / TenVAD) + actor (3 operational modes) + utils + telemetry
 │   ├── stt/                # SttEngine trait + EmbeddedSttProvider (Nemotron-3.5 / Qwen3-ASR) + actor + stitcher
-│   ├── llm/                # LlmProvider trait (Embedded / OpenAiCompat / Ollama / LMStudio), actor, capability_probe, policy
+│   ├── llm/                # LlmProvider trait (Embedded / RemoteTransport), actor, config, catalog, transport (chat_completions, responses, ollama, sse), probe, policy
 │   ├── tts/                # TtsProvider trait (EdgeTTS / Supertonic3 / Chatterbox / ChatterboxRemote), actor (TtsClauseChunker), voice
 │   ├── realtime/           # RealtimeVoiceProvider + RealtimeSession traits, engine, audio_bridge, playback_bridge (Gemini Live, Deepgram)
-│   ├── dictation/          # clipboard (with_clipboard_safe), input (per-OS enigo adapters), output_router, hotkey
-│   ├── memory/             # classifiers/ (intra/inter edge, query), deduplication, embedder, formatter, ingestion, retrieval, scope_router, tokenizer, working_memory, pipeline/{runner,stage1-4}
+│   ├── memory/             # 4-pillar architecture: harness/ (buffer, accountant, prompt_builder, manager, facade, mod), retrieval/ (scope, search), compaction/ (prompt, runner), ingestion/ (stages 1-4, runner, metrics), ml/ (embedder, nli, edge_classifier, scope_classifier, tokenizer)
 │   ├── pipeline/           # Central router, discrete domain orchestrators, and shared context
 │   │   ├── modular/        # Modular pipeline domain
-│   │   │   ├── context.rs  # Context compilation, dynamic memory retrieval, worker warmup, opportunistic compaction
 │   │   │   ├── passive.rs  # Autonomous conversational loop state machine
 │   │   │   ├── ptt.rs      # Push-To-Talk conversational loop state machine
-│   │   │   └── mod.rs      # Modular domain dispatcher
+│   │   │   └── mod.rs      # Modular domain dispatcher & worker warmup (ensure_modular_workers)
 │   │   ├── realtime/       # Realtime Speech-to-Speech WebSocket domain
 │   │   │   ├── session.rs  # Realtime provider instantiation & bidirectional barge-in
 │   │   │   ├── passive.rs  # Full-duplex WebSocket stream handler
@@ -316,10 +315,10 @@ Flow:       Cancelled { turn_id }, Error { turn_id, message }
 | Event | Payload | Source | Description |
 |-------|---------|--------|-------------|
 | `state_changed` | `InteractionState` | `services/pipeline/mod::transition` | Pipeline state (7 variants) to `target_window(owner)` |
-| `transcript_partial` | `TranscriptPayload { turn_id, text, owner }` | STT actor | Streaming partial transcript |
-| `transcript_final` | `TranscriptPayload` | STT actor | Final transcript |
+| `transcript_partial` | `TranscriptPayload { turn_id, text, owner }` | STT actor | Streaming partial transcript with monotonic turn ID |
+| `transcript_final` | `TranscriptPayload` | STT actor | Final transcript with monotonic turn ID |
 | `llm_token` | `string` | LLM actor | Streaming LLM token |
-| `ptt_status` | `PttStatusPayload { state: IDLE\|RECORDING\|PROCESSING }` | PTT domains | PTT button state |
+| `ptt_status` | `PttStatusPayload { state: IDLE\|RECORDING\|PROCESSING, turn_id, owner? }` | PTT domains | PTT button state with monotonic turn ID |
 | `audio_energy` | `{ energy: f32 }` | VAD actor | Mic level for Orb waveform |
 | `telemetry` | `TelemetryData` | aggregator | Full telemetry tick |
 | `pipeline_paused` / `pipeline_resumed` | — | `modular/passive` | Audio halt/resume (Passive only) |
@@ -327,7 +326,7 @@ Flow:       Cancelled { turn_id }, Error { turn_id, message }
 | `realtime_idle_warning` | `{ seconds_remaining }` | Realtime | Timeout countdown |
 | `realtime_interrupted` | — | Realtime | Barge-in confirmed |
 | `pipeline_error` | `String` | any domain | Error message |
-| `speech_start` / `speech_end` | `SpeechEventPayload` | VAD | Low-level VAD boundaries |
+| `speech_start` / `speech_end` | `SpeechEventPayload` | VAD | Low-level VAD boundaries with monotonic turn ID |
 | `mode_changed_main` / `mode_changed_tray` / `mode_changed` | `String` | `ipc/tray.rs` | Cross-surface mode sync |
 | `pipeline_mode_changed` | `String` | settings mutation | Pipeline mode sync |
 | `cpu_governor_warning` | `{ governor, optimal }` | `lib.rs:321` | Linux governor advisory |

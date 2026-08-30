@@ -1,8 +1,6 @@
 use std::sync::OnceLock;
 
 /// Singleton tiktoken BPE tokenizer instance (cl100k_base).
-/// Used across all WorkingMemory context estimations to ensure exact token counts
-/// for English, Devanagari (Hindi), and code tokens without heuristic drift.
 static BPE_TOKENIZER: OnceLock<Option<tiktoken_rs::CoreBPE>> = OnceLock::new();
 
 /// Retrieves or initializes the static CoreBPE instance.
@@ -13,8 +11,6 @@ fn get_bpe() -> Option<&'static tiktoken_rs::CoreBPE> {
 }
 
 /// Computes exact token count for text using BPE tokenization.
-/// Correctly accounts for Devanagari (Hindi) UTF-8 character splitting into subword tokens,
-/// preventing KV-cache overflows in production.
 pub fn estimate_tokens(text: &str) -> usize {
     if text.is_empty() {
         return 0;

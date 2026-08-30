@@ -1,3 +1,18 @@
+pub mod runner;
+pub mod stage1_dedup;
+pub mod stage2_embed;
+pub mod stage3_eval;
+pub mod stage4_commit;
+
+pub use runner::{
+    drain_pipeline_queue, drain_pipeline_queue_with_run_id, run_pipeline_cycle,
+    run_pipeline_cycle_with_id_seq,
+};
+pub use stage1_dedup::run_stage1_dedup;
+pub use stage2_embed::run_stage2_embed;
+pub use stage3_eval::{run_stage3_eval, run_stage3_eval_with_metrics_seq};
+pub use stage4_commit::run_stage4_commit;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -45,4 +60,16 @@ pub struct BatchEvaluationResult {
     pub superseded_by: Option<String>,
     pub relations: Vec<RelationEdge>,
     pub candidate_logs: Vec<CandidateAuditLog>,
+}
+
+/// Operational metrics recorded for each pipeline stage execution run.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct PipelineStageMetrics {
+    pub run_id: String,
+    pub stage_name: String,
+    pub session_id: String,
+    pub batch_seq: usize,
+    pub items_claimed: usize,
+    pub error_count: usize,
+    pub duration_ms: u128,
 }
