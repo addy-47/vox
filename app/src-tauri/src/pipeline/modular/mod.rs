@@ -31,7 +31,6 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
         crate::services::llm::actor::LlmWarmUpHandles {
             llm_tx: &mut engine.llm_tx,
             llm_handle: &mut engine.llm_handle,
-            is_loaded: Arc::clone(&state.is_llm_loaded),
             llm_provider_cache: Some(Arc::clone(&state.llm_provider)),
         },
         &settings,
@@ -56,7 +55,6 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
             tts_tx: &mut engine.tts_tx,
             tts_handle: &mut engine.tts_handle,
             cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
-            is_loaded: Arc::clone(&state.is_tts_loaded),
         },
         &settings,
         &tts_path,

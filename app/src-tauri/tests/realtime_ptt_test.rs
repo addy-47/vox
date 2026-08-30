@@ -132,7 +132,12 @@ fn create_mock_engine(
     );
 
     engine
-        .start(InteractionMode::PTT, playback, dummy_tx)
+        .start(
+            InteractionMode::PTT,
+            playback,
+            dummy_tx,
+            Arc::new(std::sync::atomic::AtomicU32::new(1)),
+        )
         .expect("Failed to start mock RealtimeEngine");
 
     engine

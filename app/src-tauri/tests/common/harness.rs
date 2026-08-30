@@ -48,7 +48,6 @@ pub fn setup_stt_worker<R: tauri::Runtime + 'static>(
     let (pipeline_event_tx, pipeline_event_rx) = mpsc::channel::<VoxEvent>();
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
-    let is_loaded = Arc::new(AtomicBool::new(false));
     let engine_shutdown = Arc::new(AtomicBool::new(false));
 
     let channels = SttActorChannels {
@@ -58,7 +57,6 @@ pub fn setup_stt_worker<R: tauri::Runtime + 'static>(
 
     let handles = SttActorHandles {
         cancel_flag,
-        is_loaded,
         engine_shutdown: engine_shutdown.clone(),
     };
 
@@ -99,7 +97,6 @@ pub fn setup_vad_actor(
     };
 
     let vad_handles = VadActorHandles {
-        is_loaded: Arc::new(AtomicBool::new(false)),
         state_atomic,
         turn_id_atomic: Arc::new(AtomicU32::new(0)),
         audio_suppressed,

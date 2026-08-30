@@ -151,25 +151,16 @@ fn collect_snapshot(
         ),
         is_db_healthy: state.telemetry.is_db_healthy.load(Ordering::Relaxed),
 
-        is_llm_loaded: state.is_llm_loaded.load(Ordering::Relaxed),
+        is_llm_loaded: state.engine.try_lock().map(|e| e.as_ref().map(|eng| eng.llm_tx.is_some()).unwrap_or(false)).unwrap_or(false),
         llm_provider_kind,
-        is_tts_loaded: state.is_tts_loaded.load(Ordering::Relaxed),
-        is_stt_loaded: state.is_stt_loaded.load(Ordering::Relaxed),
-        is_vad_loaded: state.is_vad_loaded.load(Ordering::Relaxed),
-        is_embedder_loaded: state.is_embedder_loaded.load(Ordering::Relaxed)
-            || crate::services::memory::is_embedder_loaded(),
-        is_query_classifier_loaded: state.is_query_classifier_loaded.load(Ordering::Relaxed)
-            || crate::services::memory::is_scope_classifier_loaded(),
-        is_intra_edge_classifier_loaded: state
-            .is_intra_edge_classifier_loaded
-            .load(Ordering::Relaxed)
-            || crate::services::memory::is_nli_loaded(),
-        is_inter_edge_classifier_loaded: state
-            .is_inter_edge_classifier_loaded
-            .load(Ordering::Relaxed)
-            || crate::services::memory::is_edge_classifier_loaded(),
-        is_translit_loaded: state.is_translit_loaded.load(Ordering::Relaxed)
-            || crate::services::translit::is_transliteration_engine_loaded(),
+        is_tts_loaded: state.engine.try_lock().map(|e| e.as_ref().map(|eng| eng.tts_tx.is_some()).unwrap_or(false)).unwrap_or(false),
+        is_stt_loaded: state.engine.try_lock().map(|e| e.as_ref().map(|eng| eng.stt_handle.is_some()).unwrap_or(false)).unwrap_or(false),
+        is_vad_loaded: state.engine.try_lock().map(|e| e.as_ref().map(|eng| eng.vad_handle.is_some()).unwrap_or(false)).unwrap_or(false),
+        is_embedder_loaded: crate::services::memory::is_embedder_loaded(),
+        is_query_classifier_loaded: crate::services::memory::is_scope_classifier_loaded(),
+        is_intra_edge_classifier_loaded: crate::services::memory::is_nli_loaded(),
+        is_inter_edge_classifier_loaded: crate::services::memory::is_edge_classifier_loaded(),
+        is_translit_loaded: crate::services::translit::is_transliteration_engine_loaded(),
 
         cpu_governor: state.cpu_governor.lock().clone(),
         cpu_governor_optimal: state.cpu_governor_optimal.load(Ordering::Relaxed),

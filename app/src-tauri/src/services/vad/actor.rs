@@ -228,7 +228,6 @@ pub struct VadActorConfig {
 /// Shared atomic handles and flags passed to the VAD actor.
 #[derive(Clone)]
 pub struct VadActorHandles {
-    pub is_loaded: Arc<AtomicBool>,
     pub state_atomic: Arc<AtomicU32>,
     pub turn_id_atomic: Arc<AtomicU32>,
     pub audio_suppressed: Arc<AtomicBool>,
@@ -438,16 +437,6 @@ where
     }
 
     log::info!("[VAD Actor] Starting synchronous VAD loop on dedicated thread");
-
-    let is_loaded = Arc::clone(&handles.is_loaded);
-    struct VadLoadGuard(Arc<AtomicBool>);
-    impl Drop for VadLoadGuard {
-        fn drop(&mut self) {
-            self.0.store(false, Ordering::Relaxed);
-        }
-    }
-    let _guard = VadLoadGuard(is_loaded);
-    handles.is_loaded.store(true, Ordering::Relaxed);
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut state = VadActorState::new(
