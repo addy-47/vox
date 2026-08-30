@@ -103,16 +103,11 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         let turn_id_reconnect = self.turn_id.clone();
         let ws_connected = Arc::new(std::sync::atomic::AtomicBool::new(true));
         let ws_connected_clone = ws_connected.clone();
-        let last_activity_time = Arc::new(std::sync::atomic::AtomicU64::new(
-            chrono::Utc::now().timestamp_millis() as u64,
-        ));
-        let last_activity_time_sender = last_activity_time.clone();
 
         let state = Arc::new(Mutex::new(SessionState {
             last_assistant_text: String::new(),
-            last_activity_time: last_activity_time.clone(),
             turn_id: self.turn_id.clone(),
-            current_server_turn_id: None,
+            server_turn_cursor: None,
         }));
 
         let state_clone = state.clone();
@@ -409,8 +404,6 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
             audio_tx,
             control_tx,
             shutdown_tx: parking_lot::Mutex::new(Some(shutdown_tx)),
-            ws_connected,
-            last_activity_time: last_activity_time_sender,
             terminated,
         }))
     }
@@ -594,24 +587,24 @@ enum ControlEvent {
 
 struct SessionState {
     last_assistant_text: String,
-    last_activity_time: Arc<std::sync::atomic::AtomicU64>,
     turn_id: Arc<std::sync::atomic::AtomicU32>,
-    current_server_turn_id: Option<u32>,
+    /// Session-bound cursor tracking asynchronous server-side response turns from Deepgram.
+    server_turn_cursor: Option<u32>,
 }
 
 impl SessionState {
     fn current_or_new_turn_id(&mut self) -> u32 {
-        if let Some(id) = self.current_server_turn_id {
+        if let Some(id) = self.server_turn_cursor {
             id
         } else {
             let new_id = self.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
-            self.current_server_turn_id = Some(new_id);
+            self.server_turn_cursor = Some(new_id);
             new_id
         }
     }
 
     fn peek_or_current_turn_id(&self) -> u32 {
-        self.current_server_turn_id
+        self.server_turn_cursor
             .unwrap_or_else(|| self.turn_id.load(Ordering::Relaxed))
     }
 }
@@ -621,8 +614,6 @@ pub struct DeepgramVoiceAgentSession {
     audio_tx: tokio::sync::mpsc::UnboundedSender<Vec<i16>>,
     control_tx: tokio::sync::mpsc::UnboundedSender<ControlEvent>,
     shutdown_tx: parking_lot::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
-    ws_connected: Arc<std::sync::atomic::AtomicBool>,
-    last_activity_time: Arc<std::sync::atomic::AtomicU64>,
     terminated: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -632,10 +623,6 @@ impl RealtimeSession for DeepgramVoiceAgentSession {
         if self.terminated.load(Ordering::Relaxed) {
             bail!("Deepgram Voice Agent session is terminated");
         }
-        self.last_activity_time.store(
-            chrono::Utc::now().timestamp_millis() as u64,
-            Ordering::Relaxed,
-        );
         self.audio_tx
             .send(pcm.to_vec())
             .map_err(|e| anyhow!("Failed to write to Deepgram audio queue: {:?}", e))
@@ -643,10 +630,6 @@ impl RealtimeSession for DeepgramVoiceAgentSession {
 
     /// Sends interrupt cancellation event to Deepgram.
     fn cancel(&self) -> Result<()> {
-        self.last_activity_time.store(
-            chrono::Utc::now().timestamp_millis() as u64,
-            Ordering::Relaxed,
-        );
         self.control_tx
             .send(ControlEvent::Interrupt)
             .map_err(|e| anyhow!("Failed to send interrupt control event: {:?}", e))
@@ -675,16 +658,6 @@ impl RealtimeSession for DeepgramVoiceAgentSession {
         log::trace!("[DeepgramVoiceAgent] activity_end (no-op on continuous VAD agent)");
         Ok(())
     }
-
-    /// Returns whether the Deepgram WebSocket is actively connected.
-    fn is_connected(&self) -> bool {
-        self.ws_connected.load(Ordering::SeqCst)
-    }
-
-    /// Returns timestamp of the most recent network activity.
-    fn last_activity_time(&self) -> u64 {
-        self.last_activity_time.load(Ordering::Relaxed)
-    }
 }
 
 /// Parses and routes incoming Deepgram Voice Agent JSON protocol messages.
@@ -695,14 +668,6 @@ fn handle_deepgram_server_message(
 ) -> Result<()> {
     let val: serde_json::Value = serde_json::from_str(text)?;
 
-    {
-        let s_lock = state.lock();
-        s_lock.last_activity_time.store(
-            chrono::Utc::now().timestamp_millis() as u64,
-            Ordering::Relaxed,
-        );
-    }
-
     if let Some(msg_type) = val.get("type").and_then(|v| v.as_str()) {
         log::trace!("[DeepgramVoiceAgent] Inbound message type: {}", msg_type);
         match msg_type {
@@ -711,7 +676,7 @@ fn handle_deepgram_server_message(
                 let mut s_lock = state.lock();
                 s_lock.last_assistant_text.clear();
                 let tid = s_lock.peek_or_current_turn_id();
-                s_lock.current_server_turn_id = None;
+                s_lock.server_turn_cursor = None;
                 if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id: tid }) {
                     log::warn!(
                         "[DeepgramVoiceAgent] Failed to send Cancelled event: {:?}",
@@ -781,7 +746,7 @@ fn handle_deepgram_server_message(
                 log::debug!("[DeepgramVoiceAgent] Agent audio done.");
                 let mut s_lock = state.lock();
                 s_lock.last_assistant_text.clear();
-                let finished_turn_id = s_lock.current_server_turn_id.take().unwrap_or_else(|| s_lock.turn_id.load(Ordering::Relaxed));
+                let finished_turn_id = s_lock.server_turn_cursor.take().unwrap_or_else(|| s_lock.turn_id.load(Ordering::Relaxed));
                 if let Err(e) = event_tx.send(VoxEvent::LlmFinished { turn_id: finished_turn_id }) {
                     log::warn!(
                         "[DeepgramVoiceAgent] Failed to send LlmFinished event: {:?}",

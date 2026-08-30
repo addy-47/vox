@@ -351,6 +351,12 @@ impl ConversationManager {
         true
     }
 
+    /// Handles barge-in interruption by cancelling opportunistic compaction and cleaning up any dangling uncompleted user turn.
+    pub fn handle_barge_in(&mut self) {
+        self.cancel_opportunistic();
+        self.pop_last_user_turn();
+    }
+
     /// Cancels active opportunistic compaction on speech detection.
     pub fn on_speech_start(&mut self) {
         self.cancel_opportunistic();
@@ -422,5 +428,24 @@ mod tests {
         cm.pop_last_user_turn();
         assert_eq!(cm.buffer.messages.len(), 2);
         assert_eq!(cm.buffer.messages[1].role, Role::Assistant);
+    }
+
+    /// Tests handle_barge_in cleans up speculative user turn and cancels opportunistic compaction.
+    #[test]
+    fn test_handle_barge_in_invariants() {
+        let mut cm = ConversationManager::new(2048);
+        cm.new_session("System prompt");
+
+        cm.push_user_turn("Initial query".to_string());
+        cm.push_assistant_turn("Initial response".to_string());
+        assert_eq!(cm.buffer.messages.len(), 3);
+
+        // Speculative turn interrupted mid-generation
+        cm.push_user_turn("Interrupted user query".to_string());
+        assert_eq!(cm.buffer.messages.len(), 4);
+
+        cm.handle_barge_in();
+        assert_eq!(cm.buffer.messages.len(), 3);
+        assert_eq!(cm.buffer.messages.last().unwrap().role, Role::Assistant);
     }
 }

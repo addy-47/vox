@@ -2,7 +2,7 @@
 //! stt_bench.rs — Realtime Passive Streaming Benchmark for Vox STT Engines
 //! ============================================================================
 //! Category     : Benchmark
-//! Component    : services::stt, services::vad, services::pipeline::modular_passive
+//! Component    : services::stt, services::vad, pipeline::modular::passive
 //! Prerequisites: Local model weights in ~/.vox/models/stt/
 //! Execution    : cargo bench --bench stt_bench -- [FLAGS]
 //! Metrics      : Partial Latency (ms), Final Turn Latency (ms), Streaming RTF, Throughput (spl/s), Memory (MB), Similarity (%)

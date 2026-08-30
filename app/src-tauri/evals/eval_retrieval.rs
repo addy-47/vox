@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use turso::Builder;
 use vox_lib::core::settings::MemorySettings;
+use vox_lib::services::harness::prompt_builder::format_retrieved_profile;
 use vox_lib::services::memory::estimate_tokens;
-use vox_lib::services::memory::harness::prompt_builder::format_retrieved_profile;
 use vox_lib::services::memory::retrieval::retrieve_turn_profile;
 
 fn l2_normalize(v: &[f32]) -> Vec<f32> {

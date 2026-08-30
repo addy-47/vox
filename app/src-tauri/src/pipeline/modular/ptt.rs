@@ -12,25 +12,51 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock};
 use tauri::{AppHandle, Emitter};
 
-static PTT_BUFFER: Mutex<Vec<f32>> = Mutex::new(Vec::new());
-static CHUNKER: LazyLock<Mutex<TtsClauseChunker>> =
-    LazyLock::new(|| Mutex::new(TtsClauseChunker::new()));
-static CURRENT_ASSISTANT_RESPONSE: LazyLock<Mutex<String>> =
-    LazyLock::new(|| Mutex::new(String::new()));
-static CURRENT_USER_TRANSCRIPT: LazyLock<Mutex<String>> =
-    LazyLock::new(|| Mutex::new(String::new()));
+struct TurnAccumulator {
+    chunker: TtsClauseChunker,
+    assistant_response: String,
+    user_transcript: String,
+}
 
-/// Ingests streaming audio frames into the Push-To-Talk buffer when recording is active.
-pub fn ingest_audio(chunk: &[f32], state: &AppState) {
-    if state.pipeline.state() == InteractionState::Listening {
-        PTT_BUFFER.lock().extend_from_slice(chunk);
+impl TurnAccumulator {
+    fn new() -> Self {
+        Self {
+            chunker: TtsClauseChunker::new(),
+            assistant_response: String::new(),
+            user_transcript: String::new(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.chunker.clear();
+        self.assistant_response.clear();
+        self.user_transcript.clear();
+    }
+
+    fn push_token(&mut self, token: &str) -> Vec<String> {
+        self.assistant_response.push_str(token);
+        self.chunker.push_str(token)
+    }
+
+    fn flush_chunker(&mut self) -> Option<String> {
+        self.chunker.flush()
+    }
+
+    fn set_user_transcript(&mut self, text: String) {
+        self.user_transcript = text;
+    }
+
+    fn take_assistant_response(&mut self) -> String {
+        std::mem::take(&mut self.assistant_response)
+    }
+
+    fn user_transcript(&self) -> String {
+        self.user_transcript.clone()
     }
 }
 
-/// Returns the current sample count in the Push-To-Talk buffer.
-pub fn get_buffer_len() -> usize {
-    PTT_BUFFER.lock().len()
-}
+static ACCUMULATOR: LazyLock<Mutex<TurnAccumulator>> =
+    LazyLock::new(|| Mutex::new(TurnAccumulator::new()));
 
 /// Starts the modular Push-To-Talk session.
 pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
@@ -66,6 +92,8 @@ pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
     let prompt = state.settings.read().unwrap_or_else(|p| p.into_inner()).persona.modular_prompt.clone();
     super::super::init_new_session(state, &prompt).await;
 
+    ACCUMULATOR.lock().clear();
+
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
@@ -75,9 +103,8 @@ pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
 
 /// Ends the active modular Push-To-Talk session.
 pub async fn end_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    PTT_BUFFER.lock().clear();
-    CHUNKER.lock().clear();
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+    ACCUMULATOR.lock().clear();
 
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
     if conv_id != 0 {
@@ -128,107 +155,79 @@ pub async fn end_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState
     Ok(())
 }
 
-/// Begins PTT recording and transitions state to listening.
+/// Handles Push-To-Talk button press event and initiates audio accumulation.
 pub fn ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    let current = state.pipeline.state();
-    if current == InteractionState::Idle || current == InteractionState::Paused {
-        return Err(format!("Cannot start PTT in {:?} state", current));
+    if state.pipeline.state() != InteractionState::Ready {
+        return Ok(());
     }
+
+    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
+    let (turn_id, _) = state.pipeline.next_turn();
+    ACCUMULATOR.lock().clear();
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             engine.playback_engine.cancel();
-            let _ = engine.vad_tx.send(VadCommand::StartWindowValidation);
+            if let Err(e) = engine.vad_tx.send(VadCommand::StartWindowValidation) {
+                log::warn!("[ModularPTT] Failed to start window validation: {}", e);
+            }
         }
     }
-
-    PTT_BUFFER.lock().clear();
-    CHUNKER.lock().clear();
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Listening, &ctx, app, state);
 
-    log::info!("[ModularPTT] PTT recording started");
+    log::info!("[ModularPTT] PTT recording started (turn {})", turn_id);
     Ok(())
 }
 
-/// Stops PTT recording, processes buffered audio through STT, and initiates LLM/TTS generation.
-pub fn ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+/// Handles Push-To-Talk button release event and triggers STT transcription on speech detection.
+pub async fn ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     if state.pipeline.state() != InteractionState::Listening {
         return Ok(());
     }
 
-    let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Thinking, &ctx, app, state);
-
-    let raw_samples = PTT_BUFFER.lock().clone();
-    PTT_BUFFER.lock().clear();
-
-    if raw_samples.is_empty() {
-        let ctx = RoutingContext::from_app_state(state);
-        transition(InteractionState::Ready, &ctx, app, state);
-        return Ok(());
-    }
-
-    let guard = state.engine.blocking_lock();
+    let turn_id = state.pipeline.peek_turn_id();
+    let guard = state.engine.lock().await;
     let engine = match guard.as_ref() {
-        Some(eng) => eng,
-        None => {
-            let ctx = RoutingContext::from_app_state(state);
-            transition(InteractionState::Ready, &ctx, app, state);
-            return Ok(());
-        }
+        Some(e) => e,
+        None => return Err("Audio engine is not initialized".to_string()),
     };
 
     let (tx, rx) = std::sync::mpsc::channel();
-    let validation_result = if engine
-        .vad_tx
-        .send(VadCommand::StopWindowValidation { response_tx: tx })
-        .is_ok()
-    {
-        rx.recv_timeout(std::time::Duration::from_millis(500)).ok()
-    } else {
-        None
-    };
-
-    let is_speech = match validation_result {
-        Some(ref val) => val.is_speech_detected,
-        None => true,
-    };
-
-    if !is_speech {
-        log::info!("[ModularPTT] Non-speech PTT hold discarded without STT request");
+    if let Err(e) = engine.vad_tx.send(VadCommand::StopWindowValidation { response_tx: tx }) {
+        log::warn!("[ModularPTT] Failed to stop window validation: {}", e);
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Ready, &ctx, app, state);
-        return Ok(());
+        return Err("Failed to query VAD actor".to_string());
     }
 
-    let trimmed = match validation_result {
-        Some(ref val) => {
-            let start = val.speech_start_sample.min(raw_samples.len());
-            let end = val.speech_end_sample.min(raw_samples.len());
-            if start < end && (end - start) >= 256 {
-                raw_samples[start..end].to_vec()
-            } else {
-                raw_samples
-            }
+    let validation_result = match rx.recv_timeout(std::time::Duration::from_millis(500)) {
+        Ok(result) => Some(result),
+        Err(e) => {
+            log::warn!("[ModularPTT] VAD window validation timeout: {}", e);
+            None
         }
-        None => raw_samples,
     };
 
-    if trimmed.is_empty() {
+    let (is_speech, audio) = match validation_result {
+        Some(val) => (val.is_speech_detected, val.audio),
+        None => (false, Vec::new()),
+    };
+
+    if !is_speech || audio.is_empty() {
+        log::info!("[ModularPTT] Non-speech PTT hold discarded without STT request (turn {})", turn_id);
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Ready, &ctx, app, state);
         return Ok(());
     }
 
-    let turn_id = state.pipeline.next_turn_id();
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Thinking, &ctx, app, state);
 
     if let Err(e) = engine.stt_tx.send(crate::services::stt::SttCommand::Final(
         turn_id,
-        trimmed,
+        audio,
     )) {
         log::warn!("[ModularPTT] Failed to send Final to STT: {}", e);
         let ctx = RoutingContext::from_app_state(state);
@@ -241,8 +240,7 @@ pub fn ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Resu
 
 /// Cancels ongoing PTT interaction and resets pipeline state machine to Ready.
 pub fn ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    PTT_BUFFER.lock().clear();
-    CHUNKER.lock().clear();
+    ACCUMULATOR.lock().clear();
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
 
     if let Ok(guard) = state.engine.try_lock() {
@@ -257,12 +255,6 @@ pub fn ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Re
     log::info!("[ModularPTT] PTT cancelled");
     Ok(())
 }
-
-/// Handles speech start event for Push-To-Talk mode.
-fn on_speech_start<R: tauri::Runtime>(_app: &AppHandle<R>, _state: &AppState) {}
-
-/// Handles speech end event for Push-To-Talk mode.
-fn on_speech_end<R: tauri::Runtime>(_app: &AppHandle<R>, _state: &AppState) {}
 
 /// Handles interim partial speech recognition results.
 fn on_transcript_partial<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
@@ -303,11 +295,11 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
         log::warn!("[ModularPTT] Failed to emit transcript_final: {}", e);
     }
 
-    let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Thinking, &ctx, app, state);
-
-    CURRENT_ASSISTANT_RESPONSE.lock().clear();
-    *CURRENT_USER_TRANSCRIPT.lock() = processed_text.clone();
+    {
+        let mut acc = ACCUMULATOR.lock();
+        acc.clear();
+        acc.set_user_transcript(processed_text.clone());
+    }
 
     let settings = state.settings.read().unwrap_or_else(|p| p.into_inner()).clone();
     let cm_arc = Arc::clone(&state.conversation_manager);
@@ -365,8 +357,15 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
             }
         };
 
+        if cancel.is_cancelled() {
+            log::info!("[ModularPTT] Turn {} cancelled before LLM dispatch", turn_id);
+            return;
+        }
+
         if let Some(filler) = transition_speech {
-            if let Some(ref tx) = tts_tx {
+            if tts_tx.is_some() {
+                // Already dispatched if tts_tx was passed
+            } else if let Some(ref tx) = tts_tx {
                 if let Err(e) = tx.send(TtsCommand::Generate {
                     turn_id,
                     text: filler,
@@ -401,10 +400,7 @@ fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<
         log::warn!("[ModularPTT] Failed to emit llm_token: {}", e);
     }
 
-    let clauses = {
-        CURRENT_ASSISTANT_RESPONSE.lock().push_str(&token);
-        CHUNKER.lock().push_str(&token)
-    };
+    let clauses = ACCUMULATOR.lock().push_token(&token);
     if !clauses.is_empty() {
         let guard = state.engine.blocking_lock();
         if let Some(ref engine) = *guard {
@@ -424,7 +420,7 @@ fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<
 
 /// Finalizes LLM output generation, flushes remaining TTS audio, and persists turn context.
 fn on_llm_finished(turn_id: u32, state: &AppState) {
-    if let Some(remainder) = CHUNKER.lock().flush() {
+    if let Some(remainder) = ACCUMULATOR.lock().flush_chunker() {
         let guard = state.engine.blocking_lock();
         if let Some(ref engine) = *guard {
             if let Some(ref tx) = engine.tts_tx {
@@ -438,7 +434,7 @@ fn on_llm_finished(turn_id: u32, state: &AppState) {
         }
     }
 
-    let full_text = CURRENT_ASSISTANT_RESPONSE.lock().split_off(0);
+    let full_text = ACCUMULATOR.lock().take_assistant_response();
     if !full_text.trim().is_empty() {
         state
             .conversation_manager
@@ -446,7 +442,7 @@ fn on_llm_finished(turn_id: u32, state: &AppState) {
             .push_assistant_turn(full_text.clone());
 
         let conv_id = state.conversation_id.load(Ordering::Relaxed);
-        let user_text = CURRENT_USER_TRANSCRIPT.lock().clone();
+        let user_text = ACCUMULATOR.lock().user_transcript();
         let stt_ms = state.telemetry.latest_stt_ms.load(Ordering::Relaxed);
         let ttft_ms = state.telemetry.latest_ttft_ms.load(Ordering::Relaxed);
         let persist_lock = state.persist_tx.lock();
@@ -520,8 +516,6 @@ pub fn handle_event<R: tauri::Runtime>(
     event: VoxEvent,
 ) {
     match event {
-        VoxEvent::SpeechStart { .. } => on_speech_start(app, state),
-        VoxEvent::SpeechEnd { .. } => on_speech_end(app, state),
         VoxEvent::TranscriptPartial { turn_id, text } => {
             on_transcript_partial(turn_id, text, app, state)
         }

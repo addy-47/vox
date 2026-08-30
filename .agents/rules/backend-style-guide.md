@@ -91,7 +91,38 @@ Never scatter or bury magic numbers or configuration values across internal acto
 
 ---
 
-## 7. Production Rust Best Practices
+## 7. State, Event, and Flag Discipline (CRITICAL)
+
+### 7.1 Single Source of Truth (The Law of State)
+- `InteractionState` (`Idle=0, Ready=1, Listening=2, Thinking=3, Speaking=4, Paused=5, Error=6`) is the **SOLE SOURCE OF TRUTH** for the assistant pipeline lifecycle.
+- `DictationState` (`Idle=0, Recording=1, Transcribing=2, Error=3`) is the **SOLE SOURCE OF TRUTH** for dictation.
+
+### 7.2 When Using a `bool` is Justified vs. Banned
+- ❌ **STRICTLY BANNED (Synthetic Booleans & State Flag Bags):**
+  - **Derived Lifecycle Flags:** Never create boolean atomics, struct fields, or query methods that duplicate, shadow, or approximate lifecycle state (e.g. `is_connected`, `is_idle`, `is_engaged`, `is_sleeping`, `is_paused`, `is_assistant`, `is_passive`, `is_private`, `is_recording`, `is_speech_detected`). Query the state enum (`state.pipeline.state() == InteractionState::...`) and settings directly.
+  - **Model Readiness Bags:** Never model model availability or subsystem readiness as a flat bag of loose atomics (e.g. `is_stt_loaded`, `is_llm_loaded`, `is_tts_loaded`). Subsystem/engine availability must be derived from `Option<Engine>` / `Arc<RwLock<Option<...>>>` or explicit status enums.
+  - **Ghost Flags:** Booleans that are written to but never read, or read without coordinated mutex guards leading to race conditions.
+- ✅ **JUSTIFIED / PERMITTED:**
+  - **Pure Binary Hardware / Signal Status:** A true, independent binary condition that is not a pipeline lifecycle phase (e.g. `mic_muted: bool`, `noise_gate_active: bool`, `VadBackend::is_above_noise_gate(&self) -> bool`).
+  - **Static / Persistent Feature Configuration Flags:** Immutable or user-configured binary settings (e.g. `enable_vad: bool`, `echo_cancellation: bool`, `save_transcripts: bool`).
+  - **Transient Flow Control within Single Function Scope:** A local variable tracking immediate iteration state (e.g. `let has_speech = ...;` or `let mut seen_first_token = false;`).
+  - **Atomic Cancellation / Shutdown Tokens:** `tokio_util::sync::CancellationToken` or worker shutdown flags (`AtomicBool` for loop termination only).
+
+### 7.3 State Transitions are the Sole Lifecycle Event Pump
+- `transition(...)` broadcasts `EVENT_STATE_CHANGED` (`"state_changed"`).
+- Submodules must **NEVER** manually emit ad-hoc custom lifecycle events (`speech_start`, `speech_end`, `playback_started`, `playback_finished`, `session_started`, `session_ended`, `ptt_status`).
+- The **ONLY** other IPC events permitted are streaming data payloads:
+  - `transcript_partial`
+  - `transcript_final`
+  - `llm_token`
+  - `pipeline_error`
+
+### 7.4 Centralized Monotonic Turn Generation
+- Turn IDs must be monotonically allocated strictly at the turn boundary via `AppState::next_turn_id()`. Never fragment `fetch_add` across actors, reset to `0`, or pass dummy turn IDs.
+
+---
+
+## 8. Production Rust Best Practices
 
 - **Structured Logging:** All logs must specify domain tags: `log::info!("[Domain::Subsystem] Action completed status=ok")`. Never use `println!` or `eprintln!` in `src/`.
 - **Dropped Counter Telemetry:** High-throughput channel `try_send` calls must increment an atomic dropped-counter handle and log warnings if backpressure occurs.
@@ -100,11 +131,11 @@ Never scatter or bury magic numbers or configuration values across internal acto
 
 ---
 
-## 8. Documentation Standards
+## 9. Documentation Standards
 
 Root architecture and feature docs in `docs/*.md` follow a uniform frontmatter + "How to read" convention:
 
-### 8.1 Required Frontmatter (YAML)
+### 9.1 Required Frontmatter (YAML)
 ```yaml
 ---
 title: "Doc Title"
@@ -116,7 +147,7 @@ related_docs:
 ---
 ```
 
-### 8.2 Required "How to read this doc" Section
+### 9.2 Required "How to read this doc" Section
 Immediately after the title, include:
 - **Audience:** who the doc is for.
 - **Scope:** what it covers.
@@ -126,7 +157,7 @@ Immediately after the title, include:
 
 ---
 
-## 9. Testability Seams, Inversion of Control & Runtime Generics (MANDATORY)
+## 10. Testability Seams, Inversion of Control & Runtime Generics (MANDATORY)
 
 Every backend actor, worker, pipeline domain, and router must be designed with explicit consideration of how it will be instantiated and tested in isolated unit and integration test harnesses:
 

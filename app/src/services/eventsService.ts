@@ -42,10 +42,6 @@ export interface CpuGovernorWarningPayload {
   advice: string;
 }
 
-/** `realtime_idle_warning` payload (ipc/pipeline.rs:1084). */
-export interface RealtimeIdleWarningPayload {
-  seconds_remaining: number;
-}
 
 /** `system_stats` payload (monitoring/system_monitor.rs:95). */
 export interface SystemStatsPayload {

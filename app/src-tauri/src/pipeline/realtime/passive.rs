@@ -11,10 +11,43 @@ use std::sync::{Arc, LazyLock};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 
-static CURRENT_ASSISTANT_RESPONSE: LazyLock<Mutex<String>> =
-    LazyLock::new(|| Mutex::new(String::new()));
-static CURRENT_USER_TRANSCRIPT: LazyLock<Mutex<String>> =
-    LazyLock::new(|| Mutex::new(String::new()));
+struct TurnAccumulator {
+    assistant_response: String,
+    user_transcript: String,
+}
+
+impl TurnAccumulator {
+    fn new() -> Self {
+        Self {
+            assistant_response: String::new(),
+            user_transcript: String::new(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.assistant_response.clear();
+        self.user_transcript.clear();
+    }
+
+    fn push_token(&mut self, token: &str) {
+        self.assistant_response.push_str(token);
+    }
+
+    fn set_user_transcript(&mut self, text: String) {
+        self.user_transcript = text;
+    }
+
+    fn take_assistant_response(&mut self) -> String {
+        std::mem::take(&mut self.assistant_response)
+    }
+
+    fn user_transcript(&self) -> String {
+        self.user_transcript.clone()
+    }
+}
+
+static ACCUMULATOR: LazyLock<Mutex<TurnAccumulator>> =
+    LazyLock::new(|| Mutex::new(TurnAccumulator::new()));
 
 /// Starts an autonomous real-time WebSocket speech-to-speech assistant session.
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
@@ -103,6 +136,8 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     let prompt = state.settings.read().unwrap_or_else(|p| p.into_inner()).persona.realtime_prompt.clone();
     super::super::init_new_session(state, &prompt).await;
 
+    ACCUMULATOR.lock().clear();
+
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
@@ -116,6 +151,7 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
 /// Pauses the active real-time voice pipeline.
 pub async fn pause_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+    ACCUMULATOR.lock().clear();
 
     if let Ok(mut rt_guard) = state.realtime_engine.try_lock() {
         if let Some(ref mut rt_engine) = *rt_guard {
@@ -178,6 +214,7 @@ pub async fn end_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState
     }
 
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+    ACCUMULATOR.lock().clear();
 
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
     let now = std::time::SystemTime::now()
@@ -218,8 +255,10 @@ pub async fn end_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState
     Ok(())
 }
 
-/// Handles user speech detection and transitions state machine to speaking.
-fn on_speech_start<R: tauri::Runtime>(
+/// Handles interim partial speech recognition results from the real-time server.
+fn on_transcript_partial<R: tauri::Runtime>(
+    turn_id: u32,
+    text: String,
     app: &AppHandle<R>,
     state: &AppState,
     playback: &Arc<PlaybackEngine>,
@@ -229,35 +268,13 @@ fn on_speech_start<R: tauri::Runtime>(
         return;
     }
 
-    super::session::realtime_barge_in(state, playback);
-    state.pipeline.renew_turn_token();
-    state.conversation_manager.lock().on_speech_start();
-
-    if current_state != InteractionState::Ready {
+    if current_state == InteractionState::Thinking || current_state == InteractionState::Speaking {
+        super::session::realtime_barge_in(state, playback);
+        state.pipeline.renew_turn_token();
+        state.conversation_manager.lock().handle_barge_in();
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Listening, &ctx, app, state);
-    }
-}
-
-/// Handles speech end and transitions state machine to thinking.
-fn on_speech_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
-    let current_state = state.pipeline.state();
-    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
-        return;
-    }
-
-    let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Thinking, &ctx, app, state);
-}
-
-/// Handles interim partial speech recognition results from the real-time server.
-fn on_transcript_partial<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
-    let current_state = state.pipeline.state();
-    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
-        return;
-    }
-
-    if current_state == InteractionState::Ready {
+    } else if current_state == InteractionState::Ready {
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Listening, &ctx, app, state);
     }
@@ -297,8 +314,11 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
         log::warn!("[RealtimePassive] Failed to emit transcript_final: {}", e);
     }
 
-    CURRENT_ASSISTANT_RESPONSE.lock().clear();
-    *CURRENT_USER_TRANSCRIPT.lock() = text;
+    {
+        let mut acc = ACCUMULATOR.lock();
+        acc.clear();
+        acc.set_user_transcript(text);
+    }
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Thinking, &ctx, app, state);
@@ -306,6 +326,7 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
 
 /// Handles streamed LLM token from the real-time provider.
 fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<R>) {
+    ACCUMULATOR.lock().push_token(&token);
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         EVENT_LLM_TOKEN,
@@ -326,7 +347,7 @@ fn on_playback_started<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) 
 
 /// Transitions pipeline state back to listening upon playback completion.
 fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
-    let full_text = CURRENT_ASSISTANT_RESPONSE.lock().split_off(0);
+    let full_text = ACCUMULATOR.lock().take_assistant_response();
     if !full_text.trim().is_empty() {
         state
             .conversation_manager
@@ -334,7 +355,7 @@ fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, sta
             .push_assistant_turn(full_text.clone());
 
         let conv_id = state.conversation_id.load(Ordering::Relaxed);
-        let user_text = CURRENT_USER_TRANSCRIPT.lock().clone();
+        let user_text = ACCUMULATOR.lock().user_transcript();
         let stt_ms = state.telemetry.latest_stt_ms.load(Ordering::Relaxed);
         let ttft_ms = state.telemetry.latest_ttft_ms.load(Ordering::Relaxed);
         let persist_lock = state.persist_tx.lock();
@@ -389,10 +410,8 @@ pub fn handle_event<R: tauri::Runtime>(
     event: VoxEvent,
 ) {
     match event {
-        VoxEvent::SpeechStart { .. } => on_speech_start(app, state, playback),
-        VoxEvent::SpeechEnd { .. } => on_speech_end(app, state),
         VoxEvent::TranscriptPartial { turn_id, text } => {
-            on_transcript_partial(turn_id, text, app, state)
+            on_transcript_partial(turn_id, text, app, state, playback)
         }
         VoxEvent::TranscriptFinal { turn_id, text } => {
             on_transcript_final(turn_id, text, app, state)

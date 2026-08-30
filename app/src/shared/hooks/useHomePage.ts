@@ -45,12 +45,10 @@ export function toStatusLabel(
   engaged: boolean,
   sleeping: boolean,
   ptt: "IDLE" | "RECORDING" | "PROCESSING",
-  isPaused: boolean,
-  idleTimeout: number | null
+  isPaused: boolean
 ): string {
   if (!engaged) return "Dormant";
   if (isPaused) return "Paused";
-  if (idleTimeout !== null) return `Idle · ${idleTimeout}s`;
   if (sleeping) return "Sleeping";
   if (ptt === "RECORDING") return "Recording";
   if (ptt === "PROCESSING") return "Processing";

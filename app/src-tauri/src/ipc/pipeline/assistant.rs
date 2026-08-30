@@ -1,6 +1,6 @@
 use crate::core::settings::{InteractionMode, PipelineMode};
 use crate::core::state::{AppState, InteractionOwner, InteractionState, VadCommand};
-use crate::services::pipeline::RoutingContext;
+use crate::pipeline::RoutingContext;
 use crate::services::vad::VadOperationalMode;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -59,16 +59,16 @@ pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> R
 
     match (ctx.pipeline_mode, ctx.interaction_mode) {
         (PipelineMode::Modular, InteractionMode::Passive) => {
-            crate::services::pipeline::modular::passive::start_session(&app, &state).await
+            crate::pipeline::modular::passive::start_session(&app, &state).await
         }
         (PipelineMode::Modular, InteractionMode::PTT) => {
-            crate::services::pipeline::modular::ptt::start_session(&app, &state).await
+            crate::pipeline::modular::ptt::start_session(&app, &state).await
         }
         (PipelineMode::Realtime, InteractionMode::Passive) => {
-            crate::services::pipeline::realtime::passive::start_session(&app, &state).await
+            crate::pipeline::realtime::passive::start_session(&app, &state).await
         }
         (PipelineMode::Realtime, InteractionMode::PTT) => {
-            crate::services::pipeline::realtime::ptt::start_session(&app, &state).await
+            crate::pipeline::realtime::ptt::start_session(&app, &state).await
         }
     }
 }
@@ -85,16 +85,16 @@ pub async fn end_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Res
     let ctx = RoutingContext::from_app_state(&state);
     match (ctx.pipeline_mode, ctx.interaction_mode) {
         (PipelineMode::Modular, InteractionMode::Passive) => {
-            crate::services::pipeline::modular::passive::end_session(&app, &state).await?;
+            crate::pipeline::modular::passive::end_session(&app, &state).await?;
         }
         (PipelineMode::Modular, InteractionMode::PTT) => {
-            crate::services::pipeline::modular::ptt::end_session(&app, &state).await?;
+            crate::pipeline::modular::ptt::end_session(&app, &state).await?;
         }
         (PipelineMode::Realtime, InteractionMode::Passive) => {
-            crate::services::pipeline::realtime::passive::end_session(&app, &state).await?;
+            crate::pipeline::realtime::passive::end_session(&app, &state).await?;
         }
         (PipelineMode::Realtime, InteractionMode::PTT) => {
-            crate::services::pipeline::realtime::ptt::end_session(&app, &state).await?;
+            crate::pipeline::realtime::ptt::end_session(&app, &state).await?;
         }
     }
 
@@ -140,10 +140,10 @@ pub async fn pause_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> R
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
         PipelineMode::Modular => {
-            crate::services::pipeline::modular::passive::pause_session(&app, &state).await
+            crate::pipeline::modular::passive::pause_session(&app, &state).await
         }
         PipelineMode::Realtime => {
-            crate::services::pipeline::realtime::passive::pause_session(&app, &state).await
+            crate::pipeline::realtime::passive::pause_session(&app, &state).await
         }
     }
 }
@@ -162,10 +162,10 @@ pub async fn resume_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> 
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
         PipelineMode::Modular => {
-            crate::services::pipeline::modular::passive::resume_session(&app, &state).await
+            crate::pipeline::modular::passive::resume_session(&app, &state).await
         }
         PipelineMode::Realtime => {
-            crate::services::pipeline::realtime::passive::resume_session(&app, &state).await
+            crate::pipeline::realtime::passive::resume_session(&app, &state).await
         }
     }
 }
@@ -181,10 +181,10 @@ pub async fn ptt_start(app: AppHandle, state: State<'_, Arc<AppState>>) -> Resul
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
         PipelineMode::Modular => {
-            crate::services::pipeline::modular::ptt::ptt_start(&app, &state)
+            crate::pipeline::modular::ptt::ptt_start(&app, &state)
         }
         PipelineMode::Realtime => {
-            crate::services::pipeline::realtime::ptt::ptt_start(&app, &state)
+            crate::pipeline::realtime::ptt::ptt_start(&app, &state)
         }
     }
 }
@@ -203,10 +203,10 @@ pub async fn ptt_stop(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
         PipelineMode::Modular => {
-            crate::services::pipeline::modular::ptt::ptt_stop(&app, &state)
+            crate::pipeline::modular::ptt::ptt_stop(&app, &state).await
         }
         PipelineMode::Realtime => {
-            crate::services::pipeline::realtime::ptt::ptt_stop(&app, &state)
+            crate::pipeline::realtime::ptt::ptt_stop(&app, &state).await
         }
     }
 }
@@ -222,10 +222,10 @@ pub async fn ptt_cancel(app: AppHandle, state: State<'_, Arc<AppState>>) -> Resu
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
         PipelineMode::Modular => {
-            crate::services::pipeline::modular::ptt::ptt_cancel(&app, &state)
+            crate::pipeline::modular::ptt::ptt_cancel(&app, &state)
         }
         PipelineMode::Realtime => {
-            crate::services::pipeline::realtime::ptt::ptt_cancel(&app, &state)
+            crate::pipeline::realtime::ptt::ptt_cancel(&app, &state)
         }
     }
 }
