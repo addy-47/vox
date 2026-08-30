@@ -3,13 +3,13 @@ use super::super::{
     EVENT_TRANSCRIPT_FINAL, WINDOW_MAIN,
 };
 use crate::core::events::VoxEvent;
-use crate::core::state::{AppState, InteractionOwner, InteractionState, VadCommand};
+use crate::core::state::{AppState, InteractionState, VadCommand};
 use crate::services::audio::PlaybackEngine;
 use crate::services::realtime::engine::RealtimeEngine;
 use parking_lot::Mutex;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 struct TurnAccumulator {
     assistant_response: String,
@@ -51,8 +51,6 @@ static ACCUMULATOR: LazyLock<Mutex<TurnAccumulator>> =
 
 /// Starts a user-gated real-time Push-To-Talk speech-to-speech assistant session.
 pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    crate::core::start_audio_engine(app, state).await?;
-
     let (vad_tx, playback_engine, pipeline_tx) = {
         let guard = state.engine.lock().await;
         let eng = guard.as_ref().ok_or("Audio engine not ready")?;
@@ -62,10 +60,6 @@ pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
             eng.pipeline_tx.clone(),
         )
     };
-
-    state
-        .owner
-        .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
 
     let mut rt_guard = state.realtime_engine.lock().await;
     if let Some(mut old_rt) = rt_guard.take() {
@@ -84,6 +78,7 @@ pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
             crate::core::settings::InteractionMode::PTT,
             playback_engine,
             pipeline_tx,
+            state.pipeline.turn_id.clone(),
         )
         .map_err(|e| format!("[RealtimePTT] Engine start failed: {}", e))?;
 
@@ -98,30 +93,19 @@ pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
         log::warn!("[RealtimePTT] Failed to send StartRealtime to VAD: {}", e);
     }
 
-    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
     *rt_guard = Some(rt_engine);
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    let conv_id = now;
-    state.conversation_id.store(conv_id, Ordering::Relaxed);
-
     ACCUMULATOR.lock().clear();
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    let state_arc = app.state::<std::sync::Arc<AppState>>().inner().clone();
-    super::session::spawn_realtime_idle_monitor(app.clone(), state_arc);
-
+    let conv_id = state.conversation_id.load(Ordering::Relaxed);
     log::info!("[RealtimePTT] Realtime PTT session started (ID: {})", conv_id);
     Ok(())
 }
 
 /// Ends the active real-time Push-To-Talk voice assistant session.
-pub async fn end_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+pub async fn end_session<R: tauri::Runtime>(_app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             engine.playback_engine.cancel();
@@ -136,53 +120,8 @@ pub async fn end_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState
         rt_engine.stop();
     }
 
-    state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
     ACCUMULATOR.lock().clear();
-
-    let conv_id = state.conversation_id.load(Ordering::Relaxed);
-    if conv_id != 0 {
-        let mem_lock = state.memory_tx.lock();
-        if let Some(ref tx) = *mem_lock {
-            if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
-                session_id: conv_id.to_string(),
-                summary: String::new(),
-            }) {
-                log::trace!("[RealtimePTT] Failed to send SessionEnd to memory worker: {}", e);
-            }
-        }
-    }
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-
-    {
-        let persist_lock = state.persist_tx.lock();
-        if let Some(ref tx) = *persist_lock {
-            if let Err(e) = tx.try_send(
-                crate::persistence::events::PersistenceEvent::SessionEnded {
-                    id: conv_id,
-                    timestamp_ms: now,
-                },
-            ) {
-                log::warn!("[RealtimePTT] Failed to send SessionEnded to persist: {}", e);
-            }
-        }
-    }
-
-    if let Ok(guard) = state.engine.try_lock() {
-        if let Some(ref engine) = *guard {
-            engine.playback_engine.cancel();
-        }
-        drop(guard);
-        crate::core::stop_audio_engine(state).await?;
-    } else {
-        crate::core::stop_audio_engine(state).await?;
-    }
-
-    let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Idle, &ctx, app, state);
+    super::session::purge_session_cache();
 
     log::info!("[RealtimePTT] Realtime PTT session ended");
     Ok(())
@@ -312,7 +251,6 @@ pub fn on_speech_start(
     playback: &Arc<PlaybackEngine>,
 ) {
     super::session::realtime_barge_in(state, playback);
-    state.conversation_manager.lock().handle_barge_in();
 }
 
 /// Handles incoming final transcription from the real-time server.

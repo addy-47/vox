@@ -12,8 +12,6 @@ mod common;
 
 use common::harness::get_test_app_handle;
 use common::paths::get_qwen_model_path;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 use std::time::Duration;
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::VoxSettings;
@@ -36,12 +34,10 @@ fn setup_test_llm_worker() -> (
 
     let mut llm_tx: Option<std::sync::mpsc::Sender<LlmCommand>> = None;
     let mut llm_handle: Option<std::thread::JoinHandle<()>> = None;
-    let is_loaded = Arc::new(AtomicBool::new(false));
 
     let handles = LlmWarmUpHandles {
         llm_tx: &mut llm_tx,
         llm_handle: &mut llm_handle,
-        is_loaded,
         llm_provider_cache: None,
     };
 

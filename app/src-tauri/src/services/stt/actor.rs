@@ -22,7 +22,6 @@ pub struct SttActorChannels {
 
 pub struct SttActorHandles {
     pub cancel_flag: Arc<AtomicBool>,
-    pub is_loaded: Arc<AtomicBool>,
     pub engine_shutdown: Arc<AtomicBool>,
 }
 
@@ -283,7 +282,6 @@ fn run_worker_loop(
             }
         }
     }
-    handles.is_loaded.store(false, std::sync::atomic::Ordering::Relaxed);
     log::info!("[STT] Worker thread exiting.");
 }
 
@@ -304,8 +302,6 @@ pub fn spawn_stt_worker(
             }
 
             log::info!("[STT] >>> Dedicated worker thread started.");
-            handles.is_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
-
             run_worker_loop(&*provider, channels, handles);
         })
         .map_err(|e| e.to_string())

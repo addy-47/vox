@@ -1,10 +1,9 @@
-use super::{EmbeddedProvider, LlmProvider, ProviderKind, RemoteTransport};
+use super::{EmbeddedProvider, LlmProvider, RemoteTransport};
 use crate::core::constants::{EVENT_MODEL_FAILED, EVENT_MODEL_LOADING, EVENT_MODEL_READY};
 use crate::core::events::VoxEvent;
 use crate::core::settings::{LlmProviderConfig, VoxSettings};
 use crate::services::llm::types::GenerationRequest;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::Emitter;
 
@@ -25,10 +24,7 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
     rx: std::sync::mpsc::Receiver<LlmCommand>,
     provider: Arc<dyn LlmProvider>,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
-    is_loaded: Arc<AtomicBool>,
 ) {
-    let is_local = provider.kind() == ProviderKind::Embedded;
-    is_loaded.store(is_local, Ordering::Relaxed);
     if let Err(e) = app.emit(EVENT_MODEL_READY, "LLM") {
         log::warn!("[LLM Worker] Failed to emit EVENT_MODEL_READY: {}", e);
     }
@@ -67,7 +63,6 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
         }
     }
 
-    is_loaded.store(false, Ordering::Relaxed);
     log::info!("[LLM Worker] Loop exited. Provider will be dropped.");
 }
 
@@ -116,7 +111,6 @@ pub type LlmProviderCache = Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>
 pub struct LlmWarmUpHandles<'a> {
     pub llm_tx: &'a mut Option<std::sync::mpsc::Sender<LlmCommand>>,
     pub llm_handle: &'a mut Option<std::thread::JoinHandle<()>>,
-    pub is_loaded: Arc<AtomicBool>,
     pub llm_provider_cache: Option<LlmProviderCache>,
 }
 
@@ -144,7 +138,6 @@ pub fn warm_up_llm<R: tauri::Runtime + 'static>(
             if let Err(emit_err) = app.emit(EVENT_MODEL_FAILED, format!("LLM: {}", e)) {
                 log::warn!("[LLM Actor] Failed to emit EVENT_MODEL_FAILED: {}", emit_err);
             }
-            handles.is_loaded.store(false, Ordering::Relaxed);
             return Err(e);
         }
     };
@@ -158,13 +151,12 @@ pub fn warm_up_llm<R: tauri::Runtime + 'static>(
     *handles.llm_tx = Some(tx);
 
     let app_clone = app.clone();
-    let is_loaded = handles.is_loaded;
     let worker_provider = Arc::clone(&provider_arc);
 
     let handle = std::thread::Builder::new()
         .name("vox-llm-persistent".to_string())
         .spawn(move || {
-            spawn_llm_worker(app_clone, rx, worker_provider, event_tx, is_loaded);
+            spawn_llm_worker(app_clone, rx, worker_provider, event_tx);
         })
         .map_err(|e| e.to_string())?;
 

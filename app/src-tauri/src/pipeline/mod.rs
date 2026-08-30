@@ -103,4 +103,50 @@ pub async fn init_new_session(state: &AppState, base_prompt: &str) {
     }
 }
 
+/// Spawns an idle observer for the assistant pipeline that auto-pauses the session
+/// after 7 continuous minutes in the Ready state.
+pub fn spawn_idle_monitor<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    state: std::sync::Arc<AppState>,
+) {
+    tauri::async_runtime::spawn(async move {
+        let mut state_rx = state.pipeline.state_rx.clone();
+        loop {
+            if *state_rx.borrow() == crate::core::state::InteractionState::Ready {
+                tokio::select! {
+                    _ = tokio::time::sleep(crate::services::realtime::REALTIME_IDLE_TIMEOUT) => {
+                        if state.pipeline.state() == crate::core::state::InteractionState::Ready {
+                            log::info!("[Pipeline] Auto-pausing session after 7 minutes of idle Ready state.");
+                            let ctx = RoutingContext::from_app_state(&state);
+                            match (&ctx.pipeline_mode, &ctx.interaction_mode) {
+                                (PipelineMode::Modular, InteractionMode::Passive) => {
+                                    let _ = crate::pipeline::modular::passive::pause_session(&app, &state).await;
+                                }
+                                (PipelineMode::Realtime, InteractionMode::Passive) => {
+                                    let _ = crate::pipeline::realtime::passive::pause_session(&app, &state).await;
+                                }
+                                _ => {
+                                    transition(crate::core::state::InteractionState::Paused, &ctx, &app, &state);
+                                }
+                            }
+                        }
+                    }
+                    res = state_rx.changed() => {
+                        if res.is_err() {
+                            break;
+                        }
+                    }
+                }
+            } else {
+                if state_rx.changed().await.is_err() {
+                    break;
+                }
+                if state.pipeline.state() == crate::core::state::InteractionState::Idle {
+                    break;
+                }
+            }
+        }
+    });
+}
+
 pub use router::spawn_router;

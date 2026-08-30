@@ -42,6 +42,7 @@ pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> R
     state
         .owner
         .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
     let ctx = RoutingContext::from_app_state(&state);
     let vad_mode = match ctx.interaction_mode {
@@ -56,6 +57,49 @@ pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> R
             }
         }
     }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let conv_id = now;
+    state.conversation_id.store(conv_id, Ordering::Relaxed);
+
+    {
+        let persist_lock = state.persist_tx.lock();
+        if let Some(ref tx) = *persist_lock {
+            if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::SessionStarted {
+                id: conv_id,
+                timestamp_ms: now,
+            }) {
+                log::warn!("[IPC::Assistant] Failed to send SessionStarted to persist: {}", e);
+            }
+        }
+    }
+
+    {
+        let mem_lock = state.memory_tx.lock();
+        if let Some(ref tx) = *mem_lock {
+            if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::ActiveSessionChanged {
+                session_id: conv_id,
+            }) {
+                log::trace!("[IPC::Assistant] Failed to send ActiveSessionChanged to memory worker: {}", e);
+            }
+        }
+    }
+
+    let prompt = {
+        let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
+        match ctx.pipeline_mode {
+            PipelineMode::Modular => settings.persona.modular_prompt.clone(),
+            PipelineMode::Realtime => settings.persona.realtime_prompt.clone(),
+        }
+    };
+
+    crate::pipeline::init_new_session(&state, &prompt).await;
+
+    let state_arc = state.inner().clone();
+    crate::pipeline::spawn_idle_monitor(app.clone(), state_arc);
 
     match (ctx.pipeline_mode, ctx.interaction_mode) {
         (PipelineMode::Modular, InteractionMode::Passive) => {
@@ -83,7 +127,7 @@ pub async fn end_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Res
     }
 
     let ctx = RoutingContext::from_app_state(&state);
-    match (ctx.pipeline_mode, ctx.interaction_mode) {
+    match (&ctx.pipeline_mode, &ctx.interaction_mode) {
         (PipelineMode::Modular, InteractionMode::Passive) => {
             crate::pipeline::modular::passive::end_session(&app, &state).await?;
         }
@@ -97,6 +141,40 @@ pub async fn end_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Res
             crate::pipeline::realtime::ptt::end_session(&app, &state).await?;
         }
     }
+
+    state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+
+    let conv_id = state.conversation_id.load(Ordering::Relaxed);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    {
+        let persist_lock = state.persist_tx.lock();
+        if let Some(ref tx) = *persist_lock {
+            if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
+                id: conv_id,
+                timestamp_ms: now,
+            }) {
+                log::warn!("[IPC::Assistant] Failed to send SessionEnded to persist: {}", e);
+            }
+        }
+    }
+
+    {
+        let mem_lock = state.memory_tx.lock();
+        if let Some(ref tx) = *mem_lock {
+            if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
+                session_id: conv_id.to_string(),
+                summary: String::new(),
+            }) {
+                log::trace!("[IPC::Assistant] Failed to send SessionEnd to memory worker: {}", e);
+            }
+        }
+    }
+
+    crate::pipeline::transition(InteractionState::Idle, &ctx, &app, &state);
 
     let dictation_enabled = state.settings.read().map(|s| s.dictation.enabled).unwrap_or(false);
     if dictation_enabled {

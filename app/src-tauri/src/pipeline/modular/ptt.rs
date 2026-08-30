@@ -3,7 +3,7 @@ use super::super::{
     EVENT_TRANSCRIPT_FINAL, EVENT_TRANSCRIPT_PARTIAL, WINDOW_MAIN,
 };
 use crate::core::events::VoxEvent;
-use crate::core::state::{AppState, InteractionOwner, InteractionState, VadCommand};
+use crate::core::state::{AppState, InteractionState, VadCommand};
 use crate::services::audio::PlaybackEngine;
 use crate::services::llm::actor::LlmCommand;
 use crate::services::tts::actor::{TtsClauseChunker, TtsCommand};
@@ -60,96 +60,27 @@ static ACCUMULATOR: LazyLock<Mutex<TurnAccumulator>> =
 
 /// Starts the modular Push-To-Talk session.
 pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    crate::core::start_audio_engine(app, state).await?;
     super::ensure_modular_workers(app, state).await?;
-
-    state
-        .owner
-        .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
-    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    let conv_id = now;
-    state.conversation_id.store(conv_id, Ordering::Relaxed);
-
-    {
-        let persist_lock = state.persist_tx.lock();
-        if let Some(ref tx) = *persist_lock {
-            if let Err(e) = tx.try_send(
-                crate::persistence::events::PersistenceEvent::SessionStarted {
-                    id: conv_id,
-                    timestamp_ms: now,
-                },
-            ) {
-                log::warn!("[ModularPTT] Failed to send SessionStarted to persist: {}", e);
-            }
-        }
-    }
-
-    let prompt = state.settings.read().unwrap_or_else(|p| p.into_inner()).persona.modular_prompt.clone();
-    super::super::init_new_session(state, &prompt).await;
 
     ACCUMULATOR.lock().clear();
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
+    let conv_id = state.conversation_id.load(Ordering::Relaxed);
     log::info!("[ModularPTT] Modular PTT session started (ID: {})", conv_id);
     Ok(())
 }
 
 /// Ends the active modular Push-To-Talk session.
-pub async fn end_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+pub async fn end_session<R: tauri::Runtime>(_app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     ACCUMULATOR.lock().clear();
-
-    let conv_id = state.conversation_id.load(Ordering::Relaxed);
-    if conv_id != 0 {
-        let mem_lock = state.memory_tx.lock();
-        if let Some(ref tx) = *mem_lock {
-            if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
-                session_id: conv_id.to_string(),
-                summary: String::new(),
-            }) {
-                log::trace!("[ModularPTT] Failed to send SessionEnd to memory worker: {}", e);
-            }
-        }
-    }
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-
-    {
-        let persist_lock = state.persist_tx.lock();
-        if let Some(ref tx) = *persist_lock {
-            if let Err(e) = tx.try_send(
-                crate::persistence::events::PersistenceEvent::SessionEnded {
-                    id: conv_id,
-                    timestamp_ms: now,
-                },
-            ) {
-                log::warn!("[ModularPTT] Failed to send SessionEnded to persist: {}", e);
-            }
-        }
-    }
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             engine.playback_engine.cancel();
         }
-        drop(guard);
-        crate::core::stop_audio_engine(state).await?;
-    } else {
-        crate::core::stop_audio_engine(state).await?;
     }
-
-    let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Idle, &ctx, app, state);
 
     log::info!("[ModularPTT] Modular PTT session ended");
     Ok(())

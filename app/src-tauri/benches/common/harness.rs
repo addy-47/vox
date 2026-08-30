@@ -55,7 +55,6 @@ pub fn benchmark_streaming_provider(
     let (pipeline_event_tx, pipeline_event_rx) = mpsc::channel::<VoxEvent>();
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
-    let is_loaded = Arc::new(AtomicBool::new(false));
     let engine_shutdown = Arc::new(AtomicBool::new(false));
 
     let channels = SttActorChannels {
@@ -64,7 +63,6 @@ pub fn benchmark_streaming_provider(
     };
     let handles = SttActorHandles {
         cancel_flag,
-        is_loaded,
         engine_shutdown: engine_shutdown.clone(),
     };
 
@@ -93,7 +91,6 @@ pub fn benchmark_streaming_provider(
     };
 
     let vad_handles = VadActorHandles {
-        is_loaded: Arc::new(AtomicBool::new(false)),
         state_atomic: Arc::new(AtomicU32::new(0)),
         turn_id_atomic: Arc::new(AtomicU32::new(0)),
         audio_suppressed: Arc::new(AtomicBool::new(false)),

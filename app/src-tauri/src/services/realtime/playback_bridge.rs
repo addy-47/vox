@@ -30,6 +30,8 @@ impl PlaybackBridge {
         playback_engine: Arc<PlaybackEngine>,
         config: RealtimeAudioConfig,
         handle: &tokio::runtime::Handle,
+        event_tx: std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
+        turn_id: Arc<std::sync::atomic::AtomicU32>,
     ) {
         let (tx, mut rx) = channel::<Vec<i16>>(BRIDGE_CHANNEL_CAPACITY);
         self.tx = Some(tx);
@@ -57,7 +59,17 @@ impl PlaybackBridge {
             };
 
             let mut f32_chunk = Vec::with_capacity(1024);
+            let mut seen_first_chunk = false;
+
             while let Some(pcm) = rx.recv().await {
+                if !seen_first_chunk {
+                    seen_first_chunk = true;
+                    let tid = turn_id.load(std::sync::atomic::Ordering::Relaxed);
+                    if let Err(e) = event_tx.send(crate::core::events::VoxEvent::PlaybackStarted { turn_id: tid }) {
+                        log::warn!("[PlaybackBridge] Failed to emit PlaybackStarted event: {}", e);
+                    }
+                }
+
                 let pcm_24k = if let Some(ref mut r) = resampler {
                     match r.process_i16(&pcm) {
                         Ok(out) => out,
