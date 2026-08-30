@@ -4,10 +4,9 @@ use std::sync::Arc;
 use anyhow::Result;
 use ringbuf::traits::Consumer;
 use thread_priority::{set_current_thread_priority, ThreadPriority};
-use tokio::sync::mpsc;
 
 use super::telemetry::process_and_emit_telemetry;
-use super::utils::{f32_to_i16_pcm, is_above_noise_gate, PreRollBuffer};
+use super::utils::{f32_to_i16_pcm, PreRollBuffer};
 use super::{
     VadBackend, VadEngine as _, VadOperationalMode, VAD_CHUNK_SIZE, VAD_MAX_PARTIAL_WINDOW_SAMPLES,
     VAD_MIN_UTTERANCE_SAMPLES, VAD_PARTIAL_INTERVAL_SAMPLES, VAD_PRE_ROLL_CAPACITY,
@@ -133,10 +132,6 @@ fn process_vad_commands(
                 }
                 state.operational_mode = op;
             }
-            VadCommand::SetAudioSink(sink) => {
-                log::debug!("[VAD Actor] Updating audio sink channel");
-                state.audio_sink = sink;
-            }
             VadCommand::StartWindowValidation => {
                 log::debug!("[VAD Actor] Starting windowed speech validation");
                 state.window_active = true;
@@ -192,15 +187,17 @@ fn process_vad_commands(
 /// Checks whether audio processing should be ducked due to speaker output or explicit suppression.
 fn should_suppress_audio(
     audio_suppressed: &AtomicBool,
-    playback_active: &AtomicBool,
+    state_atomic: &AtomicU32,
     state: &VadActorState,
 ) -> bool {
     if audio_suppressed.load(Ordering::Relaxed) {
         return true;
     }
 
-    let is_playing = playback_active.load(Ordering::Relaxed);
-    state.realtime_tx.is_none() && is_playing && state.audio_mode == AudioOutputMode::Speaker
+    state.realtime_tx.is_none()
+        && crate::core::state::InteractionState::from(state_atomic.load(Ordering::Relaxed))
+            == crate::core::state::InteractionState::Speaking
+        && state.audio_mode == AudioOutputMode::Speaker
 }
 
 /// Configuration settings for the VAD actor.
@@ -216,7 +213,7 @@ pub struct VadActorConfig {
 #[derive(Clone)]
 pub struct VadActorHandles {
     pub is_loaded: Arc<AtomicBool>,
-    pub playback_active: Arc<AtomicBool>,
+    pub state_atomic: Arc<AtomicU32>,
     pub turn_id_atomic: Arc<AtomicU32>,
     pub audio_suppressed: Arc<AtomicBool>,
     pub engine_shutdown: Arc<AtomicBool>,
@@ -225,7 +222,6 @@ pub struct VadActorHandles {
 
 /// Communication channels utilized by the VAD actor.
 pub struct VadActorChannels {
-    pub event_tx: mpsc::Sender<serde_json::Value>,
     pub stt_tx: std::sync::mpsc::Sender<SttCommand>,
     pub vad_rx: std::sync::mpsc::Receiver<VadCommand>,
     pub telemetry_tx: crossbeam_channel::Sender<TelemetryEvent>,
@@ -238,7 +234,6 @@ fn handle_speech_start(
     turn_id_atomic: &AtomicU32,
     stt_tx: &std::sync::mpsc::Sender<SttCommand>,
     vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
-    event_tx: &mpsc::Sender<serde_json::Value>,
 ) {
     state.in_speech = true;
     state.current_turn_id = turn_id_atomic.fetch_add(1, Ordering::Relaxed) + 1;
@@ -260,13 +255,6 @@ fn handle_speech_start(
         }
     }
 
-    if let Err(e) = event_tx.try_send(serde_json::json!({
-        "type": "speech_start",
-        "session_id": state.current_turn_id
-    })) {
-        log::trace!("[VAD Actor] Speech start event dropped: {}", e);
-    }
-
     state.utterance_buffer.clear();
     state.pre_roll_buffer.copy_into(&mut state.utterance_buffer);
     state.samples_since_partial = state.utterance_buffer.len();
@@ -279,7 +267,6 @@ fn handle_speech_end(
     state: &mut VadActorState,
     stt_tx: &std::sync::mpsc::Sender<SttCommand>,
     vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
-    event_tx: &mpsc::Sender<serde_json::Value>,
 ) {
     state.in_speech = false;
     log::info!(
@@ -294,13 +281,6 @@ fn handle_speech_end(
         }) {
             log::warn!("[VAD Actor] Failed to send SpeechEnd event: {}", e);
         }
-    }
-
-    if let Err(e) = event_tx.try_send(serde_json::json!({
-        "type": "speech_end",
-        "session_id": state.current_turn_id
-    })) {
-        log::trace!("[VAD Actor] Speech end event dropped: {}", e);
     }
 
     vad.flush();
@@ -343,20 +323,16 @@ fn accumulate_speech_frames(
 }
 
 /// Executes ContinuousSegmentation mode for autonomous speech bounding.
-#[allow(clippy::too_many_arguments)]
 fn process_continuous_segmentation(
     chunk: &[f32],
     raw_energy: f32,
-    is_earshot: bool,
     vad: &mut VadBackend,
     state: &mut VadActorState,
     turn_id_atomic: &AtomicU32,
     stt_tx: &std::sync::mpsc::Sender<SttCommand>,
     vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
-    event_tx: &mpsc::Sender<serde_json::Value>,
 ) {
-    let is_speech =
-        vad.predict(chunk) && is_above_noise_gate(raw_energy, state.noise_gate, is_earshot);
+    let is_speech = vad.predict(chunk) && vad.is_above_noise_gate(raw_energy, state.noise_gate);
 
     if is_speech {
         state.active_frames += 1;
@@ -368,7 +344,6 @@ fn process_continuous_segmentation(
                 turn_id_atomic,
                 stt_tx,
                 vox_event_tx,
-                event_tx,
             );
         }
     } else {
@@ -381,7 +356,6 @@ fn process_continuous_segmentation(
                 state,
                 stt_tx,
                 vox_event_tx,
-                event_tx,
             );
         }
     }
@@ -397,7 +371,6 @@ fn process_continuous_segmentation(
 fn process_windowed_validation(
     chunk: &[f32],
     raw_energy: f32,
-    is_earshot: bool,
     vad: &mut VadBackend,
     state: &mut VadActorState,
 ) {
@@ -406,8 +379,7 @@ fn process_windowed_validation(
         return;
     }
 
-    let is_speech =
-        vad.predict(chunk) && is_above_noise_gate(raw_energy, state.noise_gate, is_earshot);
+    let is_speech = vad.predict(chunk) && vad.is_above_noise_gate(raw_energy, state.noise_gate);
 
     if is_speech {
         if !state.window_speech_detected {
@@ -467,7 +439,6 @@ where
             config.initial_mode,
             config.initial_audio_mode,
         );
-        let is_earshot = matches!(vad, VadBackend::Earshot(_));
         let mut filter_bank = FilterBank::new(16000.0);
         let mut chunk = vec![0.0f32; VAD_CHUNK_SIZE];
 
@@ -498,7 +469,7 @@ where
 
                 if should_suppress_audio(
                     &handles.audio_suppressed,
-                    &handles.playback_active,
+                    &handles.state_atomic,
                     &state,
                 ) {
                     continue;
@@ -512,20 +483,17 @@ where
                         process_continuous_segmentation(
                             &chunk,
                             raw_energy,
-                            is_earshot,
                             &mut vad,
                             &mut state,
                             &handles.turn_id_atomic,
                             &channels.stt_tx,
                             channels.vox_event_tx.as_ref(),
-                            &channels.event_tx,
                         );
                     }
                     VadOperationalMode::WindowedValidation => {
                         process_windowed_validation(
                             &chunk,
                             raw_energy,
-                            is_earshot,
                             &mut vad,
                             &mut state,
                         );

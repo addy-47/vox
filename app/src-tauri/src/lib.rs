@@ -224,9 +224,9 @@ pub fn run() {
             if memory_enabled && local_gpu_info.has_gpu {
                 let memory_tx = crate::persistence::memory_worker::spawn_memory_worker(
                     crate::utils::paths::get().db.clone(),
-                    std::sync::Arc::clone(&telemetry_state.is_private_mode),
                     std::sync::Arc::clone(&app_state.settings),
                     app_state.memory.graph_version.clone(),
+                    app_state.pipeline.state_rx.clone(),
                 );
                 app_state.memory_tx = parking_lot::Mutex::new(Some(memory_tx));
                 log::info!("[BOOTSTRAP] Memory Worker spawned on background thread.");
@@ -245,6 +245,7 @@ pub fn run() {
             crate::monitoring::collector::spawn_monitoring_collector(std::sync::Arc::clone(&state_arc));
             spawn_system_monitor(app.handle().clone());
             crate::monitoring::telemetry_emitter::spawn_telemetry_emitter(app.handle().clone());
+            crate::services::memory::spawn_state_compaction_observer(std::sync::Arc::clone(&state_arc));
 
             // ── 1.6 Dictation Global Hotkey Registration ──────────────────────────
             {
@@ -441,18 +442,15 @@ pub fn run() {
                     let handle = window.app_handle().clone();
                     tauri::async_runtime::spawn(async move {
                         let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
-                        let (dictation_enabled, is_engaged) = {
-                            let s = state.settings.read().unwrap();
-                            (s.dictation.enabled, state.pipeline.is_engaged.load(std::sync::atomic::Ordering::Relaxed))
-                        };
+                        let dictation_enabled = state.settings.read().map(|s| s.dictation.enabled).unwrap_or(false);
 
-                        if !dictation_enabled && !is_engaged {
-                            log::info!("[Window] Main window hidden, Dictation is disabled, and app is disengaged. Offloading engine...");
+                        if !dictation_enabled && state.pipeline.state() == crate::core::state::InteractionState::Idle {
+                            log::info!("[Window] Main window hidden, Dictation is disabled, and assistant is Idle. Offloading engine...");
                             if let Err(e) = crate::ipc::pipeline::stop_engine(handle).await {
                                 log::warn!("[Window] Failed to stop engine on window hide: {}", e);
                             }
                         } else {
-                            log::info!("[Window] Main window hidden. Engine kept alive. Dictation enabled: {}, Engaged: {}", dictation_enabled, is_engaged);
+                            log::info!("[Window] Main window hidden. Engine kept alive.");
                         }
                     });
                 }

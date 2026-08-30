@@ -43,7 +43,5 @@ pub enum VoxEvent {
         turn_id: u32,
         message: String,
     },
-    WarmUp,
     Shutdown,
-    SettingsUpdated(Box<crate::core::settings::VoxSettings>),
 }

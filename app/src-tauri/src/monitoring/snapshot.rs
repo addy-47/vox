@@ -13,7 +13,6 @@ pub struct RuntimeSnapshot {
 
     /// System activity flags.
     pub playback_active: bool,
-    pub tts_generating: bool,
 
     /// System resource utilization.
     pub system_cpu_usage: f32,
@@ -61,8 +60,6 @@ pub struct RuntimeSnapshot {
     pub is_intra_edge_classifier_loaded: bool,
     pub is_inter_edge_classifier_loaded: bool,
     pub is_translit_loaded: bool,
-    pub is_sleeping: bool,
-    pub is_engaged: bool,
 
     /// CPU frequency governor (Linux only, e.g. "powersave", "performance"). Empty string if unavailable.
     pub cpu_governor: String,

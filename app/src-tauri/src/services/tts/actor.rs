@@ -10,15 +10,17 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::Emitter;
 
-/// Commands dispatched to the background speech synthesis worker actor.
+/// Commands accepted by the dedicated TTS synthesis worker thread.
+#[derive(Debug)]
 pub enum TtsCommand {
-    Generate { turn_id: u32, text: String },
-    UpdateQualitySteps(u32),
-    UpdateSpeed(f32),
+    Generate {
+        turn_id: u32,
+        text: String,
+    },
     Shutdown,
 }
 
-/// Spawns a dedicated OS worker thread processing speech synthesis tasks in a blocking loop.
+/// Spawns the dedicated TTS worker thread and processes incoming synthesis requests.
 pub fn spawn_tts_worker<R: tauri::Runtime + 'static>(
     app: tauri::AppHandle<R>,
     rx: std::sync::mpsc::Receiver<TtsCommand>,
@@ -29,30 +31,18 @@ pub fn spawn_tts_worker<R: tauri::Runtime + 'static>(
 ) {
     is_loaded.store(true, Ordering::Relaxed);
     if let Err(e) = app.emit(EVENT_MODEL_READY, "TTS") {
-        log::warn!("[TTS Worker] Failed to emit model ready event: {:?}", e);
+        log::warn!("[TTS Worker] Failed to emit EVENT_MODEL_READY: {}", e);
     }
 
-    log::info!(
-        "[TTS Worker] Persistent loop started with provider: {:?}",
-        provider.kind()
-    );
+    log::info!("[TTS Worker] Persistent loop started.");
 
     while let Ok(cmd) = rx.recv() {
         match cmd {
             TtsCommand::Generate { turn_id, text } => {
-                if let Err(e) =
-                    provider.synthesize_chunk(&text, turn_id, cancel_flag.clone(), event_tx.clone())
-                {
-                    log::error!("[TTS Worker] Synthesis error (turn {}): {}", turn_id, e);
+                log::debug!("[TTS Worker] Processing TTS chunk: '{}'", text);
+                if let Err(e) = provider.synthesize_chunk(&text, turn_id, cancel_flag.clone(), event_tx.clone()) {
+                    log::warn!("[TTS Worker] Synthesis chunk failed for turn {}: {}", turn_id, e);
                 }
-            }
-            TtsCommand::UpdateQualitySteps(steps) => {
-                provider.set_quality_steps(steps);
-                log::info!("[TTS Worker] Quality steps updated to {}", steps);
-            }
-            TtsCommand::UpdateSpeed(speed) => {
-                provider.set_speed(speed);
-                log::info!("[TTS Worker] Speed updated to {:.2}", speed);
             }
             TtsCommand::Shutdown => {
                 log::info!("[TTS Worker] Shutdown command received. Exiting loop.");
@@ -163,7 +153,6 @@ pub struct TtsWarmUpHandles<'a> {
     pub tts_handle: &'a mut Option<std::thread::JoinHandle<()>>,
     pub cancel_flag: Arc<AtomicBool>,
     pub is_loaded: Arc<AtomicBool>,
-    pub is_sleeping: Arc<AtomicBool>,
 }
 
 /// Spawns and initializes a persistent TTS worker actor thread.
@@ -188,7 +177,6 @@ pub fn warm_up_tts<R: tauri::Runtime + 'static>(
     let app_clone = app.clone();
     let cancel_flag = handles.cancel_flag;
     let is_loaded = handles.is_loaded;
-    let is_sleeping = handles.is_sleeping;
 
     let handle = std::thread::Builder::new()
         .name("vox-tts-persistent".to_string())
@@ -198,7 +186,6 @@ pub fn warm_up_tts<R: tauri::Runtime + 'static>(
         .map_err(|e| e.to_string())?;
 
     *handles.tts_handle = Some(handle);
-    is_sleeping.store(false, Ordering::Relaxed);
     Ok(())
 }
 

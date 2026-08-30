@@ -18,12 +18,12 @@ use common::harness::{
     assert_channel_empty_after, get_test_app_handle, setup_stt_worker, setup_vad_actor,
 };
 use common::paths::get_asset_path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{AudioOutputMode, InteractionMode};
-use vox_lib::core::state::VadCommand;
+use vox_lib::core::state::{InteractionState, VadCommand};
 use vox_lib::services::stt::actor::SttCommand;
 use vox_lib::services::vad::actor::VadActorConfig;
 use vox_lib::services::vad::VAD_SPEECH_END_FRAMES;
@@ -46,12 +46,12 @@ fn test_vad_ducking_suppresses_audio_during_playback() {
         initial_mode: InteractionMode::Passive,
         initial_audio_mode: AudioOutputMode::Speaker,
     };
-    let playback_active = Arc::new(AtomicBool::new(true));
+    let state_atomic = Arc::new(AtomicU32::new(InteractionState::Speaking as u32));
 
     let (vad_cmd_tx, vox_event_rx, mut producer, vad_handle) = setup_vad_actor(
         stt_tx.clone(),
         vad_config,
-        playback_active.clone(),
+        state_atomic.clone(),
         Arc::new(AtomicBool::new(false)),
         engine_shutdown.clone(),
     );
@@ -103,12 +103,12 @@ fn test_vad_ducking_resumes_after_playback() {
         initial_mode: InteractionMode::Passive,
         initial_audio_mode: AudioOutputMode::Speaker,
     };
-    let playback_active = Arc::new(AtomicBool::new(true));
+    let state_atomic = Arc::new(AtomicU32::new(InteractionState::Speaking as u32));
 
     let (vad_cmd_tx, vox_event_rx, mut producer, vad_handle) = setup_vad_actor(
         stt_tx.clone(),
         vad_config,
-        playback_active.clone(),
+        state_atomic.clone(),
         Arc::new(AtomicBool::new(false)),
         engine_shutdown.clone(),
     );
@@ -125,7 +125,7 @@ fn test_vad_ducking_resumes_after_playback() {
     );
 
     // 2. Playback ends -> unsuppress
-    playback_active.store(false, Ordering::Relaxed);
+    state_atomic.store(InteractionState::Ready as u32, Ordering::Relaxed);
 
     // 3. Second burst: audio streamed after playback ends must trigger SpeechStart
     stream_audio_to_ring_buffer(&audio, &mut producer);
@@ -174,12 +174,12 @@ fn test_vad_headset_mode_no_suppression_during_playback() {
         initial_mode: InteractionMode::Passive,
         initial_audio_mode: AudioOutputMode::Headset,
     };
-    let playback_active = Arc::new(AtomicBool::new(true));
+    let state_atomic = Arc::new(AtomicU32::new(InteractionState::Speaking as u32));
 
     let (vad_cmd_tx, vox_event_rx, mut producer, vad_handle) = setup_vad_actor(
         stt_tx.clone(),
         vad_config,
-        playback_active.clone(),
+        state_atomic.clone(),
         Arc::new(AtomicBool::new(false)),
         engine_shutdown.clone(),
     );

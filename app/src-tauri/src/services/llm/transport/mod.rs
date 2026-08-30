@@ -10,7 +10,6 @@ use crate::services::llm::types::{GenerationRequest, LlmError, ProviderCapabilit
 use futures_util::future::BoxFuture;
 use parking_lot::RwLock;
 use serde::Deserialize;
-use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -109,7 +108,7 @@ impl super::LlmProvider for RemoteTransport {
         &'a self,
         request: GenerationRequest,
         turn_id: u32,
-        cancel_flag: &'a Arc<AtomicBool>,
+        cancel: &'a tokio_util::sync::CancellationToken,
         tx: &'a mpsc::Sender<VoxEvent>,
     ) -> BoxFuture<'a, Result<(), LlmError>> {
         Box::pin(async move {
@@ -119,11 +118,11 @@ impl super::LlmProvider for RemoteTransport {
             let res = if cfg.capability_source == CapabilitySource::OllamaNative
                 && cfg.token_limit_field == TokenLimitField::NumPredict
             {
-                ollama::stream_ollama(&self.client, &cfg, &request, turn_id, cancel_flag, tx).await
+                ollama::stream_ollama(&self.client, &cfg, &request, turn_id, cancel, tx).await
             } else if cfg.transport == TransportType::Responses {
-                responses::stream_responses(&self.client, &cfg, &request, turn_id, cancel_flag, tx).await
+                responses::stream_responses(&self.client, &cfg, &request, turn_id, cancel, tx).await
             } else {
-                chat_completions::stream_chat_completions(&self.client, &cfg, &request, turn_id, cancel_flag, tx).await
+                chat_completions::stream_chat_completions(&self.client, &cfg, &request, turn_id, cancel, tx).await
             };
 
             // Negotiation: if HTTP 400 unsupported_parameter naming the token field, flip and retry once
@@ -148,9 +147,9 @@ impl super::LlmProvider for RemoteTransport {
                         cfg.token_limit_field = next_field;
 
                         return if cfg.transport == TransportType::Responses {
-                            responses::stream_responses(&self.client, &cfg, &request, turn_id, cancel_flag, tx).await
+                            responses::stream_responses(&self.client, &cfg, &request, turn_id, cancel, tx).await
                         } else {
-                            chat_completions::stream_chat_completions(&self.client, &cfg, &request, turn_id, cancel_flag, tx).await
+                            chat_completions::stream_chat_completions(&self.client, &cfg, &request, turn_id, cancel, tx).await
                         };
                     }
                 }
