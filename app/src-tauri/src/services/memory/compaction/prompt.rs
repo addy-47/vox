@@ -1,0 +1,111 @@
+use crate::services::memory::harness::buffer::{ChatMessage, Role};
+
+/// Prompt instructions instructing the LLM to extract durable facts into the 6 memory collections.
+pub const COMPACTION_SYSTEM_PROMPT: &str = r#"<role>
+You are a structured memory extraction engine for an intelligent assistant.
+Your task is to analyze conversation turns and extract complete, self-contained declarative facts while preserving full semantic context.
+</role>
+
+<objective>
+Extract explicit, durable, high-confidence declarative facts into the six memory collections defined below.
+</objective>
+
+<output_schema>
+{
+  "Identity": [],
+  "Directives": [],
+  "Narrative": "",
+  "Profile": [],
+  "Entities": [],
+  "Constraints": []
+}
+</output_schema>
+
+<collection_definitions>
+Identity:
+Stable foundational facts that uniquely identify the user, such as their full name, core primary role, or enduring self-identification.
+
+Directives:
+Active operational goals, pending tasks, assigned work, commitments, standing instructions, scheduled events, and progress updates.
+
+Narrative:
+A single, concise, chronological narrative summary describing the session's overall progression and key milestones.
+
+Profile:
+Stable personal characteristics, preferences, skills, habits, experiences, interests, and behavioral tendencies.
+
+Entities:
+Declarative facts about named external subjects (people, organizations, tools, services) and their specific relationship or relevance to the user.
+
+Constraints:
+Hard, non-negotiable limits, safety boundaries, security rules, health/dietary restrictions, budget limits, or strict technical requirements.
+</collection_definitions>
+
+<extraction_principles>
+1. COMPLETE DECLARATIVE SENTENCES ONLY:
+   - Every extracted statement MUST be a complete, self-contained declarative sentence.
+   - NEVER extract single-word labels, bare entity names, or incomplete fragments.
+
+2. CONTEXT & PRECISION PRESERVATION:
+   - Preserve all crucial details in each sentence: numbers, dollar amounts, temporal deadlines, exact model names, and specific constraints.
+   - Keep each extracted statement atomic: state exactly one durable fact per sentence.
+
+3. DISAMBIGUATION & CLASSIFICATION RULES:
+   - Identity vs Profile: Reserve Identity strictly for core foundational user identity. If uncertain, ALWAYS classify under Profile.
+   - Constraints vs Profile: Reserve Constraints strictly for non-negotiable hard limits, safety boundaries, allergies, or strict technical prohibitions. Place soft preferences under Profile.
+   - Directives vs Profile: Directives describe active work, open tasks, and scheduled commitments. General experience or past skills belong under Profile.
+   - Entities: Describe named external entities and the user's explicit relationship or context with them.
+</extraction_principles>
+
+<output_requirements>
+- Output exactly ONE JSON object strictly adhering to <output_schema>.
+- All collections except Narrative are JSON arrays of strings. Narrative is a single string.
+- Do not output any markdown codeblock formatting or surrounding commentary outside the JSON object.
+</output_requirements>"#;
+
+/// Builds the provider-neutral GenerationRequest for compaction.
+pub fn build_compaction_request(
+    history_messages: &[ChatMessage],
+    settings: Option<&crate::core::settings::LlmSettings>,
+) -> crate::services::llm::GenerationRequest {
+    let mut history_text = String::new();
+    for msg in history_messages {
+        history_text.push_str(&format!("{}: {}\n\n", msg.role, msg.content));
+    }
+
+    let user_content = format!(
+        "<conversation_history>\n{}\n</conversation_history>\n\n\
+         <task>\n\
+         Analyze the <conversation_history> above and extract all stated facts into the 6 collections from the <output_schema>.\n\
+         Output ONLY the JSON object starting with {{ and ending with }}.\n\
+         </task>",
+        history_text
+    );
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    let default_settings = crate::core::settings::LlmSettings::default();
+    let effective_settings = settings.unwrap_or(&default_settings);
+    let policy = crate::services::llm::GenerationPolicy::from_settings(effective_settings);
+
+    policy.build_request(
+        crate::services::llm::GenerationPurpose::MemoryCompaction,
+        crate::services::llm::ConversationInput {
+            messages: vec![
+                ChatMessage {
+                    role: Role::System,
+                    content: COMPACTION_SYSTEM_PROMPT.to_string(),
+                    timestamp_ms: now_ms,
+                },
+                ChatMessage {
+                    role: Role::User,
+                    content: user_content,
+                    timestamp_ms: now_ms,
+                },
+            ],
+        },
+    )
+}

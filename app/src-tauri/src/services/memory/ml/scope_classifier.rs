@@ -38,7 +38,6 @@ static SCOPE_CLASSIFIER_INSTANCE: parking_lot::RwLock<Option<QueryScopeClassifie
     parking_lot::RwLock::new(None);
 
 /// Initializes the `QueryScopeClassifier` singleton from the specified model directory.
-/// Returns `Ok(true)` if loaded, `Ok(false)` if model files do not exist.
 pub fn init_scope_classifier(classifier_dir: &Path) -> Result<bool> {
     let model_path = classifier_dir.join(CLASSIFIER_MODEL_FILENAME);
     let tokenizer_path = classifier_dir.join(CLASSIFIER_TOKENIZER_FILENAME);
@@ -96,7 +95,6 @@ pub fn ensure_scope_classifier_loaded() -> Result<bool> {
 }
 
 /// Classifies a turn query into a 4-class `MemoryScope`.
-/// Default fallback: `MemoryScope::Domain` if model missing or error occurs.
 pub fn classify_scope(text: &str) -> MemoryScope {
     if let Err(e) = ensure_scope_classifier_loaded() {
         log::warn!(

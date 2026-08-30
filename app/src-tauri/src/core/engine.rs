@@ -360,7 +360,7 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
             log::warn!("[Core::Engine] Failed to send Shutdown to VAD: {}", e);
         }
 
-        crate::services::llm::actor::cool_down_llm(&mut engine.llm_tx);
+        crate::services::llm::actor::cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));
         crate::services::tts::actor::cool_down_tts(&mut engine.tts_tx);
 
         if let Some(h) = engine.forwarder_handle.take() {

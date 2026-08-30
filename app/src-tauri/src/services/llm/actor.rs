@@ -23,7 +23,7 @@ pub enum LlmCommand {
 pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
     app: tauri::AppHandle<R>,
     rx: std::sync::mpsc::Receiver<LlmCommand>,
-    provider: Box<dyn LlmProvider>,
+    provider: Arc<dyn LlmProvider>,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
     is_loaded: Arc<AtomicBool>,
 ) {
@@ -71,14 +71,14 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
     log::info!("[LLM Worker] Loop exited. Provider will be dropped.");
 }
 
-/// Creates a boxed LLM provider based on settings configuration.
-pub fn create_llm_provider(
-    settings: &VoxSettings,
+/// Creates a boxed LLM provider directly from LlmSettings configuration.
+pub fn create_llm_provider_from_llm_settings(
+    llm_settings: &crate::core::settings::LlmSettings,
     llm_path: &Path,
 ) -> Result<Box<dyn LlmProvider>, String> {
-    let provider_config = settings.llm.to_provider_config();
-    let ctx_size = settings.llm.context_window;
-    let n_threads = settings.llm.threads;
+    let provider_config = llm_settings.to_provider_config();
+    let ctx_size = llm_settings.context_window;
+    let n_threads = llm_settings.threads;
 
     match provider_config {
         LlmProviderConfig::Embedded => EmbeddedProvider::new(llm_path, ctx_size, n_threads)
@@ -102,12 +102,23 @@ pub fn create_llm_provider(
     }
 }
 
+/// Creates a boxed LLM provider based on settings configuration.
+pub fn create_llm_provider(
+    settings: &VoxSettings,
+    llm_path: &Path,
+) -> Result<Box<dyn LlmProvider>, String> {
+    create_llm_provider_from_llm_settings(&settings.llm, llm_path)
+}
+
+pub type LlmProviderCache = Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>>>;
+
 /// Handles and flags passed when warming up the LLM actor.
 pub struct LlmWarmUpHandles<'a> {
     pub llm_tx: &'a mut Option<std::sync::mpsc::Sender<LlmCommand>>,
     pub llm_handle: &'a mut Option<std::thread::JoinHandle<()>>,
     pub is_loaded: Arc<AtomicBool>,
     pub is_sleeping: Arc<AtomicBool>,
+    pub llm_provider_cache: Option<LlmProviderCache>,
 }
 
 /// Spawns and initializes a persistent LLM worker actor thread.
@@ -139,17 +150,23 @@ pub fn warm_up_llm<R: tauri::Runtime + 'static>(
         }
     };
 
+    let provider_arc: Arc<dyn LlmProvider> = Arc::from(provider);
+    if let Some(ref cache) = handles.llm_provider_cache {
+        *cache.write() = Some(Arc::clone(&provider_arc));
+    }
+
     let (tx, rx) = std::sync::mpsc::channel();
     *handles.llm_tx = Some(tx);
 
     let app_clone = app.clone();
     let is_loaded = handles.is_loaded;
     let is_sleeping = handles.is_sleeping;
+    let worker_provider = Arc::clone(&provider_arc);
 
     let handle = std::thread::Builder::new()
         .name("vox-llm-persistent".to_string())
         .spawn(move || {
-            spawn_llm_worker(app_clone, rx, provider, event_tx, is_loaded);
+            spawn_llm_worker(app_clone, rx, worker_provider, event_tx, is_loaded);
         })
         .map_err(|e| e.to_string())?;
 
@@ -159,7 +176,13 @@ pub fn warm_up_llm<R: tauri::Runtime + 'static>(
 }
 
 /// Signals the running LLM worker thread to shutdown and drop its model instance.
-pub fn cool_down_llm(llm_tx: &mut Option<std::sync::mpsc::Sender<LlmCommand>>) {
+pub fn cool_down_llm(
+    llm_tx: &mut Option<std::sync::mpsc::Sender<LlmCommand>>,
+    llm_provider_cache: Option<&LlmProviderCache>,
+) {
+    if let Some(cache) = llm_provider_cache {
+        *cache.write() = None;
+    }
     if let Some(tx) = llm_tx.take() {
         if let Err(e) = tx.send(LlmCommand::Shutdown) {
             log::warn!("[LLM Actor] Failed to send Shutdown command: {}", e);

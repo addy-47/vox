@@ -1,10 +1,10 @@
-use super::batch_result::RelationEdge;
+use super::RelationEdge;
 use crate::core::constants::{
     PM_QUEUE_STATUS_DEDUPED, PM_QUEUE_STATUS_EMBEDDED, PM_QUEUE_STATUS_PROCESSING_EMBED,
     PM_QUEUE_STATUS_SUPERSEDED, PM_RELATION_SUPERSEDES,
 };
 use crate::persistence::{encode_f32_blob, mutations, queries};
-use crate::services::memory::embedder::{ensure_embedder_loaded, generate_embedding};
+use crate::services::memory::ml::embedder::{ensure_embedder_loaded, generate_embedding};
 use crate::services::memory::{SOFT_VECTOR_DEDUP_THRESHOLD, STAGE2_BATCH_SIZE};
 use anyhow::Result;
 use turso::Connection;
@@ -113,7 +113,7 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                     )
                     .await?;
 
-                    let log = super::batch_result::DedupAuditLog {
+                    let log = super::DedupAuditLog {
                         queue_item_id: item.id,
                         item_fact: item.fact.clone(),
                         item_collection: item.collection.clone(),
@@ -147,7 +147,7 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                     )
                     .await?;
 
-                    let log = super::batch_result::DedupAuditLog {
+                    let log = super::DedupAuditLog {
                         queue_item_id: item.id,
                         item_fact: item.fact.clone(),
                         item_collection: item.collection.clone(),
@@ -224,7 +224,7 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
     let duration_ms = start_time.elapsed().as_millis();
 
     if !run_id.is_empty() {
-        let metrics = super::metrics::PipelineStageMetrics {
+        let metrics = super::PipelineStageMetrics {
             run_id: run_id.to_string(),
             stage_name: "stage2_embed".to_string(),
             session_id: String::new(),

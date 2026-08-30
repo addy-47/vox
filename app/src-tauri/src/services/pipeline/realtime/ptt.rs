@@ -400,6 +400,7 @@ pub fn on_speech_start<R: tauri::Runtime>(
 ) {
     super::session::realtime_barge_in(state, playback);
 
+    state.conversation_manager.lock().on_speech_start();
     if IS_RECORDING.load(Ordering::Relaxed) {
         SPEECH_DETECTED.store(true, Ordering::Relaxed);
     }
@@ -419,6 +420,10 @@ pub fn on_speech_end<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, audio:
 
 /// Handles incoming final transcription from the real-time server.
 fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
+    if !state.pipeline.is_engaged.load(Ordering::Relaxed) || state.pipeline.is_paused.load(Ordering::Relaxed) {
+        return;
+    }
+
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         EVENT_TRANSCRIPT_FINAL,
@@ -432,12 +437,41 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
 
     CURRENT_ASSISTANT_RESPONSE.lock().clear();
     *CURRENT_USER_TRANSCRIPT.lock() = text.clone();
-    {
-        let mut cm = state.conversation_manager.lock();
-        if !cm.is_duplicate_user_turn(&text) {
-            cm.push_user_turn(text);
-        }
-    }
+
+    let cm_arc = Arc::clone(&state.conversation_manager);
+    let settings = state.settings.read().unwrap_or_else(|p| p.into_inner()).clone();
+    let conv_id = state.conversation_id.load(Ordering::Relaxed);
+    let cached_provider = state.llm_provider.read().clone();
+    let memory_tx = Arc::new(parking_lot::Mutex::new(state.memory_tx.lock().clone()));
+    let processed_text = text;
+
+    tauri::async_runtime::spawn(async move {
+        let db_path = crate::utils::paths::db_path();
+        let conn_opt = if settings.memory.context_retrieval_enabled {
+            crate::persistence::db::VoxDb::open_readonly(&db_path).await.ok()
+        } else {
+            None
+        };
+
+        let session_id = conv_id.to_string();
+        let _ = crate::services::memory::prepare_turn_context(
+            crate::services::memory::PrepareTurnParams {
+                harness: &cm_arc,
+                tts_tx: None,
+                memory_tx: Some(&memory_tx),
+                conn: conn_opt.as_ref(),
+                query: &processed_text,
+                turn_id,
+                session_id: &session_id,
+                memory: &settings.memory,
+                context_window: settings.llm.context_window as usize,
+                provider_kind: crate::services::llm::ProviderKind::OpenAiCompat,
+                llm_provider: cached_provider.as_deref(),
+                llm_settings: Some(&settings.llm),
+            },
+        )
+        .await;
+    });
 }
 
 /// Handles streamed token delta from the real-time server.
@@ -476,6 +510,8 @@ fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, sta
 
         let conv_id = state.conversation_id.load(Ordering::Relaxed);
         let user_text = CURRENT_USER_TRANSCRIPT.lock().clone();
+        let stt_ms = state.telemetry.latest_stt_ms.load(Ordering::Relaxed);
+        let ttft_ms = state.telemetry.latest_ttft_ms.load(Ordering::Relaxed);
         let persist_lock = state.persist_tx.lock();
         if let Some(ref tx) = *persist_lock {
             if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCompleted {
@@ -483,8 +519,8 @@ fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, sta
                 turn_id,
                 user_text,
                 assistant_text: full_text,
-                stt_latency_ms: 0,
-                ttft_ms: 0,
+                stt_latency_ms: stt_ms,
+                ttft_ms,
             }) {
                 log::warn!("[RealtimePTT] Failed to send TurnCompleted to persist: {}", e);
             }

@@ -15,7 +15,8 @@ use std::path::PathBuf;
 use turso::Builder;
 use vox_lib::core::settings::MemorySettings;
 use vox_lib::services::memory::estimate_tokens;
-use vox_lib::services::memory::retrieval::retrieve_personal_context;
+use vox_lib::services::memory::harness::prompt_builder::format_retrieved_profile;
+use vox_lib::services::memory::retrieval::retrieve_turn_profile;
 
 fn l2_normalize(v: &[f32]) -> Vec<f32> {
     let mut out = v.to_vec();
@@ -214,9 +215,10 @@ async fn main() -> Result<()> {
         };
 
         let start_time = std::time::Instant::now();
-        let rendered_context =
-            retrieve_personal_context(&conn, &norm_vec, scope, &settings, context_window_size)
+        let retrieved_profile =
+            retrieve_turn_profile(&conn, &norm_vec, scope, &settings, context_window_size)
                 .await?;
+        let rendered_context = format_retrieved_profile(&retrieved_profile);
         let elapsed_ms = start_time.elapsed().as_millis();
 
         let token_count = estimate_tokens(&rendered_context);

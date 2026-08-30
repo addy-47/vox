@@ -102,11 +102,16 @@ pub fn ensure_edge_classifier_loaded() -> Result<()> {
         return Ok(());
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/addy".to_string());
-    let default_dir = std::path::PathBuf::from(home)
-        .join(".vox")
-        .join("models")
-        .join(EDGE_CLASSIFIER_MODEL_DIR);
+    let models_dir = if let Some(p) = crate::utils::paths::try_get() {
+        p.models.clone()
+    } else {
+        dirs::home_dir()
+            .unwrap_or_default()
+            .join(".vox")
+            .join("models")
+    };
+
+    let default_dir = models_dir.join(EDGE_CLASSIFIER_MODEL_DIR);
 
     init_edge_classifier(&default_dir)?;
     Ok(())
