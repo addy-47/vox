@@ -4,8 +4,7 @@ use crate::services::llm::LlmProvider;
 use crate::services::memory::harness::buffer::ChatMessage;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 /// Extracted facts and summary resulting from LLM conversation compaction.
 #[derive(Debug, Clone)]
@@ -19,7 +18,7 @@ pub struct CompactionResult {
 async fn execute_compaction_attempt(
     provider: &dyn LlmProvider,
     request: &crate::services::llm::GenerationRequest,
-    cancel_flag: &Arc<AtomicBool>,
+    cancel: &CancellationToken,
 ) -> Result<String> {
     let (tx, rx) = std::sync::mpsc::channel();
     let (async_tx, mut async_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -35,7 +34,7 @@ async fn execute_compaction_attempt(
     let gen_future = provider.generate(
         request.clone(),
         crate::core::constants::COMPACTION_SENTINEL_TURN_ID,
-        cancel_flag,
+        cancel,
         &tx,
     );
 
@@ -75,14 +74,14 @@ pub async fn run_compaction(
     provider: &dyn LlmProvider,
     history_messages: &[ChatMessage],
     settings: Option<&crate::core::settings::LlmSettings>,
-    cancel_flag: Option<&Arc<AtomicBool>>,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<CompactionResult> {
     if history_messages.is_empty() {
         return Err(anyhow!("No history turns to compact."));
     }
 
-    let default_cancel = Arc::new(AtomicBool::new(false));
-    let effective_cancel = cancel_flag.unwrap_or(&default_cancel);
+    let default_cancel = CancellationToken::new();
+    let effective_cancel = cancel_token.unwrap_or(&default_cancel);
 
     log::info!(
         "[MemoryCompaction] Running LLM Context Compaction via {:?}",
@@ -96,7 +95,7 @@ pub async fn run_compaction(
     let max_attempts = 2;
 
     while attempts < max_attempts {
-        if effective_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        if effective_cancel.is_cancelled() {
             return Err(anyhow!("Compaction cancelled by user activity."));
         }
 

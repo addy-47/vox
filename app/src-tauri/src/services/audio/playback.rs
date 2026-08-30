@@ -8,8 +8,9 @@ use cpal::{SampleFormat, StreamConfig};
 use parking_lot::Mutex;
 use ringbuf::traits::*;
 use ringbuf::{HeapCons, HeapProd};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use crate::core::state::InteractionState;
 
 /// Upsample 24kHz mono PCM to 48kHz via cubic Hermite interpolation into a reusable buffer.
 #[inline]
@@ -28,8 +29,16 @@ pub fn upsample_2x_into(input: &[f32], out: &mut Vec<f32>) {
         let p2 = if i + 1 < len { input[i + 1] } else { p1 };
         let p3 = if i + 2 < len { input[i + 2] } else { p2 };
 
-        let midpoint = (-p0 + 9.0 * p1 + 9.0 * p2 - p3) / 16.0;
-        out.push(midpoint);
+        let v = 0.5 * (p2 - p0);
+        let v_next = if i + 2 < len {
+            let p4 = if i + 3 < len { input[i + 3] } else { p3 };
+            0.5 * (p4 - p1)
+        } else {
+            0.0
+        };
+
+        let interp = 0.5 * (p1 + p2) + 0.125 * (v - v_next);
+        out.push(interp);
     }
 }
 
@@ -41,10 +50,9 @@ pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
     out
 }
 
-/// Core audio output playback engine managing CPAL stream draining and telemetry.
+/// Core audio playback engine managing a CPAL stream, SPSC lock-free ring buffer, and volume ramps.
 pub struct PlaybackEngine {
     producer: Mutex<(HeapProd<f32>, Vec<f32>)>,
-    playback_active: Arc<AtomicBool>,
     cancel_flag: Arc<AtomicBool>,
     discard_request: Arc<AtomicBool>,
     _stream: Option<cpal::Stream>,
@@ -66,9 +74,8 @@ unsafe impl Sync for PlaybackEngine {}
 impl PlaybackEngine {
     /// Initialise CPAL output stream at 48kHz without starting playback immediately.
     pub fn new(
-        playback_active: Arc<AtomicBool>,
         cancel_flag: Arc<AtomicBool>,
-        is_assistant_speaking: Arc<AtomicBool>,
+        state_atomic: Arc<AtomicU32>,
         telemetry: PlaybackTelemetryHandles,
     ) -> Result<Self> {
         let rb = ringbuf::HeapRb::<f32>::new(PLAYBACK_BUFFER_SAMPLES);
@@ -77,16 +84,14 @@ impl PlaybackEngine {
 
         let stream = Self::build_cpal_stream(
             consumer,
-            Arc::clone(&playback_active),
+            state_atomic,
             Arc::clone(&cancel_flag),
             Arc::clone(&discard_request),
-            Arc::clone(&is_assistant_speaking),
             &telemetry,
         )?;
 
         Ok(Self {
             producer: Mutex::new((producer, Vec::with_capacity(4096))),
-            playback_active,
             cancel_flag,
             discard_request,
             _stream: Some(stream),
@@ -112,27 +117,9 @@ impl PlaybackEngine {
         }
     }
 
-    /// Explicitly triggers CPAL playback if samples are available in the buffer.
-    pub fn start_playback(&self) {
-        if self.cancel_flag.load(Ordering::Relaxed) {
-            return;
-        }
-        if !self.playback_active.load(Ordering::Relaxed) {
-            let current_len = self.producer.lock().0.occupied_len();
-            if current_len > 0 {
-                log::info!(
-                    "[Audio::Playback] start_playback requested ({} samples buffered) — starting output",
-                    current_len
-                );
-                self.playback_active.store(true, Ordering::Relaxed);
-            }
-        }
-    }
-
     /// Cancels active playback, signals consumer discard, and resets buffer count.
     pub fn cancel(&self) {
         self.cancel_flag.store(true, Ordering::Relaxed);
-        self.playback_active.store(false, Ordering::Relaxed);
         self.discard_request.store(true, Ordering::Relaxed);
         log::info!("[Audio::Playback] Cancelled — buffer signal sent");
     }
@@ -145,10 +132,9 @@ impl PlaybackEngine {
     /// Builds and starts the CPAL 48kHz stereo output stream.
     fn build_cpal_stream(
         consumer: HeapCons<f32>,
-        playback_active: Arc<AtomicBool>,
+        state_atomic: Arc<AtomicU32>,
         cancel_flag: Arc<AtomicBool>,
         discard_request: Arc<AtomicBool>,
-        is_assistant_speaking: Arc<AtomicBool>,
         telemetry: &PlaybackTelemetryHandles,
     ) -> Result<cpal::Stream> {
         let host = cpal::default_host();
@@ -156,7 +142,7 @@ impl PlaybackEngine {
 
         let mut cb_ctx = PlaybackStreamContext {
             consumer,
-            playback_active,
+            state_atomic,
             cancel_flag,
             discard_request,
             playback_energy: Arc::clone(&telemetry.energy),
@@ -164,7 +150,6 @@ impl PlaybackEngine {
             playback_mid: Arc::clone(&telemetry.mid),
             playback_high: Arc::clone(&telemetry.high),
             playback_underruns: Arc::clone(&telemetry.underruns),
-            is_assistant_speaking,
             last_sample: 0.0,
             current_volume: PLAYBACK_DEFAULT_VOLUME,
             filter_bank: crate::utils::audio_filters::FilterBank::new(PLAYBACK_SAMPLE_RATE as f32),
@@ -232,7 +217,7 @@ fn resolve_output_device_and_config(host: &cpal::Host) -> Result<(cpal::Device, 
 /// Context state held by the real-time CPAL output stream callback.
 struct PlaybackStreamContext {
     consumer: HeapCons<f32>,
-    playback_active: Arc<AtomicBool>,
+    state_atomic: Arc<AtomicU32>,
     cancel_flag: Arc<AtomicBool>,
     discard_request: Arc<AtomicBool>,
     playback_energy: Arc<std::sync::atomic::AtomicU32>,
@@ -240,7 +225,6 @@ struct PlaybackStreamContext {
     playback_mid: Arc<std::sync::atomic::AtomicU32>,
     playback_high: Arc<std::sync::atomic::AtomicU32>,
     playback_underruns: Arc<std::sync::atomic::AtomicU64>,
-    is_assistant_speaking: Arc<AtomicBool>,
     last_sample: f32,
     current_volume: f32,
     filter_bank: crate::utils::audio_filters::FilterBank,
@@ -255,8 +239,10 @@ impl PlaybackStreamContext {
             self.reset_telemetry_state();
         }
 
-        if !self.playback_active.load(Ordering::Relaxed) || self.cancel_flag.load(Ordering::Relaxed)
-        {
+        let is_speaking = InteractionState::from(self.state_atomic.load(Ordering::Relaxed))
+            == InteractionState::Speaking;
+
+        if !is_speaking || self.cancel_flag.load(Ordering::Relaxed) {
             if self.cancel_flag.load(Ordering::Relaxed) {
                 self.consumer.skip(self.consumer.occupied_len());
             }
@@ -316,10 +302,9 @@ impl PlaybackStreamContext {
         self.update_energy_metrics(frames, sum_sq, sum_low_sq, sum_mid_sq, sum_high_sq);
 
         if self.consumer.is_empty() {
-            if self.is_assistant_speaking.load(Ordering::Relaxed) {
+            if InteractionState::from(self.state_atomic.load(Ordering::Relaxed)) == InteractionState::Speaking {
                 self.playback_underruns.fetch_add(1, Ordering::Relaxed);
             }
-            self.playback_active.store(false, Ordering::Relaxed);
             self.playback_energy
                 .store(0f32.to_bits(), Ordering::Relaxed);
             self.playback_low.store(0f32.to_bits(), Ordering::Relaxed);

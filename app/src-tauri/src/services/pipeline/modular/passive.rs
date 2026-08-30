@@ -1,8 +1,6 @@
 use super::super::{
-    transition, RoutingContext, END_REASON_USER, EVENT_LLM_FINISHED, EVENT_LLM_TOKEN,
-    EVENT_PIPELINE_ERROR, EVENT_PIPELINE_PAUSED, EVENT_PIPELINE_RESUMED, EVENT_PLAYBACK_FINISHED,
-    EVENT_PLAYBACK_STARTED, EVENT_SESSION_ENDED, EVENT_SESSION_STARTED, EVENT_SPEECH_END,
-    EVENT_SPEECH_START, EVENT_TRANSCRIPT_FINAL, EVENT_TRANSCRIPT_PARTIAL, WINDOW_MAIN,
+    transition, RoutingContext, EVENT_LLM_TOKEN, EVENT_PIPELINE_ERROR,
+    EVENT_TRANSCRIPT_FINAL, EVENT_TRANSCRIPT_PARTIAL, WINDOW_MAIN,
 };
 use crate::core::events::VoxEvent;
 use crate::core::state::{AppState, InteractionOwner, InteractionState};
@@ -21,17 +19,15 @@ static CURRENT_ASSISTANT_RESPONSE: LazyLock<Mutex<String>> =
 static CURRENT_USER_TRANSCRIPT: LazyLock<Mutex<String>> =
     LazyLock::new(|| Mutex::new(String::new()));
 
-/// Starts an autonomous modular passive voice assistant session.
-pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
+/// Starts the passive voice assistant pipeline session.
+pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     crate::core::start_audio_engine(app, state).await?;
     super::ensure_modular_workers(app, state).await?;
 
     state
         .owner
         .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
-    state.pipeline.is_engaged.store(true, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
-    state.pipeline.is_paused.store(false, Ordering::Relaxed);
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -71,17 +67,12 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SESSION_STARTED, conv_id) {
-        log::warn!("[ModularPassive] Failed to emit session_started: {}", e);
-    }
-
     log::info!("[ModularPassive] Passive session started (ID: {})", conv_id);
     Ok(())
 }
 
 /// Pauses the active modular passive voice pipeline.
 pub async fn pause_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    state.pipeline.is_paused.store(true, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
     CHUNKER.lock().clear();
 
@@ -94,37 +85,39 @@ pub async fn pause_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Paused, &ctx, app, state);
 
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PIPELINE_PAUSED, ()) {
-        log::warn!("[ModularPassive] Failed to emit pipeline_paused: {}", e);
-    }
-
     log::info!("[ModularPassive] Passive session paused");
     Ok(())
 }
 
 /// Resumes a paused modular passive voice pipeline.
 pub async fn resume_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    state.pipeline.is_paused.store(false, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PIPELINE_RESUMED, ()) {
-        log::warn!("[ModularPassive] Failed to emit pipeline_resumed: {}", e);
-    }
-
     log::info!("[ModularPassive] Passive session resumed");
     Ok(())
 }
 
-/// Ends the active modular passive voice assistant session.
-pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
+/// Ends the active modular passive voice pipeline session and unloads models.
+pub async fn end_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
-    state.pipeline.is_engaged.store(false, Ordering::Relaxed);
     CHUNKER.lock().clear();
 
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
+    if conv_id != 0 {
+        let mem_lock = state.memory_tx.lock();
+        if let Some(ref tx) = *mem_lock {
+            if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
+                session_id: conv_id.to_string(),
+                summary: String::new(),
+            }) {
+                log::trace!("[ModularPassive] Failed to send SessionEnd to memory worker: {}", e);
+            }
+        }
+    }
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -144,18 +137,6 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
         }
     }
 
-    {
-        let mem_lock = state.memory_tx.lock();
-        if let Some(ref tx) = *mem_lock {
-            if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
-                session_id: conv_id.to_string(),
-                summary: String::new(),
-            }) {
-                log::trace!("[ModularPassive] Failed to send SessionEnd to memory worker: {}", e);
-            }
-        }
-    }
-
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             engine.playback_engine.cancel();
@@ -169,56 +150,43 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Idle, &ctx, app, state);
 
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SESSION_ENDED, END_REASON_USER.to_string()) {
-        log::warn!("[ModularPassive] Failed to emit session_ended: {}", e);
-    }
-
-    log::info!("[ModularPassive] Passive session ended");
+    log::info!("[ModularPassive] Modular passive session ended");
     Ok(())
 }
 
-/// Handles user speech detection onset and aborts ongoing assistant playback.
-fn on_speech_start<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
-    if !state.pipeline.is_engaged.load(Ordering::Relaxed)
-        || state.pipeline.is_paused.load(Ordering::Relaxed)
-    {
+/// Handles user speech onset and begins audio buffering and state transition.
+fn on_speech_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
         return;
     }
 
-    CHUNKER.lock().clear();
-    state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+    if current_state == InteractionState::Thinking || current_state == InteractionState::Speaking {
+        state.pipeline.renew_turn_token();
+    }
+
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             engine.playback_engine.cancel();
         }
     }
+
     state.conversation_manager.lock().on_speech_start();
     state.conversation_manager.lock().pop_last_user_turn();
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Listening, &ctx, app, state);
-
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SPEECH_START, turn_id) {
-        log::warn!("[ModularPassive] Failed to emit speech_start: {}", e);
-    }
 }
 
 /// Handles user speech completion and transitions the pipeline state to thinking.
-fn on_speech_end<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
-    if !state.pipeline.is_engaged.load(Ordering::Relaxed)
-        || state.pipeline.is_paused.load(Ordering::Relaxed)
-    {
+fn on_speech_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
         return;
     }
 
-    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
-
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Thinking, &ctx, app, state);
-
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SPEECH_END, turn_id) {
-        log::warn!("[ModularPassive] Failed to emit speech_end: {}", e);
-    }
 }
 
 /// Handles interim partial speech recognition results.
@@ -269,7 +237,8 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
     let settings = state.settings.read().unwrap_or_else(|p| p.into_inner()).clone();
     let cm_arc = Arc::clone(&state.conversation_manager);
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
-    let cancel_flag = Arc::clone(&state.pipeline.cancel_flag);
+    let cancel = state.pipeline.turn_token();
+
     let cached_provider = state.llm_provider.read().clone();
     let memory_tx = Arc::new(parking_lot::Mutex::new(state.memory_tx.lock().clone()));
     let (tts_tx, llm_tx) = {
@@ -323,8 +292,7 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
 
         if let Some(filler) = transition_speech {
             if tts_tx.is_some() {
-                // If tts_tx was passed to prepare_turn_context, it was already dispatched before compaction.
-                // If not, dispatch now.
+                // Already dispatched if tts_tx was passed
             } else if let Some(ref tx) = tts_tx {
                 if let Err(e) = tx.send(TtsCommand::Generate {
                     turn_id,
@@ -339,15 +307,15 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
             if let Err(e) = tx.send(LlmCommand::Generate {
                 request,
                 turn_id,
-                cancel_flag,
+                cancel,
             }) {
-                log::warn!("[ModularPassive] Failed to send LlmCommand::Generate: {}", e);
+                log::warn!("[ModularPassive] Failed to send Generate to LLM: {}", e);
             }
         }
     });
 }
 
-/// Handles streamed LLM token emissions, accumulates clauses, and dispatches TTS synthesis.
+/// Handles incoming streamed tokens from the active LLM provider.
 fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<R>, state: &AppState) {
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
@@ -373,10 +341,7 @@ fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<
                         turn_id,
                         text: clause,
                     }) {
-                        log::warn!(
-                            "[ModularPassive] Failed to send TtsCommand::Generate: {}",
-                            e
-                        );
+                        log::warn!("[ModularPassive] Failed to send Generate to TTS: {}", e);
                     }
                 }
             }
@@ -384,8 +349,8 @@ fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<
     }
 }
 
-/// Handles completed LLM text synthesis, flushes trailing clauses to TTS, and notifies UI.
-fn on_llm_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+/// Finalizes LLM output generation, flushes remaining TTS audio, and persists turn context.
+fn on_llm_finished(turn_id: u32, state: &AppState) {
     if let Some(remainder) = CHUNKER.lock().flush() {
         let guard = state.engine.blocking_lock();
         if let Some(ref engine) = *guard {
@@ -394,7 +359,7 @@ fn on_llm_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &
                     turn_id,
                     text: remainder,
                 }) {
-                    log::warn!("[ModularPassive] Failed to send trailing TtsCommand: {}", e);
+                    log::warn!("[ModularPassive] Failed to send Generate to TTS: {}", e);
                 }
             }
         }
@@ -425,55 +390,28 @@ fn on_llm_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &
             }
         }
     }
-
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_LLM_FINISHED, turn_id) {
-        log::warn!("[ModularPassive] Failed to emit llm_finished: {}", e);
-    }
 }
 
 /// Forwards synthesized audio samples to the audio playback buffer.
 fn on_tts_chunk(samples: Vec<f32>, playback: &Arc<PlaybackEngine>) {
     playback.ingest_chunk(&samples);
-    if playback.buffer_len() >= 12000 {
-        playback.start_playback();
-    }
 }
 
-/// Updates latest TTS real-time factor metrics upon synthesis completion and begins playback.
-fn on_tts_finished(rtf: f32, state: &AppState, playback: &Arc<PlaybackEngine>) {
-    playback.start_playback();
+/// Updates latest TTS real-time factor metrics upon synthesis completion.
+fn on_tts_finished(rtf: f32, state: &AppState) {
     state.telemetry.latest_tts_rtf.store(rtf.to_bits(), Ordering::Relaxed);
 }
 
 /// Transitions pipeline state to assistant speaking when audio playback begins.
-fn on_playback_started<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+fn on_playback_started<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Speaking, &ctx, app, state);
-
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PLAYBACK_STARTED, turn_id) {
-        log::warn!("[ModularPassive] Failed to emit playback_started: {}", e);
-    }
 }
 
 /// Transitions pipeline state back to listening upon playback completion.
-fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+fn on_playback_finished<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
-
-    let llm_settings = state
-        .settings
-        .read()
-        .map(|s| s.llm.clone())
-        .unwrap_or_default();
-    crate::services::memory::trigger_background_compaction(
-        state,
-        None,
-        Some(llm_settings),
-    );
-
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PLAYBACK_FINISHED, turn_id) {
-        log::warn!("[ModularPassive] Failed to emit playback_finished: {}", e);
-    }
 }
 
 /// Logs pipeline errors and transitions state machine to error condition.
@@ -509,8 +447,8 @@ pub fn handle_event<R: tauri::Runtime>(
     event: VoxEvent,
 ) {
     match event {
-        VoxEvent::SpeechStart { turn_id } => on_speech_start(turn_id, app, state),
-        VoxEvent::SpeechEnd { turn_id, .. } => on_speech_end(turn_id, app, state),
+        VoxEvent::SpeechStart { .. } => on_speech_start(app, state),
+        VoxEvent::SpeechEnd { .. } => on_speech_end(app, state),
         VoxEvent::TranscriptPartial { turn_id, text } => {
             on_transcript_partial(turn_id, text, app, state)
         }
@@ -518,11 +456,11 @@ pub fn handle_event<R: tauri::Runtime>(
             on_transcript_final(turn_id, text, app, state)
         }
         VoxEvent::LlmToken { turn_id, token } => on_llm_token(turn_id, token, app, state),
-        VoxEvent::LlmFinished { turn_id } => on_llm_finished(turn_id, app, state),
+        VoxEvent::LlmFinished { turn_id } => on_llm_finished(turn_id, state),
         VoxEvent::TtsChunk { samples, .. } => on_tts_chunk(samples, playback),
-        VoxEvent::TtsFinished { rtf, .. } => on_tts_finished(rtf, state, playback),
-        VoxEvent::PlaybackStarted { turn_id } => on_playback_started(turn_id, app, state),
-        VoxEvent::PlaybackFinished { turn_id } => on_playback_finished(turn_id, app, state),
+        VoxEvent::TtsFinished { rtf, .. } => on_tts_finished(rtf, state),
+        VoxEvent::PlaybackStarted { .. } => on_playback_started(app, state),
+        VoxEvent::PlaybackFinished { .. } => on_playback_finished(app, state),
         VoxEvent::Cancelled { turn_id } => on_cancelled(turn_id, app, state),
         VoxEvent::Error { turn_id, message } => on_error(turn_id, message, app, state),
         _ => {}

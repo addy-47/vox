@@ -6,7 +6,6 @@ use crate::services::llm::LlmEngine;
 use crate::services::memory::ConversationContext;
 use futures_util::future::BoxFuture;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::sync::Arc;
 
@@ -82,7 +81,7 @@ impl super::LlmProvider for EmbeddedProvider {
         &'a self,
         request: GenerationRequest,
         turn_id: u32,
-        cancel_flag: &'a Arc<AtomicBool>,
+        cancel: &'a tokio_util::sync::CancellationToken,
         tx: &'a mpsc::Sender<VoxEvent>,
     ) -> BoxFuture<'a, Result<(), LlmError>> {
         Box::pin(async move {
@@ -93,7 +92,7 @@ impl super::LlmProvider for EmbeddedProvider {
             };
 
             self.engine
-                .generate(&conv_ctx, turn_id, cancel_flag, tx)
+                .generate(&conv_ctx, turn_id, cancel, tx)
                 .map_err(|e| LlmError::Engine(e.to_string()))
         })
     }

@@ -32,15 +32,14 @@ pub fn spawn_monitoring_collector(state: Arc<AppState>) {
 }
 
 fn map_pipeline_state_string(state_u32: u32) -> String {
-    match state_u32 {
-        0 => "Idle".into(),
-        1 => "Listening".into(),
-        2 => "Thinking".into(),
-        3 => "Speaking".into(),
-        4 => "Ready".into(),
-        5 => "Paused".into(),
-        6 => "Error".into(),
-        _ => "Unknown".into(),
+    match crate::core::state::InteractionState::from(state_u32) {
+        crate::core::state::InteractionState::Idle => "Idle".into(),
+        crate::core::state::InteractionState::Ready => "Ready".into(),
+        crate::core::state::InteractionState::Listening => "Listening".into(),
+        crate::core::state::InteractionState::Thinking => "Thinking".into(),
+        crate::core::state::InteractionState::Speaking => "Speaking".into(),
+        crate::core::state::InteractionState::Paused => "Paused".into(),
+        crate::core::state::InteractionState::Error => "Error".into(),
     }
 }
 
@@ -105,8 +104,7 @@ fn collect_snapshot(
         current_turn_id: pa.turn_id.load(Ordering::Relaxed),
         conversation_id: state.conversation_id.load(Ordering::Relaxed),
 
-        playback_active: pa.playback_active.load(Ordering::Relaxed),
-        tts_generating: pa.tts_generating.load(Ordering::Relaxed),
+        playback_active: pa.state() == crate::core::state::InteractionState::Speaking,
 
         system_cpu_usage: f32::from_bits(state.telemetry.latest_sys_cpu.load(Ordering::Relaxed)),
         system_ram_mb: (sys_ram_pct * 0.01 * total_ram_mb as f32) as u32,
@@ -172,8 +170,6 @@ fn collect_snapshot(
             || crate::services::memory::is_edge_classifier_loaded(),
         is_translit_loaded: state.is_translit_loaded.load(Ordering::Relaxed)
             || crate::services::translit::is_transliteration_engine_loaded(),
-        is_sleeping: state.is_sleeping.load(Ordering::Relaxed),
-        is_engaged: state.pipeline.is_engaged.load(Ordering::Relaxed),
 
         cpu_governor: state.cpu_governor.lock().clone(),
         cpu_governor_optimal: state.cpu_governor_optimal.load(Ordering::Relaxed),

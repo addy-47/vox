@@ -10,7 +10,6 @@ import {
   pttCancel,
   testClip,
   testClipCancel,
-  getRealtimeSessionCache,
   getRuntimeSnapshot,
 } from "@/services/pipelineService";
 import { showMainWindow } from "@/services/windowService";
@@ -83,12 +82,22 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const [interactionState, setInteractionState] = useState<InteractionState>("Idle");
   const [interactionMode, setInteractionMode] = useState<InteractionMode>("PASSIVE");
   const [pipelineMode, setPipelineMode] = useState<"modular" | "realtime">("modular");
-  const [isEngaged, setIsEngaged] = useState(false);
-  const [isSleeping, setIsSleeping] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [hasCachedSession, setHasCachedSession] = useState(false);
-  const [pttStatus, setPttStatus] = useState<"IDLE" | "RECORDING" | "PROCESSING">("IDLE");
+  const [hasCachedSession] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
+
+  // Pure derived state from the canonical source of truth (interactionState)
+  const isEngaged = interactionState !== "Idle";
+  const isSleeping = interactionState === "Paused";
+  const isPaused = interactionState === "Paused";
+  const isThinking = interactionState === "Thinking";
+  const pttStatus: "IDLE" | "RECORDING" | "PROCESSING" =
+    interactionMode === "PTT" && isEngaged
+      ? interactionState === "Listening"
+        ? "RECORDING"
+        : interactionState === "Thinking"
+        ? "PROCESSING"
+        : "IDLE"
+      : "IDLE";
 
   const [transcript, setTranscript] = useState("");
   const [assistantText, setAssistantText] = useState("");
@@ -105,9 +114,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const turnIdCounter = useRef(0);
   const hasActiveTurnStarted = useRef(false);
   const isSpacePressedRef = useRef(false);
-  const isEngagedRef = useRef(false);
-
-  const isThinking = interactionState === "Thinking" || pttStatus === "PROCESSING";
 
   const archiveCurrentTurn = useCallback(() => {
     const userText = activeUserTextRef.current.trim();
@@ -133,11 +139,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const engage = useCallback(async () => {
     archiveCurrentTurn();
     hasActiveTurnStarted.current = false;
-    isEngagedRef.current = true;
     setIsLaunching(true);
-    setIsEngaged(true);
-    setIsSleeping(false);
-    setIsPaused(false);
     activeUserTextRef.current = "";
     activeAiTextRef.current = "";
     setTranscript("");
@@ -147,8 +149,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     } catch (err: any) {
       console.error("[VoiceSession] Start session failed:", err);
       setErrorAlert(err?.message || "Voice engagement failed");
-      isEngagedRef.current = false;
-      setIsEngaged(false);
     } finally {
       setIsLaunching(false);
     }
@@ -156,11 +156,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
 
   const disengage = useCallback(async () => {
     hasActiveTurnStarted.current = false;
-    isEngagedRef.current = false;
     setIsLaunching(true);
-    setIsEngaged(false);
-    setIsSleeping(false);
-    setIsPaused(false);
     activeUserTextRef.current = "";
     activeAiTextRef.current = "";
     setTranscript("");
@@ -185,25 +181,25 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
 
   const pause = useCallback(async () => {
     if (!isEngaged || isPaused) return;
-    setIsPaused(true);
+    setInteractionState("Paused");
     try {
       await pauseSession();
     } catch (err: any) {
       console.error("[VoiceSession] Pause failed:", err);
       setErrorAlert(err?.message || "Pausing voice pipeline failed");
-      setIsPaused(false);
+      setInteractionState("Ready");
     }
   }, [isEngaged, isPaused]);
 
   const resume = useCallback(async () => {
     if (!isEngaged || !isPaused) return;
-    setIsPaused(false);
+    setInteractionState("Ready");
     try {
       await resumeSession();
     } catch (err: any) {
       console.error("[VoiceSession] Resume failed:", err);
       setErrorAlert(err?.message || "Resuming voice pipeline failed");
-      setIsPaused(true);
+      setInteractionState("Paused");
     }
   }, [isEngaged, isPaused]);
 
@@ -251,7 +247,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     archiveCurrentTurn();
     hasActiveTurnStarted.current = false;
     setTestingClip(clipId);
-    setIsEngaged(true);
     setTestMode(false);
     setTranscript("");
     setAssistantText("");
@@ -260,122 +255,50 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     } catch (err) {
       console.error("[VoiceSession] Test clip failed:", err);
       setTestingClip(null);
-      setIsEngaged(false);
     }
   }, [isEngaged, archiveCurrentTurn]);
 
   const clearHistory = useCallback(() => {
     setDialogueHistory([]);
-    turnIdCounter.current = 0;
   }, []);
 
   const dismissError = useCallback(() => {
     setErrorAlert(null);
   }, []);
 
-  const kbStateRef = useRef({
-    interactionMode,
-    isEngaged,
-    isPaused,
-    pttStatus,
-    engage,
-    disengage,
-    pause,
-    resume,
-    handlePttStart,
-    handlePttStop,
-    handlePttCancel,
-  });
-  kbStateRef.current = {
-    interactionMode,
-    isEngaged,
-    isPaused,
-    pttStatus,
-    engage,
-    disengage,
-    pause,
-    resume,
-    handlePttStart,
-    handlePttStop,
-    handlePttCancel,
-  };
-
-  // Global Keyboard Shortcuts (bound once on mount, zero listener churn)
+  // Keyboard PTT integration
   useEffect(() => {
+    if (interactionMode !== "PTT" || !isEngaged || isPaused) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      const key = e.key.toLowerCase();
-      const s = kbStateRef.current;
-      if (e.code === "Space") {
-        if (s.interactionMode === "PTT" && s.isEngaged && !s.isPaused) {
-          e.preventDefault();
-          if (!isSpacePressedRef.current) {
-            isSpacePressedRef.current = true;
-            s.handlePttStart().catch(() => {
-              isSpacePressedRef.current = false;
-            });
-          }
-        }
-      } else if (e.key === "Escape") {
-        if (s.interactionMode === "PTT" && s.isEngaged && s.pttStatus === "RECORDING") {
-          e.preventDefault();
-          isSpacePressedRef.current = false;
-          s.handlePttCancel();
-        }
-      } else if (key === "s") {
+      if (e.code === "Space" && !e.repeat && !isSpacePressedRef.current) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
         e.preventDefault();
-        if (s.isEngaged) s.disengage();
-        else s.engage();
-      } else if (key === "p") {
-        e.preventDefault();
-        s.pause();
-      } else if (key === "r") {
-        e.preventDefault();
-        s.resume();
+        isSpacePressedRef.current = true;
+        handlePttStart();
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      const s = kbStateRef.current;
       if (e.code === "Space" && isSpacePressedRef.current) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
+        e.preventDefault();
         isSpacePressedRef.current = false;
-        if (s.interactionMode === "PTT" && s.isEngaged && !s.isPaused) {
-          e.preventDefault();
-          s.handlePttStop();
-        }
-      }
-    };
-
-    const handleBlur = () => {
-      const s = kbStateRef.current;
-      if (isSpacePressedRef.current && s.interactionMode === "PTT" && s.isEngaged && !s.isPaused) {
-        isSpacePressedRef.current = false;
-        s.handlePttStop();
+        handlePttStop();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
-    window.addEventListener("blur", handleBlur);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
-      window.removeEventListener("blur", handleBlur);
     };
-  }, []);
+  }, [interactionMode, isEngaged, isPaused, handlePttStart, handlePttStop]);
 
-  // Session Cache Check
-  useEffect(() => {
-    if (pipelineMode === "realtime" && !isEngaged) {
-      getRealtimeSessionCache()
-        .then((cache) => setHasCachedSession(cache?.has_session ?? false))
-        .catch((err) => console.warn("[VoiceSession] Failed to check session cache:", err));
-    } else {
-      setHasCachedSession(false);
-    }
-  }, [isEngaged, pipelineMode]);
-
-  // Persistent Tauri Event Listeners
+  // Initial Sync & Tauri Event Listeners
   useEffect(() => {
     let isMounted = true;
     const unlisteners: (() => void)[] = [];
@@ -383,8 +306,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     const setup = async () => {
       try {
         const settings = await getSettings();
-        if (!isMounted) return;
-
         if (settings?.interaction?.mode) {
           setInteractionMode(settings.interaction.mode.toUpperCase() as InteractionMode);
         }
@@ -395,10 +316,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
         try {
           const snapshot = await getRuntimeSnapshot();
           if (snapshot && isMounted) {
-            const engaged = snapshot.is_engaged ?? false;
-            setIsEngaged(engaged);
-            isEngagedRef.current = engaged;
-            setIsSleeping(snapshot.is_sleeping ?? false);
             if (snapshot.pipeline_state) {
               setInteractionState(snapshot.pipeline_state as InteractionState);
             }
@@ -406,7 +323,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
               setCpuWarning({ governor: snapshot.cpu_governor });
             }
 
-            if (engaged && snapshot.conversation_id && snapshot.conversation_id !== 0) {
+            if (snapshot.conversation_id && snapshot.conversation_id !== 0) {
               const turns = await getTurns(snapshot.conversation_id);
               if (isMounted) {
                 const history: DialogueTurn[] = turns.slice(-100).map((t) => ({
@@ -439,13 +356,13 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
               if (newState !== "Idle") {
                 hasActiveTurnStarted.current = true;
                 setIdleTimeout(null);
-              } else if (!isEngagedRef.current) {
+              } else {
                 activeUserTextRef.current = "";
                 activeAiTextRef.current = "";
                 setTranscript("");
                 setAssistantText("");
               }
-              if (newState === "Listening" && isEngagedRef.current) {
+              if (newState === "Listening") {
                 archiveCurrentTurn();
               }
             },
@@ -453,12 +370,12 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
           [
             "transcript_partial",
             (event) => {
-              if (!isMounted || !isEngagedRef.current) return;
+              if (!isMounted) return;
               activeUserTextRef.current = event.payload.text;
               setIdleTimeout(null);
               if (!partialThrottleTimer) {
                 partialThrottleTimer = setTimeout(() => {
-                  if (isMounted && isEngagedRef.current) setTranscript(activeUserTextRef.current);
+                  if (isMounted) setTranscript(activeUserTextRef.current);
                   partialThrottleTimer = null;
                 }, 30);
               }
@@ -467,7 +384,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
           [
             "transcript_final",
             (event) => {
-              if (!isMounted || !isEngagedRef.current) return;
+              if (!isMounted) return;
               if (partialThrottleTimer) {
                 clearTimeout(partialThrottleTimer);
                 partialThrottleTimer = null;
@@ -480,12 +397,12 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
           [
             "llm_token",
             (event) => {
-              if (!isMounted || !isEngagedRef.current) return;
-              activeAiTextRef.current = event.payload;
+              if (!isMounted) return;
+              activeAiTextRef.current = event.payload.token ?? event.payload.text ?? event.payload;
               setIdleTimeout(null);
               if (!tokenThrottleTimer) {
                 tokenThrottleTimer = setTimeout(() => {
-                  if (isMounted && isEngagedRef.current) setAssistantText(activeAiTextRef.current);
+                  if (isMounted) setAssistantText(activeAiTextRef.current);
                   tokenThrottleTimer = null;
                 }, 30);
               }
@@ -496,13 +413,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
             (event) => {
               if (!isMounted) return;
               setInteractionMode(event.payload.toUpperCase() as InteractionMode);
-            },
-          ],
-          [
-            "ptt_status",
-            (event) => {
-              if (!isMounted) return;
-              setPttStatus(event.payload.state as "IDLE" | "RECORDING" | "PROCESSING");
             },
           ],
           [
@@ -523,7 +433,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
             "hud_sleep_state",
             (event) => {
               if (!isMounted) return;
-              setIsSleeping(event.payload);
               if (event.payload) archiveCurrentTurn();
             },
           ],

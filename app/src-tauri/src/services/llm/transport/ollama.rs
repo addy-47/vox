@@ -4,9 +4,7 @@ use crate::services::llm::config::ConnectionConfig;
 use crate::services::llm::types::{GenerationRequest, LlmError, OutputConstraint};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 
 #[derive(Serialize)]
 struct OllamaMessage {
@@ -89,7 +87,7 @@ pub async fn stream_ollama(
     config: &ConnectionConfig,
     request: &GenerationRequest,
     turn_id: u32,
-    cancel_flag: &Arc<AtomicBool>,
+    cancel: &tokio_util::sync::CancellationToken,
     tx: &mpsc::Sender<VoxEvent>,
 ) -> Result<(), LlmError> {
     let url = resolve_url(&config.base_url);
@@ -102,14 +100,7 @@ pub async fn stream_ollama(
         res = builder.send() => {
             res.map_err(|e| LlmError::Transport(e.to_string()))?
         }
-        _ = async {
-            while !cancel_flag.load(Ordering::Relaxed) {
-                tokio::time::sleep(std::time::Duration::from_millis(
-                    crate::services::llm::DEFAULT_CANCEL_POLL_INTERVAL_MS,
-                ))
-                .await;
-            }
-        } => {
+        _ = cancel.cancelled() => {
             if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
                 log::warn!("[OllamaTransport] Failed to dispatch Cancelled: {}", e);
             }
@@ -133,7 +124,7 @@ pub async fn stream_ollama(
     let mut byte_stream = response.bytes_stream();
 
     loop {
-        if cancel_flag.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
                 log::warn!("[OllamaTransport] Failed to dispatch Cancelled: {}", e);
             }
@@ -142,14 +133,7 @@ pub async fn stream_ollama(
 
         let chunk_opt = tokio::select! {
             chunk = byte_stream.next() => chunk,
-            _ = async {
-                while !cancel_flag.load(Ordering::Relaxed) {
-                    tokio::time::sleep(std::time::Duration::from_millis(
-                        crate::services::llm::DEFAULT_CANCEL_POLL_INTERVAL_MS,
-                    ))
-                    .await;
-                }
-            } => {
+            _ = cancel.cancelled() => {
                 if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
                     log::warn!("[OllamaTransport] Cancel dispatch error: {}", e);
                 }

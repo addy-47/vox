@@ -1,8 +1,6 @@
 use super::super::{
-    transition, RoutingContext, END_REASON_USER, EVENT_LLM_TOKEN, EVENT_PIPELINE_ERROR,
-    EVENT_PIPELINE_PAUSED, EVENT_PIPELINE_RESUMED, EVENT_PLAYBACK_FINISHED, EVENT_PLAYBACK_STARTED,
-    EVENT_SESSION_ENDED, EVENT_SESSION_STARTED, EVENT_SPEECH_END, EVENT_SPEECH_START,
-    EVENT_TRANSCRIPT_FINAL, WINDOW_MAIN,
+    transition, RoutingContext, EVENT_LLM_TOKEN, EVENT_PIPELINE_ERROR,
+    EVENT_TRANSCRIPT_FINAL, EVENT_TRANSCRIPT_PARTIAL, WINDOW_MAIN,
 };
 use crate::core::events::VoxEvent;
 use crate::core::state::{AppState, InteractionOwner, InteractionState, VadCommand};
@@ -11,7 +9,7 @@ use crate::services::realtime::engine::RealtimeEngine;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock};
 use parking_lot::Mutex;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 static CURRENT_ASSISTANT_RESPONSE: LazyLock<Mutex<String>> =
     LazyLock::new(|| Mutex::new(String::new()));
@@ -67,9 +65,7 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
         log::warn!("[RealtimePassive] Failed to send StartRealtime: {}", e);
     }
 
-    state.pipeline.is_engaged.store(true, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
-    state.pipeline.is_paused.store(false, Ordering::Relaxed);
     *rt_guard = Some(rt_engine);
 
     let now = std::time::SystemTime::now()
@@ -110,9 +106,8 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SESSION_STARTED, conv_id) {
-        log::warn!("[RealtimePassive] Failed to emit session_started: {}", e);
-    }
+    let state_arc = app.state::<std::sync::Arc<AppState>>().inner().clone();
+    super::session::spawn_realtime_idle_monitor(app.clone(), state_arc);
 
     log::info!("[RealtimePassive] Realtime passive session started (ID: {})", conv_id);
     Ok(())
@@ -120,15 +115,16 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
 
 /// Pauses the active real-time voice pipeline.
 pub async fn pause_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    state.pipeline.is_paused.store(true, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+
+    if let Ok(mut rt_guard) = state.realtime_engine.try_lock() {
+        if let Some(ref mut rt_engine) = *rt_guard {
+            rt_engine.stop();
+        }
+    }
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Paused, &ctx, app, state);
-
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PIPELINE_PAUSED, ()) {
-        log::warn!("[RealtimePassive] Failed to emit pipeline_paused: {}", e);
-    }
 
     log::info!("[RealtimePassive] Realtime passive session paused");
     Ok(())
@@ -136,27 +132,44 @@ pub async fn pause_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
 
 /// Resumes a paused real-time voice pipeline.
 pub async fn resume_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    state.pipeline.is_paused.store(false, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
+
+    let (playback_engine, pipeline_tx, vad_tx) = {
+        let guard = state.engine.lock().await;
+        let engine = guard.as_ref().ok_or("Engine not initialized")?;
+        (engine.playback_engine.clone(), engine.pipeline_tx.clone(), engine.vad_tx.clone())
+    };
+
+    let mut rt_guard = state.realtime_engine.lock().await;
+    if let Some(ref mut rt_engine) = *rt_guard {
+        rt_engine.start(
+            crate::core::settings::InteractionMode::Passive,
+            playback_engine,
+            pipeline_tx,
+        ).map_err(|e| format!("[RealtimePassive] Engine restart failed: {}", e))?;
+
+        let audio_tx = rt_engine.get_audio_sender().ok_or("Failed to obtain realtime audio sender")?;
+        if let Err(e) = vad_tx.send(VadCommand::StartRealtime { tx: audio_tx, is_ptt: false }) {
+            log::warn!("[RealtimePassive] Failed to send StartRealtime on resume: {}", e);
+        }
+    }
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
-
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PIPELINE_RESUMED, ()) {
-        log::warn!("[RealtimePassive] Failed to emit pipeline_resumed: {}", e);
-    }
 
     log::info!("[RealtimePassive] Realtime passive session resumed");
     Ok(())
 }
 
-/// Ends the active real-time speech-to-speech session and tears down the WebSocket connection.
-pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
-    if let Some(engine) = state.engine.lock().await.as_ref() {
-        if let Err(e) = engine.vad_tx.send(VadCommand::StopRealtime) {
-            log::warn!("[RealtimePassive] Failed to send StopRealtime: {}", e);
+/// Ends the active real-time voice assistant session.
+pub async fn end_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+    if let Ok(guard) = state.engine.try_lock() {
+        if let Some(ref engine) = *guard {
+            engine.playback_engine.cancel();
+            if let Err(e) = engine.vad_tx.send(VadCommand::StopRealtime) {
+                log::warn!("[RealtimePassive] Failed to send StopRealtime: {}", e);
+            }
         }
-        engine.playback_engine.cancel();
     }
 
     let mut rt_guard = state.realtime_engine.lock().await;
@@ -164,7 +177,6 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
         rt_engine.stop();
     }
 
-    state.pipeline.is_engaged.store(false, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
 
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
@@ -199,26 +211,8 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
         }
     }
 
-    let dictation_enabled = state
-        .settings
-        .read()
-        .map(|s| s.dictation.enabled)
-        .unwrap_or(false);
-
-    if dictation_enabled {
-        state
-            .owner
-            .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
-    } else {
-        crate::core::stop_audio_engine(state).await?;
-    }
-
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Idle, &ctx, app, state);
-
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SESSION_ENDED, END_REASON_USER.to_string()) {
-        log::warn!("[RealtimePassive] Failed to emit session_ended: {}", e);
-    }
 
     log::info!("[RealtimePassive] Realtime passive session ended");
     Ok(())
@@ -226,49 +220,70 @@ pub async fn end_session(app: &AppHandle, state: &AppState) -> Result<(), String
 
 /// Handles user speech detection and transitions state machine to speaking.
 fn on_speech_start<R: tauri::Runtime>(
-    turn_id: u32,
     app: &AppHandle<R>,
     state: &AppState,
     playback: &Arc<PlaybackEngine>,
 ) {
-    if !state.pipeline.is_engaged.load(Ordering::Relaxed)
-        || state.pipeline.is_paused.load(Ordering::Relaxed)
-    {
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
         return;
     }
 
     super::session::realtime_barge_in(state, playback);
-
+    state.pipeline.renew_turn_token();
     state.conversation_manager.lock().on_speech_start();
-    state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
-    let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Listening, &ctx, app, state);
 
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SPEECH_START, turn_id) {
-        log::warn!("[RealtimePassive] Failed to emit speech_start: {}", e);
+    if current_state != InteractionState::Ready {
+        let ctx = RoutingContext::from_app_state(state);
+        transition(InteractionState::Listening, &ctx, app, state);
     }
 }
 
 /// Handles speech end and transitions state machine to thinking.
-fn on_speech_end<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
-    if !state.pipeline.is_engaged.load(Ordering::Relaxed)
-        || state.pipeline.is_paused.load(Ordering::Relaxed)
-    {
+fn on_speech_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
         return;
     }
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Thinking, &ctx, app, state);
+}
 
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_SPEECH_END, turn_id) {
-        log::warn!("[RealtimePassive] Failed to emit speech_end: {}", e);
+/// Handles interim partial speech recognition results from the real-time server.
+fn on_transcript_partial<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
+        return;
+    }
+
+    if current_state == InteractionState::Ready {
+        let ctx = RoutingContext::from_app_state(state);
+        transition(InteractionState::Listening, &ctx, app, state);
+    }
+
+    if let Err(e) = app.emit_to(
+        WINDOW_MAIN,
+        EVENT_TRANSCRIPT_PARTIAL,
+        serde_json::json!({
+            "turn_id": turn_id,
+            "text": text,
+        }),
+    ) {
+        log::warn!("[RealtimePassive] Failed to emit transcript_partial: {}", e);
     }
 }
 
 /// Handles incoming final transcription from the real-time server.
 fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
-    if !state.pipeline.is_engaged.load(Ordering::Relaxed) || state.pipeline.is_paused.load(Ordering::Relaxed) {
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
         return;
+    }
+
+    if current_state == InteractionState::Ready {
+        let ctx = RoutingContext::from_app_state(state);
+        transition(InteractionState::Listening, &ctx, app, state);
     }
 
     if let Err(e) = app.emit_to(
@@ -283,47 +298,14 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
     }
 
     CURRENT_ASSISTANT_RESPONSE.lock().clear();
-    *CURRENT_USER_TRANSCRIPT.lock() = text.clone();
+    *CURRENT_USER_TRANSCRIPT.lock() = text;
 
-    let cm_arc = Arc::clone(&state.conversation_manager);
-    let settings = state.settings.read().unwrap_or_else(|p| p.into_inner()).clone();
-    let conv_id = state.conversation_id.load(Ordering::Relaxed);
-    let cached_provider = state.llm_provider.read().clone();
-    let memory_tx = Arc::new(parking_lot::Mutex::new(state.memory_tx.lock().clone()));
-    let processed_text = text;
-
-    tauri::async_runtime::spawn(async move {
-        let db_path = crate::utils::paths::db_path();
-        let conn_opt = if settings.memory.context_retrieval_enabled {
-            crate::persistence::db::VoxDb::open_readonly(&db_path).await.ok()
-        } else {
-            None
-        };
-
-        let session_id = conv_id.to_string();
-        let _ = crate::services::memory::prepare_turn_context(
-            crate::services::memory::PrepareTurnParams {
-                harness: &cm_arc,
-                tts_tx: None,
-                memory_tx: Some(&memory_tx),
-                conn: conn_opt.as_ref(),
-                query: &processed_text,
-                turn_id,
-                session_id: &session_id,
-                memory: &settings.memory,
-                context_window: settings.llm.context_window as usize,
-                provider_kind: crate::services::llm::ProviderKind::OpenAiCompat,
-                llm_provider: cached_provider.as_deref(),
-                llm_settings: Some(&settings.llm),
-            },
-        )
-        .await;
-    });
+    let ctx = RoutingContext::from_app_state(state);
+    transition(InteractionState::Thinking, &ctx, app, state);
 }
 
-/// Handles streamed token delta from the real-time server.
+/// Handles streamed LLM token from the real-time provider.
 fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<R>) {
-    CURRENT_ASSISTANT_RESPONSE.lock().push_str(&token);
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         EVENT_LLM_TOKEN,
@@ -337,13 +319,9 @@ fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<
 }
 
 /// Transitions pipeline state to assistant speaking when audio playback begins.
-fn on_playback_started<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+fn on_playback_started<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Speaking, &ctx, app, state);
-
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PLAYBACK_STARTED, turn_id) {
-        log::warn!("[RealtimePassive] Failed to emit playback_started: {}", e);
-    }
 }
 
 /// Transitions pipeline state back to listening upon playback completion.
@@ -376,10 +354,6 @@ fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, sta
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
-
-    if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PLAYBACK_FINISHED, turn_id) {
-        log::warn!("[RealtimePassive] Failed to emit playback_finished: {}", e);
-    }
 }
 
 /// Logs pipeline errors and transitions state machine to error condition.
@@ -415,13 +389,16 @@ pub fn handle_event<R: tauri::Runtime>(
     event: VoxEvent,
 ) {
     match event {
-        VoxEvent::SpeechStart { turn_id } => on_speech_start(turn_id, app, state, playback),
-        VoxEvent::SpeechEnd { turn_id, .. } => on_speech_end(turn_id, app, state),
+        VoxEvent::SpeechStart { .. } => on_speech_start(app, state, playback),
+        VoxEvent::SpeechEnd { .. } => on_speech_end(app, state),
+        VoxEvent::TranscriptPartial { turn_id, text } => {
+            on_transcript_partial(turn_id, text, app, state)
+        }
         VoxEvent::TranscriptFinal { turn_id, text } => {
             on_transcript_final(turn_id, text, app, state)
         }
         VoxEvent::LlmToken { turn_id, token } => on_llm_token(turn_id, token, app),
-        VoxEvent::PlaybackStarted { turn_id } => on_playback_started(turn_id, app, state),
+        VoxEvent::PlaybackStarted { .. } => on_playback_started(app, state),
         VoxEvent::PlaybackFinished { turn_id } => on_playback_finished(turn_id, app, state),
         VoxEvent::Cancelled { turn_id } => on_cancelled(turn_id, app, state),
         VoxEvent::Error { turn_id, message } => on_error(turn_id, message, app, state),

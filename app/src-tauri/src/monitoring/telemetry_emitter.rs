@@ -13,7 +13,7 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
         loop {
             tokio::time::sleep(TELEMETRY_EMITTER_INTERVAL).await;
 
-            if state.is_sleeping.load(Ordering::Relaxed) {
+            if state.pipeline.state() == crate::core::state::InteractionState::Paused {
                 continue;
             }
 
@@ -39,20 +39,7 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
 }
 
 fn get_current_audio_levels(state: &crate::core::state::AppState) -> (f32, f32, f32, f32) {
-    let local_pipeline_mode = {
-        state
-            .settings
-            .read()
-            .map(|s| s.interaction.pipeline_mode.clone())
-            .unwrap_or(crate::core::settings::PipelineMode::Modular)
-    };
-    let is_assistant = if local_pipeline_mode == crate::core::settings::PipelineMode::Realtime {
-        state.pipeline.playback_active.load(Ordering::Relaxed)
-    } else {
-        state.pipeline.is_assistant_speaking.load(Ordering::Relaxed)
-    };
-
-    if is_assistant {
+    if state.pipeline.state() == crate::core::state::InteractionState::Speaking {
         (
             f32::from_bits(state.telemetry.latest_playback_energy.load(Ordering::Relaxed)),
             f32::from_bits(state.telemetry.latest_playback_low.load(Ordering::Relaxed)),

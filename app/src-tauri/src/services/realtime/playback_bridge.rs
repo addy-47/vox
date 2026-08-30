@@ -74,7 +74,6 @@ impl PlaybackBridge {
                 f32_chunk.extend(pcm_24k.iter().map(|&x| x as f32 / PCM_INT16_DIVISOR_FLOAT));
 
                 playback_engine.ingest_chunk(&f32_chunk);
-                playback_engine.start_playback();
             }
         });
     }

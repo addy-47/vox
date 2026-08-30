@@ -115,14 +115,12 @@ pub async fn test_clip(
         state
             .owner
             .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
-        state.pipeline.is_engaged.store(false, Ordering::Relaxed);
         return Err(e);
     }
 
     state
         .owner
         .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
-    state.pipeline.is_engaged.store(true, Ordering::Relaxed);
 
     let engine_lock = state.engine.lock().await;
     let engine = match engine_lock.as_ref() {
@@ -131,15 +129,11 @@ pub async fn test_clip(
             state
                 .owner
                 .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
-            state.pipeline.is_engaged.store(false, Ordering::Relaxed);
             return Err("Engine failed to start after launch".to_string());
         }
     };
 
-    let turn_id = state.pipeline.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
-    if let Err(e) = engine.pipeline_tx.send(VoxEvent::WarmUp) {
-        log::warn!("[TestClip] Failed to send WarmUp event: {}", e);
-    }
+    let turn_id = state.pipeline.next_turn_id();
     if let Err(e) = engine.pipeline_tx.send(VoxEvent::SpeechStart { turn_id }) {
         log::warn!("[TestClip] Failed to send SpeechStart event: {}", e);
     }
@@ -148,7 +142,6 @@ pub async fn test_clip(
         state
             .owner
             .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
-        state.pipeline.is_engaged.store(false, Ordering::Relaxed);
         return Err(format!("STT channel closed: {}", e));
     }
 
@@ -161,14 +154,13 @@ pub async fn test_clip(
 pub async fn test_clip_cancel(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
-    state.pipeline.is_engaged.store(false, Ordering::Relaxed);
+    state.pipeline.renew_turn_token();
     state
         .owner
         .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
 
     if let Some(engine) = state.engine.lock().await.as_ref() {
-        let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
+        let turn_id = state.pipeline.peek_turn_id();
         if let Err(e) = engine.pipeline_tx.send(VoxEvent::Cancelled { turn_id }) {
             log::warn!("[TestClip] Failed to send Cancelled event: {}", e);
         }

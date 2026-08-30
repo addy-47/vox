@@ -1,6 +1,8 @@
 use crate::core::settings::{InteractionMode, PipelineMode};
-use crate::core::state::AppState;
+use crate::core::state::{AppState, InteractionOwner, InteractionState, VadCommand};
 use crate::services::pipeline::RoutingContext;
+use crate::services::vad::VadOperationalMode;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
@@ -25,10 +27,36 @@ pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
     crate::core::stop_audio_engine(&state).await
 }
 
-/// Starts the voice assistant session based on current pipeline settings.
+/// Starts the voice assistant session with entry state validation and audio ownership initialization.
 #[tauri::command]
 pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let current_state = state.pipeline.state();
+    if current_state != InteractionState::Idle {
+        return Err(format!(
+            "[IPC::Assistant] Cannot start session: pipeline state is {:?}, expected Idle",
+            current_state
+        ));
+    }
+
+    crate::core::start_audio_engine(&app, &state).await?;
+    state
+        .owner
+        .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
+
     let ctx = RoutingContext::from_app_state(&state);
+    let vad_mode = match ctx.interaction_mode {
+        InteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
+        InteractionMode::PTT => VadOperationalMode::WindowedValidation,
+    };
+
+    if let Ok(guard) = state.engine.try_lock() {
+        if let Some(ref engine) = *guard {
+            if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {
+                log::warn!("[IPC::Assistant] Failed to set initial VAD operational mode: {}", e);
+            }
+        }
+    }
+
     match (ctx.pipeline_mode, ctx.interaction_mode) {
         (PipelineMode::Modular, InteractionMode::Passive) => {
             crate::services::pipeline::modular::passive::start_session(&app, &state).await
@@ -45,29 +73,70 @@ pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> R
     }
 }
 
-/// Ends the active voice assistant session.
+/// Ends the active voice assistant session, resets state to Idle, and manages audio engine ownership.
 #[tauri::command]
 pub async fn end_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Idle {
+        log::info!("[IPC::Assistant] end_session called while already Idle; no-op");
+        return Ok(());
+    }
+
     let ctx = RoutingContext::from_app_state(&state);
     match (ctx.pipeline_mode, ctx.interaction_mode) {
         (PipelineMode::Modular, InteractionMode::Passive) => {
-            crate::services::pipeline::modular::passive::end_session(&app, &state).await
+            crate::services::pipeline::modular::passive::end_session(&app, &state).await?;
         }
         (PipelineMode::Modular, InteractionMode::PTT) => {
-            crate::services::pipeline::modular::ptt::end_session(&app, &state).await
+            crate::services::pipeline::modular::ptt::end_session(&app, &state).await?;
         }
         (PipelineMode::Realtime, InteractionMode::Passive) => {
-            crate::services::pipeline::realtime::passive::end_session(&app, &state).await
+            crate::services::pipeline::realtime::passive::end_session(&app, &state).await?;
         }
         (PipelineMode::Realtime, InteractionMode::PTT) => {
-            crate::services::pipeline::realtime::ptt::end_session(&app, &state).await
+            crate::services::pipeline::realtime::ptt::end_session(&app, &state).await?;
         }
     }
+
+    let dictation_enabled = state.settings.read().map(|s| s.dictation.enabled).unwrap_or(false);
+    if dictation_enabled {
+        state
+            .owner
+            .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
+        let dictation_mode = state
+            .settings
+            .read()
+            .map(|s| s.dictation.interaction_mode.clone())
+            .unwrap_or(crate::core::settings::DictationInteractionMode::Ptt);
+        let vad_mode = match dictation_mode {
+            crate::core::settings::DictationInteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
+            crate::core::settings::DictationInteractionMode::Ptt => VadOperationalMode::WindowedValidation,
+        };
+        if let Ok(guard) = state.engine.try_lock() {
+            if let Some(ref engine) = *guard {
+                if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {
+                    log::warn!("[IPC::Assistant] Failed to set VAD mode for dictation: {}", e);
+                }
+            }
+        }
+    } else {
+        crate::core::stop_audio_engine(&state).await?;
+    }
+
+    Ok(())
 }
 
-/// Pauses the active voice assistant pipeline.
+/// Pauses the active voice assistant pipeline if active.
 #[tauri::command]
 pub async fn pause_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Idle {
+        return Err("[IPC::Assistant] Cannot pause session: pipeline is Idle".to_string());
+    }
+    if current_state == InteractionState::Paused {
+        return Ok(());
+    }
+
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
         PipelineMode::Modular => {
@@ -79,9 +148,17 @@ pub async fn pause_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> R
     }
 }
 
-/// Resumes a paused voice assistant pipeline.
+/// Resumes a paused voice assistant pipeline if in Paused state.
 #[tauri::command]
 pub async fn resume_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let current_state = state.pipeline.state();
+    if current_state != InteractionState::Paused {
+        return Err(format!(
+            "[IPC::Assistant] Cannot resume session: current state is {:?}, expected Paused",
+            current_state
+        ));
+    }
+
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
         PipelineMode::Modular => {
@@ -93,44 +170,62 @@ pub async fn resume_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> 
     }
 }
 
-/// Initiates Push-To-Talk speech recording.
+/// Initiates Push-To-Talk speech recording after validating Ready state.
 #[tauri::command]
 pub async fn ptt_start(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
+        return Err("[IPC::Assistant] Cannot start PTT: assistant session is not active".to_string());
+    }
+
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
         PipelineMode::Modular => {
-            crate::services::pipeline::modular::ptt::handle_ptt_start(&app, &state)
+            crate::services::pipeline::modular::ptt::ptt_start(&app, &state)
         }
         PipelineMode::Realtime => {
-            crate::services::pipeline::realtime::ptt::handle_ptt_start(&app, &state)
+            crate::services::pipeline::realtime::ptt::ptt_start(&app, &state)
         }
     }
 }
 
-/// Finalizes Push-To-Talk recording and triggers speech inference.
+/// Finalizes Push-To-Talk recording after validating Listening state.
 #[tauri::command]
 pub async fn ptt_stop(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let current_state = state.pipeline.state();
+    if current_state != InteractionState::Listening {
+        return Err(format!(
+            "[IPC::Assistant] Cannot stop PTT: current state is {:?}, expected Listening",
+            current_state
+        ));
+    }
+
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
         PipelineMode::Modular => {
-            crate::services::pipeline::modular::ptt::handle_ptt_stop(&app, &state)
+            crate::services::pipeline::modular::ptt::ptt_stop(&app, &state)
         }
         PipelineMode::Realtime => {
-            crate::services::pipeline::realtime::ptt::handle_ptt_stop(&app, &state)
+            crate::services::pipeline::realtime::ptt::ptt_stop(&app, &state)
         }
     }
 }
 
-/// Cancels an in-progress Push-To-Talk recording.
+/// Cancels an in-progress Push-To-Talk recording if currently Listening.
 #[tauri::command]
 pub async fn ptt_cancel(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let current_state = state.pipeline.state();
+    if current_state != InteractionState::Listening {
+        return Ok(());
+    }
+
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
         PipelineMode::Modular => {
-            crate::services::pipeline::modular::ptt::handle_ptt_cancel(&app, &state)
+            crate::services::pipeline::modular::ptt::ptt_cancel(&app, &state)
         }
         PipelineMode::Realtime => {
-            crate::services::pipeline::realtime::ptt::handle_ptt_cancel(&app, &state)
+            crate::services::pipeline::realtime::ptt::ptt_cancel(&app, &state)
         }
     }
 }

@@ -15,8 +15,6 @@ use llama_cpp_4::{
 use parking_lot::Mutex;
 use std::num::NonZeroU32;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 /// Supported LLM model families for architecture-specific prompt formatting and stop token handling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -375,7 +373,7 @@ impl LlmEngine for LlmWorker {
         &self,
         conv_ctx: &ConversationContext,
         turn_id: u32,
-        cancel_flag: &Arc<AtomicBool>,
+        cancel: &tokio_util::sync::CancellationToken,
         tx: &std::sync::mpsc::Sender<VoxEvent>,
     ) -> Result<()> {
         self.init_context()?;
@@ -428,7 +426,7 @@ impl LlmEngine for LlmWorker {
                     .map_err(|e| anyhow!("[LLM] Tokenize user prompt failed: {}", e))?;
 
                 if !user_tokens.is_empty() {
-                    if cancel_flag.load(Ordering::Relaxed) {
+                    if cancel.is_cancelled() {
                         log::info!("[LLM] Generation cancelled during user prompt tokenization/decode.");
                         *cache_lock = None;
                         ctx.clear_kv_cache();
@@ -478,7 +476,7 @@ impl LlmEngine for LlmWorker {
                 let total = prompt_tokens.len();
                 let mut offset = 0;
                 while offset < total {
-                    if cancel_flag.load(Ordering::Relaxed) {
+                    if cancel.is_cancelled() {
                         log::info!("[LLM] Generation cancelled during prefill decode phase.");
                         *cache_lock = None;
                         ctx.clear_kv_cache();
@@ -547,7 +545,7 @@ impl LlmEngine for LlmWorker {
         };
 
         loop {
-            if cancel_flag.load(Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 log::info!("[LLM] Cancelled at token {} (turn: {})", n_cur, turn_id);
                 *cache_lock = None;
                 if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {

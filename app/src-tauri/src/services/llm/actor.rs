@@ -14,7 +14,7 @@ pub enum LlmCommand {
     Generate {
         request: GenerationRequest,
         turn_id: u32,
-        cancel_flag: Arc<AtomicBool>,
+        cancel: tokio_util::sync::CancellationToken,
     },
     Shutdown,
 }
@@ -45,10 +45,10 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
             LlmCommand::Generate {
                 request,
                 turn_id,
-                cancel_flag,
+                cancel,
             } => {
                 let res =
-                    runtime.block_on(provider.generate(request, turn_id, &cancel_flag, &event_tx));
+                    runtime.block_on(provider.generate(request, turn_id, &cancel, &event_tx));
 
                 if let Err(e) = res {
                     log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
@@ -117,7 +117,6 @@ pub struct LlmWarmUpHandles<'a> {
     pub llm_tx: &'a mut Option<std::sync::mpsc::Sender<LlmCommand>>,
     pub llm_handle: &'a mut Option<std::thread::JoinHandle<()>>,
     pub is_loaded: Arc<AtomicBool>,
-    pub is_sleeping: Arc<AtomicBool>,
     pub llm_provider_cache: Option<LlmProviderCache>,
 }
 
@@ -160,7 +159,6 @@ pub fn warm_up_llm<R: tauri::Runtime + 'static>(
 
     let app_clone = app.clone();
     let is_loaded = handles.is_loaded;
-    let is_sleeping = handles.is_sleeping;
     let worker_provider = Arc::clone(&provider_arc);
 
     let handle = std::thread::Builder::new()
@@ -171,7 +169,6 @@ pub fn warm_up_llm<R: tauri::Runtime + 'static>(
         .map_err(|e| e.to_string())?;
 
     *handles.llm_handle = Some(handle);
-    is_sleeping.store(false, Ordering::Relaxed);
     Ok(())
 }
 

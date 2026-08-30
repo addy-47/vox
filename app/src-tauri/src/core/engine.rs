@@ -2,13 +2,13 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use ringbuf::traits::Split;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 use crate::core::constants::{
     EVENT_MODEL_FAILED, EVENT_MODEL_LOADING, EVENT_MODEL_READY, RING_BUFFER_SIZE,
 };
 use crate::core::events::VoxEvent;
-use crate::core::state::{AppState, InteractionOwner, InteractionState, VadCommand, VoxEngine};
+use crate::core::state::{AppState, InteractionState, VadCommand, VoxEngine};
 use crate::services::audio::playback::PlaybackTelemetryHandles;
 use crate::services::audio::{AudioStream, PlaybackEngine};
 use crate::services::pipeline::router::spawn_router;
@@ -153,46 +153,13 @@ fn create_playback_engine(state: &AppState) -> Result<Arc<PlaybackEngine>, Strin
     };
 
     let pe = PlaybackEngine::new(
-        Arc::clone(&state.pipeline.playback_active),
         Arc::clone(&state.pipeline.cancel_flag),
-        Arc::clone(&state.pipeline.is_assistant_speaking),
+        Arc::clone(&state.pipeline.current_state_atomic),
         telemetry_handles,
     )
     .map_err(|e| format!("[Core::Engine] Playback engine init failed: {}", e))?;
 
     Ok(Arc::new(pe))
-}
-
-/// Spawns the central Tokio asynchronous event forwarder bridge.
-fn spawn_event_forwarder<R: tauri::Runtime + 'static>(
-    app: AppHandle<R>,
-    mut event_rx: tokio::sync::mpsc::Receiver<serde_json::Value>,
-) -> tauri::async_runtime::JoinHandle<()> {
-    tauri::async_runtime::spawn(async move {
-        while let Some(event) = event_rx.recv().await {
-            let event_type = event
-                .get("type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-
-            let app_state: tauri::State<'_, Arc<AppState>> = app.state();
-            let owner: InteractionOwner = app_state.owner.load(Ordering::Relaxed).into();
-            let target_window = match owner {
-                InteractionOwner::Assistant => "main",
-                InteractionOwner::Dictation => "tray",
-            };
-
-            if let Err(e) = app.emit_to(target_window, event_type, &event) {
-                log::trace!(
-                    "[Core::Engine] Failed to forward event '{}' to {}: {}",
-                    event_type,
-                    target_window,
-                    e
-                );
-            }
-        }
-        log::info!("[Core::Engine] Event forwarder task completed");
-    })
 }
 
 /// Starts the global Vox native audio engine, initializes hardware streams, and spawns worker threads.
@@ -217,12 +184,9 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let (stt_tx, stt_rx) = std::sync::mpsc::channel();
     let (vad_tx, vad_rx) = std::sync::mpsc::channel();
     let (vox_event_tx, vox_event_rx) = std::sync::mpsc::channel();
-    let (event_tx, event_rx) = tokio::sync::mpsc::channel(128);
 
     let stt_provider = create_stt_instance(app, state)?;
     let vad = create_vad_instance(app, state).await?;
-
-    let forwarder_handle = spawn_event_forwarder(app.clone(), event_rx);
 
     let (threshold, noise_gate, mode, audio_mode) = {
         let s = state
@@ -251,7 +215,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
 
     let vad_handles = VadActorHandles {
         is_loaded: Arc::clone(&state.is_vad_loaded),
-        playback_active: Arc::clone(&state.pipeline.playback_active),
+        state_atomic: Arc::clone(&state.pipeline.current_state_atomic),
         turn_id_atomic: Arc::clone(&state.pipeline.turn_id),
         audio_suppressed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
@@ -259,7 +223,6 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     };
 
     let vad_channels = VadActorChannels {
-        event_tx,
         stt_tx: stt_tx.clone(),
         vad_rx,
         telemetry_tx: state.telemetry.telemetry_tx.clone(),
@@ -327,7 +290,6 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         llm_handle: None,
         tts_handle: None,
         orchestrator_handle: Some(orchestrator_handle),
-        forwarder_handle: Some(forwarder_handle),
     });
 
     log::info!("[Core::Engine] 3-Tier Audio Engine online");
@@ -363,9 +325,6 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
         crate::services::llm::actor::cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));
         crate::services::tts::actor::cool_down_tts(&mut engine.tts_tx);
 
-        if let Some(h) = engine.forwarder_handle.take() {
-            h.abort();
-        }
         if let Some(h) = engine.llm_handle.take() {
             if let Err(e) = h.join() {
                 log::warn!("[Core::Engine] Failed to join LLM handle: {:?}", e);

@@ -1,4 +1,5 @@
 use crate::core::settings::VoxSettings;
+use crate::core::state::InteractionState;
 use crate::persistence::{
     MEMORY_WORKER_CHANNEL_CAPACITY, MEMORY_WORKER_POLL_TIMEOUT, MIN_IDLE_DEBOUNCE_SECS,
 };
@@ -11,6 +12,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
+use tokio::sync::watch;
 use turso::Connection;
 
 /// Events consumed exclusively by the background memory worker.
@@ -23,10 +25,6 @@ pub enum MemoryWorkerEvent {
         facts: HashMap<String, Vec<String>>,
         session_id: String,
     },
-    /// The pipeline has entered Idle state. Trigger background memory sweep.
-    PipelineIdle,
-    /// The pipeline is active. Pause background memory sweep.
-    PipelineActive,
     /// Track current active session ID to enforce current-session exclusion invariant.
     ActiveSessionChanged { session_id: u64 },
     /// Signals the memory worker to flush and exit cleanly.
@@ -35,16 +33,15 @@ pub enum MemoryWorkerEvent {
 
 struct WorkerState {
     current_session_id: u64,
-    is_idle: bool,
     idle_since: Option<Instant>,
 }
 
 /// Spawns the dedicated background memory worker thread.
 pub fn spawn_memory_worker(
     db_path: PathBuf,
-    is_private_mode: Arc<AtomicBool>,
     settings: Arc<RwLock<VoxSettings>>,
     graph_version: Arc<AtomicU64>,
+    state_rx: watch::Receiver<InteractionState>,
 ) -> Sender<MemoryWorkerEvent> {
     let (tx, rx) = bounded::<MemoryWorkerEvent>(MEMORY_WORKER_CHANNEL_CAPACITY);
 
@@ -64,12 +61,10 @@ pub fn spawn_memory_worker(
 
             let mut state = WorkerState {
                 current_session_id: 0,
-                is_idle: true,
                 idle_since: Some(Instant::now()),
             };
             let cancel_flag = Arc::new(AtomicBool::new(false));
             let ctx = MemoryWorkerContext {
-                is_private_mode,
                 settings,
                 graph_version,
                 cancel_flag,
@@ -81,6 +76,7 @@ pub fn spawn_memory_worker(
                 conn,
                 &mut state,
                 ctx,
+                state_rx,
             );
         })
         .expect("[Persistence::MemoryWorker] Failed to spawn worker thread");
@@ -89,7 +85,6 @@ pub fn spawn_memory_worker(
 }
 
 struct MemoryWorkerContext<'a> {
-    is_private_mode: Arc<AtomicBool>,
     settings: Arc<RwLock<VoxSettings>>,
     graph_version: Arc<AtomicU64>,
     cancel_flag: Arc<AtomicBool>,
@@ -101,41 +96,57 @@ fn run_worker_loop(
     conn: Option<Connection>,
     state: &mut WorkerState,
     ctx: MemoryWorkerContext<'_>,
+    mut state_rx: watch::Receiver<InteractionState>,
 ) {
+    if *state_rx.borrow() == InteractionState::Idle {
+        state.idle_since = Some(Instant::now());
+        ctx.cancel_flag.store(false, Ordering::Relaxed);
+    } else {
+        state.idle_since = None;
+        ctx.cancel_flag.store(true, Ordering::Relaxed);
+    }
+
     loop {
-        let event = match rx.recv_timeout(MEMORY_WORKER_POLL_TIMEOUT) {
-            Ok(e) => Some(e),
-            Err(crossbeam_channel::RecvTimeoutError::Timeout) => None,
+        if state_rx.has_changed().unwrap_or(false) {
+            if *state_rx.borrow_and_update() == InteractionState::Idle {
+                if state.idle_since.is_none() {
+                    state.idle_since = Some(Instant::now());
+                }
+                ctx.cancel_flag.store(false, Ordering::Relaxed);
+            } else {
+                state.idle_since = None;
+                ctx.cancel_flag.store(true, Ordering::Relaxed);
+                crate::services::memory::unload_memory_pipeline_onnx_models();
+            }
+        }
+
+        match rx.recv_timeout(MEMORY_WORKER_POLL_TIMEOUT) {
+            Ok(event) => {
+                if ctx.settings.read().map(|s| s.history.private_mode).unwrap_or(false) {
+                    log::debug!("[Persistence::MemoryWorker] Private mode active: skipping memory event");
+                    continue;
+                }
+                if handle_single_event(event, conn.as_ref(), state, &ctx) {
+                    break;
+                }
+            }
+            Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                if !ctx.settings.read().map(|s| s.history.private_mode).unwrap_or(false) && state.idle_since.is_some() {
+                    process_idle_queue(
+                        conn.as_ref(),
+                        state,
+                        &rx,
+                        &ctx.settings,
+                        &ctx.graph_version,
+                        &ctx.cancel_flag,
+                        ctx.handle,
+                    );
+                }
+            }
             Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
                 log::info!("[Persistence::MemoryWorker] Channel disconnected. Worker exiting");
                 break;
             }
-        };
-
-        if let Some(event) = event {
-            if ctx.is_private_mode.load(Ordering::Relaxed) {
-                log::debug!("[Persistence::MemoryWorker] Private mode active: skipping memory event");
-                continue;
-            }
-
-            if handle_single_event(
-                event,
-                conn.as_ref(),
-                state,
-                &ctx,
-            ) {
-                break;
-            }
-        } else if state.is_idle && !ctx.is_private_mode.load(Ordering::Relaxed) {
-            process_idle_queue(
-                conn.as_ref(),
-                state,
-                &rx,
-                &ctx.settings,
-                &ctx.graph_version,
-                &ctx.cancel_flag,
-                ctx.handle,
-            );
         }
     }
 }
@@ -149,19 +160,6 @@ fn handle_single_event(
     match event {
         MemoryWorkerEvent::ActiveSessionChanged { session_id } => {
             state.current_session_id = session_id;
-        }
-        MemoryWorkerEvent::PipelineIdle => {
-            if !state.is_idle {
-                state.is_idle = true;
-                state.idle_since = Some(Instant::now());
-            }
-            ctx.cancel_flag.store(false, Ordering::Relaxed);
-        }
-        MemoryWorkerEvent::PipelineActive => {
-            state.is_idle = false;
-            state.idle_since = None;
-            ctx.cancel_flag.store(true, Ordering::Relaxed);
-            crate::services::memory::unload_memory_pipeline_onnx_models();
         }
         MemoryWorkerEvent::SessionEnd { session_id, summary } => {
             if let Some(db_conn) = conn {
@@ -261,7 +259,7 @@ fn run_drain_queue(
     handle: &tokio::runtime::Handle,
 ) {
     loop {
-        if !state.is_idle || !rx.is_empty() {
+        if state.idle_since.is_none() || !rx.is_empty() {
             break;
         }
 

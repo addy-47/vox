@@ -150,11 +150,7 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
     } else {
         cancel_active_dictation_turn(&state).await;
 
-        if state
-            .pipeline
-            .is_engaged
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
+        if state.pipeline.state() != crate::core::state::InteractionState::Idle {
             state.owner.store(
                 crate::core::state::InteractionOwner::Assistant as u32,
                 std::sync::atomic::Ordering::Relaxed,
@@ -198,29 +194,23 @@ pub fn set_hud_ignore_cursor(window: WebviewWindow, ignore: bool) {
 }
 
 fn evaluate_main_mode_engine_lifecycle(app: AppHandle, state: &AppState) {
-    let (dictation_enabled, is_engaged, is_passive) = state
+    let (dictation_enabled, interaction_mode) = state
         .settings
         .read()
-        .map(|s| {
-            (
-                s.dictation.enabled,
-                state
-                    .pipeline
-                    .is_engaged
-                    .load(std::sync::atomic::Ordering::Relaxed),
-                s.interaction.mode == InteractionMode::Passive,
-            )
-        })
-        .unwrap_or((false, false, false));
+        .map(|s| (s.dictation.enabled, s.interaction.mode.clone()))
+        .unwrap_or((false, InteractionMode::PTT));
 
-    if !dictation_enabled && !is_engaged && !is_passive {
+    if !dictation_enabled
+        && state.pipeline.state() == crate::core::state::InteractionState::Idle
+        && interaction_mode == InteractionMode::PTT
+    {
         log::info!("[Settings] Main App mode changed to non-passive and Dictation is disabled. Stopping engine...");
         tauri::async_runtime::spawn(async move {
             if let Err(e) = crate::ipc::pipeline::stop_engine(app).await {
                 log::warn!("[Tray] Failed to stop engine: {}", e);
             }
         });
-    } else if is_passive {
+    } else if interaction_mode == InteractionMode::Passive {
         log::info!("[Settings] Main App mode changed to Passive. Ensuring engine is launched...");
         tauri::async_runtime::spawn(async move {
             if let Err(e) = crate::ipc::pipeline::launch_engine(app).await {

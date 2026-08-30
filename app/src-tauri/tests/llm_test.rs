@@ -37,13 +37,11 @@ fn setup_test_llm_worker() -> (
     let mut llm_tx: Option<std::sync::mpsc::Sender<LlmCommand>> = None;
     let mut llm_handle: Option<std::thread::JoinHandle<()>> = None;
     let is_loaded = Arc::new(AtomicBool::new(false));
-    let is_sleeping = Arc::new(AtomicBool::new(false));
 
     let handles = LlmWarmUpHandles {
         llm_tx: &mut llm_tx,
         llm_handle: &mut llm_handle,
         is_loaded,
-        is_sleeping,
         llm_provider_cache: None,
     };
 
@@ -67,7 +65,6 @@ fn test_llm_generation_and_cancel_matrix() {
 
     // 1. Positive Generation: English Prompt -> Token Stream -> LlmFinished
     {
-        let cancel_flag = Arc::new(AtomicBool::new(false));
         let request = GenerationRequest {
             input: ConversationInput {
                 messages: vec![ChatMessage {
@@ -85,11 +82,12 @@ fn test_llm_generation_and_cancel_matrix() {
             purpose: GenerationPurpose::Conversation,
         };
 
+        let cancel_token = tokio_util::sync::CancellationToken::new();
         llm_tx
             .send(LlmCommand::Generate {
                 request,
                 turn_id: 1,
-                cancel_flag: cancel_flag.clone(),
+                cancel: cancel_token,
             })
             .expect("Failed to send LlmCommand");
 
@@ -127,7 +125,8 @@ fn test_llm_generation_and_cancel_matrix() {
 
     // 2. Negative Invariant: Pre-cancelled request halts immediately
     {
-        let cancel_flag = Arc::new(AtomicBool::new(true)); // Pre-set cancel flag
+        let cancel_token = tokio_util::sync::CancellationToken::new();
+        cancel_token.cancel();
         let request = GenerationRequest {
             input: ConversationInput {
                 messages: vec![ChatMessage {
@@ -149,7 +148,7 @@ fn test_llm_generation_and_cancel_matrix() {
             .send(LlmCommand::Generate {
                 request,
                 turn_id: 2,
-                cancel_flag: cancel_flag.clone(),
+                cancel: cancel_token,
             })
             .expect("Failed to send LlmCommand");
 

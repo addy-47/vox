@@ -6,8 +6,7 @@ use super::prompt_builder::{
 use crate::core::constants::MemoryCollection;
 use crate::services::memory::compaction::CompactionResult;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use turso::Connection;
 
 /// Orchestrates conversation turns, dynamic FIFO sliding window, and context compaction state.
@@ -23,7 +22,7 @@ pub struct ConversationManager {
     latest_compaction_facts: HashMap<String, Vec<String>>,
 
     opportunistic_active: bool,
-    opportunistic_cancel: Arc<AtomicBool>,
+    opportunistic_cancel: CancellationToken,
 }
 
 impl ConversationManager {
@@ -50,7 +49,7 @@ impl ConversationManager {
             session_compaction_contexts: Vec::new(),
             latest_compaction_facts: HashMap::new(),
             opportunistic_active: false,
-            opportunistic_cancel: Arc::new(AtomicBool::new(false)),
+            opportunistic_cancel: CancellationToken::new(),
         }
     }
 
@@ -281,13 +280,13 @@ impl ConversationManager {
     /// Attempts to initiate an opportunistic background compaction when between soft and critical thresholds.
     pub fn try_trigger_opportunistic(
         &mut self,
-    ) -> Option<(usize, Vec<ChatMessage>, Arc<AtomicBool>)> {
+    ) -> Option<(usize, Vec<ChatMessage>, CancellationToken)> {
         if self.accountant.is_in_soft_compaction_window()
             && !self.opportunistic_active
             && self.buffer.messages.len() > 3
         {
             self.opportunistic_active = true;
-            self.opportunistic_cancel = Arc::new(AtomicBool::new(false));
+            self.opportunistic_cancel = CancellationToken::new();
             log::info!(
                 "[ConversationManager] Triggering Opportunistic Compaction candidate at {:.1}% utilization.",
                 self.accountant.context_utilization() * 100.0
@@ -295,7 +294,7 @@ impl ConversationManager {
             Some((
                 self.buffer.messages.len(),
                 self.buffer.messages.clone(),
-                Arc::clone(&self.opportunistic_cancel),
+                self.opportunistic_cancel.clone(),
             ))
         } else {
             None
@@ -308,7 +307,7 @@ impl ConversationManager {
             log::info!("[ConversationManager] Commit rejected: Opportunistic compaction was inactive.");
             return false;
         }
-        if self.opportunistic_cancel.load(Ordering::Relaxed) {
+        if self.opportunistic_cancel.is_cancelled() {
             self.opportunistic_active = false;
             log::info!("[ConversationManager] Commit rejected: Opportunistic compaction was cancelled.");
             return false;
@@ -360,7 +359,7 @@ impl ConversationManager {
     /// Aborts any running opportunistic compaction task.
     pub fn cancel_opportunistic(&mut self) {
         if self.opportunistic_active {
-            self.opportunistic_cancel.store(true, Ordering::Relaxed);
+            self.opportunistic_cancel.cancel();
             self.opportunistic_active = false;
             log::info!("[ConversationManager] Opportunistic compaction cancelled.");
         }

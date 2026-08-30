@@ -35,12 +35,6 @@ export interface TelemetryData {
   high: number;
 }
 
-/** `ptt_status` payload (services/ptt.rs). */
-export interface PttStatusPayload {
-  state: "IDLE" | "RECORDING" | "PROCESSING";
-  session_id?: number;
-}
-
 /** `cpu_governor_warning` payload (lib.rs:322). */
 export interface CpuGovernorWarningPayload {
   governor: string;

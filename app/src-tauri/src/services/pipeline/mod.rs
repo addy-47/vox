@@ -3,35 +3,11 @@ pub const WINDOW_MAIN: &str = "main";
 pub const WINDOW_TRAY: &str = "tray";
 
 pub const EVENT_STATE_CHANGED: &str = "state_changed";
-pub const EVENT_SESSION_STARTED: &str = "session_started";
-pub const EVENT_SESSION_ENDED: &str = "session_ended";
-pub const EVENT_PIPELINE_PAUSED: &str = "pipeline_paused";
-pub const EVENT_PIPELINE_RESUMED: &str = "pipeline_resumed";
-pub const EVENT_PTT_STATUS: &str = "ptt_status";
-pub const EVENT_SPEECH_START: &str = "speech_start";
-pub const EVENT_SPEECH_END: &str = "speech_end";
 pub const EVENT_TRANSCRIPT_PARTIAL: &str = "transcript_partial";
 pub const EVENT_TRANSCRIPT_FINAL: &str = "transcript_final";
 pub const EVENT_LLM_TOKEN: &str = "llm_token";
-pub const EVENT_LLM_FINISHED: &str = "llm_finished";
-pub const EVENT_PLAYBACK_STARTED: &str = "playback_started";
-pub const EVENT_PLAYBACK_FINISHED: &str = "playback_finished";
 pub const EVENT_PIPELINE_ERROR: &str = "pipeline_error";
-
-pub const STATUS_RECORDING: &str = "RECORDING";
-pub const STATUS_PROCESSING: &str = "PROCESSING";
-pub const STATUS_IDLE: &str = "IDLE";
-pub const END_REASON_USER: &str = "user";
-pub const OWNER_DICTATION: &str = "dictation";
-
-#[derive(serde::Serialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PttStatusPayload {
-    pub state: &'static str,
-}
-
-pub const PTT_PAYLOAD_RECORDING: PttStatusPayload = PttStatusPayload { state: STATUS_RECORDING };
-pub const PTT_PAYLOAD_PROCESSING: PttStatusPayload = PttStatusPayload { state: STATUS_PROCESSING };
-pub const PTT_PAYLOAD_IDLE: PttStatusPayload = PttStatusPayload { state: STATUS_IDLE };
+pub const EVENT_DICTATION_STATE_CHANGED: &str = "dictation_state_changed";
 
 pub const ROUTER_THREAD_NAME: &str = "vox-router";
 

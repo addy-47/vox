@@ -80,15 +80,12 @@ pub fn benchmark_streaming_provider(
         initial_mode: InteractionMode::Passive,
         initial_audio_mode: AudioOutputMode::Headset,
     };
-    let playback_active = Arc::new(AtomicBool::new(false));
 
     let (vad_cmd_tx, vad_cmd_rx) = mpsc::channel::<VadCommand>();
-    let (event_tx, _event_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(64);
     let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();
     let (vox_event_tx, vox_event_rx) = mpsc::channel::<VoxEvent>();
 
     let vad_channels = VadActorChannels {
-        event_tx,
         stt_tx: stt_tx.clone(),
         vad_rx: vad_cmd_rx,
         telemetry_tx,
@@ -97,7 +94,7 @@ pub fn benchmark_streaming_provider(
 
     let vad_handles = VadActorHandles {
         is_loaded: Arc::new(AtomicBool::new(false)),
-        playback_active,
+        state_atomic: Arc::new(AtomicU32::new(0)),
         turn_id_atomic: Arc::new(AtomicU32::new(0)),
         audio_suppressed: Arc::new(AtomicBool::new(false)),
         engine_shutdown: engine_shutdown.clone(),

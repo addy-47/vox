@@ -148,12 +148,12 @@ pub async fn toggle_pipeline_processing(
 ) -> Result<bool, String> {
     let new_paused = match paused {
         Some(p) => p,
-        None => !state.memory.pipeline_paused.load(Ordering::SeqCst),
+        None => !state.memory.user_paused_ingestion.load(Ordering::SeqCst),
     };
 
     state
         .memory
-        .pipeline_paused
+        .user_paused_ingestion
         .store(new_paused, Ordering::SeqCst);
 
     if let Ok(mut settings) = state.settings.write() {
@@ -173,7 +173,7 @@ pub async fn toggle_pipeline_processing(
 /// Reset all failed memory queue items to staged_pending for retry.
 #[tauri::command]
 pub async fn retry_failed_queue(state: State<'_, std::sync::Arc<AppState>>) -> Result<u32, String> {
-    if state.memory.pipeline_paused.load(Ordering::SeqCst) {
+    if state.memory.user_paused_ingestion.load(Ordering::SeqCst) {
         return Err("Memory pipeline processing is currently paused. Please enable processing before retrying.".to_string());
     }
 
@@ -209,7 +209,7 @@ pub async fn retry_failed_queue_items(
         return Err("Too many items in retry batch. Maximum allowed is 1000.".to_string());
     }
 
-    if state.memory.pipeline_paused.load(Ordering::SeqCst) {
+    if state.memory.user_paused_ingestion.load(Ordering::SeqCst) {
         return Err("Memory pipeline processing is currently paused. Please enable processing before retrying.".to_string());
     }
 

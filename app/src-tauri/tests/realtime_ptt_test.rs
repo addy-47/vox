@@ -18,11 +18,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{InteractionMode, RealtimeProviderKind};
+use vox_lib::core::state::InteractionState;
 use vox_lib::services::audio::playback::PlaybackTelemetryHandles;
 use vox_lib::services::audio::PlaybackEngine;
 use vox_lib::services::pipeline::realtime::ptt::{
-    get_buffer_len, handle_event, handle_ptt_cancel, handle_ptt_start, handle_ptt_stop,
-    ingest_audio, is_recording,
+    get_buffer_len, handle_event, ptt_cancel, ptt_start, ptt_stop, ingest_audio,
 };
 use vox_lib::services::realtime::engine::RealtimeEngine;
 use vox_lib::services::realtime::{RealtimeAudioConfig, RealtimeSession, RealtimeVoiceProvider};
@@ -93,8 +93,7 @@ fn create_mock_playback_engine() -> Arc<PlaybackEngine> {
     Arc::new(
         PlaybackEngine::new(
             Arc::new(AtomicBool::new(false)),
-            Arc::new(AtomicBool::new(false)),
-            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicU32::new(0)),
             telemetry,
         )
         .expect("Failed to initialize PlaybackEngine"),
@@ -124,31 +123,83 @@ async fn test_realtime_ptt_ghost_audio_gate_rejects_non_speech() {
         let mock_engine = create_mock_engine(push_counter.clone(), tokio::runtime::Handle::current());
         *state.realtime_engine.lock().await = Some(mock_engine);
 
+        let (stt_tx, _stt_rx) = std::sync::mpsc::channel();
+        let (vad_cmd_tx, _vad_event_rx, _producer, vad_handle) = common::harness::setup_vad_actor(
+            std::sync::mpsc::channel().0,
+            vox_lib::services::vad::actor::VadActorConfig {
+                initial_threshold: 0.5,
+                initial_noise_gate: 0.001,
+                initial_mode: InteractionMode::PTT,
+                initial_audio_mode: vox_lib::core::settings::AudioOutputMode::Speaker,
+            },
+            Arc::clone(&state.pipeline.current_state_atomic),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+        );
+
+        let (pipeline_tx, _) = std::sync::mpsc::channel();
+        let (telemetry_tx, _) = crossbeam_channel::unbounded();
+        let playback_engine = Arc::new(
+            vox_lib::services::audio::PlaybackEngine::new(
+                Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                Arc::clone(&state.pipeline.current_state_atomic),
+                vox_lib::services::audio::playback::PlaybackTelemetryHandles {
+                    energy: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                    low: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                    mid: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                    high: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                    underruns: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+                },
+            )
+            .expect("Failed to create mock PlaybackEngine"),
+        );
+
+        let engine = vox_lib::core::state::VoxEngine {
+            audio_stream: vox_lib::services::audio::AudioStream::mock(),
+            stt_tx,
+            vad_tx: vad_cmd_tx.clone(),
+            llm_tx: None,
+            tts_tx: None,
+            telemetry_tx,
+            pipeline_tx,
+            playback_engine,
+            stt_handle: None,
+            vad_handle: None,
+            llm_handle: None,
+            tts_handle: None,
+            orchestrator_handle: None,
+        };
+        *state.engine.lock().await = Some(engine);
+
         // 1. Upstream Trigger: Start Realtime PTT recording
-        handle_ptt_start(&app, &state).expect("handle_ptt_start failed");
-        assert!(is_recording(), "IS_RECORDING must be true after start");
+        state.pipeline.set_state(InteractionState::Ready);
+        ptt_start(&app, &state).expect("ptt_start failed");
+        assert_eq!(state.pipeline.state(), InteractionState::Listening, "Pipeline state should be Listening after start");
 
         // 2. Ingest 10 frames of silence / background noise (speech start event not dispatched)
         let silence_chunk = vec![0.0001f32; VAD_CHUNK_SIZE];
         for _ in 0..10 {
-            ingest_audio(&silence_chunk);
+            ingest_audio(&silence_chunk, &state);
         }
         assert_eq!(get_buffer_len(), 10 * VAD_CHUNK_SIZE, "Buffer must contain ingested frames");
 
         // 3. Stop PTT hold with production state.realtime_engine dispatch
-        handle_ptt_stop(&app, &state).expect("handle_ptt_stop failed");
+        ptt_stop(&app, &state).expect("ptt_stop failed");
 
         // Allow any asynchronous background tasks (such as AudioBridge channel dispatch) to settle
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // 4. Assertions: Ghost Audio Gate activated -> Buffer cleared, ZERO cloud pushes
-        assert!(!is_recording(), "IS_RECORDING must be false after stop");
+        assert_ne!(state.pipeline.state(), InteractionState::Listening, "Pipeline state must leave Listening after stop");
         assert_eq!(get_buffer_len(), 0, "REALTIME_PTT_BUFFER must be cleared without dispatch");
         assert_eq!(
             push_counter.load(Ordering::Relaxed),
             0,
             "Ghost Audio Gate must prevent any audio from being pushed to RealtimeEngine"
         );
+
+        let _ = vad_cmd_tx.send(vox_lib::core::state::VadCommand::Shutdown);
+        let _ = vad_handle.join();
     })
     .await
     .expect("test_realtime_ptt_ghost_audio_gate_rejects_non_speech timed out");
@@ -168,12 +219,13 @@ async fn test_realtime_ptt_speech_detected_flushes_to_engine() {
         *state.realtime_engine.lock().await = Some(mock_engine);
 
         // 1. Start Realtime PTT recording
-        handle_ptt_start(&app, &state).expect("handle_ptt_start failed");
-        assert!(is_recording(), "IS_RECORDING must be true after start");
+        state.pipeline.set_state(InteractionState::Ready);
+        ptt_start(&app, &state).expect("ptt_start failed");
+        assert_eq!(state.pipeline.state(), InteractionState::Listening, "Pipeline state must be Listening after start");
 
         // 2. Ingest speech audio frames and dispatch speech onset event
         for chunk in audio.chunks(VAD_CHUNK_SIZE) {
-            ingest_audio(chunk);
+            ingest_audio(chunk, &state);
         }
         let playback_engine = create_mock_playback_engine();
         handle_event(
@@ -185,11 +237,11 @@ async fn test_realtime_ptt_speech_detected_flushes_to_engine() {
         assert!(get_buffer_len() >= audio.len(), "Buffer must contain ingested audio");
 
         // 3. Stop PTT hold -> should flush accumulated audio to engine
-        handle_ptt_stop(&app, &state).expect("handle_ptt_stop failed");
+        ptt_stop(&app, &state).expect("ptt_stop failed");
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        assert!(!is_recording(), "IS_RECORDING must be false after stop");
+        assert_ne!(state.pipeline.state(), InteractionState::Listening, "Pipeline state must leave Listening after stop");
         assert_eq!(get_buffer_len(), 0, "Buffer must be drained on release");
         assert!(
             push_counter.load(Ordering::Relaxed) > 0,
@@ -214,12 +266,13 @@ async fn test_realtime_ptt_cancel_discards_audio() {
         *state.realtime_engine.lock().await = Some(mock_engine);
 
         // 1. Start Realtime PTT recording
-        handle_ptt_start(&app, &state).expect("handle_ptt_start failed");
-        assert!(is_recording(), "IS_RECORDING must be true");
+        state.pipeline.set_state(InteractionState::Ready);
+        ptt_start(&app, &state).expect("ptt_start failed");
+        assert_eq!(state.pipeline.state(), InteractionState::Listening, "Pipeline state must be Listening");
 
         // 2. Ingest audio frames and dispatch speech onset event
         for chunk in audio.chunks(VAD_CHUNK_SIZE) {
-            ingest_audio(chunk);
+            ingest_audio(chunk, &state);
         }
         let playback_engine = create_mock_playback_engine();
         handle_event(
@@ -231,10 +284,10 @@ async fn test_realtime_ptt_cancel_discards_audio() {
         assert!(get_buffer_len() > 0, "Buffer must contain audio frames");
 
         // 3. Cancel PTT
-        handle_ptt_cancel(&app, &state).expect("handle_ptt_cancel failed");
+        ptt_cancel(&app, &state).expect("ptt_cancel failed");
 
         // 4. Assertions
-        assert!(!is_recording(), "IS_RECORDING must be false after cancel");
+        assert_ne!(state.pipeline.state(), InteractionState::Listening, "Pipeline state must leave Listening after cancel");
         assert_eq!(get_buffer_len(), 0, "Buffer must be cleared on cancel");
         assert_eq!(
             push_counter.load(Ordering::Relaxed),
