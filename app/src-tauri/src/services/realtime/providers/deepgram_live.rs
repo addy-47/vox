@@ -30,7 +30,8 @@ type WsReader = futures_util::stream::SplitStream<
 pub struct DeepgramVoiceAgentProvider {
     config: DeepgramVoiceAgentConfig,
     system_prompt: String,
-    is_paused: Arc<std::sync::atomic::AtomicBool>,
+    state_rx: tokio::sync::watch::Receiver<crate::core::state::InteractionState>,
+    turn_id: Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl DeepgramVoiceAgentProvider {
@@ -38,12 +39,14 @@ impl DeepgramVoiceAgentProvider {
     pub fn new(
         config: DeepgramVoiceAgentConfig,
         system_prompt: String,
-        is_paused: Arc<std::sync::atomic::AtomicBool>,
+        state_rx: tokio::sync::watch::Receiver<crate::core::state::InteractionState>,
+        turn_id: Arc<std::sync::atomic::AtomicU32>,
     ) -> Self {
         Self {
             config,
             system_prompt,
-            is_paused,
+            state_rx,
+            turn_id,
         }
     }
 }
@@ -96,7 +99,8 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         let (control_tx, mut control_rx) = tokio::sync::mpsc::unbounded_channel::<ControlEvent>();
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
-        let is_paused_clone = self.is_paused.clone();
+        let state_rx_clone = self.state_rx.clone();
+        let turn_id_reconnect = self.turn_id.clone();
         let ws_connected = Arc::new(std::sync::atomic::AtomicBool::new(true));
         let ws_connected_clone = ws_connected.clone();
         let last_activity_time = Arc::new(std::sync::atomic::AtomicU64::new(
@@ -107,6 +111,8 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         let state = Arc::new(Mutex::new(SessionState {
             last_assistant_text: String::new(),
             last_activity_time: last_activity_time.clone(),
+            turn_id: self.turn_id.clone(),
+            current_server_turn_id: None,
         }));
 
         let state_clone = state.clone();
@@ -216,11 +222,11 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         let playback_tx_recv = playback_tx.clone();
         let event_tx_recv = event_tx.clone();
         let state_recv = state_clone.clone();
-        let is_paused_clone_for_rec = is_paused_clone.clone();
+        let state_rx_for_rec = state_rx_clone.clone();
         let ws_connected_clone_for_rec = ws_connected_clone.clone();
 
         let receiver_task = handle.spawn(async move {
-            let is_paused_clone = is_paused_clone_for_rec;
+            let state_rx_clone = state_rx_for_rec;
             let ws_connected_clone = ws_connected_clone_for_rec;
             let mut reconnect_tx_opt = Some(reconnect_tx);
             while let Some(res) = ws_read.next().await {
@@ -256,7 +262,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                 }
             }
             ws_connected_clone.store(false, Ordering::SeqCst);
-            if is_paused_clone.load(Ordering::SeqCst) {
+            if *state_rx_clone.borrow() == crate::core::state::InteractionState::Paused {
                 log::info!("[DeepgramVoiceAgent] WebSocket disconnected silently during pause.");
             } else if let Some(tx) = reconnect_tx_opt.take() {
                 if tx.send(()).is_err() {
@@ -327,7 +333,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                             let new_playback_tx = playback_tx_clone.clone();
                             let new_event_tx = event_tx_clone.clone();
                             let new_state_recv = state_clone.clone();
-                            let is_paused_rec = is_paused_clone.clone();
+                            let state_rx_rec = state_rx_clone.clone();
                             let ws_conn_rec = ws_connected_clone.clone();
 
                             let new_receiver_task = tokio::spawn(async move {
@@ -361,7 +367,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                                     }
                                 }
                                 ws_conn_rec.store(false, Ordering::SeqCst);
-                                if is_paused_rec.load(Ordering::SeqCst) {
+                                if *state_rx_rec.borrow() == crate::core::state::InteractionState::Paused {
                                     log::info!("[DeepgramVoiceAgent] Reconnected WebSocket disconnected silently during pause.");
                                 } else if let Some(tx) = reconnect_tx_opt.take() {
                                     if tx.send(()).is_err() {
@@ -383,8 +389,9 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
 
                 if !reconnected {
                     log::error!("[DeepgramVoiceAgent] Max reconnection attempts reached. Terminating session.");
+                    let err_turn_id = turn_id_reconnect.load(Ordering::Relaxed);
                     if let Err(e) = event_tx_clone.send(VoxEvent::Error {
-                        turn_id: 0,
+                        turn_id: err_turn_id,
                         message: "Deepgram connection lost permanently after multiple retries.".to_string(),
                     }) {
                         log::warn!("[DeepgramVoiceAgent] Failed to send permanent error event: {:?}", e);
@@ -588,6 +595,25 @@ enum ControlEvent {
 struct SessionState {
     last_assistant_text: String,
     last_activity_time: Arc<std::sync::atomic::AtomicU64>,
+    turn_id: Arc<std::sync::atomic::AtomicU32>,
+    current_server_turn_id: Option<u32>,
+}
+
+impl SessionState {
+    fn current_or_new_turn_id(&mut self) -> u32 {
+        if let Some(id) = self.current_server_turn_id {
+            id
+        } else {
+            let new_id = self.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
+            self.current_server_turn_id = Some(new_id);
+            new_id
+        }
+    }
+
+    fn peek_or_current_turn_id(&self) -> u32 {
+        self.current_server_turn_id
+            .unwrap_or_else(|| self.turn_id.load(Ordering::Relaxed))
+    }
 }
 
 /// Active duplex session interacting with Deepgram Voice Agent via background channels.
@@ -684,7 +710,9 @@ fn handle_deepgram_server_message(
                 log::info!("[DeepgramVoiceAgent] User started speaking (barge-in).");
                 let mut s_lock = state.lock();
                 s_lock.last_assistant_text.clear();
-                if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id: 0 }) {
+                let tid = s_lock.peek_or_current_turn_id();
+                s_lock.current_server_turn_id = None;
+                if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id: tid }) {
                     log::warn!(
                         "[DeepgramVoiceAgent] Failed to send Cancelled event: {:?}",
                         e
@@ -698,8 +726,18 @@ fn handle_deepgram_server_message(
 
                 if role == "user" {
                     log::debug!("[DeepgramVoiceAgent] User final transcript: {:?}", content);
+                    let turn_id = state.lock().current_or_new_turn_id();
+                    if let Err(e) = event_tx.send(VoxEvent::TranscriptPartial {
+                        turn_id,
+                        text: content.to_string(),
+                    }) {
+                        log::warn!(
+                            "[DeepgramVoiceAgent] Failed to send TranscriptPartial event: {:?}",
+                            e
+                        );
+                    }
                     if let Err(e) = event_tx.send(VoxEvent::TranscriptFinal {
-                        turn_id: 0,
+                        turn_id,
                         text: content.to_string(),
                     }) {
                         log::warn!(
@@ -710,12 +748,13 @@ fn handle_deepgram_server_message(
                 } else if role == "assistant" {
                     log::debug!("[DeepgramVoiceAgent] Assistant transcript: {:?}", content);
                     let mut s_lock = state.lock();
+                    let turn_id = s_lock.current_or_new_turn_id();
                     let last_text = &s_lock.last_assistant_text;
                     if content.starts_with(last_text) {
                         let delta = &content[last_text.len()..];
                         if !delta.is_empty() {
                             if let Err(e) = event_tx.send(VoxEvent::LlmToken {
-                                turn_id: 0,
+                                turn_id,
                                 token: delta.to_string(),
                             }) {
                                 log::warn!(
@@ -726,7 +765,7 @@ fn handle_deepgram_server_message(
                         }
                     } else {
                         if let Err(e) = event_tx.send(VoxEvent::LlmToken {
-                            turn_id: 0,
+                            turn_id,
                             token: content.to_string(),
                         }) {
                             log::warn!(
@@ -742,7 +781,8 @@ fn handle_deepgram_server_message(
                 log::debug!("[DeepgramVoiceAgent] Agent audio done.");
                 let mut s_lock = state.lock();
                 s_lock.last_assistant_text.clear();
-                if let Err(e) = event_tx.send(VoxEvent::LlmFinished { turn_id: 0 }) {
+                let finished_turn_id = s_lock.current_server_turn_id.take().unwrap_or_else(|| s_lock.turn_id.load(Ordering::Relaxed));
+                if let Err(e) = event_tx.send(VoxEvent::LlmFinished { turn_id: finished_turn_id }) {
                     log::warn!(
                         "[DeepgramVoiceAgent] Failed to send LlmFinished event: {:?}",
                         e
@@ -752,8 +792,9 @@ fn handle_deepgram_server_message(
             "Error" | "Warning" => {
                 log::error!("[DeepgramVoiceAgent] Server error/warning: {:?}", val);
                 if let Some(err_msg) = val.get("message").and_then(|v| v.as_str()) {
+                    let err_turn_id = state.lock().peek_or_current_turn_id();
                     if let Err(e) = event_tx.send(VoxEvent::Error {
-                        turn_id: 0,
+                        turn_id: err_turn_id,
                         message: format!("Deepgram server error: {}", err_msg),
                     }) {
                         log::warn!("[DeepgramVoiceAgent] Failed to send Error event: {:?}", e);

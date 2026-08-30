@@ -56,6 +56,19 @@ impl VadEngine for VadBackend {
 }
 
 impl VadBackend {
+    /// Returns the noise gate multiplier required by this backend for calibrated energy filtering.
+    pub fn noise_gate_multiplier(&self) -> f32 {
+        match self {
+            VadBackend::Earshot(_) => EARSHOT_NOISE_GATE_MULTIPLIER,
+            VadBackend::Ten(_) => 1.0,
+        }
+    }
+
+    /// Evaluates if raw energy satisfies the noise gate threshold for this backend.
+    pub fn is_above_noise_gate(&self, raw_energy: f32, noise_gate: f32) -> bool {
+        raw_energy >= (noise_gate * self.noise_gate_multiplier())
+    }
+
     /// Hot-updates the voice detection activation threshold.
     pub fn update_threshold(&mut self, threshold: f32) -> anyhow::Result<()> {
         match self {

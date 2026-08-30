@@ -72,7 +72,7 @@ pub fn setup_stt_worker<R: tauri::Runtime + 'static>(
 pub fn setup_vad_actor(
     stt_tx: Sender<SttCommand>,
     config: VadActorConfig,
-    playback_active: Arc<AtomicBool>,
+    state_atomic: Arc<AtomicU32>,
     audio_suppressed: Arc<AtomicBool>,
     engine_shutdown: Arc<AtomicBool>,
 ) -> (
@@ -87,14 +87,11 @@ pub fn setup_vad_actor(
     let vad_engine = EarshotVadEngine::new(config.initial_threshold)
         .expect("Failed to initialize Earshot VAD engine");
     let vad_backend = VadBackend::Earshot(vad_engine);
-
     let (vad_cmd_tx, vad_cmd_rx) = mpsc::channel::<VadCommand>();
-    let (event_tx, _event_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(64);
     let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();
     let (vox_event_tx, vox_event_rx) = mpsc::channel::<VoxEvent>();
 
     let vad_channels = VadActorChannels {
-        event_tx,
         stt_tx,
         vad_rx: vad_cmd_rx,
         telemetry_tx,
@@ -103,7 +100,7 @@ pub fn setup_vad_actor(
 
     let vad_handles = VadActorHandles {
         is_loaded: Arc::new(AtomicBool::new(false)),
-        playback_active,
+        state_atomic,
         turn_id_atomic: Arc::new(AtomicU32::new(0)),
         audio_suppressed,
         engine_shutdown,
@@ -290,7 +287,7 @@ pub fn get_test_app_state() -> vox_lib::core::state::AppState {
 pub fn attach_mock_engine_to_state<R: tauri::Runtime>(
     _app: &AppHandle<R>,
     state: &vox_lib::core::state::AppState,
-    stt_tx: Sender<SttCommand>,
+    stt_tx: std::sync::mpsc::Sender<SttCommand>,
 ) {
     let (vad_tx, _) = std::sync::mpsc::channel();
     let (pipeline_tx, _) = std::sync::mpsc::channel();
@@ -298,8 +295,7 @@ pub fn attach_mock_engine_to_state<R: tauri::Runtime>(
     let playback_engine = Arc::new(
         vox_lib::services::audio::PlaybackEngine::new(
             Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            Arc::clone(&state.pipeline.current_state_atomic),
             vox_lib::services::audio::playback::PlaybackTelemetryHandles {
                 energy: Arc::new(std::sync::atomic::AtomicU32::new(0)),
                 low: Arc::new(std::sync::atomic::AtomicU32::new(0)),
@@ -325,8 +321,7 @@ pub fn attach_mock_engine_to_state<R: tauri::Runtime>(
         llm_handle: None,
         tts_handle: None,
         orchestrator_handle: None,
-        forwarder_handle: None,
     };
     *state.engine.blocking_lock() = Some(engine);
-    state.pipeline.is_engaged.store(true, std::sync::atomic::Ordering::Relaxed);
+    state.pipeline.set_state(vox_lib::core::state::InteractionState::Ready);
 }

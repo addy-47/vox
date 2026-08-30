@@ -55,6 +55,28 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
+## 2.2 State, Event, and Code Cleanliness Invariants (NON-NEGOTIABLE)
+
+1. **Single Source of Truth (The Law of State):**
+   - `InteractionState` (`Idle=0, Ready=1, Listening=2, Thinking=3, Speaking=4, Paused=5, Error=6`) is the **SOLE SOURCE OF TRUTH** for the assistant pipeline.
+   - `DictationState` (`Idle=0, Recording=1, Transcribing=2, Error=3`) is the **SOLE SOURCE OF TRUTH** for dictation.
+2. **Zero Synthetic Booleans & Flag Bags:**
+   - NEVER create loose boolean atomics, struct fields, or query methods like `is_connected`, `is_idle`, `is_engaged`, `is_sleeping`, `is_paused`, `is_assistant`, `is_passive`, `is_private`, `is_recording`, `is_speech_detected`. Query the state enum and settings directly.
+   - Model readiness must NEVER be modeled as a flat bag of loose `is_<model>_loaded` atomics in `AppState`.
+3. **Zero `_` Prefixed Masking & Zero `#[allow(...)]`:**
+   - NEVER prefix unused function arguments, struct fields, or variables with `_` to silence compiler warnings. If a parameter or field is not used, delete it from the signature and callers. (RAII drop guards holding live resources are the only exception).
+   - `#[allow(dead_code)]`, `#[allow(unused_variables)]`, and all lint suppressions are strictly banned per `.agents/rules/backend-style-guide.md`.
+4. **State Transitions are the Sole Lifecycle Event Pump:**
+   - `transition(...)` broadcasts `EVENT_STATE_CHANGED` (`"state_changed"`).
+   - Submodules must NEVER manually emit custom lifecycle events (`speech_start`, `speech_end`, `playback_started`, `playback_finished`, `session_started`, `session_ended`, `ptt_status`).
+   - The ONLY other IPC events permitted are streaming data payloads: `transcript_partial`, `transcript_final`, `llm_token`, `pipeline_error`.
+5. **Centralized Turn Generation:**
+   - Turn IDs must be generated strictly at the turn boundary via `AppState::next_turn_id()`, never fragmented across actors or passed as unused dummy arguments.
+6. **Frontend State Alignment:**
+   - The frontend MUST consume `interactionState` directly. Never recreate boolean `useState` hooks or alias wrappers (`isEngaged`, `isSleeping`, `isPaused`, `isThinking`, `pttStatus`). UI components switch directly on `interactionState`.
+
+---
+
 ## 3. HARD GATE: Code Modification Gate
 
 > 🛑 **MANDATORY CONTEXT GATE:**
@@ -135,4 +157,17 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 - **W3 & R3 (Realtime & Fact Dispatch):** Guarded realtime turns on engagement/pause, routed compaction facts through `PersonalFactsReady` worker channel, and offloaded SQLite writes.
 - **R2 & R4 (Event Router & Latencies):** Fixed `router.rs` so only `PlaybackFinished`/`Cancelled` emit `PipelineIdle`, preventing ingestion during active generation; wired real STT/TTFT metrics to `TurnCompleted`.
 - **Quality Gate:** Clean `cargo clippy --all-targets` (0 warnings), clean `cargo check --all-targets` (0 errors), 40/40 tests green in release mode.
+
+### 5.12 State, Event & Flag Bag Orchestration Purge
+- **Synthetic Flags Eradicated:** Purged `is_sleeping`, `is_engaged`, `is_recording`, `is_speech_detected`, `is_earshot`, and loose `state_atomic` duplicates across `AppState`, `RuntimeSnapshot`, `collector.rs`, `telemetry_emitter.rs`, `VadActor`, `PlaybackEngine`, and TS frontend.
+- **Single Source of Truth:** Replaced derived flags with direct queries on `InteractionState` (`state.pipeline.state() == InteractionState::Paused`) and polymorphic `VadBackend::is_above_noise_gate()`.
+- **Event Pump Standardization:** Eliminated redundant lifecycle emissions (`speech_start`, `speech_end`, `playback_started`, `session_started`, `session_ended`, `ptt_status`), anchoring frontend reactivity purely to `state_changed` and streaming data payloads.
+- **Quality Gate:** 0 clippy warnings across all targets (`cargo clippy --all-targets -- -D warnings`), clean `cargo check --all-targets`, clean `pnpm build`.
+
+### 5.13 State-Event Remediation & Turn Cancellation Hardening
+- **Turn ID Monotonic Invariants:** Replaced fragmented `fetch_add` calls with SSOT atomic helpers (`next_turn_id()`, `peek_turn_id()`, `next_turn()`, `cancel_current_turn()`) in `PipelineAtomics`, completely eliminating `turn_id: 0` resets across modular PTT, dictation, and duplex realtime providers (Gemini Live & Deepgram).
+- **Tokio CancellationToken Standard:** Migrated all LLM provider abstractions (`LlmProvider`, `LlmEngine`, `EmbeddedProvider`, `RemoteTransport`, `LlamaCppEngine`), compaction harness (`manager.rs`, `facade.rs`, `runner.rs`), and modular pipeline dispatch to `tokio_util::sync::CancellationToken`, eliminating sleep-polling loops and bridging shims.
+- **Memory Ingestion / Compaction Invariant:** Preserved strict `InteractionState::Idle` requirement for ONNX background ingestion worker with non-blocking opportunistic soft compaction execution on `{Ready, Paused}`.
+- **Dead Variant Purge & Strict Style Alignment:** Removed dead IPC event variants (`WarmUp`, `SettingsUpdated`, `VadCommand::SetAudioSink`, `TtsCommand::UpdateQualitySteps`, `TtsCommand::UpdateSpeed`), resolved all `_`-prefixed variables/imports, and verified zero compiler/linter warnings across Rust and TypeScript.
+- **Quality Gate:** `cargo check --all-targets` (0 errors, 0 warnings), `pnpm build` clean.
 

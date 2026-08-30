@@ -59,11 +59,7 @@ async fn handle_dictation_side_effects(
         if !enabled {
             crate::tray::destroy_tray_window(app);
 
-            let is_engaged = state
-                .pipeline
-                .is_engaged
-                .load(std::sync::atomic::Ordering::Relaxed);
-            if !is_engaged {
+            if state.pipeline.state() == crate::core::state::InteractionState::Idle {
                 let state_clone = app.state::<std::sync::Arc<AppState>>().inner().clone();
                 tauri::async_runtime::spawn(async move {
                     if let Err(e) = crate::core::stop_audio_engine(&state_clone).await {
@@ -124,29 +120,23 @@ async fn handle_interaction_side_effects(
     value: &serde_json::Value,
 ) {
     if key == "mode" {
-        let (dictation_enabled, is_engaged, is_passive) = state
+        let (dictation_enabled, interaction_mode) = state
             .settings
             .read()
-            .map(|s| {
-                (
-                    s.dictation.enabled,
-                    state
-                        .pipeline
-                        .is_engaged
-                        .load(std::sync::atomic::Ordering::Relaxed),
-                    s.interaction.mode == InteractionMode::Passive,
-                )
-            })
-            .unwrap_or((false, false, false));
+            .map(|s| (s.dictation.enabled, s.interaction.mode.clone()))
+            .unwrap_or((false, InteractionMode::PTT));
 
-        if !dictation_enabled && !is_engaged && !is_passive {
+        if !dictation_enabled
+            && state.pipeline.state() == crate::core::state::InteractionState::Idle
+            && interaction_mode == InteractionMode::PTT
+        {
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = crate::ipc::pipeline::stop_engine(app_clone).await {
                     log::warn!("[Settings::Mutation] Failed to stop engine: {}", e);
                 }
             });
-        } else if is_passive {
+        } else if interaction_mode == InteractionMode::Passive {
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = crate::ipc::pipeline::launch_engine(app_clone).await {
@@ -268,19 +258,6 @@ pub async fn update_setting(
     if domain == "persona" && key == "modular_prompt" {
         if let Some(prompt_str) = value.as_str() {
             state.conversation_manager.lock().update_system_prompt(prompt_str);
-        }
-    }
-
-    if let Some(engine) = state.engine.lock().await.as_ref() {
-        if let Ok(current_settings) = state.settings.read() {
-            if let Err(e) = engine
-                .pipeline_tx
-                .send(crate::core::events::VoxEvent::SettingsUpdated(Box::new(
-                    current_settings.clone(),
-                )))
-            {
-                log::warn!("[Settings::Mutation] Failed to send SettingsUpdated event: {}", e);
-            }
         }
     }
 

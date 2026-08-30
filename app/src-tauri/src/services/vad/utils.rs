@@ -1,7 +1,5 @@
 use std::collections::VecDeque;
 
-use super::EARSHOT_NOISE_GATE_MULTIPLIER;
-
 /// Bounded circular buffer for retaining pre-roll audio before speech onset.
 #[derive(Debug)]
 pub struct PreRollBuffer {
@@ -52,16 +50,6 @@ pub fn calculate_rms(chunk: &[f32]) -> f32 {
         return 0.0;
     }
     (chunk.iter().map(|&x| x * x).sum::<f32>() / chunk.len() as f32).sqrt()
-}
-
-/// Evaluates if raw energy satisfies the noise gate threshold.
-pub fn is_above_noise_gate(raw_energy: f32, noise_gate: f32, is_earshot: bool) -> bool {
-    let effective_noise_gate = if is_earshot {
-        noise_gate * EARSHOT_NOISE_GATE_MULTIPLIER
-    } else {
-        noise_gate
-    };
-    raw_energy >= effective_noise_gate
 }
 
 /// Converts normalized f32 audio samples [-1.0, 1.0] to 16-bit PCM i16 samples.

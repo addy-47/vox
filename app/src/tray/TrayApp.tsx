@@ -13,7 +13,6 @@ import { commitSessionToHistory, getTranscriptHistory } from "@/services/history
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettings } from "@/shared/hooks/useSettings";
 import { ErrorBoundary } from "@/shared/components/common";
-import { cn } from "@/shared/lib/utils";
 
 interface SystemStats {
   system_cpu: number;
@@ -60,7 +59,6 @@ export const TrayApp: React.FC = () => {
   const [interactionState, setInteractionState] = useState<string>("Idle");
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState<SystemStats | null>(null);
-  const [isSleeping, setIsSleeping] = useState(false);
 
   // ─── PTT & Status State ──────────────────────────────────────────────────────
   const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
@@ -141,11 +139,15 @@ export const TrayApp: React.FC = () => {
       liveTargetText, startNewInteraction, updatePartial, commitFinal, endSpeechSegment, show, startFade, cancelFade, hideImmediately, reset]);
 
   // ─── Actions ───────────────────────────────────────────────────────────────
-  const copyToClipboard = () => {
-    if (currentTargetText) {
-      navigator.clipboard.writeText(currentTargetText);
+  const copyToClipboard = async () => {
+    const textToCopy = currentTargetText;
+    if (!textToCopy) return;
+    try {
+      await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("[TrayApp] Failed to copy text: ", err);
     }
   };
 
@@ -198,11 +200,22 @@ export const TrayApp: React.FC = () => {
     const setupListeners = async () => {
       try {
         const appWindow = getCurrentWindow();
-        
-        const u1 = await appWindow.listen("speech_start", () => {
+
+        const u1 = await appWindow.listen<{ state: string; turn_id: number }>("dictation_state_changed", (event: { payload: { state: string; turn_id: number } }) => {
           if (!active) return;
-          setViewingHistory(false);
-          stateRef.current.callbacks.startNewInteraction();
+          const newState = event.payload.state;
+          if (newState === "RECORDING") {
+            setPttStatus("RECORDING");
+            stateRef.current.callbacks.reset();
+            setViewingHistory(false);
+            if (stateRef.current.visibilityState === 'HIDDEN') {
+              stateRef.current.callbacks.show();
+            }
+          } else if (newState === "PROCESSING") {
+            setPttStatus("PROCESSING");
+          } else {
+            setPttStatus("IDLE");
+          }
         });
         localUnlisteners.push(u1);
         if (!active) {
@@ -210,9 +223,8 @@ export const TrayApp: React.FC = () => {
           return;
         }
 
-        const u2 = await appWindow.listen<{ text: string, session_id: number }>("transcript_partial", (event) => {
+        const u2 = await appWindow.listen<{ text: string; turn_id?: number }>("transcript_partial", (event: { payload: { text: string; turn_id?: number } }) => {
           if (!active) return;
-          if (stateRef.current.pttStatus === 'RECORDING') return;
           if (event.payload.text) {
             if (stateRef.current.visibilityState === 'HIDDEN') {
               stateRef.current.callbacks.show();
@@ -226,7 +238,7 @@ export const TrayApp: React.FC = () => {
           return;
         }
 
-        const u3 = await appWindow.listen<{ text: string, session_id: number }>("transcript_final", (event) => {
+        const u3 = await appWindow.listen<{ text: string; turn_id?: number }>("transcript_final", (event: { payload: { text: string; turn_id?: number } }) => {
           if (!active) return;
           if (event.payload.text) {
             if (stateRef.current.visibilityState === 'HIDDEN') {
@@ -241,17 +253,7 @@ export const TrayApp: React.FC = () => {
           return;
         }
 
-        const u4 = await appWindow.listen("speech_end", () => {
-          if (!active) return;
-          stateRef.current.callbacks.endSpeechSegment();
-        });
-        localUnlisteners.push(u4);
-        if (!active) {
-          localUnlisteners.forEach(u => u());
-          return;
-        }
-
-        const u5 = await appWindow.listen<SystemStats>("system_stats", (event) => {
+        const u5 = await appWindow.listen<SystemStats>("system_stats", (event: { payload: SystemStats }) => {
           if (!active) return;
           if (stateRef.current.visibilityState === 'HIDDEN') return;
           setStats(event.payload);
@@ -273,51 +275,12 @@ export const TrayApp: React.FC = () => {
           return;
         }
 
-        const u7 = await appWindow.listen<string>("state_changed", (event) => {
+        const u7 = await appWindow.listen<string>("state_changed", (event: { payload: string }) => {
           if (!active) return;
           if (stateRef.current.visibilityState === 'HIDDEN') return;
           setInteractionState(event.payload);
         });
         localUnlisteners.push(u7);
-        if (!active) {
-          localUnlisteners.forEach(u => u());
-          return;
-        }
-
-        const u8 = await appWindow.listen<{ state: string }>("ptt_status", (event) => {
-          if (!active) return;
-          const newState = event.payload.state as any;
-          setPttStatus(newState);
-          if (newState === "RECORDING") {
-            stateRef.current.callbacks.reset();
-            setViewingHistory(false);
-          }
-        });
-        localUnlisteners.push(u8);
-        if (!active) {
-          localUnlisteners.forEach(u => u());
-          return;
-        }
-
-        const u9 = await appWindow.listen<boolean>("auto_sleep_state", (event) => {
-          if (!active) return;
-          const sleep = event.payload;
-          setIsSleeping(sleep);
-          if (sleep) {
-            // Auto-sleep: Commit current session & hide HUD
-            const textToCommit = stateRef.current.liveTargetText;
-            if (textToCommit.trim()) {
-              commitSessionToHistory(textToCommit).then((h: string[]) => {
-                if (active) setHistory(h.slice(0, stateRef.current.historyLimit));
-              });
-            }
-            stateRef.current.callbacks.reset();
-            stateRef.current.callbacks.hideImmediately();
-          } else {
-            stateRef.current.callbacks.cancelFade();
-          }
-        });
-        localUnlisteners.push(u9);
         if (!active) {
           localUnlisteners.forEach(u => u());
           return;
@@ -366,10 +329,7 @@ export const TrayApp: React.FC = () => {
             animate={visibilityState}
             exit="HIDDEN"
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className={cn(
-              "w-[380px] h-[250px] flex flex-col glass-card overflow-hidden rounded-2xl transition-all duration-1000",
-              isSleeping && "grayscale-[0.8] opacity-50"
-            )}
+            className="w-[380px] h-[250px] flex flex-col glass-card overflow-hidden rounded-2xl transition-all duration-1000"
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
             style={{ 
