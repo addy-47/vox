@@ -39,9 +39,7 @@ pub const DEFAULT_PROBE_TEMPERATURE: f32 = 0.1;
 use crate::core::events::VoxEvent;
 use crate::core::settings::LlmModelInfo;
 use futures_util::future::BoxFuture;
-use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
-use std::sync::Arc;
 
 /// Common provider abstraction implemented by `EmbeddedProvider` and `RemoteTransport`.
 pub trait LlmProvider: Send + Sync {
@@ -50,7 +48,7 @@ pub trait LlmProvider: Send + Sync {
         &'a self,
         request: GenerationRequest,
         turn_id: u32,
-        cancel_flag: &'a Arc<AtomicBool>,
+        cancel: &'a tokio_util::sync::CancellationToken,
         tx: &'a mpsc::Sender<VoxEvent>,
     ) -> BoxFuture<'a, Result<(), LlmError>>;
 
@@ -79,7 +77,7 @@ pub trait LlmEngine {
         &self,
         ctx: &crate::services::memory::ConversationContext,
         turn_id: u32,
-        cancel_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+        cancel: &tokio_util::sync::CancellationToken,
         tx: &std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
     ) -> anyhow::Result<()>;
 }

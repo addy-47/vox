@@ -9,7 +9,6 @@ export interface RuntimeSnapshot {
   current_turn_id: number;
   conversation_id: number;
   playback_active: boolean;
-  tts_generating: boolean;
   system_cpu_usage: number;
   system_ram_mb: number;
   vox_cpu_usage: number;
@@ -41,8 +40,6 @@ export interface RuntimeSnapshot {
   is_intra_edge_classifier_loaded: boolean;
   is_inter_edge_classifier_loaded: boolean;
   is_translit_loaded: boolean;
-  is_sleeping: boolean;
-  is_engaged: boolean;
   cpu_governor: string;
   cpu_governor_optimal: boolean;
   timestamp_ms: number;

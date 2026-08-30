@@ -30,7 +30,8 @@ type WsReader = futures_util::stream::SplitStream<
 pub struct GeminiLiveProvider {
     config: GeminiRealtimeConfig,
     system_prompt: String,
-    is_paused: Arc<std::sync::atomic::AtomicBool>,
+    state_rx: tokio::sync::watch::Receiver<crate::core::state::InteractionState>,
+    turn_id: Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl GeminiLiveProvider {
@@ -38,12 +39,14 @@ impl GeminiLiveProvider {
     pub fn new(
         config: GeminiRealtimeConfig,
         system_prompt: String,
-        is_paused: Arc<std::sync::atomic::AtomicBool>,
+        state_rx: tokio::sync::watch::Receiver<crate::core::state::InteractionState>,
+        turn_id: Arc<std::sync::atomic::AtomicU32>,
     ) -> Self {
         Self {
             config,
             system_prompt,
-            is_paused,
+            state_rx,
+            turn_id,
         }
     }
 }
@@ -113,7 +116,8 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         let (control_tx, mut control_rx) = tokio::sync::mpsc::unbounded_channel::<ControlEvent>();
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
-        let is_paused_clone = self.is_paused.clone();
+        let state_rx_clone = self.state_rx.clone();
+        let turn_id_reconnect = self.turn_id.clone();
         let ws_connected = Arc::new(std::sync::atomic::AtomicBool::new(true));
         let ws_connected_clone = ws_connected.clone();
         let last_activity_time = Arc::new(std::sync::atomic::AtomicU64::new(
@@ -126,6 +130,8 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
             resume_handle: config_clone.resume_handle.clone(),
             model: model.clone(),
             last_activity_time: last_activity_time.clone(),
+            turn_id: self.turn_id.clone(),
+            current_server_turn_id: None,
         }));
 
         let state_clone = state.clone();
@@ -265,11 +271,11 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         let playback_tx_recv = playback_tx.clone();
         let event_tx_recv = event_tx.clone();
         let state_recv = state_clone.clone();
-        let is_paused_clone_for_rec = is_paused_clone.clone();
+        let state_rx_for_rec = state_rx_clone.clone();
         let ws_connected_clone_for_rec = ws_connected_clone.clone();
 
         let receiver_task = handle.spawn(async move {
-            let is_paused_clone = is_paused_clone_for_rec;
+            let state_rx_clone = state_rx_for_rec;
             let ws_connected_clone = ws_connected_clone_for_rec;
             let mut reconnect_tx_opt = Some(reconnect_tx);
             while let Some(res) = ws_read.next().await {
@@ -289,7 +295,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                         if val.get("goAway").is_some() {
                             log::warn!("[GeminiLive] Server requested session termination (goAway). Reconnecting...");
                             ws_connected_clone.store(false, Ordering::SeqCst);
-                            if is_paused_clone.load(Ordering::SeqCst) {
+                            if *state_rx_clone.borrow() == crate::core::state::InteractionState::Paused {
                                 break;
                             }
                             if let Some(tx) = reconnect_tx_opt.take() {
@@ -316,7 +322,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                         if val.get("goAway").is_some() {
                             log::warn!("[GeminiLive] Server requested session termination (goAway). Reconnecting...");
                             ws_connected_clone.store(false, Ordering::SeqCst);
-                            if is_paused_clone.load(Ordering::SeqCst) {
+                            if *state_rx_clone.borrow() == crate::core::state::InteractionState::Paused {
                                 break;
                             }
                             if let Some(tx) = reconnect_tx_opt.take() {
@@ -339,7 +345,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                 }
             }
             ws_connected_clone.store(false, Ordering::SeqCst);
-            if is_paused_clone.load(Ordering::SeqCst) {
+            if *state_rx_clone.borrow() == crate::core::state::InteractionState::Paused {
                 log::info!("[GeminiLive] WebSocket disconnected silently during pause.");
             } else if let Some(tx) = reconnect_tx_opt.take() {
                 if tx.send(()).is_err() {
@@ -414,7 +420,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                             let new_playback_tx = playback_tx_clone.clone();
                             let new_event_tx = event_tx_clone.clone();
                             let new_state_recv = state_clone.clone();
-                            let is_paused_rec = is_paused_clone.clone();
+                            let state_rx_rec = state_rx_clone.clone();
                             let ws_conn_rec = ws_connected_clone.clone();
 
                             let new_receiver_task = tokio::spawn(async move {
@@ -436,7 +442,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                                             if val.get("goAway").is_some() {
                                                 log::warn!("[GeminiLive] Reconnected Server requested session termination (goAway).");
                                                 ws_conn_rec.store(false, Ordering::SeqCst);
-                                                if is_paused_rec.load(Ordering::SeqCst) {
+                                                if *state_rx_rec.borrow() == crate::core::state::InteractionState::Paused {
                                                     break;
                                                 }
                                                 if let Some(tx) = reconnect_tx_opt.take() {
@@ -463,7 +469,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                                             if val.get("goAway").is_some() {
                                                 log::warn!("[GeminiLive] Reconnected Server requested session termination (goAway).");
                                                 ws_conn_rec.store(false, Ordering::SeqCst);
-                                                if is_paused_rec.load(Ordering::SeqCst) {
+                                                if *state_rx_rec.borrow() == crate::core::state::InteractionState::Paused {
                                                     break;
                                                 }
                                                 if let Some(tx) = reconnect_tx_opt.take() {
@@ -486,7 +492,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                                     }
                                 }
                                 ws_conn_rec.store(false, Ordering::SeqCst);
-                                if is_paused_rec.load(Ordering::SeqCst) {
+                                if *state_rx_rec.borrow() == crate::core::state::InteractionState::Paused {
                                     log::info!("[GeminiLive] Reconnected WebSocket disconnected silently during pause.");
                                 } else if let Some(tx) = reconnect_tx_opt.take() {
                                     if tx.send(()).is_err() {
@@ -516,8 +522,9 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                         }
                     }
 
+                    let err_turn_id = turn_id_reconnect.load(Ordering::Relaxed);
                     if let Err(e) = event_tx_clone.send(VoxEvent::Error {
-                        turn_id: 0,
+                        turn_id: err_turn_id,
                         message: "Gemini connection lost permanently after multiple retries.".to_string(),
                     }) {
                         log::warn!("[GeminiLive] Failed to send permanent error event: {:?}", e);
@@ -747,6 +754,25 @@ struct SessionState {
     resume_handle: Option<String>,
     model: String,
     last_activity_time: Arc<std::sync::atomic::AtomicU64>,
+    turn_id: Arc<std::sync::atomic::AtomicU32>,
+    current_server_turn_id: Option<u32>,
+}
+
+impl SessionState {
+    fn current_or_new_turn_id(&mut self) -> u32 {
+        if let Some(id) = self.current_server_turn_id {
+            id
+        } else {
+            let new_id = self.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
+            self.current_server_turn_id = Some(new_id);
+            new_id
+        }
+    }
+
+    fn peek_or_current_turn_id(&self) -> u32 {
+        self.current_server_turn_id
+            .unwrap_or_else(|| self.turn_id.load(Ordering::Relaxed))
+    }
 }
 
 /// Active duplex session interacting with Gemini Live BidiGenerateContent WebSocket.
@@ -892,10 +918,12 @@ async fn handle_gemini_server_message(
 
         let interrupt_active = {
             let mut s_lock = state.lock();
+            let tid = s_lock.peek_or_current_turn_id();
             if is_interrupted {
                 log::info!("[GeminiLive] Interruption confirmed by Gemini Live server.");
                 s_lock.interrupt_active = false;
-                if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id: 0 }) {
+                s_lock.current_server_turn_id = None;
+                if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id: tid }) {
                     log::warn!("[GeminiLive] Failed to send Cancelled event: {:?}", e);
                 }
             }
@@ -906,6 +934,8 @@ async fn handle_gemini_server_message(
             if interrupt_active {
                 return Ok(());
             }
+
+            let turn_id = state.lock().current_or_new_turn_id();
 
             if let Some(parts) = model_turn.get("parts").and_then(|p| p.as_array()) {
                 for part in parts {
@@ -945,7 +975,7 @@ async fn handle_gemini_server_message(
                     if let Some(text_token) = part.get("text").and_then(|t| t.as_str()) {
                         log::debug!("[GeminiLive] Received text token: {:?}", text_token);
                         if let Err(e) = event_tx.send(VoxEvent::LlmToken {
-                            turn_id: 0,
+                            turn_id,
                             token: text_token.to_string(),
                         }) {
                             log::warn!("[GeminiLive] Failed to send LlmToken event: {:?}", e);
@@ -957,13 +987,20 @@ async fn handle_gemini_server_message(
 
         if let Some(input_transcription) = server_content.get("inputTranscription") {
             if !interrupt_active {
+                let turn_id = state.lock().current_or_new_turn_id();
                 if let Some(text) = input_transcription.get("text").and_then(|t| t.as_str()) {
                     log::debug!(
                         "[GeminiLive] Received input transcription (ASR): {:?}",
                         text
                     );
+                    if let Err(e) = event_tx.send(VoxEvent::TranscriptPartial {
+                        turn_id,
+                        text: text.to_string(),
+                    }) {
+                        log::warn!("[GeminiLive] Failed to send TranscriptPartial event: {:?}", e);
+                    }
                     if let Err(e) = event_tx.send(VoxEvent::TranscriptFinal {
-                        turn_id: 0,
+                        turn_id,
                         text: text.to_string(),
                     }) {
                         log::warn!("[GeminiLive] Failed to send TranscriptFinal event: {:?}", e);
@@ -974,13 +1011,14 @@ async fn handle_gemini_server_message(
 
         if let Some(output_transcription) = server_content.get("outputTranscription") {
             if !interrupt_active {
+                let turn_id = state.lock().current_or_new_turn_id();
                 if let Some(text) = output_transcription.get("text").and_then(|t| t.as_str()) {
                     log::debug!(
                         "[GeminiLive] Received output transcription (TTS): {:?}",
                         text
                     );
                     if let Err(e) = event_tx.send(VoxEvent::LlmToken {
-                        turn_id: 0,
+                        turn_id,
                         token: text.to_string(),
                     }) {
                         log::warn!("[GeminiLive] Failed to send LlmToken event: {:?}", e);
@@ -995,8 +1033,10 @@ async fn handle_gemini_server_message(
             .unwrap_or(false)
         {
             log::debug!("[GeminiLive] Turn completed.");
-            state.lock().interrupt_active = false;
-            if let Err(e) = event_tx.send(VoxEvent::LlmFinished { turn_id: 0 }) {
+            let mut s_lock = state.lock();
+            s_lock.interrupt_active = false;
+            let finished_turn_id = s_lock.current_server_turn_id.take().unwrap_or_else(|| s_lock.turn_id.load(Ordering::Relaxed));
+            if let Err(e) = event_tx.send(VoxEvent::LlmFinished { turn_id: finished_turn_id }) {
                 log::warn!("[GeminiLive] Failed to send LlmFinished event: {:?}", e);
             }
         }

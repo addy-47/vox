@@ -51,8 +51,8 @@ pub use crate::core::error::MemoryError;
 pub use compaction::{run_compaction, CompactionResult, COMPACTION_SYSTEM_PROMPT};
 pub use harness::prompt_builder::format_relative_timestamp;
 pub use harness::{
-    prepare_turn_context, trigger_background_compaction, ChatMessage, ConversationContext,
-    ConversationManager, PrepareTurnParams, Role,
+    prepare_turn_context, spawn_state_compaction_observer, trigger_background_compaction,
+    ChatMessage, ConversationContext, ConversationManager, PrepareTurnParams, Role,
 };
 pub use ml::edge_classifier::{
     classify_edge, ensure_edge_classifier_loaded, init_edge_classifier, is_edge_classifier_loaded,

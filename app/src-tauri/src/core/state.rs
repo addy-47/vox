@@ -66,6 +66,32 @@ impl From<InteractionState> for u32 {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[repr(u32)]
+pub enum DictationState {
+    Idle = 0,
+    Recording = 1,
+    Transcribing = 2,
+    Error = 3,
+}
+
+impl From<u32> for DictationState {
+    fn from(v: u32) -> Self {
+        match v {
+            1 => DictationState::Recording,
+            2 => DictationState::Transcribing,
+            3 => DictationState::Error,
+            _ => DictationState::Idle,
+        }
+    }
+}
+
+impl From<DictationState> for u32 {
+    fn from(state: DictationState) -> Self {
+        state as u32
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct TelemetryData {
     pub energy: f32,
@@ -81,10 +107,9 @@ pub enum VadCommand {
     UpdateMode(crate::core::settings::InteractionMode),
     UpdateAudioMode(crate::core::settings::AudioOutputMode),
     SetOperationalMode(crate::services::vad::VadOperationalMode),
-    SetAudioSink(Option<tokio::sync::mpsc::Sender<Vec<f32>>>),
     StartWindowValidation,
     StopWindowValidation {
-        response_tx: tokio::sync::oneshot::Sender<crate::services::vad::VadValidationResult>,
+        response_tx: std::sync::mpsc::Sender<crate::services::vad::VadValidationResult>,
     },
     Shutdown,
     StartRealtime {
@@ -108,21 +133,21 @@ pub struct VoxEngine {
     pub llm_handle: Option<std::thread::JoinHandle<()>>,
     pub tts_handle: Option<std::thread::JoinHandle<()>>,
     pub orchestrator_handle: Option<std::thread::JoinHandle<()>>,
-    pub forwarder_handle: Option<tauri::async_runtime::JoinHandle<()>>,
 }
 
 pub struct PipelineAtomics {
     pub cancel_flag: Arc<AtomicBool>,
-    pub is_paused: Arc<AtomicBool>,
-    pub playback_active: Arc<AtomicBool>,
-    pub llm_generating: Arc<AtomicBool>,
-    pub tts_generating: Arc<AtomicBool>,
     pub turn_id: Arc<AtomicU32>,
-    pub is_engaged: Arc<AtomicBool>,
     pub transcript_history: Arc<parking_lot::Mutex<VecDeque<String>>>,
     pub playback_underruns: Arc<std::sync::atomic::AtomicU64>,
-    pub is_assistant_speaking: Arc<AtomicBool>,
     pub current_state_atomic: Arc<std::sync::atomic::AtomicU32>,
+    pub state_tx: tokio::sync::watch::Sender<InteractionState>,
+    pub state_rx: tokio::sync::watch::Receiver<InteractionState>,
+    pub dictation_state_atomic: Arc<std::sync::atomic::AtomicU32>,
+    pub dictation_state_tx: tokio::sync::watch::Sender<DictationState>,
+    pub dictation_state_rx: tokio::sync::watch::Receiver<DictationState>,
+    pub turn_token: Arc<parking_lot::Mutex<tokio_util::sync::CancellationToken>>,
+    pub turn_epoch: Arc<std::sync::atomic::AtomicU64>,
     pub engine_shutdown: Arc<AtomicBool>,
 }
 
@@ -134,22 +159,28 @@ impl Default for PipelineAtomics {
 
 impl PipelineAtomics {
     pub fn new() -> Self {
+        let (state_tx, state_rx) = tokio::sync::watch::channel(InteractionState::Idle);
+        let (dictation_state_tx, dictation_state_rx) =
+            tokio::sync::watch::channel(DictationState::Idle);
         Self {
             cancel_flag: Arc::new(AtomicBool::new(false)),
-            is_paused: Arc::new(AtomicBool::new(false)),
-            playback_active: Arc::new(AtomicBool::new(false)),
-            llm_generating: Arc::new(AtomicBool::new(false)),
-            tts_generating: Arc::new(AtomicBool::new(false)),
             turn_id: Arc::new(AtomicU32::new(0)),
-            is_engaged: Arc::new(AtomicBool::new(false)),
             transcript_history: Arc::new(parking_lot::Mutex::new(VecDeque::with_capacity(
                 crate::core::constants::TRANSCRIPT_HISTORY_LIMIT,
             ))),
             playback_underruns: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            is_assistant_speaking: Arc::new(AtomicBool::new(false)),
             current_state_atomic: Arc::new(std::sync::atomic::AtomicU32::new(
                 InteractionState::Idle as u32,
             )),
+            state_tx,
+            state_rx,
+            dictation_state_atomic: Arc::new(std::sync::atomic::AtomicU32::new(
+                DictationState::Idle as u32,
+            )),
+            dictation_state_tx,
+            dictation_state_rx,
+            turn_token: Arc::new(parking_lot::Mutex::new(tokio_util::sync::CancellationToken::new())),
+            turn_epoch: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             engine_shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -159,20 +190,70 @@ impl PipelineAtomics {
         InteractionState::from(self.current_state_atomic.load(Ordering::Relaxed))
     }
 
-    /// Updates internal interaction state atomics.
+    /// Updates internal interaction state atomics and notifies all observers.
     pub fn set_state(&self, new_state: InteractionState) {
-        self.is_assistant_speaking.store(
-            new_state == InteractionState::Speaking,
-            Ordering::Relaxed,
-        );
         self.current_state_atomic
             .store(new_state as u32, Ordering::Relaxed);
+        if let Err(e) = self.state_tx.send(new_state) {
+            log::warn!("[Core::State] Failed to broadcast state to observers: {}", e);
+        }
+    }
+
+    /// Returns the current dictation state derived from the canonical atomic state.
+    pub fn dictation_state(&self) -> DictationState {
+        DictationState::from(self.dictation_state_atomic.load(Ordering::Relaxed))
+    }
+
+    /// Updates internal dictation state atomics and notifies all observers.
+    pub fn set_dictation_state(&self, new_state: DictationState) {
+        self.dictation_state_atomic
+            .store(new_state as u32, Ordering::Relaxed);
+        if let Err(e) = self.dictation_state_tx.send(new_state) {
+            log::warn!("[Core::State] Failed to broadcast dictation state: {}", e);
+        }
+    }
+
+    /// Returns a clone of the current turn's cancellation token.
+    pub fn turn_token(&self) -> tokio_util::sync::CancellationToken {
+        self.turn_token.lock().clone()
+    }
+
+    /// Cancels the active turn's token, increments epoch, and returns a fresh cancellation token.
+    pub fn renew_turn_token(&self) -> tokio_util::sync::CancellationToken {
+        self.turn_epoch.fetch_add(1, Ordering::Relaxed);
+        let mut guard = self.turn_token.lock();
+        guard.cancel();
+        let new_token = tokio_util::sync::CancellationToken::new();
+        *guard = new_token.clone();
+        new_token
+    }
+
+    /// Atomically allocates the next monotonic turn ID.
+    pub fn next_turn_id(&self) -> u32 {
+        self.turn_id.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
+    /// Returns the current turn ID without incrementing.
+    pub fn peek_turn_id(&self) -> u32 {
+        self.turn_id.load(Ordering::Relaxed)
+    }
+
+    /// Atomically increments turn_id and rotates the per-turn cancellation token.
+    pub fn next_turn(&self) -> (u32, tokio_util::sync::CancellationToken) {
+        let id = self.next_turn_id();
+        let tok = self.renew_turn_token();
+        (id, tok)
+    }
+
+    /// Cancels the current turn's cancellation token without allocating a new turn.
+    pub fn cancel_current_turn(&self) {
+        self.turn_token.lock().cancel();
     }
 }
 
 pub struct MemoryAppState {
     pub graph_version: Arc<AtomicU64>,
-    pub pipeline_paused: Arc<AtomicBool>,
+    pub user_paused_ingestion: Arc<AtomicBool>,
 }
 
 impl Default for MemoryAppState {
@@ -185,7 +266,7 @@ impl MemoryAppState {
     pub fn new() -> Self {
         Self {
             graph_version: Arc::new(AtomicU64::new(1)),
-            pipeline_paused: Arc::new(AtomicBool::new(false)),
+            user_paused_ingestion: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -214,7 +295,6 @@ pub struct AppState {
     pub is_intra_edge_classifier_loaded: Arc<AtomicBool>,
     pub is_inter_edge_classifier_loaded: Arc<AtomicBool>,
     pub is_translit_loaded: Arc<AtomicBool>,
-    pub is_sleeping: Arc<AtomicBool>,
     pub runtime_status: Arc<std::sync::atomic::AtomicU32>,
     pub main_window_destroyed: Arc<AtomicBool>,
     pub persist_tx: parking_lot::Mutex<
@@ -303,7 +383,6 @@ impl AppState {
             is_intra_edge_classifier_loaded: Arc::new(AtomicBool::new(false)),
             is_inter_edge_classifier_loaded: Arc::new(AtomicBool::new(false)),
             is_translit_loaded: Arc::new(AtomicBool::new(false)),
-            is_sleeping: Arc::new(AtomicBool::new(false)),
             runtime_status: Arc::new(AtomicU32::new(RuntimeStatus::Initializing as u32)),
             main_window_destroyed: Arc::new(AtomicBool::new(false)),
             persist_tx: parking_lot::Mutex::new(None),

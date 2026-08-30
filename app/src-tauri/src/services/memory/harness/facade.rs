@@ -13,7 +13,6 @@ use crate::services::llm::{
 use parking_lot::Mutex;
 use query_sieve::MemoryScope;
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use turso::Connection;
 
@@ -273,7 +272,7 @@ pub fn trigger_background_compaction(
         let cached_provider = state.llm_provider.read().clone();
 
         tauri::async_runtime::spawn(async move {
-            if cancel_flag.load(Ordering::Relaxed) {
+            if cancel_flag.is_cancelled() {
                 return;
             }
             let history_slice = &messages[1..messages.len().saturating_sub(1)];
@@ -319,4 +318,20 @@ pub fn trigger_background_compaction(
             }
         });
     }
+}
+
+/// Spawns a background observer task that watches for InteractionState transitions into {Ready, Paused}
+/// and triggers opportunistic soft compaction after the debounce window.
+pub fn spawn_state_compaction_observer(state: Arc<AppState>) {
+    tauri::async_runtime::spawn(async move {
+        let mut state_rx = state.pipeline.state_rx.clone();
+        log::info!("[Memory::Compaction] Compaction observer spawned.");
+
+        while state_rx.changed().await.is_ok() {
+            let current_state = *state_rx.borrow_and_update();
+            if current_state == InteractionState::Ready || current_state == InteractionState::Paused {
+                trigger_background_compaction(&state, None, None);
+            }
+        }
+    });
 }

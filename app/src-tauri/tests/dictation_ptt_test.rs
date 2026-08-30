@@ -20,10 +20,11 @@ use common::scoring::calculate_similarity;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use vox_lib::core::events::VoxEvent;
+use vox_lib::core::state::DictationState;
 use vox_lib::services::llm::actor::LlmCommand;
 use vox_lib::services::pipeline::dictation::{
     get_buffer_len, handle_event as handle_dictation_event, handle_hotkey_press,
-    handle_hotkey_release_with_sender, ingest_audio, is_recording,
+    handle_hotkey_release_with_sender, ingest_audio,
 };
 use vox_lib::services::stt::actor::SttCommand;
 use vox_lib::services::vad::VAD_CHUNK_SIZE;
@@ -47,16 +48,16 @@ async fn test_dictation_ptt_audio_accumulation_en() {
 
         // 1. Upstream Trigger: Hotkey press starts dictation recording
         handle_hotkey_press(&app, &state).await.expect("handle_hotkey_press failed");
-        assert!(is_recording(), "IS_RECORDING should be true after hotkey press");
+        assert_eq!(state.pipeline.dictation_state(), DictationState::Recording, "Dictation state should be Recording after hotkey press");
 
         // 2. Feed audio in standard VAD_CHUNK_SIZE frames (256 samples / 16ms)
         for chunk in audio.chunks(VAD_CHUNK_SIZE) {
             if chunk.len() == VAD_CHUNK_SIZE {
-                ingest_audio(chunk);
+                ingest_audio(chunk, &state);
             } else {
                 let mut padded = chunk.to_vec();
                 padded.resize(VAD_CHUNK_SIZE, 0.0);
-                ingest_audio(&padded);
+                ingest_audio(&padded, &state);
             }
         }
 
@@ -69,7 +70,7 @@ async fn test_dictation_ptt_audio_accumulation_en() {
         handle_hotkey_release_with_sender(&app, &state, Some(&stt_tx))
             .await
             .expect("handle_hotkey_release_with_sender failed");
-        assert!(!is_recording(), "IS_RECORDING should be false after release");
+        assert_ne!(state.pipeline.dictation_state(), DictationState::Recording, "Dictation state should leave Recording after release");
         assert_eq!(get_buffer_len(), 0, "DICTATION_BUFFER must be drained after release");
 
         // 4. Collect final STT transcript
@@ -108,13 +109,13 @@ async fn test_dictation_ptt_empty_buffer_guard() {
 
         // 1. Hotkey press
         handle_hotkey_press(&app, &state).await.expect("handle_hotkey_press failed");
-        assert!(is_recording(), "IS_RECORDING must be true");
+        assert_eq!(state.pipeline.dictation_state(), DictationState::Recording, "Dictation state should be Recording");
 
         // 2. Immediately release without ingesting any audio frames
         handle_hotkey_release_with_sender(&app, &state, Some(&stt_tx))
             .await
             .expect("handle_hotkey_release_with_sender failed");
-        assert!(!is_recording(), "IS_RECORDING must be false");
+        assert_ne!(state.pipeline.dictation_state(), DictationState::Recording, "Dictation state should leave Recording");
         assert_eq!(get_buffer_len(), 0, "Buffer len must be 0");
 
         // 3. Assert channel is empty (no SttCommand or VoxEvent dispatched)

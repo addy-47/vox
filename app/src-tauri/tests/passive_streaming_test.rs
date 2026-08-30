@@ -14,12 +14,12 @@ use common::audio::{decode_wav_to_mono_16k, stream_audio_to_ring_buffer, stream_
 use common::harness::{assert_channel_empty_after, collect_all_final_transcripts, get_test_app_handle, setup_stt_worker, setup_vad_actor};
 use common::paths::get_asset_path;
 use common::scoring::calculate_similarity;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{AudioOutputMode, InteractionMode};
-use vox_lib::core::state::VadCommand;
+use vox_lib::core::state::{InteractionState, VadCommand};
 use vox_lib::services::stt::actor::SttCommand;
 use vox_lib::services::vad::actor::VadActorConfig;
 use vox_lib::services::vad::VAD_SPEECH_END_FRAMES;
@@ -46,12 +46,12 @@ fn test_passive_streaming_pipeline() {
         initial_mode: InteractionMode::Passive,
         initial_audio_mode: AudioOutputMode::Headset,
     };
-    let playback_active = Arc::new(AtomicBool::new(false));
+    let state_atomic = Arc::new(AtomicU32::new(InteractionState::Idle as u32));
 
     let (vad_cmd_tx, vox_event_rx, mut producer, vad_handle) = setup_vad_actor(
         stt_tx.clone(),
         vad_config,
-        playback_active,
+        state_atomic,
         Arc::new(AtomicBool::new(false)),
         engine_shutdown.clone(),
     );
