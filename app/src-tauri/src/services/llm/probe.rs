@@ -405,7 +405,7 @@ impl CapabilityProbeEngine {
                             if let Some(first) = choices.first() {
                                 let msg = first.get("message");
                                 if let Some(tools) = msg.and_then(|m| m.get("tool_calls")) {
-                                    return tools.as_array().map_or(false, |a| !a.is_empty());
+                                    return tools.as_array().is_some_and(|a| !a.is_empty());
                                 }
                                 if msg.and_then(|m| m.get("function_call")).is_some() {
                                     return true;

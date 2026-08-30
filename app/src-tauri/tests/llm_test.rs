@@ -44,6 +44,7 @@ fn setup_test_llm_worker() -> (
         llm_handle: &mut llm_handle,
         is_loaded,
         is_sleeping,
+        llm_provider_cache: None,
     };
 
     warm_up_llm(&app, handles, &settings, &llm_path, event_tx)
@@ -170,7 +171,7 @@ fn test_llm_generation_and_cancel_matrix() {
 
     // 3. Graceful Teardown & Panic Verification
     let mut tx_opt = Some(llm_tx);
-    cool_down_llm(&mut tx_opt);
+    cool_down_llm(&mut tx_opt, None);
     if let Some(handle) = llm_handle {
         handle.join().expect("LLM worker thread panicked during shutdown");
     }

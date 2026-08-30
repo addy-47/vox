@@ -231,6 +231,7 @@ pub struct AppState {
     pub cpu_governor_optimal: Arc<AtomicBool>,
     pub setup_running: Arc<Mutex<bool>>,
     pub conversation_manager: Arc<parking_lot::Mutex<crate::services::memory::ConversationManager>>,
+    pub llm_provider: Arc<parking_lot::RwLock<Option<Arc<dyn crate::services::llm::LlmProvider>>>>,
 }
 
 /// Telemetry handles and health atomics bundled for AppState and monitoring workers.
@@ -317,6 +318,7 @@ impl AppState {
             conversation_manager: Arc::new(parking_lot::Mutex::new(
                 crate::services::memory::ConversationManager::new(initial_ctx_size),
             )),
+            llm_provider: Arc::new(parking_lot::RwLock::new(None)),
         }
     }
 }

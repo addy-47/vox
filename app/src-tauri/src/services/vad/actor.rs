@@ -159,7 +159,7 @@ fn process_vad_commands(
                     speech_start_sample: state.window_first_speech_sample,
                     speech_end_sample: state.window_last_speech_sample,
                 };
-                if let Err(_) = response_tx.send(result) {
+                if response_tx.send(result).is_err() {
                     log::warn!("[VAD Actor] Failed to send StopWindowValidation response");
                 }
             }
@@ -343,6 +343,7 @@ fn accumulate_speech_frames(
 }
 
 /// Executes ContinuousSegmentation mode for autonomous speech bounding.
+#[allow(clippy::too_many_arguments)]
 fn process_continuous_segmentation(
     chunk: &[f32],
     raw_energy: f32,

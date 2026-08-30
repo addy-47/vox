@@ -1,37 +1,48 @@
-# Vox v7 Memory Architecture — Current Implementation
+# Vox Memory Architecture — Current Implementation
 
-**Last Updated:** 2026-08-12  
-**Scope:** End-to-end description of what the code currently does.  
+**Last Updated:** 2026-08-30  
+**Scope:** End-to-end description of the 4-pillar cognitive memory subsystem.  
 **Location:** `app/src-tauri/src/services/memory/`, `app/src-tauri/src/persistence/`, and `app/src/shared/components/memory/`
 
 ---
 
 ## 1. Overview
 
-The Vox v7 memory subsystem is a database-backed, 4-stage pipeline that transforms raw LLM-extracted facts into active, graph-linked memory records in Turso (SQLite). A pre-retrieval scope classifier (`query-sieve-rs`) prunes irrelevant collections before vector search, and a 4-step dynamic waterfall budgets token usage at retrieval time. A full-screen, ultra-scalable 3D/2.5D Cognitive Memory Graph (`Memory.tsx` + `MemoryGraph.tsx`) built on a **Custom Three.js InstancedMesh WebGL Engine** visualizes personal memory facts, inter-fact graph edges, and real-time background pipeline ingestion monitoring with sub-60fps performance for 10,000+ nodes.
+The Vox memory subsystem is a database-backed, 4-pillar cognitive memory architecture combining dynamic context injection with asynchronous offline fact ingestion. It operates under strict 8GB RAM constraints with sub-200ms perceived voice latency:
+
+1. **Harness (`services/memory/harness/`):** Manages conversational message buffering, FIFO sliding windows, token budget accounting, `<user_profile>` XML formatting with relative timestamps, and the unified `prepare_turn_context` public facade.
+2. **Retrieval (`services/memory/retrieval/`):** Classifies turn intent via `query-sieve-rs`, routes queries through a 4-class memory scope matrix (`ChitChat`, `User`, `Domain`, `Temporal`), and runs structured waterfall searches returning typed `RetrievedProfile` structures.
+3. **Compaction (`services/memory/compaction/`):** Compresses long-running conversations into structured fact summaries using `COMPACTION_SYSTEM_PROMPT` via non-blocking async execution.
+4. **Ingestion (`services/memory/ingestion/`):** Asynchronous 4-stage pipeline running on background idle (`vox-memory-worker`) to deduplicate, embed, evaluate (NLI & ModernBERT), and commit facts and semantic graph relations to SQLite/Turso.
+5. **ML Primitives (`services/memory/ml/`):** Flat ONNX runtime session wrappers (`embedder.rs`, `tokenizer.rs`, `nli.rs`, `edge_classifier.rs`, `scope_classifier.rs`) with zero-idle-RAM dynamic eviction.
+
+A full-screen, ultra-scalable 3D/2.5D Cognitive Memory Graph (`Memory.tsx` + `MemoryGraph.tsx`) built on a **Custom Three.js InstancedMesh WebGL Engine** visualizes personal memory facts, inter-fact graph edges, and real-time background pipeline ingestion monitoring with sub-60fps performance for 10,000+ nodes.
 
 ---
 
-## 2. Fact Generation — LLM Compaction (`ingestion.rs`)
+## 2. Fact Generation — LLM Compaction (`compaction/`)
 
-When `ConversationManager` context utilization crosses the critical threshold (default `0.85`), compaction is triggered via `run_compaction()`.
+Compaction compresses conversational history and generates structured personal facts. It operates under a strict SSOT timing split:
 
-**Process:**
+- **Critical Compaction (Inline):** Triggered in `prepare_turn_context` when context utilization reaches `0.85` (`CONTEXT_CRITICAL_THRESHOLD`). If LLM compaction succeeds, extracted facts are enqueued directly to `personal_memory_queue` (`staged_pending`) for subsequent idle ingestion.
+- **Soft Compaction (Opportunistic Background):** Triggered by `trigger_background_compaction` on playback finish when utilization is in the soft window `0.65 <= util < 0.85` (`CONTEXT_SOFT_THRESHOLD`), the pipeline is in `{Ready, Paused}` states, and at least 20 seconds have elapsed (`SOFT_COMPACTION_DEBOUNCE_SECS`). Soft compaction only shrinks the in-memory window without enqueueing facts.
 
-1. Sends conversation history to the active LLM provider using `COMPACTION_SYSTEM_PROMPT`.
+**Process (`compaction/runner.rs`):**
+
+1. Sends conversation history to the active LLM provider using `COMPACTION_SYSTEM_PROMPT` (`compaction/prompt.rs`).
 2. The prompt instructs the LLM to extract facts into exactly 6 collections: `Identity`, `Directives`, `Narrative`, `Profile`, `Entities`, `Constraints`.
 3. The LLM responds with a JSON object. `parse_compaction_json()` extracts a `HashMap<String, Vec<String>>` (except `Narrative` which is a single string).
-4. Retried up to **2 attempts** on parse failure.
+4. Retried up to **2 attempts** on parse failure. Streams tokens with a 45-second timeout and cancels immediately on user speech onset (`manager.on_speech_start()`).
 
 **Output:** `CompactionResult { context_summary, personal_memory, diff_to_enqueue }` where `diff_to_enqueue == personal_memory`.
 
-**Next step:** `enqueue_personal_facts()` inserts each fact as a `staged_pending` row in `personal_memory_queue`. No pre-insertion dedup occurs.
+**Next step (Critical Compaction only):** Inserts each fact as a `staged_pending` row in `personal_memory_queue`. Ingestion is executed by `vox-memory-worker` after **30s of true idle** (`MIN_IDLE_DEBOUNCE_SECS`).
 
 ---
 
-## 3. 4-Stage Pipeline (`pipeline/`)
+## 3. 4-Stage Ingestion Pipeline (`ingestion/`)
 
-The pipeline runs sequentially: Dedup → Embedding → Evaluation → Commit & Prune. Each stage claims items atomically via TOCTOU-safe `UPDATE WHERE status = ?` queries.
+The pipeline runs sequentially on `vox-memory-worker`: Dedup → Embedding → Evaluation → Commit & Prune. Each stage claims items atomically via TOCTOU-safe `UPDATE WHERE status = ?` queries.
 
 ### 3.1 Stage 1 — Dedup (`stage1_dedup.rs`)
 
@@ -187,7 +198,7 @@ Note: `Narrative` does not originate or target inter-collection edges (Special S
 
 ---
 
-## 4. Scope Routing Matrix (`scope_router.rs`)
+## 4. Scope Routing Matrix (`retrieval/scope.rs`)
 
 The `route_scope()` function maps each `MemoryScope` variant to its SQL and vector collection targets:
 
@@ -206,9 +217,9 @@ The `route_scope()` function maps each `MemoryScope` variant to its SQL and vect
 
 ---
 
-## 5. Retrieval Waterfall (`retrieval.rs`)
+## 5. Retrieval Waterfall (`retrieval/search.rs` & `harness/prompt_builder.rs`)
 
-`retrieve_personal_context()` implements a 4-step dynamic budget allocation capped at `max_personal_memory_share` (default `0.15`, i.e., 15% of the LLM context window).
+`retrieve_turn_profile()` executes a structured waterfall retrieval returning typed `RetrievedProfile` (`sql_sections`, `vector_seeds`, `graph_children`), which is rendered into `<user_profile>` XML by `harness/prompt_builder.rs` capped at `max_personal_memory_share` (default `0.15`, i.e., 15% of the LLM context window).
 
 ### Step 1: Identity — NOOP
 
@@ -249,18 +260,18 @@ Both are token-budgeted — facts are added until `remaining_budget` is exhauste
 
 ---
 
-## 6. Identity & Dynamic Context Assembly (`working_memory.rs`)
+## 6. Identity & Dynamic Context Assembly (`harness/`)
 
-`ConversationManager` uses a structured `assemble_system_prompt()` pipeline to cleanly merge base instructions, persistent Identity facts, and online query-retrieved profile context without substring replacement hazards:
+`ConversationManager` (`harness/manager.rs`) and `prepare_turn_context` (`harness/facade.rs`) use a structured prompt assembly pipeline to cleanly merge base instructions, persistent Identity facts, and online query-retrieved profile context without substring replacement hazards:
 
 1. **Identity Facts (`set_identity_facts` / `load_identity_into_system_prompt`):** Preloads active identity facts into an `[Identity]` section.
-2. **Dynamic User Profile (`update_dynamic_user_profile`):** Injects online `<user_profile>` retrieval results (from `retrieve_personal_context`) dynamically per active turn.
-3. **Structured Assembly (`assemble_system_prompt`):** Formats all sections into a single clean `<user_profile>` block appended to `base_system_prompt`.
-4. **Scope:** All LLM providers (local, remote GPU, cloud) — operates directly on `ChatMessage.content` with exact token count tracking.
+2. **Dynamic User Profile (`update_dynamic_user_profile`):** Injects online `<user_profile>` retrieval results (from `prompt_builder.rs`) dynamically per active turn.
+3. **Structured Assembly (`consolidate_system_message`):** Formats all sections into a single clean `<user_profile>` block appended to `base_system_prompt`.
+4. **Scope:** All LLM providers (local, remote GPU, cloud) — operates directly on `ChatMessage.content` with exact token count tracking via `TokenAccountant` (`harness/accountant.rs`).
 
 ---
 
-## 7. Intra-Collection Edge Classifier Engine (`classifiers/intra_edge_classifier.rs`)
+## 7. Intra-Collection Edge Classifier Engine (`ml/nli.rs`)
 
 | Parameter               | Value                                                        |
 | ----------------------- | ------------------------------------------------------------ |
@@ -276,7 +287,7 @@ Both are token-budgeted — facts are added until `remaining_budget` is exhauste
 
 ---
 
-## 8. Inter-Collection Edge Classifier Engine (`classifiers/inter_edge_classifier.rs`)
+## 8. Inter-Collection Edge Classifier Engine (`ml/edge_classifier.rs`)
 
 | Parameter            | Value                                                                    |
 | -------------------- | ------------------------------------------------------------------------ |
@@ -292,7 +303,7 @@ Both are token-budgeted — facts are added until `remaining_budget` is exhauste
 
 ---
 
-## 9. Embedding Engine (`embedder.rs`)
+## 9. Embedding Engine (`ml/embedder.rs`)
 
 | Parameter           | Value                                                   |
 | ------------------- | ------------------------------------------------------- |
@@ -326,50 +337,60 @@ WHERE id = ?
 
 ## 11. Complete Constants Reference
 
+### Context & Compaction Constants
+
+| Constant                        | Value | Location                  |
+| ------------------------------- | ----- | ------------------------- |
+| `CONTEXT_SOFT_THRESHOLD`        | 0.65  | `services/memory/mod.rs`  |
+| `CONTEXT_CRITICAL_THRESHOLD`    | 0.85  | `services/memory/mod.rs`  |
+| `SOFT_COMPACTION_DEBOUNCE_SECS` | 20    | `services/memory/mod.rs`  |
+| `MIN_IDLE_DEBOUNCE_SECS`        | 30    | `persistence/mod.rs`      |
+
 ### Pipeline Constants
 
-| Constant                            | Value | Location           |
-| ----------------------------------- | ----- | ------------------ |
-| `STAGE1_BATCH_CEILING`              | 128   | `stage1_dedup.rs`  |
-| `STAGE2_BATCH_SIZE`                 | 16    | `stage2_embed.rs`  |
-| `STAGE3_BATCH_SIZE`                 | 16    | `stage3_eval.rs`   |
-| `STAGE4_BATCH_SIZE`                 | 32    | `stage4_commit.rs` |
-| `SOFT_VECTOR_DEDUP_THRESHOLD`       | 0.95  | `stage2_embed.rs`  |
-| `SAME_COLLECTION_CANDIDATE_SEARCH`  | 0.40  | `stage3_eval.rs`   |
-| `INTER_COLLECTION_CANDIDATE_SEARCH` | 0.55  | `stage3_eval.rs`   |
+| Constant                            | Value | Location                            |
+| ----------------------------------- | ----- | ----------------------------------- |
+| `STAGE1_BATCH_CEILING`              | 128   | `ingestion/stage1_dedup.rs`         |
+| `STAGE2_BATCH_SIZE`                 | 16    | `ingestion/stage2_embed.rs`         |
+| `STAGE3_BATCH_SIZE`                 | 16    | `ingestion/stage3_eval.rs`          |
+| `STAGE4_BATCH_SIZE`                 | 32    | `ingestion/stage4_commit.rs`        |
+| `SOFT_VECTOR_DEDUP_THRESHOLD`       | 0.95  | `ingestion/stage2_embed.rs`         |
+| `SAME_COLLECTION_CANDIDATE_SEARCH`  | 0.60  | `ingestion/stage3_eval.rs`          |
+| `INTER_COLLECTION_CANDIDATE_SEARCH` | 0.40  | `ingestion/stage3_eval.rs`          |
+| `SUBFLOOR_CANDIDATE_FLOOR`          | 0.25  | `ingestion/stage3_eval.rs`          |
 
 ### NLI Constants
 
-| Constant                                 | Value                   | Location                               |
-| ---------------------------------------- | ----------------------- | -------------------------------------- |
-| `NLI_CONTRADICTION_THRESHOLD`            | 0.85                    | `nli.rs`                               |
-| `NLI_ENTAILMENT_THRESHOLD`               | 0.85                    | `nli.rs`                               |
-| `NLI_CONTRADICTION_CONFIDENCE_THRESHOLD` | 0.85                    | `stage3_eval.rs`                       |
-| `NLI_CONTRADICTION_MARGIN_THRESHOLD`     | 0.20                    | `stage3_eval.rs`                       |
-| `NLI_ENTAILMENT_CONFIDENCE_THRESHOLD`    | 0.85                    | `stage3_eval.rs`                       |
-| `NLI_MODEL_DIR`                          | `"nli-deberta-v3-base"` | `classifiers/intra_edge_classifier.rs` |
+| Constant                                 | Value                   | Location      |
+| ---------------------------------------- | ----------------------- | ------------- |
+| `NLI_CONTRADICTION_THRESHOLD`            | 0.85                    | `ml/nli.rs`   |
+| `NLI_ENTAILMENT_THRESHOLD`               | 0.85                    | `ml/nli.rs`   |
+| `NLI_CONTRADICTION_CONFIDENCE_THRESHOLD` | 0.85                    | `ml/nli.rs`   |
+| `NLI_CONTRADICTION_MARGIN_THRESHOLD`     | 0.20                    | `ml/nli.rs`   |
+| `NLI_ENTAILMENT_CONFIDENCE_THRESHOLD`    | 0.85                    | `ml/nli.rs`   |
+| `NLI_MODEL_DIR`                          | `"nli-deberta-v3-base"` | `ml/nli.rs`   |
 
 ### Edge Classifier Constants
 
-| Constant                    | Value                                   | Location                               |
-| --------------------------- | --------------------------------------- | -------------------------------------- |
-| `EDGE_CLASSIFIER_THRESHOLD` | 0.80                                    | `classifiers/inter_edge_classifier.rs` |
-| `EDGE_CLASSIFIER_MODEL_DIR` | `"classifier/modernbert_edge_creation"` | `classifiers/inter_edge_classifier.rs` |
+| Constant                    | Value                                   | Location                 |
+| --------------------------- | --------------------------------------- | ------------------------ |
+| `EDGE_CLASSIFIER_THRESHOLD` | 0.80                                    | `ml/edge_classifier.rs`  |
+| `EDGE_CLASSIFIER_MODEL_DIR` | `"classifier/modernbert_edge_creation"` | `ml/edge_classifier.rs`  |
 
 ### Embedding Constants
 
-| Constant             | Value             | Location      |
-| -------------------- | ----------------- | ------------- |
-| `EMBEDDING_DIM`      | 384               | `embedder.rs` |
-| `PRIMARY_MODEL_DIR`  | `"minilm-l12-v2"` | `embedder.rs` |
-| `FALLBACK_MODEL_DIR` | `"bge-m3"`        | `embedder.rs` |
+| Constant             | Value             | Location           |
+| -------------------- | ----------------- | ------------------ |
+| `EMBEDDING_DIM`      | 384               | `ml/embedder.rs`   |
+| `PRIMARY_MODEL_DIR`  | `"minilm-l12-v2"` | `ml/embedder.rs`   |
+| `FALLBACK_MODEL_DIR` | `"bge-m3"`        | `ml/embedder.rs`   |
 
 ### Dedup Constants
 
-| Constant                        | Value | Location           |
-| ------------------------------- | ----- | ------------------ |
-| `COSINE_HARD_MATCH_THRESHOLD`   | 0.98  | `deduplication.rs` |
-| `JACCARD_EXACT_MATCH_THRESHOLD` | 1.0   | `deduplication.rs` |
+| Constant                        | Value | Location                    |
+| ------------------------------- | ----- | --------------------------- |
+| `COSINE_HARD_MATCH_THRESHOLD`   | 0.98  | `services/memory/mod.rs`    |
+| `JACCARD_EXACT_MATCH_THRESHOLD` | 1.0   | `ingestion/stage1_dedup.rs` |
 
 ### Memory Settings (`MemorySettings`)
 
@@ -495,7 +516,7 @@ WHERE id = ?
 
 ---
 
-## 13. Query Classifier (`query_classifier.rs`)
+## 13. Query Classifier (`ml/scope_classifier.rs`)
 
 Uses `query_sieve::MemoryScopeClassifier` (ModernBERT INT8 ONNX) to classify turn queries into 4 scopes: `ChitChat`, `User`, `Domain`, `Temporal`.
 

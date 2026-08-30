@@ -1,48 +1,33 @@
 use serde::{Deserialize, Serialize};
 
 /// Supported remote transport wire formats.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TransportType {
+    #[default]
     ChatCompletions,
     Responses,
 }
 
-impl Default for TransportType {
-    fn default() -> Self {
-        Self::ChatCompletions
-    }
-}
-
 /// Authentication scheme for HTTP requests.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "type", content = "key", rename_all = "snake_case")]
 pub enum AuthScheme {
     Bearer(Option<String>),
     AnthropicNative(String),
+    #[default]
     None,
 }
 
-impl Default for AuthScheme {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 /// Declares the output-length field expected by the upstream endpoint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TokenLimitField {
+    #[default]
     MaxTokens,
     MaxCompletionTokens,
     MaxOutputTokens,
     NumPredict,
-}
-
-impl Default for TokenLimitField {
-    fn default() -> Self {
-        Self::MaxTokens
-    }
 }
 
 impl TokenLimitField {
@@ -58,17 +43,12 @@ impl TokenLimitField {
 }
 
 /// Source of truth for model capability discovery.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CapabilitySource {
     OllamaNative,
+    #[default]
     ProbedGeneric,
-}
-
-impl Default for CapabilitySource {
-    fn default() -> Self {
-        Self::ProbedGeneric
-    }
 }
 
 /// Authoritative connection configuration for a remote LLM endpoint.

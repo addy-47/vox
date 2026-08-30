@@ -24,7 +24,7 @@ static CURRENT_USER_TRANSCRIPT: LazyLock<Mutex<String>> =
 /// Starts an autonomous modular passive voice assistant session.
 pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
     crate::core::start_audio_engine(app, state).await?;
-    super::context::ensure_modular_workers(app, state).await?;
+    super::ensure_modular_workers(app, state).await?;
 
     state
         .owner
@@ -270,6 +270,8 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
     let cm_arc = Arc::clone(&state.conversation_manager);
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
     let cancel_flag = Arc::clone(&state.pipeline.cancel_flag);
+    let cached_provider = state.llm_provider.read().clone();
+    let memory_tx = Arc::new(parking_lot::Mutex::new(state.memory_tx.lock().clone()));
     let (tts_tx, llm_tx) = {
         let guard = state.engine.blocking_lock();
         guard
@@ -279,11 +281,51 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
     };
 
     tauri::async_runtime::spawn(async move {
-        let (request, transition_speech) =
-            super::context::build_generation_request(&settings, &cm_arc, conv_id, &processed_text, turn_id).await;
+        let db_path = crate::utils::paths::db_path();
+        let conn_opt = if settings.memory.context_retrieval_enabled {
+            crate::persistence::db::VoxDb::open_readonly(&db_path).await.ok()
+        } else {
+            None
+        };
+
+        let provider_kind = match settings.llm.active {
+            crate::core::settings::LlmActiveProvider::Embedded => crate::services::llm::ProviderKind::Embedded,
+            crate::core::settings::LlmActiveProvider::Server
+            | crate::core::settings::LlmActiveProvider::Cloud => crate::services::llm::ProviderKind::OpenAiCompat,
+        };
+
+        let session_id = conv_id.to_string();
+        let res = crate::services::memory::prepare_turn_context(
+            crate::services::memory::PrepareTurnParams {
+                harness: &cm_arc,
+                tts_tx: tts_tx.as_ref(),
+                memory_tx: Some(&memory_tx),
+                conn: conn_opt.as_ref(),
+                query: &processed_text,
+                turn_id,
+                session_id: &session_id,
+                memory: &settings.memory,
+                context_window: settings.llm.context_window as usize,
+                provider_kind,
+                llm_provider: cached_provider.as_deref(),
+                llm_settings: Some(&settings.llm),
+            },
+        )
+        .await;
+
+        let (request, transition_speech) = match res {
+            Ok((req, filler)) => (req, filler),
+            Err(e) => {
+                log::error!("[ModularPassive] Failed to prepare turn context: {}", e);
+                return;
+            }
+        };
 
         if let Some(filler) = transition_speech {
-            if let Some(ref tx) = tts_tx {
+            if tts_tx.is_some() {
+                // If tts_tx was passed to prepare_turn_context, it was already dispatched before compaction.
+                // If not, dispatch now.
+            } else if let Some(ref tx) = tts_tx {
                 if let Err(e) = tx.send(TtsCommand::Generate {
                     turn_id,
                     text: filler,
@@ -367,6 +409,8 @@ fn on_llm_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &
 
         let conv_id = state.conversation_id.load(Ordering::Relaxed);
         let user_text = CURRENT_USER_TRANSCRIPT.lock().clone();
+        let stt_ms = state.telemetry.latest_stt_ms.load(Ordering::Relaxed);
+        let ttft_ms = state.telemetry.latest_ttft_ms.load(Ordering::Relaxed);
         let persist_lock = state.persist_tx.lock();
         if let Some(ref tx) = *persist_lock {
             if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCompleted {
@@ -374,8 +418,8 @@ fn on_llm_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &
                 turn_id,
                 user_text,
                 assistant_text: full_text,
-                stt_latency_ms: 0,
-                ttft_ms: 0,
+                stt_latency_ms: stt_ms,
+                ttft_ms,
             }) {
                 log::warn!("[ModularPassive] Failed to send TurnCompleted to persist: {}", e);
             }
@@ -416,7 +460,16 @@ fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, sta
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    super::context::trigger_background_compaction(state);
+    let llm_settings = state
+        .settings
+        .read()
+        .map(|s| s.llm.clone())
+        .unwrap_or_default();
+    crate::services::memory::trigger_background_compaction(
+        state,
+        None,
+        Some(llm_settings),
+    );
 
     if let Err(e) = app.emit_to(WINDOW_MAIN, EVENT_PLAYBACK_FINISHED, turn_id) {
         log::warn!("[ModularPassive] Failed to emit playback_finished: {}", e);

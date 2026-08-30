@@ -191,7 +191,7 @@ pub async fn supersede_user_fact(
 /// Records operational pipeline stage metrics into `memory_pipeline_metrics`.
 pub async fn record_stage_metrics(
     conn: &Connection,
-    metrics: &crate::services::memory::pipeline::PipelineStageMetrics,
+    metrics: &crate::services::memory::ingestion::PipelineStageMetrics,
 ) -> Result<()> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -222,7 +222,7 @@ pub async fn record_stage_metrics(
 pub async fn write_dedup_audit(
     conn: &Connection,
     item_id: i64,
-    log: &crate::services::memory::pipeline::DedupAuditLog,
+    log: &crate::services::memory::ingestion::DedupAuditLog,
 ) -> Result<()> {
     let json_str = serde_json::to_string(log)?;
     conn.execute(
@@ -237,7 +237,7 @@ pub async fn write_dedup_audit(
 pub async fn write_candidate_audit(
     conn: &Connection,
     item_id: i64,
-    logs: &[crate::services::memory::pipeline::CandidateAuditLog],
+    logs: &[crate::services::memory::ingestion::CandidateAuditLog],
 ) -> Result<()> {
     let json_str = serde_json::to_string(logs)?;
     conn.execute(

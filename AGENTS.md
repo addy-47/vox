@@ -79,62 +79,60 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
-## 5. Current Phase 10: Architecture & Orchestration Refactor
+## 5. Phase 10 Architecture & Orchestration Refactor Ledger
 
-> **Status:** Phase 10 is in progress, all major refactor work is complete. The two SSOT specs are `docs/plans/phase10/integration_test_spec.md` (Seams 1–14) and `docs/plans/phase10/wiring_memory_pipeline_refactor_spec.md` (Sprints 01–44 + Special).
+> **Chronological Storyline:** UT Layer & Spec $\to$ Backend/Frontend Discovery $\to$ Uncalled Code Purge $\to$ STT Consolidation $\to$ 188-Sprint Review $\to$ Subsystem Decoupling $\to$ Turn ID / PTT Boundaries $\to$ LLM Engine Consolidation $\to$ Memory 4-Pillar Refactor $\to$ Pipeline Seam Hardening.
 
-### 5.1 How Phase 10 Started 
+### 5.1 Initial Test Suite & Architectural Discovery
+- Built unit test suite and authored Integration Test Spec (`docs/plans/phase10/integration_test_spec.md`, Seams 1–8).
+- Mutation testing revealed widespread dead code, uncalled methods, and tangled audio/LLM routing across backend and frontend.
+- Paused Seams 9–14 to execute a foundational codebase overhaul.
 
-- Built the **unit test suite** for Vox (UT layer).
-- Authored the **Integration Test Spec** (`docs/plans/phase10/integration_test_spec.md`, Seams 1–8) and implemented those integration tests.
-- Ran **mutation testing** on the suite — results in `docs/benchmarks/test_suite_bench.md`.
-- Deferred seams 9-14 for later due to the discovery of uncalled functions and tangled backend code and frontend code.
-- Discovered the backend was in **horrible shape** (uncalled functions, dead code, tangled audio/LLM routing).
-- Refactored the **full backend** per `docs/plans/phase10/wiring_memory_pipeline_refactor_spec.md`.
-- Refactored the **frontend** (see §5.4 and `docs/features/performance-memory-optimizations.md`).
+### 5.2 Backend Refactor & Uncalled Functions Resolution
+- **Decoupled Pipelines:** Extracted `services/pipeline/modular/` and `realtime/` orchestrated via central `router.rs` (`VoxEvent` pump).
+- **Uncalled Code Resolution:** Wired 11 critical paths (`prepare_turn_context`, opportunistic compaction, monotonic turn IDs, transliteration) and purged 30 dead functions across 7 deleted legacy files.
+- **Quality Gate:** 45 tests across 9 binaries green via `cargo-nextest --release --test-threads=1`; 0 clippy warnings.
 
-### 5.2 Backend Refactor
-
-The `wiring_memory_pipeline_refactor_spec.md` is the checklist; this subsection summarizes the completed work.
-
-- **Decoupled Pipeline Architecture:** Domain modules fully decoupled under `services/pipeline/modular/` (`context.rs`, `passive.rs`, `ptt.rs`) and `services/pipeline/realtime/` (`session.rs`, `passive.rs`, `ptt.rs`), orchestrated by central `router.rs` (`spawn_router` / `route_event`) and thin IPC dispatchers (`ipc/pipeline/assistant.rs`). Deleted flat files: `services/audio/router.rs`, `services/ptt.rs`, `services/dictation/controller.rs`, `services/utils.rs`, `core/metrics.rs`, `services/llm/{capabilities,probe}.rs`, `utils/bench_reporter.rs`.
-- **Central Router + VAD-actor PTT routing:** cpal audio → `VadActor` (OS thread) → domain `ingest_audio`. **No AudioRouter thread** exists.
-- **Capability Probing SSOT:** `services/llm/capability_probe.rs` replaces deleted `probe.rs` + `capabilities.rs`.
-- **Dynamic Memory Retrieval & Working Memory:** `classify_scope` (ModernBERT) → `generate_embedding` (MiniLM) → `retrieve_personal_context` (Turso hybrid SQL + vector + BFS graph) → `ConversationManager::assemble_system_prompt` (`<user_profile>` injection) → opportunistic background compaction on `vox-memory-worker`.
-- **Uncalled Functions Resolution (Sprints 01–44 + Special) — COMPLETE:**
-  - **11 Retained & Wired:** `set_max_context_tokens`, `load_identity_into_system_prompt`, `new_session`, `update_system_prompt`, `push_assistant_turn`, `build_context` (dynamic memory retrieval + non-blocking filler queue), `try_trigger_opportunistic`, `commit_opportunistic`, `barge_in` (client + server interrupts), `transliterate_if_hi`, `stitch_transcripts`.
-  - **5 Eval / Test Seams:** `l2_normalize`, `set_speech_detected`, `is_speech_detected`, `fetch_intra_subfloor_candidates`, `fetch_inter_subfloor_candidates` relocated to `evals/` or converted to black-box event assertions.
-  - **30 Dead Code Purges (7 files deleted):** `services/utils.rs`, `services/dictation/controller.rs`, `services/audio/router.rs`, `services/llm/capabilities.rs`, `services/llm/probe.rs`, `core/metrics.rs`, `utils/bench_reporter.rs`.
-- **Quality Gate:** 45 tests across 9 binaries green via `cargo-nextest --release --test-threads=1`; clean `cargo clippy --all-targets` (0 warnings).
-
-### 5.4 Frontend Refactor — Summary
-
-- **7-State Alignment & UI Standardization:** Unified state machine (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`), standardized canonical `vad_backend` field across IPC and store, redesigned navigation/cards (`LlmConfigDesk`, `MemoryConfigDesk`, `TtsVoiceManager`), calibrated responsive viewport layouts.
-- **Dead-Code Purge:** Cleaned 26 uncalled listeners, unused primitives, and stale services; `knip` `lint:dead` wired. 10 test suites (98 tests) + `pnpm build` green.
+### 5.3 Frontend Standardization & Dead Code Purge
+- **7-State Alignment:** Unified UI across 7 canonical states (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`) with standardized `vad_backend` configuration.
+- **Cleanup:** Purged 26 unused listeners/services via `knip`. All 10 suites (98 tests) and `pnpm build` verified green.
 - **Ledger:** [`docs/features/performance-memory-optimizations.md`](file:///home/addy/projects/apps/vox/docs/features/performance-memory-optimizations.md) and [`docs/frontend.md`](file:///home/addy/projects/apps/vox/docs/frontend.md).
 
-### 5.5 STT Streaming Benchmark & Engine Consolidation — Summary
+### 5.4 STT Streaming Benchmark & Engine Consolidation
+- **Harness:** Built 256-sample streaming benchmark CLI (`app/src-tauri/benches/stt_bench.rs`) evaluating 10 canonical audio clips.
+- **Sherpa-ONNX 1.13.6:** Standardized all STT/VAD/TTS on `sherpa-onnx 1.13.6` using multilingual Nemotron-3.5 transducer (`0.497x RTF`, `97.1% accuracy`, `~71MB RSS`), completely removing `parakeet-rs`.
 
-- **Streaming Benchmark Runner (`app/src-tauri/benches/stt_bench.rs`):** CLI harness (`--model`, `--clip`, `--input-dir`, `--output-dir`, `--min-similarity`) simulating 256-sample streaming through `VadActor` $\to$ `SttWorker` across 10 canonical test clips, persisting reports to `benches/results/stt_bench/<run_id>/report.json` + `latest.json`.
-- **Sherpa-ONNX 1.13.6 Consolidation:** Replaced `parakeet-rs` with `sherpa-onnx` `OnlineRecognizer` using multilingual Nemotron-3.5 transducer (`0.497x RTF`, `97.1% accuracy` [EN: 99.0%, HI: 95.2%], `~71 MB RSS`, 10/10 clips passing `>= 0.90` gate). Removed `parakeet-rs` crate; all STT, TTS, and VAD standardized on `sherpa-onnx 1.13.6`.
+### 5.5 188-Sprint Second-Pass Review & Architectural Specs
+- Authored and completed all 188 implementation sprints across 11 modules (`docs/plans/phase10/backend_review_sprints.md`).
+- Established 5 standalone SSOT architecture specs: LLM/TTS Streaming, LLM Provider Consolidation, Monotonic Turn IDs, Memory `<user_profile>` Assembly, and Audio Ownership.
 
-### 5.6 Backend Codebase Review & Resolution Specification — Summary
+### 5.6 Subsystem Decoupling & Engine Lifecycle Migration
+- **VAD 3-Role Decoupling:** Restricted `VadActor` to generic modes (`ContinuousSegmentation`, `WindowedValidation`, `StreamPassthrough`) with zero upward pipeline imports; extracted telemetry and math utilities.
+- **Engine Relocation:** Moved application lifecycle orchestration (`VoxEngine`, startup/shutdown) to `core/engine.rs`, scoping `services/audio/` strictly to CPAL streams and playback draining.
+- **Actor Decoupling:** Isolated dictation hotkeys, output routing, audio suppression atomics, and async TTS voice reference resolution.
 
-- **Complete 188-Sprint Second-Pass Audit (`docs/plans/phase10/backend_review_resolution_spec.md`):** Translated all 11 backend review modules into an actionable, engineer-ready implementation spec across 188 individual sprints using the `/feedback-review` and `/grill-me` protocol.
-- **Master Checklist SSOT (`docs/plans/phase10/backend_review_sprints.md`):** 100% completed (`188/188` sprints verified and marked `[x]`).
-- **Core Architecture Alignments & Review Banners:**
-  1. *LLM Provider Consolidation (Sprints 085, 086, 088):* Dedicated review flag for unified `OpenAiCompatProvider` consolidation.
-  2. *PTT Realtime Audio Ownership (Sprint 072):* Dedicated review flag for audio ownership alignment between `realtime::ptt` and local VAD.
-  3. *Memory Formatting & Context Assembly (Sprints 109, 110):* Dedicated review flag for single `<user_profile>` context assembler SSOT.
-  4. *Turn ID Synchronization Architecture (Sprints 115, 121, 126):* Authoritative turn ID minting lifecycle eliminating `turn_id: 0` resets.
-  5. *Streaming STT & Transliteration Lifecycle:* Transliteration lifecycle locked 1:1 with STT under 8GB RAM constraints; streaming state carried via `sherpa-onnx` 1.13.6 transducer.
-  6. *Latency Telemetry & Monitoring:* Wired `InteractionMetric` pipeline turn-completion producer for real-time sub-200ms KPI tracking.
-  7. *Standalone Architecture Specs:*
-     - [`llm_tts_playback_streaming_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/llm_tts_playback_streaming_spec.md) (LLM-to-TTS-to-Playback streaming, Chatterbox/EdgeTTS refactors, and 4-case dynamic buffering roadmap).
-     - [`llm_provider_consolidation_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/llm_provider_consolidation_spec.md) (Unified `OpenAiCompatProvider`).
-     - [`turn_id_sync_architecture_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/turn_id_sync_architecture_spec.md) (Monotonic Turn ID lifecycle).
-     - [`memory_formatting_context_assembly_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/memory_formatting_context_assembly_spec.md) (`<user_profile>` context assembler SSOT).
-     - [`audio_ownership_domain_decoupling_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/audio_ownership_domain_decoupling_spec.md) (VAD 3-role primitives, PTT audio ownership, and full service decoupling).
-- **Ledgers:** [`docs/plans/phase10/backend_review_resolution_spec.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/backend_review_resolution_spec.md) and [`docs/plans/phase10/backend_review_sprints.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/backend_review_sprints.md).
-- **Implementation Sprint Execution Progress:**
-  - `IS-01` through `IS-38-E` (Review Sprints 001–188, Modules 01–11: Core + Shell + IPC + Persistence + Audio + VAD/Dictation + LLM + Memory + Pipeline Orchestration + Realtime Providers + STT/TTS Engines + Monitoring/Setup/Evals/Benchmarks Complete): **100% COMPLETED and verified** (all 188 review sprints executed, full `cargo-nextest` suite green in release mode, 0 clippy warnings).
+### 5.7 Turn ID Synchronization & PTT Boundary Trimming
+- **Monotonic Turn IDs:** Enforced atomic fetch-and-add increment across all PTT/dictation start events, eliminating `turn_id: 0` resets.
+- **Speech Boundary Trimming:** `VadCommand::StartWindowValidation` / `StopWindowValidation` trims audio strictly to `[speech_start..speech_end]`, automatically discarding silence/accidental clicks with 0 STT/cloud emissions.
+- **Jitter Buffer:** Added 250ms (12,000 samples @ 48kHz) pre-roll buffer in playback engine before opening audio output.
+
+### 5.8 LLM Consolidation & Empirical Capability Discovery
+- **Unified Engine (`services/llm/`):** Unified `ConnectionConfig` mapping 13 standard providers to unified `RemoteTransport` (streaming SSE line decoder, `/chat/completions`, `/responses`, `/api/chat`) and in-process `EmbeddedProvider` (`llama.cpp`).
+- **Empirical Micro-Probing (`probe.rs`):** Replaced static catalog guessing with live tool schema and multilingual streaming TTFT/TPS micro-probes; purged heuristic token floor assumptions.
+
+### 5.9 Memory Spec Consolidation & 4-Pillar Architecture Spec
+- Consolidated memory requirements into a definitive 2-in-1 spec (`docs/plans/phase10/memory_formatting_context_assembly_spec.md` v2.0).
+- Locked 4-pillar design: **Harness** (buffering, accounting, prompt building), **Retrieval** (waterfall search, scope classification), **Compaction** (async summarization), and **Ingestion** (4-stage offline queue pipeline).
+
+### 5.10 Memory 4-Pillar Implementation & Pipeline Refactor
+- Restructured `services/memory/` across 24 modular files conforming to the 4-pillar layout.
+- Decomposed `ConversationManager` into `buffer.rs`, `accountant.rs`, `prompt_builder.rs`, `manager.rs`, and the unified `prepare_turn_context` public facade.
+- Locked SSOT timing split: Critical inline compaction (`>= 0.85`), opportunistic soft compaction (`0.65 <= util < 0.85` in `{Ready, Paused}` with 20s debounce), and background queue ingestion (30s idle).
+
+### 5.11 Pipeline Memory Seams & Quality Hardening
+- **W1 (Pre-Compaction Filler):** Dispatches TTS transition filler before executing critical compaction, removing dead silence.
+- **W2 (Cached LLM Provider):** Cached active `Arc<dyn LlmProvider>` in `AppState`, eliminating per-turn disk I/O and ORT reload during compaction.
+- **W3 & R3 (Realtime & Fact Dispatch):** Guarded realtime turns on engagement/pause, routed compaction facts through `PersonalFactsReady` worker channel, and offloaded SQLite writes.
+- **R2 & R4 (Event Router & Latencies):** Fixed `router.rs` so only `PlaybackFinished`/`Cancelled` emit `PipelineIdle`, preventing ingestion during active generation; wired real STT/TTFT metrics to `TurnCompleted`.
+- **Quality Gate:** Clean `cargo clippy --all-targets` (0 warnings), clean `cargo check --all-targets` (0 errors), 40/40 tests green in release mode.
+

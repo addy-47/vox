@@ -14,7 +14,14 @@ fn route_event<R: tauri::Runtime>(
     event: VoxEvent,
 ) {
     match &event {
-        VoxEvent::SpeechStart { .. } | VoxEvent::WarmUp => {
+        VoxEvent::SpeechStart { .. }
+        | VoxEvent::SpeechEnd { .. }
+        | VoxEvent::TranscriptPartial { .. }
+        | VoxEvent::TranscriptFinal { .. }
+        | VoxEvent::LlmToken { .. }
+        | VoxEvent::TtsChunk { .. }
+        | VoxEvent::PlaybackStarted { .. }
+        | VoxEvent::WarmUp => {
             let mem_lock = state.memory_tx.lock();
             if let Some(ref tx) = *mem_lock {
                 if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::PipelineActive) {
@@ -22,7 +29,7 @@ fn route_event<R: tauri::Runtime>(
                 }
             }
         }
-        VoxEvent::SpeechEnd { .. } | VoxEvent::PlaybackFinished { .. } | VoxEvent::Cancelled { .. } => {
+        VoxEvent::PlaybackFinished { .. } | VoxEvent::Cancelled { .. } => {
             let mem_lock = state.memory_tx.lock();
             if let Some(ref tx) = *mem_lock {
                 if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::PipelineIdle) {

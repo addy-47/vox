@@ -4,7 +4,7 @@ use crate::persistence::{
 };
 pub use crate::persistence::mutations::{enqueue_personal_facts, session_end_consolidation};
 pub use crate::persistence::{decode_f32_blob, encode_f32_blob};
-pub use crate::services::memory::pipeline::run_pipeline_cycle;
+pub use crate::services::memory::ingestion::run_pipeline_cycle;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -266,7 +266,7 @@ fn run_drain_queue(
         }
 
         let processed_count = handle.block_on(async {
-            crate::services::memory::pipeline::run_pipeline_cycle(db_conn, cancel_flag).await
+            crate::services::memory::ingestion::run_pipeline_cycle(db_conn, cancel_flag).await
         });
 
         match processed_count {

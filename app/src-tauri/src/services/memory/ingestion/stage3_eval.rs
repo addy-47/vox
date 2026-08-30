@@ -1,12 +1,12 @@
-use super::batch_result::{BatchEvaluationResult, CandidateAuditLog, RelationEdge};
+use super::{BatchEvaluationResult, CandidateAuditLog, RelationEdge};
 use crate::core::constants::{
     is_valid_inter_collection_pair, MemoryCollection, PM_QUEUE_STATUS_EMBEDDED,
     PM_QUEUE_STATUS_EVALUATED, PM_QUEUE_STATUS_PROCESSING_EVAL, PM_QUEUE_STATUS_SUPERSEDED,
     PM_RELATION_CONFLICTS, PM_RELATION_SUPERSEDES, PM_RELATION_SUPPORTS,
 };
 use crate::persistence::{decode_f32_blob, queries};
-use crate::services::memory::classifiers::inter_edge_classifier;
-use crate::services::memory::classifiers::intra_edge_classifier::{
+use crate::services::memory::ml::edge_classifier as inter_edge_classifier;
+use crate::services::memory::ml::nli::{
     classify_batch, ensure_nli_loaded, relation_from_result, NliRelation,
 };
 use crate::services::memory::{
@@ -457,7 +457,7 @@ pub async fn run_stage3_eval_with_metrics_seq(
     let duration_ms = start_time.elapsed().as_millis();
 
     if !run_id.is_empty() {
-        let metrics = super::metrics::PipelineStageMetrics {
+        let metrics = super::PipelineStageMetrics {
             run_id: run_id.to_string(),
             stage_name: "stage3_eval".to_string(),
             session_id,
