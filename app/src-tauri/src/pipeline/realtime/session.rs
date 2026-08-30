@@ -64,8 +64,8 @@ pub fn spawn_realtime_idle_monitor<R: tauri::Runtime>(
                                     engine.stop();
                                 }
                             }
-                            let ctx = crate::services::pipeline::RoutingContext::from_app_state(&state);
-                            crate::services::pipeline::transition(crate::core::state::InteractionState::Paused, &ctx, &app, &state);
+                            let ctx = crate::pipeline::RoutingContext::from_app_state(&state);
+                            crate::pipeline::transition(crate::core::state::InteractionState::Paused, &ctx, &app, &state);
                         }
                     }
                     res = state_rx.changed() => {

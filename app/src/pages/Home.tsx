@@ -61,7 +61,6 @@ export const Home = memo(() => {
     transcript,
     assistantText,
     cpuWarning,
-    idleTimeout,
     testMode,
     setTestMode,
     testingClip,
@@ -98,8 +97,7 @@ export const Home = memo(() => {
     isEngaged,
     isSleeping,
     pttStatus,
-    isPaused,
-    idleTimeout
+    isPaused
   );
   const dotActive = isDotActive(isEngaged, interactionState, pttStatus, isSleeping);
 

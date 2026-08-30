@@ -25,6 +25,7 @@ pub struct VadValidationResult {
     pub is_speech_detected: bool,
     pub speech_start_sample: usize,
     pub speech_end_sample: usize,
+    pub audio: Vec<f32>,
 }
 
 /// Internal mutable state maintained by the synchronous VAD actor loop.
@@ -42,7 +43,6 @@ pub struct VadActorState {
     pub utterance_buffer: Vec<f32>,
     pub pre_roll_buffer: PreRollBuffer,
     pub realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>>,
-    pub audio_sink: Option<tokio::sync::mpsc::Sender<Vec<f32>>>,
     pub pcm_scratch: Vec<i16>,
 
     // WindowedValidation state tracking
@@ -51,6 +51,7 @@ pub struct VadActorState {
     pub window_speech_detected: bool,
     pub window_first_speech_sample: usize,
     pub window_last_speech_sample: usize,
+    pub window_buffer: Vec<f32>,
 }
 
 impl VadActorState {
@@ -80,13 +81,13 @@ impl VadActorState {
             utterance_buffer: Vec::new(),
             pre_roll_buffer: PreRollBuffer::new(VAD_PRE_ROLL_CAPACITY),
             realtime_tx: None,
-            audio_sink: None,
             pcm_scratch: Vec::with_capacity(VAD_CHUNK_SIZE),
             window_active: false,
             window_sample_offset: 0,
             window_speech_detected: false,
             window_first_speech_sample: 0,
             window_last_speech_sample: 0,
+            window_buffer: Vec::new(),
         }
     }
 }
@@ -135,24 +136,39 @@ fn process_vad_commands(
             VadCommand::StartWindowValidation => {
                 log::debug!("[VAD Actor] Starting windowed speech validation");
                 state.window_active = true;
-                state.window_sample_offset = 0;
+                state.window_buffer.clear();
+                state.pre_roll_buffer.copy_into(&mut state.window_buffer);
+                state.window_sample_offset = state.window_buffer.len();
+                state.pre_roll_buffer.clear();
                 state.window_speech_detected = false;
                 state.window_first_speech_sample = 0;
                 state.window_last_speech_sample = 0;
-                state.pre_roll_buffer.clear();
             }
             VadCommand::StopWindowValidation { response_tx } => {
                 log::debug!(
-                    "[VAD Actor] Stopping windowed validation (detected={}, start={}, end={})",
+                    "[VAD Actor] Stopping windowed validation (detected={}, start={}, end={}, buffer_len={})",
                     state.window_speech_detected,
                     state.window_first_speech_sample,
-                    state.window_last_speech_sample
+                    state.window_last_speech_sample,
+                    state.window_buffer.len()
                 );
                 state.window_active = false;
+                let raw_len = state.window_buffer.len();
+                let start = state.window_first_speech_sample.min(raw_len);
+                let end = state.window_last_speech_sample.min(raw_len);
+                let trimmed_audio = if state.window_speech_detected && start < end && (end - start) >= 256 {
+                    state.window_buffer[start..end].to_vec()
+                } else if state.window_speech_detected {
+                    std::mem::take(&mut state.window_buffer)
+                } else {
+                    Vec::new()
+                };
+                state.window_buffer.clear();
                 let result = VadValidationResult {
                     is_speech_detected: state.window_speech_detected,
                     speech_start_sample: state.window_first_speech_sample,
                     speech_end_sample: state.window_last_speech_sample,
+                    audio: trimmed_audio,
                 };
                 if response_tx.send(result).is_err() {
                     log::warn!("[VAD Actor] Failed to send StopWindowValidation response");
@@ -379,6 +395,7 @@ fn process_windowed_validation(
         return;
     }
 
+    state.window_buffer.extend_from_slice(chunk);
     let is_speech = vad.predict(chunk) && vad.is_above_noise_gate(raw_energy, state.noise_gate);
 
     if is_speech {
@@ -462,10 +479,6 @@ where
                     &channels.telemetry_tx,
                     &handles.dropped_counter,
                 );
-
-                if let Some(ref sink) = state.audio_sink {
-                    let _ = sink.try_send(chunk.clone());
-                }
 
                 if should_suppress_audio(
                     &handles.audio_suppressed,

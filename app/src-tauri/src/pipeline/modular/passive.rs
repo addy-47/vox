@@ -12,12 +12,51 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock};
 use tauri::{AppHandle, Emitter};
 
-static CHUNKER: LazyLock<Mutex<TtsClauseChunker>> =
-    LazyLock::new(|| Mutex::new(TtsClauseChunker::new()));
-static CURRENT_ASSISTANT_RESPONSE: LazyLock<Mutex<String>> =
-    LazyLock::new(|| Mutex::new(String::new()));
-static CURRENT_USER_TRANSCRIPT: LazyLock<Mutex<String>> =
-    LazyLock::new(|| Mutex::new(String::new()));
+struct TurnAccumulator {
+    chunker: TtsClauseChunker,
+    assistant_response: String,
+    user_transcript: String,
+}
+
+impl TurnAccumulator {
+    fn new() -> Self {
+        Self {
+            chunker: TtsClauseChunker::new(),
+            assistant_response: String::new(),
+            user_transcript: String::new(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.chunker.clear();
+        self.assistant_response.clear();
+        self.user_transcript.clear();
+    }
+
+    fn push_token(&mut self, token: &str) -> Vec<String> {
+        self.assistant_response.push_str(token);
+        self.chunker.push_str(token)
+    }
+
+    fn flush_chunker(&mut self) -> Option<String> {
+        self.chunker.flush()
+    }
+
+    fn set_user_transcript(&mut self, text: String) {
+        self.user_transcript = text;
+    }
+
+    fn take_assistant_response(&mut self) -> String {
+        std::mem::take(&mut self.assistant_response)
+    }
+
+    fn user_transcript(&self) -> String {
+        self.user_transcript.clone()
+    }
+}
+
+static ACCUMULATOR: LazyLock<Mutex<TurnAccumulator>> =
+    LazyLock::new(|| Mutex::new(TurnAccumulator::new()));
 
 /// Starts the passive voice assistant pipeline session.
 pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
@@ -64,6 +103,8 @@ pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
     let prompt = state.settings.read().unwrap_or_else(|p| p.into_inner()).persona.modular_prompt.clone();
     super::super::init_new_session(state, &prompt).await;
 
+    ACCUMULATOR.lock().clear();
+
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
@@ -74,7 +115,7 @@ pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
 /// Pauses the active modular passive voice pipeline.
 pub async fn pause_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
-    CHUNKER.lock().clear();
+    ACCUMULATOR.lock().clear();
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
@@ -103,7 +144,7 @@ pub async fn resume_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSt
 /// Ends the active modular passive voice pipeline session and unloads models.
 pub async fn end_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
-    CHUNKER.lock().clear();
+    ACCUMULATOR.lock().clear();
 
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
     if conv_id != 0 {
@@ -171,8 +212,7 @@ fn on_speech_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
         }
     }
 
-    state.conversation_manager.lock().on_speech_start();
-    state.conversation_manager.lock().pop_last_user_turn();
+    state.conversation_manager.lock().handle_barge_in();
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Listening, &ctx, app, state);
@@ -228,11 +268,11 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
         log::warn!("[ModularPassive] Failed to emit transcript_final: {}", e);
     }
 
-    let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Thinking, &ctx, app, state);
-
-    CURRENT_ASSISTANT_RESPONSE.lock().clear();
-    *CURRENT_USER_TRANSCRIPT.lock() = processed_text.clone();
+    {
+        let mut acc = ACCUMULATOR.lock();
+        acc.clear();
+        acc.set_user_transcript(processed_text.clone());
+    }
 
     let settings = state.settings.read().unwrap_or_else(|p| p.into_inner()).clone();
     let cm_arc = Arc::clone(&state.conversation_manager);
@@ -328,10 +368,7 @@ fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<
         log::warn!("[ModularPassive] Failed to emit llm_token: {}", e);
     }
 
-    let clauses = {
-        CURRENT_ASSISTANT_RESPONSE.lock().push_str(&token);
-        CHUNKER.lock().push_str(&token)
-    };
+    let clauses = ACCUMULATOR.lock().push_token(&token);
     if !clauses.is_empty() {
         let guard = state.engine.blocking_lock();
         if let Some(ref engine) = *guard {
@@ -351,7 +388,7 @@ fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<
 
 /// Finalizes LLM output generation, flushes remaining TTS audio, and persists turn context.
 fn on_llm_finished(turn_id: u32, state: &AppState) {
-    if let Some(remainder) = CHUNKER.lock().flush() {
+    if let Some(remainder) = ACCUMULATOR.lock().flush_chunker() {
         let guard = state.engine.blocking_lock();
         if let Some(ref engine) = *guard {
             if let Some(ref tx) = engine.tts_tx {
@@ -365,7 +402,7 @@ fn on_llm_finished(turn_id: u32, state: &AppState) {
         }
     }
 
-    let full_text = CURRENT_ASSISTANT_RESPONSE.lock().split_off(0);
+    let full_text = ACCUMULATOR.lock().take_assistant_response();
     if !full_text.trim().is_empty() {
         state
             .conversation_manager
@@ -373,7 +410,7 @@ fn on_llm_finished(turn_id: u32, state: &AppState) {
             .push_assistant_turn(full_text.clone());
 
         let conv_id = state.conversation_id.load(Ordering::Relaxed);
-        let user_text = CURRENT_USER_TRANSCRIPT.lock().clone();
+        let user_text = ACCUMULATOR.lock().user_transcript();
         let stt_ms = state.telemetry.latest_stt_ms.load(Ordering::Relaxed);
         let ttft_ms = state.telemetry.latest_ttft_ms.load(Ordering::Relaxed);
         let persist_lock = state.persist_tx.lock();

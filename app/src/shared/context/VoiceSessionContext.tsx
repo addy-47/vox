@@ -42,7 +42,6 @@ export interface VoiceSessionContextValue {
   transcript: string;
   assistantText: string;
   cpuWarning: { governor: string } | null;
-  idleTimeout: number | null;
   testMode: boolean;
   setTestMode: (mode: boolean) => void;
   testingClip: string | null;
@@ -102,7 +101,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const [transcript, setTranscript] = useState("");
   const [assistantText, setAssistantText] = useState("");
   const [cpuWarning, setCpuWarning] = useState<{ governor: string } | null>(null);
-  const [idleTimeout, setIdleTimeout] = useState<number | null>(null);
 
   const [testMode, setTestMode] = useState(false);
   const [testingClip, setTestingClip] = useState<string | null>(null);
@@ -355,7 +353,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
               setInteractionState(newState);
               if (newState !== "Idle") {
                 hasActiveTurnStarted.current = true;
-                setIdleTimeout(null);
               } else {
                 activeUserTextRef.current = "";
                 activeAiTextRef.current = "";
@@ -372,7 +369,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
             (event) => {
               if (!isMounted) return;
               activeUserTextRef.current = event.payload.text;
-              setIdleTimeout(null);
               if (!partialThrottleTimer) {
                 partialThrottleTimer = setTimeout(() => {
                   if (isMounted) setTranscript(activeUserTextRef.current);
@@ -391,7 +387,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
               }
               activeUserTextRef.current = event.payload.text;
               setTranscript(event.payload.text);
-              setIdleTimeout(null);
             },
           ],
           [
@@ -399,7 +394,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
             (event) => {
               if (!isMounted) return;
               activeAiTextRef.current = event.payload.token ?? event.payload.text ?? event.payload;
-              setIdleTimeout(null);
               if (!tokenThrottleTimer) {
                 tokenThrottleTimer = setTimeout(() => {
                   if (isMounted) setAssistantText(activeAiTextRef.current);
@@ -413,34 +407,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
             (event) => {
               if (!isMounted) return;
               setInteractionMode(event.payload.toUpperCase() as InteractionMode);
-            },
-          ],
-          [
-            "idle_timeout_tick",
-            (event) => {
-              if (!isMounted) return;
-              setIdleTimeout(event.payload.seconds);
-            },
-          ],
-          [
-            "idle_timeout_reset",
-            () => {
-              if (!isMounted) return;
-              setIdleTimeout(null);
-            },
-          ],
-          [
-            "hud_sleep_state",
-            (event) => {
-              if (!isMounted) return;
-              if (event.payload) archiveCurrentTurn();
-            },
-          ],
-          [
-            "pipeline_mode_changed",
-            (event) => {
-              if (!isMounted) return;
-              setPipelineMode(event.payload.toLowerCase() as "modular" | "realtime");
             },
           ],
         ];
@@ -492,7 +458,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       transcript,
       assistantText,
       cpuWarning,
-      idleTimeout,
       testMode,
       setTestMode,
       testingClip,
@@ -530,7 +495,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       transcript,
       assistantText,
       cpuWarning,
-      idleTimeout,
       testMode,
       testingClip,
       dialogueHistory,

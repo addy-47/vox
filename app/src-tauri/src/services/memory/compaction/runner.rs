@@ -1,7 +1,7 @@
 use super::prompt::build_compaction_request;
 use crate::core::events::VoxEvent;
 use crate::services::llm::LlmProvider;
-use crate::services::memory::harness::buffer::ChatMessage;
+use crate::services::harness::buffer::ChatMessage;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
