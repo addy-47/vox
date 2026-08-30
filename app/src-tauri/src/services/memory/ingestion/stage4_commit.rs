@@ -1,4 +1,4 @@
-use super::batch_result::RelationEdge;
+use super::RelationEdge;
 use crate::core::constants::{
     collection_type, PM_QUEUE_STATUS_EVALUATED, PM_QUEUE_STATUS_PROCESSING_COMMIT,
     PM_QUEUE_STATUS_SUPERSEDED,
@@ -212,7 +212,7 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
     let duration_ms = start_time.elapsed().as_millis();
 
     if !run_id.is_empty() {
-        let metrics = super::metrics::PipelineStageMetrics {
+        let metrics = super::PipelineStageMetrics {
             run_id: run_id.to_string(),
             stage_name: "stage4_commit".to_string(),
             session_id,

@@ -7,7 +7,6 @@ pub const RING_BUFFER_SIZE: usize = 16000 * 4; // 4s buffer
 
 // ─── Timing & Throttling ─────────────────────────────────────────────────────
 pub const TELEMETRY_INTERVAL: Duration = Duration::from_millis(60); // ~16.6Hz
-pub const STT_THROTTLE_MS: u64 = 800;
 pub const SYSTEM_STATS_INTERVAL: Duration = Duration::from_secs(5);
 
 // ─── Persistence & History ──────────────────────────────────────────────────
@@ -96,69 +95,7 @@ pub const TRANSITION_MESSAGES_HI: &[&str] = &[
     "संदर्भ को पुनर्गठित करने तक एक पल प्रतीक्षा करें।",
 ];
 
-// ─── Working Memory Compaction ──────────────────
-
-pub const COMPACTION_SYSTEM_PROMPT: &str = r#"<role>
-You are a structured memory extraction engine for an intelligent assistant.
-Your task is to analyze conversation turns and extract complete, self-contained declarative facts while preserving full semantic context.
-</role>
-
-<objective>
-Extract explicit, durable, high-confidence declarative facts into the six memory collections defined below.
-</objective>
-
-<output_schema>
-{
-  "Identity": [],
-  "Directives": [],
-  "Narrative": "",
-  "Profile": [],
-  "Entities": [],
-  "Constraints": []
-}
-</output_schema>
-
-<collection_definitions>
-Identity:
-Stable foundational facts that uniquely identify the user, such as their full name, core primary role, or enduring self-identification.
-
-Directives:
-Active operational goals, pending tasks, assigned work, commitments, standing instructions, scheduled events, and progress updates.
-
-Narrative:
-A single, concise, chronological narrative summary describing the session's overall progression and key milestones.
-
-Profile:
-Stable personal characteristics, preferences, skills, habits, experiences, interests, and behavioral tendencies.
-
-Entities:
-Declarative facts about named external subjects (people, organizations, tools, services) and their specific relationship or relevance to the user.
-
-Constraints:
-Hard, non-negotiable limits, safety boundaries, security rules, health/dietary restrictions, budget limits, or strict technical requirements.
-</collection_definitions>
-
-<extraction_principles>
-1. COMPLETE DECLARATIVE SENTENCES ONLY:
-   - Every extracted statement MUST be a complete, self-contained declarative sentence.
-   - NEVER extract single-word labels, bare entity names, or incomplete fragments.
-
-2. CONTEXT & PRECISION PRESERVATION:
-   - Preserve all crucial details in each sentence: numbers, dollar amounts, temporal deadlines, exact model names, and specific constraints.
-   - Keep each extracted statement atomic: state exactly one durable fact per sentence.
-
-3. DISAMBIGUATION & CLASSIFICATION RULES:
-   - Identity vs Profile: Reserve Identity strictly for core foundational user identity. If uncertain, ALWAYS classify under Profile.
-   - Constraints vs Profile: Reserve Constraints strictly for non-negotiable hard limits, safety boundaries, allergies, or strict technical prohibitions. Place soft preferences under Profile.
-   - Directives vs Profile: Directives describe active work, open tasks, and scheduled commitments. General experience or past skills belong under Profile.
-   - Entities: Describe named external entities and the user's explicit relationship or context with them.
-</extraction_principles>
-
-<output_requirements>
-- Output exactly ONE JSON object strictly adhering to <output_schema>.
-- All collections except Narrative are JSON arrays of strings. Narrative is a single string.
-- Do not output any markdown codeblock formatting or surrounding commentary outside the JSON object.
-</output_requirements>"#;
+// ─── Working Memory Collections ──────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]

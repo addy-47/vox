@@ -1,13 +1,39 @@
-use super::batch_result::DedupAuditLog;
+use super::DedupAuditLog;
 use crate::core::constants::{
     PM_QUEUE_STATUS_DEDUPED, PM_QUEUE_STATUS_PROCESSING_DEDUP, PM_QUEUE_STATUS_STAGED_PENDING,
     PM_QUEUE_STATUS_SUPERSEDED,
 };
-use crate::services::memory::deduplication::jaccard_similarity;
 use crate::services::memory::STAGE1_BATCH_CEILING;
 use anyhow::Result;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use turso::Connection;
+
+/// Calculates Jaccard Word-Set Overlap Similarity between two strings.
+pub fn jaccard_similarity(s1: &str, s2: &str) -> f32 {
+    let w1: HashSet<String> = s1
+        .to_lowercase()
+        .split_whitespace()
+        .map(|s| s.replace(|c: char| c.is_ascii_punctuation() || c == '।', ""))
+        .filter(|s| !s.is_empty())
+        .collect();
+    let w2: HashSet<String> = s2
+        .to_lowercase()
+        .split_whitespace()
+        .map(|s| s.replace(|c: char| c.is_ascii_punctuation() || c == '।', ""))
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if w1.is_empty() && w2.is_empty() {
+        return 1.0;
+    }
+    if w1.is_empty() || w2.is_empty() {
+        return 0.0;
+    }
+
+    let intersection = w1.intersection(&w2).count() as f32;
+    let union = w1.union(&w2).count() as f32;
+    intersection / union
+}
 
 const FACTUAL_DEDUP_COLLECTIONS: &[&str] = &[
     "Identity",
@@ -187,7 +213,7 @@ async fn dedup_item_against_active(
             } else {
                 "memory_facts".to_string()
             };
-            let cand_log = super::batch_result::CandidateAuditLog {
+            let cand_log = super::CandidateAuditLog {
                 item_id: item.id,
                 item_fact: item.fact.clone(),
                 item_collection: item.collection.clone(),
@@ -238,7 +264,7 @@ async fn dedup_item_against_active(
             } else {
                 "memory_facts".to_string()
             };
-            let cand_log = super::batch_result::CandidateAuditLog {
+            let cand_log = super::CandidateAuditLog {
                 item_id: item.id,
                 item_fact: item.fact.clone(),
                 item_collection: item.collection.clone(),
@@ -357,7 +383,7 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
     let duration_ms = start_time.elapsed().as_millis();
 
     if !run_id.is_empty() {
-        let metrics = super::metrics::PipelineStageMetrics {
+        let metrics = super::PipelineStageMetrics {
             run_id: run_id.to_string(),
             stage_name: "stage1_dedup".to_string(),
             session_id,
