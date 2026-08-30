@@ -1,8 +1,8 @@
 pub mod audio;
 pub mod dictation;
+pub mod harness;
 pub mod llm;
 pub mod memory;
-pub mod pipeline;
 pub mod realtime;
 pub mod stt;
 pub mod translit;

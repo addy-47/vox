@@ -81,12 +81,4 @@ pub trait RealtimeSession: Send + Sync {
     fn activity_start(&self) -> Result<()>;
     /// Notifies remote server of speech activity end in PTT mode.
     fn activity_end(&self) -> Result<()>;
-    /// Returns true if the session WebSocket is actively connected.
-    fn is_connected(&self) -> bool {
-        true
-    }
-    /// Returns timestamp of the most recent network activity.
-    fn last_activity_time(&self) -> u64 {
-        0
-    }
 }

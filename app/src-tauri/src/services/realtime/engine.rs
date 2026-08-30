@@ -120,22 +120,4 @@ impl RealtimeEngine {
             Ok(())
         }
     }
-
-    /// Returns true if the realtime session WebSocket is connected and authenticated.
-    pub fn is_connected(&self) -> bool {
-        if let Some(ref session) = self.session {
-            session.is_connected()
-        } else {
-            false
-        }
-    }
-
-    /// Returns the millisecond Unix timestamp of the most recent network activity.
-    pub fn last_activity_time(&self) -> u64 {
-        if let Some(ref session) = self.session {
-            session.last_activity_time()
-        } else {
-            0
-        }
-    }
 }

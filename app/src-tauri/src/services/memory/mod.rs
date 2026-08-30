@@ -1,5 +1,4 @@
 pub mod compaction;
-pub mod harness;
 pub mod ingestion;
 pub mod ml;
 pub mod retrieval;
@@ -49,8 +48,8 @@ pub const CLASSIFIER_TOKENIZER_FILENAME: &str = "tokenizer.json";
 pub use crate::core::error::MemoryError;
 
 pub use compaction::{run_compaction, CompactionResult, COMPACTION_SYSTEM_PROMPT};
-pub use harness::prompt_builder::format_relative_timestamp;
-pub use harness::{
+pub use crate::services::harness::prompt_builder::format_relative_timestamp;
+pub use crate::services::harness::{
     prepare_turn_context, spawn_state_compaction_observer, trigger_background_compaction,
     ChatMessage, ConversationContext, ConversationManager, PrepareTurnParams, Role,
 };

@@ -2,7 +2,7 @@
 //! passive_streaming_test.rs — Passive Streaming Ingestion & VAD -> STT Pipeline Integration Tests
 //! ============================================================================
 //! Category     : Integration Test
-//! Component    : services/pipeline/modular_passive, services/vad, services/stt
+//! Component    : pipeline/modular/passive, services/vad, services/stt
 //! Prerequisites: ~/.vox/models/stt/nemotron-3.5/
 //! Execution    : cargo test --test passive_streaming_test --release -- --nocapture
 //! Metrics      : Transcription Fidelity (Levenshtein >= 0.90), Speech Onset/Offset Lifecycle

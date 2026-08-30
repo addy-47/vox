@@ -8,7 +8,8 @@
 > Every time code, architecture, candidate thresholds, system prompts, or LLM judge models are modified, or a task/phase is completed:
 >
 > 1. You **MUST** automatically update `AGENTS.md` to reflect the exact current implementation, model configuration, and threshold matrix.
-> 2. You **MUST** automatically update any relevant feature, component, design, or architecture documentation in docs/ to match the actual code state, key files include `backend.md`, `models.md`, `frontend.md`and `docs/features/*`.
+>    - **Line-Count Threshold (175 Lines Max):** If `AGENTS.md` reaches or approaches the 175-line ceiling, detailed sprint logs, refactor chronologies, and subtask histories MUST be extracted into `docs/plans/<current_phase>/recent_work.md` (e.g. [`recent_work.md`](file:///home/addy/projects/apps/vox/docs/plans/<current_phase>/recent_work.md)). Section 5 of `AGENTS.md` must only retain high-level critical architectural milestones with deep links to `recent_work.md`.
+> 2. You **MUST** automatically update any relevant feature, component, design, or architecture documentation in docs/ to match the actual code state, key files include `backend.md`, `models.md`, `frontend.md` and `docs/features/*`.
 > 3. This is a **mandatory post-task completion hook** — do NOT wait for the user to explicitly remind you to sync documentation.
 
 ---
@@ -55,28 +56,6 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
-## 2.2 State, Event, and Code Cleanliness Invariants (NON-NEGOTIABLE)
-
-1. **Single Source of Truth (The Law of State):**
-   - `InteractionState` (`Idle=0, Ready=1, Listening=2, Thinking=3, Speaking=4, Paused=5, Error=6`) is the **SOLE SOURCE OF TRUTH** for the assistant pipeline.
-   - `DictationState` (`Idle=0, Recording=1, Transcribing=2, Error=3`) is the **SOLE SOURCE OF TRUTH** for dictation.
-2. **Zero Synthetic Booleans & Flag Bags:**
-   - NEVER create loose boolean atomics, struct fields, or query methods like `is_connected`, `is_idle`, `is_engaged`, `is_sleeping`, `is_paused`, `is_assistant`, `is_passive`, `is_private`, `is_recording`, `is_speech_detected`. Query the state enum and settings directly.
-   - Model readiness must NEVER be modeled as a flat bag of loose `is_<model>_loaded` atomics in `AppState`.
-3. **Zero `_` Prefixed Masking & Zero `#[allow(...)]`:**
-   - NEVER prefix unused function arguments, struct fields, or variables with `_` to silence compiler warnings. If a parameter or field is not used, delete it from the signature and callers. (RAII drop guards holding live resources are the only exception).
-   - `#[allow(dead_code)]`, `#[allow(unused_variables)]`, and all lint suppressions are strictly banned per `.agents/rules/backend-style-guide.md`.
-4. **State Transitions are the Sole Lifecycle Event Pump:**
-   - `transition(...)` broadcasts `EVENT_STATE_CHANGED` (`"state_changed"`).
-   - Submodules must NEVER manually emit custom lifecycle events (`speech_start`, `speech_end`, `playback_started`, `playback_finished`, `session_started`, `session_ended`, `ptt_status`).
-   - The ONLY other IPC events permitted are streaming data payloads: `transcript_partial`, `transcript_final`, `llm_token`, `pipeline_error`.
-5. **Centralized Turn Generation:**
-   - Turn IDs must be generated strictly at the turn boundary via `AppState::next_turn_id()`, never fragmented across actors or passed as unused dummy arguments.
-6. **Frontend State Alignment:**
-   - The frontend MUST consume `interactionState` directly. Never recreate boolean `useState` hooks or alias wrappers (`isEngaged`, `isSleeping`, `isPaused`, `isThinking`, `pttStatus`). UI components switch directly on `interactionState`.
-
----
-
 ## 3. HARD GATE: Code Modification Gate
 
 > 🛑 **MANDATORY CONTEXT GATE:**
@@ -103,71 +82,11 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ## 5. Phase 10 Architecture & Orchestration Refactor Ledger
 
-> **Chronological Storyline:** UT Layer & Spec $\to$ Backend/Frontend Discovery $\to$ Uncalled Code Purge $\to$ STT Consolidation $\to$ 188-Sprint Review $\to$ Subsystem Decoupling $\to$ Turn ID / PTT Boundaries $\to$ LLM Engine Consolidation $\to$ Memory 4-Pillar Refactor $\to$ Pipeline Seam Hardening.
+> 📖 **Full History & Sprint Details:** See [`docs/plans/phase10/recent_work.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/recent_work.md) for full chronological storyline and sprint breakdowns.
 
-### 5.1 Initial Test Suite & Architectural Discovery
-- Built unit test suite and authored Integration Test Spec (`docs/plans/phase10/integration_test_spec.md`, Seams 1–8).
-- Mutation testing revealed widespread dead code, uncalled methods, and tangled audio/LLM routing across backend and frontend.
-- Paused Seams 9–14 to execute a foundational codebase overhaul.
-
-### 5.2 Backend Refactor & Uncalled Functions Resolution
-- **Decoupled Pipelines:** Extracted `services/pipeline/modular/` and `realtime/` orchestrated via central `router.rs` (`VoxEvent` pump).
-- **Uncalled Code Resolution:** Wired 11 critical paths (`prepare_turn_context`, opportunistic compaction, monotonic turn IDs, transliteration) and purged 30 dead functions across 7 deleted legacy files.
-- **Quality Gate:** 45 tests across 9 binaries green via `cargo-nextest --release --test-threads=1`; 0 clippy warnings.
-
-### 5.3 Frontend Standardization & Dead Code Purge
-- **7-State Alignment:** Unified UI across 7 canonical states (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`) with standardized `vad_backend` configuration.
-- **Cleanup:** Purged 26 unused listeners/services via `knip`. All 10 suites (98 tests) and `pnpm build` verified green.
-- **Ledger:** [`docs/features/performance-memory-optimizations.md`](file:///home/addy/projects/apps/vox/docs/features/performance-memory-optimizations.md) and [`docs/frontend.md`](file:///home/addy/projects/apps/vox/docs/frontend.md).
-
-### 5.4 STT Streaming Benchmark & Engine Consolidation
-- **Harness:** Built 256-sample streaming benchmark CLI (`app/src-tauri/benches/stt_bench.rs`) evaluating 10 canonical audio clips.
-- **Sherpa-ONNX 1.13.6:** Standardized all STT/VAD/TTS on `sherpa-onnx 1.13.6` using multilingual Nemotron-3.5 transducer (`0.497x RTF`, `97.1% accuracy`, `~71MB RSS`), completely removing `parakeet-rs`.
-
-### 5.5 188-Sprint Second-Pass Review & Architectural Specs
-- Authored and completed all 188 implementation sprints across 11 modules (`docs/plans/phase10/backend_review_sprints.md`).
-- Established 5 standalone SSOT architecture specs: LLM/TTS Streaming, LLM Provider Consolidation, Monotonic Turn IDs, Memory `<user_profile>` Assembly, and Audio Ownership.
-
-### 5.6 Subsystem Decoupling & Engine Lifecycle Migration
-- **VAD 3-Role Decoupling:** Restricted `VadActor` to generic modes (`ContinuousSegmentation`, `WindowedValidation`, `StreamPassthrough`) with zero upward pipeline imports; extracted telemetry and math utilities.
-- **Engine Relocation:** Moved application lifecycle orchestration (`VoxEngine`, startup/shutdown) to `core/engine.rs`, scoping `services/audio/` strictly to CPAL streams and playback draining.
-- **Actor Decoupling:** Isolated dictation hotkeys, output routing, audio suppression atomics, and async TTS voice reference resolution.
-
-### 5.7 Turn ID Synchronization & PTT Boundary Trimming
-- **Monotonic Turn IDs:** Enforced atomic fetch-and-add increment across all PTT/dictation start events, eliminating `turn_id: 0` resets.
-- **Speech Boundary Trimming:** `VadCommand::StartWindowValidation` / `StopWindowValidation` trims audio strictly to `[speech_start..speech_end]`, automatically discarding silence/accidental clicks with 0 STT/cloud emissions.
-- **Jitter Buffer:** Added 250ms (12,000 samples @ 48kHz) pre-roll buffer in playback engine before opening audio output.
-
-### 5.8 LLM Consolidation & Empirical Capability Discovery
-- **Unified Engine (`services/llm/`):** Unified `ConnectionConfig` mapping 13 standard providers to unified `RemoteTransport` (streaming SSE line decoder, `/chat/completions`, `/responses`, `/api/chat`) and in-process `EmbeddedProvider` (`llama.cpp`).
-- **Empirical Micro-Probing (`probe.rs`):** Replaced static catalog guessing with live tool schema and multilingual streaming TTFT/TPS micro-probes; purged heuristic token floor assumptions.
-
-### 5.9 Memory Spec Consolidation & 4-Pillar Architecture Spec
-- Consolidated memory requirements into a definitive 2-in-1 spec (`docs/plans/phase10/memory_formatting_context_assembly_spec.md` v2.0).
-- Locked 4-pillar design: **Harness** (buffering, accounting, prompt building), **Retrieval** (waterfall search, scope classification), **Compaction** (async summarization), and **Ingestion** (4-stage offline queue pipeline).
-
-### 5.10 Memory 4-Pillar Implementation & Pipeline Refactor
-- Restructured `services/memory/` across 24 modular files conforming to the 4-pillar layout.
-- Decomposed `ConversationManager` into `buffer.rs`, `accountant.rs`, `prompt_builder.rs`, `manager.rs`, and the unified `prepare_turn_context` public facade.
-- Locked SSOT timing split: Critical inline compaction (`>= 0.85`), opportunistic soft compaction (`0.65 <= util < 0.85` in `{Ready, Paused}` with 20s debounce), and background queue ingestion (30s idle).
-
-### 5.11 Pipeline Memory Seams & Quality Hardening
-- **W1 (Pre-Compaction Filler):** Dispatches TTS transition filler before executing critical compaction, removing dead silence.
-- **W2 (Cached LLM Provider):** Cached active `Arc<dyn LlmProvider>` in `AppState`, eliminating per-turn disk I/O and ORT reload during compaction.
-- **W3 & R3 (Realtime & Fact Dispatch):** Guarded realtime turns on engagement/pause, routed compaction facts through `PersonalFactsReady` worker channel, and offloaded SQLite writes.
-- **R2 & R4 (Event Router & Latencies):** Fixed `router.rs` so only `PlaybackFinished`/`Cancelled` emit `PipelineIdle`, preventing ingestion during active generation; wired real STT/TTFT metrics to `TurnCompleted`.
-- **Quality Gate:** Clean `cargo clippy --all-targets` (0 warnings), clean `cargo check --all-targets` (0 errors), 40/40 tests green in release mode.
-
-### 5.12 State, Event & Flag Bag Orchestration Purge
-- **Synthetic Flags Eradicated:** Purged `is_sleeping`, `is_engaged`, `is_recording`, `is_speech_detected`, `is_earshot`, and loose `state_atomic` duplicates across `AppState`, `RuntimeSnapshot`, `collector.rs`, `telemetry_emitter.rs`, `VadActor`, `PlaybackEngine`, and TS frontend.
-- **Single Source of Truth:** Replaced derived flags with direct queries on `InteractionState` (`state.pipeline.state() == InteractionState::Paused`) and polymorphic `VadBackend::is_above_noise_gate()`.
-- **Event Pump Standardization:** Eliminated redundant lifecycle emissions (`speech_start`, `speech_end`, `playback_started`, `session_started`, `session_ended`, `ptt_status`), anchoring frontend reactivity purely to `state_changed` and streaming data payloads.
-- **Quality Gate:** 0 clippy warnings across all targets (`cargo clippy --all-targets -- -D warnings`), clean `cargo check --all-targets`, clean `pnpm build`.
-
-### 5.13 State-Event Remediation & Turn Cancellation Hardening
-- **Turn ID Monotonic Invariants:** Replaced fragmented `fetch_add` calls with SSOT atomic helpers (`next_turn_id()`, `peek_turn_id()`, `next_turn()`, `cancel_current_turn()`) in `PipelineAtomics`, completely eliminating `turn_id: 0` resets across modular PTT, dictation, and duplex realtime providers (Gemini Live & Deepgram).
-- **Tokio CancellationToken Standard:** Migrated all LLM provider abstractions (`LlmProvider`, `LlmEngine`, `EmbeddedProvider`, `RemoteTransport`, `LlamaCppEngine`), compaction harness (`manager.rs`, `facade.rs`, `runner.rs`), and modular pipeline dispatch to `tokio_util::sync::CancellationToken`, eliminating sleep-polling loops and bridging shims.
-- **Memory Ingestion / Compaction Invariant:** Preserved strict `InteractionState::Idle` requirement for ONNX background ingestion worker with non-blocking opportunistic soft compaction execution on `{Ready, Paused}`.
-- **Dead Variant Purge & Strict Style Alignment:** Removed dead IPC event variants (`WarmUp`, `SettingsUpdated`, `VadCommand::SetAudioSink`, `TtsCommand::UpdateQualitySteps`, `TtsCommand::UpdateSpeed`), resolved all `_`-prefixed variables/imports, and verified zero compiler/linter warnings across Rust and TypeScript.
-- **Quality Gate:** `cargo check --all-targets` (0 errors, 0 warnings), `pnpm build` clean.
-
+- **State & Flag Purge:** Purged synthetic flags (`is_sleeping`, `is_engaged`, `is_recording`, etc.); switched to SSOT state enum queries.
+- **Monotonic Turn ID & Tokio standard:** Centralized turn IDs in `PipelineAtomics`; unified cancellation tokens with `tokio_util::sync::CancellationToken`.
+- **Test Suite Realignment (S01):** Production capture seam integration across all test suites (`cargo nextest run --release` 40/40 green).
+- **Concurrency & Dead Code Purge (S02-S05):** Removed dead `audio_sink` and unread atomics; promoted PTT workers to async locks; wired realtime activity signals.
+- **Lifecycle & TurnAccumulator (S07-S11):** Idempotent transitions, barge-in memory cleanup, and domain-scoped `TurnAccumulator` structs.
+- **Subsystem Promotion & Path Alignment:** Promoted `services/pipeline/` $\to$ `src/pipeline/` (`vox_lib::pipeline::*`) and `services/memory/harness/` $\to$ `services/harness/` (`vox_lib::services::harness::*`), with all integration tests and benchmarks aligned.

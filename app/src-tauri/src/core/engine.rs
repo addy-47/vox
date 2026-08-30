@@ -11,7 +11,7 @@ use crate::core::events::VoxEvent;
 use crate::core::state::{AppState, InteractionState, VadCommand, VoxEngine};
 use crate::services::audio::playback::PlaybackTelemetryHandles;
 use crate::services::audio::{AudioStream, PlaybackEngine};
-use crate::services::pipeline::router::spawn_router;
+use crate::pipeline::router::spawn_router;
 use crate::services::stt::actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand};
 use crate::services::stt::providers::create_stt_provider;
 use crate::services::vad::actor::{

@@ -11,27 +11,43 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock};
 use tauri::{AppHandle, Emitter, Manager};
 
-static REALTIME_PTT_BUFFER: Mutex<Vec<i16>> = Mutex::new(Vec::new());
-static CURRENT_ASSISTANT_RESPONSE: LazyLock<Mutex<String>> =
-    LazyLock::new(|| Mutex::new(String::new()));
-static CURRENT_USER_TRANSCRIPT: LazyLock<Mutex<String>> =
-    LazyLock::new(|| Mutex::new(String::new()));
+struct TurnAccumulator {
+    assistant_response: String,
+    user_transcript: String,
+}
 
-/// Ingests f32 audio samples into the realtime Push-To-Talk buffer when recording is active.
-pub fn ingest_audio(chunk: &[f32], state: &AppState) {
-    if state.pipeline.state() == InteractionState::Listening {
-        let i16_samples: Vec<i16> = chunk
-            .iter()
-            .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
-            .collect();
-        REALTIME_PTT_BUFFER.lock().extend_from_slice(&i16_samples);
+impl TurnAccumulator {
+    fn new() -> Self {
+        Self {
+            assistant_response: String::new(),
+            user_transcript: String::new(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.assistant_response.clear();
+        self.user_transcript.clear();
+    }
+
+    fn push_token(&mut self, token: &str) {
+        self.assistant_response.push_str(token);
+    }
+
+    fn set_user_transcript(&mut self, text: String) {
+        self.user_transcript = text;
+    }
+
+    fn take_assistant_response(&mut self) -> String {
+        std::mem::take(&mut self.assistant_response)
+    }
+
+    fn user_transcript(&self) -> String {
+        self.user_transcript.clone()
     }
 }
 
-/// Returns the current sample count in the realtime Push-To-Talk buffer.
-pub fn get_buffer_len() -> usize {
-    REALTIME_PTT_BUFFER.lock().len()
-}
+static ACCUMULATOR: LazyLock<Mutex<TurnAccumulator>> =
+    LazyLock::new(|| Mutex::new(TurnAccumulator::new()));
 
 /// Starts a user-gated real-time Push-To-Talk speech-to-speech assistant session.
 pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
@@ -92,6 +108,8 @@ pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
     let conv_id = now;
     state.conversation_id.store(conv_id, Ordering::Relaxed);
 
+    ACCUMULATOR.lock().clear();
+
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
@@ -118,8 +136,8 @@ pub async fn end_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState
         rt_engine.stop();
     }
 
-    REALTIME_PTT_BUFFER.lock().clear();
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+    ACCUMULATOR.lock().clear();
 
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
     if conv_id != 0 {
@@ -176,8 +194,8 @@ pub fn ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Res
         return Err("Realtime PTT session not active".to_string());
     }
 
-    REALTIME_PTT_BUFFER.lock().clear();
-    state.pipeline.renew_turn_token();
+    let (turn_id, _) = state.pipeline.next_turn();
+    ACCUMULATOR.lock().clear();
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
@@ -188,7 +206,14 @@ pub fn ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Res
         }
     }
 
-    let turn_id = state.pipeline.next_turn_id();
+    if let Ok(rt_guard) = state.realtime_engine.try_lock() {
+        if let Some(ref rt_engine) = *rt_guard {
+            if let Err(e) = rt_engine.activity_start() {
+                log::warn!("[RealtimePTT] Failed to send activity_start: {}", e);
+            }
+        }
+    }
+
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Listening, &ctx, app, state);
 
@@ -196,42 +221,37 @@ pub fn ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Res
     Ok(())
 }
 
-/// Finalizes real-time Push-To-Talk recording with silence gating and ghost audio protection.
-pub fn ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+/// Finalizes a real-time Push-To-Talk speech turn and streams audio buffer to the provider.
+pub async fn ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     if state.pipeline.state() != InteractionState::Listening {
         return Ok(());
     }
 
     let turn_id = state.pipeline.peek_turn_id();
-    let raw_buffer = REALTIME_PTT_BUFFER.lock().split_off(0);
 
-    if raw_buffer.is_empty() {
-        let ctx = RoutingContext::from_app_state(state);
-        transition(InteractionState::Ready, &ctx, app, state);
-        return Ok(());
-    }
-
-    let validation_result = if let Ok(guard) = state.engine.try_lock() {
-        if let Some(ref engine) = *guard {
-            let (tx, rx) = std::sync::mpsc::channel();
-            if engine.vad_tx.send(VadCommand::StopWindowValidation { response_tx: tx }).is_ok() {
-                rx.recv_timeout(std::time::Duration::from_millis(500)).ok()
-            } else {
-                None
-            }
+    let guard = state.engine.lock().await;
+    let validation_result = if let Some(ref engine) = *guard {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if engine
+            .vad_tx
+            .send(VadCommand::StopWindowValidation { response_tx: tx })
+            .is_ok()
+        {
+            rx.recv_timeout(std::time::Duration::from_millis(500)).ok()
         } else {
             None
         }
     } else {
         None
     };
+    drop(guard);
 
-    let is_speech = match validation_result {
-        Some(ref val) => val.is_speech_detected,
-        None => true,
+    let (is_speech, audio) = match validation_result {
+        Some(val) => (val.is_speech_detected, val.audio),
+        None => (false, Vec::new()),
     };
 
-    if !is_speech {
+    if !is_speech || audio.is_empty() {
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Ready, &ctx, app, state);
         log::info!(
@@ -241,22 +261,16 @@ pub fn ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Resu
         return Ok(());
     }
 
-    let buffer_to_send = match validation_result {
-        Some(ref val) => {
-            let start = val.speech_start_sample.min(raw_buffer.len());
-            let end = val.speech_end_sample.min(raw_buffer.len());
-            if start < end && (end - start) >= 256 {
-                raw_buffer[start..end].to_vec()
-            } else {
-                raw_buffer
-            }
-        }
-        None => raw_buffer,
-    };
+    let i16_samples: Vec<i16> = audio
+        .iter()
+        .map(|&x| (x.clamp(-1.0, 1.0) * 32767.0) as i16)
+        .collect();
 
-    if let Ok(guard) = state.realtime_engine.try_lock() {
-        if let Some(ref rt_engine) = *guard {
-            rt_engine.push_audio(&buffer_to_send);
+    let rt_guard = state.realtime_engine.lock().await;
+    if let Some(ref rt_engine) = *rt_guard {
+        rt_engine.push_audio(&i16_samples);
+        if let Err(e) = rt_engine.activity_end() {
+            log::warn!("[RealtimePTT] Failed to send activity_end: {}", e);
         }
     }
 
@@ -274,8 +288,9 @@ pub fn ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Re
         return Ok(());
     }
 
-    let turn_id = state.pipeline.turn_id.load(Ordering::Relaxed);
-    REALTIME_PTT_BUFFER.lock().clear();
+    state.pipeline.cancel_current_turn();
+    ACCUMULATOR.lock().clear();
+    let turn_id = state.pipeline.peek_turn_id();
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
@@ -297,12 +312,7 @@ pub fn on_speech_start(
     playback: &Arc<PlaybackEngine>,
 ) {
     super::session::realtime_barge_in(state, playback);
-    state.conversation_manager.lock().on_speech_start();
-}
-
-/// Handles speech end detection.
-pub fn on_speech_end(audio: Vec<f32>) {
-    drop(audio);
+    state.conversation_manager.lock().handle_barge_in();
 }
 
 /// Handles incoming final transcription from the real-time server.
@@ -318,13 +328,14 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
         log::warn!("[RealtimePTT] Failed to emit transcript_final: {}", e);
     }
 
-    CURRENT_ASSISTANT_RESPONSE.lock().clear();
-    *CURRENT_USER_TRANSCRIPT.lock() = text;
+    let mut acc = ACCUMULATOR.lock();
+    acc.clear();
+    acc.set_user_transcript(text);
 }
 
 /// Handles streamed token delta from the real-time server.
 fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<R>) {
-    CURRENT_ASSISTANT_RESPONSE.lock().push_str(&token);
+    ACCUMULATOR.lock().push_token(&token);
     if let Err(e) = app.emit_to(
         WINDOW_MAIN,
         EVENT_LLM_TOKEN,
@@ -344,13 +355,31 @@ fn on_playback_started<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) 
 }
 
 /// Transitions pipeline state back to ready state upon playback completion.
-fn on_playback_finished<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
-    let full_text = CURRENT_ASSISTANT_RESPONSE.lock().split_off(0);
+fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+    let full_text = ACCUMULATOR.lock().take_assistant_response();
     if !full_text.trim().is_empty() {
         state
             .conversation_manager
             .lock()
-            .push_assistant_turn(full_text);
+            .push_assistant_turn(full_text.clone());
+
+        let conv_id = state.conversation_id.load(Ordering::Relaxed);
+        let user_text = ACCUMULATOR.lock().user_transcript();
+        let stt_ms = state.telemetry.latest_stt_ms.load(Ordering::Relaxed);
+        let ttft_ms = state.telemetry.latest_ttft_ms.load(Ordering::Relaxed);
+        let persist_lock = state.persist_tx.lock();
+        if let Some(ref tx) = *persist_lock {
+            if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCompleted {
+                conversation_id: conv_id,
+                turn_id,
+                user_text,
+                assistant_text: full_text,
+                stt_latency_ms: stt_ms,
+                ttft_ms,
+            }) {
+                log::warn!("[RealtimePTT] Failed to send TurnCompleted to persist: {}", e);
+            }
+        }
     }
 
     let ctx = RoutingContext::from_app_state(state);
@@ -393,16 +422,12 @@ pub fn handle_event<R: tauri::Runtime>(
         VoxEvent::SpeechStart { .. } => {
             on_speech_start(state, playback)
         }
-        VoxEvent::SpeechEnd {
-            audio_buffer,
-            ..
-        } => on_speech_end(audio_buffer),
         VoxEvent::TranscriptFinal { turn_id, text } => {
             on_transcript_final(turn_id, text, app)
         }
         VoxEvent::LlmToken { turn_id, token } => on_llm_token(turn_id, token, app),
         VoxEvent::PlaybackStarted { .. } => on_playback_started(app, state),
-        VoxEvent::PlaybackFinished { .. } => on_playback_finished(app, state),
+        VoxEvent::PlaybackFinished { turn_id } => on_playback_finished(turn_id, app, state),
         VoxEvent::Cancelled { turn_id } => on_cancelled(turn_id, app, state),
         VoxEvent::Error { turn_id, message } => on_error(turn_id, message, app, state),
         _ => {}

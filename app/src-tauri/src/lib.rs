@@ -4,6 +4,7 @@ pub mod core;
 pub mod ipc;
 pub mod monitoring;
 pub mod persistence;
+pub mod pipeline;
 pub mod services;
 pub mod setup;
 pub mod tray;
@@ -251,7 +252,7 @@ pub fn run() {
             {
                 let s = state_arc.settings.read().unwrap();
                 if s.dictation.enabled {
-                    if let Err(e) = crate::services::pipeline::dictation::init_dictation_hotkey_listener(
+                    if let Err(e) = crate::pipeline::dictation::init_dictation_hotkey_listener(
                         app.handle(),
                         &s.dictation.hotkey,
                     ) {
