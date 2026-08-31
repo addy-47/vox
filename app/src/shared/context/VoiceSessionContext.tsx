@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo, ReactNode } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   startSession,
   endSession,
@@ -13,7 +12,19 @@ import {
   getRuntimeSnapshot,
 } from "@/services/pipelineService";
 import { showMainWindow } from "@/services/windowService";
-import { type InteractionState } from "@/services/eventsService";
+import {
+  type InteractionState,
+  type StateChangedPayload,
+  type TranscriptPayload,
+  type LlmTokenPayload,
+  type VoiceErrorPayload,
+  onStateChanged,
+  onTranscriptPartial,
+  onTranscriptFinal,
+  onLlmToken,
+  onVoiceError,
+  onSettingsUpdated,
+} from "@/services/eventsService";
 import { getSettings } from "@/services/settingsService";
 import { getTurns } from "@/services/historyService";
 
@@ -144,6 +155,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     setAssistantText("");
     try {
       await startSession();
+      setInteractionState("Ready");
     } catch (err: any) {
       console.error("[VoiceSession] Start session failed:", err);
       setErrorAlert(err?.message || "Voice engagement failed");
@@ -169,6 +181,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       } else {
         await endSession();
       }
+      setInteractionState("Idle");
     } catch (err: any) {
       console.error("[VoiceSession] End session failed:", err);
       setErrorAlert(err?.message || "Ending session failed");
@@ -250,6 +263,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     setAssistantText("");
     try {
       await testClip(clipId);
+      setInteractionState("Ready");
     } catch (err) {
       console.error("[VoiceSession] Test clip failed:", err);
       setTestingClip(null);
@@ -340,91 +354,93 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
           console.warn("[VoiceSession] Failed to sync initial state:", e);
         }
 
-        const appWindow = getCurrentWindow();
         let partialThrottleTimer: ReturnType<typeof setTimeout> | null = null;
         let tokenThrottleTimer: ReturnType<typeof setTimeout> | null = null;
 
-        const eventsList: Array<[string, (event: any) => void]> = [
-          [
-            "state_changed",
-            (event) => {
-              if (!isMounted) return;
-              const newState = event.payload as InteractionState;
-              setInteractionState(newState);
-              if (newState !== "Idle") {
-                hasActiveTurnStarted.current = true;
-              } else {
-                activeUserTextRef.current = "";
-                activeAiTextRef.current = "";
-                setTranscript("");
-                setAssistantText("");
-              }
-              if (newState === "Listening") {
-                archiveCurrentTurn();
-              }
-            },
-          ],
-          [
-            "transcript_partial",
-            (event) => {
-              if (!isMounted) return;
-              activeUserTextRef.current = event.payload.text;
-              if (!partialThrottleTimer) {
-                partialThrottleTimer = setTimeout(() => {
-                  if (isMounted) setTranscript(activeUserTextRef.current);
-                  partialThrottleTimer = null;
-                }, 30);
-              }
-            },
-          ],
-          [
-            "transcript_final",
-            (event) => {
-              if (!isMounted) return;
-              if (partialThrottleTimer) {
-                clearTimeout(partialThrottleTimer);
-                partialThrottleTimer = null;
-              }
-              activeUserTextRef.current = event.payload.text;
-              setTranscript(event.payload.text);
-            },
-          ],
-          [
-            "llm_token",
-            (event) => {
-              if (!isMounted) return;
-              activeAiTextRef.current = event.payload.token ?? event.payload.text ?? event.payload;
-              if (!tokenThrottleTimer) {
-                tokenThrottleTimer = setTimeout(() => {
-                  if (isMounted) setAssistantText(activeAiTextRef.current);
-                  tokenThrottleTimer = null;
-                }, 30);
-              }
-            },
-          ],
-          [
-            "mode_changed_main",
-            (event) => {
-              if (!isMounted) return;
-              setInteractionMode(event.payload.toUpperCase() as InteractionMode);
-            },
-          ],
-        ];
-
-        const listenPromises = eventsList.map(async ([event, handler]) => {
-          try {
-            const unlisten = await appWindow.listen(event, handler);
-            if (!isMounted) {
-              unlisten();
-            } else {
-              unlisteners.push(unlisten);
+        unlisteners.push(
+          onStateChanged((payload: StateChangedPayload) => {
+            if (!isMounted) return;
+            if (payload && payload.owner === "Dictation") {
+              return;
             }
-          } catch (err) {
-            console.error(`[VoiceSession] Failed to listen to ${event}:`, err);
-          }
-        });
+            const newState = payload.state as InteractionState;
+            setInteractionState(newState);
+            if (newState !== "Idle") {
+              hasActiveTurnStarted.current = true;
+            } else {
+              activeUserTextRef.current = "";
+              activeAiTextRef.current = "";
+              setTranscript("");
+              setAssistantText("");
+            }
+            if (newState === "Listening") {
+              archiveCurrentTurn();
+            }
+          })
+        );
 
-        await Promise.all(listenPromises);
+        unlisteners.push(
+          onVoiceError((payload: VoiceErrorPayload) => {
+            if (!isMounted) return;
+            const msg = payload?.message || String(payload);
+            setErrorAlert(msg);
+          })
+        );
+
+        unlisteners.push(
+          onTranscriptPartial((payload: TranscriptPayload) => {
+            if (!isMounted) return;
+            activeUserTextRef.current = payload.text;
+            if (!partialThrottleTimer) {
+              partialThrottleTimer = setTimeout(() => {
+                if (isMounted) setTranscript(activeUserTextRef.current);
+                partialThrottleTimer = null;
+              }, 30);
+            }
+          })
+        );
+
+        unlisteners.push(
+          onTranscriptFinal((payload: TranscriptPayload) => {
+            if (!isMounted) return;
+            if (partialThrottleTimer) {
+              clearTimeout(partialThrottleTimer);
+              partialThrottleTimer = null;
+            }
+            activeUserTextRef.current = payload.text;
+            setTranscript(payload.text);
+          })
+        );
+
+        unlisteners.push(
+          onLlmToken((payload: LlmTokenPayload) => {
+            if (!isMounted) return;
+            activeAiTextRef.current = payload.token;
+            if (!tokenThrottleTimer) {
+              tokenThrottleTimer = setTimeout(() => {
+                if (isMounted) setAssistantText(activeAiTextRef.current);
+                tokenThrottleTimer = null;
+              }, 30);
+            }
+          })
+        );
+
+        unlisteners.push(
+          onSettingsUpdated(async () => {
+            if (!isMounted) return;
+            try {
+              const s = await getSettings();
+              if (s?.interaction?.mode && isMounted) {
+                setInteractionMode(s.interaction.mode.toUpperCase() as InteractionMode);
+              }
+              if (s?.interaction?.pipeline_mode && isMounted) {
+                setPipelineMode(s.interaction.pipeline_mode.toLowerCase() as "modular" | "realtime");
+              }
+            } catch (e) {
+              console.warn("[VoiceSession] Failed to reload settings on settings-updated:", e);
+            }
+          })
+        );
 
         setTimeout(async () => {
           if (isMounted) await showMainWindow();

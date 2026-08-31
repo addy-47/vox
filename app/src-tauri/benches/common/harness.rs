@@ -11,7 +11,6 @@ use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{AudioOutputMode, InteractionMode};
-use vox_lib::core::state::VadCommand;
 use vox_lib::services::stt::actor::{
     spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand,
 };
@@ -19,6 +18,7 @@ use vox_lib::services::stt::providers::SttProvider;
 use vox_lib::services::vad::actor::{
     spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles,
 };
+use vox_lib::services::vad::VadCommand;
 use vox_lib::services::vad::{VAD_CHUNK_SIZE, VAD_SPEECH_END_FRAMES};
 
 use super::reporting::{get_process_memory_mb, ClipBenchmarkResult, EngineBenchmarkRun};
@@ -66,8 +66,8 @@ pub fn benchmark_streaming_provider(
         engine_shutdown: engine_shutdown.clone(),
     };
 
-    let stt_handle = spawn_stt_worker(channels, provider, handles)
-        .expect("Failed to spawn STT worker");
+    let stt_handle =
+        spawn_stt_worker(channels, provider, handles).expect("Failed to spawn STT worker");
 
     let rb = HeapRb::<f32>::new(65536);
     let (mut producer, consumer) = rb.split();
@@ -98,26 +98,23 @@ pub fn benchmark_streaming_provider(
         dropped_counter: Arc::new(AtomicU64::new(0)),
     };
 
-    let earshot_engine = vox_lib::services::vad::earshot_vad::EarshotVadEngine::new(
-        vad_config.initial_threshold,
-    ).expect("Failed to create EarshotVadEngine");
+    let earshot_engine =
+        vox_lib::services::vad::earshot_vad::EarshotVadEngine::new(vad_config.initial_threshold)
+            .expect("Failed to create EarshotVadEngine");
     let vad_backend = vox_lib::services::vad::VadBackend::Earshot(earshot_engine);
 
     let vad_handle = std::thread::Builder::new()
         .name("bench-vad-actor".to_string())
         .spawn(move || {
-            let _ = spawn_vad_actor(
-                vad_backend,
-                consumer,
-                vad_channels,
-                vad_handles,
-                vad_config,
-            );
+            let _ = spawn_vad_actor(vad_backend, consumer, vad_channels, vad_handles, vad_config);
         })
         .expect("Failed to spawn VAD actor thread");
 
     let mem_after_init = get_process_memory_mb();
-    println!("Process Memory (RSS) post-initialization: ~{} MB", mem_after_init);
+    println!(
+        "Process Memory (RSS) post-initialization: ~{} MB",
+        mem_after_init
+    );
 
     let mut clip_results = Vec::new();
 
@@ -225,12 +222,16 @@ pub fn benchmark_streaming_provider(
             }
 
             // Exit when we received final transcripts for all speech ends and activity settled
-            if speech_ends_seen > 0 && final_utterances.len() >= speech_ends_seen && last_activity.elapsed() > Duration::from_millis(500) {
+            if speech_ends_seen > 0
+                && final_utterances.len() >= speech_ends_seen
+                && last_activity.elapsed() > Duration::from_millis(500)
+            {
                 break;
             }
 
             // Fallback timeout if all speech ends finished and no new events for >2s
-            if !final_utterances.is_empty() && last_activity.elapsed() > Duration::from_millis(2000) {
+            if !final_utterances.is_empty() && last_activity.elapsed() > Duration::from_millis(2000)
+            {
                 break;
             }
         }
@@ -303,7 +304,11 @@ pub fn benchmark_streaming_provider(
     let total_audio_s: f32 = clip_results.iter().map(|r| r.duration_s).sum();
     let total_stream_ms: f64 = clip_results.iter().map(|r| r.total_stream_time_ms).sum();
     let count = clip_results.len().max(1);
-    let avg_final_post_latency_ms = clip_results.iter().map(|r| r.final_post_speech_latency_ms).sum::<f64>() / count as f64;
+    let avg_final_post_latency_ms = clip_results
+        .iter()
+        .map(|r| r.final_post_speech_latency_ms)
+        .sum::<f64>()
+        / count as f64;
     let avg_rtf = clip_results.iter().map(|r| r.rtf).sum::<f64>() / count as f64;
     let avg_sim = clip_results.iter().map(|r| r.similarity).sum::<f64>() / count as f64;
     let total_samples: usize = (total_audio_s * 16000.0) as usize;
@@ -315,10 +320,20 @@ pub fn benchmark_streaming_provider(
 
     println!("\n--- Overall Streaming Summary for {} ---", engine_name);
     println!("Total Audio Processed     : {:.2}s", total_audio_s);
-    println!("Total Stream Elapsed      : {:.2}s", total_stream_ms / 1000.0);
-    println!("Avg Post-Speech Final Latency: {:.1}ms", avg_final_post_latency_ms);
+    println!(
+        "Total Stream Elapsed      : {:.2}s",
+        total_stream_ms / 1000.0
+    );
+    println!(
+        "Avg Post-Speech Final Latency: {:.1}ms",
+        avg_final_post_latency_ms
+    );
     println!("Average Streaming RTF     : {:.3}x", avg_rtf);
-    println!("Streaming Audio Throughput: {:.0} samples/s ({:.2}x real-time)", overall_throughput, if avg_rtf > 0.0 { 1.0 / avg_rtf } else { 0.0 });
+    println!(
+        "Streaming Audio Throughput: {:.0} samples/s ({:.2}x real-time)",
+        overall_throughput,
+        if avg_rtf > 0.0 { 1.0 / avg_rtf } else { 0.0 }
+    );
     println!("Average Character Accuracy: {:.1}%", avg_sim * 100.0);
     println!("Active Working Set Memory : ~{} MB RSS", mem_after_init);
 

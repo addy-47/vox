@@ -1,7 +1,7 @@
 ---
 title: "Vox Frontend Architecture"
 audience: "Internal — agents & contributors needing quick, accurate context"
-last_updated: 2026-08-25
+last_updated: 2026-08-31
 owners: "frontend-engineer role"
 related_docs:
   - "docs/design.md            — Authoritative design system (tokens, type, elevation)"
@@ -127,21 +127,14 @@ The Rust event contract is authoritative in `docs/backend.md` §8. The frontend 
 | Event | Payload source | Consumer surface |
 |---|---|---|
 | `state_changed` | `InteractionState` (`"Idle" | "Ready" | "Listening" | "Thinking" | "Speaking" | "Paused" | "Error"`) | Main + Tray (mood sync via `VoiceSessionContext` `state_changed` handler + `useHomePage.toMood`) |
-| `audio_energy` / `telemetry` | `{ energy }` / `TelemetryData` | Orb waveform, Tray HUD, `useTelemetry` |
 | `transcript_partial` / `transcript_final` | `TranscriptPayload { turn_id, text, owner }` | ActiveTranscript, Tray (throttled 30ms in context) |
 | `llm_token` | `string` | Holographic dialogue stream (throttled 30ms) |
-| `ptt_status` | `PttStatusPayload { state: IDLE\|RECORDING\|PROCESSING }` | Main PTT button, Tray, `isThinking = state==='Thinking' \|\| pttStatus==='PROCESSING'` |
-| `pipeline_paused` / `pipeline_resumed` | — | Main controls (Passive only) |
-| `realtime_session_started` / `ended` / `resumed` | — + reason | Main lifecycle + Tray |
-| `realtime_interrupted` | — | Barge-in flash |
-| `realtime_idle_warning` | `{ seconds_remaining }` | StatusCapsule countdown |
-| `pipeline_error` | `String` | Error toasts (`errorAlert` in context) |
-| `speech_start` / `speech_end` | `SpeechEventPayload` | Tray visibility + interaction |
-| `mode_changed_main` / `mode_changed_tray` / `mode_changed` | `String` | Cross-surface mode sync (`pipelineMode`/`interactionMode`) |
-| `pipeline_mode_changed` | `String` | Pipeline mode sync |
-| `cpu_governor_warning` | `{ governor, optimal }` | Banner toast |
-| `model_setup_status` / `model_setup_complete` | `ModelSetupStatusPayload` | Wizard steps, catalog progress |
-| `playback_finished` | `Record<string,unknown>` latency report | History turn commit |
+| `voice_error` | `VoiceErrorPayload` | Error toasts (`errorAlert` in context) |
+| `model_progress` | `ModelSetupStatus` | Wizard steps, catalog progress |
+| `telemetry` | `TelemetryData { energy, vad_prob, ... }` | Orb waveform, Tray HUD, `useTelemetry` (energy for waveform) |
+| `system_stats` | `SystemStatsPayload` | Monitoring dashboard |
+| `settings-updated` | — | Settings hot-reload |
+| `toggle_tray` | — | Tray HUD toggle |
 
 Commands are issued via the service modules in §6 — `pipelineService.ts:63-97` (`startSession`→`start_session`, `endSession`→`end_session`, `pauseSession`→`pause_session`, `pttStart`→`ptt_start`, etc.) (never bare `invoke` in components). Full command list and reload policies: `docs/backend.md` §10. Frontend never branches on `pipeline_mode` for lifecycle — always calls the same verbs; backend `RoutingContext` resolves the domain.
 
@@ -218,4 +211,4 @@ app/src/
 
 ---
 
-**Last Updated:** 2026-08-28
+**Last Updated:** 2026-08-31

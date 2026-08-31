@@ -1,7 +1,7 @@
 ---
 title: "Vox Voice Pipeline Flow"
 audience: "Internal — backend (Rust) contributors, system architects, agents"
-last_updated: 2026-08-28
+last_updated: 2026-08-31
 owners: "backend-engineer role"
 related_docs:
   - "docs/backend.md §3, §7, §9 — Module layout, threading model, concurrency primitives"
@@ -27,7 +27,7 @@ related_docs:
 
 Vox uses a **spec-first, domain-partitioned pipeline**. Raw audio and all internal events flow
 through a lock-free `mpsc` channel to a single non-blocking **Central Event Router** (`vox-router`
-OS thread, `services/pipeline/router.rs:33`), which dispatches each `VoxEvent` to one of the
+OS thread, `pipeline/router.rs:33`), which dispatches each `VoxEvent` to one of the
 domain handlers under `modular/`, `realtime/`, or `dictation.rs`. There is **no monolithic loop**
 and **no `AudioRouter` OS thread** (the old `services/audio/router.rs` was deleted — its PTT
 routing role moved into the VAD actor, see §4).
@@ -74,17 +74,17 @@ to inference **actors** over `std::sync::mpsc` and receive streaming results bac
 Both Rust (`core/state.rs:InteractionState`) and TS (`services/eventsService.ts`) align on 7 states.
 Ownership is binary: `InteractionOwner::Assistant (1)` vs `Dictation (0)` (`core/state.rs:10`).
 
-| State | `is_engaged` | Audio Ingestion | Owner window | Meaning |
+| State | `state != Idle` | Audio Ingestion | Owner window | Meaning |
 |---|:---:|---|---|---|
-| `Idle` | `false` | Dormant (bg dictation) | main/tray | No conversational turn active. |
-| `Ready` | `true` | Active (Passive) / Standby (PTT) | main | Engaged, engines warm, awaiting speech/PTT. |
+| `Idle` | `false` (`state == Idle`) | Dormant (bg dictation) | main/tray | No conversational turn active. |
+| `Ready` | `true` (`state == Ready`) | Active (Passive) / Standby (PTT) | main | Engaged, engines warm, awaiting speech/PTT. |
 | `Listening` | `true` | Streaming | main/tray | User speaking; mic buffered. |
 | `Thinking` | `true` | Gated | main | Speech ended; STT → dynamic memory retrieval → LLM. |
 | `Speaking` | `true` | Ducked (Speaker) / Active (Headset, PTT) | main | Playback draining to speakers. |
 | `Paused` | `true` | Discarded | main | Explicit pause (Passive only). |
-| `Error` | current | Discarded | main/tray | Surfaced via `pipeline_error`. |
+| `Error` | current | Discarded | main/tray | Surfaced via `voice_error`. |
 
-Transitions go through `services/pipeline/mod::transition` (`mod.rs:79`), which calls
+Transitions go through `pipeline/mod::transition` (`mod.rs:79`), which calls
 `state.pipeline.set_state(...)` and emits `state_changed` to `target_window(owner)` (`mod.rs:71`:
 `Dictation → "tray"`, `Assistant → "main"`). State is stored as both a `parking_lot::Mutex<InteractionState>`
 and a lock-free `AtomicU32` mirror for the audio hot path (see §5).
@@ -102,7 +102,7 @@ and blocks on it.
 
 | Actor | File | Command enum | Thread name | How it blocks |
 |---|---|---|---|---|
-| VAD | `services/vad/actor.rs` | `VadCommand` (`core/state.rs:57`) | `vox-vad-worker` (`actor.rs:248`, Max prio) | Consumes ring buffer; runs Earshot/TenVAD ONNX synchronously. |
+| VAD | `services/vad/actor.rs` | `VadCommand` (`services/vad/mod.rs:VadCommand`) | `vox-vad-worker` (`actor.rs:248`, Max prio) | Consumes ring buffer; runs Earshot/TenVAD ONNX synchronously. |
 | STT | `services/stt/actor.rs` | `SttCommand {Partial,Final,ResetStream,Shutdown}` (`:12`) | `vox-stt-worker` (`:309`) | `provider.transcribe_chunk` blocks on ONNX. |
 | LLM | `services/llm/actor.rs` | `LlmCommand {Generate{turn_id,cancel_flag}, Shutdown}` (`:13`) | `vox-llm-persistent` (`:149`) | Builds a **tokio current-thread runtime** and `runtime.block_on(provider.generate(...))` (`:38–51`) — llama.cpp / HTTP blocks on this OS thread. |
 | TTS | `services/tts/actor.rs` | `TtsCommand {Generate{turn_id,text}, …}` (`:14`) | `vox-tts-persistent` (`:197`) | `provider.synthesize_chunk` blocks on ONNX. |
@@ -125,10 +125,10 @@ and blocks on it.
 
 ### 3.3 Modular worker spawning
 
-`ensure_modular_workers` (`modular/context.rs:14`) locks `state.engine`, then calls
+`ensure_modular_workers` (`pipeline/modular/mod.rs:14`) locks `state.engine`, then calls
 `warm_up_llm` (`llm/actor.rs:113`) and `warm_up_tts` (`tts/actor.rs:174`), storing the cloned
 `llm_tx`/`tts_tx` back into the engine. STT + VAD actors are spawned earlier inside
-`start_audio_engine` (`audio/engine.rs:209,:247`), so they exist before the LLM/TTS workers warm.
+`start_audio_engine` (`core/engine.rs:209,:247`), so they exist before the LLM/TTS workers warm.
 
 ---
 
@@ -152,7 +152,7 @@ and blocks on it.
 | Mechanism | Type | Location | Use |
 |---|---|---|---|
 | Pipeline turn state | `Arc<parking_lot::Mutex<InteractionState>>` + `Arc<AtomicU32>` mirror | `core/state.rs:93,98` | `state` for transitions; `current_state_atomic` read lock-free on audio hot path |
-| Engagement / cancel / flags | `Arc<AtomicBool>` ×8 | `core/state.rs:87–99` | `cancel_flag`, `is_paused`, `playback_active`, `llm_generating`, `tts_generating`, `is_engaged`, `is_assistant_speaking`, `engine_shutdown` |
+| Engagement / cancel / flags | `Arc<AtomicBool>` ×8 | `core/state.rs:87–99` | `cancel_flag`, `is_paused`, `playback_active`, `llm_generating`, `tts_generating`, `is_assistant_speaking`, `engine_shutdown` (+ `state` atomics for engagement) |
 | Turn id | `Arc<AtomicU32>` | `state.rs:92` | monotonic turn counter |
 | Transcript history | `Arc<parking_lot::Mutex<VecDeque<String>>>` | `state.rs:95` | recent turns |
 | Settings | `Arc<RwLock<VoxSettings>>` | `state.rs:170` | read-heavy; `RoutingContext::from_app_state` does one `read()` per event (`mod.rs:49`) |
@@ -174,7 +174,7 @@ snapshotted once into `RoutingContext` per event.
 
 ## 6. Domain 1 — Modular Passive (end-to-end thread trace)
 
-`services/pipeline/modular/passive.rs`. This is the canonical Assistant turn; every step names the
+`pipeline/modular/passive.rs`. This is the canonical Assistant turn; every step names the
 thread that owns it.
 
 ```
@@ -204,7 +204,7 @@ cpal capture (device.rs thread)
 **Discrete steps (`modular/passive.rs`):**
 
 1. **`start_session`** — `start_audio_engine`; `ensure_modular_workers` (warm LLM+TTS); set
-   `is_engaged=true`, `is_paused=false`; → `Ready`.
+   `owner=Assistant`, `state → Ready`; → `Ready`.
 2. **`on_speech_start`** — cancel any playback (barge-in); → `Listening`; emit `speech_start`.
 3. **`on_speech_end`** — buffer PCM; → `Thinking`; `SttCommand::Final` to STT actor.
 4. **`on_transcript_final`** — empty→`Ready`; else `transliterate_if_hi` + `stitch_transcripts`
@@ -248,7 +248,7 @@ Barge-in: local speech onset cancels `playback_engine` immediately and signals t
 
 `InteractionOwner::Dictation` routes all events away from Assistant domains (`router.rs` →
 `dictation::handle_event`, `:229`). **No `controller.rs`** (deleted) — the unified handler is
-`services/pipeline/dictation.rs`; reusable primitives live in `services/dictation/`
+`pipeline/dictation.rs`; reusable primitives live in `services/dictation/`
 (`clipboard.rs`, `input.rs`, `output_router.rs`, `hotkey.rs`).
 
 ```
@@ -326,4 +326,4 @@ so it occupies a tokio worker briefly but never blocks the `vox-router` or VAD t
 
 ---
 
-**Last Updated:** 2026-08-28
+**Last Updated:** 2026-08-31

@@ -6,6 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use tokio::sync::Mutex;
 
+// ─── 1. Lifecycle Enums (SSOT) ───────────────────────────────────────────────
+
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum InteractionOwner {
     Dictation = 0,
@@ -92,37 +94,12 @@ impl From<DictationState> for u32 {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct TelemetryData {
-    pub energy: f32,
-    pub vad_prob: f32,
-    pub low: f32,
-    pub mid: f32,
-    pub high: f32,
-}
-
-pub enum VadCommand {
-    UpdateThreshold(f32),
-    UpdateNoiseGate(f32),
-    UpdateMode(crate::core::settings::InteractionMode),
-    UpdateAudioMode(crate::core::settings::AudioOutputMode),
-    SetOperationalMode(crate::services::vad::VadOperationalMode),
-    StartWindowValidation,
-    StopWindowValidation {
-        response_tx: std::sync::mpsc::Sender<crate::services::vad::VadValidationResult>,
-    },
-    Shutdown,
-    StartRealtime {
-        tx: tokio::sync::mpsc::Sender<Vec<i16>>,
-        is_ptt: bool,
-    },
-    StopRealtime,
-}
+// ─── 2. Engine Handle Bag ────────────────────────────────────────────────────
 
 pub struct VoxEngine {
     pub audio_stream: AudioStream,
     pub stt_tx: std::sync::mpsc::Sender<SttCommand>,
-    pub vad_tx: std::sync::mpsc::Sender<VadCommand>,
+    pub vad_tx: std::sync::mpsc::Sender<crate::services::vad::VadCommand>,
     pub llm_tx: Option<std::sync::mpsc::Sender<crate::services::llm::LlmCommand>>,
     pub tts_tx: Option<std::sync::mpsc::Sender<crate::services::tts::TtsCommand>>,
     pub telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
@@ -134,6 +111,8 @@ pub struct VoxEngine {
     pub tts_handle: Option<std::thread::JoinHandle<()>>,
     pub orchestrator_handle: Option<std::thread::JoinHandle<()>>,
 }
+
+// ─── 3. Pipeline Atomics (SSOT turn + state + cancellation) ─────────────────
 
 pub struct PipelineAtomics {
     pub cancel_flag: Arc<AtomicBool>,
@@ -179,7 +158,9 @@ impl PipelineAtomics {
             )),
             dictation_state_tx,
             dictation_state_rx,
-            turn_token: Arc::new(parking_lot::Mutex::new(tokio_util::sync::CancellationToken::new())),
+            turn_token: Arc::new(parking_lot::Mutex::new(
+                tokio_util::sync::CancellationToken::new(),
+            )),
             turn_epoch: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             engine_shutdown: Arc::new(AtomicBool::new(false)),
         }
@@ -195,7 +176,10 @@ impl PipelineAtomics {
         self.current_state_atomic
             .store(new_state as u32, Ordering::Relaxed);
         if let Err(e) = self.state_tx.send(new_state) {
-            log::warn!("[Core::State] Failed to broadcast state to observers: {}", e);
+            log::warn!(
+                "[Core::State] Failed to broadcast state to observers: {}",
+                e
+            );
         }
     }
 
@@ -251,6 +235,8 @@ impl PipelineAtomics {
     }
 }
 
+// ─── 4. Memory App State ─────────────────────────────────────────────────────
+
 pub struct MemoryAppState {
     pub graph_version: Arc<AtomicU64>,
     pub user_paused_ingestion: Arc<AtomicBool>,
@@ -270,6 +256,8 @@ impl MemoryAppState {
         }
     }
 }
+
+// ─── 5. AppState (top-level handle bag) ──────────────────────────────────────
 
 pub struct AppState {
     pub engine: Mutex<Option<VoxEngine>>,
@@ -292,7 +280,7 @@ pub struct AppState {
         Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>,
     >,
     pub memory_tx: parking_lot::Mutex<
-        Option<crossbeam_channel::Sender<crate::persistence::memory_worker::MemoryWorkerEvent>>,
+        Option<crossbeam_channel::Sender<crate::persistence::events::MemoryWorkerEvent>>,
     >,
     pub dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
     pub monitoring: Arc<crate::monitoring::runtime_state::MonitoringState>,
@@ -304,6 +292,8 @@ pub struct AppState {
     pub conversation_manager: Arc<parking_lot::Mutex<crate::services::memory::ConversationManager>>,
     pub llm_provider: Arc<parking_lot::RwLock<Option<Arc<dyn crate::services::llm::LlmProvider>>>>,
 }
+
+// ─── 6. Telemetry State (kept in state.rs — AppState owns the handles; MonitoringState owns history) ─
 
 /// Telemetry handles and health atomics bundled for AppState and monitoring workers.
 #[derive(Clone)]
@@ -342,7 +332,9 @@ impl AppState {
     ) -> Self {
         let settings = VoxSettings::load();
         let dictation_enabled = settings.dictation.enabled;
-        telemetry.is_private_mode.store(settings.history.private_mode, Ordering::Relaxed);
+        telemetry
+            .is_private_mode
+            .store(settings.history.private_mode, Ordering::Relaxed);
 
         let model_manager = Arc::new(crate::setup::model_manager::ModelManager::new(Some(
             app_handle.clone(),

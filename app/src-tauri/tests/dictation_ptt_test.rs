@@ -24,12 +24,13 @@ use common::scoring::calculate_similarity;
 
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{AudioOutputMode, InteractionMode};
-use vox_lib::core::state::{DictationState, VadCommand};
+use vox_lib::core::state::DictationState;
 use vox_lib::pipeline::dictation::{
     handle_event as handle_dictation_event, handle_hotkey_press, handle_hotkey_release,
 };
 use vox_lib::services::stt::SttCommand;
 use vox_lib::services::vad::VadActorConfig;
+use vox_lib::services::vad::VadCommand;
 
 const EN_GROUND_TRUTH: &str =
     "Hey Vox, good morning! Can you check my calendar and give me a quick briefing on today's scheduled meetings?";
@@ -202,8 +203,7 @@ fn test_dictation_does_not_invoke_llm() {
 
     let (app, state) = get_test_app_and_state();
 
-    let (llm_tx, llm_rx) =
-        std::sync::mpsc::channel::<vox_lib::services::llm::actor::LlmCommand>();
+    let (llm_tx, llm_rx) = std::sync::mpsc::channel::<vox_lib::services::llm::actor::LlmCommand>();
     let (stt_tx, _) = std::sync::mpsc::channel();
     let (vad_tx, _) = std::sync::mpsc::channel();
     let (pipeline_tx, _) = std::sync::mpsc::channel();

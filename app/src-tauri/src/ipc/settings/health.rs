@@ -1,9 +1,7 @@
-//! ============================================================================
-//! src/ipc/settings/health.rs — Provider health checks, capability probes, and remote server setup
-//! ============================================================================
-
+use crate::core::events::{emit_ipc, IpcEvent};
 use crate::core::state::AppState;
-use tauri::{Emitter, Manager, State};
+use crate::setup::model_manager::{ModelSetupStatus, SetupStep};
+use tauri::{Manager, State};
 
 #[tauri::command]
 pub async fn check_llm_provider_health(
@@ -266,7 +264,11 @@ pub async fn probe_model_capabilities(
 
     tokio::spawn(async move {
         if let Err(e) = tokio::fs::create_dir_all(&cache_dir).await {
-            log::warn!("[Settings::Health] Failed to create cache directory {:?}: {}", cache_dir, e);
+            log::warn!(
+                "[Settings::Health] Failed to create cache directory {:?}: {}",
+                cache_dir,
+                e
+            );
         }
         let mut map: std::collections::HashMap<String, crate::core::settings::ModelCapabilities> =
             if cache_file.exists() {
@@ -342,25 +344,25 @@ fn resolve_setup_script(app: &tauri::AppHandle) -> Result<std::path::PathBuf, St
     }
 }
 
-fn parse_setup_progress(line: &str) -> (&'static str, u32) {
+fn parse_setup_progress(line: &str) -> (SetupStep, f32) {
     if line.contains("Phase 1") {
-        ("setup", 10)
+        (SetupStep::Downloading, 10.0)
     } else if line.contains("Phase 2") {
-        ("sync", 25)
+        (SetupStep::Downloading, 25.0)
     } else if line.contains("Phase 3") {
-        ("models", 40)
+        (SetupStep::Downloading, 40.0)
     } else if line.contains("Phase 4") {
-        ("build", 75)
+        (SetupStep::Extracting, 75.0)
     } else if line.contains("Phase 5") {
-        ("launch", 85)
+        (SetupStep::Verifying, 85.0)
     } else if line.contains("Phase 6") {
-        ("health", 90)
+        (SetupStep::Verifying, 90.0)
     } else if line.contains("Phase 7") {
-        ("smoke", 95)
+        (SetupStep::Verifying, 95.0)
     } else if line.contains("Smoke test passed") {
-        ("complete", 100)
+        (SetupStep::Completed, 100.0)
     } else {
-        ("setup", 0)
+        (SetupStep::Downloading, 0.0)
     }
 }
 
@@ -414,12 +416,17 @@ async fn run_remote_ssh_task(
         Err(e) => {
             let err_msg = format!("Failed to spawn ssh command: {}", e);
             log::error!("{}", err_msg);
-            if let Err(e) = app.emit(
-                "remote_setup_status",
-                serde_json::json!({ "step": "failed", "progress": 0, "log_line": err_msg.clone(), "error": err_msg }),
-            ) {
-                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
-            }
+            let _ = emit_ipc(
+                &app,
+                IpcEvent::ModelProgress(ModelSetupStatus {
+                    model_id: "chatterbox_remote_server".to_string(),
+                    step: SetupStep::Failed,
+                    progress: 0.0,
+                    bytes_downloaded: 0,
+                    total_bytes: 100,
+                    error: Some(err_msg),
+                }),
+            );
             return;
         }
     };
@@ -429,12 +436,17 @@ async fn run_remote_ssh_task(
         Err(e) => {
             let err_msg = format!("Failed to read setup script: {}", e);
             log::error!("{}", err_msg);
-            if let Err(e) = app.emit(
-                "remote_setup_status",
-                serde_json::json!({ "step": "failed", "progress": 0, "log_line": err_msg.clone(), "error": err_msg }),
-            ) {
-                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
-            }
+            let _ = emit_ipc(
+                &app,
+                IpcEvent::ModelProgress(ModelSetupStatus {
+                    model_id: "chatterbox_remote_server".to_string(),
+                    step: SetupStep::Failed,
+                    progress: 0.0,
+                    bytes_downloaded: 0,
+                    total_bytes: 100,
+                    error: Some(err_msg),
+                }),
+            );
             return;
         }
     };
@@ -444,12 +456,17 @@ async fn run_remote_ssh_task(
         tokio::spawn(async move {
             if let Err(e) = stdin.write_all(&script_content).await {
                 log::error!("[SetupRemote] Failed to write script to stdin: {}", e);
-                if let Err(emit_err) = app_clone.emit(
-                    "remote_setup_status",
-                    serde_json::json!({ "step": "failed", "progress": 0, "log_line": format!("Failed to stream script: {}", e) }),
-                ) {
-                    log::warn!("[SetupRemote] Failed to emit remote_setup_status error: {}", emit_err);
-                }
+                let _ = emit_ipc(
+                    &app_clone,
+                    IpcEvent::ModelProgress(ModelSetupStatus {
+                        model_id: "chatterbox_remote_server".to_string(),
+                        step: SetupStep::Failed,
+                        progress: 0.0,
+                        bytes_downloaded: 0,
+                        total_bytes: 100,
+                        error: Some(format!("Failed to stream script: {}", e)),
+                    }),
+                );
             }
         });
     }
@@ -463,12 +480,17 @@ async fn run_remote_ssh_task(
                 while let Ok(Some(line)) = reader.next_line().await {
                     log::info!("[SetupRemote:STDOUT] {}", line);
                     let (step, progress) = parse_setup_progress(&line);
-                    if let Err(e) = app_clone.emit(
-                        "remote_setup_status",
-                        serde_json::json!({ "step": step, "progress": progress, "log_line": line }),
-                    ) {
-                        log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
-                    }
+                    let _ = emit_ipc(
+                        &app_clone,
+                        IpcEvent::ModelProgress(ModelSetupStatus {
+                            model_id: "chatterbox_remote_server".to_string(),
+                            step,
+                            progress,
+                            bytes_downloaded: progress as u64,
+                            total_bytes: 100,
+                            error: None,
+                        }),
+                    );
                 }
             }
         }
@@ -483,12 +505,17 @@ async fn run_remote_ssh_task(
                 while let Ok(Some(line)) = reader.next_line().await {
                     log::warn!("[SetupRemote:STDERR] {}", line);
                     let (step, progress) = parse_setup_progress(&line);
-                    if let Err(e) = app_clone.emit(
-                        "remote_setup_status",
-                        serde_json::json!({ "step": step, "progress": progress, "log_line": line }),
-                    ) {
-                        log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
-                    }
+                    let _ = emit_ipc(
+                        &app_clone,
+                        IpcEvent::ModelProgress(ModelSetupStatus {
+                            model_id: "chatterbox_remote_server".to_string(),
+                            step,
+                            progress,
+                            bytes_downloaded: progress as u64,
+                            total_bytes: 100,
+                            error: None,
+                        }),
+                    );
                 }
             }
         }
@@ -499,32 +526,47 @@ async fn run_remote_ssh_task(
     match child.wait().await {
         Ok(status) if status.success() => {
             log::info!("[SetupRemote] Setup completed successfully.");
-            if let Err(e) = app.emit(
-                "remote_setup_status",
-                serde_json::json!({ "step": "complete", "progress": 100, "log_line": "Remote setup completed successfully!" }),
-            ) {
-                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
-            }
+            let _ = emit_ipc(
+                &app,
+                IpcEvent::ModelProgress(ModelSetupStatus {
+                    model_id: "chatterbox_remote_server".to_string(),
+                    step: SetupStep::Completed,
+                    progress: 100.0,
+                    bytes_downloaded: 100,
+                    total_bytes: 100,
+                    error: None,
+                }),
+            );
         }
         Ok(status) => {
             let err_msg = format!("SSH command exited with code: {:?}", status.code());
             log::error!("[SetupRemote] {}", err_msg);
-            if let Err(e) = app.emit(
-                "remote_setup_status",
-                serde_json::json!({ "step": "failed", "progress": 0, "log_line": err_msg.clone(), "error": err_msg }),
-            ) {
-                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
-            }
+            let _ = emit_ipc(
+                &app,
+                IpcEvent::ModelProgress(ModelSetupStatus {
+                    model_id: "chatterbox_remote_server".to_string(),
+                    step: SetupStep::Failed,
+                    progress: 0.0,
+                    bytes_downloaded: 0,
+                    total_bytes: 100,
+                    error: Some(err_msg),
+                }),
+            );
         }
         Err(e) => {
             let err_msg = format!("Failed to wait for SSH child: {}", e);
             log::error!("[SetupRemote] {}", err_msg);
-            if let Err(e) = app.emit(
-                "remote_setup_status",
-                serde_json::json!({ "step": "failed", "progress": 0, "log_line": err_msg.clone(), "error": err_msg }),
-            ) {
-                log::warn!("[Settings::Health] Failed to emit remote_setup_status: {}", e);
-            }
+            let _ = emit_ipc(
+                &app,
+                IpcEvent::ModelProgress(ModelSetupStatus {
+                    model_id: "chatterbox_remote_server".to_string(),
+                    step: SetupStep::Failed,
+                    progress: 0.0,
+                    bytes_downloaded: 0,
+                    total_bytes: 100,
+                    error: Some(err_msg),
+                }),
+            );
         }
     }
 }

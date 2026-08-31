@@ -12,7 +12,6 @@ pub struct UpdateReport {
 
 /// Helper function to perform robust semver comparisons without external crates.
 fn is_newer_version(remote: &str, local: &str) -> bool {
-
     let remote_clean = remote.split('-').next().unwrap_or(remote);
     let local_clean = local.split('-').next().unwrap_or(local);
 

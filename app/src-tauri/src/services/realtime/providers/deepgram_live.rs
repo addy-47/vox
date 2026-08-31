@@ -74,7 +74,10 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         playback_tx: tokio::sync::mpsc::Sender<Vec<i16>>,
         event_tx: Sender<VoxEvent>,
     ) -> Result<Box<dyn RealtimeSession>> {
-        log::debug!("[DeepgramVoiceAgent] Connecting with interaction_mode: {:?}", interaction_mode);
+        log::debug!(
+            "[DeepgramVoiceAgent] Connecting with interaction_mode: {:?}",
+            interaction_mode
+        );
         let handle = tokio::runtime::Handle::current();
 
         if self.config.api_key.is_empty() {
@@ -413,11 +416,8 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         use std::net::ToSocketAddrs;
         if let Ok(mut addrs) = DEEPGRAM_HEALTH_CHECK_ADDR.to_socket_addrs() {
             if let Some(addr) = addrs.next() {
-                return std::net::TcpStream::connect_timeout(
-                    &addr,
-                    WS_HEALTH_CHECK_TIMEOUT,
-                )
-                .is_ok();
+                return std::net::TcpStream::connect_timeout(&addr, WS_HEALTH_CHECK_TIMEOUT)
+                    .is_ok();
             }
         }
         false
@@ -529,47 +529,49 @@ async fn perform_handshake(
     let mut welcome_received = false;
     let mut settings_applied_received = false;
 
-    let handshake_timeout = tokio::time::timeout(crate::services::realtime::WS_HANDSHAKE_TIMEOUT, async {
-        while let Some(res) = ws_read.next().await {
-            match res {
-                Ok(Message::Text(text)) => {
-                    let val: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-                    if let Some(msg_type) = val.get("type").and_then(|v| v.as_str()) {
-                        if msg_type == "Welcome" {
-                            log::info!("[DeepgramVoiceAgent] Received Welcome event.");
-                            welcome_received = true;
-                        } else if msg_type == "SettingsApplied" {
-                            log::info!("[DeepgramVoiceAgent] Received SettingsApplied event.");
-                            settings_applied_received = true;
-                        } else if msg_type == "Error" || msg_type == "Warning" {
-                            log::error!(
+    let handshake_timeout =
+        tokio::time::timeout(crate::services::realtime::WS_HANDSHAKE_TIMEOUT, async {
+            while let Some(res) = ws_read.next().await {
+                match res {
+                    Ok(Message::Text(text)) => {
+                        let val: serde_json::Value =
+                            serde_json::from_str(&text).unwrap_or_default();
+                        if let Some(msg_type) = val.get("type").and_then(|v| v.as_str()) {
+                            if msg_type == "Welcome" {
+                                log::info!("[DeepgramVoiceAgent] Received Welcome event.");
+                                welcome_received = true;
+                            } else if msg_type == "SettingsApplied" {
+                                log::info!("[DeepgramVoiceAgent] Received SettingsApplied event.");
+                                settings_applied_received = true;
+                            } else if msg_type == "Error" || msg_type == "Warning" {
+                                log::error!(
                                 "[DeepgramVoiceAgent] Server error/warning during handshake: {:?}",
                                 val
                             );
-                            return Err(anyhow!("Deepgram error during handshake: {:?}", val));
-                        }
+                                return Err(anyhow!("Deepgram error during handshake: {:?}", val));
+                            }
 
-                        if welcome_received && settings_applied_received {
-                            return Ok(());
+                            if welcome_received && settings_applied_received {
+                                return Ok(());
+                            }
                         }
                     }
-                }
-                Ok(msg) => {
-                    log::debug!(
-                        "[DeepgramVoiceAgent] Received non-text message during handshake: {:?}",
-                        msg
-                    );
-                }
-                Err(e) => {
-                    return Err(anyhow!("WebSocket error during handshake: {:?}", e));
+                    Ok(msg) => {
+                        log::debug!(
+                            "[DeepgramVoiceAgent] Received non-text message during handshake: {:?}",
+                            msg
+                        );
+                    }
+                    Err(e) => {
+                        return Err(anyhow!("WebSocket error during handshake: {:?}", e));
+                    }
                 }
             }
-        }
-        Err(anyhow!(
-            "WebSocket stream terminated before handshake complete"
-        ))
-    })
-    .await;
+            Err(anyhow!(
+                "WebSocket stream terminated before handshake complete"
+            ))
+        })
+        .await;
 
     match handshake_timeout {
         Ok(Ok(())) => {
@@ -577,7 +579,10 @@ async fn perform_handshake(
             Ok((ws_write, ws_read))
         }
         Ok(Err(e)) => Err(e),
-        Err(_) => Err(anyhow!("Handshake timed out after {} seconds", crate::services::realtime::WS_HANDSHAKE_TIMEOUT.as_secs())),
+        Err(_) => Err(anyhow!(
+            "Handshake timed out after {} seconds",
+            crate::services::realtime::WS_HANDSHAKE_TIMEOUT.as_secs()
+        )),
     }
 }
 
@@ -677,30 +682,31 @@ fn handle_deepgram_server_message(
                 s_lock.last_assistant_text.clear();
                 let tid = s_lock.peek_or_current_turn_id();
                 s_lock.server_turn_cursor = None;
-                if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id: tid }) {
+                if let Err(e) = event_tx.send(VoxEvent::Interrupted { turn_id: tid }) {
                     log::warn!(
-                        "[DeepgramVoiceAgent] Failed to send Cancelled event: {:?}",
+                        "[DeepgramVoiceAgent] Failed to send Interrupted event: {:?}",
                         e
                     );
                 }
             }
+            // NOTE: Function calling / tool roundtrip hook for future expansion.
+            // When Deepgram sends FunctionCallRequest with {id, name, arguments}, execute the client tool
+            // and reply with FunctionCallResponse frame {"type": "FunctionCallResponse", "id": id, "output": result}.
+            "FunctionCallRequest" => {
+                log::debug!("[DeepgramVoiceAgent] Received FunctionCallRequest frame (client-side execution hook reserved): {:?}", val);
+            }
             "ConversationText" => {
                 let role = val.get("role").and_then(|v| v.as_str()).unwrap_or("");
                 let content = val.get("content").and_then(|v| v.as_str()).unwrap_or("");
-                log::trace!("[DeepgramVoiceAgent] ConversationText role={}: {:?}", role, content);
+                log::trace!(
+                    "[DeepgramVoiceAgent] ConversationText role={}: {:?}",
+                    role,
+                    content
+                );
 
                 if role == "user" {
                     log::debug!("[DeepgramVoiceAgent] User final transcript: {:?}", content);
                     let turn_id = state.lock().current_or_new_turn_id();
-                    if let Err(e) = event_tx.send(VoxEvent::TranscriptPartial {
-                        turn_id,
-                        text: content.to_string(),
-                    }) {
-                        log::warn!(
-                            "[DeepgramVoiceAgent] Failed to send TranscriptPartial event: {:?}",
-                            e
-                        );
-                    }
                     if let Err(e) = event_tx.send(VoxEvent::TranscriptFinal {
                         turn_id,
                         text: content.to_string(),
@@ -746,8 +752,13 @@ fn handle_deepgram_server_message(
                 log::debug!("[DeepgramVoiceAgent] Agent audio done.");
                 let mut s_lock = state.lock();
                 s_lock.last_assistant_text.clear();
-                let finished_turn_id = s_lock.server_turn_cursor.take().unwrap_or_else(|| s_lock.turn_id.load(Ordering::Relaxed));
-                if let Err(e) = event_tx.send(VoxEvent::LlmFinished { turn_id: finished_turn_id }) {
+                let finished_turn_id = s_lock
+                    .server_turn_cursor
+                    .take()
+                    .unwrap_or_else(|| s_lock.turn_id.load(Ordering::Relaxed));
+                if let Err(e) = event_tx.send(VoxEvent::LlmFinished {
+                    turn_id: finished_turn_id,
+                }) {
                     log::warn!(
                         "[DeepgramVoiceAgent] Failed to send LlmFinished event: {:?}",
                         e

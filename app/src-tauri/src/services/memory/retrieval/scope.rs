@@ -1,4 +1,4 @@
-use crate::core::constants::MemoryCollection;
+use crate::services::memory::MemoryCollection;
 use query_sieve::MemoryScope;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

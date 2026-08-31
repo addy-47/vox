@@ -13,12 +13,17 @@ mod common;
 use clap::Parser;
 use common::audio::{load_wav, resolve_clip_path};
 use common::harness::{benchmark_streaming_provider, BenchmarkClip};
-use common::reporting::{generate_run_id, save_benchmark_report, BenchmarkReport, BenchmarkSystemInfo};
+use common::reporting::{
+    generate_run_id, save_benchmark_report, BenchmarkReport, BenchmarkSystemInfo,
+};
 use std::path::PathBuf;
 use vox_lib::services::stt::providers::{EmbeddedSttProvider, SttProvider};
 
 #[derive(Parser, Debug)]
-#[command(name = "stt_bench", about = "Vox Realtime Passive Streaming STT Benchmark Harness")]
+#[command(
+    name = "stt_bench",
+    about = "Vox Realtime Passive Streaming STT Benchmark Harness"
+)]
 struct CliArgs {
     /// Model to benchmark: 'nemotron', 'qwen', or 'all'
     #[arg(long, default_value = "all")]
@@ -114,8 +119,7 @@ fn load_benchmark_clips(args: &CliArgs) -> Vec<BenchmarkClip> {
     if let Some(ref single_clip) = args.clip {
         let clip_path = resolve_clip_path(single_clip, args.input_dir.as_deref())
             .unwrap_or_else(|e| panic!("{}", e));
-        let (audio, duration_s) = load_wav(&clip_path)
-            .unwrap_or_else(|e| panic!("{}", e));
+        let (audio, duration_s) = load_wav(&clip_path).unwrap_or_else(|e| panic!("{}", e));
 
         let filename = clip_path
             .file_name()
@@ -153,13 +157,13 @@ fn load_benchmark_clips(args: &CliArgs) -> Vec<BenchmarkClip> {
 
         for path in wav_paths {
             let filename = path.file_name().unwrap().to_string_lossy().to_string();
-            let (audio, duration_s) = load_wav(&path)
-                .unwrap_or_else(|e| panic!("{}", e));
-            let (lang, expected) = if let Some(canon) = CANONICAL_TEST_CLIPS.iter().find(|c| c.filename == filename) {
-                (canon.lang.to_string(), canon.expected_text.to_string())
-            } else {
-                ("CUSTOM".to_string(), String::new())
-            };
+            let (audio, duration_s) = load_wav(&path).unwrap_or_else(|e| panic!("{}", e));
+            let (lang, expected) =
+                if let Some(canon) = CANONICAL_TEST_CLIPS.iter().find(|c| c.filename == filename) {
+                    (canon.lang.to_string(), canon.expected_text.to_string())
+                } else {
+                    ("CUSTOM".to_string(), String::new())
+                };
             clips.push(BenchmarkClip {
                 filename,
                 lang,
@@ -171,10 +175,8 @@ fn load_benchmark_clips(args: &CliArgs) -> Vec<BenchmarkClip> {
     } else {
         println!("Loading canonical test clips...");
         for clip in CANONICAL_TEST_CLIPS {
-            let path = resolve_clip_path(clip.filename, None)
-                .unwrap_or_else(|e| panic!("{}", e));
-            let (audio, duration_s) = load_wav(&path)
-                .unwrap_or_else(|e| panic!("{}", e));
+            let path = resolve_clip_path(clip.filename, None).unwrap_or_else(|e| panic!("{}", e));
+            let (audio, duration_s) = load_wav(&path).unwrap_or_else(|e| panic!("{}", e));
             clips.push(BenchmarkClip {
                 filename: clip.filename.to_string(),
                 lang: clip.lang.to_string(),
@@ -200,8 +202,14 @@ fn main() {
     let qwen_dir = home.join(".vox/models/stt/qwen3-asr");
 
     println!("Model Paths:");
-    println!("  Nemotron-3.5 Multilingual (sherpa-onnx 1.13.6): {:?}", nemotron_dir);
-    println!("  Qwen3-ASR (sherpa-onnx 1.13.6)              : {:?}", qwen_dir);
+    println!(
+        "  Nemotron-3.5 Multilingual (sherpa-onnx 1.13.6): {:?}",
+        nemotron_dir
+    );
+    println!(
+        "  Qwen3-ASR (sherpa-onnx 1.13.6)              : {:?}",
+        qwen_dir
+    );
     println!("Configuration:");
     println!("  Target Model   : {}", args.model);
     println!("  Min Similarity : {:.2}", args.min_similarity);
@@ -212,8 +220,14 @@ fn main() {
     let loaded_clips = load_benchmark_clips(&args);
     println!("Loaded {} test clips successfully.\n", loaded_clips.len());
 
-    let run_nemotron = matches!(args.model.to_lowercase().as_str(), "nemotron" | "nvidia_nemotron" | "all");
-    let run_qwen = matches!(args.model.to_lowercase().as_str(), "qwen" | "qwen3_asr" | "all");
+    let run_nemotron = matches!(
+        args.model.to_lowercase().as_str(),
+        "nemotron" | "nvidia_nemotron" | "all"
+    );
+    let run_qwen = matches!(
+        args.model.to_lowercase().as_str(),
+        "qwen" | "qwen3_asr" | "all"
+    );
 
     let mut engine_runs = Vec::new();
 
@@ -234,7 +248,10 @@ fn main() {
             );
             engine_runs.push(run);
         } else {
-            eprintln!("[WARN] Nemotron-3.5 model directory not found at {:?}", nemotron_dir);
+            eprintln!(
+                "[WARN] Nemotron-3.5 model directory not found at {:?}",
+                nemotron_dir
+            );
         }
     }
 
@@ -255,14 +272,17 @@ fn main() {
             );
             engine_runs.push(run);
         } else {
-            eprintln!("[WARN] Qwen3-ASR model directory not found at {:?}", qwen_dir);
+            eprintln!(
+                "[WARN] Qwen3-ASR model directory not found at {:?}",
+                qwen_dir
+            );
         }
     }
 
     // 3. Persist Benchmark Results to JSON Artifact
-    let base_output_dir = args.output_dir.unwrap_or_else(|| {
-        PathBuf::from("benches/results/stt_bench")
-    });
+    let base_output_dir = args
+        .output_dir
+        .unwrap_or_else(|| PathBuf::from("benches/results/stt_bench"));
 
     let run_id = generate_run_id();
     let report = BenchmarkReport {
@@ -280,7 +300,9 @@ fn main() {
             println!("Run ID   : {}", run_id);
             println!("Report   : {:?}", saved_path);
             println!("Latest   : {:?}", base_output_dir.join("latest.json"));
-            println!("================================================================================");
+            println!(
+                "================================================================================"
+            );
         }
         Err(e) => {
             eprintln!("\n[ERROR] Failed to persist benchmark report: {}", e);
@@ -288,16 +310,28 @@ fn main() {
     }
 
     // 4. Evaluate Threshold Gate (when running primary Nemotron engine on canonical/clip datasets)
-    if let Some(nemotron_run) = engine_runs.iter().find(|r| r.model_type == "nvidia_nemotron") {
+    if let Some(nemotron_run) = engine_runs
+        .iter()
+        .find(|r| r.model_type == "nvidia_nemotron")
+    {
         let mut failed_clips = Vec::new();
         for clip in &nemotron_run.clips {
             if !clip.ground_truth.is_empty() && (clip.similarity as f32) < args.min_similarity {
-                failed_clips.push((clip.filename.clone(), clip.similarity, clip.ground_truth.clone(), clip.hypothesis.clone()));
+                failed_clips.push((
+                    clip.filename.clone(),
+                    clip.similarity,
+                    clip.ground_truth.clone(),
+                    clip.hypothesis.clone(),
+                ));
             }
         }
 
         if !failed_clips.is_empty() {
-            eprintln!("\n[BENCHMARK FAILED] {} clips fell below similarity threshold ({:.2}):", failed_clips.len(), args.min_similarity);
+            eprintln!(
+                "\n[BENCHMARK FAILED] {} clips fell below similarity threshold ({:.2}):",
+                failed_clips.len(),
+                args.min_similarity
+            );
             for (fname, sim, gt, hyp) in failed_clips {
                 eprintln!("  • {:<24} (Sim: {:>5.1}%)", fname, sim * 100.0);
                 eprintln!("      Ground Truth : {}", gt);
@@ -305,7 +339,10 @@ fn main() {
             }
             std::process::exit(1);
         } else {
-            println!("\n[BENCHMARK PASSED] All clips met similarity threshold (>= {:.2}).", args.min_similarity);
+            println!(
+                "\n[BENCHMARK PASSED] All clips met similarity threshold (>= {:.2}).",
+                args.min_similarity
+            );
         }
     }
 }

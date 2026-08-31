@@ -25,11 +25,12 @@ use common::paths::get_asset_path;
 
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{AudioOutputMode, InteractionMode, RealtimeProviderKind};
-use vox_lib::core::state::{InteractionState, VadCommand};
+use vox_lib::core::state::InteractionState;
 use vox_lib::pipeline::realtime::ptt::{ptt_cancel, ptt_start, ptt_stop};
 use vox_lib::services::realtime::engine::RealtimeEngine;
 use vox_lib::services::realtime::{RealtimeAudioConfig, RealtimeSession, RealtimeVoiceProvider};
 use vox_lib::services::vad::VadActorConfig;
+use vox_lib::services::vad::VadCommand;
 
 /// Mock Realtime Session that counts audio chunks pushed and activity signals.
 struct MockRealtimeSession {

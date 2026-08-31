@@ -1,13 +1,10 @@
-//! ============================================================================
-//! src/ipc/settings/mutation.rs — Setting update, mutation logic, and persistence commands
-//! ============================================================================
-
+use crate::core::events::{emit_ipc, IpcEvent};
 use crate::core::settings::{
     get_setting_reload_policy, InteractionMode, SettingReloadPolicy, VoxSettings,
 };
 use crate::core::state::AppState;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 // ─── Debounce constant ────────────────────────────────────────────────────────
 
@@ -48,11 +45,17 @@ async fn handle_dictation_side_effects(
         let menu_item_lock = state.hud_menu_item.lock();
         if let Some(ref live_i) = *menu_item_lock {
             if let Err(e) = live_i.set_enabled(is_clickable) {
-                log::warn!("[Settings::Mutation] Failed to set menu item enabled: {}", e);
+                log::warn!(
+                    "[Settings::Mutation] Failed to set menu item enabled: {}",
+                    e
+                );
             }
             let hud_visible = state.hud_visible.load(std::sync::atomic::Ordering::Relaxed);
             if let Err(e) = live_i.set_checked(hud_visible && is_clickable) {
-                log::warn!("[Settings::Mutation] Failed to set menu item checked: {}", e);
+                log::warn!(
+                    "[Settings::Mutation] Failed to set menu item checked: {}",
+                    e
+                );
             }
         }
 
@@ -76,9 +79,7 @@ async fn handle_dictation_side_effects(
             let app_clone = app.clone();
             let state_clone = app.state::<std::sync::Arc<AppState>>().inner().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) =
-                    crate::core::start_audio_engine(&app_clone, &state_clone).await
-                {
+                if let Err(e) = crate::core::start_audio_engine(&app_clone, &state_clone).await {
                     log::error!("[Settings] Failed to launch engine for dictation: {}", e);
                 }
             });
@@ -95,11 +96,17 @@ async fn handle_dictation_side_effects(
         let menu_item_lock = state.hud_menu_item.lock();
         if let Some(ref live_i) = *menu_item_lock {
             if let Err(e) = live_i.set_enabled(is_clickable) {
-                log::warn!("[Settings::Mutation] Failed to set menu item enabled: {}", e);
+                log::warn!(
+                    "[Settings::Mutation] Failed to set menu item enabled: {}",
+                    e
+                );
             }
             let hud_visible = state.hud_visible.load(std::sync::atomic::Ordering::Relaxed);
             if let Err(e) = live_i.set_checked(hud_visible && is_clickable) {
-                log::warn!("[Settings::Mutation] Failed to set menu item checked: {}", e);
+                log::warn!(
+                    "[Settings::Mutation] Failed to set menu item checked: {}",
+                    e
+                );
             }
         }
 
@@ -156,7 +163,7 @@ async fn handle_interaction_side_effects(
                 {
                     if let Err(e) = engine
                         .vad_tx
-                        .send(crate::core::state::VadCommand::UpdateMode(mode))
+                        .send(crate::services::vad::VadCommand::UpdateMode(mode))
                     {
                         log::warn!("[Settings] Failed to send VadCommand::UpdateMode: {}", e);
                     }
@@ -189,10 +196,16 @@ async fn handle_setting_side_effects(
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
             if let Err(e) = crate::ipc::pipeline::stop_engine(app_clone.clone()).await {
-                log::warn!("[Settings::Mutation] Failed to stop engine on VAD swap: {}", e);
+                log::warn!(
+                    "[Settings::Mutation] Failed to stop engine on VAD swap: {}",
+                    e
+                );
             }
             if let Err(e) = crate::ipc::pipeline::launch_engine(app_clone).await {
-                log::warn!("[Settings::Mutation] Failed to launch engine on VAD swap: {}", e);
+                log::warn!(
+                    "[Settings::Mutation] Failed to launch engine on VAD swap: {}",
+                    e
+                );
             }
         });
     }
@@ -242,14 +255,11 @@ pub async fn update_setting(
     let message = format!("{}.{} = {} — {}", domain, key, value, action_label);
     log::info!("[Settings] Updated: {}", message);
 
-    if domain == "appearance" && key == "theme" {
-        if let Err(e) = app.emit("theme-changed", value.as_str().unwrap_or("dark")) {
-            log::warn!("[Settings::Mutation] Failed to emit theme-changed: {}", e);
-        }
-    }
-
-    if let Err(e) = app.emit("settings-updated", ()) {
-        log::warn!("[Settings::Mutation] Failed to emit settings-updated: {}", e);
+    if let Err(e) = emit_ipc(&app, IpcEvent::SettingsUpdated) {
+        log::warn!(
+            "[Settings::Mutation] Failed to emit settings-updated: {}",
+            e
+        );
     }
 
     Ok(SettingUpdateResult {
@@ -269,9 +279,11 @@ pub async fn reset_settings(app: AppHandle) -> Result<VoxSettings, String> {
         *settings = defaults.clone();
     }
 
-    // Immediate apply for theme and other hot settings
-    if let Err(e) = app.emit("theme-changed", defaults.appearance.theme.clone()) {
-        log::warn!("[Settings::Mutation] Failed to emit theme-changed: {}", e);
+    if let Err(e) = emit_ipc(&app, IpcEvent::SettingsUpdated) {
+        log::warn!(
+            "[Settings::Mutation] Failed to emit settings-updated: {}",
+            e
+        );
     }
 
     schedule_debounced_save(state.clone()).await;
@@ -561,8 +573,7 @@ fn apply_tts_mutation(
         "quality_steps" => {
             let val = value
                 .as_u64()
-                .ok_or("quality_steps must be a positive integer")?
-                as u32;
+                .ok_or("quality_steps must be a positive integer")? as u32;
             if !(1..=20).contains(&val) {
                 return Err("quality_steps must be between 1 and 20".to_string());
             }
@@ -892,7 +903,7 @@ async fn dispatch_worker_command(
                 if let Some(v) = value.as_f64() {
                     if let Err(e) = engine
                         .vad_tx
-                        .send(crate::core::state::VadCommand::UpdateThreshold(v as f32))
+                        .send(crate::services::vad::VadCommand::UpdateThreshold(v as f32))
                     {
                         log::warn!(
                             "[Settings] Failed to send VadCommand::UpdateThreshold: {}",
@@ -906,7 +917,7 @@ async fn dispatch_worker_command(
                 if let Some(v) = value.as_f64() {
                     if let Err(e) = engine
                         .vad_tx
-                        .send(crate::core::state::VadCommand::UpdateNoiseGate(v as f32))
+                        .send(crate::services::vad::VadCommand::UpdateNoiseGate(v as f32))
                     {
                         log::warn!(
                             "[Settings] Failed to send VadCommand::UpdateNoiseGate: {}",
@@ -922,7 +933,7 @@ async fn dispatch_worker_command(
                 {
                     if let Err(e) = engine
                         .vad_tx
-                        .send(crate::core::state::VadCommand::UpdateAudioMode(mode))
+                        .send(crate::services::vad::VadCommand::UpdateAudioMode(mode))
                     {
                         log::warn!(
                             "[Settings] Failed to send VadCommand::UpdateAudioMode: {}",

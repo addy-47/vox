@@ -51,22 +51,20 @@ impl VoxDb {
     /// Open a connection for IPC history queries without re-issuing writer pragmas.
     pub async fn open_readonly(path: &std::path::Path) -> Result<Connection, PersistenceError> {
         let path_str = path.to_string_lossy();
-        let db = Builder::new_local(&path_str)
-            .build()
-            .await?;
+        let db = Builder::new_local(&path_str).build().await?;
         let conn = db.connect()?;
         let timeout_pragma = format!("PRAGMA busy_timeout = {};", SQLITE_BUSY_TIMEOUT_MS);
         if let Err(e) = conn.execute(&timeout_pragma, ()).await {
-            log::warn!("[Persistence::Db] Failed to set busy_timeout on readonly connection: {}", e);
+            log::warn!(
+                "[Persistence::Db] Failed to set busy_timeout on readonly connection: {}",
+                e
+            );
         }
         Ok(conn)
     }
 
     /// Executes a future within a SQLite transaction with automatic rollback on error.
-    pub async fn with_transaction<Fut, T>(
-        conn: &Connection,
-        fut: Fut,
-    ) -> Result<T, String>
+    pub async fn with_transaction<Fut, T>(conn: &Connection, fut: Fut) -> Result<T, String>
     where
         Fut: std::future::Future<Output = Result<T, String>>,
     {
@@ -90,4 +88,3 @@ impl VoxDb {
         }
     }
 }
-

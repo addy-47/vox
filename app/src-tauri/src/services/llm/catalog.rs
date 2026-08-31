@@ -188,7 +188,9 @@ pub static PROVIDER_CATALOG: &[ProviderPresetMeta] = &[
 /// Looks up a provider preset by identifier.
 pub fn lookup_preset(id: &str) -> Option<&'static ProviderPresetMeta> {
     let lower = id.to_lowercase();
-    PROVIDER_CATALOG.iter().find(|p| p.id == lower || p.name.to_lowercase() == lower)
+    PROVIDER_CATALOG
+        .iter()
+        .find(|p| p.id == lower || p.name.to_lowercase() == lower)
 }
 
 /// Returns the complete list of available provider presets.

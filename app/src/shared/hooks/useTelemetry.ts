@@ -1,12 +1,7 @@
 import { useEffect, useRef } from 'react';
+import { onTelemetry, type TelemetryData } from '@/services/eventsService';
 
-export interface TelemetryData {
-  energy: number;
-  vad_prob: number;
-  low: number;
-  mid: number;
-  high: number;
-}
+export type { TelemetryData };
 
 /**
  * useTelemetry provides access to high-frequency audio telemetry data
@@ -20,31 +15,19 @@ export const useTelemetry = () => {
     let isMounted = true;
     let unlisten: (() => void) | null = null;
 
-    const setup = async () => {
-      try {
-        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-          const { getCurrentWindow } = await import('@tauri-apps/api/window');
-          if (!isMounted) return;
-          const appWindow = getCurrentWindow();
-          const unlistenFn = await appWindow.listen<TelemetryData>('telemetry', (event) => {
-            if (isMounted) {
-              telemetryRef.current = event.payload;
-            }
-          });
+    try {
+      if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+        unlisten = onTelemetry((payload) => {
           if (isMounted) {
-            unlisten = unlistenFn;
-          } else {
-            unlistenFn();
+            telemetryRef.current = payload;
           }
-        }
-      } catch (err) {
-        if (isMounted) {
-          console.error('[Telemetry] Failed to setup listener:', err);
-        }
+        });
       }
-    };
-
-    setup();
+    } catch (err) {
+      if (isMounted) {
+        console.error('[Telemetry] Failed to setup listener:', err);
+      }
+    }
 
     return () => {
       isMounted = false;

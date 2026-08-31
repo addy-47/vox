@@ -40,7 +40,7 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
-## 2.1 Execution & Testing Invariants (All Agents)
+## 3 Execution & Testing Invariants (All Agents)
 
 1. **Sequential Execution:** Run performance-sensitive tasks (benchmarks, evals, test suites) strictly one at a time to prevent CPU, memory, and I/O contention.
 2. **Release / Optimized Mode:** Always run performance measurements and benchmarks under release mode (`--release`). Debug builds produce invalid metrics.
@@ -54,7 +54,20 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
-## 3. HARD GATE: Code Modification Gate
+## 4. Invariants and Workflow Gates
+
+### 4.1 Critical Architectural & Logical Invariants (Non-Negotiable Concepts)
+
+1. **Single Source of Truth for State:** `InteractionState` (`Idle, Ready, Listening, Thinking, Speaking, Paused, Error`) and `DictationState` (`Idle, Recording, Transcribing, Error`) are the sole sources of truth. Synthetic lifecycle booleans (`is_engaged`, `is_recording`, `is_connected`, `is_speaking`, `is_sleeping` are strictly banned across Rust and TypeScript.
+2. **Registry-Owned Event Contracts:** `core/events.rs` is the SSOT for all cross-boundary events. Internal pipeline events belong to `VoxEvent`; IPC events belong to `IpcEvent` with strongly typed payloads. Raw string event literals are forbidden at emit and listen sites; frontend mirrors the registry via `IpcEventMap`.
+3. **Sacred Audio Hot Path:** Zero dynamic memory allocations, zero lock acquisitions (`Mutex`/`RwLock`), and zero blocking I/O on the CPAL audio thread and VAD inference loop. Ring buffers must be lock-free and pre-allocated.
+4. **Actor-Engine Separation & Thread Isolation:** CPU/GPU-heavy model inference (Whisper STT, ONNX VAD, Llama LLM, Chatterbox TTS) runs strictly on dedicated background OS threads (`std::thread`). Tokio runtime is reserved strictly for async I/O, IPC routing, and network WebSockets.
+5. **Strict Frontend Service Boundary:** React components and hooks must never directly call `@tauri-apps/api/core` (`invoke`) or `@tauri-apps/api/event` (`listen`). All backend interactions must route through strongly-typed singleton service modules in `src/services/`.
+6. **React 19 Context Memoization & Selector Discipline:** Provider values must be wrapped in `useMemo`. Zustand store state must be queried via fine-grained atomic selectors (`(s) => s.field`) rather than consuming entire store snapshots, preventing cascading render loops.
+7. **Centralized Monotonic Turn ID Progression:** Monotonic turn IDs must be generated exclusively at turn boundaries via `AppState::next_turn_id()`. Turn IDs must never be reset to 0, fragmented across parallel actors, or fabricated with dummy values.
+8. **Single-Consumer Audio Stream Invariant:** Audio ring buffers and input channels must have exactly one consumer (`VadActor`). Never attach secondary or ad-hoc readers to production audio streams.
+
+### 4.2. HARD GATE: Code Modification Gate
 
 > 🛑 **MANDATORY CONTEXT GATE:**
 >
@@ -65,7 +78,7 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 ---
 
-## 4. Agent Roles
+### 4.3 Agent Roles
 
 | Role                 | Rule File                               | Scope                                                            |
 | -------------------- | --------------------------------------- | ---------------------------------------------------------------- |
@@ -93,3 +106,9 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 - **Realtime Passive Review & Hardening:** Fixed audio passthrough leak on `pause_session` by dispatching `VadCommand::StopRealtime`; wired Hindi/Hinglish `transliterate_if_hi` on partial/final realtime transcripts before UI emit; resolved barge-in turn ID desync to persist interrupted turns under their actual turn ID.
 - **ConversationManager & ContextHarness Decoupling:** Cleanly separated pure dialog turn & prompt state (`ConversationManager`) from modular LLM token budgeting, sliding-window FIFO, and compaction state (`ContextHarness`), ensuring Realtime S2S domains have zero coupling or overhead to context compaction machinery. Added `#![recursion_limit = "256"]` to `lib.rs` for deep async Tauri handler state machines.
 - **End-to-End Trace Alignment across 4 Voice Domains:** Reconstructed runtime flow artifacts across all four pipeline domains (Modular Passive, Modular PTT, Realtime Passive, Realtime PTT) using the strict `trace` skill discipline, grounding every lifecycle step with verified code citations, actor boundary directions, triggers, and subsystem owners.
+- **Gemini Live Protocol & Orchestration Specification:** Authored [`GEMINI_LIVE_PROTOCOL.md`](file:///home/addy/projects/apps/vox/GEMINI_LIVE_PROTOCOL.md) defining language-agnostic signals, framing, barge-in guarantees, tool dispatch models, and Rust actor translation mapping.
+- **Deepgram Voice Agent Protocol & Orchestration Specification:** Authored [`DEEPGRAM_VOICE_AGENT_PROTOCOL.md`](file:///home/addy/projects/apps/vox/DEEPGRAM_VOICE_AGENT_PROTOCOL.md) defining Deepgram's Voice Agent API (`/v1/agent/converse`), managed triad architecture (`listen`+`think`+`speak`), `Settings` handshake, `InjectAgentMessage`, function calling, and Rust Tokio actor blueprints.
+- **Codebase Event Architecture & Registry Audit:** Authored [`EVENT_REGISTRY_AUDIT.md`](file:///home/addy/projects/apps/vox/EVENT_REGISTRY_AUDIT.md) providing an exhaustive census and cross-boundary audit of all 65+ events across Tauri IPC, `VoxEvent`, `TelemetryEvent`, `PersistenceEvent`, `MemoryWorkerEvent`, `ControlEvent`, and actor commands; cataloged owners, payloads, and consumers, flagging unconsumed events and identifying the broken `'audio_energy'` wizard telemetry listener.
+- **Canonical Interruption & VAD Encapsulation Refactor:** Decoupled `VadCommand::SetOperationalMode` out of assistant IPC `start_session` directly into domain starters (`modular::passive`, `modular::ptt`); retained `realtime_session.json` cache on network retries exhaustion for UI reconnect; purged legacy fragmented `realtime_barge_in()` helpers; introduced canonical `VoxEvent::Interrupted` dispatched by Gemini (`serverContent.interrupted`) and Deepgram (`UserStartedSpeaking`); implemented isolated `on_interrupt` across all 4 voice domains with guaranteed SQLite turn persistence and zero nominal handler entanglement.
+- **Event Architecture Refactor & Dead Event Pruning (Sprints 1–5):** Consolidated Tauri IPC and internal actor busses to strict SSOT streams; renamed `toggle_hud` $\to$ `toggle_tray` and `pipeline_error` $\to$ `voice_error`; unified dictation state machine emissions into universal `state_changed({ owner, state, turn_id })`; consolidated all model setup events into `model_progress`; pruned 15+ dead and redundant events (`theme-changed`, `mode_changed`, `dictation_success`, `runtime_booting`, `model_loading`, etc.); fixed Setup Wizard microphone energy meter by replacing phantom `audio_energy` with canonical `telemetry.energy`; dynamically re-polled CPU governor in monitoring collector; full Vitest suite (99/99) and Vite build verified green.
+- **Strictly Registry-Owned Event SSOT & Invariants Formalization:** Established `core/events.rs` as the single source of truth for all cross-boundary events with `IpcEvent` enum and typed payloads (`StateChangedPayload`, `TranscriptPayload`, `LlmTokenPayload`, `VoiceErrorPayload`, `ModelSetupStatus`, `TelemetryData`, `SystemStatsPayload`); eliminated all raw event strings from backend emit sites; consolidated remote GPU server setup into `ModelProgress`; mirrored IPC contract in TypeScript via `IpcEventMap` with generic compile-time checked `eventsService.on<K>()`; codified Event Contracts in backend style guide and synthesized 8 non-negotiable critical invariants into `AGENTS.md` Section 4.1.

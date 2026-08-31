@@ -20,7 +20,10 @@ struct ResponsesEvent {
 }
 
 /// Builds the HTTP POST request payload for the OpenAI Responses API.
-pub fn build_request_body(config: &ConnectionConfig, request: &GenerationRequest) -> serde_json::Value {
+pub fn build_request_body(
+    config: &ConnectionConfig,
+    request: &GenerationRequest,
+) -> serde_json::Value {
     let mut system_instructions = None;
     let mut input_items = Vec::new();
 
@@ -50,7 +53,10 @@ pub fn build_request_body(config: &ConnectionConfig, request: &GenerationRequest
         body.insert("top_p".to_string(), serde_json::json!(top_p));
     }
     if let Some(max_tokens) = request.options.max_output_tokens {
-        body.insert("max_output_tokens".to_string(), serde_json::json!(max_tokens));
+        body.insert(
+            "max_output_tokens".to_string(),
+            serde_json::json!(max_tokens),
+        );
     }
 
     match &request.output {
@@ -223,7 +229,9 @@ pub async fn stream_responses(
 mod tests {
     use super::*;
     use crate::services::llm::config::TokenLimitField;
-    use crate::services::llm::types::{ConversationInput, GenerationOptions, GenerationPurpose, OutputConstraint};
+    use crate::services::llm::types::{
+        ConversationInput, GenerationOptions, GenerationPurpose, OutputConstraint,
+    };
     use crate::services::memory::{ChatMessage as MemMsg, Role};
 
     #[test]
@@ -290,8 +298,12 @@ mod tests {
     #[test]
     fn test_responses_typed_event_parsing() {
         let json_line = r#"{"type":"response.output_text.delta","delta":"Vox is ready."}"#;
-        let event = serde_json::from_str::<ResponsesEvent>(json_line).expect("must parse typed event");
-        assert_eq!(event.event_type.as_deref(), Some("response.output_text.delta"));
+        let event =
+            serde_json::from_str::<ResponsesEvent>(json_line).expect("must parse typed event");
+        assert_eq!(
+            event.event_type.as_deref(),
+            Some("response.output_text.delta")
+        );
         assert_eq!(event.delta.as_deref(), Some("Vox is ready."));
     }
 }

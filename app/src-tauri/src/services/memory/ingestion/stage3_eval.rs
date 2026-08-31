@@ -1,13 +1,11 @@
 use super::{BatchEvaluationResult, CandidateAuditLog, RelationEdge};
-use crate::core::constants::{
-    is_valid_inter_collection_pair, MemoryCollection, PM_QUEUE_STATUS_EMBEDDED,
-    PM_QUEUE_STATUS_EVALUATED, PM_QUEUE_STATUS_PROCESSING_EVAL, PM_QUEUE_STATUS_SUPERSEDED,
-    PM_RELATION_CONFLICTS, PM_RELATION_SUPERSEDES, PM_RELATION_SUPPORTS,
-};
 use crate::persistence::{decode_f32_blob, queries};
 use crate::services::memory::ml::edge_classifier as inter_edge_classifier;
 use crate::services::memory::ml::nli::{
     classify_batch, ensure_nli_loaded, relation_from_result, NliRelation,
+};
+use crate::services::memory::{
+    is_valid_inter_collection_pair, MemoryCollection, QueueStatus, Relation,
 };
 use crate::services::memory::{
     INTER_COLLECTION_CANDIDATE_SEARCH, NLI_CONTRADICTION_CONFIDENCE_THRESHOLD,
@@ -79,9 +77,9 @@ fn eval_subbranch_a_nli_sync(
                 if confident_score {
                     let (fwd, inv) =
                         if item.collection == "Identity" || item.collection == "Directives" {
-                            (PM_RELATION_SUPERSEDES, "superseded_by")
+                            (Relation::Supersedes.as_str(), "superseded_by")
                         } else {
-                            (PM_RELATION_CONFLICTS, "conflicts_with")
+                            (Relation::Conflicts.as_str(), "conflicts_with")
                         };
                     decision = fwd.to_string();
                     relations.push(RelationEdge {
@@ -102,11 +100,11 @@ fn eval_subbranch_a_nli_sync(
             }
             NliRelation::Supports => {
                 if nli_res.entailment >= NLI_ENTAILMENT_CONFIDENCE_THRESHOLD {
-                    decision = PM_RELATION_SUPPORTS.to_string();
+                    decision = Relation::Supports.as_str().to_string();
                     relations.push(RelationEdge {
                         from_id: format!("item_{}", item.id),
                         to_id: cand_id.clone(),
-                        relation: PM_RELATION_SUPPORTS.to_string(),
+                        relation: Relation::Supports.as_str().to_string(),
                         source: "NLI".to_string(),
                     });
                     relations.push(RelationEdge {
@@ -186,13 +184,11 @@ fn eval_subbranch_b_edges_sync(
                 )
             };
 
-            match inter_edge_classifier::classify_edge(
-                src_coll, src_fact, tgt_coll, tgt_fact,
-            ) {
+            match inter_edge_classifier::classify_edge(src_coll, src_fact, tgt_coll, tgt_fact) {
                 Ok((Some(pred_edge), score)) => {
                     edge_score_val = Some(score);
                     decision = pred_edge.clone();
-                    let inv_edge = crate::core::constants::inverse_edge_for_relation(&pred_edge);
+                    let inv_edge = crate::services::memory::inverse_edge_for_relation(&pred_edge);
 
                     if is_forward {
                         relations.push(RelationEdge {
@@ -288,7 +284,7 @@ async fn claim_embedded_items(conn: &Connection, now: i64) -> Result<Vec<Stage3I
     for item in candidate_items {
         let updated = conn.execute(
             "UPDATE personal_memory_queue SET status = ?, claimed_at = ? WHERE id = ? AND status = ?",
-            (PM_QUEUE_STATUS_PROCESSING_EVAL, now, item.id, PM_QUEUE_STATUS_EMBEDDED),
+            (QueueStatus::ProcessingEval.as_str(), now, item.id, QueueStatus::Embedded.as_str()),
         )
         .await?;
 
@@ -305,7 +301,7 @@ async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()
     if item.vector.is_empty() {
         conn.execute(
             "UPDATE personal_memory_queue SET status = ?, relations_json = '[]' WHERE id = ?",
-            (PM_QUEUE_STATUS_EVALUATED, item.id),
+            (QueueStatus::Evaluated.as_str(), item.id),
         )
         .await?;
         return Ok(());
@@ -325,7 +321,7 @@ async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()
         .iter()
         .copied()
         .filter(|&tgt| {
-            crate::core::constants::has_inter_collection_relationship(&item.collection, tgt)
+            crate::services::memory::has_inter_collection_relationship(&item.collection, tgt)
         })
         .collect();
 
@@ -366,7 +362,7 @@ async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()
     let item_target_id = format!("item_{}", item.id);
     let is_superseded = all_relations
         .iter()
-        .any(|rel| rel.to_id == item_target_id && rel.relation == PM_RELATION_SUPERSEDES);
+        .any(|rel| rel.to_id == item_target_id && rel.relation == Relation::Supersedes.as_str());
 
     let eval_result = BatchEvaluationResult {
         item_id: item.id,
@@ -379,9 +375,9 @@ async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()
     let json_str =
         serde_json::to_string(&eval_result.relations).unwrap_or_else(|_| "[]".to_string());
     let new_status = if eval_result.is_superseded {
-        PM_QUEUE_STATUS_SUPERSEDED
+        QueueStatus::Superseded.as_str()
     } else {
-        PM_QUEUE_STATUS_EVALUATED
+        QueueStatus::Evaluated.as_str()
     };
 
     conn.execute(
@@ -398,7 +394,10 @@ async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()
         )
         .await
         {
-            log::warn!("[MemoryPipeline::Stage3] Failed to write candidate audit: {}", e);
+            log::warn!(
+                "[MemoryPipeline::Stage3] Failed to write candidate audit: {}",
+                e
+            );
         }
     }
 
@@ -448,7 +447,11 @@ pub async fn run_stage3_eval_with_metrics_seq(
         match evaluate_stage3_item(conn, item).await {
             Ok(()) => processed_count += 1,
             Err(e) => {
-                log::error!("[MemoryPipeline::Stage3] Error evaluating item {}: {}", item.id, e);
+                log::error!(
+                    "[MemoryPipeline::Stage3] Error evaluating item {}: {}",
+                    item.id,
+                    e
+                );
                 error_count += 1;
             }
         }
@@ -467,7 +470,10 @@ pub async fn run_stage3_eval_with_metrics_seq(
             duration_ms,
         };
         if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {
-            log::warn!("[MemoryPipeline::Stage3] Failed to record stage metrics: {}", e);
+            log::warn!(
+                "[MemoryPipeline::Stage3] Failed to record stage metrics: {}",
+                e
+            );
         }
     }
 

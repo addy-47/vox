@@ -52,7 +52,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
     let localEnergy = 0;
     const THROTTLE_MS = 60;
 
-    const unlisten = listen<any>('audio_energy', (event) => {
+    const unlisten = listen<{ energy?: number }>('telemetry', (event) => {
       const val = typeof event.payload === 'number' ? event.payload : event.payload?.energy || 0;
       const targetEnergy = val * 100;
       

@@ -1,10 +1,7 @@
 use super::RelationEdge;
-use crate::core::constants::{
-    PM_QUEUE_STATUS_DEDUPED, PM_QUEUE_STATUS_EMBEDDED, PM_QUEUE_STATUS_PROCESSING_EMBED,
-    PM_QUEUE_STATUS_SUPERSEDED, PM_RELATION_SUPERSEDES,
-};
 use crate::persistence::{encode_f32_blob, mutations, queries};
 use crate::services::memory::ml::embedder::{ensure_embedder_loaded, generate_embedding};
+use crate::services::memory::{QueueStatus, Relation};
 use crate::services::memory::{SOFT_VECTOR_DEDUP_THRESHOLD, STAGE2_BATCH_SIZE};
 use anyhow::Result;
 use turso::Connection;
@@ -40,7 +37,7 @@ async fn claim_deduped_items(conn: &Connection, now: i64) -> Result<Vec<Stage2It
     for item in candidate_items {
         let updated = conn.execute(
             "UPDATE personal_memory_queue SET status = ?, claimed_at = ? WHERE id = ? AND status = ?",
-            (PM_QUEUE_STATUS_PROCESSING_EMBED, now, item.id, PM_QUEUE_STATUS_DEDUPED),
+            (QueueStatus::ProcessingEmbed.as_str(), now, item.id, QueueStatus::Deduped.as_str()),
         )
         .await?;
 
@@ -57,7 +54,7 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
     if item.collection == "Narrative" {
         conn.execute(
             "UPDATE personal_memory_queue SET status = ?, vector = NULL WHERE id = ?",
-            (PM_QUEUE_STATUS_EMBEDDED, item.id),
+            (QueueStatus::Embedded.as_str(), item.id),
         )
         .await?;
         return Ok(true);
@@ -78,10 +75,10 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
             .unwrap_or_default();
 
             let best_match = soft_dups.iter().max_by(|a, b| {
-                let prio_a = crate::core::constants::MemoryCollection::parse(&a.2)
+                let prio_a = crate::services::memory::MemoryCollection::parse(&a.2)
                     .map(|c| c.priority())
                     .unwrap_or(0);
-                let prio_b = crate::core::constants::MemoryCollection::parse(&b.2)
+                let prio_b = crate::services::memory::MemoryCollection::parse(&b.2)
                     .map(|c| c.priority())
                     .unwrap_or(0);
                 prio_a
@@ -91,25 +88,26 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
 
             if let Some((match_id, match_fact, match_coll, sim)) = best_match {
                 let incoming_priority =
-                    crate::core::constants::MemoryCollection::parse(&item.collection)
+                    crate::services::memory::MemoryCollection::parse(&item.collection)
                         .map(|c| c.priority())
                         .unwrap_or(0);
-                let existing_priority = crate::core::constants::MemoryCollection::parse(match_coll)
-                    .map(|c| c.priority())
-                    .unwrap_or(0);
+                let existing_priority =
+                    crate::services::memory::MemoryCollection::parse(match_coll)
+                        .map(|c| c.priority())
+                        .unwrap_or(0);
 
                 if incoming_priority <= existing_priority {
                     let rel = vec![RelationEdge {
                         from_id: match_id.clone(),
                         to_id: format!("item_{}", item.id),
-                        relation: PM_RELATION_SUPERSEDES.to_string(),
+                        relation: Relation::Supersedes.as_str().to_string(),
                         source: "Embedding".to_string(),
                     }];
                     let rel_json = serde_json::to_string(&rel).unwrap_or_else(|_| "[]".to_string());
 
                     conn.execute(
                         "UPDATE personal_memory_queue SET status = ?, vector = ?, relations_json = ? WHERE id = ?",
-                        (PM_QUEUE_STATUS_SUPERSEDED, blob_bytes, rel_json, item.id),
+                        (QueueStatus::Superseded.as_str(), blob_bytes, rel_json, item.id),
                     )
                     .await?;
 
@@ -124,8 +122,13 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                         matched_fact: match_fact.clone(),
                         score: *sim,
                     };
-                    if let Err(e) = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await {
-                        log::warn!("[MemoryPipeline::Stage2] Failed to write dedup audit: {}", e);
+                    if let Err(e) =
+                        crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await
+                    {
+                        log::warn!(
+                            "[MemoryPipeline::Stage2] Failed to write dedup audit: {}",
+                            e
+                        );
                     }
                 } else {
                     for (m_id, _, _, _) in &soft_dups {
@@ -143,7 +146,7 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                     }
                     conn.execute(
                         "UPDATE personal_memory_queue SET status = ?, vector = ? WHERE id = ?",
-                        (PM_QUEUE_STATUS_EMBEDDED, blob_bytes, item.id),
+                        (QueueStatus::Embedded.as_str(), blob_bytes, item.id),
                     )
                     .await?;
 
@@ -158,14 +161,19 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                         matched_fact: match_fact.clone(),
                         score: *sim,
                     };
-                    if let Err(e) = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await {
-                        log::warn!("[MemoryPipeline::Stage2] Failed to write dedup audit: {}", e);
+                    if let Err(e) =
+                        crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await
+                    {
+                        log::warn!(
+                            "[MemoryPipeline::Stage2] Failed to write dedup audit: {}",
+                            e
+                        );
                     }
                 }
             } else {
                 conn.execute(
                     "UPDATE personal_memory_queue SET status = ?, vector = ? WHERE id = ?",
-                    (PM_QUEUE_STATUS_EMBEDDED, blob_bytes, item.id),
+                    (QueueStatus::Embedded.as_str(), blob_bytes, item.id),
                 )
                 .await?;
             }
@@ -213,9 +221,13 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
     for item in items {
         match process_stage2_item(conn, &item).await {
             Ok(true) => processed_count += 1,
-            Ok(false) => {},
+            Ok(false) => {}
             Err(e) => {
-                log::error!("[MemoryPipeline::Stage2] Error embedding item {}: {}", item.id, e);
+                log::error!(
+                    "[MemoryPipeline::Stage2] Error embedding item {}: {}",
+                    item.id,
+                    e
+                );
                 error_count += 1;
             }
         }
@@ -234,7 +246,10 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
             duration_ms,
         };
         if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {
-            log::warn!("[MemoryPipeline::Stage2] Failed to record stage metrics: {}", e);
+            log::warn!(
+                "[MemoryPipeline::Stage2] Failed to record stage metrics: {}",
+                e
+            );
         }
     }
 

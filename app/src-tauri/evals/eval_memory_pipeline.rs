@@ -14,12 +14,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use std::sync::Arc;
 use turso::Builder;
-use vox_lib::core::constants::{is_valid_inter_collection_pair, PM_SEMANTIC_GRAPH_COLLECTIONS};
 use vox_lib::persistence::{decode_f32_blob, encode_f32_blob, mutations};
-use vox_lib::services::memory::ingestion::{CandidateAuditLog, DedupAuditLog};
 use vox_lib::services::memory::ingestion::{
     run_stage1_dedup, run_stage2_embed, stage3_eval, stage4_commit,
 };
+use vox_lib::services::memory::ingestion::{CandidateAuditLog, DedupAuditLog};
+use vox_lib::services::memory::{is_valid_inter_collection_pair, PM_SEMANTIC_GRAPH_COLLECTIONS};
 use vox_lib::services::memory::{
     INTER_COLLECTION_CANDIDATE_SEARCH, SAME_COLLECTION_CANDIDATE_SEARCH, SUBFLOOR_CANDIDATE_FLOOR,
 };
@@ -445,10 +445,7 @@ async fn main() -> Result<()> {
         }
         let n1 = run_stage1_dedup(&conn).await?;
         let n2 = run_stage2_embed(&conn).await?;
-        let n3 = stage3_eval::run_stage3_eval_with_metrics_seq(
-            &conn, &run_id, stage3_seq,
-        )
-        .await?;
+        let n3 = stage3_eval::run_stage3_eval_with_metrics_seq(&conn, &run_id, stage3_seq).await?;
         if n1 == 0 && n2 == 0 && n3 == 0 {
             break;
         }
@@ -866,10 +863,7 @@ async fn main() -> Result<()> {
     }
 
     // Run Stage 4 Commit & Prune post-reporting
-    let n4 = stage4_commit::run_stage4_commit_with_metrics(
-        &conn, &run_id,
-    )
-    .await?;
+    let n4 = stage4_commit::run_stage4_commit_with_metrics(&conn, &run_id).await?;
     println!(
         "  [Stage 4 Commit] Finalized and pruned {} facts into memory_facts DB.",
         n4

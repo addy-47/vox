@@ -1,8 +1,8 @@
 use super::scope::ScopeRouting;
-use crate::core::constants::MemoryCollection;
 use crate::core::settings::MemorySettings;
 use crate::persistence::queries;
 use crate::services::memory::ml::estimate_tokens;
+use crate::services::memory::MemoryCollection;
 use anyhow::Result;
 use query_sieve::MemoryScope;
 use std::collections::HashSet;

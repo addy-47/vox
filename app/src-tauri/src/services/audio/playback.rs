@@ -2,6 +2,7 @@ use super::{
     PLAYBACK_BUFFER_SAMPLES, PLAYBACK_CHANNELS, PLAYBACK_DEFAULT_VOLUME, PLAYBACK_ENERGY_EXPONENT,
     PLAYBACK_ENERGY_MULTIPLIER, PLAYBACK_SAMPLE_RATE, PLAYBACK_VOLUME_RAMP_STEP,
 };
+use crate::core::state::InteractionState;
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
@@ -10,7 +11,6 @@ use ringbuf::traits::*;
 use ringbuf::{HeapCons, HeapProd};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-use crate::core::state::InteractionState;
 
 /// Upsample 24kHz mono PCM to 48kHz via cubic Hermite interpolation into a reusable buffer.
 #[inline]
@@ -302,7 +302,9 @@ impl PlaybackStreamContext {
         self.update_energy_metrics(frames, sum_sq, sum_low_sq, sum_mid_sq, sum_high_sq);
 
         if self.consumer.is_empty() {
-            if InteractionState::from(self.state_atomic.load(Ordering::Relaxed)) == InteractionState::Speaking {
+            if InteractionState::from(self.state_atomic.load(Ordering::Relaxed))
+                == InteractionState::Speaking
+            {
                 self.playback_underruns.fetch_add(1, Ordering::Relaxed);
             }
             self.playback_energy

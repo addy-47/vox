@@ -1,9 +1,6 @@
 use super::RelationEdge;
-use crate::core::constants::{
-    collection_type, PM_QUEUE_STATUS_EVALUATED, PM_QUEUE_STATUS_PROCESSING_COMMIT,
-    PM_QUEUE_STATUS_SUPERSEDED,
-};
 use crate::services::memory::STAGE4_BATCH_SIZE;
+use crate::services::memory::{collection_type, QueueStatus};
 use anyhow::Result;
 use std::collections::HashMap;
 use turso::Connection;
@@ -52,7 +49,7 @@ async fn claim_commit_candidates(conn: &Connection, now: i64) -> Result<Vec<Stag
     for item in candidate_items {
         let updated = conn.execute(
             "UPDATE personal_memory_queue SET status = ?, claimed_at = ? WHERE id = ? AND status IN ('evaluated', 'superseded')",
-            (PM_QUEUE_STATUS_PROCESSING_COMMIT, now, item.id),
+            (QueueStatus::ProcessingCommit.as_str(), now, item.id),
         )
         .await?;
 
@@ -76,8 +73,10 @@ async fn commit_item_to_storage(
     let item_status = item.status.as_str();
     let mut relations_count = 0;
 
-    if item_status == PM_QUEUE_STATUS_EVALUATED || item_status == PM_QUEUE_STATUS_SUPERSEDED {
-        let fact_status = if item_status == PM_QUEUE_STATUS_SUPERSEDED {
+    if item_status == QueueStatus::Evaluated.as_str()
+        || item_status == QueueStatus::Superseded.as_str()
+    {
+        let fact_status = if item_status == QueueStatus::Superseded.as_str() {
             "superseded"
         } else {
             "active"
@@ -123,7 +122,7 @@ async fn commit_item_to_storage(
 
                         relations_count += 1;
 
-                        if rel.relation == crate::core::constants::PM_RELATION_SUPERSEDES {
+                        if rel.relation == crate::services::memory::Relation::Supersedes.as_str() {
                             conn.execute(
                                 "UPDATE memory_facts SET status = 'inactive' WHERE id = ?",
                                 (to_id,),
@@ -222,7 +221,10 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
             duration_ms,
         };
         if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {
-            log::warn!("[MemoryPipeline::Stage4] Failed to record stage metrics: {}", e);
+            log::warn!(
+                "[MemoryPipeline::Stage4] Failed to record stage metrics: {}",
+                e
+            );
         }
     }
 

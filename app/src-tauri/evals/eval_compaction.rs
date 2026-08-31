@@ -13,9 +13,9 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use turso::Builder;
-use vox_lib::services::memory::compaction::COMPACTION_SYSTEM_PROMPT;
 use vox_lib::persistence::mutations::enqueue_personal_facts;
 use vox_lib::persistence::schema::run_migrations;
+use vox_lib::services::memory::compaction::COMPACTION_SYSTEM_PROMPT;
 use vox_lib::utils::json::parse_compaction_json;
 
 #[allow(dead_code)]

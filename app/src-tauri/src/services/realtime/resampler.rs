@@ -1,12 +1,12 @@
+use super::{
+    PCM_INT16_DIVISOR_FLOAT, PCM_INT16_MAX_FLOAT, SINC_CUTOFF_FREQUENCY, SINC_OVERSAMPLING_FACTOR,
+    SINC_WINDOW_LEN,
+};
 use anyhow::{anyhow, Result};
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{
     Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
     WindowFunction,
-};
-use super::{
-    PCM_INT16_DIVISOR_FLOAT, PCM_INT16_MAX_FLOAT, SINC_CUTOFF_FREQUENCY, SINC_OVERSAMPLING_FACTOR,
-    SINC_WINDOW_LEN,
 };
 
 /// High-quality sinc interpolation audio resampler based on Rubato.
@@ -98,7 +98,9 @@ mod tests {
     #[test]
     fn test_audio_resampler_16k_to_24k() {
         let mut resampler = AudioResampler::new(16000, 24000, 320).expect("Resampler init");
-        let input: Vec<i16> = (0..640).map(|i| ((i as f32 * 0.1).sin() * 10000.0) as i16).collect();
+        let input: Vec<i16> = (0..640)
+            .map(|i| ((i as f32 * 0.1).sin() * 10000.0) as i16)
+            .collect();
         let output = resampler.process_i16(&input).expect("Process i16");
         assert!(!output.is_empty(), "Output should contain resampled frames");
     }
@@ -106,7 +108,9 @@ mod tests {
     #[test]
     fn test_audio_resampler_24k_to_16k() {
         let mut resampler = AudioResampler::new(24000, 16000, 512).expect("Resampler init");
-        let input: Vec<i16> = (0..960).map(|i| ((i as f32 * 0.1).sin() * 10000.0) as i16).collect();
+        let input: Vec<i16> = (0..960)
+            .map(|i| ((i as f32 * 0.1).sin() * 10000.0) as i16)
+            .collect();
         let output = resampler.process_i16(&input).expect("Process i16");
         assert!(!output.is_empty(), "Output should contain resampled frames");
     }
@@ -114,7 +118,9 @@ mod tests {
     #[test]
     fn test_audio_resampler_44k_to_16k() {
         let mut resampler = AudioResampler::new(44100, 16000, 882).expect("Resampler init");
-        let input: Vec<i16> = (0..1764).map(|i| ((i as f32 * 0.1).sin() * 10000.0) as i16).collect();
+        let input: Vec<i16> = (0..1764)
+            .map(|i| ((i as f32 * 0.1).sin() * 10000.0) as i16)
+            .collect();
         let output = resampler.process_i16(&input).expect("Process i16");
         assert!(!output.is_empty(), "Output should contain resampled frames");
     }
@@ -122,7 +128,9 @@ mod tests {
     #[test]
     fn test_audio_resampler_8k_to_16k() {
         let mut resampler = AudioResampler::new(8000, 16000, 160).expect("Resampler init");
-        let input: Vec<i16> = (0..320).map(|i| ((i as f32 * 0.1).sin() * 10000.0) as i16).collect();
+        let input: Vec<i16> = (0..320)
+            .map(|i| ((i as f32 * 0.1).sin() * 10000.0) as i16)
+            .collect();
         let output = resampler.process_i16(&input).expect("Process i16");
         assert!(!output.is_empty(), "Output should contain resampled frames");
     }

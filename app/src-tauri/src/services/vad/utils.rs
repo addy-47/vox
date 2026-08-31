@@ -21,7 +21,8 @@ impl PreRollBuffer {
         let chunk_len = chunk.len();
         if chunk_len >= self.max_capacity {
             self.buffer.clear();
-            self.buffer.extend(chunk[chunk_len - self.max_capacity..].iter().copied());
+            self.buffer
+                .extend(chunk[chunk_len - self.max_capacity..].iter().copied());
             return;
         }
         let excess = (self.buffer.len() + chunk_len).saturating_sub(self.max_capacity);

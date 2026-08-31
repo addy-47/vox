@@ -1,11 +1,9 @@
 use super::{EmbeddedProvider, LlmProvider, RemoteTransport};
-use crate::core::constants::{EVENT_MODEL_FAILED, EVENT_MODEL_LOADING, EVENT_MODEL_READY};
 use crate::core::events::VoxEvent;
 use crate::core::settings::{LlmProviderConfig, VoxSettings};
 use crate::services::llm::types::GenerationRequest;
 use std::path::Path;
 use std::sync::Arc;
-use tauri::Emitter;
 
 /// Commands processed by the background LLM worker thread.
 #[derive(Debug)]
@@ -20,15 +18,11 @@ pub enum LlmCommand {
 
 /// Spawns the dedicated LLM generation worker thread and runs its command loop.
 pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
-    app: tauri::AppHandle<R>,
+    _app: tauri::AppHandle<R>,
     rx: std::sync::mpsc::Receiver<LlmCommand>,
     provider: Arc<dyn LlmProvider>,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
 ) {
-    if let Err(e) = app.emit(EVENT_MODEL_READY, "LLM") {
-        log::warn!("[LLM Worker] Failed to emit EVENT_MODEL_READY: {}", e);
-    }
-
     log::info!("[LLM Worker] Persistent loop started.");
 
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -43,8 +37,7 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
                 turn_id,
                 cancel,
             } => {
-                let res =
-                    runtime.block_on(provider.generate(request, turn_id, &cancel, &event_tx));
+                let res = runtime.block_on(provider.generate(request, turn_id, &cancel, &event_tx));
 
                 if let Err(e) = res {
                     log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
@@ -127,17 +120,11 @@ pub fn warm_up_llm<R: tauri::Runtime + 'static>(
     }
 
     log::info!("[LLM Actor] Warming up LLM worker");
-    if let Err(e) = app.emit(EVENT_MODEL_LOADING, "LLM") {
-        log::warn!("[LLM Actor] Failed to emit EVENT_MODEL_LOADING: {}", e);
-    }
 
     let provider = match create_llm_provider(settings, llm_path) {
         Ok(p) => p,
         Err(e) => {
             log::error!("[LLM Actor] Failed to create provider: {}", e);
-            if let Err(emit_err) = app.emit(EVENT_MODEL_FAILED, format!("LLM: {}", e)) {
-                log::warn!("[LLM Actor] Failed to emit EVENT_MODEL_FAILED: {}", emit_err);
-            }
             return Err(e);
         }
     };

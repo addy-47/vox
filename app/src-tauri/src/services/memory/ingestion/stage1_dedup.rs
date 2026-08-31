@@ -1,8 +1,5 @@
 use super::DedupAuditLog;
-use crate::core::constants::{
-    PM_QUEUE_STATUS_DEDUPED, PM_QUEUE_STATUS_PROCESSING_DEDUP, PM_QUEUE_STATUS_STAGED_PENDING,
-    PM_QUEUE_STATUS_SUPERSEDED,
-};
+use crate::services::memory::QueueStatus;
 use crate::services::memory::STAGE1_BATCH_CEILING;
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
@@ -78,7 +75,7 @@ async fn claim_staged_items(conn: &Connection, now: i64) -> Result<Vec<Stage1Ite
     for item in candidate_items {
         let updated = conn.execute(
             "UPDATE personal_memory_queue SET status = ?, claimed_at = ? WHERE id = ? AND status = ?",
-            (PM_QUEUE_STATUS_PROCESSING_DEDUP, now, item.id, PM_QUEUE_STATUS_STAGED_PENDING),
+            (QueueStatus::ProcessingDedup.as_str(), now, item.id, QueueStatus::StagedPending.as_str()),
         )
         .await?;
 
@@ -143,7 +140,10 @@ async fn dedup_item_against_active(
             .execute("DELETE FROM personal_memory_queue WHERE id = ?", (item.id,))
             .await
         {
-            log::warn!("[MemoryPipeline::Stage1] Failed to delete empty queue item: {}", e);
+            log::warn!(
+                "[MemoryPipeline::Stage1] Failed to delete empty queue item: {}",
+                e
+            );
         }
         let log = DedupAuditLog {
             queue_item_id: item.id,
@@ -156,13 +156,17 @@ async fn dedup_item_against_active(
             matched_fact: String::new(),
             score: 0.0,
         };
-        if let Err(e) = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await {
-            log::warn!("[MemoryPipeline::Stage1] Failed to write empty fact dedup audit: {}", e);
+        if let Err(e) = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await
+        {
+            log::warn!(
+                "[MemoryPipeline::Stage1] Failed to write empty fact dedup audit: {}",
+                e
+            );
         }
         return Ok(());
     }
 
-    let incoming_priority = crate::core::constants::MemoryCollection::parse(&item.collection)
+    let incoming_priority = crate::services::memory::MemoryCollection::parse(&item.collection)
         .map(|c| c.priority())
         .unwrap_or(0);
 
@@ -187,7 +191,7 @@ async fn dedup_item_against_active(
     });
 
     if let Some((matched_id, matched_coll, matched_fact, jacc_sim)) = matched {
-        let existing_priority = crate::core::constants::MemoryCollection::parse(&matched_coll)
+        let existing_priority = crate::services::memory::MemoryCollection::parse(&matched_coll)
             .map(|c| c.priority())
             .unwrap_or(0);
 
@@ -204,8 +208,13 @@ async fn dedup_item_against_active(
                 matched_fact: matched_fact.clone(),
                 score: jacc_sim,
             };
-            if let Err(e) = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await {
-                log::warn!("[MemoryPipeline::Stage1] Failed to write dedup audit: {}", e);
+            if let Err(e) =
+                crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await
+            {
+                log::warn!(
+                    "[MemoryPipeline::Stage1] Failed to write dedup audit: {}",
+                    e
+                );
             }
 
             let cand_source = if matched_id.starts_with("item_") {
@@ -228,8 +237,14 @@ async fn dedup_item_against_active(
                 decision: "duplicate_dropped".to_string(),
                 rejection_reason: Some("exact_jaccard_match".to_string()),
             };
-            if let Err(e) = crate::persistence::mutations::write_candidate_audit(conn, item.id, &[cand_log]).await {
-                log::warn!("[MemoryPipeline::Stage1] Failed to write candidate audit: {}", e);
+            if let Err(e) =
+                crate::persistence::mutations::write_candidate_audit(conn, item.id, &[cand_log])
+                    .await
+            {
+                log::warn!(
+                    "[MemoryPipeline::Stage1] Failed to write candidate audit: {}",
+                    e
+                );
             }
         } else {
             if !matched_id.starts_with("item_") {
@@ -240,7 +255,10 @@ async fn dedup_item_against_active(
                     )
                     .await
                 {
-                    log::warn!("[MemoryPipeline::Stage1] Failed to supersede existing memory fact: {}", e);
+                    log::warn!(
+                        "[MemoryPipeline::Stage1] Failed to supersede existing memory fact: {}",
+                        e
+                    );
                 }
             }
             deduped_ids.push(item.id);
@@ -255,8 +273,13 @@ async fn dedup_item_against_active(
                 matched_fact: matched_fact.clone(),
                 score: jacc_sim,
             };
-            if let Err(e) = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await {
-                log::warn!("[MemoryPipeline::Stage1] Failed to write dedup audit: {}", e);
+            if let Err(e) =
+                crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await
+            {
+                log::warn!(
+                    "[MemoryPipeline::Stage1] Failed to write dedup audit: {}",
+                    e
+                );
             }
 
             let cand_source = if matched_id.starts_with("item_") {
@@ -279,8 +302,14 @@ async fn dedup_item_against_active(
                 decision: "superseded_existing".to_string(),
                 rejection_reason: None,
             };
-            if let Err(e) = crate::persistence::mutations::write_candidate_audit(conn, item.id, &[cand_log]).await {
-                log::warn!("[MemoryPipeline::Stage1] Failed to write candidate audit: {}", e);
+            if let Err(e) =
+                crate::persistence::mutations::write_candidate_audit(conn, item.id, &[cand_log])
+                    .await
+            {
+                log::warn!(
+                    "[MemoryPipeline::Stage1] Failed to write candidate audit: {}",
+                    e
+                );
             }
 
             active_facts_map
@@ -316,7 +345,7 @@ async fn commit_dedup_statuses(
     for id in deduped_ids {
         conn.execute(
             "UPDATE personal_memory_queue SET status = ? WHERE id = ?",
-            (PM_QUEUE_STATUS_DEDUPED, *id),
+            (QueueStatus::Deduped.as_str(), *id),
         )
         .await?;
     }
@@ -324,7 +353,7 @@ async fn commit_dedup_statuses(
     for id in superseded_ids {
         conn.execute(
             "UPDATE personal_memory_queue SET status = ? WHERE id = ?",
-            (PM_QUEUE_STATUS_SUPERSEDED, *id),
+            (QueueStatus::Superseded.as_str(), *id),
         )
         .await?;
     }
@@ -393,7 +422,10 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
             duration_ms,
         };
         if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {
-            log::warn!("[MemoryPipeline::Stage1] Failed to record stage metrics: {}", e);
+            log::warn!(
+                "[MemoryPipeline::Stage1] Failed to record stage metrics: {}",
+                e
+            );
         }
     }
 

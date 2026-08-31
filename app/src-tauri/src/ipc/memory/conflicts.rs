@@ -1,7 +1,7 @@
-use crate::core::constants::{PM_RELATION_CONFLICTS, PM_RELATION_SUPERSEDES};
 use crate::core::state::AppState;
 use crate::ipc::memory::graph::MemoryNodeTopology;
 use crate::persistence::db::VoxDb;
+use crate::services::memory::Relation;
 use serde::Serialize;
 use std::sync::atomic::Ordering;
 use tauri::State;
@@ -32,9 +32,9 @@ pub async fn get_unresolved_conflicts() -> Result<Vec<MemoryConflict>, String> {
                AND r.from_id NOT IN (SELECT to_id FROM memory_relations WHERE relation = ?)
                AND r.to_id NOT IN (SELECT to_id FROM memory_relations WHERE relation = ?)",
             (
-                PM_RELATION_CONFLICTS.to_string(),
-                PM_RELATION_SUPERSEDES.to_string(),
-                PM_RELATION_SUPERSEDES.to_string(),
+                Relation::Conflicts.as_str().to_string(),
+                Relation::Supersedes.as_str().to_string(),
+                Relation::Supersedes.as_str().to_string(),
             ),
         )
         .await
@@ -98,7 +98,7 @@ pub async fn resolve_memory_conflict(
 
         conn.execute(
             "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at) VALUES (?, ?, ?, 'USER', ?)",
-            (winner_id, loser_id, PM_RELATION_SUPERSEDES.to_string(), now),
+            (winner_id, loser_id, Relation::Supersedes.as_str().to_string(), now),
         )
         .await
         .map_err(|e| e.to_string())?;

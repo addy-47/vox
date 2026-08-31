@@ -10,9 +10,15 @@ import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { hideTrayWindow, syncHudVisibility, setHudIgnoreCursor } from "@/services/windowService";
 import { pttStart, pttStop } from "@/services/pipelineService";
 import { commitSessionToHistory, getTranscriptHistory } from "@/services/historyService";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettings } from "@/shared/hooks/useSettings";
 import { ErrorBoundary } from "@/shared/components/common";
+import {
+  onStateChanged,
+  onTranscriptPartial,
+  onTranscriptFinal,
+  onSystemStats,
+  onToggleTray,
+} from "@/services/eventsService";
 
 interface SystemStats {
   system_cpu: number;
@@ -195,106 +201,76 @@ export const TrayApp: React.FC = () => {
   // ─── IPC Event Listeners ───────────────────────────────────────────────────
   useEffect(() => {
     let active = true;
-    let localUnlisteners: (() => void)[] = [];
+    const localUnlisteners: (() => void)[] = [];
 
-    const setupListeners = async () => {
-      try {
-        const appWindow = getCurrentWindow();
-
-        const u1 = await appWindow.listen<{ state: string; turn_id: number }>("dictation_state_changed", (event: { payload: { state: string; turn_id: number } }) => {
+    try {
+      localUnlisteners.push(
+        onStateChanged((payload) => {
           if (!active) return;
-          const newState = event.payload.state;
-          if (newState === "RECORDING") {
-            setPttStatus("RECORDING");
-            stateRef.current.callbacks.reset();
-            setViewingHistory(false);
-            if (stateRef.current.visibilityState === 'HIDDEN') {
-              stateRef.current.callbacks.show();
+          if (payload && payload.owner === "Dictation") {
+            const newState = payload.state.toUpperCase();
+            if (newState === "RECORDING") {
+              setPttStatus("RECORDING");
+              stateRef.current.callbacks.reset();
+              setViewingHistory(false);
+              if (stateRef.current.visibilityState === 'HIDDEN') {
+                stateRef.current.callbacks.show();
+              }
+            } else if (newState === "TRANSCRIBING" || newState === "PROCESSING") {
+              setPttStatus("PROCESSING");
+            } else {
+              setPttStatus("IDLE");
             }
-          } else if (newState === "PROCESSING") {
-            setPttStatus("PROCESSING");
           } else {
-            setPttStatus("IDLE");
+            if (stateRef.current.visibilityState !== 'HIDDEN') {
+              setInteractionState(payload?.state ?? String(payload));
+            }
           }
-        });
-        localUnlisteners.push(u1);
-        if (!active) {
-          localUnlisteners.forEach(u => u());
-          return;
-        }
+        })
+      );
 
-        const u2 = await appWindow.listen<{ text: string; turn_id?: number }>("transcript_partial", (event: { payload: { text: string; turn_id?: number } }) => {
+      localUnlisteners.push(
+        onTranscriptPartial((payload) => {
           if (!active) return;
-          if (event.payload.text) {
+          if (payload.text) {
             if (stateRef.current.visibilityState === 'HIDDEN') {
               stateRef.current.callbacks.show();
             }
-            stateRef.current.callbacks.updatePartial(event.payload.text);
+            stateRef.current.callbacks.updatePartial(payload.text);
           }
-        });
-        localUnlisteners.push(u2);
-        if (!active) {
-          localUnlisteners.forEach(u => u());
-          return;
-        }
+        })
+      );
 
-        const u3 = await appWindow.listen<{ text: string; turn_id?: number }>("transcript_final", (event: { payload: { text: string; turn_id?: number } }) => {
+      localUnlisteners.push(
+        onTranscriptFinal((payload) => {
           if (!active) return;
-          if (event.payload.text) {
+          if (payload.text) {
             if (stateRef.current.visibilityState === 'HIDDEN') {
               stateRef.current.callbacks.show();
             }
-            stateRef.current.callbacks.commitFinal(event.payload.text);
+            stateRef.current.callbacks.commitFinal(payload.text);
           }
-        });
-        localUnlisteners.push(u3);
-        if (!active) {
-          localUnlisteners.forEach(u => u());
-          return;
-        }
+        })
+      );
 
-        const u5 = await appWindow.listen<SystemStats>("system_stats", (event: { payload: SystemStats }) => {
+      localUnlisteners.push(
+        onSystemStats((payload) => {
           if (!active) return;
           if (stateRef.current.visibilityState === 'HIDDEN') return;
-          setStats(event.payload);
-        });
-        localUnlisteners.push(u5);
-        if (!active) {
-          localUnlisteners.forEach(u => u());
-          return;
-        }
+          setStats(payload);
+        })
+      );
 
-        const u6 = await appWindow.listen("toggle_hud", () => {
+      localUnlisteners.push(
+        onToggleTray(() => {
           if (!active) return;
           if (stateRef.current.visibilityState === 'HIDDEN') stateRef.current.callbacks.show();
           else stateRef.current.callbacks.hideImmediately();
-        });
-        localUnlisteners.push(u6);
-        if (!active) {
-          localUnlisteners.forEach(u => u());
-          return;
-        }
-
-        const u7 = await appWindow.listen<string>("state_changed", (event: { payload: string }) => {
-          if (!active) return;
-          if (stateRef.current.visibilityState === 'HIDDEN') return;
-          setInteractionState(event.payload);
-        });
-        localUnlisteners.push(u7);
-        if (!active) {
-          localUnlisteners.forEach(u => u());
-          return;
-        }
-
-      } catch (err) {
-        console.error("[TrayApp] Failed to setup listeners:", err);
-        if (!active) {
-          localUnlisteners.forEach(u => u());
-        }
-      }
-    };
-
-    setupListeners();
+        })
+      );
+    } catch (err) {
+      console.error("[TrayApp] Failed to setup listeners:", err);
+    }
 
     // Initial History Sync
     getTranscriptHistory().then((h: string[]) => {
@@ -303,7 +279,7 @@ export const TrayApp: React.FC = () => {
 
     return () => {
       active = false;
-      localUnlisteners.forEach(u => u());
+      localUnlisteners.forEach((u) => u());
     };
   }, []); // Stable Listeners
 

@@ -1,4 +1,4 @@
-use crate::core::constants::is_valid_inter_collection_pair;
+use crate::services::memory::is_valid_inter_collection_pair;
 use crate::services::memory::{
     EDGE_CLASSIFIER_MODEL_DIR, EDGE_CLASSIFIER_MODEL_FILENAME, EDGE_CLASSIFIER_THRESHOLD,
     EDGE_CLASSIFIER_TOKENIZER_FILENAME,
@@ -245,9 +245,9 @@ pub fn classify_edge(
     let (max_idx, max_prob) = compute_softmax(&logits);
 
     let predicted_label = match max_idx {
-        0 => crate::core::constants::PM_RELATION_SHAPES,
-        1 => crate::core::constants::PM_RELATION_DEPENDS_ON,
-        2 => crate::core::constants::PM_RELATION_CONFLICTS,
+        0 => crate::services::memory::Relation::Shapes.as_str(),
+        1 => crate::services::memory::Relation::DependsOn.as_str(),
+        2 => crate::services::memory::Relation::Conflicts.as_str(),
         _ => "",
     };
 

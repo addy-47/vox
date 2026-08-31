@@ -14,7 +14,11 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
     state: &AppState,
 ) -> Result<(), String> {
     let (llm_path, tts_path, settings) = {
-        let s = state.settings.read().unwrap_or_else(|p| p.into_inner()).clone();
+        let s = state
+            .settings
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
         let models_dir = crate::utils::paths::get().models.clone();
         let llm = models_dir
             .join(crate::services::llm::QWEN_MODEL_DIR)

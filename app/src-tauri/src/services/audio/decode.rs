@@ -131,10 +131,7 @@ fn decode_packets(
         let decoded = match decoder.decode(&packet) {
             Ok(decoded) => decoded,
             Err(Error::DecodeError(err)) => {
-                log::warn!(
-                    "[Audio::Decode] skipping packet with decode error: {}",
-                    err
-                );
+                log::warn!("[Audio::Decode] skipping packet with decode error: {}", err);
                 continue;
             }
             Err(e) => return Err(format!("Decoder error: {}", e)),

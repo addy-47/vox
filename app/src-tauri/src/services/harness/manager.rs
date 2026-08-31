@@ -75,8 +75,12 @@ impl ConversationManager {
     }
 
     /// Preloads active Identity facts into the base system prompt block.
-    pub async fn load_identity_into_system_prompt(&mut self, conn: &Connection) -> anyhow::Result<()> {
-        let active_identities = crate::persistence::queries::fetch_all_active_identity(conn).await?;
+    pub async fn load_identity_into_system_prompt(
+        &mut self,
+        conn: &Connection,
+    ) -> anyhow::Result<()> {
+        let active_identities =
+            crate::persistence::queries::fetch_all_active_identity(conn).await?;
         let facts = active_identities.into_iter().map(|f| f.fact).collect();
         self.set_identity_facts(facts);
         Ok(())
@@ -160,12 +164,24 @@ mod tests {
         cm.identity_facts = vec!["User lives in Seattle.".to_string()];
         cm.update_system_prompt("You are Vox Assistant.");
 
-        assert!(cm.system_prompt.content.starts_with("You are Vox Assistant."));
-        assert!(cm.system_prompt.content.contains("<user_profile>\n[Identity]\n- User lives in Seattle.\n</user_profile>"));
+        assert!(cm
+            .system_prompt
+            .content
+            .starts_with("You are Vox Assistant."));
+        assert!(cm
+            .system_prompt
+            .content
+            .contains("<user_profile>\n[Identity]\n- User lives in Seattle.\n</user_profile>"));
 
         cm.new_session("You are a helpful coding assistant.");
-        assert!(cm.system_prompt.content.starts_with("You are a helpful coding assistant."));
-        assert!(cm.system_prompt.content.contains("<user_profile>\n[Identity]\n- User lives in Seattle.\n</user_profile>"));
+        assert!(cm
+            .system_prompt
+            .content
+            .starts_with("You are a helpful coding assistant."));
+        assert!(cm
+            .system_prompt
+            .content
+            .contains("<user_profile>\n[Identity]\n- User lives in Seattle.\n</user_profile>"));
         assert_eq!(cm.buffer.messages.len(), 1);
     }
 }

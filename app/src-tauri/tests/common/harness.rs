@@ -11,7 +11,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use vox_lib::core::events::VoxEvent;
-use vox_lib::core::state::VadCommand;
 use vox_lib::services::stt::actor::{
     spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand,
 };
@@ -21,6 +20,7 @@ use vox_lib::services::vad::actor::{
 };
 use vox_lib::services::vad::earshot_vad::EarshotVadEngine;
 use vox_lib::services::vad::VadBackend;
+use vox_lib::services::vad::VadCommand;
 
 pub type RbProducer = Caching<Arc<HeapRb<f32>>, true, false>;
 
@@ -60,8 +60,8 @@ pub fn setup_stt_worker<R: tauri::Runtime + 'static>(
         engine_shutdown: engine_shutdown.clone(),
     };
 
-    let join_handle = spawn_stt_worker(channels, provider, handles)
-        .expect("Failed to spawn STT worker");
+    let join_handle =
+        spawn_stt_worker(channels, provider, handles).expect("Failed to spawn STT worker");
 
     (stt_tx, pipeline_event_rx, engine_shutdown, join_handle)
 }
@@ -107,14 +107,8 @@ pub fn setup_vad_actor(
     let join_handle = std::thread::Builder::new()
         .name("test-vad-actor".to_string())
         .spawn(move || {
-            spawn_vad_actor(
-                vad_backend,
-                consumer,
-                vad_channels,
-                vad_handles,
-                config,
-            )
-            .expect("VAD actor failed");
+            spawn_vad_actor(vad_backend, consumer, vad_channels, vad_handles, config)
+                .expect("VAD actor failed");
         })
         .expect("Failed to spawn VAD actor thread");
 
@@ -203,10 +197,13 @@ pub fn assert_channel_empty_after<T: std::fmt::Debug>(
 }
 
 /// Constructs an AppHandle and managed AppState pair tailored for testing environments.
-pub fn get_test_app_and_state() -> (AppHandle<tauri::test::MockRuntime>, Arc<vox_lib::core::state::AppState>) {
+pub fn get_test_app_and_state() -> (
+    AppHandle<tauri::test::MockRuntime>,
+    Arc<vox_lib::core::state::AppState>,
+) {
     use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
-    use vox_lib::core::state::TelemetryState;
     use tauri::Manager;
+    use vox_lib::core::state::TelemetryState;
 
     let app = get_test_app_handle();
     let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();
@@ -325,7 +322,9 @@ pub fn attach_mock_engine_with_vad_to_state<R: tauri::Runtime>(
     } else {
         *state.engine.blocking_lock() = Some(engine);
     }
-    state.pipeline.set_state(vox_lib::core::state::InteractionState::Ready);
+    state
+        .pipeline
+        .set_state(vox_lib::core::state::InteractionState::Ready);
 }
 
 /// Attaches a mock VoxEngine to the managed AppState for testing full production pipeline flows.

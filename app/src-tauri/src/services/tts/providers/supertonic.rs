@@ -166,10 +166,8 @@ impl TtsProvider for TtsEngine {
 
     /// Hot-updates the playback speed factor.
     fn set_speed(&self, speed: f32) {
-        self.speed.store(
-            speed.clamp(MIN_SPEED, MAX_SPEED),
-            Ordering::Relaxed,
-        );
+        self.speed
+            .store(speed.clamp(MIN_SPEED, MAX_SPEED), Ordering::Relaxed);
     }
 
     /// Returns the TtsProviderKind::Supertonic variant identifier.

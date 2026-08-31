@@ -939,19 +939,84 @@ impl VoxSettings {
                 log::warn!("[Settings] Partial corruption or schema drift detected in settings.json — attempting section recovery.");
                 let mut settings = Self::default();
                 if let Some(obj) = val.as_object() {
-                    if let Some(v) = obj.get("audio").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.audio = v; }
-                    if let Some(v) = obj.get("vad").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.vad = v; }
-                    if let Some(v) = obj.get("stt").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.stt = v; }
-                    if let Some(v) = obj.get("llm").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.llm = v; }
-                    if let Some(v) = obj.get("tts").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.tts = v; }
-                    if let Some(v) = obj.get("realtime").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.realtime = v; }
-                    if let Some(v) = obj.get("interaction").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.interaction = v; }
-                    if let Some(v) = obj.get("dictation").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.dictation = v; }
-                    if let Some(v) = obj.get("history").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.history = v; }
-                    if let Some(v) = obj.get("appearance").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.appearance = v; }
-                    if let Some(v) = obj.get("memory").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.memory = v; }
-                    if let Some(v) = obj.get("persona").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.persona = v; }
-                    if let Some(v) = obj.get("system").and_then(|v| serde_json::from_value(v.clone()).ok()) { settings.system = v; }
+                    if let Some(v) = obj
+                        .get("audio")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    {
+                        settings.audio = v;
+                    }
+                    if let Some(v) = obj
+                        .get("vad")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    {
+                        settings.vad = v;
+                    }
+                    if let Some(v) = obj
+                        .get("stt")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    {
+                        settings.stt = v;
+                    }
+                    if let Some(v) = obj
+                        .get("llm")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    {
+                        settings.llm = v;
+                    }
+                    if let Some(v) = obj
+                        .get("tts")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    {
+                        settings.tts = v;
+                    }
+                    if let Some(v) = obj
+                        .get("realtime")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    {
+                        settings.realtime = v;
+                    }
+                    if let Some(v) = obj
+                        .get("interaction")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    {
+                        settings.interaction = v;
+                    }
+                    if let Some(v) = obj
+                        .get("dictation")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    {
+                        settings.dictation = v;
+                    }
+                    if let Some(v) = obj
+                        .get("history")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    {
+                        settings.history = v;
+                    }
+                    if let Some(v) = obj
+                        .get("appearance")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    {
+                        settings.appearance = v;
+                    }
+                    if let Some(v) = obj
+                        .get("memory")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    {
+                        settings.memory = v;
+                    }
+                    if let Some(v) = obj
+                        .get("persona")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    {
+                        settings.persona = v;
+                    }
+                    if let Some(v) = obj
+                        .get("system")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    {
+                        settings.system = v;
+                    }
                 }
                 return settings;
             }
@@ -980,7 +1045,10 @@ impl VoxSettings {
 
         if let Some(parent) = path.parent() {
             if let Err(e) = fs::create_dir_all(parent) {
-                log::warn!("[Settings] Failed to create settings parent directory: {}", e);
+                log::warn!(
+                    "[Settings] Failed to create settings parent directory: {}",
+                    e
+                );
             }
         }
 
@@ -992,13 +1060,19 @@ impl VoxSettings {
         let tmp_path = path.with_file_name(format!("settings.{}.tmp", nanos));
         if let Err(e) = fs::write(&tmp_path, content) {
             if let Err(rm_err) = fs::remove_file(&tmp_path) {
-                log::trace!("[Settings] Failed to remove temporary settings file: {}", rm_err);
+                log::trace!(
+                    "[Settings] Failed to remove temporary settings file: {}",
+                    rm_err
+                );
             }
             return Err(e.into());
         }
         if let Err(e) = fs::rename(&tmp_path, &path) {
             if let Err(rm_err) = fs::remove_file(&tmp_path) {
-                log::trace!("[Settings] Failed to remove temporary settings file: {}", rm_err);
+                log::trace!(
+                    "[Settings] Failed to remove temporary settings file: {}",
+                    rm_err
+                );
             }
             return Err(e.into());
         }
