@@ -33,11 +33,7 @@ pub fn ensure_wizard_window(app: &AppHandle) -> Result<WebviewWindow, String> {
 pub fn check_setup_health() -> bool {
     let p = paths::get();
 
-    let vad_ok = p
-        .models
-        .join(MODEL_DIR_VAD)
-        .join(MODEL_FILE_VAD)
-        .exists();
+    let vad_ok = p.models.join(MODEL_DIR_VAD).join(MODEL_FILE_VAD).exists();
     if !vad_ok {
         return false;
     }
@@ -55,12 +51,7 @@ pub fn check_setup_health() -> bool {
         return false;
     }
 
-    if !p
-        .models
-        .join(QWEN_MODEL_DIR)
-        .join(QWEN_MODEL_FILE)
-        .exists()
-    {
+    if !p.models.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE).exists() {
         return false;
     }
 

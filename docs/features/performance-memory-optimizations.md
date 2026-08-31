@@ -2,7 +2,7 @@
 
 > **Scope**: All memory and performance optimizations applied across the Vox codebase.  
 > **Platforms**: Linux (primary), Windows, macOS.  
-> **Last updated**: 2026-08-28.
+> **Last updated**: 2026-08-31.
 
 ---
 
@@ -81,7 +81,7 @@ Call sites:
 **Problem**: Closing the main window kept the engine running idle indefinitely. Additionally, if the renderer crashed or was closed via DevTools, the `WebviewWindow` handle disappeared, breaking "Launch Vox".
 
 **Fix**:
-- **Engine Offload on Hide**: `CloseRequested` for `"main"` hides the window and automatically triggers `stop_engine()` if `!dictation.enabled && !is_engaged`.
+- **Engine Offload on Hide**: `CloseRequested` for `"main"` hides the window and automatically triggers `stop_engine()` if `!dictation.enabled && state == Idle`.
 - **Lazy Crash Recreate**: `ensure_main_window` (`src/window_main.rs`) reconstructs the window from `tauri.conf.json` when its handle is `None`. `AppState::main_window_destroyed` manages the dynamic "Restart Vox" tray recovery item.
 
 **Files**: [`app/src-tauri/src/window_main.rs`](file:///home/addy/projects/apps/vox/app/src-tauri/src/window_main.rs), [`app/src-tauri/src/core/state.rs`](file:///home/addy/projects/apps/vox/app/src-tauri/src/core/state.rs), [`app/src-tauri/src/lib.rs`](file:///home/addy/projects/apps/vox/app/src-tauri/src/lib.rs), [`app/src-tauri/src/ipc/tray.rs`](file:///home/addy/projects/apps/vox/app/src-tauri/src/ipc/tray.rs)

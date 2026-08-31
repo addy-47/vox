@@ -118,7 +118,11 @@ impl CapabilityProbeEngine {
     }
 
     /// Builds capability matrix for local embedded GGUF model.
-    pub fn probe_local_embedded(model_id: &str, ctx_window: Option<u32>, now: u64) -> ModelCapabilities {
+    pub fn probe_local_embedded(
+        model_id: &str,
+        ctx_window: Option<u32>,
+        now: u64,
+    ) -> ModelCapabilities {
         ModelCapabilities {
             model_id: model_id.to_string(),
             provider_kind: "embedded".to_string(),
@@ -145,10 +149,7 @@ impl CapabilityProbeEngine {
         config: &ConnectionConfig,
         now: u64,
     ) -> Result<ModelCapabilities, Box<dyn std::error::Error + Send + Sync>> {
-        let preset_meta = config
-            .provider_preset
-            .as_deref()
-            .and_then(lookup_preset);
+        let preset_meta = config.provider_preset.as_deref().and_then(lookup_preset);
 
         let (supports_latin, supports_devanagari, tps, ttft_ms) =
             Self::empirical_streaming_probe(client, config).await;
@@ -222,9 +223,8 @@ impl CapabilityProbeEngine {
                         meta.family = details.family;
                     }
                     if let Some(info) = show_data.model_info {
-                        if let Some(ctx_val) = info
-                            .get("general.context_length")
-                            .and_then(|v| v.as_u64())
+                        if let Some(ctx_val) =
+                            info.get("general.context_length").and_then(|v| v.as_u64())
                         {
                             meta.context_window = Some(ctx_val as u32);
                         }
@@ -357,7 +357,10 @@ impl CapabilityProbeEngine {
             }
         }
 
-        if collected_text.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c)) {
+        if collected_text
+            .chars()
+            .any(|c| ('\u{0900}'..='\u{097F}').contains(&c))
+        {
             supports_devanagari = true;
         }
 

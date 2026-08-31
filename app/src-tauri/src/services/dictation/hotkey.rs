@@ -1,5 +1,5 @@
 use crate::core::error::DictationError;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -29,18 +29,6 @@ pub fn register_global_hotkey(
             shortcut_str,
             e
         );
-        if let Err(emit_err) = app.emit(
-            "dictation_hotkey_conflict",
-            serde_json::json!({
-                "shortcut": shortcut_str,
-                "error": format!("Invalid shortcut format: {:?}", e)
-            }),
-        ) {
-            log::warn!(
-                "[Dictation::Hotkey] Failed to emit hotkey parse conflict: {}",
-                emit_err
-            );
-        }
         DictationError::HotkeyRegistrationFailed {
             message: format!("Invalid shortcut string: {:?}", e),
         }
@@ -50,17 +38,15 @@ pub fn register_global_hotkey(
 
     let res = app
         .global_shortcut()
-        .on_shortcut(shortcut, move |_app, _sc, event| {
-            match event.state() {
-                ShortcutState::Pressed => {
-                    if let Err(e) = hotkey_tx.send(HotkeyAction::Press) {
-                        log::warn!("[Dictation::Hotkey] Failed to send Press action: {}", e);
-                    }
+        .on_shortcut(shortcut, move |_app, _sc, event| match event.state() {
+            ShortcutState::Pressed => {
+                if let Err(e) = hotkey_tx.send(HotkeyAction::Press) {
+                    log::warn!("[Dictation::Hotkey] Failed to send Press action: {}", e);
                 }
-                ShortcutState::Released => {
-                    if let Err(e) = hotkey_tx.send(HotkeyAction::Release) {
-                        log::warn!("[Dictation::Hotkey] Failed to send Release action: {}", e);
-                    }
+            }
+            ShortcutState::Released => {
+                if let Err(e) = hotkey_tx.send(HotkeyAction::Release) {
+                    log::warn!("[Dictation::Hotkey] Failed to send Release action: {}", e);
                 }
             }
         });
@@ -71,18 +57,6 @@ pub fn register_global_hotkey(
             shortcut_clone,
             e
         );
-        if let Err(emit_err) = app.emit(
-            "dictation_hotkey_conflict",
-            serde_json::json!({
-                "shortcut": shortcut_clone,
-                "error": format!("Registration failed: {:?}", e)
-            }),
-        ) {
-            log::warn!(
-                "[Dictation::Hotkey] Failed to emit hotkey registration conflict: {}",
-                emit_err
-            );
-        }
         return Err(DictationError::HotkeyRegistrationFailed {
             message: format!("Failed to register shortcut '{}': {:?}", shortcut_clone, e),
         });

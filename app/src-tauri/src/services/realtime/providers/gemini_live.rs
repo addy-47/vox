@@ -218,7 +218,10 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                         };
                         if let Some(ref tx) = opt_tx {
                             if let Err(e) = tx.send(Message::Text(start_msg.into())) {
-                                log::warn!("[GeminiLive] Failed to send activityStart on interrupt: {:?}", e);
+                                log::warn!(
+                                    "[GeminiLive] Failed to send activityStart on interrupt: {:?}",
+                                    e
+                                );
                             }
                         }
 
@@ -231,7 +234,10 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                         .to_string();
                         if let Some(ref tx) = opt_tx {
                             if let Err(e) = tx.send(Message::Text(end_msg.into())) {
-                                log::warn!("[GeminiLive] Failed to send activityEnd on interrupt: {:?}", e);
+                                log::warn!(
+                                    "[GeminiLive] Failed to send activityEnd on interrupt: {:?}",
+                                    e
+                                );
                             }
                         }
                         continue;
@@ -508,14 +514,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                 }
 
                 if !reconnected {
-                    log::error!("[GeminiLive] Max reconnection attempts reached. Terminating session orchestrator.");
-
-                    let cache_path = crate::utils::paths::cache_dir().join(SESSION_CACHE_FILENAME);
-                    if cache_path.exists() {
-                        if let Err(e) = std::fs::remove_file(&cache_path) {
-                            log::warn!("[GeminiLive] Failed to delete session cache file: {:?}", e);
-                        }
-                    }
+                    log::error!("[GeminiLive] Max reconnection attempts reached. Retaining session resumption cache for manual retry.");
 
                     let err_turn_id = turn_id_reconnect.load(Ordering::Relaxed);
                     if let Err(e) = event_tx_clone.send(VoxEvent::Error {
@@ -545,7 +544,9 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
     fn health_check(&self) -> bool {
         use std::net::ToSocketAddrs;
         let addr = if let Ok(mut addrs) = GEMINI_HEALTH_CHECK_ADDR.to_socket_addrs() {
-            addrs.next().unwrap_or(GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR)
+            addrs
+                .next()
+                .unwrap_or(GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR)
         } else {
             GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR
         };
@@ -674,51 +675,57 @@ async fn perform_handshake(
 
     log::info!("[GeminiLive] Setup config frame sent. Waiting for setupComplete response...");
 
-    let setup_completed = tokio::time::timeout(crate::services::realtime::WS_HANDSHAKE_TIMEOUT, async {
-        while let Some(res) = ws_read.next().await {
-            match res {
-                Ok(Message::Text(text)) => {
-                    let val: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-                    if val.get("setupComplete").is_some() {
-                        log::info!("[GeminiLive] Received setupComplete from Gemini Live server.");
-                        return Ok(());
-                    } else if let Some(err) = val.get("error") {
-                        let err_msg = format!("Gemini setup error response: {:?}", err);
-                        log::error!("[GeminiLive] {}", err_msg);
-                        return Err(anyhow!("{}", err_msg));
+    let setup_completed =
+        tokio::time::timeout(crate::services::realtime::WS_HANDSHAKE_TIMEOUT, async {
+            while let Some(res) = ws_read.next().await {
+                match res {
+                    Ok(Message::Text(text)) => {
+                        let val: serde_json::Value =
+                            serde_json::from_str(&text).unwrap_or_default();
+                        if val.get("setupComplete").is_some() {
+                            log::info!(
+                                "[GeminiLive] Received setupComplete from Gemini Live server."
+                            );
+                            return Ok(());
+                        } else if let Some(err) = val.get("error") {
+                            let err_msg = format!("Gemini setup error response: {:?}", err);
+                            log::error!("[GeminiLive] {}", err_msg);
+                            return Err(anyhow!("{}", err_msg));
+                        }
                     }
-                }
-                Ok(Message::Binary(bytes)) => {
-                    let text = String::from_utf8_lossy(&bytes);
-                    let val: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-                    if val.get("setupComplete").is_some() {
-                        log::info!(
+                    Ok(Message::Binary(bytes)) => {
+                        let text = String::from_utf8_lossy(&bytes);
+                        let val: serde_json::Value =
+                            serde_json::from_str(&text).unwrap_or_default();
+                        if val.get("setupComplete").is_some() {
+                            log::info!(
                             "[GeminiLive] Received setupComplete (binary) from Gemini Live server."
                         );
-                        return Ok(());
-                    } else if let Some(err) = val.get("error") {
-                        let err_msg = format!("Gemini setup error response (binary): {:?}", err);
+                            return Ok(());
+                        } else if let Some(err) = val.get("error") {
+                            let err_msg =
+                                format!("Gemini setup error response (binary): {:?}", err);
+                            log::error!("[GeminiLive] {}", err_msg);
+                            return Err(anyhow!("{}", err_msg));
+                        }
+                    }
+                    Ok(msg) => {
+                        let err_msg = format!("Unexpected message payload during setup: {:?}", msg);
+                        log::error!("[GeminiLive] {}", err_msg);
+                        return Err(anyhow!("{}", err_msg));
+                    }
+                    Err(e) => {
+                        let err_msg = format!("WebSocket error during handshake: {:?}", e);
                         log::error!("[GeminiLive] {}", err_msg);
                         return Err(anyhow!("{}", err_msg));
                     }
                 }
-                Ok(msg) => {
-                    let err_msg = format!("Unexpected message payload during setup: {:?}", msg);
-                    log::error!("[GeminiLive] {}", err_msg);
-                    return Err(anyhow!("{}", err_msg));
-                }
-                Err(e) => {
-                    let err_msg = format!("WebSocket error during handshake: {:?}", e);
-                    log::error!("[GeminiLive] {}", err_msg);
-                    return Err(anyhow!("{}", err_msg));
-                }
             }
-        }
-        let err_msg = "WebSocket stream terminated before setupComplete";
-        log::error!("[GeminiLive] {}", err_msg);
-        Err(anyhow!("{}", err_msg))
-    })
-    .await;
+            let err_msg = "WebSocket stream terminated before setupComplete";
+            log::error!("[GeminiLive] {}", err_msg);
+            Err(anyhow!("{}", err_msg))
+        })
+        .await;
 
     match setup_completed {
         Ok(Ok(())) => {
@@ -730,8 +737,14 @@ async fn perform_handshake(
             Err(anyhow!("Handshake failed: {:?}", e))
         }
         Err(_) => {
-            log::error!("[GeminiLive] Handshake timed out after {} seconds", crate::services::realtime::WS_HANDSHAKE_TIMEOUT.as_secs());
-            Err(anyhow!("Handshake timed out after {} seconds", crate::services::realtime::WS_HANDSHAKE_TIMEOUT.as_secs()))
+            log::error!(
+                "[GeminiLive] Handshake timed out after {} seconds",
+                crate::services::realtime::WS_HANDSHAKE_TIMEOUT.as_secs()
+            );
+            Err(anyhow!(
+                "Handshake timed out after {} seconds",
+                crate::services::realtime::WS_HANDSHAKE_TIMEOUT.as_secs()
+            ))
         }
     }
 }
@@ -879,8 +892,8 @@ async fn handle_gemini_server_message(
                 log::info!("[GeminiLive] Interruption confirmed by Gemini Live server.");
                 s_lock.interrupt_active = false;
                 s_lock.server_turn_cursor = None;
-                if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id: tid }) {
-                    log::warn!("[GeminiLive] Failed to send Cancelled event: {:?}", e);
+                if let Err(e) = event_tx.send(VoxEvent::Interrupted { turn_id: tid }) {
+                    log::warn!("[GeminiLive] Failed to send Interrupted event: {:?}", e);
                 }
             }
             s_lock.interrupt_active
@@ -941,6 +954,13 @@ async fn handle_gemini_server_message(
             }
         }
 
+        // NOTE: Function calling / tool dispatch hook for future expansion.
+        // When Gemini Live issues serverContent.toolCall, parse functionCalls [{id, name, args}],
+        // invoke registered local tools asynchronously, and dispatch matching toolResponse frames back to WebSocket.
+        if let Some(tool_call) = server_content.get("toolCall") {
+            log::debug!("[GeminiLive] Received server toolCall frame (client-side execution hook reserved): {:?}", tool_call);
+        }
+
         if let Some(input_transcription) = server_content.get("inputTranscription") {
             if !interrupt_active {
                 let turn_id = state.lock().current_or_new_turn_id();
@@ -953,13 +973,10 @@ async fn handle_gemini_server_message(
                         turn_id,
                         text: text.to_string(),
                     }) {
-                        log::warn!("[GeminiLive] Failed to send TranscriptPartial event: {:?}", e);
-                    }
-                    if let Err(e) = event_tx.send(VoxEvent::TranscriptFinal {
-                        turn_id,
-                        text: text.to_string(),
-                    }) {
-                        log::warn!("[GeminiLive] Failed to send TranscriptFinal event: {:?}", e);
+                        log::warn!(
+                            "[GeminiLive] Failed to send TranscriptPartial event: {:?}",
+                            e
+                        );
                     }
                 }
             }
@@ -991,8 +1008,13 @@ async fn handle_gemini_server_message(
             log::debug!("[GeminiLive] Turn completed.");
             let mut s_lock = state.lock();
             s_lock.interrupt_active = false;
-            let finished_turn_id = s_lock.server_turn_cursor.take().unwrap_or_else(|| s_lock.turn_id.load(Ordering::Relaxed));
-            if let Err(e) = event_tx.send(VoxEvent::LlmFinished { turn_id: finished_turn_id }) {
+            let finished_turn_id = s_lock
+                .server_turn_cursor
+                .take()
+                .unwrap_or_else(|| s_lock.turn_id.load(Ordering::Relaxed));
+            if let Err(e) = event_tx.send(VoxEvent::LlmFinished {
+                turn_id: finished_turn_id,
+            }) {
                 log::warn!("[GeminiLive] Failed to send LlmFinished event: {:?}", e);
             }
         }

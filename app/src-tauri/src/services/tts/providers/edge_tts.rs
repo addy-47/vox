@@ -17,7 +17,7 @@ use crate::services::audio::decode::decode_bytes_to_24khz_mono;
 use crate::services::tts::{
     EDGE_TTS_DEFAULT_VOICE, EDGE_TTS_HOST, EDGE_TTS_ORIGIN, EDGE_TTS_PORT,
     EDGE_TTS_SEC_MS_GEC_VERSION, EDGE_TTS_USER_AGENT, EDGE_TTS_WIN_EPOCH, EDGE_TTS_WS_URL_BASE,
-    MIN_SPEED_EDGE, MAX_SPEED_EDGE,
+    MAX_SPEED_EDGE, MIN_SPEED_EDGE,
 };
 
 /// Returns the Microsoft Edge ReadAloud client token bytes as a decoded UTF-8 string.
@@ -283,7 +283,10 @@ impl TtsProvider for EdgeTtsProvider {
             });
 
         if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
-            log::debug!("[EdgeTTS] Ring crypto provider already set or error: {:?}", e);
+            log::debug!(
+                "[EdgeTTS] Ring crypto provider already set or error: {:?}",
+                e
+            );
         }
 
         EDGE_TTS_RUNTIME.block_on(async move {
@@ -321,7 +324,10 @@ impl TtsProvider for EdgeTtsProvider {
 
                         for chunk in decoded.samples.chunks(crate::services::tts::TTS_CHUNK_SIZE) {
                             if cancel.load(Ordering::Relaxed) {
-                                log::info!("[EdgeTTS] Synthesis cancelled mid-emission (turn {})", turn_id);
+                                log::info!(
+                                    "[EdgeTTS] Synthesis cancelled mid-emission (turn {})",
+                                    turn_id
+                                );
                                 break;
                             }
                             if let Err(e) = event_tx.send(VoxEvent::TtsChunk {

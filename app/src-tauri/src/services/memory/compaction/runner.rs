@@ -1,7 +1,7 @@
 use super::prompt::build_compaction_request;
 use crate::core::events::VoxEvent;
-use crate::services::llm::LlmProvider;
 use crate::services::harness::buffer::ChatMessage;
+use crate::services::llm::LlmProvider;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
@@ -33,7 +33,7 @@ async fn execute_compaction_attempt(
 
     let gen_future = provider.generate(
         request.clone(),
-        crate::core::constants::COMPACTION_SENTINEL_TURN_ID,
+        crate::services::memory::COMPACTION_SENTINEL_TURN_ID,
         cancel,
         &tx,
     );
@@ -58,7 +58,10 @@ async fn execute_compaction_attempt(
         }
         Ok(Err(e)) => {
             let _ = pump_handle.await;
-            log::warn!("[MemoryCompaction] Provider generation returned error: {}", e);
+            log::warn!(
+                "[MemoryCompaction] Provider generation returned error: {}",
+                e
+            );
         }
         Err(_) => {
             let _ = pump_handle.await;
@@ -106,7 +109,8 @@ pub async fn run_compaction(
             max_attempts
         );
 
-        if let Ok(content) = execute_compaction_attempt(provider, &request, effective_cancel).await {
+        if let Ok(content) = execute_compaction_attempt(provider, &request, effective_cancel).await
+        {
             summary_content = content;
             if !summary_content.trim().is_empty() {
                 if let Some(resp) = crate::utils::json::parse_compaction_json(&summary_content) {

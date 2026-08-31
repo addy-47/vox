@@ -1,4 +1,3 @@
-use crate::core::constants::EVENT_MODEL_READY;
 use crate::core::events::VoxEvent;
 use crate::core::settings::{TtsProviderConfig, VoxSettings};
 use crate::services::tts::providers::TtsProvider;
@@ -8,38 +7,36 @@ use crate::services::tts::{
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use tauri::Emitter;
 
 /// Commands accepted by the dedicated TTS synthesis worker thread.
 #[derive(Debug)]
 pub enum TtsCommand {
-    Generate {
-        turn_id: u32,
-        text: String,
-    },
+    Generate { turn_id: u32, text: String },
     Shutdown,
 }
 
 /// Spawns the dedicated TTS worker thread and processes incoming synthesis requests.
 pub fn spawn_tts_worker<R: tauri::Runtime + 'static>(
-    app: tauri::AppHandle<R>,
+    _app: tauri::AppHandle<R>,
     rx: std::sync::mpsc::Receiver<TtsCommand>,
     provider: Box<dyn TtsProvider>,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
     cancel_flag: Arc<AtomicBool>,
 ) {
-    if let Err(e) = app.emit(EVENT_MODEL_READY, "TTS") {
-        log::warn!("[TTS Worker] Failed to emit EVENT_MODEL_READY: {}", e);
-    }
-
     log::info!("[TTS Worker] Persistent loop started.");
 
     while let Ok(cmd) = rx.recv() {
         match cmd {
             TtsCommand::Generate { turn_id, text } => {
                 log::debug!("[TTS Worker] Processing TTS chunk: '{}'", text);
-                if let Err(e) = provider.synthesize_chunk(&text, turn_id, cancel_flag.clone(), event_tx.clone()) {
-                    log::warn!("[TTS Worker] Synthesis chunk failed for turn {}: {}", turn_id, e);
+                if let Err(e) =
+                    provider.synthesize_chunk(&text, turn_id, cancel_flag.clone(), event_tx.clone())
+                {
+                    log::warn!(
+                        "[TTS Worker] Synthesis chunk failed for turn {}: {}",
+                        turn_id,
+                        e
+                    );
                 }
             }
             TtsCommand::Shutdown => {
@@ -61,7 +58,9 @@ pub async fn resolve_reference_audio(voice_id: Option<&str>) -> Option<String> {
         .await
         .ok()?;
 
-    let entry = crate::persistence::voices::get_voice(&conn, id).await.ok()??;
+    let entry = crate::persistence::voices::get_voice(&conn, id)
+        .await
+        .ok()??;
 
     if let Some(ref dir) = entry.voice_dir {
         let path = std::path::Path::new(dir);

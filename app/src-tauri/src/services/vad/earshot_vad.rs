@@ -57,8 +57,10 @@ impl VadEngine for EarshotVadEngine {
         let is_active = score >= cal_threshold;
 
         log::trace!(
-            "[VAD/Earshot] score: {:.4}, cal_threshold: {:.4}, is_active: {}", 
-            score, cal_threshold, is_active
+            "[VAD/Earshot] score: {:.4}, cal_threshold: {:.4}, is_active: {}",
+            score,
+            cal_threshold,
+            is_active
         );
 
         is_active

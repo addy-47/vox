@@ -1,15 +1,16 @@
+pub use actor::{
+    spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles, VadValidationResult,
+};
+pub use utils::PreRollBuffer;
+
+// ─── 3. mod declarations ───────────────────────────────────────────────────
 pub mod actor;
 pub mod earshot_vad;
 pub mod telemetry;
 pub mod ten_onnx;
 pub mod utils;
 
-pub use actor::{
-    spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles, VadValidationResult,
-};
-pub use utils::PreRollBuffer;
-
-// ─── VAD Subsystem Constants ─────────────────────────────────────────────────
+// ─── 4. constants ──────────────────────────────────────────────────────────
 pub const MODEL_DIR_VAD: &str = "vad";
 pub const MODEL_FILE_VAD: &str = "ten_vad.onnx";
 pub const VAD_CHUNK_SIZE: usize = 256;
@@ -22,6 +23,26 @@ pub const VAD_MAX_PARTIAL_WINDOW_SAMPLES: usize = 240000;
 /// Earshot pure-Rust energy model noise gate calibration multiplier to compensate for dynamic range scale differences.
 pub const EARSHOT_NOISE_GATE_MULTIPLIER: f32 = 1.5;
 
+// ─── 6. enums ──────────────────────────────────────────────────────────────
+/// Commands dispatched to the dedicated VAD OS thread via `mpsc::Sender<VadCommand>`.
+pub enum VadCommand {
+    UpdateThreshold(f32),
+    UpdateNoiseGate(f32),
+    UpdateMode(crate::core::settings::InteractionMode),
+    UpdateAudioMode(crate::core::settings::AudioOutputMode),
+    SetOperationalMode(VadOperationalMode),
+    StartWindowValidation,
+    StopWindowValidation {
+        response_tx: std::sync::mpsc::Sender<VadValidationResult>,
+    },
+    Shutdown,
+    StartRealtime {
+        tx: tokio::sync::mpsc::Sender<Vec<i16>>,
+        is_ptt: bool,
+    },
+    StopRealtime,
+}
+
 /// Generic operational modes supported by the decoupled VAD actor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VadOperationalMode {
@@ -33,18 +54,20 @@ pub enum VadOperationalMode {
     StreamPassthrough,
 }
 
-/// Voice Activity Detection engine contract.
-pub trait VadEngine {
-    /// Evaluates if the current audio chunk contains active speech.
-    fn predict(&mut self, chunk: &[f32]) -> bool;
-}
-
 /// Unified dispatch enum for supported Voice Activity Detection backends.
 pub enum VadBackend {
     Ten(ten_onnx::VadEngine),
     Earshot(earshot_vad::EarshotVadEngine),
 }
 
+// ─── 8. traits ─────────────────────────────────────────────────────────────
+/// Voice Activity Detection engine contract.
+pub trait VadEngine {
+    /// Evaluates if the current audio chunk contains active speech.
+    fn predict(&mut self, chunk: &[f32]) -> bool;
+}
+
+// ─── 9. impl blocks ────────────────────────────────────────────────────────
 impl VadEngine for VadBackend {
     /// Dispatches chunk speech activity evaluation to the selected backend.
     fn predict(&mut self, chunk: &[f32]) -> bool {

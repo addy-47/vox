@@ -110,7 +110,10 @@ fn main() -> Result<()> {
 
     let super_tts_path = vox_lib::utils::paths::model_dir("tts").join("supertonic-3");
     if !super_tts_path.exists() {
-        return Err(anyhow!("Supertonic 3 model not found at {:?}", super_tts_path));
+        return Err(anyhow!(
+            "Supertonic 3 model not found at {:?}",
+            super_tts_path
+        ));
     }
 
     let mp = |f: &str| -> String { super_tts_path.join(f).to_string_lossy().into() };
@@ -153,7 +156,10 @@ fn main() -> Result<()> {
     for prompt in TEST_PROMPTS {
         let out_path = out_dir.join(format!("{}.wav", prompt.id));
         let sid = prompt.sid % tts.num_speakers().max(1);
-        print!("  Synthesizing {} (Voice: {}, sid={})... ", prompt.id, prompt.voice_name, sid);
+        print!(
+            "  Synthesizing {} (Voice: {}, sid={})... ",
+            prompt.id, prompt.voice_name, sid
+        );
 
         let lang = if vox_lib::services::translit::is_devanagari(prompt.text) {
             "hi"
@@ -173,7 +179,8 @@ fn main() -> Result<()> {
         };
 
         let start = std::time::Instant::now();
-        let audio = tts.generate_with_config(prompt.text, &gen_config, None::<fn(&[f32], f32) -> bool>);
+        let audio =
+            tts.generate_with_config(prompt.text, &gen_config, None::<fn(&[f32], f32) -> bool>);
         let elapsed = start.elapsed();
 
         if let Some(audio_data) = audio {

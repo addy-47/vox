@@ -1,4 +1,3 @@
-
 pub fn clean_json_content(content: &str) -> String {
     let mut cleaned = content.trim().to_string();
     if cleaned.starts_with("```") {
@@ -126,8 +125,7 @@ pub fn escape_control_chars_in_json(input: &str) -> String {
                 '\n' => output.push_str("\\n"),
                 '\r' => output.push_str("\\r"),
                 '\t' => output.push_str("\\t"),
-                _ if c.is_control() => {
-                }
+                _ if c.is_control() => {}
                 _ => output.push(c),
             }
         } else {

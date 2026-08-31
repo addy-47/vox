@@ -43,8 +43,13 @@ impl RealtimeEngine {
         log::info!("[RealtimeEngine] Starting realtime voice engine...");
 
         let config = self.provider.audio_config();
-        self.playback_bridge
-            .start(playback_engine, config, &self.tokio_handle, event_tx.clone(), turn_id);
+        self.playback_bridge.start(
+            playback_engine,
+            config,
+            &self.tokio_handle,
+            event_tx.clone(),
+            turn_id,
+        );
 
         let playback_tx = self
             .playback_bridge
@@ -90,15 +95,12 @@ impl RealtimeEngine {
         self.audio_bridge.get_sender()
     }
 
-    /// Cancels active speech playback and sends barge-in notification to the provider session.
-    pub fn barge_in(&self, playback_engine: &PlaybackEngine) {
-        log::info!("[RealtimeEngine] Interruption (barge-in) triggered.");
-        playback_engine.cancel();
-
+    /// Sends cancellation signal to the active realtime provider session.
+    pub fn cancel(&self) -> Result<()> {
         if let Some(ref session) = self.session {
-            if let Err(e) = session.cancel() {
-                log::warn!("[RealtimeEngine] Cancel error during barge-in: {:?}", e);
-            }
+            session.cancel()
+        } else {
+            Ok(())
         }
     }
 

@@ -65,8 +65,13 @@ impl PlaybackBridge {
                 if !seen_first_chunk {
                     seen_first_chunk = true;
                     let tid = turn_id.load(std::sync::atomic::Ordering::Relaxed);
-                    if let Err(e) = event_tx.send(crate::core::events::VoxEvent::PlaybackStarted { turn_id: tid }) {
-                        log::warn!("[PlaybackBridge] Failed to emit PlaybackStarted event: {}", e);
+                    if let Err(e) = event_tx
+                        .send(crate::core::events::VoxEvent::PlaybackStarted { turn_id: tid })
+                    {
+                        log::warn!(
+                            "[PlaybackBridge] Failed to emit PlaybackStarted event: {}",
+                            e
+                        );
                     }
                 }
 

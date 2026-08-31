@@ -40,7 +40,8 @@ pub const EDGE_TTS_SEC_MS_GEC_VERSION: &str = "1-143.0.3650.75";
 pub const EDGE_TTS_WIN_EPOCH: u64 = 11_644_473_600;
 pub const EDGE_TTS_DEFAULT_VOICE: &str = "en-US-AriaNeural";
 pub const EDGE_TTS_VOICES_URL_BASE: &str = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=";
-pub const EDGE_TTS_WS_URL_BASE: &str = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
+pub const EDGE_TTS_WS_URL_BASE: &str =
+    "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
 
 // ─── TTS Model Constants ─────────────────────────────────────────────────────
 pub const MODEL_DIR_TTS: &str = "tts";
@@ -57,4 +58,3 @@ pub const CHATTERBOX_MODEL_DIR: &str = "tts/chatterbox";
 pub const MODEL_DIRNAME_CHATTERBOX: &str = "chatterbox";
 pub const MODEL_FILE_TTS_CHATTERBOX_T3: &str = "t3-q4_0.gguf";
 pub const MODEL_FILE_TTS_CHATTERBOX_S3GEN: &str = "s3gen-f16.gguf";
-

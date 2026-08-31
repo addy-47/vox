@@ -6,7 +6,9 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder}
 use gtk::prelude::WidgetExt;
 
 /// Ensures the "tray" WebviewWindow exists, lazily constructing it if it was closed to save RAM.
-pub fn ensure_tray_window<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, String> {
+pub fn ensure_tray_window<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+) -> Result<WebviewWindow<R>, String> {
     if let Some(existing) = app.get_webview_window("tray") {
         return Ok(existing);
     }
@@ -152,7 +154,10 @@ pub async fn position_tray_window<R: tauri::Runtime>(window: &WebviewWindow<R>) 
     #[cfg(target_os = "linux")]
     {
         if let Err(e) = window.show() {
-            log::debug!("[Tray] Failed to show tray window during positioning: {}", e);
+            log::debug!(
+                "[Tray] Failed to show tray window during positioning: {}",
+                e
+            );
         }
         let win_clone = window.clone();
         tauri::async_runtime::spawn(async move {

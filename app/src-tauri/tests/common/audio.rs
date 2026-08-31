@@ -14,9 +14,7 @@ pub fn decode_wav_to_mono_16k(path: &Path) -> Result<Vec<f32>, String> {
     let spec = reader.spec();
 
     let samples: Vec<f32> = match (spec.sample_format, spec.bits_per_sample) {
-        (hound::SampleFormat::Float, _) => {
-            reader.samples::<f32>().filter_map(|s| s.ok()).collect()
-        }
+        (hound::SampleFormat::Float, _) => reader.samples::<f32>().filter_map(|s| s.ok()).collect(),
         (hound::SampleFormat::Int, 16) => reader
             .samples::<i16>()
             .filter_map(|s| s.ok())

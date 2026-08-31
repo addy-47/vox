@@ -1,19 +1,23 @@
 use crate::core::settings::RealtimeProviderKind;
 use crate::core::state::AppState;
-use crate::services::audio::PlaybackEngine;
 use crate::services::realtime::providers::deepgram_live::DeepgramVoiceAgentProvider;
 use crate::services::realtime::providers::gemini_live::GeminiLiveProvider;
 use crate::services::realtime::RealtimeVoiceProvider;
-use std::sync::Arc;
 
 /// Instantiates the configured cloud real-time voice provider.
-pub fn create_realtime_provider(state: &AppState) -> Result<Box<dyn RealtimeVoiceProvider>, String> {
-    let mut settings = state.settings.read().unwrap_or_else(|p| p.into_inner()).clone();
+pub fn create_realtime_provider(
+    state: &AppState,
+) -> Result<Box<dyn RealtimeVoiceProvider>, String> {
+    let mut settings = state
+        .settings
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
     let assembled_prompt = state.conversation_manager.lock().assemble_system_prompt();
 
     // Check cached session resumption token with 2-hour TTL
-    let cache_path = crate::utils::paths::cache_dir()
-        .join(crate::services::realtime::SESSION_CACHE_FILENAME);
+    let cache_path =
+        crate::utils::paths::cache_dir().join(crate::services::realtime::SESSION_CACHE_FILENAME);
     let mut cached_handle = None;
     if cache_path.exists() {
         if let Ok(data) = std::fs::read_to_string(&cache_path) {
@@ -22,7 +26,9 @@ pub fn create_realtime_provider(state: &AppState) -> Result<Box<dyn RealtimeVoic
                 let now_ms = chrono::Utc::now().timestamp_millis() as u64;
                 if now_ms < expires_at {
                     if let Some(handle) = cached["handle"].as_str() {
-                        log::info!("[RealtimeSession] Found valid unexpired session resumption token.");
+                        log::info!(
+                            "[RealtimeSession] Found valid unexpired session resumption token."
+                        );
                         cached_handle = Some(handle.to_string());
                     }
                 } else {
@@ -61,27 +67,16 @@ pub fn create_realtime_provider(state: &AppState) -> Result<Box<dyn RealtimeVoic
 
 /// Explicitly purges the disk cache file containing the session resumption token.
 pub fn purge_session_cache() {
-    let cache_path = crate::utils::paths::cache_dir()
-        .join(crate::services::realtime::SESSION_CACHE_FILENAME);
+    let cache_path =
+        crate::utils::paths::cache_dir().join(crate::services::realtime::SESSION_CACHE_FILENAME);
     if cache_path.exists() {
         if let Err(e) = std::fs::remove_file(&cache_path) {
-            log::warn!("[RealtimeSession] Failed to delete session cache file: {}", e);
+            log::warn!(
+                "[RealtimeSession] Failed to delete session cache file: {}",
+                e
+            );
         } else {
             log::info!("[RealtimeSession] Purged session cache file.");
         }
     }
-}
-
-/// Cancels realtime playback and issues provider barge-in signal if session is active.
-pub fn realtime_barge_in(
-    state: &AppState,
-    playback: &Arc<PlaybackEngine>,
-) {
-    if let Ok(rt_guard) = state.realtime_engine.try_lock() {
-        if let Some(ref rt_engine) = *rt_guard {
-            rt_engine.barge_in(playback);
-            return;
-        }
-    }
-    playback.cancel();
 }

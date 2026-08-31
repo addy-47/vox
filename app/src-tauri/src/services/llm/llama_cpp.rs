@@ -427,11 +427,16 @@ impl LlmEngine for LlmWorker {
 
                 if !user_tokens.is_empty() {
                     if cancel.is_cancelled() {
-                        log::info!("[LLM] Generation cancelled during user prompt tokenization/decode.");
+                        log::info!(
+                            "[LLM] Generation cancelled during user prompt tokenization/decode."
+                        );
                         *cache_lock = None;
                         ctx.clear_kv_cache();
                         if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
-                            log::warn!("[LLM] Failed to send Cancelled event during user decode: {}", e);
+                            log::warn!(
+                                "[LLM] Failed to send Cancelled event during user decode: {}",
+                                e
+                            );
                         }
                         return Ok(());
                     }
@@ -455,7 +460,9 @@ impl LlmEngine for LlmWorker {
                 }
             }
         } else {
-            log::info!("[LLM] KV cache miss or new system prompt. Prefilling full conversation context...");
+            log::info!(
+                "[LLM] KV cache miss or new system prompt. Prefilling full conversation context..."
+            );
             ctx.clear_kv_cache();
 
             let full_prompt = self.family.format_conversation(&conv_ctx.messages);
@@ -481,7 +488,10 @@ impl LlmEngine for LlmWorker {
                         *cache_lock = None;
                         ctx.clear_kv_cache();
                         if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
-                            log::warn!("[LLM] Failed to send Cancelled event during prefill: {}", e);
+                            log::warn!(
+                                "[LLM] Failed to send Cancelled event during prefill: {}",
+                                e
+                            );
                         }
                         return Ok(());
                     }

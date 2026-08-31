@@ -40,10 +40,7 @@ pub async fn get_profiler_snapshot(app: tauri::AppHandle) -> Result<ProfilerSnap
 /// Record a structured frontend memory profile event to tracing and persisted JSONL log.
 #[tauri::command]
 pub async fn record_memory_profile_event(event: MemoryProfileLogEvent) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        crate::monitoring::persist_memory_profile_event(&event)
-    })
-    .await
-    .map_err(|e| format!("[Monitoring] Failed to record memory profile event: {e}"))?
+    tokio::task::spawn_blocking(move || crate::monitoring::persist_memory_profile_event(&event))
+        .await
+        .map_err(|e| format!("[Monitoring] Failed to record memory profile event: {e}"))?
 }
-

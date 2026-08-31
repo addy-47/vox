@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -31,7 +31,7 @@ pub struct ModelSetupStatus {
     pub error: Option<String>,
 }
 
-pub type ModelStatusEmitter = Arc<dyn Fn(&str, ModelSetupStatus) + Send + Sync>;
+pub type ModelStatusEmitter = Arc<dyn Fn(ModelSetupStatus) + Send + Sync>;
 
 /// Orchestrates model downloads, extraction, and verification.
 ///
@@ -48,14 +48,16 @@ pub struct ModelManager {
 
 impl ModelManager {
     pub fn new<R: tauri::Runtime>(app: Option<AppHandle<R>>) -> Self {
-        let app_emitter: Option<ModelStatusEmitter> =
-            app.map(|handle| {
-                Arc::new(move |event_name: &str, payload: ModelSetupStatus| {
-                    if let Err(e) = handle.emit(event_name, payload) {
-                        log::warn!("[ModelManager] Failed to emit {}: {}", event_name, e);
-                    }
-                }) as ModelStatusEmitter
-            });
+        let app_emitter: Option<ModelStatusEmitter> = app.map(|handle| {
+            Arc::new(move |payload: ModelSetupStatus| {
+                if let Err(e) = crate::core::events::emit_ipc(
+                    &handle,
+                    crate::core::events::IpcEvent::ModelProgress(payload),
+                ) {
+                    log::warn!("[ModelManager] Failed to emit model_progress: {}", e);
+                }
+            }) as ModelStatusEmitter
+        });
 
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(300))
@@ -368,17 +370,14 @@ impl ModelManager {
         error: Option<String>,
     ) {
         if let Some(ref emitter) = self.app_emitter {
-            emitter(
-                "model_setup_status",
-                ModelSetupStatus {
-                    model_id: model_id.to_string(),
-                    step,
-                    progress,
-                    bytes_downloaded: bytes,
-                    total_bytes: total,
-                    error,
-                },
-            );
+            emitter(ModelSetupStatus {
+                model_id: model_id.to_string(),
+                step,
+                progress,
+                bytes_downloaded: bytes,
+                total_bytes: total,
+                error,
+            });
         }
     }
 
@@ -424,14 +423,26 @@ impl ModelManager {
                     if model_file_path.exists() {
                         if model_file_path.is_dir() {
                             if let Err(e) = std::fs::remove_dir_all(&model_file_path) {
-                                log::warn!("[ModelManager] Failed to remove outdated dir {:?}: {}", model_file_path, e);
+                                log::warn!(
+                                    "[ModelManager] Failed to remove outdated dir {:?}: {}",
+                                    model_file_path,
+                                    e
+                                );
                             }
                         } else if let Err(e) = std::fs::remove_file(&model_file_path) {
-                            log::warn!("[ModelManager] Failed to remove outdated file {:?}: {}", model_file_path, e);
+                            log::warn!(
+                                "[ModelManager] Failed to remove outdated file {:?}: {}",
+                                model_file_path,
+                                e
+                            );
                         }
                     }
                     if let Err(e) = std::fs::remove_file(&verified_path) {
-                        log::warn!("[ModelManager] Failed to remove outdated marker {:?}: {}", verified_path, e);
+                        log::warn!(
+                            "[ModelManager] Failed to remove outdated marker {:?}: {}",
+                            verified_path,
+                            e
+                        );
                     }
                 }
             }

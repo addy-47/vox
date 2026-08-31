@@ -1,6 +1,7 @@
 use crate::core::settings::{InteractionMode, PipelineMode};
-use crate::core::state::{AppState, InteractionOwner, InteractionState, VadCommand};
+use crate::core::state::{AppState, InteractionOwner, InteractionState};
 use crate::pipeline::RoutingContext;
+use crate::services::vad::VadCommand;
 use crate::services::vad::VadOperationalMode;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -45,18 +46,6 @@ pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> R
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
     let ctx = RoutingContext::from_app_state(&state);
-    let vad_mode = match ctx.interaction_mode {
-        InteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
-        InteractionMode::PTT => VadOperationalMode::WindowedValidation,
-    };
-
-    if let Ok(guard) = state.engine.try_lock() {
-        if let Some(ref engine) = *guard {
-            if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {
-                log::warn!("[IPC::Assistant] Failed to set initial VAD operational mode: {}", e);
-            }
-        }
-    }
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -68,11 +57,16 @@ pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> R
     {
         let persist_lock = state.persist_tx.lock();
         if let Some(ref tx) = *persist_lock {
-            if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::SessionStarted {
-                id: conv_id,
-                timestamp_ms: now,
-            }) {
-                log::warn!("[IPC::Assistant] Failed to send SessionStarted to persist: {}", e);
+            if let Err(e) = tx.try_send(
+                crate::persistence::events::PersistenceEvent::SessionStarted {
+                    id: conv_id,
+                    timestamp_ms: now,
+                },
+            ) {
+                log::warn!(
+                    "[IPC::Assistant] Failed to send SessionStarted to persist: {}",
+                    e
+                );
             }
         }
     }
@@ -80,10 +74,15 @@ pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> R
     {
         let mem_lock = state.memory_tx.lock();
         if let Some(ref tx) = *mem_lock {
-            if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::ActiveSessionChanged {
-                session_id: conv_id,
-            }) {
-                log::trace!("[IPC::Assistant] Failed to send ActiveSessionChanged to memory worker: {}", e);
+            if let Err(e) = tx.try_send(
+                crate::persistence::events::MemoryWorkerEvent::ActiveSessionChanged {
+                    session_id: conv_id,
+                },
+            ) {
+                log::trace!(
+                    "[IPC::Assistant] Failed to send ActiveSessionChanged to memory worker: {}",
+                    e
+                );
             }
         }
     }
@@ -153,11 +152,16 @@ pub async fn end_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Res
     {
         let persist_lock = state.persist_tx.lock();
         if let Some(ref tx) = *persist_lock {
-            if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
-                id: conv_id,
-                timestamp_ms: now,
-            }) {
-                log::warn!("[IPC::Assistant] Failed to send SessionEnded to persist: {}", e);
+            if let Err(e) =
+                tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
+                    id: conv_id,
+                    timestamp_ms: now,
+                })
+            {
+                log::warn!(
+                    "[IPC::Assistant] Failed to send SessionEnded to persist: {}",
+                    e
+                );
             }
         }
     }
@@ -165,18 +169,25 @@ pub async fn end_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Res
     {
         let mem_lock = state.memory_tx.lock();
         if let Some(ref tx) = *mem_lock {
-            if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
+            if let Err(e) = tx.try_send(crate::persistence::events::MemoryWorkerEvent::SessionEnd {
                 session_id: conv_id.to_string(),
                 summary: String::new(),
             }) {
-                log::trace!("[IPC::Assistant] Failed to send SessionEnd to memory worker: {}", e);
+                log::trace!(
+                    "[IPC::Assistant] Failed to send SessionEnd to memory worker: {}",
+                    e
+                );
             }
         }
     }
 
     crate::pipeline::transition(InteractionState::Idle, &ctx, &app, &state);
 
-    let dictation_enabled = state.settings.read().map(|s| s.dictation.enabled).unwrap_or(false);
+    let dictation_enabled = state
+        .settings
+        .read()
+        .map(|s| s.dictation.enabled)
+        .unwrap_or(false);
     if dictation_enabled {
         state
             .owner
@@ -187,13 +198,20 @@ pub async fn end_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Res
             .map(|s| s.dictation.interaction_mode.clone())
             .unwrap_or(crate::core::settings::DictationInteractionMode::Ptt);
         let vad_mode = match dictation_mode {
-            crate::core::settings::DictationInteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
-            crate::core::settings::DictationInteractionMode::Ptt => VadOperationalMode::WindowedValidation,
+            crate::core::settings::DictationInteractionMode::Passive => {
+                VadOperationalMode::ContinuousSegmentation
+            }
+            crate::core::settings::DictationInteractionMode::Ptt => {
+                VadOperationalMode::WindowedValidation
+            }
         };
         if let Ok(guard) = state.engine.try_lock() {
             if let Some(ref engine) = *guard {
                 if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {
-                    log::warn!("[IPC::Assistant] Failed to set VAD mode for dictation: {}", e);
+                    log::warn!(
+                        "[IPC::Assistant] Failed to set VAD mode for dictation: {}",
+                        e
+                    );
                 }
             }
         }
@@ -253,17 +271,15 @@ pub async fn resume_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> 
 pub async fn ptt_start(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let current_state = state.pipeline.state();
     if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
-        return Err("[IPC::Assistant] Cannot start PTT: assistant session is not active".to_string());
+        return Err(
+            "[IPC::Assistant] Cannot start PTT: assistant session is not active".to_string(),
+        );
     }
 
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
-        PipelineMode::Modular => {
-            crate::pipeline::modular::ptt::ptt_start(&app, &state)
-        }
-        PipelineMode::Realtime => {
-            crate::pipeline::realtime::ptt::ptt_start(&app, &state)
-        }
+        PipelineMode::Modular => crate::pipeline::modular::ptt::ptt_start(&app, &state),
+        PipelineMode::Realtime => crate::pipeline::realtime::ptt::ptt_start(&app, &state),
     }
 }
 
@@ -280,12 +296,8 @@ pub async fn ptt_stop(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result
 
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
-        PipelineMode::Modular => {
-            crate::pipeline::modular::ptt::ptt_stop(&app, &state).await
-        }
-        PipelineMode::Realtime => {
-            crate::pipeline::realtime::ptt::ptt_stop(&app, &state).await
-        }
+        PipelineMode::Modular => crate::pipeline::modular::ptt::ptt_stop(&app, &state).await,
+        PipelineMode::Realtime => crate::pipeline::realtime::ptt::ptt_stop(&app, &state).await,
     }
 }
 
@@ -299,11 +311,7 @@ pub async fn ptt_cancel(app: AppHandle, state: State<'_, Arc<AppState>>) -> Resu
 
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
-        PipelineMode::Modular => {
-            crate::pipeline::modular::ptt::ptt_cancel(&app, &state)
-        }
-        PipelineMode::Realtime => {
-            crate::pipeline::realtime::ptt::ptt_cancel(&app, &state)
-        }
+        PipelineMode::Modular => crate::pipeline::modular::ptt::ptt_cancel(&app, &state),
+        PipelineMode::Realtime => crate::pipeline::realtime::ptt::ptt_cancel(&app, &state),
     }
 }

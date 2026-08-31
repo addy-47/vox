@@ -114,7 +114,9 @@ impl super::LlmProvider for EmbeddedProvider {
                 if let Ok(entries) = std::fs::read_dir(parent) {
                     for entry in entries.flatten() {
                         let path = entry.path();
-                        if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("gguf") {
+                        if path.is_file()
+                            && path.extension().and_then(|e| e.to_str()) == Some("gguf")
+                        {
                             if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
                                 let metadata = entry.metadata().ok();
                                 let size_bytes = metadata.map(|m| m.len());

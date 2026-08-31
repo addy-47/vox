@@ -28,11 +28,7 @@ pub fn process_and_emit_telemetry(
 
     let gated_low = if raw_low > noise_gate { raw_low } else { 0.0 };
     let gated_mid = if raw_mid > noise_gate { raw_mid } else { 0.0 };
-    let gated_high = if raw_high > noise_gate {
-        raw_high
-    } else {
-        0.0
-    };
+    let gated_high = if raw_high > noise_gate { raw_high } else { 0.0 };
 
     let low = (gated_low * 12.0).clamp(0.0, 1.0).powf(0.5);
     let mid = (gated_mid * 12.0).clamp(0.0, 1.0).powf(0.5);

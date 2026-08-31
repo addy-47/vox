@@ -1,7 +1,3 @@
-//! ============================================================================
-//! src/core/defaults.rs — Centralized Default Values for Vox Configuration
-//! ============================================================================
-
 // ─── Appearance / UI Defaults ────────────────────────────────────────────────
 pub const DEFAULT_UI_THEME: &str = "dark";
 pub const DEFAULT_UI_ACCENT_SEED: &str = "#00DBE9"; // Default Cyan

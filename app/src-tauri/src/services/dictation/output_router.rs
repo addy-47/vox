@@ -2,7 +2,7 @@ use crate::core::error::DictationError;
 use crate::core::settings::DictationOutputMode;
 use crate::services::dictation::clipboard;
 use crate::services::dictation::input::create_input_adapter;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 /// Routes a completed transcript to the configured OS output destination (Clipboard or OS Paste).
 pub async fn route_transcript<R: tauri::Runtime>(
@@ -26,33 +26,19 @@ pub async fn route_transcript<R: tauri::Runtime>(
     }
 }
 
-/// Sets transcript directly on system clipboard and broadcasts success event.
+/// Sets transcript directly on system clipboard.
 fn dispatch_to_clipboard<R: tauri::Runtime>(
-    app: &AppHandle<R>,
+    _app: &AppHandle<R>,
     text: &str,
 ) -> Result<(), DictationError> {
     clipboard::set_text(text)?;
-
-    if let Err(e) = app.emit(
-        "dictation_success",
-        serde_json::json!({
-            "mode": "clipboard",
-            "length": text.len()
-        }),
-    ) {
-        log::warn!(
-            "[Dictation::Router] Failed to emit dictation_success: {}",
-            e
-        );
-    }
-
     log::info!("[Dictation::Router] Transcript written to system clipboard.");
     Ok(())
 }
 
 /// Simulates OS paste into active window with fallback clipboard preservation on failure.
 async fn dispatch_to_paste<R: tauri::Runtime>(
-    app: &AppHandle<R>,
+    _app: &AppHandle<R>,
     text: &str,
 ) -> Result<(), DictationError> {
     let input_adapter = create_input_adapter();
@@ -61,18 +47,6 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
 
     match paste_result {
         Ok(()) => {
-            if let Err(e) = app.emit(
-                "dictation_success",
-                serde_json::json!({
-                    "mode": "paste",
-                    "length": text.len()
-                }),
-            ) {
-                log::warn!(
-                    "[Dictation::Router] Failed to emit dictation_success: {}",
-                    e
-                );
-            }
             log::info!(
                 "[Dictation::Router] Transcript successfully pasted into focused application."
             );
@@ -83,18 +57,6 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
                 "[Dictation::Router] Paste simulation failed ({:?}). Transcript is preserved on clipboard.",
                 e
             );
-            if let Err(emit_err) = app.emit(
-                "dictation_recovery_available",
-                serde_json::json!({
-                    "text": text,
-                    "error": format!("{}", e)
-                }),
-            ) {
-                log::warn!(
-                    "[Dictation::Router] Failed to emit dictation_recovery_available: {}",
-                    emit_err
-                );
-            }
             Ok(())
         }
     }

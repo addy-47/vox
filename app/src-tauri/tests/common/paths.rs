@@ -20,7 +20,10 @@ pub fn get_asset_path(filename: &str) -> PathBuf {
             return c.clone();
         }
     }
-    panic!("Test asset '{}' not found in candidate paths: {:?}", filename, candidates);
+    panic!(
+        "Test asset '{}' not found in candidate paths: {:?}",
+        filename, candidates
+    );
 }
 
 /// Resolves the local Nemotron STT model directory.

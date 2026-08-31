@@ -1,35 +1,19 @@
 use crate::core::settings::VoxSettings;
 use crate::core::state::InteractionState;
+pub use crate::persistence::events::MemoryWorkerEvent;
+pub use crate::persistence::mutations::{enqueue_personal_facts, session_end_consolidation};
+pub use crate::persistence::{decode_f32_blob, encode_f32_blob};
 use crate::persistence::{
     MEMORY_WORKER_CHANNEL_CAPACITY, MEMORY_WORKER_POLL_TIMEOUT, MIN_IDLE_DEBOUNCE_SECS,
 };
-pub use crate::persistence::mutations::{enqueue_personal_facts, session_end_consolidation};
-pub use crate::persistence::{decode_f32_blob, encode_f32_blob};
 pub use crate::services::memory::ingestion::run_pipeline_cycle;
 use crossbeam_channel::{bounded, Receiver, Sender};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
 use turso::Connection;
-
-/// Events consumed exclusively by the background memory worker.
-#[derive(Debug, Clone)]
-pub enum MemoryWorkerEvent {
-    /// A session has ended. Trigger the consolidation sweep.
-    SessionEnd { session_id: String, summary: String },
-    /// Extracted facts from compaction — enqueued to personal_memory_queue
-    PersonalFactsReady {
-        facts: HashMap<String, Vec<String>>,
-        session_id: String,
-    },
-    /// Track current active session ID to enforce current-session exclusion invariant.
-    ActiveSessionChanged { session_id: u64 },
-    /// Signals the memory worker to flush and exit cleanly.
-    Shutdown,
-}
 
 struct WorkerState {
     current_session_id: u64,
@@ -48,13 +32,21 @@ pub fn spawn_memory_worker(
     std::thread::Builder::new()
         .name("vox-memory-worker".to_string())
         .spawn(move || {
-            log::info!("[Persistence::MemoryWorker] Worker started. DB at {:?}", db_path);
+            log::info!(
+                "[Persistence::MemoryWorker] Worker started. DB at {:?}",
+                db_path
+            );
 
             let handle = crate::persistence::db::get_tokio_handle();
-            let conn = match handle.block_on(async { crate::persistence::db::VoxDb::open(&db_path).await }) {
+            let conn = match handle
+                .block_on(async { crate::persistence::db::VoxDb::open(&db_path).await })
+            {
                 Ok(c) => Some(c),
                 Err(e) => {
-                    log::error!("[Persistence::MemoryWorker] Failed to open DB connection: {}", e);
+                    log::error!(
+                        "[Persistence::MemoryWorker] Failed to open DB connection: {}",
+                        e
+                    );
                     None
                 }
             };
@@ -71,13 +63,7 @@ pub fn spawn_memory_worker(
                 handle: &handle,
             };
 
-            run_worker_loop(
-                rx,
-                conn,
-                &mut state,
-                ctx,
-                state_rx,
-            );
+            run_worker_loop(rx, conn, &mut state, ctx, state_rx);
         })
         .expect("[Persistence::MemoryWorker] Failed to spawn worker thread");
 
@@ -122,8 +108,15 @@ fn run_worker_loop(
 
         match rx.recv_timeout(MEMORY_WORKER_POLL_TIMEOUT) {
             Ok(event) => {
-                if ctx.settings.read().map(|s| s.history.private_mode).unwrap_or(false) {
-                    log::debug!("[Persistence::MemoryWorker] Private mode active: skipping memory event");
+                if ctx
+                    .settings
+                    .read()
+                    .map(|s| s.history.private_mode)
+                    .unwrap_or(false)
+                {
+                    log::debug!(
+                        "[Persistence::MemoryWorker] Private mode active: skipping memory event"
+                    );
                     continue;
                 }
                 if handle_single_event(event, conn.as_ref(), state, &ctx) {
@@ -131,7 +124,13 @@ fn run_worker_loop(
                 }
             }
             Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
-                if !ctx.settings.read().map(|s| s.history.private_mode).unwrap_or(false) && state.idle_since.is_some() {
+                if !ctx
+                    .settings
+                    .read()
+                    .map(|s| s.history.private_mode)
+                    .unwrap_or(false)
+                    && state.idle_since.is_some()
+                {
                     process_idle_queue(
                         conn.as_ref(),
                         state,
@@ -161,7 +160,10 @@ fn handle_single_event(
         MemoryWorkerEvent::ActiveSessionChanged { session_id } => {
             state.current_session_id = session_id;
         }
-        MemoryWorkerEvent::SessionEnd { session_id, summary } => {
+        MemoryWorkerEvent::SessionEnd {
+            session_id,
+            summary,
+        } => {
             if let Some(db_conn) = conn {
                 if let Err(e) = ctx.handle.block_on(async {
                     session_end_consolidation(db_conn, &session_id, &summary).await
@@ -177,7 +179,8 @@ fn handle_single_event(
         }
         MemoryWorkerEvent::PersonalFactsReady { facts, session_id } => {
             if let Some(db_conn) = conn {
-                let pipeline_enabled = ctx.settings
+                let pipeline_enabled = ctx
+                    .settings
                     .read()
                     .map(|s| s.memory.pipeline_processing_enabled)
                     .unwrap_or(true);
@@ -185,7 +188,8 @@ fn handle_single_event(
                     enqueue_personal_facts(db_conn, facts, &session_id, pipeline_enabled).await
                 }) {
                     log::error!(
-                        "[Persistence::MemoryWorker] Failed to enqueue personal facts: {}", e
+                        "[Persistence::MemoryWorker] Failed to enqueue personal facts: {}",
+                        e
                     );
                 }
             }
@@ -286,7 +290,10 @@ fn run_drain_queue(
                 });
 
                 if auto_retried > 0 {
-                    log::info!("[Persistence::MemoryWorker] Auto-retrying {} failed queue items", auto_retried);
+                    log::info!(
+                        "[Persistence::MemoryWorker] Auto-retrying {} failed queue items",
+                        auto_retried
+                    );
                     continue;
                 }
 
@@ -297,4 +304,3 @@ fn run_drain_queue(
         }
     }
 }
-

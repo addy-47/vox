@@ -235,7 +235,10 @@ impl TransliterationEngine {
             .map_err(|e| format!("Failed to extract h_states: {}", e))?;
         let enc_h_shape = enc_h_view.shape();
         if enc_h_shape.len() < 3 || enc_h_shape[0] < 4 || enc_h_shape[2] < 256 {
-            return Err(format!("Unexpected encoder h_states shape: {:?}", enc_h_shape));
+            return Err(format!(
+                "Unexpected encoder h_states shape: {:?}",
+                enc_h_shape
+            ));
         }
 
         let enc_c_tensor = enc_outputs
@@ -246,7 +249,10 @@ impl TransliterationEngine {
             .map_err(|e| format!("Failed to extract c_states: {}", e))?;
         let enc_c_shape = enc_c_view.shape();
         if enc_c_shape.len() < 3 || enc_c_shape[0] < 4 || enc_c_shape[2] < 256 {
-            return Err(format!("Unexpected encoder c_states shape: {:?}", enc_c_shape));
+            return Err(format!(
+                "Unexpected encoder c_states shape: {:?}",
+                enc_c_shape
+            ));
         }
 
         let mut dec_h = Array3::<f32>::zeros((2, 1, 256));

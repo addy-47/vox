@@ -47,7 +47,9 @@ fn setup_test_llm_worker() -> (
     (tts_tx_handle(llm_tx), event_rx, llm_handle)
 }
 
-fn tts_tx_handle(llm_tx: Option<std::sync::mpsc::Sender<LlmCommand>>) -> std::sync::mpsc::Sender<LlmCommand> {
+fn tts_tx_handle(
+    llm_tx: Option<std::sync::mpsc::Sender<LlmCommand>>,
+) -> std::sync::mpsc::Sender<LlmCommand> {
     llm_tx.expect("llm_tx initialized")
 }
 
@@ -152,12 +154,16 @@ fn test_llm_generation_and_cancel_matrix() {
         let deadline = std::time::Instant::now() + Duration::from_secs(3);
 
         while std::time::Instant::now() < deadline {
-            if let Ok(VoxEvent::LlmToken { .. }) = event_rx.recv_timeout(Duration::from_millis(50)) {
+            if let Ok(VoxEvent::LlmToken { .. }) = event_rx.recv_timeout(Duration::from_millis(50))
+            {
                 tokens_received += 1;
             }
         }
 
-        println!("\n=== [LLM Cancel Guard] Tokens Emitted: {} ===", tokens_received);
+        println!(
+            "\n=== [LLM Cancel Guard] Tokens Emitted: {} ===",
+            tokens_received
+        );
         assert!(
             tokens_received <= 1,
             "Cancelled LLM generation must halt token generation immediately"
@@ -168,7 +174,9 @@ fn test_llm_generation_and_cancel_matrix() {
     let mut tx_opt = Some(llm_tx);
     cool_down_llm(&mut tx_opt, None);
     if let Some(handle) = llm_handle {
-        handle.join().expect("LLM worker thread panicked during shutdown");
+        handle
+            .join()
+            .expect("LLM worker thread panicked during shutdown");
     }
 
     assert!(

@@ -216,8 +216,7 @@ async fn main() -> Result<()> {
 
         let start_time = std::time::Instant::now();
         let retrieved_profile =
-            retrieve_turn_profile(&conn, &norm_vec, scope, &settings, context_window_size)
-                .await?;
+            retrieve_turn_profile(&conn, &norm_vec, scope, &settings, context_window_size).await?;
         let rendered_context = format_retrieved_profile(&retrieved_profile);
         let elapsed_ms = start_time.elapsed().as_millis();
 

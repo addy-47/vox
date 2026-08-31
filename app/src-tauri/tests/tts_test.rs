@@ -25,8 +25,7 @@ use vox_lib::services::tts::actor::{cool_down_tts, warm_up_tts, TtsCommand, TtsW
 
 const EN_PROMPT: &str =
     "Hey Vox, good morning! Can you check my calendar and give me a quick briefing on today's scheduled meetings?";
-const HI_PROMPT: &str =
-    "वॉक्स, आज बाहर का मौसम कैसा है? क्या शाम को बारिश होने की कोई संभावना है?";
+const HI_PROMPT: &str = "वॉक्स, आज बाहर का मौसम कैसा है? क्या शाम को बारिश होने की कोई संभावना है?";
 
 enum TestTtsConfig {
     EdgeTts { voice: Option<String> },
@@ -129,7 +128,9 @@ fn write_temp_wav(path: &Path, samples: &[f32], sample_rate: u32) {
     let mut writer = hound::WavWriter::create(path, spec).expect("Failed to create temp WAV");
     for &sample in samples {
         let i16_val = (sample.clamp(-1.0, 1.0) * 32767.0) as i16;
-        writer.write_sample(i16_val).expect("Failed to write sample");
+        writer
+            .write_sample(i16_val)
+            .expect("Failed to write sample");
     }
     writer.finalize().expect("Failed to finalize WAV");
 }
@@ -165,8 +166,14 @@ fn test_tts_edge_synthesis_matrix() {
         let _ = std::fs::remove_file(temp_wav);
 
         println!("\n=== [Edge TTS EN Acoustic Report] ===");
-        println!("Duration : Gen {:.2}s vs Golden {:.2}s", gen_features.duration_sec, golden_features.duration_sec);
-        println!("Mean RMS : Gen {:.4} vs Golden {:.4}", gen_features.mean_rms, golden_features.mean_rms);
+        println!(
+            "Duration : Gen {:.2}s vs Golden {:.2}s",
+            gen_features.duration_sec, golden_features.duration_sec
+        );
+        println!(
+            "Mean RMS : Gen {:.4} vs Golden {:.4}",
+            gen_features.mean_rms, golden_features.mean_rms
+        );
 
         assert_acoustic_within_tolerance(
             &gen_features,
@@ -201,8 +208,14 @@ fn test_tts_edge_synthesis_matrix() {
         let _ = std::fs::remove_file(temp_wav);
 
         println!("\n=== [Edge TTS HI Acoustic Report] ===");
-        println!("Duration : Gen {:.2}s vs Golden {:.2}s", gen_features.duration_sec, golden_features.duration_sec);
-        println!("Mean RMS : Gen {:.4} vs Golden {:.4}", gen_features.mean_rms, golden_features.mean_rms);
+        println!(
+            "Duration : Gen {:.2}s vs Golden {:.2}s",
+            gen_features.duration_sec, golden_features.duration_sec
+        );
+        println!(
+            "Mean RMS : Gen {:.4} vs Golden {:.4}",
+            gen_features.mean_rms, golden_features.mean_rms
+        );
 
         assert_acoustic_within_tolerance(
             &gen_features,
@@ -266,7 +279,10 @@ fn test_tts_supertonic_synthesis_matrix() {
             .expect("Failed to send Supertonic EN");
 
         let audio_16k = collect_all_tts_audio_16k(&event_rx, 1, Duration::from_secs(12));
-        assert!(!audio_16k.is_empty(), "Supertonic EN audio must not be empty");
+        assert!(
+            !audio_16k.is_empty(),
+            "Supertonic EN audio must not be empty"
+        );
 
         let temp_wav = std::env::temp_dir().join("vox_test_supertonic_en.wav");
         write_temp_wav(&temp_wav, &audio_16k, 16000);
@@ -274,8 +290,14 @@ fn test_tts_supertonic_synthesis_matrix() {
         let _ = std::fs::remove_file(temp_wav);
 
         println!("\n=== [Supertonic EN Acoustic Report] ===");
-        println!("Duration : Gen {:.2}s vs Golden {:.2}s", gen_features.duration_sec, golden_features.duration_sec);
-        println!("Mean RMS : Gen {:.4} vs Golden {:.4}", gen_features.mean_rms, golden_features.mean_rms);
+        println!(
+            "Duration : Gen {:.2}s vs Golden {:.2}s",
+            gen_features.duration_sec, golden_features.duration_sec
+        );
+        println!(
+            "Mean RMS : Gen {:.4} vs Golden {:.4}",
+            gen_features.mean_rms, golden_features.mean_rms
+        );
 
         assert_acoustic_within_tolerance(
             &gen_features,
@@ -302,7 +324,10 @@ fn test_tts_supertonic_synthesis_matrix() {
             .expect("Failed to send Supertonic HI");
 
         let audio_16k = collect_all_tts_audio_16k(&event_rx, 2, Duration::from_secs(12));
-        assert!(!audio_16k.is_empty(), "Supertonic HI audio must not be empty");
+        assert!(
+            !audio_16k.is_empty(),
+            "Supertonic HI audio must not be empty"
+        );
 
         let temp_wav = std::env::temp_dir().join("vox_test_supertonic_hi.wav");
         write_temp_wav(&temp_wav, &audio_16k, 16000);
@@ -310,8 +335,14 @@ fn test_tts_supertonic_synthesis_matrix() {
         let _ = std::fs::remove_file(temp_wav);
 
         println!("\n=== [Supertonic HI Acoustic Report] ===");
-        println!("Duration : Gen {:.2}s vs Golden {:.2}s", gen_features.duration_sec, golden_features.duration_sec);
-        println!("Mean RMS : Gen {:.4} vs Golden {:.4}", gen_features.mean_rms, golden_features.mean_rms);
+        println!(
+            "Duration : Gen {:.2}s vs Golden {:.2}s",
+            gen_features.duration_sec, golden_features.duration_sec
+        );
+        println!(
+            "Mean RMS : Gen {:.4} vs Golden {:.4}",
+            gen_features.mean_rms, golden_features.mean_rms
+        );
 
         assert_acoustic_within_tolerance(
             &gen_features,

@@ -1,14 +1,13 @@
 use super::buffer::{current_timestamp_ms, ChatMessage, MessageBuffer, Role};
 use super::prompt_builder::{build_session_history_xml, consolidate_system_message};
-use crate::core::constants::MemoryCollection;
 use crate::services::memory::compaction::CompactionResult;
 use crate::services::memory::ml::estimate_tokens;
+use crate::services::memory::MemoryCollection;
 use crate::services::memory::{
     CONTEXT_CRITICAL_THRESHOLD, CONTEXT_SOFT_THRESHOLD, RESERVED_GENERATION_TOKENS,
 };
 use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
-
 
 /// Manages context budgeting, sliding-window compaction, and background opportunistic compaction for Modular LLM.
 pub struct ContextHarness {
@@ -204,7 +203,12 @@ impl ContextHarness {
     }
 
     /// Consolidates session history XML into the root System Message.
-    pub fn consolidate_system_message(&mut self, buffer: &mut MessageBuffer, system_prompt: &ChatMessage, session_history: &str) {
+    pub fn consolidate_system_message(
+        &mut self,
+        buffer: &mut MessageBuffer,
+        system_prompt: &ChatMessage,
+        session_history: &str,
+    ) {
         let mut total_tokens = self.accountant.total_token_count();
         consolidate_system_message(
             &mut buffer.messages,

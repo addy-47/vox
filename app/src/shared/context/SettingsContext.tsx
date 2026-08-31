@@ -1,6 +1,6 @@
 import React, { createContext, useEffect, useMemo } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettingsStore } from "@/store/settingsStore";
+import { onSettingsUpdated } from "@/services/eventsService";
 
 export type { VoxSettings, ModelMetadata, VoiceProfile, ModelCatalog } from "@/store/settingsStore";
 import type { VoxSettings, ModelCatalog } from "@/store/settingsStore";
@@ -27,37 +27,25 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   useEffect(() => {
-    let unlisteners: (() => void)[] = [];
+    const unlisteners: (() => void)[] = [];
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     let isMounted = true;
 
-    const setup = async () => {
-      try {
-        const win = getCurrentWindow();
-        const u1 = await win.listen<string>("theme-changed", () => {
-          if (!isMounted) return;
-          useSettingsStore.getState().loadSettings();
-        });
-        const u2 = await win.listen("settings-updated", () => {
+    try {
+      unlisteners.push(
+        onSettingsUpdated(() => {
           if (!isMounted || useSettingsStore.getState().isCommitting) return;
           if (debounceTimer) clearTimeout(debounceTimer);
           debounceTimer = setTimeout(() => {
             if (!isMounted || useSettingsStore.getState().isCommitting) return;
             useSettingsStore.getState().loadSettings();
           }, 80);
-        });
+        })
+      );
+    } catch (err) {
+      console.warn("[SettingsContext] Failed to bind listeners:", err);
+    }
 
-        if (isMounted) {
-          unlisteners = [u1, u2];
-        } else {
-          u1();
-          u2();
-        }
-      } catch (err) {
-        console.warn("[SettingsContext] Failed to bind listeners:", err);
-      }
-    };
-    setup();
     return () => {
       isMounted = false;
       unlisteners.forEach((u) => u());

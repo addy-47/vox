@@ -101,9 +101,7 @@ pub async fn get_sessions() -> Result<Vec<SessionRow>, String> {
 
 /// Returns all turns for a given session, oldest first.
 #[tauri::command]
-pub async fn get_turns(
-    session_id: i64,
-) -> Result<Vec<TurnRow>, String> {
+pub async fn get_turns(session_id: i64) -> Result<Vec<TurnRow>, String> {
     let db_path = crate::utils::paths::get().db.clone();
 
     let conn = VoxDb::open_readonly(&db_path)
@@ -138,9 +136,7 @@ pub async fn get_turns(
 
 /// Deletes a session and all its turns (CASCADE).
 #[tauri::command]
-pub async fn delete_session(
-    id: i64,
-) -> Result<(), String> {
+pub async fn delete_session(id: i64) -> Result<(), String> {
     let db_path = crate::utils::paths::get().db.clone();
 
     let conn = VoxDb::open(&db_path)

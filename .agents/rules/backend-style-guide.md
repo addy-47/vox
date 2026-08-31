@@ -109,16 +109,15 @@ Never scatter or bury magic numbers or configuration values across internal acto
   - **Atomic Cancellation / Shutdown Tokens:** `tokio_util::sync::CancellationToken` or worker shutdown flags (`AtomicBool` for loop termination only).
 
 ### 7.3 State Transitions are the Sole Lifecycle Event Pump
-- `transition(...)` broadcasts `EVENT_STATE_CHANGED` (`"state_changed"`).
+- `transition(...)` broadcasts `IpcEvent::StateChanged` (`"state_changed"`).
 - Submodules must **NEVER** manually emit ad-hoc custom lifecycle events (`speech_start`, `speech_end`, `playback_started`, `playback_finished`, `session_started`, `session_ended`, `ptt_status`).
-- The **ONLY** other IPC events permitted are streaming data payloads:
-  - `transcript_partial`
-  - `transcript_final`
-  - `llm_token`
-  - `pipeline_error`
+- All cross-boundary IPC emissions must be dispatched strictly through `emit_ipc` or `emit_ipc_to` using canonical `IpcEvent` enum variants.
 
 ### 7.4 Centralized Monotonic Turn Generation
 - Turn IDs must be monotonically allocated strictly at the turn boundary via `AppState::next_turn_id()`. Never fragment `fetch_add` across actors, reset to `0`, or pass dummy turn IDs.
+
+### 7.5 Event Contracts
+Events are registry-owned and must have exactly one canonical definition. Internal pipeline events belong in `core/events.rs` (`VoxEvent`); IPC events belong in the typed IPC event registry (`IpcEvent`); telemetry and other subsystem buses use their own dedicated enums (`TelemetryEvent`, `PersistenceEvent`, `MemoryWorkerEvent`). Never introduce raw event-name strings, ad-hoc event variants, or undocumented payloads at call sites. Every new event requires a registry entry, a strongly typed payload, an explicit producer, an explicit consumer or documented reason for being producer-only, and corresponding contract tests. If an event is not present in the canonical registry, it does not exist. Do not duplicate or rename an existing event to represent the same state; extend the existing contract instead. Commands are not events and must remain in their owning actor/service command enum.
 
 ---
 

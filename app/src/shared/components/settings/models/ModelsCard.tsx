@@ -202,15 +202,6 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     refreshPresence();
   }, [refreshPresence]);
 
-  useEffect(() => {
-    const unsub = eventsService.onOptionalModelComplete(() => {
-      refreshPresence();
-    });
-    return () => {
-      unsub();
-    };
-  }, [refreshPresence]);
-
   // 3. Custom Voices & Edge TTS
   const loadCustomVoices = useCallback(async () => {
     try {
@@ -273,17 +264,24 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   }, [draftSettings?.tts?.provider, activePipelineTab]);
 
   useEffect(() => {
-    return eventsService.onRemoteSetupStatus((payload) => {
-      setSetupStatus(payload);
-      if (payload?.step === "complete" && draftSettings?.tts?.provider) {
-        checkTtsProviderHealth(draftSettings.tts.provider).then((healthy) => setIsRemoteTtsHealthy(healthy));
+    return eventsService.onModelProgress((payload) => {
+      if (payload?.model_id === "chatterbox_remote_server") {
+        setSetupStatus({
+          step: payload.step,
+          progress: payload.progress,
+          log_line: payload.error ? `Error: ${payload.error}` : `Step: ${payload.step}`,
+          error: payload.error || undefined,
+        });
+        if ((payload.step === "completed" || payload.step === "Completed") && draftSettings?.tts?.provider) {
+          checkTtsProviderHealth(draftSettings.tts.provider).then((healthy) => setIsRemoteTtsHealthy(healthy));
+        }
       }
     });
   }, [draftSettings?.tts?.provider]);
 
-  // Model download events listener (model_setup_status, optional_model_complete, optional_model_failed)
+  // Model download events listener (unified model_progress)
   useEffect(() => {
-    const unlistenStatus = eventsService.onModelSetupStatus((payload) => {
+    const unlistenProgress = eventsService.onModelProgress((payload) => {
       const { model_id, step, progress, bytes_downloaded, total_bytes, error } = payload || {};
       if (!model_id) return;
 
@@ -296,33 +294,14 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         totalBytes: total_bytes || 100,
         error: error || undefined,
       });
-    });
 
-    const unlistenComplete = eventsService.onOptionalModelComplete((modelGroupId) => {
-      if (!modelGroupId) return;
-
-      updateDownloadStatus(modelGroupId, {
-        step: "completed",
-        progress: 100,
-      });
-      refreshPresence();
-    });
-
-    const unlistenFailed = eventsService.on<any>("optional_model_failed", (payload) => {
-      const modelGroupId = Array.isArray(payload) ? payload[0] : typeof payload === "string" ? payload : payload?.model_id;
-      const errStr = Array.isArray(payload) ? payload[1] : payload?.error || "Download failed";
-      if (!modelGroupId) return;
-
-      updateDownloadStatus(modelGroupId, {
-        step: "failed",
-        error: String(errStr),
-      });
+      if (stepLower === "completed" || (stepLower as string) === "complete") {
+        refreshPresence();
+      }
     });
 
     return () => {
-      unlistenStatus();
-      unlistenComplete();
-      unlistenFailed();
+      unlistenProgress();
     };
   }, [updateDownloadStatus, refreshPresence]);
 

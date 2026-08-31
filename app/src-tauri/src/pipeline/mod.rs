@@ -2,13 +2,6 @@
 pub const WINDOW_MAIN: &str = "main";
 pub const WINDOW_TRAY: &str = "tray";
 
-pub const EVENT_STATE_CHANGED: &str = "state_changed";
-pub const EVENT_TRANSCRIPT_PARTIAL: &str = "transcript_partial";
-pub const EVENT_TRANSCRIPT_FINAL: &str = "transcript_final";
-pub const EVENT_LLM_TOKEN: &str = "llm_token";
-pub const EVENT_PIPELINE_ERROR: &str = "pipeline_error";
-pub const EVENT_DICTATION_STATE_CHANGED: &str = "dictation_state_changed";
-
 pub const ROUTER_THREAD_NAME: &str = "vox-router";
 
 pub mod dictation;
@@ -16,10 +9,11 @@ pub mod modular;
 pub mod realtime;
 pub mod router;
 
+use crate::core::events::{emit_ipc_to, IpcEvent};
 use crate::core::settings::{DictationInteractionMode, InteractionMode, PipelineMode};
 use crate::core::state::{AppState, InteractionOwner, InteractionState};
 use std::sync::atomic::Ordering;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RoutingContext {
@@ -32,10 +26,7 @@ impl RoutingContext {
     /// Snapshots the active routing context from settings and current owner with poison-safety.
     pub fn from_app_state(state: &AppState) -> Self {
         let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
-        let owner: InteractionOwner = state
-            .owner
-            .load(Ordering::Relaxed)
-            .into();
+        let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
         let (pipeline_mode, interaction_mode) = match owner {
             InteractionOwner::Dictation => {
                 let im = match settings.dictation.interaction_mode {
@@ -79,8 +70,23 @@ pub fn transition<R: tauri::Runtime>(
 
     state.pipeline.set_state(new_state);
     let target = target_window(ctx.owner);
+    let turn_id = state.pipeline.peek_turn_id();
+    let state_str = match new_state {
+        InteractionState::Idle => "Idle",
+        InteractionState::Ready => "Ready",
+        InteractionState::Listening => "Listening",
+        InteractionState::Thinking => "Thinking",
+        InteractionState::Speaking => "Speaking",
+        InteractionState::Paused => "Paused",
+        InteractionState::Error => "Error",
+    };
+    let payload = crate::core::events::StateChangedPayload {
+        owner: ctx.owner,
+        state: state_str.to_string(),
+        turn_id,
+    };
 
-    if let Err(e) = app.emit_to(target, EVENT_STATE_CHANGED, new_state) {
+    if let Err(e) = emit_ipc_to(app, target, IpcEvent::StateChanged(payload)) {
         log::warn!(
             "[Pipeline] Failed to emit state_changed to {}: {}",
             target,

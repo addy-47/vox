@@ -1,7 +1,7 @@
-use crate::core::constants::{PM_RELATION_SUPERSEDES, PM_SOURCE_USER};
 use crate::core::state::AppState;
 use crate::persistence::db::VoxDb;
 use crate::persistence::encode_f32_blob;
+use crate::services::memory::{FactSource, Relation};
 use std::sync::atomic::Ordering;
 use tauri::State;
 
@@ -157,14 +157,14 @@ pub async fn soft_delete_fact(
 
         conn.execute(
             "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at) VALUES (?, 'foundational', 'Identity', '', ?, 'active', ?)",
-            (tombstone_id.clone(), PM_SOURCE_USER.to_string(), now),
+            (tombstone_id.clone(), FactSource::User.as_str().to_string(), now),
         )
         .await
         .map_err(|e| e.to_string())?;
 
         conn.execute(
             "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at) VALUES (?, ?, ?, 'USER', ?)",
-            (tombstone_id, fact_id, PM_RELATION_SUPERSEDES.to_string(), now),
+            (tombstone_id, fact_id, Relation::Supersedes.as_str().to_string(), now),
         )
         .await
         .map_err(|e| e.to_string())?;

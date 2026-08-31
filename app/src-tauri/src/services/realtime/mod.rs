@@ -4,11 +4,11 @@ pub mod playback_bridge;
 pub mod providers;
 pub mod resampler;
 
-use std::time::Duration;
 use crate::core::events::VoxEvent;
 pub use crate::core::settings::RealtimeProviderKind;
 use anyhow::Result;
 use std::sync::mpsc::Sender;
+use std::time::Duration;
 
 pub const DEFAULT_INPUT_SAMPLE_RATE: u32 = 16000;
 pub const DEFAULT_OUTPUT_SAMPLE_RATE: u32 = 24000;
@@ -36,11 +36,9 @@ pub const DEEPGRAM_DEFAULT_WS_URL: &str = "wss://agent.deepgram.com/v1/agent/con
 pub const DEEPGRAM_HEALTH_CHECK_ADDR: &str = "agent.deepgram.com:443";
 pub const GEMINI_DEFAULT_WS_URL_BASE: &str = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 pub const GEMINI_HEALTH_CHECK_ADDR: &str = "generativelanguage.googleapis.com:443";
-pub const GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR: std::net::SocketAddr =
-    std::net::SocketAddr::V4(std::net::SocketAddrV4::new(
-        std::net::Ipv4Addr::new(142, 250, 190, 42),
-        443,
-    ));
+pub const GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR: std::net::SocketAddr = std::net::SocketAddr::V4(
+    std::net::SocketAddrV4::new(std::net::Ipv4Addr::new(142, 250, 190, 42), 443),
+);
 pub const SESSION_CACHE_FILENAME: &str = "realtime_session.json";
 
 /// Configuration defining input/output sampling rates and resampling requirements for realtime streaming.

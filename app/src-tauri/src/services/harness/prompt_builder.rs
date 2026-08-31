@@ -53,16 +53,25 @@ pub fn format_retrieved_profile(profile: &RetrievedProfile) -> String {
     let mut sql_lines = Vec::new();
     for fact in &profile.sql_sections {
         let time_str = format_relative_timestamp(fact.created_at);
-        sql_lines.push(format!("- ({}) [{}] {}", time_str, fact.collection, fact.fact));
+        sql_lines.push(format!(
+            "- ({}) [{}] {}",
+            time_str, fact.collection, fact.fact
+        ));
     }
     if !sql_lines.is_empty() {
-        sections.push(format!("[Directives & Narrative]\n{}", sql_lines.join("\n")));
+        sections.push(format!(
+            "[Directives & Narrative]\n{}",
+            sql_lines.join("\n")
+        ));
     }
 
     let mut vector_lines = Vec::new();
     for seed in &profile.vector_seeds {
         let time_str = format_relative_timestamp(seed.created_at);
-        vector_lines.push(format!("- ({}) [{}] {}", time_str, seed.collection, seed.fact));
+        vector_lines.push(format!(
+            "- ({}) [{}] {}",
+            time_str, seed.collection, seed.fact
+        ));
     }
     for edge in &profile.graph_children {
         vector_lines.push(format!(
@@ -71,7 +80,10 @@ pub fn format_retrieved_profile(profile: &RetrievedProfile) -> String {
         ));
     }
     if !vector_lines.is_empty() {
-        sections.push(format!("[User Context & Knowledge]\n{}", vector_lines.join("\n")));
+        sections.push(format!(
+            "[User Context & Knowledge]\n{}",
+            vector_lines.join("\n")
+        ));
     }
 
     sections.join("\n\n")
@@ -85,23 +97,20 @@ pub fn assemble_system_prompt(
 ) -> String {
     let mut sections = Vec::new();
     if !identity_facts.is_empty() {
-        let identity_lines: Vec<String> = identity_facts
-            .iter()
-            .map(|f| format!("- {}", f))
-            .collect();
+        let identity_lines: Vec<String> =
+            identity_facts.iter().map(|f| format!("- {}", f)).collect();
         sections.push(format!("[Identity]\n{}", identity_lines.join("\n")));
     }
 
     if let Some(dyn_profile) = dynamic_user_profile {
         let trimmed = dyn_profile.trim();
         if !trimmed.is_empty() {
-            let inner = if trimmed.starts_with("<user_profile>")
-                && trimmed.ends_with("</user_profile>")
-            {
-                trimmed[14..trimmed.len() - 15].trim()
-            } else {
-                trimmed
-            };
+            let inner =
+                if trimmed.starts_with("<user_profile>") && trimmed.ends_with("</user_profile>") {
+                    trimmed[14..trimmed.len() - 15].trim()
+                } else {
+                    trimmed
+                };
             if !inner.is_empty() {
                 sections.push(inner.to_string());
             }
@@ -201,18 +210,12 @@ mod tests {
 
         assert_eq!(format_relative_timestamp(now_ms), "Just now");
         assert_eq!(format_relative_timestamp(now_ms + 50_000), "Just now");
-        assert_eq!(
-            format_relative_timestamp(now_ms - 60_000),
-            "1 minute ago"
-        );
+        assert_eq!(format_relative_timestamp(now_ms - 60_000), "1 minute ago");
         assert_eq!(
             format_relative_timestamp(now_ms - 5 * 60_000),
             "5 minutes ago"
         );
-        assert_eq!(
-            format_relative_timestamp(now_ms - 3_600_000),
-            "1 hour ago"
-        );
+        assert_eq!(format_relative_timestamp(now_ms - 3_600_000), "1 hour ago");
         assert_eq!(
             format_relative_timestamp(now_ms - 4 * 3_600_000),
             "4 hours ago"

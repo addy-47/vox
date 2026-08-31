@@ -21,7 +21,18 @@ pub fn spawn_monitoring_collector(state: Arc<AppState>) {
             let total_ram_mb = (sys.total_memory() / 1024 / 1024) as u32;
             let cpu_cores = sys.cpus().len() as u32;
 
+            let mut tick_count: u64 = 0;
             loop {
+                tick_count = tick_count.wrapping_add(1);
+                if tick_count.is_multiple_of(50) {
+                    if let Some(governor) = crate::utils::check_cpu_governor() {
+                        let is_optimal = governor == "performance";
+                        *state.cpu_governor.lock() = governor;
+                        state
+                            .cpu_governor_optimal
+                            .store(is_optimal, Ordering::Relaxed);
+                    }
+                }
                 let threads = state.telemetry.latest_threads.load(Ordering::Relaxed);
                 let snapshot = collect_snapshot(&state, threads, total_ram_mb, cpu_cores);
                 state.monitoring.push(snapshot);
@@ -116,10 +127,16 @@ fn collect_snapshot(
         vad_energy: f32::from_bits(state.telemetry.latest_energy.load(Ordering::Relaxed)),
         vad_probability: f32::from_bits(state.telemetry.latest_vad_prob.load(Ordering::Relaxed)),
 
-        stt_latency_ms: Some(state.telemetry.latest_stt_ms.load(Ordering::Relaxed)).filter(|&v| v > 0),
-        ttft_ms: Some(state.telemetry.latest_ttft_ms.load(Ordering::Relaxed)).filter(|&v| v > 0),
-        total_voice_latency_ms: Some(state.telemetry.latest_voice_latency_ms.load(Ordering::Relaxed))
+        stt_latency_ms: Some(state.telemetry.latest_stt_ms.load(Ordering::Relaxed))
             .filter(|&v| v > 0),
+        ttft_ms: Some(state.telemetry.latest_ttft_ms.load(Ordering::Relaxed)).filter(|&v| v > 0),
+        total_voice_latency_ms: Some(
+            state
+                .telemetry
+                .latest_voice_latency_ms
+                .load(Ordering::Relaxed),
+        )
+        .filter(|&v| v > 0),
 
         persistence_queue_depth: state
             .persist_tx
@@ -144,18 +161,50 @@ fn collect_snapshot(
                 None
             }
         },
-        playback_start_ms: Some(state.telemetry.latest_playback_start_ms.load(Ordering::Relaxed))
-            .filter(|&v| v > 0),
+        playback_start_ms: Some(
+            state
+                .telemetry
+                .latest_playback_start_ms
+                .load(Ordering::Relaxed),
+        )
+        .filter(|&v| v > 0),
         persistence_writes_per_sec: f32::from_bits(
-            state.telemetry.latest_persistence_rate.load(Ordering::Relaxed),
+            state
+                .telemetry
+                .latest_persistence_rate
+                .load(Ordering::Relaxed),
         ),
         is_db_healthy: state.telemetry.is_db_healthy.load(Ordering::Relaxed),
 
-        is_llm_loaded: state.engine.try_lock().map(|e| e.as_ref().map(|eng| eng.llm_tx.is_some()).unwrap_or(false)).unwrap_or(false),
+        is_llm_loaded: state
+            .engine
+            .try_lock()
+            .map(|e| e.as_ref().map(|eng| eng.llm_tx.is_some()).unwrap_or(false))
+            .unwrap_or(false),
         llm_provider_kind,
-        is_tts_loaded: state.engine.try_lock().map(|e| e.as_ref().map(|eng| eng.tts_tx.is_some()).unwrap_or(false)).unwrap_or(false),
-        is_stt_loaded: state.engine.try_lock().map(|e| e.as_ref().map(|eng| eng.stt_handle.is_some()).unwrap_or(false)).unwrap_or(false),
-        is_vad_loaded: state.engine.try_lock().map(|e| e.as_ref().map(|eng| eng.vad_handle.is_some()).unwrap_or(false)).unwrap_or(false),
+        is_tts_loaded: state
+            .engine
+            .try_lock()
+            .map(|e| e.as_ref().map(|eng| eng.tts_tx.is_some()).unwrap_or(false))
+            .unwrap_or(false),
+        is_stt_loaded: state
+            .engine
+            .try_lock()
+            .map(|e| {
+                e.as_ref()
+                    .map(|eng| eng.stt_handle.is_some())
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false),
+        is_vad_loaded: state
+            .engine
+            .try_lock()
+            .map(|e| {
+                e.as_ref()
+                    .map(|eng| eng.vad_handle.is_some())
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false),
         is_embedder_loaded: crate::services::memory::is_embedder_loaded(),
         is_query_classifier_loaded: crate::services::memory::is_scope_classifier_loaded(),
         is_intra_edge_classifier_loaded: crate::services::memory::is_nli_loaded(),
@@ -172,4 +221,3 @@ fn collect_snapshot(
         timestamp_ms: now,
     }
 }
-

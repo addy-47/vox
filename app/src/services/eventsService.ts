@@ -17,13 +17,30 @@ export type InteractionState =
 export type InteractionOwner = "Assistant" | "Dictation";
 
 /** Payload emitted on `state_changed` event. */
-export type StateChangedPayload = InteractionState;
+export interface StateChangedPayload {
+  owner: InteractionOwner;
+  state: string;
+  turn_id: number;
+}
+
+/** `voice_error` payload emitted on pipeline/engine failure. */
+export interface VoiceErrorPayload {
+  message: string;
+  source: string;
+  owner?: InteractionOwner;
+}
 
 /** `transcript_partial` / `transcript_final` payload. */
 export interface TranscriptPayload {
   turn_id: number;
   text: string;
-  owner: InteractionOwner;
+  owner?: InteractionOwner;
+}
+
+/** `llm_token` streaming delta payload. */
+export interface LlmTokenPayload {
+  turn_id: number;
+  token: string;
 }
 
 /** Mirror of `TelemetryData` emitted on `telemetry`. */
@@ -35,15 +52,7 @@ export interface TelemetryData {
   high: number;
 }
 
-/** `cpu_governor_warning` payload (lib.rs:322). */
-export interface CpuGovernorWarningPayload {
-  governor: string;
-  optimal: boolean;
-  advice: string;
-}
-
-
-/** `system_stats` payload (monitoring/system_monitor.rs:95). */
+/** `system_stats` payload (monitoring/system_monitor.rs). */
 export interface SystemStatsPayload {
   system_cpu: number;
   system_ram_pct: number;
@@ -54,16 +63,15 @@ export interface SystemStatsPayload {
   cpu_count: number;
 }
 
-/** `remote_setup_status` payload (ipc/settings.rs:952). */
-export interface RemoteSetupStatusPayload {
-  step: string;
-  progress: number;
-  log_line: string;
-  error?: string;
-}
-
-/** Rust `SetupStep` enum (setup/model_manager.rs:14), used by `model_setup_status`. */
+/** Rust `SetupStep` enum (setup/model_manager.rs:14), used by `model_progress`. */
 export type SetupStep =
+  | "idle"
+  | "downloading"
+  | "extracting"
+  | "verifying"
+  | "completed"
+  | "failed"
+  | "cancelled"
   | "Idle"
   | "Downloading"
   | "Extracting"
@@ -72,14 +80,30 @@ export type SetupStep =
   | "Failed"
   | "Cancelled";
 
-/** `model_setup_status` payload (setup/model_manager.rs:343). */
-export interface ModelSetupStatusPayload {
+/** `model_progress` payload (setup/model_manager.rs & health.rs). */
+export interface ModelProgressPayload {
   model_id: string;
   step: SetupStep;
   progress: number;
   bytes_downloaded: number;
   total_bytes: number;
   error: string | null;
+}
+
+/**
+ * Canonical IPC Event Map mirroring Rust `IpcEvent` registry in `core/events.rs`.
+ */
+export interface IpcEventMap {
+  state_changed: StateChangedPayload;
+  transcript_partial: TranscriptPayload;
+  transcript_final: TranscriptPayload;
+  llm_token: LlmTokenPayload;
+  voice_error: VoiceErrorPayload;
+  model_progress: ModelProgressPayload;
+  telemetry: TelemetryData;
+  system_stats: SystemStatsPayload;
+  "settings-updated": void;
+  toggle_tray: void;
 }
 
 /**
@@ -104,10 +128,13 @@ if (typeof window !== "undefined") {
 }
 
 /**
- * Typed wrapper around Tauri `listen`. Returns a synchronous unlisten
- * function that is safe to call before the underlying listener resolves.
+ * Strongly-typed wrapper around Tauri `listen`, generic over canonical `IpcEventMap`.
+ * Returns a synchronous unlisten function safe to call before the listener resolves.
  */
-export function on<T>(eventName: string, handler: (payload: T) => void): () => void {
+export function on<K extends keyof IpcEventMap>(
+  eventName: K,
+  handler: (payload: IpcEventMap[K]) => void
+): () => void {
   let unlisten: UnlistenFn | null = null;
   let cancelled = false;
 
@@ -122,7 +149,7 @@ export function on<T>(eventName: string, handler: (payload: T) => void): () => v
 
   activeListeners.add(cleanup);
 
-  listen<T>(eventName, (event) => handler(event.payload))
+  listen<IpcEventMap[K]>(eventName as string, (event) => handler(event.payload))
     .then((u) => {
       if (cancelled) {
         u();
@@ -132,20 +159,50 @@ export function on<T>(eventName: string, handler: (payload: T) => void): () => v
     })
     .catch((err) => {
       activeListeners.delete(cleanup);
-      console.error(`[events] Failed to listen to "${eventName}":`, err);
+      console.error(`[events] Failed to listen to "${String(eventName)}":`, err);
     });
 
   return cleanup;
 }
 
-export function onModelSetupStatus(handler: (payload: ModelSetupStatusPayload) => void): () => void {
-  return on("model_setup_status", handler);
+// ─── Strongly-Typed Convenience Listeners ────────────────────────────────────
+
+export function onStateChanged(handler: (payload: StateChangedPayload) => void): () => void {
+  return on("state_changed", handler);
 }
 
-export function onOptionalModelComplete(handler: (modelId: string) => void): () => void {
-  return on("optional_model_complete", handler);
+export function onTranscriptPartial(handler: (payload: TranscriptPayload) => void): () => void {
+  return on("transcript_partial", handler);
 }
 
-export function onRemoteSetupStatus(handler: (payload: RemoteSetupStatusPayload) => void): () => void {
-  return on("remote_setup_status", handler);
+export function onTranscriptFinal(handler: (payload: TranscriptPayload) => void): () => void {
+  return on("transcript_final", handler);
+}
+
+export function onLlmToken(handler: (payload: LlmTokenPayload) => void): () => void {
+  return on("llm_token", handler);
+}
+
+export function onVoiceError(handler: (payload: VoiceErrorPayload) => void): () => void {
+  return on("voice_error", handler);
+}
+
+export function onModelProgress(handler: (payload: ModelProgressPayload) => void): () => void {
+  return on("model_progress", handler);
+}
+
+export function onToggleTray(handler: () => void): () => void {
+  return on("toggle_tray", handler);
+}
+
+export function onTelemetry(handler: (payload: TelemetryData) => void): () => void {
+  return on("telemetry", handler);
+}
+
+export function onSystemStats(handler: (payload: SystemStatsPayload) => void): () => void {
+  return on("system_stats", handler);
+}
+
+export function onSettingsUpdated(handler: () => void): () => void {
+  return on("settings-updated", handler);
 }

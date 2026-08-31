@@ -42,7 +42,10 @@ pub async fn run_pipeline_cycle_with_id_seq(
     }
 
     if let Err(e) = recover_stuck_pipeline_jobs(conn).await {
-        log::warn!("[MemoryPipeline] Failed to recover stuck pipeline jobs: {}", e);
+        log::warn!(
+            "[MemoryPipeline] Failed to recover stuck pipeline jobs: {}",
+            e
+        );
     }
 
     let count = match conn
@@ -89,10 +92,7 @@ pub async fn run_pipeline_cycle_with_id_seq(
     let n3 = run_stage3_eval_with_metrics_seq(conn, run_id, stage3_batch_seq).await?;
     total_processed += n3;
     if n3 > 0 {
-        log::info!(
-            "[MemoryPipeline] Stage 3 (NLI Eval) processed_items={}",
-            n3
-        );
+        log::info!("[MemoryPipeline] Stage 3 (NLI Eval) processed_items={}", n3);
     }
     if cancel_flag.load(Ordering::Relaxed) {
         log::info!("[MemoryPipeline] Consolidation canceled after Stage 3.");

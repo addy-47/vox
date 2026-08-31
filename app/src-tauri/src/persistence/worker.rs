@@ -32,7 +32,11 @@ pub fn spawn_persistence_worker(
                 }
                 Err(e) => {
                     is_db_healthy.store(false, Ordering::Relaxed);
-                    log::error!("[Persistence::Worker] Failed to open DB at {:?}: {}", db_path, e);
+                    log::error!(
+                        "[Persistence::Worker] Failed to open DB at {:?}: {}",
+                        db_path,
+                        e
+                    );
                     return;
                 }
             };
@@ -119,11 +123,7 @@ fn run_event_loop(
     }
 }
 
-fn maybe_flush_rate(
-    writes: &mut u32,
-    last_tick: &mut Instant,
-    rate_atomic: &Arc<AtomicU32>,
-) {
+fn maybe_flush_rate(writes: &mut u32, last_tick: &mut Instant, rate_atomic: &Arc<AtomicU32>) {
     if last_tick.elapsed() >= PERSISTENCE_RATE_INTERVAL {
         rate_atomic.store((*writes as f32).to_bits(), Ordering::Relaxed);
         *writes = 0;
@@ -134,7 +134,10 @@ fn maybe_flush_rate(
 fn log_skipped_private_event(event: &PersistenceEvent) {
     match event {
         PersistenceEvent::SessionStarted { id, .. } => {
-            log::info!("[Persistence::Worker] Private Mode active: skipping session start (id={})", id);
+            log::info!(
+                "[Persistence::Worker] Private Mode active: skipping session start (id={})",
+                id
+            );
         }
         PersistenceEvent::TurnCompleted {
             conversation_id,
@@ -169,7 +172,10 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
                 )
                 .await?;
             if deleted > 0 {
-                log::info!("[Persistence::Worker] Cleaned up zero-activity session id={}", id);
+                log::info!(
+                    "[Persistence::Worker] Cleaned up zero-activity session id={}",
+                    id
+                );
             } else {
                 conn.execute(
                     "UPDATE sessions SET ended_at = ? WHERE id = ? AND turn_count > 0",
@@ -279,4 +285,3 @@ async fn cleanup_stuck_queue_items(conn: &turso::Connection) -> anyhow::Result<(
     }
     Ok(())
 }
-

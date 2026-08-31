@@ -4,9 +4,11 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 
 /// Initializes the tracing-based logging system.
 pub fn init(log_dir: PathBuf) -> WorkerGuard {
-
     if let Err(e) = std::fs::create_dir_all(&log_dir) {
-        eprintln!("[Logging] Failed to create log directory {:?}: {}", log_dir, e);
+        eprintln!(
+            "[Logging] Failed to create log directory {:?}: {}",
+            log_dir, e
+        );
     }
 
     cleanup_old_logs(&log_dir, 5);

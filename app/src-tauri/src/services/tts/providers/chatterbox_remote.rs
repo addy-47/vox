@@ -173,8 +173,9 @@ fn stream_pcm_response(
                         return Ok(total_samples_received);
                     }
 
-                    let chunk_samples =
-                        raw_pcm_samples.drain(..TTS_CHUNK_SIZE).collect::<Vec<f32>>();
+                    let chunk_samples = raw_pcm_samples
+                        .drain(..TTS_CHUNK_SIZE)
+                        .collect::<Vec<f32>>();
                     total_samples_received += chunk_samples.len();
 
                     let stretched_chunk = if (speed - 1.0).abs() >= 0.01 {
