@@ -556,6 +556,7 @@ fn on_error<R: tauri::Runtime>(
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Error, &ctx, app, state);
 
+    let toast_message = message.clone();
     if let Err(e) = emit_ipc_to(
         app,
         WINDOW_MAIN,
@@ -566,6 +567,11 @@ fn on_error<R: tauri::Runtime>(
         }),
     ) {
         log::warn!("[ModularPTT] Failed to emit voice_error: {}", e);
+    }
+    if crate::toast::should_show_error_toast(app) {
+        if let Err(e) = crate::toast::show_toast(app, "Voice Error", &toast_message, crate::core::events::ToastLevel::Error) {
+            log::warn!("[ModularPTT] Failed to show error toast: {}", e);
+        }
     }
 }
 
