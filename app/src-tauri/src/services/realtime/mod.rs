@@ -28,7 +28,7 @@ pub const WS_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(4);
 pub const MAX_RECONNECT_ATTEMPTS: usize = 3;
 pub const RECONNECT_BASE_DELAY_SECS: u64 = 1;
 pub const RECONNECT_FACTOR_SECS: u64 = 2;
-pub const REALTIME_IDLE_TIMEOUT: Duration = Duration::from_secs(600);
+pub const REALTIME_IDLE_TIMEOUT: Duration = Duration::from_secs(420);
 pub const PTT_INTERRUPT_GAP: Duration = Duration::from_millis(50);
 pub const SESSION_CACHE_TTL_MS: u64 = 2 * 60 * 60 * 1000;
 

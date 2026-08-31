@@ -286,15 +286,6 @@ pub struct AppState {
     pub dictation_last_transcript: parking_lot::Mutex<Option<String>>,
     pub conversation_id: Arc<AtomicU64>,
     pub is_dictation_enabled: Arc<AtomicBool>,
-    pub is_llm_loaded: Arc<AtomicBool>,
-    pub is_tts_loaded: Arc<AtomicBool>,
-    pub is_stt_loaded: Arc<AtomicBool>,
-    pub is_vad_loaded: Arc<AtomicBool>,
-    pub is_embedder_loaded: Arc<AtomicBool>,
-    pub is_query_classifier_loaded: Arc<AtomicBool>,
-    pub is_intra_edge_classifier_loaded: Arc<AtomicBool>,
-    pub is_inter_edge_classifier_loaded: Arc<AtomicBool>,
-    pub is_translit_loaded: Arc<AtomicBool>,
     pub runtime_status: Arc<std::sync::atomic::AtomicU32>,
     pub main_window_destroyed: Arc<AtomicBool>,
     pub persist_tx: parking_lot::Mutex<
@@ -351,7 +342,6 @@ impl AppState {
     ) -> Self {
         let settings = VoxSettings::load();
         let dictation_enabled = settings.dictation.enabled;
-        let initial_ctx_size = settings.llm.context_window as usize;
         telemetry.is_private_mode.store(settings.history.private_mode, Ordering::Relaxed);
 
         let model_manager = Arc::new(crate::setup::model_manager::ModelManager::new(Some(
@@ -374,15 +364,6 @@ impl AppState {
             dictation_last_transcript: parking_lot::Mutex::new(None),
             conversation_id: Arc::new(AtomicU64::new(0)),
             is_dictation_enabled: Arc::new(AtomicBool::new(dictation_enabled)),
-            is_llm_loaded: Arc::new(AtomicBool::new(false)),
-            is_tts_loaded: Arc::new(AtomicBool::new(false)),
-            is_stt_loaded: Arc::new(AtomicBool::new(false)),
-            is_vad_loaded: Arc::new(AtomicBool::new(false)),
-            is_embedder_loaded: Arc::new(AtomicBool::new(false)),
-            is_query_classifier_loaded: Arc::new(AtomicBool::new(false)),
-            is_intra_edge_classifier_loaded: Arc::new(AtomicBool::new(false)),
-            is_inter_edge_classifier_loaded: Arc::new(AtomicBool::new(false)),
-            is_translit_loaded: Arc::new(AtomicBool::new(false)),
             runtime_status: Arc::new(AtomicU32::new(RuntimeStatus::Initializing as u32)),
             main_window_destroyed: Arc::new(AtomicBool::new(false)),
             persist_tx: parking_lot::Mutex::new(None),
@@ -395,7 +376,7 @@ impl AppState {
             cpu_governor_optimal: Arc::new(AtomicBool::new(true)),
             setup_running: Arc::new(Mutex::new(false)),
             conversation_manager: Arc::new(parking_lot::Mutex::new(
-                crate::services::memory::ConversationManager::new(initial_ctx_size),
+                crate::services::memory::ConversationManager::new(),
             )),
             llm_provider: Arc::new(parking_lot::RwLock::new(None)),
         }
