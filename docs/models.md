@@ -1,7 +1,7 @@
 ---
 title: "Vox Model Inventory & Specifications"
 audience: "Internal — ML/model-config contributors, backend engineers, agents"
-last_updated: 2026-08-25
+last_updated: 2026-08-31
 owners: "ml-research-engineer role"
 related_docs:
   - "docs/backend.md — Engines, threading, lifecycle"
@@ -98,9 +98,9 @@ Which models and memory features are available depends on the user's hardware ti
 | Aspect | Nemotron-3.5 (primary) | Qwen3-ASR-0.6B (fallback) |
 |--------|------------------------|---------------------------|
 | **Architecture** | FastConformer-RNNT | Conformer-Transducer |
-| **Engine** | `parakeet-rs` (Rust-native ONNX) | `sherpa-onnx` (C++ ONNX) |
+| **Engine** | `sherpa-onnx 1.13.6` (C++ ONNX) | `sherpa-onnx 1.13.6` (C++ ONNX) |
 | **Files** | `encoder.onnx`, `decoder_joint.onnx`, `config.json`, `tokenizer.model` | `conv_frontend.onnx`, `encoder.int8.onnx`, `decoder.int8.onnx`, `tokenizer` |
-| **RTF** | 0.02–0.35× (avg 0.18×) | 0.38–4.63× |
+| **RTF** | 0.02–0.35× (avg 0.18×) | 0.38–4.63× (parakeet-rs removed) |
 | **Streaming** | 8960-sample windows (~560ms @ 16kHz), stateful across chunks | 15s rolling overlap window |
 | **State Reset** | `reset_state()` called only at end of utterance | Full window flush |
 | **Chunked Strategy** | Context is preserved across all chunks — produces coherent Devanagari Hindi from multilingual speech | Per-window decoding |
@@ -287,23 +287,23 @@ Legend: ✅ resident · ❌ not loaded · ↺ lazy/on-demand (loaded on first wa
 **Transliteration (ONNX)** is orthogonal to the above: it loads on the first Devanagari string seen in *any* state (`transliterate` → `init_transliteration_engine`) and stays resident until `stop_engine`.
 
 **Reference — load entry points** (for tracing in code):
-- VAD: `services/audio/engine.rs` (`start_audio_engine`) — eager at engine launch.
+- VAD: `core/engine.rs` (`start_audio_engine`) — eager at engine launch via `services/vad/actor.rs`.
 - STT: `services/stt/providers/embedded.rs` (`ensure_loaded`) — lazy on first `transcribe`/`transcribe_chunk` turn.
-- LLM / TTS: `services/llm/actor.rs` & `services/tts/actor.rs` (`warm_up_*`) — lazy on `VoxEvent::WarmUp` / first turn; `cool_down_*` on auto-sleep.
-- Scope Clf: `services/intent/` (`ensure_scope_classifier_loaded`).
-- Embedding / NLI / Edge: `services/memory/**` + `persistence/memory_worker.rs` — idle sweep only.
+- LLM / TTS: `services/llm/actor.rs` & `services/tts/actor.rs` (`ensure_*_workers` / `warm_up_*`) — lazy on first turn; `cool_down_*` on auto-sleep (no `VoxEvent::WarmUp` — removed in state purge).
+- Scope Clf: `services/memory/ml/scope_classifier.rs` (`ensure_scope_classifier_loaded`).
+- Embedding / NLI / Edge: `services/memory/**` + `persistence/memory_worker.rs` — idle sweep only (30s `MIN_IDLE_DEBOUNCE_SECS`).
 - Transliteration: `services/translit.rs`.
-- Realtime S2S: `services/pipeline/realtime/` (`passive.rs`, `ptt.rs`, `session.rs`) — cloud WebSocket, no local weights.
-- Full teardown: `services/audio/engine.rs` (`stop_audio_engine` → `unload_all_onnx_models` + `trim_heap`).
+- Realtime S2S: `pipeline/realtime/` (`passive.rs`, `ptt.rs`, `session.rs`) — cloud WebSocket, no local weights.
+- Full teardown: `core/engine.rs` (`stop_audio_engine` → `unload_all_onnx_models` + `trim_heap`).
 
 ### Auto-Sleep Cooldown
 
-Auto-sleep is driven by the pipeline router (`services/pipeline/router.rs`) using `interaction.auto_sleep_timeout` (default 300s). On sustained inactivity it sets `is_sleeping` and runs a **tiered offload**:
+Auto-sleep is driven by the pipeline router (`pipeline/router.rs`) using `interaction.auto_sleep_timeout` (default 400s per `core/defaults.rs:DEFAULT_AUTO_SLEEP_TIMEOUT`). On sustained inactivity it transitions toward `InteractionState::Paused` and runs a **tiered offload**:
 
 - `cool_down_llm()` (`services/llm/actor.rs`) — drops the local GGUF model / closes the cloud provider, frees ~0.75–1.4 GB.
 - `cool_down_tts()` (`services/tts/actor.rs`) — drops the TTS engine, frees ~0.14–1.1 GB.
 
-VAD and STT are **not** cooled on auto-sleep — they stay resident so the mic keeps listening for the next wake word / push-to-talk. Any new activity flips `is_sleeping` back to false and re-warms LLM + TTS lazily via `warm_up_*`. Only `stop_engine()` (main-window close with dictation disabled, disengage, or app quit) tears down VAD/STT and evicts **every** ONNX model via `unload_all_onnx_models()` followed by a cross-platform `trim_heap()`.
+VAD and STT are **not** cooled on auto-sleep — they stay resident so the mic keeps listening for the next wake word / push-to-talk. Any new activity returns `state == Ready` and re-warms LLM + TTS lazily via `ensure_*_workers`. Only `stop_engine()` (main-window close with dictation disabled, disengage, or app quit) tears down VAD/STT and evicts **every** ONNX model via `unload_all_onnx_models()` followed by a cross-platform `trim_heap()`.
 
 ### Hot-Reload Rules
 
@@ -341,4 +341,4 @@ The three idle-sweep memory models (Embedding, NLI, Edge Classifier) are **not c
 
 ---
 
-**Last Updated:** 2026-08-25
+**Last Updated:** 2026-08-31

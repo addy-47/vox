@@ -81,7 +81,9 @@ pub fn init_with_root(root: PathBuf) {
     };
 
     if PATHS.set(paths).is_err() {
-        log::debug!("[Paths] VoxPaths singleton was already initialized; skipping re-initialization.");
+        log::debug!(
+            "[Paths] VoxPaths singleton was already initialized; skipping re-initialization."
+        );
     }
 }
 

@@ -4,7 +4,7 @@ use std::path::Path;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelEntry {
     pub id: String,
-    pub path: String, 
+    pub path: String,
     #[serde(rename = "size")]
     pub size_bytes: u64,
     pub sha256: String,

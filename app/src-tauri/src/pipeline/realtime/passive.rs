@@ -1,15 +1,14 @@
-use super::super::{
-    transition, RoutingContext, EVENT_LLM_TOKEN, EVENT_PIPELINE_ERROR,
-    EVENT_TRANSCRIPT_FINAL, EVENT_TRANSCRIPT_PARTIAL, WINDOW_MAIN,
-};
-use crate::core::events::VoxEvent;
-use crate::core::state::{AppState, InteractionState, VadCommand};
+use super::super::{transition, RoutingContext, WINDOW_MAIN};
+use crate::core::events::VoiceErrorPayload;
+use crate::core::events::{emit_ipc_to, IpcEvent, LlmTokenPayload, TranscriptPayload, VoxEvent};
+use crate::core::state::{AppState, InteractionOwner, InteractionState};
 use crate::services::audio::PlaybackEngine;
 use crate::services::realtime::engine::RealtimeEngine;
+use crate::services::vad::VadCommand;
+use parking_lot::Mutex;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock};
-use parking_lot::Mutex;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 struct TurnAccumulator {
     assistant_response: String,
@@ -50,7 +49,10 @@ static ACCUMULATOR: LazyLock<Mutex<TurnAccumulator>> =
     LazyLock::new(|| Mutex::new(TurnAccumulator::new()));
 
 /// Starts an autonomous real-time WebSocket speech-to-speech assistant session.
-pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+pub async fn start_session<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+) -> Result<(), String> {
     let (vad_tx, pipeline_tx, playback_engine) = {
         let guard = state.engine.lock().await;
         let eng = guard.as_ref().ok_or("Audio engine not ready")?;
@@ -100,12 +102,18 @@ pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
     transition(InteractionState::Ready, &ctx, app, state);
 
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
-    log::info!("[RealtimePassive] Realtime passive session started (ID: {})", conv_id);
+    log::info!(
+        "[RealtimePassive] Realtime passive session started (ID: {})",
+        conv_id
+    );
     Ok(())
 }
 
 /// Pauses the active real-time voice pipeline.
-pub async fn pause_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+pub async fn pause_session<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+) -> Result<(), String> {
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
     ACCUMULATOR.lock().clear();
 
@@ -113,7 +121,10 @@ pub async fn pause_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
         if let Some(ref engine) = *guard {
             engine.playback_engine.cancel();
             if let Err(e) = engine.vad_tx.send(VadCommand::StopRealtime) {
-                log::warn!("[RealtimePassive] Failed to send StopRealtime on pause: {}", e);
+                log::warn!(
+                    "[RealtimePassive] Failed to send StopRealtime on pause: {}",
+                    e
+                );
             }
         }
     }
@@ -132,27 +143,44 @@ pub async fn pause_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
 }
 
 /// Resumes a paused real-time voice pipeline.
-pub async fn resume_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+pub async fn resume_session<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+) -> Result<(), String> {
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
     let (playback_engine, pipeline_tx, vad_tx) = {
         let guard = state.engine.lock().await;
         let engine = guard.as_ref().ok_or("Engine not initialized")?;
-        (engine.playback_engine.clone(), engine.pipeline_tx.clone(), engine.vad_tx.clone())
+        (
+            engine.playback_engine.clone(),
+            engine.pipeline_tx.clone(),
+            engine.vad_tx.clone(),
+        )
     };
 
     let mut rt_guard = state.realtime_engine.lock().await;
     if let Some(ref mut rt_engine) = *rt_guard {
-        rt_engine.start(
-            crate::core::settings::InteractionMode::Passive,
-            playback_engine,
-            pipeline_tx,
-            state.pipeline.turn_id.clone(),
-        ).map_err(|e| format!("[RealtimePassive] Engine restart failed: {}", e))?;
+        rt_engine
+            .start(
+                crate::core::settings::InteractionMode::Passive,
+                playback_engine,
+                pipeline_tx,
+                state.pipeline.turn_id.clone(),
+            )
+            .map_err(|e| format!("[RealtimePassive] Engine restart failed: {}", e))?;
 
-        let audio_tx = rt_engine.get_audio_sender().ok_or("Failed to obtain realtime audio sender")?;
-        if let Err(e) = vad_tx.send(VadCommand::StartRealtime { tx: audio_tx, is_ptt: false }) {
-            log::warn!("[RealtimePassive] Failed to send StartRealtime on resume: {}", e);
+        let audio_tx = rt_engine
+            .get_audio_sender()
+            .ok_or("Failed to obtain realtime audio sender")?;
+        if let Err(e) = vad_tx.send(VadCommand::StartRealtime {
+            tx: audio_tx,
+            is_ptt: false,
+        }) {
+            log::warn!(
+                "[RealtimePassive] Failed to send StartRealtime on resume: {}",
+                e
+            );
         }
     }
 
@@ -164,7 +192,10 @@ pub async fn resume_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSt
 }
 
 /// Ends the active real-time voice assistant session.
-pub async fn end_session<R: tauri::Runtime>(_app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+pub async fn end_session<R: tauri::Runtime>(
+    _app: &AppHandle<R>,
+    state: &AppState,
+) -> Result<(), String> {
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             engine.playback_engine.cancel();
@@ -186,6 +217,68 @@ pub async fn end_session<R: tauri::Runtime>(_app: &AppHandle<R>, state: &AppStat
     Ok(())
 }
 
+/// Handles dedicated barge-in interruption for realtime passive pipeline.
+fn on_interrupt<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    playback: &Arc<PlaybackEngine>,
+) {
+    playback.cancel();
+
+    if let Ok(rt_guard) = state.realtime_engine.try_lock() {
+        if let Some(ref rt_engine) = *rt_guard {
+            if let Err(e) = rt_engine.cancel() {
+                log::warn!(
+                    "[RealtimePassive] Error sending cancel to realtime engine: {}",
+                    e
+                );
+            }
+        }
+    }
+
+    state.pipeline.renew_turn_token();
+
+    let partial_assistant = ACCUMULATOR.lock().take_assistant_response();
+    let user_text = ACCUMULATOR.lock().user_transcript();
+    let interrupted_turn_id = state.pipeline.peek_turn_id();
+    let conv_id = state.conversation_id.load(Ordering::Relaxed);
+
+    if !partial_assistant.trim().is_empty() {
+        state
+            .conversation_manager
+            .lock()
+            .push_assistant_turn(partial_assistant.clone());
+    }
+
+    let persist_lock = state.persist_tx.lock();
+    if let Some(ref tx) = *persist_lock {
+        if let Err(e) = tx.try_send(
+            crate::persistence::events::PersistenceEvent::TurnCompleted {
+                conversation_id: conv_id,
+                turn_id: interrupted_turn_id,
+                user_text,
+                assistant_text: partial_assistant,
+                stt_latency_ms: 0,
+                ttft_ms: 0,
+            },
+        ) {
+            log::warn!(
+                "[RealtimePassive] Failed to send TurnCompleted on interrupt: {}",
+                e
+            );
+        }
+    }
+
+    ACCUMULATOR.lock().clear();
+
+    let ctx = RoutingContext::from_app_state(state);
+    transition(InteractionState::Listening, &ctx, app, state);
+    log::info!(
+        "[RealtimePassive] Interruption handled (turn: {})",
+        interrupted_turn_id
+    );
+}
+
 /// Handles interim partial speech recognition results from the real-time server.
 fn on_transcript_partial<R: tauri::Runtime>(
     turn_id: u32,
@@ -199,6 +292,13 @@ fn on_transcript_partial<R: tauri::Runtime>(
         return;
     }
 
+    if current_state == InteractionState::Thinking || current_state == InteractionState::Speaking {
+        on_interrupt(app, state, playback);
+    } else if current_state == InteractionState::Ready {
+        let ctx = RoutingContext::from_app_state(state);
+        transition(InteractionState::Listening, &ctx, app, state);
+    }
+
     let transliterate_enabled = state
         .settings
         .read()
@@ -207,45 +307,13 @@ fn on_transcript_partial<R: tauri::Runtime>(
     let processed_text =
         crate::services::translit::transliterate_if_hi(&text, false, transliterate_enabled);
 
-    if current_state == InteractionState::Thinking || current_state == InteractionState::Speaking {
-        super::session::realtime_barge_in(state, playback);
-        let interrupted_turn_id = state.pipeline.peek_turn_id();
-        state.pipeline.renew_turn_token();
-
-        let partial_assistant = ACCUMULATOR.lock().take_assistant_response();
-        let user_text = ACCUMULATOR.lock().user_transcript();
-        if !partial_assistant.trim().is_empty() {
-            state.conversation_manager.lock().push_assistant_turn(partial_assistant.clone());
-            let conv_id = state.conversation_id.load(Ordering::Relaxed);
-            let persist_lock = state.persist_tx.lock();
-            if let Some(ref tx) = *persist_lock {
-                if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCompleted {
-                    conversation_id: conv_id,
-                    turn_id: interrupted_turn_id,
-                    user_text,
-                    assistant_text: partial_assistant,
-                    stt_latency_ms: 0,
-                    ttft_ms: 0,
-                }) {
-                    log::warn!("[RealtimePassive] Failed to send TurnCompleted on barge-in: {}", e);
-                }
-            }
-        }
-        ACCUMULATOR.lock().clear();
-
-        let ctx = RoutingContext::from_app_state(state);
-        transition(InteractionState::Listening, &ctx, app, state);
-    } else if current_state == InteractionState::Ready {
-        let ctx = RoutingContext::from_app_state(state);
-        transition(InteractionState::Listening, &ctx, app, state);
-    }
-
-    if let Err(e) = app.emit_to(
+    if let Err(e) = emit_ipc_to(
+        app,
         WINDOW_MAIN,
-        EVENT_TRANSCRIPT_PARTIAL,
-        serde_json::json!({
-            "turn_id": turn_id,
-            "text": processed_text,
+        IpcEvent::TranscriptPartial(TranscriptPayload {
+            turn_id,
+            text: processed_text,
+            owner: Some(InteractionOwner::Assistant),
         }),
     ) {
         log::warn!("[RealtimePassive] Failed to emit transcript_partial: {}", e);
@@ -253,7 +321,12 @@ fn on_transcript_partial<R: tauri::Runtime>(
 }
 
 /// Handles incoming final transcription from the real-time server.
-fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>, state: &AppState) {
+fn on_transcript_final<R: tauri::Runtime>(
+    turn_id: u32,
+    text: String,
+    app: &AppHandle<R>,
+    state: &AppState,
+) {
     let current_state = state.pipeline.state();
     if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
         return;
@@ -272,12 +345,13 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
         transition(InteractionState::Listening, &ctx, app, state);
     }
 
-    if let Err(e) = app.emit_to(
+    if let Err(e) = emit_ipc_to(
+        app,
         WINDOW_MAIN,
-        EVENT_TRANSCRIPT_FINAL,
-        serde_json::json!({
-            "turn_id": turn_id,
-            "text": processed_text,
+        IpcEvent::TranscriptFinal(TranscriptPayload {
+            turn_id,
+            text: processed_text.clone(),
+            owner: Some(InteractionOwner::Assistant),
         }),
     ) {
         log::warn!("[RealtimePassive] Failed to emit transcript_final: {}", e);
@@ -296,12 +370,12 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
 /// Handles streamed LLM token from the real-time provider.
 fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<R>) {
     ACCUMULATOR.lock().push_token(&token);
-    if let Err(e) = app.emit_to(
+    if let Err(e) = emit_ipc_to(
+        app,
         WINDOW_MAIN,
-        EVENT_LLM_TOKEN,
-        serde_json::json!({
-            "turn_id": turn_id,
-            "token": token,
+        IpcEvent::LlmToken(LlmTokenPayload {
+            turn_id,
+            token: token.clone(),
         }),
     ) {
         log::warn!("[RealtimePassive] Failed to emit llm_token: {}", e);
@@ -329,15 +403,20 @@ fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, sta
         let ttft_ms = state.telemetry.latest_ttft_ms.load(Ordering::Relaxed);
         let persist_lock = state.persist_tx.lock();
         if let Some(ref tx) = *persist_lock {
-            if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCompleted {
-                conversation_id: conv_id,
-                turn_id,
-                user_text,
-                assistant_text: full_text,
-                stt_latency_ms: stt_ms,
-                ttft_ms,
-            }) {
-                log::warn!("[RealtimePassive] Failed to send TurnCompleted to persist: {}", e);
+            if let Err(e) = tx.try_send(
+                crate::persistence::events::PersistenceEvent::TurnCompleted {
+                    conversation_id: conv_id,
+                    turn_id,
+                    user_text,
+                    assistant_text: full_text,
+                    stt_latency_ms: stt_ms,
+                    ttft_ms,
+                },
+            ) {
+                log::warn!(
+                    "[RealtimePassive] Failed to send TurnCompleted to persist: {}",
+                    e
+                );
             }
         }
     }
@@ -346,27 +425,35 @@ fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, sta
     transition(InteractionState::Ready, &ctx, app, state);
 }
 
-/// Logs pipeline errors and transitions state machine to error condition.
-fn on_error<R: tauri::Runtime>(turn_id: u32, message: String, app: &AppHandle<R>, state: &AppState) {
-    log::error!("[RealtimePassive] Error on turn {}: {}", turn_id, message);
+/// Handles error event, transitions to Error state, and surfaces error payload to UI.
+fn on_error<R: tauri::Runtime>(
+    _turn_id: u32,
+    message: String,
+    app: &AppHandle<R>,
+    state: &AppState,
+) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Error, &ctx, app, state);
 
-    if let Err(e) = app.emit_to(
+    if let Err(e) = emit_ipc_to(
+        app,
         WINDOW_MAIN,
-        EVENT_PIPELINE_ERROR,
-        serde_json::json!({
-            "turn_id": turn_id,
-            "message": message,
+        IpcEvent::VoiceError(VoiceErrorPayload {
+            message,
+            source: "RealtimePassive".to_string(),
+            owner: Some(InteractionOwner::Assistant),
         }),
     ) {
-        log::warn!("[RealtimePassive] Failed to emit pipeline_error: {}", e);
+        log::warn!("[RealtimePassive] Failed to emit voice_error: {}", e);
     }
 }
 
 /// Handles cancellation event and resets state machine to Ready.
 fn on_cancelled<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
-    log::info!("[RealtimePassive] Interaction cancelled on turn {}", turn_id);
+    log::info!(
+        "[RealtimePassive] Interaction cancelled on turn {}",
+        turn_id
+    );
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 }
@@ -388,6 +475,7 @@ pub fn handle_event<R: tauri::Runtime>(
         VoxEvent::LlmToken { turn_id, token } => on_llm_token(turn_id, token, app),
         VoxEvent::PlaybackStarted { .. } => on_playback_started(app, state),
         VoxEvent::PlaybackFinished { turn_id } => on_playback_finished(turn_id, app, state),
+        VoxEvent::Interrupted { .. } => on_interrupt(app, state, playback),
         VoxEvent::Cancelled { turn_id } => on_cancelled(turn_id, app, state),
         VoxEvent::Error { turn_id, message } => on_error(turn_id, message, app, state),
         _ => {}

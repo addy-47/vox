@@ -7,7 +7,6 @@ pub struct LowPass {
 
 impl LowPass {
     pub fn new(cutoff_hz: f32, sample_rate: f32) -> Self {
-        
         let omega = 2.0 * std::f32::consts::PI * cutoff_hz / sample_rate;
         let alpha = omega / (1.0 + omega);
         Self { alpha, prev_y: 0.0 }

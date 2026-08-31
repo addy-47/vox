@@ -1,6 +1,7 @@
+use crate::core::events::{emit_ipc_to, IpcEvent};
 use crate::monitoring::TELEMETRY_EMITTER_INTERVAL;
 use std::sync::atomic::Ordering;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 /// Spawns periodic background task pushing audio and VAD telemetry to active window.
 pub fn spawn_telemetry_emitter(app: AppHandle) {
@@ -21,18 +22,21 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
             let vad_prob = f32::from_bits(state.telemetry.latest_vad_prob.load(Ordering::Relaxed));
             let target = get_target_window(&state);
 
-            if let Err(e) = app.emit_to(
+            if let Err(e) = emit_ipc_to(
+                &app,
                 target,
-                "telemetry",
-                crate::core::state::TelemetryData {
+                IpcEvent::Telemetry(crate::core::events::TelemetryData {
                     energy,
                     vad_prob,
                     low,
                     mid,
                     high,
-                },
+                }),
             ) {
-                log::warn!("[Monitoring::TelemetryEmitter] Failed to emit telemetry event: {}", e);
+                log::warn!(
+                    "[Monitoring::TelemetryEmitter] Failed to emit telemetry event: {}",
+                    e
+                );
             }
         }
     });
@@ -41,7 +45,12 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
 fn get_current_audio_levels(state: &crate::core::state::AppState) -> (f32, f32, f32, f32) {
     if state.pipeline.state() == crate::core::state::InteractionState::Speaking {
         (
-            f32::from_bits(state.telemetry.latest_playback_energy.load(Ordering::Relaxed)),
+            f32::from_bits(
+                state
+                    .telemetry
+                    .latest_playback_energy
+                    .load(Ordering::Relaxed),
+            ),
             f32::from_bits(state.telemetry.latest_playback_low.load(Ordering::Relaxed)),
             f32::from_bits(state.telemetry.latest_playback_mid.load(Ordering::Relaxed)),
             f32::from_bits(state.telemetry.latest_playback_high.load(Ordering::Relaxed)),
@@ -64,4 +73,3 @@ fn get_target_window(state: &crate::core::state::AppState) -> &'static str {
         crate::core::state::InteractionOwner::Dictation => "tray",
     }
 }
-

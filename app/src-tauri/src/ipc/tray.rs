@@ -1,12 +1,14 @@
+use crate::core::events::{emit_ipc, IpcEvent};
 use crate::core::settings::InteractionMode;
 use crate::core::state::AppState;
 use crate::tray::position_tray_window;
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 /// Toggles the tray window visibility and updates the menu checkmark state.
-pub async fn toggle_hud_visibility(app: AppHandle) {
+#[tauri::command]
+pub async fn toggle_tray_visibility(app: AppHandle) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
     let (setup_completed, dictation_enabled, is_tray_mode) = match state.settings.read() {
@@ -21,16 +23,18 @@ pub async fn toggle_hud_visibility(app: AppHandle) {
         }
     };
     if !setup_completed {
-        log::warn!("[Tray] Blocked toggle_hud_visibility: Setup not completed.");
+        log::warn!("[Tray] Blocked toggle_tray_visibility: Setup not completed.");
         return;
     }
     if !dictation_enabled || !is_tray_mode {
-        log::warn!("[Tray] Blocked toggle_hud_visibility: Dictation is disabled or not set to Tray output mode.");
+        log::warn!("[Tray] Blocked toggle_tray_visibility: Dictation is disabled or not set to Tray output mode.");
         return;
     }
 
     let new_state = !state.hud_visible.load(std::sync::atomic::Ordering::Relaxed);
-    state.hud_visible.store(new_state, std::sync::atomic::Ordering::Relaxed);
+    state
+        .hud_visible
+        .store(new_state, std::sync::atomic::Ordering::Relaxed);
 
     if new_state {
         if let Ok(window) = crate::tray::ensure_tray_window(&app) {
@@ -38,16 +42,16 @@ pub async fn toggle_hud_visibility(app: AppHandle) {
                 log::warn!("[Tray] Failed to show tray window: {}", e);
             }
             position_tray_window(&window).await;
-            if let Err(e) = app.emit("toggle_hud", ()) {
-                log::warn!("[Tray] Failed to emit toggle_hud: {}", e);
+            if let Err(e) = emit_ipc(&app, IpcEvent::ToggleTray) {
+                log::warn!("[Tray] Failed to emit toggle_tray: {}", e);
             }
         }
     } else if let Some(window) = app.get_webview_window("tray") {
         if let Err(e) = window.hide() {
             log::warn!("[Tray] Failed to hide tray window: {}", e);
         }
-        if let Err(e) = app.emit("toggle_hud", ()) {
-            log::warn!("[Tray] Failed to emit toggle_hud: {}", e);
+        if let Err(e) = emit_ipc(&app, IpcEvent::ToggleTray) {
+            log::warn!("[Tray] Failed to emit toggle_tray: {}", e);
         }
     }
 
@@ -98,7 +102,9 @@ async fn cancel_active_dictation_turn(state: &AppState) {
 #[tauri::command]
 pub async fn hide_tray_window(app: AppHandle) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
-    let was_visible = state.hud_visible.swap(false, std::sync::atomic::Ordering::Relaxed);
+    let was_visible = state
+        .hud_visible
+        .swap(false, std::sync::atomic::Ordering::Relaxed);
     if was_visible {
         log::info!("[Tray] Ending Tray user session (Tray window hidden).");
     }
@@ -126,7 +132,9 @@ pub async fn sync_hud_visibility(app: AppHandle, visible: bool) {
         return;
     }
 
-    let old_visible = state.hud_visible.swap(visible, std::sync::atomic::Ordering::Relaxed);
+    let old_visible = state
+        .hud_visible
+        .swap(visible, std::sync::atomic::Ordering::Relaxed);
 
     if old_visible != visible {
         if visible {
@@ -251,7 +259,10 @@ pub async fn update_interaction_mode(
             _ => return Err(format!("Invalid target window: {}", target)),
         }
         if let Err(e) = settings.save() {
-            log::warn!("[Tray] Failed to save settings on interaction mode update: {}", e);
+            log::warn!(
+                "[Tray] Failed to save settings on interaction mode update: {}",
+                e
+            );
         }
     }
 
@@ -268,7 +279,7 @@ pub async fn update_interaction_mode(
         if let Some(engine) = state.engine.lock().await.as_ref() {
             if let Err(e) = engine
                 .vad_tx
-                .send(crate::core::state::VadCommand::UpdateMode(new_mode))
+                .send(crate::services::vad::VadCommand::UpdateMode(new_mode))
             {
                 log::warn!("[Tray] Failed to send VadCommand::UpdateMode: {}", e);
             }
@@ -279,14 +290,7 @@ pub async fn update_interaction_mode(
         evaluate_main_mode_engine_lifecycle(app.clone(), &state);
     }
 
-    let event_name = format!("mode_changed_{}", target.to_lowercase());
-    if let Err(e) = app.emit(&event_name, mode.clone()) {
-        log::warn!("[Tray] Failed to emit {}: {}", event_name, e);
-    }
-    if let Err(e) = app.emit("mode_changed", mode) {
-        log::warn!("[Tray] Failed to emit mode_changed: {}", e);
-    }
-    if let Err(e) = app.emit("settings-updated", ()) {
+    if let Err(e) = emit_ipc(&app, IpcEvent::SettingsUpdated) {
         log::warn!("[Tray] Failed to emit settings-updated: {}", e);
     }
 

@@ -60,8 +60,8 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
     let localEnergy = 0;
     const THROTTLE_MS = 40; // High-refresh responsive updates
 
-    const unlistenEnergy = listen<number>('audio_energy', (event) => {
-      const e = event.payload;
+    const unlistenEnergy = listen<{ energy?: number }>('telemetry', (event) => {
+      const e = typeof event.payload === 'number' ? event.payload : event.payload?.energy || 0;
       
       const targetEnergy = e * 100;
       localEnergy = localEnergy * 0.75 + targetEnergy * 0.25;

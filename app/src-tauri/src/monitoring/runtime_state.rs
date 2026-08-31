@@ -56,4 +56,3 @@ impl Default for MonitoringState {
         Self::new()
     }
 }
-

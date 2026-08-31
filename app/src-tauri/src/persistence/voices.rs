@@ -121,4 +121,3 @@ pub async fn rename_voice(conn: &Connection, id: &str, name: &str) -> Result<()>
     }
     Ok(())
 }
-

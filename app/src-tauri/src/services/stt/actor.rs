@@ -69,12 +69,7 @@ fn coalesce_partials(
 }
 
 /// Dispatches a partial transcript event to the pipeline event channel if changed.
-fn emit_partial_event(
-    ctx: &WorkerContext<'_>,
-    tid: u32,
-    text: String,
-    state: &mut WorkerState,
-) {
+fn emit_partial_event(ctx: &WorkerContext<'_>, tid: u32, text: String, state: &mut WorkerState) {
     if !text.is_empty() && text != state.last_transcript {
         if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
             if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptPartial {
@@ -247,7 +242,10 @@ fn run_worker_loop(
     let mut pending_cmd = None;
 
     loop {
-        if handles.engine_shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+        if handles
+            .engine_shutdown
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
             log::info!("[STT] Engine shutdown flag detected. Exiting loop.");
             break;
         }
@@ -255,7 +253,10 @@ fn run_worker_loop(
         let raw_cmd = if let Some(c) = pending_cmd.take() {
             c
         } else {
-            match channels.rx.recv_timeout(Duration::from_millis(STT_WORKER_RECV_TIMEOUT_MS)) {
+            match channels
+                .rx
+                .recv_timeout(Duration::from_millis(STT_WORKER_RECV_TIMEOUT_MS))
+            {
                 Ok(c) => c,
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -306,4 +307,3 @@ pub fn spawn_stt_worker(
         })
         .map_err(|e| e.to_string())
 }
-

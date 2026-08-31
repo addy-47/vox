@@ -2,21 +2,22 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use ringbuf::traits::Split;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
-use crate::core::constants::{
-    EVENT_MODEL_FAILED, EVENT_MODEL_LOADING, EVENT_MODEL_READY, RING_BUFFER_SIZE,
-};
+use crate::core::constants::RING_BUFFER_SIZE;
 use crate::core::events::VoxEvent;
-use crate::core::state::{AppState, InteractionState, VadCommand, VoxEngine};
+use crate::core::state::{AppState, InteractionState, VoxEngine};
+use crate::pipeline::router::spawn_router;
 use crate::services::audio::playback::PlaybackTelemetryHandles;
 use crate::services::audio::{AudioStream, PlaybackEngine};
-use crate::pipeline::router::spawn_router;
-use crate::services::stt::actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand};
+use crate::services::stt::actor::{
+    spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand,
+};
 use crate::services::stt::providers::create_stt_provider;
 use crate::services::vad::actor::{
     spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles,
 };
+use crate::services::vad::VadCommand;
 use crate::services::vad::{
     earshot_vad::EarshotVadEngine, ten_onnx::VadEngine as TenVadEngine, VadBackend,
 };
@@ -55,8 +56,7 @@ async fn ensure_manifest_loaded(state: &AppState) {
 }
 
 /// Resolves and instantiates the active STT provider.
-fn create_stt_instance<R: tauri::Runtime>(
-    app: &AppHandle<R>,
+fn create_stt_instance(
     state: &AppState,
 ) -> Result<Box<dyn crate::services::stt::providers::SttProvider>, String> {
     let asr_provider = state
@@ -73,30 +73,19 @@ fn create_stt_instance<R: tauri::Runtime>(
                 "nvidia_nemotron" => models_dir.join(crate::services::stt::NEMOTRON_MODEL_DIR),
                 _ => models_dir.join(crate::services::stt::QWEN_ASR_MODEL_DIR),
             };
-            create_stt_provider(&asr_provider, &path).map_err(|e| {
-                if let Err(emit_err) = app.emit(EVENT_MODEL_FAILED, format!("STT: {}", e)) {
-                    log::warn!("[Core::Engine] Failed to emit EVENT_MODEL_FAILED: {}", emit_err);
-                }
-                format!("[Core::Engine] STT provider creation failed: {}", e)
-            })
+            create_stt_provider(&asr_provider, &path)
+                .map_err(|e| format!("[Core::Engine] STT provider creation failed: {}", e))
         }
         crate::core::settings::SttProviderConfig::Cloud { .. } => {
             let path = models_dir.join("stt");
-            create_stt_provider(&asr_provider, &path).map_err(|e| {
-                if let Err(emit_err) = app.emit(EVENT_MODEL_FAILED, format!("STT: {}", e)) {
-                    log::warn!("[Core::Engine] Failed to emit EVENT_MODEL_FAILED: {}", emit_err);
-                }
-                format!("[Core::Engine] STT provider creation failed: {}", e)
-            })
+            create_stt_provider(&asr_provider, &path)
+                .map_err(|e| format!("[Core::Engine] STT provider creation failed: {}", e))
         }
     }
 }
 
 /// Resolves and instantiates the active VAD backend engine.
-async fn create_vad_instance<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    state: &AppState,
-) -> Result<VadBackend, String> {
+async fn create_vad_instance(state: &AppState) -> Result<VadBackend, String> {
     let (vad_backend, threshold) = {
         let s = state
             .settings
@@ -126,18 +115,13 @@ async fn create_vad_instance<R: tauri::Runtime>(
                     .map(VadBackend::Earshot)
                     .map_err(|e| format!("[Core::Engine] Earshot VAD fallback failed: {}", e));
             }
-            log::info!("[Core::Engine] Initializing Ten ONNX VAD from {:?}", vad_path);
+            log::info!(
+                "[Core::Engine] Initializing Ten ONNX VAD from {:?}",
+                vad_path
+            );
             TenVadEngine::new(&vad_path, threshold)
                 .map(VadBackend::Ten)
-                .map_err(|e| {
-                    if let Err(emit_err) = app.emit(EVENT_MODEL_FAILED, format!("VAD: {}", e)) {
-                        log::warn!(
-                            "[Core::Engine] Failed to emit EVENT_MODEL_FAILED: {}",
-                            emit_err
-                        );
-                    }
-                    format!("[Core::Engine] Ten VAD init failed: {}", e)
-                })
+                .map_err(|e| format!("[Core::Engine] Ten VAD init failed: {}", e))
         }
     }
 }
@@ -174,9 +158,6 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     }
 
     log::info!("[Core::Engine] Booting 3-Tier Audio Engine...");
-    if let Err(e) = app.emit(EVENT_MODEL_LOADING, "AudioEngine") {
-        log::warn!("[Core::Engine] Failed to emit EVENT_MODEL_LOADING: {}", e);
-    }
 
     ensure_manifest_loaded(state).await;
     ensure_persistence_worker(state);
@@ -185,8 +166,8 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let (vad_tx, vad_rx) = std::sync::mpsc::channel();
     let (vox_event_tx, vox_event_rx) = std::sync::mpsc::channel();
 
-    let stt_provider = create_stt_instance(app, state)?;
-    let vad = create_vad_instance(app, state).await?;
+    let stt_provider = create_stt_instance(state)?;
+    let vad = create_vad_instance(state).await?;
 
     let (threshold, noise_gate, mode, audio_mode) = {
         let s = state
@@ -204,7 +185,10 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let ring_buffer = ringbuf::HeapRb::<f32>::new(RING_BUFFER_SIZE);
     let (producer, consumer) = ring_buffer.split();
 
-    state.pipeline.engine_shutdown.store(false, Ordering::Relaxed);
+    state
+        .pipeline
+        .engine_shutdown
+        .store(false, Ordering::Relaxed);
 
     let vad_config = VadActorConfig {
         initial_threshold: threshold,
@@ -231,14 +215,11 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let vad_handle = std::thread::Builder::new()
         .name("vox-vad-actor".to_string())
         .spawn(move || {
-            if let Err(e) = spawn_vad_actor(
-                vad,
-                consumer,
-                vad_channels,
-                vad_handles,
-                vad_config,
-            ) {
-                log::error!("[Core::Engine] VAD actor thread terminated with error: {:?}", e);
+            if let Err(e) = spawn_vad_actor(vad, consumer, vad_channels, vad_handles, vad_config) {
+                log::error!(
+                    "[Core::Engine] VAD actor thread terminated with error: {:?}",
+                    e
+                );
             }
         })
         .map_err(|e| format!("[Core::Engine] Failed to spawn VAD thread: {}", e))?;
@@ -255,10 +236,6 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
 
     let stt_handle = spawn_stt_worker(stt_channels, stt_provider, stt_handles)
         .map_err(|e| format!("[Core::Engine] Failed to spawn STT worker: {}", e))?;
-
-    if let Err(e) = app.emit(EVENT_MODEL_READY, "STT") {
-        log::warn!("[Core::Engine] Failed to emit EVENT_MODEL_READY: {}", e);
-    }
 
     let input_device = state
         .settings

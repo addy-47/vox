@@ -1,6 +1,6 @@
 # Vox Memory Architecture — Current Implementation
 
-**Last Updated:** 2026-08-30  
+**Last Updated:** 2026-08-31  
 **Scope:** End-to-end description of the 4-pillar cognitive memory subsystem.  
 **Location:** `app/src-tauri/src/services/memory/`, `app/src-tauri/src/persistence/`, and `app/src/shared/components/memory/`
 
@@ -10,7 +10,7 @@
 
 The Vox memory subsystem is a database-backed, 4-pillar cognitive memory architecture combining dynamic context injection with asynchronous offline fact ingestion. It operates under strict 8GB RAM constraints with sub-200ms perceived voice latency:
 
-1. **Harness (`services/memory/harness/`):** Manages conversational message buffering, FIFO sliding windows, token budget accounting, `<user_profile>` XML formatting with relative timestamps, and the unified `prepare_turn_context` public facade.
+1. **Harness (`services/harness/`):** Manages conversational message buffering, FIFO sliding windows, token budget accounting, `<user_profile>` XML formatting with relative timestamps, and the unified `prepare_turn_context` public facade.
 2. **Retrieval (`services/memory/retrieval/`):** Classifies turn intent via `query-sieve-rs`, routes queries through a 4-class memory scope matrix (`ChitChat`, `User`, `Domain`, `Temporal`), and runs structured waterfall searches returning typed `RetrievedProfile` structures.
 3. **Compaction (`services/memory/compaction/`):** Compresses long-running conversations into structured fact summaries using `COMPACTION_SYSTEM_PROMPT` via non-blocking async execution.
 4. **Ingestion (`services/memory/ingestion/`):** Asynchronous 4-stage pipeline running on background idle (`vox-memory-worker`) to deduplicate, embed, evaluate (NLI & ModernBERT), and commit facts and semantic graph relations to SQLite/Turso.

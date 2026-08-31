@@ -3,7 +3,8 @@ pub const CLONE_SAMPLE_RATE: u32 = 24_000;
 pub const PLAYBACK_SAMPLE_RATE: u32 = 48_000;
 pub const PLAYBACK_CHANNELS: u16 = 2;
 pub const PLAYBACK_BUFFER_CAPACITY_SECS: usize = 30;
-pub const PLAYBACK_BUFFER_SAMPLES: usize = PLAYBACK_SAMPLE_RATE as usize * PLAYBACK_BUFFER_CAPACITY_SECS;
+pub const PLAYBACK_BUFFER_SAMPLES: usize =
+    PLAYBACK_SAMPLE_RATE as usize * PLAYBACK_BUFFER_CAPACITY_SECS;
 pub const PLAYBACK_DEFAULT_VOLUME: f32 = 1.0;
 pub const PLAYBACK_VOLUME_RAMP_STEP: f32 = 0.002;
 pub const PLAYBACK_ENERGY_MULTIPLIER: f32 = 15.0;
@@ -23,8 +24,8 @@ pub mod device;
 pub mod playback;
 
 pub use decode::{
-    decode_bytes_to_24khz_mono, decode_to_24khz_mono, truncate_to, write_wav_f32, write_wav_f32_raw,
-    DecodedAudio,
+    decode_bytes_to_24khz_mono, decode_to_24khz_mono, truncate_to, write_wav_f32,
+    write_wav_f32_raw, DecodedAudio,
 };
 pub use device::AudioStream;
 pub use playback::PlaybackEngine;

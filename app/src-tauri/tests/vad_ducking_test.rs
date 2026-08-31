@@ -23,9 +23,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{AudioOutputMode, InteractionMode};
-use vox_lib::core::state::{InteractionState, VadCommand};
+use vox_lib::core::state::InteractionState;
 use vox_lib::services::stt::actor::SttCommand;
 use vox_lib::services::vad::actor::VadActorConfig;
+use vox_lib::services::vad::VadCommand;
 use vox_lib::services::vad::VAD_SPEECH_END_FRAMES;
 
 /// Guard (NEGATIVE): When audio_mode is Speaker and playback_active is true, speech frames must be suppressed.
@@ -76,8 +77,12 @@ fn test_vad_ducking_suppresses_audio_during_playback() {
     let _ = vad_cmd_tx.send(VadCommand::Shutdown);
     let _ = stt_tx.send(SttCommand::Shutdown);
     engine_shutdown.store(true, Ordering::Relaxed);
-    vad_handle.join().expect("VAD worker panicked during ducking suppression test");
-    stt_handle.join().expect("STT worker panicked during ducking suppression test");
+    vad_handle
+        .join()
+        .expect("VAD worker panicked during ducking suppression test");
+    stt_handle
+        .join()
+        .expect("STT worker panicked during ducking suppression test");
 
     assert!(
         start_time.elapsed() < max_test_duration,
@@ -142,13 +147,20 @@ fn test_vad_ducking_resumes_after_playback() {
         }
     }
 
-    assert!(speech_started, "SpeechStart must fire after playback finishes");
+    assert!(
+        speech_started,
+        "SpeechStart must fire after playback finishes"
+    );
 
     let _ = vad_cmd_tx.send(VadCommand::Shutdown);
     let _ = stt_tx.send(SttCommand::Shutdown);
     engine_shutdown.store(true, Ordering::Relaxed);
-    vad_handle.join().expect("VAD worker panicked during ducking resume test");
-    stt_handle.join().expect("STT worker panicked during ducking resume test");
+    vad_handle
+        .join()
+        .expect("VAD worker panicked during ducking resume test");
+    stt_handle
+        .join()
+        .expect("STT worker panicked during ducking resume test");
 
     assert!(
         start_time.elapsed() < max_test_duration,
@@ -199,13 +211,20 @@ fn test_vad_headset_mode_no_suppression_during_playback() {
         }
     }
 
-    assert!(speech_started, "SpeechStart must fire during playback in Headset mode");
+    assert!(
+        speech_started,
+        "SpeechStart must fire during playback in Headset mode"
+    );
 
     let _ = vad_cmd_tx.send(VadCommand::Shutdown);
     let _ = stt_tx.send(SttCommand::Shutdown);
     engine_shutdown.store(true, Ordering::Relaxed);
-    vad_handle.join().expect("VAD worker panicked during headset test");
-    stt_handle.join().expect("STT worker panicked during headset test");
+    vad_handle
+        .join()
+        .expect("VAD worker panicked during headset test");
+    stt_handle
+        .join()
+        .expect("STT worker panicked during headset test");
 
     assert!(
         start_time.elapsed() < max_test_duration,

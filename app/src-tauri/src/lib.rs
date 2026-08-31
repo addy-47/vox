@@ -32,7 +32,7 @@ use crate::ipc::settings::{
 };
 use crate::ipc::tray::{
     hide_tray_window, set_hud_ignore_cursor, show_main_window, sync_hud_visibility,
-    toggle_hud_visibility, update_interaction_mode,
+    toggle_tray_visibility, update_interaction_mode,
 };
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
@@ -40,7 +40,7 @@ use crate::tray::setup_linux_virtual_layer;
 use crate::monitoring::system_monitor::spawn_system_monitor;
 
 use tauri::tray::TrayIconBuilder;
-use tauri::{Emitter, Manager, State};
+use tauri::{Manager, State};
 
 // ─── App Entry Point ─────────────────────────────────────────────────────────
 
@@ -51,7 +51,10 @@ use tauri::{Emitter, Manager, State};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
-        log::debug!("[Crypto] Ring default provider already installed or failed: {:?}", e);
+        log::debug!(
+            "[Crypto] Ring default provider already installed or failed: {:?}",
+            e
+        );
     }
 
     // Suppress ALSA/Jack noisy logs on Linux
@@ -77,9 +80,6 @@ pub fn run() {
                     }
                 }
             });
-
-            // ── 0. Runtime Booting ──────────────────────────────────────────────────
-            app.emit(crate::core::constants::EVENT_RUNTIME_BOOTING, ()).ok();
 
             // ── 0. Paths Singleton (must be first) ──────────────────────────────────
             crate::utils::paths::init();
@@ -159,8 +159,6 @@ pub fn run() {
                     latest_sys_ram: std::sync::Arc::clone(&latest_sys_ram),
                     latest_vox_cpu: std::sync::Arc::clone(&latest_vox_cpu),
                     latest_vox_ram: std::sync::Arc::clone(&latest_vox_ram),
-                    latest_stt_ms: std::sync::Arc::clone(&latest_stt_ms),
-                    latest_ttft_ms: std::sync::Arc::clone(&latest_ttft_ms),
                     dropped_events: std::sync::Arc::clone(&dropped_telemetry_events),
                 },
             );
@@ -290,7 +288,7 @@ pub fn run() {
                     "live" => {
                         let handle = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            toggle_hud_visibility(handle).await;
+                            toggle_tray_visibility(handle).await;
                         });
                     }
                     "quit" => app.exit(0),
@@ -333,13 +331,6 @@ pub fn run() {
                              Consider: echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor",
                             governor
                         );
-                        if let Err(e) = app.emit("cpu_governor_warning", serde_json::json!({
-                            "governor": governor,
-                            "optimal": is_optimal,
-                            "advice": "Switch to 'performance' governor for best voice pipeline performance"
-                        })) {
-                            log::warn!("[BOOTSTRAP] Failed to emit cpu_governor_warning: {}", e);
-                        }
                     }
                 }
             }
@@ -350,7 +341,6 @@ pub fn run() {
                 use std::sync::atomic::Ordering;
                 let state: State<'_, std::sync::Arc<AppState>> = app.state();
                 state.runtime_status.store(RuntimeStatus::Ready as u32, Ordering::Relaxed);
-                app.emit(crate::core::constants::EVENT_RUNTIME_READY, ()).ok();
                 log::info!("[BOOTSTRAP] Runtime Ready.");
             }
 
@@ -471,6 +461,7 @@ pub fn run() {
             test_clip_cancel,
             get_realtime_session_cache,
             hide_tray_window,
+            toggle_tray_visibility,
             sync_hud_visibility,
             set_hud_ignore_cursor,
             update_interaction_mode,
@@ -565,7 +556,7 @@ pub fn run() {
                         if let Err(e) = engine.stt_tx.send(crate::services::stt::SttCommand::Shutdown) {
                             log::trace!("[Vox] STT worker already closed: {}", e);
                         }
-                        if let Err(e) = engine.vad_tx.send(crate::core::state::VadCommand::Shutdown) {
+                        if let Err(e) = engine.vad_tx.send(crate::services::vad::VadCommand::Shutdown) {
                             log::trace!("[Vox] VAD worker already closed: {}", e);
                         }
                     }
@@ -575,7 +566,7 @@ pub fn run() {
                         let mut memory_tx_lock = state.memory_tx.lock();
                         if let Some(tx) = memory_tx_lock.take() {
                             log::info!("[Vox] Sending Shutdown signal to memory worker...");
-                            if let Err(e) = tx.send(crate::persistence::memory_worker::MemoryWorkerEvent::Shutdown) {
+                            if let Err(e) = tx.send(crate::persistence::events::MemoryWorkerEvent::Shutdown) {
                                 log::trace!("[Vox] Memory worker already closed: {}", e);
                             }
                         }

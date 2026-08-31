@@ -80,24 +80,19 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
   }, [isAlreadyComplete]);
 
   useEffect(() => {
-    const unlistenStatus = listen<ModelProgress>('model_setup_status', (event) => {
-      setProgress(prev => ({ ...prev, [event.payload.model_id]: event.payload }));
-    });
-
-    const unlistenComplete = listen<boolean>('model_setup_complete', () => {
-      console.log('Model setup complete signal received');
-      setIsFinished(true);
-    });
-
-    const unlistenError = listen<string>('model_setup_error', (event) => {
-        setInternalError(event.payload);
-        setView('catalog'); 
+    const unlistenStatus = listen<ModelProgress>('model_progress', (event) => {
+      const p = event.payload;
+      setProgress(prev => ({ ...prev, [p.model_id]: p }));
+      if (p.step === 'Complete' || p.step === 'Completed') {
+        setIsFinished(true);
+      } else if (p.step === 'Failed' && p.error) {
+        setInternalError(p.error);
+        setView('catalog');
+      }
     });
 
     return () => {
       unlistenStatus.then(u => u());
-      unlistenComplete.then(u => u());
-      unlistenError.then(u => u());
     };
   }, []);
 
