@@ -214,7 +214,6 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     };
 
     let vad_handles = VadActorHandles {
-        is_loaded: Arc::clone(&state.is_vad_loaded),
         state_atomic: Arc::clone(&state.pipeline.current_state_atomic),
         turn_id_atomic: Arc::clone(&state.pipeline.turn_id),
         audio_suppressed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -251,7 +250,6 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
 
     let stt_handles = SttActorHandles {
         cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
-        is_loaded: Arc::clone(&state.is_stt_loaded),
         engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
     };
 
@@ -306,10 +304,6 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
             .pipeline
             .engine_shutdown
             .store(true, Ordering::Relaxed);
-        state.is_vad_loaded.store(false, Ordering::Relaxed);
-        state.is_stt_loaded.store(false, Ordering::Relaxed);
-        state.is_llm_loaded.store(false, Ordering::Relaxed);
-        state.is_tts_loaded.store(false, Ordering::Relaxed);
         state.pipeline.set_state(InteractionState::Idle);
 
         if let Err(e) = engine.pipeline_tx.send(VoxEvent::Shutdown) {

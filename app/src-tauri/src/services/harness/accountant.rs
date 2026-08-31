@@ -1,8 +1,23 @@
-use super::buffer::{MessageBuffer, Role};
+use super::buffer::{current_timestamp_ms, ChatMessage, MessageBuffer, Role};
+use super::prompt_builder::{build_session_history_xml, consolidate_system_message};
+use crate::core::constants::MemoryCollection;
+use crate::services::memory::compaction::CompactionResult;
 use crate::services::memory::ml::estimate_tokens;
 use crate::services::memory::{
     CONTEXT_CRITICAL_THRESHOLD, CONTEXT_SOFT_THRESHOLD, RESERVED_GENERATION_TOKENS,
 };
+use std::collections::HashMap;
+use tokio_util::sync::CancellationToken;
+
+
+/// Manages context budgeting, sliding-window compaction, and background opportunistic compaction for Modular LLM.
+pub struct ContextHarness {
+    pub accountant: TokenAccountant,
+    session_compaction_contexts: Vec<String>,
+    latest_compaction_facts: HashMap<String, Vec<String>>,
+    opportunistic_active: bool,
+    opportunistic_cancel: CancellationToken,
+}
 
 /// Tracks token usage, enforces budget thresholds, and executes FIFO maintenance.
 #[derive(Debug, Clone)]
@@ -138,5 +153,196 @@ impl TokenAccountant {
 
         selected.reverse();
         selected.join(" ")
+    }
+}
+
+impl ContextHarness {
+    /// Creates a new ContextHarness instance for modular LLM context management.
+    pub fn new(max_context_tokens: usize) -> Self {
+        Self {
+            accountant: TokenAccountant::new(max_context_tokens, 0),
+            session_compaction_contexts: Vec::new(),
+            latest_compaction_facts: HashMap::new(),
+            opportunistic_active: false,
+            opportunistic_cancel: CancellationToken::new(),
+        }
+    }
+
+    /// Recalculates total tokens across all messages in the buffer.
+    pub fn sync_tokens_from_buffer(&mut self, buffer: &MessageBuffer) {
+        let mut total = 0;
+        for msg in &buffer.messages {
+            total += estimate_tokens(&msg.content);
+        }
+        self.accountant.set_total_token_count(total);
+    }
+
+    /// Resets session context compaction state.
+    pub fn reset(&mut self) {
+        self.session_compaction_contexts.clear();
+        self.latest_compaction_facts.clear();
+        self.cancel_opportunistic();
+    }
+
+    /// Computes percentage of usable context budget consumed by active conversation.
+    pub fn context_utilization(&self) -> f32 {
+        self.accountant.context_utilization()
+    }
+
+    /// Returns true if memory utilization has crossed the critical threshold.
+    pub fn needs_threshold_maintenance(&self) -> bool {
+        self.accountant.needs_threshold_maintenance()
+    }
+
+    /// Formats recent compaction narrative chain and facts into XML session history.
+    pub fn build_session_history_xml(&self, soft_cap_tokens: usize) -> String {
+        let narrative_chain = TokenAccountant::build_narrative_context_chain(
+            &self.session_compaction_contexts,
+            soft_cap_tokens.max(50),
+        );
+        build_session_history_xml(&narrative_chain, &self.latest_compaction_facts)
+    }
+
+    /// Consolidates session history XML into the root System Message.
+    pub fn consolidate_system_message(&mut self, buffer: &mut MessageBuffer, system_prompt: &ChatMessage, session_history: &str) {
+        let mut total_tokens = self.accountant.total_token_count();
+        consolidate_system_message(
+            &mut buffer.messages,
+            system_prompt,
+            session_history,
+            &mut total_tokens,
+        );
+        self.accountant.set_total_token_count(total_tokens);
+    }
+
+    /// FIFO Sliding Window Shift: Drops oldest (User, Assistant) pairs until below soft threshold.
+    pub fn perform_fifo_maintenance(&mut self, buffer: &mut MessageBuffer) {
+        self.accountant.perform_fifo_maintenance(buffer);
+    }
+
+    /// Rebuilds message buffer and session compaction state from successful compaction result.
+    pub fn apply_compaction_result(
+        &mut self,
+        buffer: &mut MessageBuffer,
+        system_prompt: &ChatMessage,
+        result: &CompactionResult,
+        last_user_turn: ChatMessage,
+    ) -> HashMap<String, Vec<String>> {
+        let context_summary = result.context_summary.trim().to_string();
+        if !context_summary.is_empty() {
+            self.session_compaction_contexts.push(context_summary);
+        }
+
+        let mut facts_9_col = result.personal_memory.clone();
+        facts_9_col.remove(MemoryCollection::Narrative.as_str());
+        facts_9_col.remove("Context");
+        self.latest_compaction_facts = facts_9_col;
+
+        let sys_tokens = estimate_tokens(&system_prompt.content);
+        let user_tokens = estimate_tokens(&last_user_turn.content);
+
+        buffer.messages = vec![system_prompt.clone(), last_user_turn];
+        self.accountant
+            .set_total_token_count(sys_tokens + user_tokens);
+        buffer.kv_synced_index = 0;
+
+        log::info!(
+            "[ContextHarness] Compaction complete. Context rebuilt with 2 items ({} tokens, utilization {:.1}%). Total session compactions: {}.",
+            self.accountant.total_token_count(),
+            self.accountant.context_utilization() * 100.0,
+            self.session_compaction_contexts.len()
+        );
+
+        result.diff_to_enqueue.clone()
+    }
+
+    /// Attempts to initiate an opportunistic background compaction when between soft and critical thresholds.
+    pub fn try_trigger_opportunistic(
+        &mut self,
+        buffer: &MessageBuffer,
+    ) -> Option<(usize, Vec<ChatMessage>, CancellationToken)> {
+        if self.accountant.is_in_soft_compaction_window()
+            && !self.opportunistic_active
+            && buffer.messages.len() > 3
+        {
+            self.opportunistic_active = true;
+            self.opportunistic_cancel = CancellationToken::new();
+            log::info!(
+                "[ContextHarness] Triggering Opportunistic Compaction candidate at {:.1}% utilization.",
+                self.accountant.context_utilization() * 100.0
+            );
+            Some((
+                buffer.messages.len(),
+                buffer.messages.clone(),
+                self.opportunistic_cancel.clone(),
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// Commits opportunistic compaction results if no user turns were added during processing.
+    pub fn commit_opportunistic(
+        &mut self,
+        buffer: &mut MessageBuffer,
+        system_prompt: &ChatMessage,
+        snapshot_len: usize,
+        summary_text: String,
+    ) -> bool {
+        if !self.opportunistic_active {
+            log::info!("[ContextHarness] Commit rejected: Opportunistic compaction was inactive.");
+            return false;
+        }
+        if self.opportunistic_cancel.is_cancelled() {
+            self.opportunistic_active = false;
+            log::info!("[ContextHarness] Commit rejected: Opportunistic compaction was cancelled.");
+            return false;
+        }
+        if buffer.messages.len() != snapshot_len {
+            self.opportunistic_active = false;
+            log::info!(
+                "[ContextHarness] Commit rejected: Race detected (expected {} items, current has {}).",
+                snapshot_len,
+                buffer.messages.len()
+            );
+            return false;
+        }
+
+        let last_user_turn = match buffer.messages.pop() {
+            Some(turn) => turn,
+            None => return false,
+        };
+
+        let summary_msg = ChatMessage {
+            role: Role::System,
+            content: format!("[Summary of prior context: {}]", summary_text),
+            timestamp_ms: current_timestamp_ms(),
+        };
+
+        buffer.messages = vec![system_prompt.clone(), summary_msg, last_user_turn];
+
+        let mut count = 0;
+        for msg in &buffer.messages {
+            count += estimate_tokens(&msg.content);
+        }
+        self.accountant.set_total_token_count(count);
+        buffer.kv_synced_index = 0;
+        self.opportunistic_active = false;
+
+        log::info!(
+            "[ContextHarness] Opportunistic Compaction COMMITTED successfully! Utilization now {:.1}%.",
+            self.accountant.context_utilization() * 100.0
+        );
+
+        true
+    }
+
+    /// Aborts any running opportunistic compaction task.
+    pub fn cancel_opportunistic(&mut self) {
+        if self.opportunistic_active {
+            self.opportunistic_cancel.cancel();
+            self.opportunistic_active = false;
+            log::info!("[ContextHarness] Opportunistic compaction cancelled.");
+        }
     }
 }

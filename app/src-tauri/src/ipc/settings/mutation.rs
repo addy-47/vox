@@ -248,19 +248,6 @@ pub async fn update_setting(
         }
     }
 
-    if domain == "llm" && (key == "context_window" || key == "provider" || key == "active") {
-        if let Ok(settings_guard) = state.settings.read() {
-            let max_ctx = settings_guard.llm.context_window as usize;
-            state.conversation_manager.lock().set_max_context_tokens(max_ctx);
-        }
-    }
-
-    if domain == "persona" && key == "modular_prompt" {
-        if let Some(prompt_str) = value.as_str() {
-            state.conversation_manager.lock().update_system_prompt(prompt_str);
-        }
-    }
-
     if let Err(e) = app.emit("settings-updated", ()) {
         log::warn!("[Settings::Mutation] Failed to emit settings-updated: {}", e);
     }
@@ -281,10 +268,6 @@ pub async fn reset_settings(app: AppHandle) -> Result<VoxSettings, String> {
         let mut settings = state.settings.write().map_err(|e| e.to_string())?;
         *settings = defaults.clone();
     }
-
-    let max_ctx = defaults.llm.context_window as usize;
-    state.conversation_manager.lock().set_max_context_tokens(max_ctx);
-    state.conversation_manager.lock().update_system_prompt(&defaults.persona.modular_prompt);
 
     // Immediate apply for theme and other hot settings
     if let Err(e) = app.emit("theme-changed", defaults.appearance.theme.clone()) {

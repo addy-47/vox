@@ -59,13 +59,11 @@ fn setup_test_tts_worker(
     let mut tts_tx: Option<std::sync::mpsc::Sender<TtsCommand>> = None;
     let mut tts_handle: Option<std::thread::JoinHandle<()>> = None;
     let cancel_flag = Arc::new(AtomicBool::new(false));
-    let is_loaded = Arc::new(AtomicBool::new(false));
 
     let handles = TtsWarmUpHandles {
         tts_tx: &mut tts_tx,
         tts_handle: &mut tts_handle,
         cancel_flag,
-        is_loaded,
     };
 
     warm_up_tts(&app, handles, &settings, &super_tts_path, None, event_tx)

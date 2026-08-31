@@ -3,13 +3,13 @@ use super::super::{
     EVENT_TRANSCRIPT_FINAL, EVENT_TRANSCRIPT_PARTIAL, WINDOW_MAIN,
 };
 use crate::core::events::VoxEvent;
-use crate::core::state::{AppState, InteractionOwner, InteractionState, VadCommand};
+use crate::core::state::{AppState, InteractionState, VadCommand};
 use crate::services::audio::PlaybackEngine;
 use crate::services::realtime::engine::RealtimeEngine;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock};
 use parking_lot::Mutex;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 struct TurnAccumulator {
     assistant_response: String,
@@ -50,9 +50,7 @@ static ACCUMULATOR: LazyLock<Mutex<TurnAccumulator>> =
     LazyLock::new(|| Mutex::new(TurnAccumulator::new()));
 
 /// Starts an autonomous real-time WebSocket speech-to-speech assistant session.
-pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), String> {
-    crate::core::start_audio_engine(app, state).await?;
-
+pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     let (vad_tx, pipeline_tx, playback_engine) = {
         let guard = state.engine.lock().await;
         let eng = guard.as_ref().ok_or("Audio engine not ready")?;
@@ -62,10 +60,6 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
             eng.playback_engine.clone(),
         )
     };
-
-    state
-        .owner
-        .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
 
     let mut rt_guard = state.realtime_engine.lock().await;
     if let Some(mut old_rt) = rt_guard.take() {
@@ -84,6 +78,7 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
             crate::core::settings::InteractionMode::Passive,
             playback_engine,
             pipeline_tx,
+            state.pipeline.turn_id.clone(),
         )
         .map_err(|e| format!("[RealtimePassive] Engine start failed: {}", e))?;
 
@@ -98,52 +93,13 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
         log::warn!("[RealtimePassive] Failed to send StartRealtime: {}", e);
     }
 
-    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
     *rt_guard = Some(rt_engine);
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    let conv_id = now;
-    state.conversation_id.store(conv_id, Ordering::Relaxed);
-
-    {
-        let persist_lock = state.persist_tx.lock();
-        if let Some(ref tx) = *persist_lock {
-            if let Err(e) = tx.try_send(
-                crate::persistence::events::PersistenceEvent::SessionStarted {
-                    id: conv_id,
-                    timestamp_ms: now,
-                },
-            ) {
-                log::warn!("[RealtimePassive] Failed to send SessionStarted to persist: {}", e);
-            }
-        }
-    }
-
-    {
-        let mem_lock = state.memory_tx.lock();
-        if let Some(ref tx) = *mem_lock {
-            if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::ActiveSessionChanged {
-                session_id: conv_id,
-            }) {
-                log::trace!("[RealtimePassive] Failed to send ActiveSessionChanged to memory worker: {}", e);
-            }
-        }
-    }
-
-    let prompt = state.settings.read().unwrap_or_else(|p| p.into_inner()).persona.realtime_prompt.clone();
-    super::super::init_new_session(state, &prompt).await;
-
     ACCUMULATOR.lock().clear();
 
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 
-    let state_arc = app.state::<std::sync::Arc<AppState>>().inner().clone();
-    super::session::spawn_realtime_idle_monitor(app.clone(), state_arc);
-
+    let conv_id = state.conversation_id.load(Ordering::Relaxed);
     log::info!("[RealtimePassive] Realtime passive session started (ID: {})", conv_id);
     Ok(())
 }
@@ -152,6 +108,15 @@ pub async fn start_session(app: &AppHandle, state: &AppState) -> Result<(), Stri
 pub async fn pause_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
     ACCUMULATOR.lock().clear();
+
+    if let Ok(guard) = state.engine.try_lock() {
+        if let Some(ref engine) = *guard {
+            engine.playback_engine.cancel();
+            if let Err(e) = engine.vad_tx.send(VadCommand::StopRealtime) {
+                log::warn!("[RealtimePassive] Failed to send StopRealtime on pause: {}", e);
+            }
+        }
+    }
 
     if let Ok(mut rt_guard) = state.realtime_engine.try_lock() {
         if let Some(ref mut rt_engine) = *rt_guard {
@@ -182,6 +147,7 @@ pub async fn resume_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSt
             crate::core::settings::InteractionMode::Passive,
             playback_engine,
             pipeline_tx,
+            state.pipeline.turn_id.clone(),
         ).map_err(|e| format!("[RealtimePassive] Engine restart failed: {}", e))?;
 
         let audio_tx = rt_engine.get_audio_sender().ok_or("Failed to obtain realtime audio sender")?;
@@ -198,7 +164,7 @@ pub async fn resume_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSt
 }
 
 /// Ends the active real-time voice assistant session.
-pub async fn end_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+pub async fn end_session<R: tauri::Runtime>(_app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             engine.playback_engine.cancel();
@@ -213,43 +179,8 @@ pub async fn end_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState
         rt_engine.stop();
     }
 
-    state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
     ACCUMULATOR.lock().clear();
-
-    let conv_id = state.conversation_id.load(Ordering::Relaxed);
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-
-    {
-        let persist_lock = state.persist_tx.lock();
-        if let Some(ref tx) = *persist_lock {
-            if let Err(e) = tx.try_send(
-                crate::persistence::events::PersistenceEvent::SessionEnded {
-                    id: conv_id,
-                    timestamp_ms: now,
-                },
-            ) {
-                log::warn!("[RealtimePassive] Failed to send SessionEnded to persist: {}", e);
-            }
-        }
-    }
-
-    {
-        let mem_lock = state.memory_tx.lock();
-        if let Some(ref tx) = *mem_lock {
-            if let Err(e) = tx.try_send(crate::persistence::memory_worker::MemoryWorkerEvent::SessionEnd {
-                session_id: conv_id.to_string(),
-                summary: String::new(),
-            }) {
-                log::trace!("[RealtimePassive] Failed to send SessionEnd to memory worker: {}", e);
-            }
-        }
-    }
-
-    let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Idle, &ctx, app, state);
+    super::session::purge_session_cache();
 
     log::info!("[RealtimePassive] Realtime passive session ended");
     Ok(())
@@ -268,10 +199,40 @@ fn on_transcript_partial<R: tauri::Runtime>(
         return;
     }
 
+    let transliterate_enabled = state
+        .settings
+        .read()
+        .map(|s| s.stt.transliterate_enabled)
+        .unwrap_or(false);
+    let processed_text =
+        crate::services::translit::transliterate_if_hi(&text, false, transliterate_enabled);
+
     if current_state == InteractionState::Thinking || current_state == InteractionState::Speaking {
         super::session::realtime_barge_in(state, playback);
+        let interrupted_turn_id = state.pipeline.peek_turn_id();
         state.pipeline.renew_turn_token();
-        state.conversation_manager.lock().handle_barge_in();
+
+        let partial_assistant = ACCUMULATOR.lock().take_assistant_response();
+        let user_text = ACCUMULATOR.lock().user_transcript();
+        if !partial_assistant.trim().is_empty() {
+            state.conversation_manager.lock().push_assistant_turn(partial_assistant.clone());
+            let conv_id = state.conversation_id.load(Ordering::Relaxed);
+            let persist_lock = state.persist_tx.lock();
+            if let Some(ref tx) = *persist_lock {
+                if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCompleted {
+                    conversation_id: conv_id,
+                    turn_id: interrupted_turn_id,
+                    user_text,
+                    assistant_text: partial_assistant,
+                    stt_latency_ms: 0,
+                    ttft_ms: 0,
+                }) {
+                    log::warn!("[RealtimePassive] Failed to send TurnCompleted on barge-in: {}", e);
+                }
+            }
+        }
+        ACCUMULATOR.lock().clear();
+
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Listening, &ctx, app, state);
     } else if current_state == InteractionState::Ready {
@@ -284,7 +245,7 @@ fn on_transcript_partial<R: tauri::Runtime>(
         EVENT_TRANSCRIPT_PARTIAL,
         serde_json::json!({
             "turn_id": turn_id,
-            "text": text,
+            "text": processed_text,
         }),
     ) {
         log::warn!("[RealtimePassive] Failed to emit transcript_partial: {}", e);
@@ -298,6 +259,14 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
         return;
     }
 
+    let transliterate_enabled = state
+        .settings
+        .read()
+        .map(|s| s.stt.transliterate_enabled)
+        .unwrap_or(false);
+    let processed_text =
+        crate::services::translit::transliterate_if_hi(&text, true, transliterate_enabled);
+
     if current_state == InteractionState::Ready {
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Listening, &ctx, app, state);
@@ -308,7 +277,7 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
         EVENT_TRANSCRIPT_FINAL,
         serde_json::json!({
             "turn_id": turn_id,
-            "text": text,
+            "text": processed_text,
         }),
     ) {
         log::warn!("[RealtimePassive] Failed to emit transcript_final: {}", e);
@@ -317,7 +286,7 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
     {
         let mut acc = ACCUMULATOR.lock();
         acc.clear();
-        acc.set_user_transcript(text);
+        acc.set_user_transcript(processed_text);
     }
 
     let ctx = RoutingContext::from_app_state(state);

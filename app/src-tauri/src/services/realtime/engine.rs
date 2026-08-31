@@ -38,12 +38,13 @@ impl RealtimeEngine {
         interaction_mode: crate::core::settings::InteractionMode,
         playback_engine: Arc<PlaybackEngine>,
         event_tx: Sender<VoxEvent>,
+        turn_id: Arc<std::sync::atomic::AtomicU32>,
     ) -> Result<()> {
         log::info!("[RealtimeEngine] Starting realtime voice engine...");
 
         let config = self.provider.audio_config();
         self.playback_bridge
-            .start(playback_engine, config, &self.tokio_handle);
+            .start(playback_engine, config, &self.tokio_handle, event_tx.clone(), turn_id);
 
         let playback_tx = self
             .playback_bridge

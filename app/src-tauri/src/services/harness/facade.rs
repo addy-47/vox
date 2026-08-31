@@ -71,17 +71,19 @@ pub async fn prepare_turn_context(
 
     let (transition_speech, compaction_job) = {
         let mut cm = params.harness.lock();
-        cm.cancel_opportunistic();
         cm.update_dynamic_user_profile(profile_opt);
         cm.push_user_turn(query_trimmed.to_string());
+
+        let mut context_harness = super::accountant::ContextHarness::new(params.context_window);
+        context_harness.sync_tokens_from_buffer(&cm.buffer);
 
         let mut transition_speech = None;
         let mut compaction_job = None;
 
-        if cm.needs_threshold_maintenance() {
+        if context_harness.needs_threshold_maintenance() {
             log::warn!(
                 "[Harness] Critical threshold reached ({:.1}% utilization). Performing Maintenance...",
-                cm.context_utilization() * 100.0
+                context_harness.context_utilization() * 100.0
             );
 
             let msg_set = if is_deva {
@@ -93,12 +95,12 @@ pub async fn prepare_turn_context(
             transition_speech = Some(msg_set[random_idx].to_string());
 
             let use_fifo = match params.provider_kind {
-                ProviderKind::Embedded => cm.accountant.max_context_tokens() <= 4096,
+                ProviderKind::Embedded => context_harness.accountant.max_context_tokens() <= 4096,
                 ProviderKind::OpenAiCompat => false,
             };
 
             if use_fifo || cm.buffer.messages.len() <= 3 {
-                cm.perform_fifo_maintenance();
+                context_harness.perform_fifo_maintenance(&mut cm.buffer);
             } else if let Some(last_user_turn) = cm.buffer.pop_last_user_turn() {
                 let history_slice = cm.buffer.messages[1..].to_vec();
                 compaction_job = Some((history_slice, last_user_turn));
@@ -148,7 +150,14 @@ pub async fn prepare_turn_context(
             {
                 Ok(result) => {
                     let mut lock = params.harness.lock();
-                    diff_to_enqueue = lock.apply_compaction_result(&result, last_user_turn);
+                    let mut context_harness = super::accountant::ContextHarness::new(params.context_window);
+                    let sys_prompt = lock.system_prompt().clone();
+                    diff_to_enqueue = context_harness.apply_compaction_result(
+                        &mut lock.buffer,
+                        &sys_prompt,
+                        &result,
+                        last_user_turn,
+                    );
                 }
                 Err(e) => {
                     log::warn!(
@@ -156,23 +165,31 @@ pub async fn prepare_turn_context(
                         e
                     );
                     let mut lock = params.harness.lock();
+                    let mut context_harness = super::accountant::ContextHarness::new(params.context_window);
+                    context_harness.sync_tokens_from_buffer(&lock.buffer);
                     lock.buffer.messages.push(last_user_turn);
-                    lock.perform_fifo_maintenance();
+                    context_harness.perform_fifo_maintenance(&mut lock.buffer);
                 }
             }
         } else {
             let mut lock = params.harness.lock();
+            let mut context_harness = super::accountant::ContextHarness::new(params.context_window);
+            context_harness.sync_tokens_from_buffer(&lock.buffer);
             lock.buffer.messages.push(last_user_turn);
-            lock.perform_fifo_maintenance();
+            context_harness.perform_fifo_maintenance(&mut lock.buffer);
         }
     }
 
     let conv_ctx = {
         let mut cm = params.harness.lock();
-        let soft_cap = ((cm.accountant.max_context_tokens() as f32)
+        let mut context_harness = super::accountant::ContextHarness::new(params.context_window);
+        context_harness.sync_tokens_from_buffer(&cm.buffer);
+
+        let soft_cap = ((context_harness.accountant.max_context_tokens() as f32)
             * crate::services::memory::NARRATIVE_CHAIN_SOFT_CAP_SHARE) as usize;
-        let session_history = cm.build_session_history_xml(soft_cap);
-        cm.consolidate_system_message(&session_history);
+        let session_history = context_harness.build_session_history_xml(soft_cap);
+        let sys_prompt = cm.system_prompt().clone();
+        context_harness.consolidate_system_message(&mut cm.buffer, &sys_prompt, &session_history);
 
         let kv_idx = if params.provider_kind == ProviderKind::Embedded {
             cm.buffer.kv_synced_index
@@ -180,9 +197,14 @@ pub async fn prepare_turn_context(
             0
         };
 
+        let mut total_tokens = 0;
+        for msg in &cm.buffer.messages {
+            total_tokens += crate::services::memory::ml::estimate_tokens(&msg.content);
+        }
+
         ConversationContext {
             messages: cm.buffer.messages.clone(),
-            token_count: cm.total_token_count(),
+            token_count: total_tokens,
             kv_cache_index: kv_idx,
         }
     };
@@ -250,6 +272,15 @@ pub fn trigger_background_compaction(
         return;
     }
 
+    let is_modular = state
+        .settings
+        .read()
+        .map(|s| s.interaction.pipeline_mode == crate::core::settings::PipelineMode::Modular)
+        .unwrap_or(true);
+    if !is_modular {
+        return;
+    }
+
     {
         let last = LAST_SOFT_COMPACTION.lock();
         if let Some(instant) = *last {
@@ -259,8 +290,20 @@ pub fn trigger_background_compaction(
         }
     }
 
+    let context_window = state
+        .settings
+        .read()
+        .map(|s| s.llm.context_window as usize)
+        .unwrap_or(4096);
+
     let harness = &state.conversation_manager;
-    let candidate = harness.lock().try_trigger_opportunistic();
+    let candidate = {
+        let cm = harness.lock();
+        let mut context_harness = super::accountant::ContextHarness::new(context_window);
+        context_harness.sync_tokens_from_buffer(&cm.buffer);
+        context_harness.try_trigger_opportunistic(&cm.buffer)
+    };
+
     if let Some((snapshot_len, messages, cancel_flag)) = candidate {
         if messages.len() <= 3 {
             return;
@@ -306,7 +349,16 @@ pub fn trigger_background_compaction(
             .await
             {
                 Ok(result) => {
-                    let committed = h.lock().commit_opportunistic(snapshot_len, result.context_summary);
+                    let mut lock = h.lock();
+                    let mut context_harness = super::accountant::ContextHarness::new(context_window);
+                    context_harness.sync_tokens_from_buffer(&lock.buffer);
+                    let sys_prompt = lock.system_prompt().clone();
+                    let committed = context_harness.commit_opportunistic(
+                        &mut lock.buffer,
+                        &sys_prompt,
+                        snapshot_len,
+                        result.context_summary,
+                    );
                     if committed {
                         *LAST_SOFT_COMPACTION.lock() = Some(Instant::now());
                         log::info!("[Harness] Opportunistic background compaction committed successfully.");

@@ -6,7 +6,7 @@ use crate::services::tts::{
     ChatterboxEngine, ChatterboxRemoteProvider, EdgeTtsProvider, TtsEngine as SupertonicEngine,
 };
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::Emitter;
 
@@ -27,9 +27,7 @@ pub fn spawn_tts_worker<R: tauri::Runtime + 'static>(
     provider: Box<dyn TtsProvider>,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
     cancel_flag: Arc<AtomicBool>,
-    is_loaded: Arc<AtomicBool>,
 ) {
-    is_loaded.store(true, Ordering::Relaxed);
     if let Err(e) = app.emit(EVENT_MODEL_READY, "TTS") {
         log::warn!("[TTS Worker] Failed to emit EVENT_MODEL_READY: {}", e);
     }
@@ -51,7 +49,6 @@ pub fn spawn_tts_worker<R: tauri::Runtime + 'static>(
         }
     }
 
-    is_loaded.store(false, Ordering::Relaxed);
     log::info!("[TTS Worker] Loop exited. Provider will be dropped.");
 }
 
@@ -152,7 +149,6 @@ pub struct TtsWarmUpHandles<'a> {
     pub tts_tx: &'a mut Option<std::sync::mpsc::Sender<TtsCommand>>,
     pub tts_handle: &'a mut Option<std::thread::JoinHandle<()>>,
     pub cancel_flag: Arc<AtomicBool>,
-    pub is_loaded: Arc<AtomicBool>,
 }
 
 /// Spawns and initializes a persistent TTS worker actor thread.
@@ -176,12 +172,11 @@ pub fn warm_up_tts<R: tauri::Runtime + 'static>(
 
     let app_clone = app.clone();
     let cancel_flag = handles.cancel_flag;
-    let is_loaded = handles.is_loaded;
 
     let handle = std::thread::Builder::new()
         .name("vox-tts-persistent".to_string())
         .spawn(move || {
-            spawn_tts_worker(app_clone, rx, provider, event_tx, cancel_flag, is_loaded);
+            spawn_tts_worker(app_clone, rx, provider, event_tx, cancel_flag);
         })
         .map_err(|e| e.to_string())?;
 
