@@ -6,13 +6,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Vox | Ambient Intelligence</title>
     <script>
-      // Immediate window detection to prevent flash of background on transparent HUD
+      // Immediate window detection to prevent flash of background on transparent HUDs
       (function() {
         var isTray = window.location.pathname.includes("tray") || 
                      window.location.search.includes("window=tray") ||
                      (window.__TAURI_METADATA__ && window.__TAURI_METADATA__.windowLabel === "tray");
+        var isToast = window.location.pathname.includes("toast") || 
+                     window.location.search.includes("window=toast") ||
+                     (window.__TAURI_METADATA__ && window.__TAURI_METADATA__.windowLabel === "toast");
         if (isTray) {
           document.documentElement.classList.add("is-tray");
+        }
+        if (isToast) {
+          document.documentElement.classList.add("is-toast");
         }
       })();
     </script>
@@ -24,15 +30,18 @@
         height: 100%;
         overflow: hidden;
       }
-      html:not(.is-tray), 
-      body:not(.is-tray), 
-      body:not(.is-tray) #root {
+      html:not(.is-tray):not(.is-toast), 
+      body:not(.is-tray):not(.is-toast), 
+      body:not(.is-tray):not(.is-toast) #root {
         background-color: #050505;
         background: #050505;
       }
       html.is-tray, 
       body.is-tray, 
-      body.is-tray #root {
+      body.is-tray #root,
+      html.is-toast, 
+      body.is-toast, 
+      body.is-toast #root {
         background-color: transparent !important;
         background: transparent !important;
       }

@@ -9,6 +9,7 @@ pub mod persistence;
 pub mod pipeline;
 pub mod services;
 pub mod setup;
+pub mod toast;
 pub mod tray;
 pub mod utils;
 pub mod window_customizer;
@@ -36,6 +37,8 @@ use crate::ipc::tray::{
 };
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
+#[cfg(target_os = "linux")]
+use crate::toast::setup_linux_toast_layer;
 
 use crate::monitoring::system_monitor::spawn_system_monitor;
 
@@ -344,6 +347,37 @@ pub fn run() {
                 log::info!("[BOOTSTRAP] Runtime Ready.");
             }
 
+            // ── 1.8.1 Toast test poll (dev — emits every 10s after boot) ─────────
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    let mut tick: u32 = 0;
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                        tick = tick.wrapping_add(1);
+                        let title = format!("Toast Test #{tick}");
+                        let message = match tick % 4 {
+                            0 => "Dictation Copied — transcript on clipboard.".to_string(),
+                            1 => "Dictation Pasted — transcript injected.".to_string(),
+                            2 => "Paste Blocked by OS — fallback to clipboard.".to_string(),
+                            _ => format!("Voice Error — simulated poll tick {tick}."),
+                        };
+                        let level = match tick % 4 {
+                            0 => crate::core::events::ToastLevel::Success,
+                            1 => crate::core::events::ToastLevel::Success,
+                            2 => crate::core::events::ToastLevel::Warning,
+                            _ => crate::core::events::ToastLevel::Error,
+                        };
+                        if let Err(e) = crate::toast::show_toast(&handle, &title, &message, level) {
+                            log::warn!("[Toast::Poll] Failed to emit test toast: {}", e);
+                        } else {
+                            log::info!("[Toast::Poll] Emitted test toast #{tick}: {}", title);
+                        }
+                    }
+                });
+            }
+
             // ── 2. Conditionally construct tray HUD on demand ─────────────────────────
             {
                 let (should_show_tray, setup_completed) = {
@@ -421,6 +455,14 @@ pub fn run() {
                     }
                 }
             }
+            if window.label() == "toast" {
+                if let tauri::WindowEvent::Resized(size) = event {
+                    if size.width > 0 && size.height > 0 {
+                        #[cfg(target_os = "linux")]
+                        setup_linux_toast_layer(window.app_handle(), window.label());
+                    }
+                }
+            }
 
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // Instead of closing, hide the main window to keep app running
@@ -466,6 +508,10 @@ pub fn run() {
             set_hud_ignore_cursor,
             update_interaction_mode,
             show_main_window,
+            crate::toast::show_toast_window,
+            crate::toast::hide_toast_window,
+            crate::toast::destroy_toast_window_cmd,
+            crate::toast::get_last_toast,
             request_boot_state,
             request_model_catalog,
             check_llm_provider_health,
