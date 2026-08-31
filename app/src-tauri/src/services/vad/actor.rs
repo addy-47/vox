@@ -14,9 +14,9 @@ use super::{
 };
 use crate::core::events::VoxEvent;
 use crate::core::settings::{AudioOutputMode, InteractionMode};
-use crate::core::state::VadCommand;
 use crate::monitoring::aggregator::TelemetryEvent;
 use crate::services::stt::SttCommand;
+use crate::services::vad::VadCommand;
 use crate::utils::audio_filters::FilterBank;
 
 /// Result returned from windowed speech validation.
@@ -156,13 +156,14 @@ fn process_vad_commands(
                 let raw_len = state.window_buffer.len();
                 let start = state.window_first_speech_sample.min(raw_len);
                 let end = state.window_last_speech_sample.min(raw_len);
-                let trimmed_audio = if state.window_speech_detected && start < end && (end - start) >= 256 {
-                    state.window_buffer[start..end].to_vec()
-                } else if state.window_speech_detected {
-                    std::mem::take(&mut state.window_buffer)
-                } else {
-                    Vec::new()
-                };
+                let trimmed_audio =
+                    if state.window_speech_detected && start < end && (end - start) >= 256 {
+                        state.window_buffer[start..end].to_vec()
+                    } else if state.window_speech_detected {
+                        std::mem::take(&mut state.window_buffer)
+                    } else {
+                        Vec::new()
+                    };
                 state.window_buffer.clear();
                 let result = VadValidationResult {
                     is_speech_detected: state.window_speech_detected,
@@ -253,10 +254,7 @@ fn handle_speech_start(
     state.in_speech = true;
     state.current_turn_id = turn_id_atomic.fetch_add(1, Ordering::Relaxed) + 1;
 
-    log::info!(
-        "[VAD Actor] Speech Start (turn: {})",
-        state.current_turn_id
-    );
+    log::info!("[VAD Actor] Speech Start (turn: {})", state.current_turn_id);
 
     if let Err(e) = stt_tx.send(SttCommand::ResetStream) {
         log::warn!("[VAD Actor] Failed to send ResetStream to STT: {}", e);
@@ -284,10 +282,7 @@ fn handle_speech_end(
     vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
 ) {
     state.in_speech = false;
-    log::info!(
-        "[VAD Actor] Speech End (turn: {})",
-        state.current_turn_id
-    );
+    log::info!("[VAD Actor] Speech End (turn: {})", state.current_turn_id);
 
     if let Some(tx) = vox_event_tx {
         if let Err(e) = tx.send(VoxEvent::SpeechEnd {
@@ -354,24 +349,14 @@ fn process_continuous_segmentation(
         state.inactive_frames = 0;
 
         if !state.in_speech && state.active_frames >= VAD_SPEECH_START_FRAMES {
-            handle_speech_start(
-                state,
-                turn_id_atomic,
-                stt_tx,
-                vox_event_tx,
-            );
+            handle_speech_start(state, turn_id_atomic, stt_tx, vox_event_tx);
         }
     } else {
         state.inactive_frames += 1;
         state.active_frames = 0;
 
         if state.in_speech && state.inactive_frames >= VAD_SPEECH_END_FRAMES {
-            handle_speech_end(
-                vad,
-                state,
-                stt_tx,
-                vox_event_tx,
-            );
+            handle_speech_end(vad, state, stt_tx, vox_event_tx);
         }
     }
 
@@ -469,11 +454,7 @@ where
                     &handles.dropped_counter,
                 );
 
-                if should_suppress_audio(
-                    &handles.audio_suppressed,
-                    &handles.state_atomic,
-                    &state,
-                ) {
+                if should_suppress_audio(&handles.audio_suppressed, &handles.state_atomic, &state) {
                     continue;
                 }
 
@@ -493,12 +474,7 @@ where
                         );
                     }
                     VadOperationalMode::WindowedValidation => {
-                        process_windowed_validation(
-                            &chunk,
-                            raw_energy,
-                            &mut vad,
-                            &mut state,
-                        );
+                        process_windowed_validation(&chunk, raw_energy, &mut vad, &mut state);
                     }
                 }
             } else {

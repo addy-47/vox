@@ -2,16 +2,16 @@
 
 use crate::services::tts::{
     CHATTERBOX_MODEL_DIR, EDGE_TTS_USER_AGENT, EDGE_TTS_VOICES_URL_BASE,
-    MIN_VOICE_CLONE_DURATION_SECS, MODEL_FILE_TTS_CHATTERBOX_S3GEN,
-    MODEL_FILE_TTS_CHATTERBOX_T3, TARGET_VOICE_SAMPLE_DURATION_SECS, TTS_SAMPLE_RATE,
+    MIN_VOICE_CLONE_DURATION_SECS, MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3,
+    TARGET_VOICE_SAMPLE_DURATION_SECS, TTS_SAMPLE_RATE,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use symphonia_core::audio::Audio;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
+use symphonia_core::audio::Audio;
 
 /// Metadata describing an online Edge TTS neural voice.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,7 +22,6 @@ pub struct EdgeTtsVoiceEntry {
     pub locale: String,
     pub friendly_name: String,
 }
-
 
 fn extract_mono_f32_samples(
     buf_ref: crate::symphonia_core::audio::GenericAudioBufferRef<'_>,
@@ -204,7 +203,11 @@ pub fn convert_and_validate_audio(src_path: &str, dest_path: &Path) -> Result<()
         ));
     }
 
-    let final_samples = pad_or_truncate_audio(&resampled, TTS_SAMPLE_RATE, TARGET_VOICE_SAMPLE_DURATION_SECS);
+    let final_samples = pad_or_truncate_audio(
+        &resampled,
+        TTS_SAMPLE_RATE,
+        TARGET_VOICE_SAMPLE_DURATION_SECS,
+    );
     write_f32_wav(dest_path, &final_samples, TTS_SAMPLE_RATE)
 }
 
@@ -214,7 +217,8 @@ pub fn write_pcm_to_wav(
     sample_rate: u32,
     dest_path: &Path,
 ) -> Result<usize, String> {
-    let final_samples = pad_or_truncate_audio(pcm_f32, sample_rate, TARGET_VOICE_SAMPLE_DURATION_SECS);
+    let final_samples =
+        pad_or_truncate_audio(pcm_f32, sample_rate, TARGET_VOICE_SAMPLE_DURATION_SECS);
     let len = final_samples.len();
     write_f32_wav(dest_path, &final_samples, sample_rate)?;
     Ok(len)
@@ -227,8 +231,7 @@ pub fn pre_bake_speaker_tensors(source_wav: &Path, baked_dir: &Path) -> Result<(
     std::fs::create_dir_all(baked_dir)
         .map_err(|e| format!("Failed to create baked voice directory: {}", e))?;
 
-    let tts_model_dir =
-        crate::utils::paths::model_dir(CHATTERBOX_MODEL_DIR);
+    let tts_model_dir = crate::utils::paths::model_dir(CHATTERBOX_MODEL_DIR);
     let t3_path = tts_model_dir.join(MODEL_FILE_TTS_CHATTERBOX_T3);
     let s3_path = tts_model_dir.join(MODEL_FILE_TTS_CHATTERBOX_S3GEN);
 
@@ -255,7 +258,6 @@ pub fn pre_bake_speaker_tensors(source_wav: &Path, baked_dir: &Path) -> Result<(
     );
     Ok(())
 }
-
 
 struct ActiveRecorder {
     _stream: cpal::Stream,

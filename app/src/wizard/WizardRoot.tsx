@@ -9,7 +9,7 @@ import { AudioSetupStep } from "./steps/AudioSetupStep";
 import { LiveTestStep } from "./steps/LiveTestStep";
 import { CompletedStep } from "./steps/CompletedStep";
 import { revealWizard, fetchManifest } from '@/services/modelService';
-import { listen } from "@tauri-apps/api/event";
+import { onModelProgress } from "@/services/eventsService";
 import { CheckCircle2 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { TitleBar } from '@/layout/TitleBar';
@@ -40,14 +40,10 @@ export const WizardRoot: React.FC = () => {
   }, []);
 
   React.useEffect(() => {
-    // Listen for model setup progress
-    const unlisten = listen('model_setup_status', (event) => {
-      send({ type: 'PROGRESS', data: event.payload });
+    const unlisten = onModelProgress((payload) => {
+      send({ type: 'PROGRESS', data: payload });
     });
-
-    return () => {
-      unlisten.then(f => f());
-    };
+    return unlisten;
   }, [send]);
 
   const steps = WIZARD_STEPS.map(s => ({ ...s, icon: <s.icon className="w-4 h-4" /> }));

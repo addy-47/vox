@@ -1,5 +1,7 @@
 # Query Sieve — 4-Class MemoryScope Classifier
 
+**Last Updated:** 2026-08-31
+
 **Pre-retrieval scope classification** that routes user queries into 4 cognitive categories before embedding generation and vector search. Eliminates wasted inference on chit-chat and identity queries, while ensuring domain-specific and temporal queries get full memory retrieval.
 
 This is a custom submodule at `submodules/query-sieve-rs/` — a standalone Rust crate wrapping ModernBERT multilingual (ONNX Runtime INT8) with a Vox integration layer in `app/src-tauri/src/services/memory/query_classifier.rs`.
@@ -29,8 +31,8 @@ Re-exported API:                                    ← services/memory public s
        │
        ▼
 Production callers:
-  services/pipeline.rs  → scope-based retrieval gating
-  ipc/pipeline.rs       → lazy-load on pipeline engage
+   pipeline/router.rs  → scope-based retrieval gating
+   ipc/pipeline.rs       → lazy-load on pipeline engage
 ```
 
 ### Pipeline Gating

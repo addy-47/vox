@@ -29,7 +29,10 @@ struct ChunkDelta {
 }
 
 /// Builds the HTTP POST request payload for Chat Completions.
-pub fn build_request_body(config: &ConnectionConfig, request: &GenerationRequest) -> serde_json::Value {
+pub fn build_request_body(
+    config: &ConnectionConfig,
+    request: &GenerationRequest,
+) -> serde_json::Value {
     let messages: Vec<ChatMessage> = request
         .input
         .messages

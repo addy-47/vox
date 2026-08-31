@@ -1,15 +1,14 @@
-use super::super::{
-    transition, RoutingContext, EVENT_LLM_TOKEN, EVENT_PIPELINE_ERROR,
-    EVENT_TRANSCRIPT_FINAL, WINDOW_MAIN,
-};
-use crate::core::events::VoxEvent;
-use crate::core::state::{AppState, InteractionState, VadCommand};
+use super::super::{transition, RoutingContext, WINDOW_MAIN};
+use crate::core::events::VoiceErrorPayload;
+use crate::core::events::{emit_ipc_to, IpcEvent, LlmTokenPayload, TranscriptPayload, VoxEvent};
+use crate::core::state::{AppState, InteractionOwner, InteractionState};
 use crate::services::audio::PlaybackEngine;
 use crate::services::realtime::engine::RealtimeEngine;
+use crate::services::vad::VadCommand;
 use parking_lot::Mutex;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 struct TurnAccumulator {
     assistant_response: String,
@@ -50,7 +49,10 @@ static ACCUMULATOR: LazyLock<Mutex<TurnAccumulator>> =
     LazyLock::new(|| Mutex::new(TurnAccumulator::new()));
 
 /// Starts a user-gated real-time Push-To-Talk speech-to-speech assistant session.
-pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+pub async fn start_session<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+) -> Result<(), String> {
     let (vad_tx, playback_engine, pipeline_tx) = {
         let guard = state.engine.lock().await;
         let eng = guard.as_ref().ok_or("Audio engine not ready")?;
@@ -100,12 +102,18 @@ pub async fn start_session<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppSta
     transition(InteractionState::Ready, &ctx, app, state);
 
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
-    log::info!("[RealtimePTT] Realtime PTT session started (ID: {})", conv_id);
+    log::info!(
+        "[RealtimePTT] Realtime PTT session started (ID: {})",
+        conv_id
+    );
     Ok(())
 }
 
 /// Ends the active real-time Push-To-Talk voice assistant session.
-pub async fn end_session<R: tauri::Runtime>(_app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+pub async fn end_session<R: tauri::Runtime>(
+    _app: &AppHandle<R>,
+    state: &AppState,
+) -> Result<(), String> {
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             engine.playback_engine.cancel();
@@ -127,10 +135,81 @@ pub async fn end_session<R: tauri::Runtime>(_app: &AppHandle<R>, state: &AppStat
     Ok(())
 }
 
+/// Handles dedicated barge-in interruption for realtime PTT pipeline.
+pub fn on_interrupt<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    playback: &Arc<PlaybackEngine>,
+) {
+    playback.cancel();
+
+    if let Ok(rt_guard) = state.realtime_engine.try_lock() {
+        if let Some(ref rt_engine) = *rt_guard {
+            if let Err(e) = rt_engine.cancel() {
+                log::warn!(
+                    "[RealtimePTT] Error sending cancel to realtime engine: {}",
+                    e
+                );
+            }
+        }
+    }
+
+    state.pipeline.renew_turn_token();
+
+    let partial_assistant = ACCUMULATOR.lock().take_assistant_response();
+    let user_text = ACCUMULATOR.lock().user_transcript();
+    let interrupted_turn_id = state.pipeline.peek_turn_id();
+    let conv_id = state.conversation_id.load(Ordering::Relaxed);
+
+    if !partial_assistant.trim().is_empty() {
+        state
+            .conversation_manager
+            .lock()
+            .push_assistant_turn(partial_assistant.clone());
+    }
+
+    let persist_lock = state.persist_tx.lock();
+    if let Some(ref tx) = *persist_lock {
+        if let Err(e) = tx.try_send(
+            crate::persistence::events::PersistenceEvent::TurnCompleted {
+                conversation_id: conv_id,
+                turn_id: interrupted_turn_id,
+                user_text,
+                assistant_text: partial_assistant,
+                stt_latency_ms: 0,
+                ttft_ms: 0,
+            },
+        ) {
+            log::warn!(
+                "[RealtimePTT] Failed to send TurnCompleted on interrupt: {}",
+                e
+            );
+        }
+    }
+
+    ACCUMULATOR.lock().clear();
+
+    let ctx = RoutingContext::from_app_state(state);
+    transition(InteractionState::Listening, &ctx, app, state);
+    log::info!(
+        "[RealtimePTT] Interruption handled (turn: {})",
+        interrupted_turn_id
+    );
+}
+
 /// Initiates real-time Push-To-Talk speech streaming and interrupts ongoing playback and cloud response.
 pub fn ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
-    if state.pipeline.state() == InteractionState::Idle {
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
         return Err("Realtime PTT session not active".to_string());
+    }
+
+    if current_state == InteractionState::Thinking || current_state == InteractionState::Speaking {
+        if let Ok(guard) = state.engine.try_lock() {
+            if let Some(ref engine) = *guard {
+                on_interrupt(app, state, &engine.playback_engine);
+            }
+        }
     }
 
     let (turn_id, _) = state.pipeline.next_turn();
@@ -138,9 +217,12 @@ pub fn ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Res
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
-            super::session::realtime_barge_in(state, &engine.playback_engine);
+            engine.playback_engine.cancel();
             if let Err(e) = engine.vad_tx.send(VadCommand::StartWindowValidation) {
-                log::warn!("[RealtimePTT] Failed to send StartWindowValidation to VAD: {}", e);
+                log::warn!(
+                    "[RealtimePTT] Failed to send StartWindowValidation to VAD: {}",
+                    e
+                );
             }
         }
     }
@@ -156,12 +238,18 @@ pub fn ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Res
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Listening, &ctx, app, state);
 
-    log::info!("[RealtimePTT] PTT recording started with cloud interrupt (Turn: {})", turn_id);
+    log::info!(
+        "[RealtimePTT] PTT recording started with cloud interrupt (Turn: {})",
+        turn_id
+    );
     Ok(())
 }
 
 /// Finalizes a real-time Push-To-Talk speech turn and streams audio buffer to the provider.
-pub async fn ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Result<(), String> {
+pub async fn ptt_stop<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+) -> Result<(), String> {
     if state.pipeline.state() != InteractionState::Listening {
         return Ok(());
     }
@@ -234,7 +322,9 @@ pub fn ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Re
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             let (tx, _) = std::sync::mpsc::channel();
-            let _ = engine.vad_tx.send(VadCommand::StopWindowValidation { response_tx: tx });
+            let _ = engine
+                .vad_tx
+                .send(VadCommand::StopWindowValidation { response_tx: tx });
         }
     }
 
@@ -245,22 +335,29 @@ pub fn ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Re
     Ok(())
 }
 
+/// LOGIC IS WRONG , THIS SHOULD BE TRNASCRIPT PARTIAL EVENT ,
+// TODO WHEN WE FIX EVENT ARCHITECTURE
 /// Handles speech onset detection and marks speech active for PTT gating.
-pub fn on_speech_start(
+pub fn on_speech_start<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     state: &AppState,
     playback: &Arc<PlaybackEngine>,
 ) {
-    super::session::realtime_barge_in(state, playback);
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Thinking || current_state == InteractionState::Speaking {
+        on_interrupt(app, state, playback);
+    }
 }
 
 /// Handles incoming final transcription from the real-time server.
 fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppHandle<R>) {
-    if let Err(e) = app.emit_to(
+    if let Err(e) = emit_ipc_to(
+        app,
         WINDOW_MAIN,
-        EVENT_TRANSCRIPT_FINAL,
-        serde_json::json!({
-            "turn_id": turn_id,
-            "text": text,
+        IpcEvent::TranscriptFinal(TranscriptPayload {
+            turn_id,
+            text: text.clone(),
+            owner: Some(InteractionOwner::Assistant),
         }),
     ) {
         log::warn!("[RealtimePTT] Failed to emit transcript_final: {}", e);
@@ -274,12 +371,12 @@ fn on_transcript_final<R: tauri::Runtime>(turn_id: u32, text: String, app: &AppH
 /// Handles streamed token delta from the real-time server.
 fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<R>) {
     ACCUMULATOR.lock().push_token(&token);
-    if let Err(e) = app.emit_to(
+    if let Err(e) = emit_ipc_to(
+        app,
         WINDOW_MAIN,
-        EVENT_LLM_TOKEN,
-        serde_json::json!({
-            "turn_id": turn_id,
-            "token": token,
+        IpcEvent::LlmToken(LlmTokenPayload {
+            turn_id,
+            token: token.clone(),
         }),
     ) {
         log::warn!("[RealtimePTT] Failed to emit llm_token: {}", e);
@@ -307,15 +404,20 @@ fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, sta
         let ttft_ms = state.telemetry.latest_ttft_ms.load(Ordering::Relaxed);
         let persist_lock = state.persist_tx.lock();
         if let Some(ref tx) = *persist_lock {
-            if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::TurnCompleted {
-                conversation_id: conv_id,
-                turn_id,
-                user_text,
-                assistant_text: full_text,
-                stt_latency_ms: stt_ms,
-                ttft_ms,
-            }) {
-                log::warn!("[RealtimePTT] Failed to send TurnCompleted to persist: {}", e);
+            if let Err(e) = tx.try_send(
+                crate::persistence::events::PersistenceEvent::TurnCompleted {
+                    conversation_id: conv_id,
+                    turn_id,
+                    user_text,
+                    assistant_text: full_text,
+                    stt_latency_ms: stt_ms,
+                    ttft_ms,
+                },
+            ) {
+                log::warn!(
+                    "[RealtimePTT] Failed to send TurnCompleted to persist: {}",
+                    e
+                );
             }
         }
     }
@@ -325,20 +427,25 @@ fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, sta
 }
 
 /// Logs pipeline errors and transitions state machine to error condition.
-fn on_error<R: tauri::Runtime>(turn_id: u32, message: String, app: &AppHandle<R>, state: &AppState) {
-    log::error!("[RealtimePTT] Error on turn {}: {}", turn_id, message);
+fn on_error<R: tauri::Runtime>(
+    _turn_id: u32,
+    message: String,
+    app: &AppHandle<R>,
+    state: &AppState,
+) {
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Error, &ctx, app, state);
 
-    if let Err(e) = app.emit_to(
+    if let Err(e) = emit_ipc_to(
+        app,
         WINDOW_MAIN,
-        EVENT_PIPELINE_ERROR,
-        serde_json::json!({
-            "turn_id": turn_id,
-            "message": message,
+        IpcEvent::VoiceError(VoiceErrorPayload {
+            message,
+            source: "RealtimePTT".to_string(),
+            owner: Some(InteractionOwner::Assistant),
         }),
     ) {
-        log::warn!("[RealtimePTT] Failed to emit pipeline_error: {}", e);
+        log::warn!("[RealtimePTT] Failed to emit voice_error: {}", e);
     }
 }
 
@@ -357,15 +464,12 @@ pub fn handle_event<R: tauri::Runtime>(
     event: VoxEvent,
 ) {
     match event {
-        VoxEvent::SpeechStart { .. } => {
-            on_speech_start(state, playback)
-        }
-        VoxEvent::TranscriptFinal { turn_id, text } => {
-            on_transcript_final(turn_id, text, app)
-        }
+        VoxEvent::SpeechStart { .. } => on_speech_start(app, state, playback),
+        VoxEvent::TranscriptFinal { turn_id, text } => on_transcript_final(turn_id, text, app),
         VoxEvent::LlmToken { turn_id, token } => on_llm_token(turn_id, token, app),
         VoxEvent::PlaybackStarted { .. } => on_playback_started(app, state),
         VoxEvent::PlaybackFinished { turn_id } => on_playback_finished(turn_id, app, state),
+        VoxEvent::Interrupted { .. } => on_interrupt(app, state, playback),
         VoxEvent::Cancelled { turn_id } => on_cancelled(turn_id, app, state),
         VoxEvent::Error { turn_id, message } => on_error(turn_id, message, app, state),
         _ => {}

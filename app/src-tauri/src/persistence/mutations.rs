@@ -1,8 +1,5 @@
-use crate::core::constants::{
-    collection_type, PM_QUEUE_STATUS_PAUSED, PM_QUEUE_STATUS_STAGED_PENDING,
-    PM_RELATION_SUPERSEDES, PM_SOURCE_USER, PM_TYPE_SEMANTIC_GRAPH,
-};
 use crate::persistence::{encode_f32_blob, MAX_QUEUE_RETRY_ATTEMPTS};
+use crate::services::memory::{collection_type, CollectionType, FactSource, QueueStatus, Relation};
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use turso::Connection;
@@ -21,9 +18,9 @@ pub async fn enqueue_personal_facts(
 
     for (collection, fact_list) in facts {
         let status = if pipeline_processing_enabled {
-            PM_QUEUE_STATUS_STAGED_PENDING
+            QueueStatus::StagedPending.as_str()
         } else {
-            PM_QUEUE_STATUS_PAUSED
+            QueueStatus::Paused.as_str()
         };
 
         for fact in fact_list {
@@ -132,15 +129,15 @@ pub async fn supersede_user_fact(
             "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?)",
             (
                 new_id.clone(),
-                fact_type.to_string(),
+                fact_type.as_str().to_string(),
                 collection.to_string(),
                 new_fact_text.to_string(),
-                PM_SOURCE_USER.to_string(),
+                FactSource::User.as_str().to_string(),
                 now,
             ),
         ).await?;
 
-        if fact_type == PM_TYPE_SEMANTIC_GRAPH {
+        if fact_type == CollectionType::SemanticGraph {
             crate::services::memory::ensure_embedder_loaded(true)?;
             let embedding = match crate::services::memory::generate_embedding(new_fact_text)? {
                 Some(v) => v,
@@ -160,7 +157,7 @@ pub async fn supersede_user_fact(
             (
                 new_id.clone(),
                 old_id.to_string(),
-                PM_RELATION_SUPERSEDES.to_string(),
+                Relation::Supersedes.as_str().to_string(),
                 now,
             ),
         ).await?;
@@ -181,7 +178,10 @@ pub async fn supersede_user_fact(
         }
         Err(err) => {
             if let Err(e) = conn.execute("ROLLBACK;", ()).await {
-                log::warn!("[Persistence::Mutations] Failed to rollback supersede_user_fact: {}", e);
+                log::warn!(
+                    "[Persistence::Mutations] Failed to rollback supersede_user_fact: {}",
+                    e
+                );
             }
             Err(err)
         }
@@ -247,4 +247,3 @@ pub async fn write_candidate_audit(
     .await?;
     Ok(())
 }
-

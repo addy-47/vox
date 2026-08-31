@@ -10,8 +10,14 @@
 
 mod common;
 
-use common::audio::{decode_wav_to_mono_16k, stream_audio_to_ring_buffer, stream_silence_frames, wait_for_buffer_drain};
-use common::harness::{assert_channel_empty_after, collect_all_final_transcripts, get_test_app_handle, setup_stt_worker, setup_vad_actor};
+use common::audio::{
+    decode_wav_to_mono_16k, stream_audio_to_ring_buffer, stream_silence_frames,
+    wait_for_buffer_drain,
+};
+use common::harness::{
+    assert_channel_empty_after, collect_all_final_transcripts, get_test_app_handle,
+    setup_stt_worker, setup_vad_actor,
+};
 use common::paths::get_asset_path;
 use common::scoring::calculate_similarity;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -19,15 +25,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{AudioOutputMode, InteractionMode};
-use vox_lib::core::state::{InteractionState, VadCommand};
+use vox_lib::core::state::InteractionState;
 use vox_lib::services::stt::actor::SttCommand;
 use vox_lib::services::vad::actor::VadActorConfig;
+use vox_lib::services::vad::VadCommand;
 use vox_lib::services::vad::VAD_SPEECH_END_FRAMES;
 
 const EN_GROUND_TRUTH: &str =
     "Hey Vox, good morning! Can you check my calendar and give me a quick briefing on today's scheduled meetings?";
-const HI_GROUND_TRUTH: &str =
-    "वॉक्स, आज बाहर का मौसम कैसा है? क्या शाम को बारिश होने की कोई संभावना है?";
+const HI_GROUND_TRUTH: &str = "वॉक्स, आज बाहर का मौसम कैसा है? क्या शाम को बारिश होने की कोई संभावना है?";
 
 const MIN_SIMILARITY_THRESHOLD: f32 = 0.90;
 
@@ -81,10 +87,17 @@ fn test_passive_streaming_pipeline() {
             }
         }
 
-        assert!(speech_started, "Passive streaming did not trigger SpeechStart via VAD (EN)");
-        assert!(speech_ended, "Passive streaming did not trigger SpeechEnd via VAD (EN)");
+        assert!(
+            speech_started,
+            "Passive streaming did not trigger SpeechStart via VAD (EN)"
+        );
+        assert!(
+            speech_ended,
+            "Passive streaming did not trigger SpeechEnd via VAD (EN)"
+        );
 
-        let transcript = collect_all_final_transcripts(&pipeline_event_rx, 2, Duration::from_secs(20));
+        let transcript =
+            collect_all_final_transcripts(&pipeline_event_rx, 2, Duration::from_secs(20));
         let elapsed = sub_start.elapsed().as_secs_f32();
         let rtf = elapsed / audio_duration_sec;
         let similarity = calculate_similarity(&transcript, EN_GROUND_TRUTH);
@@ -92,8 +105,14 @@ fn test_passive_streaming_pipeline() {
         println!("\n=== [Passive Streaming EN] Result ===");
         println!("Ground Truth : {}", EN_GROUND_TRUTH);
         println!("Hypothesis   : {}", transcript);
-        println!("Similarity   : {:.4} (Threshold: {:.2})", similarity, MIN_SIMILARITY_THRESHOLD);
-        println!("Total Stream : {:.2}s (Audio: {:.2}s, RTF: {:.3}x)", elapsed, audio_duration_sec, rtf);
+        println!(
+            "Similarity   : {:.4} (Threshold: {:.2})",
+            similarity, MIN_SIMILARITY_THRESHOLD
+        );
+        println!(
+            "Total Stream : {:.2}s (Audio: {:.2}s, RTF: {:.3}x)",
+            elapsed, audio_duration_sec, rtf
+        );
 
         assert!(
             similarity >= MIN_SIMILARITY_THRESHOLD,
@@ -128,10 +147,17 @@ fn test_passive_streaming_pipeline() {
             }
         }
 
-        assert!(speech_started, "Passive streaming did not trigger SpeechStart via VAD (HI)");
-        assert!(speech_ended, "Passive streaming did not trigger SpeechEnd via VAD (HI)");
+        assert!(
+            speech_started,
+            "Passive streaming did not trigger SpeechStart via VAD (HI)"
+        );
+        assert!(
+            speech_ended,
+            "Passive streaming did not trigger SpeechEnd via VAD (HI)"
+        );
 
-        let transcript = collect_all_final_transcripts(&pipeline_event_rx, 2, Duration::from_secs(20));
+        let transcript =
+            collect_all_final_transcripts(&pipeline_event_rx, 2, Duration::from_secs(20));
         let elapsed = sub_start.elapsed().as_secs_f32();
         let rtf = elapsed / audio_duration_sec;
         let similarity = calculate_similarity(&transcript, HI_GROUND_TRUTH);
@@ -139,8 +165,14 @@ fn test_passive_streaming_pipeline() {
         println!("\n=== [Passive Streaming HI] Result ===");
         println!("Ground Truth : {}", HI_GROUND_TRUTH);
         println!("Hypothesis   : {}", transcript);
-        println!("Similarity   : {:.4} (Threshold: {:.2})", similarity, MIN_SIMILARITY_THRESHOLD);
-        println!("Total Stream : {:.2}s (Audio: {:.2}s, RTF: {:.3}x)", elapsed, audio_duration_sec, rtf);
+        println!(
+            "Similarity   : {:.4} (Threshold: {:.2})",
+            similarity, MIN_SIMILARITY_THRESHOLD
+        );
+        println!(
+            "Total Stream : {:.2}s (Audio: {:.2}s, RTF: {:.3}x)",
+            elapsed, audio_duration_sec, rtf
+        );
 
         assert!(
             similarity >= MIN_SIMILARITY_THRESHOLD,
@@ -150,7 +182,10 @@ fn test_passive_streaming_pipeline() {
         );
 
         // Drain any lingering turn events generated during the multi-turn Hindi utterance
-        while vox_event_rx.recv_timeout(Duration::from_millis(150)).is_ok() {}
+        while vox_event_rx
+            .recv_timeout(Duration::from_millis(150))
+            .is_ok()
+        {}
     }
 
     // 3. Silence-Only Guard
@@ -158,16 +193,28 @@ fn test_passive_streaming_pipeline() {
         stream_silence_frames(&mut producer, 100);
         wait_for_buffer_drain(&producer, 5);
 
-        assert_channel_empty_after(&vox_event_rx, Duration::from_millis(300), "vox_event_rx silence");
-        assert_channel_empty_after(&pipeline_event_rx, Duration::from_millis(300), "pipeline_event_rx silence");
+        assert_channel_empty_after(
+            &vox_event_rx,
+            Duration::from_millis(300),
+            "vox_event_rx silence",
+        );
+        assert_channel_empty_after(
+            &pipeline_event_rx,
+            Duration::from_millis(300),
+            "pipeline_event_rx silence",
+        );
     }
 
     // 4. Teardown & Panic Verification
     let _ = vad_cmd_tx.send(VadCommand::Shutdown);
     let _ = stt_tx.send(SttCommand::Shutdown);
     engine_shutdown.store(true, Ordering::Relaxed);
-    vad_handle.join().expect("VAD worker panicked during passive streaming shutdown");
-    stt_handle.join().expect("STT worker panicked during passive streaming shutdown");
+    vad_handle
+        .join()
+        .expect("VAD worker panicked during passive streaming shutdown");
+    stt_handle
+        .join()
+        .expect("STT worker panicked during passive streaming shutdown");
 
     assert!(
         start_time.elapsed() < max_test_duration,

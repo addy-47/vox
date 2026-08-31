@@ -111,11 +111,15 @@ pub fn ensure_embedder_loaded(memory_enabled: bool) -> Result<bool> {
             .join("models")
     };
 
-    let minilm_dir = models_dir.join("embedding").join(PRIMARY_EMBEDDING_MODEL_DIR);
+    let minilm_dir = models_dir
+        .join("embedding")
+        .join(PRIMARY_EMBEDDING_MODEL_DIR);
     if minilm_dir.join(PRIMARY_EMBEDDING_MODEL_FILENAME).exists() {
         init_embedder(&minilm_dir, true)
     } else {
-        let bge_dir = models_dir.join("embedding").join(FALLBACK_EMBEDDING_MODEL_DIR);
+        let bge_dir = models_dir
+            .join("embedding")
+            .join(FALLBACK_EMBEDDING_MODEL_DIR);
         init_embedder(&bge_dir, false)
     }
 }

@@ -1,7 +1,9 @@
+use crate::core::events::SystemStatsPayload;
+use crate::core::events::{emit_ipc, IpcEvent};
 use crate::monitoring::SYSTEM_MONITOR_INTERVAL;
 use std::sync::atomic::Ordering;
 use sysinfo::{Pid, System};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 /// Spawns the background system monitor task to collect and broadcast CPU and RAM statistics.
 pub fn spawn_system_monitor(app: AppHandle) {
@@ -34,7 +36,15 @@ pub fn spawn_system_monitor(app: AppHandle) {
                 thread_count,
             );
 
-            emit_system_stats(&app, &sys, system_cpu, system_ram_pct, vox_cpu, vox_ram_mb, thread_count);
+            emit_system_stats(
+                &app,
+                &sys,
+                system_cpu,
+                system_ram_pct,
+                vox_cpu,
+                vox_ram_mb,
+                thread_count,
+            );
 
             if let Err(e) = telemetry_tx.try_send(
                 crate::monitoring::aggregator::TelemetryEvent::SystemHealth {
@@ -140,19 +150,20 @@ fn emit_system_stats(
     vox_ram_mb: u32,
     thread_count: u32,
 ) {
-    if let Err(e) = app.emit(
-        "system_stats",
-        serde_json::json!({
-            "system_cpu": system_cpu,
-            "system_ram_pct": system_ram_pct,
-            "vox_cpu": vox_cpu,
-            "vox_ram_mb": vox_ram_mb,
-            "threads": thread_count,
-            "total_memory_gb": sys.total_memory() / 1024 / 1024 / 1024,
-            "cpu_count": sys.cpus().len(),
-        }),
-    ) {
-        log::warn!("[Monitoring::SystemMonitor] Failed to emit system_stats: {}", e);
+    let payload = SystemStatsPayload {
+        system_cpu,
+        system_ram_pct,
+        vox_cpu,
+        vox_ram_mb,
+        threads: thread_count,
+        total_memory_gb: sys.total_memory() / 1024 / 1024 / 1024,
+        cpu_count: sys.cpus().len(),
+    };
+
+    if let Err(e) = emit_ipc(app, IpcEvent::SystemStats(payload)) {
+        log::warn!(
+            "[Monitoring::SystemMonitor] Failed to emit system_stats: {}",
+            e
+        );
     }
 }
-

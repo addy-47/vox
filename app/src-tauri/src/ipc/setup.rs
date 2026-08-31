@@ -5,7 +5,7 @@ use crate::setup::update_check::{
     check_app_updates, check_model_updates, ModelUpdateReport, UpdateReport,
 };
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 /// Check for available Vox desktop application updates.
 #[tauri::command]
@@ -60,14 +60,11 @@ async fn execute_model_setup_task(
     base_url: String,
     models_dir: std::path::PathBuf,
     state: Arc<AppState>,
-    app: AppHandle,
+    _app: AppHandle,
 ) {
     let total_count = target_models.len();
     if total_count == 0 {
-        log::warn!("[SETUP] No models selected for setup. Emitting completion immediately.");
-        if let Err(e) = app.emit("model_setup_complete", true) {
-            log::warn!("[Setup] Failed to emit model_setup_complete: {}", e);
-        }
+        log::warn!("[SETUP] No models selected for setup.");
         *state.setup_running.lock().await = false;
         return;
     }
@@ -81,9 +78,6 @@ async fn execute_model_setup_task(
         );
         if let Err(e) = manager.setup_model(model, &base_url, &models_dir).await {
             log::error!("[SETUP] Failed to setup model {}: {}", model.id, e);
-            if let Err(emit_err) = app.emit::<String>("model_setup_error", e.to_string()) {
-                log::warn!("[Setup] Failed to emit model_setup_error: {}", emit_err);
-            }
             *state.setup_running.lock().await = false;
             return;
         }
@@ -94,9 +88,6 @@ async fn execute_model_setup_task(
         total_count
     );
     *state.setup_running.lock().await = false;
-    if let Err(e) = app.emit("model_setup_complete", true) {
-        log::warn!("[Setup] Failed to emit model_setup_complete: {}", e);
-    }
 }
 
 /// Begin downloading and verifying required or selected models in the background.
@@ -335,7 +326,7 @@ pub async fn check_model_exists(
 #[tauri::command]
 pub async fn download_optional_model(
     model_id: String,
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     {
@@ -375,15 +366,9 @@ pub async fn download_optional_model(
         for model in target_models {
             if let Err(e) = manager.setup_model(&model, base_url, &p.models).await {
                 log::error!("[SETUP] Failed to setup optional model {}: {}", model.id, e);
-                if let Err(emit_err) = app.emit("optional_model_failed", (model_id.clone(), e.to_string())) {
-                    log::warn!("[Setup] Failed to emit optional_model_failed: {}", emit_err);
-                }
                 *setup_running.lock().await = false;
                 return;
             }
-        }
-        if let Err(e) = app.emit("optional_model_complete", model_id) {
-            log::warn!("[Setup] Failed to emit optional_model_complete: {}", e);
         }
         *setup_running.lock().await = false;
     });
@@ -411,14 +396,22 @@ fn delete_model_file(file: &crate::setup::manifest::ModelEntry, models_dir: &std
 
     if verified_path.exists() {
         if let Err(e) = std::fs::remove_file(&verified_path) {
-            log::warn!("[Setup] Failed to remove verified marker {:?}: {}", verified_path, e);
+            log::warn!(
+                "[Setup] Failed to remove verified marker {:?}: {}",
+                verified_path,
+                e
+            );
         }
     }
 
     if dest_path.exists() {
         if dest_path.is_dir() {
             if let Err(e) = std::fs::remove_dir_all(&dest_path) {
-                log::warn!("[Setup] Failed to remove model directory {:?}: {}", dest_path, e);
+                log::warn!(
+                    "[Setup] Failed to remove model directory {:?}: {}",
+                    dest_path,
+                    e
+                );
             }
         } else if let Err(e) = std::fs::remove_file(&dest_path) {
             log::warn!("[Setup] Failed to remove model file {:?}: {}", dest_path, e);
@@ -430,7 +423,11 @@ fn delete_model_file(file: &crate::setup::manifest::ModelEntry, models_dir: &std
             if let Ok(entries) = std::fs::read_dir(parent) {
                 if entries.count() == 0 {
                     if let Err(e) = std::fs::remove_dir(parent) {
-                        log::warn!("[Setup] Failed to remove empty parent directory {:?}: {}", parent, e);
+                        log::warn!(
+                            "[Setup] Failed to remove empty parent directory {:?}: {}",
+                            parent,
+                            e
+                        );
                     }
                 }
             }

@@ -8,9 +8,14 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import {
   on,
-  onModelSetupStatus,
-  onOptionalModelComplete,
-  onRemoteSetupStatus,
+  onModelProgress,
+  onStateChanged,
+  onTranscriptPartial,
+  onTranscriptFinal,
+  onLlmToken,
+  onVoiceError,
+  onTelemetry,
+  onSystemStats,
 } from "../eventsService";
 
 describe("eventsService", () => {
@@ -24,9 +29,9 @@ describe("eventsService", () => {
       mockListen.mockResolvedValueOnce(mockUnlisten);
 
       const handler = vi.fn();
-      const unlistenFn = onOptionalModelComplete(handler);
+      const unlistenFn = onModelProgress(handler);
 
-      expect(mockListen).toHaveBeenCalledWith("optional_model_complete", expect.any(Function));
+      expect(mockListen).toHaveBeenCalledWith("model_progress", expect.any(Function));
 
       // Wait for promise resolution inside on()
       await new Promise((r) => setTimeout(r, 10));
@@ -44,7 +49,7 @@ describe("eventsService", () => {
       mockListen.mockReturnValueOnce(listenPromise);
 
       const handler = vi.fn();
-      const unlistenFn = on("test_event", handler);
+      const unlistenFn = on("toggle_tray", handler);
 
       // Synchronously cancel immediately before promise resolves (simulates fast React unmount)
       unlistenFn();
@@ -59,7 +64,7 @@ describe("eventsService", () => {
   });
 
   describe("Event Payload Propagation", () => {
-    it("should correctly handle model_setup_status events", async () => {
+    it("should correctly handle model_progress events", async () => {
       let registeredCallback: ((event: { payload: unknown }) => void) | null = null;
       mockListen.mockImplementationOnce((_evt: string, callback: (event: { payload: unknown }) => void) => {
         registeredCallback = callback;
@@ -67,9 +72,9 @@ describe("eventsService", () => {
       });
 
       const handler = vi.fn();
-      onModelSetupStatus(handler);
+      onModelProgress(handler);
 
-      expect(mockListen).toHaveBeenCalledWith("model_setup_status", expect.any(Function));
+      expect(mockListen).toHaveBeenCalledWith("model_progress", expect.any(Function));
       registeredCallback!({
         payload: {
           model_id: "qwen2.5-0.5b",
@@ -90,11 +95,91 @@ describe("eventsService", () => {
       });
     });
 
-    it("should correctly handle remote_setup_status events", async () => {
-      mockListen.mockResolvedValue(vi.fn());
+    it("should correctly handle state_changed events", async () => {
+      let registeredCallback: ((event: { payload: unknown }) => void) | null = null;
+      mockListen.mockImplementationOnce((_evt: string, callback: (event: { payload: unknown }) => void) => {
+        registeredCallback = callback;
+        return Promise.resolve(vi.fn());
+      });
 
-      onRemoteSetupStatus(vi.fn());
-      expect(mockListen).toHaveBeenCalledWith("remote_setup_status", expect.any(Function));
+      const handler = vi.fn();
+      onStateChanged(handler);
+
+      expect(mockListen).toHaveBeenCalledWith("state_changed", expect.any(Function));
+      registeredCallback!({
+        payload: {
+          owner: "Assistant",
+          state: "Listening",
+          turn_id: 42,
+        },
+      });
+      expect(handler).toHaveBeenCalledWith({
+        owner: "Assistant",
+        state: "Listening",
+        turn_id: 42,
+      });
+    });
+
+    it("should correctly handle streaming transcript, llm_token, and voice_error events", async () => {
+      let registeredCallback: ((event: { payload: unknown }) => void) | null = null;
+      mockListen.mockImplementation((_evt: string, callback: (event: { payload: unknown }) => void) => {
+        registeredCallback = callback;
+        return Promise.resolve(vi.fn());
+      });
+
+      const tokenHandler = vi.fn();
+      onLlmToken(tokenHandler);
+      expect(mockListen).toHaveBeenCalledWith("llm_token", expect.any(Function));
+      registeredCallback!({ payload: { turn_id: 1, token: "Hello" } });
+      expect(tokenHandler).toHaveBeenCalledWith({ turn_id: 1, token: "Hello" });
+
+      const transcriptHandler = vi.fn();
+      onTranscriptPartial(transcriptHandler);
+      expect(mockListen).toHaveBeenCalledWith("transcript_partial", expect.any(Function));
+      registeredCallback!({ payload: { turn_id: 1, text: "Hey vox", owner: "Assistant" } });
+      expect(transcriptHandler).toHaveBeenCalledWith({ turn_id: 1, text: "Hey vox", owner: "Assistant" });
+
+      const finalHandler = vi.fn();
+      onTranscriptFinal(finalHandler);
+      expect(mockListen).toHaveBeenCalledWith("transcript_final", expect.any(Function));
+      registeredCallback!({ payload: { turn_id: 1, text: "Hey vox", owner: "Assistant" } });
+      expect(finalHandler).toHaveBeenCalledWith({ turn_id: 1, text: "Hey vox", owner: "Assistant" });
+
+      const errorHandler = vi.fn();
+      onVoiceError(errorHandler);
+      expect(mockListen).toHaveBeenCalledWith("voice_error", expect.any(Function));
+      registeredCallback!({ payload: { message: "Failed", source: "ModularPassive", owner: "Assistant" } });
+      expect(errorHandler).toHaveBeenCalledWith({ message: "Failed", source: "ModularPassive", owner: "Assistant" });
+
+      const telemetryHandler = vi.fn();
+      onTelemetry(telemetryHandler);
+      expect(mockListen).toHaveBeenCalledWith("telemetry", expect.any(Function));
+      registeredCallback!({ payload: { energy: 0.5, vad_prob: 0.8, low: 0.1, mid: 0.2, high: 0.3 } });
+      expect(telemetryHandler).toHaveBeenCalledWith({ energy: 0.5, vad_prob: 0.8, low: 0.1, mid: 0.2, high: 0.3 });
+
+      const statsHandler = vi.fn();
+      onSystemStats(statsHandler);
+      expect(mockListen).toHaveBeenCalledWith("system_stats", expect.any(Function));
+      registeredCallback!({
+        payload: {
+          system_cpu: 10,
+          system_ram_pct: 40,
+          vox_cpu: 2,
+          vox_ram_mb: 256,
+          threads: 8,
+          total_memory_gb: 16,
+          cpu_count: 8,
+        },
+      });
+      expect(statsHandler).toHaveBeenCalledWith({
+        system_cpu: 10,
+        system_ram_pct: 40,
+        vox_cpu: 2,
+        vox_ram_mb: 256,
+        threads: 8,
+        total_memory_gb: 16,
+        cpu_count: 8,
+      });
     });
   });
 });

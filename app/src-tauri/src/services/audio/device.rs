@@ -1,5 +1,5 @@
-use crate::core::constants::SAMPLE_RATE;
 use super::{INGESTION_BUFFER_CAPACITY_SAMPLES, INGESTION_OVERFLOW_LOG_INTERVAL};
+use crate::core::constants::SAMPLE_RATE;
 use anyhow::Result;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::traits::*;
@@ -33,7 +33,9 @@ impl AudioStream {
         );
 
         let stream = build_input_stream(device, &config, channels, sample_rate, producer)?;
-        Ok(Self { _stream: Some(stream) })
+        Ok(Self {
+            _stream: Some(stream),
+        })
     }
 
     /// Creates a mock AudioStream for integration testing without audio hardware.
@@ -57,7 +59,10 @@ fn resolve_input_device(device_name: Option<&str>) -> Result<(cpal::Device, cpal
     log::info!("[Audio::Device] Using audio host: {:?}", host.id());
 
     let device = if let Some(name) = device_name {
-        log::info!("[Audio::Device] Attempting to use requested device: {}", name);
+        log::info!(
+            "[Audio::Device] Attempting to use requested device: {}",
+            name
+        );
         host.input_devices()?
             .find(|d| d.name().map(|n| n == name).unwrap_or(false))
             .or_else(|| {

@@ -122,8 +122,13 @@ This document tracks detailed architectural refactorings, milestone completions,
 - **Unified Idle Monitor:** Promoted `spawn_idle_monitor` to `pipeline/mod.rs` and wired it into `ipc/pipeline/assistant.rs`, auto-pausing any active assistant pipeline upon 7 minutes (420s) of continuous `Ready` state.
 - **Quality Gate:** `cargo check --all-targets` (0 errors, 0 warnings), `cargo clippy --all-targets -- -D warnings` (0 warnings), all 40 tests passing in release mode (`cargo nextest run --release --test-threads=1`).
 
-### 21. ConversationManager & ContextHarness Decoupling
-- **Structural Separation of Dialog and Context Machinery:** Stripped `TokenAccountant`, sliding-window FIFO logic, narrative chain builder, and opportunistic compaction state machines completely out of `ConversationManager`.
-- **Pure `ConversationManager`:** Now strictly manages `MessageBuffer`, `base_system_prompt`, `identity_facts`, and dynamic profile formatting (`assemble_system_prompt()`). Shared cleanly across all four domains (Modular Passive, Modular PTT, Realtime Passive, Realtime PTT) with zero token-accounting or compaction overhead.
-- **Modular-Exclusive `ContextHarness`:** Created `ContextHarness` in `services/harness/accountant.rs` to encapsulate token accountant budgeting, soft/critical threshold detection, FIFO eviction, and background opportunistic compaction exclusively for the Modular LLM pipeline in `services/harness/facade.rs`.
-- **Quality Gate:** `cargo check --all-targets` (0 errors, 0 warnings), `cargo clippy --all-targets -- -D warnings` (0 warnings), all 40 tests passing in release mode (`cargo nextest run --release --test-threads=1`).
+### 22. Canonical Event Architecture Refactor & Registry Ownership
+- **Strictly Registry-Owned Event SSOT (`core/events.rs`):** Established `core/events.rs` as the single source of truth for all cross-boundary events, introducing the strongly typed `IpcEvent` enum with typed payload structs (`StateChangedPayload`, `TranscriptPayload`, `LlmTokenPayload`, `VoiceErrorPayload`, `ModelSetupStatus`, `TelemetryData`, `SystemStatsPayload`) and safe `emit_ipc` / `emit_ipc_to` dispatchers.
+- **Zero Raw Strings Invariant:** Eliminated all raw event string literals (`"state_changed"`, `"voice_error"`, `"transcript_partial"`, `"transcript_final"`, `"llm_token"`, `"telemetry"`, `"system_stats"`, `"toggle_tray"`, `"settings-updated"`) from backend emit sites.
+- **Consolidation of Remote Setup Stream:** Completely pruned legacy `remote_setup_status`; remote GPU server installation now emits canonical `IpcEvent::ModelProgress` with `model_id: "chatterbox_remote_server"`.
+- **Frontend IPC Contract Mirroring (`eventsService.ts`):** Created `IpcEventMap` mirroring Rust payloads with generic compile-time checked `eventsService.on<K extends keyof IpcEventMap>(event, handler)`.
+- **Quality Gate:** `cargo clippy --all-targets -- -D warnings` (0 warnings), `cargo check --release` (0 errors), Vitest suite 10/10 files (99/99 tests passed), and `pnpm build` (clean Vite bundle in 10.36s).
+
+### 23. Architectural Invariants Formalization
+- **Backend Style Guide (`.agents/rules/backend-style-guide.md`):** Added Section 7.5 ("Event Contracts") codifying strict registry ownership, typed payloads, explicit producer/consumer contracts, and the command vs event distinction.
+- **AGENTS.md Critical Invariants (`AGENTS.md` Section 4.1):** Formulated the 8 non-negotiable architectural and logical invariants across backend and frontend (State SSOT, Registry-Owned Events, Sacred Audio Hot Path, Actor-Engine Separation, Frontend Service Boundary, Context Memoization & Selector Discipline, Monotonic Turn IDs, Single-Consumer Audio Stream).

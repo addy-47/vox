@@ -122,9 +122,11 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             for stmt in statements {
                 conn.execute(stmt, ()).await?;
             }
-            conn.execute(&format!("PRAGMA user_version = {};", SCHEMA_VERSION), ()).await?;
+            conn.execute(&format!("PRAGMA user_version = {};", SCHEMA_VERSION), ())
+                .await?;
             Ok(())
-        }.await;
+        }
+        .await;
 
         match migration_res {
             Ok(_) => {
@@ -136,7 +138,10 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             }
             Err(e) => {
                 if let Err(rollback_err) = conn.execute("ROLLBACK;", ()).await {
-                    log::warn!("[Persistence::Schema] Failed to rollback migration: {}", rollback_err);
+                    log::warn!(
+                        "[Persistence::Schema] Failed to rollback migration: {}",
+                        rollback_err
+                    );
                 }
                 return Err(e);
             }
@@ -183,7 +188,11 @@ async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-async fn seed_single_voice(conn: &Connection, name_str: &str, path: &std::path::Path) -> Result<()> {
+async fn seed_single_voice(
+    conn: &Connection,
+    name_str: &str,
+    path: &std::path::Path,
+) -> Result<()> {
     let id = format!("chatterbox_voice_{}", name_str);
     let mut rows = conn
         .query("SELECT 1 FROM voices WHERE id = ?", (id.clone(),))
@@ -221,9 +230,13 @@ async fn seed_single_voice(conn: &Connection, name_str: &str, path: &std::path::
                 Some(voice_dir),
                 now,
             ),
-        ).await?;
-        log::info!("[Persistence::Schema] Seeded packaged voice '{}' (id={})", name, id);
+        )
+        .await?;
+        log::info!(
+            "[Persistence::Schema] Seeded packaged voice '{}' (id={})",
+            name,
+            id
+        );
     }
     Ok(())
 }
-

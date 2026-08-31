@@ -5,8 +5,12 @@ pub mod sse;
 
 use crate::core::events::VoxEvent;
 use crate::core::settings::LlmModelInfo;
-use crate::services::llm::config::{AuthScheme, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType};
-use crate::services::llm::types::{GenerationRequest, LlmError, ProviderCapabilities, ProviderKind, Support};
+use crate::services::llm::config::{
+    AuthScheme, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType,
+};
+use crate::services::llm::types::{
+    GenerationRequest, LlmError, ProviderCapabilities, ProviderKind, Support,
+};
 use futures_util::future::BoxFuture;
 use parking_lot::RwLock;
 use serde::Deserialize;
@@ -122,11 +126,23 @@ impl super::LlmProvider for RemoteTransport {
             } else if cfg.transport == TransportType::Responses {
                 responses::stream_responses(&self.client, &cfg, &request, turn_id, cancel, tx).await
             } else {
-                chat_completions::stream_chat_completions(&self.client, &cfg, &request, turn_id, cancel, tx).await
+                chat_completions::stream_chat_completions(
+                    &self.client,
+                    &cfg,
+                    &request,
+                    turn_id,
+                    cancel,
+                    tx,
+                )
+                .await
             };
 
             // Negotiation: if HTTP 400 unsupported_parameter naming the token field, flip and retry once
-            if let Err(LlmError::Provider { status: 400, ref message }) = res {
+            if let Err(LlmError::Provider {
+                status: 400,
+                ref message,
+            }) = res
+            {
                 let msg_lower = message.to_lowercase();
                 if msg_lower.contains("unsupported_parameter")
                     || msg_lower.contains("max_completion_tokens")
@@ -147,9 +163,25 @@ impl super::LlmProvider for RemoteTransport {
                         cfg.token_limit_field = next_field;
 
                         return if cfg.transport == TransportType::Responses {
-                            responses::stream_responses(&self.client, &cfg, &request, turn_id, cancel, tx).await
+                            responses::stream_responses(
+                                &self.client,
+                                &cfg,
+                                &request,
+                                turn_id,
+                                cancel,
+                                tx,
+                            )
+                            .await
                         } else {
-                            chat_completions::stream_chat_completions(&self.client, &cfg, &request, turn_id, cancel, tx).await
+                            chat_completions::stream_chat_completions(
+                                &self.client,
+                                &cfg,
+                                &request,
+                                turn_id,
+                                cancel,
+                                tx,
+                            )
+                            .await
                         };
                     }
                 }

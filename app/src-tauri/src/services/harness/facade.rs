@@ -1,9 +1,7 @@
 use super::buffer::{current_timestamp_ms, ConversationContext};
 use super::manager::ConversationManager;
 use super::prompt_builder::format_retrieved_profile;
-use crate::core::constants::{
-    TRANSITION_MESSAGES_EN, TRANSITION_MESSAGES_HI,
-};
+use crate::core::constants::{TRANSITION_MESSAGES_EN, TRANSITION_MESSAGES_HI};
 use crate::core::error::MemoryError;
 use crate::core::settings::{LlmSettings, MemorySettings};
 use crate::services::llm::{
@@ -20,7 +18,11 @@ use turso::Connection;
 pub struct PrepareTurnParams<'a> {
     pub harness: &'a Arc<Mutex<ConversationManager>>,
     pub tts_tx: Option<&'a std::sync::mpsc::Sender<crate::services::tts::TtsCommand>>,
-    pub memory_tx: Option<&'a parking_lot::Mutex<Option<crossbeam_channel::Sender<crate::persistence::memory_worker::MemoryWorkerEvent>>>>,
+    pub memory_tx: Option<
+        &'a parking_lot::Mutex<
+            Option<crossbeam_channel::Sender<crate::persistence::events::MemoryWorkerEvent>>,
+        >,
+    >,
     pub conn: Option<&'a Connection>,
     pub query: &'a str,
     pub turn_id: u32,
@@ -39,10 +41,13 @@ pub async fn prepare_turn_context(
     let query_trimmed = params.query.trim();
 
     let mut retrieved_profile = crate::services::memory::retrieval::RetrievedProfile::default();
-    if params.memory.context_retrieval_enabled && params.conn.is_some() && !query_trimmed.is_empty() {
+    if params.memory.context_retrieval_enabled && params.conn.is_some() && !query_trimmed.is_empty()
+    {
         let scope = crate::services::memory::ml::classify_scope(query_trimmed);
         if scope != MemoryScope::ChitChat {
-            if let Ok(Some(embedding)) = crate::services::memory::ml::generate_embedding(query_trimmed) {
+            if let Ok(Some(embedding)) =
+                crate::services::memory::ml::generate_embedding(query_trimmed)
+            {
                 if let Some(conn) = params.conn {
                     if let Ok(profile) = crate::services::memory::retrieval::retrieve_turn_profile(
                         conn,
@@ -127,7 +132,8 @@ pub async fn prepare_turn_context(
                 let llm_path = models_dir
                     .join(crate::services::llm::QWEN_MODEL_DIR)
                     .join(crate::services::llm::QWEN_MODEL_FILE);
-                crate::services::llm::actor::create_llm_provider_from_llm_settings(s, &llm_path).ok()
+                crate::services::llm::actor::create_llm_provider_from_llm_settings(s, &llm_path)
+                    .ok()
             } else {
                 None
             }
@@ -135,9 +141,8 @@ pub async fn prepare_turn_context(
             None
         };
 
-        let active_provider: Option<&dyn LlmProvider> = params
-            .llm_provider
-            .or(provider_box.as_deref());
+        let active_provider: Option<&dyn LlmProvider> =
+            params.llm_provider.or(provider_box.as_deref());
 
         if let Some(provider) = active_provider {
             match crate::services::memory::compaction::run_compaction(
@@ -150,7 +155,8 @@ pub async fn prepare_turn_context(
             {
                 Ok(result) => {
                     let mut lock = params.harness.lock();
-                    let mut context_harness = super::accountant::ContextHarness::new(params.context_window);
+                    let mut context_harness =
+                        super::accountant::ContextHarness::new(params.context_window);
                     let sys_prompt = lock.system_prompt().clone();
                     diff_to_enqueue = context_harness.apply_compaction_result(
                         &mut lock.buffer,
@@ -165,7 +171,8 @@ pub async fn prepare_turn_context(
                         e
                     );
                     let mut lock = params.harness.lock();
-                    let mut context_harness = super::accountant::ContextHarness::new(params.context_window);
+                    let mut context_harness =
+                        super::accountant::ContextHarness::new(params.context_window);
                     context_harness.sync_tokens_from_buffer(&lock.buffer);
                     lock.buffer.messages.push(last_user_turn);
                     context_harness.perform_fifo_maintenance(&mut lock.buffer);
@@ -186,7 +193,8 @@ pub async fn prepare_turn_context(
         context_harness.sync_tokens_from_buffer(&cm.buffer);
 
         let soft_cap = ((context_harness.accountant.max_context_tokens() as f32)
-            * crate::services::memory::NARRATIVE_CHAIN_SOFT_CAP_SHARE) as usize;
+            * crate::services::memory::NARRATIVE_CHAIN_SOFT_CAP_SHARE)
+            as usize;
         let session_history = context_harness.build_session_history_xml(soft_cap);
         let sys_prompt = cm.system_prompt().clone();
         context_harness.consolidate_system_message(&mut cm.buffer, &sys_prompt, &session_history);
@@ -213,12 +221,15 @@ pub async fn prepare_turn_context(
         let mem_sender = params.memory_tx.and_then(|m| m.lock().clone());
         if let Some(tx) = mem_sender {
             if let Err(e) = tx.try_send(
-                crate::persistence::memory_worker::MemoryWorkerEvent::PersonalFactsReady {
+                crate::persistence::events::MemoryWorkerEvent::PersonalFactsReady {
                     facts: diff_to_enqueue.clone(),
                     session_id: params.session_id.to_string(),
                 },
             ) {
-                log::warn!("[Harness] Failed to dispatch PersonalFactsReady to worker: {}", e);
+                log::warn!(
+                    "[Harness] Failed to dispatch PersonalFactsReady to worker: {}",
+                    e
+                );
             }
         } else if let Some(conn) = params.conn {
             let session_id = params.session_id.to_string();
@@ -257,8 +268,7 @@ use std::time::Instant;
 
 pub const SOFT_COMPACTION_DEBOUNCE_SECS: u64 = 20;
 
-static LAST_SOFT_COMPACTION: LazyLock<Mutex<Option<Instant>>> =
-    LazyLock::new(|| Mutex::new(None));
+static LAST_SOFT_COMPACTION: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
 
 /// Triggers opportunistic background compaction if conversation memory utilization is in the soft window,
 /// pipeline state is in {Ready, Paused}, and at least 20 seconds have elapsed since last compaction.
@@ -284,7 +294,8 @@ pub fn trigger_background_compaction(
     {
         let last = LAST_SOFT_COMPACTION.lock();
         if let Some(instant) = *last {
-            if instant.elapsed().as_secs() < crate::services::memory::SOFT_COMPACTION_DEBOUNCE_SECS {
+            if instant.elapsed().as_secs() < crate::services::memory::SOFT_COMPACTION_DEBOUNCE_SECS
+            {
                 return;
             }
         }
@@ -309,9 +320,8 @@ pub fn trigger_background_compaction(
             return;
         }
         let h = Arc::clone(harness);
-        let settings_resolved = settings.or_else(|| {
-            state.settings.read().ok().map(|s| s.llm.clone())
-        });
+        let settings_resolved =
+            settings.or_else(|| state.settings.read().ok().map(|s| s.llm.clone()));
         let cached_provider = state.llm_provider.read().clone();
 
         tauri::async_runtime::spawn(async move {
@@ -329,7 +339,10 @@ pub fn trigger_background_compaction(
                         .join(crate::services::llm::QWEN_MODEL_DIR)
                         .join(crate::services::llm::QWEN_MODEL_FILE);
                     match s_ref.and_then(|s| {
-                        crate::services::llm::actor::create_llm_provider_from_llm_settings(s, &llm_path).ok()
+                        crate::services::llm::actor::create_llm_provider_from_llm_settings(
+                            s, &llm_path,
+                        )
+                        .ok()
                     }) {
                         Some(p) => Arc::from(p),
                         None => {
@@ -350,7 +363,8 @@ pub fn trigger_background_compaction(
             {
                 Ok(result) => {
                     let mut lock = h.lock();
-                    let mut context_harness = super::accountant::ContextHarness::new(context_window);
+                    let mut context_harness =
+                        super::accountant::ContextHarness::new(context_window);
                     context_harness.sync_tokens_from_buffer(&lock.buffer);
                     let sys_prompt = lock.system_prompt().clone();
                     let committed = context_harness.commit_opportunistic(
@@ -361,11 +375,16 @@ pub fn trigger_background_compaction(
                     );
                     if committed {
                         *LAST_SOFT_COMPACTION.lock() = Some(Instant::now());
-                        log::info!("[Harness] Opportunistic background compaction committed successfully.");
+                        log::info!(
+                            "[Harness] Opportunistic background compaction committed successfully."
+                        );
                     }
                 }
                 Err(e) => {
-                    log::warn!("[Harness] Opportunistic background compaction failed: {}", e);
+                    log::warn!(
+                        "[Harness] Opportunistic background compaction failed: {}",
+                        e
+                    );
                 }
             }
         });
@@ -381,7 +400,8 @@ pub fn spawn_state_compaction_observer(state: Arc<AppState>) {
 
         while state_rx.changed().await.is_ok() {
             let current_state = *state_rx.borrow_and_update();
-            if current_state == InteractionState::Ready || current_state == InteractionState::Paused {
+            if current_state == InteractionState::Ready || current_state == InteractionState::Paused
+            {
                 trigger_background_compaction(&state, None, None);
             }
         }

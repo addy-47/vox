@@ -55,7 +55,6 @@ fn now_epoch() -> i64 {
 
 // ─── Commands ────────────────────────────────────────────────────────────────
 
-
 /// Return all saved voices ordered by creation date (newest first).
 #[tauri::command]
 pub async fn list_voices() -> Result<Vec<VoiceEntryDto>, String> {
@@ -242,7 +241,6 @@ pub async fn rename_voice(id: String, name: String) -> Result<(), String> {
     log::info!("[Voices] Renamed voice {} to '{}'", id, name);
     Ok(())
 }
-
 
 /// Start backend microphone recording for voice cloning.
 #[tauri::command]
