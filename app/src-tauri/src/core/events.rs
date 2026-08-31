@@ -110,6 +110,24 @@ pub struct LlmTokenPayload {
     pub token: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToastLevel {
+    Success,
+    Warning,
+    Error,
+    Info,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToastPayload {
+    pub title: String,
+    pub message: String,
+    pub level: ToastLevel,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+}
+
 // ─── 3. Canonical IPC Event Registry ──────────────────────────────────────────
 /// Strongly-typed universal Tauri IPC event enum.
 /// Every IPC event emitted to any webview window must have a canonical entry here.
@@ -126,6 +144,7 @@ pub enum IpcEvent {
     SystemStats(SystemStatsPayload),
     SettingsUpdated,
     ToggleTray,
+    ShowToast(ToastPayload),
 }
 
 impl IpcEvent {
@@ -142,6 +161,7 @@ impl IpcEvent {
             Self::SystemStats(_) => "system_stats",
             Self::SettingsUpdated => "settings-updated",
             Self::ToggleTray => "toggle_tray",
+            Self::ShowToast(_) => "show_toast",
         }
     }
 }
@@ -160,6 +180,7 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::SystemStats(payload) => app.emit(name, payload),
         IpcEvent::SettingsUpdated => app.emit(name, ()),
         IpcEvent::ToggleTray => app.emit(name, ()),
+        IpcEvent::ShowToast(payload) => app.emit(name, payload),
     }
 }
 
@@ -181,5 +202,6 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::SystemStats(payload) => app.emit_to(target, name, payload),
         IpcEvent::SettingsUpdated => app.emit_to(target, name, ()),
         IpcEvent::ToggleTray => app.emit_to(target, name, ()),
+        IpcEvent::ShowToast(payload) => app.emit_to(target, name, payload),
     }
 }

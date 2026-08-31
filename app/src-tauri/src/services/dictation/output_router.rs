@@ -28,17 +28,20 @@ pub async fn route_transcript<R: tauri::Runtime>(
 
 /// Sets transcript directly on system clipboard.
 fn dispatch_to_clipboard<R: tauri::Runtime>(
-    _app: &AppHandle<R>,
+    app: &AppHandle<R>,
     text: &str,
 ) -> Result<(), DictationError> {
     clipboard::set_text(text)?;
     log::info!("[Dictation::Router] Transcript written to system clipboard.");
+    if let Err(e) = crate::toast::show_toast(app, "Dictation Copied", text, crate::core::events::ToastLevel::Success) {
+        log::warn!("[Dictation::Router] Failed to show toast: {}", e);
+    }
     Ok(())
 }
 
 /// Simulates OS paste into active window with fallback clipboard preservation on failure.
 async fn dispatch_to_paste<R: tauri::Runtime>(
-    _app: &AppHandle<R>,
+    app: &AppHandle<R>,
     text: &str,
 ) -> Result<(), DictationError> {
     let input_adapter = create_input_adapter();
@@ -50,6 +53,9 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
             log::info!(
                 "[Dictation::Router] Transcript successfully pasted into focused application."
             );
+            if let Err(e) = crate::toast::show_toast(app, "Dictation Pasted", text, crate::core::events::ToastLevel::Success) {
+                log::warn!("[Dictation::Router] Failed to show toast: {}", e);
+            }
             Ok(())
         }
         Err(e) => {
@@ -57,6 +63,14 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
                 "[Dictation::Router] Paste simulation failed ({:?}). Transcript is preserved on clipboard.",
                 e
             );
+            if let Err(toast_err) = crate::toast::show_toast(
+                app,
+                "Paste Blocked by OS",
+                "Transcript saved to clipboard — paste manually with Ctrl+V.",
+                crate::core::events::ToastLevel::Warning,
+            ) {
+                log::warn!("[Dictation::Router] Failed to show paste-blocked toast: {}", toast_err);
+            }
             Ok(())
         }
     }

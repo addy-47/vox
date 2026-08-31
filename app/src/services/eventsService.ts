@@ -90,6 +90,15 @@ export interface ModelProgressPayload {
   error: string | null;
 }
 
+/** `show_toast` payload (core/events.rs: ToastPayload). */
+export type ToastLevel = "success" | "warning" | "error" | "info";
+export interface ToastPayload {
+  title: string;
+  message: string;
+  level: ToastLevel;
+  duration_ms?: number;
+}
+
 /**
  * Canonical IPC Event Map mirroring Rust `IpcEvent` registry in `core/events.rs`.
  */
@@ -104,6 +113,7 @@ export interface IpcEventMap {
   system_stats: SystemStatsPayload;
   "settings-updated": void;
   toggle_tray: void;
+  show_toast: ToastPayload;
 }
 
 /**
@@ -205,4 +215,8 @@ export function onSystemStats(handler: (payload: SystemStatsPayload) => void): (
 
 export function onSettingsUpdated(handler: () => void): () => void {
   return on("settings-updated", handler);
+}
+
+export function onShowToast(handler: (payload: ToastPayload) => void): () => void {
+  return on("show_toast", handler);
 }

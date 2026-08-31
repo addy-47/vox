@@ -247,6 +247,7 @@ fn on_error<R: tauri::Runtime>(
     state.pipeline.set_dictation_state(DictationState::Error);
     emit_dictation_state(app, DictationState::Error, 0);
 
+    let toast_message = message.clone();
     if let Err(e) = emit_ipc_to(
         app,
         WINDOW_TRAY,
@@ -257,6 +258,11 @@ fn on_error<R: tauri::Runtime>(
         }),
     ) {
         log::warn!("[Dictation] Failed to emit voice_error: {}", e);
+    }
+    if crate::toast::should_show_error_toast(app) {
+        if let Err(e) = crate::toast::show_toast(app, "Voice Error", &toast_message, crate::core::events::ToastLevel::Error) {
+            log::warn!("[Dictation] Failed to show error toast: {}", e);
+        }
     }
 }
 

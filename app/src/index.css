@@ -53,8 +53,8 @@
 }
 
 /* Explicit early background to kill the flash for main app */
-html:not(.is-tray), 
-body:not(.is-tray) {
+html:not(.is-tray):not(.is-toast), 
+body:not(.is-tray):not(.is-toast) {
   background-color: rgb(var(--background)) !important;
 }
 
@@ -161,6 +161,15 @@ html.is-tray,
 body.is-tray, 
 body.is-tray #root {
   background: transparent !important;
+  border: none !important;
+}
+
+/* Toast overlay - must mirror tray transparency for virtual layer */
+html.is-toast,
+body.is-toast,
+body.is-toast #root {
+  background: transparent !important;
+  background-color: transparent !important;
   border: none !important;
 }
 
