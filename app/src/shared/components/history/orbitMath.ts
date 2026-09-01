@@ -1,6 +1,5 @@
 import type { SessionRow } from "@/services/historyService";
 
-// ─── Single-Ring Carousel Layout Constants ───────────────────────────────────
 // One tilted ring, rendered as a CSS ellipse; cards travel along it like an
 // infinite circular carousel. Angle 0 = right side, +π/2 = bottom (front).
 // The ring never shrinks below the disc clearance; it scales with the viewport
@@ -46,7 +45,6 @@ export const ORBIT_Z_SELECTED = 85;
 export const ORBIT_GUIDE_GAP = 36;
 export const ORBIT_GUIDE_OPACITY = 0.12;
 
-// ─── Ring Geometry ───────────────────────────────────────────────────────────
 
 export interface RingPoint {
   x: number;
@@ -117,7 +115,6 @@ export function distributeAngles(count: number): number[] {
   );
 }
 
-// ─── Window Model ────────────────────────────────────────────────────────────
 // Days/months with more sessions than the orbit can hold are chunked into
 // windows of at most `capacity` items. Windows are labeled by the actual
 // hour-range (sessions) or day-range (month) they cover.
@@ -203,7 +200,6 @@ export function daysInMonthKey(monthKey: string): number {
   return new Date(y, m, 0).getDate();
 }
 
-// ─── Voice Print Dial ────────────────────────────────────────────────────────
 // A static ring of dots between the clock and the orbit: one dot per session
 // (day view) at its clock position, or per active day (month view). Dot size
 // encodes turn count.
@@ -229,7 +225,6 @@ export function dialDotRadius(turnCount: number): number {
   return clamp(2 + turnCount * 0.3, 2, 5.5);
 }
 
-// ─── Formatting ──────────────────────────────────────────────────────────────
 
 /** "45s" / "12m" / "1h 05m" from a duration in ms. */
 export function formatDuration(ms: number): string {
@@ -251,7 +246,6 @@ function clamp01(value: number): number {
   return clamp(value, 0, 1);
 }
 
-// ─── Date Grouping (locale-independent keys) ─────────────────────────────────
 
 export function toDayKey(ms: number): string {
   const d = new Date(ms);

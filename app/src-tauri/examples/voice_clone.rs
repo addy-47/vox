@@ -39,8 +39,6 @@ use vox_lib::services::audio::decode as audio_decode;
 const DEFAULT_EN_PROMPT: &str = "Hello, this is a sample of my cloned voice. I hope you like it. \
      The quick brown fox jumps over the lazy dog.";
 
-// ─── CLI ───────────────────────────────────────────────────────────
-
 #[derive(Parser, Debug)]
 #[command(
     name = "voice_clone",
@@ -95,8 +93,6 @@ struct Args {
     #[arg(long = "lang", default_value = "en")]
     language: String,
 }
-
-// ─── Entrypoint ─────────────────────────────────────────────────────
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -189,8 +185,6 @@ fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
-
-// ─── Per-voice processing ───────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
 fn process_one_voice(
@@ -349,8 +343,6 @@ fn process_one_voice(
 
     Ok(())
 }
-
-// ─── Helpers ────────────────────────────────────────────────────────
 
 /// Parse "--voice name=path" arguments.
 fn parse_voice_args(args: &[String]) -> anyhow::Result<Vec<(String, PathBuf)>> {

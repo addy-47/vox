@@ -1,4 +1,3 @@
-// ─── Audio Subsystem Constants ───────────────────────────────────────────────
 pub const CLONE_SAMPLE_RATE: u32 = 24_000;
 pub const PLAYBACK_SAMPLE_RATE: u32 = 48_000;
 pub const PLAYBACK_CHANNELS: u16 = 2;
@@ -10,6 +9,7 @@ pub const PLAYBACK_VOLUME_RAMP_STEP: f32 = 0.002;
 pub const PLAYBACK_ENERGY_MULTIPLIER: f32 = 15.0;
 pub const PLAYBACK_ENERGY_EXPONENT: f32 = 0.5;
 pub const PREROLL_THRESHOLD_SAMPLES: usize = 12_000;
+pub const PLAYBACK_PRODUCER_SCRATCH_CAPACITY: usize = 4096;
 
 pub const INGESTION_BUFFER_CAPACITY_SAMPLES: usize = 8192;
 pub const INGESTION_OVERFLOW_LOG_INTERVAL: u32 = 100;

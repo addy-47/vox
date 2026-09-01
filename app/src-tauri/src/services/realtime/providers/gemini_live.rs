@@ -30,6 +30,8 @@ pub struct GeminiLiveProvider {
     system_prompt: String,
     state_rx: tokio::sync::watch::Receiver<crate::core::state::InteractionState>,
     turn_id: Arc<std::sync::atomic::AtomicU32>,
+    turn_token: Arc<Mutex<tokio_util::sync::CancellationToken>>,
+    turn_epoch: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl GeminiLiveProvider {
@@ -39,12 +41,16 @@ impl GeminiLiveProvider {
         system_prompt: String,
         state_rx: tokio::sync::watch::Receiver<crate::core::state::InteractionState>,
         turn_id: Arc<std::sync::atomic::AtomicU32>,
+        turn_token: Arc<Mutex<tokio_util::sync::CancellationToken>>,
+        turn_epoch: Arc<std::sync::atomic::AtomicU64>,
     ) -> Self {
         Self {
             config,
             system_prompt,
             state_rx,
             turn_id,
+            turn_token,
+            turn_epoch,
         }
     }
 }
@@ -111,8 +117,12 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
 
         let config_clone = self.config.clone();
         let system_prompt_clone = self.system_prompt.clone();
-        let (audio_tx, mut audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<i16>>();
-        let (control_tx, mut control_rx) = tokio::sync::mpsc::unbounded_channel::<ControlEvent>();
+        let (audio_tx, mut audio_rx) = tokio::sync::mpsc::channel::<Vec<i16>>(
+            crate::services::realtime::BRIDGE_CHANNEL_CAPACITY,
+        );
+        let (control_tx, mut control_rx) = tokio::sync::mpsc::channel::<ControlEvent>(
+            crate::services::realtime::BRIDGE_CHANNEL_CAPACITY,
+        );
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
         let (provider_event_tx, provider_event_rx) =
             tokio::sync::mpsc::channel::<crate::services::realtime::RealtimeProviderEvent>(
@@ -129,6 +139,8 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
             resume_handle: config_clone.resume_handle.clone(),
             model: model.clone(),
             turn_id: self.turn_id.clone(),
+            turn_token: self.turn_token.clone(),
+            turn_epoch: self.turn_epoch.clone(),
             server_turn_cursor: None,
         }));
 
@@ -763,7 +775,8 @@ struct SessionState {
     resume_handle: Option<String>,
     model: String,
     turn_id: Arc<std::sync::atomic::AtomicU32>,
-    /// Session-bound cursor tracking asynchronous server-side response turns from Gemini Live.
+    turn_token: Arc<Mutex<tokio_util::sync::CancellationToken>>,
+    turn_epoch: Arc<std::sync::atomic::AtomicU64>,
     server_turn_cursor: Option<u32>,
 }
 
@@ -772,6 +785,12 @@ impl SessionState {
         if let Some(id) = self.server_turn_cursor {
             id
         } else {
+            self.turn_epoch.fetch_add(1, Ordering::Relaxed);
+            {
+                let mut guard = self.turn_token.lock();
+                guard.cancel();
+                *guard = tokio_util::sync::CancellationToken::new();
+            }
             let new_id = self.turn_id.fetch_add(1, Ordering::Relaxed) + 1;
             self.server_turn_cursor = Some(new_id);
             new_id
@@ -786,8 +805,8 @@ impl SessionState {
 
 /// Active duplex session interacting with Gemini Live BidiGenerateContent WebSocket.
 pub struct GeminiLiveSession {
-    audio_tx: tokio::sync::mpsc::UnboundedSender<Vec<i16>>,
-    control_tx: tokio::sync::mpsc::UnboundedSender<ControlEvent>,
+    audio_tx: tokio::sync::mpsc::Sender<Vec<i16>>,
+    control_tx: tokio::sync::mpsc::Sender<ControlEvent>,
     shutdown_tx: parking_lot::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     terminated: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -798,9 +817,12 @@ impl RealtimeSession for GeminiLiveSession {
         if self.terminated.load(Ordering::Relaxed) {
             bail!("Gemini Live session is terminated");
         }
-        self.audio_tx
-            .send(pcm.to_vec())
-            .map_err(|e| anyhow!("Failed to write to S2S audio pipeline queue: {:?}", e))
+        if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) =
+            self.audio_tx.try_send(pcm.to_vec())
+        {
+            log::warn!("[GeminiLive] Audio pipeline queue full — dropped frame");
+        }
+        Ok(())
     }
 
     /// Commits an atomic speech turn by encapsulating the audio between activityStart and activityEnd.
@@ -809,13 +831,15 @@ impl RealtimeSession for GeminiLiveSession {
             bail!("Gemini Live session is terminated");
         }
         self.control_tx
-            .send(ControlEvent::ActivityStart)
+            .try_send(ControlEvent::ActivityStart)
             .map_err(|e| anyhow!("Failed to send ActivityStart: {:?}", e))?;
-        self.audio_tx
-            .send(pcm.to_vec())
-            .map_err(|e| anyhow!("Failed to send audio turn payload: {:?}", e))?;
+        if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) =
+            self.audio_tx.try_send(pcm.to_vec())
+        {
+            log::warn!("[GeminiLive] Audio pipeline queue full on turn commit — dropped frame");
+        }
         self.control_tx
-            .send(ControlEvent::ActivityEnd)
+            .try_send(ControlEvent::ActivityEnd)
             .map_err(|e| anyhow!("Failed to send ActivityEnd: {:?}", e))?;
         Ok(())
     }
@@ -823,7 +847,7 @@ impl RealtimeSession for GeminiLiveSession {
     /// Sends interrupt cancellation event to Gemini Live.
     fn cancel(&self) -> Result<()> {
         self.control_tx
-            .send(ControlEvent::Interrupt)
+            .try_send(ControlEvent::Interrupt)
             .map_err(|e| anyhow!("Failed to send interrupt control event: {:?}", e))
     }
 

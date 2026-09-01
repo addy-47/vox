@@ -10,13 +10,14 @@ pub static TOKIO_HANDLE: once_cell::sync::OnceCell<tokio::runtime::Handle> =
 pub fn get_tokio_handle() -> tokio::runtime::Handle {
     TOKIO_HANDLE.get().cloned().unwrap_or_else(|| {
         tokio::runtime::Handle::try_current().unwrap_or_else(|_| {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("[Persistence::Db] Failed to create fallback tokio runtime");
-            let handle = rt.handle().clone();
-            Box::leak(Box::new(rt));
-            handle
+            static FALLBACK_RT: std::sync::LazyLock<tokio::runtime::Runtime> =
+                std::sync::LazyLock::new(|| {
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("[Persistence::Db] Failed to create fallback tokio runtime")
+                });
+            FALLBACK_RT.handle().clone()
         })
     })
 }

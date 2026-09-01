@@ -8,7 +8,6 @@ pub use crate::core::error::SttError;
 pub use actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand};
 pub use stitcher::stitch_transcripts;
 
-// ─── STT Subsystem Constants ─────────────────────────────────────────────────
 pub const QWEN_ASR_MODEL_DIR: &str = "stt/qwen3-asr";
 pub const NEMOTRON_MODEL_DIR: &str = "stt/nemotron-3.5";
 pub const MODEL_FILE_ASR_FRONTEND: &str = "conv_frontend.onnx";

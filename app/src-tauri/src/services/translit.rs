@@ -4,6 +4,8 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::path::Path;
 
+pub const TRANSLIT_MAX_DECODE_STEPS: usize = 32;
+
 /// Character-level Seq2Seq ONNX engine transliterating Devanagari Hindi text to Latin Hinglish.
 pub struct TransliterationEngine {
     encoder_sess: Mutex<Session>,
@@ -106,7 +108,7 @@ impl TransliterationEngine {
 
         let mut output_chars = Vec::new();
 
-        for _step in 0..32 {
+        for _step in 0..TRANSLIT_MAX_DECODE_STEPS {
             let dec_input_tensor = ort::value::Tensor::from_array(dec_input.clone())
                 .map_err(|e| format!("Failed to convert dec_input: {}", e))?;
             let dec_h_tensor = ort::value::Tensor::from_array(dec_h.clone())
@@ -290,7 +292,7 @@ pub fn init_transliteration_engine() -> Result<(), String> {
             .join("models")
     };
 
-    let model_path = models_dir.join("translit");
+    let model_path = models_dir.join(crate::setup::TRANSLIT_MODEL_DIR);
     let engine = TransliterationEngine::new(&model_path)?;
     *lock = Some(engine);
     log::info!("[Translit] Transliteration ONNX engine loaded into memory.");

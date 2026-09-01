@@ -1,3 +1,4 @@
+use crate::core::error::VoxIpcError;
 use crate::core::settings::{InteractionMode, PipelineMode};
 use crate::core::state::{AppState, InteractionOwner, InteractionState};
 use crate::pipeline::RoutingContext;
@@ -9,30 +10,39 @@ use tauri::{AppHandle, Manager, State};
 
 /// Launches and initializes the 3-tier audio engine.
 #[tauri::command]
-pub async fn launch_engine(app: AppHandle) -> Result<(), String> {
+pub async fn launch_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), VoxIpcError> {
     let state: State<'_, Arc<AppState>> = app.state();
-    crate::core::start_audio_engine(&app, &state).await
+    crate::core::start_audio_engine(&app, &state)
+        .await
+        .map_err(VoxIpcError::Engine)
 }
 
 /// Shuts down the 3-tier audio engine and unloads models.
 #[tauri::command]
-pub async fn stop_engine(app: AppHandle) -> Result<(), String> {
+pub async fn stop_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), VoxIpcError> {
     let state: State<'_, Arc<AppState>> = app.state();
-    crate::core::stop_audio_engine(&state).await
+    crate::core::stop_audio_engine(&state)
+        .await
+        .map_err(VoxIpcError::Engine)
 }
 
 /// Starts the voice assistant session with entry state validation and audio ownership initialization.
 #[tauri::command]
-pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn start_session<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
     let current_state = state.pipeline.state();
     if current_state != InteractionState::Idle {
-        return Err(format!(
+        return Err(VoxIpcError::InvalidState(format!(
             "[IPC::Assistant] Cannot start session: pipeline state is {:?}, expected Idle",
             current_state
-        ));
+        )));
     }
 
-    crate::core::start_audio_engine(&app, &state).await?;
+    crate::core::start_audio_engine(&app, &state)
+        .await
+        .map_err(VoxIpcError::Engine)?;
     state
         .owner
         .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
@@ -80,6 +90,13 @@ pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> R
         }
     }
 
+    log::info!(
+        "[IPC::Assistant] Session initiated: id={} pipeline_mode={:?} interaction_mode={:?}",
+        conv_id,
+        ctx.pipeline_mode,
+        ctx.interaction_mode
+    );
+
     let prompt = {
         let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
         match ctx.pipeline_mode {
@@ -93,25 +110,36 @@ pub async fn start_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> R
     let state_arc = state.inner().clone();
     crate::pipeline::spawn_idle_monitor(app.clone(), state_arc);
 
-    match (ctx.pipeline_mode, ctx.interaction_mode) {
+    match (&ctx.pipeline_mode, &ctx.interaction_mode) {
         (PipelineMode::Modular, InteractionMode::Passive) => {
-            crate::pipeline::modular::passive::start_session(&app, &state).await
+            crate::pipeline::modular::passive::start_session(&app, &state)
+                .await
+                .map_err(VoxIpcError::Engine)
         }
         (PipelineMode::Modular, InteractionMode::PTT) => {
-            crate::pipeline::modular::ptt::start_session(&app, &state).await
+            crate::pipeline::modular::ptt::start_session(&app, &state)
+                .await
+                .map_err(VoxIpcError::Engine)
         }
         (PipelineMode::Realtime, InteractionMode::Passive) => {
-            crate::pipeline::realtime::passive::start_session(&app, &state).await
+            crate::pipeline::realtime::passive::start_session(&app, &state)
+                .await
+                .map_err(VoxIpcError::Engine)
         }
         (PipelineMode::Realtime, InteractionMode::PTT) => {
-            crate::pipeline::realtime::ptt::start_session(&app, &state).await
+            crate::pipeline::realtime::ptt::start_session(&app, &state)
+                .await
+                .map_err(VoxIpcError::Engine)
         }
     }
 }
 
 /// Ends the active voice assistant session, resets state to Idle, and manages audio engine ownership.
 #[tauri::command]
-pub async fn end_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn end_session<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
     let current_state = state.pipeline.state();
     if current_state == InteractionState::Idle {
         log::info!("[IPC::Assistant] end_session called while already Idle; no-op");
@@ -121,16 +149,24 @@ pub async fn end_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Res
     let ctx = RoutingContext::from_app_state(&state);
     match (&ctx.pipeline_mode, &ctx.interaction_mode) {
         (PipelineMode::Modular, InteractionMode::Passive) => {
-            crate::pipeline::modular::passive::end_session(&app, &state).await?;
+            crate::pipeline::modular::passive::end_session(&app, &state)
+                .await
+                .map_err(VoxIpcError::Engine)?;
         }
         (PipelineMode::Modular, InteractionMode::PTT) => {
-            crate::pipeline::modular::ptt::end_session(&app, &state).await?;
+            crate::pipeline::modular::ptt::end_session(&app, &state)
+                .await
+                .map_err(VoxIpcError::Engine)?;
         }
         (PipelineMode::Realtime, InteractionMode::Passive) => {
-            crate::pipeline::realtime::passive::end_session(&app, &state).await?;
+            crate::pipeline::realtime::passive::end_session(&app, &state)
+                .await
+                .map_err(VoxIpcError::Engine)?;
         }
         (PipelineMode::Realtime, InteractionMode::PTT) => {
-            crate::pipeline::realtime::ptt::end_session(&app, &state).await?;
+            crate::pipeline::realtime::ptt::end_session(&app, &state)
+                .await
+                .map_err(VoxIpcError::Engine)?;
         }
     }
 
@@ -209,7 +245,9 @@ pub async fn end_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Res
             }
         }
     } else {
-        crate::core::stop_audio_engine(&state).await?;
+        crate::core::stop_audio_engine(&state)
+            .await
+            .map_err(VoxIpcError::Engine)?;
     }
 
     Ok(())
@@ -217,10 +255,15 @@ pub async fn end_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Res
 
 /// Pauses the active voice assistant pipeline if active.
 #[tauri::command]
-pub async fn pause_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn pause_session<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
     let current_state = state.pipeline.state();
     if current_state == InteractionState::Idle {
-        return Err("[IPC::Assistant] Cannot pause session: pipeline is Idle".to_string());
+        return Err(VoxIpcError::InvalidState(
+            "[IPC::Assistant] Cannot pause session: pipeline is Idle".to_string(),
+        ));
     }
     if current_state == InteractionState::Paused {
         return Ok(());
@@ -228,75 +271,95 @@ pub async fn pause_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> R
 
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
-        PipelineMode::Modular => {
-            crate::pipeline::modular::passive::pause_session(&app, &state).await
-        }
-        PipelineMode::Realtime => {
-            crate::pipeline::realtime::passive::pause_session(&app, &state).await
-        }
+        PipelineMode::Modular => crate::pipeline::modular::passive::pause_session(&app, &state)
+            .await
+            .map_err(VoxIpcError::Engine),
+        PipelineMode::Realtime => crate::pipeline::realtime::passive::pause_session(&app, &state)
+            .await
+            .map_err(VoxIpcError::Engine),
     }
 }
 
 /// Resumes a paused voice assistant pipeline if in Paused state.
 #[tauri::command]
-pub async fn resume_session(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn resume_session<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
     let current_state = state.pipeline.state();
     if current_state != InteractionState::Paused {
-        return Err(format!(
+        return Err(VoxIpcError::InvalidState(format!(
             "[IPC::Assistant] Cannot resume session: current state is {:?}, expected Paused",
             current_state
+        )));
+    }
+
+    let ctx = RoutingContext::from_app_state(&state);
+    match ctx.pipeline_mode {
+        PipelineMode::Modular => crate::pipeline::modular::passive::resume_session(&app, &state)
+            .await
+            .map_err(VoxIpcError::Engine),
+        PipelineMode::Realtime => crate::pipeline::realtime::passive::resume_session(&app, &state)
+            .await
+            .map_err(VoxIpcError::Engine),
+    }
+}
+
+/// Initiates Push-To-Talk speech recording after validating Ready state.
+#[tauri::command]
+pub async fn ptt_start<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
+        return Err(VoxIpcError::InvalidState(
+            "[IPC::Assistant] Cannot start PTT: assistant session is not active".to_string(),
         ));
     }
 
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
         PipelineMode::Modular => {
-            crate::pipeline::modular::passive::resume_session(&app, &state).await
+            crate::pipeline::modular::ptt::ptt_start(&app, &state).map_err(VoxIpcError::Engine)
         }
         PipelineMode::Realtime => {
-            crate::pipeline::realtime::passive::resume_session(&app, &state).await
+            crate::pipeline::realtime::ptt::ptt_start(&app, &state).map_err(VoxIpcError::Engine)
         }
-    }
-}
-
-/// Initiates Push-To-Talk speech recording after validating Ready state.
-#[tauri::command]
-pub async fn ptt_start(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    let current_state = state.pipeline.state();
-    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
-        return Err(
-            "[IPC::Assistant] Cannot start PTT: assistant session is not active".to_string(),
-        );
-    }
-
-    let ctx = RoutingContext::from_app_state(&state);
-    match ctx.pipeline_mode {
-        PipelineMode::Modular => crate::pipeline::modular::ptt::ptt_start(&app, &state),
-        PipelineMode::Realtime => crate::pipeline::realtime::ptt::ptt_start(&app, &state),
     }
 }
 
 /// Finalizes Push-To-Talk recording after validating Listening state.
 #[tauri::command]
-pub async fn ptt_stop(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn ptt_stop<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
     let current_state = state.pipeline.state();
     if current_state != InteractionState::Listening {
-        return Err(format!(
+        return Err(VoxIpcError::InvalidState(format!(
             "[IPC::Assistant] Cannot stop PTT: current state is {:?}, expected Listening",
             current_state
-        ));
+        )));
     }
 
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
-        PipelineMode::Modular => crate::pipeline::modular::ptt::ptt_stop(&app, &state).await,
-        PipelineMode::Realtime => crate::pipeline::realtime::ptt::ptt_stop(&app, &state).await,
+        PipelineMode::Modular => crate::pipeline::modular::ptt::ptt_stop(&app, &state)
+            .await
+            .map_err(VoxIpcError::Engine),
+        PipelineMode::Realtime => crate::pipeline::realtime::ptt::ptt_stop(&app, &state)
+            .await
+            .map_err(VoxIpcError::Engine),
     }
 }
 
 /// Cancels an in-progress Push-To-Talk recording if currently Listening.
 #[tauri::command]
-pub async fn ptt_cancel(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn ptt_cancel<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
     let current_state = state.pipeline.state();
     if current_state != InteractionState::Listening {
         return Ok(());
@@ -304,7 +367,11 @@ pub async fn ptt_cancel(app: AppHandle, state: State<'_, Arc<AppState>>) -> Resu
 
     let ctx = RoutingContext::from_app_state(&state);
     match ctx.pipeline_mode {
-        PipelineMode::Modular => crate::pipeline::modular::ptt::ptt_cancel(&app, &state),
-        PipelineMode::Realtime => crate::pipeline::realtime::ptt::ptt_cancel(&app, &state),
+        PipelineMode::Modular => {
+            crate::pipeline::modular::ptt::ptt_cancel(&app, &state).map_err(VoxIpcError::Engine)
+        }
+        PipelineMode::Realtime => {
+            crate::pipeline::realtime::ptt::ptt_cancel(&app, &state).map_err(VoxIpcError::Engine)
+        }
     }
 }

@@ -1,3 +1,7 @@
+use crate::core::constants::{
+    TRAY_HUD_HEIGHT_LOGICAL, TRAY_HUD_WIDTH_LOGICAL, TRAY_PADDING_TOP_VH, TRAY_PADDING_X_LOGICAL,
+    WINDOW_TRAY,
+};
 use std::time::Duration;
 use tauri::menu::{CheckMenuItem, CheckMenuItemBuilder, Menu, MenuItemBuilder, PredefinedMenuItem};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
@@ -9,12 +13,12 @@ use gtk::prelude::WidgetExt;
 pub fn ensure_tray_window<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<WebviewWindow<R>, String> {
-    if let Some(existing) = app.get_webview_window("tray") {
+    if let Some(existing) = app.get_webview_window(WINDOW_TRAY) {
         return Ok(existing);
     }
 
     log::info!("[Tray] Lazily constructing 'tray' HUD webview window...");
-    let window = WebviewWindowBuilder::new(app, "tray", WebviewUrl::App("/tray".into()))
+    let window = WebviewWindowBuilder::new(app, WINDOW_TRAY, WebviewUrl::App("/tray".into()))
         .title("vox-live")
         .inner_size(420.0, 250.0)
         .transparent(true)
@@ -39,7 +43,7 @@ pub fn ensure_tray_window<R: tauri::Runtime>(
 
 /// Safely closes and destroys the tray window to reclaim memory when Tray mode is inactive.
 pub fn destroy_tray_window<R: tauri::Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("tray") {
+    if let Some(window) = app.get_webview_window(WINDOW_TRAY) {
         log::info!("[Tray] Destroying 'tray' HUD webview window to save RAM.");
         if let Err(e) = window.close() {
             log::warn!("[Tray] Failed to close tray window: {}", e);
@@ -91,7 +95,10 @@ pub fn sync_live_menu_item(app: &AppHandle<tauri::Wry>, live_i: &CheckMenuItem<t
     }
 
     let (hud_visible, dictation_enabled, is_tray_mode) = {
-        let s = state.settings.read().unwrap();
+        let s = state.settings.read().unwrap_or_else(|p| {
+            log::warn!("[Tray] Settings RwLock poisoned; recovering inner state.");
+            p.into_inner()
+        });
         let v = state.hud_visible.load(std::sync::atomic::Ordering::Relaxed);
         (
             v,
@@ -145,8 +152,6 @@ pub fn setup_tray_window<R: tauri::Runtime>(window: &WebviewWindow<R>) {
     }
 }
 
-// ─── Positioning Logic ───────────────────────────────────────────────────────
-
 /// Positions the tray window at the top-right of the screen.
 ///
 /// On Linux, this triggers the "virtual layer" setup for click-through support.
@@ -162,7 +167,7 @@ pub async fn position_tray_window<R: tauri::Runtime>(window: &WebviewWindow<R>) 
         let win_clone = window.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(Duration::from_millis(200)).await;
-            setup_linux_virtual_layer(win_clone.app_handle(), "tray");
+            setup_linux_virtual_layer(win_clone.app_handle(), WINDOW_TRAY);
         });
     }
 
@@ -217,10 +222,10 @@ pub fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &
             let scale_factor = window.scale_factor().unwrap_or(1.0);
 
             // Logical units from CSS/React (Sync with TrayApp.tsx and index.css)
-            let hud_w_logical = 380.0;
-            let hud_h_logical = 250.0;
-            let padding_x_logical = 55.0;
-            let padding_top_vh = 0.15; // 15vh
+            let hud_w_logical = TRAY_HUD_WIDTH_LOGICAL;
+            let hud_h_logical = TRAY_HUD_HEIGHT_LOGICAL;
+            let padding_x_logical = TRAY_PADDING_X_LOGICAL;
+            let padding_top_vh = TRAY_PADDING_TOP_VH;
 
             // Convert to physical pixels for region math
             let hud_w = (hud_w_logical * scale_factor) as i32;
@@ -232,8 +237,6 @@ pub fn setup_linux_virtual_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &
 
             let x = screen_w - hud_w - padding_x;
             let y = (screen_h as f64 * padding_top_vh) as i32;
-
-            // log::debug!("[TRAY] Setting input region: x={}, y={}, w={}, h={} (scale={})", x, y, hud_w, hud_h, scale_factor);
 
             let rect = cairo::RectangleInt::new(x, y, hud_w, hud_h);
             let region = cairo::Region::create_rectangle(&rect);
