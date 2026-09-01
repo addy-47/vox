@@ -12,8 +12,6 @@ use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
-// ─── Structs & Enums ──────────────────────────────────────────────────────────
-
 struct AtomicF32 {
     inner: AtomicU32,
 }
@@ -40,8 +38,6 @@ pub struct KokoroEngine {
     speed: AtomicF32,
     voice: AtomicI32,
 }
-
-// ─── KokoroEngine Inherent Implementations ───────────────────────────────────
 
 impl KokoroEngine {
     /// Initializes Kokoro multi-lang v1.1 offline TTS components from the specified model directory.
@@ -82,8 +78,6 @@ impl KokoroEngine {
         })
     }
 }
-
-// ─── Trait Implementations ───────────────────────────────────────────────────
 
 impl TtsProvider for KokoroEngine {
     /// Hot-updates the playback speed factor.

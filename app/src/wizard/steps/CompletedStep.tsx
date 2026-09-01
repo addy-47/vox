@@ -2,7 +2,6 @@ import React from 'react';
 import { completeSetupWizard } from '@/services/settingsService';
 import { Zap, Check } from 'lucide-react';
 
-// --- Modular Components ---
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
 import { StatusCard } from '../components/StatusCard';

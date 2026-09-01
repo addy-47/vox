@@ -10,7 +10,6 @@ import {
 import { cn } from '@/shared/lib/utils';
 import { WIZARD_CTA_LABELS } from '@/data/welcomeCopy';
 
-// --- Modular Components ---
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
 import { ModelCategory } from '../components/ModelCategory';

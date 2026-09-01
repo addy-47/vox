@@ -1,8 +1,8 @@
 use super::resample::upsample_2x_into;
 use super::{
     PLAYBACK_BUFFER_SAMPLES, PLAYBACK_CHANNELS, PLAYBACK_DEFAULT_VOLUME, PLAYBACK_ENERGY_EXPONENT,
-    PLAYBACK_ENERGY_MULTIPLIER, PLAYBACK_SAMPLE_RATE, PLAYBACK_VOLUME_RAMP_STEP,
-    PREROLL_THRESHOLD_SAMPLES,
+    PLAYBACK_ENERGY_MULTIPLIER, PLAYBACK_PRODUCER_SCRATCH_CAPACITY, PLAYBACK_SAMPLE_RATE,
+    PLAYBACK_VOLUME_RAMP_STEP, PREROLL_THRESHOLD_SAMPLES,
 };
 use crate::core::events::VoxEvent;
 use crate::core::state::InteractionState;
@@ -70,8 +70,6 @@ struct PlaybackStreamContext {
     filter_bank: FilterBank,
 }
 
-// ─── Trait Implementations ───────────────────────────────────────────────────
-
 unsafe impl Send for PlaybackEngine {}
 unsafe impl Sync for PlaybackEngine {}
 
@@ -81,8 +79,6 @@ impl Drop for PlaybackEngine {
         self.cancel();
     }
 }
-
-// ─── PlaybackEngine Inherent Implementations ─────────────────────────────────
 
 impl PlaybackEngine {
     /// Initialise CPAL output stream at 48kHz without starting playback immediately.
@@ -104,7 +100,10 @@ impl PlaybackEngine {
         )?;
 
         Ok(Self {
-            producer: Mutex::new((producer, Vec::with_capacity(4096))),
+            producer: Mutex::new((
+                producer,
+                Vec::with_capacity(PLAYBACK_PRODUCER_SCRATCH_CAPACITY),
+            )),
             cancel_flag: handles.cancel_flag,
             discard_request,
             event_tx: handles.event_tx,
@@ -124,7 +123,10 @@ impl PlaybackEngine {
         stream: Option<cpal::Stream>,
     ) -> Self {
         Self {
-            producer: Mutex::new((producer, Vec::with_capacity(4096))),
+            producer: Mutex::new((
+                producer,
+                Vec::with_capacity(PLAYBACK_PRODUCER_SCRATCH_CAPACITY),
+            )),
             cancel_flag: handles.cancel_flag,
             discard_request,
             event_tx: handles.event_tx,
@@ -310,8 +312,6 @@ impl PlaybackEngine {
     }
 }
 
-// ─── PlaybackStreamContext Implementation ────────────────────────────────────
-
 impl PlaybackStreamContext {
     /// Handles buffer drain, cancellation, discard requests, and audio output generation.
     fn process_output_buffer(&mut self, output: &mut [f32]) {
@@ -458,8 +458,6 @@ impl PlaybackStreamContext {
             .store(high_val.to_bits(), Ordering::Relaxed);
     }
 }
-
-// ─── Free Helper Functions ───────────────────────────────────────────────────
 
 /// Resolves default output device and validates 48kHz stereo stream config.
 fn resolve_output_device_and_config(host: &cpal::Host) -> Result<(cpal::Device, StreamConfig)> {

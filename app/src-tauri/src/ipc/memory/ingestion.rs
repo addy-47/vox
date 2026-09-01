@@ -1,3 +1,4 @@
+use crate::core::error::VoxIpcError;
 use crate::core::state::AppState;
 use crate::persistence::db::VoxDb;
 use serde::Serialize;
@@ -42,11 +43,11 @@ pub struct MemoryQueueSummary {
 
 /// Retrieve queue status counts and the most recent 50 queue items.
 #[tauri::command]
-pub async fn get_memory_queue_status() -> Result<MemoryQueueSummary, String> {
+pub async fn get_memory_queue_status() -> Result<MemoryQueueSummary, VoxIpcError> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
+        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     let mut rows = conn
         .query(
@@ -54,7 +55,7 @@ pub async fn get_memory_queue_status() -> Result<MemoryQueueSummary, String> {
             (),
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     let mut staged_pending = 0;
     let mut dedup_pass = 0;
@@ -62,40 +63,64 @@ pub async fn get_memory_queue_status() -> Result<MemoryQueueSummary, String> {
     let mut paused = 0;
     let mut failed = 0;
 
-    while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
-        let status_str: String = row.get(0).map_err(|e| e.to_string())?;
-        let cnt: u32 = row.get::<i64>(1).unwrap_or(0) as u32;
-        match status_str.as_str() {
-            "staged_pending" => staged_pending = cnt,
-            "dedup_pass" => dedup_pass = cnt,
-            "nli_evaluated" => nli_evaluated = cnt,
-            "paused" => paused = cnt,
-            "failed" => failed = cnt,
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+    {
+        let status: String = row.get(0).unwrap_or_default();
+        let count: i64 = row.get(1).unwrap_or(0);
+        match status.as_str() {
+            "staged_pending" => staged_pending = count as u32,
+            "dedup_pass" => dedup_pass = count as u32,
+            "nli_evaluated" => nli_evaluated = count as u32,
+            "paused" => paused = count as u32,
+            "failed" => failed = count as u32,
             _ => {}
         }
     }
 
-    let mut rows = conn
+    let mut recent_rows = conn
         .query(
             "SELECT id, fact, collection, source, session_id, status, attempts, error_msg, created_at 
-             FROM personal_memory_queue ORDER BY id DESC LIMIT 50",
+             FROM personal_memory_queue 
+             ORDER BY created_at DESC LIMIT 50",
             (),
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     let mut recent_items = Vec::new();
-    while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+    while let Some(row) = recent_rows
+        .next()
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+    {
+        let attempts_i64: i64 = row.get(6).unwrap_or(0);
         recent_items.push(MemoryQueueItem {
-            id: row.get(0).map_err(|e| e.to_string())?,
-            fact: row.get(1).map_err(|e| e.to_string())?,
-            collection: row.get(2).map_err(|e| e.to_string())?,
-            source: row.get(3).map_err(|e| e.to_string())?,
-            session_id: row.get(4).map_err(|e| e.to_string())?,
-            status: row.get(5).map_err(|e| e.to_string())?,
-            attempts: row.get::<i64>(6).unwrap_or(0) as u32,
+            id: row
+                .get(0)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            fact: row
+                .get(1)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            collection: row
+                .get(2)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            source: row
+                .get(3)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            session_id: row
+                .get(4)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            status: row
+                .get(5)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            attempts: attempts_i64 as u32,
             error_msg: row.get(7).ok(),
-            created_at: row.get(8).map_err(|e| e.to_string())?,
+            created_at: row
+                .get(8)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
         });
     }
 
@@ -109,14 +134,14 @@ pub async fn get_memory_queue_status() -> Result<MemoryQueueSummary, String> {
     })
 }
 
-/// Toggle or set pause state for background memory pipeline processing.
+/// Pause or resume background processing for personal memory queue.
 #[tauri::command]
 pub async fn toggle_pipeline_processing(
     state: State<'_, std::sync::Arc<AppState>>,
-    paused: Option<bool>,
-) -> Result<bool, String> {
-    let new_paused = match paused {
-        Some(p) => p,
+    enabled: Option<bool>,
+) -> Result<bool, VoxIpcError> {
+    let new_paused = match enabled {
+        Some(e) => !e,
         None => !state.memory.user_paused_ingestion.load(Ordering::SeqCst),
     };
 
@@ -144,20 +169,24 @@ pub async fn toggle_pipeline_processing(
 pub async fn retry_failed_queue_items(
     state: State<'_, std::sync::Arc<AppState>>,
     item_ids: Option<Vec<i64>>,
-) -> Result<u32, String> {
+) -> Result<u32, VoxIpcError> {
     if state.memory.user_paused_ingestion.load(Ordering::SeqCst) {
-        return Err("Memory pipeline processing is currently paused. Please enable processing before retrying.".to_string());
+        return Err(VoxIpcError::InvalidState(
+            "Memory pipeline processing is currently paused. Please enable processing before retrying.".to_string(),
+        ));
     }
 
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
+        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     let affected = match item_ids {
         Some(ids) if !ids.is_empty() => {
             if ids.len() > 1000 {
-                return Err("Too many items in retry batch. Maximum allowed is 1000.".to_string());
+                return Err(VoxIpcError::InvalidArgument(
+                    "Too many items in retry batch. Maximum allowed is 1000.".to_string(),
+                ));
             }
             let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
             let sql = format!(
@@ -169,7 +198,7 @@ pub async fn retry_failed_queue_items(
             let params: Vec<turso::Value> = ids.into_iter().map(|id| id.into()).collect();
             conn.execute(&sql, params)
                 .await
-                .map_err(|e| e.to_string())?
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?
         }
         _ => conn
             .execute(
@@ -179,7 +208,7 @@ pub async fn retry_failed_queue_items(
                 (),
             )
             .await
-            .map_err(|e| e.to_string())?,
+            .map_err(|e| VoxIpcError::Database(e.to_string()))?,
     };
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);

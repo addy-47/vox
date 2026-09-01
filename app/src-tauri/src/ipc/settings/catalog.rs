@@ -1,3 +1,4 @@
+use crate::core::error::VoxIpcError;
 use crate::core::settings::VoxSettings;
 use crate::core::state::AppState;
 use crate::utils::paths;
@@ -26,9 +27,13 @@ pub struct ModelCatalog {
 
 /// Called by the frontend on mount to load initial settings snapshot and model paths.
 #[tauri::command]
-pub async fn get_settings(app: AppHandle) -> Result<BootState, String> {
+pub async fn get_settings<R: tauri::Runtime>(app: AppHandle<R>) -> Result<BootState, VoxIpcError> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
-    let settings = state.settings.read().map_err(|e| e.to_string())?.clone();
+    let settings = state
+        .settings
+        .read()
+        .map_err(|e| VoxIpcError::Internal(e.to_string()))?
+        .clone();
     let models_dir_exists = paths::get().models.exists();
     let settings_path = paths::get().settings.to_string_lossy().to_string();
 
@@ -47,7 +52,9 @@ pub async fn get_settings(app: AppHandle) -> Result<BootState, String> {
 
 /// Query the model manifest catalog filtered into distinct model categories.
 #[tauri::command]
-pub async fn get_model_catalog(app: AppHandle) -> Result<ModelCatalog, String> {
+pub async fn get_model_catalog<R: tauri::Runtime>(
+    app: AppHandle<R>,
+) -> Result<ModelCatalog, VoxIpcError> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let manifest_opt = {
         let guard = state.manifest.read().await;
@@ -59,11 +66,15 @@ pub async fn get_model_catalog(app: AppHandle) -> Result<ModelCatalog, String> {
     } else {
         let manifest_path = paths::get().models.join("models_manifest.json");
         if manifest_path.exists() {
-            let content = std::fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?;
+            let p = manifest_path.clone();
+            let content = tokio::task::spawn_blocking(move || std::fs::read_to_string(&p))
+                .await
+                .map_err(|e| VoxIpcError::Internal(e.to_string()))?
+                .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
             serde_json::from_str::<crate::setup::manifest::VoxManifest>(&content)
-                .map_err(|e| e.to_string())?
+                .map_err(|e| VoxIpcError::Internal(e.to_string()))?
         } else {
-            return Err("Manifest not available".to_string());
+            return Err(VoxIpcError::NotFound("Manifest not available".to_string()));
         }
     };
 

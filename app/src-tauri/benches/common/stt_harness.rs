@@ -1,7 +1,3 @@
-//! ============================================================================
-//! benches/common/harness.rs — Benchmark Streaming Pipeline Setup & Event Polling
-//! ============================================================================
-
 use ringbuf::traits::{Observer, Producer, Split};
 use ringbuf::HeapRb;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};

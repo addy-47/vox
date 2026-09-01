@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-// ─── Monitoring Subsystem Constants ──────────────────────────────────────────
-
 /// Capacity of the lock-free telemetry aggregator channel.
 pub const TELEMETRY_AGGREGATOR_CHANNEL_CAPACITY: usize = 4096;
 

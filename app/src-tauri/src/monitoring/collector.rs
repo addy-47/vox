@@ -13,11 +13,12 @@ pub fn spawn_monitoring_collector(state: Arc<AppState>) {
         .spawn(move || {
             log::info!("[Monitoring::Collector] Collector worker started (10Hz)");
 
-            let sys = sysinfo::System::new_with_specifics(
+            let mut sys = sysinfo::System::new_with_specifics(
                 sysinfo::RefreshKind::new()
                     .with_memory(sysinfo::MemoryRefreshKind::everything())
                     .with_cpu(sysinfo::CpuRefreshKind::everything()),
             );
+            sys.refresh_memory();
             let total_ram_mb = (sys.total_memory() / 1024 / 1024) as u32;
             let cpu_cores = sys.cpus().len() as u32;
 

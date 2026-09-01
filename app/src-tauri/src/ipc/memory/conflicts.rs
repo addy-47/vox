@@ -1,3 +1,4 @@
+use crate::core::error::VoxIpcError;
 use crate::core::state::AppState;
 use crate::ipc::memory::graph::MemoryNodeTopology;
 use crate::persistence::db::VoxDb;
@@ -15,11 +16,11 @@ pub struct MemoryConflict {
 
 /// Retrieve all unresolved memory fact conflicts from the graph.
 #[tauri::command]
-pub async fn get_unresolved_conflicts() -> Result<Vec<MemoryConflict>, String> {
+pub async fn get_unresolved_conflicts() -> Result<Vec<MemoryConflict>, VoxIpcError> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
+        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     let mut rows = conn
         .query(
@@ -38,17 +39,33 @@ pub async fn get_unresolved_conflicts() -> Result<Vec<MemoryConflict>, String> {
             ),
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     let mut conflicts = Vec::new();
-    while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
-        let from_id: String = row.get(0).map_err(|e| e.to_string())?;
-        let from_col: String = row.get(1).map_err(|e| e.to_string())?;
-        let from_created: i64 = row.get(2).map_err(|e| e.to_string())?;
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+    {
+        let from_id: String = row
+            .get(0)
+            .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+        let from_col: String = row
+            .get(1)
+            .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+        let from_created: i64 = row
+            .get(2)
+            .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
-        let to_id: String = row.get(3).map_err(|e| e.to_string())?;
-        let to_col: String = row.get(4).map_err(|e| e.to_string())?;
-        let to_created: i64 = row.get(5).map_err(|e| e.to_string())?;
+        let to_id: String = row
+            .get(3)
+            .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+        let to_col: String = row
+            .get(4)
+            .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+        let to_created: i64 = row
+            .get(5)
+            .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
         conflicts.push(MemoryConflict {
             fact_a: MemoryNodeTopology {
@@ -77,11 +94,11 @@ pub async fn resolve_memory_conflict(
     state: State<'_, std::sync::Arc<AppState>>,
     winner_id: String,
     loser_id: String,
-) -> Result<(), String> {
+) -> Result<(), VoxIpcError> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
+        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -105,7 +122,8 @@ pub async fn resolve_memory_conflict(
 
         Ok(())
     })
-    .await?;
+    .await
+    .map_err(VoxIpcError::Database)?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(())

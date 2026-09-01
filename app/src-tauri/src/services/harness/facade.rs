@@ -119,10 +119,15 @@ pub async fn prepare_turn_context(
     if let Some((history_slice, last_user_turn)) = compaction_job {
         if let Some(ref filler) = transition_speech {
             if let Some(tts_sender) = params.tts_tx {
-                let _ = tts_sender.send(crate::services::tts::TtsCommand::Generate {
+                if let Err(e) = tts_sender.send(crate::services::tts::TtsCommand::Generate {
                     turn_id: params.turn_id,
                     text: filler.clone(),
-                });
+                }) {
+                    log::warn!(
+                        "[ContextHarness] Failed to dispatch transition speech filler to TTS: {}",
+                        e
+                    );
+                }
             }
         }
 

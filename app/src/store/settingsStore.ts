@@ -459,7 +459,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     );
     set({ hasChanges });
 
-    // ─── Hybrid Auto-Save Logic ───
     // Check if the modified key requires a heavy restart
     const requiresRestart =
       (domain === "stt" && key === "embedded") ||

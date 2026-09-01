@@ -12,10 +12,10 @@ mod common;
 
 use clap::Parser;
 use common::audio::{load_wav, resolve_clip_path};
-use common::harness::{benchmark_streaming_provider, BenchmarkClip};
 use common::reporting::{
     generate_run_id, save_benchmark_report, BenchmarkReport, BenchmarkSystemInfo,
 };
+use common::stt_harness::{benchmark_streaming_provider, BenchmarkClip};
 use std::path::PathBuf;
 use vox_lib::services::stt::providers::{EmbeddedSttProvider, SttProvider};
 

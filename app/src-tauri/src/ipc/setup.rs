@@ -1,3 +1,4 @@
+use crate::core::error::VoxIpcError;
 use crate::core::state::AppState;
 use crate::setup::manager_ops;
 use crate::setup::manifest::VoxManifest;
@@ -30,7 +31,7 @@ pub enum ManageModelsResult {
 
 /// Check for available Vox application updates, model updates, or both.
 #[tauri::command]
-pub async fn check_updates(scope: Option<String>) -> Result<UnifiedUpdateReport, String> {
+pub async fn check_updates(scope: Option<String>) -> Result<UnifiedUpdateReport, VoxIpcError> {
     let s = scope.unwrap_or_else(|| "all".to_string()).to_lowercase();
     let check_app = s == "all" || s == "app";
     let check_models = s == "all" || s == "models";
@@ -38,7 +39,7 @@ pub async fn check_updates(scope: Option<String>) -> Result<UnifiedUpdateReport,
     let app = if check_app {
         Some(check_app_updates().await.map_err(|e| {
             log::error!("[IPC] App update check failed: {}", e);
-            e.to_string()
+            VoxIpcError::Network(e.to_string())
         })?)
     } else {
         None
@@ -47,7 +48,7 @@ pub async fn check_updates(scope: Option<String>) -> Result<UnifiedUpdateReport,
     let models = if check_models {
         Some(check_model_updates().await.map_err(|e| {
             log::error!("[IPC] Model update check failed: {}", e);
-            e.to_string()
+            VoxIpcError::Network(e.to_string())
         })?)
     } else {
         None
@@ -58,49 +59,63 @@ pub async fn check_updates(scope: Option<String>) -> Result<UnifiedUpdateReport,
 
 /// Fetch the remote models manifest or return cached instance.
 #[tauri::command]
-pub async fn fetch_manifest(state: State<'_, Arc<AppState>>) -> Result<VoxManifest, String> {
-    let mut m = state.manifest.write().await;
-
-    if let Some(ref manifest) = *m {
-        return Ok(manifest.clone());
+pub async fn fetch_manifest(state: State<'_, Arc<AppState>>) -> Result<VoxManifest, VoxIpcError> {
+    {
+        let m = state.manifest.read().await;
+        if let Some(ref manifest) = *m {
+            return Ok(manifest.clone());
+        }
     }
 
     let manifest = VoxManifest::fetch().await.map_err(|e| {
         log::error!("[IPC] Manifest fetch failed: {}", e);
-        e.to_string()
+        VoxIpcError::Network(e.to_string())
     })?;
 
-    *m = Some(manifest.clone());
+    {
+        let mut m = state.manifest.write().await;
+        *m = Some(manifest.clone());
+    }
     Ok(manifest)
 }
 
 /// Verify runtime system hardware and model readiness against the manifest.
 #[tauri::command]
-pub async fn get_runtime_report(state: State<'_, Arc<AppState>>) -> Result<RuntimeReport, String> {
+pub async fn get_runtime_report(
+    state: State<'_, Arc<AppState>>,
+) -> Result<RuntimeReport, VoxIpcError> {
     let manifest_guard = state.manifest.read().await;
-    let manifest = manifest_guard.as_ref().ok_or("Manifest not fetched")?;
+    let manifest = manifest_guard
+        .as_ref()
+        .ok_or_else(|| VoxIpcError::NotFound("Manifest not fetched".to_string()))?;
     Ok(verify_runtime(Some(manifest)))
 }
 
 /// Return whether the first-run onboarding setup wizard has completed.
 #[tauri::command]
-pub async fn get_onboarding_status(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
-    let settings = state.settings.read().map_err(|e| e.to_string())?;
+pub async fn get_onboarding_status(state: State<'_, Arc<AppState>>) -> Result<bool, VoxIpcError> {
+    let settings = state
+        .settings
+        .read()
+        .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
     Ok(settings.system.setup_completed)
 }
 
 /// Mark onboarding setup as completed, persist configuration, and focus main window.
 #[tauri::command]
-pub async fn complete_setup_wizard(
-    app: AppHandle,
+pub async fn complete_setup_wizard<R: tauri::Runtime + 'static>(
+    app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<(), VoxIpcError> {
     {
-        let mut settings = state.settings.write().map_err(|e| e.to_string())?;
+        let mut settings = state
+            .settings
+            .write()
+            .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
         settings.system.setup_completed = true;
         settings
             .save()
-            .map_err(|e| format!("Failed to save settings: {}", e))?;
+            .map_err(|e| VoxIpcError::Internal(format!("Failed to save settings: {}", e)))?;
     }
 
     let app_clone = app.clone();
@@ -123,23 +138,28 @@ pub async fn complete_setup_wizard(
 
 /// Unified model manager command handling downloads, cancellations, presence checks, and deletion.
 #[tauri::command]
-pub async fn manage_models(
-    app: AppHandle,
+pub async fn manage_models<R: tauri::Runtime + 'static>(
+    app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
     payload: ManageModelsPayload,
-) -> Result<ManageModelsResult, String> {
+) -> Result<ManageModelsResult, VoxIpcError> {
     match payload.action.to_lowercase().as_str() {
         "exists" | "check" => {
-            let exists = manager_ops::check_model_exists(&state, payload.model_id).await?;
+            let exists = manager_ops::check_model_exists(&state, payload.model_id)
+                .await
+                .map_err(VoxIpcError::Internal)?;
             Ok(ManageModelsResult::Status(exists))
         }
         "download" | "download_optional" => {
-            manager_ops::download_single_model(&state, payload.model_id).await?;
+            manager_ops::download_single_model(&state, payload.model_id)
+                .await
+                .map_err(VoxIpcError::Engine)?;
             Ok(ManageModelsResult::Done)
         }
         "start_setup" | "setup" => {
             manager_ops::start_batch_setup(app, state.inner().clone(), payload.selected_ids)
-                .await?;
+                .await
+                .map_err(VoxIpcError::Engine)?;
             Ok(ManageModelsResult::Done)
         }
         "cancel" | "cancel_setup" => {
@@ -147,16 +167,21 @@ pub async fn manage_models(
             Ok(ManageModelsResult::Done)
         }
         "delete" => {
-            manager_ops::delete_model_group(&state, payload.model_id).await?;
+            manager_ops::delete_model_group(&state, payload.model_id)
+                .await
+                .map_err(VoxIpcError::Internal)?;
             Ok(ManageModelsResult::Done)
         }
-        _ => Err(format!("Unknown manage_models action: {}", payload.action)),
+        _ => Err(VoxIpcError::InvalidArgument(format!(
+            "Unknown manage_models action: {}",
+            payload.action
+        ))),
     }
 }
 
 /// Bring the setup wizard window into foreground focus.
 #[tauri::command]
-pub async fn reveal_wizard(app: AppHandle) -> Result<(), String> {
+pub async fn reveal_wizard<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), VoxIpcError> {
     if let Some(wizard_win) = app.get_webview_window("wizard") {
         if let Err(e) = wizard_win.show() {
             log::warn!("[Setup] Failed to show wizard window: {}", e);
