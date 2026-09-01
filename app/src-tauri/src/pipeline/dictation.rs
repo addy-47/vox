@@ -72,15 +72,24 @@ pub async fn handle_hotkey_release_with_sender<R: tauri::Runtime>(
 
     let turn_id = state.pipeline.peek_turn_id();
 
-    let engine_guard = state.engine.lock().await;
-    let validation_result = if let Some(ref engine) = *engine_guard {
+    let (vad_tx_opt, engine_stt_tx_opt) = {
+        let engine_guard = state.engine.lock().await;
+        (
+            engine_guard.as_ref().map(|e| e.vad_tx.clone()),
+            engine_guard.as_ref().map(|e| e.stt_tx.clone()),
+        )
+    };
+
+    let validation_result = if let Some(vad_tx) = vad_tx_opt {
         let (tx, rx) = std::sync::mpsc::channel();
-        if engine
-            .vad_tx
+        if vad_tx
             .send(crate::services::vad::VadCommand::StopWindowValidation { response_tx: tx })
             .is_ok()
         {
-            rx.recv_timeout(std::time::Duration::from_millis(500)).ok()
+            rx.recv_timeout(std::time::Duration::from_millis(
+                crate::services::vad::VAD_VALIDATION_TIMEOUT_MS,
+            ))
+            .ok()
         } else {
             None
         }
@@ -115,11 +124,8 @@ pub async fn handle_hotkey_release_with_sender<R: tauri::Runtime>(
                 e
             );
         }
-    } else if let Some(ref engine) = *engine_guard {
-        if let Err(e) = engine
-            .stt_tx
-            .send(crate::services::stt::SttCommand::Final(turn_id, audio))
-        {
+    } else if let Some(stt_tx) = engine_stt_tx_opt {
+        if let Err(e) = stt_tx.send(crate::services::stt::SttCommand::Final(turn_id, audio)) {
             log::warn!("[Dictation] Failed to dispatch Final audio to STT: {}", e);
         }
     }

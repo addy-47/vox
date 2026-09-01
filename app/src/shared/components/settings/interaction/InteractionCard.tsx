@@ -44,7 +44,6 @@ export const InteractionCard = memo(
     const dictationInteractionMode = dictation?.interaction_mode ?? "ptt";
     const isModular = interaction.pipeline_mode === "modular";
 
-    // ─── 1. Saved / Persisted Provider (holds the active indicator highlight) ───
     const savedLlm = settings.llm?.active || "embedded";
     const savedLlmRemoteUrl = savedLlm === "server" ? settings.llm?.server?.base_url : savedLlm === "cloud" ? settings.llm?.cloud?.base_url : "";
     const isSavedCloudUrl = checkIfCloudUrl(savedLlmRemoteUrl || "");
@@ -73,7 +72,6 @@ export const InteractionCard = memo(
         ? savedLlmPill
         : savedTtsPill;
 
-    // ─── 2. Draft / Inspected Provider (for Level 2 config & model catalog sync) ───
     const activeLlm = llm?.active || "embedded";
     const activeRemoteUrl = activeLlm === "server" ? llm?.server?.base_url : activeLlm === "cloud" ? llm?.cloud?.base_url : "";
     const isCloudUrl = checkIfCloudUrl(activeRemoteUrl || "");

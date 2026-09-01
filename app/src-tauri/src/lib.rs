@@ -25,7 +25,7 @@ use crate::ipc::pipeline::{
     start_session, stop_engine, test_clip, test_clip_cancel,
 };
 use crate::ipc::settings::{
-    check_provider_health, get_settings, list_llm_models, get_model_catalog, reset_settings,
+    check_provider_health, get_model_catalog, get_settings, list_llm_models, reset_settings,
     setup_remote_server, update_setting,
 };
 use crate::ipc::tray::{
@@ -40,8 +40,6 @@ use crate::monitoring::system_monitor::spawn_system_monitor;
 
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, State};
-
-// ─── App Entry Point ─────────────────────────────────────────────────────────
 
 /// Main entry point for the Vox application.
 ///
@@ -217,7 +215,13 @@ pub fn run() {
 
             // ── 0.9 Memory Worker (Gated on Tier 1B+ and MemorySettings) ───────────
             let memory_enabled = {
-                let s = app_state.settings.read().unwrap();
+                let s = app_state
+                    .settings
+                    .read()
+                    .unwrap_or_else(|p| {
+                        log::warn!("[BOOTSTRAP] Settings RwLock poisoned; recovering inner state.");
+                        p.into_inner()
+                    });
                 s.memory.pipeline_processing_enabled
             };
 
@@ -249,7 +253,13 @@ pub fn run() {
 
             // ── 1.6 Dictation Global Hotkey Registration ──────────────────────────
             {
-                let s = state_arc.settings.read().unwrap();
+                let s = state_arc
+                    .settings
+                    .read()
+                    .unwrap_or_else(|p| {
+                        log::warn!("[BOOTSTRAP] Settings RwLock poisoned; recovering inner state.");
+                        p.into_inner()
+                    });
                 if s.dictation.enabled {
                     if let Err(e) = crate::pipeline::dictation::init_dictation_hotkey_listener(
                         app.handle(),
@@ -299,7 +309,13 @@ pub fn run() {
                         let app = tray.app_handle().clone();
                         let dictation_enabled = {
                             let state: State<'_, std::sync::Arc<AppState>> = app.state();
-                            let s = state.settings.read().unwrap();
+                            let s = state
+                                .settings
+                                .read()
+                                .unwrap_or_else(|p| {
+                                    log::warn!("[Tray] Settings RwLock poisoned; recovering inner state.");
+                                    p.into_inner()
+                                });
                             s.dictation.enabled
                         };
                         if dictation_enabled {
@@ -378,7 +394,13 @@ pub fn run() {
             {
                 let (should_show_tray, setup_completed) = {
                     let state: State<'_, std::sync::Arc<AppState>> = app.state();
-                    let s = state.settings.read().unwrap();
+                    let s = state
+                        .settings
+                        .read()
+                        .unwrap_or_else(|p| {
+                            log::warn!("[BOOTSTRAP] Settings RwLock poisoned; recovering inner state.");
+                            p.into_inner()
+                        });
                     (
                         s.dictation.enabled
                             && s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
@@ -405,7 +427,13 @@ pub fn run() {
                     let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
 
                     // ── 3.1 Auto-detect existing models ────────────────────────────
-                    let mut settings = state.settings.write().unwrap();
+                    let mut settings = state
+                        .settings
+                        .write()
+                        .unwrap_or_else(|p| {
+                            log::warn!("[BOOTSTRAP] Settings RwLock poisoned; recovering inner state for write.");
+                            p.into_inner()
+                        });
                     if !settings.system.setup_completed && wizard::check_setup_health() {
                         log::info!("[BOOTSTRAP] Existing models detected. Auto-completing setup.");
                         settings.system.setup_completed = true;

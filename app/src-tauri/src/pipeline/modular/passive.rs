@@ -62,6 +62,7 @@ pub async fn start_session<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
 ) -> Result<(), String> {
+    state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
     super::ensure_modular_workers(app, state).await?;
 
     if let Ok(guard) = state.engine.try_lock() {
@@ -360,6 +361,14 @@ fn on_transcript_final<R: tauri::Runtime>(
                     log::warn!("[ModularPassive] Failed to send filler TTS: {}", e);
                 }
             }
+        }
+
+        if cancel.is_cancelled() {
+            log::info!(
+                "[ModularPassive] Turn {} cancelled before LLM dispatch",
+                turn_id
+            );
+            return;
         }
 
         if let Some(ref tx) = llm_tx {

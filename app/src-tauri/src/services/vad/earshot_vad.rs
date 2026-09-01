@@ -49,21 +49,16 @@ impl VadEngine for EarshotVadEngine {
             }
             self.detector.predict_f32(&clamped_chunk)
         } else {
-            let clamped: Vec<f32> = chunk.iter().map(|&val| val.clamp(-1.0, 1.0)).collect();
-            self.detector.predict_f32(&clamped)
+            let mut clamped_chunk = [0.0f32; 256];
+            let len = chunk.len().min(256);
+            for i in 0..len {
+                clamped_chunk[i] = chunk[i].clamp(-1.0, 1.0);
+            }
+            self.detector.predict_f32(&clamped_chunk)
         };
 
         let cal_threshold = (self.threshold + 0.15).min(0.99);
-        let is_active = score >= cal_threshold;
-
-        log::trace!(
-            "[VAD/Earshot] score: {:.4}, cal_threshold: {:.4}, is_active: {}",
-            score,
-            cal_threshold,
-            is_active
-        );
-
-        is_active
+        score >= cal_threshold
     }
 }
 

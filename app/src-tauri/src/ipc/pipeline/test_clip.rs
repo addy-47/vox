@@ -1,3 +1,4 @@
+use crate::core::error::VoxIpcError;
 use crate::core::events::VoxEvent;
 use crate::core::state::{AppState, InteractionOwner};
 use crate::services::stt::SttCommand;
@@ -29,16 +30,17 @@ fn resample_to_16k(samples: &[f32], source_rate: u32) -> Cow<'_, [f32]> {
 }
 
 /// Decodes a WAV file to mono f32 samples resampled to 16kHz.
-fn decode_wav_to_mono_f32(path: &std::path::Path) -> Result<Vec<f32>, String> {
-    let mut reader = hound::WavReader::open(path)
-        .map_err(|e| format!("Failed to open WAV '{}': {}", path.display(), e))?;
+fn decode_wav_to_mono_f32(path: &std::path::Path) -> Result<Vec<f32>, VoxIpcError> {
+    let mut reader = hound::WavReader::open(path).map_err(|e| {
+        VoxIpcError::InvalidArgument(format!("Failed to open WAV '{}': {}", path.display(), e))
+    })?;
     let spec = reader.spec();
 
     if spec.sample_rate == 0 {
-        return Err(format!(
+        return Err(VoxIpcError::InvalidArgument(format!(
             "Invalid WAV '{}': sample rate cannot be 0",
             path.display()
-        ));
+        )));
     }
 
     let samples: Vec<f32> = match spec.sample_format {
@@ -67,9 +69,11 @@ fn decode_wav_to_mono_f32(path: &std::path::Path) -> Result<Vec<f32>, String> {
 }
 
 /// Resolves the filesystem path for a designated QA test clip.
-fn resolve_clip_path(clip_id: &str) -> Result<std::path::PathBuf, String> {
+fn resolve_clip_path(clip_id: &str) -> Result<std::path::PathBuf, VoxIpcError> {
     if clip_id.contains('/') || clip_id.contains('\\') || clip_id.contains("..") {
-        return Err("Invalid clip ID: directory traversal not permitted".into());
+        return Err(VoxIpcError::InvalidArgument(
+            "Invalid clip ID: directory traversal not permitted".into(),
+        ));
     }
 
     let filename = if clip_id.ends_with(".wav") {
@@ -98,7 +102,10 @@ fn resolve_clip_path(clip_id: &str) -> Result<std::path::PathBuf, String> {
         }
     }
 
-    Err(format!("Clip '{}' not found in test_clips paths", filename))
+    Err(VoxIpcError::NotFound(format!(
+        "Clip '{}' not found in test_clips paths",
+        filename
+    )))
 }
 
 /// Injects a pre-recorded audio clip directly into the STT engine for automated testing.
@@ -107,7 +114,7 @@ pub async fn test_clip(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
     clip_id: String,
-) -> Result<(), String> {
+) -> Result<(), VoxIpcError> {
     let clip_path = resolve_clip_path(&clip_id)?;
     let audio = decode_wav_to_mono_f32(&clip_path)?;
 
@@ -115,7 +122,7 @@ pub async fn test_clip(
         state
             .owner
             .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
-        return Err(e);
+        return Err(VoxIpcError::Engine(e));
     }
 
     state
@@ -129,7 +136,9 @@ pub async fn test_clip(
             state
                 .owner
                 .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
-            return Err("Engine failed to start after launch".to_string());
+            return Err(VoxIpcError::Engine(
+                "Engine failed to start after launch".to_string(),
+            ));
         }
     };
 
@@ -142,7 +151,7 @@ pub async fn test_clip(
         state
             .owner
             .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
-        return Err(format!("STT channel closed: {}", e));
+        return Err(VoxIpcError::Engine(format!("STT channel closed: {}", e)));
     }
 
     log::info!("[TestClip] Injected turn_id={} into pipeline", turn_id);
@@ -151,7 +160,7 @@ pub async fn test_clip(
 
 /// Cancels a running test clip and resets the speech recognition stream.
 #[tauri::command]
-pub async fn test_clip_cancel(state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn test_clip_cancel(state: State<'_, Arc<AppState>>) -> Result<(), VoxIpcError> {
     state.pipeline.renew_turn_token();
     state
         .owner

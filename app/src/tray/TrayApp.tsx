@@ -31,12 +31,10 @@ interface SystemStats {
 export const TrayApp: React.FC = () => {
   const { settings, isLoading } = useSettings();
   
-  // ─── History System (Backend Backed) ──────────────────────────────────────
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [viewingHistory, setViewingHistory] = useState(false);
 
-  // ─── Interaction & Text State ──────────────────────────────────────────────
   const { 
     interactionId, committedText, partialText, 
     startNewInteraction, endSpeechSegment, updatePartial, commitFinal, reset 
@@ -57,7 +55,6 @@ export const TrayApp: React.FC = () => {
 
   const displayText = useStreamingRenderer(currentTargetText);
   
-  // ─── Visibility & UX State ────────────────────────────────────────────────
   const { 
     state: visibilityState, setIsHovered, show, startFade, cancelFade, hideImmediately 
   } = useVisibility();
@@ -66,7 +63,6 @@ export const TrayApp: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState<SystemStats | null>(null);
 
-  // ─── PTT & Status State ──────────────────────────────────────────────────────
   const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
 
   // Sync React state to OS Window and Backend state
@@ -94,7 +90,6 @@ export const TrayApp: React.FC = () => {
     syncVisibility();
   }, [visibilityState, reset]);
 
-  // ─── Stable Refs for Listeners ───────────────────────────────────────────
   const historyLimit = settings?.history?.tray_history_limit || 5;
 
   const stateRef = useRef({
@@ -142,7 +137,6 @@ export const TrayApp: React.FC = () => {
   }, [pttStatus, visibilityState, interactionId, interactionState, history, historyLimit, 
       liveTargetText, startNewInteraction, updatePartial, commitFinal, endSpeechSegment, show, startFade, cancelFade, hideImmediately, reset]);
 
-  // ─── Actions ───────────────────────────────────────────────────────────────
   const copyToClipboard = async () => {
     const textToCopy = currentTargetText;
     if (!textToCopy) return;
@@ -198,7 +192,6 @@ export const TrayApp: React.FC = () => {
     }
   };
 
-  // ─── IPC Event Listeners ───────────────────────────────────────────────────
   useEffect(() => {
     let active = true;
     const localUnlisteners: (() => void)[] = [];

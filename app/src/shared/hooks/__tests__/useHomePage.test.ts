@@ -2,9 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
-// ---------------------------------------------------------------------------
 // Mocked pipeline service primitives (the IPC command contract under test).
-// ---------------------------------------------------------------------------
 const pipelineMocks = vi.hoisted(() => ({
   startSession: vi.fn().mockResolvedValue(undefined),
   endSession: vi.fn().mockResolvedValue(undefined),
@@ -36,10 +34,8 @@ vi.mock("@/services/pipelineService", () => ({
   getRuntimeSnapshot: pipelineMocks.getRuntimeSnapshot,
 }));
 
-// ---------------------------------------------------------------------------
 // Mocked collaborating services so the hook can mount under jsdom without
 // touching real Tauri runtime state.
-// ---------------------------------------------------------------------------
 const settingsState = vi.hoisted(() => ({
   value: { interaction: { mode: "passive", pipeline_mode: "modular" } },
 }));
@@ -70,9 +66,7 @@ vi.mock("@tauri-apps/api/window", () => ({
   })),
 }));
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 const flush = async () => {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -106,9 +100,7 @@ const mountHook = () => {
   return wrapper;
 };
 
-// ---------------------------------------------------------------------------
 // Test suite
-// ---------------------------------------------------------------------------
 describe("useHomePage voice pipeline lifecycle", () => {
   describe("Engage (engage / handleEngage)", () => {
     it("invokes startSession() unconditionally regardless of pipeline mode", async () => {

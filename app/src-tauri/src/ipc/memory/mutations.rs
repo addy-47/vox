@@ -1,3 +1,4 @@
+use crate::core::error::VoxIpcError;
 use crate::core::state::AppState;
 use crate::persistence::db::VoxDb;
 use crate::persistence::encode_f32_blob;
@@ -25,29 +26,31 @@ pub enum ManageFactResult {
 pub async fn manage_memory_fact(
     state: State<'_, std::sync::Arc<AppState>>,
     payload: ManageFactPayload,
-) -> Result<ManageFactResult, String> {
+) -> Result<ManageFactResult, VoxIpcError> {
     match payload.action.to_lowercase().as_str() {
         "edit_in_place" | "edit" => edit_fact_in_place_internal(&state, payload).await,
         "supersede" | "user_edit" => supersede_fact_internal(&state, payload).await,
         "reassign" => reassign_fact_internal(&state, payload).await,
         "delete" | "soft_delete" => delete_fact_internal(&state, payload).await,
-        _ => Err(format!(
+        _ => Err(VoxIpcError::InvalidArgument(format!(
             "Unknown manage_memory_fact action: {}",
             payload.action
-        )),
+        ))),
     }
 }
 
 async fn edit_fact_in_place_internal(
     state: &State<'_, std::sync::Arc<AppState>>,
     payload: ManageFactPayload,
-) -> Result<ManageFactResult, String> {
-    let new_content = payload
-        .new_content
-        .ok_or("new_content required for edit action")?;
+) -> Result<ManageFactResult, VoxIpcError> {
+    let new_content = payload.new_content.ok_or_else(|| {
+        VoxIpcError::InvalidArgument("new_content required for edit action".to_string())
+    })?;
     let trimmed = new_content.trim();
     if trimmed.is_empty() {
-        return Err("Fact content cannot be empty".to_string());
+        return Err(VoxIpcError::InvalidArgument(
+            "Fact content cannot be empty".to_string(),
+        ));
     }
 
     let memory_enabled = state
@@ -56,24 +59,26 @@ async fn edit_fact_in_place_internal(
         .map(|s| s.memory.pipeline_processing_enabled || s.memory.context_retrieval_enabled)
         .unwrap_or(false);
     if !memory_enabled {
-        return Err("Memory subsystem is disabled".to_string());
+        return Err(VoxIpcError::InvalidState(
+            "Memory subsystem is disabled".to_string(),
+        ));
     }
 
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
+        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     let trimmed_clone = trimmed.to_string();
     let embedding = tokio::task::spawn_blocking(move || {
         crate::services::memory::ensure_embedder_loaded(true)
-            .map_err(|e| format!("Embedder loading failed: {}", e))?;
+            .map_err(|e| VoxIpcError::Engine(format!("Embedder loading failed: {}", e)))?;
         crate::services::memory::generate_embedding(&trimmed_clone)
-            .map_err(|e| format!("Embedding generation failed: {}", e))?
-            .ok_or_else(|| "Failed to generate embedding vector".to_string())
+            .map_err(|e| VoxIpcError::Engine(format!("Embedding generation failed: {}", e)))?
+            .ok_or_else(|| VoxIpcError::Engine("Failed to generate embedding vector".to_string()))
     })
     .await
-    .map_err(|e| format!("Task panicked: {}", e))??;
+    .map_err(|e| VoxIpcError::Internal(format!("Task panicked: {}", e)))??;
 
     let blob_bytes = encode_f32_blob(&embedding);
 
@@ -83,14 +88,16 @@ async fn edit_fact_in_place_internal(
             (payload.fact_id.clone(),),
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     let row = rows
         .next()
         .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Fact not found: {}", payload.fact_id))?;
-    let collection: String = row.get(0).map_err(|e| e.to_string())?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+        .ok_or_else(|| VoxIpcError::NotFound(format!("Fact not found: {}", payload.fact_id)))?;
+    let collection: String = row
+        .get(0)
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     VoxDb::with_transaction(&conn, async {
         conn.execute(
@@ -110,7 +117,8 @@ async fn edit_fact_in_place_internal(
 
         Ok(())
     })
-    .await?;
+    .await
+    .map_err(VoxIpcError::Database)?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(ManageFactResult::Done)
@@ -119,35 +127,33 @@ async fn edit_fact_in_place_internal(
 async fn supersede_fact_internal(
     state: &State<'_, std::sync::Arc<AppState>>,
     payload: ManageFactPayload,
-) -> Result<ManageFactResult, String> {
-    let new_content = payload
-        .new_content
-        .ok_or("new_content required for supersede action")?;
+) -> Result<ManageFactResult, VoxIpcError> {
+    let new_content = payload.new_content.ok_or_else(|| {
+        VoxIpcError::InvalidArgument("new_content required for supersede action".to_string())
+    })?;
     let collection = payload
         .new_collection
         .unwrap_or_else(|| "Identity".to_string());
     let trimmed = new_content.trim();
     if trimmed.is_empty() {
-        return Err("Fact content cannot be empty".to_string());
+        return Err(VoxIpcError::InvalidArgument(
+            "Fact content cannot be empty".to_string(),
+        ));
     }
 
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
+        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    let new_id = VoxDb::with_transaction(&conn, async {
-        let res = crate::persistence::mutations::supersede_user_fact(
-            &conn,
-            &payload.fact_id,
-            trimmed,
-            &collection,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-        Ok(res)
-    })
-    .await?;
+    let new_id = crate::persistence::mutations::supersede_user_fact(
+        &conn,
+        &payload.fact_id,
+        trimmed,
+        &collection,
+    )
+    .await
+    .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     log::info!(
@@ -161,14 +167,14 @@ async fn supersede_fact_internal(
 async fn reassign_fact_internal(
     state: &State<'_, std::sync::Arc<AppState>>,
     payload: ManageFactPayload,
-) -> Result<ManageFactResult, String> {
-    let new_collection = payload
-        .new_collection
-        .ok_or("new_collection required for reassign action")?;
+) -> Result<ManageFactResult, VoxIpcError> {
+    let new_collection = payload.new_collection.ok_or_else(|| {
+        VoxIpcError::InvalidArgument("new_collection required for reassign action".to_string())
+    })?;
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
+        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     let mut rows = conn
         .query(
@@ -176,16 +182,20 @@ async fn reassign_fact_internal(
             (payload.fact_id.clone(),),
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     let row = rows
         .next()
         .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Fact not found: {}", payload.fact_id))?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+        .ok_or_else(|| VoxIpcError::NotFound(format!("Fact not found: {}", payload.fact_id)))?;
 
-    let fact_text: String = row.get(0).map_err(|e| e.to_string())?;
-    let source_str: String = row.get(1).map_err(|e| e.to_string())?;
+    let fact_text: String = row
+        .get(0)
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let source_str: String = row
+        .get(1)
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
     let session_id: String = row.get(2).unwrap_or_default();
 
     let now = std::time::SystemTime::now()
@@ -199,7 +209,7 @@ async fn reassign_fact_internal(
         (fact_text, new_collection, source_str, session_id, now),
     )
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(ManageFactResult::Done)
@@ -208,11 +218,11 @@ async fn reassign_fact_internal(
 async fn delete_fact_internal(
     state: &State<'_, std::sync::Arc<AppState>>,
     payload: ManageFactPayload,
-) -> Result<ManageFactResult, String> {
+) -> Result<ManageFactResult, VoxIpcError> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
+        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -244,7 +254,8 @@ async fn delete_fact_internal(
 
         Ok(())
     })
-    .await?;
+    .await
+    .map_err(VoxIpcError::Database)?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(ManageFactResult::Done)

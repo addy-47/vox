@@ -1,3 +1,4 @@
+use crate::core::error::VoxIpcError;
 use crate::core::events::{emit_ipc, IpcEvent};
 use crate::core::settings::{
     get_setting_reload_policy, InteractionMode, SettingReloadPolicy, VoxSettings,
@@ -6,13 +7,9 @@ use crate::core::state::AppState;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
-// ─── Debounce constant ────────────────────────────────────────────────────────
-
 /// Disk write is deferred by this duration after the last setting change.
 /// Prevents thrashing disk on rapid slider updates (dozens of changes/sec).
 const SETTINGS_SAVE_DEBOUNCE_MS: u64 = 1500;
-
-// ─── Response Types ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SettingUpdateResult {
@@ -21,10 +18,8 @@ pub struct SettingUpdateResult {
     pub message: String,
 }
 
-// ─── Helper Functions ─────────────────────────────────────────────────────────
-
-async fn handle_dictation_side_effects(
-    app: &AppHandle,
+async fn handle_dictation_side_effects<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     state: &AppState,
     key: &str,
     value: &serde_json::Value,
@@ -38,9 +33,6 @@ async fn handle_dictation_side_effects(
             .read()
             .map(|s| s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray)
             .unwrap_or(false);
-        state
-            .is_dictation_enabled
-            .store(enabled, std::sync::atomic::Ordering::Relaxed);
         let is_clickable = enabled && is_tray_mode;
         let menu_item_lock = state.hud_menu_item.lock();
         if let Some(ref live_i) = *menu_item_lock {
@@ -120,8 +112,8 @@ async fn handle_dictation_side_effects(
     }
 }
 
-async fn handle_interaction_side_effects(
-    app: &AppHandle,
+async fn handle_interaction_side_effects<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     state: &AppState,
     key: &str,
     value: &serde_json::Value,
@@ -173,8 +165,8 @@ async fn handle_interaction_side_effects(
     }
 }
 
-async fn handle_setting_side_effects(
-    app: &AppHandle,
+async fn handle_setting_side_effects<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     state: &AppState,
     domain: &str,
     key: &str,
@@ -212,22 +204,23 @@ async fn handle_setting_side_effects(
 }
 
 /// Generic settings update command.
-///
-/// Applies the new value in-memory immediately, returns the reload policy,
-/// and schedules a debounced disk write (1.5s after last change).
 #[tauri::command]
-pub async fn update_setting(
+pub async fn update_setting<R: tauri::Runtime>(
     domain: String,
     key: String,
     value: serde_json::Value,
-    app: AppHandle,
-) -> Result<SettingUpdateResult, String> {
+    app: AppHandle<R>,
+) -> Result<SettingUpdateResult, VoxIpcError> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let policy = get_setting_reload_policy(&domain, &key);
 
     let applied = {
-        let mut settings = state.settings.write().map_err(|e| e.to_string())?;
-        apply_setting_mutation(&mut settings, &domain, &key, &value)?
+        let mut settings = state
+            .settings
+            .write()
+            .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
+        apply_setting_mutation(&mut settings, &domain, &key, &value)
+            .map_err(VoxIpcError::InvalidArgument)?
     };
 
     if applied {
@@ -271,11 +264,16 @@ pub async fn update_setting(
 
 /// Resets all settings to system defaults.
 #[tauri::command]
-pub async fn reset_settings(app: AppHandle) -> Result<VoxSettings, String> {
+pub async fn reset_settings<R: tauri::Runtime>(
+    app: AppHandle<R>,
+) -> Result<VoxSettings, VoxIpcError> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let defaults = VoxSettings::default();
     {
-        let mut settings = state.settings.write().map_err(|e| e.to_string())?;
+        let mut settings = state
+            .settings
+            .write()
+            .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
         *settings = defaults.clone();
     }
 
@@ -290,8 +288,6 @@ pub async fn reset_settings(app: AppHandle) -> Result<VoxSettings, String> {
 
     Ok(defaults)
 }
-
-// ─── Internal Helpers ─────────────────────────────────────────────────────────
 
 fn apply_appearance_mutation(
     settings: &mut VoxSettings,
@@ -891,8 +887,8 @@ pub(crate) fn apply_setting_mutation(
 
 /// Dispatches a hot-update command to the appropriate worker thread.
 /// Called only for `WorkerCommand` policy settings.
-async fn dispatch_worker_command(
-    app: &AppHandle,
+async fn dispatch_worker_command<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     domain: &str,
     key: &str,
     value: &serde_json::Value,

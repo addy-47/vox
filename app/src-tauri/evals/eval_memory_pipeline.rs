@@ -459,9 +459,7 @@ async fn main() -> Result<()> {
         processed_count, total_duration
     );
 
-    // =========================================================================
     // Phase A: Post-Pipeline Sub-Floor Candidate Audit Pass (0.25 <= sim < threshold)
-    // =========================================================================
     println!("\n[Eval 2 Audit Pass] Scanning sub-floor candidates (0.25 <= sim < threshold)...");
     let mut eval_rows = conn
         .query(
@@ -585,9 +583,7 @@ async fn main() -> Result<()> {
         total_subfloor_candidates_found
     );
 
-    // =========================================================================
     // Stage Observability & Metrics Summary
-    // =========================================================================
     let mut metrics_rows = conn
         .query(
             "SELECT stage_name, batch_seq, items_claimed, error_count, duration_ms 
@@ -627,9 +623,7 @@ async fn main() -> Result<()> {
         .timeout(std::time::Duration::from_secs(EVAL_JUDGE_TIMEOUT_SECS))
         .build()?;
 
-    // =========================================================================
     // Phase B: Report A — Stage 1 & Stage 2 Deduplication Judge Report
-    // =========================================================================
     println!("\n[Report A] Generating Stage 1 & Stage 2 Deduplication Audit Report...");
     let mut dedup_rows = conn
         .query(
@@ -678,9 +672,7 @@ async fn main() -> Result<()> {
         Err(e) => println!("  [Report A Warning] Failed: {}", e),
     }
 
-    // =========================================================================
     // Phase C: Report B — Per-Batch Stage 3 Evaluation Judge Reports
-    // =========================================================================
     println!("\n[Report B] Generating Per-Batch Stage 3 Judge Reports...");
     let mut eval_queue_rows = conn
         .query(
@@ -809,9 +801,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    // =========================================================================
     // Phase D: Master Report C — LLM Synthesis across Stages 1-3 & Batch Reports
-    // =========================================================================
     println!("\n[Report C] Initiating Master Synthesis LLM Judge Call across Stages 1-3...");
 
     let dedup_report_text = std::fs::read_to_string(&report_a_path).unwrap_or_default();

@@ -29,7 +29,7 @@ Architecture capabilities are gated by hardware tier. Vox must dynamically degra
 - **Single responsibility:** 1 responsibility per file. If a file cannot be described in 1 sentence, split it.
 - **File size ceiling:** Flag and justify files exceeding ~600 lines.
 - **`mod.rs` & `lib.rs`:** `mod.rs` is for module declarations, re-exports, and **subsystem-level constants**. Zero business logic. `lib.rs` is for module declarations + Tauri app setup only. Zero business logic.
-- **Visibility:** Use `pub(crate)` over `pub` unless crossing the crate boundary (IPC handlers or integration tests).
+- **Visibility:** Use `pub(crate)` over `pub` unless crossing the crate boundary. Use `pub` only for Tauri IPC command handlers and types that must be accessible from the integration test crate (`tests/`).
 
 ### 2.1 Standard Rust File Grammar Order (CRITICAL)
 
@@ -69,7 +69,7 @@ Never scatter or bury magic numbers or configuration values across internal acto
 ## 4. Function Standards & Code Cleanliness
 
 - **Function line cap (soft):** No function exceeds 50 lines without documented justification.
-- **Docstrings:** Exactly one `///` doc comment per function that states what it does, what it takes, and what it returns. Zero per-line comments inside function bodies. Runtime traces belong in `log::info!` / `log::warn!`.
+- **Docstrings:** Exactly one `///` doc comment per function that states what it does, what it takes, and what it returns. No narrative step-comments inside function bodies; runtime traces belong in `log::info!` / `log::warn!`. Exception: `// SAFETY:` blocks (required for `unsafe`) and `// INVARIANT:` comments explaining non-obvious preconditions are always permitted.
 - **No step-comment sequences:** If a function body needs numbered step comments (`// 1. do X`, `// 2. do Y`), each step must become a named private helper function.
 - **No toggle functions:** A function named `engage()` must only engage. `if condition { engage } else { disengage }` in one function body is banned. Use discrete named functions.
 - **Struct bundling for parameter lists (>5 arguments):** Any function or constructor taking more than 5 arguments must group related parameters into a dedicated typed config or handles struct (e.g. `VadActorConfig`, `VadActorHandles`, `PlaybackTelemetryHandles`).
@@ -127,11 +127,11 @@ Never scatter or bury magic numbers or configuration values across internal acto
 
 ### 7.3 State Transitions are the Sole Lifecycle Event Pump
 - `transition(...)` broadcasts `IpcEvent::StateChanged` (`"state_changed"`).
-- Submodules must **NEVER** manually emit ad-hoc custom lifecycle events (`speech_start`, `speech_end`, `playback_started`, `playback_finished`, `session_started`, `session_ended`, `ptt_status`).
+- Submodules must **NEVER** manually emit ad-hoc custom lifecycle events — for example: `speech_start`, `speech_end`, `playback_started`, `playback_finished`, `session_started`, `session_ended`, `ptt_status`. This list is illustrative, not exhaustive.
 - All cross-boundary IPC emissions must be dispatched strictly through `emit_ipc` or `emit_ipc_to` using canonical `IpcEvent` enum variants.
 
 ### 7.4 Centralized Monotonic Turn Generation
-- Turn IDs must be monotonically allocated strictly at the turn boundary via `AppState::next_turn_id()`. Never fragment `fetch_add` across actors, reset to `0`, or pass dummy turn IDs.
+- Turn IDs must be monotonically allocated strictly at the turn boundary via `PipelineAtomics::next_turn()`. Never call raw `fetch_add` on `turn_id` inside actors or subsystems; never reset to `0` or pass dummy turn IDs. Subsystems receive a `(turn_id: u32, token: CancellationToken)` pair at the turn boundary — they never own or advance the counter.
 
 ### 7.5 Event Contracts
 Events are registry-owned and must have exactly one canonical definition. Internal pipeline events belong in `core/events.rs` (`VoxEvent`); IPC events belong in the typed IPC event registry (`IpcEvent`); telemetry and other subsystem buses use their own dedicated enums (`TelemetryEvent`, `PersistenceEvent`, `MemoryWorkerEvent`). Never introduce raw event-name strings, ad-hoc event variants, or undocumented payloads at call sites. Every new event requires a registry entry, a strongly typed payload, an explicit producer, an explicit consumer or documented reason for being producer-only, and corresponding contract tests. If an event is not present in the canonical registry, it does not exist. Do not duplicate or rename an existing event to represent the same state; extend the existing contract instead. Commands are not events and must remain in their owning actor/service command enum.

@@ -6,8 +6,6 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use tokio::sync::Mutex;
 
-// ─── 1. Lifecycle Enums (SSOT) ───────────────────────────────────────────────
-
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum InteractionOwner {
     Dictation = 0,
@@ -94,8 +92,6 @@ impl From<DictationState> for u32 {
     }
 }
 
-// ─── 2. Engine Handle Bag ────────────────────────────────────────────────────
-
 pub struct VoxEngine {
     pub audio_stream: AudioStream,
     pub stt_tx: std::sync::mpsc::Sender<SttCommand>,
@@ -111,8 +107,6 @@ pub struct VoxEngine {
     pub tts_handle: Option<std::thread::JoinHandle<()>>,
     pub orchestrator_handle: Option<std::thread::JoinHandle<()>>,
 }
-
-// ─── 3. Pipeline Atomics (SSOT turn + state + cancellation) ─────────────────
 
 pub struct PipelineAtomics {
     pub cancel_flag: Arc<AtomicBool>,
@@ -170,33 +164,46 @@ impl PipelineAtomics {
 
     /// Returns the current interaction state derived from the canonical atomic state.
     pub fn state(&self) -> InteractionState {
-        InteractionState::from(self.current_state_atomic.load(Ordering::Relaxed))
+        InteractionState::from(self.current_state_atomic.load(Ordering::SeqCst))
     }
 
     /// Updates internal interaction state atomics and notifies all observers.
     pub fn set_state(&self, new_state: InteractionState) {
         self.current_state_atomic
-            .store(new_state as u32, Ordering::Relaxed);
+            .store(new_state as u32, Ordering::SeqCst);
         if let Err(e) = self.state_tx.send(new_state) {
             log::warn!(
-                "[Core::State] Failed to broadcast state to observers: {}",
+                "[Pipeline::State] Failed to broadcast state to observers: {}",
                 e
             );
         }
     }
 
+    /// Subscribes to the broadcast interaction state channel for multi-consumer fanout.
+    pub fn subscribe_state(&self) -> tokio::sync::watch::Receiver<InteractionState> {
+        self.state_tx.subscribe()
+    }
+
     /// Returns the current dictation state derived from the canonical atomic state.
     pub fn dictation_state(&self) -> DictationState {
-        DictationState::from(self.dictation_state_atomic.load(Ordering::Relaxed))
+        DictationState::from(self.dictation_state_atomic.load(Ordering::SeqCst))
     }
 
     /// Updates internal dictation state atomics and notifies all observers.
     pub fn set_dictation_state(&self, new_state: DictationState) {
         self.dictation_state_atomic
-            .store(new_state as u32, Ordering::Relaxed);
+            .store(new_state as u32, Ordering::SeqCst);
         if let Err(e) = self.dictation_state_tx.send(new_state) {
-            log::warn!("[Core::State] Failed to broadcast dictation state: {}", e);
+            log::warn!(
+                "[Pipeline::State] Failed to broadcast dictation state: {}",
+                e
+            );
         }
+    }
+
+    /// Subscribes to the broadcast dictation state channel for multi-consumer fanout.
+    pub fn subscribe_dictation_state(&self) -> tokio::sync::watch::Receiver<DictationState> {
+        self.dictation_state_tx.subscribe()
     }
 
     /// Returns a clone of the current turn's cancellation token.
@@ -237,8 +244,6 @@ impl PipelineAtomics {
     }
 }
 
-// ─── 4. Memory App State ─────────────────────────────────────────────────────
-
 pub struct MemoryAppState {
     pub graph_version: Arc<AtomicU64>,
     pub user_paused_ingestion: Arc<AtomicBool>,
@@ -259,8 +264,6 @@ impl MemoryAppState {
     }
 }
 
-// ─── 5. AppState (top-level handle bag) ──────────────────────────────────────
-
 pub struct AppState {
     pub engine: Mutex<Option<VoxEngine>>,
     pub realtime_engine: Mutex<Option<crate::services::realtime::RealtimeActor>>,
@@ -275,7 +278,6 @@ pub struct AppState {
     pub telemetry: Arc<TelemetryState>,
     pub dictation_last_transcript: parking_lot::Mutex<Option<String>>,
     pub conversation_id: Arc<AtomicU64>,
-    pub is_dictation_enabled: Arc<AtomicBool>,
     pub runtime_status: Arc<std::sync::atomic::AtomicU32>,
     pub main_window_destroyed: Arc<AtomicBool>,
     pub persist_tx: parking_lot::Mutex<
@@ -294,8 +296,6 @@ pub struct AppState {
     pub conversation_manager: Arc<parking_lot::Mutex<crate::services::memory::ConversationManager>>,
     pub llm_provider: Arc<parking_lot::RwLock<Option<Arc<dyn crate::services::llm::LlmProvider>>>>,
 }
-
-// ─── 6. Telemetry State (kept in state.rs — AppState owns the handles; MonitoringState owns history) ─
 
 /// Telemetry handles and health atomics bundled for AppState and monitoring workers.
 #[derive(Clone)]
@@ -333,7 +333,6 @@ impl AppState {
         telemetry: Arc<TelemetryState>,
     ) -> Self {
         let settings = VoxSettings::load();
-        let dictation_enabled = settings.dictation.enabled;
         telemetry
             .is_private_mode
             .store(settings.history.private_mode, Ordering::Relaxed);
@@ -357,7 +356,6 @@ impl AppState {
             telemetry: Arc::clone(&telemetry),
             dictation_last_transcript: parking_lot::Mutex::new(None),
             conversation_id: Arc::new(AtomicU64::new(0)),
-            is_dictation_enabled: Arc::new(AtomicBool::new(dictation_enabled)),
             runtime_status: Arc::new(AtomicU32::new(RuntimeStatus::Initializing as u32)),
             main_window_destroyed: Arc::new(AtomicBool::new(false)),
             persist_tx: parking_lot::Mutex::new(None),

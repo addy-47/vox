@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { getRuntimeSnapshot, type RuntimeSnapshot } from "@/services/pipelineService";
 
-// ─── Types ────────────────────────────────────────────────────────────────
 
 export type { RuntimeSnapshot };
 
@@ -13,7 +12,6 @@ interface VoxFootprint {
 
 const POLL_INTERVAL_MS = 2000;
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
 
 /**
  * useVoxFootprint

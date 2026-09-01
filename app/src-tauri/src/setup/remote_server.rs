@@ -13,7 +13,9 @@ impl Drop for RemoteSetupGuard {
     }
 }
 
-pub fn resolve_setup_script(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+pub fn resolve_setup_script<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<std::path::PathBuf, String> {
     let resource_path = app
         .path()
         .resource_dir()
@@ -60,8 +62,8 @@ pub fn parse_setup_progress(line: &str) -> (SetupStep, f32) {
     }
 }
 
-pub async fn run_remote_ssh_task(
-    app: tauri::AppHandle,
+pub async fn run_remote_ssh_task<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     script_path: std::path::PathBuf,
     connection_string: String,
     ssh_port: Option<u16>,
@@ -99,7 +101,7 @@ pub async fn run_remote_ssh_task(
         Err(e) => {
             let err_msg = format!("Failed to spawn ssh command: {}", e);
             log::error!("{}", err_msg);
-            let _ = emit_ipc(
+            if let Err(emit_err) = emit_ipc(
                 &app,
                 IpcEvent::ModelProgress(ModelSetupStatus {
                     model_id: "chatterbox_remote_server".to_string(),
@@ -109,7 +111,12 @@ pub async fn run_remote_ssh_task(
                     total_bytes: 100,
                     error: Some(err_msg),
                 }),
-            );
+            ) {
+                log::warn!(
+                    "[RemoteServer] Failed to emit ModelProgress failure: {}",
+                    emit_err
+                );
+            }
             return;
         }
     };
@@ -136,9 +143,12 @@ pub async fn run_remote_ssh_task(
 
     if let Some(mut stdin) = child.stdin.take() {
         let app_clone = app.clone();
-        tokio::spawn(async move {
+        tokio::task::spawn(async move {
             if let Err(e) = stdin.write_all(&script_content).await {
-                log::error!("[SetupRemote] Failed to write script to stdin: {}", e);
+                log::error!(
+                    "[SetupRemote] Failed to write script content into stdin: {}",
+                    e
+                );
                 let _ = emit_ipc(
                     &app_clone,
                     IpcEvent::ModelProgress(ModelSetupStatus {
@@ -163,7 +173,7 @@ pub async fn run_remote_ssh_task(
                 while let Ok(Some(line)) = reader.next_line().await {
                     log::info!("[SetupRemote:STDOUT] {}", line);
                     let (step, progress) = parse_setup_progress(&line);
-                    let _ = emit_ipc(
+                    if let Err(e) = emit_ipc(
                         &app_clone,
                         IpcEvent::ModelProgress(ModelSetupStatus {
                             model_id: "chatterbox_remote_server".to_string(),
@@ -173,7 +183,12 @@ pub async fn run_remote_ssh_task(
                             total_bytes: 100,
                             error: None,
                         }),
-                    );
+                    ) {
+                        log::warn!(
+                            "[SetupRemote] Failed to emit ModelProgress on stdout: {}",
+                            e
+                        );
+                    }
                 }
             }
         }
@@ -188,7 +203,7 @@ pub async fn run_remote_ssh_task(
                 while let Ok(Some(line)) = reader.next_line().await {
                     log::warn!("[SetupRemote:STDERR] {}", line);
                     let (step, progress) = parse_setup_progress(&line);
-                    let _ = emit_ipc(
+                    if let Err(e) = emit_ipc(
                         &app_clone,
                         IpcEvent::ModelProgress(ModelSetupStatus {
                             model_id: "chatterbox_remote_server".to_string(),
@@ -198,7 +213,12 @@ pub async fn run_remote_ssh_task(
                             total_bytes: 100,
                             error: None,
                         }),
-                    );
+                    ) {
+                        log::warn!(
+                            "[SetupRemote] Failed to emit ModelProgress on stderr: {}",
+                            e
+                        );
+                    }
                 }
             }
         }
@@ -209,7 +229,7 @@ pub async fn run_remote_ssh_task(
     match child.wait().await {
         Ok(status) if status.success() => {
             log::info!("[SetupRemote] Setup completed successfully.");
-            let _ = emit_ipc(
+            if let Err(e) = emit_ipc(
                 &app,
                 IpcEvent::ModelProgress(ModelSetupStatus {
                     model_id: "chatterbox_remote_server".to_string(),
@@ -219,12 +239,14 @@ pub async fn run_remote_ssh_task(
                     total_bytes: 100,
                     error: None,
                 }),
-            );
+            ) {
+                log::warn!("[SetupRemote] Failed to emit ModelProgress success: {}", e);
+            }
         }
         Ok(status) => {
             let err_msg = format!("SSH command exited with code: {:?}", status.code());
             log::error!("[SetupRemote] {}", err_msg);
-            let _ = emit_ipc(
+            if let Err(e) = emit_ipc(
                 &app,
                 IpcEvent::ModelProgress(ModelSetupStatus {
                     model_id: "chatterbox_remote_server".to_string(),
@@ -234,12 +256,14 @@ pub async fn run_remote_ssh_task(
                     total_bytes: 100,
                     error: Some(err_msg),
                 }),
-            );
+            ) {
+                log::warn!("[SetupRemote] Failed to emit ModelProgress error: {}", e);
+            }
         }
         Err(e) => {
             let err_msg = format!("Failed to wait for SSH child: {}", e);
             log::error!("[SetupRemote] {}", err_msg);
-            let _ = emit_ipc(
+            if let Err(emit_err) = emit_ipc(
                 &app,
                 IpcEvent::ModelProgress(ModelSetupStatus {
                     model_id: "chatterbox_remote_server".to_string(),
@@ -249,13 +273,18 @@ pub async fn run_remote_ssh_task(
                     total_bytes: 100,
                     error: Some(err_msg),
                 }),
-            );
+            ) {
+                log::warn!(
+                    "[SetupRemote] Failed to emit ModelProgress error: {}",
+                    emit_err
+                );
+            }
         }
     }
 }
 
-pub fn start_remote_setup(
-    app: tauri::AppHandle,
+pub fn start_remote_setup<R: tauri::Runtime + 'static>(
+    app: tauri::AppHandle<R>,
     connection_string: String,
     ssh_port: Option<u16>,
     identity_key_path: Option<String>,

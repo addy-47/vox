@@ -201,32 +201,48 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
                 .unwrap_or_default()
                 .as_millis() as i64;
 
-            conn.execute(
-                "INSERT OR IGNORE INTO sessions (id, started_at) VALUES (?, ?)",
-                (conversation_id as i64, conversation_id as i64),
-            )
-            .await?;
+            conn.execute("BEGIN IMMEDIATE;", ()).await?;
+            let res: Result<(), crate::core::error::PersistenceError> = async {
+                conn.execute(
+                    "INSERT OR IGNORE INTO sessions (id, started_at) VALUES (?, ?)",
+                    (conversation_id as i64, conversation_id as i64),
+                )
+                .await?;
 
-            conn.execute(
-                "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, stt_latency_ms, ttft_ms, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    conversation_id as i64,
-                    turn_id,
-                    user_text,
-                    assistant_text,
-                    stt_latency_ms as i64,
-                    ttft_ms as i64,
-                    now,
-                ),
-            )
-            .await?;
+                conn.execute(
+                    "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, stt_latency_ms, ttft_ms, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        conversation_id as i64,
+                        turn_id,
+                        user_text,
+                        assistant_text,
+                        stt_latency_ms as i64,
+                        ttft_ms as i64,
+                        now,
+                    ),
+                )
+                .await?;
 
-            conn.execute(
-                "UPDATE sessions SET turn_count = turn_count + 1 WHERE id = ?",
-                (conversation_id as i64,),
-            )
-            .await?;
+                conn.execute(
+                    "UPDATE sessions SET turn_count = turn_count + 1 WHERE id = ?",
+                    (conversation_id as i64,),
+                )
+                .await?;
+
+                Ok(())
+            }
+            .await;
+
+            match res {
+                Ok(_) => {
+                    conn.execute("COMMIT;", ()).await?;
+                }
+                Err(e) => {
+                    let _ = conn.execute("ROLLBACK;", ()).await;
+                    return Err(e.into());
+                }
+            }
 
             log::info!(
                 "[Persistence::Worker] TurnCompleted: session={}, turn={}, stt={:?}ms, ttft={:?}ms",

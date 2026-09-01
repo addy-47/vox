@@ -397,19 +397,19 @@ impl LlmEngine for LlmWorker {
             .map(|m| m.content.as_str())
             .unwrap_or("You are Vox.");
 
-        let mut cache_lock = self.cache_state.lock();
-        let mut system_tokens_len = 0;
-        let mut initial_seq_len = 0;
-        let mut cache_hit = false;
-        let mut last_sample_ith: i32 = 0;
-
-        if let Some(state) = &*cache_lock {
-            if state.system_prompt == system_prompt {
-                system_tokens_len = state.system_tokens_len;
-                initial_seq_len = state.current_seq_tokens_len;
-                cache_hit = true;
+        let (mut system_tokens_len, mut initial_seq_len, cache_hit) = {
+            let cache_lock = self.cache_state.lock();
+            if let Some(state) = &*cache_lock {
+                if state.system_prompt == system_prompt {
+                    (state.system_tokens_len, state.current_seq_tokens_len, true)
+                } else {
+                    (0, 0, false)
+                }
+            } else {
+                (0, 0, false)
             }
-        }
+        };
+        let mut last_sample_ith: i32 = 0;
 
         if cache_hit && initial_seq_len > 0 {
             log::info!(
@@ -430,7 +430,7 @@ impl LlmEngine for LlmWorker {
                         log::info!(
                             "[LLM] Generation cancelled during user prompt tokenization/decode."
                         );
-                        *cache_lock = None;
+                        *self.cache_state.lock() = None;
                         ctx.clear_kv_cache();
                         if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
                             log::warn!(
@@ -485,7 +485,7 @@ impl LlmEngine for LlmWorker {
                 while offset < total {
                     if cancel.is_cancelled() {
                         log::info!("[LLM] Generation cancelled during prefill decode phase.");
-                        *cache_lock = None;
+                        *self.cache_state.lock() = None;
                         ctx.clear_kv_cache();
                         if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
                             log::warn!(
@@ -513,7 +513,7 @@ impl LlmEngine for LlmWorker {
                 initial_seq_len = total;
             }
 
-            *cache_lock = Some(CacheState {
+            *self.cache_state.lock() = Some(CacheState {
                 system_prompt: system_prompt.to_string(),
                 system_tokens_len,
                 current_seq_tokens_len: initial_seq_len,
@@ -557,7 +557,7 @@ impl LlmEngine for LlmWorker {
         loop {
             if cancel.is_cancelled() {
                 log::info!("[LLM] Cancelled at token {} (turn: {})", n_cur, turn_id);
-                *cache_lock = None;
+                *self.cache_state.lock() = None;
                 if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
                     log::warn!("[LLM] Failed to send Cancelled event: {}", e);
                 }
@@ -693,7 +693,7 @@ impl LlmEngine for LlmWorker {
             }
         }
 
-        if let Some(state) = &mut *cache_lock {
+        if let Some(state) = &mut *self.cache_state.lock() {
             state.current_seq_tokens_len = n_cur as usize;
         }
 

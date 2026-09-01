@@ -131,3 +131,59 @@ pub enum DictationError {
     #[error("Dictation engine not ready: {message}")]
     EngineNotReady { message: String },
 }
+
+/// Unified IPC error type serialized across Tauri command boundary.
+#[derive(Error, Debug, serde::Serialize)]
+#[serde(tag = "error_type", content = "message")]
+pub enum VoxIpcError {
+    #[error("Internal error: {0}")]
+    Internal(String),
+
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
+
+    #[error("State error: {0}")]
+    InvalidState(String),
+
+    #[error("Resource not found: {0}")]
+    NotFound(String),
+
+    #[error("Database error: {0}")]
+    Database(String),
+
+    #[error("Model/Audio engine error: {0}")]
+    Engine(String),
+
+    #[error("Network/Remote error: {0}")]
+    Network(String),
+}
+
+impl From<String> for VoxIpcError {
+    fn from(s: String) -> Self {
+        VoxIpcError::Internal(s)
+    }
+}
+
+impl From<&str> for VoxIpcError {
+    fn from(s: &str) -> Self {
+        VoxIpcError::Internal(s.to_string())
+    }
+}
+
+impl From<turso::Error> for VoxIpcError {
+    fn from(e: turso::Error) -> Self {
+        VoxIpcError::Database(e.to_string())
+    }
+}
+
+impl From<std::io::Error> for VoxIpcError {
+    fn from(e: std::io::Error) -> Self {
+        VoxIpcError::Internal(e.to_string())
+    }
+}
+
+impl From<serde_json::Error> for VoxIpcError {
+    fn from(e: serde_json::Error) -> Self {
+        VoxIpcError::InvalidArgument(e.to_string())
+    }
+}

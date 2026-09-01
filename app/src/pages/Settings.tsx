@@ -27,8 +27,6 @@ const InteractionCard = lazy(loadInteraction);
 
 import { SettingsCardSkeleton } from "@/shared/components/settings/SettingsCardSkeleton";
 
-// ─── Domain content map ───────────────────────────────────────────────────────
-
 const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMode?: "full-max" | "full-min" | "small" }) => {
   const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction?.pipeline_mode === "realtime");
   return (
@@ -59,7 +57,6 @@ DomainContent.displayName = "DomainContent";
 import { RadialNode, HubConnectors } from "@/shared/components/settings/RadialHub";
 import { Tooltip } from "@/shared/ui/Tooltip";
 
-// ─── Hub center ───────────────────────────────────────────────────────────────
 
 interface HubCenterProps {
   onClick: () => void;

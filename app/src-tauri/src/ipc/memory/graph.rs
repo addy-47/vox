@@ -1,3 +1,4 @@
+use crate::core::error::VoxIpcError;
 use crate::core::state::AppState;
 use crate::persistence::db::VoxDb;
 use serde::{Deserialize, Serialize};
@@ -64,7 +65,9 @@ pub struct MemoryStats {
 
 /// Retrieve the current monotonic memory graph version.
 #[tauri::command]
-pub async fn get_graph_version(state: State<'_, std::sync::Arc<AppState>>) -> Result<u64, String> {
+pub async fn get_graph_version(
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<u64, VoxIpcError> {
     Ok(state
         .memory
         .graph_version
@@ -126,16 +129,33 @@ async fn fetch_memory_relations(
     conn: &turso::Connection,
     sql: &str,
     params: impl turso::IntoParams,
-) -> Result<Vec<MemoryEdgeTopology>, String> {
-    let mut rel_rows = conn.query(sql, params).await.map_err(|e| e.to_string())?;
+) -> Result<Vec<MemoryEdgeTopology>, VoxIpcError> {
+    let mut rel_rows = conn
+        .query(sql, params)
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
     let mut edges = Vec::new();
-    while let Some(row) = rel_rows.next().await.map_err(|e| e.to_string())? {
+    while let Some(row) = rel_rows
+        .next()
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+    {
         edges.push(MemoryEdgeTopology {
-            id: row.get(0).map_err(|e| e.to_string())?,
-            from_id: row.get(1).map_err(|e| e.to_string())?,
-            to_id: row.get(2).map_err(|e| e.to_string())?,
-            relation: row.get(3).map_err(|e| e.to_string())?,
-            created_at: row.get(4).map_err(|e| e.to_string())?,
+            id: row
+                .get(0)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            from_id: row
+                .get(1)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            to_id: row
+                .get(2)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            relation: row
+                .get(3)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            created_at: row
+                .get(4)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
         });
     }
     Ok(edges)
@@ -146,27 +166,37 @@ async fn fetch_memory_relations(
 pub async fn get_memory_graph_topology(
     state: State<'_, std::sync::Arc<AppState>>,
     filter: Option<MemoryGraphQueryFilter>,
-) -> Result<MemoryGraphPayload, String> {
+) -> Result<MemoryGraphPayload, VoxIpcError> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
+        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     let (query_str, params) = build_topology_query(filter.as_ref());
     let mut rows = conn
         .query(&query_str, params)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     let mut nodes = Vec::new();
-    while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+    {
         let is_sup_val: i64 = row.get(3).unwrap_or(0);
         let fact_val: Option<String> = row.get(4).ok();
         nodes.push(MemoryNodeTopology {
-            id: row.get(0).map_err(|e| e.to_string())?,
-            collection: row.get(1).map_err(|e| e.to_string())?,
+            id: row
+                .get(0)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            collection: row
+                .get(1)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
             is_superseded: is_sup_val != 0,
-            created_at: row.get(2).map_err(|e| e.to_string())?,
+            created_at: row
+                .get(2)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
             fact: fact_val,
         });
     }
@@ -203,11 +233,11 @@ pub async fn get_memory_graph_topology(
 
 /// Retrieve detailed information for a single memory fact by ID.
 #[tauri::command]
-pub async fn get_memory_fact_detail(fact_id: String) -> Result<MemoryFactDetail, String> {
+pub async fn get_memory_fact_detail(fact_id: String) -> Result<MemoryFactDetail, VoxIpcError> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
+        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     let mut fact_rows = conn
         .query(
@@ -215,20 +245,32 @@ pub async fn get_memory_fact_detail(fact_id: String) -> Result<MemoryFactDetail,
             (fact_id.clone(),),
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     let row = fact_rows
         .next()
         .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Memory fact not found: {}", fact_id))?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+        .ok_or_else(|| VoxIpcError::NotFound(format!("Memory fact not found: {}", fact_id)))?;
 
-    let id: String = row.get(0).map_err(|e| e.to_string())?;
-    let collection: String = row.get(1).map_err(|e| e.to_string())?;
-    let fact: String = row.get(2).map_err(|e| e.to_string())?;
-    let source: String = row.get(3).map_err(|e| e.to_string())?;
-    let session_id: String = row.get(4).map_err(|e| e.to_string())?;
-    let created_at: i64 = row.get(5).map_err(|e| e.to_string())?;
+    let id: String = row
+        .get(0)
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let collection: String = row
+        .get(1)
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let fact: String = row
+        .get(2)
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let source: String = row
+        .get(3)
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let session_id: String = row
+        .get(4)
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let created_at: i64 = row
+        .get(5)
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     let is_superseded = {
         let mut s_rows = conn
@@ -237,8 +279,12 @@ pub async fn get_memory_fact_detail(fact_id: String) -> Result<MemoryFactDetail,
                 (id.clone(),),
             )
             .await
-            .map_err(|e| e.to_string())?;
-        s_rows.next().await.map_err(|e| e.to_string())?.is_some()
+            .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+        s_rows
+            .next()
+            .await
+            .map_err(|e| VoxIpcError::Database(e.to_string()))?
+            .is_some()
     };
 
     let incoming_relations = fetch_memory_relations(

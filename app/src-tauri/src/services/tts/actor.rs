@@ -213,6 +213,11 @@ pub fn warm_up_tts(
     let handle = std::thread::Builder::new()
         .name("vox-tts-persistent".to_string())
         .spawn(move || {
+            if let Err(e) =
+                thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Max)
+            {
+                log::warn!("[TTS Actor] Thread priority elevation failed: {:?}", e);
+            }
             spawn_tts_worker(rx, provider, worker_handles);
         })
         .map_err(|e| e.to_string())?;

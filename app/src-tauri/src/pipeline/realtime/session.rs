@@ -49,12 +49,16 @@ pub fn create_realtime_provider(
             assembled_prompt,
             state.pipeline.state_rx.clone(),
             state.pipeline.turn_id.clone(),
+            state.pipeline.turn_token.clone(),
+            state.pipeline.turn_epoch.clone(),
         ))),
         RealtimeProviderKind::DeepgramVoiceAgent => Ok(Box::new(DeepgramVoiceAgentProvider::new(
             settings.realtime.deepgram_voice_agent.clone(),
             assembled_prompt,
             state.pipeline.state_rx.clone(),
             state.pipeline.turn_id.clone(),
+            state.pipeline.turn_token.clone(),
+            state.pipeline.turn_epoch.clone(),
         ))),
         RealtimeProviderKind::OpenAiRealtime => {
             Err("OpenAI Realtime provider is not implemented".to_string())

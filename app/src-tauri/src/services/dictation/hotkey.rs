@@ -11,8 +11,8 @@ pub enum HotkeyAction {
 }
 
 /// Register the global dictation shortcut with press and release listener hooks.
-pub fn register_global_hotkey(
-    app: &AppHandle,
+pub fn register_global_hotkey<R: tauri::Runtime>(
+    app: &AppHandle<R>,
     shortcut_str: &str,
     hotkey_tx: UnboundedSender<HotkeyAction>,
 ) -> Result<(), DictationError> {

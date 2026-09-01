@@ -1,17 +1,9 @@
-//! ============================================================================
-//! benches/common/tts_harness.rs — TTS Production-Seam Benchmark Harness
-//! ============================================================================
-//! Uses the real worker pipeline:
-//!   TtsCommand::Generate -> spawn_tts_worker -> TtsProvider::synthesize_chunk
-//!       -> PlaybackEngine::ingest_chunk (HeapRb, no CPAL hardware)
-//! Audio is captured from the ring buffer and persisted as 24 kHz WAV.
-
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ringbuf::traits::{Consumer, Split};
+use ringbuf::traits::Split;
 use ringbuf::HeapRb;
 
 use vox_lib::core::events::VoxEvent;
@@ -22,6 +14,7 @@ use vox_lib::services::tts::providers::TtsProvider;
 use vox_lib::services::tts::TTS_SAMPLE_RATE;
 
 use super::reporting::{get_process_memory_mb, ClipBenchmarkResult, EngineBenchmarkRun};
+use super::utils::{downsample_48k_to_24k, drain_consumer, write_wav_f32};
 
 /// Text prompt derived from canonical test-clips transcripts (verbatim).
 #[derive(Debug, Clone)]
@@ -45,67 +38,22 @@ pub struct TtsClipResult {
     pub clip_result: ClipBenchmarkResult,
 }
 
-/// Persist mono 24 kHz f32 samples as WAV.
-fn write_wav_f32(path: &Path, samples: &[f32], sample_rate: u32) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create WAV dir {:?}: {}", parent, e))?;
-    }
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate,
-        bits_per_sample: 32,
-        sample_format: hound::SampleFormat::Float,
-    };
-    let mut writer = hound::WavWriter::create(path, spec)
-        .map_err(|e| format!("Failed to create WAV {:?}: {}", path, e))?;
-    for s in samples {
-        writer
-            .write_sample(*s)
-            .map_err(|e| format!("WAV write failed: {}", e))?;
-    }
-    writer
-        .finalize()
-        .map_err(|e| format!("WAV finalize failed: {}", e))?;
-    Ok(())
-}
-
-/// Drain all available samples from a HeapCons without blocking.
-fn drain_consumer(consumer: &mut ringbuf::HeapCons<f32>) -> Vec<f32> {
-    let mut out = Vec::new();
-    while let Some(s) = consumer.try_pop() {
-        out.push(s);
-    }
-    out
-}
-
-/// Benchmark a single TTS provider across prompts, using the production seam.
-///
-/// * `engine_name` – display name
-/// * `model_type` – machine id (supertonic/kokoro/chatterbox)
-/// * `model_path` – path for reporting
-/// * `prompts` – canonical verbatim transcripts
-/// * `make_provider` – factory that may vary voice per prompt (for Kokoro diff voices)
-/// * `wav_output_dir` – if Some, each clip's 24 kHz WAV is persisted
-/// * `base_voice` – used for non-factory path; for kokoro diff voices pass `None` and use factory
-#[allow(clippy::too_many_arguments)]
-pub fn benchmark_tts_provider<F>(
+/// Benchmark a TTS provider across prompts using a **persistent** worker thread
+/// and hot-swappable `SetVoice` (backend now supports `TtsProvider::set_voice`).
+pub fn benchmark_tts_provider(
     engine_name: &str,
     model_type: &str,
     model_path: &str,
     prompts: &[TtsBenchmarkPrompt],
-    mut make_provider: F,
+    provider: Box<dyn TtsProvider>,
     wav_output_dir: Option<&Path>,
     default_voice: i32,
-) -> EngineBenchmarkRun
-where
-    F: FnMut(usize, &TtsBenchmarkPrompt) -> Box<dyn TtsProvider>,
-{
+) -> EngineBenchmarkRun {
     println!("\n================================================================================");
     println!(">>> TTS Benchmark: {} (max quality, 24 kHz)", engine_name);
     println!("================================================================================");
     println!(
-        "Prompts: {} | Default voice: {} | WAV out: {:?}",
+        "Prompts: {} | Default voice: {} | WAV out: {:?} | hot-swap SetVoice",
         prompts.len(),
         default_voice,
         wav_output_dir
@@ -114,12 +62,9 @@ where
     let mem_before = get_process_memory_mb();
     let total_start = Instant::now();
 
-    // We reuse one PlaybackEngine + ring buffer across clips but drain between clips.
-    // PlaybackEngine::from_parts allows headless operation (stream=None).
     let rb = HeapRb::<f32>::new(PLAYBACK_BUFFER_SAMPLES);
     let (prod, mut cons) = rb.split();
 
-    // Handles required by PlaybackEngine
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let discard_request = Arc::new(AtomicBool::new(false));
     let turn_armed = Arc::new(AtomicBool::new(false));
@@ -151,34 +96,32 @@ where
         mem_after_init.saturating_sub(mem_before)
     );
 
-    // Per-clip results
+    // Persistent worker thread — single provider, hot-swap voices via SetVoice
+    let (tx, rx) = std::sync::mpsc::channel::<TtsCommand>();
+    let rtf_atomic = Arc::new(AtomicU32::new(0));
+    let worker_handles = TtsWorkerHandles {
+        playback: Arc::clone(&playback),
+        event_tx: event_tx.clone(),
+        cancel_flag: Arc::clone(&cancel_flag),
+        pending_synthesis_jobs: Some(Arc::clone(&pending_jobs)),
+        telemetry_rtf: Some(Arc::clone(&rtf_atomic)),
+    };
+
+    let handle = std::thread::Builder::new()
+        .name("bench-tts-persistent".to_string())
+        .spawn(move || {
+            spawn_tts_worker(rx, provider, worker_handles);
+        })
+        .expect("Failed to spawn TTS worker thread");
+
     let mut clip_results: Vec<ClipBenchmarkResult> = Vec::new();
     let mut tts_clip_results: Vec<TtsClipResult> = Vec::new();
 
     for (idx, prompt) in prompts.iter().enumerate() {
         let voice_for_clip = if model_type == "kokoro" {
-            // Diff voices per clip: cycle 0..N-1
             (idx as i32) % 10
         } else {
             default_voice
-        };
-
-        // For kokoro diff voices we need a fresh provider per clip (engine holds voice at init)
-        // For supertonic/chatterbox a single provider suffices but creating per-clip is also fine
-        // and keeps the factory path uniform. Reuse logic: factory decides.
-        let provider = make_provider(idx, prompt);
-
-        // Isolated worker per clip guarantees cold isolation without cross-clip state bleed.
-        // Alternative of reusing one worker across all clips would intermix pending_synthesis_jobs.
-        // Cost is thread spawn/join (~1ms) negligible vs synthesis (seconds).
-        let (tx, rx) = std::sync::mpsc::channel::<TtsCommand>();
-        let rtf_atomic = Arc::new(AtomicU32::new(0));
-        let worker_handles = TtsWorkerHandles {
-            playback: Arc::clone(&playback),
-            event_tx: event_tx.clone(),
-            cancel_flag: Arc::clone(&cancel_flag),
-            pending_synthesis_jobs: Some(Arc::clone(&pending_jobs)),
-            telemetry_rtf: Some(Arc::clone(&rtf_atomic)),
         };
 
         // Ensure ring buffer empty before clip
@@ -186,20 +129,19 @@ where
         turn_armed.store(false, Ordering::Relaxed);
         discard_request.store(false, Ordering::Relaxed);
         cancel_flag.store(false, Ordering::Relaxed);
+        rtf_atomic.store(0, Ordering::Relaxed);
         pending_jobs.store(1, Ordering::Relaxed);
         current_turn_id.store((idx as u32) + 1, Ordering::Relaxed);
 
-        let handle = std::thread::Builder::new()
-            .name(format!("bench-tts-worker-{}", idx))
-            .spawn(move || {
-                spawn_tts_worker(rx, provider, worker_handles);
-            })
-            .expect("Failed to spawn TTS worker thread");
-
-        let synthesis_start = Instant::now();
         let turn_id = (idx as u32) + 1;
+        let synthesis_start = Instant::now();
 
-        // Production entry seam
+        // Hot-swap voice via production seam (TtsCommand::SetVoice) before Generate
+        if model_type == "kokoro" || voice_for_clip != default_voice {
+            let _ = tx.send(TtsCommand::SetVoice(voice_for_clip));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+
         if let Err(e) = tx.send(TtsCommand::Generate {
             turn_id,
             text: prompt.text.clone(),
@@ -208,28 +150,18 @@ where
                 "[TTS Bench] Failed to send Generate for {}: {}",
                 prompt.filename, e
             );
-            let _ = tx.send(TtsCommand::Shutdown);
-            let _ = handle.join();
             continue;
         }
 
-        // Poll for completion: wait until pending_jobs drops to 0 and rtf_atomic set, with hard deadline.
+        // Wait for synthesis to complete (pending_jobs -> 0)
         let deadline = Instant::now() + Duration::from_secs(60);
-        let mut rtf_reported = 0.0;
         let mut completed = false;
-
         while Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(50));
             if pending_jobs.load(Ordering::Relaxed) == 0 {
-                // Give PlaybackEngine a moment to push last chunk
                 std::thread::sleep(Duration::from_millis(120));
                 completed = true;
                 break;
-            }
-            // Early RTF availability check is fine but pending_jobs is authoritative
-            let bits = rtf_atomic.load(Ordering::Relaxed);
-            if bits != 0 {
-                rtf_reported = f32::from_bits(bits) as f64;
             }
             if synthesis_start.elapsed().as_millis() > 60000 {
                 break;
@@ -238,24 +170,21 @@ where
 
         let elapsed_ms = synthesis_start.elapsed().as_secs_f64() * 1000.0;
 
-        // Shutdown worker thread after this clip
-        let _ = tx.send(TtsCommand::Shutdown);
-        let _ = handle.join();
-
-        // Final RTF from atomic
-        let bits = rtf_atomic.load(Ordering::Relaxed);
-        if bits != 0 {
-            rtf_reported = f32::from_bits(bits) as f64;
-        }
-
-        // Drain captured audio
-        let samples = drain_consumer(&mut cons);
+        // Drain 48k buffer and downsample to 24k for correct pitch
+        let raw_48k = drain_consumer(&mut cons);
+        let samples = downsample_48k_to_24k(&raw_48k);
         let audio_duration_s = if samples.is_empty() {
             0.0
         } else {
             samples.len() as f32 / TTS_SAMPLE_RATE as f32
         };
 
+        let bits = rtf_atomic.load(Ordering::Relaxed);
+        let rtf_reported = if bits != 0 {
+            f32::from_bits(bits) as f64
+        } else {
+            0.0
+        };
         let rtf = if audio_duration_s > 0.0 {
             (elapsed_ms / 1000.0) / audio_duration_s as f64
         } else {
@@ -268,7 +197,6 @@ where
             0.0
         };
 
-        // Persist WAV
         let wav_path = if let Some(out_dir) = wav_output_dir {
             let safe_name = prompt.filename.replace(".wav", "").replace(".txt", "");
             let file_name = format!(
@@ -349,12 +277,15 @@ where
 
         if !completed {
             eprintln!(
-                "[WARN] Clip {} timed out after {:.1}s — likely synthesis hang",
+                "[WARN] Clip {} timed out after {:.1}s",
                 prompt.filename,
                 elapsed_ms / 1000.0
             );
         }
     }
+
+    let _ = tx.send(TtsCommand::Shutdown);
+    let _ = handle.join();
 
     let total_elapsed_ms = total_start.elapsed().as_secs_f64() * 1000.0;
     let total_audio_s: f32 = tts_clip_results.iter().map(|r| r.audio_duration_s).sum();
@@ -381,7 +312,7 @@ where
 
     println!("\n--- Overall TTS Summary for {} ---", engine_name);
     println!("Total Prompts             : {}", prompts.len());
-    println!("Total Audio Generated     : {:.2}s", total_audio_s);
+    println!("Total Audio Generated     : {:.2}s (24kHz)", total_audio_s);
     println!(
         "Total Wall Time           : {:.2}s",
         total_elapsed_ms / 1000.0

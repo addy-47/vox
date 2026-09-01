@@ -175,7 +175,6 @@ export function on<K extends keyof IpcEventMap>(
   return cleanup;
 }
 
-// ─── Strongly-Typed Convenience Listeners ────────────────────────────────────
 
 export function onStateChanged(handler: (payload: StateChangedPayload) => void): () => void {
   return on("state_changed", handler);

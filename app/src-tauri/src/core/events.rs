@@ -7,7 +7,6 @@ use tauri::{AppHandle, Emitter, Runtime};
 pub use crate::monitoring::aggregator::TelemetryEvent;
 pub use crate::persistence::events::{MemoryWorkerEvent, PersistenceEvent};
 
-// ─── 1. Internal Pipeline Actor-to-Router Bus ────────────────────────────────
 #[derive(Debug, Clone)]
 pub enum VoxEvent {
     SpeechStart {
@@ -51,7 +50,6 @@ pub enum VoxEvent {
     Shutdown,
 }
 
-// ─── 2. Strongly Typed Payload Types for IPC ──────────────────────────────────
 /// Unified payload emitted on `state_changed` — SSOT for all pipeline + dictation state transitions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StateChangedPayload {
@@ -120,7 +118,6 @@ pub struct ToastPayload {
     pub duration_ms: Option<u64>,
 }
 
-// ─── 3. Canonical IPC Event Registry ──────────────────────────────────────────
 /// Strongly-typed universal Tauri IPC event enum.
 /// Every IPC event emitted to any webview window must have a canonical entry here.
 #[derive(Debug, Clone, Serialize)]

@@ -3,8 +3,6 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-// ─── Shared Enums ─────────────────────────────────────────────────────────────
-
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub enum AudioOutputMode {
     #[default]
@@ -146,8 +144,6 @@ pub fn get_preset_colors() -> Vec<String> {
     ]
 }
 
-// ─── Reload Policy ────────────────────────────────────────────────────────────
-
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SettingReloadPolicy {
@@ -194,8 +190,6 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
     }
 }
 
-// ─── 1. Appearance Settings ───────────────────────────────────────────────────
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct AppearanceSettings {
@@ -212,8 +206,6 @@ impl Default for AppearanceSettings {
     }
 }
 
-// ─── 2. Audio Settings ────────────────────────────────────────────────────────
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct AudioSettings {
@@ -229,8 +221,6 @@ impl Default for AudioSettings {
         }
     }
 }
-
-// ─── 3. VAD Settings ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
@@ -249,8 +239,6 @@ impl Default for VadSettings {
         }
     }
 }
-
-// ─── 4. STT Settings (Parallel Providers) ─────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -397,8 +385,6 @@ impl SttSettings {
     }
 }
 
-// ─── 5. LLM Settings (Parallel Providers) ─────────────────────────────────────
-
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum LlmActiveProvider {
@@ -534,8 +520,6 @@ impl LlmSettings {
         }
     }
 }
-
-// ─── 6. TTS Settings (Parallel Providers) ─────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -686,8 +670,6 @@ impl TtsSettings {
     }
 }
 
-// ─── 7. Interaction Settings ──────────────────────────────────────────────────
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct InteractionSettings {
@@ -705,8 +687,6 @@ impl Default for InteractionSettings {
         }
     }
 }
-
-// ─── 8. Dictation Settings ────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
@@ -728,8 +708,6 @@ impl Default for DictationSettings {
     }
 }
 
-// ─── 9. History Settings ──────────────────────────────────────────────────────
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct HistorySettings {
@@ -745,8 +723,6 @@ impl Default for HistorySettings {
         }
     }
 }
-
-// ─── 10. Memory Settings ──────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
@@ -778,8 +754,6 @@ impl Default for MemorySettings {
     }
 }
 
-// ─── 11. Persona Settings ─────────────────────────────────────────────────────
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct PersonaSettings {
@@ -795,8 +769,6 @@ impl Default for PersonaSettings {
         }
     }
 }
-
-// ─── 12. Realtime Settings ────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -898,8 +870,6 @@ impl Default for RealtimeSettings {
     }
 }
 
-// ─── 13. System Settings ──────────────────────────────────────────────────────
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct SystemSettings {
@@ -917,8 +887,6 @@ impl Default for SystemSettings {
         }
     }
 }
-
-// ─── Main Flat Settings Struct ────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
@@ -1073,14 +1041,22 @@ impl VoxSettings {
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         let tmp_path = path.with_file_name(format!("settings.{}.tmp", nanos));
-        if let Err(e) = fs::write(&tmp_path, content) {
-            if let Err(rm_err) = fs::remove_file(&tmp_path) {
-                log::trace!(
-                    "[Settings] Failed to remove temporary settings file: {}",
-                    rm_err
-                );
+        {
+            use std::io::Write;
+            let mut file = match fs::File::create(&tmp_path) {
+                Ok(f) => f,
+                Err(e) => {
+                    log::warn!("[Settings] Failed to create tmp settings file: {}", e);
+                    return Err(e.into());
+                }
+            };
+            if let Err(e) = file.write_all(content.as_bytes()) {
+                let _ = fs::remove_file(&tmp_path);
+                return Err(e.into());
             }
-            return Err(e.into());
+            if let Err(e) = file.sync_all() {
+                log::warn!("[Settings] Failed to fsync tmp settings file: {}", e);
+            }
         }
         if let Err(e) = fs::rename(&tmp_path, &path) {
             if let Err(rm_err) = fs::remove_file(&tmp_path) {

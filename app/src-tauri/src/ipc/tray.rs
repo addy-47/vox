@@ -1,3 +1,4 @@
+use crate::core::error::VoxIpcError;
 use crate::core::events::{emit_ipc, IpcEvent};
 use crate::core::state::AppState;
 use crate::tray::position_tray_window;
@@ -6,7 +7,7 @@ use crate::tray::setup_linux_virtual_layer;
 use tauri::{AppHandle, Manager, State};
 
 /// Toggles the tray window visibility and updates the menu checkmark state (internal native menu callback).
-pub async fn toggle_tray_visibility_internal(app: AppHandle) {
+pub async fn toggle_tray_visibility_internal<R: tauri::Runtime>(app: AppHandle<R>) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
 
     let (setup_completed, dictation_enabled, is_tray_mode) = match state.settings.read() {
@@ -60,6 +61,7 @@ pub async fn toggle_tray_visibility_internal(app: AppHandle) {
         }
     }
 }
+
 #[cfg(target_os = "linux")]
 use gtk::prelude::*;
 
@@ -98,7 +100,7 @@ async fn cancel_active_dictation_turn(state: &AppState) {
 
 /// Hide the tray overlay window and cancel active dictation turns.
 #[tauri::command]
-pub async fn hide_tray_window(app: AppHandle) {
+pub async fn hide_tray_window<R: tauri::Runtime>(app: AppHandle<R>) {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let was_visible = state
         .hud_visible
@@ -125,14 +127,14 @@ pub async fn hide_tray_window(app: AppHandle) {
 
 /// Set whether a transparent overlay window (tray or toast) should ignore mouse cursor input events.
 #[tauri::command]
-pub fn set_window_click_through(
-    app: AppHandle,
+pub fn set_window_click_through<R: tauri::Runtime>(
+    app: AppHandle<R>,
     window: String,
     enabled: bool,
-) -> Result<(), String> {
+) -> Result<(), VoxIpcError> {
     let target_window = app
         .get_webview_window(&window)
-        .ok_or_else(|| format!("Window '{}' not found", window))?;
+        .ok_or_else(|| VoxIpcError::NotFound(format!("Window '{}' not found", window)))?;
 
     #[cfg(target_os = "linux")]
     {
@@ -160,7 +162,7 @@ pub fn set_window_click_through(
 }
 
 #[tauri::command]
-pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
-    crate::window_main::ensure_main_window(&app)?;
+pub async fn show_main_window(app: AppHandle) -> Result<(), VoxIpcError> {
+    crate::window_main::ensure_main_window(&app).map_err(VoxIpcError::Internal)?;
     Ok(())
 }

@@ -123,6 +123,16 @@ pub async fn supersede_user_fact(
     let new_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
     let fact_type = collection_type(collection);
 
+    let embedding_opt = if fact_type == CollectionType::SemanticGraph {
+        crate::services::memory::ensure_embedder_loaded(true)?;
+        match crate::services::memory::generate_embedding(new_fact_text)? {
+            Some(v) => Some(v),
+            None => return Err(anyhow!("Failed to generate embedding for edited fact.")),
+        }
+    } else {
+        None
+    };
+
     conn.execute("BEGIN TRANSACTION;", ()).await?;
     let res: Result<String> = async {
         conn.execute(
@@ -137,14 +147,8 @@ pub async fn supersede_user_fact(
             ),
         ).await?;
 
-        if fact_type == CollectionType::SemanticGraph {
-            crate::services::memory::ensure_embedder_loaded(true)?;
-            let embedding = match crate::services::memory::generate_embedding(new_fact_text)? {
-                Some(v) => v,
-                None => return Err(anyhow!("Failed to generate embedding for edited fact.")),
-            };
-
-            let blob_bytes = encode_f32_blob(&embedding);
+        if let Some(ref embedding) = embedding_opt {
+            let blob_bytes = encode_f32_blob(embedding);
             conn.execute(
                 "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES (?, ?, ?)",
                 (new_id.clone(), collection.to_string(), blob_bytes),

@@ -1,3 +1,7 @@
+use super::{
+    APP_MANIFEST_FETCH_TIMEOUT_SECS, APP_MANIFEST_URL, MANIFEST_FETCH_TIMEOUT_SECS,
+    MODELS_MANIFEST_URL,
+};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -49,9 +53,6 @@ pub struct VoxManifest {
 
 impl VoxManifest {
     /// Calculates total required space including extraction overhead and safety buffer.
-    ///
-    /// Overhead is estimated as 1.5x the size of archived models.
-    /// Buffer is a fixed 1GB as per Part 2 Directive.
     pub fn calculate_required_space(&self) -> u64 {
         let mut required = 0;
         for group in &self.model_groups {
@@ -68,12 +69,12 @@ impl VoxManifest {
 
     /// Fetches the manifest from the Hugging Face repository.
     pub async fn fetch() -> anyhow::Result<Self> {
-        let url = "https://huggingface.co/addyo07/vox-models/resolve/main/models_manifest.json";
+        let url = MODELS_MANIFEST_URL;
         log::info!("[VoxManifest] Initiating fetch from: {}", url);
 
         let client = reqwest::Client::builder()
             .user_agent("Vox-App/0.8.1")
-            .timeout(std::time::Duration::from_secs(15))
+            .timeout(std::time::Duration::from_secs(MANIFEST_FETCH_TIMEOUT_SECS))
             .build()?;
 
         let response = client.get(url).send().await?;
@@ -110,10 +111,25 @@ impl VerifiedMarker {
         Ok(marker)
     }
 
+    pub async fn load_async(path: &Path) -> anyhow::Result<Self> {
+        let p = path.to_path_buf();
+        tokio::task::spawn_blocking(move || Self::load(&p))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to join marker load task: {}", e))?
+    }
+
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         let content = serde_json::to_string_pretty(self)?;
         std::fs::write(path, content)?;
         Ok(())
+    }
+
+    pub async fn save_async(&self, path: &Path) -> anyhow::Result<()> {
+        let p = path.to_path_buf();
+        let marker = self.clone();
+        tokio::task::spawn_blocking(move || marker.save(&p))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to join marker save task: {}", e))?
     }
 }
 
@@ -133,12 +149,12 @@ pub struct AppManifest {
 impl AppManifest {
     /// Fetches the application manifest from GitHub Pages.
     pub async fn fetch() -> anyhow::Result<Self> {
-        let url = "https://addy-47.github.io/vox/manifests/app_manifest.json";
+        let url = APP_MANIFEST_URL;
         log::info!("[AppManifest] Initiating fetch from: {}", url);
 
         let client = reqwest::Client::builder()
             .user_agent("Vox-App/0.8.1")
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(APP_MANIFEST_FETCH_TIMEOUT_SECS))
             .build()?;
 
         let response = client.get(url).send().await?;

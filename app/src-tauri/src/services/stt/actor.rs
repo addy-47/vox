@@ -174,6 +174,14 @@ fn handle_final_command(
         if let Err(e) = ctx.provider.reset_state() {
             log::warn!("[STT] Error resetting state on stale final: {:?}", e);
         }
+        if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
+            if let Err(e) = pipeline_tx.send(VoxEvent::Cancelled { turn_id: tid }) {
+                log::warn!(
+                    "[STT] Error sending cancelled event on stale final: {:?}",
+                    e
+                );
+            }
+        }
         return;
     }
     state.current_active_turn = tid;
