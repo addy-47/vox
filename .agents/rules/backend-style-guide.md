@@ -31,6 +31,23 @@ Architecture capabilities are gated by hardware tier. Vox must dynamically degra
 - **`mod.rs` & `lib.rs`:** `mod.rs` is for module declarations, re-exports, and **subsystem-level constants**. Zero business logic. `lib.rs` is for module declarations + Tauri app setup only. Zero business logic.
 - **Visibility:** Use `pub(crate)` over `pub` unless crossing the crate boundary (IPC handlers or integration tests).
 
+### 2.1 Standard Rust File Grammar Order (CRITICAL)
+
+All Rust source files must strictly follow this top-to-bottom grammar ordering:
+1. **Module Documentation & Imports:**
+   - Crate/file doc comments (`//! ...`).
+   - Grouped imports: `std::...`, external third-party crates, internal `crate::...`, `super::...`.
+2. **File-Local Constants & Type Aliases:**
+   - `const ...`, `pub type ...`.
+3. **Data Structures (Structs & Enums):**
+   - Public and internal `struct` and `enum` declarations with `#[derive(...)]`.
+4. **Trait Implementations:**
+   - Standard and custom trait impls (`impl Trait for Struct { ... }`).
+5. **Main Inherent Implementations:**
+   - `impl Struct { pub fn ... fn ... }` (constructors first, public methods, private methods).
+6. **Helper Functions & Private Utilities:**
+   - Free functions (`fn ...`).
+
 ---
 
 ## 3. Constant Hierarchy & Placement (CRITICAL)
@@ -174,4 +191,3 @@ Every backend actor, worker, pipeline domain, and router must be designed with e
 
 3. **Inversion of Control for Hardware Dependencies**:
    - High-level orchestrators that dispatch commands to downstream channels (`stt_tx`, `llm_tx`, `tts_tx`, `realtime_engine`) must support optional sender overrides or fallback gracefully when executing in headless test environments where hardware audio drivers (CPAL) are absent.
-

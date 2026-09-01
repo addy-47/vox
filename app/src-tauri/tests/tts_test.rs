@@ -10,7 +10,6 @@
 
 mod common;
 
-use common::harness::{assert_channel_empty_after, get_test_app_handle};
 use common::paths::{get_asset_path, get_supertonic_model_dir};
 use common::scoring::{
     assert_acoustic_within_tolerance, extract_acoustic_features, AcousticTolerances,
@@ -32,15 +31,19 @@ enum TestTtsConfig {
     Supertonic,
 }
 
+use parking_lot::Mutex;
+use ringbuf::traits::{Consumer, Observer};
+use ringbuf::HeapCons;
+
+struct TestTtsHandles {
+    tts_tx: std::sync::mpsc::Sender<TtsCommand>,
+    _event_rx: std::sync::mpsc::Receiver<VoxEvent>,
+    tts_handle: Option<std::thread::JoinHandle<()>>,
+    consumer: Arc<Mutex<HeapCons<f32>>>,
+}
+
 /// Helper to set up TTS worker with specified provider configuration.
-fn setup_test_tts_worker(
-    config: TestTtsConfig,
-) -> (
-    std::sync::mpsc::Sender<TtsCommand>,
-    std::sync::mpsc::Receiver<VoxEvent>,
-    Option<std::thread::JoinHandle<()>>,
-) {
-    let app = get_test_app_handle();
+fn setup_test_tts_worker(config: TestTtsConfig) -> TestTtsHandles {
     let mut settings = VoxSettings::default();
     match config {
         TestTtsConfig::EdgeTts { voice } => {
@@ -58,63 +61,70 @@ fn setup_test_tts_worker(
     let mut tts_tx: Option<std::sync::mpsc::Sender<TtsCommand>> = None;
     let mut tts_handle: Option<std::thread::JoinHandle<()>> = None;
     let cancel_flag = Arc::new(AtomicBool::new(false));
+    let (playback_engine, consumer) = common::harness::create_mock_playback_engine();
 
     let handles = TtsWarmUpHandles {
         tts_tx: &mut tts_tx,
         tts_handle: &mut tts_handle,
         cancel_flag,
+        playback_engine,
+        pending_synthesis_jobs: None,
+        telemetry_rtf: None,
     };
 
-    warm_up_tts(&app, handles, &settings, &super_tts_path, None, event_tx)
+    warm_up_tts(handles, &settings, &super_tts_path, None, event_tx)
         .expect("Failed to warm up TTS worker");
 
-    (tts_tx.expect("tts_tx initialized"), event_rx, tts_handle)
+    TestTtsHandles {
+        tts_tx: tts_tx.expect("tts_tx initialized"),
+        _event_rx: event_rx,
+        tts_handle,
+        consumer,
+    }
 }
 
-/// Linear interpolation resampler from 24kHz to 16kHz.
-fn resample_24k_to_16k(input_24k: &[f32]) -> Vec<f32> {
-    if input_24k.is_empty() {
+/// Linear interpolation resampler from 48kHz to 16kHz.
+fn resample_48k_to_16k(input_48k: &[f32]) -> Vec<f32> {
+    if input_48k.is_empty() {
         return Vec::new();
     }
-    let ratio = 16000.0 / 24000.0;
-    let target_len = (input_24k.len() as f64 * ratio).round() as usize;
+    let ratio = 16000.0 / 48000.0;
+    let target_len = (input_48k.len() as f64 * ratio).round() as usize;
     let mut out = Vec::with_capacity(target_len);
     for i in 0..target_len {
         let src_pos = i as f64 / ratio;
         let idx0 = src_pos.floor() as usize;
         let frac = (src_pos - idx0 as f64) as f32;
-        let s0 = input_24k[idx0.min(input_24k.len() - 1)];
-        let s1 = input_24k[(idx0 + 1).min(input_24k.len() - 1)];
+        let s0 = input_48k[idx0.min(input_48k.len() - 1)];
+        let s1 = input_48k[(idx0 + 1).min(input_48k.len() - 1)];
         out.push(s0 + frac * (s1 - s0));
     }
     out
 }
 
-/// Helper to collect all synthesized PCM samples from event channel into mono 16kHz audio.
-fn collect_all_tts_audio_16k(
-    event_rx: &std::sync::mpsc::Receiver<VoxEvent>,
-    turn_id_expected: u32,
-    timeout: Duration,
-) -> Vec<f32> {
-    let mut samples_24k = Vec::new();
+/// Helper to collect all synthesized PCM samples from playback buffer into mono 16kHz audio.
+fn collect_all_tts_audio_16k(consumer: &Arc<Mutex<HeapCons<f32>>>, timeout: Duration) -> Vec<f32> {
+    let mut samples_48k = Vec::new();
     let deadline = std::time::Instant::now() + timeout;
 
     while std::time::Instant::now() < deadline {
-        if let Ok(event) = event_rx.recv_timeout(Duration::from_millis(100)) {
-            match event {
-                VoxEvent::TtsChunk { turn_id, samples } => {
-                    assert_eq!(turn_id, turn_id_expected);
-                    samples_24k.extend_from_slice(&samples);
-                }
-                VoxEvent::PlaybackFinished { .. } => {
-                    break;
-                }
-                _ => {}
+        std::thread::sleep(Duration::from_millis(50));
+        let mut guard = consumer.lock();
+        while let Some(sample) = guard.try_pop() {
+            samples_48k.push(sample);
+        }
+        if !samples_48k.is_empty() && guard.is_empty() {
+            // Check if more incoming
+            drop(guard);
+            std::thread::sleep(Duration::from_millis(300));
+            let guard2 = consumer.lock();
+            if guard2.is_empty() {
+                break;
             }
         }
     }
 
-    resample_24k_to_16k(&samples_24k)
+    resample_48k_to_16k(&samples_48k)
 }
 
 /// Writes mono f32 samples to a 16-bit PCM WAV file.
@@ -142,8 +152,12 @@ fn test_tts_edge_synthesis_matrix() {
     let start_time = std::time::Instant::now();
     let max_test_duration = Duration::from_secs(30);
 
-    let (tts_tx, event_rx, tts_handle) =
-        setup_test_tts_worker(TestTtsConfig::EdgeTts { voice: None });
+    let TestTtsHandles {
+        tts_tx,
+        _event_rx,
+        tts_handle,
+        consumer,
+    } = setup_test_tts_worker(TestTtsConfig::EdgeTts { voice: None });
 
     // 1. Edge TTS English Generation vs edgetts_01_en_briefing.wav
     {
@@ -157,7 +171,7 @@ fn test_tts_edge_synthesis_matrix() {
             })
             .expect("Failed to send TtsCommand EN");
 
-        let audio_16k = collect_all_tts_audio_16k(&event_rx, 1, Duration::from_secs(12));
+        let audio_16k = collect_all_tts_audio_16k(&consumer, Duration::from_secs(12));
         assert!(!audio_16k.is_empty(), "Edge TTS EN audio must not be empty");
 
         let temp_wav = std::env::temp_dir().join("vox_test_edge_en.wav");
@@ -199,7 +213,7 @@ fn test_tts_edge_synthesis_matrix() {
             })
             .expect("Failed to send TtsCommand HI");
 
-        let audio_16k = collect_all_tts_audio_16k(&event_rx, 2, Duration::from_secs(12));
+        let audio_16k = collect_all_tts_audio_16k(&consumer, Duration::from_secs(12));
         assert!(!audio_16k.is_empty(), "Edge TTS HI audio must not be empty");
 
         let temp_wav = std::env::temp_dir().join("vox_test_edge_hi.wav");
@@ -238,11 +252,8 @@ fn test_tts_edge_synthesis_matrix() {
             })
             .expect("Failed to send empty TtsCommand");
 
-        assert_channel_empty_after(
-            &event_rx,
-            Duration::from_millis(500),
-            "event_rx empty text guard",
-        );
+        let audio_16k = collect_all_tts_audio_16k(&consumer, Duration::from_secs(1));
+        assert!(audio_16k.is_empty(), "Empty prompt must not produce audio");
     }
 
     // 4. Graceful Teardown & Panic Verification
@@ -264,7 +275,12 @@ fn test_tts_supertonic_synthesis_matrix() {
     let start_time = std::time::Instant::now();
     let max_test_duration = Duration::from_secs(30);
 
-    let (tts_tx, event_rx, tts_handle) = setup_test_tts_worker(TestTtsConfig::Supertonic);
+    let TestTtsHandles {
+        tts_tx,
+        _event_rx,
+        tts_handle,
+        consumer,
+    } = setup_test_tts_worker(TestTtsConfig::Supertonic);
 
     // 1. Supertonic English vs supertonic_01_en_briefing.wav
     {
@@ -278,7 +294,7 @@ fn test_tts_supertonic_synthesis_matrix() {
             })
             .expect("Failed to send Supertonic EN");
 
-        let audio_16k = collect_all_tts_audio_16k(&event_rx, 1, Duration::from_secs(12));
+        let audio_16k = collect_all_tts_audio_16k(&consumer, Duration::from_secs(12));
         assert!(
             !audio_16k.is_empty(),
             "Supertonic EN audio must not be empty"
@@ -323,7 +339,7 @@ fn test_tts_supertonic_synthesis_matrix() {
             })
             .expect("Failed to send Supertonic HI");
 
-        let audio_16k = collect_all_tts_audio_16k(&event_rx, 2, Duration::from_secs(12));
+        let audio_16k = collect_all_tts_audio_16k(&consumer, Duration::from_secs(12));
         assert!(
             !audio_16k.is_empty(),
             "Supertonic HI audio must not be empty"

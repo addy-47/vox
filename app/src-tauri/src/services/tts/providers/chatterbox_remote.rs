@@ -7,7 +7,8 @@ use std::sync::Arc;
 use super::{TtsProvider, TtsProviderKind};
 use crate::core::events::VoxEvent;
 use crate::services::tts::{
-    MAX_QUALITY_STEPS_CHATTERBOX, MIN_QUALITY_STEPS, MIN_SPEED, TTS_CHUNK_SIZE, TTS_SAMPLE_RATE,
+    MAX_QUALITY_STEPS_CHATTERBOX, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED, TTS_CHUNK_SIZE,
+    TTS_SAMPLE_RATE,
 };
 
 /// Remote speech synthesis provider offloading Chatterbox inference to a GPU server via HTTP streaming.
@@ -137,7 +138,7 @@ fn stream_pcm_response(
     speed: f32,
     turn_id: u32,
     cancel: &Arc<AtomicBool>,
-    event_tx: &Sender<VoxEvent>,
+    playback: &Arc<crate::services::audio::PlaybackEngine>,
 ) -> Result<usize> {
     let mut byte_buf = Vec::new();
     let mut raw_pcm_samples = Vec::new();
@@ -184,16 +185,7 @@ fn stream_pcm_response(
                         chunk_samples
                     };
 
-                    if event_tx
-                        .send(VoxEvent::TtsChunk {
-                            turn_id,
-                            samples: stretched_chunk,
-                        })
-                        .is_err()
-                    {
-                        log::warn!("[ChatterboxRemote] event_tx closed, stopping synthesis");
-                        return Ok(total_samples_received);
-                    }
+                    playback.ingest_chunk(&stretched_chunk);
                 }
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
@@ -209,12 +201,7 @@ fn stream_pcm_response(
             raw_pcm_samples
         };
 
-        if let Err(e) = event_tx.send(VoxEvent::TtsChunk {
-            turn_id,
-            samples: stretched_chunk,
-        }) {
-            log::warn!("[ChatterboxRemote] Error sending final chunk: {:?}", e);
-        }
+        playback.ingest_chunk(&stretched_chunk);
     }
 
     Ok(total_samples_received)
@@ -228,55 +215,42 @@ impl TtsProvider for ChatterboxRemoteProvider {
         log::info!("[ChatterboxRemote] Quality steps set to {}", clamped);
     }
 
-    /// Hot-updates the remote speech playback speed factor.
+    /// Hot-updates the speech playback speed multiplier.
     fn set_speed(&self, speed: f32) {
-        let clamped = speed.clamp(MIN_SPEED, crate::services::tts::MAX_SPEED);
+        let clamped = speed.clamp(MIN_SPEED, MAX_SPEED);
         self.speed.store(clamped.to_bits(), Ordering::Relaxed);
         log::info!("[ChatterboxRemote] Speed set to {:.2}", clamped);
     }
 
-    /// Returns the TtsProviderKind::ChatterboxRemote variant identifier.
+    /// Returns the provider kind identifier.
     fn kind(&self) -> TtsProviderKind {
         TtsProviderKind::ChatterboxRemote
     }
 
-    /// Performs HTTP GET health check against the remote server health endpoint.
+    /// Checks if remote GPU server is reachable and active.
     fn health_check(&self) -> bool {
-        let url = format!("{}/health", self.endpoint.trim_end_matches('/'));
-        match self
-            .client
-            .get(&url)
-            .timeout(std::time::Duration::from_secs(3))
+        self.client
+            .get(format!("{}/health", self.endpoint))
+            .timeout(std::time::Duration::from_secs(2))
             .send()
-        {
-            Ok(res) => {
-                if res.status().is_success() {
-                    if let Ok(body) = res.json::<serde_json::Value>() {
-                        return body.get("status").and_then(|s| s.as_str()) == Some("ok");
-                    }
-                }
-                false
-            }
-            Err(_) => false,
-        }
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
     }
 
-    /// Submits synthesis job to remote GPU server and streams audio chunks back to local pipeline.
+    /// Synthesizes text via HTTP streaming to remote GPU server and feeds PlaybackEngine.
     fn synthesize_chunk(
         &self,
         text: &str,
         turn_id: u32,
         cancel: Arc<AtomicBool>,
-        event_tx: Sender<VoxEvent>,
+        playback: &Arc<crate::services::audio::PlaybackEngine>,
+        _event_tx: Sender<VoxEvent>,
+        telemetry_rtf: Option<&Arc<AtomicU32>>,
     ) -> Result<()> {
-        if cancel.load(Ordering::Relaxed) || text.trim().is_empty() {
-            return Ok(());
-        }
-
         log::info!(
-            "[ChatterboxRemote] Synthesizing turn {} via remote: '{}'",
+            "[ChatterboxRemote] Synthesizing turn {} via remote server: '{}'",
             turn_id,
-            text.chars().take(80).collect::<String>()
+            text
         );
 
         let start = std::time::Instant::now();
@@ -310,7 +284,7 @@ impl TtsProvider for ChatterboxRemoteProvider {
         }
 
         let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
-        let total_samples = stream_pcm_response(response, speed, turn_id, &cancel, &event_tx)?;
+        let total_samples = stream_pcm_response(response, speed, turn_id, &cancel, playback)?;
 
         let elapsed = start.elapsed().as_secs_f32();
         let audio_duration = total_samples as f32 / TTS_SAMPLE_RATE as f32;
@@ -327,8 +301,8 @@ impl TtsProvider for ChatterboxRemoteProvider {
             rtf,
         );
 
-        if let Err(e) = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf }) {
-            log::warn!("[ChatterboxRemote] Error sending TtsFinished: {:?}", e);
+        if let Some(rtf_handle) = telemetry_rtf {
+            rtf_handle.store(rtf.to_bits(), Ordering::Relaxed);
         }
 
         Ok(())

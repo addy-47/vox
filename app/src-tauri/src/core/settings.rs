@@ -169,7 +169,9 @@ impl SettingReloadPolicy {
 pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy {
     match domain {
         "appearance" | "memory" | "persona" | "history" | "realtime" => SettingReloadPolicy::Hot,
-        "tts" if key == "quality_steps" || key == "speed" => SettingReloadPolicy::WorkerCommand,
+        "tts" if key == "quality_steps" || key == "speed" || key == "voice_index" || key == "voice" => {
+            SettingReloadPolicy::WorkerCommand
+        }
         "llm"
             if key == "temperature"
                 || key == "compaction_temperature"
@@ -536,6 +538,7 @@ pub enum TtsActiveProvider {
     #[default]
     EdgeTts,
     Supertonic,
+    Kokoro,
     Chatterbox,
     ChatterboxRemote,
 }
@@ -548,6 +551,9 @@ pub struct TtsEdgeConfig {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
 pub struct TtsSupertonicConfig {}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
+pub struct TtsKokoroConfig {}
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(default)]
@@ -589,6 +595,7 @@ impl Default for TtsChatterboxRemoteConfig {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TtsProviderConfig {
     Supertonic,
+    Kokoro,
     Chatterbox {
         language: String,
         quality_steps: u32,
@@ -627,6 +634,7 @@ pub struct TtsSettings {
     pub speed: f32,
     pub edge_tts: TtsEdgeConfig,
     pub supertonic: TtsSupertonicConfig,
+    pub kokoro: TtsKokoroConfig,
     pub chatterbox: TtsChatterboxConfig,
     pub chatterbox_remote: TtsChatterboxRemoteConfig,
 }
@@ -640,6 +648,7 @@ impl Default for TtsSettings {
             speed: crate::core::defaults::DEFAULT_TTS_SPEED,
             edge_tts: TtsEdgeConfig::default(),
             supertonic: TtsSupertonicConfig::default(),
+            kokoro: TtsKokoroConfig::default(),
             chatterbox: TtsChatterboxConfig::default(),
             chatterbox_remote: TtsChatterboxRemoteConfig::default(),
         }
@@ -653,6 +662,7 @@ impl TtsSettings {
                 voice: self.edge_tts.voice.clone(),
             },
             TtsActiveProvider::Supertonic => TtsProviderConfig::Supertonic,
+            TtsActiveProvider::Kokoro => TtsProviderConfig::Kokoro,
             TtsActiveProvider::Chatterbox => TtsProviderConfig::Chatterbox {
                 language: self.chatterbox.language.clone(),
                 quality_steps: self.quality_steps,

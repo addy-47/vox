@@ -209,20 +209,7 @@ fn test_dictation_does_not_invoke_llm() {
     let (pipeline_tx, _) = std::sync::mpsc::channel();
     let (telemetry_tx, _) = crossbeam_channel::unbounded();
 
-    let playback_engine = Arc::new(
-        vox_lib::services::audio::PlaybackEngine::new(
-            Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            Arc::clone(&state.pipeline.current_state_atomic),
-            vox_lib::services::audio::playback::PlaybackTelemetryHandles {
-                energy: Arc::new(std::sync::atomic::AtomicU32::new(0)),
-                low: Arc::new(std::sync::atomic::AtomicU32::new(0)),
-                mid: Arc::new(std::sync::atomic::AtomicU32::new(0)),
-                high: Arc::new(std::sync::atomic::AtomicU32::new(0)),
-                underruns: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            },
-        )
-        .expect("Failed to create mock PlaybackEngine"),
-    );
+    let (playback_engine, _) = common::harness::create_mock_playback_engine();
 
     let engine = vox_lib::core::state::VoxEngine {
         audio_stream: vox_lib::services::audio::AudioStream::mock(),

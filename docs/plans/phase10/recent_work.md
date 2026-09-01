@@ -132,3 +132,45 @@ This document tracks detailed architectural refactorings, milestone completions,
 ### 23. Architectural Invariants Formalization
 - **Backend Style Guide (`.agents/rules/backend-style-guide.md`):** Added Section 7.5 ("Event Contracts") codifying strict registry ownership, typed payloads, explicit producer/consumer contracts, and the command vs event distinction.
 - **AGENTS.md Critical Invariants (`AGENTS.md` Section 4.1):** Formulated the 8 non-negotiable architectural and logical invariants across backend and frontend (State SSOT, Registry-Owned Events, Sacred Audio Hot Path, Actor-Engine Separation, Frontend Service Boundary, Context Memoization & Selector Discipline, Monotonic Turn IDs, Single-Consumer Audio Stream).
+
+### 24. Playback Consolidation & TTS Event Bus Pruning
+- **Playback Consolidation (`services/audio/playback.rs`):** Consolidated `PlaybackBridge` into `PlaybackEngine` with native `spawn_pcm_stream_worker` and `ingest_chunk_i16` supporting dynamic resampling, deleting `services/realtime/playback_bridge.rs`.
+- **Event Bus Pruning (`core/events.rs`):** Completely removed raw data transport events `VoxEvent::TtsChunk` and `VoxEvent::TtsFinished` from the pipeline event bus.
+- **Direct TTS Delivery:** Updated TTS providers (Chatterbox local, Chatterbox remote, Supertonic, EdgeTTS) to feed audio chunks directly to `PlaybackEngine::ingest_chunk` and record RTF metrics directly to telemetry atomics.
+- **Quality Gate:** `cargo clippy --all-targets -- -D warnings` (0 warnings), `cargo check --all-targets` (0 errors), Vitest suite 10/10 files (99/99 tests passed), and `pnpm build` (clean Vite bundle).
+
+### 25. Playback State Guard Alignment & Persistence SSOT
+- **Domain State Precondition Guards:** Added strict state verification guards across all 4 voice assistant pipeline domains (`modular/passive.rs`, `modular/ptt.rs`, `realtime/passive.rs`, `realtime/ptt.rs`):
+  - `on_playback_started`: Strictly requires `state.pipeline.state() == InteractionState::Thinking` before transitioning to `InteractionState::Speaking`.
+  - `on_playback_finished`: Strictly requires `state.pipeline.state() == InteractionState::Speaking` before transitioning to `InteractionState::Ready`.
+- **Persistence SSOT (`VoxEvent::LlmFinished`):** Canonicalized `VoxEvent::LlmFinished` as the universal trigger across modular and realtime modes for consuming the assistant response from `TurnAccumulator`, pushing the turn into `ConversationManager`, and sending `PersistenceEvent::TurnCompleted` to SQLite. Playback completion is strictly reserved for the audio output state transition (`Speaking` $\to$ `Ready`).
+- **VoiceError Payload Consistency:** Fixed `VoiceErrorPayload` field structure in realtime passive and PTT domain error handlers to adhere to `{ message, source, owner }`.
+- **Quality Gate:** `cargo clippy --all-targets -- -D warnings` (0 warnings), `cargo check --all-targets` (0 errors).
+
+### 26. Kokoro Multi-Lang v1.1 TTS Integration
+- **Engine Implementation (`services/tts/providers/kokoro.rs`):** Built `KokoroEngine` using `sherpa-onnx`'s `OfflineTtsKokoroModelConfig` with dynamic speaker voice embeddings, `espeak-ng-data` phonemization, and direct 24kHz audio stream delivery into `PlaybackEngine`.
+- **Model Directory & Path SSOT:** Defined `KOKORO_MODEL_DIR = "tts/kokoro"` in `services/tts/mod.rs` and registered the model group `kokoro_multi_lang_v1_1` in `manifests/models_manifest.json`.
+- **Settings & IPC Sync:** Added `TtsActiveProvider::Kokoro`, `TtsKokoroConfig`, and `TtsProviderConfig::Kokoro` variants across `core/settings.rs`, `ipc/settings/health.rs`, `ipc/settings/mutation.rs`, `services/tts/actor.rs`, and frontend `settingsStore.ts` / `settingsCopy.ts`.
+- **Quality Gate:** `cargo clippy --all-targets -- -D warnings` (0 warnings), `cargo check --all-targets` (0 errors), `pnpm build` (clean Vite bundle).
+
+### 27. Universal `Listening` $\to$ `Thinking` on `TranscriptFinal` & Realtime PTT Activity Alignment
+- **`TranscriptFinal` as Single Source of Truth for `Thinking`:**
+  - In `modular/passive.rs`: Removed state transition from `on_speech_end` (which previously forced `Thinking` on raw VAD boundaries). In `on_transcript_final`, if `processed_text` is empty, returns cleanly to `Ready`; if valid, transitions `Listening` $\to$ `Thinking` right before context preparation and LLM generation.
+  - In `modular/ptt.rs`: Removed premature `Thinking` transition on key release (`ptt_stop`). The pipeline remains in `Listening` while STT processes; `on_transcript_final` performs the transition to `Thinking` (valid text) or `Ready` (empty text).
+  - In `realtime/passive.rs`: Added empty transcript check in `on_transcript_final` to transition to `Ready` on silence/noise instead of `Thinking`.
+  - In `realtime/ptt.rs`: `on_transcript_final` transitions to `Thinking` upon receipt of server transcript, or `Ready` if empty.
+- **Realtime PTT Activity Stream Alignment:**
+  - Removed premature `rt_engine.activity_start()` dispatch from key-down (`ptt_start`).
+  - In `ptt_stop`, queries VAD window validation: if non-speech, discards audio and transitions to `Ready` with zero network frames sent; if speech is detected, streams `activity_start()` $\to$ `push_audio(&i16_samples)` $\to$ `activity_end()` in sequence while keeping the pipeline in `Listening` until the server returns `TranscriptFinal`.
+- **Quality Gate:** `cargo clippy --all-targets -- -D warnings` (0 warnings), `cargo check --all-targets` (0 errors), `pnpm build` (clean Vite bundle).
+
+### 28. TTS Dynamic Voice Selection (`set_voice`) & Hot-Swap Architecture
+- **`TtsProvider` Trait Enhancement (`services/tts/providers/mod.rs`):** Added `fn set_voice(&self, _voice: i32) {}` default method to the `TtsProvider` trait.
+- **Atomic Dynamic Voice in Kokoro & Supertonic:**
+  - `KokoroEngine` (`services/tts/providers/kokoro.rs`): Converted `voice` to `AtomicI32`, implemented `set_voice` (clamped $\ge 0$), and dynamically loads `sid` per chunk.
+  - `SupertonicEngine` (`services/tts/providers/supertonic.rs`): Converted `voice` to `AtomicI32`, implemented `set_voice` (clamped 0..9), and dynamically loads speaker ID per chunk.
+- **Actor & Settings Integration:**
+  - Added `TtsCommand::SetVoice(i32)` to `TtsCommand` enum and worker dispatch loop in `services/tts/actor.rs`.
+  - Updated `get_setting_reload_policy` in `core/settings.rs` to treat `tts.voice_index` and `tts.voice` as `SettingReloadPolicy::WorkerCommand`.
+  - Wired `dispatch_worker_command` in `ipc/settings/mutation.rs` to forward `TtsCommand::SetVoice(voice)` directly to the active TTS worker channel, eliminating full audio engine reloads on voice switching.
+- **Quality Gate:** `cargo clippy --all-targets -- -D warnings` (0 warnings), `cargo check --all-targets` (0 errors), `pnpm build` (clean Vite bundle).

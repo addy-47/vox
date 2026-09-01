@@ -165,7 +165,9 @@ pub fn show_toast_window<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), Str
         // Ensure virtual layer is correctly sized before presenting
         #[cfg(target_os = "linux")]
         setup_linux_toast_layer(&app, "toast");
-        window.show().map_err(|e| format!("Failed to show toast window: {}", e))?;
+        window
+            .show()
+            .map_err(|e| format!("Failed to show toast window: {}", e))?;
     }
     Ok(())
 }
@@ -174,7 +176,9 @@ pub fn show_toast_window<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), Str
 #[tauri::command]
 pub fn hide_toast_window<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("toast") {
-        window.hide().map_err(|e| format!("Failed to hide toast window: {}", e))?;
+        window
+            .hide()
+            .map_err(|e| format!("Failed to hide toast window: {}", e))?;
     }
     Ok(())
 }
@@ -253,7 +257,9 @@ pub fn show_toast<R: tauri::Runtime>(
         if let Some(w) = app_for_emit.get_webview_window("toast") {
             if !w.is_visible().unwrap_or(true) {
                 log::warn!("[Toast] Fallback showing toast window (frontend did not show)");
-                if let Err(e) = w.show() { log::warn!("[Toast] Fallback show failed: {}", e); }
+                if let Err(e) = w.show() {
+                    log::warn!("[Toast] Fallback show failed: {}", e);
+                }
                 // Ensure layer after fallback show
                 tokio::time::sleep(Duration::from_millis(120)).await;
                 setup_linux_toast_layer(&app_for_emit, "toast");
@@ -263,8 +269,15 @@ pub fn show_toast<R: tauri::Runtime>(
         drop(win_for_show);
     });
 
-    if let Err(e) = crate::core::events::emit_ipc_to(app, "toast", crate::core::events::IpcEvent::ShowToast(payload)) {
-        log::debug!("[Toast] Immediate emit show_toast (expected miss before mount): {}", e);
+    if let Err(e) = crate::core::events::emit_ipc_to(
+        app,
+        "toast",
+        crate::core::events::IpcEvent::ShowToast(payload),
+    ) {
+        log::debug!(
+            "[Toast] Immediate emit show_toast (expected miss before mount): {}",
+            e
+        );
     }
 
     // Ensure layer is correctly sized for the next `show()` triggered by the frontend.

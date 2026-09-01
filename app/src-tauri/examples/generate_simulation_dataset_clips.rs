@@ -8,16 +8,15 @@
 //! ============================================================================
 
 use anyhow::{anyhow, Result};
+use ringbuf::traits::*;
 use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::channel;
 use std::sync::Arc;
-use std::time::Duration;
-
-use vox_lib::core::events::VoxEvent;
-use vox_lib::services::tts::{TtsEngine, TtsProvider};
+use vox_lib::services::tts::providers::supertonic::TtsEngine;
+use vox_lib::services::tts::providers::TtsProvider;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -146,25 +145,51 @@ fn main() -> Result<()> {
             );
 
             let cancel = Arc::new(AtomicBool::new(false));
-            let (tx, rx) = channel();
+            let discard_request = Arc::new(AtomicBool::new(false));
+            let (tx, _rx) = channel();
+            let (event_tx, _event_rx) = channel();
+            let current_turn_id =
+                Arc::new(std::sync::atomic::AtomicU32::new(turn_item.turn as u32));
+            let turn_armed = Arc::new(AtomicBool::new(false));
+            let pending_synthesis_jobs = Arc::new(std::sync::atomic::AtomicU32::new(0));
 
-            tts_engine.synthesize_chunk(&turn_item.user, turn_item.turn as u32, cancel, tx)?;
+            let rb = ringbuf::HeapRb::<f32>::new(vox_lib::services::audio::PLAYBACK_BUFFER_SAMPLES);
+            let (producer, mut consumer) = rb.split();
+
+            let handles = vox_lib::services::audio::playback::PlaybackEngineHandles {
+                cancel_flag: cancel.clone(),
+                state_atomic: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                current_turn_id,
+                pending_synthesis_jobs,
+                event_tx,
+            };
+
+            let playback = Arc::new(vox_lib::services::audio::PlaybackEngine::from_parts(
+                producer,
+                handles,
+                discard_request,
+                turn_armed,
+                None,
+            ));
+
+            tts_engine.synthesize_chunk(
+                &turn_item.user,
+                turn_item.turn as u32,
+                cancel,
+                &playback,
+                tx,
+                None,
+            )?;
 
             let mut accumulated_samples = Vec::new();
-            while let Ok(evt) = rx.recv_timeout(Duration::from_millis(5000)) {
-                match evt {
-                    VoxEvent::TtsChunk { samples, .. } => {
-                        accumulated_samples.extend(samples);
-                    }
-                    VoxEvent::TtsFinished { .. } => break,
-                    _ => {}
-                }
+            while let Some(sample) = consumer.try_pop() {
+                accumulated_samples.push(sample);
             }
 
             if accumulated_samples.is_empty() {
                 println!("FAILED (Empty audio)");
             } else {
-                write_wav_file(&clip_path, &accumulated_samples, 24000)?;
+                write_wav_file(&clip_path, &accumulated_samples, 48000)?;
                 println!("DONE ({} samples)", accumulated_samples.len());
             }
         }

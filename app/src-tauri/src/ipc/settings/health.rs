@@ -135,6 +135,11 @@ pub async fn check_tts_provider_health(
             let model_path = models_dir.join(crate::services::tts::SUPERTONIC_MODEL_DIR);
             Ok(model_path.exists())
         }
+        TtsProviderConfig::Kokoro => {
+            let models_dir = paths::get().models.clone();
+            let model_path = models_dir.join(crate::services::tts::KOKORO_MODEL_DIR);
+            Ok(model_path.exists())
+        }
         TtsProviderConfig::Chatterbox { .. } => {
             let models_dir = paths::get().models.clone();
             let model_path = models_dir.join(crate::services::tts::CHATTERBOX_MODEL_DIR);

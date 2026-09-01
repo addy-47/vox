@@ -4,7 +4,6 @@ pub mod ptt;
 use crate::core::events::VoxEvent;
 use crate::core::settings::InteractionMode;
 use crate::core::state::AppState;
-use crate::services::audio::PlaybackEngine;
 use std::sync::Arc;
 use tauri::AppHandle;
 
@@ -54,11 +53,13 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
     let reference_audio = crate::services::tts::resolve_reference_audio(voice_id).await;
 
     crate::services::tts::actor::warm_up_tts(
-        app,
         crate::services::tts::actor::TtsWarmUpHandles {
             tts_tx: &mut engine.tts_tx,
             tts_handle: &mut engine.tts_handle,
             cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
+            playback_engine: Arc::clone(&engine.playback_engine),
+            pending_synthesis_jobs: Some(Arc::clone(&state.pipeline.pending_synthesis_jobs)),
+            telemetry_rtf: Some(Arc::clone(&state.telemetry.latest_tts_rtf)),
         },
         &settings,
         &tts_path,
@@ -74,11 +75,10 @@ pub fn handle_event<R: tauri::Runtime>(
     mode: InteractionMode,
     app: &AppHandle<R>,
     state: &AppState,
-    playback: &Arc<PlaybackEngine>,
     event: VoxEvent,
 ) {
     match mode {
-        InteractionMode::Passive => passive::handle_event(app, state, playback, event),
-        InteractionMode::PTT => ptt::handle_event(app, state, playback, event),
+        InteractionMode::Passive => passive::handle_event(app, state, event),
+        InteractionMode::PTT => ptt::handle_event(app, state, event),
     }
 }

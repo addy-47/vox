@@ -172,16 +172,11 @@ async fn send_ssml_request(
     event_tx: &Sender<VoxEvent>,
     turn_id: u32,
 ) -> Result<()> {
-    let now = chrono::Utc::now()
-        .format("%a %b %d %Y %H:%M:%S GMT+0000 (Coordinated Universal Time)")
-        .to_string();
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
 
-    let cfg_msg = format!(
-        "X-Timestamp:{}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{{\"context\":{{\"synthesis\":{{\"audio\":{{\"metadataoptions\":{{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"}},\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}}}}}\r\n",
-        now
-    );
+    let speech_config = "Content-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"},\"outputFormat\":\"audio-24khz-96kbitrate-mono-mp3\"}}}}";
 
-    if let Err(e) = ws_stream.send(Message::Text(cfg_msg.into())).await {
+    if let Err(e) = ws_stream.send(Message::Text(speech_config.into())).await {
         if let Err(send_err) = event_tx.send(VoxEvent::Error {
             turn_id,
             message: format!("Edge TTS config send error: {}", e),
@@ -259,7 +254,9 @@ impl TtsProvider for EdgeTtsProvider {
         text: &str,
         turn_id: u32,
         cancel: Arc<AtomicBool>,
+        playback: &Arc<crate::services::audio::PlaybackEngine>,
         event_tx: Sender<VoxEvent>,
+        telemetry_rtf: Option<&Arc<std::sync::atomic::AtomicU32>>,
     ) -> anyhow::Result<()> {
         let text_clean = text.trim();
         log::debug!("[EdgeTTS] Entering synthesize_chunk: '{}'", text_clean);
@@ -330,18 +327,12 @@ impl TtsProvider for EdgeTtsProvider {
                                 );
                                 break;
                             }
-                            if let Err(e) = event_tx.send(VoxEvent::TtsChunk {
-                                turn_id,
-                                samples: chunk.to_vec(),
-                            }) {
-                                log::warn!("[EdgeTTS] Error sending TtsChunk: {:?}", e);
-                                break;
-                            }
+                            playback.ingest_chunk(chunk);
                         }
 
                         if !cancel.load(Ordering::Relaxed) {
-                            if let Err(e) = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf }) {
-                                log::warn!("[EdgeTTS] Error sending TtsFinished: {:?}", e);
+                            if let Some(rtf_handle) = telemetry_rtf {
+                                rtf_handle.store(rtf.to_bits(), Ordering::Relaxed);
                             }
                         }
                     }

@@ -36,9 +36,9 @@ use crate::ipc::tray::{
     toggle_tray_visibility, update_interaction_mode,
 };
 #[cfg(target_os = "linux")]
-use crate::tray::setup_linux_virtual_layer;
-#[cfg(target_os = "linux")]
 use crate::toast::setup_linux_toast_layer;
+#[cfg(target_os = "linux")]
+use crate::tray::setup_linux_virtual_layer;
 
 use crate::monitoring::system_monitor::spawn_system_monitor;
 

@@ -1,53 +1,45 @@
+use super::resample::upsample_2x_into;
 use super::{
     PLAYBACK_BUFFER_SAMPLES, PLAYBACK_CHANNELS, PLAYBACK_DEFAULT_VOLUME, PLAYBACK_ENERGY_EXPONENT,
     PLAYBACK_ENERGY_MULTIPLIER, PLAYBACK_SAMPLE_RATE, PLAYBACK_VOLUME_RAMP_STEP,
+    PREROLL_THRESHOLD_SAMPLES,
 };
+use crate::core::events::VoxEvent;
 use crate::core::state::InteractionState;
+use crate::services::realtime::resampler::AudioResampler;
+use crate::services::realtime::{
+    RealtimeAudioConfig, DEFAULT_OUTPUT_SAMPLE_RATE, PCM_INT16_DIVISOR_FLOAT,
+    SINC_CHUNK_SIZE_OUTPUT,
+};
+use crate::utils::audio_filters::FilterBank;
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
 use parking_lot::Mutex;
 use ringbuf::traits::*;
 use ringbuf::{HeapCons, HeapProd};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
-/// Upsample 24kHz mono PCM to 48kHz via cubic Hermite interpolation into a reusable buffer.
-#[inline]
-pub fn upsample_2x_into(input: &[f32], out: &mut Vec<f32>) {
-    out.clear();
-    if input.is_empty() {
-        return;
-    }
-    let len = input.len();
-    out.reserve(len * 2);
-    for i in 0..len {
-        let p1 = input[i];
-        out.push(p1);
-
-        let p0 = if i > 0 { input[i - 1] } else { p1 };
-        let p2 = if i + 1 < len { input[i + 1] } else { p1 };
-        let p3 = if i + 2 < len { input[i + 2] } else { p2 };
-
-        let v = 0.5 * (p2 - p0);
-        let v_next = if i + 2 < len {
-            let p4 = if i + 3 < len { input[i + 3] } else { p3 };
-            0.5 * (p4 - p1)
-        } else {
-            0.0
-        };
-
-        let interp = 0.5 * (p1 + p2) + 0.125 * (v - v_next);
-        out.push(interp);
-    }
+/// Telemetry and visualization atomics passed to the playback engine.
+#[derive(Clone)]
+pub struct PlaybackTelemetryHandles {
+    pub energy: Arc<AtomicU32>,
+    pub low: Arc<AtomicU32>,
+    pub mid: Arc<AtomicU32>,
+    pub high: Arc<AtomicU32>,
+    pub underruns: Arc<AtomicU64>,
 }
 
-/// Upsample 24kHz mono PCM to 48kHz via cubic Hermite interpolation.
-#[inline]
-pub fn upsample_2x(input: &[f32]) -> Vec<f32> {
-    let mut out = Vec::with_capacity(input.len() * 2);
-    upsample_2x_into(input, &mut out);
-    out
+/// Handles and state atomics for initializing or wrapping a playback engine.
+#[derive(Clone)]
+pub struct PlaybackEngineHandles {
+    pub cancel_flag: Arc<AtomicBool>,
+    pub state_atomic: Arc<AtomicU32>,
+    pub current_turn_id: Arc<AtomicU32>,
+    pub pending_synthesis_jobs: Arc<AtomicU32>,
+    pub event_tx: Sender<VoxEvent>,
 }
 
 /// Core audio playback engine managing a CPAL stream, SPSC lock-free ring buffer, and volume ramps.
@@ -55,47 +47,92 @@ pub struct PlaybackEngine {
     producer: Mutex<(HeapProd<f32>, Vec<f32>)>,
     cancel_flag: Arc<AtomicBool>,
     discard_request: Arc<AtomicBool>,
-    _stream: Option<cpal::Stream>,
+    event_tx: Sender<VoxEvent>,
+    current_turn_id: Arc<AtomicU32>,
+    turn_armed: Arc<AtomicBool>,
+    pending_synthesis_jobs: Arc<AtomicU32>,
+    stream: Option<cpal::Stream>,
 }
 
-/// Telemetry and visualization atomics passed to the playback engine.
-#[derive(Clone)]
-pub struct PlaybackTelemetryHandles {
-    pub energy: Arc<std::sync::atomic::AtomicU32>,
-    pub low: Arc<std::sync::atomic::AtomicU32>,
-    pub mid: Arc<std::sync::atomic::AtomicU32>,
-    pub high: Arc<std::sync::atomic::AtomicU32>,
-    pub underruns: Arc<std::sync::atomic::AtomicU64>,
+/// Context state held by the real-time CPAL output stream callback.
+struct PlaybackStreamContext {
+    consumer: HeapCons<f32>,
+    handles: PlaybackEngineHandles,
+    discard_request: Arc<AtomicBool>,
+    turn_armed: Arc<AtomicBool>,
+    playback_energy: Arc<AtomicU32>,
+    playback_low: Arc<AtomicU32>,
+    playback_mid: Arc<AtomicU32>,
+    playback_high: Arc<AtomicU32>,
+    playback_underruns: Arc<AtomicU64>,
+    last_sample: f32,
+    current_volume: f32,
+    filter_bank: FilterBank,
 }
+
+// ─── Trait Implementations ───────────────────────────────────────────────────
 
 unsafe impl Send for PlaybackEngine {}
 unsafe impl Sync for PlaybackEngine {}
 
+impl Drop for PlaybackEngine {
+    /// Cleans up and halts output on engine drop.
+    fn drop(&mut self) {
+        self.cancel();
+    }
+}
+
+// ─── PlaybackEngine Inherent Implementations ─────────────────────────────────
+
 impl PlaybackEngine {
     /// Initialise CPAL output stream at 48kHz without starting playback immediately.
     pub fn new(
-        cancel_flag: Arc<AtomicBool>,
-        state_atomic: Arc<AtomicU32>,
+        handles: PlaybackEngineHandles,
         telemetry: PlaybackTelemetryHandles,
     ) -> Result<Self> {
         let rb = ringbuf::HeapRb::<f32>::new(PLAYBACK_BUFFER_SAMPLES);
         let (producer, consumer) = rb.split();
         let discard_request = Arc::new(AtomicBool::new(false));
+        let turn_armed = Arc::new(AtomicBool::new(false));
 
         let stream = Self::build_cpal_stream(
             consumer,
-            state_atomic,
-            Arc::clone(&cancel_flag),
+            handles.clone(),
             Arc::clone(&discard_request),
+            Arc::clone(&turn_armed),
             &telemetry,
         )?;
 
         Ok(Self {
             producer: Mutex::new((producer, Vec::with_capacity(4096))),
-            cancel_flag,
+            cancel_flag: handles.cancel_flag,
             discard_request,
-            _stream: Some(stream),
+            event_tx: handles.event_tx,
+            current_turn_id: handles.current_turn_id,
+            turn_armed,
+            pending_synthesis_jobs: handles.pending_synthesis_jobs,
+            stream: Some(stream),
         })
+    }
+
+    /// Creates a PlaybackEngine from constituent components without building a hardware stream.
+    pub fn from_parts(
+        producer: HeapProd<f32>,
+        handles: PlaybackEngineHandles,
+        discard_request: Arc<AtomicBool>,
+        turn_armed: Arc<AtomicBool>,
+        stream: Option<cpal::Stream>,
+    ) -> Self {
+        Self {
+            producer: Mutex::new((producer, Vec::with_capacity(4096))),
+            cancel_flag: handles.cancel_flag,
+            discard_request,
+            event_tx: handles.event_tx,
+            current_turn_id: handles.current_turn_id,
+            turn_armed,
+            pending_synthesis_jobs: handles.pending_synthesis_jobs,
+            stream,
+        }
     }
 
     /// Ingest a 24kHz audio chunk from TTS, upsample 2x to 48kHz, and push to ring buffer.
@@ -115,6 +152,99 @@ impl PlaybackEngine {
                 scratch.len() - pushed
             );
         }
+
+        // Gate 1 (Start): Preroll cushion threshold check before dispatching PlaybackStarted
+        if !self.turn_armed.load(Ordering::Relaxed) {
+            let occupied = prod.occupied_len();
+            if occupied >= PREROLL_THRESHOLD_SAMPLES {
+                self.turn_armed.store(true, Ordering::Relaxed);
+                let tid = self.current_turn_id.load(Ordering::Relaxed);
+                if let Err(e) = self
+                    .event_tx
+                    .send(VoxEvent::PlaybackStarted { turn_id: tid })
+                {
+                    log::warn!("[Audio::Playback] Failed to emit PlaybackStarted: {}", e);
+                } else {
+                    log::info!(
+                        "[Audio::Playback] Preroll cushion satisfied ({} samples) — PlaybackStarted emitted (turn {})",
+                        occupied,
+                        tid
+                    );
+                }
+            }
+        }
+    }
+
+    /// Ingest a raw PCM i16 chunk with arbitrary sample rate, normalize, resample to 24kHz if needed, and push.
+    pub fn ingest_chunk_i16(&self, chunk_i16: &[i16], resampler: &mut Option<AudioResampler>) {
+        if self.cancel_flag.load(Ordering::Relaxed) || chunk_i16.is_empty() {
+            return;
+        }
+
+        let pcm_24k = if let Some(ref mut r) = resampler {
+            match r.process_i16(chunk_i16) {
+                Ok(out) => out,
+                Err(e) => {
+                    log::error!("[Audio::Playback] Resampling error: {:?}", e);
+                    return;
+                }
+            }
+        } else {
+            chunk_i16.to_vec()
+        };
+
+        let mut f32_chunk = Vec::with_capacity(pcm_24k.len());
+        for &s in &pcm_24k {
+            f32_chunk.push(s as f32 / PCM_INT16_DIVISOR_FLOAT);
+        }
+
+        self.ingest_chunk(&f32_chunk);
+    }
+
+    /// Spawns an async receiver worker reading PCM i16 from a Tokio channel and streaming into PlaybackEngine.
+    pub fn spawn_pcm_stream_worker(
+        self: &Arc<Self>,
+        mut rx: tokio::sync::mpsc::Receiver<Vec<i16>>,
+        config: RealtimeAudioConfig,
+        handle: &tokio::runtime::Handle,
+    ) {
+        let engine = Arc::clone(self);
+        handle.spawn(async move {
+            let mut resampler = if config.requires_output_resampling
+                || config.output_sample_rate != DEFAULT_OUTPUT_SAMPLE_RATE
+            {
+                match AudioResampler::new(
+                    config.output_sample_rate,
+                    DEFAULT_OUTPUT_SAMPLE_RATE,
+                    SINC_CHUNK_SIZE_OUTPUT,
+                ) {
+                    Ok(r) => Some(r),
+                    Err(e) => {
+                        log::error!(
+                            "[Audio::Playback] Failed to create output resampler: {:?}",
+                            e
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            while let Some(pcm) = rx.recv().await {
+                engine.ingest_chunk_i16(&pcm, &mut resampler);
+            }
+        });
+    }
+
+    /// Returns true if an active CPAL audio hardware output stream is bound.
+    pub fn has_active_stream(&self) -> bool {
+        self.stream.is_some()
+    }
+
+    /// Returns a clone of the pending synthesis jobs atomic counter.
+    pub fn pending_synthesis_jobs(&self) -> Arc<AtomicU32> {
+        Arc::clone(&self.pending_synthesis_jobs)
     }
 
     /// Cancels active playback, signals consumer discard, and resets buffer count.
@@ -132,9 +262,9 @@ impl PlaybackEngine {
     /// Builds and starts the CPAL 48kHz stereo output stream.
     fn build_cpal_stream(
         consumer: HeapCons<f32>,
-        state_atomic: Arc<AtomicU32>,
-        cancel_flag: Arc<AtomicBool>,
+        handles: PlaybackEngineHandles,
         discard_request: Arc<AtomicBool>,
+        turn_armed: Arc<AtomicBool>,
         telemetry: &PlaybackTelemetryHandles,
     ) -> Result<cpal::Stream> {
         let host = cpal::default_host();
@@ -142,9 +272,9 @@ impl PlaybackEngine {
 
         let mut cb_ctx = PlaybackStreamContext {
             consumer,
-            state_atomic,
-            cancel_flag,
+            handles,
             discard_request,
+            turn_armed,
             playback_energy: Arc::clone(&telemetry.energy),
             playback_low: Arc::clone(&telemetry.low),
             playback_mid: Arc::clone(&telemetry.mid),
@@ -152,7 +282,7 @@ impl PlaybackEngine {
             playback_underruns: Arc::clone(&telemetry.underruns),
             last_sample: 0.0,
             current_volume: PLAYBACK_DEFAULT_VOLUME,
-            filter_bank: crate::utils::audio_filters::FilterBank::new(PLAYBACK_SAMPLE_RATE as f32),
+            filter_bank: FilterBank::new(PLAYBACK_SAMPLE_RATE as f32),
         };
 
         let stream = device
@@ -180,55 +310,7 @@ impl PlaybackEngine {
     }
 }
 
-/// Resolves default output device and validates 48kHz stereo stream config.
-fn resolve_output_device_and_config(host: &cpal::Host) -> Result<(cpal::Device, StreamConfig)> {
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| anyhow!("[Audio::Playback] No default output device found"))?;
-
-    log::info!("[Audio::Playback] Output device: {:?}", device.name());
-
-    let config = StreamConfig {
-        channels: PLAYBACK_CHANNELS,
-        sample_rate: cpal::SampleRate(PLAYBACK_SAMPLE_RATE),
-        buffer_size: cpal::BufferSize::Default,
-    };
-
-    let supported = device
-        .supported_output_configs()
-        .map_err(|e| anyhow!("[Audio::Playback] Failed to query output configs: {}", e))?
-        .find(|c| {
-            c.channels() == PLAYBACK_CHANNELS
-                && c.sample_format() == SampleFormat::F32
-                && c.min_sample_rate().0 <= PLAYBACK_SAMPLE_RATE
-                && c.max_sample_rate().0 >= PLAYBACK_SAMPLE_RATE
-        });
-
-    if supported.is_none() {
-        log::warn!(
-            "[Audio::Playback] {}Hz stereo f32 not reported as supported — trying anyway",
-            PLAYBACK_SAMPLE_RATE
-        );
-    }
-
-    Ok((device, config))
-}
-
-/// Context state held by the real-time CPAL output stream callback.
-struct PlaybackStreamContext {
-    consumer: HeapCons<f32>,
-    state_atomic: Arc<AtomicU32>,
-    cancel_flag: Arc<AtomicBool>,
-    discard_request: Arc<AtomicBool>,
-    playback_energy: Arc<std::sync::atomic::AtomicU32>,
-    playback_low: Arc<std::sync::atomic::AtomicU32>,
-    playback_mid: Arc<std::sync::atomic::AtomicU32>,
-    playback_high: Arc<std::sync::atomic::AtomicU32>,
-    playback_underruns: Arc<std::sync::atomic::AtomicU64>,
-    last_sample: f32,
-    current_volume: f32,
-    filter_bank: crate::utils::audio_filters::FilterBank,
-}
+// ─── PlaybackStreamContext Implementation ────────────────────────────────────
 
 impl PlaybackStreamContext {
     /// Handles buffer drain, cancellation, discard requests, and audio output generation.
@@ -236,15 +318,20 @@ impl PlaybackStreamContext {
         if self.discard_request.load(Ordering::Relaxed) {
             self.consumer.skip(self.consumer.occupied_len());
             self.discard_request.store(false, Ordering::Relaxed);
+            self.turn_armed.store(false, Ordering::Relaxed);
             self.reset_telemetry_state();
         }
 
-        let is_speaking = InteractionState::from(self.state_atomic.load(Ordering::Relaxed))
+        let is_speaking = InteractionState::from(self.handles.state_atomic.load(Ordering::Relaxed))
             == InteractionState::Speaking;
 
-        if !is_speaking || self.cancel_flag.load(Ordering::Relaxed) {
-            if self.cancel_flag.load(Ordering::Relaxed) {
+        // Drain allowed if state is Speaking OR if turn is armed (pre-roll threshold met)
+        let playback_active = is_speaking || self.turn_armed.load(Ordering::Relaxed);
+
+        if !playback_active || self.handles.cancel_flag.load(Ordering::Relaxed) {
+            if self.handles.cancel_flag.load(Ordering::Relaxed) {
                 self.consumer.skip(self.consumer.occupied_len());
+                self.turn_armed.store(false, Ordering::Relaxed);
             }
             self.reset_telemetry_state();
             output.fill(0.0);
@@ -302,11 +389,30 @@ impl PlaybackStreamContext {
         self.update_energy_metrics(frames, sum_sq, sum_low_sq, sum_mid_sq, sum_high_sq);
 
         if self.consumer.is_empty() {
-            if InteractionState::from(self.state_atomic.load(Ordering::Relaxed))
-                == InteractionState::Speaking
-            {
+            let pending_jobs = self.handles.pending_synthesis_jobs.load(Ordering::Relaxed);
+            let armed = self.turn_armed.load(Ordering::Relaxed);
+
+            if pending_jobs > 0 {
+                // Mid-turn gap: next clause is in-flight synthesizing
                 self.playback_underruns.fetch_add(1, Ordering::Relaxed);
+            } else if armed {
+                // Gate 2 (End): Genuinely done with all clauses in turn
+                self.turn_armed.store(false, Ordering::Relaxed);
+                let tid = self.handles.current_turn_id.load(Ordering::Relaxed);
+                if let Err(e) = self
+                    .handles
+                    .event_tx
+                    .send(VoxEvent::PlaybackFinished { turn_id: tid })
+                {
+                    log::warn!("[Audio::Playback] Failed to emit PlaybackFinished: {}", e);
+                } else {
+                    log::info!(
+                        "[Audio::Playback] Playback completed — PlaybackFinished emitted (turn {})",
+                        tid
+                    );
+                }
             }
+
             self.playback_energy
                 .store(0f32.to_bits(), Ordering::Relaxed);
             self.playback_low.store(0f32.to_bits(), Ordering::Relaxed);
@@ -353,9 +459,38 @@ impl PlaybackStreamContext {
     }
 }
 
-impl Drop for PlaybackEngine {
-    /// Cleans up and halts output on engine drop.
-    fn drop(&mut self) {
-        self.cancel();
+// ─── Free Helper Functions ───────────────────────────────────────────────────
+
+/// Resolves default output device and validates 48kHz stereo stream config.
+fn resolve_output_device_and_config(host: &cpal::Host) -> Result<(cpal::Device, StreamConfig)> {
+    let device = host
+        .default_output_device()
+        .ok_or_else(|| anyhow!("[Audio::Playback] No default output device found"))?;
+
+    log::info!("[Audio::Playback] Output device: {:?}", device.name());
+
+    let config = StreamConfig {
+        channels: PLAYBACK_CHANNELS,
+        sample_rate: cpal::SampleRate(PLAYBACK_SAMPLE_RATE),
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    let supported = device
+        .supported_output_configs()
+        .map_err(|e| anyhow!("[Audio::Playback] Failed to query output configs: {}", e))?
+        .find(|c| {
+            c.channels() == PLAYBACK_CHANNELS
+                && c.sample_format() == SampleFormat::F32
+                && c.min_sample_rate().0 <= PLAYBACK_SAMPLE_RATE
+                && c.max_sample_rate().0 >= PLAYBACK_SAMPLE_RATE
+        });
+
+    if supported.is_none() {
+        log::warn!(
+            "[Audio::Playback] {}Hz stereo f32 not reported as supported — trying anyway",
+            PLAYBACK_SAMPLE_RATE
+        );
     }
+
+    Ok((device, config))
 }

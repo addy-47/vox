@@ -127,7 +127,10 @@ async fn create_vad_instance(state: &AppState) -> Result<VadBackend, String> {
 }
 
 /// Creates and initializes the CPAL audio playback engine.
-fn create_playback_engine(state: &AppState) -> Result<Arc<PlaybackEngine>, String> {
+fn create_playback_engine(
+    state: &AppState,
+    event_tx: std::sync::mpsc::Sender<VoxEvent>,
+) -> Result<Arc<PlaybackEngine>, String> {
     let telemetry_handles = PlaybackTelemetryHandles {
         energy: Arc::clone(&state.telemetry.latest_playback_energy),
         low: Arc::clone(&state.telemetry.latest_playback_low),
@@ -136,12 +139,16 @@ fn create_playback_engine(state: &AppState) -> Result<Arc<PlaybackEngine>, Strin
         underruns: Arc::clone(&state.pipeline.playback_underruns),
     };
 
-    let pe = PlaybackEngine::new(
-        Arc::clone(&state.pipeline.cancel_flag),
-        Arc::clone(&state.pipeline.current_state_atomic),
-        telemetry_handles,
-    )
-    .map_err(|e| format!("[Core::Engine] Playback engine init failed: {}", e))?;
+    let engine_handles = crate::services::audio::playback::PlaybackEngineHandles {
+        cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
+        state_atomic: Arc::clone(&state.pipeline.current_state_atomic),
+        current_turn_id: Arc::clone(&state.pipeline.turn_id),
+        pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_synthesis_jobs),
+        event_tx,
+    };
+
+    let pe = PlaybackEngine::new(engine_handles, telemetry_handles)
+        .map_err(|e| format!("[Core::Engine] Playback engine init failed: {}", e))?;
 
     Ok(Arc::new(pe))
 }
@@ -247,7 +254,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let audio_stream = AudioStream::new(producer, input_device).map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
-    let playback_engine = create_playback_engine(state)?;
+    let playback_engine = create_playback_engine(state, vox_event_tx.clone())?;
     let orchestrator_handle =
         spawn_router(app.clone(), vox_event_rx, Arc::clone(&playback_engine))?;
 
