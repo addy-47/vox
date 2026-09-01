@@ -1,6 +1,4 @@
-use super::{
-    MODEL_CONNECT_TIMEOUT_SECS, MODEL_DOWNLOAD_TIMEOUT_SECS, PROGRESS_EMIT_INTERVAL_MS,
-};
+use super::{MODEL_CONNECT_TIMEOUT_SECS, MODEL_DOWNLOAD_TIMEOUT_SECS, PROGRESS_EMIT_INTERVAL_MS};
 use crate::setup::manifest::{ModelEntry, VerifiedMarker};
 use futures_util::StreamExt;
 use reqwest::Client;

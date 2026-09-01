@@ -4,12 +4,6 @@ pub mod ml;
 pub mod retrieval;
 
 pub use crate::core::error::MemoryError;
-
-pub use crate::services::harness::prompt_builder::format_relative_timestamp;
-pub use crate::services::harness::{
-    prepare_turn_context, spawn_state_compaction_observer, trigger_background_compaction,
-    ChatMessage, ContextHarness, ConversationContext, ConversationManager, PrepareTurnParams, Role,
-};
 pub use compaction::{run_compaction, CompactionResult, COMPACTION_SYSTEM_PROMPT};
 pub use ml::edge_classifier::{
     classify_edge, ensure_edge_classifier_loaded, init_edge_classifier, is_edge_classifier_loaded,

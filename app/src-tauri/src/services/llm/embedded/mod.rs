@@ -1,10 +1,16 @@
-use super::llama_cpp::LlmWorker;
+pub mod family;
+pub mod generate;
+pub mod worker;
+
+pub use family::ModelFamily;
+pub use worker::LlmWorker;
+
 use crate::core::events::VoxEvent;
 use crate::core::settings::LlmModelInfo;
+use crate::services::harness::ConversationContext;
 use crate::services::llm::{
     GenerationRequest, LlmEngine, LlmError, ProviderCapabilities, ProviderKind, Support,
 };
-use crate::services::memory::ConversationContext;
 use futures_util::future::BoxFuture;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -77,7 +83,7 @@ impl EmbeddedProvider {
     }
 }
 
-impl super::LlmProvider for EmbeddedProvider {
+impl crate::services::llm::LlmProvider for EmbeddedProvider {
     fn generate<'a>(
         &'a self,
         request: GenerationRequest,
@@ -98,54 +104,31 @@ impl super::LlmProvider for EmbeddedProvider {
         })
     }
 
+    fn capabilities(&self) -> &ProviderCapabilities {
+        &self.capabilities
+    }
+
     fn health_check<'a>(&'a self) -> BoxFuture<'a, Result<(), LlmError>> {
         Box::pin(async move {
             if self.model_path.exists() {
                 Ok(())
             } else {
-                Err(LlmError::Engine("Model file missing from disk".to_string()))
+                Err(LlmError::Engine(format!(
+                    "Embedded model path not found: {:?}",
+                    self.model_path
+                )))
             }
         })
     }
 
     fn list_models<'a>(&'a self) -> BoxFuture<'a, Result<Vec<LlmModelInfo>, LlmError>> {
         Box::pin(async move {
-            let mut models = Vec::new();
-            if let Some(parent) = self.model_path.parent() {
-                if let Ok(entries) = std::fs::read_dir(parent) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.is_file()
-                            && path.extension().and_then(|e| e.to_str()) == Some("gguf")
-                        {
-                            if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
-                                let metadata = entry.metadata().ok();
-                                let size_bytes = metadata.map(|m| m.len());
-                                let clean_name = filename
-                                    .strip_suffix(".gguf")
-                                    .unwrap_or(filename)
-                                    .replace(['_', '-'], " ");
-
-                                models.push(LlmModelInfo {
-                                    id: filename.to_string(),
-                                    name: clean_name,
-                                    size_bytes,
-                                    quantization: None,
-                                    family: None,
-                                    provider_kind: "embedded".to_string(),
-                                    capabilities: None,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-            Ok(models)
+            let dir = self
+                .model_path
+                .parent()
+                .unwrap_or_else(|| Path::new("."));
+            Self::list_models_in_dir(dir)
         })
-    }
-
-    fn capabilities(&self) -> &ProviderCapabilities {
-        &self.capabilities
     }
 
     fn kind(&self) -> ProviderKind {

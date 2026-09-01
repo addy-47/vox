@@ -17,7 +17,7 @@ use common::reporting::{
 };
 use common::stt_harness::{benchmark_streaming_provider, BenchmarkClip};
 use std::path::PathBuf;
-use vox_lib::services::stt::providers::{EmbeddedSttProvider, SttProvider};
+use vox_lib::services::stt::{EmbeddedSttProvider, SttProvider};
 
 #[derive(Parser, Debug)]
 #[command(

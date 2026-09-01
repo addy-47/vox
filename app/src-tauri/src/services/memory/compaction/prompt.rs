@@ -63,6 +63,21 @@ Hard, non-negotiable limits, safety boundaries, security rules, health/dietary r
 - Do not output any markdown codeblock formatting or surrounding commentary outside the JSON object.
 </output_requirements>"#;
 
+/// Calculates dynamic max compaction output tokens based on context window size.
+pub fn calculate_compaction_max_tokens(ctx_size: u32) -> u32 {
+    let ctx = ctx_size as f32;
+    let ratio = if ctx <= 8192.0 {
+        let t = ((ctx - 2048.0) / (8192.0 - 2048.0)).clamp(0.0, 1.0);
+        0.30 - t * (0.30 - 0.15)
+    } else {
+        let t = ((ctx - 8192.0) / (1_000_000.0 - 8192.0)).clamp(0.0, 1.0);
+        0.15 - t * (0.15 - 0.10)
+    };
+
+    let raw = (ctx * ratio) as u32;
+    raw.clamp(256, 16_384)
+}
+
 /// Builds the provider-neutral GenerationRequest for compaction.
 pub fn build_compaction_request(
     history_messages: &[ChatMessage],
@@ -89,7 +104,9 @@ pub fn build_compaction_request(
 
     let default_settings = crate::core::settings::LlmSettings::default();
     let effective_settings = settings.unwrap_or(&default_settings);
-    let policy = crate::services::llm::GenerationPolicy::from_settings(effective_settings);
+    let eff_ctx = effective_settings.effective_ctx_size();
+    let compaction_max_tokens = calculate_compaction_max_tokens(eff_ctx);
+    let policy = crate::services::llm::GenerationPolicy::from_settings(effective_settings, Some(compaction_max_tokens));
 
     policy.build_request(
         crate::services::llm::GenerationPurpose::MemoryCompaction,
