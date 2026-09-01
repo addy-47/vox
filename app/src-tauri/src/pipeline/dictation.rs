@@ -260,7 +260,12 @@ fn on_error<R: tauri::Runtime>(
         log::warn!("[Dictation] Failed to emit voice_error: {}", e);
     }
     if crate::toast::should_show_error_toast(app) {
-        if let Err(e) = crate::toast::show_toast(app, "Voice Error", &toast_message, crate::core::events::ToastLevel::Error) {
+        if let Err(e) = crate::toast::show_toast(
+            app,
+            "Voice Error",
+            &toast_message,
+            crate::core::events::ToastLevel::Error,
+        ) {
             log::warn!("[Dictation] Failed to show error toast: {}", e);
         }
     }

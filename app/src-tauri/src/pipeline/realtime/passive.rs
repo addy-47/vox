@@ -80,7 +80,6 @@ pub async fn start_session<R: tauri::Runtime>(
             crate::core::settings::InteractionMode::Passive,
             playback_engine,
             pipeline_tx,
-            state.pipeline.turn_id.clone(),
         )
         .map_err(|e| format!("[RealtimePassive] Engine start failed: {}", e))?;
 
@@ -166,7 +165,6 @@ pub async fn resume_session<R: tauri::Runtime>(
                 crate::core::settings::InteractionMode::Passive,
                 playback_engine,
                 pipeline_tx,
-                state.pipeline.turn_id.clone(),
             )
             .map_err(|e| format!("[RealtimePassive] Engine restart failed: {}", e))?;
 
@@ -340,6 +338,12 @@ fn on_transcript_final<R: tauri::Runtime>(
     let processed_text =
         crate::services::translit::transliterate_if_hi(&text, true, transliterate_enabled);
 
+    if processed_text.trim().is_empty() {
+        let ctx = RoutingContext::from_app_state(state);
+        transition(InteractionState::Ready, &ctx, app, state);
+        return;
+    }
+
     if current_state == InteractionState::Ready {
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Listening, &ctx, app, state);
@@ -382,14 +386,8 @@ fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<
     }
 }
 
-/// Transitions pipeline state to assistant speaking when audio playback begins.
-fn on_playback_started<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
-    let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Speaking, &ctx, app, state);
-}
-
-/// Transitions pipeline state back to listening upon playback completion.
-fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+/// Finalizes assistant turn response in memory and persists to SQLite database.
+fn on_llm_finished(turn_id: u32, state: &AppState) {
     let full_text = ACCUMULATOR.lock().take_assistant_response();
     if !full_text.trim().is_empty() {
         state
@@ -420,18 +418,32 @@ fn on_playback_finished<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, sta
             }
         }
     }
+}
 
-    let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Ready, &ctx, app, state);
+/// Transitions pipeline state to assistant speaking when audio playback begins.
+fn on_playback_started<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
+    if state.pipeline.state() == InteractionState::Thinking {
+        let ctx = RoutingContext::from_app_state(state);
+        transition(InteractionState::Speaking, &ctx, app, state);
+    }
+}
+
+/// Transitions pipeline state back to ready upon playback completion.
+fn on_playback_finished<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
+    if state.pipeline.state() == InteractionState::Speaking {
+        let ctx = RoutingContext::from_app_state(state);
+        transition(InteractionState::Ready, &ctx, app, state);
+    }
 }
 
 /// Handles error event, transitions to Error state, and surfaces error payload to UI.
 fn on_error<R: tauri::Runtime>(
-    _turn_id: u32,
+    turn_id: u32,
     message: String,
     app: &AppHandle<R>,
     state: &AppState,
 ) {
+    log::error!("[RealtimePassive] Error on turn {}: {}", turn_id, message);
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Error, &ctx, app, state);
 
@@ -448,12 +460,9 @@ fn on_error<R: tauri::Runtime>(
     }
 }
 
-/// Handles cancellation event and resets state machine to Ready.
-fn on_cancelled<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
-    log::info!(
-        "[RealtimePassive] Interaction cancelled on turn {}",
-        turn_id
-    );
+/// Resets turn accumulator and transitions state machine to ready on user cancellation.
+fn on_cancelled<R: tauri::Runtime>(_turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+    ACCUMULATOR.lock().clear();
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
 }
@@ -473,8 +482,9 @@ pub fn handle_event<R: tauri::Runtime>(
             on_transcript_final(turn_id, text, app, state)
         }
         VoxEvent::LlmToken { turn_id, token } => on_llm_token(turn_id, token, app),
+        VoxEvent::LlmFinished { turn_id } => on_llm_finished(turn_id, state),
         VoxEvent::PlaybackStarted { .. } => on_playback_started(app, state),
-        VoxEvent::PlaybackFinished { turn_id } => on_playback_finished(turn_id, app, state),
+        VoxEvent::PlaybackFinished { .. } => on_playback_finished(app, state),
         VoxEvent::Interrupted { .. } => on_interrupt(app, state, playback),
         VoxEvent::Cancelled { turn_id } => on_cancelled(turn_id, app, state),
         VoxEvent::Error { turn_id, message } => on_error(turn_id, message, app, state),

@@ -141,3 +141,7 @@ path = "evals/eval_retrieval.rs"
 name = "stt_bench"
 harness = false
 
+[[bench]]
+name = "tts_bench"
+harness = false
+

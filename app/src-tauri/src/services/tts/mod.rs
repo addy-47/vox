@@ -9,6 +9,7 @@ pub use actor::{
 pub use providers::chatterbox::ChatterboxEngine;
 pub use providers::chatterbox_remote::ChatterboxRemoteProvider;
 pub use providers::edge_tts::EdgeTtsProvider;
+pub use providers::kokoro::KokoroEngine;
 pub use providers::supertonic::TtsEngine;
 pub use providers::{TtsProvider, TtsProviderKind};
 
@@ -20,7 +21,7 @@ pub const TTS_CHUNK_SIZE: usize = 2048;
 // ─── Quality & Speed Constraints ─────────────────────────────────────────────
 pub const MIN_QUALITY_STEPS: u32 = 2;
 pub const MAX_QUALITY_STEPS_CHATTERBOX: u32 = 10;
-pub const MAX_QUALITY_STEPS_SUPERTONIC: u32 = 12;
+pub const MAX_QUALITY_STEPS_SUPERTONIC: u32 = 16;
 pub const MIN_SPEED: f32 = 0.7;
 pub const MAX_SPEED: f32 = 2.0;
 pub const MIN_SPEED_EDGE: f32 = 0.5;
@@ -53,6 +54,12 @@ pub const MODEL_FILE_TTS_SUPER_VOCODER: &str = "vocoder.int8.onnx";
 pub const MODEL_FILE_TTS_SUPER_CONFIG: &str = "tts.json";
 pub const MODEL_FILE_TTS_SUPER_INDEXER: &str = "unicode_indexer.bin";
 pub const MODEL_FILE_TTS_SUPER_VOICE: &str = "voice.bin";
+
+pub const KOKORO_MODEL_DIR: &str = "tts/kokoro";
+pub const MODEL_FILE_TTS_KOKORO_MODEL: &str = "model.onnx";
+pub const MODEL_FILE_TTS_KOKORO_VOICES: &str = "voices.bin";
+pub const MODEL_FILE_TTS_KOKORO_TOKENS: &str = "tokens.txt";
+pub const MODEL_DIRNAME_TTS_KOKORO_ESPEAK: &str = "espeak-ng-data";
 
 pub const CHATTERBOX_MODEL_DIR: &str = "tts/chatterbox";
 pub const MODEL_DIRNAME_CHATTERBOX: &str = "chatterbox";
