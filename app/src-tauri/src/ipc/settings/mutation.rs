@@ -606,6 +606,9 @@ fn apply_tts_mutation(
                     crate::core::settings::TtsProviderConfig::Supertonic => {
                         settings.tts.active = crate::core::settings::TtsActiveProvider::Supertonic;
                     }
+                    crate::core::settings::TtsProviderConfig::Kokoro => {
+                        settings.tts.active = crate::core::settings::TtsActiveProvider::Kokoro;
+                    }
                     crate::core::settings::TtsProviderConfig::EdgeTts { voice } => {
                         settings.tts.active = crate::core::settings::TtsActiveProvider::EdgeTts;
                         settings.tts.edge_tts.voice = voice;
@@ -941,6 +944,19 @@ async fn dispatch_worker_command(
                         );
                     }
                     log::debug!("[Settings] VadCommand::UpdateAudioMode dispatched");
+                }
+            }
+            ("tts", "voice_index" | "voice") => {
+                if let Some(ref tts_tx) = engine.tts_tx {
+                    let voice_opt = value.as_i64().map(|v| v as i32).or_else(|| {
+                        value.as_str().and_then(|s| s.parse::<i32>().ok())
+                    });
+                    if let Some(voice) = voice_opt {
+                        if let Err(e) = tts_tx.send(crate::services::tts::TtsCommand::SetVoice(voice)) {
+                            log::warn!("[Settings] Failed to send TtsCommand::SetVoice: {}", e);
+                        }
+                        log::debug!("[Settings] TtsCommand::SetVoice({}) dispatched", voice);
+                    }
                 }
             }
             _ => {}

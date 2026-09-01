@@ -2,7 +2,6 @@ use super::super::{transition, RoutingContext, WINDOW_MAIN};
 use crate::core::events::VoiceErrorPayload;
 use crate::core::events::{emit_ipc_to, IpcEvent, LlmTokenPayload, TranscriptPayload, VoxEvent};
 use crate::core::state::{AppState, InteractionOwner, InteractionState};
-use crate::services::audio::PlaybackEngine;
 use crate::services::llm::actor::LlmCommand;
 use crate::services::tts::actor::{TtsClauseChunker, TtsCommand};
 use crate::services::vad::VadCommand;
@@ -234,9 +233,6 @@ pub async fn ptt_stop<R: tauri::Runtime>(
         return Ok(());
     }
 
-    let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Thinking, &ctx, app, state);
-
     if let Err(e) = engine
         .stt_tx
         .send(crate::services::stt::SttCommand::Final(turn_id, audio))
@@ -318,6 +314,9 @@ fn on_transcript_final<R: tauri::Runtime>(
         transition(InteractionState::Ready, &ctx, app, state);
         return;
     }
+
+    let ctx = RoutingContext::from_app_state(state);
+    transition(InteractionState::Thinking, &ctx, app, state);
 
     if let Err(e) = emit_ipc_to(
         app,
@@ -460,10 +459,18 @@ fn on_llm_token<R: tauri::Runtime>(
         if let Some(ref engine) = *guard {
             if let Some(ref tx) = engine.tts_tx {
                 for clause in clauses {
+                    state
+                        .pipeline
+                        .pending_synthesis_jobs
+                        .fetch_add(1, Ordering::Relaxed);
                     if let Err(e) = tx.send(TtsCommand::Generate {
                         turn_id,
                         text: clause,
                     }) {
+                        state
+                            .pipeline
+                            .pending_synthesis_jobs
+                            .fetch_sub(1, Ordering::Relaxed);
                         log::warn!("[ModularPTT] Failed to send Generate to TTS: {}", e);
                     }
                 }
@@ -478,10 +485,18 @@ fn on_llm_finished(turn_id: u32, state: &AppState) {
         let guard = state.engine.blocking_lock();
         if let Some(ref engine) = *guard {
             if let Some(ref tx) = engine.tts_tx {
+                state
+                    .pipeline
+                    .pending_synthesis_jobs
+                    .fetch_add(1, Ordering::Relaxed);
                 if let Err(e) = tx.send(TtsCommand::Generate {
                     turn_id,
                     text: remainder,
                 }) {
+                    state
+                        .pipeline
+                        .pending_synthesis_jobs
+                        .fetch_sub(1, Ordering::Relaxed);
                     log::warn!("[ModularPTT] Failed to send Generate to TTS: {}", e);
                 }
             }
@@ -520,29 +535,20 @@ fn on_llm_finished(turn_id: u32, state: &AppState) {
     }
 }
 
-/// Forwards synthesized audio samples to the audio playback buffer.
-fn on_tts_chunk(samples: Vec<f32>, playback: &Arc<PlaybackEngine>) {
-    playback.ingest_chunk(&samples);
-}
-
-/// Updates latest TTS real-time factor metrics upon synthesis completion.
-fn on_tts_finished(rtf: f32, state: &AppState) {
-    state
-        .telemetry
-        .latest_tts_rtf
-        .store(rtf.to_bits(), Ordering::Relaxed);
-}
-
 /// Transitions pipeline state to assistant speaking when audio playback begins.
 fn on_playback_started<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
-    let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Speaking, &ctx, app, state);
+    if state.pipeline.state() == InteractionState::Thinking {
+        let ctx = RoutingContext::from_app_state(state);
+        transition(InteractionState::Speaking, &ctx, app, state);
+    }
 }
 
 /// Finalizes assistant response playback and transitions pipeline back to ready state.
 fn on_playback_finished<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
-    let ctx = RoutingContext::from_app_state(state);
-    transition(InteractionState::Ready, &ctx, app, state);
+    if state.pipeline.state() == InteractionState::Speaking {
+        let ctx = RoutingContext::from_app_state(state);
+        transition(InteractionState::Ready, &ctx, app, state);
+    }
 }
 
 /// Logs pipeline errors and transitions state machine to error condition.
@@ -569,7 +575,12 @@ fn on_error<R: tauri::Runtime>(
         log::warn!("[ModularPTT] Failed to emit voice_error: {}", e);
     }
     if crate::toast::should_show_error_toast(app) {
-        if let Err(e) = crate::toast::show_toast(app, "Voice Error", &toast_message, crate::core::events::ToastLevel::Error) {
+        if let Err(e) = crate::toast::show_toast(
+            app,
+            "Voice Error",
+            &toast_message,
+            crate::core::events::ToastLevel::Error,
+        ) {
             log::warn!("[ModularPTT] Failed to show error toast: {}", e);
         }
     }
@@ -583,12 +594,7 @@ fn on_cancelled<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &App
 }
 
 /// Main event dispatcher for the modular Push-To-Talk pipeline domain.
-pub fn handle_event<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    state: &AppState,
-    playback: &Arc<PlaybackEngine>,
-    event: VoxEvent,
-) {
+pub fn handle_event<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, event: VoxEvent) {
     match event {
         VoxEvent::TranscriptPartial { turn_id, text } => {
             on_transcript_partial(turn_id, text, app, state)
@@ -598,8 +604,6 @@ pub fn handle_event<R: tauri::Runtime>(
         }
         VoxEvent::LlmToken { turn_id, token } => on_llm_token(turn_id, token, app, state),
         VoxEvent::LlmFinished { turn_id } => on_llm_finished(turn_id, state),
-        VoxEvent::TtsChunk { samples, .. } => on_tts_chunk(samples, playback),
-        VoxEvent::TtsFinished { rtf, .. } => on_tts_finished(rtf, state),
         VoxEvent::PlaybackStarted { .. } => on_playback_started(app, state),
         VoxEvent::PlaybackFinished { .. } => on_playback_finished(app, state),
         VoxEvent::Interrupted { .. } => on_interrupt(app, state),

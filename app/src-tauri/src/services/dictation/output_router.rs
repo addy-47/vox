@@ -33,7 +33,12 @@ fn dispatch_to_clipboard<R: tauri::Runtime>(
 ) -> Result<(), DictationError> {
     clipboard::set_text(text)?;
     log::info!("[Dictation::Router] Transcript written to system clipboard.");
-    if let Err(e) = crate::toast::show_toast(app, "Dictation Copied", text, crate::core::events::ToastLevel::Success) {
+    if let Err(e) = crate::toast::show_toast(
+        app,
+        "Dictation Copied",
+        text,
+        crate::core::events::ToastLevel::Success,
+    ) {
         log::warn!("[Dictation::Router] Failed to show toast: {}", e);
     }
     Ok(())
@@ -53,7 +58,12 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
             log::info!(
                 "[Dictation::Router] Transcript successfully pasted into focused application."
             );
-            if let Err(e) = crate::toast::show_toast(app, "Dictation Pasted", text, crate::core::events::ToastLevel::Success) {
+            if let Err(e) = crate::toast::show_toast(
+                app,
+                "Dictation Pasted",
+                text,
+                crate::core::events::ToastLevel::Success,
+            ) {
                 log::warn!("[Dictation::Router] Failed to show toast: {}", e);
             }
             Ok(())
@@ -69,7 +79,10 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
                 "Transcript saved to clipboard — paste manually with Ctrl+V.",
                 crate::core::events::ToastLevel::Warning,
             ) {
-                log::warn!("[Dictation::Router] Failed to show paste-blocked toast: {}", toast_err);
+                log::warn!(
+                    "[Dictation::Router] Failed to show paste-blocked toast: {}",
+                    toast_err
+                );
             }
             Ok(())
         }

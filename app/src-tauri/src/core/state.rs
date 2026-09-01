@@ -119,6 +119,7 @@ pub struct PipelineAtomics {
     pub turn_id: Arc<AtomicU32>,
     pub transcript_history: Arc<parking_lot::Mutex<VecDeque<String>>>,
     pub playback_underruns: Arc<std::sync::atomic::AtomicU64>,
+    pub pending_synthesis_jobs: Arc<AtomicU32>,
     pub current_state_atomic: Arc<std::sync::atomic::AtomicU32>,
     pub state_tx: tokio::sync::watch::Sender<InteractionState>,
     pub state_rx: tokio::sync::watch::Receiver<InteractionState>,
@@ -148,6 +149,7 @@ impl PipelineAtomics {
                 crate::core::constants::TRANSCRIPT_HISTORY_LIMIT,
             ))),
             playback_underruns: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            pending_synthesis_jobs: Arc::new(AtomicU32::new(0)),
             current_state_atomic: Arc::new(std::sync::atomic::AtomicU32::new(
                 InteractionState::Idle as u32,
             )),

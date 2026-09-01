@@ -82,7 +82,7 @@ pub struct TtsEngine {
     tts: Mutex<OfflineTts>,
     quality_steps: AtomicU32,
     speed: AtomicF32,
-    voice: i32,
+    voice: std::sync::atomic::AtomicI32,
 }
 
 struct AtomicF32 {
@@ -150,7 +150,7 @@ impl TtsEngine {
                 quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_SUPERTONIC),
             ),
             speed: AtomicF32::new(speed.clamp(MIN_SPEED, MAX_SPEED)),
-            voice: voice.clamp(0, 9),
+            voice: std::sync::atomic::AtomicI32::new(voice.clamp(0, 9)),
         })
     }
 }
@@ -170,6 +170,13 @@ impl TtsProvider for TtsEngine {
             .store(speed.clamp(MIN_SPEED, MAX_SPEED), Ordering::Relaxed);
     }
 
+    /// Hot-updates the active Supertonic speaker voice ID (0..9).
+    fn set_voice(&self, voice: i32) {
+        let clamped = voice.clamp(0, 9);
+        self.voice.store(clamped, Ordering::Relaxed);
+        log::debug!("[Supertonic] Active speaker voice updated to {}", clamped);
+    }
+
     /// Returns the TtsProviderKind::Supertonic variant identifier.
     fn kind(&self) -> TtsProviderKind {
         TtsProviderKind::Supertonic
@@ -181,12 +188,15 @@ impl TtsProvider for TtsEngine {
     }
 
     /// Synthesizes text chunk, resamples stream to 24kHz in real-time, and dispatches chunk events.
+    /// Synthesizes text chunk into 24kHz audio and feeds directly to PlaybackEngine.
     fn synthesize_chunk(
         &self,
         text: &str,
         turn_id: u32,
         cancel: Arc<AtomicBool>,
-        event_tx: Sender<VoxEvent>,
+        playback: &Arc<crate::services::audio::PlaybackEngine>,
+        _event_tx: Sender<VoxEvent>,
+        telemetry_rtf: Option<&Arc<AtomicU32>>,
     ) -> Result<()> {
         if cancel.load(Ordering::Relaxed) {
             return Ok(());
@@ -198,7 +208,7 @@ impl TtsProvider for TtsEngine {
             "en"
         };
 
-        let sid = self.voice;
+        let sid = self.voice.load(Ordering::Relaxed);
 
         log::info!(
             "[Supertonic] Synthesizing turn {} ({}): '{}' sid={}",
@@ -208,25 +218,24 @@ impl TtsProvider for TtsEngine {
             sid
         );
 
-        let steps = self.quality_steps.load(Ordering::Relaxed) as i32;
-        let spd = self.speed.load(Ordering::Relaxed);
-
         let start = std::time::Instant::now();
+        let speed = self.speed.load(Ordering::Relaxed);
+        let quality_steps = self.quality_steps.load(Ordering::Relaxed);
 
         let mut extra = HashMap::new();
         extra.insert("lang".to_string(), serde_json::json!(lang));
 
         let gen_config = GenerationConfig {
             sid,
-            num_steps: steps,
-            speed: spd,
+            num_steps: quality_steps as i32,
+            speed,
             silence_scale: 0.1,
             extra: Some(extra),
             ..Default::default()
         };
 
         let cancel_cb = cancel.clone();
-        let event_tx_cb = event_tx.clone();
+        let playback_cb = Arc::clone(playback);
         let mut lpf = BiquadFilter::new_lpf_11k();
 
         let tts_guard = self.tts.lock();
@@ -241,12 +250,7 @@ impl TtsProvider for TtsEngine {
                     return true;
                 }
                 let samples_24k = resample_44100_to_24000(raw_samples, &mut lpf);
-                if let Err(e) = event_tx_cb.send(VoxEvent::TtsChunk {
-                    turn_id,
-                    samples: samples_24k,
-                }) {
-                    log::warn!("[Supertonic] Error sending TtsChunk: {:?}", e);
-                }
+                playback_cb.ingest_chunk(&samples_24k);
                 true
             }),
         );
@@ -277,8 +281,8 @@ impl TtsProvider for TtsEngine {
             rtf
         );
 
-        if let Err(e) = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf }) {
-            log::warn!("[Supertonic] Error sending TtsFinished: {:?}", e);
+        if let Some(rtf_handle) = telemetry_rtf {
+            rtf_handle.store(rtf.to_bits(), Ordering::Relaxed);
         }
         Ok(())
     }

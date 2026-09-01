@@ -117,28 +117,10 @@ fn create_mock_engine(
     let mut engine = RealtimeEngine::new(provider, handle);
 
     let (dummy_tx, _) = std::sync::mpsc::channel();
-    let playback = Arc::new(
-        vox_lib::services::audio::PlaybackEngine::new(
-            Arc::new(AtomicBool::new(false)),
-            Arc::new(std::sync::atomic::AtomicU32::new(0)),
-            vox_lib::services::audio::playback::PlaybackTelemetryHandles {
-                energy: Arc::new(std::sync::atomic::AtomicU32::new(0)),
-                low: Arc::new(std::sync::atomic::AtomicU32::new(0)),
-                mid: Arc::new(std::sync::atomic::AtomicU32::new(0)),
-                high: Arc::new(std::sync::atomic::AtomicU32::new(0)),
-                underruns: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            },
-        )
-        .expect("Failed to create mock PlaybackEngine"),
-    );
+    let (playback, _consumer) = common::harness::create_mock_playback_engine();
 
     engine
-        .start(
-            InteractionMode::PTT,
-            playback,
-            dummy_tx,
-            Arc::new(std::sync::atomic::AtomicU32::new(1)),
-        )
+        .start(InteractionMode::PTT, playback, dummy_tx)
         .expect("Failed to start mock RealtimeEngine");
 
     engine

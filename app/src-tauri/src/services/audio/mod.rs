@@ -9,6 +9,7 @@ pub const PLAYBACK_DEFAULT_VOLUME: f32 = 1.0;
 pub const PLAYBACK_VOLUME_RAMP_STEP: f32 = 0.002;
 pub const PLAYBACK_ENERGY_MULTIPLIER: f32 = 15.0;
 pub const PLAYBACK_ENERGY_EXPONENT: f32 = 0.5;
+pub const PREROLL_THRESHOLD_SAMPLES: usize = 12_000;
 
 pub const INGESTION_BUFFER_CAPACITY_SAMPLES: usize = 8192;
 pub const INGESTION_OVERFLOW_LOG_INTERVAL: u32 = 100;
@@ -22,6 +23,7 @@ pub const PCM_S32_SCALE: f32 = 2147483648.0;
 pub mod decode;
 pub mod device;
 pub mod playback;
+pub mod resample;
 
 pub use decode::{
     decode_bytes_to_24khz_mono, decode_to_24khz_mono, truncate_to, write_wav_f32,
@@ -29,3 +31,4 @@ pub use decode::{
 };
 pub use device::AudioStream;
 pub use playback::PlaybackEngine;
+pub use resample::{upsample_2x, upsample_2x_into};

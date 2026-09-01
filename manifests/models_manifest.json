@@ -280,6 +280,51 @@
       ]
     },
     {
+      "id": "kokoro_multi_lang_v1_1",
+      "name": "Kokoro Multi-Lang v1.1",
+      "category": "tts",
+      "subcategory": "main",
+      "description": "High-fidelity multilingual speech generator. Supports natural English and Hindi voice synthesis with zero cloud latency.",
+      "parameters": "82M (ONNX)",
+      "ram_usage": "~180 MB",
+      "tradeoffs": "Rich multilingual prosody, requires espeak-ng phoneme table",
+      "version": "1.1.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
+      "files": [
+        {
+          "id": "tts_kokoro_model",
+          "path": "tts/kokoro/model.onnx",
+          "size": 343292416,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "required": false
+        },
+        {
+          "id": "tts_kokoro_voices",
+          "path": "tts/kokoro/voices.bin",
+          "size": 25165824,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "required": false
+        },
+        {
+          "id": "tts_kokoro_tokens",
+          "path": "tts/kokoro/tokens.txt",
+          "size": 4096,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "required": false
+        },
+        {
+          "id": "tts_kokoro_espeak",
+          "path": "tts/kokoro/espeak-ng-data.tar.gz",
+          "size": 16777216,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "archive": "tar.gz",
+          "required": false
+        }
+      ]
+    },
+    {
       "id": "edge_tts",
       "name": "Microsoft Edge Neural TTS",
       "category": "tts",

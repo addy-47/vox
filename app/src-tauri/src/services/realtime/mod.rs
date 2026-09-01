@@ -1,6 +1,5 @@
 pub mod audio_bridge;
 pub mod engine;
-pub mod playback_bridge;
 pub mod providers;
 pub mod resampler;
 

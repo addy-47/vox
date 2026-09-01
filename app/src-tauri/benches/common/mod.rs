@@ -10,3 +10,5 @@ pub mod harness;
 pub mod reporting;
 #[allow(dead_code)]
 pub mod scoring;
+#[allow(dead_code)]
+pub mod tts_harness;

@@ -151,22 +151,20 @@ impl TtsProvider for ChatterboxEngine {
         true
     }
 
-    /// Synthesizes text chunk into 24kHz audio and dispatches chunk events in 2048-sample blocks.
+    /// Synthesizes input text chunk and feeds 24kHz audio directly to PlaybackEngine.
     fn synthesize_chunk(
         &self,
         text: &str,
         turn_id: u32,
         cancel: Arc<AtomicBool>,
-        event_tx: Sender<VoxEvent>,
+        playback: &Arc<crate::services::audio::PlaybackEngine>,
+        _event_tx: Sender<VoxEvent>,
+        telemetry_rtf: Option<&Arc<AtomicU32>>,
     ) -> Result<()> {
-        if cancel.load(Ordering::Relaxed) || text.trim().is_empty() {
-            return Ok(());
-        }
-
         log::info!(
-            "[Chatterbox] Synthesizing turn {}: '{}'",
+            "[Chatterbox] Starting synthesis for text (turn {}): '{}'",
             turn_id,
-            text.chars().take(80).collect::<String>()
+            text
         );
 
         let start = std::time::Instant::now();
@@ -195,16 +193,7 @@ impl TtsProvider for ChatterboxEngine {
             if cancel.load(Ordering::Relaxed) {
                 return Ok(());
             }
-            if event_tx
-                .send(VoxEvent::TtsChunk {
-                    turn_id,
-                    samples: chunk.to_vec(),
-                })
-                .is_err()
-            {
-                log::warn!("[Chatterbox] event_tx closed, stopping synthesis");
-                return Ok(());
-            }
+            playback.ingest_chunk(chunk);
         }
 
         let audio_duration = output.len() as f32 / TTS_SAMPLE_RATE as f32;
@@ -222,8 +211,8 @@ impl TtsProvider for ChatterboxEngine {
             speed,
         );
 
-        if let Err(e) = event_tx.send(VoxEvent::TtsFinished { turn_id, rtf }) {
-            log::warn!("[Chatterbox] Error dispatching TtsFinished: {:?}", e);
+        if let Some(rtf_handle) = telemetry_rtf {
+            rtf_handle.store(rtf.to_bits(), Ordering::Relaxed);
         }
 
         Ok(())
