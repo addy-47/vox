@@ -296,29 +296,29 @@
         {
           "id": "tts_kokoro_model",
           "path": "tts/kokoro/model.onnx",
-          "size": 343292416,
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "size": 345555491,
+          "sha256": "10ff414106a038ce7e9e0126c6461e4dc8a86efaa89dc91d2009d69fe635e339",
           "required": false
         },
         {
           "id": "tts_kokoro_voices",
           "path": "tts/kokoro/voices.bin",
-          "size": 25165824,
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "size": 5755904,
+          "sha256": "a372c67b056ef0b695c375d39b99630d23fb07ad4c8d87aa32a19a62fca523ad",
           "required": false
         },
         {
           "id": "tts_kokoro_tokens",
           "path": "tts/kokoro/tokens.txt",
-          "size": 4096,
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "size": 1078,
+          "sha256": "4f31c71282d14af4e926cd12462078fe9d20d00c589e63fe2750a8f56d6d7f7b",
           "required": false
         },
         {
           "id": "tts_kokoro_espeak",
           "path": "tts/kokoro/espeak-ng-data.tar.gz",
-          "size": 16777216,
-          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "size": 8990857,
+          "sha256": "7ddfb7247e98108baeab2a3f9c79c29247e58ae7d60d837b32e28999f555bf8d",
           "archive": "tar.gz",
           "required": false
         }

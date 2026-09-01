@@ -69,49 +69,62 @@ export function fetchManifest(): Promise<VoxManifest> {
   return invoke("fetch_manifest");
 }
 
-/** Whether a manifest model group is present and verified (ipc/setup.rs:275). */
+/** Whether a manifest model group is present and verified. */
 export function checkModelExists(modelId: string): Promise<boolean> {
-  return invoke("check_model_exists", { modelId });
+  return invoke<boolean>("manage_models", { payload: { action: "exists", model_id: modelId } });
 }
 
-/** Download an optional model group in the background (ipc/setup.rs:362). */
+/** Download an optional model group in the background. */
 export function downloadOptionalModel(modelId: string): Promise<void> {
-  return invoke("download_optional_model", { modelId });
+  return invoke<void>("manage_models", { payload: { action: "download", model_id: modelId } });
 }
 
-/** Delete a model group from disk (ipc/setup.rs:429). */
+/** Delete a model group from disk. */
 export function deleteModel(modelId: string): Promise<void> {
-  return invoke("delete_model", { modelId });
+  return invoke<void>("manage_models", { payload: { action: "delete", model_id: modelId } });
 }
 
-/** Start the model setup wizard downloads (ipc/setup.rs:57). */
+/** Start the model setup wizard downloads. */
 export function startModelSetup(selectedIds: string[]): Promise<void> {
-  return invoke("start_model_setup", { selectedIds });
+  return invoke<void>("manage_models", { payload: { action: "start_setup", selected_ids: selectedIds } });
 }
 
-/** Cancel an in-flight model setup (ipc/setup.rs:165). */
+/** Cancel an in-flight model setup. */
 export function cancelModelSetup(): Promise<void> {
-  return invoke("cancel_model_setup");
+  return invoke<void>("manage_models", { payload: { action: "cancel" } });
 }
 
-/** Mark the setup wizard as completed (ipc/setup.rs:177). */
+/** Mark the setup wizard as completed (ipc/settings.rs). */
 export function completeSetupWizard(): Promise<void> {
   return invoke("complete_setup_wizard");
 }
 
-/** Bring the wizard window to the front (ipc/setup.rs:420). */
+/** Bring the wizard window to the front. */
 export function revealWizard(): Promise<void> {
   return invoke("reveal_wizard");
 }
 
-/** App update check (ipc/setup.rs:11). */
-export function checkForUpdates(): Promise<UpdateReport> {
-  return invoke("check_for_updates");
+/** Unified update check result. */
+export interface UnifiedUpdateReport {
+  app?: UpdateReport | null;
+  models?: ModelUpdateReport | null;
 }
 
-/** Model manifest update check (ipc/setup.rs:19). */
-export function checkForModelUpdates(): Promise<ModelUpdateReport> {
-  return invoke("check_for_model_updates");
+/** Check for updates across application, models, or both. */
+export function checkUpdates(scope: "app" | "models" | "all" = "all"): Promise<UnifiedUpdateReport> {
+  return invoke("check_updates", { scope });
+}
+
+/** App update check. */
+export async function checkForUpdates(): Promise<UpdateReport> {
+  const res = await checkUpdates("app");
+  return res.app!;
+}
+
+/** Model manifest update check. */
+export async function checkForModelUpdates(): Promise<ModelUpdateReport> {
+  const res = await checkUpdates("models");
+  return res.models!;
 }
 
 /** System validation report for the wizard (ipc/setup.rs:47). */

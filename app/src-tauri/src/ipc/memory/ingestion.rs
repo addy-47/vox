@@ -40,37 +40,6 @@ pub struct MemoryQueueSummary {
     pub recent_items: Vec<MemoryQueueItem>,
 }
 
-/// Retrieve all relation edges from the memory graph database.
-#[tauri::command]
-pub async fn get_memory_relations() -> Result<Vec<MemoryRelationEntry>, String> {
-    let db_path = crate::utils::paths::get().db.clone();
-    let conn = VoxDb::open_readonly(&db_path)
-        .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
-
-    let mut rows = conn
-        .query(
-            "SELECT id, from_id, to_id, relation, source, created_at FROM memory_relations ORDER BY id ASC",
-            (),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let mut relations = Vec::new();
-    while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
-        relations.push(MemoryRelationEntry {
-            id: row.get(0).map_err(|e| e.to_string())?,
-            from_id: row.get(1).map_err(|e| e.to_string())?,
-            to_id: row.get(2).map_err(|e| e.to_string())?,
-            relation: row.get(3).map_err(|e| e.to_string())?,
-            source: row.get(4).map_err(|e| e.to_string())?,
-            created_at: row.get(5).map_err(|e| e.to_string())?,
-        });
-    }
-
-    Ok(relations)
-}
-
 /// Retrieve queue status counts and the most recent 50 queue items.
 #[tauri::command]
 pub async fn get_memory_queue_status() -> Result<MemoryQueueSummary, String> {
@@ -170,45 +139,12 @@ pub async fn toggle_pipeline_processing(
     Ok(!new_paused)
 }
 
-/// Reset all failed memory queue items to staged_pending for retry.
-#[tauri::command]
-pub async fn retry_failed_queue(state: State<'_, std::sync::Arc<AppState>>) -> Result<u32, String> {
-    if state.memory.user_paused_ingestion.load(Ordering::SeqCst) {
-        return Err("Memory pipeline processing is currently paused. Please enable processing before retrying.".to_string());
-    }
-
-    let db_path = crate::utils::paths::get().db.clone();
-    let conn = VoxDb::open(&db_path)
-        .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
-
-    let affected = conn
-        .execute(
-            "UPDATE personal_memory_queue 
-             SET status = 'staged_pending', attempts = 0, retry_count = 0, error_msg = NULL 
-             WHERE status = 'failed'",
-            (),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-
-    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-    Ok(affected as u32)
-}
-
-/// Reset specific failed memory queue items by ID to staged_pending for retry.
+/// Reset failed memory queue items to staged_pending for retry (all items if item_ids is None/empty).
 #[tauri::command]
 pub async fn retry_failed_queue_items(
     state: State<'_, std::sync::Arc<AppState>>,
-    item_ids: Vec<i64>,
+    item_ids: Option<Vec<i64>>,
 ) -> Result<u32, String> {
-    if item_ids.is_empty() {
-        return Ok(0);
-    }
-    if item_ids.len() > 1000 {
-        return Err("Too many items in retry batch. Maximum allowed is 1000.".to_string());
-    }
-
     if state.memory.user_paused_ingestion.load(Ordering::SeqCst) {
         return Err("Memory pipeline processing is currently paused. Please enable processing before retrying.".to_string());
     }
@@ -218,19 +154,33 @@ pub async fn retry_failed_queue_items(
         .await
         .map_err(|e| format!("DB open failed: {}", e))?;
 
-    let placeholders = item_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql = format!(
-        "UPDATE personal_memory_queue 
-         SET status = 'staged_pending', attempts = 0, retry_count = 0, error_msg = NULL 
-         WHERE status = 'failed' AND id IN ({})",
-        placeholders
-    );
-
-    let params: Vec<turso::Value> = item_ids.into_iter().map(|id| id.into()).collect();
-    let affected = conn
-        .execute(&sql, params)
-        .await
-        .map_err(|e| e.to_string())?;
+    let affected = match item_ids {
+        Some(ids) if !ids.is_empty() => {
+            if ids.len() > 1000 {
+                return Err("Too many items in retry batch. Maximum allowed is 1000.".to_string());
+            }
+            let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "UPDATE personal_memory_queue 
+                 SET status = 'staged_pending', attempts = 0, retry_count = 0, error_msg = NULL 
+                 WHERE status = 'failed' AND id IN ({})",
+                placeholders
+            );
+            let params: Vec<turso::Value> = ids.into_iter().map(|id| id.into()).collect();
+            conn.execute(&sql, params)
+                .await
+                .map_err(|e| e.to_string())?
+        }
+        _ => conn
+            .execute(
+                "UPDATE personal_memory_queue 
+                 SET status = 'staged_pending', attempts = 0, retry_count = 0, error_msg = NULL 
+                 WHERE status = 'failed'",
+                (),
+            )
+            .await
+            .map_err(|e| e.to_string())?,
+    };
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(affected as u32)

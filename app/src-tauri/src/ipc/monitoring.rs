@@ -10,18 +10,6 @@ pub fn get_runtime_snapshot(state: State<'_, std::sync::Arc<AppState>>) -> Optio
     state.monitoring.get_latest()
 }
 
-/// Get the full history of recent runtime snapshots (~60 seconds).
-#[tauri::command]
-pub fn get_runtime_history(state: State<'_, std::sync::Arc<AppState>>) -> Vec<RuntimeSnapshot> {
-    state.monitoring.get_history()
-}
-
-/// Clear the accumulated runtime monitoring history.
-#[tauri::command]
-pub fn clear_runtime_history(state: State<'_, std::sync::Arc<AppState>>) {
-    state.monitoring.clear();
-}
-
 /// Fetch an immediate, on-demand high-accuracy memory snapshot of the Vox process tree.
 #[tauri::command]
 pub async fn get_profiler_snapshot(app: tauri::AppHandle) -> Result<ProfilerSnapshot, String> {

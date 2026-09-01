@@ -7,13 +7,6 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
-/// Checks whether the background audio engine is currently active.
-#[tauri::command]
-pub async fn check_engine_status(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
-    let lock = state.engine.lock().await;
-    Ok(lock.is_some())
-}
-
 /// Launches and initializes the 3-tier audio engine.
 #[tauri::command]
 pub async fn launch_engine(app: AppHandle) -> Result<(), String> {

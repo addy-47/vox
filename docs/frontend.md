@@ -81,14 +81,15 @@ Raw `@tauri-apps/api` `invoke` calls are **banned inside components** (code-styl
 
 | Service file | Responsibility |
 |---|---|
-| `services/settingsService.ts` | Boot state, settings get/update, model catalog, provider health, input devices |
-| `services/pipelineService.ts` | Engine lifecycle (`stopEngine`, `launchEngine`), discrete session verbs (`startSession`, `endSession`, `pauseSession`, `resumeSession`), PTT (`pttStart`, `pttStop`, `pttCancel`), test clips (`testClip`, `testClipCancel`), runtime snapshots, voice library, realtime cache, remote deploy |
+| `services/settingsService.ts` | Boot state, settings get/update, model catalog, provider health, model capability probing & token cap validation, input/output audio devices |
+| `services/pipelineService.ts` | Engine lifecycle (`stopEngine`, `launchEngine`), discrete session verbs (`startSession`, `endSession`, `pauseSession`, `resumeSession`), PTT (`pttStart`, `pttStop`, `pttCancel`), test clips (`testClip`, `testClipCancel`), runtime snapshots, voice library (`listVoices`, `renameVoice`, `addVoiceFromFile`, `addVoiceFromRecording`, `deleteVoice`), remote deploy |
 | `services/eventsService.ts` | Typed Tauri `listen` wrappers for canonical 7-state events, telemetry, transcripts — `on<T>` sync-cleanup wrapper with `beforeunload`/`pagehide` registry |
 | `services/historyService.ts` | Session/turn CRUD, transcript history, delete |
 | `services/memoryService.ts` | Memory graph topology, stats, fact mutations, ingestion control |
 | `services/memoryProfilerService.ts` | Multi-dimensional RAM/heap/DOM profiling snapshots |
 | `services/modelService.ts` | Onboarding status, model download/setup, manifest |
-| `services/windowService.ts` | Tray/wizard window visibility + HUD control |
+| `services/windowService.ts` | Main window show, Tray window hide, mouse click-through toggling (`setWindowClickThrough`) |
+| `services/toastService.ts` | Native toast overlay window lifecycle (`manageToastWindow`) and late-joining replay buffer (`getLastToast`) |
 
 **Rule:** pages compose layout only (`code-style-guide.md` §2). Business logic, data transforms, and IPC belong in `services/`, `hooks/`, or `store/`.
 

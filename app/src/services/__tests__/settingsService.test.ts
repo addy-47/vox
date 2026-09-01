@@ -7,17 +7,17 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import {
-  requestBootState,
   requestModelCatalog,
   getSettings,
   updateSetting,
-  updateInteractionMode,
   resetSettings,
   checkLlmProviderHealth,
   checkSttProviderHealth,
   checkTtsProviderHealth,
   listLlmModels,
   probeModelCapabilities,
+  validateLlmTokenCap,
+  listAudioDevices,
   listInputDevices,
   completeSetupWizard,
 } from "../settingsService";
@@ -28,11 +28,11 @@ describe("settingsService", () => {
   });
 
   describe("Settings Boot & Catalog", () => {
-    it("should request boot state", async () => {
+    it("should get settings and boot state", async () => {
       const mockBoot = { settings: {}, models_dir_exists: true, settings_path: "/path" };
       mockInvoke.mockResolvedValueOnce(mockBoot);
-      const res = await requestBootState();
-      expect(mockInvoke).toHaveBeenCalledWith("request_boot_state");
+      const res = await getSettings();
+      expect(mockInvoke).toHaveBeenCalledWith("get_settings");
       expect(res).toEqual(mockBoot);
     });
 
@@ -40,7 +40,7 @@ describe("settingsService", () => {
       const mockCatalog = { llm: [], stt: [], tts: [] };
       mockInvoke.mockResolvedValueOnce(mockCatalog);
       const res = await requestModelCatalog();
-      expect(mockInvoke).toHaveBeenCalledWith("request_model_catalog");
+      expect(mockInvoke).toHaveBeenCalledWith("get_model_catalog");
       expect(res).toEqual(mockCatalog);
     });
   });
@@ -66,15 +66,6 @@ describe("settingsService", () => {
       expect(res).toEqual(updateRes);
     });
 
-    it("should update interaction mode", async () => {
-      mockInvoke.mockResolvedValueOnce(undefined);
-      await updateInteractionMode("main", "PTT");
-      expect(mockInvoke).toHaveBeenCalledWith("update_interaction_mode", {
-        target: "main",
-        mode: "PTT",
-      });
-    });
-
     it("should reset settings", async () => {
       const mockSettings = { ui: { theme: "system" } };
       mockInvoke.mockResolvedValueOnce(mockSettings);
@@ -89,15 +80,15 @@ describe("settingsService", () => {
       mockInvoke.mockResolvedValue(true);
 
       const llmOk = await checkLlmProviderHealth();
-      expect(mockInvoke).toHaveBeenCalledWith("check_llm_provider_health", { provider: undefined });
+      expect(mockInvoke).toHaveBeenCalledWith("check_provider_health", { kind: "llm", provider: undefined });
       expect(llmOk).toBe(true);
 
       const sttOk = await checkSttProviderHealth();
-      expect(mockInvoke).toHaveBeenCalledWith("check_stt_provider_health", { provider: undefined });
+      expect(mockInvoke).toHaveBeenCalledWith("check_provider_health", { kind: "stt", provider: undefined });
       expect(sttOk).toBe(true);
 
       const ttsOk = await checkTtsProviderHealth();
-      expect(mockInvoke).toHaveBeenCalledWith("check_tts_provider_health", { provider: undefined });
+      expect(mockInvoke).toHaveBeenCalledWith("check_provider_health", { kind: "tts", provider: undefined });
       expect(ttsOk).toBe(true);
     });
 
@@ -109,20 +100,39 @@ describe("settingsService", () => {
       expect(models).toEqual(mockModels);
 
       const mockCaps = { supports_streaming: true, supports_tools: true };
-      mockInvoke.mockResolvedValueOnce(mockCaps);
+      const mockProbeResult = {
+        capabilities: mockCaps,
+        validated_cap: null,
+        cached_map: {},
+      };
+      mockInvoke.mockResolvedValueOnce(mockProbeResult);
       const caps = await probeModelCapabilities(undefined, "gpt-4o");
-      expect(mockInvoke).toHaveBeenCalledWith("probe_model_capabilities", { provider: undefined, modelId: "gpt-4o" });
+      expect(mockInvoke).toHaveBeenCalledWith("probe_model_capabilities", { provider: undefined, modelId: "gpt-4o", targetCap: undefined });
       expect(caps).toEqual(mockCaps);
+
+      mockInvoke.mockResolvedValueOnce({
+        capabilities: mockCaps,
+        validated_cap: 4096,
+        cached_map: {},
+      });
+      const ceiling = await validateLlmTokenCap(undefined, "gpt-4o", 2048);
+      expect(mockInvoke).toHaveBeenCalledWith("probe_model_capabilities", { provider: undefined, modelId: "gpt-4o", targetCap: 2048 });
+      expect(ceiling).toBe(4096);
     });
   });
 
   describe("Device & Setup Utilities", () => {
-    it("should list input devices", async () => {
+    it("should list audio devices and input devices", async () => {
       const mockDevices = [{ name: "Default Mic", is_default: true }];
       mockInvoke.mockResolvedValueOnce(mockDevices);
-      const devices = await listInputDevices();
-      expect(mockInvoke).toHaveBeenCalledWith("list_input_devices");
+      const devices = await listAudioDevices("input");
+      expect(mockInvoke).toHaveBeenCalledWith("list_audio_devices", { kind: "input" });
       expect(devices).toEqual(mockDevices);
+
+      mockInvoke.mockResolvedValueOnce(mockDevices);
+      const inDevices = await listInputDevices();
+      expect(mockInvoke).toHaveBeenCalledWith("list_audio_devices", { kind: "input" });
+      expect(inDevices).toEqual(mockDevices);
     });
 
     it("should complete setup wizard", async () => {

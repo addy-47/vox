@@ -31,7 +31,8 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
         
         // Try to get current device from settings first
         try {
-          const settings = await getSettings();
+          const boot = await getSettings();
+          const settings = boot.settings;
           if (settings.audio.input_device) {
             setSelected(settings.audio.input_device);
           } else {

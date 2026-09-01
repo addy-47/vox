@@ -4,7 +4,7 @@ import {
   Cpu, Zap, Battery, Sparkles, Check, Loader2, Gauge, Layers, Server, Plus, X
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { invoke } from "@tauri-apps/api/core";
+import { validateLlmTokenCap } from "@/services/settingsService";
 
 export interface LlmSettingsViewProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -96,11 +96,11 @@ export const LlmSettingsView = memo(({
     setCapValidationResult({ status: null });
 
     try {
-      const ceiling = await invoke<number | null>("validate_llm_token_cap", {
-        provider: provider,
-        modelId: provider && "model" in provider ? provider.model : undefined,
-        targetCap: capVal,
-      });
+      const ceiling = await validateLlmTokenCap(
+        provider,
+        provider && "model" in provider ? provider.model : undefined,
+        capVal
+      );
 
       if (ceiling === null) {
         setCapValidationResult({ status: "valid" });

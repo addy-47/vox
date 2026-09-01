@@ -13,11 +13,6 @@ static LAST_TOAST: LazyLock<parking_lot::Mutex<Option<crate::core::events::Toast
     LazyLock::new(|| parking_lot::Mutex::new(None));
 
 /// Ensures the "toast" WebviewWindow exists, lazily constructing it if absent.
-///
-/// Window is created `visible(false)` and **stays hidden** until the frontend
-/// signals it has mounted and painted its first frame. This prevents the
-/// WebKitGTK black flash that occurs when a transparent window is shown
-/// before the page has set `html.is-toast → transparent`.
 pub fn ensure_toast_window<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<WebviewWindow<R>, String> {
@@ -42,13 +37,10 @@ pub fn ensure_toast_window<R: tauri::Runtime>(
         .map_err(|e| format!("Failed to create toast window: {}", e))?;
 
     setup_toast_window(&window);
-    // Pre-size virtual layer so the first `show()` is already fullscreen + click-through.
-    // Intentionally NOT calling `show()` here — frontend owns the first show after mount.
     #[cfg(target_os = "linux")]
     {
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
-            // Give WebKit a moment to create the GTK widget before querying monitors.
             tokio::time::sleep(Duration::from_millis(120)).await;
             setup_linux_toast_layer(&app_clone, "toast");
         });
@@ -87,10 +79,6 @@ pub fn setup_toast_window<R: tauri::Runtime>(window: &WebviewWindow<R>) {
 }
 
 /// Positions the toast window at top-center with 24px top inset.
-///
-/// This only sizes/positions — it never calls `show()`. Visibility is owned by
-/// the frontend so the window is only presented after the transparent page has
-/// painted.
 pub async fn position_toast_window<R: tauri::Runtime>(window: &WebviewWindow<R>) {
     #[cfg(target_os = "linux")]
     {
@@ -158,41 +146,38 @@ pub fn setup_linux_toast_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &st
     }
 }
 
-/// Shows the toast window (called by frontend after it has painted).
+/// Manages toast window lifecycle states (show, hide, destroy).
 #[tauri::command]
-pub fn show_toast_window<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("toast") {
-        // Ensure virtual layer is correctly sized before presenting
-        #[cfg(target_os = "linux")]
-        setup_linux_toast_layer(&app, "toast");
-        window
-            .show()
-            .map_err(|e| format!("Failed to show toast window: {}", e))?;
+pub fn manage_toast_window<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    action: String,
+) -> Result<(), String> {
+    match action.to_lowercase().as_str() {
+        "show" => {
+            if let Some(window) = app.get_webview_window("toast") {
+                #[cfg(target_os = "linux")]
+                setup_linux_toast_layer(&app, "toast");
+                window
+                    .show()
+                    .map_err(|e| format!("Failed to show toast window: {}", e))?;
+            }
+        }
+        "hide" => {
+            if let Some(window) = app.get_webview_window("toast") {
+                window
+                    .hide()
+                    .map_err(|e| format!("Failed to hide toast window: {}", e))?;
+            }
+        }
+        "destroy" => {
+            destroy_toast_window(&app);
+        }
+        _ => return Err(format!("Unknown toast action: {}", action)),
     }
-    Ok(())
-}
-
-/// Hides the toast window without destroying it (auto-dismiss via frontend).
-#[tauri::command]
-pub fn hide_toast_window<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("toast") {
-        window
-            .hide()
-            .map_err(|e| format!("Failed to hide toast window: {}", e))?;
-    }
-    Ok(())
-}
-
-/// Destroys the toast window to reclaim RAM after auto-dismiss.
-#[tauri::command]
-pub fn destroy_toast_window_cmd<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    destroy_toast_window(&app);
     Ok(())
 }
 
 /// Returns the last emitted toast for late-joining webviews that missed the `show_toast` event.
-///
-/// Frontend calls this on mount to avoid losing the burst emitted during window creation.
 #[tauri::command]
 pub fn get_last_toast() -> Option<crate::core::events::ToastPayload> {
     LAST_TOAST.lock().clone()
@@ -207,9 +192,6 @@ pub fn should_show_error_toast<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
 }
 
 /// Lazily ensures the toast window, positions it, and emits a `show_toast` event.
-///
-/// The window stays hidden until the frontend mounts and calls `show()` itself
-/// after its first paint, eliminating the black flash.
 pub fn show_toast<R: tauri::Runtime>(
     app: &AppHandle<R>,
     title: &str,
@@ -232,8 +214,8 @@ pub fn show_toast<R: tauri::Runtime>(
     let payload_for_emit = payload.clone();
     let app_for_emit = app.clone();
     let win_for_show = _window.clone();
+
     tauri::async_runtime::spawn(async move {
-        // Give a fresh webview time to create its GTK widget + mount React listeners.
         tokio::time::sleep(Duration::from_millis(420)).await;
         if let Err(e) = crate::core::events::emit_ipc_to(
             &app_for_emit,
@@ -242,7 +224,7 @@ pub fn show_toast<R: tauri::Runtime>(
         ) {
             log::warn!("[Toast] Delayed emit show_toast failed: {}", e);
         }
-        // Re-emit once more after content has definitely painted, to survive any late mount.
+
         tokio::time::sleep(Duration::from_millis(300)).await;
         if let Err(e) = crate::core::events::emit_ipc_to(
             &app_for_emit,
@@ -251,8 +233,6 @@ pub fn show_toast<R: tauri::Runtime>(
         ) {
             log::debug!("[Toast] Second emit (late mount) failed: {}", e);
         }
-        // Fallback: if frontend hasn't shown the window (e.g. event missed / frontend show failed),
-        // ensure the window is still presented so the toast isn't silently lost.
         tokio::time::sleep(Duration::from_millis(300)).await;
         if let Some(w) = app_for_emit.get_webview_window("toast") {
             if !w.is_visible().unwrap_or(true) {
@@ -260,12 +240,10 @@ pub fn show_toast<R: tauri::Runtime>(
                 if let Err(e) = w.show() {
                     log::warn!("[Toast] Fallback show failed: {}", e);
                 }
-                // Ensure layer after fallback show
                 tokio::time::sleep(Duration::from_millis(120)).await;
                 setup_linux_toast_layer(&app_for_emit, "toast");
             }
         }
-        // Keep a handle alive so the window isn't dropped
         drop(win_for_show);
     });
 

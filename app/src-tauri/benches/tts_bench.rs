@@ -15,12 +15,17 @@
 mod common;
 
 use clap::Parser;
-use common::reporting::{generate_run_id, save_benchmark_report, BenchmarkReport, BenchmarkSystemInfo};
+use common::reporting::{
+    generate_run_id, save_benchmark_report, BenchmarkReport, BenchmarkSystemInfo,
+};
 use common::tts_harness::{benchmark_tts_provider, TtsBenchmarkPrompt};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
-#[command(name = "tts_bench", about = "Vox TTS Synthesis Benchmark (max quality, production seam)")]
+#[command(
+    name = "tts_bench",
+    about = "Vox TTS Synthesis Benchmark (max quality, production seam)"
+)]
 struct CliArgs {
     /// Model to benchmark: 'supertonic', 'kokoro', 'chatterbox', 'edge' or 'all' (default: all local)
     #[arg(long, default_value = "all")]
@@ -114,7 +119,10 @@ const CANONICAL_TTS_PROMPTS: &[CanonicalPromptDef] = &[
 fn load_benchmark_prompts(args: &CliArgs) -> Vec<TtsBenchmarkPrompt> {
     // Priority: --text > --clip > canonical all
     if let Some(ref custom) = args.text {
-        let filename = args.clip.clone().unwrap_or_else(|| "custom_prompt.txt".to_string());
+        let filename = args
+            .clip
+            .clone()
+            .unwrap_or_else(|| "custom_prompt.txt".to_string());
         let lang = if vox_lib::services::translit::is_devanagari(custom) {
             "HI"
         } else {
@@ -133,7 +141,10 @@ fn load_benchmark_prompts(args: &CliArgs) -> Vec<TtsBenchmarkPrompt> {
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| clip_name.clone());
-        if let Some(canon) = CANONICAL_TTS_PROMPTS.iter().find(|c| c.filename == basename) {
+        if let Some(canon) = CANONICAL_TTS_PROMPTS
+            .iter()
+            .find(|c| c.filename == basename)
+        {
             return vec![TtsBenchmarkPrompt {
                 filename: canon.filename.to_string(),
                 lang: canon.lang.to_string(),
@@ -141,7 +152,10 @@ fn load_benchmark_prompts(args: &CliArgs) -> Vec<TtsBenchmarkPrompt> {
             }];
         }
         // Unknown clip name but user provided explicit clip with text override already handled; fallback to verbatim search by exact string
-        if let Some(canon) = CANONICAL_TTS_PROMPTS.iter().find(|c| c.filename == clip_name.as_str()) {
+        if let Some(canon) = CANONICAL_TTS_PROMPTS
+            .iter()
+            .find(|c| c.filename == clip_name.as_str())
+        {
             return vec![TtsBenchmarkPrompt {
                 filename: canon.filename.to_string(),
                 lang: canon.lang.to_string(),
@@ -149,7 +163,10 @@ fn load_benchmark_prompts(args: &CliArgs) -> Vec<TtsBenchmarkPrompt> {
             }];
         }
         // If user passed e.g. "clip_01..." without path, still allow
-        eprintln!("[TTS Bench] Unknown clip '{}', falling back to canonical list filtered", clip_name);
+        eprintln!(
+            "[TTS Bench] Unknown clip '{}', falling back to canonical list filtered",
+            clip_name
+        );
         // Try prefix match
         let filtered: Vec<_> = CANONICAL_TTS_PROMPTS
             .iter()
@@ -209,9 +226,17 @@ fn main() {
     println!("  Kokoro Policy: diff voice per clip (voice = idx % 10)");
 
     let prompts = load_benchmark_prompts(&args);
-    println!("Loaded {} prompt(s) (verbatim from test-clips)", prompts.len());
+    println!(
+        "Loaded {} prompt(s) (verbatim from test-clips)",
+        prompts.len()
+    );
     for p in &prompts {
-        println!("  - {:<28} [{}] \"{}\"", p.filename, p.lang, p.text.chars().take(80).collect::<String>());
+        println!(
+            "  - {:<28} [{}] \"{}\"",
+            p.filename,
+            p.lang,
+            p.text.chars().take(80).collect::<String>()
+        );
     }
 
     let model_arg = args.model.to_lowercase();
@@ -250,8 +275,13 @@ fn main() {
                 &prompts_clone,
                 move |_idx, _prompt| {
                     let p: Box<dyn TtsProvider> = Box::new(
-                        vox_lib::services::tts::TtsEngine::new(&supertonic_dir_cloned, voice, 16, 1.0)
-                            .expect("Failed to init Supertonic"),
+                        vox_lib::services::tts::TtsEngine::new(
+                            &supertonic_dir_cloned,
+                            voice,
+                            16,
+                            1.0,
+                        )
+                        .expect("Failed to init Supertonic"),
                     );
                     p
                 },
@@ -260,7 +290,10 @@ fn main() {
             );
             engine_runs.push(run);
         } else {
-            eprintln!("[WARN] Supertonic model dir not found at {:?}", supertonic_dir);
+            eprintln!(
+                "[WARN] Supertonic model dir not found at {:?}",
+                supertonic_dir
+            );
         }
     }
 
@@ -365,7 +398,9 @@ fn main() {
             println!("Report   : {:?}", saved_path);
             println!("WAVs     : {:?}", wav_run_dir);
             println!("Latest   : {:?}", base_output_dir.join("latest.json"));
-            println!("================================================================================");
+            println!(
+                "================================================================================"
+            );
             println!("Manual QA: play wavs per clip and compare EN prosody vs HI (kokoro HI may be limited).");
             for run in &engine_runs {
                 println!(

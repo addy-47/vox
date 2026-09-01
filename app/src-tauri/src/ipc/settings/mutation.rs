@@ -948,11 +948,14 @@ async fn dispatch_worker_command(
             }
             ("tts", "voice_index" | "voice") => {
                 if let Some(ref tts_tx) = engine.tts_tx {
-                    let voice_opt = value.as_i64().map(|v| v as i32).or_else(|| {
-                        value.as_str().and_then(|s| s.parse::<i32>().ok())
-                    });
+                    let voice_opt = value
+                        .as_i64()
+                        .map(|v| v as i32)
+                        .or_else(|| value.as_str().and_then(|s| s.parse::<i32>().ok()));
                     if let Some(voice) = voice_opt {
-                        if let Err(e) = tts_tx.send(crate::services::tts::TtsCommand::SetVoice(voice)) {
+                        if let Err(e) =
+                            tts_tx.send(crate::services::tts::TtsCommand::SetVoice(voice))
+                        {
                             log::warn!("[Settings] Failed to send TtsCommand::SetVoice: {}", e);
                         }
                         log::debug!("[Settings] TtsCommand::SetVoice({}) dispatched", voice);

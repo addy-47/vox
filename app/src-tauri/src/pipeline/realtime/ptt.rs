@@ -3,7 +3,7 @@ use crate::core::events::VoiceErrorPayload;
 use crate::core::events::{emit_ipc_to, IpcEvent, LlmTokenPayload, TranscriptPayload, VoxEvent};
 use crate::core::state::{AppState, InteractionOwner, InteractionState};
 use crate::services::audio::PlaybackEngine;
-use crate::services::realtime::engine::RealtimeEngine;
+use crate::services::realtime::RealtimeActor;
 use crate::services::vad::VadCommand;
 use parking_lot::Mutex;
 use std::sync::atomic::Ordering;
@@ -73,17 +73,17 @@ pub async fn start_session<R: tauri::Runtime>(
 
     let provider = super::session::create_realtime_provider(state)?;
     let tokio_handle = tokio::runtime::Handle::current();
-    let mut rt_engine = RealtimeEngine::new(provider, tokio_handle);
+    let mut rt_actor = RealtimeActor::new(provider, tokio_handle);
 
-    rt_engine
+    rt_actor
         .start(
             crate::core::settings::InteractionMode::PTT,
             playback_engine,
             pipeline_tx,
         )
-        .map_err(|e| format!("[RealtimePTT] Engine start failed: {}", e))?;
+        .map_err(|e| format!("[RealtimePTT] Actor start failed: {}", e))?;
 
-    let audio_tx = rt_engine
+    let audio_tx = rt_actor
         .get_audio_sender()
         .ok_or("Failed to obtain realtime audio sender")?;
 
@@ -94,7 +94,7 @@ pub async fn start_session<R: tauri::Runtime>(
         log::warn!("[RealtimePTT] Failed to send StartRealtime to VAD: {}", e);
     }
 
-    *rt_guard = Some(rt_engine);
+    *rt_guard = Some(rt_actor);
     ACCUMULATOR.lock().clear();
 
     let ctx = RoutingContext::from_app_state(state);
@@ -123,8 +123,8 @@ pub async fn end_session<R: tauri::Runtime>(
     }
 
     let mut rt_guard = state.realtime_engine.lock().await;
-    if let Some(mut rt_engine) = rt_guard.take() {
-        rt_engine.stop();
+    if let Some(mut rt_actor) = rt_guard.take() {
+        rt_actor.stop();
     }
 
     ACCUMULATOR.lock().clear();
@@ -143,10 +143,10 @@ pub fn on_interrupt<R: tauri::Runtime>(
     playback.cancel();
 
     if let Ok(rt_guard) = state.realtime_engine.try_lock() {
-        if let Some(ref rt_engine) = *rt_guard {
-            if let Err(e) = rt_engine.cancel() {
+        if let Some(ref rt_actor) = *rt_guard {
+            if let Err(e) = rt_actor.signal_interrupt() {
                 log::warn!(
-                    "[RealtimePTT] Error sending cancel to realtime engine: {}",
+                    "[RealtimePTT] Error sending interrupt signal to realtime actor: {}",
                     e
                 );
             }
@@ -285,18 +285,17 @@ pub async fn ptt_stop<R: tauri::Runtime>(
         .collect();
 
     let rt_guard = state.realtime_engine.lock().await;
-    if let Some(ref rt_engine) = *rt_guard {
-        if let Err(e) = rt_engine.activity_start() {
-            log::warn!("[RealtimePTT] Failed to send activity_start: {}", e);
-        }
-        rt_engine.push_audio(&i16_samples);
-        if let Err(e) = rt_engine.activity_end() {
-            log::warn!("[RealtimePTT] Failed to send activity_end: {}", e);
+    if let Some(ref rt_actor) = *rt_guard {
+        if let Err(e) = rt_actor.signal_speech_committed(&i16_samples) {
+            log::warn!("[RealtimePTT] Failed to commit speech turn: {}", e);
         }
     }
 
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
-    log::info!("[RealtimePTT] PTT recording finalized and streamed to cloud (Turn: {})", turn_id);
+    log::info!(
+        "[RealtimePTT] PTT recording finalized and streamed to cloud (Turn: {})",
+        turn_id
+    );
     Ok(())
 }
 
@@ -326,8 +325,7 @@ pub fn ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) -> Re
     Ok(())
 }
 
-/// LOGIC IS WRONG , THIS SHOULD BE TRNASCRIPT PARTIAL EVENT ,
-// TODO WHEN WE FIX EVENT ARCHITECTURE
+/// needs to know wht htis does , doenst make sense
 /// Handles speech onset detection and marks speech active for PTT gating.
 pub fn on_speech_start<R: tauri::Runtime>(
     app: &AppHandle<R>,

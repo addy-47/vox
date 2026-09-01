@@ -13,8 +13,6 @@ impl SseDecoder {
     }
 
     /// Decodes an incoming chunk of bytes, extracting all completed SSE payload lines.
-    ///
-    /// Yields lines that start with `data: `, stripped of the `data: ` prefix and trimmed.
     pub fn decode_chunk(&mut self, chunk: &[u8]) -> Vec<String> {
         let text = String::from_utf8_lossy(chunk);
         self.buffer.push_str(&text);
@@ -34,7 +32,6 @@ impl SseDecoder {
                     lines.push(trimmed);
                 }
             } else {
-                // If it's a raw line (e.g. NDJSON or raw text)
                 lines.push(line);
             }
         }

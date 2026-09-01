@@ -55,9 +55,26 @@ fn now_epoch() -> i64 {
 
 // ─── Commands ────────────────────────────────────────────────────────────────
 
-/// Return all saved voices ordered by creation date (newest first).
+/// Return saved voices from SQLite database or remote Edge TTS voices based on provider.
 #[tauri::command]
-pub async fn list_voices() -> Result<Vec<VoiceEntryDto>, String> {
+pub async fn list_voices(provider: Option<String>) -> Result<Vec<VoiceEntryDto>, String> {
+    if let Some(p) = provider.as_deref() {
+        if p.to_lowercase() == "edge" || p.to_lowercase() == "edge_tts" {
+            let edge_voices = fetch_remote_edge_voices().await?;
+            let mapped = edge_voices
+                .into_iter()
+                .map(|e| VoiceEntryDto {
+                    id: e.short_name.clone(),
+                    name: e.friendly_name,
+                    source_kind: "edge".to_string(),
+                    has_preview: true,
+                    created_at: 0,
+                })
+                .collect();
+            return Ok(mapped);
+        }
+    }
+
     let conn = open_db().await?;
     voices::list_voices(&conn)
         .await
@@ -252,10 +269,4 @@ pub async fn start_backend_recording() -> Result<(), String> {
 #[tauri::command]
 pub async fn stop_backend_recording() -> Result<(Vec<f32>, u32), String> {
     stop_recording()
-}
-
-/// Fetch available online neural voices from the Edge TTS service.
-#[tauri::command]
-pub async fn fetch_edge_tts_voices() -> Result<Vec<EdgeTtsVoiceDto>, String> {
-    fetch_remote_edge_voices().await
 }

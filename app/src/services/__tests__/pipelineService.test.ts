@@ -19,16 +19,13 @@ import {
   testClip,
   testClipCancel,
   getRuntimeSnapshot,
-  getRuntimeHistory,
-  clearRuntimeHistory,
-  getRealtimeSessionCache,
   startBackendRecording,
   stopBackendRecording,
   listVoices,
+  renameVoice,
   addVoiceFromFile,
   addVoiceFromRecording,
   deleteVoice,
-  fetchEdgeTtsVoices,
   setupRemoteServer,
 } from "../pipelineService";
 
@@ -98,25 +95,6 @@ describe("pipelineService", () => {
       expect(mockInvoke).toHaveBeenCalledWith("get_runtime_snapshot");
       expect(res).toEqual(mockSnapshot);
     });
-
-    it("should fetch runtime history and clear it", async () => {
-      mockInvoke.mockResolvedValueOnce([{ pipeline_state: "Idle" }]);
-      const history = await getRuntimeHistory();
-      expect(mockInvoke).toHaveBeenCalledWith("get_runtime_history");
-      expect(history).toHaveLength(1);
-
-      mockInvoke.mockResolvedValueOnce(undefined);
-      await clearRuntimeHistory();
-      expect(mockInvoke).toHaveBeenCalledWith("clear_runtime_history");
-    });
-
-    it("should fetch realtime session cache", async () => {
-      const mockCache = { has_session: true, provider: "openai", expires_in_seconds: 300, model: "gpt-4o" };
-      mockInvoke.mockResolvedValueOnce(mockCache);
-      const res = await getRealtimeSessionCache();
-      expect(mockInvoke).toHaveBeenCalledWith("get_realtime_session_cache");
-      expect(res).toEqual(mockCache);
-    });
   });
 
   describe("Voice Recording & Voice Management", () => {
@@ -135,7 +113,7 @@ describe("pipelineService", () => {
       const mockVoices = [{ id: "v1", name: "Custom Voice", source_kind: "file", has_preview: true, created_at: 1000 }];
       mockInvoke.mockResolvedValueOnce(mockVoices);
       const list = await listVoices();
-      expect(mockInvoke).toHaveBeenCalledWith("list_voices");
+      expect(mockInvoke).toHaveBeenCalledWith("list_voices", { provider: undefined });
       expect(list).toEqual(mockVoices);
 
       mockInvoke.mockResolvedValueOnce(undefined);
@@ -156,12 +134,16 @@ describe("pipelineService", () => {
       expect(resRec).toEqual(mockEntry);
     });
 
-    it("should fetch edge TTS voices", async () => {
-      const mockEdgeVoices = [{ name: "en-US-AriaNeural", short_name: "Aria", gender: "Female", locale: "en-US", friendly_name: "Aria" }];
+    it("should fetch voices with provider filter and rename voice", async () => {
+      const mockEdgeVoices = [{ id: "Aria", name: "Aria", source_kind: "edge", has_preview: true, created_at: 0 }];
       mockInvoke.mockResolvedValueOnce(mockEdgeVoices);
-      const res = await fetchEdgeTtsVoices();
-      expect(mockInvoke).toHaveBeenCalledWith("fetch_edge_tts_voices");
+      const res = await listVoices("edge");
+      expect(mockInvoke).toHaveBeenCalledWith("list_voices", { provider: "edge" });
       expect(res).toEqual(mockEdgeVoices);
+
+      mockInvoke.mockResolvedValueOnce(undefined);
+      await renameVoice("v1", "New Name");
+      expect(mockInvoke).toHaveBeenCalledWith("rename_voice", { id: "v1", name: "New Name" });
     });
   });
 

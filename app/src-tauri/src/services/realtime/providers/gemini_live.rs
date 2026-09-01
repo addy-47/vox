@@ -2,19 +2,17 @@ use anyhow::{anyhow, bail, Result};
 use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 use std::sync::atomic::Ordering;
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::core::events::VoxEvent;
 use crate::core::settings::GeminiRealtimeConfig;
 use crate::services::realtime::{
     RealtimeAudioConfig, RealtimeProviderKind, RealtimeSession, RealtimeVoiceProvider,
     DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE, GEMINI_DEFAULT_WS_URL_BASE,
     GEMINI_HEALTH_CHECK_ADDR, GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR, LOG_INTERVAL_PACKETS,
     MAX_RECONNECT_ATTEMPTS, PTT_INTERRUPT_GAP, RECONNECT_BASE_DELAY_SECS, RECONNECT_FACTOR_SECS,
-    SESSION_CACHE_FILENAME, WS_HEALTH_CHECK_TIMEOUT,
+    WS_HEALTH_CHECK_TIMEOUT,
 };
 
 type WsWriter = futures_util::stream::SplitSink<
@@ -71,9 +69,10 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
     fn connect(
         &self,
         interaction_mode: crate::core::settings::InteractionMode,
-        playback_tx: tokio::sync::mpsc::Sender<Vec<i16>>,
-        event_tx: Sender<VoxEvent>,
-    ) -> Result<Box<dyn RealtimeSession>> {
+    ) -> Result<(
+        Box<dyn RealtimeSession>,
+        tokio::sync::mpsc::Receiver<crate::services::realtime::RealtimeProviderEvent>,
+    )> {
         let handle = tokio::runtime::Handle::current();
 
         if self.config.api_key.is_empty() {
@@ -115,6 +114,10 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         let (audio_tx, mut audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<i16>>();
         let (control_tx, mut control_rx) = tokio::sync::mpsc::unbounded_channel::<ControlEvent>();
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let (provider_event_tx, provider_event_rx) =
+            tokio::sync::mpsc::channel::<crate::services::realtime::RealtimeProviderEvent>(
+                crate::services::realtime::BRIDGE_CHANNEL_CAPACITY,
+            );
 
         let state_rx_clone = self.state_rx.clone();
         let turn_id_reconnect = self.turn_id.clone();
@@ -130,8 +133,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         }));
 
         let state_clone = state.clone();
-        let playback_tx_clone = playback_tx.clone();
-        let event_tx_clone = event_tx.clone();
+        let provider_event_tx_clone = provider_event_tx.clone();
 
         let ws_sender: Arc<Mutex<Option<UnboundedSender<Message>>>> = Arc::new(Mutex::new(None));
         let ws_sender_audio = ws_sender.clone();
@@ -269,8 +271,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         });
 
         let (reconnect_tx, mut reconnect_rx) = tokio::sync::oneshot::channel::<()>();
-        let playback_tx_recv = playback_tx.clone();
-        let event_tx_recv = event_tx.clone();
+        let provider_event_tx_recv = provider_event_tx.clone();
         let state_recv = state_clone.clone();
         let state_rx_for_rec = state_rx_clone.clone();
         let ws_connected_clone_for_rec = ws_connected_clone.clone();
@@ -290,7 +291,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                                 continue;
                             }
                         };
-                        if let Err(e) = handle_gemini_server_message(&val, &playback_tx_recv, &event_tx_recv, &state_recv).await {
+                        if let Err(e) = handle_gemini_server_message(&val, &provider_event_tx_recv, &state_recv).await {
                             log::error!("[GeminiLive] Message handling error: {:?}", e);
                         }
                         if val.get("goAway").is_some() {
@@ -317,7 +318,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                                 continue;
                             }
                         };
-                        if let Err(e) = handle_gemini_server_message(&val, &playback_tx_recv, &event_tx_recv, &state_recv).await {
+                        if let Err(e) = handle_gemini_server_message(&val, &provider_event_tx_recv, &state_recv).await {
                             log::error!("[GeminiLive] Message handling error: {:?}", e);
                         }
                         if val.get("goAway").is_some() {
@@ -418,8 +419,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                             let (new_reconnect_tx, new_reconnect_rx) = tokio::sync::oneshot::channel::<()>();
                             reconnect_rx = new_reconnect_rx;
 
-                            let new_playback_tx = playback_tx_clone.clone();
-                            let new_event_tx = event_tx_clone.clone();
+                            let new_provider_event_tx = provider_event_tx_clone.clone();
                             let new_state_recv = state_clone.clone();
                             let state_rx_rec = state_rx_clone.clone();
                             let ws_conn_rec = ws_connected_clone.clone();
@@ -437,7 +437,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                                                     continue;
                                                 }
                                             };
-                                            if let Err(e) = handle_gemini_server_message(&val, &new_playback_tx, &new_event_tx, &new_state_recv).await {
+                                            if let Err(e) = handle_gemini_server_message(&val, &new_provider_event_tx, &new_state_recv).await {
                                                 log::error!("[GeminiLive] Reconnected Message handling error: {:?}", e);
                                             }
                                             if val.get("goAway").is_some() {
@@ -464,7 +464,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                                                     continue;
                                                 }
                                             };
-                                            if let Err(e) = handle_gemini_server_message(&val, &new_playback_tx, &new_event_tx, &new_state_recv).await {
+                                            if let Err(e) = handle_gemini_server_message(&val, &new_provider_event_tx, &new_state_recv).await {
                                                 log::error!("[GeminiLive] Reconnected Message handling error: {:?}", e);
                                             }
                                             if val.get("goAway").is_some() {
@@ -517,7 +517,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                     log::error!("[GeminiLive] Max reconnection attempts reached. Retaining session resumption cache for manual retry.");
 
                     let err_turn_id = turn_id_reconnect.load(Ordering::Relaxed);
-                    if let Err(e) = event_tx_clone.send(VoxEvent::Error {
+                    if let Err(e) = provider_event_tx_clone.try_send(crate::services::realtime::RealtimeProviderEvent::Error {
                         turn_id: err_turn_id,
                         message: "Gemini connection lost permanently after multiple retries.".to_string(),
                     }) {
@@ -532,12 +532,15 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
             }
         });
 
-        Ok(Box::new(GeminiLiveSession {
-            audio_tx,
-            control_tx,
-            shutdown_tx: parking_lot::Mutex::new(Some(shutdown_tx)),
-            terminated,
-        }))
+        Ok((
+            Box::new(GeminiLiveSession {
+                audio_tx,
+                control_tx,
+                shutdown_tx: parking_lot::Mutex::new(Some(shutdown_tx)),
+                terminated,
+            }),
+            provider_event_rx,
+        ))
     }
 
     /// Performs TCP health check against Gemini Live endpoint.
@@ -800,6 +803,23 @@ impl RealtimeSession for GeminiLiveSession {
             .map_err(|e| anyhow!("Failed to write to S2S audio pipeline queue: {:?}", e))
     }
 
+    /// Commits an atomic speech turn by encapsulating the audio between activityStart and activityEnd.
+    fn commit_speech_turn(&self, pcm: &[i16]) -> Result<()> {
+        if self.terminated.load(Ordering::Relaxed) {
+            bail!("Gemini Live session is terminated");
+        }
+        self.control_tx
+            .send(ControlEvent::ActivityStart)
+            .map_err(|e| anyhow!("Failed to send ActivityStart: {:?}", e))?;
+        self.audio_tx
+            .send(pcm.to_vec())
+            .map_err(|e| anyhow!("Failed to send audio turn payload: {:?}", e))?;
+        self.control_tx
+            .send(ControlEvent::ActivityEnd)
+            .map_err(|e| anyhow!("Failed to send ActivityEnd: {:?}", e))?;
+        Ok(())
+    }
+
     /// Sends interrupt cancellation event to Gemini Live.
     fn cancel(&self) -> Result<()> {
         self.control_tx
@@ -816,27 +836,12 @@ impl RealtimeSession for GeminiLiveSession {
         }
         Ok(())
     }
-
-    /// Signals start of speech activity in PTT mode.
-    fn activity_start(&self) -> Result<()> {
-        self.control_tx
-            .send(ControlEvent::ActivityStart)
-            .map_err(|e| anyhow!("Failed to send activity_start control event: {:?}", e))
-    }
-
-    /// Signals end of speech activity in PTT mode.
-    fn activity_end(&self) -> Result<()> {
-        self.control_tx
-            .send(ControlEvent::ActivityEnd)
-            .map_err(|e| anyhow!("Failed to send activity_end control event: {:?}", e))
-    }
 }
 
 /// Parses and routes incoming Gemini Live BidiGenerateContent JSON protocol messages.
 async fn handle_gemini_server_message(
     val: &serde_json::Value,
-    playback_tx: &tokio::sync::mpsc::Sender<Vec<i16>>,
-    event_tx: &Sender<VoxEvent>,
+    provider_event_tx: &tokio::sync::mpsc::Sender<crate::services::realtime::RealtimeProviderEvent>,
     state: &Arc<Mutex<SessionState>>,
 ) -> Result<()> {
     if let Some(resumption) = val.get("sessionResumptionUpdate") {
@@ -846,35 +851,19 @@ async fn handle_gemini_server_message(
                 s_lock.resume_handle = Some(new_handle.to_string());
                 s_lock.model.clone()
             };
-            log::debug!(
-                "[GeminiLive] Saved resumption token: {}",
-                if new_handle.len() > 12 {
-                    &new_handle[..12]
-                } else {
-                    new_handle
-                }
-            );
-
-            let cache_path = crate::utils::paths::cache_dir().join(SESSION_CACHE_FILENAME);
-            let now_ms = chrono::Utc::now().timestamp_millis() as u64;
-            let expires_at = now_ms + crate::services::realtime::SESSION_CACHE_TTL_MS;
-            let payload = serde_json::json!({
-                "provider": "gemini_live",
-                "handle": new_handle,
-                "expires_at": expires_at,
-                "model": model,
-            });
-
-            let tmp_path = cache_path.with_extension("tmp");
-            if let Ok(payload_str) = serde_json::to_string_pretty(&payload) {
-                if let Err(e) = std::fs::write(&tmp_path, payload_str) {
-                    log::error!(
-                        "[GeminiLive] Failed to write temporary session cache: {:?}",
-                        e
-                    );
-                } else if let Err(e) = std::fs::rename(&tmp_path, &cache_path) {
-                    log::error!("[GeminiLive] Failed to rename session cache file: {:?}", e);
-                }
+            if let Err(e) = provider_event_tx
+                .send(
+                    crate::services::realtime::RealtimeProviderEvent::SessionResumptionHandle {
+                        handle: new_handle.to_string(),
+                        model,
+                    },
+                )
+                .await
+            {
+                log::warn!(
+                    "[GeminiLive] Failed to forward SessionResumptionHandle: {:?}",
+                    e
+                );
             }
         }
     }
@@ -892,8 +881,10 @@ async fn handle_gemini_server_message(
                 log::info!("[GeminiLive] Interruption confirmed by Gemini Live server.");
                 s_lock.interrupt_active = false;
                 s_lock.server_turn_cursor = None;
-                if let Err(e) = event_tx.send(VoxEvent::Interrupted { turn_id: tid }) {
-                    log::warn!("[GeminiLive] Failed to send Interrupted event: {:?}", e);
+                if let Err(e) = provider_event_tx.try_send(
+                    crate::services::realtime::RealtimeProviderEvent::Interrupted { turn_id: tid },
+                ) {
+                    log::warn!("[GeminiLive] Failed to forward Interrupted event: {:?}", e);
                 }
             }
             s_lock.interrupt_active
@@ -924,9 +915,12 @@ async fn handle_gemini_server_message(
                                         .chunks_exact(2)
                                         .map(|c| i16::from_le_bytes([c[0], c[1]]))
                                         .collect();
-                                    if let Err(e) = playback_tx.send(pcm).await {
+                                    if let Err(e) = provider_event_tx
+                                        .send(crate::services::realtime::RealtimeProviderEvent::AudioChunk(pcm))
+                                        .await
+                                    {
                                         log::warn!(
-                                            "[GeminiLive] Playback bridge channel closed: {:?}",
+                                            "[GeminiLive] Failed to forward AudioChunk: {:?}",
                                             e
                                         );
                                     } else {
@@ -943,11 +937,14 @@ async fn handle_gemini_server_message(
                     }
                     if let Some(text_token) = part.get("text").and_then(|t| t.as_str()) {
                         log::debug!("[GeminiLive] Received text token: {:?}", text_token);
-                        if let Err(e) = event_tx.send(VoxEvent::LlmToken {
-                            turn_id,
-                            token: text_token.to_string(),
-                        }) {
-                            log::warn!("[GeminiLive] Failed to send LlmToken event: {:?}", e);
+                        if let Err(e) = provider_event_tx
+                            .send(crate::services::realtime::RealtimeProviderEvent::LlmToken {
+                                turn_id,
+                                token: text_token.to_string(),
+                            })
+                            .await
+                        {
+                            log::warn!("[GeminiLive] Failed to forward LlmToken event: {:?}", e);
                         }
                     }
                 }
@@ -969,12 +966,17 @@ async fn handle_gemini_server_message(
                         "[GeminiLive] Received input transcription (ASR): {:?}",
                         text
                     );
-                    if let Err(e) = event_tx.send(VoxEvent::TranscriptPartial {
-                        turn_id,
-                        text: text.to_string(),
-                    }) {
+                    if let Err(e) = provider_event_tx
+                        .send(
+                            crate::services::realtime::RealtimeProviderEvent::TranscriptPartial {
+                                turn_id,
+                                text: text.to_string(),
+                            },
+                        )
+                        .await
+                    {
                         log::warn!(
-                            "[GeminiLive] Failed to send TranscriptPartial event: {:?}",
+                            "[GeminiLive] Failed to forward TranscriptPartial event: {:?}",
                             e
                         );
                     }
@@ -990,11 +992,14 @@ async fn handle_gemini_server_message(
                         "[GeminiLive] Received output transcription (TTS): {:?}",
                         text
                     );
-                    if let Err(e) = event_tx.send(VoxEvent::LlmToken {
-                        turn_id,
-                        token: text.to_string(),
-                    }) {
-                        log::warn!("[GeminiLive] Failed to send LlmToken event: {:?}", e);
+                    if let Err(e) = provider_event_tx
+                        .send(crate::services::realtime::RealtimeProviderEvent::LlmToken {
+                            turn_id,
+                            token: text.to_string(),
+                        })
+                        .await
+                    {
+                        log::warn!("[GeminiLive] Failed to forward LlmToken event: {:?}", e);
                     }
                 }
             }
@@ -1006,16 +1011,23 @@ async fn handle_gemini_server_message(
             .unwrap_or(false)
         {
             log::debug!("[GeminiLive] Turn completed.");
-            let mut s_lock = state.lock();
-            s_lock.interrupt_active = false;
-            let finished_turn_id = s_lock
-                .server_turn_cursor
-                .take()
-                .unwrap_or_else(|| s_lock.turn_id.load(Ordering::Relaxed));
-            if let Err(e) = event_tx.send(VoxEvent::LlmFinished {
-                turn_id: finished_turn_id,
-            }) {
-                log::warn!("[GeminiLive] Failed to send LlmFinished event: {:?}", e);
+            let finished_turn_id = {
+                let mut s_lock = state.lock();
+                s_lock.interrupt_active = false;
+                s_lock
+                    .server_turn_cursor
+                    .take()
+                    .unwrap_or_else(|| s_lock.turn_id.load(Ordering::Relaxed))
+            };
+            if let Err(e) = provider_event_tx
+                .send(
+                    crate::services::realtime::RealtimeProviderEvent::LlmFinished {
+                        turn_id: finished_turn_id,
+                    },
+                )
+                .await
+            {
+                log::warn!("[GeminiLive] Failed to forward LlmFinished event: {:?}", e);
             }
         }
     }
