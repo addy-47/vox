@@ -1,12 +1,28 @@
-use crate::core::settings::{LlmProviderConfig, ModelCapabilities};
+use crate::core::settings::{LlmModelInfo, LlmProviderConfig, ModelCapabilities};
+use crate::core::state::AppState;
 use crate::services::llm::catalog::lookup_preset;
-use crate::services::llm::config::{CapabilitySource, ConnectionConfig, TransportType};
+use crate::services::llm::config::{
+    CapabilitySource, ConnectionConfig, TokenLimitField, TransportType,
+};
 use crate::services::llm::transport::inject_auth_headers;
+use crate::services::llm::{EmbeddedProvider, LlmProvider, RemoteTransport, QWEN_MODEL_DIR};
+use crate::utils::paths;
 use futures_util::StreamExt;
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+// ─── Data Types & API Results ────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ModelProbeResult {
+    pub capabilities: ModelCapabilities,
+    pub validated_cap: Option<u32>,
+    pub cached_map: HashMap<String, ModelCapabilities>,
+}
 
 #[derive(Default, Debug)]
 struct EndpointMeta {
@@ -53,21 +69,117 @@ struct OllamaPsModel {
     size_vram: Option<u64>,
 }
 
-#[derive(Deserialize)]
-struct ChatProbeChunk {
-    #[serde(default)]
-    choices: Vec<ChatProbeChoice>,
+// ─── High-Level Probing & Listing Public Service Functions ────────────────────
+
+/// Lists available models for the given LLM provider configuration or active state.
+pub async fn list_models(
+    state: &Arc<AppState>,
+    provider: Option<LlmProviderConfig>,
+) -> Result<Vec<LlmModelInfo>, String> {
+    let config = match provider {
+        Some(prov) => prov,
+        None => {
+            let settings = state.settings.read().map_err(|e| e.to_string())?;
+            settings.llm.to_provider_config()
+        }
+    };
+
+    match config {
+        LlmProviderConfig::Embedded => {
+            let llm_dir = paths::get().models.join(QWEN_MODEL_DIR);
+            EmbeddedProvider::list_models_in_dir(&llm_dir).map_err(|e| e.to_string())
+        }
+        LlmProviderConfig::OpenAiCompat {
+            base_url,
+            model,
+            api_key,
+            provider_name,
+        } => {
+            let conn_cfg = ConnectionConfig::new(
+                &base_url,
+                &model,
+                api_key.as_deref(),
+                provider_name.as_deref(),
+            );
+            let transport = RemoteTransport::new(conn_cfg);
+            transport.list_models().await.map_err(|e| e.to_string())
+        }
+    }
 }
 
-#[derive(Deserialize)]
-struct ChatProbeChoice {
-    delta: ChatProbeDelta,
+/// Probes capabilities, validates optional token cap, and persists result to the capabilities cache.
+pub async fn probe_capabilities(
+    state: &Arc<AppState>,
+    provider: Option<LlmProviderConfig>,
+    model_id: Option<String>,
+    target_cap: Option<u32>,
+) -> Result<ModelProbeResult, String> {
+    let (config, active_model) = {
+        let settings = state.settings.read().map_err(|e| e.to_string())?;
+        (
+            provider.unwrap_or_else(|| settings.llm.to_provider_config()),
+            settings.llm.active_model().to_string(),
+        )
+    };
+
+    let target = model_id.or(Some(active_model));
+
+    let caps = CapabilityProbeEngine::probe_capabilities(&config, target.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let validated_cap = if let Some(cap) = target_cap {
+        CapabilityProbeEngine::validate_token_cap(&config, target.as_deref(), cap)
+            .await
+            .unwrap_or(None)
+    } else {
+        None
+    };
+
+    let cache_dir = paths::get().cache.clone();
+    let cache_file = cache_dir.join("model_capabilities.json");
+    let caps_clone = caps.clone();
+
+    let mut map: HashMap<String, ModelCapabilities> = if cache_file.exists() {
+        tokio::fs::read_to_string(&cache_file)
+            .await
+            .ok()
+            .and_then(|c| serde_json::from_str(&c).ok())
+            .unwrap_or_default()
+    } else {
+        HashMap::new()
+    };
+
+    let key = format!("{}:{}", caps_clone.provider_kind, caps_clone.model_id);
+    map.insert(key, caps_clone);
+
+    let map_clone = map.clone();
+    tokio::spawn(async move {
+        if let Err(e) = tokio::fs::create_dir_all(&cache_dir).await {
+            log::warn!(
+                "[Settings::Health] Failed to create cache directory {:?}: {}",
+                cache_dir,
+                e
+            );
+        }
+        if let Ok(json) = serde_json::to_string_pretty(&map_clone) {
+            let tmp = cache_file.with_extension("tmp");
+            if tokio::fs::write(&tmp, json).await.is_ok() {
+                if let Err(e) = tokio::fs::rename(&tmp, &cache_file).await {
+                    log::warn!("[Settings::Health] Failed to rename temp cache file: {}", e);
+                }
+            }
+        }
+    });
+
+    Ok(ModelProbeResult {
+        capabilities: caps,
+        validated_cap,
+        cached_map: map,
+    })
 }
 
-#[derive(Deserialize)]
-struct ChatProbeDelta {
-    content: Option<String>,
-}
+// ─── Empirical Capability Discovery Engine ───────────────────────────────────
 
 /// Empirical Capability Discovery Engine.
 pub struct CapabilityProbeEngine;
@@ -158,25 +270,37 @@ impl CapabilityProbeEngine {
 
         let mut meta = EndpointMeta {
             supports_tools: tool_probe_success,
-            context_window: preset_meta.and_then(|p| p.published_context_window),
             ..Default::default()
         };
 
-        if config.capability_source == CapabilitySource::OllamaNative {
-            Self::probe_ollama_metadata(client, &config.base_url, &config.model, &mut meta).await;
+        match config.capability_source {
+            CapabilitySource::OllamaNative => {
+                Self::probe_ollama_metadata(client, config, &mut meta).await;
+            }
+            CapabilitySource::ProbedGeneric => {
+                if let Some(meta_preset) = preset_meta {
+                    if meta.context_window.is_none() {
+                        meta.context_window = meta_preset.published_context_window;
+                    }
+                }
+            }
         }
 
-        let gpu_status = if let Some(p) = preset_meta {
-            p.display_label.to_string()
-        } else if meta.vram_bytes.is_some() {
-            "Local Daemon (GPU VRAM Allocated)".to_string()
+        let is_gpu = meta.is_gpu_accelerated || meta.server_has_gpu;
+        let gpu_status = if is_gpu {
+            if let Some(vram) = meta.vram_bytes {
+                let mb = vram / (1024 * 1024);
+                format!("GPU Active (VRAM: {} MB)", mb)
+            } else {
+                "GPU Active (Hardware Accelerated)".to_string()
+            }
         } else {
-            "Server / Provider Managed".to_string()
+            "CPU Inference / Standard".to_string()
         };
 
         Ok(ModelCapabilities {
             model_id: config.model.clone(),
-            provider_kind: "open_ai_compat".to_string(),
+            provider_kind: "openai_compat".to_string(),
             supports_tools: meta.supports_tools,
             supports_latin,
             supports_devanagari,
@@ -184,7 +308,7 @@ impl CapabilityProbeEngine {
             tps,
             ttft_ms,
             server_has_gpu: meta.server_has_gpu,
-            is_gpu_accelerated: meta.is_gpu_accelerated,
+            is_gpu_accelerated: is_gpu,
             gpu_status,
             vram_bytes: meta.vram_bytes,
             parameter_size: meta.parameter_size,
@@ -194,99 +318,117 @@ impl CapabilityProbeEngine {
         })
     }
 
-    /// Queries Ollama native endpoints (/api/show and /api/ps) for model details.
     async fn probe_ollama_metadata(
         client: &Client,
-        base_url: &str,
-        model_id: &str,
+        config: &ConnectionConfig,
         meta: &mut EndpointMeta,
     ) {
-        let show_url = format!("{}/api/show", base_url.trim_end_matches('/'));
-        let ps_url = format!("{}/api/ps", base_url.trim_end_matches('/'));
+        let base_url = config.base_url.trim_end_matches('/');
 
-        if let Ok(resp) = client
-            .post(&show_url)
-            .json(&json!({ "name": model_id }))
-            .send()
-            .await
-        {
-            if resp.status().is_success() {
-                if let Ok(show_data) = resp.json::<OllamaShowResponse>().await {
-                    if let Some(caps) = show_data.capabilities {
-                        if caps.iter().any(|c| c == "tools") {
-                            meta.supports_tools = true;
+        let show_url = format!("{}/api/show", base_url);
+        let show_payload = json!({ "name": config.model });
+        let mut builder = client.post(&show_url).json(&show_payload);
+        builder = inject_auth_headers(builder, &config.auth);
+
+        if let Ok(resp) = builder.send().await {
+            if let Ok(show) = resp.json::<OllamaShowResponse>().await {
+                if let Some(caps) = show.capabilities {
+                    if caps.iter().any(|c| c.eq_ignore_ascii_case("tools")) {
+                        meta.supports_tools = true;
+                    }
+                }
+                if let Some(info) = show.model_info {
+                    if let Some(obj) = info.as_object() {
+                        for (k, v) in obj {
+                            if k.ends_with(".context_length") {
+                                if let Some(len) = v.as_u64() {
+                                    meta.context_window = Some(len as u32);
+                                    break;
+                                }
+                            }
                         }
                     }
-                    if let Some(details) = show_data.details {
-                        meta.parameter_size = details.parameter_size;
-                        meta.quantization = details.quantization_level;
-                        meta.family = details.family;
-                    }
-                    if let Some(info) = show_data.model_info {
-                        if let Some(ctx_val) =
-                            info.get("general.context_length").and_then(|v| v.as_u64())
-                        {
-                            meta.context_window = Some(ctx_val as u32);
-                        }
-                    }
+                }
+                if let Some(details) = show.details {
+                    meta.parameter_size = details.parameter_size;
+                    meta.quantization = details.quantization_level;
+                    meta.family = details.family;
                 }
             }
         }
 
-        if let Ok(resp) = client.get(&ps_url).send().await {
-            if resp.status().is_success() {
-                if let Ok(ps_data) = resp.json::<OllamaPsResponse>().await {
-                    if let Some(m) = ps_data.models.iter().find(|m| m.name.contains(model_id)) {
-                        if let Some(vram) = m.size_vram {
+        let ps_url = format!("{}/api/ps", base_url);
+        let mut ps_builder = client.get(&ps_url);
+        ps_builder = inject_auth_headers(ps_builder, &config.auth);
+
+        if let Ok(resp) = ps_builder.send().await {
+            if let Ok(ps) = resp.json::<OllamaPsResponse>().await {
+                for running in ps.models {
+                    if running.name == config.model
+                        || running.name.starts_with(&format!("{}:", config.model))
+                    {
+                        if let Some(vram) = running.size_vram {
                             if vram > 0 {
                                 meta.server_has_gpu = true;
                                 meta.is_gpu_accelerated = true;
                                 meta.vram_bytes = Some(vram);
                             }
                         }
+                        break;
                     }
                 }
             }
         }
     }
 
-    /// Executes live streaming test to empirically measure TTFT, TPS, and multilingual output.
     async fn empirical_streaming_probe(
         client: &Client,
         config: &ConnectionConfig,
     ) -> (bool, bool, Option<f32>, Option<u32>) {
-        let supports_latin = true;
-        let mut supports_devanagari = false;
-        let mut tps = None;
-        let mut ttft_ms = None;
+        let is_ollama_native = config.capability_source == CapabilitySource::OllamaNative
+            && config.token_limit_field == TokenLimitField::NumPredict;
 
-        let prompt = "Respond with: Hello / नमस्ते";
-
-        let (url, payload) = if config.transport == TransportType::Responses {
-            let url = super::transport::responses::resolve_url(&config.base_url);
-            let payload = json!({
-                "model": config.model,
-                "input": [{"role": "user", "content": prompt}],
-                "stream": true,
-                "max_output_tokens": super::DEFAULT_PROBE_MAX_TOKENS,
-                "temperature": super::DEFAULT_PROBE_TEMPERATURE
-            });
-            (url, payload)
+        let (url, payload) = if is_ollama_native {
+            (
+                super::transport::ollama::resolve_url(&config.base_url),
+                json!({
+                    "model": config.model,
+                    "messages": [
+                        {"role": "user", "content": "Respond strictly with: Hello नमस्ते"}
+                    ],
+                    "stream": true,
+                    "options": {
+                        "temperature": super::DEFAULT_PROBE_TEMPERATURE,
+                        "num_predict": super::DEFAULT_PROBE_MAX_TOKENS
+                    }
+                }),
+            )
+        } else if config.transport == TransportType::Responses {
+            (
+                super::transport::responses::resolve_url(&config.base_url),
+                json!({
+                    "model": config.model,
+                    "input": [
+                        {"role": "user", "content": "Respond strictly with: Hello नमस्ते"}
+                    ],
+                    "temperature": super::DEFAULT_PROBE_TEMPERATURE,
+                    "max_output_tokens": super::DEFAULT_PROBE_MAX_TOKENS,
+                    "stream": true
+                }),
+            )
         } else {
-            let url = super::transport::chat_completions::resolve_url(&config.base_url);
-            let mut p = json!({
-                "model": config.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": true,
-                "temperature": super::DEFAULT_PROBE_TEMPERATURE
-            });
-            if let Some(obj) = p.as_object_mut() {
-                obj.insert(
-                    config.token_limit_field.as_str().to_string(),
-                    json!(super::DEFAULT_PROBE_MAX_TOKENS),
-                );
-            }
-            (url, p)
+            (
+                super::transport::chat_completions::resolve_url(&config.base_url),
+                json!({
+                    "model": config.model,
+                    "messages": [
+                        {"role": "user", "content": "Respond strictly with: Hello नमस्ते"}
+                    ],
+                    "temperature": super::DEFAULT_PROBE_TEMPERATURE,
+                    "max_tokens": super::DEFAULT_PROBE_MAX_TOKENS,
+                    "stream": true
+                }),
+            )
         };
 
         let mut builder = client.post(&url).json(&payload);
@@ -295,106 +437,139 @@ impl CapabilityProbeEngine {
         let t_start = Instant::now();
         let mut first_token_time = None;
         let mut token_count = 0usize;
-        let mut collected_text = String::new();
+        let mut accumulated_text = String::new();
 
-        if let Ok(resp) = builder.send().await {
-            if resp.status().is_success() {
-                let mut stream = resp.bytes_stream();
-                let mut decoder = super::transport::sse::SseDecoder::new();
+        let response = match builder.send().await {
+            Ok(res) if res.status().is_success() => res,
+            _ => return (false, false, None, None),
+        };
 
-                while let Some(Ok(chunk)) = stream.next().await {
-                    let lines = decoder.decode_chunk(&chunk);
-                    for line in lines {
-                        if line == "[DONE]" {
-                            break;
-                        }
-                        if config.transport == TransportType::Responses {
-                            #[derive(Deserialize)]
-                            struct RespEvt {
-                                #[serde(rename = "type")]
-                                event_type: Option<String>,
-                                delta: Option<String>,
-                            }
-                            if let Ok(evt) = serde_json::from_str::<RespEvt>(&line) {
-                                if evt.event_type.as_deref() == Some("response.output_text.delta") {
-                                    if let Some(ref text) = evt.delta {
-                                        if !text.is_empty() {
-                                            if first_token_time.is_none() {
-                                                first_token_time = Some(t_start.elapsed());
-                                            }
-                                            token_count += 1;
-                                            collected_text.push_str(text);
-                                        }
-                                    }
-                                }
-                            }
-                        } else if let Ok(parsed) = serde_json::from_str::<ChatProbeChunk>(&line) {
-                            if let Some(choice) = parsed.choices.first() {
-                                if let Some(ref text) = choice.delta.content {
-                                    if !text.is_empty() {
-                                        if first_token_time.is_none() {
-                                            first_token_time = Some(t_start.elapsed());
-                                        }
-                                        token_count += 1;
-                                        collected_text.push_str(text);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if t_start.elapsed().as_secs() >= super::DEFAULT_PROBE_TIMEOUT_SECS {
+        let mut decoder = super::transport::sse::SseDecoder::new();
+        let mut stream = response.bytes_stream();
+
+        while let Some(item) = stream.next().await {
+            if let Ok(bytes) = item {
+                let lines = decoder.decode_chunk(&bytes);
+                for line in lines {
+                    if line == "[DONE]" {
                         break;
                     }
-                }
-            }
-        }
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
+                        let token_opt = if is_ollama_native {
+                            val.get("message")
+                                .and_then(|m| m.get("content"))
+                                .and_then(|s| s.as_str())
+                        } else if config.transport == TransportType::Responses {
+                            val.get("delta").and_then(|s| s.as_str())
+                        } else {
+                            val.get("choices")
+                                .and_then(|c| c.get(0))
+                                .and_then(|c| c.get("delta"))
+                                .and_then(|d| d.get("content"))
+                                .and_then(|s| s.as_str())
+                        };
 
-        if let Some(ttft) = first_token_time {
-            ttft_ms = Some(ttft.as_millis() as u32);
-            let generation_time = t_start.elapsed().saturating_sub(ttft).as_secs_f32();
-            if generation_time > 0.05 && token_count > 1 {
-                tps = Some(token_count as f32 / generation_time);
-            }
-        }
-
-        if collected_text
-            .chars()
-            .any(|c| ('\u{0900}'..='\u{097F}').contains(&c))
-        {
-            supports_devanagari = true;
-        }
-
-        (supports_latin, supports_devanagari, tps, ttft_ms)
-    }
-
-    /// Executes live structured tool probe to empirically observe tool calling support.
-    async fn empirical_tool_probe(client: &Client, config: &ConnectionConfig) -> bool {
-        let url = super::transport::chat_completions::resolve_url(&config.base_url);
-        let mut payload = json!({
-            "model": config.model,
-            "messages": [{"role": "user", "content": "What is the weather in Tokyo?"}],
-            "tools": [{
-                "type": "function",
-                "function": {
-                    "name": "get_weather",
-                    "description": "Get current weather",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "location": { "type": "string" }
-                        },
-                        "required": ["location"]
+                        if let Some(tok) = token_opt {
+                            if !tok.is_empty() {
+                                if first_token_time.is_none() {
+                                    first_token_time = Some(t_start.elapsed());
+                                }
+                                token_count += 1;
+                                accumulated_text.push_str(tok);
+                            }
+                        }
                     }
                 }
-            }],
-            "tool_choice": "auto"
-        });
-        if let Some(obj) = payload.as_object_mut() {
-            obj.insert(
-                config.token_limit_field.as_str().to_string(),
-                json!(super::DEFAULT_TOOL_PROBE_MAX_TOKENS),
-            );
+            }
         }
+
+        let ttft_ms = first_token_time.map(|d| d.as_millis() as u32);
+        let tps = if let Some(ttft) = first_token_time {
+            let total_dur = t_start.elapsed();
+            if total_dur > ttft && token_count > 1 {
+                let gen_secs = (total_dur - ttft).as_secs_f32();
+                if gen_secs > 0.0 {
+                    Some((token_count - 1) as f32 / gen_secs)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let has_latin = accumulated_text.chars().any(|c| c.is_ascii_alphabetic());
+        let has_devanagari = accumulated_text
+            .chars()
+            .any(|c| ('\u{0900}'..='\u{097F}').contains(&c));
+
+        (
+            has_latin || !accumulated_text.is_empty(),
+            has_devanagari,
+            tps,
+            ttft_ms,
+        )
+    }
+
+    async fn empirical_tool_probe(client: &Client, config: &ConnectionConfig) -> bool {
+        let is_ollama_native = config.capability_source == CapabilitySource::OllamaNative
+            && config.token_limit_field == TokenLimitField::NumPredict;
+
+        let (url, payload) = if is_ollama_native {
+            (
+                super::transport::ollama::resolve_url(&config.base_url),
+                json!({
+                    "model": config.model,
+                    "messages": [
+                        {"role": "user", "content": "What is the weather in Tokyo?"}
+                    ],
+                    "tools": [{
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "description": "Get current weather for location",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "location": {"type": "string"}
+                                },
+                                "required": ["location"]
+                            }
+                        }
+                    }],
+                    "stream": false
+                }),
+            )
+        } else {
+            (
+                super::transport::chat_completions::resolve_url(&config.base_url),
+                json!({
+                    "model": config.model,
+                    "messages": [
+                        {"role": "user", "content": "What is the weather in Tokyo?"}
+                    ],
+                    "tools": [{
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "description": "Get current weather for location",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "location": {"type": "string"}
+                                },
+                                "required": ["location"]
+                            }
+                        }
+                    }],
+                    "tool_choice": "auto",
+                    "max_tokens": super::DEFAULT_TOOL_PROBE_MAX_TOKENS,
+                    "temperature": super::DEFAULT_PROBE_TEMPERATURE
+                }),
+            )
+        };
 
         let mut builder = client.post(&url).json(&payload);
         builder = inject_auth_headers(builder, &config.auth);
@@ -403,16 +578,21 @@ impl CapabilityProbeEngine {
             let status = resp.status();
             if status.is_success() {
                 if let Ok(body) = resp.text().await {
-                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body) {
-                        if let Some(choices) = parsed.get("choices").and_then(|c| c.as_array()) {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
+                        if let Some(choices) = val.get("choices").and_then(|c| c.as_array()) {
                             if let Some(first) = choices.first() {
-                                let msg = first.get("message");
-                                if let Some(tools) = msg.and_then(|m| m.get("tool_calls")) {
-                                    return tools.as_array().is_some_and(|a| !a.is_empty());
-                                }
-                                if msg.and_then(|m| m.get("function_call")).is_some() {
+                                if first
+                                    .get("message")
+                                    .and_then(|m| m.get("tool_calls"))
+                                    .is_some()
+                                {
                                     return true;
                                 }
+                            }
+                        }
+                        if let Some(msg) = val.get("message") {
+                            if msg.get("tool_calls").is_some() {
+                                return true;
                             }
                         }
                     }

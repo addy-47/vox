@@ -5,13 +5,46 @@ use crate::services::memory::{FactSource, Relation};
 use std::sync::atomic::Ordering;
 use tauri::State;
 
-/// Update the text content and vector embedding of an existing memory fact.
+#[derive(Debug, serde::Deserialize)]
+pub struct ManageFactPayload {
+    pub action: String,
+    pub fact_id: String,
+    pub new_content: Option<String>,
+    pub new_collection: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(untagged)]
+pub enum ManageFactResult {
+    NewId(String),
+    Done,
+}
+
+/// Unified command for modifying, superseding, reassigning, and deleting memory facts.
 #[tauri::command]
-pub async fn edit_fact_content(
+pub async fn manage_memory_fact(
     state: State<'_, std::sync::Arc<AppState>>,
-    fact_id: String,
-    new_content: String,
-) -> Result<(), String> {
+    payload: ManageFactPayload,
+) -> Result<ManageFactResult, String> {
+    match payload.action.to_lowercase().as_str() {
+        "edit_in_place" | "edit" => edit_fact_in_place_internal(&state, payload).await,
+        "supersede" | "user_edit" => supersede_fact_internal(&state, payload).await,
+        "reassign" => reassign_fact_internal(&state, payload).await,
+        "delete" | "soft_delete" => delete_fact_internal(&state, payload).await,
+        _ => Err(format!(
+            "Unknown manage_memory_fact action: {}",
+            payload.action
+        )),
+    }
+}
+
+async fn edit_fact_in_place_internal(
+    state: &State<'_, std::sync::Arc<AppState>>,
+    payload: ManageFactPayload,
+) -> Result<ManageFactResult, String> {
+    let new_content = payload
+        .new_content
+        .ok_or("new_content required for edit action")?;
     let trimmed = new_content.trim();
     if trimmed.is_empty() {
         return Err("Fact content cannot be empty".to_string());
@@ -47,7 +80,7 @@ pub async fn edit_fact_content(
     let mut rows = conn
         .query(
             "SELECT collection FROM memory_facts WHERE id = ?",
-            (fact_id.clone(),),
+            (payload.fact_id.clone(),),
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -56,13 +89,13 @@ pub async fn edit_fact_content(
         .next()
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Fact not found: {}", fact_id))?;
+        .ok_or_else(|| format!("Fact not found: {}", payload.fact_id))?;
     let collection: String = row.get(0).map_err(|e| e.to_string())?;
 
     VoxDb::with_transaction(&conn, async {
         conn.execute(
             "UPDATE memory_facts SET fact = ? WHERE id = ?",
-            (trimmed.to_string(), fact_id.clone()),
+            (trimmed.to_string(), payload.fact_id.clone()),
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -70,7 +103,7 @@ pub async fn edit_fact_content(
         conn.execute(
             "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES (?, ?, ?)
              ON CONFLICT(fact_id) DO UPDATE SET embedding = excluded.embedding",
-            (fact_id.clone(), collection, blob_bytes),
+            (payload.fact_id.clone(), collection, blob_bytes),
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -80,16 +113,58 @@ pub async fn edit_fact_content(
     .await?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-    Ok(())
+    Ok(ManageFactResult::Done)
 }
 
-/// Reassign a memory fact to a new collection by staging it into the ingestion queue.
-#[tauri::command]
-pub async fn reassign_fact_collection(
-    state: State<'_, std::sync::Arc<AppState>>,
-    fact_id: String,
-    new_collection: String,
-) -> Result<(), String> {
+async fn supersede_fact_internal(
+    state: &State<'_, std::sync::Arc<AppState>>,
+    payload: ManageFactPayload,
+) -> Result<ManageFactResult, String> {
+    let new_content = payload
+        .new_content
+        .ok_or("new_content required for supersede action")?;
+    let collection = payload
+        .new_collection
+        .unwrap_or_else(|| "Identity".to_string());
+    let trimmed = new_content.trim();
+    if trimmed.is_empty() {
+        return Err("Fact content cannot be empty".to_string());
+    }
+
+    let db_path = crate::utils::paths::get().db.clone();
+    let conn = VoxDb::open(&db_path)
+        .await
+        .map_err(|e| format!("DB open failed: {}", e))?;
+
+    let new_id = VoxDb::with_transaction(&conn, async {
+        let res = crate::persistence::mutations::supersede_user_fact(
+            &conn,
+            &payload.fact_id,
+            trimmed,
+            &collection,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        Ok(res)
+    })
+    .await?;
+
+    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
+    log::info!(
+        "[Memory] Successfully superseded fact {} -> new_id={}",
+        payload.fact_id,
+        new_id
+    );
+    Ok(ManageFactResult::NewId(new_id))
+}
+
+async fn reassign_fact_internal(
+    state: &State<'_, std::sync::Arc<AppState>>,
+    payload: ManageFactPayload,
+) -> Result<ManageFactResult, String> {
+    let new_collection = payload
+        .new_collection
+        .ok_or("new_collection required for reassign action")?;
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
@@ -98,7 +173,7 @@ pub async fn reassign_fact_collection(
     let mut rows = conn
         .query(
             "SELECT fact, source, session_id FROM memory_facts WHERE id = ?",
-            (fact_id.clone(),),
+            (payload.fact_id.clone(),),
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -107,7 +182,7 @@ pub async fn reassign_fact_collection(
         .next()
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Fact not found: {}", fact_id))?;
+        .ok_or_else(|| format!("Fact not found: {}", payload.fact_id))?;
 
     let fact_text: String = row.get(0).map_err(|e| e.to_string())?;
     let source_str: String = row.get(1).map_err(|e| e.to_string())?;
@@ -127,15 +202,13 @@ pub async fn reassign_fact_collection(
     .map_err(|e| e.to_string())?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-    Ok(())
+    Ok(ManageFactResult::Done)
 }
 
-/// Soft-delete a memory fact by creating a tombstone fact with a SUPERSEDES edge.
-#[tauri::command]
-pub async fn soft_delete_fact(
-    state: State<'_, std::sync::Arc<AppState>>,
-    fact_id: String,
-) -> Result<(), String> {
+async fn delete_fact_internal(
+    state: &State<'_, std::sync::Arc<AppState>>,
+    payload: ManageFactPayload,
+) -> Result<ManageFactResult, String> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
@@ -150,7 +223,7 @@ pub async fn soft_delete_fact(
     VoxDb::with_transaction(&conn, async {
         conn.execute(
             "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
-            (fact_id.clone(),),
+            (payload.fact_id.clone(),),
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -164,7 +237,7 @@ pub async fn soft_delete_fact(
 
         conn.execute(
             "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at) VALUES (?, ?, ?, 'USER', ?)",
-            (tombstone_id, fact_id, Relation::Supersedes.as_str().to_string(), now),
+            (tombstone_id, payload.fact_id, Relation::Supersedes.as_str().to_string(), now),
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -174,58 +247,5 @@ pub async fn soft_delete_fact(
     .await?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-    Ok(())
-}
-
-/// Supersede an existing user memory fact with a newly edited version and audit trail.
-#[tauri::command]
-pub async fn user_edit_memory(
-    state: State<'_, std::sync::Arc<AppState>>,
-    old_fact_id: String,
-    new_fact: String,
-    collection: String,
-) -> Result<String, String> {
-    let trimmed = new_fact.trim();
-    if trimmed.is_empty() {
-        return Err("Fact content cannot be empty".to_string());
-    }
-
-    let db_path = crate::utils::paths::get().db.clone();
-    let conn = VoxDb::open(&db_path)
-        .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
-
-    let new_id = VoxDb::with_transaction(&conn, async {
-        let res = crate::persistence::mutations::supersede_user_fact(
-            &conn,
-            &old_fact_id,
-            trimmed,
-            &collection,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-        Ok(res)
-    })
-    .await?;
-
-    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-    log::info!(
-        "[Memory] Successfully superseded fact {} -> new_id={}",
-        old_fact_id,
-        new_id
-    );
-    Ok(new_id)
-}
-
-/// Delete a user memory fact via soft-deletion and tombstone relation edge.
-#[tauri::command]
-pub async fn user_delete_memory(
-    state: State<'_, std::sync::Arc<AppState>>,
-    fact_id: String,
-) -> Result<(), String> {
-    let trimmed = fact_id.trim();
-    if trimmed.is_empty() {
-        return Err("Fact ID cannot be empty".to_string());
-    }
-    soft_delete_fact(state, trimmed.to_string()).await
+    Ok(ManageFactResult::Done)
 }

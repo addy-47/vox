@@ -7,7 +7,7 @@ import { useVisibility } from "@/shared/hooks/useVisibility";
 import { useInteraction } from "@/shared/hooks/useInteraction";
 import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
-import { hideTrayWindow, syncHudVisibility, setHudIgnoreCursor } from "@/services/windowService";
+import { hideTrayWindow, setWindowClickThrough } from "@/services/windowService";
 import { pttStart, pttStop } from "@/services/pipelineService";
 import { commitSessionToHistory, getTranscriptHistory } from "@/services/historyService";
 import { useSettings } from "@/shared/hooks/useSettings";
@@ -75,8 +75,7 @@ export const TrayApp: React.FC = () => {
       try {
         if (visibilityState === 'HIDDEN') {
           hideTrayWindow();
-          syncHudVisibility(false);
-          setHudIgnoreCursor(true);
+          setWindowClickThrough("tray", true);
           reset();
           setInteractionState("Idle");
           setPttStatus("IDLE");
@@ -84,10 +83,9 @@ export const TrayApp: React.FC = () => {
           setHistoryIndex(-1);
           setViewingHistory(false);
         } else if (visibilityState === 'ACTIVE' || visibilityState === 'APPEARING') {
-          syncHudVisibility(true);
-          setHudIgnoreCursor(false);
+          setWindowClickThrough("tray", false);
         } else if (visibilityState === 'FADING') {
-          setHudIgnoreCursor(true);
+          setWindowClickThrough("tray", true);
         }
       } catch (e) {
         console.warn("[TrayApp] Failed to sync visibility:", e);
@@ -160,8 +158,10 @@ export const TrayApp: React.FC = () => {
   const handleClose = useCallback(() => {
     const textToCommit = stateRef.current.liveTargetText;
     if (textToCommit.trim()) {
-      commitSessionToHistory(textToCommit).then((h: string[]) => {
-        setHistory(h.slice(0, stateRef.current.historyLimit));
+      commitSessionToHistory(textToCommit).then(() => {
+        getTranscriptHistory().then((h) => {
+          setHistory(h.slice(0, stateRef.current.historyLimit));
+        });
       });
     }
     stateRef.current.callbacks.reset();

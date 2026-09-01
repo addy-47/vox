@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertTriangle, AlertCircle, Info, X } from "lucide-react";
 import { onShowToast, type ToastPayload } from "@/services/eventsService";
-import { invoke } from "@tauri-apps/api/core";
+import { manageToastWindow, getLastToast } from "@/services/toastService";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const LEVEL = {
@@ -31,10 +31,10 @@ export const ToastApp: React.FC = () => {
       try {
         await getCurrentWindow().hide();
       } catch {
-        try { await invoke("hide_toast_window"); } catch {}
+        try { await manageToastWindow("hide"); } catch {}
       }
       setTimeout(async () => {
-        try { await invoke("destroy_toast_window_cmd"); } catch {}
+        try { await manageToastWindow("destroy"); } catch {}
         setToast(null);
         setProgress(1);
       }, 280);
@@ -52,7 +52,7 @@ export const ToastApp: React.FC = () => {
     let shown = false;
     try { await getCurrentWindow().show(); shown = true; } catch (e) { console.warn("[ToastApp] getCurrentWindow().show failed", e); }
     if (!shown) {
-      try { await invoke("show_toast_window"); shown = true; } catch (e) { console.warn("[ToastApp] show_toast_window invoke failed", e); }
+      try { await manageToastWindow("show"); shown = true; } catch (e) { console.warn("[ToastApp] manageToastWindow show failed", e); }
     }
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
 
@@ -77,7 +77,7 @@ export const ToastApp: React.FC = () => {
     const unlisten = onShowToast((payload) => { if (!cancelled) show(payload); });
     const fetchPending = async () => {
       try {
-        const pending = await invoke<ToastPayload | null>("get_last_toast");
+        const pending = await getLastToast();
         if (pending && !cancelled) show(pending);
       } catch {}
     };

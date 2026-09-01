@@ -263,7 +263,7 @@ impl MemoryAppState {
 
 pub struct AppState {
     pub engine: Mutex<Option<VoxEngine>>,
-    pub realtime_engine: Mutex<Option<crate::services::realtime::engine::RealtimeEngine>>,
+    pub realtime_engine: Mutex<Option<crate::services::realtime::RealtimeActor>>,
     pub owner: Arc<AtomicU32>,
     pub hud_visible: Arc<AtomicBool>,
     pub memory: MemoryAppState,

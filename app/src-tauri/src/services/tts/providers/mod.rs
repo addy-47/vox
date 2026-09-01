@@ -26,7 +26,6 @@ pub enum TtsProviderKind {
 
 /// Abstract contract for text-to-speech synthesis providers.
 pub trait TtsProvider: Send {
-
     fn synthesize_chunk(
         &self,
         text: &str,

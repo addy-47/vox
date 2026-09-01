@@ -31,11 +31,9 @@ describe("historyService", () => {
     });
 
     it("should commit session to history", async () => {
-      const mockHistory = ["Line 1", "Session text"];
-      mockInvoke.mockResolvedValueOnce(mockHistory);
-      const res = await commitSessionToHistory("Session text");
+      mockInvoke.mockResolvedValueOnce(undefined);
+      await commitSessionToHistory("Session text");
       expect(mockInvoke).toHaveBeenCalledWith("commit_session_to_history", { text: "Session text" });
-      expect(res).toEqual(mockHistory);
     });
   });
 

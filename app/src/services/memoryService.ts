@@ -103,21 +103,21 @@ export async function getMemoryFactDetail(factId: string): Promise<MemoryFactDet
  * Edits raw fact text in-place (synchronizing vector embeddings).
  */
 export async function editFactContent(factId: string, newContent: string): Promise<void> {
-  await invoke<void>("edit_fact_content", { factId, newContent });
+  await invoke<void>("manage_memory_fact", { payload: { action: "edit", fact_id: factId, new_content: newContent } });
 }
 
 /**
  * Reassigns fact to a new collection category via pipeline staging.
  */
 export async function reassignFactCollection(factId: string, newCollection: string): Promise<void> {
-  await invoke<void>("reassign_fact_collection", { factId, newCollection });
+  await invoke<void>("manage_memory_fact", { payload: { action: "reassign", fact_id: factId, new_collection: newCollection } });
 }
 
 /**
  * Soft deletes a memory fact.
  */
 export async function softDeleteFact(factId: string): Promise<void> {
-  await invoke<void>("soft_delete_fact", { factId });
+  await invoke<void>("manage_memory_fact", { payload: { action: "delete", fact_id: factId } });
 }
 
 /**
@@ -131,7 +131,7 @@ export async function togglePipelineProcessing(paused?: boolean): Promise<boolea
  * Resets all failed queue items back to staged_pending.
  */
 export async function retryFailedQueue(): Promise<number> {
-  return await invoke<number>("retry_failed_queue");
+  return await invoke<number>("retry_failed_queue_items", { itemIds: null });
 }
 
 /**

@@ -174,3 +174,41 @@ This document tracks detailed architectural refactorings, milestone completions,
   - Updated `get_setting_reload_policy` in `core/settings.rs` to treat `tts.voice_index` and `tts.voice` as `SettingReloadPolicy::WorkerCommand`.
   - Wired `dispatch_worker_command` in `ipc/settings/mutation.rs` to forward `TtsCommand::SetVoice(voice)` directly to the active TTS worker channel, eliminating full audio engine reloads on voice switching.
 - **Quality Gate:** `cargo clippy --all-targets -- -D warnings` (0 warnings), `cargo check --all-targets` (0 errors), `pnpm build` (clean Vite bundle).
+
+### 29. Realtime Actor-Engine Decoupling & Provider Framing Encapsulation
+- **Architecture & Service Layer Refactor:**
+  - **`RealtimeActor` (`services/realtime/actor.rs`):** Replaced legacy `RealtimeEngine` wrapper with a proper `RealtimeActor`. The actor now owns the `event_tx: Sender<VoxEvent>` pipeline stream, the `playback_engine: Arc<PlaybackEngine>`, and a dedicated async Tokio event loop that consumes typed internal provider events.
+  - **`RealtimeProviderEvent` Enum (`services/realtime/mod.rs`):** Established an internal typed communication channel between providers and `RealtimeActor` (`AudioChunk`, `TranscriptPartial`, `TranscriptFinal`, `LlmToken`, `LlmFinished`, `Interrupted`, `Error`, `SessionResumptionHandle`). Providers are now strictly transport drivers and no longer have references to `VoxEvent` or `event_tx`.
+  - **Semantic Trait Protocol (`RealtimeSession`):** Replaced Gemini wire-protocol leaked methods (`activity_start`/`activity_end`) with a single semantic method `commit_speech_turn(&self, pcm: &[i16])` on `RealtimeSession`.
+  - **Provider Enveloping:**
+    - `GeminiLiveSession`: Internally maps `commit_speech_turn` to `ActivityStart` $\to$ PCM chunks $\to$ `ActivityEnd` wire frames.
+    - `DeepgramVoiceAgentSession`: Enqueues PCM chunks directly without manual framing.
+  - **Domain Cleansing (`pipeline/realtime/ptt.rs` & `passive.rs`):** Domain logic now invokes `rt_actor.signal_speech_committed(&i16_samples)` and `rt_actor.signal_interrupt()`, with 0 awareness of provider protocol or wire command mechanics.
+  - **Non-Blocking Session Cache:** Relocated `realtime_session.json` cache persistence from blocking synchronous file I/O inside provider message handlers to non-blocking `tokio::fs` within `RealtimeActor`.
+### 30. IPC Command Realignment, Service Layer Extraction & LLM Subsystem Consolidation
+- **Runtime Defect Repairs & SSOT Invariants:**
+  - Standardized `get_settings` as the single SSOT query returning `BootState` (snapshot, models dir presence, and settings path).
+  - Pruned dead `getCachedCapabilities` in favor of `probeModelCapabilities` / `probeModelCapabilitiesFull`.
+  - Consolidated queue retries to `retry_failed_queue_items(item_ids: Option<Vec<i64>>)` across backend and frontend `memoryService.ts`.
+  - Pruned dead function definitions in Rust `ipc/memory/graph.rs` and `ipc/memory/ingestion.rs`.
+- **Thin Handler IPC & Service Layer Separation:**
+  - Extracted provider health checks into dedicated domain module `services/health.rs`.
+  - Extracted SSH runner and setup script streaming into `setup/remote_server.rs`.
+  - Extracted model task runner, file verification, and manifest syncing into `setup/manager_ops.rs`.
+  - Enforced strict $\le 30$-line thin routing envelopes across `ipc/setup.rs` and `ipc/settings/health.rs`.
+- **LLM Subsystem Consolidation & Defragmentation:**
+  - Integrated `types.rs` structs and error types into `services/llm/mod.rs`.
+  - Merged capability probing and model listing into `services/llm/probe.rs`.
+  - Pruned micro-fragmented files (`probing.rs`, `types.rs`).
+- **Quality Gate:** Verified `cargo check --all-targets` (0 errors), `pnpm test` (96/96 tests passed across all 10 suites), `pnpm run build` (0 TypeScript errors in 5.46s).
+
+### 31. Backend Comprehensive Review — 7-Sprint Audit (§31)
+
+- **Scope & Method:** Full `app/src-tauri/src/` audit — 147 `*.rs`, 32k LOC — via 7 parallel `explore` subagents (`very thorough`) against `backend-style-guide.md §1-10` + `backend-engineer.md` invariants + `AGENTS.md §4.1` 8 invariants. `tests/`/`benches/`/`examples/` excluded; `submodules/` not audited.
+- **Gates:** `cargo check --all-targets` `0 errors` `app/src-tauri/Cargo.toml:1` (28.5s) + `cargo clippy --all-targets -- -D warnings` `0 warnings` (27.6s) — **clippy green ≠ style compliant** (style gates strictly tighter). Snapshot greps: `unwrap()` 13, `let _ =` 16 (`remote_server.rs:102` ×8), `#[allow` 0, `is_dictation_enabled` `state.rs:278` + `is_private_mode` `state.rs:325`/`worker.rs:15`.
+- **Totals (de-duplicated):** **~283 issues** — 🔴 Critical 14, 🟠 High 52, 🟡 Medium 78, 🔵 Low 31, 📏 Style-Guide 108 (see `docs/plans/phase10/backend_review_report.md:1` ledger).
+  - **Critical (14):** Sacred audio hot-path `log!/send/clone` on CPAL I/O + VAD loop `device.rs:135` `playback.rs:402` `vad/actor.rs:288`/`earshot_vad.rs:52`; `engine.lock().await` held across `recv_timeout(500ms)` in 3 PTT paths `dictation.rs:75` `modular/ptt.rs:196` `realtime/ptt.rs:250`; banned `is_dictation_enabled`/`is_private_mode` `state.rs:278` `worker.rs:15`; provider-local `fetch_add` turn fragments `gemini_live.rs:761` `deepgram_live.rs:602`.
+  - **High (52):** `Result<T,String>` 58 sites typed-error violation `§5` (`ipc/audio.rs:22` `history.rs:8` `health.rs:16`); concrete `AppHandle` 29 sites `§10` (`tray.rs:53` `assistant.rs:12`); thread-priority gaps (`stt/actor.rs:300` `tts/actor.rs:213` missing `Max`); `std::fs` blocking in async `realtime/session.rs:22` `setup/model_manager.rs:212`; `parking_lot::Mutex` in Tokio `gemini_live.rs:140`.
+  - **Style (108):** `§2` file ceiling 5 (`llama_cpp.rs:717` `probe.rs:658` `gemini_live.rs:1036` `mutation.rs:1000`); `§2.1` grammar 38 (missing `//!` 20/22 `ipc/*` + import inversion 18/29 `llm/*`); `§4` caps 48 (48 fns >50L, top `facade.rs:prepare_turn_context 226` `gemini_live.rs:connect 476` `llama_cpp.rs:generate 344`); `§3` hierarchy 27 (11 VAD thresholds not in `vad/mod.rs:13`).
+- **Sprint Ledgers:** S1 Core 43 issues (3🔴 4🟠 8🟡 6🔵 22📏) — `is_*` flags + `lib.rs:51` 566-line monolith; S2 IPC 87 — 58 string errors + 29 `AppHandle` + dictation orphan 3 cmds + `fetch_manifest` S5 violate; S3 Pipeline 6 critical — `try_lock` silent drops `modular/passive.rs:67` + `blocking_lock` on router + filler dead code `modular/passive.rs:352`; S4 Audio/VAD 4 sacred violations + 11 constant leaks; S5 Inference 2 ceiling + 14 thread-priority/blocking-HTTP; S6 Realtime/Memory 3 crit — `ws_connected` flag + `fetch_add` + `block_in_place`; S7 Persistence 18 error/visibility + `Box::leak` `db.rs:18`.
+- **Artifact:** Full per-sprint `File:Line | Cat | § | Evidence | Fix` tables in [`docs/plans/phase10/backend_review_report.md`](file:///home/addy/projects/apps/vox/docs/plans/phase10/backend_review_report.md). **Next P0 stack:** (1) sacred path `log/send/clone` removal + `utterance_buffer` pre-alloc 160k, (2) drop guard before `recv_timeout` ×3, (3) delete `is_*` flags + centralize `AppState::next_turn_id`, (4) `<R:Runtime>` generics 29 sites — gates `tauri::test::mock_app`. P1 `thiserror` 58 sites, P2 split 5 ceiling files + 48 caps.

@@ -21,19 +21,15 @@ use crate::ipc::history::{
     commit_session_to_history, delete_session, get_sessions, get_transcript_history, get_turns,
 };
 use crate::ipc::pipeline::{
-    check_engine_status, copy_last_dictation_transcript, end_session, get_dictation_settings,
-    get_last_dictation_transcript, get_realtime_session_cache, launch_engine, pause_session,
-    ptt_cancel, ptt_start, ptt_stop, resume_session, start_session, stop_engine, test_clip,
-    test_clip_cancel,
+    end_session, launch_engine, pause_session, ptt_cancel, ptt_start, ptt_stop, resume_session,
+    start_session, stop_engine, test_clip, test_clip_cancel,
 };
 use crate::ipc::settings::{
-    check_llm_provider_health, check_stt_provider_health, check_tts_provider_health, get_settings,
-    list_llm_models, request_boot_state, request_model_catalog, reset_settings,
+    check_provider_health, get_settings, list_llm_models, get_model_catalog, reset_settings,
     setup_remote_server, update_setting,
 };
 use crate::ipc::tray::{
-    hide_tray_window, set_hud_ignore_cursor, show_main_window, sync_hud_visibility,
-    toggle_tray_visibility, update_interaction_mode,
+    hide_tray_window, set_window_click_through, show_main_window, toggle_tray_visibility_internal,
 };
 #[cfg(target_os = "linux")]
 use crate::toast::setup_linux_toast_layer;
@@ -291,7 +287,7 @@ pub fn run() {
                     "live" => {
                         let handle = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            toggle_tray_visibility(handle).await;
+                            toggle_tray_visibility_internal(handle).await;
                         });
                     }
                     "quit" => app.exit(0),
@@ -492,7 +488,6 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            check_engine_status,
             launch_engine,
             stop_engine,
             start_session,
@@ -501,28 +496,17 @@ pub fn run() {
             resume_session,
             test_clip,
             test_clip_cancel,
-            get_realtime_session_cache,
             hide_tray_window,
-            toggle_tray_visibility,
-            sync_hud_visibility,
-            set_hud_ignore_cursor,
-            update_interaction_mode,
+            set_window_click_through,
             show_main_window,
-            crate::toast::show_toast_window,
-            crate::toast::hide_toast_window,
-            crate::toast::destroy_toast_window_cmd,
+            crate::toast::manage_toast_window,
             crate::toast::get_last_toast,
-            request_boot_state,
-            request_model_catalog,
-            check_llm_provider_health,
-            check_stt_provider_health,
-            check_tts_provider_health,
-            list_llm_models,
-            crate::ipc::settings::get_cached_capabilities,
-            crate::ipc::settings::probe_model_capabilities,
-            crate::ipc::settings::validate_llm_token_cap,
-            setup_remote_server,
             get_settings,
+            get_model_catalog,
+            check_provider_health,
+            list_llm_models,
+            crate::ipc::settings::probe_model_capabilities,
+            setup_remote_server,
             update_setting,
             reset_settings,
             ptt_start,
@@ -533,56 +517,37 @@ pub fn run() {
             get_sessions,
             get_turns,
             delete_session,
-            // Dictation
-            get_dictation_settings,
-            get_last_dictation_transcript,
-            copy_last_dictation_transcript,
             // Voices
             crate::ipc::voices::list_voices,
-            crate::ipc::voices::fetch_edge_tts_voices,
             crate::ipc::voices::add_voice_from_file,
             crate::ipc::voices::add_voice_from_recording,
             crate::ipc::voices::start_backend_recording,
             crate::ipc::voices::stop_backend_recording,
             crate::ipc::voices::delete_voice,
+            crate::ipc::voices::rename_voice,
             // Monitoring & Profiler
             crate::ipc::monitoring::get_runtime_snapshot,
-            crate::ipc::monitoring::get_runtime_history,
-            crate::ipc::monitoring::clear_runtime_history,
             crate::ipc::monitoring::get_profiler_snapshot,
             crate::ipc::monitoring::record_memory_profile_event,
             // Setup
             crate::ipc::setup::fetch_manifest,
-            crate::ipc::setup::check_for_updates,
-            crate::ipc::setup::check_for_model_updates,
+            crate::ipc::setup::check_updates,
             crate::ipc::setup::get_onboarding_status,
             crate::ipc::setup::get_runtime_report,
-            crate::ipc::setup::start_model_setup,
-            crate::ipc::setup::cancel_model_setup,
+            crate::ipc::setup::manage_models,
             crate::ipc::setup::complete_setup_wizard,
             crate::ipc::setup::reveal_wizard,
-            crate::ipc::setup::check_model_exists,
-            crate::ipc::setup::download_optional_model,
-            crate::ipc::setup::delete_model,
             // Audio
-            crate::ipc::audio::list_input_devices,
-            crate::ipc::audio::list_output_devices,
+            crate::ipc::audio::list_audio_devices,
             // Memory Subsystem
             crate::ipc::memory::get_graph_version,
             crate::ipc::memory::get_memory_graph_topology,
             crate::ipc::memory::get_memory_fact_detail,
-            crate::ipc::memory::get_memory_stats,
-            crate::ipc::memory::edit_fact_content,
-            crate::ipc::memory::reassign_fact_collection,
-            crate::ipc::memory::soft_delete_fact,
-            crate::ipc::memory::user_edit_memory,
-            crate::ipc::memory::user_delete_memory,
+            crate::ipc::memory::manage_memory_fact,
             crate::ipc::memory::get_unresolved_conflicts,
             crate::ipc::memory::resolve_memory_conflict,
-            crate::ipc::memory::get_memory_relations,
             crate::ipc::memory::get_memory_queue_status,
             crate::ipc::memory::toggle_pipeline_processing,
-            crate::ipc::memory::retry_failed_queue,
             crate::ipc::memory::retry_failed_queue_items,
         ])
         .build(tauri::generate_context!())
