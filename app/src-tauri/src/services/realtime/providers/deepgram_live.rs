@@ -2,12 +2,10 @@ use anyhow::{anyhow, bail, Result};
 use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 use std::sync::atomic::Ordering;
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::core::events::VoxEvent;
 use crate::core::settings::DeepgramVoiceAgentConfig;
 use crate::services::realtime::{
     RealtimeAudioConfig, RealtimeProviderKind, RealtimeSession, RealtimeVoiceProvider,
@@ -71,9 +69,10 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
     fn connect(
         &self,
         interaction_mode: crate::core::settings::InteractionMode,
-        playback_tx: tokio::sync::mpsc::Sender<Vec<i16>>,
-        event_tx: Sender<VoxEvent>,
-    ) -> Result<Box<dyn RealtimeSession>> {
+    ) -> Result<(
+        Box<dyn RealtimeSession>,
+        tokio::sync::mpsc::Receiver<crate::services::realtime::RealtimeProviderEvent>,
+    )> {
         log::debug!(
             "[DeepgramVoiceAgent] Connecting with interaction_mode: {:?}",
             interaction_mode
@@ -101,6 +100,10 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         let (audio_tx, mut audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<i16>>();
         let (control_tx, mut control_rx) = tokio::sync::mpsc::unbounded_channel::<ControlEvent>();
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let (provider_event_tx, provider_event_rx) =
+            tokio::sync::mpsc::channel::<crate::services::realtime::RealtimeProviderEvent>(
+                crate::services::realtime::BRIDGE_CHANNEL_CAPACITY,
+            );
 
         let state_rx_clone = self.state_rx.clone();
         let turn_id_reconnect = self.turn_id.clone();
@@ -114,8 +117,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         }));
 
         let state_clone = state.clone();
-        let playback_tx_clone = playback_tx.clone();
-        let event_tx_clone = event_tx.clone();
+        let provider_event_tx_clone = provider_event_tx.clone();
 
         let ws_sender: Arc<Mutex<Option<UnboundedSender<Message>>>> = Arc::new(Mutex::new(None));
         let ws_sender_audio = ws_sender.clone();
@@ -217,8 +219,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         });
 
         let (reconnect_tx, mut reconnect_rx) = tokio::sync::oneshot::channel::<()>();
-        let playback_tx_recv = playback_tx.clone();
-        let event_tx_recv = event_tx.clone();
+        let provider_event_tx_recv = provider_event_tx.clone();
         let state_recv = state_clone.clone();
         let state_rx_for_rec = state_rx_clone.clone();
         let ws_connected_clone_for_rec = ws_connected_clone.clone();
@@ -233,7 +234,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                         let text_str: &str = &text;
                         if let Err(e) = handle_deepgram_server_message(
                             text_str,
-                            &event_tx_recv,
+                            &provider_event_tx_recv,
                             &state_recv,
                         ) {
                             log::error!("[DeepgramVoiceAgent] Message handling error: {:?}", e);
@@ -244,8 +245,11 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                             .chunks_exact(2)
                             .map(|c| i16::from_le_bytes([c[0], c[1]]))
                             .collect();
-                        if let Err(e) = playback_tx_recv.send(pcm).await {
-                            log::warn!("[DeepgramVoiceAgent] Playback bridge channel closed: {:?}", e);
+                        if let Err(e) = provider_event_tx_recv
+                            .send(crate::services::realtime::RealtimeProviderEvent::AudioChunk(pcm))
+                            .await
+                        {
+                            log::warn!("[DeepgramVoiceAgent] Failed to forward AudioChunk: {:?}", e);
                         }
                     }
                     Ok(Message::Close(cf)) => {
@@ -328,8 +332,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                             let (new_reconnect_tx, new_reconnect_rx) = tokio::sync::oneshot::channel::<()>();
                             reconnect_rx = new_reconnect_rx;
 
-                            let new_playback_tx = playback_tx_clone.clone();
-                            let new_event_tx = event_tx_clone.clone();
+                            let new_provider_event_tx = provider_event_tx_clone.clone();
                             let new_state_recv = state_clone.clone();
                             let state_rx_rec = state_rx_clone.clone();
                             let ws_conn_rec = ws_connected_clone.clone();
@@ -340,7 +343,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                                     match res {
                                         Ok(Message::Text(text)) => {
                                             let text_str: &str = &text;
-                                            if let Err(e) = handle_deepgram_server_message(text_str, &new_event_tx, &new_state_recv) {
+                                            if let Err(e) = handle_deepgram_server_message(text_str, &new_provider_event_tx, &new_state_recv) {
                                                 log::error!("[DeepgramVoiceAgent] Reconnected Message handling error: {:?}", e);
                                             }
                                         }
@@ -349,8 +352,11 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                                                 .chunks_exact(2)
                                                 .map(|c| i16::from_le_bytes([c[0], c[1]]))
                                                 .collect();
-                                            if let Err(e) = new_playback_tx.send(pcm).await {
-                                                log::warn!("[DeepgramVoiceAgent] Reconnected Playback bridge channel closed: {:?}", e);
+                                            if let Err(e) = new_provider_event_tx
+                                                .send(crate::services::realtime::RealtimeProviderEvent::AudioChunk(pcm))
+                                                .await
+                                            {
+                                                log::warn!("[DeepgramVoiceAgent] Reconnected AudioChunk send error: {:?}", e);
                                             }
                                         }
                                         Ok(Message::Close(cf)) => {
@@ -388,7 +394,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                 if !reconnected {
                     log::error!("[DeepgramVoiceAgent] Max reconnection attempts reached. Terminating session.");
                     let err_turn_id = turn_id_reconnect.load(Ordering::Relaxed);
-                    if let Err(e) = event_tx_clone.send(VoxEvent::Error {
+                    if let Err(e) = provider_event_tx_clone.try_send(crate::services::realtime::RealtimeProviderEvent::Error {
                         turn_id: err_turn_id,
                         message: "Deepgram connection lost permanently after multiple retries.".to_string(),
                     }) {
@@ -403,12 +409,15 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
             }
         });
 
-        Ok(Box::new(DeepgramVoiceAgentSession {
-            audio_tx,
-            control_tx,
-            shutdown_tx: parking_lot::Mutex::new(Some(shutdown_tx)),
-            terminated,
-        }))
+        Ok((
+            Box::new(DeepgramVoiceAgentSession {
+                audio_tx,
+                control_tx,
+                shutdown_tx: parking_lot::Mutex::new(Some(shutdown_tx)),
+                terminated,
+            }),
+            provider_event_rx,
+        ))
     }
 
     /// Performs a network health check by probing the Deepgram Voice Agent TCP endpoint.
@@ -633,6 +642,11 @@ impl RealtimeSession for DeepgramVoiceAgentSession {
             .map_err(|e| anyhow!("Failed to write to Deepgram audio queue: {:?}", e))
     }
 
+    /// Commits an atomic speech turn by enqueuing the audio buffer to Deepgram.
+    fn commit_speech_turn(&self, pcm: &[i16]) -> Result<()> {
+        self.send_audio(pcm)
+    }
+
     /// Sends interrupt cancellation event to Deepgram.
     fn cancel(&self) -> Result<()> {
         self.control_tx
@@ -649,26 +663,12 @@ impl RealtimeSession for DeepgramVoiceAgentSession {
         }
         Ok(())
     }
-
-    /// Signals start of speech activity. Deepgram Voice Agent operates continuous streaming with server-side VAD (flux model),
-    /// so client-side speech start is an intentional no-op.
-    fn activity_start(&self) -> Result<()> {
-        log::trace!("[DeepgramVoiceAgent] activity_start (no-op on continuous VAD agent)");
-        Ok(())
-    }
-
-    /// Signals end of speech activity. Deepgram Voice Agent operates continuous streaming with server-side VAD (flux model),
-    /// so client-side speech end is an intentional no-op.
-    fn activity_end(&self) -> Result<()> {
-        log::trace!("[DeepgramVoiceAgent] activity_end (no-op on continuous VAD agent)");
-        Ok(())
-    }
 }
 
 /// Parses and routes incoming Deepgram Voice Agent JSON protocol messages.
 fn handle_deepgram_server_message(
     text: &str,
-    event_tx: &Sender<VoxEvent>,
+    provider_event_tx: &tokio::sync::mpsc::Sender<crate::services::realtime::RealtimeProviderEvent>,
     state: &Arc<Mutex<SessionState>>,
 ) -> Result<()> {
     let val: serde_json::Value = serde_json::from_str(text)?;
@@ -682,9 +682,11 @@ fn handle_deepgram_server_message(
                 s_lock.last_assistant_text.clear();
                 let tid = s_lock.peek_or_current_turn_id();
                 s_lock.server_turn_cursor = None;
-                if let Err(e) = event_tx.send(VoxEvent::Interrupted { turn_id: tid }) {
+                if let Err(e) = provider_event_tx.try_send(
+                    crate::services::realtime::RealtimeProviderEvent::Interrupted { turn_id: tid },
+                ) {
                     log::warn!(
-                        "[DeepgramVoiceAgent] Failed to send Interrupted event: {:?}",
+                        "[DeepgramVoiceAgent] Failed to forward Interrupted event: {:?}",
                         e
                     );
                 }
@@ -707,12 +709,14 @@ fn handle_deepgram_server_message(
                 if role == "user" {
                     log::debug!("[DeepgramVoiceAgent] User final transcript: {:?}", content);
                     let turn_id = state.lock().current_or_new_turn_id();
-                    if let Err(e) = event_tx.send(VoxEvent::TranscriptFinal {
-                        turn_id,
-                        text: content.to_string(),
-                    }) {
+                    if let Err(e) = provider_event_tx.try_send(
+                        crate::services::realtime::RealtimeProviderEvent::TranscriptFinal {
+                            turn_id,
+                            text: content.to_string(),
+                        },
+                    ) {
                         log::warn!(
-                            "[DeepgramVoiceAgent] Failed to send TranscriptFinal event: {:?}",
+                            "[DeepgramVoiceAgent] Failed to forward TranscriptFinal event: {:?}",
                             e
                         );
                     }
@@ -724,23 +728,27 @@ fn handle_deepgram_server_message(
                     if content.starts_with(last_text) {
                         let delta = &content[last_text.len()..];
                         if !delta.is_empty() {
-                            if let Err(e) = event_tx.send(VoxEvent::LlmToken {
-                                turn_id,
-                                token: delta.to_string(),
-                            }) {
+                            if let Err(e) = provider_event_tx.try_send(
+                                crate::services::realtime::RealtimeProviderEvent::LlmToken {
+                                    turn_id,
+                                    token: delta.to_string(),
+                                },
+                            ) {
                                 log::warn!(
-                                    "[DeepgramVoiceAgent] Failed to send LlmToken event: {:?}",
+                                    "[DeepgramVoiceAgent] Failed to forward LlmToken event: {:?}",
                                     e
                                 );
                             }
                         }
                     } else {
-                        if let Err(e) = event_tx.send(VoxEvent::LlmToken {
-                            turn_id,
-                            token: content.to_string(),
-                        }) {
+                        if let Err(e) = provider_event_tx.try_send(
+                            crate::services::realtime::RealtimeProviderEvent::LlmToken {
+                                turn_id,
+                                token: content.to_string(),
+                            },
+                        ) {
                             log::warn!(
-                                "[DeepgramVoiceAgent] Failed to send LlmToken event: {:?}",
+                                "[DeepgramVoiceAgent] Failed to forward LlmToken event: {:?}",
                                 e
                             );
                         }
@@ -756,11 +764,13 @@ fn handle_deepgram_server_message(
                     .server_turn_cursor
                     .take()
                     .unwrap_or_else(|| s_lock.turn_id.load(Ordering::Relaxed));
-                if let Err(e) = event_tx.send(VoxEvent::LlmFinished {
-                    turn_id: finished_turn_id,
-                }) {
+                if let Err(e) = provider_event_tx.try_send(
+                    crate::services::realtime::RealtimeProviderEvent::LlmFinished {
+                        turn_id: finished_turn_id,
+                    },
+                ) {
                     log::warn!(
-                        "[DeepgramVoiceAgent] Failed to send LlmFinished event: {:?}",
+                        "[DeepgramVoiceAgent] Failed to forward LlmFinished event: {:?}",
                         e
                     );
                 }
@@ -769,11 +779,16 @@ fn handle_deepgram_server_message(
                 log::error!("[DeepgramVoiceAgent] Server error/warning: {:?}", val);
                 if let Some(err_msg) = val.get("message").and_then(|v| v.as_str()) {
                     let err_turn_id = state.lock().peek_or_current_turn_id();
-                    if let Err(e) = event_tx.send(VoxEvent::Error {
-                        turn_id: err_turn_id,
-                        message: format!("Deepgram server error: {}", err_msg),
-                    }) {
-                        log::warn!("[DeepgramVoiceAgent] Failed to send Error event: {:?}", e);
+                    if let Err(e) = provider_event_tx.try_send(
+                        crate::services::realtime::RealtimeProviderEvent::Error {
+                            turn_id: err_turn_id,
+                            message: format!("Deepgram server error: {}", err_msg),
+                        },
+                    ) {
+                        log::warn!(
+                            "[DeepgramVoiceAgent] Failed to forward Error event: {:?}",
+                            e
+                        );
                     }
                 }
             }

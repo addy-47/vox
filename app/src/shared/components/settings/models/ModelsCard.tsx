@@ -3,7 +3,6 @@ import { useSettingsStore } from "@/store/settingsStore";
 import {
   setupRemoteServer,
   listVoices,
-  fetchEdgeTtsVoices,
 } from "@/services/pipelineService";
 import {
   downloadOptionalModel,
@@ -216,8 +215,15 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     setLoadingEdgeVoices(true);
     setEdgeTtsError(null);
     try {
-      const list = await fetchEdgeTtsVoices();
-      setEdgeTtsVoices(list);
+      const list = await listVoices("edge");
+      const mapped = list.map((v) => ({
+        name: v.id,
+        short_name: v.id,
+        gender: "Unknown",
+        locale: "en-US",
+        friendly_name: v.name,
+      }));
+      setEdgeTtsVoices(mapped);
     } catch (err: any) {
       console.error("Failed to fetch Edge TTS voices:", err);
       setEdgeTtsError(String(err));

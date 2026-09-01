@@ -4,7 +4,8 @@ use crate::services::tts::{MAX_SPEED, MIN_SPEED};
 use anyhow::{anyhow, Result};
 use parking_lot::Mutex;
 use sherpa_onnx::{
-    GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsKokoroModelConfig, OfflineTtsModelConfig,
+    GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsKokoroModelConfig,
+    OfflineTtsModelConfig,
 };
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};

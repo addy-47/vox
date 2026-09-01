@@ -15,7 +15,6 @@ const pipelineMocks = vi.hoisted(() => ({
   pttCancel: vi.fn().mockResolvedValue(undefined),
   testClip: vi.fn().mockResolvedValue(undefined),
   testClipCancel: vi.fn().mockResolvedValue(undefined),
-  getRealtimeSessionCache: vi.fn().mockResolvedValue({ has_session: false }),
   getRuntimeSnapshot: vi.fn().mockResolvedValue({
     is_engaged: false,
     is_sleeping: false,
@@ -34,7 +33,6 @@ vi.mock("@/services/pipelineService", () => ({
   pttCancel: pipelineMocks.pttCancel,
   testClip: pipelineMocks.testClip,
   testClipCancel: pipelineMocks.testClipCancel,
-  getRealtimeSessionCache: pipelineMocks.getRealtimeSessionCache,
   getRuntimeSnapshot: pipelineMocks.getRuntimeSnapshot,
 }));
 

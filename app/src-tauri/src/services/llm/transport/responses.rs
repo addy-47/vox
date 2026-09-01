@@ -1,7 +1,7 @@
 use super::sse::SseDecoder;
 use crate::core::events::VoxEvent;
 use crate::services::llm::config::ConnectionConfig;
-use crate::services::llm::types::{GenerationRequest, LlmError, OutputConstraint};
+use crate::services::llm::{GenerationRequest, LlmError, OutputConstraint};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc;
@@ -229,7 +229,7 @@ pub async fn stream_responses(
 mod tests {
     use super::*;
     use crate::services::llm::config::TokenLimitField;
-    use crate::services::llm::types::{
+    use crate::services::llm::{
         ConversationInput, GenerationOptions, GenerationPurpose, OutputConstraint,
     };
     use crate::services::memory::{ChatMessage as MemMsg, Role};

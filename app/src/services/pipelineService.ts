@@ -48,13 +48,6 @@ export interface RuntimeSnapshot {
 /** RuntimeSnapshot with a local performance.now() timestamp for sparkline age calc. */
 export type LocalSnapshot = RuntimeSnapshot & { localTime: number };
 
-export interface RealtimeSessionCache {
-  has_session: boolean;
-  provider: string;
-  expires_in_seconds: number;
-  model: string;
-}
-
 // ─── Engine Commands ───────────────────────────────────────────────────────
 
 export function stopEngine(): Promise<void> {
@@ -105,18 +98,6 @@ export function getRuntimeSnapshot(): Promise<RuntimeSnapshot | null> {
   return invoke("get_runtime_snapshot");
 }
 
-export function getRuntimeHistory(): Promise<RuntimeSnapshot[]> {
-  return invoke("get_runtime_history");
-}
-
-export function clearRuntimeHistory(): Promise<void> {
-  return invoke("clear_runtime_history");
-}
-
-export function getRealtimeSessionCache(): Promise<RealtimeSessionCache> {
-  return invoke("get_realtime_session_cache");
-}
-
 // ─── Voice Commands & Types ────────────────────────────────────────────────
 
 export interface VoiceEntryDto {
@@ -143,8 +124,12 @@ export function stopBackendRecording(): Promise<[number[], number]> {
   return invoke("stop_backend_recording");
 }
 
-export function listVoices(): Promise<VoiceEntryDto[]> {
-  return invoke("list_voices");
+export function listVoices(provider?: "custom" | "edge" | "kokoro" | "supertonic"): Promise<VoiceEntryDto[]> {
+  return invoke("list_voices", { provider });
+}
+
+export function renameVoice(id: string, name: string): Promise<void> {
+  return invoke("rename_voice", { id, name });
 }
 
 export function addVoiceFromFile(name: string, filePath: string): Promise<VoiceEntryDto> {
@@ -157,10 +142,6 @@ export function addVoiceFromRecording(name: string, pcmF32: number[], sampleRate
 
 export function deleteVoice(id: string): Promise<void> {
   return invoke("delete_voice", { id });
-}
-
-export function fetchEdgeTtsVoices(): Promise<EdgeTtsVoiceDto[]> {
-  return invoke("fetch_edge_tts_voices");
 }
 
 // ─── Remote Deployment Commands & Types ────────────────────────────────────

@@ -1,12 +1,16 @@
 ---
 title: "Vox Dictation Subsystem"
 audience: "Internal — backend & frontend contributors"
-last_updated: 2026-08-31
+last_updated: 2026-09-01
 owners: "backend-engineer role"
 related_docs:
   - "docs/backend.md §3, §8 — Pipeline & events"
   - "docs/features/voice-flow.md §8 — Dictation domain"
   - "docs/plans/phase10/pipeline_orchestration_spec.md §7.5 — Dictation domain SSOT"
+  - "app/src-tauri/src/toast.rs — Toast window lifecycle & emit chain"
+  - "app/src-tauri/src/core/events.rs:105 — ToastPayload / IpcEvent::ShowToast"
+  - "app/src/toast/ToastApp.tsx — Toast presentation & show_toast handling"
+  - "AUDIT_IPC.md §3.D/§8 — Toast IPC surface (86-command audit)"
 ---
 
 # 📄 `dictation.md` — Realtime Dictation Subsystem & Output Architecture (Phase 10)
@@ -180,12 +184,67 @@ enum VisibilityState {
 
 ---
 
-## 6. Transliteration & Transcript Recovery (FR-08)
+## 6. Toast Notification System — Transient Feedback Layer
 
-### 6.1 Transliteration Invariant
+Dictation's only user-visible confirmation outside `Tray` mode is the **toast overlay** — a dedicated, ephemeral `WebviewWindow` (`label: "toast"`) that surfaces copy/paste success, fallback, and error states without stealing focus. It is **distinct** from the Tray HUD (`Tray` is an output destination that accumulates turns; toast is a transient notification on top of whatever the user is doing).
+
+### 6.1 Architecture & Ownership
+
+```
+output_router.rs (dispatch_to_clipboard / dispatch_to_paste / on_error)
+        │  crate::toast::show_toast(app, title, msg, level)
+        ▼
+toast.rs::show_toast()  ──►  ensure_toast_window("toast")  (lazy, visible:false)
+        │                     LAST_TOAST: LazyLock<Mutex<Option<ToastPayload>>>  (toast.rs:12)
+        ├──► emit_ipc_to("toast", IpcEvent::ShowToast(payload))   immediate (core/events.rs:238)
+        └──► async fallback chain: 420ms emit → 300ms re-emit → 300ms → w.show() if still hidden
+                                   + position_toast_window() → setup_linux_toast_layer()
+        ▼
+Frontend ToastApp.tsx  ──►  onShowToast (eventsService.ts:220)  →  show(payload)
+                             ├─ getCurrentWindow().show() (owns first paint, avoids black flash)
+                             ├─ fallback invoke("show_toast_window")  (toast.rs:163)
+                             ├─ renders 360×96 glass-card, progress bar, auto-dismiss 3400ms
+                             └─ on mount also polls invoke("get_last_toast") at 700ms for late joiners
+```
+
+* **Window lifecycle:** `ensure_toast_window` (`toast.rs:22`) builds `360×96`, `transparent:true`, `decorations:false`, `always_on_top:true`, `visible:false`, `skip_taskbar:true`. The window **stays hidden** until `ToastApp` has mounted and painted its first frame — this eliminates the WebKitGTK black flash. Backend emits immediately but also retries (420ms + 300ms) and finally falls back to `w.show()` (`toast.rs:254`) if the event was missed. `position_toast_window` (`toast.rs:94`) centers at top with `24px` inset; on Linux it installs a fullscreen transparent GTK virtual layer with a `cairo::Region` input shape so only the 360×96 rect is hit-testable (`setup_linux_toast_layer`, `toast.rs:113`).
+* **IPC contract — SSOT `core/events.rs:105`:** `ToastPayload { title: String, message: String, level: ToastLevel, duration_ms?: u64 }`, `ToastLevel { Success, Warning, Error, Info }` (`serde(rename_all="lowercase")`), `IpcEvent::ShowToast(ToastPayload)` → `name="show_toast"` (`events.rs:156`), `emit_ipc_to("toast", …)` targeted to the toast webview (not broadcast). Mirrored in `services/eventsService.ts:93` (`ToastPayload`, `ToastLevel`, `IpcEventMap["show_toast"]`, `onShowToast`). Every backend call goes through `toast::show_toast`; no raw string literals at emit sites.
+* **Commands (`lib.rs:511` + `toast.rs:162`):** `show_toast_window` (sync, frontend fallback after `getCurrentWindow().show()`), `hide_toast_window` (`toast.rs:176`), `destroy_toast_window_cmd` (`toast.rs:188`, reclaims RAM after 280ms teardown), `get_last_toast` (`toast.rs:197`, returns `LAST_TOAST` clone for late-joining webviews). Frontend currently calls all 4 directly from `ToastApp.tsx:34,37,55,80` — flagged in `AUDIT_IPC.md:185` as `AGENTS.md:4.1#5` violation; recommended move into `services/windowService.ts` or new `services/toastService.ts`.
+* **`should_show_error_toast` (`toast.rs:202`):** Guard that supplements `VoiceError` with a toast only when the main window (`pipeline::WINDOW_MAIN`) is hidden or destroyed — checked in every `on_error` path (`pipeline/dictation.rs:262`, `pipeline/modular/passive.rs:516`, etc.). Prevents duplicate banners when the user is already looking at the main HUD.
+
+### 6.2 Dictation-Specific Toast Triggers
+
+| Trigger | Code Path | Title | Message | `level` | Condition |
+|---|---|---|---|---|---|
+| Clipboard write succeeded | `output_router.rs:36` `dispatch_to_clipboard` | `Dictation Copied` | `text` (full transcript) | `Success` | `output_mode == Clipboard` |
+| Paste injected (`Ctrl+V`/`Cmd+V`) | `output_router.rs:61` `dispatch_to_paste` `Ok(())` | `Dictation Pasted` | `text` | `Success` | `output_mode == Paste`, `with_clipboard_safe` + `simulate_paste` succeeded |
+| Paste blocked by OS/compositor | `output_router.rs:76` `dispatch_to_paste` `Err` | `Paste Blocked by OS` | `Transcript saved to clipboard — paste manually with Ctrl+V.` | `Warning` | Wayland security block, macOS Accessibility denied, `enigo` failure — transcript **left** on clipboard |
+| Engine/hotkey/STT failure | `pipeline/dictation.rs:263` `on_error` | `Voice Error` | `message` (typed `DictationError`) | `Error` | Also emits `voice_error { source:"Dictation", owner:"Dictation" }` to `WINDOW_TRAY`; toast only if `should_show_error_toast` is true |
+
+Notes:
+* `Tray` mode bypasses OS injection entirely (`output_router.rs:20` `DictationOutputMode::Tray => Ok(())`) — **no toast** is emitted; the Tray HUD itself is the presentation surface.
+* Duration is caller-controlled via `ToastPayload.duration_ms`; all dictation paths pass `None` → frontend defaults to `DEFAULT_DURATION_MS = 3400ms` (`ToastApp.tsx:15`) with a linear `scaleX` progress bar.
+* Clipboard safety and toast are coupled: on `Paste` success the 350ms restore window (`clipboard.rs:with_clipboard_safe`) completes **before** the success toast; on failure the clipboard is **not** restored so the warning toast's "saved to clipboard" claim is accurate.
+
+### 6.3 Frontend Presentation — `ToastApp.tsx`
+
+* **Dimensions:** `360px × 96px` (`TOAST_WIDTH/HEIGHT` `toast.rs:8`), positioned top-center with `24px` top inset (`TOAST_PAD_TOP`). Glassmorphism `glass-card` (`rounded-xl`, `border`, `blur(20px) saturate(180%)` via outer window shape), outer wrapper `w-screen h-screen flex items-start justify-center bg-transparent pointer-events-none p-6`.
+* **Stack:** `React` + `framer-motion` `AnimatePresence`; entry `opacity 0→1, y -12→0` `duration 0.36 spring [0.16,1,0.3,1]`, exit `y -12`, inner fade `320ms` before `hide` + `280ms` before `destroy_toast_window_cmd`.
+* **Levels (`ToastApp.tsx:8`):** `success → CheckCircle2 @ accent`, `warning → AlertTriangle @ warning`, `error → AlertCircle @ error`, `info → Info @ muted`; each with `bg`/`border` alpha variants and a 1× `bg-[rgba(border,0.06)]` progress track with `scaleX(progress)` fill at `opacity 0.45`.
+* **Resilience:** `onShowToast` listen + 700ms `get_last_toast` poll covers cold-start race where the backend's immediate emit lands before `ToastApp` mounts; the backend's 420ms/300ms re-emits cover the inverse.
+
+### 6.4 Relationship to Other Pipelines & Dev Poll
+
+The same toast layer is reused outside dictation for modular pipeline errors (`pipeline/modular/passive.rs:517` `Voice Error`) and realtime failures. A dev-only poll in `lib.rs:350` emits a rotating test toast every 60s (titles `Dictation Copied` / `Dictation Pasted` / `Paste Blocked by OS` / `Voice Error` with `Success/Warning/Error` levels) to exercise the fallback chain; it does not affect the dictation contract.
+
+---
+
+## 7. Transliteration & Transcript Recovery (FR-08)
+
+### 7.1 Transliteration Invariant
 Spoken Hindi/Devanagari text is passed through the ONNX transliteration model (`transliterate_if_hi`) across **all 3 output modes** before reaching the output router, ensuring consistent Romanized/Devanagari transcript output.
 
-### 6.2 Transcript Recovery Engine
+### 7.2 Transcript Recovery Engine
 Every completed dictation transcript is stored in `AppState.dictation_last_transcript: Mutex<Option<String>>`.
 
 If simulated paste fails or the user accidentally loses their pasted text:
@@ -194,7 +253,7 @@ If simulated paste fails or the user accidentally loses their pasted text:
 
 ---
 
-## 7. Zero Swallowed Errors Policy
+## 8. Zero Swallowed Errors Policy
 
 All dictation errors are strictly typed in `DictationError` and propagated without swallowing:
 
@@ -211,9 +270,9 @@ Every failure logs detailed diagnostic context and surfaces an error event to th
 
 ---
 
-## 8. Settings & IPC Interface
+## 9. Settings & IPC Interface
 
-### 8.1 Backend Data Structures
+### 9.1 Backend Data Structures
 ```rust
 pub struct DictationSettings {
     pub enabled: bool,                            // Master switch
@@ -223,7 +282,7 @@ pub struct DictationSettings {
 }
 ```
 
-### 8.2 Frontend Settings Desk
+### 9.2 Frontend Settings Desk
 In `InteractionCard.tsx`, users toggle between **Assistant** and **Dictation**:
 - **Voice Typing Switch**: Toggle `dictation.enabled`.
 - **Trigger Mode**: Switch between `Push-To-Talk` and `Continuous`.
@@ -232,11 +291,11 @@ In `InteractionCard.tsx`, users toggle between **Assistant** and **Dictation**:
 
 ---
 
-## 9. Platform Compatibility Matrix
+## 10. Platform Compatibility Matrix
 
 This section documents all platform-specific behavior, known limitations, and open verification items.
 
-### 9.1 Paste Output Mode
+### 10.1 Paste Output Mode
 
 | Capability | Linux X11 | Linux Wayland | macOS | Windows |
 |---|---|---|---|---|
@@ -251,7 +310,7 @@ This section documents all platform-specific behavior, known limitations, and op
 > is correct per `enigo 0.2` documentation. A macOS smoke test of dictation paste mode is
 > required before the DMG target ships. Track as: `TODO(cross-platform): enigo macOS paste live test`.
 
-### 9.2 Tray HUD Positioning & Click-Through
+### 10.2 Tray HUD Positioning & Click-Through
 
 | Capability | Linux X11/Wayland | macOS | Windows |
 |---|---|---|---|
@@ -261,13 +320,13 @@ This section documents all platform-specific behavior, known limitations, and op
 | HUD dims (logical px) | 380×250, padding 55px right, 15vh top | 380×250 | 380×250 |
 
 
-### 9.3 Global PTT Hotkey (`Alt+Space`)
+### 10.3 Global PTT Hotkey (`Alt+Space`)
 
 - **Linux**: Registered via `tauri-plugin-global-shortcut`. Works on X11 and Wayland (portal-permitting).
 - **macOS**: Requires Accessibility permission in System Settings → Privacy & Security → Accessibility.
 - **Windows**: Standard Win32 `RegisterHotKey` — no special permissions needed.
 
-### 9.4 `enigo` Cargo Feature Configuration
+### 10.4 `enigo` Cargo Feature Configuration
 
 The `x11rb` feature is Linux-only. macOS and Windows compile `enigo` with `default-features = false` and no additional feature flags (both platforms are supported by enigo's default build):
 
@@ -289,4 +348,4 @@ enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 
 ---
 
-**Last Updated:** 2026-08-31
+**Last Updated:** 2026-09-01 — added §6 Toast Notification System (backend `toast.rs` emit chain, `ToastPayload` IPC, dictation trigger matrix, `ToastApp.tsx` presentation).

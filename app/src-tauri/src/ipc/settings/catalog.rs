@@ -1,7 +1,3 @@
-//! ============================================================================
-//! src/ipc/settings/catalog.rs — Boot state and model catalog IPC query commands
-//! ============================================================================
-
 use crate::core::settings::VoxSettings;
 use crate::core::state::AppState;
 use crate::utils::paths;
@@ -30,7 +26,7 @@ pub struct ModelCatalog {
 
 /// Called by the frontend on mount to load initial settings snapshot and model paths.
 #[tauri::command]
-pub async fn request_boot_state(app: AppHandle) -> Result<BootState, String> {
+pub async fn get_settings(app: AppHandle) -> Result<BootState, String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let settings = state.settings.read().map_err(|e| e.to_string())?.clone();
     let models_dir_exists = paths::get().models.exists();
@@ -51,7 +47,7 @@ pub async fn request_boot_state(app: AppHandle) -> Result<BootState, String> {
 
 /// Query the model manifest catalog filtered into distinct model categories.
 #[tauri::command]
-pub async fn request_model_catalog(app: AppHandle) -> Result<ModelCatalog, String> {
+pub async fn get_model_catalog(app: AppHandle) -> Result<ModelCatalog, String> {
     let state: State<'_, std::sync::Arc<AppState>> = app.state();
     let manifest_opt = {
         let guard = state.manifest.read().await;
@@ -115,16 +111,4 @@ pub async fn request_model_catalog(app: AppHandle) -> Result<ModelCatalog, Strin
         voices: crate::core::settings::get_voice_profiles(),
         preset_colors: crate::core::settings::get_preset_colors(),
     })
-}
-
-/// Returns the current settings snapshot.
-#[tauri::command]
-pub async fn get_settings(
-    state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<VoxSettings, String> {
-    state
-        .settings
-        .read()
-        .map_err(|e| e.to_string())
-        .map(|s| s.clone())
 }

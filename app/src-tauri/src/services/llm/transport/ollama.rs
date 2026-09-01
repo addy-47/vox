@@ -1,7 +1,7 @@
 use super::sse::SseDecoder;
 use crate::core::events::VoxEvent;
 use crate::services::llm::config::ConnectionConfig;
-use crate::services::llm::types::{GenerationRequest, LlmError, OutputConstraint};
+use crate::services::llm::{GenerationRequest, LlmError, OutputConstraint};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc;

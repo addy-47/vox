@@ -7,8 +7,10 @@ import {
   stopBackendRecording,
   addVoiceFromFile,
   addVoiceFromRecording,
+  renameVoice,
   deleteVoice,
 } from "@/services/pipelineService";
+import { Edit2, Check } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
 
 export const VoiceBars = memo(function VoiceBars({ seed, disabled }: { seed: string; disabled?: boolean }) {
@@ -207,6 +209,29 @@ export const VoiceCarousel = memo(function VoiceCarousel({
     }
   };
 
+  const [editingVoiceId, setEditingVoiceId] = useState<string | null>(null);
+  const [editingVoiceName, setEditingVoiceName] = useState("");
+
+  const handleStartRename = (id: string, currentName: string) => {
+    setEditingVoiceId(id);
+    setEditingVoiceName(currentName);
+  };
+
+  const handleSaveRename = async () => {
+    if (!editingVoiceId || !editingVoiceName.trim()) {
+      setEditingVoiceId(null);
+      return;
+    }
+    try {
+      await renameVoice(editingVoiceId, editingVoiceName.trim());
+      if (onVoicesChanged) onVoicesChanged();
+    } catch (e) {
+      console.error("Failed to rename voice:", e);
+    } finally {
+      setEditingVoiceId(null);
+    }
+  };
+
   const handleDeleteVoice = async (id: string) => {
     if (!confirm("Are you sure you want to delete this custom voice?")) return;
     try {
@@ -382,19 +407,68 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                   </button>
                 </Tooltip>
 
-                <span className="text-[13px] font-black tracking-wide text-[rgb(var(--foreground))] truncate text-center flex-1 max-w-[140px] sm:max-w-[160px]">
-                  {currentVoice?.name || "No Voice"}
-                </span>
-
-                {currentVoice?.isCustom && (
-                  <Tooltip label="Delete Custom Voice">
+                {editingVoiceId === currentVoice?.id ? (
+                  <div className="flex items-center gap-1 flex-1 max-w-[140px] sm:max-w-[160px]">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={editingVoiceName}
+                      onChange={(e) => setEditingVoiceName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleSaveRename();
+                        if (e.key === "Escape") setEditingVoiceId(null);
+                      }}
+                      className="w-full bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--accent),0.4)] rounded px-1.5 py-0.5 text-[12px] font-bold text-[rgb(var(--foreground))] outline-none focus:border-[rgb(var(--accent))]"
+                    />
                     <button
-                      onClick={() => handleDeleteVoice(currentVoice.id)}
-                      className="p-1 text-rose-400 hover:text-rose-300 hover:scale-110 transition-all duration-150 cursor-pointer shrink-0"
+                      type="button"
+                      onClick={handleSaveRename}
+                      className="p-1 text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] rounded transition-colors cursor-pointer shrink-0"
+                      aria-label="Save voice name"
                     >
-                      <Trash2 size={12} />
+                      <Check size={12} />
                     </button>
-                  </Tooltip>
+                    <button
+                      type="button"
+                      onClick={() => setEditingVoiceId(null)}
+                      className="p-1 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] rounded transition-colors cursor-pointer shrink-0"
+                      aria-label="Cancel rename"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="text-[13px] font-black tracking-wide text-[rgb(var(--foreground))] truncate text-center flex-1 max-w-[140px] sm:max-w-[160px]">
+                      {currentVoice?.name || "No Voice"}
+                    </span>
+
+                    {currentVoice?.isCustom && (
+                      <>
+                        <Tooltip label="Rename Custom Voice">
+                          <button
+                            type="button"
+                            onClick={() => handleStartRename(currentVoice.id, currentVoice.name)}
+                            className="p-1 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:scale-110 transition-all duration-150 cursor-pointer shrink-0"
+                            aria-label="Rename voice"
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                        </Tooltip>
+
+                        <Tooltip label="Delete Custom Voice">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteVoice(currentVoice.id)}
+                            className="p-1 text-rose-400 hover:text-rose-300 hover:scale-110 transition-all duration-150 cursor-pointer shrink-0"
+                            aria-label="Delete voice"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </Tooltip>
+                      </>
+                    )}
+                  </>
                 )}
 
                 {allowClone && (
