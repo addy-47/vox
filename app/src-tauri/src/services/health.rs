@@ -20,7 +20,7 @@ pub async fn check_health(
 ) -> Result<bool, String> {
     match kind.to_lowercase().as_str() {
         "llm" => check_llm_health(state, provider).await,
-        "stt" | "asr" => check_stt_health(state, provider).await,
+        "stt" => check_stt_health(state, provider).await,
         "tts" => check_tts_health(state, provider).await,
         _ => Err(format!("Unknown provider health check kind: {}", kind)),
     }
@@ -108,10 +108,7 @@ pub async fn check_stt_health(
             Ok(model_path.exists())
         }
         SttProviderConfig::Cloud { .. } => tokio::task::spawn_blocking(move || {
-            match crate::services::stt::providers::create_stt_provider(
-                &config,
-                &std::path::PathBuf::new(),
-            ) {
+            match crate::services::stt::create_stt_provider(&config, &std::path::PathBuf::new()) {
                 Ok(provider) => provider.health_check(),
                 Err(e) => {
                     log::warn!("[Settings] Cloud STT provider health check failed: {}", e);

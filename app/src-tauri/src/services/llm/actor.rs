@@ -1,8 +1,35 @@
-use super::{EmbeddedProvider, GenerationRequest, LlmProvider, RemoteTransport};
+use super::{
+    ConversationInput, EmbeddedProvider, GenerationOptions, GenerationPurpose, GenerationRequest,
+    LlmProvider, OutputConstraint, RemoteTransport,
+};
 use crate::core::events::VoxEvent;
-use crate::core::settings::{LlmProviderConfig, VoxSettings};
+use crate::core::settings::{LlmProviderConfig, LlmSettings, VoxSettings};
 use std::path::Path;
 use std::sync::Arc;
+
+pub type LlmProviderCache = Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>>>;
+
+/// Policy defaults for a given generation purpose.
+#[derive(Debug, Clone)]
+pub struct GenerationDefaults {
+    pub temperature: f32,
+    pub max_output_tokens: u32,
+    pub output: OutputConstraint,
+}
+
+/// Generation policy engine translating user/system settings into generation requests.
+#[derive(Debug, Clone)]
+pub struct GenerationPolicy {
+    pub conversation: GenerationDefaults,
+    pub compaction: GenerationDefaults,
+}
+
+/// Handles and flags passed when warming up the LLM actor.
+pub struct LlmWarmUpHandles<'a> {
+    pub llm_tx: &'a mut Option<std::sync::mpsc::Sender<LlmCommand>>,
+    pub llm_handle: &'a mut Option<std::thread::JoinHandle<()>>,
+    pub llm_provider_cache: Option<LlmProviderCache>,
+}
 
 /// Commands processed by the background LLM worker thread.
 #[derive(Debug)]
@@ -13,6 +40,52 @@ pub enum LlmCommand {
         cancel: tokio_util::sync::CancellationToken,
     },
     Shutdown,
+}
+
+
+impl GenerationPolicy {
+    /// Constructs policy from current `LlmSettings` and optional explicit compaction token ceiling.
+    pub fn from_settings(settings: &LlmSettings, compaction_max_tokens: Option<u32>) -> Self {
+        let compaction_tokens = compaction_max_tokens.unwrap_or(settings.max_output_tokens);
+
+        Self {
+            conversation: GenerationDefaults {
+                temperature: settings.temperature,
+                max_output_tokens: settings.max_output_tokens,
+                output: OutputConstraint::Text,
+            },
+            compaction: GenerationDefaults {
+                temperature: settings.compaction_temperature,
+                max_output_tokens: compaction_tokens,
+                output: OutputConstraint::JsonObject,
+            },
+        }
+    }
+
+    /// Builds a provider-neutral `GenerationRequest` for a specified purpose.
+    pub fn build_request(
+        &self,
+        purpose: GenerationPurpose,
+        input: ConversationInput,
+    ) -> GenerationRequest {
+        let defaults = match purpose {
+            GenerationPurpose::Conversation => &self.conversation,
+            GenerationPurpose::MemoryCompaction | GenerationPurpose::StructuredExtraction => {
+                &self.compaction
+            }
+        };
+
+        GenerationRequest {
+            input,
+            options: GenerationOptions {
+                temperature: Some(defaults.temperature),
+                max_output_tokens: Some(defaults.max_output_tokens),
+                ..Default::default()
+            },
+            output: defaults.output.clone(),
+            purpose,
+        }
+    }
 }
 
 /// Spawns the dedicated LLM generation worker thread and runs its command loop.
@@ -77,7 +150,7 @@ pub fn create_llm_provider_from_llm_settings(
             api_key,
             provider_name,
         } => {
-            let conn_cfg = super::config::ConnectionConfig::new(
+            let conn_cfg = super::transport::ConnectionConfig::new(
                 &base_url,
                 &model,
                 api_key.as_deref(),
@@ -97,14 +170,6 @@ pub fn create_llm_provider(
     create_llm_provider_from_llm_settings(&settings.llm, llm_path)
 }
 
-pub type LlmProviderCache = Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>>>;
-
-/// Handles and flags passed when warming up the LLM actor.
-pub struct LlmWarmUpHandles<'a> {
-    pub llm_tx: &'a mut Option<std::sync::mpsc::Sender<LlmCommand>>,
-    pub llm_handle: &'a mut Option<std::thread::JoinHandle<()>>,
-    pub llm_provider_cache: Option<LlmProviderCache>,
-}
 
 /// Spawns and initializes a persistent LLM worker actor thread.
 pub fn warm_up_llm<R: tauri::Runtime + 'static>(

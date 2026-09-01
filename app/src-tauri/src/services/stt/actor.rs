@@ -1,9 +1,8 @@
 use super::{
-    STT_DEFAULT_INFERENCE_DURATION_MS, STT_MIN_PARTIAL_THROTTLE_MS, STT_PARTIAL_ERROR_PENALTY_MS,
-    STT_WORKER_RECV_TIMEOUT_MS, STT_WORKER_THREAD_PRIORITY,
+    SttProvider, STT_DEFAULT_INFERENCE_DURATION_MS, STT_MIN_PARTIAL_THROTTLE_MS,
+    STT_PARTIAL_ERROR_PENALTY_MS, STT_WORKER_RECV_TIMEOUT_MS, STT_WORKER_THREAD_PRIORITY,
 };
 use crate::core::events::VoxEvent;
-use crate::services::stt::providers::SttProvider;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

@@ -14,7 +14,7 @@ use vox_lib::core::events::VoxEvent;
 use vox_lib::services::stt::actor::{
     spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand,
 };
-use vox_lib::services::stt::providers::{EmbeddedSttProvider, SttProvider};
+use vox_lib::services::stt::{EmbeddedSttProvider, SttProvider};
 use vox_lib::services::vad::actor::{
     spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles,
 };
@@ -130,6 +130,8 @@ pub fn setup_vad_actor(
         audio_suppressed,
         engine_shutdown,
         dropped_counter: Arc::new(AtomicU64::new(0)),
+        turn_token: Arc::new(parking_lot::Mutex::new(tokio_util::sync::CancellationToken::new())),
+        turn_epoch: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
 
     let join_handle = std::thread::Builder::new()

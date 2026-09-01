@@ -13,7 +13,7 @@ use crate::services::audio::{AudioStream, PlaybackEngine};
 use crate::services::stt::actor::{
     spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand,
 };
-use crate::services::stt::providers::create_stt_provider;
+use crate::services::stt::{create_stt_provider, SttProvider};
 use crate::services::vad::actor::{
     spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles,
 };
@@ -56,9 +56,7 @@ async fn ensure_manifest_loaded(state: &AppState) {
 }
 
 /// Resolves and instantiates the active STT provider.
-fn create_stt_instance(
-    state: &AppState,
-) -> Result<Box<dyn crate::services::stt::providers::SttProvider>, String> {
+fn create_stt_instance(state: &AppState) -> Result<Box<dyn SttProvider>, String> {
     let asr_provider = state
         .settings
         .read()

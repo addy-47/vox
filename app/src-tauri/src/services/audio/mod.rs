@@ -20,10 +20,16 @@ pub const PCM_U16_SCALE: f32 = 32768.0;
 pub const PCM_S16_SCALE: f32 = 32768.0;
 pub const PCM_S32_SCALE: f32 = 2147483648.0;
 
+pub const SINC_CHUNK_SIZE_INPUT: usize = 320;
+pub const SINC_CHUNK_SIZE_OUTPUT: usize = 512;
+pub const SINC_WINDOW_LEN: usize = 256;
+pub const SINC_OVERSAMPLING_FACTOR: usize = 128;
+pub const SINC_CUTOFF_FREQUENCY: f32 = 0.95;
+
 pub mod decode;
 pub mod device;
 pub mod playback;
-pub mod resample;
+pub mod resampler;
 
 pub use decode::{
     decode_bytes_to_24khz_mono, decode_to_24khz_mono, truncate_to, write_wav_f32,
@@ -31,4 +37,4 @@ pub use decode::{
 };
 pub use device::AudioStream;
 pub use playback::PlaybackEngine;
-pub use resample::{upsample_2x, upsample_2x_into};
+pub use resampler::{upsample_2x, upsample_2x_into, AudioResampler};

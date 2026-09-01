@@ -1,6 +1,7 @@
+use crate::services::audio::AudioResampler;
 use crate::services::realtime::{
-    resampler::AudioResampler, RealtimeAudioConfig, RealtimeSession, BRIDGE_CHANNEL_CAPACITY,
-    DEFAULT_INPUT_SAMPLE_RATE, LOG_INTERVAL_PACKETS, SINC_CHUNK_SIZE_INPUT,
+    RealtimeAudioConfig, RealtimeSession, BRIDGE_CHANNEL_CAPACITY, DEFAULT_INPUT_SAMPLE_RATE,
+    LOG_INTERVAL_PACKETS, SINC_CHUNK_SIZE_INPUT,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

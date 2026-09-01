@@ -1,13 +1,14 @@
-use super::{SttProvider, SttProviderKind};
-use crate::services::stt::SttEngine;
+use super::nemotron::SttEngine as NemotronEngine;
+use super::qwen::SttEngine as QwenEngine;
+use super::{SttEngine, SttProvider, SttProviderKind};
 use parking_lot::Mutex;
 use std::path::PathBuf;
 
 struct EmbeddedSttProviderInner {
     model_path: PathBuf,
     model_type: String,
-    nemotron_engine: Option<super::super::nemotron_onnx::SttEngine>,
-    qwen_engine: Option<super::super::qwen_onnx::SttEngine>,
+    nemotron_engine: Option<NemotronEngine>,
+    qwen_engine: Option<QwenEngine>,
     stitched_transcript: String,
 }
 
@@ -24,11 +25,11 @@ impl EmbeddedSttProviderInner {
         );
         match self.model_type.as_str() {
             "nvidia_nemotron" | "nemotron" => {
-                let engine = super::super::nemotron_onnx::SttEngine::new(&self.model_path)?;
+                let engine = NemotronEngine::new(&self.model_path)?;
                 self.nemotron_engine = Some(engine);
             }
             _ => {
-                let engine = super::super::qwen_onnx::SttEngine::new(&self.model_path)?;
+                let engine = QwenEngine::new(&self.model_path)?;
                 self.qwen_engine = Some(engine);
             }
         }

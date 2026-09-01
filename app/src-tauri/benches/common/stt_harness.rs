@@ -10,7 +10,7 @@ use vox_lib::core::settings::{AudioOutputMode, InteractionMode};
 use vox_lib::services::stt::actor::{
     spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand,
 };
-use vox_lib::services::stt::providers::SttProvider;
+use vox_lib::services::stt::SttProvider;
 use vox_lib::services::vad::actor::{
     spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles,
 };
@@ -92,6 +92,8 @@ pub fn benchmark_streaming_provider(
         audio_suppressed: Arc::new(AtomicBool::new(false)),
         engine_shutdown: engine_shutdown.clone(),
         dropped_counter: Arc::new(AtomicU64::new(0)),
+        turn_token: Arc::new(parking_lot::Mutex::new(tokio_util::sync::CancellationToken::new())),
+        turn_epoch: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
 
     let earshot_engine =

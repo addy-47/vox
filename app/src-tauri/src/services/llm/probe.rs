@@ -1,11 +1,11 @@
 use crate::core::settings::{LlmModelInfo, LlmProviderConfig, ModelCapabilities};
 use crate::core::state::AppState;
-use crate::services::llm::catalog::lookup_preset;
-use crate::services::llm::config::{
-    CapabilitySource, ConnectionConfig, TokenLimitField, TransportType,
+use crate::services::llm::transport::{
+    inject_auth_headers, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType,
 };
-use crate::services::llm::transport::inject_auth_headers;
-use crate::services::llm::{EmbeddedProvider, LlmProvider, RemoteTransport, QWEN_MODEL_DIR};
+use crate::services::llm::{
+    lookup_preset, EmbeddedProvider, LlmProvider, RemoteTransport, QWEN_MODEL_DIR,
+};
 use crate::utils::paths;
 use futures_util::StreamExt;
 use reqwest::Client;

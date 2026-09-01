@@ -89,51 +89,6 @@ pub struct LlmModelInfo {
     pub capabilities: Option<ModelCapabilities>,
 }
 
-pub fn get_voice_profiles() -> Vec<VoiceProfile> {
-    vec![
-        VoiceProfile {
-            id: 0,
-            name: "James".to_string(),
-        },
-        VoiceProfile {
-            id: 1,
-            name: "David".to_string(),
-        },
-        VoiceProfile {
-            id: 2,
-            name: "Alex".to_string(),
-        },
-        VoiceProfile {
-            id: 3,
-            name: "Ryan".to_string(),
-        },
-        VoiceProfile {
-            id: 4,
-            name: "Ethan".to_string(),
-        },
-        VoiceProfile {
-            id: 5,
-            name: "Sophia".to_string(),
-        },
-        VoiceProfile {
-            id: 6,
-            name: "Olivia".to_string(),
-        },
-        VoiceProfile {
-            id: 7,
-            name: "Emma".to_string(),
-        },
-        VoiceProfile {
-            id: 8,
-            name: "Ava".to_string(),
-        },
-        VoiceProfile {
-            id: 9,
-            name: "Mia".to_string(),
-        },
-    ]
-}
-
 pub fn get_preset_colors() -> Vec<String> {
     vec![
         "#00DBE9".to_string(),

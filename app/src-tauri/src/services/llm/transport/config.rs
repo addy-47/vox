@@ -71,7 +71,7 @@ impl ConnectionConfig {
         api_key: Option<&str>,
         provider_preset: Option<&str>,
     ) -> Self {
-        let preset_meta = provider_preset.and_then(super::catalog::lookup_preset);
+        let preset_meta = provider_preset.and_then(crate::services::llm::catalog::lookup_preset);
 
         let resolved_base_url = if base_url.trim().is_empty() {
             preset_meta
@@ -84,13 +84,13 @@ impl ConnectionConfig {
         let auth = if let Some(key) = api_key.filter(|k| !k.trim().is_empty()) {
             if let Some(p) = preset_meta {
                 match p.auth_scheme {
-                    super::catalog::CatalogAuthScheme::AnthropicNative => {
+                    crate::services::llm::catalog::CatalogAuthScheme::AnthropicNative => {
                         AuthScheme::AnthropicNative(key.to_string())
                     }
-                    super::catalog::CatalogAuthScheme::Bearer => {
+                    crate::services::llm::catalog::CatalogAuthScheme::Bearer => {
                         AuthScheme::Bearer(Some(key.to_string()))
                     }
-                    super::catalog::CatalogAuthScheme::None => AuthScheme::None,
+                    crate::services::llm::catalog::CatalogAuthScheme::None => AuthScheme::None,
                 }
             } else {
                 AuthScheme::Bearer(Some(key.to_string()))

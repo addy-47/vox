@@ -20,7 +20,7 @@ import { cn } from "@/shared/lib/utils";
 import { SegmentedControl } from "@/shared/ui";
 import { LlmModelInfo, ModelCapabilities, LlmProviderConfig } from "@/store/settingsStore";
 
-import { ModelsTopologyMap } from "./ModelsTopologyMap";
+import { ModelsTopologyMap, type PipelineTab } from "./ModelsTopologyMap";
 import { VadWorkspace } from "./VadWorkspace";
 import { AsrWorkspace } from "./AsrWorkspace";
 import { AuxiliaryWorkspace } from "./AuxiliaryWorkspace";
@@ -54,7 +54,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     ...globalDownloadStatuses,
   }));
   const [modelPresence, setModelPresence] = useState<Record<string, boolean>>({});
-  const [activePipelineTab, setActivePipelineTab] = useState<"vad" | "asr" | "llm" | "tts" | "auxiliary">("llm");
+  const [activePipelineTab, setActivePipelineTab] = useState<PipelineTab>("llm");
   const [activeCategoryTab, setActiveCategoryTab] = useState<"model" | "settings">("model");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -157,7 +157,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     const handleSync = (e: Event) => {
       const tab = (e as CustomEvent).detail;
       if (tab === "stt") {
-        setActivePipelineTab("asr");
+        setActivePipelineTab("stt");
       } else if (tab === "llm" || tab === "tts") {
         setActivePipelineTab(tab);
       }
@@ -168,7 +168,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
   useEffect(() => {
     let cat = "";
-    if (activePipelineTab === "asr") cat = "STT";
+    if (activePipelineTab === "stt") cat = "STT";
     else if (activePipelineTab === "llm") cat = "LLM";
     else if (activePipelineTab === "tts") cat = "TTS";
     if (cat) {
@@ -182,7 +182,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     try {
       const allModelIds = modelCatalog?.model_groups?.map((g) => g.id) || [
         ...(modelCatalog?.vad?.map((m) => m.id) || []),
-        ...(modelCatalog?.asr?.map((m) => m.id) || []),
+        ...(modelCatalog?.stt?.map((m) => m.id) || []),
         ...(modelCatalog?.llm?.map((m) => m.id) || []),
         ...(modelCatalog?.tts?.map((m) => m.id) || []),
         ...(modelCatalog?.auxiliary?.map((m) => m.id) || []),
@@ -634,7 +634,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                 />
               )}
 
-              {activePipelineTab === "asr" && (
+              {activePipelineTab === "stt" && (
                 <AsrWorkspace
                   layoutMode={layoutMode}
                   confirmDeleteId={confirmDeleteId}

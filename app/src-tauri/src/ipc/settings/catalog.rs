@@ -16,7 +16,7 @@ pub struct BootState {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ModelCatalog {
     pub llm: Vec<crate::setup::manifest::ModelGroup>,
-    pub asr: Vec<crate::setup::manifest::ModelGroup>,
+    pub stt: Vec<crate::setup::manifest::ModelGroup>,
     pub tts: Vec<crate::setup::manifest::ModelGroup>,
     pub vad: Vec<crate::setup::manifest::ModelGroup>,
     pub auxiliary: Vec<crate::setup::manifest::ModelGroup>,
@@ -85,7 +85,7 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         .filter(|g| g.category == "llm")
         .cloned()
         .collect();
-    let asr = groups
+    let stt = groups
         .iter()
         .filter(|g| g.category == "stt")
         .cloned()
@@ -114,12 +114,12 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
 
     Ok(ModelCatalog {
         llm,
-        asr,
+        stt,
         tts,
         vad,
         auxiliary,
         model_groups: groups,
-        voices: crate::core::settings::get_voice_profiles(),
+        voices: crate::services::tts::voice::get_voice_profiles(),
         preset_colors: crate::core::settings::get_preset_colors(),
     })
 }
