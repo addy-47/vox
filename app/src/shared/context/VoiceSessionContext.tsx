@@ -317,7 +317,8 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
 
     const setup = async () => {
       try {
-        const settings = await getSettings();
+        const res = await getSettings();
+        const settings = (res as any)?.settings ?? res;
         if (settings?.interaction?.mode) {
           setInteractionMode(settings.interaction.mode.toUpperCase() as InteractionMode);
         }
@@ -429,7 +430,8 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
           onSettingsUpdated(async () => {
             if (!isMounted) return;
             try {
-              const s = await getSettings();
+              const b = await getSettings();
+              const s = b?.settings;
               if (s?.interaction?.mode && isMounted) {
                 setInteractionMode(s.interaction.mode.toUpperCase() as InteractionMode);
               }

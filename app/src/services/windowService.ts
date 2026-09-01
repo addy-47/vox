@@ -8,10 +8,6 @@ export function hideTrayWindow(): Promise<void> {
   return invoke("hide_tray_window");
 }
 
-export function syncHudVisibility(visible: boolean): Promise<void> {
-  return invoke("sync_hud_visibility", { visible });
-}
-
-export function setHudIgnoreCursor(ignore: boolean): Promise<void> {
-  return invoke("set_hud_ignore_cursor", { ignore });
+export function setWindowClickThrough(window: "tray" | "toast", enabled: boolean): Promise<void> {
+  return invoke("set_window_click_through", { window, enabled });
 }

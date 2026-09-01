@@ -11,15 +11,15 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ringbuf::HeapRb;
 use ringbuf::traits::{Consumer, Split};
+use ringbuf::HeapRb;
 
 use vox_lib::core::events::VoxEvent;
 use vox_lib::services::audio::playback::PlaybackEngineHandles;
 use vox_lib::services::audio::{PlaybackEngine, PLAYBACK_BUFFER_SAMPLES};
 use vox_lib::services::tts::actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles};
 use vox_lib::services::tts::providers::TtsProvider;
-use vox_lib::services::tts::{TTS_SAMPLE_RATE};
+use vox_lib::services::tts::TTS_SAMPLE_RATE;
 
 use super::reporting::{get_process_memory_mb, ClipBenchmarkResult, EngineBenchmarkRun};
 
@@ -104,7 +104,12 @@ where
     println!("\n================================================================================");
     println!(">>> TTS Benchmark: {} (max quality, 24 kHz)", engine_name);
     println!("================================================================================");
-    println!("Prompts: {} | Default voice: {} | WAV out: {:?}", prompts.len(), default_voice, wav_output_dir);
+    println!(
+        "Prompts: {} | Default voice: {} | WAV out: {:?}",
+        prompts.len(),
+        default_voice,
+        wav_output_dir
+    );
 
     let mem_before = get_process_memory_mb();
     let total_start = Instant::now();
@@ -199,7 +204,10 @@ where
             turn_id,
             text: prompt.text.clone(),
         }) {
-            eprintln!("[TTS Bench] Failed to send Generate for {}: {}", prompt.filename, e);
+            eprintln!(
+                "[TTS Bench] Failed to send Generate for {}: {}",
+                prompt.filename, e
+            );
             let _ = tx.send(TtsCommand::Shutdown);
             let _ = handle.join();
             continue;
@@ -262,16 +270,19 @@ where
 
         // Persist WAV
         let wav_path = if let Some(out_dir) = wav_output_dir {
-            let safe_name = prompt
-                .filename
-                .replace(".wav", "")
-                .replace(".txt", "");
-            let file_name = format!("{}_{}_voice{}_turn{}.wav", model_type, safe_name, voice_for_clip, turn_id);
+            let safe_name = prompt.filename.replace(".wav", "").replace(".txt", "");
+            let file_name = format!(
+                "{}_{}_voice{}_turn{}.wav",
+                model_type, safe_name, voice_for_clip, turn_id
+            );
             let path = out_dir.join(file_name);
             match write_wav_f32(&path, &samples, TTS_SAMPLE_RATE) {
                 Ok(()) => Some(path),
                 Err(e) => {
-                    eprintln!("[TTS Bench] WAV write failed for {}: {}", prompt.filename, e);
+                    eprintln!(
+                        "[TTS Bench] WAV write failed for {}: {}",
+                        prompt.filename, e
+                    );
                     None
                 }
             }
@@ -315,7 +326,12 @@ where
             throughput_spl_s: throughput,
             partials_emitted: voice_for_clip as usize,
             similarity: if samples.is_empty() { 0.0 } else { 1.0 },
-            hypothesis: format!("voice={} samples={} wav={:?}", voice_for_clip, samples.len(), wav_path),
+            hypothesis: format!(
+                "voice={} samples={} wav={:?}",
+                voice_for_clip,
+                samples.len(),
+                wav_path
+            ),
             ground_truth: prompt.text.clone(),
         };
         clip_results.push(cr.clone());
@@ -350,7 +366,11 @@ where
     let avg_latency = if clip_results.is_empty() {
         0.0
     } else {
-        clip_results.iter().map(|r| r.total_stream_time_ms).sum::<f64>() / clip_results.len() as f64
+        clip_results
+            .iter()
+            .map(|r| r.total_stream_time_ms)
+            .sum::<f64>()
+            / clip_results.len() as f64
     };
     let total_samples: usize = tts_clip_results.iter().map(|r| r.samples).sum();
     let overall_throughput = if total_elapsed_ms > 0.0 {
@@ -362,9 +382,15 @@ where
     println!("\n--- Overall TTS Summary for {} ---", engine_name);
     println!("Total Prompts             : {}", prompts.len());
     println!("Total Audio Generated     : {:.2}s", total_audio_s);
-    println!("Total Wall Time           : {:.2}s", total_elapsed_ms / 1000.0);
+    println!(
+        "Total Wall Time           : {:.2}s",
+        total_elapsed_ms / 1000.0
+    );
     println!("Avg Synthesis Latency     : {:.0} ms", avg_latency);
-    println!("Avg RTF                   : {:.3}x (lower is faster; <1.0 is realtime)", avg_rtf);
+    println!(
+        "Avg RTF                   : {:.3}x (lower is faster; <1.0 is realtime)",
+        avg_rtf
+    );
     println!(
         "Throughput                : {:.0} samples/s ({:.2}x realtime)",
         overall_throughput,

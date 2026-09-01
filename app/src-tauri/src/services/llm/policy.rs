@@ -1,12 +1,9 @@
 use crate::core::settings::LlmSettings;
-use crate::services::llm::types::{
+use crate::services::llm::{
     ConversationInput, GenerationOptions, GenerationPurpose, GenerationRequest, OutputConstraint,
 };
 
 /// Calculates dynamic max compaction output tokens based on context window size.
-/// - Baseline (8192 ctx): 15% ratio (~1228 tokens)
-/// - Small ctx (<=8192): scales up to 30% (e.g. 2048 ctx -> 30% = 614 tokens)
-/// - Large ctx (>8192): scales down toward 10%, capped at 16,384 tokens maximum.
 pub fn calculate_compaction_max_tokens(ctx_size: u32) -> u32 {
     let ctx = ctx_size as f32;
     let ratio = if ctx <= 8192.0 {

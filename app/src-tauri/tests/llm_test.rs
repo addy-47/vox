@@ -16,7 +16,7 @@ use std::time::Duration;
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::VoxSettings;
 use vox_lib::services::llm::actor::{cool_down_llm, warm_up_llm, LlmCommand, LlmWarmUpHandles};
-use vox_lib::services::llm::types::{
+use vox_lib::services::llm::{
     ConversationInput, GenerationOptions, GenerationPurpose, GenerationRequest, OutputConstraint,
 };
 use vox_lib::services::memory::{ChatMessage, Role};

@@ -23,24 +23,30 @@ use common::harness::{
 };
 use common::paths::get_asset_path;
 
-use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{AudioOutputMode, InteractionMode, RealtimeProviderKind};
 use vox_lib::core::state::InteractionState;
 use vox_lib::pipeline::realtime::ptt::{ptt_cancel, ptt_start, ptt_stop};
-use vox_lib::services::realtime::engine::RealtimeEngine;
-use vox_lib::services::realtime::{RealtimeAudioConfig, RealtimeSession, RealtimeVoiceProvider};
+use vox_lib::services::realtime::{
+    RealtimeActor, RealtimeAudioConfig, RealtimeProviderEvent, RealtimeSession,
+    RealtimeVoiceProvider,
+};
 use vox_lib::services::vad::VadActorConfig;
 use vox_lib::services::vad::VadCommand;
 
-/// Mock Realtime Session that counts audio chunks pushed and activity signals.
+/// Mock Realtime Session that counts audio chunks pushed and atomic turns committed.
 struct MockRealtimeSession {
     push_counter: Arc<AtomicUsize>,
-    activity_start_counter: Arc<AtomicUsize>,
-    activity_end_counter: Arc<AtomicUsize>,
+    commit_counter: Arc<AtomicUsize>,
 }
 
 impl RealtimeSession for MockRealtimeSession {
     fn send_audio(&self, pcm: &[i16]) -> anyhow::Result<()> {
+        self.push_counter.fetch_add(pcm.len(), Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn commit_speech_turn(&self, pcm: &[i16]) -> anyhow::Result<()> {
+        self.commit_counter.fetch_add(1, Ordering::Relaxed);
         self.push_counter.fetch_add(pcm.len(), Ordering::Relaxed);
         Ok(())
     }
@@ -52,23 +58,12 @@ impl RealtimeSession for MockRealtimeSession {
     fn disconnect(&self) -> anyhow::Result<()> {
         Ok(())
     }
-
-    fn activity_start(&self) -> anyhow::Result<()> {
-        self.activity_start_counter.fetch_add(1, Ordering::Relaxed);
-        Ok(())
-    }
-
-    fn activity_end(&self) -> anyhow::Result<()> {
-        self.activity_end_counter.fetch_add(1, Ordering::Relaxed);
-        Ok(())
-    }
 }
 
 /// Mock Realtime Voice Provider factory that creates `MockRealtimeSession`.
 struct MockRealtimeProvider {
     push_counter: Arc<AtomicUsize>,
-    activity_start_counter: Arc<AtomicUsize>,
-    activity_end_counter: Arc<AtomicUsize>,
+    commit_counter: Arc<AtomicUsize>,
 }
 
 impl RealtimeVoiceProvider for MockRealtimeProvider {
@@ -88,14 +83,18 @@ impl RealtimeVoiceProvider for MockRealtimeProvider {
     fn connect(
         &self,
         _interaction_mode: InteractionMode,
-        _playback_tx: tokio::sync::mpsc::Sender<Vec<i16>>,
-        _event_tx: std::sync::mpsc::Sender<VoxEvent>,
-    ) -> anyhow::Result<Box<dyn RealtimeSession>> {
-        Ok(Box::new(MockRealtimeSession {
-            push_counter: self.push_counter.clone(),
-            activity_start_counter: self.activity_start_counter.clone(),
-            activity_end_counter: self.activity_end_counter.clone(),
-        }))
+    ) -> anyhow::Result<(
+        Box<dyn RealtimeSession>,
+        tokio::sync::mpsc::Receiver<RealtimeProviderEvent>,
+    )> {
+        let (_tx, rx) = tokio::sync::mpsc::channel(10);
+        Ok((
+            Box::new(MockRealtimeSession {
+                push_counter: self.push_counter.clone(),
+                commit_counter: self.commit_counter.clone(),
+            }),
+            rx,
+        ))
     }
 
     fn health_check(&self) -> bool {
@@ -103,27 +102,25 @@ impl RealtimeVoiceProvider for MockRealtimeProvider {
     }
 }
 
-fn create_mock_engine(
+fn create_mock_actor(
     push_counter: Arc<AtomicUsize>,
-    activity_start_counter: Arc<AtomicUsize>,
-    activity_end_counter: Arc<AtomicUsize>,
+    commit_counter: Arc<AtomicUsize>,
     handle: tokio::runtime::Handle,
-) -> RealtimeEngine {
+) -> RealtimeActor {
     let provider = Box::new(MockRealtimeProvider {
         push_counter,
-        activity_start_counter,
-        activity_end_counter,
+        commit_counter,
     });
-    let mut engine = RealtimeEngine::new(provider, handle);
+    let mut actor = RealtimeActor::new(provider, handle);
 
     let (dummy_tx, _) = std::sync::mpsc::channel();
     let (playback, _consumer) = common::harness::create_mock_playback_engine();
 
-    engine
+    actor
         .start(InteractionMode::PTT, playback, dummy_tx)
-        .expect("Failed to start mock RealtimeEngine");
+        .expect("Failed to start mock RealtimeActor");
 
-    engine
+    actor
 }
 
 /// Invariant (NEGATIVE): Ghost audio gate rejects silence-only PTT holds and prevents cloud transmission.
@@ -135,15 +132,13 @@ async fn test_realtime_ptt_ghost_audio_gate_rejects_non_speech() {
     let (app, state) = get_test_app_and_state();
 
     let push_counter = Arc::new(AtomicUsize::new(0));
-    let activity_start_counter = Arc::new(AtomicUsize::new(0));
-    let activity_end_counter = Arc::new(AtomicUsize::new(0));
-    let mock_engine = create_mock_engine(
+    let commit_counter = Arc::new(AtomicUsize::new(0));
+    let mock_actor = create_mock_actor(
         push_counter.clone(),
-        activity_start_counter.clone(),
-        activity_end_counter.clone(),
+        commit_counter.clone(),
         tokio::runtime::Handle::current(),
     );
-    *state.realtime_engine.lock().await = Some(mock_engine);
+    *state.realtime_engine.lock().await = Some(mock_actor);
 
     let (stt_tx, _) = std::sync::mpsc::channel();
     let engine_shutdown = Arc::new(AtomicBool::new(false));
@@ -170,11 +165,6 @@ async fn test_realtime_ptt_ghost_audio_gate_rejects_non_speech() {
         InteractionState::Listening,
         "State must be Listening after ptt_start"
     );
-    assert_eq!(
-        activity_start_counter.load(Ordering::Relaxed),
-        1,
-        "activity_start must be signaled on ptt_start"
-    );
 
     // 2. Stream purely silent frames into SPSC ring buffer
     stream_silence_frames(&mut producer, 20);
@@ -195,12 +185,12 @@ async fn test_realtime_ptt_ghost_audio_gate_rejects_non_speech() {
     assert_eq!(
         push_counter.load(Ordering::Relaxed),
         0,
-        "Zero audio samples must be pushed to RealtimeEngine when speech is absent"
+        "Zero audio samples must be pushed to RealtimeActor when speech is absent"
     );
     assert_eq!(
-        activity_end_counter.load(Ordering::Relaxed),
+        commit_counter.load(Ordering::Relaxed),
         0,
-        "activity_end must NOT be called when speech validation fails"
+        "commit_speech_turn must NOT be called when speech validation fails"
     );
 
     // Teardown
@@ -216,7 +206,7 @@ async fn test_realtime_ptt_ghost_audio_gate_rejects_non_speech() {
     );
 }
 
-/// Positive: Valid speech during PTT is trimmed and flushed to the active RealtimeEngine.
+/// Positive: Valid speech during PTT is trimmed and flushed to the active RealtimeActor.
 #[tokio::test]
 async fn test_realtime_ptt_speech_detected_flushes_to_engine() {
     let start_time = Instant::now();
@@ -228,15 +218,13 @@ async fn test_realtime_ptt_speech_detected_flushes_to_engine() {
     let (app, state) = get_test_app_and_state();
 
     let push_counter = Arc::new(AtomicUsize::new(0));
-    let activity_start_counter = Arc::new(AtomicUsize::new(0));
-    let activity_end_counter = Arc::new(AtomicUsize::new(0));
-    let mock_engine = create_mock_engine(
+    let commit_counter = Arc::new(AtomicUsize::new(0));
+    let mock_actor = create_mock_actor(
         push_counter.clone(),
-        activity_start_counter.clone(),
-        activity_end_counter.clone(),
+        commit_counter.clone(),
         tokio::runtime::Handle::current(),
     );
-    *state.realtime_engine.lock().await = Some(mock_engine);
+    *state.realtime_engine.lock().await = Some(mock_actor);
 
     let (stt_tx, _) = std::sync::mpsc::channel();
     let engine_shutdown = Arc::new(AtomicBool::new(false));
@@ -263,11 +251,6 @@ async fn test_realtime_ptt_speech_detected_flushes_to_engine() {
         InteractionState::Listening,
         "State must be Listening after ptt_start"
     );
-    assert_eq!(
-        activity_start_counter.load(Ordering::Relaxed),
-        1,
-        "activity_start must be signaled on ptt_start"
-    );
 
     // 2. Stream real speech into SPSC ring buffer
     stream_audio_to_ring_buffer(&audio, &mut producer);
@@ -279,20 +262,20 @@ async fn test_realtime_ptt_speech_detected_flushes_to_engine() {
     // Settle async propagation
     tokio::time::sleep(Duration::from_millis(50)).await;
 
-    // 4. Assert speech was validated and flushed to RealtimeEngine
+    // 4. Assert speech was validated and flushed to RealtimeActor
     assert_eq!(
         state.pipeline.state(),
         InteractionState::Thinking,
-        "State must be Thinking after speech flushed to RealtimeEngine"
+        "State must be Thinking after speech flushed to RealtimeActor"
     );
     assert!(
         push_counter.load(Ordering::Relaxed) > 0,
-        "Audio samples must be dispatched to RealtimeEngine when speech is detected"
+        "Audio samples must be dispatched to RealtimeActor when speech is detected"
     );
     assert_eq!(
-        activity_end_counter.load(Ordering::Relaxed),
+        commit_counter.load(Ordering::Relaxed),
         1,
-        "activity_end must be signaled when speech is validated and flushed"
+        "commit_speech_turn must be called when speech is validated and flushed"
     );
 
     // Teardown
@@ -320,15 +303,13 @@ async fn test_realtime_ptt_cancel_discards_audio() {
     let (app, state) = get_test_app_and_state();
 
     let push_counter = Arc::new(AtomicUsize::new(0));
-    let activity_start_counter = Arc::new(AtomicUsize::new(0));
-    let activity_end_counter = Arc::new(AtomicUsize::new(0));
-    let mock_engine = create_mock_engine(
+    let commit_counter = Arc::new(AtomicUsize::new(0));
+    let mock_actor = create_mock_actor(
         push_counter.clone(),
-        activity_start_counter.clone(),
-        activity_end_counter.clone(),
+        commit_counter.clone(),
         tokio::runtime::Handle::current(),
     );
-    *state.realtime_engine.lock().await = Some(mock_engine);
+    *state.realtime_engine.lock().await = Some(mock_actor);
 
     let (stt_tx, _) = std::sync::mpsc::channel();
     let engine_shutdown = Arc::new(AtomicBool::new(false));
@@ -355,11 +336,6 @@ async fn test_realtime_ptt_cancel_discards_audio() {
         InteractionState::Listening,
         "State must be Listening after ptt_start"
     );
-    assert_eq!(
-        activity_start_counter.load(Ordering::Relaxed),
-        1,
-        "activity_start must be signaled on ptt_start"
-    );
 
     // 2. Stream real speech into SPSC ring buffer
     stream_audio_to_ring_buffer(&audio, &mut producer);
@@ -381,12 +357,12 @@ async fn test_realtime_ptt_cancel_discards_audio() {
     assert_eq!(
         push_counter.load(Ordering::Relaxed),
         0,
-        "Zero audio samples must be pushed to RealtimeEngine when cancelled"
+        "Zero audio samples must be pushed to RealtimeActor when cancelled"
     );
     assert_eq!(
-        activity_end_counter.load(Ordering::Relaxed),
+        commit_counter.load(Ordering::Relaxed),
         0,
-        "activity_end must NOT be called on cancel"
+        "commit_speech_turn must NOT be called on cancel"
     );
 
     // Teardown

@@ -1,8 +1,9 @@
 use super::llama_cpp::LlmWorker;
-use super::types::{GenerationRequest, LlmError, ProviderCapabilities, ProviderKind, Support};
 use crate::core::events::VoxEvent;
 use crate::core::settings::LlmModelInfo;
-use crate::services::llm::LlmEngine;
+use crate::services::llm::{
+    GenerationRequest, LlmEngine, LlmError, ProviderCapabilities, ProviderKind, Support,
+};
 use crate::services::memory::ConversationContext;
 use futures_util::future::BoxFuture;
 use std::path::{Path, PathBuf};

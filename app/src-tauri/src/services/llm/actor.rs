@@ -1,7 +1,6 @@
-use super::{EmbeddedProvider, LlmProvider, RemoteTransport};
+use super::{EmbeddedProvider, GenerationRequest, LlmProvider, RemoteTransport};
 use crate::core::events::VoxEvent;
 use crate::core::settings::{LlmProviderConfig, VoxSettings};
-use crate::services::llm::types::GenerationRequest;
 use std::path::Path;
 use std::sync::Arc;
 

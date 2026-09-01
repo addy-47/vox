@@ -16,6 +16,9 @@ use parking_lot::Mutex;
 use std::num::NonZeroU32;
 use std::path::Path;
 
+unsafe impl Send for LlmWorker {}
+unsafe impl Sync for LlmWorker {}
+
 /// Supported LLM model families for architecture-specific prompt formatting and stop token handling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -25,6 +28,24 @@ pub enum ModelFamily {
     Llama3,
     Nemotron,
     Unknown,
+}
+
+/// In-memory KV cache tracking state for prompt prefix reuse.
+struct CacheState {
+    system_prompt: String,
+    system_tokens_len: usize,
+    current_seq_tokens_len: usize,
+}
+
+/// In-process llama.cpp model worker executing token generation.
+pub struct LlmWorker {
+    model: LlamaModel,
+    backend: &'static LlamaBackend,
+    ctx_size: u32,
+    n_threads: u32,
+    family: ModelFamily,
+    ctx: Mutex<Option<LlamaContext<'static>>>,
+    cache_state: Mutex<Option<CacheState>>,
 }
 
 impl ModelFamily {
@@ -239,27 +260,6 @@ impl ModelFamily {
         self.strip_tags_raw(text).trim().to_string()
     }
 }
-
-/// In-memory KV cache tracking state for prompt prefix reuse.
-struct CacheState {
-    system_prompt: String,
-    system_tokens_len: usize,
-    current_seq_tokens_len: usize,
-}
-
-/// In-process llama.cpp model worker executing token generation.
-pub struct LlmWorker {
-    model: LlamaModel,
-    backend: &'static LlamaBackend,
-    ctx_size: u32,
-    n_threads: u32,
-    family: ModelFamily,
-    ctx: Mutex<Option<LlamaContext<'static>>>,
-    cache_state: Mutex<Option<CacheState>>,
-}
-
-unsafe impl Send for LlmWorker {}
-unsafe impl Sync for LlmWorker {}
 
 /// Detects the length of a partial trailing tag suffix to hold back during streaming.
 fn partial_tag_len(text: &str, tags: &[&str]) -> usize {

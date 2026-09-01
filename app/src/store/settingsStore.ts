@@ -1,11 +1,10 @@
 import { create } from "zustand";
 import {
-  requestBootState,
+  getSettings,
   requestModelCatalog,
   updateSetting,
-  updateInteractionMode,
   resetSettings,
-  getCachedCapabilities,
+  probeModelCapabilitiesFull,
 } from "@/services/settingsService";
 import { hexToRgb } from "@/shared/lib/utils";
 import { DOMAIN_DIRTY_KEYS, SETTINGS_SCOPE_KEYS, type SettingsDomainId, type SettingsScope } from "@/data/settingsCopy";
@@ -372,10 +371,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadSettings: async () => {
     try {
-      const [bootState, capsCache] = await Promise.all([
-        requestBootState(),
-        getCachedCapabilities().catch(() => ({})),
-      ]);
+      const bootState = await getSettings();
       const fetched = bootState.settings;
       const cloned = structuredClone(fetched);
 
@@ -387,7 +383,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         return {
           settings: fetched,
           draftSettings: state.hasChanges ? state.draftSettings : cloned,
-          capabilitiesCache: capsCache || {},
           isLoading: false,
           hasChanges: state.hasChanges,
           error: null,
@@ -412,8 +407,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadCapabilitiesCache: async () => {
     try {
-      const cache = await getCachedCapabilities();
-      set({ capabilitiesCache: cache || {} });
+      const res = await probeModelCapabilitiesFull();
+      set({ capabilitiesCache: res.cached_map || {} });
     } catch (err) {
       console.error("Failed to load capabilities cache:", err);
     }
@@ -643,17 +638,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         const oldVal = savedObj ? savedObj[key] : undefined;
 
         if (JSON.stringify(val) !== JSON.stringify(oldVal)) {
-          if (domain === "interaction" && key === "mode") {
-            promises.push(updateInteractionMode("main", val));
-          } else {
-            promises.push(
-              updateSetting(domain, key, val).then((res: any) => {
-                if (res?.reload_policy === "restart") {
-                  restartKeys.push(`${domain}.${key}`);
-                }
-              })
-            );
-          }
+          promises.push(
+            updateSetting(domain, key, val).then((res: any) => {
+              if (res?.reload_policy === "restart") {
+                restartKeys.push(`${domain}.${key}`);
+              }
+            })
+          );
         }
       }
     }
@@ -661,7 +652,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     try {
       await Promise.all(promises);
       set({ hasChanges: false });
-      const bootState = await requestBootState();
+      const bootState = await getSettings();
       const fetched = bootState.settings;
       const cloned = structuredClone(fetched);
       set({ settings: fetched, draftSettings: cloned, hasChanges: false, isLoading: false });

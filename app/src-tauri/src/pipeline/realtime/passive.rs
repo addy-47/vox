@@ -3,7 +3,7 @@ use crate::core::events::VoiceErrorPayload;
 use crate::core::events::{emit_ipc_to, IpcEvent, LlmTokenPayload, TranscriptPayload, VoxEvent};
 use crate::core::state::{AppState, InteractionOwner, InteractionState};
 use crate::services::audio::PlaybackEngine;
-use crate::services::realtime::engine::RealtimeEngine;
+use crate::services::realtime::RealtimeActor;
 use crate::services::vad::VadCommand;
 use parking_lot::Mutex;
 use std::sync::atomic::Ordering;
@@ -73,17 +73,17 @@ pub async fn start_session<R: tauri::Runtime>(
 
     let provider = super::session::create_realtime_provider(state)?;
     let tokio_handle = tokio::runtime::Handle::current();
-    let mut rt_engine = RealtimeEngine::new(provider, tokio_handle);
+    let mut rt_actor = RealtimeActor::new(provider, tokio_handle);
 
-    rt_engine
+    rt_actor
         .start(
             crate::core::settings::InteractionMode::Passive,
             playback_engine,
             pipeline_tx,
         )
-        .map_err(|e| format!("[RealtimePassive] Engine start failed: {}", e))?;
+        .map_err(|e| format!("[RealtimePassive] Actor start failed: {}", e))?;
 
-    let audio_tx = rt_engine
+    let audio_tx = rt_actor
         .get_audio_sender()
         .ok_or("Failed to obtain realtime audio sender")?;
 
@@ -94,7 +94,7 @@ pub async fn start_session<R: tauri::Runtime>(
         log::warn!("[RealtimePassive] Failed to send StartRealtime: {}", e);
     }
 
-    *rt_guard = Some(rt_engine);
+    *rt_guard = Some(rt_actor);
     ACCUMULATOR.lock().clear();
 
     let ctx = RoutingContext::from_app_state(state);
@@ -129,8 +129,8 @@ pub async fn pause_session<R: tauri::Runtime>(
     }
 
     if let Ok(mut rt_guard) = state.realtime_engine.try_lock() {
-        if let Some(ref mut rt_engine) = *rt_guard {
-            rt_engine.stop();
+        if let Some(ref mut rt_actor) = *rt_guard {
+            rt_actor.stop();
         }
     }
 
@@ -159,16 +159,16 @@ pub async fn resume_session<R: tauri::Runtime>(
     };
 
     let mut rt_guard = state.realtime_engine.lock().await;
-    if let Some(ref mut rt_engine) = *rt_guard {
-        rt_engine
+    if let Some(ref mut rt_actor) = *rt_guard {
+        rt_actor
             .start(
                 crate::core::settings::InteractionMode::Passive,
                 playback_engine,
                 pipeline_tx,
             )
-            .map_err(|e| format!("[RealtimePassive] Engine restart failed: {}", e))?;
+            .map_err(|e| format!("[RealtimePassive] Actor restart failed: {}", e))?;
 
-        let audio_tx = rt_engine
+        let audio_tx = rt_actor
             .get_audio_sender()
             .ok_or("Failed to obtain realtime audio sender")?;
         if let Err(e) = vad_tx.send(VadCommand::StartRealtime {
@@ -204,8 +204,8 @@ pub async fn end_session<R: tauri::Runtime>(
     }
 
     let mut rt_guard = state.realtime_engine.lock().await;
-    if let Some(mut rt_engine) = rt_guard.take() {
-        rt_engine.stop();
+    if let Some(mut rt_actor) = rt_guard.take() {
+        rt_actor.stop();
     }
 
     ACCUMULATOR.lock().clear();
@@ -224,10 +224,10 @@ fn on_interrupt<R: tauri::Runtime>(
     playback.cancel();
 
     if let Ok(rt_guard) = state.realtime_engine.try_lock() {
-        if let Some(ref rt_engine) = *rt_guard {
-            if let Err(e) = rt_engine.cancel() {
+        if let Some(ref rt_actor) = *rt_guard {
+            if let Err(e) = rt_actor.signal_interrupt() {
                 log::warn!(
-                    "[RealtimePassive] Error sending cancel to realtime engine: {}",
+                    "[RealtimePassive] Error sending interrupt to realtime actor: {}",
                     e
                 );
             }

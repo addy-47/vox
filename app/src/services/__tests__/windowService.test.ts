@@ -9,8 +9,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 import {
   showMainWindow,
   hideTrayWindow,
-  syncHudVisibility,
-  setHudIgnoreCursor,
+  setWindowClickThrough,
 } from "../windowService";
 
 describe("windowService", () => {
@@ -18,7 +17,7 @@ describe("windowService", () => {
     vi.clearAllMocks();
   });
 
-  describe("Window Visibility & Cursor Management IPC", () => {
+  describe("Window Visibility & Click-Through Management IPC", () => {
     it("should show main window and hide tray window", async () => {
       mockInvoke.mockResolvedValue(undefined);
 
@@ -29,14 +28,14 @@ describe("windowService", () => {
       expect(mockInvoke).toHaveBeenCalledWith("hide_tray_window");
     });
 
-    it("should sync HUD visibility and set HUD ignore cursor", async () => {
+    it("should set window click through for tray and toast", async () => {
       mockInvoke.mockResolvedValue(undefined);
 
-      await syncHudVisibility(true);
-      expect(mockInvoke).toHaveBeenCalledWith("sync_hud_visibility", { visible: true });
+      await setWindowClickThrough("tray", true);
+      expect(mockInvoke).toHaveBeenCalledWith("set_window_click_through", { window: "tray", enabled: true });
 
-      await setHudIgnoreCursor(false);
-      expect(mockInvoke).toHaveBeenCalledWith("set_hud_ignore_cursor", { ignore: false });
+      await setWindowClickThrough("toast", false);
+      expect(mockInvoke).toHaveBeenCalledWith("set_window_click_through", { window: "toast", enabled: false });
     });
   });
 });

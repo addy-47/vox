@@ -33,7 +33,7 @@ export function getTranscriptHistory(): Promise<string[]> {
 }
 
 /** Commit a session's full text to the ephemeral history buffer (ipc/history.rs:17). */
-export function commitSessionToHistory(text: string): Promise<string[]> {
+export function commitSessionToHistory(text: string): Promise<void> {
   return invoke("commit_session_to_history", { text });
 }
 

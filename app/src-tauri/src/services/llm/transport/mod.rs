@@ -8,7 +8,7 @@ use crate::core::settings::LlmModelInfo;
 use crate::services::llm::config::{
     AuthScheme, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType,
 };
-use crate::services::llm::types::{
+use crate::services::llm::{
     GenerationRequest, LlmError, ProviderCapabilities, ProviderKind, Support,
 };
 use futures_util::future::BoxFuture;

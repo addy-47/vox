@@ -38,16 +38,16 @@ describe("modelService", () => {
     it("should check model exists, download optional model, and delete model", async () => {
       mockInvoke.mockResolvedValueOnce(true);
       const exists = await checkModelExists("m1");
-      expect(mockInvoke).toHaveBeenCalledWith("check_model_exists", { modelId: "m1" });
+      expect(mockInvoke).toHaveBeenCalledWith("manage_models", { payload: { action: "exists", model_id: "m1" } });
       expect(exists).toBe(true);
 
       mockInvoke.mockResolvedValueOnce(undefined);
       await downloadOptionalModel("m1");
-      expect(mockInvoke).toHaveBeenCalledWith("download_optional_model", { modelId: "m1" });
+      expect(mockInvoke).toHaveBeenCalledWith("manage_models", { payload: { action: "download", model_id: "m1" } });
 
       mockInvoke.mockResolvedValueOnce(undefined);
       await deleteModel("m1");
-      expect(mockInvoke).toHaveBeenCalledWith("delete_model", { modelId: "m1" });
+      expect(mockInvoke).toHaveBeenCalledWith("manage_models", { payload: { action: "delete", model_id: "m1" } });
     });
   });
 
@@ -56,10 +56,10 @@ describe("modelService", () => {
       mockInvoke.mockResolvedValue(undefined);
 
       await startModelSetup(["m1", "m2"]);
-      expect(mockInvoke).toHaveBeenCalledWith("start_model_setup", { selectedIds: ["m1", "m2"] });
+      expect(mockInvoke).toHaveBeenCalledWith("manage_models", { payload: { action: "start_setup", selected_ids: ["m1", "m2"] } });
 
       await cancelModelSetup();
-      expect(mockInvoke).toHaveBeenCalledWith("cancel_model_setup");
+      expect(mockInvoke).toHaveBeenCalledWith("manage_models", { payload: { action: "cancel" } });
 
       await completeSetupWizard();
       expect(mockInvoke).toHaveBeenCalledWith("complete_setup_wizard");
@@ -72,15 +72,15 @@ describe("modelService", () => {
   describe("Updates & System Reports", () => {
     it("should check for app updates and model updates", async () => {
       const mockAppUpdate = { current_version: "0.8.7", latest_version: "0.8.7", update_available: false, release_notes: [], update_command: "" };
-      mockInvoke.mockResolvedValueOnce(mockAppUpdate);
+      mockInvoke.mockResolvedValueOnce({ app: mockAppUpdate });
       const appReport = await checkForUpdates();
-      expect(mockInvoke).toHaveBeenCalledWith("check_for_updates");
+      expect(mockInvoke).toHaveBeenCalledWith("check_updates", { scope: "app" });
       expect(appReport).toEqual(mockAppUpdate);
 
       const mockModelUpdate = { local_version: "1.0", remote_version: "1.0", update_available: false, outdated_models: [] };
-      mockInvoke.mockResolvedValueOnce(mockModelUpdate);
+      mockInvoke.mockResolvedValueOnce({ models: mockModelUpdate });
       const modelReport = await checkForModelUpdates();
-      expect(mockInvoke).toHaveBeenCalledWith("check_for_model_updates");
+      expect(mockInvoke).toHaveBeenCalledWith("check_updates", { scope: "models" });
       expect(modelReport).toEqual(mockModelUpdate);
     });
 
