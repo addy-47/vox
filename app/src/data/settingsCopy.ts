@@ -58,6 +58,7 @@ export const SETTINGS_SCOPE_KEYS: Record<SettingsScope, readonly string[]> = {
     "speed",
     "edge_tts",
     "supertonic",
+    "kokoro",
     "chatterbox",
     "chatterbox_remote",
   ],

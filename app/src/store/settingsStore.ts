@@ -13,7 +13,7 @@ import { DOMAIN_DIRTY_KEYS, SETTINGS_SCOPE_KEYS, type SettingsDomainId, type Set
 export type PipelineMode = "modular" | "realtime";
 export type LlmActiveProvider = "embedded" | "server" | "cloud";
 export type SttActiveProvider = "embedded" | "cloud";
-export type TtsActiveProvider = "edge_tts" | "supertonic" | "chatterbox" | "chatterbox_remote";
+export type TtsActiveProvider = "edge_tts" | "supertonic" | "kokoro" | "chatterbox" | "chatterbox_remote";
 export type RealtimeActiveProvider =
   | "gemini_live"
   | "openai_realtime"
@@ -39,6 +39,7 @@ export interface SttProviderConfig {
 
 export type TtsProviderConfig =
   | { kind: "supertonic" }
+  | { kind: "kokoro" }
   | { kind: "chatterbox"; language: string; quality_steps: number; speed: number }
   | {
       kind: "chatterbox_remote";
@@ -184,9 +185,11 @@ export interface TtsEdgeTtsConfig {
 }
 
 export interface TtsSupertonicConfig {}
+export interface TtsKokoroConfig {}
 
 export interface TtsChatterboxConfig {
   language: string;
+  voice_id?: string | null;
 }
 
 export interface TtsChatterboxRemoteConfig {
@@ -202,6 +205,7 @@ export interface TtsSettings {
   speed: number;
   edge_tts: TtsEdgeTtsConfig;
   supertonic: TtsSupertonicConfig;
+  kokoro: TtsKokoroConfig;
   chatterbox: TtsChatterboxConfig;
   chatterbox_remote: TtsChatterboxRemoteConfig;
   provider?: TtsProviderConfig;

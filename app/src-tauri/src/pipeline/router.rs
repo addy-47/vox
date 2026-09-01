@@ -20,7 +20,7 @@ fn route_event<R: tauri::Runtime>(
         }
         InteractionOwner::Assistant => match ctx.pipeline_mode {
             PipelineMode::Modular => {
-                super::modular::handle_event(ctx.interaction_mode, app, state, playback, event);
+                super::modular::handle_event(ctx.interaction_mode, app, state, event);
             }
             PipelineMode::Realtime => {
                 super::realtime::handle_event(ctx.interaction_mode, app, state, playback, event);

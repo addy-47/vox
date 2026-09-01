@@ -22,7 +22,35 @@ use vox_lib::services::vad::earshot_vad::EarshotVadEngine;
 use vox_lib::services::vad::VadBackend;
 use vox_lib::services::vad::VadCommand;
 
+use parking_lot::Mutex;
+use ringbuf::HeapCons;
+use vox_lib::services::audio::PlaybackEngine;
+
 pub type RbProducer = Caching<Arc<HeapRb<f32>>, true, false>;
+
+/// Creates a mock/headless playback engine and consumer for integration tests without CPAL audio hardware.
+pub fn create_mock_playback_engine() -> (Arc<PlaybackEngine>, Arc<Mutex<HeapCons<f32>>>) {
+    let rb = HeapRb::<f32>::new(vox_lib::services::audio::PLAYBACK_BUFFER_SAMPLES);
+    let (producer, consumer) = rb.split();
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let discard_request = Arc::new(AtomicBool::new(false));
+    let (event_tx, _rx) = std::sync::mpsc::channel();
+    let current_turn_id = Arc::new(AtomicU32::new(0));
+    let turn_armed = Arc::new(AtomicBool::new(false));
+    let pending_synthesis_jobs = Arc::new(AtomicU32::new(0));
+
+    let handles = vox_lib::services::audio::playback::PlaybackEngineHandles {
+        cancel_flag,
+        state_atomic: Arc::new(AtomicU32::new(0)),
+        current_turn_id,
+        pending_synthesis_jobs,
+        event_tx,
+    };
+
+    let engine = PlaybackEngine::from_parts(producer, handles, discard_request, turn_armed, None);
+
+    (Arc::new(engine), Arc::new(Mutex::new(consumer)))
+}
 
 /// Creates a mock AppHandle for integration testing without desktop event loops.
 pub fn get_test_app_handle() -> AppHandle<tauri::test::MockRuntime> {
@@ -287,20 +315,7 @@ pub fn attach_mock_engine_with_vad_to_state<R: tauri::Runtime>(
 ) {
     let (pipeline_tx, _) = std::sync::mpsc::channel();
     let (telemetry_tx, _) = crossbeam_channel::unbounded();
-    let playback_engine = Arc::new(
-        vox_lib::services::audio::PlaybackEngine::new(
-            Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            Arc::clone(&state.pipeline.current_state_atomic),
-            vox_lib::services::audio::playback::PlaybackTelemetryHandles {
-                energy: Arc::new(std::sync::atomic::AtomicU32::new(0)),
-                low: Arc::new(std::sync::atomic::AtomicU32::new(0)),
-                mid: Arc::new(std::sync::atomic::AtomicU32::new(0)),
-                high: Arc::new(std::sync::atomic::AtomicU32::new(0)),
-                underruns: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            },
-        )
-        .expect("Failed to create mock PlaybackEngine"),
-    );
+    let (playback_engine, _) = create_mock_playback_engine();
 
     let engine = vox_lib::core::state::VoxEngine {
         audio_stream: vox_lib::services::audio::AudioStream::mock(),

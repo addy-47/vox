@@ -2,7 +2,8 @@ use crate::core::events::VoxEvent;
 use crate::core::settings::{TtsProviderConfig, VoxSettings};
 use crate::services::tts::providers::TtsProvider;
 use crate::services::tts::{
-    ChatterboxEngine, ChatterboxRemoteProvider, EdgeTtsProvider, TtsEngine as SupertonicEngine,
+    ChatterboxEngine, ChatterboxRemoteProvider, EdgeTtsProvider, KokoroEngine,
+    TtsEngine as SupertonicEngine,
 };
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -12,16 +13,24 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub enum TtsCommand {
     Generate { turn_id: u32, text: String },
+    SetVoice(i32),
     Shutdown,
 }
 
+/// Execution handles and atomics passed to the dedicated TTS worker thread.
+pub struct TtsWorkerHandles {
+    pub playback: Arc<crate::services::audio::PlaybackEngine>,
+    pub event_tx: std::sync::mpsc::Sender<VoxEvent>,
+    pub cancel_flag: Arc<AtomicBool>,
+    pub pending_synthesis_jobs: Option<Arc<std::sync::atomic::AtomicU32>>,
+    pub telemetry_rtf: Option<Arc<std::sync::atomic::AtomicU32>>,
+}
+
 /// Spawns the dedicated TTS worker thread and processes incoming synthesis requests.
-pub fn spawn_tts_worker<R: tauri::Runtime + 'static>(
-    _app: tauri::AppHandle<R>,
+pub fn spawn_tts_worker(
     rx: std::sync::mpsc::Receiver<TtsCommand>,
     provider: Box<dyn TtsProvider>,
-    event_tx: std::sync::mpsc::Sender<VoxEvent>,
-    cancel_flag: Arc<AtomicBool>,
+    handles: TtsWorkerHandles,
 ) {
     log::info!("[TTS Worker] Persistent loop started.");
 
@@ -29,15 +38,30 @@ pub fn spawn_tts_worker<R: tauri::Runtime + 'static>(
         match cmd {
             TtsCommand::Generate { turn_id, text } => {
                 log::debug!("[TTS Worker] Processing TTS chunk: '{}'", text);
-                if let Err(e) =
-                    provider.synthesize_chunk(&text, turn_id, cancel_flag.clone(), event_tx.clone())
-                {
+                let res = provider.synthesize_chunk(
+                    &text,
+                    turn_id,
+                    handles.cancel_flag.clone(),
+                    &handles.playback,
+                    handles.event_tx.clone(),
+                    handles.telemetry_rtf.as_ref(),
+                );
+
+                if let Some(ref jobs) = handles.pending_synthesis_jobs {
+                    jobs.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                }
+
+                if let Err(e) = res {
                     log::warn!(
                         "[TTS Worker] Synthesis chunk failed for turn {}: {}",
                         turn_id,
                         e
                     );
                 }
+            }
+            TtsCommand::SetVoice(voice) => {
+                log::info!("[TTS Worker] Setting active speaker voice to: {}", voice);
+                provider.set_voice(voice);
             }
             TtsCommand::Shutdown => {
                 log::info!("[TTS Worker] Shutdown command received. Exiting loop.");
@@ -99,6 +123,13 @@ pub fn create_tts_provider(
                 .map(|e| Box::new(e) as Box<dyn TtsProvider>)
                 .map_err(|e| format!("Failed to create Supertonic engine: {}", e))
         }
+        TtsProviderConfig::Kokoro => {
+            log::info!("[TTS Actor] Initializing Kokoro Multi-Lang engine");
+            let kokoro_path = crate::utils::paths::model_dir(super::KOKORO_MODEL_DIR);
+            KokoroEngine::new(&kokoro_path, voice, speed)
+                .map(|e| Box::new(e) as Box<dyn TtsProvider>)
+                .map_err(|e| format!("Failed to create Kokoro engine: {}", e))
+        }
         TtsProviderConfig::Chatterbox {
             language,
             quality_steps: cb_quality,
@@ -148,11 +179,13 @@ pub struct TtsWarmUpHandles<'a> {
     pub tts_tx: &'a mut Option<std::sync::mpsc::Sender<TtsCommand>>,
     pub tts_handle: &'a mut Option<std::thread::JoinHandle<()>>,
     pub cancel_flag: Arc<AtomicBool>,
+    pub playback_engine: Arc<crate::services::audio::PlaybackEngine>,
+    pub pending_synthesis_jobs: Option<Arc<std::sync::atomic::AtomicU32>>,
+    pub telemetry_rtf: Option<Arc<std::sync::atomic::AtomicU32>>,
 }
 
 /// Spawns and initializes a persistent TTS worker actor thread.
-pub fn warm_up_tts<R: tauri::Runtime + 'static>(
-    app: &tauri::AppHandle<R>,
+pub fn warm_up_tts(
     handles: TtsWarmUpHandles<'_>,
     settings: &VoxSettings,
     super_tts_path: &Path,
@@ -169,13 +202,18 @@ pub fn warm_up_tts<R: tauri::Runtime + 'static>(
     let (tx, rx) = std::sync::mpsc::channel::<TtsCommand>();
     *handles.tts_tx = Some(tx);
 
-    let app_clone = app.clone();
-    let cancel_flag = handles.cancel_flag;
+    let worker_handles = TtsWorkerHandles {
+        playback: handles.playback_engine,
+        event_tx,
+        cancel_flag: handles.cancel_flag,
+        pending_synthesis_jobs: handles.pending_synthesis_jobs,
+        telemetry_rtf: handles.telemetry_rtf,
+    };
 
     let handle = std::thread::Builder::new()
         .name("vox-tts-persistent".to_string())
         .spawn(move || {
-            spawn_tts_worker(app_clone, rx, provider, event_tx, cancel_flag);
+            spawn_tts_worker(rx, provider, worker_handles);
         })
         .map_err(|e| e.to_string())?;
 
@@ -243,17 +281,41 @@ impl TtsClauseChunker {
     fn find_split_point(&self) -> Option<(usize, usize)> {
         let chars: Vec<(usize, char)> = self.buffer.char_indices().collect();
 
+        // Check for 25-word emergency boundary to prevent buffer bloat
+        let words: Vec<&str> = self.buffer.split_whitespace().collect();
+        if words.len() >= 25 {
+            let target_word_count = 20;
+            let mut count = 0;
+            for (pos, c) in &chars {
+                if c.is_whitespace() {
+                    count += 1;
+                    if count >= target_word_count {
+                        return Some((*pos, c.len_utf8()));
+                    }
+                }
+            }
+        }
+
         for i in 0..chars.len() {
             let (pos, c) = chars[i];
 
+            // Primary sentence boundaries: newline, question mark, exclamation mark
             if c == '\n' || c == '?' || c == '!' {
                 return Some((pos, c.len_utf8()));
             }
 
+            // Sub-clause boundaries: comma, semicolon, colon, em-dash
             if c == ',' || c == ';' || c == ':' || c == '—' || c == '–' {
-                return Some((pos, c.len_utf8()));
+                // Natural flow & prosody pacing: only split if sub-clause has >= 5 words
+                let text_before = &self.buffer[..pos];
+                let word_count = text_before.split_whitespace().count();
+                if word_count >= 5 {
+                    return Some((pos, c.len_utf8()));
+                }
+                continue;
             }
 
+            // Period sentence boundary
             if c == '.' {
                 let prev_is_digit = if i > 0 {
                     chars[i - 1].1.is_ascii_digit()

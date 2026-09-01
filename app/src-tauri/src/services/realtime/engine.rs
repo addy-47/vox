@@ -1,10 +1,9 @@
 use crate::core::events::VoxEvent;
 use crate::services::audio::PlaybackEngine;
 use crate::services::realtime::{
-    audio_bridge::AudioBridge, playback_bridge::PlaybackBridge, RealtimeSession,
-    RealtimeVoiceProvider,
+    audio_bridge::AudioBridge, RealtimeSession, RealtimeVoiceProvider, BRIDGE_CHANNEL_CAPACITY,
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
@@ -13,7 +12,6 @@ pub struct RealtimeEngine {
     provider: Box<dyn RealtimeVoiceProvider>,
     session: Option<Arc<dyn RealtimeSession>>,
     audio_bridge: AudioBridge,
-    playback_bridge: PlaybackBridge,
     tokio_handle: tokio::runtime::Handle,
 }
 
@@ -27,7 +25,6 @@ impl RealtimeEngine {
             provider,
             session: None,
             audio_bridge: AudioBridge::new(),
-            playback_bridge: PlaybackBridge::new(),
             tokio_handle,
         }
     }
@@ -38,23 +35,14 @@ impl RealtimeEngine {
         interaction_mode: crate::core::settings::InteractionMode,
         playback_engine: Arc<PlaybackEngine>,
         event_tx: Sender<VoxEvent>,
-        turn_id: Arc<std::sync::atomic::AtomicU32>,
     ) -> Result<()> {
         log::info!("[RealtimeEngine] Starting realtime voice engine...");
 
         let config = self.provider.audio_config();
-        self.playback_bridge.start(
-            playback_engine,
-            config,
-            &self.tokio_handle,
-            event_tx.clone(),
-            turn_id,
-        );
+        let (playback_tx, playback_rx) =
+            tokio::sync::mpsc::channel::<Vec<i16>>(BRIDGE_CHANNEL_CAPACITY);
 
-        let playback_tx = self
-            .playback_bridge
-            .get_sender()
-            .context("[RealtimeEngine] PlaybackBridge not started")?;
+        playback_engine.spawn_pcm_stream_worker(playback_rx, config, &self.tokio_handle);
 
         let session = self
             .provider
@@ -74,7 +62,6 @@ impl RealtimeEngine {
         log::info!("[RealtimeEngine] Stopping realtime voice engine...");
 
         self.audio_bridge.stop();
-        self.playback_bridge.stop();
 
         if let Some(session) = self.session.take() {
             if let Err(e) = session.disconnect() {
