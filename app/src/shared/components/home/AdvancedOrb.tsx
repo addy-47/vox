@@ -4,7 +4,6 @@ import { useDynamicFPS } from '@/shared/hooks/useDynamicFPS';
 import { type InteractionState } from '@/services/eventsService';
 import { useMemoryTrace } from '@/shared/hooks/useMemoryTrace';
 
-// ─── Types ──────────────────────────────────────────────────────────────────
 
 interface VoxOrbProps {
   telemetryRef?: React.MutableRefObject<{ energy: number; vad_prob: number; low: number; mid: number; high: number }>;
@@ -15,7 +14,6 @@ interface VoxOrbProps {
 }
 
 
-// ─── Constants ───────────────────────────────────────────────────────────────
 
 /**
  * Disc radius = sphere surface radius where each disc projects to.
@@ -57,7 +55,6 @@ function getCSSColor(varName: string, fallbackHex: string): THREE.Color {
   }
 }
 
-// ─── Geometry ────────────────────────────────────────────────────────────────
 
 /**
  * Disc with concentric ring subdivision so the vertex shader's noise
@@ -118,7 +115,6 @@ function createDiscGeometry(
   return geo;
 }
 
-// ─── GLSL: 3-D Simplex noise ─────────────────────────────────────────────────
 
 const SNOISE_GLSL = `
   vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -172,7 +168,6 @@ const SNOISE_GLSL = `
   }
 `;
 
-// ─── Shaders ─────────────────────────────────────────────────────────────────
 
 /**
  * DISC VERTEX SHADER
@@ -340,7 +335,6 @@ const OUTER_FRAG = `
   }
 `;
 
-// ─── Component ───────────────────────────────────────────────────────────────
 
 export const VoxOrb = React.memo(({
   telemetryRef,

@@ -17,9 +17,11 @@ static OUTPUT_DEVICE_CACHE: parking_lot::Mutex<Option<(Instant, Vec<AudioDevice>
 
 const DEVICE_CACHE_TTL: Duration = Duration::from_secs(5);
 
+use crate::core::error::VoxIpcError;
+
 /// Enumerate available host audio input or output devices, filtering out virtual and monitor devices.
 #[tauri::command]
-pub async fn list_audio_devices(kind: Option<String>) -> Result<Vec<AudioDevice>, String> {
+pub async fn list_audio_devices(kind: Option<String>) -> Result<Vec<AudioDevice>, VoxIpcError> {
     let is_output = kind.as_deref().unwrap_or("input").to_lowercase() == "output";
 
     if is_output {
@@ -43,7 +45,9 @@ pub async fn list_audio_devices(kind: Option<String>) -> Result<Vec<AudioDevice>
         let mut result = Vec::new();
 
         if is_output {
-            let devices = host.output_devices().map_err(|e| e.to_string())?;
+            let devices = host.output_devices().map_err(|e| {
+                VoxIpcError::Engine(format!("Failed to list output devices: {}", e))
+            })?;
             let default_device = host.default_output_device().and_then(|d| d.name().ok());
 
             for device in devices {
@@ -62,7 +66,9 @@ pub async fn list_audio_devices(kind: Option<String>) -> Result<Vec<AudioDevice>
                 }
             }
         } else {
-            let devices = host.input_devices().map_err(|e| e.to_string())?;
+            let devices = host
+                .input_devices()
+                .map_err(|e| VoxIpcError::Engine(format!("Failed to list input devices: {}", e)))?;
             let default_device = host.default_input_device().and_then(|d| d.name().ok());
 
             for device in devices {
@@ -83,10 +89,10 @@ pub async fn list_audio_devices(kind: Option<String>) -> Result<Vec<AudioDevice>
         }
 
         result.sort_by(|a, b| b.is_default.cmp(&a.is_default));
-        Ok::<Vec<AudioDevice>, String>(result)
+        Ok::<Vec<AudioDevice>, VoxIpcError>(result)
     })
     .await
-    .map_err(|e| format!("Task panicked: {}", e))??;
+    .map_err(|e| VoxIpcError::Internal(format!("Task panicked: {}", e)))??;
 
     if is_output {
         *OUTPUT_DEVICE_CACHE.lock() = Some((Instant::now(), result.clone()));

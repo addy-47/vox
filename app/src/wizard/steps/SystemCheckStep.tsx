@@ -3,7 +3,6 @@ import { HardDrive, Cpu, Database, Mic } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getRuntimeReport, type RuntimeReport } from '@/services/modelService';
 
-// --- Modular Components ---
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
 import { StatusCard } from '../components/StatusCard';

@@ -421,9 +421,7 @@ async fn main() -> Result<()> {
     let staged_db_path = resolve_path("evals/results/stage_1_compaction_staged.db");
     let _ = std::fs::copy(&output_db_path, &staged_db_path);
 
-    // =========================================================================
     // Hierarchical LLM Judge Phase: 3 Sub-Batch Reports + 1 Master Synthesis Report
-    // =========================================================================
     println!("\n[Eval 1] Initiating Hierarchical LLM Judge Evaluation (3 Sub-Batches + Master Synthesis)...");
 
     let reports_dir = resolve_path("evals/results/reports");

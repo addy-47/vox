@@ -259,33 +259,22 @@ fn main() {
 
     let base_voice = args.voice;
 
-    // 1) Supertonic — max 16 steps, speed 1.0, realtime via production seam
+    // 1) Supertonic — max 16 steps, speed 1.0, realtime via production seam (hot-swap voice not needed)
     if run_supertonic {
         if supertonic_dir.exists() {
-            use vox_lib::services::tts::providers::TtsProvider;
-            let prompts_clone = prompts.clone();
-            let wav_dir_clone = wav_run_dir.clone();
             let supertonic_path_str = supertonic_dir.to_string_lossy().to_string();
-            let supertonic_dir_cloned = supertonic_dir.clone();
             let voice = base_voice;
+            let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(
+                vox_lib::services::tts::TtsEngine::new(&supertonic_dir, voice, 16, 1.0)
+                    .expect("Failed to init Supertonic"),
+            );
             let run = benchmark_tts_provider(
                 "Supertonic 3 Multilingual (max 16 steps, speed 1.0)",
                 "supertonic",
                 &supertonic_path_str,
-                &prompts_clone,
-                move |_idx, _prompt| {
-                    let p: Box<dyn TtsProvider> = Box::new(
-                        vox_lib::services::tts::TtsEngine::new(
-                            &supertonic_dir_cloned,
-                            voice,
-                            16,
-                            1.0,
-                        )
-                        .expect("Failed to init Supertonic"),
-                    );
-                    p
-                },
-                Some(&wav_dir_clone),
+                &prompts,
+                provider,
+                Some(&wav_run_dir),
                 voice,
             );
             engine_runs.push(run);
@@ -297,35 +286,27 @@ fn main() {
         }
     }
 
-    // 2) Kokoro — diff voice per clip, speed 1.0
+    // 2) Kokoro — diff voice per clip via SetVoice hot-swap, speed 1.0
     if run_kokoro {
         if kokoro_dir.exists() && kokoro_dir.join("model.onnx").exists() {
-            use vox_lib::services::tts::providers::TtsProvider;
-            let wav_dir_clone = wav_run_dir.clone();
-            // capture kokoro_dir by clone for move closure
-            let kd = kokoro_dir.clone();
-            let kd_str = kd.to_string_lossy().to_string();
+            let kd_str = kokoro_dir.to_string_lossy().to_string();
             let voice = base_voice;
+            let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(
+                vox_lib::services::tts::KokoroEngine::new(&kokoro_dir, voice, 1.0)
+                    .expect("Failed to init Kokoro"),
+            );
             let run = benchmark_tts_provider(
                 "Kokoro Multi-Lang v1.1 (diff voice per clip, speed 1.0)",
                 "kokoro",
                 &kd_str,
                 &prompts,
-                move |idx, _prompt| {
-                    let v = (idx as i32) % 10;
-                    let p: Box<dyn TtsProvider> = Box::new(
-                        vox_lib::services::tts::KokoroEngine::new(&kd, v, 1.0)
-                            .unwrap_or_else(|e| panic!("Failed to init Kokoro voice {}: {}", v, e)),
-                    );
-                    p
-                },
-                Some(&wav_dir_clone),
+                provider,
+                Some(&wav_run_dir),
                 voice,
             );
             engine_runs.push(run);
 
-            // Print Kokoro capability hint
-            println!("\n[Kokoro] Voices cycled per clip (0..9). Check wavs for Hindi prosody: HI clips should retain Devanagari phonemes if model supports it.");
+            println!("\n[Kokoro] Voices cycled per clip (0..9) via SetVoice hot-swap. Check wavs for Hindi prosody: HI clips should retain Devanagari phonemes if model supports it.");
         } else {
             eprintln!("[WARN] Kokoro model not found at {:?} — reinstall via sherpa-onnx tts-models/kokoro-multi-lang-v1_1.tar.bz2", kokoro_dir);
         }
@@ -334,24 +315,19 @@ fn main() {
     // 3) Chatterbox — max 10 steps
     if run_chatterbox {
         if chatterbox_dir.join("t3-q4_0.gguf").exists() {
-            use vox_lib::services::tts::providers::TtsProvider;
-            let wav_dir_clone = wav_run_dir.clone();
-            let cd = chatterbox_dir.clone();
-            let cd_str = cd.to_string_lossy().to_string();
+            let cd_str = chatterbox_dir.to_string_lossy().to_string();
             let voice = base_voice;
+            let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(
+                vox_lib::services::tts::ChatterboxEngine::new(&chatterbox_dir, "en", 10, 1.0, None)
+                    .expect("Failed to init Chatterbox"),
+            );
             let run = benchmark_tts_provider(
                 "Chatterbox Local (max 10 steps, speed 1.0)",
                 "chatterbox",
                 &cd_str,
                 &prompts,
-                move |_idx, _prompt| {
-                    let p: Box<dyn TtsProvider> = Box::new(
-                        vox_lib::services::tts::ChatterboxEngine::new(&cd, "en", 10, 1.0, None)
-                            .expect("Failed to init Chatterbox"),
-                    );
-                    p
-                },
-                Some(&wav_dir_clone),
+                provider,
+                Some(&wav_run_dir),
                 voice,
             );
             engine_runs.push(run);

@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 
-// ─── Engine & Pipeline Types ───────────────────────────────────────────────
 
 export type InteractionOwner = "Assistant" | "Dictation";
 
@@ -48,7 +47,6 @@ export interface RuntimeSnapshot {
 /** RuntimeSnapshot with a local performance.now() timestamp for sparkline age calc. */
 export type LocalSnapshot = RuntimeSnapshot & { localTime: number };
 
-// ─── Engine Commands ───────────────────────────────────────────────────────
 
 export function stopEngine(): Promise<void> {
   return invoke("stop_engine");
@@ -98,7 +96,6 @@ export function getRuntimeSnapshot(): Promise<RuntimeSnapshot | null> {
   return invoke("get_runtime_snapshot");
 }
 
-// ─── Voice Commands & Types ────────────────────────────────────────────────
 
 export interface VoiceEntryDto {
   id: string;
@@ -144,7 +141,6 @@ export function deleteVoice(id: string): Promise<void> {
   return invoke("delete_voice", { id });
 }
 
-// ─── Remote Deployment Commands & Types ────────────────────────────────────
 
 export interface RemoteServerConfig {
   connectionString: string;

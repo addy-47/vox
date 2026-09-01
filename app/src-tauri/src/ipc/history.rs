@@ -1,3 +1,4 @@
+use crate::core::error::VoxIpcError;
 use crate::core::state::AppState;
 use crate::persistence::db::VoxDb;
 use serde::Serialize;
@@ -7,7 +8,7 @@ use tauri::State;
 #[tauri::command]
 pub async fn get_transcript_history(
     state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, VoxIpcError> {
     let history = state.pipeline.transcript_history.lock();
     Ok(history.iter().cloned().collect())
 }
@@ -19,7 +20,7 @@ const MAX_HISTORY_TEXT_CHARS: usize = 10_000;
 pub async fn commit_session_to_history(
     text: String,
     state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<(), String> {
+) -> Result<(), VoxIpcError> {
     let trimmed = text.trim();
     if !trimmed.is_empty() {
         let bounded_text: String = if trimmed.chars().count() > MAX_HISTORY_TEXT_CHARS {
@@ -28,13 +29,18 @@ pub async fn commit_session_to_history(
             trimmed.to_string()
         };
 
+        let limit = state
+            .settings
+            .read()
+            .map(|s| s.history.tray_history_limit as usize)
+            .unwrap_or_else(|p| {
+                log::warn!("[History] Settings RwLock poisoned; using inner state limit.");
+                p.into_inner().history.tray_history_limit as usize
+            });
+
         let mut history = state.pipeline.transcript_history.lock();
         if history.front() != Some(&bounded_text) {
             history.push_front(bounded_text);
-            let limit = {
-                let settings = state.settings.read().map_err(|e| e.to_string())?;
-                settings.history.tray_history_limit as usize
-            };
             while history.len() > limit {
                 history.pop_back();
             }
@@ -68,11 +74,11 @@ pub struct TurnRow {
 
 /// Returns all sessions ordered by most recent first.
 #[tauri::command]
-pub async fn get_sessions() -> Result<Vec<SessionRow>, String> {
+pub async fn get_sessions() -> Result<Vec<SessionRow>, VoxIpcError> {
     let db_path = crate::utils::paths::get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
+        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     let mut rows = conn
         .query(
@@ -83,16 +89,30 @@ pub async fn get_sessions() -> Result<Vec<SessionRow>, String> {
             (),
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     let mut sessions = Vec::new();
-    while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+    {
         sessions.push(SessionRow {
-            id: row.get(0).map_err(|e| e.to_string())?,
-            started_at: row.get(1).map_err(|e| e.to_string())?,
-            ended_at: row.get(2).map_err(|e| e.to_string())?,
-            turn_count: row.get(3).map_err(|e| e.to_string())?,
-            first_message: row.get(4).map_err(|e| e.to_string())?,
+            id: row
+                .get(0)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            started_at: row
+                .get(1)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            ended_at: row
+                .get(2)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            turn_count: row
+                .get(3)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            first_message: row
+                .get(4)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
         });
     }
 
@@ -101,12 +121,12 @@ pub async fn get_sessions() -> Result<Vec<SessionRow>, String> {
 
 /// Returns all turns for a given session, oldest first.
 #[tauri::command]
-pub async fn get_turns(session_id: i64) -> Result<Vec<TurnRow>, String> {
+pub async fn get_turns(session_id: i64) -> Result<Vec<TurnRow>, VoxIpcError> {
     let db_path = crate::utils::paths::get().db.clone();
 
     let conn = VoxDb::open_readonly(&db_path)
         .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
+        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     let mut rows = conn
         .query(
@@ -115,19 +135,39 @@ pub async fn get_turns(session_id: i64) -> Result<Vec<TurnRow>, String> {
             (session_id,),
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     let mut turns = Vec::new();
-    while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+    {
         turns.push(TurnRow {
-            id: row.get(0).map_err(|e| e.to_string())?,
-            session_id: row.get(1).map_err(|e| e.to_string())?,
-            turn_id: row.get(2).map_err(|e| e.to_string())?,
-            user_text: row.get(3).map_err(|e| e.to_string())?,
-            assistant_text: row.get(4).map_err(|e| e.to_string())?,
-            stt_latency_ms: row.get(5).map_err(|e| e.to_string())?,
-            ttft_ms: row.get(6).map_err(|e| e.to_string())?,
-            created_at: row.get(7).map_err(|e| e.to_string())?,
+            id: row
+                .get(0)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            session_id: row
+                .get(1)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            turn_id: row
+                .get(2)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            user_text: row
+                .get(3)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            assistant_text: row
+                .get(4)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            stt_latency_ms: row
+                .get(5)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            ttft_ms: row
+                .get(6)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            created_at: row
+                .get(7)
+                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
         });
     }
 
@@ -136,16 +176,16 @@ pub async fn get_turns(session_id: i64) -> Result<Vec<TurnRow>, String> {
 
 /// Deletes a session and all its turns (CASCADE).
 #[tauri::command]
-pub async fn delete_session(id: i64) -> Result<(), String> {
+pub async fn delete_session(id: i64) -> Result<(), VoxIpcError> {
     let db_path = crate::utils::paths::get().db.clone();
 
     let conn = VoxDb::open(&db_path)
         .await
-        .map_err(|e| format!("DB open failed: {}", e))?;
+        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     conn.execute("DELETE FROM sessions WHERE id = ?", (id,))
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     Ok(())
 }

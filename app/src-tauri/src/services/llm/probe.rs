@@ -15,8 +15,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-// ─── Data Types & API Results ────────────────────────────────────────────────
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ModelProbeResult {
     pub capabilities: ModelCapabilities,
@@ -68,8 +66,6 @@ struct OllamaPsModel {
     #[serde(default)]
     size_vram: Option<u64>,
 }
-
-// ─── High-Level Probing & Listing Public Service Functions ────────────────────
 
 /// Lists available models for the given LLM provider configuration or active state.
 pub async fn list_models(
@@ -178,8 +174,6 @@ pub async fn probe_capabilities(
         cached_map: map,
     })
 }
-
-// ─── Empirical Capability Discovery Engine ───────────────────────────────────
 
 /// Empirical Capability Discovery Engine.
 pub struct CapabilityProbeEngine;

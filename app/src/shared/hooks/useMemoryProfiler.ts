@@ -153,7 +153,6 @@ export function useMemoryProfiler(enabled = true) {
     []
   );
 
-  // ─── Track Route Changes for UI Display (No Disk Snapshot Writes on Drawer Open) ──────
   useEffect(() => {
     if (!enabled) return;
     let isCancelled = false;
@@ -192,14 +191,12 @@ export function useMemoryProfiler(enabled = true) {
     };
   }, [location.pathname, enabled, captureSnapshot]);
 
-  // ─── Initial Snapshot on Open (No periodic auto-polling; manual snapshots on-demand) ─────
   useEffect(() => {
     if (!enabled) return;
     captureSnapshot();
   }, [enabled, captureSnapshot]);
 
 
-  // ─── Diagnostic Time-Series Recorder (5s) ───────────────────────────────────
   // Writes a "poll" event every 5 seconds. Disabled by default, can be toggled on when profiling.
   const ENABLE_DIAGNOSTIC_POLL = false;
 

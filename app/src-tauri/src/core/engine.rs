@@ -210,6 +210,8 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         audio_suppressed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
         dropped_counter: Arc::clone(&state.telemetry.dropped_telemetry_events),
+        turn_token: Arc::clone(&state.pipeline.turn_token),
+        turn_epoch: Arc::clone(&state.pipeline.turn_epoch),
     };
 
     let vad_channels = VadActorChannels {
@@ -280,70 +282,85 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
 
 /// Shuts down all audio engine background threads, flushes persistence, and unloads models.
 pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
-    let mut lock = state.engine.lock().await;
-    if let Some(mut engine) = lock.take() {
-        log::info!("[Core::Engine] Shutting down audio engine threads");
-
-        state
-            .pipeline
-            .engine_shutdown
-            .store(true, Ordering::Relaxed);
-        state.pipeline.set_state(InteractionState::Idle);
-
-        if let Err(e) = engine.pipeline_tx.send(VoxEvent::Shutdown) {
-            log::warn!("[Core::Engine] Failed to send Shutdown to pipeline: {}", e);
+    let mut engine = {
+        let mut lock = state.engine.lock().await;
+        match lock.take() {
+            Some(e) => e,
+            None => return Ok(()),
         }
-        if let Err(e) = engine.stt_tx.send(SttCommand::Shutdown) {
-            log::warn!("[Core::Engine] Failed to send Shutdown to STT: {}", e);
-        }
-        if let Err(e) = engine.vad_tx.send(VadCommand::Shutdown) {
-            log::warn!("[Core::Engine] Failed to send Shutdown to VAD: {}", e);
-        }
+    };
 
-        crate::services::llm::actor::cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));
-        crate::services::tts::actor::cool_down_tts(&mut engine.tts_tx);
+    log::info!("[Core::Engine] Shutting down audio engine threads");
 
-        if let Some(h) = engine.llm_handle.take() {
+    state
+        .pipeline
+        .engine_shutdown
+        .store(true, Ordering::Relaxed);
+    state.pipeline.set_state(InteractionState::Idle);
+
+    if let Err(e) = engine.pipeline_tx.send(VoxEvent::Shutdown) {
+        log::warn!("[Core::Engine] Failed to send Shutdown to pipeline: {}", e);
+    }
+    if let Err(e) = engine.stt_tx.send(SttCommand::Shutdown) {
+        log::warn!("[Core::Engine] Failed to send Shutdown to STT: {}", e);
+    }
+    if let Err(e) = engine.vad_tx.send(VadCommand::Shutdown) {
+        log::warn!("[Core::Engine] Failed to send Shutdown to VAD: {}", e);
+    }
+
+    crate::services::llm::actor::cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));
+    crate::services::tts::actor::cool_down_tts(&mut engine.tts_tx);
+
+    let llm_handle = engine.llm_handle.take();
+    let tts_handle = engine.tts_handle.take();
+    let orch_handle = engine.orchestrator_handle.take();
+    let stt_handle = engine.stt_handle.take();
+    let vad_handle = engine.vad_handle.take();
+
+    tokio::task::spawn_blocking(move || {
+        if let Some(h) = llm_handle {
             if let Err(e) = h.join() {
                 log::warn!("[Core::Engine] Failed to join LLM handle: {:?}", e);
             }
         }
-        if let Some(h) = engine.tts_handle.take() {
+        if let Some(h) = tts_handle {
             if let Err(e) = h.join() {
                 log::warn!("[Core::Engine] Failed to join TTS handle: {:?}", e);
             }
         }
-        if let Some(h) = engine.orchestrator_handle.take() {
+        if let Some(h) = orch_handle {
             if let Err(e) = h.join() {
                 log::warn!("[Core::Engine] Failed to join orchestrator handle: {:?}", e);
             }
         }
-        if let Some(h) = engine.stt_handle.take() {
+        if let Some(h) = stt_handle {
             if let Err(e) = h.join() {
                 log::warn!("[Core::Engine] Failed to join STT handle: {:?}", e);
             }
         }
-        if let Some(h) = engine.vad_handle.take() {
+        if let Some(h) = vad_handle {
             if let Err(e) = h.join() {
                 log::warn!("[Core::Engine] Failed to join VAD handle: {:?}", e);
             }
         }
+    })
+    .await
+    .map_err(|e| format!("Join task failed: {}", e))?;
 
-        {
-            let mut persist_lock = state.persist_tx.lock();
-            if let Some(tx) = persist_lock.take() {
-                if let Err(e) = tx.send(crate::persistence::events::PersistenceEvent::Shutdown) {
-                    log::warn!(
-                        "[Core::Engine] Failed to send Shutdown to persistence: {}",
-                        e
-                    );
-                }
+    {
+        let mut persist_lock = state.persist_tx.lock();
+        if let Some(tx) = persist_lock.take() {
+            if let Err(e) = tx.send(crate::persistence::events::PersistenceEvent::Shutdown) {
+                log::warn!(
+                    "[Core::Engine] Failed to send Shutdown to persistence: {}",
+                    e
+                );
             }
         }
-
-        crate::services::memory::unload_all_onnx_models();
-        crate::services::memory::trim_heap("stop_audio_engine");
-        log::info!("[Core::Engine] Audio engine resources cleanly released");
     }
+
+    crate::services::memory::unload_all_onnx_models();
+    crate::services::memory::trim_heap("stop_audio_engine");
+    log::info!("[Core::Engine] Audio engine resources cleanly released");
     Ok(())
 }

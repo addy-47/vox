@@ -6,7 +6,6 @@ import { motion } from 'framer-motion';
 import { Mic, Check, Volume2, Activity } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
-// --- Modular Components ---
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
 

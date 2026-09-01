@@ -8,9 +8,9 @@ use thread_priority::{set_current_thread_priority, ThreadPriority};
 use super::telemetry::process_and_emit_telemetry;
 use super::utils::{f32_to_i16_pcm, PreRollBuffer};
 use super::{
-    VadBackend, VadEngine as _, VadOperationalMode, VAD_CHUNK_SIZE, VAD_MAX_PARTIAL_WINDOW_SAMPLES,
-    VAD_MIN_UTTERANCE_SAMPLES, VAD_PARTIAL_INTERVAL_SAMPLES, VAD_PRE_ROLL_CAPACITY,
-    VAD_SPEECH_END_FRAMES, VAD_SPEECH_START_FRAMES,
+    VadBackend, VadEngine as _, VadOperationalMode, VAD_ACTOR_IDLE_SLEEP_MS, VAD_CHUNK_SIZE,
+    VAD_MAX_PARTIAL_WINDOW_SAMPLES, VAD_MIN_UTTERANCE_SAMPLES, VAD_PARTIAL_INTERVAL_SAMPLES,
+    VAD_PRE_ROLL_CAPACITY, VAD_SPEECH_END_FRAMES, VAD_SPEECH_START_FRAMES,
 };
 use crate::core::events::VoxEvent;
 use crate::core::settings::{AudioOutputMode, InteractionMode};
@@ -234,6 +234,8 @@ pub struct VadActorHandles {
     pub audio_suppressed: Arc<AtomicBool>,
     pub engine_shutdown: Arc<AtomicBool>,
     pub dropped_counter: Arc<AtomicU64>,
+    pub turn_token: Arc<parking_lot::Mutex<tokio_util::sync::CancellationToken>>,
+    pub turn_epoch: Arc<std::sync::atomic::AtomicU64>,
 }
 
 /// Communication channels utilized by the VAD actor.
@@ -247,12 +249,18 @@ pub struct VadActorChannels {
 /// Handles speech start event transition, stream resets, and pre-roll transfer.
 fn handle_speech_start(
     state: &mut VadActorState,
-    turn_id_atomic: &AtomicU32,
+    handles: &VadActorHandles,
     stt_tx: &std::sync::mpsc::Sender<SttCommand>,
     vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
 ) {
     state.in_speech = true;
-    state.current_turn_id = turn_id_atomic.fetch_add(1, Ordering::Relaxed) + 1;
+    handles.turn_epoch.fetch_add(1, Ordering::Relaxed);
+    {
+        let mut guard = handles.turn_token.lock();
+        guard.cancel();
+        *guard = tokio_util::sync::CancellationToken::new();
+    }
+    state.current_turn_id = handles.turn_id_atomic.fetch_add(1, Ordering::Relaxed) + 1;
 
     log::info!("[VAD Actor] Speech Start (turn: {})", state.current_turn_id);
 
@@ -338,7 +346,7 @@ fn process_continuous_segmentation(
     raw_energy: f32,
     vad: &mut VadBackend,
     state: &mut VadActorState,
-    turn_id_atomic: &AtomicU32,
+    handles: &VadActorHandles,
     stt_tx: &std::sync::mpsc::Sender<SttCommand>,
     vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
 ) {
@@ -349,7 +357,7 @@ fn process_continuous_segmentation(
         state.inactive_frames = 0;
 
         if !state.in_speech && state.active_frames >= VAD_SPEECH_START_FRAMES {
-            handle_speech_start(state, turn_id_atomic, stt_tx, vox_event_tx);
+            handle_speech_start(state, handles, stt_tx, vox_event_tx);
         }
     } else {
         state.inactive_frames += 1;
@@ -468,7 +476,7 @@ where
                             raw_energy,
                             &mut vad,
                             &mut state,
-                            &handles.turn_id_atomic,
+                            &handles,
                             &channels.stt_tx,
                             channels.vox_event_tx.as_ref(),
                         );
@@ -478,7 +486,7 @@ where
                     }
                 }
             } else {
-                std::thread::sleep(std::time::Duration::from_millis(5));
+                std::thread::sleep(std::time::Duration::from_millis(VAD_ACTOR_IDLE_SLEEP_MS));
             }
         }
     }));

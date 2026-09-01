@@ -6,33 +6,50 @@ use std::sync::Arc;
 use tauri::AppHandle;
 
 pub async fn ensure_manifest_loaded(state: &AppState) -> Result<(), String> {
-    let mut m = state.manifest.write().await;
-    if m.is_none() {
-        let manifest_path = crate::utils::paths::get()
-            .models
-            .join("models_manifest.json");
-
-        if manifest_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&manifest_path) {
-                if let Ok(manifest) = serde_json::from_str::<VoxManifest>(&content) {
-                    *m = Some(manifest);
-                    return Ok(());
-                }
-            }
+    {
+        let m = state.manifest.read().await;
+        if m.is_some() {
+            return Ok(());
         }
+    }
 
-        let manifest = VoxManifest::fetch()
-            .await
-            .map_err(|e| format!("Manifest not loaded and failed to fetch: {}", e))?;
+    let manifest_path = crate::utils::paths::get()
+        .models
+        .join("models_manifest.json");
 
-        if let Ok(serialized) = serde_json::to_string_pretty(&manifest) {
-            if let Err(e) = std::fs::write(&manifest_path, serialized) {
+    if manifest_path.exists() {
+        let p = manifest_path.clone();
+        let loaded = tokio::task::spawn_blocking(move || {
+            std::fs::read_to_string(&p)
+                .ok()
+                .and_then(|c| serde_json::from_str::<VoxManifest>(&c).ok())
+        })
+        .await
+        .unwrap_or(None);
+
+        if let Some(manifest) = loaded {
+            let mut m = state.manifest.write().await;
+            *m = Some(manifest);
+            return Ok(());
+        }
+    }
+
+    let manifest = VoxManifest::fetch()
+        .await
+        .map_err(|e| format!("Manifest not loaded and failed to fetch: {}", e))?;
+
+    let p = manifest_path.clone();
+    let m_clone = manifest.clone();
+    tokio::task::spawn_blocking(move || {
+        if let Ok(serialized) = serde_json::to_string_pretty(&m_clone) {
+            if let Err(e) = std::fs::write(&p, serialized) {
                 log::warn!("[Setup] Failed to write manifest to disk: {}", e);
             }
         }
+    });
 
-        *m = Some(manifest);
-    }
+    let mut m = state.manifest.write().await;
+    *m = Some(manifest);
     Ok(())
 }
 
@@ -140,13 +157,13 @@ pub fn delete_model_file(file: &ModelEntry, models_dir: &Path) {
     }
 }
 
-pub async fn execute_model_setup_task(
+pub async fn execute_model_setup_task<R: tauri::Runtime>(
     manager: Arc<ModelManager>,
     target_models: Vec<ModelEntry>,
     base_url: String,
     models_dir: PathBuf,
     state: Arc<AppState>,
-    _app: AppHandle,
+    _app: AppHandle<R>,
 ) {
     let total_count = target_models.len();
     if total_count == 0 {
@@ -251,8 +268,8 @@ pub async fn download_single_model(
     Ok(())
 }
 
-pub async fn start_batch_setup(
-    app: AppHandle,
+pub async fn start_batch_setup<R: tauri::Runtime + 'static>(
+    app: AppHandle<R>,
     state: Arc<AppState>,
     selected_ids: Option<Vec<String>>,
 ) -> Result<(), String> {

@@ -11,9 +11,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// ─── Voice data ───────────────────────────────────────────────────────────────
 
 const VOICE_OPTIONS = ["Aoede", "Charon", "Fenrir", "Kore", "Puck"];
 
@@ -25,7 +23,6 @@ const VOICE_INFO: Record<string, { desc: string }> = {
   Puck: { desc: "Playful & light" },
 };
 
-// ─── Pipeline flow visualization (senior UI/UX) ─────────────────────────────
 
 const PipelineFlow = ({ active }: { active: boolean }) => {
   // Generate 3 particles per connection with unique delays/drifts
@@ -266,7 +263,6 @@ const PipelineFlow = ({ active }: { active: boolean }) => {
   );
 };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function Input({
   label,
@@ -410,7 +406,6 @@ function ToggleRow({
   );
 }
 
-// ─── Voice carousel with animated 12-bar organic equalizer ───────────────────
 
 function VoiceBars({ seed, disabled }: { seed: string; disabled?: boolean }) {
   const bars = useMemo(() => {
@@ -564,7 +559,6 @@ function VoiceCarousel({
   );
 }
 
-// ─── Unified config — 2-column layout ────────────────────────────────────────
 
 function UnifiedConfig({
   subkey,
@@ -716,7 +710,6 @@ function UnifiedConfig({
   );
 }
 
-// ─── Card component ─────────────────────────────────────────────────────────
 
 interface RealtimeCardProps {
   layoutMode?: "full-max" | "full-min" | "small";

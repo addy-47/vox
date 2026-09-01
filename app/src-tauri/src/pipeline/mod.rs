@@ -1,6 +1,4 @@
-// ─── Pipeline Subsystem Constants ────────────────────────────────────────────
-pub const WINDOW_MAIN: &str = "main";
-pub const WINDOW_TRAY: &str = "tray";
+pub use crate::core::constants::{WINDOW_MAIN, WINDOW_TOAST, WINDOW_TRAY, WINDOW_WIZARD};
 
 pub const ROUTER_THREAD_NAME: &str = "vox-router";
 
@@ -116,9 +114,17 @@ pub fn spawn_idle_monitor<R: tauri::Runtime>(
     state: std::sync::Arc<AppState>,
 ) {
     tauri::async_runtime::spawn(async move {
-        let mut state_rx = state.pipeline.state_rx.clone();
+        let mut state_rx = state.pipeline.subscribe_state();
         loop {
-            if *state_rx.borrow() == crate::core::state::InteractionState::Ready {
+            let current = *state_rx.borrow_and_update();
+            if current == crate::core::state::InteractionState::Idle {
+                if state_rx.changed().await.is_err() {
+                    break;
+                }
+                continue;
+            }
+
+            if current == crate::core::state::InteractionState::Ready {
                 tokio::select! {
                     _ = tokio::time::sleep(crate::services::realtime::REALTIME_IDLE_TIMEOUT) => {
                         if state.pipeline.state() == crate::core::state::InteractionState::Ready {
@@ -143,13 +149,8 @@ pub fn spawn_idle_monitor<R: tauri::Runtime>(
                         }
                     }
                 }
-            } else {
-                if state_rx.changed().await.is_err() {
-                    break;
-                }
-                if state.pipeline.state() == crate::core::state::InteractionState::Idle {
-                    break;
-                }
+            } else if state_rx.changed().await.is_err() {
+                break;
             }
         }
     });

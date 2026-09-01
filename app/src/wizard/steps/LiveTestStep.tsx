@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Activity, X, MessageSquare, Sparkles } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
-// --- Modular Components ---
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
 

@@ -1,13 +1,10 @@
+use crate::core::constants::{TOAST_HEIGHT, TOAST_PAD_TOP, TOAST_WIDTH, WINDOW_TOAST};
 use std::sync::LazyLock;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 #[cfg(target_os = "linux")]
 use gtk::prelude::WidgetExt;
-
-const TOAST_WIDTH: f64 = 360.0;
-const TOAST_HEIGHT: f64 = 96.0;
-const TOAST_PAD_TOP: f64 = 24.0;
 
 static LAST_TOAST: LazyLock<parking_lot::Mutex<Option<crate::core::events::ToastPayload>>> =
     LazyLock::new(|| parking_lot::Mutex::new(None));
@@ -16,12 +13,12 @@ static LAST_TOAST: LazyLock<parking_lot::Mutex<Option<crate::core::events::Toast
 pub fn ensure_toast_window<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<WebviewWindow<R>, String> {
-    if let Some(existing) = app.get_webview_window("toast") {
+    if let Some(existing) = app.get_webview_window(WINDOW_TOAST) {
         return Ok(existing);
     }
 
     log::info!("[Toast] Lazily constructing 'toast' overlay webview window...");
-    let window = WebviewWindowBuilder::new(app, "toast", WebviewUrl::App("/toast".into()))
+    let window = WebviewWindowBuilder::new(app, WINDOW_TOAST, WebviewUrl::App("/toast".into()))
         .title("vox-toast")
         .inner_size(TOAST_WIDTH, TOAST_HEIGHT)
         .transparent(true)
@@ -42,7 +39,7 @@ pub fn ensure_toast_window<R: tauri::Runtime>(
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(Duration::from_millis(120)).await;
-            setup_linux_toast_layer(&app_clone, "toast");
+            setup_linux_toast_layer(&app_clone, WINDOW_TOAST);
         });
     }
 
@@ -51,7 +48,7 @@ pub fn ensure_toast_window<R: tauri::Runtime>(
 
 /// Safely closes and destroys the toast window to reclaim memory when idle.
 pub fn destroy_toast_window<R: tauri::Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("toast") {
+    if let Some(window) = app.get_webview_window(WINDOW_TOAST) {
         log::info!("[Toast] Destroying 'toast' overlay window to save RAM.");
         if let Err(e) = window.close() {
             log::warn!("[Toast] Failed to close toast window: {}", e);

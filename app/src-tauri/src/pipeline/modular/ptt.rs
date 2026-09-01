@@ -193,24 +193,25 @@ pub async fn ptt_stop<R: tauri::Runtime>(
     }
 
     let turn_id = state.pipeline.peek_turn_id();
-    let guard = state.engine.lock().await;
-    let engine = match guard.as_ref() {
-        Some(e) => e,
-        None => return Err("Audio engine is not initialized".to_string()),
+    let (vad_tx, stt_tx) = {
+        let guard = state.engine.lock().await;
+        match guard.as_ref() {
+            Some(e) => (e.vad_tx.clone(), e.stt_tx.clone()),
+            None => return Err("Audio engine is not initialized".to_string()),
+        }
     };
 
     let (tx, rx) = std::sync::mpsc::channel();
-    if let Err(e) = engine
-        .vad_tx
-        .send(VadCommand::StopWindowValidation { response_tx: tx })
-    {
+    if let Err(e) = vad_tx.send(VadCommand::StopWindowValidation { response_tx: tx }) {
         log::warn!("[ModularPTT] Failed to stop window validation: {}", e);
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Ready, &ctx, app, state);
         return Err("Failed to query VAD actor".to_string());
     }
 
-    let validation_result = match rx.recv_timeout(std::time::Duration::from_millis(500)) {
+    let validation_result = match rx.recv_timeout(std::time::Duration::from_millis(
+        crate::services::vad::VAD_VALIDATION_TIMEOUT_MS,
+    )) {
         Ok(result) => Some(result),
         Err(e) => {
             log::warn!("[ModularPTT] VAD window validation timeout: {}", e);
@@ -233,10 +234,7 @@ pub async fn ptt_stop<R: tauri::Runtime>(
         return Ok(());
     }
 
-    if let Err(e) = engine
-        .stt_tx
-        .send(crate::services::stt::SttCommand::Final(turn_id, audio))
-    {
+    if let Err(e) = stt_tx.send(crate::services::stt::SttCommand::Final(turn_id, audio)) {
         log::warn!("[ModularPTT] Failed to send Final to STT: {}", e);
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Ready, &ctx, app, state);

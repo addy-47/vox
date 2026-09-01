@@ -247,22 +247,27 @@ pub async fn ptt_stop<R: tauri::Runtime>(
 
     let turn_id = state.pipeline.peek_turn_id();
 
-    let guard = state.engine.lock().await;
-    let validation_result = if let Some(ref engine) = *guard {
+    let vad_tx_opt = {
+        let guard = state.engine.lock().await;
+        guard.as_ref().map(|e| e.vad_tx.clone())
+    };
+
+    let validation_result = if let Some(vad_tx) = vad_tx_opt {
         let (tx, rx) = std::sync::mpsc::channel();
-        if engine
-            .vad_tx
+        if vad_tx
             .send(VadCommand::StopWindowValidation { response_tx: tx })
             .is_ok()
         {
-            rx.recv_timeout(std::time::Duration::from_millis(500)).ok()
+            rx.recv_timeout(std::time::Duration::from_millis(
+                crate::services::vad::VAD_VALIDATION_TIMEOUT_MS,
+            ))
+            .ok()
         } else {
             None
         }
     } else {
         None
     };
-    drop(guard);
 
     let (is_speech, audio) = match validation_result {
         Some(val) => (val.is_speech_detected, val.audio),
@@ -345,7 +350,15 @@ fn on_transcript_final<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
 ) {
-    if text.trim().is_empty() {
+    let transliterate_enabled = state
+        .settings
+        .read()
+        .map(|s| s.stt.transliterate_enabled)
+        .unwrap_or(false);
+    let processed_text =
+        crate::services::translit::transliterate_if_hi(&text, true, transliterate_enabled);
+
+    if processed_text.trim().is_empty() {
         let ctx = RoutingContext::from_app_state(state);
         transition(InteractionState::Ready, &ctx, app, state);
         return;
@@ -359,7 +372,7 @@ fn on_transcript_final<R: tauri::Runtime>(
         WINDOW_MAIN,
         IpcEvent::TranscriptFinal(TranscriptPayload {
             turn_id,
-            text: text.clone(),
+            text: processed_text.clone(),
             owner: Some(InteractionOwner::Assistant),
         }),
     ) {
@@ -368,7 +381,7 @@ fn on_transcript_final<R: tauri::Runtime>(
 
     let mut acc = ACCUMULATOR.lock();
     acc.clear();
-    acc.set_user_transcript(text);
+    acc.set_user_transcript(processed_text);
 }
 
 /// Handles streamed token delta from the real-time server.

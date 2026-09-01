@@ -45,26 +45,43 @@ async fn execute_compaction_attempt(
 
     match gen_res {
         Ok(Ok(())) => {
-            let _ = pump_handle.await;
+            if let Err(e) = pump_handle.await {
+                log::warn!("[MemoryCompaction] Pump task error: {:?}", e);
+            }
             while let Ok(event) = async_rx.try_recv() {
                 match event {
                     VoxEvent::LlmToken { token, .. } => {
                         summary_content.push_str(&token);
                     }
-                    VoxEvent::LlmFinished { .. } => break,
+                    VoxEvent::LlmFinished { .. } => {
+                        log::info!(
+                            "[MemoryCompaction] LlmFinished received; full summary received."
+                        );
+                        break;
+                    }
                     _ => {}
                 }
             }
         }
         Ok(Err(e)) => {
-            let _ = pump_handle.await;
+            if let Err(join_err) = pump_handle.await {
+                log::warn!(
+                    "[MemoryCompaction] Pump task error on failure: {:?}",
+                    join_err
+                );
+            }
             log::warn!(
                 "[MemoryCompaction] Provider generation returned error: {}",
                 e
             );
         }
         Err(_) => {
-            let _ = pump_handle.await;
+            if let Err(join_err) = pump_handle.await {
+                log::warn!(
+                    "[MemoryCompaction] Pump task error on timeout: {:?}",
+                    join_err
+                );
+            }
             log::warn!("[MemoryCompaction] Compaction attempt timed out after 45s");
         }
     }

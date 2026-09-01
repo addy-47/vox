@@ -1,9 +1,11 @@
+use super::{
+    MODEL_CONNECT_TIMEOUT_SECS, MODEL_DOWNLOAD_TIMEOUT_SECS, PROGRESS_EMIT_INTERVAL_MS,
+};
 use crate::setup::manifest::{ModelEntry, VerifiedMarker};
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -34,12 +36,6 @@ pub struct ModelSetupStatus {
 pub type ModelStatusEmitter = Arc<dyn Fn(ModelSetupStatus) + Send + Sync>;
 
 /// Orchestrates model downloads, extraction, and verification.
-///
-/// Implements Part 2 Directives:
-/// - No RAM buffering (Streaming only)
-/// - Backend owns state
-/// - Post-download hashing only
-/// - Structured .verified marker
 pub struct ModelManager {
     app_emitter: Option<ModelStatusEmitter>,
     client: Client,
@@ -60,8 +56,8 @@ impl ModelManager {
         });
 
         let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(300))
-            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(MODEL_DOWNLOAD_TIMEOUT_SECS))
+            .connect_timeout(std::time::Duration::from_secs(MODEL_CONNECT_TIMEOUT_SECS))
             .build()
             .unwrap_or_else(|_| Client::new());
 
@@ -92,9 +88,8 @@ impl ModelManager {
         log::info!("[ModelManager] Starting setup for: {} ({})", model_id, url);
         self.cancel_flag.store(false, Ordering::Relaxed);
 
-        // ── 0. Check if already verified ─────────────────────────────────────
         if verified_path.exists() {
-            if let Ok(marker) = VerifiedMarker::load(&verified_path) {
+            if let Ok(marker) = VerifiedMarker::load_async(&verified_path).await {
                 if marker.sha256 == entry.sha256
                     && (entry.archive_type.is_some() || dest_path.exists())
                 {
@@ -115,15 +110,12 @@ impl ModelManager {
             }
         }
 
-        // Clean up any older/different hash versions of this model ID before download
         self.cleanup_old_versions(model_id, &entry.sha256, models_dir);
 
-        // Ensure parent directory exists
         if let Some(parent) = dest_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
 
-        // ── 1. Download & Hash ───────────────────────────────────────────────
         self.emit_status(
             model_id,
             SetupStep::Downloading,
@@ -160,7 +152,6 @@ impl ModelManager {
             }
         };
 
-        // ── 2. Verify Hash ───────────────────────────────────────────────────
         self.emit_status(
             model_id,
             SetupStep::Verifying,
@@ -175,7 +166,6 @@ impl ModelManager {
                 model_id, entry.sha256, hash
             );
 
-            // Diagnostic: Check if we downloaded something large but the manifest hash is for a pointer
             if entry.size_bytes > 1024 && entry.sha256.len() == 64 {
                 log::warn!("[ModelManager] Hash mismatch detected. Diagnostic: If you are using Git LFS, ensure your models_manifest.json contains hashes of smudged files, not pointer files.");
                 err.push_str("\n\nTip: Manifest hash may be for an LFS pointer. Re-verify models_manifest.json.");
@@ -195,7 +185,6 @@ impl ModelManager {
             return Err(anyhow::anyhow!(err));
         }
 
-        // ── 3. Extract if needed ──────────────────────────────────────────────
         if let Some(ref archive_type) = entry.archive_type {
             self.emit_status(
                 model_id,
@@ -206,8 +195,6 @@ impl ModelManager {
                 None,
             );
 
-            // For archives, we extract into a directory.
-            // Usually path in manifest is the directory or main file.
             let extract_dest = if entry.path.contains('/') {
                 models_dir.join(Path::new(&entry.path).parent().unwrap())
             } else {
@@ -259,11 +246,9 @@ impl ModelManager {
                 log::debug!("[ModelManager] Temp file cleanup notice: {}", cleanup_err);
             }
         } else {
-            // Direct model file
             std::fs::rename(&temp_path, &dest_path)?;
         }
 
-        // ── 4. Create Verified Marker ─────────────────────────────────────────
         let marker = VerifiedMarker {
             model_id: Some(model_id.clone()),
             sha256: entry.sha256.clone(),
@@ -272,7 +257,7 @@ impl ModelManager {
                 .as_millis() as u64,
             expected_size: entry.size_bytes,
         };
-        marker.save(&verified_path)?;
+        marker.save_async(&verified_path).await?;
 
         self.emit_status(
             model_id,
@@ -302,7 +287,7 @@ impl ModelManager {
             ));
         }
 
-        let mut file = std::fs::File::create(dest)?;
+        let mut file = tokio::fs::File::create(dest).await?;
         let mut hasher = Sha256::new();
         let mut downloaded: u64 = 0;
         let mut stream = response.bytes_stream();
@@ -314,11 +299,11 @@ impl ModelManager {
             }
 
             let chunk = chunk_result?;
-            file.write_all(&chunk)?;
+            tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await?;
             hasher.update(&chunk);
             downloaded += chunk.len() as u64;
 
-            if last_emit.elapsed() > std::time::Duration::from_millis(150) {
+            if last_emit.elapsed() > std::time::Duration::from_millis(PROGRESS_EMIT_INTERVAL_MS) {
                 let progress = (downloaded as f32 / expected_size as f32) * 100.0;
                 self.emit_status(
                     model_id,
@@ -332,7 +317,7 @@ impl ModelManager {
             }
         }
 
-        file.flush()?;
+        tokio::io::AsyncWriteExt::flush(&mut file).await?;
         let hash = format!("{:x}", hasher.finalize());
         Ok(hash)
     }
@@ -343,12 +328,48 @@ impl ModelManager {
         match archive_type {
             "zip" => {
                 let mut archive = zip::ZipArchive::new(file)?;
-                archive.extract(dest_dir)?;
+                for i in 0..archive.len() {
+                    let mut entry = archive.by_index(i)?;
+                    let enclosed = match entry.enclosed_name() {
+                        Some(path) => path.to_owned(),
+                        None => {
+                            return Err(anyhow::anyhow!(
+                                "Zip-Slip vulnerability detected: illegal file path in archive"
+                            ));
+                        }
+                    };
+                    let outpath = dest_dir.join(enclosed);
+
+                    if entry.name().ends_with('/') {
+                        std::fs::create_dir_all(&outpath)?;
+                    } else {
+                        if let Some(parent) = outpath.parent() {
+                            if !parent.exists() {
+                                std::fs::create_dir_all(parent)?;
+                            }
+                        }
+                        let mut outfile = std::fs::File::create(&outpath)?;
+                        std::io::copy(&mut entry, &mut outfile)?;
+                    }
+                }
             }
             "tar.gz" | "tgz" => {
                 let tar_gz = flate2::read::GzDecoder::new(file);
                 let mut archive = tar::Archive::new(tar_gz);
-                archive.unpack(dest_dir)?;
+                for entry_res in archive.entries()? {
+                    let mut entry = entry_res?;
+                    let path = entry.path()?;
+                    if path
+                        .components()
+                        .any(|c| c == std::path::Component::ParentDir)
+                    {
+                        return Err(anyhow::anyhow!(
+                            "Tar-Slip vulnerability detected: illegal path traversal in archive: {:?}",
+                            path
+                        ));
+                    }
+                    entry.unpack_in(dest_dir)?;
+                }
             }
             _ => {
                 return Err(anyhow::anyhow!(

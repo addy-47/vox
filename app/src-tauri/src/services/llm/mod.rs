@@ -16,7 +16,6 @@ pub use policy::GenerationPolicy;
 pub use probe::{CapabilityProbeEngine, ModelProbeResult};
 pub use transport::RemoteTransport;
 
-// ─── Subsystem Model Directory & File Constants ───────────────────────────────
 pub const QWEN_MODEL_DIR: &str = "llm/qwen";
 pub const QWEN_MODEL_FILE: &str = "qwen-3.5-0.8b-q4_k_m.gguf";
 pub const GEMMA_MODEL_DIR: &str = "llm/gemma4";
