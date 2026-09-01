@@ -293,7 +293,8 @@ pub struct AppState {
     pub cpu_governor: parking_lot::Mutex<String>,
     pub cpu_governor_optimal: Arc<AtomicBool>,
     pub setup_running: Arc<Mutex<bool>>,
-    pub conversation_manager: Arc<parking_lot::Mutex<crate::services::memory::ConversationManager>>,
+    pub conversation_manager:
+        Arc<parking_lot::Mutex<crate::services::harness::ConversationManager>>,
     pub llm_provider: Arc<parking_lot::RwLock<Option<Arc<dyn crate::services::llm::LlmProvider>>>>,
 }
 
@@ -368,7 +369,7 @@ impl AppState {
             cpu_governor_optimal: Arc::new(AtomicBool::new(true)),
             setup_running: Arc::new(Mutex::new(false)),
             conversation_manager: Arc::new(parking_lot::Mutex::new(
-                crate::services::memory::ConversationManager::new(),
+                crate::services::harness::ConversationManager::new(),
             )),
             llm_provider: Arc::new(parking_lot::RwLock::new(None)),
         }

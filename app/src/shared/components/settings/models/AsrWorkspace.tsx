@@ -39,7 +39,7 @@ export const AsrWorkspace = memo(
             layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
           )}
         >
-          {modelCatalog.asr.map((model) => {
+          {modelCatalog.stt.map((model) => {
             const isSelected = draftSettings.stt.embedded.model === model.id;
             const modelGroupId = model.id;
             const isDownloaded = !!modelPresence[modelGroupId];

@@ -19,7 +19,7 @@ use vox_lib::services::llm::actor::{cool_down_llm, warm_up_llm, LlmCommand, LlmW
 use vox_lib::services::llm::{
     ConversationInput, GenerationOptions, GenerationPurpose, GenerationRequest, OutputConstraint,
 };
-use vox_lib::services::memory::{ChatMessage, Role};
+use vox_lib::services::harness::{ChatMessage, Role};
 
 /// Helper to set up LLM worker with local embedded Qwen model.
 fn setup_test_llm_worker() -> (

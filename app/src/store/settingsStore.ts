@@ -114,7 +114,7 @@ export interface VoiceProfile {
 
 export interface ModelCatalog {
   llm: ModelGroupInfo[];
-  asr: ModelGroupInfo[];
+  stt: ModelGroupInfo[];
   tts: ModelGroupInfo[];
   vad: ModelGroupInfo[];
   auxiliary: ModelGroupInfo[];
@@ -543,8 +543,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const { settings, draftSettings } = get();
     if (!settings || !draftSettings) return false;
 
-    const cat = category.toLowerCase();
-    const scope = (cat === "asr" ? "stt" : cat) as keyof VoxSettings;
+    const scope = category.toLowerCase() as keyof VoxSettings;
     const draftScope = (draftSettings as any)?.[scope];
     const savedScope = (settings as any)?.[scope];
 
@@ -569,8 +568,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const { settings, updateDraft } = get();
     if (!settings) return;
 
-    const cat = category.toLowerCase();
-    const scope = (cat === "asr" ? "stt" : cat) as keyof VoxSettings;
+    const scope = category.toLowerCase() as keyof VoxSettings;
     const savedScope = (settings as any)?.[scope];
     if (!savedScope) return;
 

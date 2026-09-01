@@ -396,3 +396,49 @@ pub async fn fetch_remote_edge_voices() -> Result<Vec<EdgeTtsVoiceEntry>, String
         })
         .collect())
 }
+
+/// Returns default system voice profiles (Supertonic/Kokoro speaker mappings).
+pub fn get_voice_profiles() -> Vec<crate::core::settings::VoiceProfile> {
+    vec![
+        crate::core::settings::VoiceProfile {
+            id: 0,
+            name: "James".to_string(),
+        },
+        crate::core::settings::VoiceProfile {
+            id: 1,
+            name: "David".to_string(),
+        },
+        crate::core::settings::VoiceProfile {
+            id: 2,
+            name: "Alex".to_string(),
+        },
+        crate::core::settings::VoiceProfile {
+            id: 3,
+            name: "Ryan".to_string(),
+        },
+        crate::core::settings::VoiceProfile {
+            id: 4,
+            name: "Ethan".to_string(),
+        },
+        crate::core::settings::VoiceProfile {
+            id: 5,
+            name: "Sophia".to_string(),
+        },
+        crate::core::settings::VoiceProfile {
+            id: 6,
+            name: "Olivia".to_string(),
+        },
+        crate::core::settings::VoiceProfile {
+            id: 7,
+            name: "Emma".to_string(),
+        },
+        crate::core::settings::VoiceProfile {
+            id: 8,
+            name: "Ava".to_string(),
+        },
+        crate::core::settings::VoiceProfile {
+            id: 9,
+            name: "Mia".to_string(),
+        },
+    ]
+}

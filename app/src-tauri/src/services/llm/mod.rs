@@ -1,20 +1,19 @@
 pub mod actor;
 pub mod catalog;
-pub mod config;
 pub mod embedded;
-pub mod llama_cpp;
-pub mod policy;
 pub mod probe;
 pub mod transport;
 
-pub use actor::{cool_down_llm, create_llm_provider, spawn_llm_worker, warm_up_llm, LlmCommand};
+pub use actor::{
+    cool_down_llm, create_llm_provider, spawn_llm_worker, warm_up_llm, GenerationDefaults,
+    GenerationPolicy, LlmCommand,
+};
 pub use catalog::{list_presets, lookup_preset, ProviderPresetMeta, PROVIDER_CATALOG};
-pub use config::{AuthScheme, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType};
-pub use embedded::EmbeddedProvider;
-pub use llama_cpp::LlmWorker;
-pub use policy::GenerationPolicy;
+pub use embedded::{EmbeddedProvider, LlmWorker, ModelFamily};
 pub use probe::{CapabilityProbeEngine, ModelProbeResult};
-pub use transport::RemoteTransport;
+pub use transport::{
+    AuthScheme, CapabilitySource, ConnectionConfig, RemoteTransport, TokenLimitField, TransportType,
+};
 
 pub const QWEN_MODEL_DIR: &str = "llm/qwen";
 pub const QWEN_MODEL_FILE: &str = "qwen-3.5-0.8b-q4_k_m.gguf";
@@ -76,7 +75,7 @@ pub enum OutputConstraint {
 /// Neutral container for input messages.
 #[derive(Debug, Clone)]
 pub struct ConversationInput {
-    pub messages: Vec<crate::services::memory::ChatMessage>,
+    pub messages: Vec<crate::services::harness::ChatMessage>,
 }
 
 /// Provider-neutral generation request payload.
@@ -210,7 +209,7 @@ pub trait LlmEngine {
     /// Generates completion tokens for the conversation context and dispatches them via channel.
     fn generate(
         &self,
-        ctx: &crate::services::memory::ConversationContext,
+        ctx: &crate::services::harness::ConversationContext,
         turn_id: u32,
         cancel: &tokio_util::sync::CancellationToken,
         tx: &std::sync::mpsc::Sender<crate::core::events::VoxEvent>,

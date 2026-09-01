@@ -1,16 +1,13 @@
-use super::resample::upsample_2x_into;
+use super::resampler::upsample_2x_into;
 use super::{
-    PLAYBACK_BUFFER_SAMPLES, PLAYBACK_CHANNELS, PLAYBACK_DEFAULT_VOLUME, PLAYBACK_ENERGY_EXPONENT,
-    PLAYBACK_ENERGY_MULTIPLIER, PLAYBACK_PRODUCER_SCRATCH_CAPACITY, PLAYBACK_SAMPLE_RATE,
-    PLAYBACK_VOLUME_RAMP_STEP, PREROLL_THRESHOLD_SAMPLES,
+    AudioResampler, PLAYBACK_BUFFER_SAMPLES, PLAYBACK_CHANNELS, PLAYBACK_DEFAULT_VOLUME,
+    PLAYBACK_ENERGY_EXPONENT, PLAYBACK_ENERGY_MULTIPLIER, PLAYBACK_PRODUCER_SCRATCH_CAPACITY,
+    PLAYBACK_SAMPLE_RATE, PLAYBACK_VOLUME_RAMP_STEP, PREROLL_THRESHOLD_SAMPLES,
+    SINC_CHUNK_SIZE_OUTPUT,
 };
 use crate::core::events::VoxEvent;
 use crate::core::state::InteractionState;
-use crate::services::realtime::resampler::AudioResampler;
-use crate::services::realtime::{
-    RealtimeAudioConfig, DEFAULT_OUTPUT_SAMPLE_RATE, PCM_INT16_DIVISOR_FLOAT,
-    SINC_CHUNK_SIZE_OUTPUT,
-};
+use crate::services::realtime::{RealtimeAudioConfig, DEFAULT_OUTPUT_SAMPLE_RATE};
 use crate::utils::audio_filters::FilterBank;
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -197,7 +194,7 @@ impl PlaybackEngine {
 
         let mut f32_chunk = Vec::with_capacity(pcm_24k.len());
         for &s in &pcm_24k {
-            f32_chunk.push(s as f32 / PCM_INT16_DIVISOR_FLOAT);
+            f32_chunk.push(s as f32 / super::PCM_S16_SCALE);
         }
 
         self.ingest_chunk(&f32_chunk);

@@ -1,13 +1,13 @@
 pub mod chat_completions;
+pub mod config;
 pub mod ollama;
 pub mod responses;
 pub mod sse;
 
+pub use config::{AuthScheme, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType};
+
 use crate::core::events::VoxEvent;
 use crate::core::settings::LlmModelInfo;
-use crate::services::llm::config::{
-    AuthScheme, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType,
-};
 use crate::services::llm::{
     GenerationRequest, LlmError, ProviderCapabilities, ProviderKind, Support,
 };
@@ -17,27 +17,6 @@ use serde::Deserialize;
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
-
-/// Injects authentication headers into a request builder based on the explicit `AuthScheme`.
-pub fn inject_auth_headers(
-    mut builder: reqwest::RequestBuilder,
-    auth: &AuthScheme,
-) -> reqwest::RequestBuilder {
-    match auth {
-        AuthScheme::Bearer(Some(key)) => {
-            if !key.trim().is_empty() {
-                builder = builder.bearer_auth(key);
-            }
-        }
-        AuthScheme::AnthropicNative(key) => {
-            builder = builder
-                .header("x-api-key", key)
-                .header("anthropic-version", "2023-06-01");
-        }
-        AuthScheme::Bearer(None) | AuthScheme::None => {}
-    }
-    builder
-}
 
 #[derive(Deserialize)]
 struct ModelListResponse {
@@ -69,6 +48,27 @@ pub struct RemoteTransport {
     client: reqwest::Client,
     active_token_limit_field: Arc<RwLock<TokenLimitField>>,
     capabilities: ProviderCapabilities,
+}
+
+/// Injects authentication headers into a request builder based on the explicit `AuthScheme`.
+pub fn inject_auth_headers(
+    mut builder: reqwest::RequestBuilder,
+    auth: &AuthScheme,
+) -> reqwest::RequestBuilder {
+    match auth {
+        AuthScheme::Bearer(Some(key)) => {
+            if !key.trim().is_empty() {
+                builder = builder.bearer_auth(key);
+            }
+        }
+        AuthScheme::AnthropicNative(key) => {
+            builder = builder
+                .header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01");
+        }
+        AuthScheme::Bearer(None) | AuthScheme::None => {}
+    }
+    builder
 }
 
 impl RemoteTransport {

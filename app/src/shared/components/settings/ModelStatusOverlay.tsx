@@ -76,7 +76,7 @@ export const ModelStatusOverlay = memo(() => {
 
   // Direct dynamic lookups from catalog using saved IDs in draftSettings
   const activeLlm = modelCatalog.llm.find((m) => m.id === llmId) || modelCatalog.llm[0];
-  const activeAsr = modelCatalog.asr.find((m) => m.id === asrId) || modelCatalog.asr[0];
+  const activeAsr = modelCatalog.stt.find((m) => m.id === asrId) || modelCatalog.stt[0];
   const activeTts = modelCatalog.tts.find((m) => m.id === ttsKind || m.id.includes(ttsKind)) || modelCatalog.tts[0];
   const activeVoice = modelCatalog.voices.find((v) => v.id === draftSettings.tts.voice_index) || modelCatalog.voices[0];
 

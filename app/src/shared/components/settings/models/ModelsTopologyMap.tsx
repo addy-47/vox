@@ -3,7 +3,7 @@ import { Activity, Sparkles, Brain, Volume2, Layers } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
 
-export type PipelineTab = "vad" | "asr" | "llm" | "tts" | "auxiliary";
+export type PipelineTab = "vad" | "stt" | "llm" | "tts" | "auxiliary";
 
 interface ModelsTopologyMapProps {
   activeTab: PipelineTab;
@@ -31,7 +31,7 @@ export const ModelsTopologyMap = memo(
 
     const PIPELINE_NODES = [
       { id: "vad" as PipelineTab, label: "Voice Detection", Icon: Activity, isVerified: isVadVerified },
-      { id: "asr" as PipelineTab, label: "Listening", Icon: Sparkles, isVerified: isAsrVerified },
+      { id: "stt" as PipelineTab, label: "Listening", Icon: Sparkles, isVerified: isAsrVerified },
       { id: "llm" as PipelineTab, label: "Reasoning", Icon: Brain, isVerified: isLlmDownloaded },
       { id: "tts" as PipelineTab, label: "Speaking", Icon: Volume2, isVerified: isTtsVerified },
       { id: "auxiliary" as PipelineTab, label: "Support", Icon: Layers, isVerified: isAuxiliaryVerified },
@@ -47,7 +47,7 @@ export const ModelsTopologyMap = memo(
         )}
       >
         {PIPELINE_NODES.map(({ id, label, Icon }) => {
-          const isDirty = isCategoryDirty(id === "asr" ? "stt" : id);
+          const isDirty = isCategoryDirty(id);
 
           return (
             <button

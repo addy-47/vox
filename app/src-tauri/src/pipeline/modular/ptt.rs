@@ -374,8 +374,8 @@ fn on_transcript_final<R: tauri::Runtime>(
         };
 
         let session_id = conv_id.to_string();
-        let res = crate::services::memory::prepare_turn_context(
-            crate::services::memory::PrepareTurnParams {
+        let res = crate::services::harness::prepare_turn_context(
+            crate::services::harness::PrepareTurnParams {
                 harness: &cm_arc,
                 tts_tx: tts_tx.as_ref(),
                 memory_tx: Some(&memory_tx),

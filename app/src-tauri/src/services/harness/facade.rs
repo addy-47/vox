@@ -324,7 +324,7 @@ pub fn trigger_background_compaction(
         if messages.len() <= 3 {
             return;
         }
-        let h = Arc::clone(harness);
+        let h: std::sync::Arc<Mutex<ConversationManager>> = std::sync::Arc::clone(harness);
         let settings_resolved =
             settings.or_else(|| state.settings.read().ok().map(|s| s.llm.clone()));
         let cached_provider = state.llm_provider.read().clone();

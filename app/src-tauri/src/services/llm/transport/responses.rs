@@ -1,6 +1,6 @@
+use super::config::ConnectionConfig;
 use super::sse::SseDecoder;
 use crate::core::events::VoxEvent;
-use crate::services::llm::config::ConnectionConfig;
 use crate::services::llm::{GenerationRequest, LlmError, OutputConstraint};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,7 @@ pub fn build_request_body(
     let mut input_items = Vec::new();
 
     for msg in &request.input.messages {
-        if msg.role == crate::services::memory::Role::System {
+        if msg.role == crate::services::harness::Role::System {
             system_instructions = Some(msg.content.clone());
         } else {
             input_items.push(ResponsesInputItem {
@@ -228,21 +228,21 @@ pub async fn stream_responses(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::llm::config::TokenLimitField;
     use crate::services::llm::{
-        ConversationInput, GenerationOptions, GenerationPurpose, OutputConstraint,
+        AuthScheme, CapabilitySource, ConversationInput, GenerationOptions, GenerationPurpose,
+        OutputConstraint, TokenLimitField, TransportType,
     };
-    use crate::services::memory::{ChatMessage as MemMsg, Role};
+    use crate::services::harness::{ChatMessage as MemMsg, Role};
 
     #[test]
     fn test_responses_request_body_flattened_history() {
         let config = ConnectionConfig {
-            transport: crate::services::llm::config::TransportType::Responses,
+            transport: TransportType::Responses,
             base_url: "https://api.openai.com/v1".to_string(),
             model: "gpt-4o".to_string(),
-            auth: crate::services::llm::config::AuthScheme::Bearer(Some("test".to_string())),
+            auth: AuthScheme::Bearer(Some("test".to_string())),
             token_limit_field: TokenLimitField::MaxOutputTokens,
-            capability_source: crate::services::llm::config::CapabilitySource::ProbedGeneric,
+            capability_source: CapabilitySource::ProbedGeneric,
             provider_preset: Some("openai".to_string()),
         };
 

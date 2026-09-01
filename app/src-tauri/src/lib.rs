@@ -249,7 +249,7 @@ pub fn run() {
             crate::monitoring::collector::spawn_monitoring_collector(std::sync::Arc::clone(&state_arc));
             spawn_system_monitor(app.handle().clone());
             crate::monitoring::telemetry_emitter::spawn_telemetry_emitter(app.handle().clone());
-            crate::services::memory::spawn_state_compaction_observer(std::sync::Arc::clone(&state_arc));
+            crate::services::harness::spawn_state_compaction_observer(std::sync::Arc::clone(&state_arc));
 
             // ── 1.6 Dictation Global Hotkey Registration ──────────────────────────
             {
