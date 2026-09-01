@@ -1,7 +1,6 @@
 pub mod actor;
 pub mod audio_bridge;
 pub mod providers;
-pub mod resampler;
 
 pub use crate::core::settings::RealtimeProviderKind;
 pub use actor::RealtimeActor;

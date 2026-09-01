@@ -154,7 +154,9 @@ impl AppManifest {
 
         let client = reqwest::Client::builder()
             .user_agent("Vox-App/0.8.1")
-            .timeout(std::time::Duration::from_secs(APP_MANIFEST_FETCH_TIMEOUT_SECS))
+            .timeout(std::time::Duration::from_secs(
+                APP_MANIFEST_FETCH_TIMEOUT_SECS,
+            ))
             .build()?;
 
         let response = client.get(url).send().await?;
