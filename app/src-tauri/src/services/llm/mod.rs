@@ -33,7 +33,6 @@ pub const DEFAULT_PROBE_MAX_TOKENS: u32 = 40;
 pub const DEFAULT_TOOL_PROBE_MAX_TOKENS: u32 = 80;
 pub const DEFAULT_PROBE_TEMPERATURE: f32 = 0.1;
 
-use crate::core::events::VoxEvent;
 use crate::core::settings::LlmModelInfo;
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
@@ -175,30 +174,31 @@ pub enum LlmError {
     Other(#[from] anyhow::Error),
 }
 
+/// Provider streaming events emitted during generation.
+#[derive(Debug, Clone)]
+pub enum LlmStreamEvent {
+    Token(String),
+    Finished,
+}
+
 /// Common provider abstraction implemented by `EmbeddedProvider` and `RemoteTransport`.
 pub trait LlmProvider: Send + Sync {
-    /// Submits a provider-neutral generation request and streams tokens via `tx`.
     fn generate<'a>(
         &'a self,
         request: GenerationRequest,
         turn_id: u32,
         cancel: &'a tokio_util::sync::CancellationToken,
-        tx: &'a mpsc::Sender<VoxEvent>,
+        tx: &'a mpsc::Sender<LlmStreamEvent>,
     ) -> BoxFuture<'a, Result<(), LlmError>>;
 
-    /// Returns static capabilities of this provider.
     fn capabilities(&self) -> &ProviderCapabilities;
 
-    /// Returns true if the provider is healthy and reachable.
     fn health_check<'a>(&'a self) -> BoxFuture<'a, Result<(), LlmError>>;
 
-    /// Returns list of model IDs the provider can serve.
     fn list_models<'a>(&'a self) -> BoxFuture<'a, Result<Vec<LlmModelInfo>, LlmError>>;
 
-    /// Identifies the runtime engine type of this LLM provider.
     fn kind(&self) -> ProviderKind;
 
-    /// Maximum supported context size in tokens.
     fn max_context_tokens(&self) -> usize {
         DEFAULT_MAX_CONTEXT_TOKENS
     }
@@ -206,13 +206,12 @@ pub trait LlmProvider: Send + Sync {
 
 /// Large Language Model engine contract for lower-level FFI.
 pub trait LlmEngine {
-    /// Generates completion tokens for the conversation context and dispatches them via channel.
     fn generate(
         &self,
         ctx: &crate::services::harness::ConversationContext,
         turn_id: u32,
         cancel: &tokio_util::sync::CancellationToken,
-        tx: &std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
+        tx: &std::sync::mpsc::Sender<crate::services::llm::LlmStreamEvent>,
     ) -> anyhow::Result<()>;
 }
 

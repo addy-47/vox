@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use vox_lib::core::settings::{AudioOutputMode, InteractionMode};
 use vox_lib::core::state::InteractionState;
-use vox_lib::pipeline::modular::ptt::{ptt_cancel, ptt_start, ptt_stop};
+use vox_lib::pipeline::handlers::ptt::{ptt_cancel, ptt_start, ptt_stop};
 use vox_lib::services::stt::actor::SttCommand;
 use vox_lib::services::vad::actor::VadActorConfig;
 use vox_lib::services::vad::VadCommand;
@@ -76,8 +76,8 @@ async fn test_modular_ptt_audio_accumulation_en() {
         ptt_stop(&app, &state).await.expect("ptt_stop failed");
         assert_eq!(
             state.pipeline.state(),
-            InteractionState::Listening,
-            "Pipeline state must remain in Listening while STT transcription is in-flight (domain_event_matrix.md)"
+            InteractionState::Thinking,
+            "Pipeline state must transition to Thinking upon speech release (domain_event_matrix.md)"
         );
 
         // 4. Downstream Evaluation: Collect emitted transcripts

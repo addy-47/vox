@@ -35,9 +35,13 @@ pub struct LlmWarmUpHandles<'a> {
 #[derive(Debug)]
 pub enum LlmCommand {
     Generate {
-        request: GenerationRequest,
+        request: Box<GenerationRequest>,
         turn_id: u32,
         cancel: tokio_util::sync::CancellationToken,
+        accumulator:
+            Arc<parking_lot::Mutex<crate::pipeline::handlers::accumulator::TurnAccumulator>>,
+        tts_tx: Option<std::sync::mpsc::Sender<crate::services::tts::actor::TtsCommand>>,
+        pending_synthesis_jobs: Arc<std::sync::atomic::AtomicU32>,
     },
     Shutdown,
 }
@@ -89,7 +93,7 @@ impl GenerationPolicy {
 
 /// Spawns the dedicated LLM generation worker thread and runs its command loop.
 pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
-    _app: tauri::AppHandle<R>,
+    app: tauri::AppHandle<R>,
     rx: std::sync::mpsc::Receiver<LlmCommand>,
     provider: Arc<dyn LlmProvider>,
     event_tx: std::sync::mpsc::Sender<VoxEvent>,
@@ -107,16 +111,80 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
                 request,
                 turn_id,
                 cancel,
+                accumulator,
+                tts_tx,
+                pending_synthesis_jobs,
             } => {
-                let res = runtime.block_on(provider.generate(request, turn_id, &cancel, &event_tx));
+                let (stream_tx, stream_rx) = std::sync::mpsc::channel::<super::LlmStreamEvent>();
+                let provider_clone = Arc::clone(&provider);
+                let cancel_clone = cancel.clone();
+                let gen_handle = runtime.spawn(async move {
+                    provider_clone
+                        .generate(*request, turn_id, &cancel_clone, &stream_tx)
+                        .await
+                });
 
-                if let Err(e) = res {
-                    log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
-                    if let Err(send_err) = event_tx.send(VoxEvent::Error {
-                        turn_id,
-                        message: e.to_string(),
-                    }) {
-                        log::warn!("[LLM Worker] Failed to dispatch error event: {}", send_err);
+                while let Ok(event) = stream_rx.recv() {
+                    match event {
+                        super::LlmStreamEvent::Token(token) => {
+                            let clauses = accumulator.lock().push_token(&token);
+                            if let Some(ref tx) = tts_tx {
+                                for clause in clauses {
+                                    pending_synthesis_jobs
+                                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                    if let Err(e) =
+                                        tx.send(crate::services::tts::actor::TtsCommand::Generate {
+                                            turn_id,
+                                            text: clause,
+                                        })
+                                    {
+                                        pending_synthesis_jobs
+                                            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                                        log::warn!(
+                                            "[LLM Worker] Failed to dispatch clause to TTS: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+
+                            let target = crate::pipeline::target_window(
+                                crate::core::state::InteractionOwner::Assistant,
+                            );
+                            if let Err(e) = crate::core::events::emit_ipc_to(
+                                &app,
+                                target,
+                                crate::core::events::IpcEvent::LlmToken(
+                                    crate::core::events::LlmTokenPayload { turn_id, token },
+                                ),
+                            ) {
+                                log::trace!("[LLM Worker] Failed to emit LlmToken IPC: {}", e);
+                            }
+                        }
+                        super::LlmStreamEvent::Finished => {
+                            break;
+                        }
+                    }
+                }
+
+                match runtime.block_on(gen_handle) {
+                    Ok(Ok(())) => {
+                        if let Err(e) = event_tx.send(VoxEvent::LlmFinished { turn_id }) {
+                            log::warn!("[LLM Worker] Failed to dispatch LlmFinished: {}", e);
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
+                        if let Err(send_err) = event_tx.send(VoxEvent::Error {
+                            turn_id,
+                            message: e.to_string(),
+                            source: "LlmActor".to_string(),
+                        }) {
+                            log::warn!("[LLM Worker] Failed to dispatch Error: {}", send_err);
+                        }
+                    }
+                    Err(join_err) => {
+                        log::error!("[LLM Worker] Provider task join error: {}", join_err);
                     }
                 }
             }

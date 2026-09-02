@@ -239,7 +239,9 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
                     conn.execute("COMMIT;", ()).await?;
                 }
                 Err(e) => {
-                    let _ = conn.execute("ROLLBACK;", ()).await;
+                    if let Err(rb_err) = conn.execute("ROLLBACK;", ()).await {
+                        log::warn!("[Persistence::Worker] Rollback failed: {}", rb_err);
+                    }
                     return Err(e.into());
                 }
             }

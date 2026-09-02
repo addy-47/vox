@@ -1,6 +1,5 @@
 use super::config::ConnectionConfig;
 use super::sse::SseDecoder;
-use crate::core::events::VoxEvent;
 use crate::services::llm::{GenerationRequest, LlmError, OutputConstraint};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -91,9 +90,14 @@ pub async fn stream_ollama(
     request: &GenerationRequest,
     turn_id: u32,
     cancel: &tokio_util::sync::CancellationToken,
-    tx: &mpsc::Sender<VoxEvent>,
+    tx: &mpsc::Sender<super::super::LlmStreamEvent>,
 ) -> Result<(), LlmError> {
     let url = resolve_url(&config.base_url);
+    log::debug!(
+        "[OllamaTransport] Starting stream (turn: {}) to {}",
+        turn_id,
+        url
+    );
     let req_body = build_request_body(config, request);
 
     let mut builder = client.post(&url).json(&req_body);
@@ -104,8 +108,8 @@ pub async fn stream_ollama(
             res.map_err(|e| LlmError::Transport(e.to_string()))?
         }
         _ = cancel.cancelled() => {
-            if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
-                log::warn!("[OllamaTransport] Failed to dispatch Cancelled: {}", e);
+            if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
+                log::warn!("[OllamaTransport] Failed to send Finished on cancel: {}", e);
             }
             return Ok(());
         }
@@ -128,8 +132,11 @@ pub async fn stream_ollama(
 
     loop {
         if cancel.is_cancelled() {
-            if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
-                log::warn!("[OllamaTransport] Failed to dispatch Cancelled: {}", e);
+            if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
+                log::warn!(
+                    "[OllamaTransport] Failed to send Finished on cancel during stream: {}",
+                    e
+                );
             }
             return Ok(());
         }
@@ -137,8 +144,11 @@ pub async fn stream_ollama(
         let chunk_opt = tokio::select! {
             chunk = byte_stream.next() => chunk,
             _ = cancel.cancelled() => {
-                if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
-                    log::warn!("[OllamaTransport] Cancel dispatch error: {}", e);
+                if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
+                    log::warn!(
+                        "[OllamaTransport] Failed to send Finished on select cancel: {}",
+                        e
+                    );
                 }
                 return Ok(());
             }
@@ -152,17 +162,16 @@ pub async fn stream_ollama(
                         if let Some(msg) = chunk.message {
                             if let Some(content) = msg.content {
                                 if !content.is_empty() {
-                                    if let Err(e) = tx.send(VoxEvent::LlmToken {
-                                        turn_id,
-                                        token: content,
-                                    }) {
+                                    if let Err(e) =
+                                        tx.send(super::super::LlmStreamEvent::Token(content))
+                                    {
                                         log::warn!("[OllamaTransport] Send token error: {}", e);
                                     }
                                 }
                             }
                         }
                         if chunk.done.unwrap_or(false) {
-                            if let Err(e) = tx.send(VoxEvent::LlmFinished { turn_id }) {
+                            if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
                                 log::warn!("[OllamaTransport] Send finished error: {}", e);
                             }
                             return Ok(());
@@ -180,17 +189,16 @@ pub async fn stream_ollama(
             if let Some(msg) = chunk.message {
                 if let Some(content) = msg.content {
                     if !content.is_empty() {
-                        let _ = tx.send(VoxEvent::LlmToken {
-                            turn_id,
-                            token: content,
-                        });
+                        if let Err(e) = tx.send(super::super::LlmStreamEvent::Token(content)) {
+                            log::warn!("[OllamaTransport] Send flush token error: {}", e);
+                        }
                     }
                 }
             }
         }
     }
 
-    if let Err(e) = tx.send(VoxEvent::LlmFinished { turn_id }) {
+    if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
         log::warn!("[OllamaTransport] Send final finished event error: {}", e);
     }
     Ok(())
