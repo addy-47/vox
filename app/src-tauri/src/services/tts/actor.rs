@@ -48,7 +48,10 @@ pub fn spawn_tts_worker(
                 );
 
                 if let Some(ref jobs) = handles.pending_synthesis_jobs {
-                    jobs.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                    let remaining = jobs.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                    if remaining <= 1 {
+                        handles.playback.flush_pre_roll();
+                    }
                 }
 
                 if let Err(e) = res {
