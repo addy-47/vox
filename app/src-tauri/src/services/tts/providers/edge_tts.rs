@@ -217,35 +217,44 @@ async fn send_ssml_request(
     Ok(())
 }
 
+use std::time::Duration;
+
 /// Receives and strips Microsoft binary audio framing headers, returning raw MP3 byte stream.
 async fn collect_mp3_payload(ws_stream: &mut EdgeWsStream, cancel: &Arc<AtomicBool>) -> Vec<u8> {
     let mut mp3_buffer = Vec::new();
 
-    while let Some(msg_res) = ws_stream.next().await {
-        if cancel.load(Ordering::Relaxed) {
-            break;
-        }
-        match &msg_res {
-            Ok(Message::Binary(bin)) => {
-                if bin.len() >= 2 {
-                    let header_len = u16::from_be_bytes([bin[0], bin[1]]) as usize;
-                    if bin.len() >= 2 + header_len {
-                        let payload = &bin[2 + header_len..];
-                        mp3_buffer.extend_from_slice(payload);
-                    }
-                }
-            }
-            Ok(Message::Text(txt)) => {
-                if txt.contains("Path:turn.end") {
-                    break;
-                }
-            }
-            Err(e) => {
-                log::warn!("[EdgeTTS] WebSocket receive error: {:?}", e);
+    let res = tokio::time::timeout(Duration::from_secs(30), async {
+        while let Some(msg_res) = ws_stream.next().await {
+            if cancel.load(Ordering::Relaxed) {
                 break;
             }
-            _ => {}
+            match &msg_res {
+                Ok(Message::Binary(bin)) => {
+                    if bin.len() >= 2 {
+                        let header_len = u16::from_be_bytes([bin[0], bin[1]]) as usize;
+                        if bin.len() >= 2 + header_len {
+                            let payload = &bin[2 + header_len..];
+                            mp3_buffer.extend_from_slice(payload);
+                        }
+                    }
+                }
+                Ok(Message::Text(txt)) => {
+                    if txt.contains("Path:turn.end") {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[EdgeTTS] WebSocket receive error: {:?}", e);
+                    break;
+                }
+                _ => {}
+            }
         }
+    })
+    .await;
+
+    if res.is_err() {
+        log::warn!("[EdgeTTS] Timed out waiting for audio frames from Edge TTS server");
     }
 
     mp3_buffer
