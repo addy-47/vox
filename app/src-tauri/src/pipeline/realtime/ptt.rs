@@ -153,6 +153,10 @@ pub fn on_interrupt<R: tauri::Runtime>(
         }
     }
 
+    state
+        .pipeline
+        .pending_synthesis_jobs
+        .store(0, Ordering::Relaxed);
     state.pipeline.renew_turn_token();
 
     let partial_assistant = ACCUMULATOR.lock().take_assistant_response();
@@ -382,6 +386,11 @@ fn on_transcript_final<R: tauri::Runtime>(
     let mut acc = ACCUMULATOR.lock();
     acc.clear();
     acc.set_user_transcript(processed_text);
+
+    state
+        .pipeline
+        .pending_synthesis_jobs
+        .store(1, Ordering::Relaxed);
 }
 
 /// Handles streamed token delta from the real-time server.
@@ -400,7 +409,13 @@ fn on_llm_token<R: tauri::Runtime>(turn_id: u32, token: String, app: &AppHandle<
 }
 
 /// Finalizes assistant turn response in memory and persists to SQLite database.
-fn on_llm_finished(turn_id: u32, state: &AppState) {
+fn on_llm_finished(turn_id: u32, state: &AppState, playback: &Arc<PlaybackEngine>) {
+    state
+        .pipeline
+        .pending_synthesis_jobs
+        .store(0, Ordering::Relaxed);
+    playback.flush_pre_roll();
+
     let full_text = ACCUMULATOR.lock().take_assistant_response();
     if !full_text.trim().is_empty() {
         state
@@ -475,6 +490,10 @@ fn on_error<R: tauri::Runtime>(
 
 /// Resets turn accumulator and transitions state machine to ready on user cancellation.
 fn on_cancelled<R: tauri::Runtime>(_turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+    state
+        .pipeline
+        .pending_synthesis_jobs
+        .store(0, Ordering::Relaxed);
     ACCUMULATOR.lock().clear();
     let ctx = RoutingContext::from_app_state(state);
     transition(InteractionState::Ready, &ctx, app, state);
@@ -493,7 +512,7 @@ pub fn handle_event<R: tauri::Runtime>(
             on_transcript_final(turn_id, text, app, state)
         }
         VoxEvent::LlmToken { turn_id, token } => on_llm_token(turn_id, token, app),
-        VoxEvent::LlmFinished { turn_id } => on_llm_finished(turn_id, state),
+        VoxEvent::LlmFinished { turn_id } => on_llm_finished(turn_id, state, playback),
         VoxEvent::PlaybackStarted { .. } => on_playback_started(app, state),
         VoxEvent::PlaybackFinished { .. } => on_playback_finished(app, state),
         VoxEvent::Interrupted { .. } => on_interrupt(app, state, playback),

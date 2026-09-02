@@ -2,8 +2,8 @@ use super::resampler::upsample_2x_into;
 use super::{
     AudioResampler, PLAYBACK_BUFFER_SAMPLES, PLAYBACK_CHANNELS, PLAYBACK_DEFAULT_VOLUME,
     PLAYBACK_ENERGY_EXPONENT, PLAYBACK_ENERGY_MULTIPLIER, PLAYBACK_PRODUCER_SCRATCH_CAPACITY,
-    PLAYBACK_SAMPLE_RATE, PLAYBACK_VOLUME_RAMP_STEP, PREROLL_THRESHOLD_SAMPLES,
-    SINC_CHUNK_SIZE_OUTPUT,
+    PLAYBACK_SAMPLE_RATE, PLAYBACK_VOLUME_RAMP_STEP, MODULAR_PREROLL_THRESHOLD_SAMPLES,
+    REALTIME_PREROLL_THRESHOLD_SAMPLES, SINC_CHUNK_SIZE_OUTPUT,
 };
 use crate::core::events::VoxEvent;
 use crate::core::state::InteractionState;
@@ -134,8 +134,13 @@ impl PlaybackEngine {
         }
     }
 
-    /// Ingest a 24kHz audio chunk from TTS, upsample 2x to 48kHz, and push to ring buffer.
+    /// Ingest a 24kHz audio chunk from TTS, upsample 2x to 48kHz, and push to ring buffer using default pre-roll.
     pub fn ingest_chunk(&self, chunk_24khz: &[f32]) {
+        self.ingest_chunk_with_threshold(chunk_24khz, MODULAR_PREROLL_THRESHOLD_SAMPLES);
+    }
+
+    /// Ingest a 24kHz audio chunk, upsample 2x to 48kHz, push to ring buffer, and check against custom pre-roll threshold.
+    pub fn ingest_chunk_with_threshold(&self, chunk_24khz: &[f32], preroll_threshold: usize) {
         if self.cancel_flag.load(Ordering::Relaxed) {
             return;
         }
@@ -155,7 +160,7 @@ impl PlaybackEngine {
         // Gate 1 (Start): Preroll cushion threshold check before dispatching PlaybackStarted
         if !self.turn_armed.load(Ordering::Relaxed) {
             let occupied = prod.occupied_len();
-            if occupied >= PREROLL_THRESHOLD_SAMPLES {
+            if occupied >= preroll_threshold {
                 self.turn_armed.store(true, Ordering::Relaxed);
                 let tid = self.current_turn_id.load(Ordering::Relaxed);
                 if let Err(e) = self
@@ -174,7 +179,7 @@ impl PlaybackEngine {
         }
     }
 
-    /// Ingest a raw PCM i16 chunk with arbitrary sample rate, normalize, resample to 24kHz if needed, and push.
+    /// Ingest a raw PCM i16 chunk with arbitrary sample rate, normalize, resample to 24kHz if needed, and push with realtime pre-roll cushion.
     pub fn ingest_chunk_i16(&self, chunk_i16: &[i16], resampler: &mut Option<AudioResampler>) {
         if self.cancel_flag.load(Ordering::Relaxed) || chunk_i16.is_empty() {
             return;
@@ -197,7 +202,37 @@ impl PlaybackEngine {
             f32_chunk.push(s as f32 / super::PCM_S16_SCALE);
         }
 
-        self.ingest_chunk(&f32_chunk);
+        self.ingest_chunk_with_threshold(&f32_chunk, REALTIME_PREROLL_THRESHOLD_SAMPLES);
+    }
+
+    /// Flushes pre-roll cushion on generation completion, immediately arming playback if unplayed samples exist.
+    pub fn flush_pre_roll(&self) {
+        if self.cancel_flag.load(Ordering::Relaxed) {
+            return;
+        }
+
+        if !self.turn_armed.load(Ordering::Relaxed) {
+            let occupied = self.producer.lock().0.occupied_len();
+            if occupied > 0 {
+                self.turn_armed.store(true, Ordering::Relaxed);
+                let tid = self.current_turn_id.load(Ordering::Relaxed);
+                if let Err(e) = self
+                    .event_tx
+                    .send(VoxEvent::PlaybackStarted { turn_id: tid })
+                {
+                    log::warn!(
+                        "[Audio::Playback] Failed to emit PlaybackStarted on flush_pre_roll: {}",
+                        e
+                    );
+                } else {
+                    log::info!(
+                        "[Audio::Playback] Pre-roll flushed ({} samples) — PlaybackStarted emitted (turn {})",
+                        occupied,
+                        tid
+                    );
+                }
+            }
+        }
     }
 
     /// Spawns an async receiver worker reading PCM i16 from a Tokio channel and streaming into PlaybackEngine.
