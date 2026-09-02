@@ -141,7 +141,7 @@ fn test_vad_ducking_resumes_after_playback() {
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while std::time::Instant::now() < deadline && !speech_started {
         if let Ok(event) = vox_event_rx.recv_timeout(Duration::from_millis(50)) {
-            if matches!(event, VoxEvent::SpeechStart { .. }) {
+            if matches!(event, VoxEvent::SpeechStart) {
                 speech_started = true;
             }
         }
@@ -205,7 +205,7 @@ fn test_vad_headset_mode_no_suppression_during_playback() {
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while std::time::Instant::now() < deadline && !speech_started {
         if let Ok(event) = vox_event_rx.recv_timeout(Duration::from_millis(50)) {
-            if matches!(event, VoxEvent::SpeechStart { .. }) {
+            if matches!(event, VoxEvent::SpeechStart) {
                 speech_started = true;
             }
         }

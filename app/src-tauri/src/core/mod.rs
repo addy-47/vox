@@ -6,5 +6,5 @@ pub mod events;
 pub mod settings;
 pub mod state;
 
-pub use engine::{start_audio_engine, stop_audio_engine};
+pub use engine::{start_audio_engine, stop_audio_engine, stop_audio_engine_sync};
 pub use error::*;

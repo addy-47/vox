@@ -208,8 +208,6 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         audio_suppressed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
         dropped_counter: Arc::clone(&state.telemetry.dropped_telemetry_events),
-        turn_token: Arc::clone(&state.pipeline.turn_token),
-        turn_epoch: Arc::clone(&state.pipeline.turn_epoch),
     };
 
     let vad_channels = VadActorChannels {
@@ -231,9 +229,32 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         })
         .map_err(|e| format!("[Core::Engine] Failed to spawn VAD thread: {}", e))?;
 
+    let app_handle = app.clone();
+    let partial_emitter = Some(Arc::new(move |turn_id: u32, text: String| {
+        let target =
+            crate::pipeline::target_window(crate::core::state::InteractionOwner::Assistant);
+        if let Err(e) = crate::core::events::emit_ipc_to(
+            &app_handle,
+            target,
+            crate::core::events::IpcEvent::TranscriptPartial(
+                crate::core::events::TranscriptPayload {
+                    turn_id,
+                    text,
+                    owner: Some(crate::core::state::InteractionOwner::Assistant),
+                },
+            ),
+        ) {
+            log::trace!(
+                "[Core::Engine] Failed to emit partial transcript IPC: {}",
+                e
+            );
+        }
+    }) as Arc<dyn Fn(u32, String) + Send + Sync>);
+
     let stt_channels = SttActorChannels {
         rx: stt_rx,
         pipeline_event_tx: Some(vox_event_tx.clone()),
+        partial_emitter,
     };
 
     let stt_handles = SttActorHandles {
@@ -255,8 +276,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     audio_stream.start().map_err(|e| e.to_string())?;
 
     let playback_engine = create_playback_engine(state, vox_event_tx.clone())?;
-    let orchestrator_handle =
-        spawn_router(app.clone(), vox_event_rx, Arc::clone(&playback_engine))?;
+    let orchestrator_handle = spawn_router(app.clone(), vox_event_rx)?;
 
     *lock = Some(VoxEngine {
         audio_stream,
@@ -265,7 +285,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         llm_tx: None,
         tts_tx: None,
         telemetry_tx: state.telemetry.telemetry_tx.clone(),
-        pipeline_tx: vox_event_tx,
+        pipeline_tx: vox_event_tx.clone(),
         playback_engine,
         stt_handle: Some(stt_handle),
         vad_handle: Some(vad_handle),
@@ -273,6 +293,8 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         tts_handle: None,
         orchestrator_handle: Some(orchestrator_handle),
     });
+
+    *state.event_tx.lock() = Some(vox_event_tx);
 
     log::info!("[Core::Engine] 3-Tier Audio Engine online");
     Ok(())
@@ -295,6 +317,7 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
         .engine_shutdown
         .store(true, Ordering::Relaxed);
     state.pipeline.set_state(InteractionState::Idle);
+    *state.event_tx.lock() = None;
 
     if let Err(e) = engine.pipeline_tx.send(VoxEvent::Shutdown) {
         log::warn!("[Core::Engine] Failed to send Shutdown to pipeline: {}", e);
@@ -362,3 +385,113 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
     log::info!("[Core::Engine] Audio engine resources cleanly released");
     Ok(())
 }
+
+/// Synchronous wrapper for stop_audio_engine executed via the global Tokio runtime handle.
+pub fn stop_audio_engine_sync(state: &AppState) -> Result<(), String> {
+    let handle = crate::persistence::db::get_tokio_handle();
+    handle.block_on(stop_audio_engine(state))
+}
+
+/// Initializes and warms up the LLM and TTS actor threads asynchronously if not already loaded.
+pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
+    app: &AppHandle<R>,
+    state: &AppState,
+) -> Result<(), String> {
+    let (llm_path, tts_path, settings) = {
+        let s = state
+            .settings
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        let models_dir = crate::utils::paths::get().models.clone();
+        let llm = models_dir
+            .join(crate::services::llm::QWEN_MODEL_DIR)
+            .join(crate::services::llm::QWEN_MODEL_FILE);
+        let tts = models_dir.join(crate::services::tts::SUPERTONIC_MODEL_DIR);
+        (llm, tts, s)
+    };
+
+    let voice_id = match settings.tts.active {
+        crate::core::settings::TtsActiveProvider::Chatterbox => {
+            settings.tts.chatterbox.voice_id.as_deref()
+        }
+        crate::core::settings::TtsActiveProvider::ChatterboxRemote => {
+            settings.tts.chatterbox_remote.voice_id.as_deref()
+        }
+        _ => None,
+    };
+    let reference_audio = crate::services::tts::resolve_reference_audio(voice_id).await;
+
+    // Check if workers are already active under a short lock
+    let (needs_llm, needs_tts, playback_engine, pipeline_tx) = {
+        let lock = state.engine.lock().await;
+        let engine = lock.as_ref().ok_or("Audio engine not ready")?;
+        (
+            engine.llm_tx.is_none(),
+            engine.tts_tx.is_none(),
+            Arc::clone(&engine.playback_engine),
+            engine.pipeline_tx.clone(),
+        )
+    };
+
+    let mut new_llm_tx = None;
+    let mut new_llm_handle = None;
+    if needs_llm {
+        crate::services::llm::actor::warm_up_llm(
+            app,
+            crate::services::llm::actor::LlmWarmUpHandles {
+                llm_tx: &mut new_llm_tx,
+                llm_handle: &mut new_llm_handle,
+                llm_provider_cache: Some(Arc::clone(&state.llm_provider)),
+            },
+            &settings,
+            &llm_path,
+            pipeline_tx.clone(),
+        )?;
+    }
+
+    let mut new_tts_tx = None;
+    let mut new_tts_handle = None;
+    if needs_tts {
+        crate::services::tts::actor::warm_up_tts(
+            crate::services::tts::actor::TtsWarmUpHandles {
+                tts_tx: &mut new_tts_tx,
+                tts_handle: &mut new_tts_handle,
+                cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
+                playback_engine,
+                pending_synthesis_jobs: Some(Arc::clone(&state.pipeline.pending_synthesis_jobs)),
+                telemetry_rtf: Some(Arc::clone(&state.telemetry.latest_tts_rtf)),
+            },
+            &settings,
+            &tts_path,
+            reference_audio.as_deref(),
+            pipeline_tx,
+        )?;
+    }
+
+    if needs_llm || needs_tts {
+        let mut lock = state.engine.lock().await;
+        if let Some(ref mut engine) = *lock {
+            if needs_llm && engine.llm_tx.is_none() {
+                engine.llm_tx = new_llm_tx;
+                engine.llm_handle = new_llm_handle;
+            }
+            if needs_tts && engine.tts_tx.is_none() {
+                engine.tts_tx = new_tts_tx;
+                engine.tts_handle = new_tts_handle;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Synchronous wrapper for ensure_modular_workers to be called safely on the Router OS thread.
+pub fn ensure_modular_workers_sync<R: tauri::Runtime + 'static>(
+    app: &AppHandle<R>,
+    state: &AppState,
+) -> Result<(), String> {
+    let handle = crate::persistence::db::get_tokio_handle();
+    handle.block_on(ensure_modular_workers(app, state))
+}
+

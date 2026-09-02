@@ -1,6 +1,5 @@
 use super::config::ConnectionConfig;
 use super::sse::SseDecoder;
-use crate::core::events::VoxEvent;
 use crate::services::llm::{GenerationRequest, LlmError, OutputConstraint};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -123,9 +122,14 @@ pub async fn stream_chat_completions(
     request: &GenerationRequest,
     turn_id: u32,
     cancel: &tokio_util::sync::CancellationToken,
-    tx: &mpsc::Sender<VoxEvent>,
+    tx: &mpsc::Sender<super::super::LlmStreamEvent>,
 ) -> Result<(), LlmError> {
     let url = resolve_url(&config.base_url);
+    log::debug!(
+        "[ChatCompletions] Starting stream (turn: {}) to {}",
+        turn_id,
+        url
+    );
     let req_body = build_request_body(config, request);
 
     let mut builder = client.post(&url).json(&req_body);
@@ -136,8 +140,8 @@ pub async fn stream_chat_completions(
             res.map_err(|e| LlmError::Transport(e.to_string()))?
         }
         _ = cancel.cancelled() => {
-            if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
-                log::warn!("[ChatCompletions] Failed to dispatch Cancelled: {}", e);
+            if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
+                log::warn!("[ChatCompletions] Failed to send Finished on cancel: {}", e);
             }
             return Ok(());
         }
@@ -160,8 +164,11 @@ pub async fn stream_chat_completions(
 
     loop {
         if cancel.is_cancelled() {
-            if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
-                log::warn!("[ChatCompletions] Failed to dispatch Cancelled: {}", e);
+            if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
+                log::warn!(
+                    "[ChatCompletions] Failed to send Finished on cancel during stream: {}",
+                    e
+                );
             }
             return Ok(());
         }
@@ -169,8 +176,11 @@ pub async fn stream_chat_completions(
         let chunk_opt = tokio::select! {
             chunk = byte_stream.next() => chunk,
             _ = cancel.cancelled() => {
-                if let Err(e) = tx.send(VoxEvent::Cancelled { turn_id }) {
-                    log::warn!("[ChatCompletions] Cancel dispatch error: {}", e);
+                if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
+                    log::warn!(
+                        "[ChatCompletions] Failed to send Finished on select cancel: {}",
+                        e
+                    );
                 }
                 return Ok(());
             }
@@ -181,7 +191,7 @@ pub async fn stream_chat_completions(
                 let lines = decoder.decode_chunk(&bytes);
                 for line in lines {
                     if line == "[DONE]" {
-                        if let Err(e) = tx.send(VoxEvent::LlmFinished { turn_id }) {
+                        if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
                             log::warn!("[ChatCompletions] Send finished event error: {}", e);
                         }
                         return Ok(());
@@ -191,10 +201,9 @@ pub async fn stream_chat_completions(
                         if let Some(choice) = chunk.choices.first() {
                             if let Some(token) = &choice.delta.content {
                                 if !token.is_empty() {
-                                    if let Err(e) = tx.send(VoxEvent::LlmToken {
-                                        turn_id,
-                                        token: token.clone(),
-                                    }) {
+                                    if let Err(e) =
+                                        tx.send(super::super::LlmStreamEvent::Token(token.clone()))
+                                    {
                                         log::warn!("[ChatCompletions] Send token error: {}", e);
                                     }
                                 }
@@ -214,10 +223,11 @@ pub async fn stream_chat_completions(
                 if let Some(choice) = chunk.choices.first() {
                     if let Some(token) = &choice.delta.content {
                         if !token.is_empty() {
-                            let _ = tx.send(VoxEvent::LlmToken {
-                                turn_id,
-                                token: token.clone(),
-                            });
+                            if let Err(e) =
+                                tx.send(super::super::LlmStreamEvent::Token(token.clone()))
+                            {
+                                log::warn!("[ChatCompletions] Send flush token error: {}", e);
+                            }
                         }
                     }
                 }
@@ -225,7 +235,7 @@ pub async fn stream_chat_completions(
         }
     }
 
-    if let Err(e) = tx.send(VoxEvent::LlmFinished { turn_id }) {
+    if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
         log::warn!("[ChatCompletions] Send final finished event error: {}", e);
     }
     Ok(())

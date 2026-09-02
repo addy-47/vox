@@ -31,11 +31,6 @@ impl GeminiSessionState {
             id
         }
     }
-
-    pub(super) fn peek_or_current_turn_id(&self) -> u32 {
-        self.server_turn_cursor
-            .unwrap_or_else(|| self.turn_id.load(Ordering::Relaxed))
-    }
 }
 
 pub(crate) struct GeminiDriver {
@@ -194,12 +189,11 @@ fn dispatch_server_message(
 
     let interrupt_active = {
         let mut s = state.lock();
-        let tid = s.peek_or_current_turn_id();
         if is_interrupted {
             s.interrupt_active = false;
             s.server_turn_cursor = None;
-            if let Err(e) = event_tx.try_send(RealtimeProviderEvent::Interrupted { turn_id: tid }) {
-                log::warn!("[GeminiLive] Failed to forward Interrupted: {:?}", e);
+            if let Err(e) = event_tx.try_send(RealtimeProviderEvent::SpeechStart) {
+                log::warn!("[GeminiLive] Failed to forward SpeechStart: {:?}", e);
             }
         }
         s.interrupt_active
@@ -207,6 +201,9 @@ fn dispatch_server_message(
 
     if let Some(model_turn) = server_content.get("modelTurn") {
         if !interrupt_active {
+            if let Err(e) = event_tx.try_send(RealtimeProviderEvent::SpeechEnd) {
+                log::trace!("[GeminiLive] SpeechEnd forwarded on modelTurn: {:?}", e);
+            }
             let turn_id = state.lock().current_or_new_turn_id();
             if let Some(parts) = model_turn.get("parts").and_then(|p| p.as_array()) {
                 for part in parts {

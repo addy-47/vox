@@ -6,7 +6,6 @@ pub mod sse;
 
 pub use config::{AuthScheme, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType};
 
-use crate::core::events::VoxEvent;
 use crate::core::settings::LlmModelInfo;
 use crate::services::llm::{
     GenerationRequest, LlmError, ProviderCapabilities, ProviderKind, Support,
@@ -113,7 +112,7 @@ impl super::LlmProvider for RemoteTransport {
         request: GenerationRequest,
         turn_id: u32,
         cancel: &'a tokio_util::sync::CancellationToken,
-        tx: &'a mpsc::Sender<VoxEvent>,
+        tx: &'a mpsc::Sender<super::LlmStreamEvent>,
     ) -> BoxFuture<'a, Result<(), LlmError>> {
         Box::pin(async move {
             let mut cfg = self.config.clone();

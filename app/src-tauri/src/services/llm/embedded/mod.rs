@@ -5,7 +5,6 @@ pub mod worker;
 pub use family::ModelFamily;
 pub use worker::LlmWorker;
 
-use crate::core::events::VoxEvent;
 use crate::core::settings::LlmModelInfo;
 use crate::services::harness::ConversationContext;
 use crate::services::llm::{
@@ -89,7 +88,7 @@ impl crate::services::llm::LlmProvider for EmbeddedProvider {
         request: GenerationRequest,
         turn_id: u32,
         cancel: &'a tokio_util::sync::CancellationToken,
-        tx: &'a mpsc::Sender<VoxEvent>,
+        tx: &'a mpsc::Sender<crate::services::llm::LlmStreamEvent>,
     ) -> BoxFuture<'a, Result<(), LlmError>> {
         Box::pin(async move {
             let conv_ctx = ConversationContext {

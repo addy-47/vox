@@ -12,6 +12,7 @@ mod common;
 
 use common::harness::get_test_app_handle;
 use common::paths::get_qwen_model_path;
+use std::sync::Arc;
 use std::time::Duration;
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::VoxSettings;
@@ -80,49 +81,53 @@ fn test_llm_generation_and_cancel_matrix() {
             purpose: GenerationPurpose::Conversation,
         };
 
+        let accumulator = Arc::new(parking_lot::Mutex::new(
+            vox_lib::pipeline::handlers::accumulator::TurnAccumulator::new(),
+        ));
+        let pending_jobs = Arc::new(std::sync::atomic::AtomicU32::new(0));
+
         let cancel_token = tokio_util::sync::CancellationToken::new();
         llm_tx
             .send(LlmCommand::Generate {
-                request,
+                request: Box::new(request),
                 turn_id: 1,
                 cancel: cancel_token,
+                accumulator: Arc::clone(&accumulator),
+                tts_tx: None,
+                pending_synthesis_jobs: Arc::clone(&pending_jobs),
             })
             .expect("Failed to send LlmCommand");
 
-        let mut tokens_received = Vec::new();
         let mut finished = false;
         let deadline = std::time::Instant::now() + Duration::from_secs(20);
 
         while std::time::Instant::now() < deadline && !finished {
-            if let Ok(event) = event_rx.recv_timeout(Duration::from_millis(100)) {
-                match event {
-                    VoxEvent::LlmToken { token, turn_id, .. } => {
-                        assert_eq!(turn_id, 1);
-                        tokens_received.push(token);
-                    }
-                    VoxEvent::LlmFinished { turn_id } => {
-                        assert_eq!(turn_id, 1);
-                        finished = true;
-                    }
-                    _ => {}
-                }
+            if let Ok(VoxEvent::LlmFinished { turn_id }) =
+                event_rx.recv_timeout(Duration::from_millis(100))
+            {
+                assert_eq!(turn_id, 1);
+                finished = true;
             }
         }
 
-        let full_response = tokens_received.concat();
+        let full_response = accumulator.lock().assistant_response.clone();
         println!("\n=== [LLM Response Matrix] ===");
-        println!("Tokens Received: {}", tokens_received.len());
         println!("Response Text  : {}", full_response.trim());
 
         assert!(
-            !tokens_received.is_empty(),
-            "LLM actor must emit at least one LlmToken"
+            !full_response.trim().is_empty(),
+            "LLM actor must accumulate assistant response text"
         );
         assert!(finished, "LLM actor must emit VoxEvent::LlmFinished");
     }
 
     // 2. Negative Invariant: Pre-cancelled request halts immediately
     {
+        let accumulator = Arc::new(parking_lot::Mutex::new(
+            vox_lib::pipeline::handlers::accumulator::TurnAccumulator::new(),
+        ));
+        let pending_jobs = Arc::new(std::sync::atomic::AtomicU32::new(0));
+
         let cancel_token = tokio_util::sync::CancellationToken::new();
         cancel_token.cancel();
         let request = GenerationRequest {
@@ -144,28 +149,31 @@ fn test_llm_generation_and_cancel_matrix() {
 
         llm_tx
             .send(LlmCommand::Generate {
-                request,
+                request: Box::new(request),
                 turn_id: 2,
                 cancel: cancel_token,
+                accumulator: Arc::clone(&accumulator),
+                tts_tx: None,
+                pending_synthesis_jobs: Arc::clone(&pending_jobs),
             })
             .expect("Failed to send LlmCommand");
 
-        let mut tokens_received = 0;
         let deadline = std::time::Instant::now() + Duration::from_secs(3);
-
         while std::time::Instant::now() < deadline {
-            if let Ok(VoxEvent::LlmToken { .. }) = event_rx.recv_timeout(Duration::from_millis(50))
+            if let Ok(VoxEvent::LlmFinished { .. }) =
+                event_rx.recv_timeout(Duration::from_millis(50))
             {
-                tokens_received += 1;
+                break;
             }
         }
 
+        let emitted_len = accumulator.lock().assistant_response.len();
         println!(
-            "\n=== [LLM Cancel Guard] Tokens Emitted: {} ===",
-            tokens_received
+            "\n=== [LLM Cancel Guard] Characters Accumulated: {} ===",
+            emitted_len
         );
         assert!(
-            tokens_received <= 1,
+            emitted_len <= 15,
             "Cancelled LLM generation must halt token generation immediately"
         );
     }

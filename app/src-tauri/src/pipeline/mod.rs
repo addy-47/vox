@@ -1,17 +1,18 @@
-pub use crate::core::constants::{WINDOW_MAIN, WINDOW_TOAST, WINDOW_TRAY, WINDOW_WIZARD};
-
-pub const ROUTER_THREAD_NAME: &str = "vox-router";
-
 pub mod dictation;
-pub mod modular;
-pub mod realtime;
+pub mod handlers;
 pub mod router;
 
+pub use crate::core::constants::{WINDOW_MAIN, WINDOW_TOAST, WINDOW_TRAY, WINDOW_WIZARD};
 use crate::core::events::{emit_ipc_to, IpcEvent};
 use crate::core::settings::{DictationInteractionMode, InteractionMode, PipelineMode};
 use crate::core::state::{AppState, InteractionOwner, InteractionState};
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 use tauri::AppHandle;
+
+pub const ROUTER_THREAD_NAME: &str = "vox-router";
+pub const INACTIVITY_READY_TIMEOUT: Duration = Duration::from_secs(420);
+pub const INACTIVITY_PAUSED_TIMEOUT: Duration = Duration::from_secs(300); 
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RoutingContext {
@@ -107,10 +108,16 @@ pub async fn init_new_session(state: &AppState, base_prompt: &str) {
     }
 }
 
-/// Spawns an idle observer for the assistant pipeline that auto-pauses the session
-/// after 7 continuous minutes in the Ready state.
+/// Synchronous wrapper for init_new_session executed via the global Tokio runtime handle.
+pub fn init_new_session_sync(state: &AppState, base_prompt: &str) {
+    let handle = crate::persistence::db::get_tokio_handle();
+    handle.block_on(init_new_session(state, base_prompt));
+}
+
+/// Spawns an idle observer for the assistant pipeline that auto-pauses after 7 minutes of Ready
+/// and reclaims model RAM after 5 minutes of sustained Paused state.
 pub fn spawn_idle_monitor<R: tauri::Runtime>(
-    app: tauri::AppHandle<R>,
+    _app: tauri::AppHandle<R>,
     state: std::sync::Arc<AppState>,
 ) {
     tauri::async_runtime::spawn(async move {
@@ -126,21 +133,38 @@ pub fn spawn_idle_monitor<R: tauri::Runtime>(
 
             if current == crate::core::state::InteractionState::Ready {
                 tokio::select! {
-                    _ = tokio::time::sleep(crate::services::realtime::REALTIME_IDLE_TIMEOUT) => {
+                    _ = tokio::time::sleep(INACTIVITY_READY_TIMEOUT) => {
                         if state.pipeline.state() == crate::core::state::InteractionState::Ready {
                             log::info!("[Pipeline] Auto-pausing session after 7 minutes of idle Ready state.");
-                            let ctx = RoutingContext::from_app_state(&state);
-                            match (&ctx.pipeline_mode, &ctx.interaction_mode) {
-                                (PipelineMode::Modular, InteractionMode::Passive) => {
-                                    let _ = crate::pipeline::modular::passive::pause_session(&app, &state).await;
-                                }
-                                (PipelineMode::Realtime, InteractionMode::Passive) => {
-                                    let _ = crate::pipeline::realtime::passive::pause_session(&app, &state).await;
-                                }
-                                _ => {
-                                    transition(crate::core::state::InteractionState::Paused, &ctx, &app, &state);
+                            let event_tx_opt = state.event_tx.lock().clone();
+                            if let Some(tx) = event_tx_opt {
+                                if let Err(e) = tx.send(crate::core::events::VoxEvent::PauseSession) {
+                                    log::warn!("[Pipeline] Failed to send PauseSession from idle monitor: {}", e);
                                 }
                             }
+                        }
+                    }
+                    res = state_rx.changed() => {
+                        if res.is_err() {
+                            break;
+                        }
+                    }
+                }
+            } else if current == crate::core::state::InteractionState::Paused {
+                tokio::select! {
+                    _ = tokio::time::sleep(INACTIVITY_PAUSED_TIMEOUT) => {
+                        if state.pipeline.state() == crate::core::state::InteractionState::Paused {
+                            log::info!("[Pipeline] Offloading idle models after 5 minutes of sustained Paused state.");
+                            let mut lock = state.engine.lock().await;
+                            if let Some(ref mut engine) = *lock {
+                                crate::services::llm::actor::cool_down_llm(
+                                    &mut engine.llm_tx,
+                                    Some(&state.llm_provider),
+                                );
+                                crate::services::tts::actor::cool_down_tts(&mut engine.tts_tx);
+                            }
+                            drop(lock);
+                            crate::services::memory::trim_heap("secondary_paused_offload");
                         }
                     }
                     res = state_rx.changed() => {

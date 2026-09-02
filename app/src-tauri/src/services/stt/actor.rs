@@ -17,6 +17,7 @@ pub enum SttCommand {
 pub struct SttActorChannels {
     pub rx: std::sync::mpsc::Receiver<SttCommand>,
     pub pipeline_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
+    pub partial_emitter: Option<Arc<dyn Fn(u32, String) + Send + Sync>>,
 }
 
 pub struct SttActorHandles {
@@ -34,6 +35,7 @@ struct WorkerState {
 struct WorkerContext<'a> {
     pub provider: &'a dyn SttProvider,
     pub pipeline_event_tx: &'a Option<std::sync::mpsc::Sender<VoxEvent>>,
+    pub partial_emitter: &'a Option<Arc<dyn Fn(u32, String) + Send + Sync>>,
     pub cancel_flag: &'a Arc<AtomicBool>,
 }
 
@@ -67,16 +69,11 @@ fn coalesce_partials(
     }
 }
 
-/// Dispatches a partial transcript event to the pipeline event channel if changed.
+/// Dispatches a partial transcript event directly to UI via partial_emitter if changed.
 fn emit_partial_event(ctx: &WorkerContext<'_>, tid: u32, text: String, state: &mut WorkerState) {
     if !text.is_empty() && text != state.last_transcript {
-        if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
-            if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptPartial {
-                turn_id: tid,
-                text: text.clone(),
-            }) {
-                log::warn!("[STT] Error dispatching partial transcript: {:?}", e);
-            }
+        if let Some(ref emitter) = ctx.partial_emitter {
+            emitter(tid, text.clone());
         }
         state.last_transcript = text;
     }
@@ -237,6 +234,7 @@ fn run_worker_loop(
     let ctx = WorkerContext {
         provider,
         pipeline_event_tx: &channels.pipeline_event_tx,
+        partial_emitter: &channels.partial_emitter,
         cancel_flag: &handles.cancel_flag,
     };
 

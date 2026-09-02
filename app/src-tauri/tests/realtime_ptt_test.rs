@@ -25,7 +25,7 @@ use common::paths::get_asset_path;
 
 use vox_lib::core::settings::{AudioOutputMode, InteractionMode, RealtimeProviderKind};
 use vox_lib::core::state::InteractionState;
-use vox_lib::pipeline::realtime::ptt::{ptt_cancel, ptt_start, ptt_stop};
+use vox_lib::pipeline::handlers::ptt::{ptt_cancel, ptt_start, ptt_stop};
 use vox_lib::services::realtime::{
     RealtimeActor, RealtimeAudioConfig, RealtimeProviderEvent, RealtimeSession,
     RealtimeVoiceProvider,
@@ -115,9 +115,10 @@ fn create_mock_actor(
 
     let (dummy_tx, _) = std::sync::mpsc::channel();
     let (playback, _consumer) = common::harness::create_mock_playback_engine();
+    let app = common::harness::get_test_app_handle();
 
     actor
-        .start(InteractionMode::PTT, playback, dummy_tx)
+        .start(InteractionMode::PTT, playback, dummy_tx, app)
         .expect("Failed to start mock RealtimeActor");
 
     actor

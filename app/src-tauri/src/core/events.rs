@@ -9,24 +9,20 @@ pub use crate::persistence::events::{MemoryWorkerEvent, PersistenceEvent};
 
 #[derive(Debug, Clone)]
 pub enum VoxEvent {
-    SpeechStart {
-        turn_id: u32,
+    SessionStart {
+        owner: InteractionOwner,
     },
-    SpeechEnd {
-        turn_id: u32,
-        audio_buffer: Vec<f32>,
-    },
-    TranscriptPartial {
-        turn_id: u32,
-        text: String,
-    },
+    PauseSession,
+    ResumeSession,
+    EndSession,
+    PttStart,
+    PttStop,
+    PttCancel,
+    SpeechStart,
+    SpeechEnd,
     TranscriptFinal {
         turn_id: u32,
         text: String,
-    },
-    LlmToken {
-        turn_id: u32,
-        token: String,
     },
     LlmFinished {
         turn_id: u32,
@@ -40,12 +36,10 @@ pub enum VoxEvent {
     Cancelled {
         turn_id: u32,
     },
-    Interrupted {
-        turn_id: u32,
-    },
     Error {
         turn_id: u32,
         message: String,
+        source: String,
     },
     Shutdown,
 }

@@ -1,5 +1,4 @@
 use super::prompt::build_compaction_request;
-use crate::core::events::VoxEvent;
 use crate::services::harness::buffer::ChatMessage;
 use crate::services::llm::LlmProvider;
 use anyhow::{anyhow, Result};
@@ -50,16 +49,15 @@ async fn execute_compaction_attempt(
             }
             while let Ok(event) = async_rx.try_recv() {
                 match event {
-                    VoxEvent::LlmToken { token, .. } => {
+                    crate::services::llm::LlmStreamEvent::Token(token) => {
                         summary_content.push_str(&token);
                     }
-                    VoxEvent::LlmFinished { .. } => {
+                    crate::services::llm::LlmStreamEvent::Finished => {
                         log::info!(
                             "[MemoryCompaction] LlmFinished received; full summary received."
                         );
                         break;
                     }
-                    _ => {}
                 }
             }
         }
