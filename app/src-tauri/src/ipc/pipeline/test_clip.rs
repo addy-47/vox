@@ -143,7 +143,7 @@ pub async fn test_clip(
     };
 
     let turn_id = state.pipeline.next_turn_id();
-    if let Err(e) = engine.pipeline_tx.send(VoxEvent::SpeechStart { turn_id }) {
+    if let Err(e) = engine.pipeline_tx.send(VoxEvent::SpeechStart) {
         log::warn!("[TestClip] Failed to send SpeechStart event: {}", e);
     }
 

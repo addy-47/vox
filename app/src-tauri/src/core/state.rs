@@ -296,6 +296,10 @@ pub struct AppState {
     pub conversation_manager:
         Arc<parking_lot::Mutex<crate::services::harness::ConversationManager>>,
     pub llm_provider: Arc<parking_lot::RwLock<Option<Arc<dyn crate::services::llm::LlmProvider>>>>,
+    pub event_tx:
+        parking_lot::Mutex<Option<std::sync::mpsc::Sender<crate::core::events::VoxEvent>>>,
+    pub pipeline_accumulator:
+        Arc<parking_lot::Mutex<crate::pipeline::handlers::accumulator::TurnAccumulator>>,
 }
 
 /// Telemetry handles and health atomics bundled for AppState and monitoring workers.
@@ -372,6 +376,10 @@ impl AppState {
                 crate::services::harness::ConversationManager::new(),
             )),
             llm_provider: Arc::new(parking_lot::RwLock::new(None)),
+            event_tx: parking_lot::Mutex::new(None),
+            pipeline_accumulator: Arc::new(parking_lot::Mutex::new(
+                crate::pipeline::handlers::accumulator::TurnAccumulator::new(),
+            )),
         }
     }
 }

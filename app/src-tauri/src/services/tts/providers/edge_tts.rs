@@ -109,6 +109,7 @@ async fn connect_edge_websocket(event_tx: &Sender<VoxEvent>, turn_id: u32) -> Op
                 if let Err(send_err) = event_tx.send(VoxEvent::Error {
                     turn_id,
                     message: format!("Edge TTS URL parse error: {}", e),
+                    source: "EdgeTts".to_string(),
                 }) {
                     log::warn!("[EdgeTTS] Failed to emit error event: {}", send_err);
                 }
@@ -151,6 +152,7 @@ async fn connect_edge_websocket(event_tx: &Sender<VoxEvent>, turn_id: u32) -> Op
                     if let Err(send_err) = event_tx.send(VoxEvent::Error {
                         turn_id,
                         message: format!("Edge TTS WebSocket connect error (attempt 3/3): {:?}", e),
+                        source: "EdgeTts".to_string(),
                     }) {
                         log::warn!("[EdgeTTS] Failed to emit error event: {}", send_err);
                     }
@@ -180,6 +182,7 @@ async fn send_ssml_request(
         if let Err(send_err) = event_tx.send(VoxEvent::Error {
             turn_id,
             message: format!("Edge TTS config send error: {}", e),
+            source: "EdgeTts".to_string(),
         }) {
             log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
         }
@@ -204,6 +207,7 @@ async fn send_ssml_request(
         if let Err(send_err) = event_tx.send(VoxEvent::Error {
             turn_id,
             message: format!("Edge TTS SSML send error: {}", e),
+            source: "EdgeTts".to_string(),
         }) {
             log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
         }
@@ -340,6 +344,7 @@ impl TtsProvider for EdgeTtsProvider {
                         if let Err(send_err) = event_tx.send(VoxEvent::Error {
                             turn_id,
                             message: format!("Edge TTS MP3 decode error: {}", e),
+                            source: "EdgeTts".to_string(),
                         }) {
                             log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
                         }

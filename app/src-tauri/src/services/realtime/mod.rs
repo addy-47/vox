@@ -1,11 +1,13 @@
 pub mod actor;
 pub mod audio_bridge;
 pub mod providers;
+pub mod session;
 pub mod transport;
 
 pub use crate::core::settings::RealtimeProviderKind;
 pub use actor::RealtimeActor;
 use anyhow::Result;
+pub use session::{create_realtime_provider, purge_session_cache};
 use std::time::Duration;
 
 pub const DEFAULT_INPUT_SAMPLE_RATE: u32 = 16000;
@@ -26,7 +28,6 @@ pub const WS_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(4);
 pub const MAX_RECONNECT_ATTEMPTS: usize = 3;
 pub const RECONNECT_BASE_DELAY_SECS: u64 = 1;
 pub const RECONNECT_FACTOR_SECS: u64 = 2;
-pub const REALTIME_IDLE_TIMEOUT: Duration = Duration::from_secs(420);
 pub const PTT_INTERRUPT_GAP: Duration = Duration::from_millis(50);
 pub const SESSION_CACHE_TTL_MS: u64 = 2 * 60 * 60 * 1000;
 
@@ -43,11 +44,12 @@ pub const SESSION_CACHE_FILENAME: &str = "realtime_session.json";
 #[derive(Debug)]
 pub enum RealtimeProviderEvent {
     AudioChunk(Vec<i16>),
+    SpeechStart,
+    SpeechEnd,
     TranscriptPartial { turn_id: u32, text: String },
     TranscriptFinal { turn_id: u32, text: String },
     LlmToken { turn_id: u32, token: String },
     LlmFinished { turn_id: u32 },
-    Interrupted { turn_id: u32 },
     Error { turn_id: u32, message: String },
     SessionResumptionHandle { handle: String, model: String },
 }
