@@ -143,7 +143,8 @@ pub async fn handle_hotkey_release<R: tauri::Runtime>(
 }
 
 /// Handles user speech onset for background passive dictation.
-fn on_speech_start<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+fn on_speech_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
+    let turn_id = state.pipeline.peek_turn_id();
     state
         .pipeline
         .set_dictation_state(DictationState::Recording);
@@ -151,40 +152,12 @@ fn on_speech_start<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &
 }
 
 /// Handles user speech completion for background passive dictation.
-fn on_speech_end<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &AppState) {
+fn on_speech_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
+    let turn_id = state.pipeline.peek_turn_id();
     state
         .pipeline
         .set_dictation_state(DictationState::Transcribing);
     emit_dictation_state(app, DictationState::Transcribing, turn_id);
-}
-
-/// Handles interim partial speech recognition results for dictation.
-fn on_transcript_partial<R: tauri::Runtime>(
-    turn_id: u32,
-    text: String,
-    app: &AppHandle<R>,
-    state: &AppState,
-) {
-    let transliterate_enabled = state
-        .settings
-        .read()
-        .unwrap_or_else(|p| p.into_inner())
-        .stt
-        .transliterate_enabled;
-    let processed_text =
-        crate::services::translit::transliterate_if_hi(&text, false, transliterate_enabled);
-
-    if let Err(e) = emit_ipc_to(
-        app,
-        WINDOW_TRAY,
-        IpcEvent::TranscriptPartial(TranscriptPayload {
-            turn_id,
-            text: processed_text,
-            owner: Some(InteractionOwner::Dictation),
-        }),
-    ) {
-        log::warn!("[Dictation] Failed to emit transcript_partial: {}", e);
-    }
 }
 
 /// Routes finalized transcript directly to OS input simulation without invoking LLM or TTS.
@@ -287,16 +260,15 @@ fn on_cancelled<R: tauri::Runtime>(turn_id: u32, app: &AppHandle<R>, state: &App
 /// Main event dispatcher for the unified dictation domain.
 pub fn handle_event<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, event: VoxEvent) {
     match event {
-        VoxEvent::SpeechStart { turn_id } => on_speech_start(turn_id, app, state),
-        VoxEvent::SpeechEnd { turn_id, .. } => on_speech_end(turn_id, app, state),
-        VoxEvent::TranscriptPartial { turn_id, text } => {
-            on_transcript_partial(turn_id, text, app, state)
-        }
+        VoxEvent::SpeechStart => on_speech_start(app, state),
+        VoxEvent::SpeechEnd => on_speech_end(app, state),
         VoxEvent::TranscriptFinal { turn_id, text } => {
             on_transcript_final(turn_id, text, app, state)
         }
         VoxEvent::Cancelled { turn_id } => on_cancelled(turn_id, app, state),
-        VoxEvent::Error { turn_id, message } => on_error(turn_id, message, app, state),
+        VoxEvent::Error {
+            turn_id, message, ..
+        } => on_error(turn_id, message, app, state),
         _ => {}
     }
 }

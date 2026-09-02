@@ -80,8 +80,8 @@ fn test_passive_streaming_pipeline() {
         while Instant::now() < deadline && (!speech_started || !speech_ended) {
             if let Ok(event) = vox_event_rx.recv_timeout(Duration::from_millis(50)) {
                 match event {
-                    VoxEvent::SpeechStart { .. } => speech_started = true,
-                    VoxEvent::SpeechEnd { .. } => speech_ended = true,
+                    VoxEvent::SpeechStart => speech_started = true,
+                    VoxEvent::SpeechEnd => speech_ended = true,
                     _ => {}
                 }
             }
@@ -140,8 +140,8 @@ fn test_passive_streaming_pipeline() {
         while Instant::now() < deadline && (!speech_started || !speech_ended) {
             if let Ok(event) = vox_event_rx.recv_timeout(Duration::from_millis(50)) {
                 match event {
-                    VoxEvent::SpeechStart { .. } => speech_started = true,
-                    VoxEvent::SpeechEnd { .. } => speech_ended = true,
+                    VoxEvent::SpeechStart => speech_started = true,
+                    VoxEvent::SpeechEnd => speech_ended = true,
                     _ => {}
                 }
             }

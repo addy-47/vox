@@ -1006,7 +1006,9 @@ impl VoxSettings {
                 }
             };
             if let Err(e) = file.write_all(content.as_bytes()) {
-                let _ = fs::remove_file(&tmp_path);
+                if let Err(rm_err) = fs::remove_file(&tmp_path) {
+                    log::trace!("[Settings] Failed to remove tmp settings file: {}", rm_err);
+                }
                 return Err(e.into());
             }
             if let Err(e) = file.sync_all() {

@@ -1,6 +1,5 @@
 use super::family::{partial_tag_len, ModelFamily};
 use super::worker::{CacheState, LlmWorker};
-use crate::core::events::VoxEvent;
 use crate::services::harness::ConversationContext;
 use crate::services::llm::LlmEngine;
 use anyhow::{anyhow, Result};
@@ -48,8 +47,7 @@ impl GenerationLimits {
 /// Helper struct managing incremental streaming buffer, tag stripping, and partial emission.
 struct StreamingEmitter<'a> {
     family: &'a ModelFamily,
-    turn_id: u32,
-    tx: &'a std::sync::mpsc::Sender<VoxEvent>,
+    tx: &'a std::sync::mpsc::Sender<crate::services::llm::LlmStreamEvent>,
     raw_gen_buf: String,
     emitted_clean_len: usize,
     byte_buf: Vec<u8>,
@@ -58,12 +56,10 @@ struct StreamingEmitter<'a> {
 impl<'a> StreamingEmitter<'a> {
     pub fn new(
         family: &'a ModelFamily,
-        turn_id: u32,
-        tx: &'a std::sync::mpsc::Sender<VoxEvent>,
+        tx: &'a std::sync::mpsc::Sender<crate::services::llm::LlmStreamEvent>,
     ) -> Self {
         Self {
             family,
-            turn_id,
             tx,
             raw_gen_buf: String::new(),
             emitted_clean_len: 0,
@@ -121,10 +117,11 @@ impl<'a> StreamingEmitter<'a> {
         if cleaned_trimmed.len() > self.emitted_clean_len {
             let delta = &cleaned_trimmed[self.emitted_clean_len..];
             if !delta.is_empty() {
-                let _ = self.tx.send(VoxEvent::LlmToken {
-                    turn_id: self.turn_id,
-                    token: delta.to_string(),
-                });
+                if let Err(e) = self.tx.send(crate::services::llm::LlmStreamEvent::Token(
+                    delta.to_string(),
+                )) {
+                    log::warn!("[LLM::Embedded] Failed to send Token stream event: {}", e);
+                }
             }
             self.emitted_clean_len = cleaned_trimmed.len();
         }
@@ -139,10 +136,14 @@ impl<'a> StreamingEmitter<'a> {
         if clean_len > self.emitted_clean_len {
             let delta = &cleaned[self.emitted_clean_len..clean_len];
             if !delta.is_empty() {
-                let _ = self.tx.send(VoxEvent::LlmToken {
-                    turn_id: self.turn_id,
-                    token: delta.to_string(),
-                });
+                if let Err(e) = self.tx.send(crate::services::llm::LlmStreamEvent::Token(
+                    delta.to_string(),
+                )) {
+                    log::warn!(
+                        "[LLM::Embedded] Failed to send partial Token stream event: {}",
+                        e
+                    );
+                }
             }
             self.emitted_clean_len = clean_len;
         }
@@ -158,10 +159,14 @@ impl<'a> StreamingEmitter<'a> {
         if final_trimmed.len() > self.emitted_clean_len {
             let delta = &final_trimmed[self.emitted_clean_len..];
             if !delta.is_empty() {
-                let _ = self.tx.send(VoxEvent::LlmToken {
-                    turn_id: self.turn_id,
-                    token: delta.to_string(),
-                });
+                if let Err(e) = self.tx.send(crate::services::llm::LlmStreamEvent::Token(
+                    delta.to_string(),
+                )) {
+                    log::warn!(
+                        "[LLM::Embedded] Failed to send final Token stream event: {}",
+                        e
+                    );
+                }
             }
         }
     }
@@ -175,7 +180,7 @@ impl LlmWorker {
         conv_ctx: &ConversationContext,
         turn_id: u32,
         cancel: &tokio_util::sync::CancellationToken,
-        tx: &std::sync::mpsc::Sender<VoxEvent>,
+        tx: &std::sync::mpsc::Sender<crate::services::llm::LlmStreamEvent>,
     ) -> Result<Option<(usize, i32)>> {
         let last_user_text = conv_ctx
             .messages
@@ -218,10 +223,15 @@ impl LlmWorker {
 
                 if !user_tokens.is_empty() {
                     if cancel.is_cancelled() {
-                        log::info!("[LLM] Generation cancelled during user prompt decode.");
+                        log::info!(
+                            "[LLM] Generation cancelled during user prompt decode (turn: {}).",
+                            turn_id
+                        );
                         *self.cache_state.lock() = None;
                         ctx.clear_kv_cache();
-                        let _ = tx.send(VoxEvent::Cancelled { turn_id });
+                        if let Err(e) = tx.send(crate::services::llm::LlmStreamEvent::Finished) {
+                            log::warn!("[LLM::Embedded] Failed to send Finished on cancel: {}", e);
+                        }
                         return Ok(None);
                     }
 
@@ -245,7 +255,10 @@ impl LlmWorker {
             }
             Ok(Some((initial_seq_len, 0)))
         } else {
-            log::info!("[LLM] KV cache miss. Prefilling full conversation context...");
+            log::info!(
+                "[LLM] KV cache miss (turn: {}). Prefilling full conversation context...",
+                turn_id
+            );
             ctx.clear_kv_cache();
 
             let full_prompt = self.family.format_conversation(&conv_ctx.messages);
@@ -268,10 +281,18 @@ impl LlmWorker {
                 let mut offset = 0;
                 while offset < total {
                     if cancel.is_cancelled() {
-                        log::info!("[LLM] Generation cancelled during prefill phase.");
+                        log::info!(
+                            "[LLM] Generation cancelled during prefill phase (turn: {}).",
+                            turn_id
+                        );
                         *self.cache_state.lock() = None;
                         ctx.clear_kv_cache();
-                        let _ = tx.send(VoxEvent::Cancelled { turn_id });
+                        if let Err(e) = tx.send(crate::services::llm::LlmStreamEvent::Finished) {
+                            log::warn!(
+                                "[LLM::Embedded] Failed to send Finished on cancel during prefill: {}",
+                                e
+                            );
+                        }
                         return Ok(None);
                     }
                     let end = (offset + n_batch_chunk).min(total);
@@ -328,7 +349,7 @@ impl LlmEngine for LlmWorker {
         conv_ctx: &ConversationContext,
         turn_id: u32,
         cancel: &tokio_util::sync::CancellationToken,
-        tx: &std::sync::mpsc::Sender<VoxEvent>,
+        tx: &std::sync::mpsc::Sender<crate::services::llm::LlmStreamEvent>,
     ) -> Result<()> {
         self.init_context()?;
 
@@ -357,7 +378,7 @@ impl LlmEngine for LlmWorker {
 
         let mut n_cur = total_input_tokens as i32;
         let limits = GenerationLimits::new(total_input_tokens, self.ctx_size);
-        let mut emitter = StreamingEmitter::new(&self.family, turn_id, tx);
+        let mut emitter = StreamingEmitter::new(&self.family, tx);
 
         log::info!("[LLM] >>> Generating (turn: {})...", turn_id);
 
@@ -383,7 +404,12 @@ impl LlmEngine for LlmWorker {
             if cancel.is_cancelled() {
                 log::info!("[LLM] Cancelled at token {} (turn: {})", n_cur, turn_id);
                 *self.cache_state.lock() = None;
-                let _ = tx.send(VoxEvent::Cancelled { turn_id });
+                if let Err(e) = tx.send(crate::services::llm::LlmStreamEvent::Finished) {
+                    log::warn!(
+                        "[LLM::Embedded] Failed to send Finished on cancel during loop: {}",
+                        e
+                    );
+                }
                 return Ok(());
             }
 
@@ -437,7 +463,9 @@ impl LlmEngine for LlmWorker {
             tps
         );
 
-        let _ = tx.send(VoxEvent::LlmFinished { turn_id });
+        if let Err(e) = tx.send(crate::services::llm::LlmStreamEvent::Finished) {
+            log::warn!("[LLM::Embedded] Failed to send Finished event: {}", e);
+        }
         Ok(())
     }
 }

@@ -126,7 +126,7 @@ pub async fn run_remote_ssh_task<R: tauri::Runtime>(
         Err(e) => {
             let err_msg = format!("Failed to read setup script: {}", e);
             log::error!("{}", err_msg);
-            let _ = emit_ipc(
+            if let Err(ipc_err) = emit_ipc(
                 &app,
                 IpcEvent::ModelProgress(ModelSetupStatus {
                     model_id: "chatterbox_remote_server".to_string(),
@@ -136,7 +136,12 @@ pub async fn run_remote_ssh_task<R: tauri::Runtime>(
                     total_bytes: 100,
                     error: Some(err_msg),
                 }),
-            );
+            ) {
+                log::warn!(
+                    "[SetupRemote] Failed to emit ModelProgress IPC: {}",
+                    ipc_err
+                );
+            }
             return;
         }
     };
@@ -149,7 +154,7 @@ pub async fn run_remote_ssh_task<R: tauri::Runtime>(
                     "[SetupRemote] Failed to write script content into stdin: {}",
                     e
                 );
-                let _ = emit_ipc(
+                if let Err(ipc_err) = emit_ipc(
                     &app_clone,
                     IpcEvent::ModelProgress(ModelSetupStatus {
                         model_id: "chatterbox_remote_server".to_string(),
@@ -157,9 +162,14 @@ pub async fn run_remote_ssh_task<R: tauri::Runtime>(
                         progress: 0.0,
                         bytes_downloaded: 0,
                         total_bytes: 100,
-                        error: Some(format!("Failed to stream script: {}", e)),
+                        error: Some(e.to_string()),
                     }),
-                );
+                ) {
+                    log::warn!(
+                        "[SetupRemote] Failed to emit ModelProgress IPC on write error: {}",
+                        ipc_err
+                    );
+                }
             }
         });
     }

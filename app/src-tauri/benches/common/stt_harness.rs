@@ -53,9 +53,16 @@ pub fn benchmark_streaming_provider(
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let engine_shutdown = Arc::new(AtomicBool::new(false));
 
+    let partials_counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let partials_clone = Arc::clone(&partials_counter);
+    let partial_emitter = Some(Arc::new(move |_turn_id: u32, _text: String| {
+        partials_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }) as Arc<dyn Fn(u32, String) + Send + Sync>);
+
     let channels = SttActorChannels {
         rx: stt_rx,
         pipeline_event_tx: Some(pipeline_event_tx),
+        partial_emitter,
     };
     let handles = SttActorHandles {
         cancel_flag,
@@ -92,10 +99,6 @@ pub fn benchmark_streaming_provider(
         audio_suppressed: Arc::new(AtomicBool::new(false)),
         engine_shutdown: engine_shutdown.clone(),
         dropped_counter: Arc::new(AtomicU64::new(0)),
-        turn_token: Arc::new(parking_lot::Mutex::new(
-            tokio_util::sync::CancellationToken::new(),
-        )),
-        turn_epoch: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
 
     let earshot_engine =
@@ -120,7 +123,6 @@ pub fn benchmark_streaming_provider(
 
     for clip in clips {
         let stream_start = Instant::now();
-        let mut partials_count = 0;
         let mut final_utterances: Vec<String> = Vec::new();
 
         // 1. Stream 256-sample chunks to VAD ring buffer
@@ -139,20 +141,16 @@ pub fn benchmark_streaming_provider(
 
             // Poll intermediate events
             while let Ok(event) = vox_event_rx.try_recv() {
-                if let VoxEvent::SpeechEnd { .. } = event {
+                if let VoxEvent::SpeechEnd = event {
                     speech_ends_seen += 1;
                 }
             }
             while let Ok(event) = pipeline_event_rx.try_recv() {
-                match event {
-                    VoxEvent::TranscriptPartial { .. } => partials_count += 1,
-                    VoxEvent::TranscriptFinal { text, .. } => {
-                        let trimmed = text.trim();
-                        if !trimmed.is_empty() {
-                            final_utterances.push(trimmed.to_string());
-                        }
+                if let VoxEvent::TranscriptFinal { text, .. } = event {
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        final_utterances.push(trimmed.to_string());
                     }
-                    _ => {}
                 }
             }
         }
@@ -167,20 +165,16 @@ pub fn benchmark_streaming_provider(
             std::thread::sleep(Duration::from_millis(1));
 
             while let Ok(event) = vox_event_rx.try_recv() {
-                if let VoxEvent::SpeechEnd { .. } = event {
+                if let VoxEvent::SpeechEnd = event {
                     speech_ends_seen += 1;
                 }
             }
             while let Ok(event) = pipeline_event_rx.try_recv() {
-                match event {
-                    VoxEvent::TranscriptPartial { .. } => partials_count += 1,
-                    VoxEvent::TranscriptFinal { text, .. } => {
-                        let trimmed = text.trim();
-                        if !trimmed.is_empty() {
-                            final_utterances.push(trimmed.to_string());
-                        }
+                if let VoxEvent::TranscriptFinal { text, .. } = event {
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        final_utterances.push(trimmed.to_string());
                     }
-                    _ => {}
                 }
             }
         }
@@ -201,7 +195,7 @@ pub fn benchmark_streaming_provider(
             // Poll VAD actor events
             while let Ok(event) = vox_event_rx.recv_timeout(Duration::from_millis(50)) {
                 last_activity = Instant::now();
-                if let VoxEvent::SpeechEnd { .. } = event {
+                if let VoxEvent::SpeechEnd = event {
                     speech_ends_seen += 1;
                 }
             }
@@ -209,15 +203,11 @@ pub fn benchmark_streaming_provider(
             // Poll STT worker events
             while let Ok(event) = pipeline_event_rx.try_recv() {
                 last_activity = Instant::now();
-                match event {
-                    VoxEvent::TranscriptPartial { .. } => partials_count += 1,
-                    VoxEvent::TranscriptFinal { text, .. } => {
-                        let trimmed = text.trim();
-                        if !trimmed.is_empty() {
-                            final_utterances.push(trimmed.to_string());
-                        }
+                if let VoxEvent::TranscriptFinal { text, .. } = event {
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        final_utterances.push(trimmed.to_string());
                     }
-                    _ => {}
                 }
             }
 
@@ -237,12 +227,15 @@ pub fn benchmark_streaming_provider(
         }
 
         let final_transcript = final_utterances.join(" ");
+        let partials_count = partials_counter.swap(0, std::sync::atomic::Ordering::Relaxed);
 
         // Clean isolation between clips: ensure queues are fully empty before next clip
         std::thread::sleep(Duration::from_millis(100));
         while vox_event_rx.try_recv().is_ok() {}
         while pipeline_event_rx.try_recv().is_ok() {}
-        let _ = stt_tx.send(SttCommand::ResetStream);
+        if let Err(e) = stt_tx.send(SttCommand::ResetStream) {
+            log::warn!("[SttBench] Failed to send ResetStream: {}", e);
+        }
         std::thread::sleep(Duration::from_millis(50));
 
         let total_stream_time = stream_start.elapsed();

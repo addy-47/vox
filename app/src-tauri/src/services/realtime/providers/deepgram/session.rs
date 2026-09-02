@@ -145,13 +145,19 @@ fn dispatch_deepgram_server_message(
                 log::info!("[DeepgramVoiceAgent] User started speaking (barge-in).");
                 let mut s_lock = state.lock();
                 s_lock.last_assistant_text.clear();
-                let tid = s_lock.peek_or_current_turn_id();
                 s_lock.server_turn_cursor = None;
-                if let Err(e) =
-                    provider_event_tx.try_send(RealtimeProviderEvent::Interrupted { turn_id: tid })
-                {
+                if let Err(e) = provider_event_tx.try_send(RealtimeProviderEvent::SpeechStart) {
                     log::warn!(
-                        "[DeepgramVoiceAgent] Failed to forward Interrupted event: {:?}",
+                        "[DeepgramVoiceAgent] Failed to forward SpeechStart event: {:?}",
+                        e
+                    );
+                }
+            }
+            "UserStoppedSpeaking" => {
+                log::info!("[DeepgramVoiceAgent] User stopped speaking.");
+                if let Err(e) = provider_event_tx.try_send(RealtimeProviderEvent::SpeechEnd) {
+                    log::warn!(
+                        "[DeepgramVoiceAgent] Failed to forward SpeechEnd event: {:?}",
                         e
                     );
                 }

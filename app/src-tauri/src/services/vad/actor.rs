@@ -234,8 +234,6 @@ pub struct VadActorHandles {
     pub audio_suppressed: Arc<AtomicBool>,
     pub engine_shutdown: Arc<AtomicBool>,
     pub dropped_counter: Arc<AtomicU64>,
-    pub turn_token: Arc<parking_lot::Mutex<tokio_util::sync::CancellationToken>>,
-    pub turn_epoch: Arc<std::sync::atomic::AtomicU64>,
 }
 
 /// Communication channels utilized by the VAD actor.
@@ -254,13 +252,7 @@ fn handle_speech_start(
     vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
 ) {
     state.in_speech = true;
-    handles.turn_epoch.fetch_add(1, Ordering::Relaxed);
-    {
-        let mut guard = handles.turn_token.lock();
-        guard.cancel();
-        *guard = tokio_util::sync::CancellationToken::new();
-    }
-    state.current_turn_id = handles.turn_id_atomic.fetch_add(1, Ordering::Relaxed) + 1;
+    state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
 
     log::info!("[VAD Actor] Speech Start (turn: {})", state.current_turn_id);
 
@@ -269,9 +261,7 @@ fn handle_speech_start(
     }
 
     if let Some(tx) = vox_event_tx {
-        if let Err(e) = tx.send(VoxEvent::SpeechStart {
-            turn_id: state.current_turn_id,
-        }) {
+        if let Err(e) = tx.send(VoxEvent::SpeechStart) {
             log::warn!("[VAD Actor] Failed to send SpeechStart event: {}", e);
         }
     }
@@ -293,10 +283,7 @@ fn handle_speech_end(
     log::info!("[VAD Actor] Speech End (turn: {})", state.current_turn_id);
 
     if let Some(tx) = vox_event_tx {
-        if let Err(e) = tx.send(VoxEvent::SpeechEnd {
-            turn_id: state.current_turn_id,
-            audio_buffer: state.utterance_buffer.clone(),
-        }) {
+        if let Err(e) = tx.send(VoxEvent::SpeechEnd) {
             log::warn!("[VAD Actor] Failed to send SpeechEnd event: {}", e);
         }
     }

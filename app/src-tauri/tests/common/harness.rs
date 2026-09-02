@@ -81,6 +81,7 @@ pub fn setup_stt_worker<R: tauri::Runtime + 'static>(
     let channels = SttActorChannels {
         rx: stt_rx,
         pipeline_event_tx: Some(pipeline_event_tx),
+        partial_emitter: None,
     };
 
     let handles = SttActorHandles {
@@ -130,10 +131,6 @@ pub fn setup_vad_actor(
         audio_suppressed,
         engine_shutdown,
         dropped_counter: Arc::new(AtomicU64::new(0)),
-        turn_token: Arc::new(parking_lot::Mutex::new(
-            tokio_util::sync::CancellationToken::new(),
-        )),
-        turn_epoch: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
 
     let join_handle = std::thread::Builder::new()
