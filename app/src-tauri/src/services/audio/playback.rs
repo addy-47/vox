@@ -185,20 +185,25 @@ impl PlaybackEngine {
             return;
         }
 
-        let pcm_24k = if let Some(ref mut r) = resampler {
+        let pcm_resampled: Option<Vec<i16>> = if let Some(ref mut r) = resampler {
             match r.process_i16(chunk_i16) {
-                Ok(out) => out,
+                Ok(out) => Some(out),
                 Err(e) => {
                     log::error!("[Audio::Playback] Resampling error: {:?}", e);
                     return;
                 }
             }
         } else {
-            chunk_i16.to_vec()
+            None
         };
 
-        let mut f32_chunk = Vec::with_capacity(pcm_24k.len());
-        for &s in &pcm_24k {
+        let slice = match pcm_resampled {
+            Some(ref v) => v.as_slice(),
+            None => chunk_i16,
+        };
+
+        let mut f32_chunk = Vec::with_capacity(slice.len());
+        for &s in slice {
             f32_chunk.push(s as f32 / super::PCM_S16_SCALE);
         }
 

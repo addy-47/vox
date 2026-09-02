@@ -100,7 +100,8 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
 ) {
     log::info!("[LLM Worker] Persistent loop started.");
 
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
         .enable_all()
         .build()
         .expect("Failed to build LLM worker runtime");

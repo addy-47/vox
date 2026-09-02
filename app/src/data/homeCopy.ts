@@ -29,3 +29,43 @@ export const GOVERNOR_LABELS: Record<string, string> = {
   schedutil: "Balanced",
   ondemand: "Adaptive",
 };
+
+export const HOME_CONTROLS_COPY = {
+  engage: {
+    ariaLabel: "Engage Vox",
+    resumeAriaLabel: "Resume Vox Session",
+    resumeBadge: "Resume Session",
+    stopAriaLabel: "Stop Vox",
+  },
+  passive: {
+    pauseAriaLabel: "Pause Vox",
+    resumeAriaLabel: "Resume Vox",
+    pauseTooltip: "Pause Audio & Passthrough",
+    resumeTooltip: "Resume Audio & Passthrough",
+  },
+  ptt: {
+    micAriaLabel: "Hold to Talk (Push-To-Talk)",
+    micTooltip: "Hold or Tap to Talk",
+  },
+  error: {
+    reconnectAriaLabel: "Reconnect Vox Session",
+    reconnectLabel: "Reconnect",
+    reconnectTooltip: "Attempt Session Reconnection",
+  },
+  testMode: {
+    ariaLabel: "Test Mode",
+  },
+} as const;
+
+export const ERROR_BANNER_COPY = {
+  title: "Connection Error",
+  reconnectButton: "Reconnect",
+  configureButton: "Configure Settings",
+  dismissButton: "Dismiss",
+} as const;
+
+export const DIALOGUE_COPY = {
+  userBadge: "USER",
+  assistantBadge: "VOX",
+} as const;
+

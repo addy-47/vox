@@ -8,7 +8,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub enum SttCommand {
-    Partial(u32, Arc<[f32]>),
+    Partial {
+        turn_id: u32,
+        audio: Vec<f32>,
+        recycle_tx: std::sync::mpsc::SyncSender<Vec<f32>>,
+    },
     Final(u32, Vec<f32>),
     ResetStream,
     Shutdown,
@@ -45,13 +49,23 @@ fn coalesce_partials(
     rx: &std::sync::mpsc::Receiver<SttCommand>,
     pending_cmd: &mut Option<SttCommand>,
 ) -> SttCommand {
-    if let SttCommand::Partial(mut tid, mut utterance) = cmd {
+    if let SttCommand::Partial {
+        mut turn_id,
+        mut audio,
+        recycle_tx,
+    } = cmd
+    {
         let mut skipped = 0;
         while let Ok(next_cmd) = rx.try_recv() {
             match next_cmd {
-                SttCommand::Partial(next_tid, next_utterance) => {
-                    tid = next_tid;
-                    utterance = next_utterance;
+                SttCommand::Partial {
+                    turn_id: next_tid,
+                    audio: next_audio,
+                    recycle_tx: _,
+                } => {
+                    let _ = recycle_tx.try_send(audio);
+                    turn_id = next_tid;
+                    audio = next_audio;
                     skipped += 1;
                 }
                 other => {
@@ -63,7 +77,11 @@ fn coalesce_partials(
         if skipped > 0 {
             log::debug!("[STT] Coalesced {} stale partials in queue", skipped);
         }
-        SttCommand::Partial(tid, utterance)
+        SttCommand::Partial {
+            turn_id,
+            audio,
+            recycle_tx,
+        }
     } else {
         cmd
     }
@@ -214,7 +232,13 @@ fn drain_reset_stream(
     }
     while let Ok(cmd) = rx.try_recv() {
         match cmd {
-            SttCommand::Partial(..) | SttCommand::ResetStream => continue,
+            SttCommand::Partial {
+                audio, recycle_tx, ..
+            } => {
+                let _ = recycle_tx.try_send(audio);
+                continue;
+            }
+            SttCommand::ResetStream => continue,
             SttCommand::Final(..) => {
                 *pending_cmd = Some(cmd);
                 break;
@@ -275,8 +299,13 @@ fn run_worker_loop(
                 log::info!("[STT] Shutdown signal received. Exiting worker thread.");
                 break;
             }
-            SttCommand::Partial(tid, utterance) => {
-                handle_partial_command(&ctx, tid, &utterance, &mut state);
+            SttCommand::Partial {
+                turn_id,
+                audio,
+                recycle_tx,
+            } => {
+                handle_partial_command(&ctx, turn_id, &audio, &mut state);
+                let _ = recycle_tx.try_send(audio);
             }
             SttCommand::Final(tid, utterance) => {
                 handle_final_command(&ctx, tid, &utterance, &mut state);

@@ -88,16 +88,16 @@ fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
             }
         };
 
-        if transition_speech.is_some() {
-            pending_jobs.fetch_add(1, Ordering::Relaxed);
-        }
-
         if cancel.is_cancelled() {
             log::info!(
                 "[Pipeline::Transcript] Turn {} cancelled before LLM dispatch",
                 turn_id
             );
             return;
+        }
+
+        if transition_speech.is_some() {
+            pending_jobs.fetch_add(1, Ordering::Relaxed);
         }
 
         if let Some(ref tx) = llm_tx {

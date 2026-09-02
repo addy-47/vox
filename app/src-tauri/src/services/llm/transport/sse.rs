@@ -1,3 +1,5 @@
+pub const MAX_SSE_BUFFER_BYTES: usize = 65_536;
+
 /// Buffered line and SSE frame decoder.
 #[derive(Default)]
 pub struct SseDecoder {
@@ -16,6 +18,15 @@ impl SseDecoder {
     pub fn decode_chunk(&mut self, chunk: &[u8]) -> Vec<String> {
         let text = String::from_utf8_lossy(chunk);
         self.buffer.push_str(&text);
+
+        if self.buffer.len() > MAX_SSE_BUFFER_BYTES {
+            log::warn!(
+                "[SseDecoder] Buffer limit exceeded ({} bytes). Truncating to avoid OOM.",
+                self.buffer.len()
+            );
+            self.buffer.clear();
+            return Vec::new();
+        }
 
         let mut lines = Vec::new();
         while let Some(idx) = self.buffer.find('\n') {
