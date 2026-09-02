@@ -44,6 +44,10 @@ pub struct VadActorState {
     pub pre_roll_buffer: PreRollBuffer,
     pub realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>>,
     pub pcm_scratch: Vec<i16>,
+    pub partial_recycle_tx: std::sync::mpsc::SyncSender<Vec<f32>>,
+    pub partial_recycle_rx: std::sync::mpsc::Receiver<Vec<f32>>,
+    pub realtime_recycle_tx: std::sync::mpsc::SyncSender<Vec<i16>>,
+    pub realtime_recycle_rx: std::sync::mpsc::Receiver<Vec<i16>>,
 
     // WindowedValidation state tracking
     pub window_active: bool,
@@ -67,6 +71,9 @@ impl VadActorState {
             InteractionMode::PTT => VadOperationalMode::WindowedValidation,
         };
 
+        let (partial_recycle_tx, partial_recycle_rx) = std::sync::mpsc::sync_channel(4);
+        let (realtime_recycle_tx, realtime_recycle_rx) = std::sync::mpsc::sync_channel(32);
+
         Self {
             threshold,
             noise_gate,
@@ -78,10 +85,14 @@ impl VadActorState {
             active_frames: 0,
             inactive_frames: 0,
             samples_since_partial: 0,
-            utterance_buffer: Vec::new(),
+            utterance_buffer: Vec::with_capacity(VAD_PRE_ROLL_CAPACITY + VAD_PARTIAL_INTERVAL_SAMPLES * 2),
             pre_roll_buffer: PreRollBuffer::new(VAD_PRE_ROLL_CAPACITY),
             realtime_tx: None,
             pcm_scratch: Vec::with_capacity(VAD_CHUNK_SIZE),
+            partial_recycle_tx,
+            partial_recycle_rx,
+            realtime_recycle_tx,
+            realtime_recycle_rx,
             window_active: false,
             window_sample_offset: 0,
             window_speech_detected: false,
@@ -318,8 +329,17 @@ fn accumulate_speech_frames(
                 .utterance_buffer
                 .len()
                 .saturating_sub(VAD_MAX_PARTIAL_WINDOW_SAMPLES);
-            let slice: Arc<[f32]> = state.utterance_buffer[start_idx..].into();
-            if let Err(e) = stt_tx.send(SttCommand::Partial(state.current_turn_id, slice)) {
+            let mut buf = state
+                .partial_recycle_rx
+                .try_recv()
+                .unwrap_or_else(|_| Vec::with_capacity(VAD_MAX_PARTIAL_WINDOW_SAMPLES));
+            buf.clear();
+            buf.extend_from_slice(&state.utterance_buffer[start_idx..]);
+            if let Err(e) = stt_tx.send(SttCommand::Partial {
+                turn_id: state.current_turn_id,
+                audio: buf,
+                recycle_tx: state.partial_recycle_tx.clone(),
+            }) {
                 log::warn!("[VAD Actor] Failed to send Partial audio to STT: {}", e);
             }
         }
@@ -394,8 +414,12 @@ fn process_windowed_validation(
 /// Executes StreamPassthrough mode for direct low-latency routing to realtime cloud sinks.
 fn process_stream_passthrough(chunk: &[f32], state: &mut VadActorState) {
     if let Some(ref tx) = state.realtime_tx {
-        f32_to_i16_pcm(chunk, &mut state.pcm_scratch);
-        if let Err(e) = tx.try_send(state.pcm_scratch.clone()) {
+        let mut pcm = state
+            .realtime_recycle_rx
+            .try_recv()
+            .unwrap_or_else(|_| Vec::with_capacity(chunk.len()));
+        f32_to_i16_pcm(chunk, &mut pcm);
+        if let Err(e) = tx.try_send(pcm) {
             log::trace!("[VAD Actor] Passthrough queue full or disconnected: {}", e);
         }
     }

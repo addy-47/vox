@@ -13,14 +13,16 @@ struct GenerationLimits {
     pub total_input_tokens: usize,
     pub max_ctx_size: u32,
     pub max_safety_tokens: usize,
+    pub max_output_tokens: Option<u32>,
 }
 
 impl GenerationLimits {
-    pub fn new(total_input_tokens: usize, max_ctx_size: u32) -> Self {
+    pub fn new(total_input_tokens: usize, max_ctx_size: u32, max_output_tokens: Option<u32>) -> Self {
         Self {
             total_input_tokens,
             max_ctx_size,
             max_safety_tokens: crate::services::llm::DEFAULT_MAX_GENERATION_SAFETY_TOKENS,
+            max_output_tokens,
         }
     }
 
@@ -33,10 +35,14 @@ impl GenerationLimits {
             );
             return true;
         }
-        if n_cur > (self.total_input_tokens + self.max_safety_tokens) as i32 {
+        let allowed_new = self
+            .max_output_tokens
+            .map(|m| m as usize)
+            .unwrap_or(self.max_safety_tokens);
+        if n_cur > (self.total_input_tokens + allowed_new) as i32 {
             log::warn!(
-                "[LLM] Safety limit reached ({} tokens beyond input).",
-                self.max_safety_tokens
+                "[LLM] Output limit reached ({} tokens beyond input).",
+                allowed_new
             );
             return true;
         }
@@ -348,6 +354,7 @@ impl LlmEngine for LlmWorker {
         &self,
         conv_ctx: &ConversationContext,
         turn_id: u32,
+        max_output_tokens: Option<u32>,
         cancel: &tokio_util::sync::CancellationToken,
         tx: &std::sync::mpsc::Sender<crate::services::llm::LlmStreamEvent>,
     ) -> Result<()> {
@@ -377,13 +384,17 @@ impl LlmEngine for LlmWorker {
         }
 
         let mut n_cur = total_input_tokens as i32;
-        let limits = GenerationLimits::new(total_input_tokens, self.ctx_size);
+        let limits = GenerationLimits::new(total_input_tokens, self.ctx_size, max_output_tokens);
         let mut emitter = StreamingEmitter::new(&self.family, tx);
 
         log::info!("[LLM] >>> Generating (turn: {})...", turn_id);
 
+        let max_new_batch = match max_output_tokens {
+            Some(toks) => (toks as usize).min(self.ctx_size as usize),
+            None => crate::services::llm::DEFAULT_MAX_GENERATION_SAFETY_TOKENS,
+        };
         let mut batch = LlamaBatch::new(
-            total_input_tokens + crate::services::llm::DEFAULT_MAX_GENERATION_SAFETY_TOKENS,
+            total_input_tokens + max_new_batch,
             1,
         );
 

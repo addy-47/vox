@@ -60,7 +60,9 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
         return Ok(true);
     }
 
-    let embedding_res = generate_embedding(&item.fact);
+    let fact_str = item.fact.clone();
+    let embedding_res =
+        tokio::task::spawn_blocking(move || generate_embedding(&fact_str)).await?;
     match embedding_res {
         Ok(Some(vec)) => {
             let blob_bytes = encode_f32_blob(&vec);
@@ -72,7 +74,14 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                 None,
             )
             .await
-            .unwrap_or_default();
+            .map_err(|e| {
+                log::warn!(
+                    "[MemoryPipeline::Stage2] Failed to fetch cross-collection candidates for item {}: {}",
+                    item.id,
+                    e
+                );
+                e
+            })?;
 
             let best_match = soft_dups.iter().max_by(|a, b| {
                 let prio_a = crate::services::memory::MemoryCollection::parse(&a.2)

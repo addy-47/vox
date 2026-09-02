@@ -47,14 +47,12 @@ export function toStatusLabel(
   ptt: "IDLE" | "RECORDING" | "PROCESSING",
   isPaused: boolean
 ): string {
-  if (!engaged) return "Dormant";
-  if (isPaused) return "Paused";
-  if (sleeping) return "Sleeping";
+  if (state === "Error") return "Error";
+  if (!engaged || state === "Idle") return "Dormant";
+  if (isPaused || state === "Paused" || sleeping) return "Paused";
   if (ptt === "RECORDING") return "Recording";
   if (ptt === "PROCESSING") return "Processing";
   switch (state) {
-    case "Idle":
-      return "Ready";
     case "Ready":
       return "Ready";
     case "Listening":
@@ -63,10 +61,6 @@ export function toStatusLabel(
       return "Thinking";
     case "Speaking":
       return "Speaking";
-    case "Paused":
-      return "Paused";
-    case "Error":
-      return "Error";
     default:
       return "Ready";
   }
@@ -78,7 +72,7 @@ export function isDotActive(
   ptt: "IDLE" | "RECORDING" | "PROCESSING",
   sleeping: boolean
 ): boolean {
-  if (!engaged || sleeping) return false;
+  if (!engaged || sleeping || state === "Idle" || state === "Paused" || state === "Error") return false;
   if (ptt === "RECORDING" || ptt === "PROCESSING") return true;
   return state === "Listening" || state === "Thinking" || state === "Speaking";
 }

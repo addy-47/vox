@@ -54,7 +54,17 @@ pub(super) async fn perform_handshake(
         while let Some(res) = ws_read.next().await {
             match res {
                 Ok(Message::Text(text)) => {
-                    let val: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+                    let val: serde_json::Value = match serde_json::from_str(&text) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            log::warn!(
+                                "[GeminiLive] Invalid JSON during handshake: {} (raw: {})",
+                                e,
+                                text
+                            );
+                            continue;
+                        }
+                    };
                     if val.get("setupComplete").is_some() {
                         return Ok(());
                     }
@@ -63,8 +73,17 @@ pub(super) async fn perform_handshake(
                     }
                 }
                 Ok(Message::Binary(bytes)) => {
-                    let val: serde_json::Value =
-                        serde_json::from_str(&String::from_utf8_lossy(&bytes)).unwrap_or_default();
+                    let text = String::from_utf8_lossy(&bytes);
+                    let val: serde_json::Value = match serde_json::from_str(&text) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            log::warn!(
+                                "[GeminiLive] Invalid JSON in binary frame during handshake: {}",
+                                e
+                            );
+                            continue;
+                        }
+                    };
                     if val.get("setupComplete").is_some() {
                         return Ok(());
                     }

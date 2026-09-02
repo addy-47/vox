@@ -16,33 +16,48 @@ pub async fn enqueue_personal_facts(
         .unwrap_or_default()
         .as_millis() as i64;
 
-    for (collection, fact_list) in facts {
-        let status = if pipeline_processing_enabled {
-            QueueStatus::StagedPending.as_str()
-        } else {
-            QueueStatus::Paused.as_str()
-        };
-
-        for fact in fact_list {
-            let trimmed = fact.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            conn.execute(
-                "INSERT INTO personal_memory_queue (fact, collection, source, session_id, status, created_at)
-                 VALUES (?, ?, 'LLM', ?, ?, ?)",
-                (
-                    trimmed.to_string(),
-                    collection.clone(),
-                    session_id.to_string(),
-                    status.to_string(),
-                    now,
-                ),
-            )
-            .await?;
-        }
+    if facts.is_empty() {
+        return Ok(());
     }
-    Ok(())
+
+    conn.execute("BEGIN IMMEDIATE;", ()).await?;
+    let res: Result<()> = async {
+        for (collection, fact_list) in &facts {
+            let status = if pipeline_processing_enabled {
+                QueueStatus::StagedPending.as_str()
+            } else {
+                QueueStatus::Paused.as_str()
+            };
+
+            for fact in fact_list {
+                let trimmed = fact.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                conn.execute(
+                    "INSERT INTO personal_memory_queue (fact, collection, source, session_id, status, created_at)
+                     VALUES (?, ?, 'LLM', ?, ?, ?)",
+                    (
+                        trimmed.to_string(),
+                        collection.clone(),
+                        session_id.to_string(),
+                        status.to_string(),
+                        now,
+                    ),
+                )
+                .await?;
+            }
+        }
+        Ok(())
+    }
+    .await;
+
+    if res.is_ok() {
+        conn.execute("COMMIT;", ()).await?;
+    } else {
+        let _ = conn.execute("ROLLBACK;", ()).await;
+    }
+    res
 }
 
 /// Marks a queue item failure in `personal_memory_queue`, incrementing `retry_count`.
