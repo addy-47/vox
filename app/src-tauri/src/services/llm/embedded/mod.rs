@@ -123,10 +123,7 @@ impl crate::services::llm::LlmProvider for EmbeddedProvider {
 
     fn list_models<'a>(&'a self) -> BoxFuture<'a, Result<Vec<LlmModelInfo>, LlmError>> {
         Box::pin(async move {
-            let dir = self
-                .model_path
-                .parent()
-                .unwrap_or_else(|| Path::new("."));
+            let dir = self.model_path.parent().unwrap_or_else(|| Path::new("."));
             Self::list_models_in_dir(dir)
         })
     }

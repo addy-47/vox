@@ -228,11 +228,11 @@ pub async fn stream_responses(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::harness::{ChatMessage as MemMsg, Role};
     use crate::services::llm::{
         AuthScheme, CapabilitySource, ConversationInput, GenerationOptions, GenerationPurpose,
         OutputConstraint, TokenLimitField, TransportType,
     };
-    use crate::services::harness::{ChatMessage as MemMsg, Role};
 
     #[test]
     fn test_responses_request_body_flattened_history() {

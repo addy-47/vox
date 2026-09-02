@@ -1,6 +1,7 @@
 pub mod actor;
 pub mod audio_bridge;
 pub mod providers;
+pub mod transport;
 
 pub use crate::core::settings::RealtimeProviderKind;
 pub use actor::RealtimeActor;
@@ -49,6 +50,16 @@ pub enum RealtimeProviderEvent {
     Interrupted { turn_id: u32 },
     Error { turn_id: u32, message: String },
     SessionResumptionHandle { handle: String, model: String },
+}
+
+/// Typed commands dispatched outbound from session callers to the WebSocket connection writer.
+#[derive(Debug)]
+pub enum OutboundCommand {
+    Audio(Vec<i16>),
+    ActivityStart,
+    ActivityEnd,
+    Interrupt,
+    KeepAlive,
 }
 
 /// Configuration defining input/output sampling rates and resampling requirements for realtime streaming.

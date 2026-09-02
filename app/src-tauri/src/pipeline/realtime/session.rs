@@ -1,7 +1,7 @@
 use crate::core::settings::RealtimeProviderKind;
 use crate::core::state::AppState;
-use crate::services::realtime::providers::deepgram_live::DeepgramVoiceAgentProvider;
-use crate::services::realtime::providers::gemini_live::GeminiLiveProvider;
+use crate::services::realtime::providers::DeepgramVoiceAgentProvider;
+use crate::services::realtime::providers::GeminiLiveProvider;
 use crate::services::realtime::RealtimeVoiceProvider;
 
 /// Instantiates the configured cloud real-time voice provider.
@@ -49,16 +49,12 @@ pub fn create_realtime_provider(
             assembled_prompt,
             state.pipeline.state_rx.clone(),
             state.pipeline.turn_id.clone(),
-            state.pipeline.turn_token.clone(),
-            state.pipeline.turn_epoch.clone(),
         ))),
         RealtimeProviderKind::DeepgramVoiceAgent => Ok(Box::new(DeepgramVoiceAgentProvider::new(
             settings.realtime.deepgram_voice_agent.clone(),
             assembled_prompt,
             state.pipeline.state_rx.clone(),
             state.pipeline.turn_id.clone(),
-            state.pipeline.turn_token.clone(),
-            state.pipeline.turn_epoch.clone(),
         ))),
         RealtimeProviderKind::OpenAiRealtime => {
             Err("OpenAI Realtime provider is not implemented".to_string())
