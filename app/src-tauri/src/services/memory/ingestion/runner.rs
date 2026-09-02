@@ -54,9 +54,22 @@ pub async fn run_pipeline_cycle_with_id_seq(
     {
         Ok(mut rows) => match rows.next().await {
             Ok(Some(row)) => row.get::<i64>(0).unwrap_or(0),
-            _ => 0,
+            Ok(None) => 0,
+            Err(e) => {
+                log::warn!(
+                    "[MemoryPipeline] Failed to read row from queue count query: {}",
+                    e
+                );
+                return Err(e.into());
+            }
         },
-        Err(_) => 0,
+        Err(e) => {
+            log::warn!(
+                "[MemoryPipeline] Failed to query personal_memory_queue count: {}",
+                e
+            );
+            return Err(e.into());
+        }
     };
     if count == 0 {
         return Ok(0);

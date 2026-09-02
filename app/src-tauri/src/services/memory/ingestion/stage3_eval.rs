@@ -315,7 +315,14 @@ async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()
         None,
     )
     .await
-    .unwrap_or_default();
+    .map_err(|e| {
+        log::warn!(
+            "[MemoryPipeline::Stage3] Failed to fetch intra-collection candidates for item {}: {}",
+            item.id,
+            e
+        );
+        e
+    })?;
 
     let policy_targets: Vec<&'static str> = MemoryCollection::SEMANTIC_GRAPH_NAMES
         .iter()
@@ -334,7 +341,14 @@ async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()
             None,
         )
         .await
-        .unwrap_or_default()
+        .map_err(|e| {
+            log::warn!(
+                "[MemoryPipeline::Stage3] Failed to fetch inter-collection candidates for item {}: {}",
+                item.id,
+                e
+            );
+            e
+        })?
     } else {
         Vec::new()
     };
@@ -350,8 +364,28 @@ async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()
 
     let (res_a, res_b) = tokio::join!(handle_a, handle_b);
 
-    let (nli_rels, nli_logs) = res_a.unwrap_or_else(|_| (Vec::new(), Vec::new()));
-    let (edge_rels, edge_logs) = res_b.unwrap_or_else(|_| (Vec::new(), Vec::new()));
+    let (nli_rels, nli_logs) = match res_a {
+        Ok(val) => val,
+        Err(e) => {
+            log::error!(
+                "[MemoryPipeline::Stage3] NLI task join error for item {}: {:?}",
+                item.id,
+                e
+            );
+            return Err(anyhow::anyhow!("NLI evaluation task failed: {:?}", e));
+        }
+    };
+    let (edge_rels, edge_logs) = match res_b {
+        Ok(val) => val,
+        Err(e) => {
+            log::error!(
+                "[MemoryPipeline::Stage3] Edge evaluation task join error for item {}: {:?}",
+                item.id,
+                e
+            );
+            return Err(anyhow::anyhow!("Edge evaluation task failed: {:?}", e));
+        }
+    };
 
     let mut all_relations = nli_rels;
     all_relations.extend(edge_rels);

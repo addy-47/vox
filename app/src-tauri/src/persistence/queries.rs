@@ -92,30 +92,32 @@ pub async fn fetch_graph_neighbors(
         return Ok(Vec::new());
     }
 
-    let placeholders = vec!["?"; fact_ids.len()].join(",");
-    let query_str = format!(
-        "SELECT from_id, to_id, relation, source FROM memory_relations
-         WHERE from_id IN ({0}) OR to_id IN ({0})",
-        placeholders
-    );
-
-    let mut params: Vec<turso::Value> = Vec::with_capacity(fact_ids.len() * 2);
-    for id in fact_ids {
-        params.push(turso::Value::Text(id.clone()));
-    }
-    for id in fact_ids {
-        params.push(turso::Value::Text(id.clone()));
-    }
-
-    let mut rows = conn.query(&query_str, params).await?;
     let mut neighbors = Vec::new();
-    while let Some(row) = rows.next().await? {
-        neighbors.push((
-            row.get::<String>(0)?,
-            row.get::<String>(1)?,
-            row.get::<String>(2)?,
-            row.get::<String>(3)?,
-        ));
+    for chunk in fact_ids.chunks(400) {
+        let placeholders = vec!["?"; chunk.len()].join(",");
+        let query_str = format!(
+            "SELECT from_id, to_id, relation, source FROM memory_relations
+             WHERE from_id IN ({0}) OR to_id IN ({0})",
+            placeholders
+        );
+
+        let mut params: Vec<turso::Value> = Vec::with_capacity(chunk.len() * 2);
+        for id in chunk {
+            params.push(turso::Value::Text(id.clone()));
+        }
+        for id in chunk {
+            params.push(turso::Value::Text(id.clone()));
+        }
+
+        let mut rows = conn.query(&query_str, params).await?;
+        while let Some(row) = rows.next().await? {
+            neighbors.push((
+                row.get::<String>(0)?,
+                row.get::<String>(1)?,
+                row.get::<String>(2)?,
+                row.get::<String>(3)?,
+            ));
+        }
     }
     Ok(neighbors)
 }
@@ -129,30 +131,32 @@ pub async fn fetch_facts_by_ids(
         return Ok(HashMap::new());
     }
 
-    let placeholders = vec!["?"; fact_ids.len()].join(",");
-    let query_str = format!(
-        "SELECT id, type, collection, fact, source, status, created_at FROM memory_facts
-         WHERE id IN ({}) AND status = 'active'",
-        placeholders
-    );
-
-    let params: Vec<turso::Value> = fact_ids
-        .iter()
-        .map(|id| turso::Value::Text(id.clone()))
-        .collect();
-    let mut rows = conn.query(&query_str, params).await?;
     let mut map = HashMap::new();
-    while let Some(row) = rows.next().await? {
-        let mf = MemoryFact {
-            id: row.get(0)?,
-            fact_type: row.get(1)?,
-            collection: row.get(2)?,
-            fact: row.get(3)?,
-            source: row.get(4)?,
-            status: row.get(5)?,
-            created_at: row.get(6)?,
-        };
-        map.insert(mf.id.clone(), mf);
+    for chunk in fact_ids.chunks(400) {
+        let placeholders = vec!["?"; chunk.len()].join(",");
+        let query_str = format!(
+            "SELECT id, type, collection, fact, source, status, created_at FROM memory_facts
+             WHERE id IN ({}) AND status = 'active'",
+            placeholders
+        );
+
+        let params: Vec<turso::Value> = chunk
+            .iter()
+            .map(|id| turso::Value::Text(id.clone()))
+            .collect();
+        let mut rows = conn.query(&query_str, params).await?;
+        while let Some(row) = rows.next().await? {
+            let mf = MemoryFact {
+                id: row.get(0)?,
+                fact_type: row.get(1)?,
+                collection: row.get(2)?,
+                fact: row.get(3)?,
+                source: row.get(4)?,
+                status: row.get(5)?,
+                created_at: row.get(6)?,
+            };
+            map.insert(mf.id.clone(), mf);
+        }
     }
     Ok(map)
 }

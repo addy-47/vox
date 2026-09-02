@@ -102,8 +102,8 @@ pub(crate) fn spawn_harness<D: ProviderDriver>(
                     attempt + 1,
                     config.max_reconnect_attempts
                 );
-                match reconnect_fn().await {
-                    Ok((new_write, new_read)) => {
+                match tokio::time::timeout(Duration::from_secs(10), reconnect_fn()).await {
+                    Ok(Ok((new_write, new_read))) => {
                         let (new_reconnect_tx, new_reconnect_rx) =
                             tokio::sync::oneshot::channel::<()>();
                         reconnect_rx = new_reconnect_rx;
@@ -125,11 +125,17 @@ pub(crate) fn spawn_harness<D: ProviderDriver>(
                         log::info!("[RealtimeHarness] Reconnected successfully.");
                         break;
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         log::error!(
                             "[RealtimeHarness] Reconnect attempt {} failed: {:?}",
                             attempt + 1,
                             e
+                        );
+                    }
+                    Err(_) => {
+                        log::error!(
+                            "[RealtimeHarness] Reconnect attempt {} timed out after 10s",
+                            attempt + 1
                         );
                     }
                 }

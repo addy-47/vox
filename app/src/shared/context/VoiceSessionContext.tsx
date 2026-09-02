@@ -191,7 +191,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   }, [testingClip]);
 
   const pause = useCallback(async () => {
-    if (!isEngaged || isPaused) return;
+    if (interactionState === "Idle" || interactionState === "Paused" || interactionState === "Error") return;
     setInteractionState("Paused");
     try {
       await pauseSession();
@@ -200,22 +200,24 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       setErrorAlert(err?.message || "Pausing voice pipeline failed");
       setInteractionState("Ready");
     }
-  }, [isEngaged, isPaused]);
+  }, [interactionState]);
 
   const resume = useCallback(async () => {
-    if (!isEngaged || !isPaused) return;
+    if (interactionState !== "Paused" && interactionState !== "Error") return;
+    const previousState = interactionState;
     setInteractionState("Ready");
     try {
       await resumeSession();
+      setErrorAlert(null);
     } catch (err: any) {
       console.error("[VoiceSession] Resume failed:", err);
       setErrorAlert(err?.message || "Resuming voice pipeline failed");
-      setInteractionState("Paused");
+      setInteractionState(previousState);
     }
-  }, [isEngaged, isPaused]);
+  }, [interactionState]);
 
   const handlePttStart = useCallback(async () => {
-    if (!isEngaged || isPaused) return;
+    if (!isEngaged || isPaused || interactionState === "Error") return;
     archiveCurrentTurn();
     try {
       await pttStart();
@@ -223,17 +225,17 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       console.error("[VoiceSession] PTT start failed:", err);
       setErrorAlert(err?.message || "PTT start failed");
     }
-  }, [isEngaged, isPaused, archiveCurrentTurn]);
+  }, [isEngaged, isPaused, interactionState, archiveCurrentTurn]);
 
   const handlePttStop = useCallback(async () => {
-    if (!isEngaged || isPaused) return;
+    if (!isEngaged || isPaused || interactionState === "Error") return;
     try {
       await pttStop();
     } catch (err: any) {
       console.error("[VoiceSession] PTT stop failed:", err);
       setErrorAlert(err?.message || "PTT stop failed");
     }
-  }, [isEngaged, isPaused]);
+  }, [isEngaged, isPaused, interactionState]);
 
   const handlePttCancel = useCallback(async () => {
     if (!isEngaged) return;

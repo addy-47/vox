@@ -53,7 +53,17 @@ pub(super) async fn perform_handshake(
         while let Some(res) = ws_read.next().await {
             match res {
                 Ok(Message::Text(text)) => {
-                    let val: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+                    let val: serde_json::Value = match serde_json::from_str(&text) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            log::warn!(
+                                "[DeepgramVoiceAgent] Invalid JSON during handshake: {} (raw: {})",
+                                e,
+                                text
+                            );
+                            continue;
+                        }
+                    };
                     if let Some(msg_type) = val.get("type").and_then(|v| v.as_str()) {
                         if msg_type == "Welcome" {
                             log::info!("[DeepgramVoiceAgent] Received Welcome event.");

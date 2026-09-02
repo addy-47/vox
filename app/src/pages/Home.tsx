@@ -2,8 +2,13 @@ import React, { memo, useMemo } from "react";
 import { VoxOrb, PipelineField, StatusCapsule, TestClipsPopover } from "@/shared/components/home";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
 import { ErrorBoundary } from "@/shared/components/common";
-import { GOVERNOR_LABELS } from "@/data/homeCopy";
-import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle } from "lucide-react";
+import {
+  GOVERNOR_LABELS,
+  HOME_CONTROLS_COPY,
+  ERROR_BANNER_COPY,
+  DIALOGUE_COPY,
+} from "@/data/homeCopy";
+import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle, RotateCcw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
@@ -31,7 +36,7 @@ const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; 
     {turn.user && (
       <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--foreground-muted))] font-normal text-[13px] leading-relaxed prose prose-invert select-text p-3 rounded-2xl bg-[rgb(var(--card))]/80 border border-[rgba(var(--border),0.12)]">
         <span className="text-[11px] tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-1 font-bold">
-          USER
+          {DIALOGUE_COPY.userBadge}
         </span>
         <ReactMarkdown components={MarkdownComponents}>{turn.user}</ReactMarkdown>
       </div>
@@ -39,7 +44,7 @@ const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; 
     {turn.assistant && (
       <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed prose prose-invert select-text p-3 rounded-2xl bg-[rgb(var(--card))]/90 border border-[rgba(var(--accent),0.2)]">
         <span className="text-[11px] tracking-widest text-[rgb(var(--accent))]/80 uppercase block mb-1 font-bold">
-          VOX
+          {DIALOGUE_COPY.assistantBadge}
         </span>
         <ReactMarkdown components={MarkdownComponents}>{turn.assistant}</ReactMarkdown>
       </div>
@@ -106,7 +111,7 @@ export const Home = memo(() => {
     return dialogueHistory.slice(-10);
   }, [dialogueHistory]);
 
-  const isPttActive = isEngaged && !testingClip && interactionMode === "PTT" && !isPaused;
+  const isPttActive = isEngaged && !testingClip && interactionMode === "PTT" && !isPaused && interactionState !== "Error";
 
   return (
     <div className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none">
@@ -125,25 +130,36 @@ export const Home = memo(() => {
             <div className="glass-card p-4 rounded-xl flex items-start gap-3 border border-red-500/30 shadow-2xl bg-black/40 backdrop-blur-md">
               <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={18} />
               <div className="flex-1 flex flex-col gap-1.5 min-w-0">
-                <span className="text-xs font-bold tracking-wider uppercase text-red-400 text-left">Connection Error</span>
+                <span className="text-xs font-bold tracking-wider uppercase text-red-400 text-left">
+                  {ERROR_BANNER_COPY.title}
+                </span>
                 <p className="text-[12px] text-[rgb(var(--foreground))]/90 leading-relaxed font-light break-words select-text text-left">
                   {errorAlert}
                 </p>
                 <div className="flex gap-3 mt-1 justify-start">
                   <button
                     onClick={() => {
+                      resume();
                       setErrorAlert(null);
-                      navigate("/settings");
                     }}
                     className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] hover:underline cursor-pointer"
                   >
-                    Configure Settings
+                    {ERROR_BANNER_COPY.reconnectButton}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setErrorAlert(null);
+                      navigate("/settings");
+                    }}
+                    className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))] cursor-pointer"
+                  >
+                    {ERROR_BANNER_COPY.configureButton}
                   </button>
                   <button
                     onClick={() => setErrorAlert(null)}
                     className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer"
                   >
-                    Dismiss
+                    {ERROR_BANNER_COPY.dismissButton}
                   </button>
                 </div>
               </div>
@@ -215,7 +231,7 @@ export const Home = memo(() => {
         <div
           className={cn(
             "absolute inset-0 rounded-full border border-[rgb(var(--accent))]/10 transition-all duration-1000",
-            isEngaged ? "scale-100 opacity-100 animate-field-pulse" : "scale-90 opacity-60"
+            isEngaged && interactionState !== "Error" ? "scale-100 opacity-100 animate-field-pulse" : "scale-90 opacity-60"
           )}
         />
         <div className="relative w-full h-full flex items-center justify-center">
@@ -237,76 +253,108 @@ export const Home = memo(() => {
           bottom: "calc(72px + clamp(12px, 2.5vh, 28px))"
         }}
       >
-        {/* Buttons */}
         <div className="flex items-center gap-4 relative">
-          {/* Passive Mode Pause / Resume Button (Hidden in PTT Mode) */}
-          {isEngaged && !testingClip && interactionMode !== "PTT" && (
-            <button
-              onClick={isPaused ? resume : pause}
-              className={cn(
-                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95",
-                isPaused
-                  ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
-                  : "text-[rgb(var(--accent))]"
+          {/* Error State: Single Reconnect Button (calls resume_session directly) */}
+          {interactionState === "Error" ? (
+            <div className="relative flex flex-col items-center">
+              <button
+                onClick={resume}
+                className="flex items-center justify-center gap-2.5 px-6 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/50 bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] shadow-[0_0_24px_rgba(var(--accent),0.25)] cursor-pointer"
+                aria-label={HOME_CONTROLS_COPY.error.reconnectAriaLabel}
+                title={HOME_CONTROLS_COPY.error.reconnectTooltip}
+              >
+                <RotateCcw size={20} className="transition-transform group-hover:-rotate-45" />
+                <span className="text-xs font-mono font-bold tracking-[0.2em] uppercase">
+                  {HOME_CONTROLS_COPY.error.reconnectLabel}
+                </span>
+              </button>
+            </div>
+          ) : isEngaged ? (
+            /* Engaged Controls */
+            <React.Fragment>
+              {/* Passive Mode: Pause / Resume Button */}
+              {interactionMode !== "PTT" && !testingClip && (
+                <button
+                  onClick={isPaused ? resume : pause}
+                  className={cn(
+                    "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer",
+                    isPaused
+                      ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
+                      : "text-[rgb(var(--accent))]"
+                  )}
+                  aria-label={isPaused ? HOME_CONTROLS_COPY.passive.resumeAriaLabel : HOME_CONTROLS_COPY.passive.pauseAriaLabel}
+                  title={isPaused ? HOME_CONTROLS_COPY.passive.resumeTooltip : HOME_CONTROLS_COPY.passive.pauseTooltip}
+                >
+                  {isPaused ? <Play size={28} /> : <Pause size={28} />}
+                </button>
               )}
-              aria-label={isPaused ? "Resume Vox" : "Pause Vox"}
-            >
-              {isPaused ? <Play size={28} /> : <Pause size={28} />}
-            </button>
-          )}
 
-          {/* PTT Hold-to-Talk Mic Button */}
-          {isEngaged && !testingClip && interactionMode === "PTT" && (
-            <button
-              onPointerDown={() => handlePttStart()}
-              onPointerUp={() => handlePttStop()}
-              onPointerLeave={() => { if (pttStatus === "RECORDING") handlePttCancel(); }}
-              disabled={isPaused}
-              className={cn(
-                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer",
-                pttStatus === "RECORDING"
-                  ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
-                  : "text-[rgb(var(--accent))]",
-                isPaused && "opacity-40 cursor-not-allowed hover:bg-transparent hover:scale-100"
+              {/* PTT Mode: Hold-to-Talk Mic Button */}
+              {interactionMode === "PTT" && !testingClip && (
+                <button
+                  onPointerDown={() => handlePttStart()}
+                  onPointerUp={() => handlePttStop()}
+                  onPointerLeave={() => { if (pttStatus === "RECORDING") handlePttCancel(); }}
+                  disabled={isPaused}
+                  className={cn(
+                    "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer",
+                    pttStatus === "RECORDING"
+                      ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
+                      : "text-[rgb(var(--accent))]",
+                    isPaused && "opacity-40 cursor-not-allowed hover:bg-transparent hover:scale-100"
+                  )}
+                  aria-label={HOME_CONTROLS_COPY.ptt.micAriaLabel}
+                  title={HOME_CONTROLS_COPY.ptt.micTooltip}
+                >
+                  <Mic size={28} className={cn(pttStatus === "RECORDING" && "animate-pulse-slow")} />
+                </button>
               )}
-              aria-label="Hold to Talk (Push-To-Talk)"
-            >
-              <Mic size={28} className={cn(pttStatus === "RECORDING" && "animate-pulse-slow")} />
-            </button>
-          )}
 
-          {/* Primary Engage / Disengage Button */}
-          <div className="relative flex flex-col items-center">
-            {!isEngaged && hasCachedSession && (
-              <span className="absolute -top-7 text-[11px] tracking-widest text-[rgb(var(--accent))]/85 uppercase animate-pulse whitespace-nowrap bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded-full border border-[rgb(var(--accent))]/15">
-                Resume Session
-              </span>
-            )}
-            <button
-              onClick={isEngaged ? disengage : engage}
-              className={cn(
-                "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95",
-                isEngaged && isThinking && "engage-btn-loading border-transparent",
-                isLaunching && "animate-spin",
-                isEngaged
-                  ? "border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/15"
-                  : "bg-transparent text-[rgb(var(--accent))]"
+              {/* Disengage Button */}
+              <div className="relative flex flex-col items-center">
+                <button
+                  onClick={disengage}
+                  className={cn(
+                    "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 cursor-pointer",
+                    isThinking && "engage-btn-loading border-transparent",
+                    isLaunching && "animate-spin"
+                  )}
+                  disabled={isLaunching}
+                  aria-label={HOME_CONTROLS_COPY.engage.stopAriaLabel}
+                >
+                  {isLaunching ? (
+                    <Power size={28} className="animate-pulse-slow" />
+                  ) : (
+                    <X size={28} />
+                  )}
+                </button>
+              </div>
+            </React.Fragment>
+          ) : (
+            /* Idle State: Primary Engage Button */
+            <div className="relative flex flex-col items-center">
+              {hasCachedSession && (
+                <span className="absolute -top-7 text-[11px] tracking-widest text-[rgb(var(--accent))]/85 uppercase animate-pulse whitespace-nowrap bg-[rgb(var(--accent))]/5 px-2 py-0.5 rounded-full border border-[rgb(var(--accent))]/15">
+                  {HOME_CONTROLS_COPY.engage.resumeBadge}
+                </span>
               )}
-              disabled={isLaunching}
-              aria-label={isEngaged ? "Stop Vox" : (hasCachedSession ? "Resume Vox Session" : "Engage Vox")}
-            >
-              {isLaunching ? (
-                <Power size={28} className="animate-pulse-slow" />
-              ) : isEngaged ? (
-                <X size={28} />
-              ) : (
-                <Power
-                  size={28}
-                  className="transition-transform duration-700"
-                />
-              )}
-            </button>
-          </div>
+              <button
+                onClick={engage}
+                className={cn(
+                  "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] cursor-pointer",
+                  isLaunching && "animate-spin"
+                )}
+                disabled={isLaunching}
+                aria-label={hasCachedSession ? HOME_CONTROLS_COPY.engage.resumeAriaLabel : HOME_CONTROLS_COPY.engage.ariaLabel}
+              >
+                {isLaunching ? (
+                  <Power size={28} className="animate-pulse-slow" />
+                ) : (
+                  <Power size={28} className="transition-transform duration-700" />
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -330,7 +378,7 @@ export const Home = memo(() => {
                   ? "bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/60"
                   : "bg-transparent border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
               )}
-              aria-label="Test Mode"
+              aria-label={HOME_CONTROLS_COPY.testMode.ariaLabel}
             >
               <FlaskConical size={22} />
             </button>

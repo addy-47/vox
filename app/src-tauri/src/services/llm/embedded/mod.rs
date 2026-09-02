@@ -98,7 +98,13 @@ impl crate::services::llm::LlmProvider for EmbeddedProvider {
             };
 
             self.engine
-                .generate(&conv_ctx, turn_id, cancel, tx)
+                .generate(
+                    &conv_ctx,
+                    turn_id,
+                    request.options.max_output_tokens,
+                    cancel,
+                    tx,
+                )
                 .map_err(|e| LlmError::Engine(e.to_string()))
         })
     }

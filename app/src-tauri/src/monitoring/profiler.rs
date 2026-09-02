@@ -79,7 +79,12 @@ pub fn resolve_temp_dir() -> std::path::PathBuf {
     }
     let fallback = std::path::PathBuf::from("temp");
     if let Err(e) = std::fs::create_dir_all(&fallback) {
-        tracing::warn!(target: "memory_profiler", "Failed to create fallback temp directory {:?}: {}", fallback, e);
+        log::warn!(
+            target: "memory_profiler",
+            "Failed to create fallback temp directory {:?}: {}",
+            fallback,
+            e
+        );
     }
     fallback
 }
@@ -278,7 +283,7 @@ pub fn collect_profiler_snapshot(
 /// Persists and logs a structured frontend memory profile event.
 pub fn persist_memory_profile_event(event: &MemoryProfileLogEvent) -> Result<(), String> {
     if event.event_type != "poll" {
-        tracing::info!(
+        log::info!(
             target: "memory_profiler",
             "[MEMORY_PROFILE] Route: {} | Event: {} | Current: {:.1}MB | Peak: {:?}MB (Δ{:?}MB) | Retained: {:?}MB (Δ{:?}MB) | WebViews: Main={:?}MB, Tray={:?}MB | DOM Nodes: {} | Components: {:?}",
             event.route,
@@ -316,14 +321,14 @@ pub fn persist_memory_profile_event(event: &MemoryProfileLogEvent) -> Result<(),
         .open(&file_path)
     {
         if let Err(e) = writeln!(file, "{}", serialized) {
-            tracing::warn!(target: "memory_profiler", "Failed to write to snapshot JSONL: {}", e);
+            log::warn!(target: "memory_profiler", "Failed to write to snapshot JSONL: {}", e);
         }
     } else {
-        tracing::warn!(target: "memory_profiler", "Failed to open snapshot JSONL file at {:?}", file_path);
+        log::warn!(target: "memory_profiler", "Failed to open snapshot JSONL file at {:?}", file_path);
     }
 
     if let Err(e) = std::fs::write(temp_dir.join("memory_profile_latest.json"), &serialized) {
-        tracing::warn!(target: "memory_profiler", "Failed to write latest snapshot JSON: {}", e);
+        log::warn!(target: "memory_profiler", "Failed to write latest snapshot JSON: {}", e);
     }
 
     Ok(())

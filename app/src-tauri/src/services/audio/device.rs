@@ -109,12 +109,18 @@ where
             resampled_buffer.clear();
 
             for chunk in data.chunks_exact(channels) {
+                if mono_buffer.len() >= INGESTION_BUFFER_CAPACITY_SAMPLES {
+                    break;
+                }
                 let avg: f32 = chunk.iter().sum::<f32>() / channels as f32;
                 mono_buffer.push(avg);
             }
 
             let n_mono = mono_buffer.len();
             while (source_index as usize) < n_mono {
+                if resampled_buffer.len() >= INGESTION_BUFFER_CAPACITY_SAMPLES {
+                    break;
+                }
                 let idx = source_index as usize;
                 let next_idx = (idx + 1).min(n_mono - 1);
                 let frac = source_index - idx as f32;

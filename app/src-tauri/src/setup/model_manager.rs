@@ -193,8 +193,12 @@ impl ModelManager {
                 None,
             );
 
-            let extract_dest = if entry.path.contains('/') {
-                models_dir.join(Path::new(&entry.path).parent().unwrap())
+            let extract_dest = if let Some(parent) = Path::new(&entry.path).parent() {
+                if parent.as_os_str().is_empty() {
+                    models_dir.to_path_buf()
+                } else {
+                    models_dir.join(parent)
+                }
             } else {
                 models_dir.to_path_buf()
             };

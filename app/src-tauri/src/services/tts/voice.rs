@@ -335,7 +335,7 @@ pub fn stop_recording() -> Result<(Vec<f32>, u32), String> {
 
     drop(recorder._stream);
 
-    let samples = recorder.samples.lock().clone();
+    let samples = std::mem::take(&mut *recorder.samples.lock());
     let sample_rate = recorder.sample_rate;
     log::info!(
         "[Voice] Recording stopped. Captured {} samples at {} Hz ({:.2}s)",

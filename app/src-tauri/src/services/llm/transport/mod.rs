@@ -78,8 +78,17 @@ impl RemoteTransport {
             .connect_timeout(Duration::from_secs(
                 crate::services::llm::DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS,
             ))
+            .timeout(Duration::from_secs(
+                crate::services::llm::DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS,
+            ))
             .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+            .unwrap_or_else(|e| {
+                log::warn!(
+                    "[LLM Transport] Failed to build tuned HTTP client ({}). Using default client.",
+                    e
+                );
+                reqwest::Client::new()
+            });
 
         let capabilities = ProviderCapabilities {
             temperature: Support::Supported,

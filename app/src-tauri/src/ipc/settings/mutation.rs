@@ -973,11 +973,11 @@ async fn schedule_debounced_save(state: State<'_, std::sync::Arc<AppState>>) {
         handle.abort();
     }
 
-    let settings_snapshot = { state.settings.read().ok().map(|s| s.clone()) };
-
-    let Some(snapshot) = settings_snapshot else {
-        return;
-    };
+    let snapshot = state
+        .settings
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
 
     let handle = tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_millis(SETTINGS_SAVE_DEBOUNCE_MS)).await;
