@@ -92,7 +92,9 @@ pub fn benchmark_streaming_provider(
         audio_suppressed: Arc::new(AtomicBool::new(false)),
         engine_shutdown: engine_shutdown.clone(),
         dropped_counter: Arc::new(AtomicU64::new(0)),
-        turn_token: Arc::new(parking_lot::Mutex::new(tokio_util::sync::CancellationToken::new())),
+        turn_token: Arc::new(parking_lot::Mutex::new(
+            tokio_util::sync::CancellationToken::new(),
+        )),
         turn_epoch: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
 

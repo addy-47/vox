@@ -5,12 +5,8 @@ use crate::services::harness::ConversationContext;
 use crate::services::llm::LlmEngine;
 use anyhow::{anyhow, Result};
 use llama_cpp_4::{
-    context::LlamaContext,
-    llama_batch::LlamaBatch,
-    model::AddBos,
-    sampling::LlamaSampler,
-    token::data_array::LlamaTokenDataArray,
-    token::LlamaToken,
+    context::LlamaContext, llama_batch::LlamaBatch, model::AddBos, sampling::LlamaSampler,
+    token::data_array::LlamaTokenDataArray, token::LlamaToken,
 };
 
 /// Soft-cap limits and state for stream generation.
@@ -32,7 +28,10 @@ impl GenerationLimits {
     /// Evaluates if generation has exceeded either context limit or safety limit soft caps.
     pub fn is_soft_cap_exceeded(&self, n_cur: i32) -> bool {
         if n_cur >= self.max_ctx_size as i32 {
-            log::warn!("[LLM] Context limit reached ({} tokens).", self.max_ctx_size);
+            log::warn!(
+                "[LLM] Context limit reached ({} tokens).",
+                self.max_ctx_size
+            );
             return true;
         }
         if n_cur > (self.total_input_tokens + self.max_safety_tokens) as i32 {

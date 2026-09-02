@@ -106,7 +106,10 @@ pub fn build_compaction_request(
     let effective_settings = settings.unwrap_or(&default_settings);
     let eff_ctx = effective_settings.effective_ctx_size();
     let compaction_max_tokens = calculate_compaction_max_tokens(eff_ctx);
-    let policy = crate::services::llm::GenerationPolicy::from_settings(effective_settings, Some(compaction_max_tokens));
+    let policy = crate::services::llm::GenerationPolicy::from_settings(
+        effective_settings,
+        Some(compaction_max_tokens),
+    );
 
     policy.build_request(
         crate::services::llm::GenerationPurpose::MemoryCompaction,
