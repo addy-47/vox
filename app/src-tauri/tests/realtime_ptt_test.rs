@@ -265,8 +265,8 @@ async fn test_realtime_ptt_speech_detected_flushes_to_engine() {
     // 4. Assert speech was validated and flushed to RealtimeActor
     assert_eq!(
         state.pipeline.state(),
-        InteractionState::Thinking,
-        "State must be Thinking after speech flushed to RealtimeActor"
+        InteractionState::Listening,
+        "State must remain Listening after speech flushed to RealtimeActor while awaiting cloud turn (domain_event_matrix.md)"
     );
     assert!(
         push_counter.load(Ordering::Relaxed) > 0,

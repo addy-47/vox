@@ -42,7 +42,6 @@ pub enum LlmCommand {
     Shutdown,
 }
 
-
 impl GenerationPolicy {
     /// Constructs policy from current `LlmSettings` and optional explicit compaction token ceiling.
     pub fn from_settings(settings: &LlmSettings, compaction_max_tokens: Option<u32>) -> Self {
@@ -169,7 +168,6 @@ pub fn create_llm_provider(
 ) -> Result<Box<dyn LlmProvider>, String> {
     create_llm_provider_from_llm_settings(&settings.llm, llm_path)
 }
-
 
 /// Spawns and initializes a persistent LLM worker actor thread.
 pub fn warm_up_llm<R: tauri::Runtime + 'static>(

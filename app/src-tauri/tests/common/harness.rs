@@ -130,7 +130,9 @@ pub fn setup_vad_actor(
         audio_suppressed,
         engine_shutdown,
         dropped_counter: Arc::new(AtomicU64::new(0)),
-        turn_token: Arc::new(parking_lot::Mutex::new(tokio_util::sync::CancellationToken::new())),
+        turn_token: Arc::new(parking_lot::Mutex::new(
+            tokio_util::sync::CancellationToken::new(),
+        )),
         turn_epoch: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
 
