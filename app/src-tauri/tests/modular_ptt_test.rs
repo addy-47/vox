@@ -74,10 +74,10 @@ async fn test_modular_ptt_audio_accumulation_en() {
 
         // 3. Upstream Trigger: Stop PTT recording
         ptt_stop(&app, &state).await.expect("ptt_stop failed");
-        assert_ne!(
+        assert_eq!(
             state.pipeline.state(),
             InteractionState::Listening,
-            "Pipeline state must leave Listening after ptt_stop"
+            "Pipeline state must remain in Listening while STT transcription is in-flight (domain_event_matrix.md)"
         );
 
         // 4. Downstream Evaluation: Collect emitted transcripts

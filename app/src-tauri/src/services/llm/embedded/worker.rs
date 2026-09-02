@@ -1,12 +1,8 @@
 use super::family::ModelFamily;
 use anyhow::{anyhow, Result};
 use llama_cpp_4::{
-    context::params::LlamaContextParams,
-    context::LlamaContext,
-    llama_backend::LlamaBackend,
-    model::params::LlamaModelParams,
-    model::LlamaModel,
-    token::LlamaToken,
+    context::params::LlamaContextParams, context::LlamaContext, llama_backend::LlamaBackend,
+    model::params::LlamaModelParams, model::LlamaModel, token::LlamaToken,
 };
 use parking_lot::Mutex;
 use std::num::NonZeroU32;
