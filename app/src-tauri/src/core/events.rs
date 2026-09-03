@@ -112,6 +112,21 @@ pub struct ToastPayload {
     pub duration_ms: Option<u64>,
 }
 
+/// Strongly-typed universal notification record serialized across Tauri IPC.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NotificationRecord {
+    pub id: String,
+    pub category: String,
+    pub title: String,
+    pub message: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<i64>,
+    pub metadata: String,
+    pub is_read: bool,
+    pub created_at: i64,
+}
+
 /// Strongly-typed universal Tauri IPC event enum.
 /// Every IPC event emitted to any webview window must have a canonical entry here.
 #[derive(Debug, Clone, Serialize)]
@@ -128,6 +143,10 @@ pub enum IpcEvent {
     SettingsUpdated,
     ToggleTray,
     ShowToast(ToastPayload),
+    NotificationCreated(NotificationRecord),
+    NotificationUpdated(NotificationRecord),
+    NotificationDismissed { id: String },
+    NotificationsMarkedRead,
 }
 
 impl IpcEvent {
@@ -145,6 +164,10 @@ impl IpcEvent {
             Self::SettingsUpdated => "settings-updated",
             Self::ToggleTray => "toggle_tray",
             Self::ShowToast(_) => "show_toast",
+            Self::NotificationCreated(_) => "notification_created",
+            Self::NotificationUpdated(_) => "notification_updated",
+            Self::NotificationDismissed { .. } => "notification_dismissed",
+            Self::NotificationsMarkedRead => "notifications_marked_read",
         }
     }
 }
@@ -164,6 +187,10 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::SettingsUpdated => app.emit(name, ()),
         IpcEvent::ToggleTray => app.emit(name, ()),
         IpcEvent::ShowToast(payload) => app.emit(name, payload),
+        IpcEvent::NotificationCreated(payload) => app.emit(name, payload),
+        IpcEvent::NotificationUpdated(payload) => app.emit(name, payload),
+        IpcEvent::NotificationDismissed { id } => app.emit(name, serde_json::json!({ "id": id })),
+        IpcEvent::NotificationsMarkedRead => app.emit(name, ()),
     }
 }
 
@@ -186,5 +213,11 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::SettingsUpdated => app.emit_to(target, name, ()),
         IpcEvent::ToggleTray => app.emit_to(target, name, ()),
         IpcEvent::ShowToast(payload) => app.emit_to(target, name, payload),
+        IpcEvent::NotificationCreated(payload) => app.emit_to(target, name, payload),
+        IpcEvent::NotificationUpdated(payload) => app.emit_to(target, name, payload),
+        IpcEvent::NotificationDismissed { id } => {
+            app.emit_to(target, name, serde_json::json!({ "id": id }))
+        }
+        IpcEvent::NotificationsMarkedRead => app.emit_to(target, name, ()),
     }
 }

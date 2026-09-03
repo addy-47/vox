@@ -568,6 +568,52 @@ impl Default for TtsProviderConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TtsVoiceSource {
+    Catalog,
+    Custom,
+    Edge,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderCaps {
+    pub voices: TtsVoiceSource,
+    pub speed: bool,
+    pub quality_steps: bool,
+    pub clone: bool,
+}
+
+pub fn caps_for_id(provider_id: &str) -> ProviderCaps {
+    match provider_id {
+        "supertonic" | "kokoro" => ProviderCaps {
+            voices: TtsVoiceSource::Catalog,
+            speed: true,
+            quality_steps: false,
+            clone: false,
+        },
+        "chatterbox" | "chatterbox_remote" => ProviderCaps {
+            voices: TtsVoiceSource::Custom,
+            speed: true,
+            quality_steps: true,
+            clone: true,
+        },
+        "edge_tts" => ProviderCaps {
+            voices: TtsVoiceSource::Edge,
+            speed: false,
+            quality_steps: false,
+            clone: false,
+        },
+        _ => ProviderCaps {
+            voices: TtsVoiceSource::Catalog,
+            speed: true,
+            quality_steps: false,
+            clone: false,
+        },
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TtsSettings {
@@ -663,11 +709,12 @@ impl Default for DictationSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(default)]
 pub struct HistorySettings {
     pub private_mode: bool,
     pub tray_history_limit: u32,
+    pub auto_compaction: bool,
 }
 
 impl Default for HistorySettings {
@@ -675,6 +722,7 @@ impl Default for HistorySettings {
         Self {
             private_mode: crate::core::defaults::DEFAULT_HISTORY_PRIVATE_MODE,
             tray_history_limit: crate::core::defaults::DEFAULT_HISTORY_TRAY_LIMIT,
+            auto_compaction: crate::core::defaults::DEFAULT_HISTORY_AUTO_COMPACTION,
         }
     }
 }
@@ -1026,5 +1074,32 @@ impl VoxSettings {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_caps_for_id_matrix() {
+        assert_eq!(
+            caps_for_id("supertonic"),
+            ProviderCaps {
+                voices: TtsVoiceSource::Catalog,
+                speed: true,
+                quality_steps: false,
+                clone: false,
+            }
+        );
+        assert_eq!(caps_for_id("kokoro"), caps_for_id("supertonic"));
+        let chatterbox = caps_for_id("chatterbox");
+        assert_eq!(chatterbox.voices, TtsVoiceSource::Custom);
+        assert!(chatterbox.speed && chatterbox.quality_steps && chatterbox.clone);
+        assert_eq!(caps_for_id("chatterbox_remote"), chatterbox);
+        let edge = caps_for_id("edge_tts");
+        assert_eq!(edge.voices, TtsVoiceSource::Edge);
+        assert!(!edge.speed && !edge.quality_steps && !edge.clone);
+        assert_eq!(caps_for_id("no_such_engine"), caps_for_id("supertonic"));
     }
 }

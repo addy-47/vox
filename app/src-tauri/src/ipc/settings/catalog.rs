@@ -123,3 +123,8 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         preset_colors: crate::core::settings::get_preset_colors(),
     })
 }
+
+#[tauri::command]
+pub fn get_provider_caps(provider_id: String) -> crate::core::settings::ProviderCaps {
+    crate::core::settings::caps_for_id(&provider_id)
+}

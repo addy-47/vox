@@ -58,29 +58,29 @@ export const ToggleTile = memo<ToggleTileProps>(({
       <div
         className="flex-1 p-3 rounded-xl group-hover:rounded-r-none border border-[rgba(var(--accent),0.05)] bg-[rgba(var(--foreground),0.01)] group-hover:border-[rgba(var(--accent),0.2)] group-hover:bg-[rgba(var(--accent),0.02)] transition-all duration-300 flex flex-col justify-between h-full min-w-0"
       >
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[12px] font-bold tracking-widest text-[rgb(var(--foreground-muted))]/70 whitespace-nowrap uppercase">
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <span className="text-[11px] sm:text-[11.5px] font-bold tracking-wider text-[rgb(var(--foreground-muted))]/70 uppercase truncate">
             {title}
           </span>
           {Icon && (
             <Icon
-              size={16}
+              size={15}
               className={
                 active
-                  ? "text-[rgb(var(--accent))]"
-                  : "text-[rgb(var(--foreground-muted))]/40"
+                  ? "text-[rgb(var(--accent))] shrink-0"
+                  : "text-[rgb(var(--foreground-muted))]/40 shrink-0"
               }
             />
           )}
         </div>
 
-        <div className="flex items-end justify-between mt-2">
-          <div className="flex flex-col min-w-0">
+        <div className="flex items-end justify-between mt-2 min-w-0">
+          <div className="flex flex-col min-w-0 flex-1">
             <span className="text-[12px] font-bold text-[rgb(var(--foreground))] transition-colors group-hover:text-[rgb(var(--accent))] leading-none truncate">
               {active ? activeLabel : inactiveLabel}
             </span>
             {(activeSublabel || inactiveSublabel) && (
-              <span className="text-[12px] text-[rgb(var(--foreground-muted))]/60 font-semibold uppercase mt-1 leading-none truncate">
+              <span className="text-[10px] sm:text-[10.5px] text-[rgb(var(--foreground-muted))]/60 font-medium uppercase mt-1 leading-none truncate">
                 {active ? activeSublabel : inactiveSublabel}
               </span>
             )}

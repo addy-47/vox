@@ -40,6 +40,8 @@ pub struct ModelGroup {
     pub is_cloud: bool,
     #[serde(default)]
     pub is_remote: bool,
+    #[serde(default)]
+    pub required: bool,
     pub files: Vec<ModelEntry>,
 }
 

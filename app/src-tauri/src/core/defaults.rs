@@ -3,6 +3,7 @@ pub const DEFAULT_UI_ACCENT_SEED: &str = "#00DBE9"; // Default Cyan
 
 pub const DEFAULT_HISTORY_PRIVATE_MODE: bool = false;
 pub const DEFAULT_HISTORY_TRAY_LIMIT: u32 = 5;
+pub const DEFAULT_HISTORY_AUTO_COMPACTION: bool = false;
 
 pub const DEFAULT_DICTATION_ENABLED: bool = true;
 pub const DEFAULT_DICTATION_HOTKEY: &str = "Alt+Space";

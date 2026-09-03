@@ -38,17 +38,17 @@ export const VadWorkspace = memo(
         {activeCategoryTab === "model" ? (
           <div
             className={cn(
-              "grid gap-2.5 auto-rows-max content-start",
-              layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
+              "grid gap-2.5 h-full",
+              vadModels.length <= 2
+                ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr" : "grid-cols-2 grid-rows-1")
+                : (layoutMode === "small" ? "grid-cols-1 auto-rows-full snap-y snap-mandatory" : "grid-cols-2 auto-rows-full snap-y snap-mandatory")
             )}
           >
             {vadModels.map((model) => {
               const isBuiltIn = !!model.is_built_in;
               const isDownloaded = isBuiltIn || !!modelPresence[model.id];
-              const isActive =
-                activeVadBackend.toLowerCase() === model.id.toLowerCase() ||
-                (model.id === "earshot" && activeVadBackend === "earshot") ||
-                (model.id === "ten_vad" && activeVadBackend === "ten_vad");
+              // Single source: manifest group id IS the vad_backend key.
+              const isActive = model.id === activeVadBackend;
 
               return (
                 <SubModelCard
