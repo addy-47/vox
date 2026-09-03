@@ -1,3 +1,4 @@
+use crate::persistence::db::VoxDb;
 use crate::persistence::{encode_f32_blob, MAX_QUEUE_RETRY_ATTEMPTS};
 use crate::services::memory::{collection_type, CollectionType, FactSource, QueueStatus, Relation};
 use anyhow::{anyhow, Result};
@@ -264,5 +265,195 @@ pub async fn write_candidate_audit(
         (json_str, item_id),
     )
     .await?;
+    Ok(())
+}
+
+/// Updates a memory fact's text content and its embedding vector.
+pub async fn update_memory_fact(
+    conn: &Connection,
+    fact_id: &str,
+    new_text: &str,
+    embedding: &[f32],
+) -> Result<()> {
+    let mut rows = conn
+        .query(
+            "SELECT collection FROM memory_facts WHERE id = ?",
+            (fact_id.to_string(),),
+        )
+        .await?;
+    let row = rows
+        .next()
+        .await?
+        .ok_or_else(|| anyhow!("Fact not found: {}", fact_id))?;
+    let collection: String = row.get(0)?;
+
+    let blob_bytes = encode_f32_blob(embedding);
+
+    VoxDb::with_transaction(conn, async {
+        conn.execute(
+            "UPDATE memory_facts SET fact = ? WHERE id = ?",
+            (new_text.to_string(), fact_id.to_string()),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "INSERT INTO memory_facts_vectors (fact_id, collection, embedding) VALUES (?, ?, ?)
+             ON CONFLICT(fact_id) DO UPDATE SET embedding = excluded.embedding",
+            (fact_id.to_string(), collection, blob_bytes),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| anyhow!(e))?;
+
+    Ok(())
+}
+
+/// Marks a memory fact as superseded and creates a user tombstone linking it.
+pub async fn delete_memory_fact(
+    conn: &Connection,
+    fact_id: &str,
+) -> Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let tombstone_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
+
+    VoxDb::with_transaction(conn, async {
+        conn.execute(
+            "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
+            (fact_id.to_string(),),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at) VALUES (?, 'foundational', 'Identity', '', ?, 'active', ?)",
+            (tombstone_id.clone(), FactSource::User.as_str().to_string(), now),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at) VALUES (?, ?, ?, 'USER', ?)",
+            (tombstone_id, fact_id.to_string(), Relation::Supersedes.as_str().to_string(), now),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| anyhow!(e))?;
+
+    Ok(())
+}
+
+/// Resolves a conflict between two facts by marking loser as superseded and linking winner with SUPERSEDES.
+pub async fn resolve_fact_conflict(
+    conn: &Connection,
+    winner_id: &str,
+    loser_id: &str,
+) -> Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    VoxDb::with_transaction(conn, async {
+        conn.execute(
+            "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
+            (loser_id.to_string(),),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "INSERT INTO memory_relations (from_id, to_id, relation, source, created_at) VALUES (?, ?, ?, 'USER', ?)",
+            (winner_id.to_string(), loser_id.to_string(), Relation::Supersedes.as_str().to_string(), now),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| anyhow!(e))?;
+
+    Ok(())
+}
+
+/// Resets failed queue items to staged_pending for re-processing.
+pub async fn retry_failed_queue_items(
+    conn: &Connection,
+    item_ids: Option<Vec<i64>>,
+) -> Result<u64> {
+    let affected = match item_ids {
+        Some(ids) if !ids.is_empty() => {
+            if ids.len() > 1000 {
+                return Err(anyhow!("Too many items in retry batch. Maximum allowed is 1000."));
+            }
+            let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "UPDATE personal_memory_queue 
+                 SET status = 'staged_pending', attempts = 0, retry_count = 0, error_msg = NULL 
+                 WHERE status = 'failed' AND id IN ({})",
+                placeholders
+            );
+            let params: Vec<turso::Value> = ids.into_iter().map(|id| id.into()).collect();
+            conn.execute(&sql, params).await?
+        }
+        _ => {
+            conn.execute(
+                "UPDATE personal_memory_queue 
+                 SET status = 'staged_pending', attempts = 0, retry_count = 0, error_msg = NULL 
+                 WHERE status = 'failed'",
+                (),
+            )
+            .await?
+        }
+    };
+    Ok(affected)
+}
+
+/// Reassigns an existing memory fact to a new collection by staging it in personal_memory_queue.
+pub async fn reassign_memory_fact(
+    conn: &Connection,
+    fact_id: &str,
+    new_collection: &str,
+) -> Result<()> {
+    let mut rows = conn
+        .query(
+            "SELECT fact, source, session_id FROM memory_facts WHERE id = ?",
+            (fact_id.to_string(),),
+        )
+        .await?;
+
+    let row = rows
+        .next()
+        .await?
+        .ok_or_else(|| anyhow!("Fact not found: {}", fact_id))?;
+
+    let fact_text: String = row.get(0)?;
+    let source_str: String = row.get(1)?;
+    let session_id: String = row.get(2).unwrap_or_default();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    conn.execute(
+        "INSERT INTO personal_memory_queue (fact, collection, source, session_id, status, created_at)
+         VALUES (?, ?, ?, ?, 'staged_pending', ?)",
+        (fact_text, new_collection.to_string(), source_str, session_id, now),
+    )
+    .await?;
+
     Ok(())
 }

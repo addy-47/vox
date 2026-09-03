@@ -483,6 +483,20 @@ pub fn run() {
                 }
             });
 
+            // ── 4. Background boot reconciliation for crash-recovery & uncompacted sessions ──
+            let boot_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state: tauri::State<'_, std::sync::Arc<AppState>> = boot_handle.state();
+                if let Err(e) = crate::services::memory::compaction::reconcile_uncompacted_sessions_on_boot(
+                    &boot_handle,
+                    state.inner(),
+                )
+                .await
+                {
+                    log::warn!("[BOOTSTRAP] Boot memory compaction reconciliation failed: {}", e);
+                }
+            });
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -546,6 +560,7 @@ pub fn run() {
             crate::toast::get_last_toast,
             get_settings,
             get_model_catalog,
+            crate::ipc::settings::catalog::get_provider_caps,
             check_provider_health,
             list_llm_models,
             crate::ipc::settings::probe_model_capabilities,
@@ -592,6 +607,11 @@ pub fn run() {
             crate::ipc::memory::get_memory_queue_status,
             crate::ipc::memory::toggle_pipeline_processing,
             crate::ipc::memory::retry_failed_queue_items,
+            // Notifications & Compaction
+            crate::ipc::notifications::get_notifications,
+            crate::ipc::notifications::mark_notifications_read,
+            crate::ipc::notifications::dismiss_notification,
+            crate::ipc::notifications::trigger_session_compaction,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

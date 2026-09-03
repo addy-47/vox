@@ -9,14 +9,28 @@ pub const PERSISTENCE_RATE_INTERVAL: Duration = Duration::from_secs(1);
 pub const MAX_QUEUE_RETRY_ATTEMPTS: u32 = 3;
 pub const SQLITE_BUSY_TIMEOUT_MS: u32 = 5000;
 
+pub mod compactions;
 pub mod db;
 pub mod events;
+pub mod graph;
+pub mod memory_mutations;
+pub mod memory_queries;
 pub mod memory_worker;
-pub mod mutations;
-pub mod queries;
+pub mod notifications;
 pub mod schema;
+pub mod sessions;
 pub mod voices;
 pub mod worker;
+
+pub use graph::{
+    MemoryConflictItem, MemoryEdgeTopology, MemoryFactDetail, MemoryGraphPayload,
+    MemoryGraphQueryFilter, MemoryNodeTopology,
+};
+pub use memory_mutations as mutations;
+pub use memory_queries as queries;
+pub use memory_queries::{MemoryQueueItem, MemoryQueueSummary};
+pub use notifications::{NewNotification, NotificationRecord};
+pub use sessions::{SessionRow, TurnRow};
 
 /// Floating-point vector byte-blob encoding and decoding helpers for Turso F32_BLOB columns.
 pub fn encode_f32_blob(floats: &[f32]) -> Vec<u8> {

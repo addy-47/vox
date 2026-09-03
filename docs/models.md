@@ -42,9 +42,9 @@ related_docs:
 | **LLM** (server) | Ollama / LM Studio | `ollama` / `lm_studio` | — | — | 0 MB (local) | HTTP (reqwest) | `http://localhost:11434` | N/A |
 | **LLM** (cloud) | OpenAI / Gemini / Anthropic / Nvidia | provider-config | — | — | 0 MB (local) | HTTP (reqwest) | Remote API (`integrate.api.nvidia.com/v1` default) | N/A |
 | **TTS** (default) | Microsoft Edge TTS | `edge_tts` | Remote | — | **0 MB** | Pure Rust (`tokio-tungstenite`) | Remote WebSocket | N/A |
-| **TTS** (local) | Supertonic 3 | `supertonic_tts` | 99M | INT8 | ~144 MB | sherpa-onnx ONNX | `~/.vox/models/tts/supertonic-3/` | ✅ |
+| **TTS** (local) | Supertonic 3 | `supertonic` | 99M | INT8 | ~144 MB | sherpa-onnx ONNX | `~/.vox/models/tts/supertonic-3/` | ✅ |
 | **TTS** (local) | Kokoro Multi-Lang | `kokoro` | 82M | FP32 | ~120 MB | sherpa-onnx ONNX | `~/.vox/models/tts/kokoro/` | ✅ |
-| **TTS** (local clone) | Chatterbox Local | `chatterbox_tts` | 340M | Q4 GGML | ~1.1 GB | chatterbox-rs GGML | `~/.vox/models/tts/chatterbox/` | ✅ |
+| **TTS** (local clone) | Chatterbox Local | `chatterbox` | 340M | Q4 GGML | ~1.1 GB | chatterbox-rs GGML | `~/.vox/models/tts/chatterbox/` | ✅ |
 | **TTS** (remote) | Chatterbox Remote | `chatterbox_remote` | 340M | Q4 GGML | 0 MB (local) | reqwest HTTP | Remote GPU server | ✅ |
 
 ### 1.2 Memory Subsystem Models

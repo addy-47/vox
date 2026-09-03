@@ -171,16 +171,13 @@ pub async fn prepare_turn_context(
                     );
                 }
                 Err(e) => {
-                    log::warn!(
-                        "[Harness] LLM compaction failed: {}. Falling back to FIFO shift.",
+                    log::error!(
+                        "[Harness] Critical LLM compaction failed: {}. Transitioning to pipeline error.",
                         e
                     );
-                    let mut lock = params.harness.lock();
-                    let mut context_harness =
-                        super::accountant::ContextHarness::new(params.context_window);
-                    context_harness.sync_tokens_from_buffer(&lock.buffer);
-                    lock.buffer.messages.push(last_user_turn);
-                    context_harness.perform_fifo_maintenance(&mut lock.buffer);
+                    return Err(MemoryError::CompactionFailed {
+                        message: e.to_string(),
+                    });
                 }
             }
         } else {
@@ -328,6 +325,10 @@ pub fn trigger_background_compaction(
         let settings_resolved =
             settings.or_else(|| state.settings.read().ok().map(|s| s.llm.clone()));
         let cached_provider = state.llm_provider.read().clone();
+        let session_id = state
+            .conversation_id
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .to_string();
 
         tauri::async_runtime::spawn(async move {
             if cancel_flag.is_cancelled() {
@@ -383,6 +384,29 @@ pub fn trigger_background_compaction(
                         log::info!(
                             "[Harness] Opportunistic background compaction committed successfully."
                         );
+                    }
+
+                    if !result.personal_memory.is_empty() {
+                        let db_path = crate::utils::paths::db_path();
+                        let active_session = session_id.clone();
+                        let facts = result.personal_memory;
+                        tauri::async_runtime::spawn(async move {
+                            if let Ok(conn) = crate::persistence::db::VoxDb::open(&db_path).await {
+                                if let Err(e) = crate::persistence::memory_mutations::enqueue_personal_facts(
+                                    &conn,
+                                    facts,
+                                    &active_session,
+                                    true,
+                                )
+                                .await
+                                {
+                                    log::warn!(
+                                        "[Harness] Soft compaction personal facts enqueue failed: {}",
+                                        e
+                                    );
+                                }
+                            }
+                        });
                     }
                 }
                 Err(e) => {

@@ -467,4 +467,62 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
 
     transition(InteractionState::Idle, ctx, app, state);
     log::info!("[Pipeline::Session] Session ended -> Idle");
+
+    // Check compaction for the completed session
+    let auto_compaction = state
+        .settings
+        .read()
+        .map(|s| s.history.auto_compaction)
+        .unwrap_or(false);
+
+    let app_handle = app.clone();
+    let session_id = conv_id as i64;
+
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        let db_path = crate::utils::paths::db_path();
+        if let Ok(conn) = crate::persistence::db::VoxDb::open(&db_path).await {
+            let last_compacted = match crate::persistence::compactions::fetch_latest_compaction_run(&conn, session_id).await {
+                Ok(Some(run)) if run.status == "completed" => run.to_turn_id,
+                _ => 0,
+            };
+
+            if let Ok(turns) = crate::persistence::compactions::fetch_turns_for_compaction(&conn, session_id, last_compacted).await {
+                let uncompacted_count = turns.len() as u32;
+                if uncompacted_count > 0 {
+                    if auto_compaction {
+                        use tauri::Manager;
+                        let state_handle: tauri::State<'_, Arc<AppState>> = app_handle.state();
+                        let app_state: &Arc<AppState> = state_handle.inner();
+                        if let Err(e) = crate::services::memory::compaction::coordinator::CompactionCoordinator::run_compaction_slice(
+                            &app_handle,
+                            app_state,
+                            session_id,
+                            "auto",
+                            None,
+                        )
+                        .await
+                        {
+                            log::warn!(
+                                "[Pipeline::Session] Auto-compaction failed for session {}: {}",
+                                session_id, e
+                            );
+                        }
+                    } else if let Err(e) = crate::services::memory::compaction::coordinator::CompactionCoordinator::notify_uncompacted_session(
+                        &app_handle,
+                        session_id,
+                        uncompacted_count,
+                    )
+                    .await
+                    {
+                        log::warn!(
+                            "[Pipeline::Session] Failed to emit uncompacted notification for session {}: {}",
+                            session_id, e
+                        );
+                    }
+                }
+            }
+        }
+    });
 }

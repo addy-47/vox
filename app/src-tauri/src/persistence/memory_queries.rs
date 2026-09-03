@@ -382,3 +382,91 @@ pub async fn fetch_inter_collection_candidates(
     }
     Ok(candidates)
 }
+
+/// Item in the personal memory staging ingestion queue.
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct MemoryQueueItem {
+    pub id: i64,
+    pub fact: String,
+    pub collection: String,
+    pub source: String,
+    pub session_id: String,
+    pub status: String,
+    pub attempts: u32,
+    pub error_msg: Option<String>,
+    pub created_at: i64,
+}
+
+/// Summary counts and recent entries in the memory ingestion queue.
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct MemoryQueueSummary {
+    pub staged_pending: u32,
+    pub dedup_pass: u32,
+    pub nli_evaluated: u32,
+    pub paused: u32,
+    pub failed: u32,
+    pub recent_items: Vec<MemoryQueueItem>,
+}
+
+/// Fetches queue status counts and the most recent 50 queue items.
+pub async fn fetch_memory_queue_status(conn: &Connection) -> Result<MemoryQueueSummary> {
+    let mut rows = conn
+        .query(
+            "SELECT status, count(*) FROM personal_memory_queue GROUP BY status",
+            (),
+        )
+        .await?;
+
+    let mut staged_pending = 0;
+    let mut dedup_pass = 0;
+    let mut nli_evaluated = 0;
+    let mut paused = 0;
+    let mut failed = 0;
+
+    while let Some(row) = rows.next().await? {
+        let status: String = row.get(0).unwrap_or_default();
+        let count: i64 = row.get(1).unwrap_or(0);
+        match status.as_str() {
+            "staged_pending" => staged_pending = count as u32,
+            "dedup_pass" => dedup_pass = count as u32,
+            "nli_evaluated" => nli_evaluated = count as u32,
+            "paused" => paused = count as u32,
+            "failed" => failed = count as u32,
+            _ => {}
+        }
+    }
+
+    let mut recent_rows = conn
+        .query(
+            "SELECT id, fact, collection, source, session_id, status, attempts, error_msg, created_at 
+             FROM personal_memory_queue 
+             ORDER BY created_at DESC LIMIT 50",
+            (),
+        )
+        .await?;
+
+    let mut recent_items = Vec::new();
+    while let Some(row) = recent_rows.next().await? {
+        let attempts_i64: i64 = row.get(6).unwrap_or(0);
+        recent_items.push(MemoryQueueItem {
+            id: row.get(0)?,
+            fact: row.get(1)?,
+            collection: row.get(2)?,
+            source: row.get(3)?,
+            session_id: row.get(4)?,
+            status: row.get(5)?,
+            attempts: attempts_i64 as u32,
+            error_msg: row.get(7).ok(),
+            created_at: row.get(8)?,
+        });
+    }
+
+    Ok(MemoryQueueSummary {
+        staged_pending,
+        dedup_pass,
+        nli_evaluated,
+        paused,
+        failed,
+        recent_items,
+    })
+}
