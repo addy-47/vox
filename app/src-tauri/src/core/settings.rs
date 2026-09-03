@@ -135,8 +135,12 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
         {
             SettingReloadPolicy::Hot
         }
-        "vad" if key == "threshold" || key == "ptt_noise_gate" => SettingReloadPolicy::Hot,
-        "stt" if key == "transliterate_enabled" => SettingReloadPolicy::Hot,
+        "vad" if key == "threshold" || key == "ptt_noise_gate" || key == "silence_duration_ms" || key == "speech_onset_ms" => {
+            SettingReloadPolicy::WorkerCommand
+        }
+        "stt" if key == "transliterate_enabled" || key == "partial_throttle_ms" => SettingReloadPolicy::Hot,
+        "stt" if key == "threads" => SettingReloadPolicy::Restart,
+        "tts" if key == "threads" => SettingReloadPolicy::Restart,
         "interaction" if key == "auto_sleep_timeout" => SettingReloadPolicy::Hot,
         "system" if key == "telemetry_enabled" || key == "setup_completed" => {
             SettingReloadPolicy::Hot
@@ -183,6 +187,8 @@ pub struct VadSettings {
     pub threshold: f32,
     pub ptt_noise_gate: f32,
     pub vad_backend: VadBackendOption,
+    pub silence_duration_ms: u32,
+    pub speech_onset_ms: u32,
 }
 
 impl Default for VadSettings {
@@ -191,6 +197,8 @@ impl Default for VadSettings {
             threshold: crate::core::defaults::DEFAULT_VAD_THRESHOLD,
             ptt_noise_gate: crate::core::defaults::DEFAULT_VAD_PTT_NOISE_GATE,
             vad_backend: VadBackendOption::TenVad,
+            silence_duration_ms: crate::core::defaults::DEFAULT_VAD_SILENCE_DURATION_MS,
+            speech_onset_ms: crate::core::defaults::DEFAULT_VAD_SPEECH_ONSET_MS,
         }
     }
 }
@@ -207,12 +215,16 @@ pub enum SttActiveProvider {
 #[serde(default)]
 pub struct SttEmbeddedConfig {
     pub model: String,
+    pub partial_throttle_ms: u64,
+    pub threads: u32,
 }
 
 impl Default for SttEmbeddedConfig {
     fn default() -> Self {
         Self {
             model: crate::core::defaults::DEFAULT_ASR_MODEL.to_string(),
+            partial_throttle_ms: crate::core::defaults::DEFAULT_STT_PARTIAL_THROTTLE_MS,
+            threads: crate::core::defaults::DEFAULT_STT_THREADS,
         }
     }
 }
@@ -622,6 +634,7 @@ pub struct TtsSettings {
     pub voice_index: i32,
     pub quality_steps: u32,
     pub speed: f32,
+    pub threads: u32,
     pub edge_tts: TtsEdgeConfig,
     pub supertonic: TtsSupertonicConfig,
     pub kokoro: TtsKokoroConfig,
@@ -636,6 +649,7 @@ impl Default for TtsSettings {
             voice_index: crate::core::defaults::DEFAULT_TTS_VOICE_INDEX,
             quality_steps: crate::core::defaults::DEFAULT_TTS_QUALITY_STEPS,
             speed: crate::core::defaults::DEFAULT_TTS_SPEED,
+            threads: crate::core::defaults::DEFAULT_TTS_THREADS,
             edge_tts: TtsEdgeConfig::default(),
             supertonic: TtsSupertonicConfig::default(),
             kokoro: TtsKokoroConfig::default(),

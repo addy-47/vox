@@ -16,20 +16,34 @@ import {
   getProviderCaps,
 } from "@/services/settingsService";
 import * as eventsService from "@/services/eventsService";
-import { Database, Loader2 } from "lucide-react";
+import { Orbit, Loader2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SegmentedControl } from "@/shared/ui";
 import { LlmModelInfo, ModelCapabilities, LlmProviderConfig, ProviderCaps } from "@/store/settingsStore";
 
 import { ModelsTopologyMap, type PipelineTab } from "./ModelsTopologyMap";
+import { SettingsTopologyMap } from "./SettingsTopologyMap";
 import { VadWorkspace } from "./VadWorkspace";
 import { AsrWorkspace } from "./AsrWorkspace";
 import { AuxiliaryWorkspace } from "./AuxiliaryWorkspace";
 import { RemoteServerSetup } from "./RemoteServerSetup";
-import { TtsVoiceManager, type CustomVoice } from "./TtsVoiceManager";
+import { TtsVoiceManager, type CustomVoice, type TtsSubTab } from "./TtsVoiceManager";
 import { TtsModelWorkspace } from "./TtsModelWorkspace";
 import { LlmCatalogView } from "./LlmCatalogView";
-import { LlmSettingsView } from "./LlmSettingsView";
+import { LlmSettingsView, type SettingsSubTab as LlmSubTab } from "./LlmSettingsView";
+import {
+  AudioWaveform,
+  AudioLines,
+  Microchip,
+  TextCursorInput,
+  Layers2,
+  WandSparkles,
+  Metronome,
+  Hourglass,
+  SlidersHorizontal,
+  Zap,
+  Languages,
+} from "lucide-react";
 
 interface ModelStatus {
   step: 'idle' | 'downloading' | 'extracting' | 'verifying' | 'completed' | 'failed' | 'cancelled';
@@ -58,6 +72,12 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [activePipelineTab, setActivePipelineTab] = useState<PipelineTab>("llm");
   const [activeCategoryTab, setActiveCategoryTab] = useState<"model" | "settings">("model");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Settings Topology subtab tracking
+  const [activeVadSubTab, setActiveVadSubTab] = useState<string>("sensitivity");
+  const [activeSttSubTab, setActiveSttSubTab] = useState<string>("streamingRate");
+  const [activeLlmSubTab, setActiveLlmSubTab] = useState<LlmSubTab>("compute");
+  const [activeTtsSubTab, setActiveTtsSubTab] = useState<TtsSubTab>("voice");
 
   const updateDownloadStatus = useCallback((modelId: string, status: Partial<ModelStatus>) => {
     setDownloadStatuses((prev) => {
@@ -647,14 +667,14 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         {/* Header Row: Title on Left, Model | Settings Toggle on Right */}
         <div className="flex items-center justify-between gap-2 mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
           <div className="flex items-center gap-2 min-w-0">
-            <Database className="text-[rgb(var(--accent))] shrink-0" size={17} />
+            <Orbit className="text-[rgb(var(--accent))] shrink-0" size={17} />
             <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
               Model Hub
             </span>
           </div>
 
           {/* Small Category Tabs: Model vs Settings */}
-          {(activePipelineTab === "vad" || activePipelineTab === "llm" || activePipelineTab === "tts") && (
+          {(activePipelineTab === "vad" || activePipelineTab === "stt" || activePipelineTab === "llm" || activePipelineTab === "tts") && (
             <SegmentedControl
               options={[
                 { id: "model", label: "Model" },
@@ -680,18 +700,65 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           )}
         </div>
 
-        {/* Models Topology Interactive Bar */}
+        {/* Topology Bar: Swapped between Models Topology and Settings Topology */}
         <div className="shrink-0">
-          <ModelsTopologyMap
-            activeTab={activePipelineTab}
-            onChangeTab={setActivePipelineTab}
-            layoutMode={layoutMode}
-            isVadVerified={isVadVerified}
-            isAsrVerified={isAsrVerified}
-            isLlmDownloaded={isLlmDownloaded}
-            isTtsVerified={isTtsVerified}
-            isAuxiliaryVerified={isAuxiliaryVerified}
-          />
+          {activeCategoryTab === "model" ? (
+            <ModelsTopologyMap
+              activeTab={activePipelineTab}
+              onChangeTab={setActivePipelineTab}
+              layoutMode={layoutMode}
+              isVadVerified={isVadVerified}
+              isAsrVerified={isAsrVerified}
+              isLlmDownloaded={isLlmDownloaded}
+              isTtsVerified={isTtsVerified}
+              isAuxiliaryVerified={isAuxiliaryVerified}
+            />
+          ) : (
+            <SettingsTopologyMap
+              layoutMode={layoutMode}
+              nodes={
+                activePipelineTab === "vad"
+                  ? [
+                      { id: "sensitivity", label: "Sensitivity", Icon: AudioWaveform },
+                      { id: "silence", label: "Silence Cutoff", Icon: Hourglass },
+                      { id: "noiseGate", label: "Noise Gate", Icon: SlidersHorizontal },
+                    ]
+                  : activePipelineTab === "stt"
+                  ? [
+                      { id: "streamingRate", label: "Streaming Rate", Icon: Zap },
+                      { id: "transliteration", label: "Transliterate", Icon: Languages },
+                      { id: "compute", label: "Compute", Icon: Microchip },
+                    ]
+                  : activePipelineTab === "llm"
+                  ? [
+                      { id: "compute", label: "Compute", Icon: Microchip },
+                      { id: "tokens", label: "Response", Icon: TextCursorInput },
+                      { id: "context", label: "Context", Icon: Layers2 },
+                      { id: "creativity", label: "Creativity", Icon: WandSparkles },
+                    ]
+                  : [
+                      { id: "voice", label: "Voice", Icon: AudioLines },
+                      { id: "speed", label: "Speech Rate", Icon: Metronome },
+                      { id: "compute", label: "Compute", Icon: Microchip },
+                    ]
+              }
+              activeSubTab={
+                activePipelineTab === "vad"
+                  ? activeVadSubTab
+                  : activePipelineTab === "stt"
+                  ? activeSttSubTab
+                  : activePipelineTab === "llm"
+                  ? activeLlmSubTab
+                  : activeTtsSubTab
+              }
+              onChangeSubTab={(id) => {
+                if (activePipelineTab === "vad") setActiveVadSubTab(id);
+                else if (activePipelineTab === "stt") setActiveSttSubTab(id);
+                else if (activePipelineTab === "llm") setActiveLlmSubTab(id as LlmSubTab);
+                else if (activePipelineTab === "tts") setActiveTtsSubTab(id as TtsSubTab);
+              }}
+            />
+          )}
         </div>
 
         {/* Workspaces by Pipeline Tab: Unified Glass Container */}
@@ -710,6 +777,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
               {activePipelineTab === "vad" && (
                 <VadWorkspace
                   activeCategoryTab={activeCategoryTab}
+                  activeSubTab={activeVadSubTab}
                   layoutMode={layoutMode}
                   confirmDeleteId={confirmDeleteId}
                   setConfirmDeleteId={setConfirmDeleteId}
@@ -722,6 +790,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
               {activePipelineTab === "stt" && (
                 <AsrWorkspace
+                  activeCategoryTab={activeCategoryTab}
+                  activeSubTab={activeSttSubTab}
                   layoutMode={layoutMode}
                   confirmDeleteId={confirmDeleteId}
                   setConfirmDeleteId={setConfirmDeleteId}
@@ -736,6 +806,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
               {activePipelineTab === "llm" && (
                 activeCategoryTab === "settings" ? (
                   <LlmSettingsView
+                    activeSubTab={activeLlmSubTab}
                     layoutMode={layoutMode}
                     isRemoteLlm={isRemoteLlm}
                     isCloud={isCloudLlm}
@@ -815,6 +886,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                       loadingEdgeVoices={loadingEdgeVoices}
                       loadEdgeVoices={loadEdgeVoices}
                       activeCategoryTab={activeCategoryTab}
+                      activeSubTab={activeTtsSubTab}
                     />
                   )}
                 </>

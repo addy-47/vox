@@ -23,10 +23,8 @@ pub const MODEL_FILE_ASR_JOINER: &str = "joiner.int8.onnx";
 pub const MODEL_FILE_ASR_TOKENS: &str = "tokens.txt";
 pub const MODEL_FILE_ASR_TOKENIZER: &str = "tokenizer";
 
-pub const NEMOTRON_NUM_THREADS: i32 = 4;
 pub const QWEN_MAX_TOTAL_LEN: i32 = 2048;
 pub const QWEN_MAX_NEW_TOKENS: i32 = 128;
-pub const QWEN_NUM_THREADS: i32 = 4;
 
 pub const STT_DEFAULT_INFERENCE_DURATION_MS: u64 = 300;
 pub const STT_MIN_PARTIAL_THROTTLE_MS: u64 = 300;
@@ -58,10 +56,11 @@ pub trait SttEngine: Send + Sync {
 pub fn create_stt_provider(
     provider_config: &SttProviderConfig,
     model_path: &Path,
+    num_threads: u32,
 ) -> anyhow::Result<Box<dyn SttProvider>> {
     match provider_config {
         SttProviderConfig::Embedded { model_type } => {
-            Ok(Box::new(EmbeddedSttProvider::new(model_path, model_type)?))
+            Ok(Box::new(EmbeddedSttProvider::new(model_path, model_type, num_threads)?))
         }
         SttProviderConfig::Cloud { provider, .. } => {
             anyhow::bail!("Unknown cloud STT provider: \"{}\"", provider)
