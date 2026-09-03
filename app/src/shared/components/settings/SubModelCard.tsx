@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { cn } from "@/shared/lib/utils";
-import { Check, ArrowLeft, Trash2, Info, Lock } from "lucide-react";
+import { Check, ArrowLeft, Trash2, Info, Lock, Download } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
 
 interface SubModelCardProps {
@@ -59,9 +59,11 @@ export const SubModelCard = memo<SubModelCardProps>(({
             e.stopPropagation();
             startDownload();
           }}
-          className="px-2.5 py-1 rounded bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[12px] font-bold uppercase tracking-wider shrink-0 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer shadow-md"
+          className="p-1.5 rounded-lg text-[rgb(var(--accent))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.15)] transition-colors shrink-0 cursor-pointer"
+          aria-label="Download model"
+          title="Download model"
         >
-          Get
+          <Download size={16} />
         </button>
       );
     }

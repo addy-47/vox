@@ -1,7 +1,6 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { getOnboardingStatus } from "@/services/modelService";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
 import { WizardRoot } from "@/wizard/WizardRoot";
 import { TitleBar } from "@/layout/TitleBar";
@@ -36,6 +35,14 @@ const App: React.FC = () => {
   const [setupCompleted, setSetupCompleted] = useState<boolean | null>(null);
   const [readyToTransition, setReadyToTransition] = useState(false);
 
+  // Fade and remove the pre-React boot loader (rendered by index.html's
+  // #vox-boot-loader element) as soon as the App component mounts. This
+  // ensures the user sees the animated loader during Vite cold start and
+  // React tree mount, with a smooth cross-fade to the React OrbitalLoader.
+  useEffect(() => {
+    (window as unknown as { __VOX_HIDE_BOOT_LOADER?: () => void }).__VOX_HIDE_BOOT_LOADER?.();
+  }, []);
+
   useEffect(() => {
     // Global error handler for unhandled promise rejections
     const onRejection = (event: PromiseRejectionEvent) => {
@@ -59,19 +66,11 @@ const App: React.FC = () => {
         console.error('[App] Setup check failed:', e);
         setSetupCompleted(false);
       } finally {
-        // Double rAF ensures the WebKit compositor and Window Manager have
-        // completed layout calculation and maximization before revealing the window
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            getCurrentWindow().show().catch(console.error);
-
-            // Hold the orbital loader for a brief smooth beat so the user sees the loader,
-            // then smoothly cross-fade to the home screen
-            setTimeout(() => {
-              setReadyToTransition(true);
-            }, 300);
-          });
-        });
+        // Hold the orbital loader for a brief smooth beat so the user sees the
+        // loader cross-fade to the home screen.
+        setTimeout(() => {
+          setReadyToTransition(true);
+        }, 300);
       }
     };
     checkSetup();
@@ -83,9 +82,19 @@ const App: React.FC = () => {
 
   const isLoading = setupCompleted === null || !readyToTransition;
 
-  // Global overlay stack — single authority for FILO Escape / outside-click dismissal.
+  // Global overlay stack — single authority for FILO Escape / outside-click
+  // dismissal. Deferred to requestIdleCallback so it doesn't run during the
+  // critical first-paint path. The overlay system is only needed once the
+  // user has interacted with any overlay (drawer, popover, panel), so a
+  // 100-500ms delay after first paint is imperceptible.
   useEffect(() => {
-    installOverlayStack();
+    const schedule = (window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+    const cb = () => installOverlayStack();
+    if (typeof schedule === "function") {
+      schedule(cb, { timeout: 1000 });
+    } else {
+      setTimeout(cb, 200);
+    }
   }, []);
 
   return (

@@ -199,6 +199,119 @@ pub fn consolidate_system_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::memory::retrieval::{GraphEdge, MemoryFact, RetrievedProfile, ScoredFact};
+    use std::collections::HashMap;
+
+    /// Tests assemble_system_prompt merges identity and dynamic profile with wrappers.
+    #[test]
+    fn test_assemble_system_prompt_merges() {
+        let base = "You are Vox.";
+        let ids = vec!["User is Alice".to_string(), "Lives in Berlin".to_string()];
+        let profile = Some("<user_profile>[User Context]\n- likes Rust\n</user_profile>");
+        let out = assemble_system_prompt(base, &ids, profile);
+        assert!(out.contains("You are Vox."));
+        assert!(out.contains("[Identity]"));
+        assert!(out.contains("Alice"));
+        assert!(out.contains("<user_profile>"));
+        assert!(out.contains("likes Rust"));
+        assert!(out.ends_with("</user_profile>"));
+    }
+
+    /// Tests assemble returns base only when no identity/profile.
+    #[test]
+    fn test_assemble_system_prompt_base_only() {
+        let base = "Base prompt.";
+        assert_eq!(assemble_system_prompt(base, &[], None), "Base prompt.");
+        assert_eq!(assemble_system_prompt(base, &[], Some("   ")), "Base prompt.");
+        assert_eq!(assemble_system_prompt(base, &[], Some("")), "Base prompt.");
+    }
+
+    /// Tests assemble strips existing wrapper and unwraps inner.
+    #[test]
+    fn test_assemble_system_prompt_unwraps_inner() {
+        let base = "Base.";
+        let inner = "<user_profile>  inner content  </user_profile>";
+        let out = assemble_system_prompt(base, &[], Some(inner));
+        assert!(out.contains("inner content"));
+        assert_eq!(out.matches("<user_profile>").count(), 1);
+    }
+
+    /// Tests build_session_history_xml emits narrative and facts sections.
+    #[test]
+    fn test_build_session_history_xml_structure() {
+        let mut facts: HashMap<String, Vec<String>> = HashMap::new();
+        facts.insert("Profile".to_string(), vec!["fact1".to_string()]);
+        let xml = build_session_history_xml("chain text", &facts);
+        assert!(xml.contains("<session_history>"));
+        assert!(xml.contains("<narrative_chain>"));
+        assert!(xml.contains("chain text"));
+        assert!(xml.contains("<recent_compaction_facts>"));
+        assert!(xml.contains("[Profile]"));
+        assert!(xml.contains("fact1"));
+        assert!(xml.contains("</session_history>"));
+        assert_eq!(build_session_history_xml("", &HashMap::new()), "");
+    }
+
+    /// Tests consolidate_system_message inserts history before user_profile.
+    #[test]
+    fn test_consolidate_system_message_inserts_history() {
+        let sys = ChatMessage {
+            role: Role::System,
+            content: "Base.<user_profile>old</user_profile>".to_string(),
+            timestamp_ms: 0,
+        };
+        let mut msgs = vec![sys.clone()];
+        let history = "<session_history>new</session_history>";
+        let mut tokens = estimate_tokens(&msgs[0].content);
+        consolidate_system_message(&mut msgs, &sys, history, &mut tokens);
+        assert!(msgs[0].content.contains(history));
+        assert!(msgs[0].content.contains("<user_profile>"));
+        let idx_hist = msgs[0].content.find(history).unwrap();
+        let idx_prof = msgs[0].content.find("<user_profile>").unwrap();
+        assert!(idx_hist < idx_prof);
+    }
+
+    /// Tests format_retrieved_profile returns empty for empty profile and formats sections.
+    #[test]
+    fn test_format_retrieved_profile_empty_and_sections() {
+        let empty = RetrievedProfile {
+            sql_sections: vec![],
+            vector_seeds: vec![],
+            graph_children: vec![],
+        };
+        assert_eq!(format_retrieved_profile(&empty), "");
+
+        let fact = MemoryFact {
+            id: "f1".to_string(),
+            fact_type: "fact".to_string(),
+            collection: "Profile".to_string(),
+            fact: "test fact".to_string(),
+            source: "User".to_string(),
+            status: "active".to_string(),
+            created_at: 0,
+        };
+        let seed = ScoredFact {
+            id: "f1".to_string(),
+            fact: "test fact".to_string(),
+            collection: "Profile".to_string(),
+            similarity: 0.9,
+            created_at: 0,
+        };
+        let profile = RetrievedProfile {
+            sql_sections: vec![fact],
+            vector_seeds: vec![seed],
+            graph_children: vec![GraphEdge {
+                relation: "SUPPORTS".to_string(),
+                target_collection: "Entities".to_string(),
+                target_fact: "edge fact".to_string(),
+                created_at: 0,
+            }],
+        };
+        let formatted = format_retrieved_profile(&profile);
+        assert!(formatted.contains("[Directives & Narrative]"));
+        assert!(formatted.contains("[User Context & Knowledge]"));
+        assert!(formatted.contains("↳ --[SUPPORTS]-->"));
+    }
 
     /// Tests relative timestamp humanization across minute, hour, day, and week intervals.
     #[test]

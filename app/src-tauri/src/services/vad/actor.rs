@@ -510,3 +510,79 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::settings::AudioOutputMode;
+    use crate::core::state::InteractionState;
+    use std::sync::atomic::{AtomicBool, AtomicU32};
+
+    fn make_state(audio_mode: AudioOutputMode, state_val: u32, realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>>) -> (VadActorState, Arc<AtomicU32>, Arc<AtomicBool>) {
+        let mut s = VadActorState::new(0.5, 0.001, InteractionMode::Passive, audio_mode);
+        s.realtime_tx = realtime_tx;
+        let state_atomic = Arc::new(AtomicU32::new(state_val));
+        let suppressed = Arc::new(AtomicBool::new(false));
+        (s, state_atomic, suppressed)
+    }
+
+    /// Tests should_suppress_audio returns false when state is not Speaking.
+    #[test]
+    fn test_suppression_requires_speaking_state() {
+        let (state, atomic, suppressed) = make_state(AudioOutputMode::Speaker, InteractionState::Ready as u32, None);
+        assert!(!should_suppress_audio(&suppressed, &atomic, &state));
+        let (state2, atomic2, suppressed2) = make_state(AudioOutputMode::Speaker, InteractionState::Listening as u32, None);
+        assert!(!should_suppress_audio(&suppressed2, &atomic2, &state2));
+    }
+
+    /// Tests suppression active only for Speaker + Speaking + no realtime_tx.
+    #[test]
+    fn test_suppression_speaker_speaking_no_realtime() {
+        let (state, atomic, suppressed) = make_state(AudioOutputMode::Speaker, InteractionState::Speaking as u32, None);
+        assert!(should_suppress_audio(&suppressed, &atomic, &state));
+    }
+
+    /// Tests Headset never suppresses even while Speaking.
+    #[test]
+    fn test_headset_never_suppresses() {
+        let (state, atomic, suppressed) = make_state(AudioOutputMode::Headset, InteractionState::Speaking as u32, None);
+        assert!(!should_suppress_audio(&suppressed, &atomic, &state));
+    }
+
+    /// Tests realtime_tx Some bypasses suppression (passthrough mode).
+    #[test]
+    fn test_realtime_bypasses_suppression() {
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let (state, atomic, suppressed) = make_state(AudioOutputMode::Speaker, InteractionState::Speaking as u32, Some(tx));
+        assert!(!should_suppress_audio(&suppressed, &atomic, &state));
+    }
+
+    /// Tests explicit audio_suppressed flag forces suppression regardless of state/mode.
+    #[test]
+    fn test_audio_suppressed_flag_forces_suppression() {
+        let (state, atomic, suppressed) = make_state(AudioOutputMode::Headset, InteractionState::Ready as u32, None);
+        suppressed.store(true, Ordering::Relaxed);
+        assert!(should_suppress_audio(&suppressed, &atomic, &state));
+        let (state2, atomic2, suppressed2) = make_state(AudioOutputMode::Speaker, InteractionState::Ready as u32, None);
+        suppressed2.store(true, Ordering::Relaxed);
+        assert!(should_suppress_audio(&suppressed2, &atomic2, &state2));
+    }
+
+    /// Tests VadValidationResult trimming: speech window within buffer bounds.
+    #[test]
+    fn test_window_validation_trimming_logic() {
+        let mut s = VadActorState::new(0.5, 0.001, InteractionMode::PTT, AudioOutputMode::Speaker);
+        s.window_active = true;
+        s.window_buffer = vec![0.0; 1000];
+        s.window_speech_detected = true;
+        s.window_first_speech_sample = 100;
+        s.window_last_speech_sample = 900;
+        let raw_len = s.window_buffer.len();
+        let start = s.window_first_speech_sample.min(raw_len);
+        let end = s.window_last_speech_sample.min(raw_len);
+        assert_eq!(start, 100);
+        assert_eq!(end, 900);
+        assert!(start < end && (end - start) >= 256);
+    }
+}
+

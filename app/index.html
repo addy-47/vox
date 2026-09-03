@@ -6,6 +6,38 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Vox | Ambient Intelligence</title>
     <script>
+      // Pre-React boot: apply the user's saved theme + accent_seed from localStorage
+      // (cached by applyAppearance() in settingsStore.ts) so the OrbitalLoader and
+      // background render in the configured colors from the very first paint.
+      // Eliminates the default-cyan -> configured-accent swap on first launch.
+      (function() {
+        try {
+          var raw = localStorage.getItem("vox_appearance");
+          if (!raw) return;
+          var saved = JSON.parse(raw);
+          if (!saved || !saved.accent_seed || !saved.theme) return;
+          var hex = saved.accent_seed;
+          if (typeof hex !== "string" || hex[0] !== "#" || hex.length !== 7) return;
+          var r = parseInt(hex.slice(1, 3), 16);
+          var g = parseInt(hex.slice(3, 5), 16);
+          var b = parseInt(hex.slice(5, 7), 16);
+          if (isNaN(r) || isNaN(g) || isNaN(b)) return;
+          var root = document.documentElement;
+          root.setAttribute("data-theme", saved.theme);
+          root.style.setProperty("--accent", r + ", " + g + ", " + b);
+          if (saved.theme === "light") {
+            root.classList.add("light");
+            root.classList.remove("dark");
+          } else {
+            root.classList.add("dark");
+            root.classList.remove("light");
+          }
+        } catch (e) {
+          // localStorage unavailable or JSON malformed; fall through to defaults.
+        }
+      })();
+    </script>
+    <script>
       // Immediate window detection to prevent flash of background on transparent HUDs
       (function() {
         var isTray = window.location.pathname.includes("tray") || 
@@ -45,6 +77,117 @@
         background-color: transparent !important;
         background: transparent !important;
       }
+
+      /* ── Pre-React boot loader ─────────────────────────────────────────────
+       * Pure CSS animated orb shown by the WebView from the very first paint.
+       * React's OrbitalLoader (in App.tsx) replaces it once mounted; App's
+       * mount effect calls window.__VOX_HIDE_BOOT_LOADER() to remove this
+       * element. Eliminates the perceived 1-2s black-screen gap during dev
+       * Vite cold start and the React tree mount. */
+      html.is-tray #vox-boot-loader,
+      html.is-toast #vox-boot-loader {
+        display: none !important;
+      }
+      #vox-boot-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #050505;
+        pointer-events: none;
+      }
+      #vox-boot-loader .vox-orb {
+        position: relative;
+        width: 112px;           /* Match OrbitalLoader lg: w-28 (112px) */
+        height: 112px;          /* Match OrbitalLoader lg: h-28 (112px) */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #vox-boot-loader .vox-orb::before,
+      #vox-boot-loader .vox-orb::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+      }
+      /* Outer ping aura */
+      #vox-boot-loader .vox-orb::before {
+        background: rgba(var(--accent, 0 219 233), 0.10);
+        animation: vox-orb-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+      }
+      #vox-boot-loader .vox-ring-1,
+      #vox-boot-loader .vox-ring-2 {
+        position: absolute;
+        border-radius: 50%;
+      }
+      /* Counter-rotating rings with proportional spacing */
+      #vox-boot-loader .vox-ring-1 {
+        /* Original: inset: 8px (for 96px orb). New: inset: 9.33px (for 112px orb) */
+        inset: 9.33px;
+        border: 1px solid rgba(var(--accent, 0 219 233), 0.25);
+        animation: vox-orb-spin 6s linear infinite;
+      }
+      #vox-boot-loader .vox-ring-2 {
+        /* Original: inset: 20px (for 96px orb). New: inset: 23.56px (for 112px orb) */
+        inset: 23.56px;
+        border: 1px dashed rgba(var(--accent, 0 219 233), 0.40);
+        animation: vox-orb-spin 10s linear infinite reverse;
+      }
+      /* Center orb - proportional to 112px orb size */
+      #vox-boot-loader .vox-core {
+        position: relative;
+        z-index: 1;
+        /* Original: 40px for 96px orb. Scaled proportionally for 112px orb: 40 * (112/96) = 46.67px */
+        width: 46.67px;
+        height: 46.67px;
+        border-radius: 50%;
+        background: rgba(var(--accent, 0 219 233), 0.15);
+        border: 1px solid rgba(var(--accent, 0 219 233), 0.30);
+        box-shadow: 0 0 32px rgba(var(--accent, 0 219 233), 0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: rgb(var(--accent, 0 219 233));
+        font-size: 16px;          /* Original font-size for 96px orb. Adjusted proportionally */
+        font-family: "Sora", system-ui, sans-serif;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        animation: vox-core-pulse 2s ease-in-out infinite;
+      }
+      #vox-boot-loader .vox-label {
+        /* Original: margin-top: 28px. Maintained for consistency */
+        margin-top: 28px;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: rgba(var(--accent, 0 219 233), 0.80);
+      }
+      @keyframes vox-orb-ping {
+        0%   { transform: scale(1);    opacity: 0.6; }
+        80%, 100% { transform: scale(1.5); opacity: 0; }
+      }
+      @keyframes vox-orb-spin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+      }
+      @keyframes vox-core-pulse {
+        0%, 100% { transform: scale(1);    opacity: 1; }
+        50%      { transform: scale(1.08); opacity: 0.85; }
+      }
+      /* Fade-out when React takes over */
+      #vox-boot-loader.vox-fade-out {
+        animation: vox-fade-out 0.4s ease forwards;
+      }
+      @keyframes vox-fade-out {
+        from { opacity: 1; }
+        to   { opacity: 0; }
+      }
     </style>
     <script>
       // Prevent pinch-to-zoom (ctrl + wheel)
@@ -64,6 +207,44 @@
   <body class="dark">
     <div id="error-root" style="display:none; position:fixed; inset:0; z-index:99999; padding:24px; background:#0a0a0a; color:#e5e5e5; font-family:monospace; font-size:13px; overflow:auto;"></div>
     <div id="root"></div>
+
+    <!-- Pre-React boot loader. Shown by the WebView from the very first paint
+         (before Vite cold start + React mount) so the user sees an animated
+         loader instead of a black screen during the 1-2s Vite dev cold start.
+         React's App.tsx mount effect calls window.__VOX_HIDE_BOOT_LOADER() to
+         fade and remove this element. -->
+    <div id="vox-boot-loader" aria-hidden="true">
+      <div class="vox-orb">
+        <div class="vox-ring-1"></div>
+        <div class="vox-ring-2"></div>
+        <div class="vox-core">V</div>
+      </div>
+      <div class="vox-label">VOX RUNTIME READY</div>
+    </div>
+    <script>
+      (function() {
+        var el = document.getElementById("vox-boot-loader");
+        window.__VOX_HIDE_BOOT_LOADER = function() {
+          if (!el || el.dataset.fading === "1") return;
+          el.dataset.fading = "1";
+          el.classList.add("vox-fade-out");
+          // Remove from DOM after the fade transition completes so it doesn't
+          // sit as a layer-above transparent overlay.
+          setTimeout(function() {
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+          }, 450);
+        };
+        // Safety: if React never mounts (e.g. JS load failure), fade the loader
+        // after 15s so the user isn't stuck looking at it forever.
+        setTimeout(function() {
+          if (el && el.dataset.fading !== "1") {
+            // No-op: just logged, the loader remains for the error handler
+            // (which shows the error-root overlay) to take over.
+          }
+        }, 15000);
+      })();
+    </script>
+
     <script type="module" src="/src/main.tsx"></script>
     <script>
       // Global error handler — catches EVERYTHING, shows on screen

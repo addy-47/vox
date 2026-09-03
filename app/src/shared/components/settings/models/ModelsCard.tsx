@@ -285,6 +285,12 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     });
   }, [draftSettings?.tts?.provider]);
 
+  // Per-file progress accumulator: backend emits model_progress with file-entry
+  // ids (e.g. tts_kokoro_model) while cards are keyed by group id
+  // (e.g. kokoro_multi_lang_v1_1). Aggregate here so multi-file groups
+  // show real weighted progress instead of sticking at the optimistic 1%.
+  const fileProgressRef = useRef<Record<string, { progress: number; bytesDownloaded: number; totalBytes: number; done: boolean }>>({});
+
   // Model download events listener (unified model_progress)
   useEffect(() => {
     const unlistenProgress = eventsService.onModelProgress((payload) => {
@@ -292,12 +298,69 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       if (!model_id) return;
 
       const stepLower = String(step || "downloading").toLowerCase() as ModelStatus["step"];
+      const fileProgress = typeof progress === "number" ? progress : 0;
+      const fileBytes = bytes_downloaded || 0;
+      const fileTotal = total_bytes || 100;
+
+      fileProgressRef.current[model_id] = {
+        progress: fileProgress,
+        bytesDownloaded: fileBytes,
+        totalBytes: fileTotal,
+        done: stepLower === "completed" || (stepLower as string) === "complete",
+      };
+
+      const groups = modelCatalog?.model_groups || [];
+      const parent = groups.find(
+        (g) => g.id === model_id || (g.files || []).some((f) => f.id === model_id)
+      );
+      const targetId = parent ? parent.id : model_id;
+
+      if (parent && parent.id !== model_id) {
+        const files = parent.files || [];
+        let totalBytes = 0;
+        let doneBytes = 0;
+        let allDone = files.length > 0;
+        for (const f of files) {
+          const fp = fileProgressRef.current[f.id];
+          const tb = fp?.totalBytes || f.size || 0;
+          totalBytes += tb;
+          doneBytes += fp ? (fp.bytesDownloaded || (fp.progress / 100) * tb) : 0;
+          if (!fp?.done) allDone = false;
+        }
+        if (stepLower === "failed" || stepLower === "cancelled") {
+          updateDownloadStatus(targetId, {
+            step: stepLower,
+            progress: totalBytes > 0 ? (doneBytes / totalBytes) * 100 : 0,
+            bytesDownloaded: Math.round(doneBytes),
+            totalBytes: totalBytes || 100,
+            error: error || undefined,
+          });
+        } else if (allDone) {
+          updateDownloadStatus(targetId, {
+            step: "completed",
+            progress: 100,
+            bytesDownloaded: totalBytes,
+            totalBytes: totalBytes || 100,
+            error: undefined,
+          });
+          refreshPresence();
+        } else {
+          updateDownloadStatus(targetId, {
+            step: "downloading",
+            progress: totalBytes > 0 ? (doneBytes / totalBytes) * 100 : 0,
+            bytesDownloaded: Math.round(doneBytes),
+            totalBytes: totalBytes || 100,
+            error: undefined,
+          });
+        }
+        return;
+      }
 
       updateDownloadStatus(model_id, {
         step: stepLower,
-        progress: typeof progress === "number" ? progress : 0,
-        bytesDownloaded: bytes_downloaded || 0,
-        totalBytes: total_bytes || 100,
+        progress: fileProgress,
+        bytesDownloaded: fileBytes,
+        totalBytes: fileTotal,
         error: error || undefined,
       });
 
@@ -309,7 +372,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     return () => {
       unlistenProgress();
     };
-  }, [updateDownloadStatus, refreshPresence]);
+  }, [updateDownloadStatus, refreshPresence, modelCatalog]);
 
   useEffect(() => {
     localStorage.setItem("vox_ssh_conn", sshConnectionString);
@@ -536,6 +599,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       ? isRemoteTtsHealthy === true
       : draftSettings?.tts?.active === "supertonic"
       ? !!modelPresence[modelCatalog?.tts?.find((m) => m.id.includes("supertonic"))?.id || "supertonic_tts"]
+      : draftSettings?.tts?.active === "kokoro"
+      ? !!modelPresence[modelCatalog?.tts?.find((m) => m.id.includes("kokoro"))?.id || "kokoro_multi_lang_v1_1"]
       : draftSettings?.tts?.active === "chatterbox"
       ? !!modelPresence[modelCatalog?.tts?.find((m) => m.id.includes("chatterbox"))?.id || "chatterbox_tts"]
       : false;

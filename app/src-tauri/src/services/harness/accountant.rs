@@ -350,3 +350,155 @@ impl ContextHarness {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::buffer::{ChatMessage, MessageBuffer, Role};
+    use super::*;
+
+    fn sys_msg() -> ChatMessage {
+        ChatMessage {
+            role: Role::System,
+            content: "System prompt base.".to_string(),
+            timestamp_ms: 0,
+        }
+    }
+
+    /// Tests context_utilization computes usable budget correctly and thresholds.
+    #[test]
+    fn test_token_accountant_utilization_and_thresholds() {
+        let mut acc = TokenAccountant::new(4096, 0);
+        assert!((acc.context_utilization() - 0.0).abs() < 1e-5);
+        assert!(!acc.needs_threshold_maintenance());
+        assert!(!acc.is_in_soft_compaction_window());
+
+        let usable = 4096 - RESERVED_GENERATION_TOKENS;
+        let crit_tokens = (usable as f32 * CONTEXT_CRITICAL_THRESHOLD).ceil() as usize + 1;
+        acc.set_total_token_count(crit_tokens);
+        assert!(acc.needs_threshold_maintenance());
+        assert!(!acc.is_in_soft_compaction_window());
+
+        let soft_tokens = (usable as f32 * CONTEXT_SOFT_THRESHOLD) as usize + 10;
+        acc.set_total_token_count(soft_tokens);
+        assert!(!acc.needs_threshold_maintenance());
+        assert!(acc.is_in_soft_compaction_window());
+
+        let below_soft = (usable as f32 * CONTEXT_SOFT_THRESHOLD) as usize - 10;
+        acc.set_total_token_count(below_soft);
+        assert!(!acc.is_in_soft_compaction_window());
+        assert!(!acc.needs_threshold_maintenance());
+    }
+
+    /// Tests add/sub saturating arithmetic and set_max rejects zero.
+    #[test]
+    fn test_token_accountant_arithmetic_and_set_max() {
+        let mut acc = TokenAccountant::new(4096, 100);
+        acc.add_tokens(50);
+        assert_eq!(acc.total_token_count(), 150);
+        acc.sub_tokens(200);
+        assert_eq!(acc.total_token_count(), 0);
+        acc.sub_tokens(10);
+        assert_eq!(acc.total_token_count(), 0);
+
+        let before = acc.max_context_tokens();
+        acc.set_max_context_tokens(0);
+        assert_eq!(acc.max_context_tokens(), before);
+        acc.set_max_context_tokens(8192);
+        assert_eq!(acc.max_context_tokens(), 8192);
+    }
+
+    /// Tests perform_fifo_maintenance drops oldest pair below soft threshold.
+    #[test]
+    fn test_perform_fifo_maintenance_drops_oldest_pair() {
+        let mut acc = TokenAccountant::new(100, 0);
+        let mut buf = MessageBuffer::new(sys_msg());
+        buf.push_user_turn("u1".to_string());
+        buf.push_assistant_turn("a1".to_string());
+        buf.push_user_turn("u2".to_string());
+        buf.push_assistant_turn("a2".to_string());
+        buf.push_user_turn("u3".to_string());
+        let mut total = 0;
+        for m in &buf.messages {
+            total += estimate_tokens(&m.content);
+        }
+        acc.set_total_token_count(total * 2);
+        let before_len = buf.messages.len();
+        acc.perform_fifo_maintenance(&mut buf);
+        assert!(buf.messages.len() < before_len);
+        assert_eq!(buf.kv_synced_index, 0);
+    }
+
+    /// Tests build_narrative_context_chain respects soft cap and skips empty.
+    #[test]
+    fn test_build_narrative_chain_respects_cap() {
+        let ctxs = vec![
+            "        ".to_string(),
+            "first context".to_string(),
+            "second context which is longer".to_string(),
+        ];
+        let chain = TokenAccountant::build_narrative_context_chain(&ctxs, 5);
+        assert!(chain.contains("second context"));
+        let chain2 = TokenAccountant::build_narrative_context_chain(&ctxs, 1000);
+        assert!(chain2.contains("first context"));
+        assert!(chain2.contains("second context"));
+        assert_eq!(
+            TokenAccountant::build_narrative_context_chain(&[], 100),
+            ""
+        );
+    }
+
+    /// Tests ContextHarness opportunistic trigger and cancel/commit race guards.
+    #[test]
+    fn test_harness_opportunistic_trigger_and_race() {
+        let mut harness = ContextHarness::new(100);
+        let mut buf = MessageBuffer::new(sys_msg());
+        buf.push_user_turn("u1".to_string());
+        buf.push_assistant_turn("a1".to_string());
+        buf.push_user_turn("u2".to_string());
+        buf.push_assistant_turn("a2".to_string());
+        buf.push_user_turn("u3".to_string());
+        harness.sync_tokens_from_buffer(&buf);
+        // Force into soft window without critical
+        let usable = 100 - RESERVED_GENERATION_TOKENS.max(1);
+        let target = (usable as f32 * 0.7) as usize;
+        harness.accountant.set_total_token_count(target.max(10));
+        // Ensure >3 messages
+        assert!(buf.messages.len() > 3);
+
+        let triggered = harness.try_trigger_opportunistic(&buf);
+        if harness.accountant.is_in_soft_compaction_window() {
+            assert!(triggered.is_some());
+            let (snap_len, _msgs, _tok) = triggered.unwrap();
+            // Second trigger should be None while active
+            assert!(harness.try_trigger_opportunistic(&buf).is_none());
+            // Race: buffer grew, commit must reject
+            buf.push_user_turn("new turn".to_string());
+            let ok = harness.commit_opportunistic(&mut buf, &sys_msg(), snap_len, "summary".to_string());
+            assert!(!ok);
+        }
+        harness.cancel_opportunistic();
+        assert!(!harness.opportunistic_active);
+    }
+
+    /// Tests MessageBuffer duplicate detection and pop/reset semantics.
+    #[test]
+    fn test_message_buffer_duplicate_and_pop() {
+        let mut buf = MessageBuffer::new(sys_msg());
+        assert!(!buf.is_duplicate_user_turn("hello"));
+        buf.push_user_turn("hello".to_string());
+        assert!(buf.is_duplicate_user_turn("hello"));
+        assert!(!buf.is_duplicate_user_turn("world"));
+        let popped = buf.pop_last_user_turn();
+        assert!(popped.is_some());
+        assert_eq!(popped.unwrap().content, "hello");
+        assert!(buf.pop_last_user_turn().is_none());
+        buf.push_user_turn("a".to_string());
+        buf.push_assistant_turn("".to_string());
+        assert_eq!(buf.messages.len(), 2);
+        buf.push_assistant_turn("real".to_string());
+        assert_eq!(buf.messages.len(), 3);
+        buf.reset(sys_msg());
+        assert_eq!(buf.messages.len(), 1);
+        assert_eq!(buf.kv_synced_index, 0);
+    }
+}

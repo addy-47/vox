@@ -407,3 +407,116 @@ fn is_abbreviation(word: &str) -> bool {
 
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests strong terminators (? ! newline) always split regardless of word count.
+    #[test]
+    fn test_chunker_strong_terminators_split() {
+        let mut c = TtsClauseChunker::new();
+        let chunks = c.push_str("Hello world? Next clause here.");
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0], "Hello world?");
+        assert_eq!(chunks[1], "Next clause here.");
+        assert!(c.is_empty());
+    }
+
+    /// Tests newline is treated as strong terminator.
+    #[test]
+    fn test_chunker_newline_splits() {
+        let mut c = TtsClauseChunker::new();
+        let chunks = c.push_str("Line one\nLine two");
+        assert_eq!(chunks, vec!["Line one"]);
+        assert_eq!(c.buffer(), "Line two");
+    }
+
+    /// Tests comma requires >=5 words before split for prosody pacing.
+    #[test]
+    fn test_chunker_comma_gated_by_word_count() {
+        let mut c = TtsClauseChunker::new();
+        let chunks = c.push_str("Hello, world here");
+        assert!(chunks.is_empty(), "short comma must not split");
+
+        let mut c2 = TtsClauseChunker::new();
+        let chunks2 = c2.push_str("This is a longer sentence, and it continues");
+        assert_eq!(chunks2, vec!["This is a longer sentence,"]);
+    }
+
+    /// Tests period does not split on decimal like 3.14
+    #[test]
+    fn test_chunker_period_decimal_guard() {
+        let mut c = TtsClauseChunker::new();
+        let chunks = c.push_str("Value is 3.14 and continues");
+        assert!(chunks.is_empty(), "decimal period must not split");
+        let mut c2 = TtsClauseChunker::new();
+        let chunks2 = c2.push_str("Value is 3.14. Next sentence");
+        assert_eq!(chunks2, vec!["Value is 3.14."]);
+    }
+
+    /// Tests period does not split after known abbreviation.
+    #[test]
+    fn test_chunker_period_abbreviation_guard() {
+        let mut c = TtsClauseChunker::new();
+        let chunks = c.push_str("Hello Dr. Smith is here");
+        assert!(chunks.is_empty(), "abbreviation period must not split");
+        let mut c2 = TtsClauseChunker::new();
+        let chunks2 = c2.push_str("Hello Dr. Smith is here. Next one");
+        assert_eq!(chunks2, vec!["Hello Dr. Smith is here."]);
+    }
+
+    /// Tests emergency 25-word cap forces split at 20 words.
+    #[test]
+    fn test_chunker_emergency_word_cap() {
+        let long = (0..30)
+            .map(|i| format!("w{}", i))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut c = TtsClauseChunker::new();
+        let chunks = c.push_str(&long);
+        assert!(!chunks.is_empty(), "bloat guard must emit chunk");
+        assert_eq!(chunks[0].split_whitespace().count(), 20);
+    }
+
+    /// Tests flush returns trimmed remainder and clears buffer.
+    #[test]
+    fn test_chunker_flush_and_clear() {
+        let mut c = TtsClauseChunker::new();
+        c.push_str("Hello world");
+        assert_eq!(c.flush(), Some("Hello world".to_string()));
+        assert!(c.is_empty());
+        assert_eq!(c.flush(), None);
+        c.push_str("  trailing  ");
+        assert_eq!(c.flush(), Some("trailing".to_string()));
+        c.push_str("keep");
+        c.clear();
+        assert!(c.is_empty());
+        assert_eq!(c.buffer(), "");
+    }
+
+    /// Tests is_abbreviation covers honorifics, version and single-letter cases.
+    #[test]
+    fn test_is_abbreviation_variants() {
+        assert!(is_abbreviation("Dr"));
+        assert!(is_abbreviation("dr"));
+        assert!(is_abbreviation("e.g"));
+        assert!(is_abbreviation("Mrs"));
+        assert!(is_abbreviation("v2"));
+        assert!(is_abbreviation("v10"));
+        assert!(is_abbreviation("J"));
+        assert!(!is_abbreviation("Hello"));
+        assert!(!is_abbreviation(""));
+        assert!(!is_abbreviation("world"));
+    }
+
+    /// Tests extract_chunks returns multiple clauses when multiple split points present.
+    #[test]
+    fn test_chunker_multiple_clauses() {
+        let mut c = TtsClauseChunker::new();
+        let chunks = c.push_str("First sentence! Second? Third, with many words before comma, and tail.");
+        assert!(chunks.len() >= 2);
+        assert_eq!(chunks[0], "First sentence!");
+        assert_eq!(chunks[1], "Second?");
+    }
+}

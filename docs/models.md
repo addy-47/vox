@@ -1,7 +1,7 @@
 ---
 title: "Vox Model Inventory & Specifications"
 audience: "Internal — ML/model-config contributors, backend engineers, agents"
-last_updated: 2026-08-31
+last_updated: 2026-09-03
 owners: "ml-research-engineer role"
 related_docs:
   - "docs/backend.md — Engines, threading, lifecycle"
@@ -43,6 +43,7 @@ related_docs:
 | **LLM** (cloud) | OpenAI / Gemini / Anthropic / Nvidia | provider-config | — | — | 0 MB (local) | HTTP (reqwest) | Remote API (`integrate.api.nvidia.com/v1` default) | N/A |
 | **TTS** (default) | Microsoft Edge TTS | `edge_tts` | Remote | — | **0 MB** | Pure Rust (`tokio-tungstenite`) | Remote WebSocket | N/A |
 | **TTS** (local) | Supertonic 3 | `supertonic_tts` | 99M | INT8 | ~144 MB | sherpa-onnx ONNX | `~/.vox/models/tts/supertonic-3/` | ✅ |
+| **TTS** (local) | Kokoro Multi-Lang | `kokoro` | 82M | FP32 | ~120 MB | sherpa-onnx ONNX | `~/.vox/models/tts/kokoro/` | ✅ |
 | **TTS** (local clone) | Chatterbox Local | `chatterbox_tts` | 340M | Q4 GGML | ~1.1 GB | chatterbox-rs GGML | `~/.vox/models/tts/chatterbox/` | ✅ |
 | **TTS** (remote) | Chatterbox Remote | `chatterbox_remote` | 340M | Q4 GGML | 0 MB (local) | reqwest HTTP | Remote GPU server | ✅ |
 
@@ -139,17 +140,17 @@ fn transcribe(audio: &[f32]) -> String {
 
 ### 3.4 TTS
 
-| Aspect | Edge TTS (default) | Supertonic 3 (local) | Chatterbox (local clone) | Chatterbox Remote |
-|--------|--------------------|----------------------|--------------------------|-------------------|
-| **Architecture** | Microsoft Bing ReadAloud | Flow-matching transformer | Transformer (GGML) | Same as Chatterbox |
-| **Engine** | Pure Rust WebSocket (`tokio-tungstenite`) | sherpa-onnx ONNX | chatterbox-rs GGML | reqwest HTTP |
-| **Params** | Remote API | 99M | 340M Q4 | 340M (server-side) |
-| **Output** | Native 24kHz f32 MP3-decoded PCM | 44.1kHz → 24kHz (downsampled) | Native 24kHz | 24kHz |
-| **Voice** | ~300+ Edge Neural Voices (default: `en-US-AriaNeural`) | 10 built-in (5M/5F) | 5s reference → cloned | Cloned via remote |
-| **Languages** | 100+ global languages & dialects | 31 | Multilingual | Multilingual |
-| **Quality Steps** | N/A (Streaming MP3) | 2–12 (configurable) | Fixed | Fixed |
-| **Speed** | 0.7×–2.0× (prosody rate) | Configurable | Fixed | Fixed |
-| **RTF / Latency** | **0.30× RTF** (~3.3× real-time) | 1.76× RTF | Variable | Variable |
+| Aspect | Edge TTS (default) | Supertonic 3 (local) | Kokoro (local) | Chatterbox (local clone) | Chatterbox Remote |
+|--------|--------------------|----------------------|----------------|--------------------------|-------------------|
+| **Architecture** | Microsoft Bing ReadAloud | Flow-matching transformer | Kokoro multi-lang | Transformer (GGML) | Same as Chatterbox |
+| **Engine** | Pure Rust WebSocket (`tokio-tungstenite`) | sherpa-onnx ONNX | sherpa-onnx ONNX | chatterbox-rs GGML | reqwest HTTP |
+| **Params** | Remote API | 99M | 82M | 340M Q4 | 340M (server-side) |
+| **Output** | Native 24kHz f32 MP3-decoded PCM | 44.1kHz → 24kHz (downsampled) | 24kHz | Native 24kHz | 24kHz |
+| **Voice** | ~300+ Edge Neural Voices (default: `en-US-AriaNeural`) | 10 built-in (5M/5F) | 50+ multi-lang | 5s reference → cloned | Cloned via remote |
+| **Languages** | 100+ global languages & dialects | 31 | 50+ | Multilingual | Multilingual |
+| **Quality Steps** | N/A (Streaming MP3) | 2–12 (configurable) | N/A | Fixed | Fixed |
+| **Speed** | 0.7×–2.0× (prosody rate) | Configurable | Configurable | Fixed | Fixed |
+| **RTF / Latency** | **0.30× RTF** (~3.3× real-time) | 1.76× RTF | ~1.2× RTF | Variable | Variable |
 
 **Anti-Aliasing Low-Pass Filter (Supertonic 3):** The vocoder outputs 44.1kHz, downsampled to 24kHz for TTS output. A 2nd-order Butterworth LPF (cutoff: 11000Hz) is applied before downsampling to prevent aliasing artifacts near Nyquist (22.05kHz). Implemented as a biquad filter applied sample-by-sample in the resampling loop.
 
@@ -315,7 +316,7 @@ VAD and STT are **not** cooled on auto-sleep — they stay resident so the mic k
 | LLM model / ctx_size / threads | `Restart` | Full pipeline restart |
 | LLM provider | `Restart` | Full pipeline restart |
 | TTS provider / voice | `Restart` | Full pipeline restart |
-| TTS quality steps / speed | `WorkerCommand` | Hot-update on TTS thread |
+| TTS quality steps / speed / voice | `WorkerCommand` | Hot-update on TTS thread |
 
 ---
 
