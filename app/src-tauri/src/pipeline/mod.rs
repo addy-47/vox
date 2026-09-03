@@ -1,6 +1,7 @@
 pub mod dictation;
 pub mod handlers;
 pub mod router;
+pub mod test;
 
 pub use crate::core::constants::{WINDOW_MAIN, WINDOW_TOAST, WINDOW_TRAY, WINDOW_WIZARD};
 use crate::core::events::{emit_ipc_to, IpcEvent};

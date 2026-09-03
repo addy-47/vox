@@ -16,10 +16,11 @@ interface ClipGroupProps {
   count: number;
   clips: TestClip[];
   onSelectClip: (clipId: string) => void;
+  onClose?: () => void;
   testingClip?: string | null;
 }
 
-const ClipGroup = memo(({ title, count, clips, onSelectClip, testingClip }: ClipGroupProps) => {
+const ClipGroup = memo(({ title, count, clips, onSelectClip, onClose, testingClip }: ClipGroupProps) => {
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between px-1.5 pt-1">
@@ -40,7 +41,10 @@ const ClipGroup = memo(({ title, count, clips, onSelectClip, testingClip }: Clip
               key={clip.id}
               type="button"
               disabled={isAnyClipActive}
-              onClick={() => onSelectClip(clip.id)}
+              onClick={() => {
+                onSelectClip(clip.id);
+                onClose?.();
+              }}
               className={cn(
                 "group w-full text-left px-3 py-2.5 rounded-xl transition-all duration-150 border border-[rgba(var(--border),0.06)] flex items-center justify-between gap-3 cursor-pointer",
                 isThisClipActive
@@ -134,6 +138,7 @@ export const TestClipsPopover = memo(({
           count={englishClips.length}
           clips={englishClips}
           onSelectClip={onSelectClip}
+          onClose={onClose}
           testingClip={testingClip}
         />
 
@@ -142,6 +147,7 @@ export const TestClipsPopover = memo(({
           count={hindiClips.length}
           clips={hindiClips}
           onSelectClip={onSelectClip}
+          onClose={onClose}
           testingClip={testingClip}
         />
       </div>

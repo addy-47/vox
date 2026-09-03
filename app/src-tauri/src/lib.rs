@@ -69,6 +69,21 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(window_customizer::PinchZoomDisablePlugin)
         .setup(|app| {
+            // Synchronous window reveal — runs before any async bootstrap so the
+            // main window is mapped immediately. The window is configured
+            // visible+maximized in tauri.conf.json, so there is no withdrawn ->
+            // normal WM transition to animate on first launch.
+            if let Some(main_win) = app.get_webview_window("main") {
+                if let Err(e) = main_win.show() {
+                    log::warn!("[Vox] Failed to show main window in setup: {}", e);
+                }
+                if let Err(e) = main_win.set_focus() {
+                    log::debug!("[Vox] Failed to focus main window in setup: {}", e);
+                }
+            } else {
+                log::warn!("[Vox] 'main' window not found at boot");
+            }
+
             // Capture the Tokio runtime handle early
             tauri::async_runtime::spawn(async {
                 if let Ok(handle) = tokio::runtime::Handle::try_current() {
