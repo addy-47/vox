@@ -21,9 +21,9 @@ related_docs:
 
 **Realtime Dictation** is a system-level, high-throughput speech-to-text pipeline in Vox inspired by Wispr-flow. It delivers instant, zero-latency transcription directly into any application on the operating system without incurring LLM reasoning or TTS synthesis overhead.
 
-In Phase 10, Dictation is **fully decoupled from the desktop Tray HUD and unified**: Passive and PTT share a single `pipeline/dictation.rs` handler (no split files). `services/dictation/` holds the reusable primitives (clipboard, input adapters, output_router, hotkey, controller):
+Dictation is **fully decoupled from the desktop Tray HUD and unified**: Passive and PTT share a single `pipeline/dictation.rs` handler (no split files). `services/dictation/` holds the reusable primitives (clipboard, input adapters, output_router, hotkey). The central router (`pipeline/router.rs:12`) fast-paths `owner==Dictation` events directly to `pipeline/dictation.rs::handle_event` before the assistant handler match:
 - **Dictation Core**: The native audio capture, VAD gating, STT acoustic transcription, and Devanagari transliteration engine.
-- **Output Mediums**: The transcription capability routes to mutually exclusive output destinations, where the desktop Tray HUD is simply one visual presentation medium among others. Note: the old `services/dictation/controller.rs` was deleted in the Phase-10 refactor; the unified handler is `pipeline/dictation.rs` and reusable primitives now live in `services/dictation/` (`clipboard.rs`, `input.rs`, `output_router.rs`, `hotkey.rs`, `mod.rs`).
+- **Output Mediums**: The transcription capability routes to mutually exclusive output destinations, where the desktop Tray HUD is simply one visual presentation medium among others. Reusable primitives live in `services/dictation/` (`clipboard.rs`, `input.rs`, `output_router.rs`, `hotkey.rs`, `mod.rs`).
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
@@ -92,7 +92,7 @@ Every output mode is **mutually exclusive** — at any given moment, transcripti
 
 ## 3. Fast-Path Pipeline Interception
 
-When dictation is active, the pipeline owner is `InteractionOwner::Dictation` (`core/state.rs:11`). The central router dispatches all `VoxEvent`s to `pipeline/dictation.rs::handle_event` (`pipeline/router.rs:10-31`). On `VoxEvent::TranscriptFinal`:
+When dictation is active, the pipeline owner is `InteractionOwner::Dictation` (`core/state.rs:10`). The central router dispatches all `VoxEvent`s to `pipeline/dictation.rs::handle_event` (`pipeline/router.rs:10-14`). On `VoxEvent::TranscriptFinal`:
 
 ```rust
 // Dispatches to OS input router and resets state to Idle
@@ -108,7 +108,7 @@ tauri::async_runtime::spawn(async move {
 transition(InteractionState::Idle, &ctx, app, state);
 ```
 
-Dictation has no `start_session`/`end_session` — it rides on the audio engine lifecycle (`lib.rs:360-395` auto-launch for Passive, lazy `ensure_engine_running` for PTT) and the router ownership check. While `owner==Assistant`, global hotkey presses are suppressed with a debug log (pipeline_orchestration_spec §5.2).
+Dictation has no `start_session`/`end_session` — it rides on the audio engine lifecycle (`lib.rs:360-395` auto-launch for Passive, lazy `ensure_engine_running` for PTT) and the router ownership check. While `owner==Assistant`, global hotkey `Press` events are received but are a no-op (assistant has exclusive mic priority). `DictationState` (`Recording→Transcribing→Idle`) is emitted to the tray via `emit_dictation_state` (`pipeline/dictation.rs:9`) mapping `Transcribing` to tray string `"Thinking"` for UI reuse.
 
 **Benefits**:
 - **0ms LLM Overhead**: No prompt templating, context construction, token generation, or quantization lag.
@@ -348,4 +348,4 @@ enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 
 ---
 
-**Last Updated:** 2026-09-01 — added §6 Toast Notification System (backend `toast.rs` emit chain, `ToastPayload` IPC, dictation trigger matrix, `ToastApp.tsx` presentation).
+**Last Updated:** 2026-09-03 — router fast-path uses `pipeline/handlers/` event-driven handlers; `DictationState` tray mapping clarified.

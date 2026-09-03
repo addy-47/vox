@@ -12,7 +12,7 @@ related_docs:
 
 # Vox — Backend Architecture
 
-> **A realtime, event-driven native audio processing system** built in Rust with C++ inference backends (ONNX Runtime, llama.cpp). Runs entirely on-device with sub-200ms perceived pipeline latency on 8GB RAM systems. Phase 10 is domain-partitioned: a central non-blocking router dispatches to 5 dedicated handlers instead of a monolithic God loop.
+> **A realtime, event-driven native audio processing system** built in Rust with C++ inference backends (ONNX Runtime, llama.cpp). Runs entirely on-device with sub-200ms perceived pipeline latency on 8GB RAM systems. Handler event-driven: a central non-blocking router (`vox-router`, `pipeline/router.rs`) dispatches each `VoxEvent` to a flat set of handler functions (`pipeline/handlers/*` + `pipeline/dictation.rs`) instead of a domain-partitioned or monolithic loop (see `docs/features/voice-flow.md`).
 
 ---
 
@@ -22,7 +22,7 @@ related_docs:
 - **Scope:** the Rust 4-layer architecture, provider/trait system, threading model, lifecycle, and the Tauri IPC event contract.
 - **Convention:** claims use `path/file.rs` pointers; schemas are linked, not pasted.
 - **Non-goals:** not the frontend (→ `docs/frontend.md`), not model specs (→ `docs/models.md`). The IPC event list in §8 is the contract the frontend consumes.
-- **SSOT:** event payloads (§8), settings reload policies (§10), and hardware tiers (§2) are authoritative here. Orchestration topology is SSOT in `core/events.rs` (IPC contract) and `pipeline/mod.rs` (routing).
+- **SSOT:** event payloads (§8), settings reload policies (§10), and hardware tiers (§2) are authoritative here. Orchestration topology is SSOT in `core/events.rs` (IPC contract), `pipeline/router.rs` (routing), and `pipeline/handlers/` (assistant handlers); `docs/features/voice-flow.md` is the handler-level companion reference.
 
 ## 1. Architecture Stack
 
@@ -35,7 +35,7 @@ The backend follows a strict 4-layer design. Each layer has a single responsibil
 ├─────────────────────────────────────────────────────────────────────┤
 │  2. SERVICES — Domain-specific inference + orchestration            │
 │     Audio → VAD → STT → LLM → TTS → Playback                       │
-│     + Pipeline Router (5 domains) + Realtime S2S + Memory (async)  │
+│     + Pipeline Router (handler event-driven) + Realtime S2S + Memory│
 ├─────────────────────────────────────────────────────────────────────┤
 │  3. INFRASTRUCTURE — Persistence, monitoring, IPC command handlers  │
 │     (persistence/, monitoring/, ipc/)                                │
@@ -93,20 +93,21 @@ src/
 │   ├── realtime/           # RealtimeVoiceProvider + RealtimeSession traits, engine, audio_bridge, playback_bridge (Gemini Live, Deepgram)
 │   ├── memory/             # 4-pillar architecture: retrieval/ (scope, search), compaction/ (prompt, runner), ingestion/ (stages 1-4, runner, metrics), ml/ (embedder, nli, edge_classifier, scope_classifier, tokenizer)
 │   └── translit.rs         # Devanagari→Roman ONNX encoder-decoder (evictable singleton)
-│   ├── harness/            # Conversation & context harness (buffer, accountant, prompt_builder, manager, facade, mod) — promoted from services/memory/harness/
-│   └── pipeline/           # Central router, discrete domain orchestrators, and shared context (vox_lib::pipeline::*)
-│       ├── modular/        # Modular pipeline domain
-│       │   ├── passive.rs  # Autonomous conversational loop state machine
-│       │   ├── ptt.rs      # Push-To-Talk conversational loop state machine
-│       │   └── mod.rs      # Modular domain dispatcher & worker warmup (ensure_modular_workers)
-│       ├── realtime/       # Realtime Speech-to-Speech WebSocket domain
-│       │   ├── session.rs  # Realtime provider instantiation & bidirectional barge-in
-│       │   ├── passive.rs  # Full-duplex WebSocket stream handler
-│       │   ├── ptt.rs      # Push-To-Talk WebSocket handler with ghost audio rejection
-│       │   └── mod.rs      # Realtime domain dispatcher
-│       ├── dictation.rs    # Unified passive/PTT OS-wide speech-to-text dictation
+│   ├── harness/            # Conversation & context harness (buffer, accountant, prompt_builder, manager, facade, mod)
+│   └── pipeline/           # Central router, handler functions, and shared context
+│       ├── handlers/       # Assistant handler event-driven layer (flat, no domain dirs)
+│       │   ├── speech.rs       # SpeechStart/SpeechEnd (passive gate + barge-in)
+│       │   ├── transcript.rs   # TranscriptFinal → harness → LLM dispatch
+│       │   ├── llm.rs          # LlmFinished → TTS remainder + persistence
+│       │   ├── playback.rs     # PlaybackStarted/Finished → Speaking/Ready
+│       │   ├── ptt.rs          # PttStart/Stop/Cancel (windowed VAD validation)
+│       │   ├── session.rs      # SessionStart/Pause/Resume/End + idle monitor
+│       │   ├── error.rs        # Error/Cancelled
+│       │   ├── interrupt.rs    # Barge-in helper (cancel + next_turn)
+│       │   └── accumulator.rs  # TurnAccumulator (TtsClauseChunker + buffers)
+│       ├── dictation.rs    # Unified passive/PTT OS-wide dictation handler
 │       ├── router.rs       # Central VoxEvent dispatcher thread (spawn_router, route_event)
-│       └── mod.rs          # RoutingContext, transition, target_window, init_new_session
+│       └── mod.rs          # RoutingContext, transition, target_window, init_new_session, spawn_idle_monitor
 ├── ipc/                    # Tauri command handlers
 │   ├── pipeline/           # assistant (start/end/pause/resume/ptt_* + engine), dictation (settings, recovery, clipboard copy), test_clip
 │   ├── settings/           # catalog, health (probe, validate_token_cap, hardware), mutation (update_setting, dispatch_worker_command)
@@ -131,12 +132,16 @@ audio(cpal 16kHz f32 SPSC ring 4s) → VAD actor (256-sample frames) → VoxEven
         │
         ▼
    Central Router (pipeline/router.rs — spawn_router, route_event)
-        │  RoutingContext { owner, pipeline_mode, interaction_mode } derived once per event
-        ├── Assistant / Modular / Passive → STT actor → Dynamic Memory Scope Retrieval (ModernBERT→MiniLM→Turso) → LLM actor → TTS clause chunker → Playback (24kHz→48kHz 2× Hermite)
-        ├── Assistant / Modular / PTT     → PTT gated buffer → STT → Dynamic Memory Retrieval → LLM → TTS → Playback
-        ├── Assistant / Realtime / Passive→ Realtime S2S WebSocket (Gemini Live / Deepgram)
-        ├── Assistant / Realtime / PTT    → Gated Realtime buffer (ghost-audio suppressed + server interrupt) → WS
-        └── Dictation (Passive+PTT unified) → STT → transliterate_if_hi → output_router (Paste/Clipboard/Tray) — 0 LLM/TTS
+        │  RoutingContext { owner, pipeline_mode, interaction_mode } snapshotted once per event
+        ├── owner==Dictation → pipeline/dictation.rs::handle_event → STT → transliterate_if_hi → output_router (Paste/Clipboard/Tray) — 0 LLM/TTS
+        └── owner==Assistant (match event → handler fn on router thread):
+            ├── SpeechStart/SpeechEnd → handlers/speech.rs (passive gate + barge-in → Listening/Thinking)
+            ├── TranscriptFinal        → handlers/transcript.rs → harness::prepare_turn_context (retrieval) → LLM actor → TTS clause chunker → Playback
+            ├── PttStart/Stop/Cancel  → handlers/ptt.rs → VAD window validation → STT or RealtimeActor
+            ├── LlmFinished           → handlers/llm.rs (flush remainder, persistence)
+            ├── PlaybackStarted/Finished → handlers/playback.rs (Speaking↔Ready)
+            └── SessionStart/Pause/Resume/End → handlers/session.rs (engine lifecycle + idle monitor)
+        PipelineMode selects the downstream path inside the handler: Modular → local STT/LLM/TTS actors; Realtime → RealtimeActor WebSocket (Gemini Live / Deepgram)
 ```
 
 ### Pipeline State Machine (7 Canonical Turn States)
@@ -221,10 +226,11 @@ Selection is `LlmActiveProvider::{Embedded, Server, Cloud}` (`core/settings.rs:3
 |----------|------|-------:|:------:|--------|---------|
 | **Edge TTS** (default) | Pure Rust WebSocket (`tokio-tungstenite`) | Remote | **0 MB** | 24kHz f32 | Free Microsoft Bing ReadAloud, 3.3× RTF, sub-200ms latency |
 | **Supertonic 3** (local) | ONNX INT8, sherpa-onnx | 99M | ~144 MB | 24kHz f32 | 31 languages, 10 local voices |
+| **Kokoro** (local) | ONNX, sherpa-onnx | 82M | ~120 MB | 24kHz f32 | Multi-lang, 50+ voices |
 | **Chatterbox** (local clone) | GGML, chatterbox-rs | 340M Q4 | ~1.1 GB | 24kHz native | Voice cloning from 5s reference |
 | **Chatterbox Remote** | reqwest blocking HTTP | 340M | 0 MB (local) | 24kHz | Offloads to remote CUDA GPU |
 
-Selection is `TtsActiveProvider::{EdgeTts,Supertonic,Chatterbox,ChatterboxRemote}` (`core/settings.rs:541-549`). Quality steps and speed are `WorkerCommand` hot-reloadable.
+Selection is `TtsActiveProvider::{EdgeTts,Supertonic,Kokoro,Chatterbox,ChatterboxRemote}` (`core/settings.rs:479`). Quality steps and speed are `WorkerCommand` hot-reloadable.
 
 ### 4.5 Realtime S2S — Speech-to-Speech
 
@@ -299,16 +305,17 @@ Remaining: audio (Tier 1, Max priority), VAD (Tier 2, high priority)
 
 ## 8. Event System
 
-### Internal VoxEvent (mpsc channel, `core/events.rs:10-62`)
+### Internal VoxEvent (mpsc channel, `core/events.rs:11-45`)
 
 ```
-VAD:        SpeechStart { turn_id }, SpeechEnd { turn_id, audio_buffer }
-STT:        TranscriptPartial { turn_id, text }, TranscriptFinal { turn_id, text }
-LLM:        LlmToken { turn_id, token }, LlmFinished { turn_id }
-TTS:        TtsChunk { turn_id, samples }, TtsFinished { turn_id, rtf }
+Lifecycle:  SessionStart { owner }, PauseSession, ResumeSession, EndSession
+PTT:        PttStart, PttStop, PttCancel
+VAD:        SpeechStart, SpeechEnd
+STT:        TranscriptFinal { turn_id, text }
+LLM:        LlmFinished { turn_id }
 Playback:   PlaybackStarted { turn_id }, PlaybackFinished { turn_id }
+Flow:       Cancelled { turn_id }, Error { turn_id, message, source }
 Control:    Shutdown
-Flow:       Cancelled { turn_id }, Interrupted { turn_id }, Error { turn_id, message }
 ```
 
 ### Tauri IPC Events (frontend-bound, via `app.emit` / `app.emit_to`, SSOT `core/events.rs:IpcEvent`)
@@ -336,13 +343,13 @@ Full consumer map is in `docs/frontend.md:§9` and typed wrappers in `services/e
 |-----------|-------|----------|
 | SPSC lock-free ring buffer | Audio transport (64k samples / 4s) | `services/audio/device.rs`, `core/constants.rs:RING_BUFFER_SIZE` |
 | `Arc<AtomicBool>` / `AtomicU32` / `AtomicU64` | Cancellation, playback, engagement, turn_id, state, sleep, health flags | `PipelineAtomics`, `AppState` |
-| `Arc<parking_lot::Mutex<InteractionState>>` | Turn state (sync, no poisoning) | `PipelineAtomics::state` |
-| `Arc<AtomicU32>` (state as u32) + `is_assistant_speaking` | Lock-free state read on audio hot path | `PipelineAtomics::current_state_atomic` |
+| `tokio::sync::watch::Sender<InteractionState>` + `Arc<AtomicU32>` mirror | Turn state (broadcast) | `PipelineAtomics::state_tx` + `current_state_atomic` |
+| `Arc<AtomicU32>` (state as u32) + `DictationState` mirror | Lock-free state read on audio hot path | `PipelineAtomics::current_state_atomic` + `dictation_state_atomic` |
 | `std::sync::mpsc::channel` | Inter-thread VoxEvent + STT/LLM/TTS commands | All workers, `VoxEngine::{stt,llm,tts,pipeline}_tx` |
 | `crossbeam_channel::bounded(4096)` | High-throughput telemetry + persistence events | `monitoring/aggregator.rs`, `persistence/worker.rs` |
 | `parking_lot::RwLock<VoxSettings>` | Read-heavy settings | `AppState::settings` |
 | `parking_lot::RwLock<Option<T>>` | Evictable ONNX model singletons | `translit.rs`, `query_classifier.rs`, `embedder.rs`, `intra_edge_classifier.rs`, `inter_edge_classifier.rs` |
-| `tokio::sync::Mutex<Option<VoxEngine>>` + `Mutex<Option<RealtimeEngine>>` | Engine lifecycle (async IPC) | `AppState::{engine,realtime_engine}` |
+| `tokio::sync::Mutex<Option<VoxEngine>>` + `Mutex<Option<RealtimeActor>>` | Engine lifecycle (async IPC) | `AppState::{engine,realtime_engine}` |
 | `parking_lot::Mutex<Option<CheckMenuItem>>` | Tray menu handle | `AppState::hud_menu_item` |
 
 > **Note:** All sync mutexes use `parking_lot` (not `std::sync::Mutex`) for lower overhead, no poisoning, and better performance under contention. The switch was made in v0.8.6 to eliminate lock-poisoning risks in the audio pipeline. Canonical lock order is `state.engine` before `state.realtime_engine` (AGENTS.md §5.2).
@@ -400,4 +407,4 @@ Any ──(realtime mode)──────────→ WS (no local LLM/STT/
 
 ---
 
-**Last Updated:** 2026-08-31
+**Last Updated:** 2026-09-03 — pipeline handler event-driven (§3), `TtsActiveProvider::Kokoro` (§4.4), `watch` state (§9), `VoxEvent` registry (§8).
