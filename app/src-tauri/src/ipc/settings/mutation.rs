@@ -345,6 +345,20 @@ fn apply_vad_mutation(
             settings.vad.ptt_noise_gate =
                 value.as_f64().ok_or("ptt_noise_gate must be a number")? as f32;
         }
+        "silence_duration_ms" => {
+            let duration = value.as_u64().ok_or("silence_duration_ms must be an integer")? as u32;
+            if !(100..=5000).contains(&duration) {
+                return Err("silence_duration_ms must be between 100 and 5000 ms".to_string());
+            }
+            settings.vad.silence_duration_ms = duration;
+        }
+        "speech_onset_ms" => {
+            let onset = value.as_u64().ok_or("speech_onset_ms must be an integer")? as u32;
+            if !(16..=1000).contains(&onset) {
+                return Err("speech_onset_ms must be between 16 and 1000 ms".to_string());
+            }
+            settings.vad.speech_onset_ms = onset;
+        }
         "vad_backend" => {
             settings.vad.vad_backend = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid vad backend: {}", e))?;
@@ -367,6 +381,20 @@ fn apply_stt_mutation(
         "model" => {
             settings.stt.embedded.model =
                 value.as_str().ok_or("model must be a string")?.to_string();
+        }
+        "partial_throttle_ms" => {
+            let throttle = value.as_u64().ok_or("partial_throttle_ms must be an integer")?;
+            if !(50..=2000).contains(&throttle) {
+                return Err("partial_throttle_ms must be between 50 and 2000 ms".to_string());
+            }
+            settings.stt.embedded.partial_throttle_ms = throttle;
+        }
+        "threads" => {
+            let t = value.as_u64().ok_or("threads must be a positive integer")? as u32;
+            if !(1..=64).contains(&t) {
+                return Err("stt threads must be between 1 and 64".to_string());
+            }
+            settings.stt.embedded.threads = t;
         }
         "transliterate_enabled" => {
             settings.stt.transliterate_enabled = value
@@ -577,6 +605,13 @@ fn apply_tts_mutation(
         }
         "speed" => {
             settings.tts.speed = value.as_f64().ok_or("speed must be a number")? as f32;
+        }
+        "threads" => {
+            let t = value.as_u64().ok_or("threads must be a positive integer")? as u32;
+            if !(1..=64).contains(&t) {
+                return Err("tts threads must be between 1 and 64".to_string());
+            }
+            settings.tts.threads = t;
         }
         "edge_tts" => {
             settings.tts.edge_tts = serde_json::from_value(value.clone())
@@ -924,6 +959,34 @@ async fn dispatch_worker_command<R: tauri::Runtime>(
                         );
                     }
                     log::debug!("[Settings] VadCommand::UpdateNoiseGate({}) dispatched", v);
+                }
+            }
+            ("vad", "silence_duration_ms") => {
+                if let Some(v) = value.as_u64() {
+                    if let Err(e) = engine
+                        .vad_tx
+                        .send(crate::services::vad::VadCommand::UpdateSilenceDuration(v as u32))
+                    {
+                        log::warn!(
+                            "[Settings] Failed to send VadCommand::UpdateSilenceDuration: {}",
+                            e
+                        );
+                    }
+                    log::debug!("[Settings] VadCommand::UpdateSilenceDuration({}) dispatched", v);
+                }
+            }
+            ("vad", "speech_onset_ms") => {
+                if let Some(v) = value.as_u64() {
+                    if let Err(e) = engine
+                        .vad_tx
+                        .send(crate::services::vad::VadCommand::UpdateSpeechOnset(v as u32))
+                    {
+                        log::warn!(
+                            "[Settings] Failed to send VadCommand::UpdateSpeechOnset: {}",
+                            e
+                        );
+                    }
+                    log::debug!("[Settings] VadCommand::UpdateSpeechOnset({}) dispatched", v);
                 }
             }
             ("audio", "output_mode") => {

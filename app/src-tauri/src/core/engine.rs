@@ -57,12 +57,13 @@ async fn ensure_manifest_loaded(state: &AppState) {
 
 /// Resolves and instantiates the active STT provider.
 fn create_stt_instance(state: &AppState) -> Result<Box<dyn SttProvider>, String> {
-    let asr_provider = state
-        .settings
-        .read()
-        .map_err(|e| format!("[Core::Engine] Settings lock poisoned: {}", e))?
-        .stt
-        .to_provider_config();
+    let (asr_provider, stt_threads) = {
+        let s = state
+            .settings
+            .read()
+            .map_err(|e| format!("[Core::Engine] Settings lock poisoned: {}", e))?;
+        (s.stt.to_provider_config(), s.stt.embedded.threads)
+    };
     let models_dir = paths::get().models.clone();
 
     match asr_provider {
@@ -71,12 +72,12 @@ fn create_stt_instance(state: &AppState) -> Result<Box<dyn SttProvider>, String>
                 "nvidia_nemotron" => models_dir.join(crate::services::stt::NEMOTRON_MODEL_DIR),
                 _ => models_dir.join(crate::services::stt::QWEN_ASR_MODEL_DIR),
             };
-            create_stt_provider(&asr_provider, &path)
+            create_stt_provider(&asr_provider, &path, stt_threads)
                 .map_err(|e| format!("[Core::Engine] STT provider creation failed: {}", e))
         }
         crate::core::settings::SttProviderConfig::Cloud { .. } => {
             let path = models_dir.join("stt");
-            create_stt_provider(&asr_provider, &path)
+            create_stt_provider(&asr_provider, &path, stt_threads)
                 .map_err(|e| format!("[Core::Engine] STT provider creation failed: {}", e))
         }
     }
@@ -174,7 +175,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let stt_provider = create_stt_instance(state)?;
     let vad = create_vad_instance(state).await?;
 
-    let (threshold, noise_gate, mode, audio_mode) = {
+    let (threshold, noise_gate, silence_duration_ms, speech_onset_ms, mode, audio_mode) = {
         let s = state
             .settings
             .read()
@@ -182,6 +183,8 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         (
             s.vad.threshold,
             s.vad.ptt_noise_gate,
+            s.vad.silence_duration_ms,
+            s.vad.speech_onset_ms,
             s.interaction.mode.clone(),
             s.audio.output_mode.clone(),
         )
@@ -198,6 +201,8 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let vad_config = VadActorConfig {
         initial_threshold: threshold,
         initial_noise_gate: noise_gate,
+        initial_silence_duration_ms: silence_duration_ms,
+        initial_speech_onset_ms: speech_onset_ms,
         initial_mode: mode,
         initial_audio_mode: audio_mode,
     };

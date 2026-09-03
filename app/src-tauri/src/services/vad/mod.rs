@@ -29,6 +29,8 @@ pub const EARSHOT_NOISE_GATE_MULTIPLIER: f32 = 1.5;
 pub enum VadCommand {
     UpdateThreshold(f32),
     UpdateNoiseGate(f32),
+    UpdateSilenceDuration(u32),
+    UpdateSpeechOnset(u32),
     UpdateMode(crate::core::settings::InteractionMode),
     UpdateAudioMode(crate::core::settings::AudioOutputMode),
     SetOperationalMode(VadOperationalMode),

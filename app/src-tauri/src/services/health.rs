@@ -108,7 +108,7 @@ pub async fn check_stt_health(
             Ok(model_path.exists())
         }
         SttProviderConfig::Cloud { .. } => tokio::task::spawn_blocking(move || {
-            match crate::services::stt::create_stt_provider(&config, &std::path::PathBuf::new()) {
+            match crate::services::stt::create_stt_provider(&config, &std::path::PathBuf::new(), crate::core::defaults::DEFAULT_STT_THREADS) {
                 Ok(provider) => provider.health_check(),
                 Err(e) => {
                     log::warn!("[Settings] Cloud STT provider health check failed: {}", e);

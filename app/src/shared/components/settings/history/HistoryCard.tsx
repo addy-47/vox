@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { History, ShieldAlert, Layers } from "lucide-react";
+import { History, ShieldOff, FoldVertical } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, RotaryKnob, ToggleTile } from "@/shared/ui";
 import { HISTORY_SETTINGS_COPY } from "@/data/settingsCopy";
@@ -57,7 +57,7 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
             inactiveLabel={HISTORY_SETTINGS_COPY.privateModeInactive}
             activeSublabel={HISTORY_SETTINGS_COPY.privateModeActiveSub}
             inactiveSublabel={HISTORY_SETTINGS_COPY.privateModeInactiveSub}
-            icon={ShieldAlert}
+            icon={ShieldOff}
             onToggle={() =>
               updateDraft("history", "private_mode", !history.private_mode)
             }
@@ -72,7 +72,7 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
             inactiveLabel={HISTORY_SETTINGS_COPY.autoCompactionInactive}
             activeSublabel={HISTORY_SETTINGS_COPY.autoCompactionActiveSub}
             inactiveSublabel={HISTORY_SETTINGS_COPY.autoCompactionInactiveSub}
-            icon={Layers}
+            icon={FoldVertical}
             onToggle={() =>
               updateDraft("history", "auto_compaction", !history.auto_compaction)
             }

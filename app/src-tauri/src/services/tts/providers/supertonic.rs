@@ -110,7 +110,7 @@ impl AtomicF32 {
 
 impl TtsEngine {
     /// Initializes Supertonic ONNX offline TTS components from the specified model directory.
-    pub fn new(model_path: &Path, voice: i32, quality_steps: u32, speed: f32) -> Result<Self> {
+    pub fn new(model_path: &Path, voice: i32, quality_steps: u32, speed: f32, num_threads: u32) -> Result<Self> {
         let mp = |f: &str| -> String { model_path.join(f).to_string_lossy().into() };
 
         let config = OfflineTtsConfig {
@@ -128,7 +128,7 @@ impl TtsEngine {
                     unicode_indexer: Some(mp(crate::services::tts::MODEL_FILE_TTS_SUPER_INDEXER)),
                     voice_style: Some(mp(crate::services::tts::MODEL_FILE_TTS_SUPER_VOICE)),
                 },
-                num_threads: 2,
+                num_threads: num_threads as i32,
                 debug: false,
                 ..Default::default()
             },
