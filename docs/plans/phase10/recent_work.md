@@ -235,3 +235,55 @@ This document tracks detailed architectural refactorings, milestone completions,
 - **Audit Remediation SP-25d (2026-09-01):** Centralized setup and model operation constants (`MODEL_DOWNLOAD_TIMEOUT_SECS`, `MODEL_CONNECT_TIMEOUT_SECS`, `PROGRESS_EMIT_INTERVAL_MS`, `MANIFEST_FETCH_TIMEOUT_SECS`, `APP_MANIFEST_FETCH_TIMEOUT_SECS`, `TRANSLIT_MODEL_DIR`, `MODELS_MANIFEST_URL`, `APP_MANIFEST_URL`) in `setup/mod.rs` and replaced scattered literals in `model_manager.rs`, `manifest.rs`, and `services/translit.rs`. Zero clippy warnings.
 - **Audit Remediation SP-25e (2026-09-01):** Centralized transliteration autoregressive decode ceiling (`TRANSLIT_MAX_DECODE_STEPS = 32`) in `services/translit.rs` and verified thread priority and probe temperature constant hierarchy in `services/stt/mod.rs` and `services/llm/mod.rs`. Zero clippy warnings.
 - **Structure Audit (2026-09-01):** 5-sprint review-only flag audit (154 files, 32,950 LOC, 2487 audit lines, soft 120/600 caps) → `docs/plans/phase10/audits/{audit-llm.md:999, audit-stt-vad-audio.md:269, audit-tts-realtime.md:441, audit-memory-harness.md:342, audit-core-pipeline.md:409, INDEX.md}` — 2 true gods (`gemini_live:1058` 🔴, `deepgram:824` 🟠), 5 tall-keep (`llama_cpp:717`, `probe:658`, `settings:1105`, `mutation:1007`, `lib:647`), 2 cycles (`memory↔harness`, `core/engine↔pipeline`), 3 laterals (`playback→realtime::resampler`, `tts→persistence`, `stt/providers/embedded super::super::`), `translit:437` wrong parent. Checklist `structure-audit-checklist.md` 154/154.
+
+### 33. Realtime Transport & Driver Decomposition (2026-09-02)
+
+- **WebSocket Reconnect Harness:** Extracted shared WebSocket reconnect harness (`services/realtime/transport/{connection.rs, health.rs, mod.rs}`) with single-FIFO `OutboundCommand` channel, eliminating wire-ordering framing races.
+- **Provider Decomposition:** Decomposed monolithic `gemini_live.rs` (1061 LOC) and `deepgram_live.rs` (827 LOC) into modular `ProviderDriver` drivers under `providers/gemini/` and `providers/deepgram/` (all files ≤ 312 LOC).
+- **Monotonic Turn ID SSOT:** Enforced monotonic turn ID SSOT by eliminating provider-level `fetch_add` bypass.
+- **Quality Gate:** Zero clippy warnings, 100% release test suite green (34/34 passed).
+
+### 34. Playback Triggers & Realtime Stream Guard (2026-09-02)
+
+- **Event Matrix Alignment:** Aligned `PlaybackStarted` and `PlaybackFinished` across all 4 domains in `domain_event_matrix.md`.
+- **Pre-Roll Flush:** Implemented `PlaybackEngine::flush_pre_roll()` to eliminate short-utterance (<250ms) deadlocks.
+- **Tuned Pre-Roll:** Introduced tuned `REALTIME_PREROLL_THRESHOLD_SAMPLES` (80ms vs 250ms) for low-latency S2S.
+- **Network Jitter Guard:** Guarded realtime multi-packet playback against network jitter cutoffs via in-flight `pending_synthesis_jobs` lifecycle until `LlmFinished`. Zero clippy warnings.
+
+### 35. Comprehensive Backend Audit (2026-09-02)
+
+- **Audit Scope:** 8-sprint domain-bounded audit (154 files, ~32,700 LOC) across core engine, audio/VAD, STT/TTS, LLM, realtime, memory, IPC, persistence/monitoring.
+- **Findings:** Found 12 critical findings and 20 high findings (allocation on hot path, bounds checks, timeouts, queue transactions, SQLite chunking).
+- **Quality Gate:** 4 false positives eliminated via feedback-review pass. Full inventory checklist: 154/154 verified.
+
+### 36. 4-Domain Event Pipeline & Lifecycle Refactor (2026-09-02)
+
+- **Domain Matrix:** Implemented specification from `docs/specs/event-domain-matrix.md`.
+- **Pipeline Router & Handlers:** Unified and decomposed pipeline event routing across all 4 interaction domains (Modular Passive, Modular PTT, Realtime Passive, Realtime PTT) under single-FIFO elevated router (`pipeline/router.rs`) and modular handlers (`pipeline/handlers/{session, speech, transcript, llm, playback, ptt, interrupt, error}.rs`).
+- **Direct Hot-Path Streaming:** Direct actor-to-actor audio hot-path streaming; centralized monotonic turn ID SSOT; fully encapsulated barge-in in `on_interrupt`. Zero clippy warnings across all targets.
+
+### 37. Frontend Pipeline Alignment & Home Controls Refactor (2026-09-02)
+
+- **Home Controls:** Aligned frontend interaction state machine and Home page controls across all 4 domains: single Engage button for `Idle`, dynamic Pause/Play toggle + Disengage for `PASSIVE`, Mic hold-to-talk + Disengage for `PTT`, and single Reconnect button (calling `resume_session` for Stage 1 error recovery) with detailed action banner for `Error`.
+- **Session Resumption:** Fixed `VoiceSessionContext::resume` to support resumption from `Error` state and filtered `owner: "Dictation"` transitions.
+- **Zero Hardcoding:** Extracted zero-hardcoding copy to `src/data/homeCopy.ts`. 100% clean TypeScript typecheck and Vite production build.
+
+### 38. Unified Audit Single Source Consolidation (2026-09-02)
+
+- **Consolidation:** Re-read all 8 sprint audits + pipeline `handlers/` refactor at HEAD vs `specs/event-domain-matrix.md` + logic SSOT.
+- **Root Audit Artifact:** Consolidated into sole artifact `AUDIT_REPORT.md` (root) with own taxonomy: 16 Real Bugs / 14 Edge Cases / 12 Guards.
+- **Cleanup:** Downgraded dictation/test_clip ephemeral `turn_id` to Low; removed 8 sprint files + `audits/INDEX.md` + `audits/` dir. Single-FIFO router, barge-in, warm-pause, streaming bypass all verified.
+
+### 39. Audit Defect Remediations & Audio Hot-Path Allocations Purge (2026-09-02)
+
+- **Defect Remediations:** Wired `max_output_tokens` enforcement across embedded LLM generation (R1); added `MAX_SSE_BUFFER_BYTES` bounds check (R2); moved embedding inference to `spawn_blocking` with strict candidate query error propagation (R4, R5, R9); added 30s timeout on Edge TTS MP3 collection (R6) and 180s timeout on remote LLM transport (R7); added queue count error checks (R8); logged malformed JSON on Gemini/Deepgram handshakes (R10); made settings snapshot poison-safe (R11); hardened archive parent paths (R12).
+- **Buffer Recycling:** Implemented zero-allocation recycle pools for VAD 62.5Hz passthrough and partial STT streaming (R14, R15); avoided buffer copies in playback ingestion (E1); bounded CPAL input buffers (E2); added 10s reconnect timeout (E9); chunked SQLite IN queries $\le 400$ (E4) and wrapped queue enqueue in transactions (E8); used `mem::take` for voice recording buffers (P11); unified multi-threaded runtime in LLM worker actor. Zero clippy warnings.
+
+### 40. Playback Architecture & Device Output Decomposition (2026-09-02)
+
+- **Responsibility Decoupling:** Decomposed monolithic `playback.rs` (532 LOC) into clean single-responsibility components:
+  - `services/audio/mod.rs`: Elevated shared domain handles (`PlaybackTelemetryHandles`, `PlaybackEngineHandles`) and subsystem constants.
+  - `services/audio/device.rs`: Unified CPAL hardware stream bindings (`AudioStream` mic capture, `build_output_stream`, `resolve_output_device_and_config`).
+  - `services/audio/sink.rs`: Encapsulated real-time lock-free output callback (`PlaybackStreamContext`) handling zero-allocation frame drain, volume ramping, and FilterBank FFT.
+  - `services/audio/playback.rs`: Focused purely on producer-side ring buffer ingestion (`HeapProd`), pre-roll gating (`turn_armed`), and Tokio stream workers.
+- **Quality Gate:** 100% clean `cargo check` and zero clippy warnings across all targets.

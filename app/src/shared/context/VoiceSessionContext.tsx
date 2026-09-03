@@ -11,7 +11,6 @@ import {
   testClipCancel,
   getRuntimeSnapshot,
 } from "@/services/pipelineService";
-import { showMainWindow } from "@/services/windowService";
 import {
   type InteractionState,
   type StateChangedPayload,
@@ -376,6 +375,9 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
               setTranscript("");
               setAssistantText("");
             }
+            if (newState === "Ready" || newState === "Idle") {
+              setTestingClip(null);
+            }
             if (newState === "Listening") {
               archiveCurrentTurn();
             }
@@ -446,9 +448,11 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
           })
         );
 
-        setTimeout(async () => {
-          if (isMounted) await showMainWindow();
-        }, 300);
+        // Window reveal is now the sole responsibility of App.tsx (after
+        // core:window:allow-show was added 2026-09-03). Previously this site
+        // issued a second showMainWindow() 300ms after the App.tsx show as a
+        // workaround, which caused a visible WM state-transition flash
+        // (minimized -> maximized) on first launch.
       } catch (err) {
         console.error("[VoiceSession] Failed to setup listeners:", err);
       }

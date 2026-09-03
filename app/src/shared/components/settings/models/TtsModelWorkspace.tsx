@@ -61,6 +61,7 @@ export const TtsModelWorkspace = memo(
             const isSelected =
               (model.is_cloud && draftSettings.tts.active === "edge_tts") ||
               (model.id === "supertonic_tts" && draftSettings.tts.active === "supertonic") ||
+              (model.id.includes("kokoro") && draftSettings.tts.active === "kokoro") ||
               (model.id === "chatterbox_tts" && draftSettings.tts.active === "chatterbox") ||
               (model.is_remote && draftSettings.tts.active === "chatterbox_remote");
 
@@ -86,6 +87,8 @@ export const TtsModelWorkspace = memo(
                       updateDraft("tts", "active", "edge_tts");
                     } else if (model.id === "supertonic_tts") {
                       updateDraft("tts", "active", "supertonic");
+                    } else if (model.id.includes("kokoro")) {
+                      updateDraft("tts", "active", "kokoro");
                     } else if (model.id === "chatterbox_tts") {
                       updateDraft("tts", "active", "chatterbox");
                     } else if (model.id === "chatterbox_remote") {

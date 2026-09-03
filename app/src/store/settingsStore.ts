@@ -353,6 +353,18 @@ function applyAppearance(appearance?: AppearanceSettings) {
       document.documentElement.classList.add("dark");
       document.documentElement.classList.remove("light");
     }
+
+    // Persist to localStorage so the boot inline script in index.html can
+    // apply the user's theme + accent_seed before React mounts, eliminating
+    // the default-cyan -> configured-accent flash on first paint. Added 2026-09-03.
+    try {
+      localStorage.setItem(
+        "vox_appearance",
+        JSON.stringify({ theme: appearance.theme, accent_seed: appearance.accent_seed })
+      );
+    } catch {
+      /* localStorage unavailable; first-paint flash will be a no-op */
+    }
   }
 }
 

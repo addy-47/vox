@@ -34,9 +34,9 @@ Architecture capabilities are gated by hardware tier. Vox must dynamically degra
 ### 2.1 Standard Rust File Grammar Order (CRITICAL)
 
 All Rust source files must strictly follow this top-to-bottom grammar ordering:
-1. **Module Documentation & Imports:**
-   - Crate/file doc comments (`//! ...`).
+1. **Imports:**
    - Grouped imports: `std::...`, external third-party crates, internal `crate::...`, `super::...`.
+   - Do not include crate/file header doc comment blocks (`//! ...`). Comments should strictly be concise doc comments directly on top of functions, types, and traits (`/// ...`).
 2. **File-Local Constants & Type Aliases:**
    - `const ...`, `pub type ...`.
 3. **Data Structures (Structs & Enums):**
@@ -125,10 +125,10 @@ Never scatter or bury magic numbers or configuration values across internal acto
   - **Transient Flow Control within Single Function Scope:** A local variable tracking immediate iteration state (e.g. `let has_speech = ...;` or `let mut seen_first_token = false;`).
   - **Atomic Cancellation / Shutdown Tokens:** `tokio_util::sync::CancellationToken` or worker shutdown flags (`AtomicBool` for loop termination only).
 
-### 7.3 State Transitions are the Sole Lifecycle Event Pump
-- `transition(...)` broadcasts `IpcEvent::StateChanged` (`"state_changed"`).
-- Submodules must **NEVER** manually emit ad-hoc custom lifecycle events — for example: `speech_start`, `speech_end`, `playback_started`, `playback_finished`, `session_started`, `session_ended`, `ptt_status`. This list is illustrative, not exhaustive.
-- All cross-boundary IPC emissions must be dispatched strictly through `emit_ipc` or `emit_ipc_to` using canonical `IpcEvent` enum variants.
+### 7.3 State Transitions are Event-Driven (IPC Calls Must Never Mutate State Directly)
+- **Event-Driven SSOT:** Pipeline lifecycle state (`InteractionState`, `DictationState`) is driven strictly and exclusively by internal pipeline events (`VoxEvent`) processed sequentially through the pipeline router.
+- **No Direct IPC State Mutation:** IPC command handlers (`src/ipc/`) must **NEVER** directly mutate lifecycle state atomics (e.g. calling `state.set_state(...)` or `state_atomic.store(...)`).
+- **Command Intent Pattern:** IPC handlers express intent solely by dispatching commands to actors (e.g. `session_tx.send(SessionCommand::...)` or `ptt_tx.send(...)`). The owning subsystem or pipeline router processes the command, evaluates domain invariants, emits the corresponding event, and the event router executes the canonical state transition. Direct state mutation bypasses lifecycle gates, corrupts turn lifecycles, and creates race conditions across actors.
 
 ### 7.4 Centralized Monotonic Turn Generation
 - Turn IDs must be monotonically allocated strictly at the turn boundary via `PipelineAtomics::next_turn()`. Never call raw `fetch_add` on `turn_id` inside actors or subsystems; never reset to `0` or pass dummy turn IDs. Subsystems receive a `(turn_id: u32, token: CancellationToken)` pair at the turn boundary — they never own or advance the counter.

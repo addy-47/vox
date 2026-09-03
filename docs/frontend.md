@@ -1,7 +1,7 @@
 ---
 title: "Vox Frontend Architecture"
 audience: "Internal — agents & contributors needing quick, accurate context"
-last_updated: 2026-08-31
+last_updated: 2026-09-03
 owners: "frontend-engineer role"
 related_docs:
   - "docs/design.md            — Authoritative design system (tokens, type, elevation)"
@@ -123,7 +123,7 @@ Raw `@tauri-apps/api` `invoke` calls are **banned inside components** (code-styl
 
 ## 9. IPC & events — consumer view
 
-The Rust event contract is authoritative in `docs/backend.md` §8. The frontend consumes it through typed wrappers in `services/eventsService.ts` — `on<T>` provides synchronous `unlisten` via `beforeunload`/`pagehide` registry (`eventsService.ts:110-161`). Key events and their consumers:
+The Rust event contract is authoritative in `docs/backend.md` §8. The frontend consumes it through typed wrappers in `services/eventsService.ts` — `on<T>` provides synchronous `unlisten` via `beforeunload`/`pagehide` registry (`eventsService.ts:122-176`). Handler-level routing detail is in `docs/features/voice-flow.md` §9. Key events and their consumers:
 
 | Event | Payload source | Consumer surface |
 |---|---|---|
@@ -137,7 +137,7 @@ The Rust event contract is authoritative in `docs/backend.md` §8. The frontend 
 | `settings-updated` | — | Settings hot-reload |
 | `toggle_tray` | — | Tray HUD toggle |
 
-Commands are issued via the service modules in §6 — `pipelineService.ts:63-97` (`startSession`→`start_session`, `endSession`→`end_session`, `pauseSession`→`pause_session`, `pttStart`→`ptt_start`, etc.) (never bare `invoke` in components). Full command list and reload policies: `docs/backend.md` §10. Frontend never branches on `pipeline_mode` for lifecycle — always calls the same verbs; backend `RoutingContext` resolves the domain.
+Commands are issued via the service modules in §6 — `pipelineService.ts` (`startSession`→`start_session`, `endSession`→`end_session`, `pauseSession`→`pause_session`, `pttStart`→`ptt_start`, etc.) (never bare `invoke` in components). Full command list and reload policies: `docs/backend.md` §10. Frontend never branches on `pipeline_mode` for lifecycle — always calls the same verbs; backend `RoutingContext` + handler dispatch (`pipeline/router.rs` → `pipeline/handlers/*`) resolves the path.
 
 ## 10. Design system consumption
 
