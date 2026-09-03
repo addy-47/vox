@@ -11,9 +11,13 @@ pub const DEFAULT_DICTATION_HOTKEY: &str = "Alt+Space";
 pub const DEFAULT_VAD_BACKEND: &str = "ten_vad";
 pub const DEFAULT_VAD_THRESHOLD: f32 = 0.5;
 pub const DEFAULT_VAD_PTT_NOISE_GATE: f32 = 0.005;
+pub const DEFAULT_VAD_SILENCE_DURATION_MS: u32 = 800;
+pub const DEFAULT_VAD_SPEECH_ONSET_MS: u32 = 32;
 
 pub const DEFAULT_ASR_MODEL: &str = "nvidia_nemotron";
 pub const DEFAULT_ASR_TRANSLITERATE_ENABLED: bool = true;
+pub const DEFAULT_STT_PARTIAL_THROTTLE_MS: u64 = 300;
+pub const DEFAULT_STT_THREADS: u32 = 4;
 pub const DEFAULT_STT_CLOUD_PROVIDER: &str = "google";
 pub const DEFAULT_STT_CLOUD_MODEL: &str = "chirp_3";
 pub const DEFAULT_STT_CLOUD_LANGUAGE: &str = "en-US";
@@ -37,6 +41,7 @@ pub const DEFAULT_LLM_CLOUD_PROVIDER_NAME: &str = "nvidia";
 pub const DEFAULT_TTS_VOICE_INDEX: i32 = 0;
 pub const DEFAULT_TTS_QUALITY_STEPS: u32 = 12;
 pub const DEFAULT_TTS_SPEED: f32 = 1.05;
+pub const DEFAULT_TTS_THREADS: u32 = 2;
 
 pub const DEFAULT_AUTO_SLEEP_TIMEOUT: u32 = 400;
 

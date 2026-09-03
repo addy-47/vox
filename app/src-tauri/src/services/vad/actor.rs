@@ -10,7 +10,7 @@ use super::utils::{f32_to_i16_pcm, PreRollBuffer};
 use super::{
     VadBackend, VadEngine as _, VadOperationalMode, VAD_ACTOR_IDLE_SLEEP_MS, VAD_CHUNK_SIZE,
     VAD_MAX_PARTIAL_WINDOW_SAMPLES, VAD_MIN_UTTERANCE_SAMPLES, VAD_PARTIAL_INTERVAL_SAMPLES,
-    VAD_PRE_ROLL_CAPACITY, VAD_SPEECH_END_FRAMES, VAD_SPEECH_START_FRAMES,
+    VAD_PRE_ROLL_CAPACITY,
 };
 use crate::core::events::VoxEvent;
 use crate::core::settings::{AudioOutputMode, InteractionMode};
@@ -32,6 +32,8 @@ pub struct VadValidationResult {
 pub struct VadActorState {
     pub threshold: f32,
     pub noise_gate: f32,
+    pub speech_end_frames: usize,
+    pub speech_start_frames: usize,
     pub mode: InteractionMode,
     pub operational_mode: VadOperationalMode,
     pub audio_mode: AudioOutputMode,
@@ -63,6 +65,8 @@ impl VadActorState {
     pub fn new(
         threshold: f32,
         noise_gate: f32,
+        silence_duration_ms: u32,
+        speech_onset_ms: u32,
         mode: InteractionMode,
         audio_mode: AudioOutputMode,
     ) -> Self {
@@ -71,12 +75,17 @@ impl VadActorState {
             InteractionMode::PTT => VadOperationalMode::WindowedValidation,
         };
 
+        let speech_end_frames = (silence_duration_ms as usize / 16).max(1);
+        let speech_start_frames = (speech_onset_ms as usize / 16).max(1);
+
         let (partial_recycle_tx, partial_recycle_rx) = std::sync::mpsc::sync_channel(4);
         let (realtime_recycle_tx, realtime_recycle_rx) = std::sync::mpsc::sync_channel(32);
 
         Self {
             threshold,
             noise_gate,
+            speech_end_frames,
+            speech_start_frames,
             mode,
             operational_mode,
             audio_mode,
@@ -121,6 +130,14 @@ fn process_vad_commands(
             VadCommand::UpdateNoiseGate(v) => {
                 log::info!("[VAD Actor] Updating noise gate to {}", v);
                 state.noise_gate = v;
+            }
+            VadCommand::UpdateSilenceDuration(ms) => {
+                log::info!("[VAD Actor] Updating silence duration to {} ms", ms);
+                state.speech_end_frames = (ms as usize / 16).max(1);
+            }
+            VadCommand::UpdateSpeechOnset(ms) => {
+                log::info!("[VAD Actor] Updating speech onset to {} ms", ms);
+                state.speech_start_frames = (ms as usize / 16).max(1);
             }
             VadCommand::UpdateMode(m) => {
                 log::info!("[VAD Actor] Updating interaction mode to {:?}", m);
@@ -233,6 +250,8 @@ fn should_suppress_audio(
 pub struct VadActorConfig {
     pub initial_threshold: f32,
     pub initial_noise_gate: f32,
+    pub initial_silence_duration_ms: u32,
+    pub initial_speech_onset_ms: u32,
     pub initial_mode: InteractionMode,
     pub initial_audio_mode: AudioOutputMode,
 }
@@ -363,14 +382,14 @@ fn process_continuous_segmentation(
         state.active_frames += 1;
         state.inactive_frames = 0;
 
-        if !state.in_speech && state.active_frames >= VAD_SPEECH_START_FRAMES {
+        if !state.in_speech && state.active_frames >= state.speech_start_frames {
             handle_speech_start(state, handles, stt_tx, vox_event_tx);
         }
     } else {
         state.inactive_frames += 1;
         state.active_frames = 0;
 
-        if state.in_speech && state.inactive_frames >= VAD_SPEECH_END_FRAMES {
+        if state.in_speech && state.inactive_frames >= state.speech_end_frames {
             handle_speech_end(vad, state, stt_tx, vox_event_tx);
         }
     }
@@ -446,6 +465,8 @@ where
         let mut state = VadActorState::new(
             config.initial_threshold,
             config.initial_noise_gate,
+            config.initial_silence_duration_ms,
+            config.initial_speech_onset_ms,
             config.initial_mode,
             config.initial_audio_mode,
         );
@@ -519,7 +540,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU32};
 
     fn make_state(audio_mode: AudioOutputMode, state_val: u32, realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>>) -> (VadActorState, Arc<AtomicU32>, Arc<AtomicBool>) {
-        let mut s = VadActorState::new(0.5, 0.001, InteractionMode::Passive, audio_mode);
+        let mut s = VadActorState::new(0.5, 0.001, 800, 32, InteractionMode::Passive, audio_mode);
         s.realtime_tx = realtime_tx;
         let state_atomic = Arc::new(AtomicU32::new(state_val));
         let suppressed = Arc::new(AtomicBool::new(false));
@@ -571,7 +592,7 @@ mod tests {
     /// Tests VadValidationResult trimming: speech window within buffer bounds.
     #[test]
     fn test_window_validation_trimming_logic() {
-        let mut s = VadActorState::new(0.5, 0.001, InteractionMode::PTT, AudioOutputMode::Speaker);
+        let mut s = VadActorState::new(0.5, 0.001, 800, 32, InteractionMode::PTT, AudioOutputMode::Speaker);
         s.window_active = true;
         s.window_buffer = vec![0.0; 1000];
         s.window_speech_detected = true;

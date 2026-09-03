@@ -1,13 +1,13 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { Settings, Monitor, Activity, Clock, Database } from "lucide-react";
+import { SlidersHorizontal, House, Activity, History, Network } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
 const navItems = [
-  { icon: Monitor, label: "Home", path: "/" },
-  { icon: Clock, label: "History", path: "/history" },
-  { icon: Database, label: "Memory", path: "/memory" },
-  { icon: Settings, label: "Settings", path: "/settings" },
+  { icon: House, label: "Home", path: "/" },
+  { icon: History, label: "History", path: "/history" },
+  { icon: Network, label: "Memory", path: "/memory" },
+  { icon: SlidersHorizontal, label: "Settings", path: "/settings" },
 ];
 
 export const EdgeNav: React.FC = () => {

@@ -1,6 +1,6 @@
 use super::{
     SttEngine as SttEngineTrait, MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_ENCODER,
-    MODEL_FILE_ASR_JOINER, MODEL_FILE_ASR_TOKENS, NEMOTRON_NUM_THREADS, SAMPLE_RATE,
+    MODEL_FILE_ASR_JOINER, MODEL_FILE_ASR_TOKENS, SAMPLE_RATE,
 };
 use anyhow::{anyhow, Result};
 use parking_lot::Mutex;
@@ -14,7 +14,7 @@ pub struct SttEngine {
 
 impl SttEngine {
     /// Loads Nemotron-3.5 streaming transducer ONNX model components and initializes the Sherpa recognizer.
-    pub fn new(model_dir: &Path) -> Result<Self> {
+    pub fn new(model_dir: &Path, num_threads: u32) -> Result<Self> {
         log::info!("[STT] >>> Initializing Sherpa-ONNX Nemotron-3.5 Transducer Engine...");
 
         let encoder_path = model_dir.join(MODEL_FILE_ASR_ENCODER);
@@ -27,7 +27,7 @@ impl SttEngine {
         config.model_config.transducer.decoder = Some(decoder_path.to_string_lossy().to_string());
         config.model_config.transducer.joiner = Some(joiner_path.to_string_lossy().to_string());
         config.model_config.tokens = Some(tokens_path.to_string_lossy().to_string());
-        config.model_config.num_threads = NEMOTRON_NUM_THREADS;
+        config.model_config.num_threads = num_threads as i32;
         config.model_config.provider = Some("cpu".to_string());
         config.decoding_method = Some("greedy_search".to_string());
 

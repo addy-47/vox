@@ -7,6 +7,7 @@ use std::path::PathBuf;
 struct EmbeddedSttProviderInner {
     model_path: PathBuf,
     model_type: String,
+    num_threads: u32,
     nemotron_engine: Option<NemotronEngine>,
     qwen_engine: Option<QwenEngine>,
     stitched_transcript: String,
@@ -25,11 +26,11 @@ impl EmbeddedSttProviderInner {
         );
         match self.model_type.as_str() {
             "nvidia_nemotron" | "nemotron" => {
-                let engine = NemotronEngine::new(&self.model_path)?;
+                let engine = NemotronEngine::new(&self.model_path, self.num_threads)?;
                 self.nemotron_engine = Some(engine);
             }
             _ => {
-                let engine = QwenEngine::new(&self.model_path)?;
+                let engine = QwenEngine::new(&self.model_path, self.num_threads)?;
                 self.qwen_engine = Some(engine);
             }
         }
@@ -44,11 +45,12 @@ pub struct EmbeddedSttProvider {
 
 impl EmbeddedSttProvider {
     /// Instantiates an embedded speech-to-text provider with lazy engine loading on first transcription.
-    pub fn new(model_path: &std::path::Path, model_type: &str) -> anyhow::Result<Self> {
+    pub fn new(model_path: &std::path::Path, model_type: &str, num_threads: u32) -> anyhow::Result<Self> {
         Ok(Self {
             inner: Mutex::new(EmbeddedSttProviderInner {
                 model_path: model_path.to_path_buf(),
                 model_type: model_type.to_string(),
+                num_threads,
                 nemotron_engine: None,
                 qwen_engine: None,
                 stitched_transcript: String::new(),

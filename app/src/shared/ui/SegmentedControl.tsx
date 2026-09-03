@@ -5,6 +5,7 @@ import { Tooltip } from "./Tooltip";
 export interface SegmentedOption<T extends string = string> {
   id: T;
   label?: string;
+  compactLabel?: string;
   icon?: React.ElementType;
   title?: string;
   disabled?: boolean;
@@ -57,8 +58,15 @@ function SegmentedControlInner<T extends string = string>({
                 : ""
             )}
           >
-            {Icon && <Icon size={size === "sm" ? 14 : 16} className={opt.label ? "mr-1" : ""} />}
-            {opt.label && <span>{opt.label}</span>}
+            {Icon && <Icon size={size === "sm" ? 14 : 16} className={opt.label ? "mr-1 @[380px]:inline hidden" : ""} />}
+            {opt.compactLabel && opt.label ? (
+              <>
+                <span className="inline @[380px]:hidden">{opt.compactLabel}</span>
+                <span className="hidden @[380px]:inline">{opt.label}</span>
+              </>
+            ) : opt.label ? (
+              <span>{opt.label}</span>
+            ) : null}
           </button>
         );
 

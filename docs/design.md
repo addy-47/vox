@@ -340,6 +340,24 @@ Rather than standard conversation logs, Vox renders a holographic dialogue strea
   `title` only for component props, truncated-text ellipsis, and shared primitives.
 * Icon-only buttons **must** have a tooltip.
 
+### Settings topology subtab icons (Model Hub — Settings mode)
+
+| Pipeline domain | Subtab | Icon | Notes |
+| :--- | :--- | :--- | :--- |
+| VAD | Sensitivity | `AudioWaveform` | |
+| VAD | Silence Cutoff | `Hourglass` | |
+| VAD | Noise Gate | `SlidersHorizontal` | |
+| STT | Streaming Rate | `Zap` | |
+| STT | Transliterate | `Languages` | |
+| STT | **Compute Allocation** | **`Microchip`** | Presets Auto/Eco/Max/Custom; maps to `stt.embedded.threads`; SettingReloadPolicy::Restart |
+| LLM | Compute Allocation | `Microchip` | Presets Auto/Eco/Max/Custom; maps to `llm.threads` |
+| LLM | Response | `TextCursorInput` | |
+| LLM | Context | `Layers2` | |
+| LLM | Creativity | `WandSparkles` | |
+| TTS | Voice | `AudioLines` | |
+| TTS | Speech Rate | `Metronome` | |
+| TTS | **Compute Allocation** | **`Microchip`** | Presets Auto/Eco/Max/Custom; maps to `tts.threads`; SettingReloadPolicy::Restart |
+
 ---
 
 ## 11. Accessibility

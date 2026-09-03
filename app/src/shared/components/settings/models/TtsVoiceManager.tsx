@@ -1,5 +1,6 @@
 import React, { useState, useMemo, memo, useCallback } from "react";
 import { useSettingsStore, type ProviderCaps } from "@/store/settingsStore";
+import { Metronome, Microchip, Zap, Battery, Gauge } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { RotaryKnob } from "@/shared/ui";
 import { VoiceCarousel } from "../voice/VoiceCarousel";
@@ -36,9 +37,10 @@ export interface TtsVoiceManagerProps {
   loadingEdgeVoices: boolean;
   loadEdgeVoices: () => void;
   activeCategoryTab?: "model" | "settings";
+  activeSubTab?: "voice" | "speed" | "compute";
 }
 
-type TtsSubTab = "voice" | "speed";
+export type TtsSubTab = "voice" | "speed" | "compute";
 
 const REGIONS = ["ALL", "US", "UK", "AU", "GLOBAL"] as const;
 
@@ -51,8 +53,8 @@ export const TtsVoiceManager = memo(({
   chatterboxIsAdding,
   setChatterboxIsAdding,
   edgeTtsVoices,
+  activeSubTab = "voice",
 }: TtsVoiceManagerProps) => {
-  const [activeSubTab, setActiveSubTab] = useState<TtsSubTab>("voice");
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
@@ -82,7 +84,6 @@ export const TtsVoiceManager = memo(({
   // No provider id literals anywhere in this file.
   const previewGroup = modelCatalog?.tts?.find((g) => g.id === providerId);
   const voiceSource = caps?.voices ?? (previewGroup?.is_cloud ? "edge" : previewGroup?.is_remote ? "custom" : "catalog");
-  const showSpeed = caps?.speed ?? true;
   const allowClone = caps?.clone ?? !!previewGroup?.is_remote;
   const isEdgeTts = voiceSource === "edge";
   const isCustomVoices = voiceSource === "custom";
@@ -173,49 +174,15 @@ export const TtsVoiceManager = memo(({
   const copy = TTS_VOICE_MANAGER_COPY;
   const isSmall = layoutMode === "small";
 
-  // Tabs derive from caps: voice unless the provider has no voices,
-  // speed only when the provider supports it (edge has neither knob nor list gap).
-  const tabs: Array<{ id: TtsSubTab; label: string }> = [
-    ...(voiceSource === "none" ? [] : [{ id: "voice" as TtsSubTab, label: copy.tabs.selectVoice }]),
-    ...(showSpeed ? [{ id: "speed" as TtsSubTab, label: copy.tabs.speechSpeed }] : []),
-  ];
-  const effectiveSubTab = tabs.some((t) => t.id === activeSubTab) ? activeSubTab : tabs[0]?.id ?? "voice";
+  const effectiveSubTab = activeSubTab;
 
   return (
     <div className="w-full flex-1 flex flex-col justify-between select-none animate-fade-in">
-      {/* ─── Layer 1: Subtab Navigation (Full-Width Distributed Tabs) ─── */}
-      <div className="w-full flex items-center justify-between pt-0.5 pb-2 shrink-0 border-b border-[rgba(var(--accent),0.08)] mb-2 px-0.5">
-        {tabs.map((tab, idx, arr) => {
-          const isActive = effectiveSubTab === tab.id;
-          return (
-            <div key={tab.id} className="flex-1 flex items-center justify-center">
-              <button
-                type="button"
-                onClick={() => setActiveSubTab(tab.id)}
-                className={cn(
-                  "w-full flex items-center justify-center pb-1 border-b-2 transition-all duration-200 bg-transparent text-[11px] sm:text-[12px] font-black uppercase tracking-[0.08em] sm:tracking-[0.12em] outline-none cursor-pointer text-center",
-                  isActive
-                    ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
-                    : "text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]"
-                )}
-              >
-                <span>{tab.label}</span>
-              </button>
-              {idx < arr.length - 1 && (
-                <span className="text-[11px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/25 font-light select-none pb-1 shrink-0 px-1 sm:px-2">
-                  |
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ─── Layer 2: Subtab Workspace (HistoryCard Side-by-Side Ergonomics) ─── */}
+      {/* ─── Layer: Subtab Workspace (Full Height Ergonomics) ─── */}
       <div
         className={cn(
           "w-full flex flex-col flex-1 min-h-0 pt-0.5 pb-0.5 justify-between",
-          isSmall ? "h-auto py-1" : "h-[128px] max-h-[128px]"
+          isSmall ? "h-auto py-1" : "h-full"
         )}
       >
         {/* TAB 1: SELECT VOICE */}
@@ -274,12 +241,13 @@ export const TtsVoiceManager = memo(({
           </div>
         )}
 
-        {/* TAB 2: SPEECH SPEED */}
+        {/* TAB 2: SPEECH SPEED / RATE */}
         {effectiveSubTab === "speed" && (
           <div className="flex flex-row items-center justify-between gap-3 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+                <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))] flex items-center gap-1.5">
+                  <Metronome size={14} className="text-[rgb(var(--accent))]" />
                   {copy.speed.title}
                 </span>
                 <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
@@ -305,6 +273,103 @@ export const TtsVoiceManager = memo(({
             </div>
           </div>
         )}
+        {/* TAB 3: COMPUTE ALLOCATION */}
+        {effectiveSubTab === "compute" && (() => {
+          const totalCores = (typeof navigator !== "undefined" ? navigator.hardwareConcurrency : undefined) || 4;
+          const balancedThreads = Math.max(1, Math.floor(totalCores / 2));
+          const ecoThreads = Math.max(1, Math.floor(totalCores / 4));
+          const currentThreads = draftSettings.tts.threads ?? 2;
+          const currentProfile =
+            currentThreads === totalCores ? "max"
+            : currentThreads === balancedThreads ? "balanced"
+            : currentThreads === ecoThreads ? "eco"
+            : "custom";
+          return (
+            <div className="flex flex-row items-center justify-between gap-3 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+              <div className="flex flex-col gap-1 min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))] flex items-center gap-1.5">
+                    <Microchip size={14} className="text-[rgb(var(--accent))]" />
+                    Compute Allocation
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
+                    {currentThreads} / {totalCores} Cores
+                  </span>
+                </div>
+                <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
+                  CPU worker threads for TTS synthesis. Higher counts reduce latency but share cores with STT and LLM.
+                </p>
+              </div>
+
+              <div className="shrink-0 grid grid-cols-2 gap-1.5 w-[116px] sm:w-[136px]">
+                <button
+                  type="button"
+                  onClick={() => updateDraft("tts", "threads", balancedThreads)}
+                  className={cn(
+                    "py-1 rounded-lg border text-[11px] font-bold transition-all duration-200 cursor-pointer flex items-center justify-center gap-1",
+                    currentProfile === "balanced"
+                      ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
+                      : "border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))]/80 hover:border-[rgba(var(--accent),0.2)] hover:text-[rgb(var(--foreground))]"
+                  )}
+                >
+                  <Zap size={11} className="text-[rgb(var(--accent))]" />
+                  <span>Auto</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => updateDraft("tts", "threads", ecoThreads)}
+                  className={cn(
+                    "py-1 rounded-lg border text-[11px] font-bold transition-all duration-200 cursor-pointer flex items-center justify-center gap-1",
+                    currentProfile === "eco"
+                      ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
+                      : "border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))]/80 hover:border-[rgba(var(--accent),0.2)] hover:text-[rgb(var(--foreground))]"
+                  )}
+                >
+                  <Battery size={11} className="text-emerald-400" />
+                  <span>Eco</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => updateDraft("tts", "threads", totalCores)}
+                  className={cn(
+                    "py-1 rounded-lg border text-[11px] font-bold transition-all duration-200 cursor-pointer flex items-center justify-center gap-1",
+                    currentProfile === "max"
+                      ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
+                      : "border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))]/80 hover:border-[rgba(var(--accent),0.2)] hover:text-[rgb(var(--foreground))]"
+                  )}
+                >
+                  <Gauge size={11} className="text-amber-400" />
+                  <span>Max</span>
+                </button>
+
+                <div className={cn(
+                  "rounded-lg border flex items-center justify-center transition-all overflow-hidden",
+                  currentProfile === "custom"
+                    ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
+                    : "border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] focus-within:border-[rgba(var(--accent),0.35)]"
+                )}>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={currentProfile === "custom" ? `${currentThreads}T` : ""}
+                    onChange={(e) => {
+                      const clean = e.target.value.replace(/[^0-9]/g, "");
+                      if (!clean) return;
+                      const num = parseInt(clean, 10);
+                      if (!isNaN(num) && num >= 1 && num <= 64) {
+                        updateDraft("tts", "threads", num);
+                      }
+                    }}
+                    placeholder="Custom"
+                    className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

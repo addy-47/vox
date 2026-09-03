@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Brain, Database, History, Palette, Sliders, UserCircle } from "lucide-react";
+import { Archive, CircleUserRound, History, Orbit, Palette, SlidersHorizontal } from "lucide-react";
 
 export type SettingsDomainId = "persona" | "models" | "history" | "memory" | "appearance" | "interaction";
 
@@ -12,12 +12,12 @@ export interface SettingsDomain {
 }
 
 export const SETTINGS_DOMAINS: SettingsDomain[] = [
-  { id: "persona", label: "Persona", sublabel: "Prompts & identity", icon: UserCircle, angle: -90 },
-  { id: "models", label: "Models", sublabel: "Voice & thinking models", icon: Brain, angle: -30 },
+  { id: "persona", label: "Persona", sublabel: "Prompts & identity", icon: CircleUserRound, angle: -90 },
+  { id: "models", label: "Models", sublabel: "Voice & thinking models", icon: Orbit, angle: -30 },
   { id: "history", label: "History", sublabel: "Session history & limits", icon: History, angle: 30 },
   { id: "appearance", label: "Appearance", sublabel: "Visual theme & colors", icon: Palette, angle: 90 },
-  { id: "memory", label: "Memory", sublabel: "What Vox remembers", icon: Database, angle: 150 },
-  { id: "interaction", label: "Interaction", sublabel: "Activation & cloud key", icon: Sliders, angle: -150 },
+  { id: "memory", label: "Memory", sublabel: "What Vox remembers", icon: Archive, angle: 150 },
+  { id: "interaction", label: "Interaction", sublabel: "Activation & cloud key", icon: SlidersHorizontal, angle: -150 },
 ];
 
 export type SettingsScope =
@@ -318,7 +318,7 @@ export const MEMORY_CONFIG_DESK_COPY = {
 export const TTS_VOICE_MANAGER_COPY = {
   tabs: {
     selectVoice: "Select Voice",
-    speechSpeed: "Speech Speed",
+    speechSpeed: "Speech Rate",
   },
   voice: {
     title: "Voice Profile",
@@ -327,7 +327,7 @@ export const TTS_VOICE_MANAGER_COPY = {
     localDescription: "Select an on-device neural voice profile for offline speech synthesis.",
   },
   speed: {
-    title: "Playback Rate",
+    title: "Speech Rate",
     description: "Fine-tune speech synthesis playback tempo and velocity across assistant responses without pitch distortion.",
   },
 };
@@ -342,9 +342,9 @@ export const MODEL_HUB_COPY = {
 export const LLM_SETTINGS_COPY = {
   tabs: {
     compute: "Compute",
-    tokens: "Tokens",
+    tokens: "Response",
     context: "Context",
-    creativity: "Temp",
+    creativity: "Creativity",
   },
 };
 
@@ -359,5 +359,40 @@ export const HISTORY_SETTINGS_COPY = {
   autoCompactionInactive: "Manual Review",
   autoCompactionActiveSub: "Summarizes on idle",
   autoCompactionInactiveSub: "Prompt on uncompacted",
+};
+
+export const VAD_SETTINGS_COPY = {
+  tabs: {
+    sensitivity: "Sensitivity",
+    silence: "Silence Cutoff",
+    noiseGate: "Noise Gate",
+  },
+  sensitivity: {
+    title: "Voice Sensitivity",
+    description: "Neural probability threshold required to detect user speech. Lower values detect soft whispers; higher values prevent ambient pickup.",
+  },
+  silence: {
+    title: "Silence Duration",
+    description: "Pause duration before Vox considers speech finished and initiates response reasoning.",
+  },
+  noiseGate: {
+    title: "Acoustic Noise Gate",
+    description: "Raw microphone energy floor to suppress background PC fans, air conditioners, and mechanical keystrokes.",
+  },
+};
+
+export const STT_SETTINGS_COPY = {
+  tabs: {
+    streamingRate: "Streaming Rate",
+    transliteration: "Transliterate",
+  },
+  streamingRate: {
+    title: "Live Subtitle Cadence",
+    description: "Throttle interval for interim partial speech transcription. Faster cadences yield immediate visual feedback at higher CPU load.",
+  },
+  transliteration: {
+    title: "Script Transliteration",
+    description: "Automatically transliterates non-Latin or phonetic scripts to standard script formats during transcription.",
+  },
 };
 

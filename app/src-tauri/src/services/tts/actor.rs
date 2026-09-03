@@ -118,18 +118,19 @@ pub fn create_tts_provider(
     let voice = settings.tts.voice_index;
     let quality_steps = settings.tts.quality_steps;
     let speed = settings.tts.speed;
+    let num_threads = settings.tts.threads;
 
     match &provider_config {
         TtsProviderConfig::Supertonic => {
             log::info!("[TTS Actor] Initializing Supertonic engine");
-            SupertonicEngine::new(super_tts_path, voice, quality_steps, speed)
+            SupertonicEngine::new(super_tts_path, voice, quality_steps, speed, num_threads)
                 .map(|e| Box::new(e) as Box<dyn TtsProvider>)
                 .map_err(|e| format!("Failed to create Supertonic engine: {}", e))
         }
         TtsProviderConfig::Kokoro => {
             log::info!("[TTS Actor] Initializing Kokoro Multi-Lang engine");
             let kokoro_path = crate::utils::paths::model_dir(super::KOKORO_MODEL_DIR);
-            KokoroEngine::new(&kokoro_path, voice, speed)
+            KokoroEngine::new(&kokoro_path, voice, speed, num_threads)
                 .map(|e| Box::new(e) as Box<dyn TtsProvider>)
                 .map_err(|e| format!("Failed to create Kokoro engine: {}", e))
         }

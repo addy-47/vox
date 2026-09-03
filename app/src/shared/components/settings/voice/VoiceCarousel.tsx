@@ -14,41 +14,45 @@ import { Edit2, Check } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
 
 export const VoiceBars = memo(function VoiceBars({ seed, disabled }: { seed: string; disabled?: boolean }) {
-  const hash = Array.from(seed).reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const bars = Array.from({ length: 16 }, (_, i) => ((hash * (i + 1)) % 25) + 10);
+  const hash = useMemo(() => {
+    return Array.from(seed).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  }, [seed]);
 
-  const animations = [
-    { dur: "0.40s", delay: "0s" },
-    { dur: "0.55s", delay: "-0.3s" },
-    { dur: "0.50s", delay: "-0.1s" },
-    { dur: "0.35s", delay: "-0.6s" },
-    { dur: "0.45s", delay: "-0.7s" },
-    { dur: "0.60s", delay: "-0.1s" },
-    { dur: "0.80s", delay: "-0.4s" },
-    { dur: "0.55s", delay: "-0.2s" },
-    { dur: "0.65s", delay: "-0.5s" },
-    { dur: "0.45s", delay: "-0.2s" },
-    { dur: "0.55s", delay: "-0.4s" },
-    { dur: "0.40s", delay: "-0.1s" },
-  ];
+  // Generate 18 symmetric soundwave bars with curved organic envelope
+  const bars = useMemo(() => {
+    const total = 18;
+    return Array.from({ length: total }, (_, i) => {
+      // Gaussian/parabolic bell curve envelope centered at middle
+      const normalizedPos = (i - (total - 1) / 2) / ((total - 1) / 2);
+      const envelope = Math.max(0.25, 1 - normalizedPos * normalizedPos * 0.7);
+      // Deterministic pseudo-random variation based on voice name hash
+      const variance = ((hash * (i + 3)) % 10) / 10;
+      const baseHeight = 10 + Math.round(18 * envelope + variance * 6);
+      return Math.min(32, Math.max(8, baseHeight));
+    });
+  }, [hash]);
+
+  const durations = ["1.8s", "2.2s", "1.6s", "2.4s", "1.9s", "2.1s"];
+  const delays = ["0s", "-0.6s", "-1.2s", "-0.3s", "-0.9s", "-1.5s"];
 
   return (
-    <div className="flex items-end justify-center gap-[3px] h-9 px-2 py-0.5">
+    <div className="flex items-center justify-center gap-[3px] h-8 px-2 py-0.5 relative">
       {bars.map((h, i) => {
-        const anim = animations[i % animations.length];
+        const dur = durations[i % durations.length];
+        const delay = delays[i % delays.length];
         return (
           <div
             key={i}
             className={cn(
-              "w-[3px] rounded-full transition-all duration-300",
+              "w-[3px] rounded-full transition-all duration-300 will-change-transform",
               disabled
-                ? "bg-[rgba(var(--foreground-muted),0.1)]"
-                : "bg-gradient-to-t from-[rgba(var(--accent-dark),0.4)] to-[rgb(var(--accent))] shadow-[0_0_6px_rgba(var(--accent),0.2)]"
+                ? "bg-[rgba(var(--foreground-muted),0.15)]"
+                : "bg-gradient-to-t from-[rgba(var(--accent),0.35)] via-[rgb(var(--accent))] to-[rgba(var(--accent),0.85)] shadow-[0_0_8px_rgba(var(--accent),0.2)]"
             )}
             style={{
               height: `${h}px`,
-              animation: disabled ? "none" : `dynamic-eq ${anim.dur} ease-in-out infinite alternate ${anim.delay}`,
-              transformOrigin: "bottom",
+              animation: disabled ? "none" : `dynamic-eq ${dur} ease-in-out infinite alternate ${delay}`,
+              transformOrigin: "center",
             }}
           />
         );
