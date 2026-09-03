@@ -2,6 +2,7 @@ pub mod audio;
 pub mod history;
 pub mod memory;
 pub mod monitoring;
+pub mod notifications;
 pub mod pipeline;
 pub mod settings;
 pub mod setup;

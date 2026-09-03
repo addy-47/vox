@@ -32,7 +32,14 @@ const PageLoader = () => (
 );
 
 const App: React.FC = () => {
-  const [setupCompleted, setSetupCompleted] = useState<boolean | null>(null);
+  const [setupCompleted, setSetupCompleted] = useState<boolean | null>(() => {
+    try {
+      const cached = localStorage.getItem("vox_setup_completed");
+      return cached === "true" ? true : null;
+    } catch {
+      return null;
+    }
+  });
   const [readyToTransition, setReadyToTransition] = useState(false);
 
   // Fade and remove the pre-React boot loader (rendered by index.html's
@@ -61,7 +68,15 @@ const App: React.FC = () => {
 
       try {
         const completed = await getOnboardingStatus();
-        setSetupCompleted(forceWizard ? false : completed);
+        const finalStatus = forceWizard ? false : completed;
+        setSetupCompleted(finalStatus);
+        try {
+          if (finalStatus) {
+            localStorage.setItem("vox_setup_completed", "true");
+          } else {
+            localStorage.removeItem("vox_setup_completed");
+          }
+        } catch (_) {}
       } catch (e) {
         console.error('[App] Setup check failed:', e);
         setSetupCompleted(false);
@@ -70,7 +85,7 @@ const App: React.FC = () => {
         // loader cross-fade to the home screen.
         setTimeout(() => {
           setReadyToTransition(true);
-        }, 300);
+        }, 150);
       }
     };
     checkSetup();

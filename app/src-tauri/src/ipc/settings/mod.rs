@@ -1,7 +1,3 @@
-//! ============================================================================
-//! src/ipc/settings/mod.rs — Settings IPC module declarations and re-exports
-//! ============================================================================
-
 pub mod catalog;
 pub mod health;
 pub mod mutation;

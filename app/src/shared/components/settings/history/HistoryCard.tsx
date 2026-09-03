@@ -1,8 +1,9 @@
 import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { History, ShieldAlert } from "lucide-react";
+import { History, ShieldAlert, Layers } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, RotaryKnob, ToggleTile } from "@/shared/ui";
+import { HISTORY_SETTINGS_COPY } from "@/data/settingsCopy";
 
 interface HistoryCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -40,21 +41,44 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
       </div>
 
       {/* Card Content */}
-      <div className="flex-1 flex flex-col justify-between min-h-0 pt-1 gap-3">
-        {/* Incognito Mode: Standardized ToggleTile */}
-        <ToggleTile
-          title="Ephemeral session storage"
-          active={history.private_mode}
-          activeLabel="Incognito Active"
-          inactiveLabel="Logging Active"
-          activeSublabel="No traces persisted"
-          inactiveSublabel="Standard SQLite logging"
-          icon={ShieldAlert}
-          onToggle={() =>
-            updateDraft("history", "private_mode", !history.private_mode)
-          }
-          layoutMode={layoutMode}
-        />
+      <div className="flex-1 flex flex-col justify-between min-h-0 pt-1 gap-2.5">
+        {/* Top Row: Two Toggle Tiles Side by Side */}
+        <div
+          className={cn(
+            "grid gap-2 shrink-0",
+            isSmall ? "grid-cols-1" : "grid-cols-2"
+          )}
+        >
+          {/* Incognito Mode: Standardized ToggleTile */}
+          <ToggleTile
+            title={HISTORY_SETTINGS_COPY.privateModeTitle}
+            active={history.private_mode}
+            activeLabel={HISTORY_SETTINGS_COPY.privateModeActive}
+            inactiveLabel={HISTORY_SETTINGS_COPY.privateModeInactive}
+            activeSublabel={HISTORY_SETTINGS_COPY.privateModeActiveSub}
+            inactiveSublabel={HISTORY_SETTINGS_COPY.privateModeInactiveSub}
+            icon={ShieldAlert}
+            onToggle={() =>
+              updateDraft("history", "private_mode", !history.private_mode)
+            }
+            layoutMode={layoutMode}
+          />
+
+          {/* Auto Compaction Mode: Standardized ToggleTile */}
+          <ToggleTile
+            title={HISTORY_SETTINGS_COPY.autoCompactionTitle}
+            active={history.auto_compaction ?? false}
+            activeLabel={HISTORY_SETTINGS_COPY.autoCompactionActive}
+            inactiveLabel={HISTORY_SETTINGS_COPY.autoCompactionInactive}
+            activeSublabel={HISTORY_SETTINGS_COPY.autoCompactionActiveSub}
+            inactiveSublabel={HISTORY_SETTINGS_COPY.autoCompactionInactiveSub}
+            icon={Layers}
+            onToggle={() =>
+              updateDraft("history", "auto_compaction", !history.auto_compaction)
+            }
+            layoutMode={layoutMode}
+          />
+        </div>
 
         {/* Lower Section: HUD Limit Rotary Knob & Database Status (Unified Glass Container) */}
         <div className="flex-1 flex items-center gap-4 justify-between p-3 rounded-xl border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]">

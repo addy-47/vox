@@ -1,15 +1,15 @@
 {
-  "models_version": "1.4.0",
+  "models_version": "1.6.0",
   "release_notes": [
-    "Expanded Single Source of Truth (SSOT) model manifest with user-friendly descriptions.",
-    "Added explicit process RAM usage estimates and parameters to all model groups.",
-    "Integrated virtual built-in and cloud provider entries for dynamic UI rendering."
+    "Stable short group ids: id is the single internal key (kokoro, supertonic, chatterbox, minilm_l12).",
+    "Short user-facing names: name is display-only, description carries detail.",
+    "Rule: version bumps never rename an id."
   ],
   "total_size_bytes": 10219831741,
   "model_groups": [
     {
       "id": "earshot",
-      "name": "Earshot (Built-in)",
+      "name": "earshot",
       "category": "vad",
       "subcategory": "vad",
       "description": "Ultra-fast built-in voice detector. Embedded directly in the app with zero download and zero extra memory.",
@@ -24,7 +24,7 @@
     },
     {
       "id": "ten_vad",
-      "name": "TenVAD Engine",
+      "name": "ten-vad",
       "category": "vad",
       "subcategory": "vad",
       "description": "ONNX voice detector. Analyzes audio frames in real time to detect when you start and stop speaking.",
@@ -43,11 +43,12 @@
           "sha256": "718cb7eef47e3cf5ddbe7e967a7503f46b8b469c0706872f494dfa921b486206",
           "required": true
         }
-      ]
+      ],
+      "required": true
     },
     {
       "id": "vox_translit_rnn",
-      "name": "Vox Transliteration Engine",
+      "name": "transliteration",
       "category": "translit",
       "subcategory": "auxiliary",
       "description": "Converts spoken Hindi and Devanagari words into clean Roman script for seamless multilingual processing.",
@@ -91,7 +92,7 @@
     },
     {
       "id": "nvidia_nemotron",
-      "name": "Nemotron-3.5 ASR Engine",
+      "name": "nemotron",
       "category": "stt",
       "subcategory": "main",
       "description": "High-accuracy streaming speech recognition. Best for noisy background environments.",
@@ -135,7 +136,7 @@
     },
     {
       "id": "qwen3_asr",
-      "name": "Qwen3 ASR Engine",
+      "name": "qwen3-asr",
       "category": "stt",
       "subcategory": "main",
       "description": "Lightweight multilingual speech recognition. Fast transcription with lower memory requirements.",
@@ -193,7 +194,7 @@
     },
     {
       "id": "qwen_3_5_0_8b",
-      "name": "Qwen 3.5 0.8B (Q4)",
+      "name": "qwen-0.8b",
       "category": "llm",
       "subcategory": "main",
       "description": "Ultra-fast and intelligent multilingual conversational engine with official ChatML template.",
@@ -215,11 +216,11 @@
       ]
     },
     {
-      "id": "supertonic_tts",
-      "name": "Supertonic 3 Multilingual",
+      "id": "supertonic",
+      "name": "supertonic",
       "category": "tts",
       "subcategory": "main",
-      "description": "Fast local speech generator. Features 10 natural preset voices with instant startup.",
+      "description": "Fast local speech synthesis with 10 natural preset voices.",
       "parameters": "99M (INT8)",
       "ram_usage": "~144 MB",
       "tradeoffs": "Fast response; 10 built-in voices",
@@ -280,11 +281,11 @@
       ]
     },
     {
-      "id": "kokoro_multi_lang_v1_1",
-      "name": "Kokoro Multi-Lang v1.1",
+      "id": "kokoro",
+      "name": "kokoro",
       "category": "tts",
       "subcategory": "main",
-      "description": "High-fidelity multilingual speech generator. Supports natural English and Hindi voice synthesis with zero cloud latency.",
+      "description": "High-fidelity local speech synthesis for English and Hindi voices.",
       "parameters": "82M (ONNX)",
       "ram_usage": "~180 MB",
       "tradeoffs": "Rich multilingual prosody, requires espeak-ng phoneme table",
@@ -326,7 +327,7 @@
     },
     {
       "id": "edge_tts",
-      "name": "Microsoft Edge Neural TTS",
+      "name": "edge",
       "category": "tts",
       "subcategory": "cloud",
       "description": "Cloud voice synthesis. Offers over 400 natural voices with zero local CPU or RAM load.",
@@ -340,8 +341,8 @@
       "files": []
     },
     {
-      "id": "chatterbox_tts",
-      "name": "Chatterbox Local TTS",
+      "id": "chatterbox",
+      "name": "chatterbox",
       "category": "tts",
       "subcategory": "main",
       "description": "Local voice cloning engine. Mimics any voice from a short 5-second sample audio clip.",
@@ -379,7 +380,7 @@
     },
     {
       "id": "chatterbox_remote",
-      "name": "Chatterbox Remote TTS",
+      "name": "chatterbox-remote",
       "category": "tts",
       "subcategory": "remote",
       "description": "Remote voice cloning engine. Offloads voice cloning to a dedicated remote GPU server.",
@@ -394,7 +395,7 @@
     },
     {
       "id": "bge_m3",
-      "name": "BGE-M3 Multilingual Embedding Engine",
+      "name": "bge-m3",
       "category": "embedding",
       "subcategory": "auxiliary",
       "description": "Fallback memory vector generator. Creates 1024-dimensional semantic embeddings.",
@@ -423,8 +424,8 @@
       ]
     },
     {
-      "id": "minilm_l12_v2",
-      "name": "MiniLM-L12 Multilingual Embeddings",
+      "id": "minilm_l12",
+      "name": "minilm-l12",
       "category": "embedding",
       "subcategory": "auxiliary",
       "description": "Fast memory vector generator. Creates 384-dimensional embeddings for memory retrieval.",
@@ -454,7 +455,7 @@
     },
     {
       "id": "nli_deberta_v3_base",
-      "name": "DeBERTa-v3 NLI Fact Verifier",
+      "name": "deberta-nli",
       "category": "nli",
       "subcategory": "auxiliary",
       "description": "Memory contradiction checker. Verifies facts before saving to prevent incorrect memories.",
@@ -484,7 +485,7 @@
     },
     {
       "id": "modernbert_memory_scope",
-      "name": "ModernBERT MemoryScope Classifier",
+      "name": "memory-scope",
       "category": "classifier",
       "subcategory": "auxiliary",
       "description": "Smart intent filter. Checks your speech in under 5ms to route queries without wasting resources.",
@@ -514,7 +515,7 @@
     },
     {
       "id": "modernbert_edge_creation",
-      "name": "ModernBERT Cognitive Edge Classifier",
+      "name": "edge-creation",
       "category": "classifier",
       "subcategory": "auxiliary",
       "description": "Memory relationship builder. Connects related facts together in your memory graph.",

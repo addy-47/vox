@@ -98,6 +98,9 @@ pub enum MemoryError {
 
     #[error("Worker background queue error: {0}")]
     WorkerError(String),
+
+    #[error("Memory compaction failed: {message}")]
+    CompactionFailed { message: String },
 }
 
 /// Database & Persistence domain error types.

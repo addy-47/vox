@@ -1,5 +1,5 @@
 import React, { memo, useMemo } from "react";
-import { VoxOrb, PipelineField, StatusCapsule, TestClipsPopover } from "@/shared/components/home";
+import { VoxOrb, PipelineField, StatusCapsule, TestClipsPopover, NotificationBell } from "@/shared/components/home";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
 import { ErrorBoundary } from "@/shared/components/common";
 import {
@@ -168,8 +168,13 @@ export const Home = memo(() => {
         )}
       </AnimatePresence>
 
-      {/* ── Top-right: Status Capsule (single, clean, centered on mobile) ── */}
-      <div className="absolute top-[10%] md:top-4 left-1/2 -translate-x-1/2 md:left-auto md:translate-x-0 md:right-5 z-30 flex items-center gap-2 pointer-events-none">
+      {/* ── Top-right: Notification Bell ── */}
+      <div className="absolute top-4 right-5 z-30 flex items-center pointer-events-none">
+        <NotificationBell />
+      </div>
+
+      {/* ── Status Capsule: Centered directly above the Orb (matching mobile on all viewports) ── */}
+      <div className="absolute top-[10%] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 pointer-events-none">
         {cpuWarning && (
           <span className="text-[11px] tracking-widest uppercase text-[rgb(var(--accent))]/70 font-semibold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20">
             Mode: {GOVERNOR_LABELS[cpuWarning.governor] || cpuWarning.governor}

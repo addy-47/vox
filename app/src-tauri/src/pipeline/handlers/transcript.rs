@@ -39,12 +39,12 @@ fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
 
     let cached_provider = state.llm_provider.read().clone();
     let memory_tx = parking_lot::Mutex::new(state.memory_tx.lock().clone());
-    let (tts_tx, llm_tx) = {
+    let (tts_tx, llm_tx, pipeline_tx) = {
         let guard = state.engine.blocking_lock();
         guard
             .as_ref()
-            .map(|e| (e.tts_tx.clone(), e.llm_tx.clone()))
-            .unwrap_or((None, None))
+            .map(|e| (e.tts_tx.clone(), e.llm_tx.clone(), Some(e.pipeline_tx.clone())))
+            .unwrap_or((None, None, None))
     };
 
     tauri::async_runtime::spawn(async move {
@@ -84,6 +84,18 @@ fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
                     "[Pipeline::Transcript] Failed to prepare turn context: {}",
                     e
                 );
+                if let Some(ref p_tx) = pipeline_tx {
+                    if let Err(send_err) = p_tx.send(crate::core::events::VoxEvent::Error {
+                        turn_id,
+                        message: format!("Turn context preparation failed: {}", e),
+                        source: "CriticalCompaction".to_string(),
+                    }) {
+                        log::warn!(
+                            "[Pipeline::Transcript] Failed to emit CriticalCompaction error: {}",
+                            send_err
+                        );
+                    }
+                }
                 return;
             }
         };

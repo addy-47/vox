@@ -13,12 +13,13 @@ import {
   checkTtsProviderHealth,
   probeModelCapabilities,
   listLlmModels,
+  getProviderCaps,
 } from "@/services/settingsService";
 import * as eventsService from "@/services/eventsService";
 import { Database, Loader2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SegmentedControl } from "@/shared/ui";
-import { LlmModelInfo, ModelCapabilities, LlmProviderConfig } from "@/store/settingsStore";
+import { LlmModelInfo, ModelCapabilities, LlmProviderConfig, ProviderCaps } from "@/store/settingsStore";
 
 import { ModelsTopologyMap, type PipelineTab } from "./ModelsTopologyMap";
 import { VadWorkspace } from "./VadWorkspace";
@@ -119,6 +120,34 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   // Base layout decisions on committed and draft settings
   const activeProviderKind = draftSettings?.llm?.active || "embedded";
   const isRemoteLlm = activeProviderKind === "server" || activeProviderKind === "cloud";
+  const isCloudLlm = activeProviderKind === "cloud";
+
+  // Preview selection: the clicked card's group id IS the settings active key.
+  // Tier and health gating derive from manifest flags — never from id literals
+  // and never from the stale derived `draftSettings.tts.provider.kind`.
+  const previewTtsGroup = modelCatalog?.tts?.find((g) => g.id === draftSettings?.tts?.active);
+  const isCloudTts = !!previewTtsGroup?.is_cloud;
+  const isRemoteTts = !!previewTtsGroup?.is_remote;
+
+  // Settings capabilities for the preview TTS provider (caps-driven panes).
+  const [ttsCaps, setTtsCaps] = useState<ProviderCaps | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const previewId = draftSettings?.tts?.active;
+    if (!previewId) {
+      setTtsCaps(null);
+      return;
+    }
+    getProviderCaps(previewId).then((caps) => {
+      if (isMounted) setTtsCaps(caps);
+    }).catch(() => {
+      if (isMounted) setTtsCaps(null);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [draftSettings?.tts?.active]);
 
   const provider: LlmProviderConfig = useMemo(() => {
     if (activeProviderKind === "embedded") {
@@ -151,6 +180,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     draftSettings?.llm?.cloud?.api_key,
     draftSettings?.llm?.cloud?.provider_name,
   ]);
+
 
   // 1. Bidirectional Pipeline Tab Synchronization with InteractionCard
   useEffect(() => {
@@ -239,14 +269,14 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   }, [activePipelineTab, loadCustomVoices]);
 
   useEffect(() => {
-    if (draftSettings?.tts?.provider?.kind === "edge_tts" && edgeTtsVoices.length === 0 && !loadingEdgeVoices) {
+    if (isCloudTts && edgeTtsVoices.length === 0 && !loadingEdgeVoices) {
       loadEdgeVoices();
     }
-  }, [draftSettings?.tts?.provider?.kind, edgeTtsVoices.length, loadingEdgeVoices, loadEdgeVoices]);
+  }, [isCloudTts, edgeTtsVoices.length, loadingEdgeVoices, loadEdgeVoices]);
 
-  // 4. Chatterbox Remote Health Polling (gated by visibility & active tab)
+  // 4. Remote TTS Health Polling (gated by preview tier, visibility & active tab)
   useEffect(() => {
-    if (draftSettings?.tts?.provider?.kind !== "chatterbox_remote") {
+    if (!isRemoteTts) {
       setIsRemoteTtsHealthy(null);
       return;
     }
@@ -287,7 +317,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
 
   // Per-file progress accumulator: backend emits model_progress with file-entry
   // ids (e.g. tts_kokoro_model) while cards are keyed by group id
-  // (e.g. kokoro_multi_lang_v1_1). Aggregate here so multi-file groups
+  // (e.g. kokoro). Aggregate here so multi-file groups
   // show real weighted progress instead of sticking at the optimistic 1%.
   const fileProgressRef = useRef<Record<string, { progress: number; bytesDownloaded: number; totalBytes: number; done: boolean }>>({});
 
@@ -488,16 +518,19 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   };
 
   const triggerRemoteSetup = async () => {
-    if (!draftSettings?.tts?.provider) return;
+    if (!isRemoteTts) return;
     setSetupStatus({ progress: 10, step: "initiating", log_line: "Starting connection..." });
     try {
+      // Endpoint values come from the derived provider config; the gate above
+      // is the preview tier flag, not the provider kind.
+      const ttsProvider = draftSettings?.tts?.provider;
       const endpoint =
-        draftSettings.tts.provider.kind === "chatterbox_remote"
-          ? draftSettings.tts.provider.endpoint
+        ttsProvider && ttsProvider.kind === "chatterbox_remote"
+          ? ttsProvider.endpoint
           : "http://127.0.0.1:7860";
       const remotePath =
-        draftSettings.tts.provider.kind === "chatterbox_remote"
-          ? draftSettings.tts.provider.remote_path
+        ttsProvider && ttsProvider.kind === "chatterbox_remote"
+          ? ttsProvider.remote_path
           : "~/.vox";
 
       let srvPort = 7860;
@@ -552,35 +585,28 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
   };
 
-  const MANDATORY_CORE_MODEL_IDS = new Set([
-    "ten_vad",
-    "silero_vad_v5",
-    "whisper_medium",
-    "qwen2_5_0_5b",
-    "chatterbox_turbo",
-  ]);
-
+  // Required = manifest SSOT (`required` flag or built-in). No id literals.
   const isGroupRequired = useCallback((id: string) => {
-    return MANDATORY_CORE_MODEL_IDS.has(id);
-  }, []);
+    const g = modelCatalog?.model_groups?.find((x) => x.id === id);
+    return !!g && (!!g.required || !!g.is_built_in);
+  }, [modelCatalog]);
 
   useEffect(() => {
     const isRemoteTtsSetupNotDone =
-      activePipelineTab === "tts" &&
-      draftSettings?.tts?.provider?.kind === "chatterbox_remote" &&
-      isRemoteTtsHealthy !== true;
+      activePipelineTab === "tts" && isRemoteTts && isRemoteTtsHealthy !== true;
 
     if (isRemoteTtsSetupNotDone && activeCategoryTab === "settings") {
       setActiveCategoryTab("model");
     }
-  }, [activePipelineTab, draftSettings?.tts?.active, isRemoteTtsHealthy, activeCategoryTab]);
+  }, [activePipelineTab, isRemoteTts, isRemoteTtsHealthy, activeCategoryTab]);
 
   if (!draftSettings) return null;
 
-  // Topology verification flags (dynamically checking configured active models and providers)
+
+  // Topology verification flags: the preview active id IS the manifest group id.
   const isVadVerified =
-    draftSettings?.vad?.vad_backend === "earshot" ||
-    !!modelPresence[modelCatalog?.vad?.[0]?.id || "ten_vad"];
+    !!modelPresence[draftSettings?.vad?.vad_backend || ""] ||
+    !!modelCatalog?.vad?.find((m) => m.is_built_in && m.id === draftSettings?.vad?.vad_backend);
 
   const isAsrVerified =
     draftSettings?.stt?.active === "cloud"
@@ -592,18 +618,13 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       ? true
       : !!(draftSettings?.llm?.embedded?.model && modelPresence[draftSettings.llm.embedded.model]);
 
-  const isTtsVerified =
-    draftSettings?.tts?.active === "edge_tts"
-      ? true
-      : draftSettings?.tts?.active === "chatterbox_remote"
-      ? isRemoteTtsHealthy === true
-      : draftSettings?.tts?.active === "supertonic"
-      ? !!modelPresence[modelCatalog?.tts?.find((m) => m.id.includes("supertonic"))?.id || "supertonic_tts"]
-      : draftSettings?.tts?.active === "kokoro"
-      ? !!modelPresence[modelCatalog?.tts?.find((m) => m.id.includes("kokoro"))?.id || "kokoro_multi_lang_v1_1"]
-      : draftSettings?.tts?.active === "chatterbox"
-      ? !!modelPresence[modelCatalog?.tts?.find((m) => m.id.includes("chatterbox"))?.id || "chatterbox_tts"]
-      : false;
+  // The preview active id IS the manifest group id — direct presence lookup.
+  // Cloud needs nothing on disk; remote needs a healthy server.
+  const isTtsVerified = isCloudTts
+    ? true
+    : isRemoteTts
+    ? isRemoteTtsHealthy === true
+    : !!modelPresence[draftSettings?.tts?.active || ""];
 
   const isAuxiliaryVerified =
     (modelCatalog?.auxiliary?.length || 0) > 0
@@ -623,10 +644,10 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       )}
     >
       <div className="flex flex-col gap-2.5 flex-1 min-h-0">
-        {/* Header with Model vs Settings Toggle */}
-        <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
-          <div className="flex items-center gap-2">
-            <Database className="text-[rgb(var(--accent))]" size={17} />
+        {/* Header Row: Title on Left, Model | Settings Toggle on Right */}
+        <div className="flex items-center justify-between gap-2 mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
+          <div className="flex items-center gap-2 min-w-0">
+            <Database className="text-[rgb(var(--accent))] shrink-0" size={17} />
             <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
               Model Hub
             </span>
@@ -642,11 +663,11 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                   label: "Settings",
                   disabled:
                     activePipelineTab === "tts" &&
-                    draftSettings?.tts?.provider?.kind === "chatterbox_remote" &&
+                    isRemoteTts &&
                     isRemoteTtsHealthy !== true,
                   title:
                     activePipelineTab === "tts" &&
-                    draftSettings?.tts?.provider?.kind === "chatterbox_remote" &&
+                    isRemoteTts &&
                     isRemoteTtsHealthy !== true
                       ? "Complete server setup first to configure voices"
                       : undefined,
@@ -717,6 +738,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                   <LlmSettingsView
                     layoutMode={layoutMode}
                     isRemoteLlm={isRemoteLlm}
+                    isCloud={isCloudLlm}
                     provider={provider}
                   />
                 ) : (
@@ -754,7 +776,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
               {activePipelineTab === "tts" && (
                 <>
                   {activeCategoryTab === "model" ? (
-                    draftSettings?.tts?.provider?.kind === "chatterbox_remote" && isRemoteTtsHealthy !== true ? (
+                    isRemoteTts && isRemoteTtsHealthy !== true ? (
                       <RemoteServerSetup
                         sshConnectionString={sshConnectionString}
                         setSshConnectionString={setSshConnectionString}
@@ -782,6 +804,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                   ) : (
                     <TtsVoiceManager
                       layoutMode={layoutMode}
+                      providerId={draftSettings?.tts?.active || ""}
+                      caps={ttsCaps}
                       customVoices={customVoices}
                       loadCustomVoices={loadCustomVoices}
                       chatterboxIsAdding={chatterboxIsAdding}

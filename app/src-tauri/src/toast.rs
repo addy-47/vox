@@ -4,7 +4,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 #[cfg(target_os = "linux")]
-use gtk::prelude::WidgetExt;
+use gtk::prelude::{GtkWindowExt, WidgetExt};
 
 static LAST_TOAST: LazyLock<parking_lot::Mutex<Option<crate::core::events::ToastPayload>>> =
     LazyLock::new(|| parking_lot::Mutex::new(None));
@@ -73,6 +73,11 @@ pub fn setup_toast_window<R: tauri::Runtime>(window: &WebviewWindow<R>) {
     if let Err(e) = window.set_resizable(false) {
         log::debug!("[Toast] Failed to set window resizable: {}", e);
     }
+    #[cfg(target_os = "linux")]
+    if let Ok(gtk_window) = window.gtk_window() {
+        gtk_window.set_accept_focus(false);
+        gtk_window.set_focus_on_map(false);
+    }
 }
 
 /// Positions the toast window at top-center with 24px top inset.
@@ -125,6 +130,9 @@ pub fn setup_linux_toast_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &st
         }
 
         if let Ok(gtk_window) = window.gtk_window() {
+            gtk_window.set_accept_focus(false);
+            gtk_window.set_focus_on_map(false);
+
             let scale_factor = window.scale_factor().unwrap_or(1.0);
 
             let toast_w = (TOAST_WIDTH * scale_factor) as i32;

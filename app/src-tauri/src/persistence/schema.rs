@@ -3,7 +3,7 @@ use turso::Connection;
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 
 /// Runs the CREATE TABLE IF NOT EXISTS migrations against the given connection.
 pub async fn run_migrations(conn: &Connection) -> Result<()> {
@@ -21,7 +21,7 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             SCHEMA_VERSION
         );
 
-        let statements = [
+        let v1_statements = [
             "CREATE TABLE IF NOT EXISTS sessions (
                 id               INTEGER PRIMARY KEY,
                 started_at       INTEGER NOT NULL,
@@ -117,10 +117,47 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             "CREATE INDEX IF NOT EXISTS idx_mpm_batch_seq ON memory_pipeline_metrics(run_id, stage_name, batch_seq);",
         ];
 
+        let v2_statements = [
+            "CREATE TABLE IF NOT EXISTS session_compactions (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id     INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                trigger_kind   TEXT NOT NULL,
+                from_turn_id   INTEGER NOT NULL,
+                to_turn_id     INTEGER NOT NULL,
+                status         TEXT NOT NULL,
+                facts_count    INTEGER NOT NULL DEFAULT 0,
+                error_msg      TEXT,
+                created_at     INTEGER NOT NULL,
+                completed_at   INTEGER
+            );",
+            "CREATE INDEX IF NOT EXISTS idx_sc_session ON session_compactions(session_id, to_turn_id DESC);",
+            "CREATE INDEX IF NOT EXISTS idx_sc_status ON session_compactions(status);",
+            "CREATE TABLE IF NOT EXISTS notifications (
+                id          TEXT PRIMARY KEY,
+                category    TEXT NOT NULL,
+                title       TEXT NOT NULL,
+                message     TEXT NOT NULL,
+                status      TEXT NOT NULL DEFAULT 'pending',
+                session_id  INTEGER,
+                metadata    TEXT NOT NULL DEFAULT '{}',
+                is_read     INTEGER NOT NULL DEFAULT 0,
+                created_at  INTEGER NOT NULL
+            );",
+            "CREATE INDEX IF NOT EXISTS idx_notif_status_created ON notifications(status, created_at DESC);",
+            "CREATE INDEX IF NOT EXISTS idx_notif_session ON notifications(session_id);",
+        ];
+
         conn.execute("BEGIN TRANSACTION;", ()).await?;
         let migration_res: Result<()> = async {
-            for stmt in statements {
-                conn.execute(stmt, ()).await?;
+            if current_version < 1 {
+                for stmt in v1_statements {
+                    conn.execute(stmt, ()).await?;
+                }
+            }
+            if current_version < 2 {
+                for stmt in v2_statements {
+                    conn.execute(stmt, ()).await?;
+                }
             }
             conn.execute(&format!("PRAGMA user_version = {};", SCHEMA_VERSION), ())
                 .await?;

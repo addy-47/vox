@@ -48,6 +48,8 @@ export const LlmCatalogView = memo(({
   handleProbeCapabilities,
   customModelId,
   setCustomModelId,
+  customModelStatus: _customModelStatus,
+  handleValidateCustomModel: _handleValidateCustomModel,
 }: LlmCatalogViewProps) => {
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
@@ -572,8 +574,10 @@ export const LlmCatalogView = memo(({
   return (
     <div
       className={cn(
-        "grid auto-rows-max content-start gap-2.5 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1",
-        layoutMode === "small" ? "grid-cols-1 max-h-[235px]" : "grid-cols-2"
+        "grid gap-2.5 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 h-full",
+        sortedLocalModels.length <= 2
+          ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr" : "grid-cols-2 grid-rows-1")
+          : (layoutMode === "small" ? "grid-cols-1 auto-rows-full snap-y snap-mandatory" : "grid-cols-2 auto-rows-full snap-y snap-mandatory")
       )}
     >
       {sortedLocalModels.map((model) => {

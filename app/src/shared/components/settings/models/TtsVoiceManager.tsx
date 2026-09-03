@@ -1,5 +1,5 @@
 import React, { useState, useMemo, memo, useCallback } from "react";
-import { useSettingsStore } from "@/store/settingsStore";
+import { useSettingsStore, type ProviderCaps } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
 import { RotaryKnob } from "@/shared/ui";
 import { VoiceCarousel } from "../voice/VoiceCarousel";
@@ -23,6 +23,10 @@ export interface EdgeTtsVoice {
 
 export interface TtsVoiceManagerProps {
   layoutMode?: "full-max" | "full-min" | "small";
+  /** Preview provider id (manifest group id) — drives which settings render. */
+  providerId: string;
+  /** Backend capabilities; null while loading (flag-derived fallback applies). */
+  caps: ProviderCaps | null;
   customVoices: CustomVoice[];
   loadCustomVoices: () => void;
   chatterboxIsAdding: boolean;
@@ -40,6 +44,8 @@ const REGIONS = ["ALL", "US", "UK", "AU", "GLOBAL"] as const;
 
 export const TtsVoiceManager = memo(({
   layoutMode,
+  providerId,
+  caps,
   customVoices,
   loadCustomVoices,
   chatterboxIsAdding,
@@ -72,23 +78,19 @@ export const TtsVoiceManager = memo(({
 
   if (!draftSettings) return null;
 
-  const isEdgeTts = draftSettings.tts.active === "edge_tts";
-  const isChatterbox =
-    draftSettings.tts.active === "chatterbox_remote" ||
-    draftSettings.tts.active === "chatterbox";
+  // Caps-driven voice source. While caps load, fall back to manifest tier flags.
+  // No provider id literals anywhere in this file.
+  const previewGroup = modelCatalog?.tts?.find((g) => g.id === providerId);
+  const voiceSource = caps?.voices ?? (previewGroup?.is_cloud ? "edge" : previewGroup?.is_remote ? "custom" : "catalog");
+  const showSpeed = caps?.speed ?? true;
+  const allowClone = caps?.clone ?? !!previewGroup?.is_remote;
+  const isEdgeTts = voiceSource === "edge";
+  const isCustomVoices = voiceSource === "custom";
+  const isRemoteGroup = !!previewGroup?.is_remote;
 
-  // 1. Simplify Voice Name for Local Presets
-  const simplifyVoiceName = (n: string) => {
-    if (n.includes("Pain")) return "Pain";
-    if (n.includes("Madara")) return "Madara";
-    if (n.includes("Shreya")) return "Shreya";
-    if (n.includes("Hayami")) return "Hayami";
-    if (n.includes("Ellen")) return "Ellen";
-    if (n.includes("Juniper")) return "Juniper";
-    if (n.includes("Mark")) return "Mark";
-    if (n.includes("Spuds")) return "Spuds";
-    return n;
-  };
+  // Display names render as-is (data-driven). The id/name boundary:
+  // `name` is UI text only, never a key.
+  const displayName = (n: string) => n.trim() || n;
 
   const simplifyEdgeVoiceName = (shortName: string, friendlyName: string) => {
     const parts = shortName.split("-");
@@ -134,19 +136,22 @@ export const TtsVoiceManager = memo(({
     }));
   }, [edgeTtsVoices, selectedRegion]);
 
-  const localVoices = isChatterbox
+  const localVoices = isCustomVoices
     ? [
         { id: "default", name: "Default" },
-        ...customVoices.map((v) => ({ id: v.id, name: simplifyVoiceName(v.name), isCustom: true })),
+        ...customVoices.map((v) => ({ id: v.id, name: displayName(v.name), isCustom: true })),
       ]
-    : (modelCatalog?.voices || []).map((v) => ({ id: String(v.id), name: simplifyVoiceName(v.name) }));
+    : (modelCatalog?.voices || []).map((v) => ({ id: String(v.id), name: displayName(v.name) }));
 
   const activeVoices = isEdgeTts ? edgeVoicesList : localVoices;
 
+  const customConfigKey = isRemoteGroup ? "chatterbox_remote" : "chatterbox";
+  const customConfig = draftSettings.tts[customConfigKey];
+
   const selectedVoiceId = isEdgeTts
     ? draftSettings.tts.edge_tts?.voice || (edgeVoicesList[0]?.id || "en-US-AriaNeural")
-    : isChatterbox
-      ? draftSettings.tts.chatterbox?.language || "default"
+    : isCustomVoices
+      ? customConfig?.language || "default"
       : String(draftSettings.tts.voice_index ?? 0);
 
   const handleVoiceChange = (id: string) => {
@@ -155,9 +160,9 @@ export const TtsVoiceManager = memo(({
         ...draftSettings.tts.edge_tts,
         voice: id,
       });
-    } else if (isChatterbox) {
-      updateDraft("tts", "chatterbox", {
-        ...draftSettings.tts.chatterbox,
+    } else if (isCustomVoices) {
+      updateDraft("tts", customConfigKey, {
+        ...customConfig,
         language: id,
       });
     } else {
@@ -168,17 +173,20 @@ export const TtsVoiceManager = memo(({
   const copy = TTS_VOICE_MANAGER_COPY;
   const isSmall = layoutMode === "small";
 
+  // Tabs derive from caps: voice unless the provider has no voices,
+  // speed only when the provider supports it (edge has neither knob nor list gap).
   const tabs: Array<{ id: TtsSubTab; label: string }> = [
-    { id: "voice", label: copy.tabs.selectVoice },
-    { id: "speed", label: copy.tabs.speechSpeed },
+    ...(voiceSource === "none" ? [] : [{ id: "voice" as TtsSubTab, label: copy.tabs.selectVoice }]),
+    ...(showSpeed ? [{ id: "speed" as TtsSubTab, label: copy.tabs.speechSpeed }] : []),
   ];
+  const effectiveSubTab = tabs.some((t) => t.id === activeSubTab) ? activeSubTab : tabs[0]?.id ?? "voice";
 
   return (
     <div className="w-full flex-1 flex flex-col justify-between select-none animate-fade-in">
       {/* ─── Layer 1: Subtab Navigation (Full-Width Distributed Tabs) ─── */}
       <div className="w-full flex items-center justify-between pt-0.5 pb-2 shrink-0 border-b border-[rgba(var(--accent),0.08)] mb-2 px-0.5">
         {tabs.map((tab, idx, arr) => {
-          const isActive = activeSubTab === tab.id;
+          const isActive = effectiveSubTab === tab.id;
           return (
             <div key={tab.id} className="flex-1 flex items-center justify-center">
               <button
@@ -211,7 +219,7 @@ export const TtsVoiceManager = memo(({
         )}
       >
         {/* TAB 1: SELECT VOICE */}
-        {activeSubTab === "voice" && (
+        {effectiveSubTab === "voice" && (
           <div className="flex flex-row items-center justify-between gap-3 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
@@ -260,14 +268,14 @@ export const TtsVoiceManager = memo(({
                 onVoicesChanged={loadCustomVoices}
                 isAdding={chatterboxIsAdding}
                 setIsAdding={setChatterboxIsAdding}
-                allowClone={isChatterbox}
+                allowClone={allowClone}
               />
             </div>
           </div>
         )}
 
         {/* TAB 2: SPEECH SPEED */}
-        {activeSubTab === "speed" && (
+        {effectiveSubTab === "speed" && (
           <div className="flex flex-row items-center justify-between gap-3 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               <div className="flex items-center gap-2">

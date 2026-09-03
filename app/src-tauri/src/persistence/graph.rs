@@ -1,11 +1,8 @@
-use crate::core::error::VoxIpcError;
-use crate::core::state::AppState;
-use crate::persistence::db::VoxDb;
+use crate::core::error::PersistenceError;
 use serde::{Deserialize, Serialize};
-use tauri::State;
 
 /// Topology node representing a single fact entity in the memory graph.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MemoryNodeTopology {
     pub id: String,
     pub collection: String,
@@ -15,7 +12,7 @@ pub struct MemoryNodeTopology {
 }
 
 /// Topology edge representing a relational connection between two memory nodes.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MemoryEdgeTopology {
     pub id: i64,
     pub from_id: String,
@@ -25,7 +22,7 @@ pub struct MemoryEdgeTopology {
 }
 
 /// Complete graph topology payload with atomic version counter.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MemoryGraphPayload {
     pub version: u64,
     pub nodes: Vec<MemoryNodeTopology>,
@@ -40,7 +37,7 @@ pub struct MemoryGraphQueryFilter {
 }
 
 /// Detailed descriptor for a single memory fact node and its adjacent edges.
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MemoryFactDetail {
     pub id: String,
     pub collection: String,
@@ -53,25 +50,11 @@ pub struct MemoryFactDetail {
     pub outgoing_relations: Vec<MemoryEdgeTopology>,
 }
 
-/// Aggregate memory subsystem statistics for sessions, episodes, and queue sizes.
-#[derive(Debug, Serialize, Clone)]
-pub struct MemoryStats {
-    pub pending_sessions: u32,
-    pub embedded_sessions: u32,
-    pub total_episodes: u32,
-    pub personal_memories: u32,
-    pub history_entries: u32,
-}
-
-/// Retrieve the current monotonic memory graph version.
-#[tauri::command]
-pub async fn get_graph_version(
-    state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<u64, VoxIpcError> {
-    Ok(state
-        .memory
-        .graph_version
-        .load(std::sync::atomic::Ordering::SeqCst))
+/// A conflict pair between two active or competing memory facts.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MemoryConflictItem {
+    pub fact_a: MemoryNodeTopology,
+    pub fact_b: MemoryNodeTopology,
 }
 
 fn build_topology_query(filter: Option<&MemoryGraphQueryFilter>) -> (String, Vec<turso::Value>) {
@@ -129,80 +112,45 @@ async fn fetch_memory_relations(
     conn: &turso::Connection,
     sql: &str,
     params: impl turso::IntoParams,
-) -> Result<Vec<MemoryEdgeTopology>, VoxIpcError> {
-    let mut rel_rows = conn
-        .query(sql, params)
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+) -> Result<Vec<MemoryEdgeTopology>, PersistenceError> {
+    let mut rel_rows = conn.query(sql, params).await?;
     let mut edges = Vec::new();
-    while let Some(row) = rel_rows
-        .next()
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?
-    {
+    while let Some(row) = rel_rows.next().await? {
         edges.push(MemoryEdgeTopology {
-            id: row
-                .get(0)
-                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
-            from_id: row
-                .get(1)
-                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
-            to_id: row
-                .get(2)
-                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
-            relation: row
-                .get(3)
-                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
-            created_at: row
-                .get(4)
-                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            id: row.get(0)?,
+            from_id: row.get(1)?,
+            to_id: row.get(2)?,
+            relation: row.get(3)?,
+            created_at: row.get(4)?,
         });
     }
     Ok(edges)
 }
 
-/// Retrieve the full memory graph topology filtered by collection or active status.
-#[tauri::command]
-pub async fn get_memory_graph_topology(
-    state: State<'_, std::sync::Arc<AppState>>,
-    filter: Option<MemoryGraphQueryFilter>,
-) -> Result<MemoryGraphPayload, VoxIpcError> {
-    let db_path = crate::utils::paths::get().db.clone();
-    let conn = VoxDb::open_readonly(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
-
-    let (query_str, params) = build_topology_query(filter.as_ref());
-    let mut rows = conn
-        .query(&query_str, params)
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+/// Fetch the complete memory graph topology with optional filters.
+pub async fn fetch_memory_graph(
+    conn: &turso::Connection,
+    filter: Option<&MemoryGraphQueryFilter>,
+    graph_version: u64,
+) -> Result<MemoryGraphPayload, PersistenceError> {
+    let (query_str, params) = build_topology_query(filter);
+    let mut rows = conn.query(&query_str, params).await?;
 
     let mut nodes = Vec::new();
-    while let Some(row) = rows
-        .next()
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?
-    {
+    while let Some(row) = rows.next().await? {
         let is_sup_val: i64 = row.get(3).unwrap_or(0);
         let fact_val: Option<String> = row.get(4).ok();
         nodes.push(MemoryNodeTopology {
-            id: row
-                .get(0)
-                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
-            collection: row
-                .get(1)
-                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            id: row.get(0)?,
+            collection: row.get(1)?,
             is_superseded: is_sup_val != 0,
-            created_at: row
-                .get(2)
-                .map_err(|e| VoxIpcError::Database(e.to_string()))?,
+            created_at: row.get(2)?,
             fact: fact_val,
         });
     }
 
     let all_edges = fetch_memory_relations(
-        &conn,
+        conn,
         "SELECT id, from_id, to_id, relation, created_at FROM memory_relations ORDER BY id ASC",
         (),
     )
@@ -219,58 +167,36 @@ pub async fn get_memory_graph_topology(
         all_edges
     };
 
-    let version = state
-        .memory
-        .graph_version
-        .load(std::sync::atomic::Ordering::SeqCst);
-
     Ok(MemoryGraphPayload {
-        version,
+        version: graph_version,
         nodes,
         edges,
     })
 }
 
-/// Retrieve detailed information for a single memory fact by ID.
-#[tauri::command]
-pub async fn get_memory_fact_detail(fact_id: String) -> Result<MemoryFactDetail, VoxIpcError> {
-    let db_path = crate::utils::paths::get().db.clone();
-    let conn = VoxDb::open_readonly(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
-
+/// Fetch detail for a single fact entity by ID.
+pub async fn fetch_fact_detail(
+    conn: &turso::Connection,
+    fact_id: &str,
+) -> Result<Option<MemoryFactDetail>, PersistenceError> {
     let mut fact_rows = conn
         .query(
             "SELECT id, collection, fact, source, session_id, created_at FROM memory_facts WHERE id = ?",
-            (fact_id.clone(),),
+            (fact_id.to_string(),),
         )
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+        .await?;
 
-    let row = fact_rows
-        .next()
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?
-        .ok_or_else(|| VoxIpcError::NotFound(format!("Memory fact not found: {}", fact_id)))?;
+    let row = match fact_rows.next().await? {
+        Some(r) => r,
+        None => return Ok(None),
+    };
 
-    let id: String = row
-        .get(0)
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let collection: String = row
-        .get(1)
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let fact: String = row
-        .get(2)
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let source: String = row
-        .get(3)
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let session_id: String = row
-        .get(4)
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let created_at: i64 = row
-        .get(5)
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let id: String = row.get(0)?;
+    let collection: String = row.get(1)?;
+    let fact: String = row.get(2)?;
+    let source: String = row.get(3)?;
+    let session_id: String = row.get(4)?;
+    let created_at: i64 = row.get(5)?;
 
     let is_superseded = {
         let mut s_rows = conn
@@ -278,30 +204,25 @@ pub async fn get_memory_fact_detail(fact_id: String) -> Result<MemoryFactDetail,
                 "SELECT 1 FROM memory_relations WHERE to_id = ? AND relation = 'SUPERSEDES'",
                 (id.clone(),),
             )
-            .await
-            .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-        s_rows
-            .next()
-            .await
-            .map_err(|e| VoxIpcError::Database(e.to_string()))?
-            .is_some()
+            .await?;
+        s_rows.next().await?.is_some()
     };
 
     let incoming_relations = fetch_memory_relations(
-        &conn,
+        conn,
         "SELECT id, from_id, to_id, relation, created_at FROM memory_relations WHERE to_id = ? ORDER BY id ASC",
         (id.clone(),),
     )
     .await?;
 
     let outgoing_relations = fetch_memory_relations(
-        &conn,
+        conn,
         "SELECT id, from_id, to_id, relation, created_at FROM memory_relations WHERE from_id = ? ORDER BY id ASC",
         (id.clone(),),
     )
     .await?;
 
-    Ok(MemoryFactDetail {
+    Ok(Some(MemoryFactDetail {
         id,
         collection,
         fact,
@@ -311,5 +232,53 @@ pub async fn get_memory_fact_detail(fact_id: String) -> Result<MemoryFactDetail,
         is_superseded,
         incoming_relations,
         outgoing_relations,
-    })
+    }))
+}
+
+/// Fetch unresolved conflicts across memory nodes.
+pub async fn fetch_memory_conflicts(
+    conn: &turso::Connection,
+) -> Result<Vec<MemoryConflictItem>, PersistenceError> {
+    let sql = "SELECT 
+        r.from_id, fa.collection, fa.created_at,
+        r.to_id, fb.collection, fb.created_at
+     FROM memory_relations r
+     JOIN memory_facts fa ON fa.id = r.from_id
+     JOIN memory_facts fb ON fb.id = r.to_id
+     WHERE r.relation = 'CONFLICTS_WITH'
+       AND fa.status = 'active'
+       AND fb.status = 'active'
+     ORDER BY r.created_at DESC";
+
+    let mut rows = conn.query(sql, ()).await?;
+
+    let mut conflicts = Vec::new();
+    while let Some(row) = rows.next().await? {
+        let from_id: String = row.get(0)?;
+        let from_col: String = row.get(1)?;
+        let from_created: i64 = row.get(2)?;
+
+        let to_id: String = row.get(3)?;
+        let to_col: String = row.get(4)?;
+        let to_created: i64 = row.get(5)?;
+
+        conflicts.push(MemoryConflictItem {
+            fact_a: MemoryNodeTopology {
+                id: from_id,
+                collection: from_col,
+                is_superseded: false,
+                created_at: from_created,
+                fact: None,
+            },
+            fact_b: MemoryNodeTopology {
+                id: to_id,
+                collection: to_col,
+                is_superseded: false,
+                created_at: to_created,
+                fact: None,
+            },
+        });
+    }
+
+    Ok(conflicts)
 }
