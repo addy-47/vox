@@ -1,7 +1,7 @@
 use super::{
     SttEngine as SttEngineTrait, MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_ENCODER,
     MODEL_FILE_ASR_FRONTEND, MODEL_FILE_ASR_TOKENIZER, QWEN_MAX_NEW_TOKENS, QWEN_MAX_TOTAL_LEN,
-    QWEN_NUM_THREADS, SAMPLE_RATE,
+    SAMPLE_RATE,
 };
 use anyhow::{anyhow, Result};
 use sherpa_onnx::{OfflineQwen3ASRModelConfig, OfflineRecognizer, OfflineRecognizerConfig};
@@ -14,7 +14,7 @@ pub struct SttEngine {
 
 impl SttEngine {
     /// Loads Qwen3-ASR ONNX model components and initializes the Sherpa recognizer.
-    pub fn new(model_dir: &Path) -> Result<Self> {
+    pub fn new(model_dir: &Path, num_threads: u32) -> Result<Self> {
         log::info!("[STT] >>> Initializing Sherpa-ONNX Qwen3-ASR Engine...");
 
         let mut config = OfflineRecognizerConfig {
@@ -52,7 +52,7 @@ impl SttEngine {
             ..Default::default()
         };
 
-        config.model_config.num_threads = QWEN_NUM_THREADS;
+        config.model_config.num_threads = num_threads as i32;
         config.model_config.debug = false;
         config.model_config.provider = Some("cpu".into());
 

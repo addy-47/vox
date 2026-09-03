@@ -142,10 +142,14 @@ export interface VadSettings {
   threshold: number;
   ptt_noise_gate: number;
   vad_backend: "earshot" | "ten_vad";
+  silence_duration_ms?: number;
+  speech_onset_ms?: number;
 }
 
 export interface SttEmbeddedConfig {
   model: string;
+  partial_throttle_ms?: number;
+  threads?: number;
 }
 
 export interface SttCloudConfig {
@@ -212,6 +216,7 @@ export interface TtsSettings {
   voice_index: number;
   quality_steps: number;
   speed: number;
+  threads: number;
   edge_tts: TtsEdgeTtsConfig;
   supertonic: TtsSupertonicConfig;
   kokoro: TtsKokoroConfig;
@@ -486,11 +491,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const requiresRestart =
       (domain === "stt" && key === "embedded") ||
       (domain === "stt" && key === "active") ||
+      (domain === "stt" && key === "threads") ||
       (domain === "llm" && key === "embedded") ||
       (domain === "llm" && key === "active") ||
       (domain === "llm" && key === "context_window") ||
       (domain === "llm" && key === "threads") ||
       (domain === "tts" && key === "active") ||
+      (domain === "tts" && key === "threads") ||
       (domain === "vad" && key === "vad_backend") ||
       (domain === "audio" && key === "input_device");
 

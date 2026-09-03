@@ -374,6 +374,21 @@ input[type="range"]:active::-webkit-slider-thumb {
   50% { opacity: 1; }
 }
 
+@keyframes dynamic-eq {
+  0% {
+    transform: scaleY(0.28);
+    opacity: 0.50;
+  }
+  50% {
+    transform: scaleY(0.92);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scaleY(0.38);
+    opacity: 0.65;
+  }
+}
+
 @keyframes connector-flow {
   0% { stroke-dashoffset: 0; opacity: 0; }
   12% { opacity: 1; }

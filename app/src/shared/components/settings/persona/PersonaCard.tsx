@@ -1,6 +1,6 @@
 import { useState, memo, useCallback, useMemo, useRef } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { UserCircle, Code2, Eye, Sparkles } from "lucide-react";
+import { CircleUserRound, Code2, Eye, Sparkles } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import ReactMarkdown from "react-markdown";
 import { Card, SegmentedControl } from "@/shared/ui";
@@ -11,13 +11,13 @@ interface PersonaCardProps {
 }
 
 const INSTRUCTION_TABS = [
-  { id: "modular" as const, label: PERSONA_COPY.tabModular },
-  { id: "realtime" as const, label: PERSONA_COPY.tabRealtime },
+  { id: "modular" as const, label: PERSONA_COPY.tabModular, compactLabel: "M", title: PERSONA_COPY.tabModular },
+  { id: "realtime" as const, label: PERSONA_COPY.tabRealtime, compactLabel: "R", title: PERSONA_COPY.tabRealtime },
 ];
 
 const VIEW_TABS = [
-  { id: "edit" as const, label: PERSONA_COPY.viewEdit, icon: Code2 },
-  { id: "preview" as const, label: PERSONA_COPY.viewPreview, icon: Eye },
+  { id: "edit" as const, icon: Code2, label: PERSONA_COPY.viewEdit, title: PERSONA_COPY.viewEdit },
+  { id: "preview" as const, icon: Eye, label: PERSONA_COPY.viewPreview, title: PERSONA_COPY.viewPreview },
 ];
 
 /**
@@ -321,23 +321,23 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       layoutMode={layoutMode}
       elevation="card"
       className={cn(
-        "text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 transform-gpu flex flex-col",
+        "@container text-[14px] leading-relaxed text-[rgb(var(--foreground))]/85 transform-gpu flex flex-col",
         !isSmall && cn(
           "p-4 sm:p-5",
-          layoutMode === "full-min" ? "lg:w-[320px] xl:w-[380px] 2xl:w-[460px]" : "lg:w-[460px]"
+          layoutMode === "full-min" ? "lg:w-[380px] xl:w-[430px] 2xl:w-[480px]" : "lg:w-[480px]"
         )
       )}
     >
       {/* Header & Controls */}
-      <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full gap-2 flex-wrap sm:flex-nowrap">
+      <div className="flex items-center justify-between mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full gap-2 flex-nowrap">
         <div className="flex items-center gap-2 shrink-0">
-          <UserCircle className="text-[rgb(var(--accent))]" size={17} />
+          <CircleUserRound className="text-[rgb(var(--accent))]" size={17} />
           <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
             {PERSONA_COPY.cardTitle}
           </span>
         </div>
         
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           <SegmentedControl options={INSTRUCTION_TABS} value={activeTab} onChange={setActiveTab} size="sm" />
           <SegmentedControl options={VIEW_TABS} value={viewMode} onChange={setViewMode} size="sm" />
         </div>

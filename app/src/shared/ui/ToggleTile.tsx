@@ -80,7 +80,7 @@ export const ToggleTile = memo<ToggleTileProps>(({
               {active ? activeLabel : inactiveLabel}
             </span>
             {(activeSublabel || inactiveSublabel) && (
-              <span className="text-[10px] sm:text-[10.5px] text-[rgb(var(--foreground-muted))]/60 font-medium uppercase mt-1 leading-none truncate">
+              <span className="text-[10px] sm:text-[10.5px] text-[rgb(var(--foreground-muted))]/60 font-medium mt-1 leading-none truncate">
                 {active ? activeSublabel : inactiveSublabel}
               </span>
             )}
