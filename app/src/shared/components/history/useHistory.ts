@@ -116,6 +116,18 @@ export function useHistory() {
     loadSessions();
   }, [loadSessions]);
 
+  useEffect(() => {
+    if (sessions.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const targetSessionId = params.get("sessionId");
+    if (targetSessionId) {
+      const target = sessions.find((s) => s.id === Number(targetSessionId));
+      if (target) {
+        setSelectedSession(target);
+      }
+    }
+  }, [sessions]);
+
   // Groupings
   const dayGroups = useMemo(() => groupSessionsByDay(sessions), [sessions]);
   const monthGroups = useMemo(() => groupDaysByMonth(dayGroups), [dayGroups]);

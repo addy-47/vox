@@ -64,7 +64,7 @@ export const SETTINGS_SCOPE_KEYS: Record<SettingsScope, readonly string[]> = {
   ],
   interaction: ["mode", "auto_sleep_timeout", "pipeline_mode"],
   dictation: ["enabled", "interaction_mode", "hotkey", "output_mode"],
-  history: ["private_mode", "tray_history_limit"],
+  history: ["private_mode", "tray_history_limit", "auto_compaction"],
   memory: [
     "context_retrieval_enabled",
     "pipeline_processing_enabled",
@@ -330,5 +330,34 @@ export const TTS_VOICE_MANAGER_COPY = {
     title: "Playback Rate",
     description: "Fine-tune speech synthesis playback tempo and velocity across assistant responses without pitch distortion.",
   },
+};
+
+export const MODEL_HUB_COPY = {
+  backToModels: "Models",
+  present: "Ready",
+  notPresent: "Not downloaded",
+  unsavedChanges: "Unsaved changes for this provider",
+};
+
+export const LLM_SETTINGS_COPY = {
+  tabs: {
+    compute: "Compute",
+    tokens: "Tokens",
+    context: "Context",
+    creativity: "Temp",
+  },
+};
+
+export const HISTORY_SETTINGS_COPY = {
+  privateModeTitle: "Session Storage",
+  privateModeActive: "Incognito Active",
+  privateModeInactive: "Logging Active",
+  privateModeActiveSub: "No traces saved",
+  privateModeInactiveSub: "Standard SQLite",
+  autoCompactionTitle: "Auto Compaction",
+  autoCompactionActive: "Auto Active",
+  autoCompactionInactive: "Manual Review",
+  autoCompactionActiveSub: "Summarizes on idle",
+  autoCompactionInactiveSub: "Prompt on uncompacted",
 };
 

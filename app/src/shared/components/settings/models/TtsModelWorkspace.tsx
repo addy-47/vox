@@ -34,8 +34,10 @@ export const TtsModelWorkspace = memo(
 
     if (!draftSettings || !modelCatalog) return null;
 
-    const isRemote = draftSettings.tts.active === "chatterbox_remote";
-    const isCloud = draftSettings.tts.active === "edge_tts";
+    // Tier derives from the preview group's manifest flags — never id literals.
+    const previewGroup = modelCatalog?.tts?.find((m) => m.id === draftSettings.tts.active);
+    const isRemote = !!previewGroup?.is_remote;
+    const isCloud = !!previewGroup?.is_cloud;
 
     // Strictly partition models according to the active provider tier (Embedded, Remote, or Cloud) using manifest flags
     const filteredModels = (modelCatalog.tts || []).filter((model) => {
@@ -53,24 +55,22 @@ export const TtsModelWorkspace = memo(
       <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1">
         <div
           className={cn(
-            "grid gap-2.5 auto-rows-max content-start",
-            layoutMode === "small" ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
+            "grid gap-2.5 h-full",
+            filteredModels.length <= 2
+              ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr" : "grid-cols-2 grid-rows-1")
+              : (layoutMode === "small" ? "grid-cols-1 auto-rows-full snap-y snap-mandatory" : "grid-cols-2 auto-rows-full snap-y snap-mandatory")
           )}
         >
           {filteredModels.map((model) => {
-            const isSelected =
-              (model.is_cloud && draftSettings.tts.active === "edge_tts") ||
-              (model.id === "supertonic_tts" && draftSettings.tts.active === "supertonic") ||
-              (model.id.includes("kokoro") && draftSettings.tts.active === "kokoro") ||
-              (model.id === "chatterbox_tts" && draftSettings.tts.active === "chatterbox") ||
-              (model.is_remote && draftSettings.tts.active === "chatterbox_remote");
+            // Single source: manifest group id IS the settings active key.
+            const isSelected = model.id === draftSettings.tts.active;
 
             const isDownloaded =
               !!model.is_cloud || !!model.is_remote || !!model.is_built_in || !!modelPresence[model.id];
             const status = downloadStatuses[model.id];
 
             return (
-              <div key={model.id} className="relative">
+              <div key={model.id} className="relative h-full">
                 <SubModelCard
                   id={model.id}
                   name={model.name}
@@ -83,17 +83,7 @@ export const TtsModelWorkspace = memo(
                   isRequired={false}
                   layoutMode={layoutMode}
                   onSelect={() => {
-                    if (model.id === "edge_tts") {
-                      updateDraft("tts", "active", "edge_tts");
-                    } else if (model.id === "supertonic_tts") {
-                      updateDraft("tts", "active", "supertonic");
-                    } else if (model.id.includes("kokoro")) {
-                      updateDraft("tts", "active", "kokoro");
-                    } else if (model.id === "chatterbox_tts") {
-                      updateDraft("tts", "active", "chatterbox");
-                    } else if (model.id === "chatterbox_remote") {
-                      updateDraft("tts", "active", "chatterbox_remote");
-                    }
+                    updateDraft("tts", "active", model.id);
                   }}
                   confirmDeleteId={confirmDeleteId}
                   setConfirmDeleteId={setConfirmDeleteId}
@@ -101,7 +91,7 @@ export const TtsModelWorkspace = memo(
                   startDownload={() => startDownload(model.id)}
                   deleteModel={() => deleteModel(model.id)}
                 />
-                {model.id === "chatterbox_remote" && isSelected && (
+                {model.is_remote && isSelected && (
                   <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 select-none pointer-events-none">
                     {checkingTtsHealth ? (
                       <Loader2 size={10} className="animate-spin text-[rgb(var(--accent))]" />

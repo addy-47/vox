@@ -101,7 +101,17 @@ export interface ModelGroupInfo {
   is_built_in?: boolean;
   is_cloud?: boolean;
   is_remote?: boolean;
+  required?: boolean;
   files?: ModelEntry[];
+}
+
+export type TtsVoiceSource = "catalog" | "custom" | "edge" | "none";
+
+export interface ProviderCaps {
+  voices: TtsVoiceSource;
+  speed: boolean;
+  quality_steps: boolean;
+  clone: boolean;
 }
 
 // Alias for backwards compatibility during component migration
@@ -269,6 +279,7 @@ export interface DictationSettings {
 export interface HistorySettings {
   private_mode: boolean;
   tray_history_limit: number;
+  auto_compaction: boolean;
 }
 
 export interface AppearanceSettings {

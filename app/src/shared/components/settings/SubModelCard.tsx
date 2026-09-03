@@ -134,61 +134,57 @@ export const SubModelCard = memo<SubModelCardProps>(({
         }
       }}
       className={cn(
-        "p-3 sm:p-3.5 rounded-lg border transition-all duration-300 flex flex-col justify-between gap-2 glass-card min-h-[96px] sm:min-h-[100px]",
+        "p-3 sm:p-3.5 rounded-lg border transition-all duration-300 flex flex-col justify-between gap-2 glass-card h-full w-full select-none",
         isDownloaded && !isActive && "cursor-pointer hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.02)]",
         isActive && "border-[rgb(var(--accent))] bg-[rgb(var(--accent))]/5 shadow-md"
       )}
     >
-      <div className="space-y-0.5">
-        <div className="flex items-start justify-between gap-2">
+      <div className="flex-1 min-h-0 flex flex-col justify-between gap-1.5">
+        <div className="flex items-start justify-between gap-2 shrink-0">
           <Tooltip label={name}>
             <span className={cn("text-[13px] font-bold text-[rgb(var(--foreground))]", layoutMode === "small" ? "" : "truncate max-w-[170px]")}>
               {name}
             </span>
           </Tooltip>
 
-          {hasTooltip && (
-            <div className="relative group inline-block shrink-0 mt-0.5">
-              <Info size={16} className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors cursor-help" />
-              <div className="absolute right-full top-0 mr-2 hidden group-hover:block group-hover:opacity-100 w-52 p-2.5 rounded-lg bg-[rgb(var(--card))]/95 border border-[rgba(var(--accent),0.25)] text-[12px] text-[rgb(var(--foreground-muted))] shadow-2xl leading-normal z-50 transition-opacity duration-200 pointer-events-none">
-                <div className="space-y-1">
-                  <div className="flex justify-between border-b border-[rgba(var(--accent),0.08)] pb-0.5 mb-1 font-bold">
-                    <span className="text-[11px] text-[rgb(var(--accent))] uppercase tracking-wider">Specs</span>
-                    <span className="font-mono text-[11px] text-[rgb(var(--foreground-muted))]">{parameters}</span>
+          <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+            {hasTooltip && (
+              <div className="relative group inline-block">
+                <Info size={16} className="text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors cursor-help" />
+                <div className="absolute right-full top-0 mr-2 hidden group-hover:block group-hover:opacity-100 w-52 p-2.5 rounded-lg bg-[rgb(var(--card))]/95 border border-[rgba(var(--accent),0.25)] text-[12px] text-[rgb(var(--foreground-muted))] shadow-2xl leading-normal z-50 transition-opacity duration-200 pointer-events-none">
+                  <div className="space-y-1">
+                    <div className="flex justify-between border-b border-[rgba(var(--accent),0.08)] pb-0.5 mb-1 font-bold">
+                      <span className="text-[11px] text-[rgb(var(--accent))] uppercase tracking-wider">Specs</span>
+                      <span className="font-mono text-[11px] text-[rgb(var(--foreground-muted))]">{parameters}</span>
+                    </div>
+                    {description && <div className="text-[11px] text-[rgb(var(--foreground))] leading-normal mb-1">{description}</div>}
+                    {ramUsage && (
+                      <div className="text-[11px] text-[rgb(var(--foreground-muted))] font-mono">
+                        RAM: {ramUsage}
+                      </div>
+                    )}
+                    {tradeoffs && (
+                      <div className="text-[11px] text-[rgb(var(--foreground-muted))] italic border-t border-[rgba(var(--accent),0.08)] pt-1 mt-1 leading-normal">
+                        {tradeoffs}
+                      </div>
+                    )}
                   </div>
-                  {description && <div className="text-[11px] text-[rgb(var(--foreground))] leading-normal mb-1">{description}</div>}
-                  {ramUsage && (
-                    <div className="text-[11px] text-[rgb(var(--foreground-muted))] font-mono">
-                      RAM: {ramUsage}
-                    </div>
-                  )}
-                  {tradeoffs && (
-                    <div className="text-[11px] text-[rgb(var(--foreground-muted))] italic border-t border-[rgba(var(--accent),0.08)] pt-1 mt-1 leading-normal">
-                      {tradeoffs}
-                    </div>
-                  )}
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {description && (
-          !showTooltip ? (
-            <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-normal">
-              {description}
-              {ramUsage && ` · RAM: ${ramUsage}`}
-              {parameters && ` · ${parameters}`}
-            </p>
-          ) : (
-            <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-normal line-clamp-2">
-              {description}
-            </p>
-          )
+          <p className="flex-1 min-h-0 text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed overflow-hidden line-clamp-3">
+            {description}
+            {!showTooltip && ramUsage && ` · RAM: ${ramUsage}`}
+            {!showTooltip && parameters && ` · ${parameters}`}
+          </p>
         )}
       </div>
 
-      <div className="flex items-center justify-between pt-1.5 border-t border-[rgba(var(--border),0.08)] h-6 shrink-0">
+      <div className="flex items-center justify-between pt-1.5 border-t border-[rgba(var(--border),0.08)] h-6 shrink-0 mt-auto">
         <span className={cn(
           "text-[12px] font-bold uppercase tracking-wider",
           isDownloaded

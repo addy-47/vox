@@ -5,10 +5,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { validateLlmTokenCap } from "@/services/settingsService";
+import { LLM_SETTINGS_COPY } from "@/data/settingsCopy";
 
 export interface LlmSettingsViewProps {
   layoutMode?: "full-max" | "full-min" | "small";
   isRemoteLlm: boolean;
+  isCloud: boolean;
   provider?: LlmProviderConfig;
 }
 
@@ -17,6 +19,7 @@ type SettingsSubTab = "compute" | "tokens" | "context" | "creativity";
 export const LlmSettingsView = memo(({
   layoutMode,
   isRemoteLlm,
+  isCloud,
   provider,
 }: LlmSettingsViewProps) => {
   const [activeSubTab, setActiveSubTab] = useState<SettingsSubTab>("compute");
@@ -124,22 +127,14 @@ export const LlmSettingsView = memo(({
 
   if (!llmSettings) return null;
 
-  const providerName = provider && "provider_name" in provider ? provider.provider_name : "";
-  const isCloudProvider =
-    isRemoteLlm &&
-    (providerName?.toLowerCase().includes("nvidia") ||
-      providerName?.toLowerCase().includes("groq") ||
-      providerName?.toLowerCase().includes("openrouter") ||
-      providerName?.toLowerCase().includes("together") ||
-      providerName?.toLowerCase().includes("openai") ||
-      providerName?.toLowerCase().includes("gemini") ||
-      providerName?.toLowerCase().includes("mistral"));
+  const isCloudProvider = isRemoteLlm && isCloud;
 
+  const copy = LLM_SETTINGS_COPY;
   const tabs: Array<{ id: SettingsSubTab; label: string }> = [
-    { id: "compute", label: "Compute" },
-    { id: "tokens", label: "Tokens" },
-    { id: "context", label: "Context" },
-    { id: "creativity", label: "Temp" },
+    { id: "compute", label: copy.tabs.compute },
+    { id: "tokens", label: copy.tabs.tokens },
+    { id: "context", label: copy.tabs.context },
+    { id: "creativity", label: copy.tabs.creativity },
   ];
 
   return (

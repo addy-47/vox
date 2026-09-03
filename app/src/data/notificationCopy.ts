@@ -1,0 +1,15 @@
+export const NOTIFICATION_COPY = {
+  bellAriaLabel: "Notifications",
+  title: "Notifications",
+  markAllRead: "Mark all read",
+  emptyTitle: "All caught up",
+  emptySubtitle: "No pending session maintenance or background alerts.",
+  compactNow: "Compact Now",
+  compacting: "Compacting...",
+  dismiss: "Dismiss",
+  viewSession: "View Session",
+  uncompactedBadge: "Uncompacted Turns",
+  statusSuccess: "Compaction complete",
+  statusError: "Compaction failed",
+  openDrawerTooltip: "Open session details in history",
+} as const;

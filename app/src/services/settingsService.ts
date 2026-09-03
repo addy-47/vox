@@ -7,6 +7,7 @@ import type {
   TtsProviderConfig,
   ModelCapabilities,
   LlmModelInfo,
+  ProviderCaps,
 } from "@/store/settingsStore";
 
 /** Mirror of `BootState` (ipc/settings.rs:17). */
@@ -36,6 +37,26 @@ export function getSettings(): Promise<BootState> {
 /** Model catalog (ipc/settings/catalog.rs:55). */
 export function requestModelCatalog(): Promise<ModelCatalog> {
   return invoke("get_model_catalog");
+}
+
+/** Static fallback caps when the backend is unreachable (mirrors caps_for_id). */
+const FALLBACK_CAPS: Record<string, ProviderCaps> = {
+  supertonic: { voices: "catalog", speed: true, quality_steps: false, clone: false },
+  kokoro: { voices: "catalog", speed: true, quality_steps: false, clone: false },
+  chatterbox: { voices: "custom", speed: true, quality_steps: true, clone: true },
+  chatterbox_remote: { voices: "custom", speed: true, quality_steps: true, clone: true },
+  edge_tts: { voices: "edge", speed: false, quality_steps: false, clone: false },
+};
+
+const DEFAULT_CAPS: ProviderCaps = { voices: "catalog", speed: true, quality_steps: false, clone: false };
+
+/** Settings capabilities for a TTS provider id (ipc/settings/catalog.rs). */
+export async function getProviderCaps(providerId: string): Promise<ProviderCaps> {
+  try {
+    return await invoke<ProviderCaps>("get_provider_caps", { providerId });
+  } catch {
+    return FALLBACK_CAPS[providerId] || DEFAULT_CAPS;
+  }
 }
 
 /**

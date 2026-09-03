@@ -64,7 +64,7 @@ pub fn spawn_persistence_worker(
 }
 
 fn run_startup_sweeps(db: &turso::Connection, rt_handle: &tokio::runtime::Handle) {
-    if let Err(e) = rt_handle.block_on(cleanup_zero_turn_sessions(db)) {
+    if let Err(e) = rt_handle.block_on(crate::persistence::sessions::cleanup_zero_turn_sessions(db)) {
         log::warn!(
             "[Persistence::Worker] Zero-turn startup cleanup failed (non-fatal): {}",
             e
@@ -275,19 +275,7 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
     Ok(())
 }
 
-async fn cleanup_zero_turn_sessions(conn: &turso::Connection) -> anyhow::Result<()> {
-    let deleted = conn
-        .execute("DELETE FROM sessions WHERE turn_count = 0", ())
-        .await?;
-    if deleted > 0 {
-        log::info!(
-            "[Persistence::Worker] Startup cleanup: removed {} zero-activity session(s)",
-            deleted
-        );
-    }
-    Ok(())
-}
-
+/// Resets memory queue items stuck in 'processing' status to 'staged_pending'.
 async fn cleanup_stuck_queue_items(conn: &turso::Connection) -> anyhow::Result<()> {
     let reset = conn
         .execute(
@@ -297,7 +285,7 @@ async fn cleanup_stuck_queue_items(conn: &turso::Connection) -> anyhow::Result<(
         .await?;
     if reset > 0 {
         log::info!(
-            "[Persistence::Worker] Startup cleanup: reset {} stuck memory queue item(s) to staged_pending",
+            "[Persistence::Worker] Startup cleanup: reset {} stuck memory queue item(s)",
             reset
         );
     }
