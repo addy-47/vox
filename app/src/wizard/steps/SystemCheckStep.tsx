@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { HardDrive, Cpu, Database, Mic } from 'lucide-react';
+import { HardDrive, Cpu, Mic, ShieldCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getRuntimeReport, type RuntimeReport } from '@/services/modelService';
 
@@ -33,10 +33,9 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
     check();
   }, []);
 
-  const allOk = report && 
-    report.write_access && 
-    report.disk_space_ok && 
-    report.mic_access;
+  const systemOk = Boolean(report && report.write_access && report.disk_space_ok);
+  const allOk = Boolean(systemOk && report?.mic_access);
+  const micMissingOnly = Boolean(systemOk && !report?.mic_access);
 
   return (
     <div className="flex flex-col h-full relative">
@@ -49,43 +48,43 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
       <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
         <div className="grid grid-cols-2 gap-4">
             <motion.div
-                key="storage"
+                key="disk"
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
             >
                 <StatusCard 
                     icon={<HardDrive className="w-4 h-4" />}
-                    label="STORAGE"
-                    value={report ? `${report.available_space_gb.toFixed(1)} GB Available` : "Scanning..."}
-                    subValue={report ? `System Total: ${report.total_space_gb.toFixed(1)} GB | Required: ${report.required_space_gb.toFixed(1)} GB` : "Calculating requirements..."}
+                    label="STORAGE SPACE"
+                    value={report ? (report.disk_space_ok ? `${report.available_space_gb.toFixed(1)} GB` : "INSUFFICIENT") : "Checking..."}
+                    subValue={report ? (report.disk_space_ok ? "Sufficient for neural models" : "At least 10GB recommended") : "Measuring available space..."}
                     ok={report?.disk_space_ok}
                     loading={isLoading}
                 />
             </motion.div>
             <motion.div
-                key="audio"
+                key="mic"
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.15 }}
             >
                 <StatusCard 
                     icon={<Mic className="w-4 h-4" />}
-                    label="AUDIO"
-                    value={report ? (report.mic_access ? "CONNECTED" : "NOT FOUND") : "Scanning..."}
-                    subValue={report ? (report.mic_access ? "Input device detected" : "Check permissions") : "Scanning hardware..."}
+                    label="MICROPHONE"
+                    value={report ? (report.mic_access ? "DETECTED" : "NOT FOUND") : "Checking..."}
+                    subValue={report ? (report.mic_access ? "Audio input available" : "No capture device found") : "Testing audio devices..."}
                     ok={report?.mic_access}
                     loading={isLoading}
                 />
             </motion.div>
             <motion.div
-                key="permissions"
+                key="write"
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
             >
                 <StatusCard 
-                    icon={<Database className="w-4 h-4" />}
+                    icon={<ShieldCheck className="w-4 h-4" />}
                     label="PERMISSIONS"
                     value={report ? (report.write_access ? "GRANTED" : "DENIED") : "Checking..."}
                     subValue={report ? (report.write_access ? "Sandbox I/O verified" : "Check folder access") : "Verifying access..."}
@@ -114,14 +113,21 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
       <WizardFooter 
         onBack={onBack}
         onNext={onNext}
+        onSkip={micMissingOnly ? onNext : undefined}
+        showSkip={micMissingOnly}
         nextLabel="Continue to Models"
         isNextDisabled={!allOk || isLoading}
         showBack={true}
-        error={externalError || (!allOk && !isLoading ? "Some checks need attention" : undefined)}
-        errorLabel="Setup Check Failed"
+        error={
+          externalError ||
+          (!systemOk && !isLoading
+            ? "Storage or folder permissions need attention"
+            : micMissingOnly
+            ? "No microphone detected. You can proceed and configure audio later."
+            : undefined)
+        }
+        errorLabel={micMissingOnly ? "Microphone Warning" : "Setup Check Failed"}
       />
     </div>
   );
 };
-
-
