@@ -107,7 +107,7 @@ describe("settingsService", () => {
       };
       mockInvoke.mockResolvedValueOnce(mockProbeResult);
       const caps = await probeModelCapabilities(undefined, "gpt-4o");
-      expect(mockInvoke).toHaveBeenCalledWith("probe_model_capabilities", { provider: undefined, modelId: "gpt-4o", targetCap: undefined });
+      expect(mockInvoke).toHaveBeenCalledWith("probe_model_capabilities", { provider: undefined, model_id: "gpt-4o", target_cap: undefined });
       expect(caps).toEqual(mockCaps);
 
       mockInvoke.mockResolvedValueOnce({
@@ -116,7 +116,7 @@ describe("settingsService", () => {
         cached_map: {},
       });
       const ceiling = await validateLlmTokenCap(undefined, "gpt-4o", 2048);
-      expect(mockInvoke).toHaveBeenCalledWith("probe_model_capabilities", { provider: undefined, modelId: "gpt-4o", targetCap: 2048 });
+      expect(mockInvoke).toHaveBeenCalledWith("probe_model_capabilities", { provider: undefined, model_id: "gpt-4o", target_cap: 2048 });
       expect(ceiling).toBe(4096);
     });
   });

@@ -80,7 +80,7 @@ describe("pipelineService", () => {
     it("should invoke test_clip and test_clip_cancel", async () => {
       mockInvoke.mockResolvedValue(undefined);
       await testClip("command.wav");
-      expect(mockInvoke).toHaveBeenCalledWith("test_clip", { clipId: "command.wav" });
+      expect(mockInvoke).toHaveBeenCalledWith("test_clip", { clip_id: "command.wav" });
 
       await testClipCancel();
       expect(mockInvoke).toHaveBeenCalledWith("test_clip_cancel");
@@ -125,12 +125,12 @@ describe("pipelineService", () => {
       const mockEntry = { id: "v2", name: "Voice 2", source_kind: "file", has_preview: false, created_at: 2000 };
       mockInvoke.mockResolvedValueOnce(mockEntry);
       const resFile = await addVoiceFromFile("Voice 2", "/path/to/sample.wav");
-      expect(mockInvoke).toHaveBeenCalledWith("add_voice_from_file", { name: "Voice 2", filePath: "/path/to/sample.wav" });
+      expect(mockInvoke).toHaveBeenCalledWith("add_voice_from_file", { name: "Voice 2", file_path: "/path/to/sample.wav" });
       expect(resFile).toEqual(mockEntry);
 
       mockInvoke.mockResolvedValueOnce(mockEntry);
       const resRec = await addVoiceFromRecording("Voice 2", [0.5, -0.5], 16000);
-      expect(mockInvoke).toHaveBeenCalledWith("add_voice_from_recording", { name: "Voice 2", pcmF32: [0.5, -0.5], sampleRate: 16000 });
+      expect(mockInvoke).toHaveBeenCalledWith("add_voice_from_recording", { name: "Voice 2", pcm_f32: [0.5, -0.5], sample_rate: 16000 });
       expect(resRec).toEqual(mockEntry);
     });
 
@@ -158,7 +158,13 @@ describe("pipelineService", () => {
         serverPort: 8080,
       };
       await setupRemoteServer(config);
-      expect(mockInvoke).toHaveBeenCalledWith("setup_remote_server", { ...config });
+      expect(mockInvoke).toHaveBeenCalledWith("setup_remote_server", {
+        connection_string: config.connectionString,
+        ssh_port: config.sshPort,
+        identity_key_path: config.identityKeyPath,
+        remote_path: config.remotePath,
+        server_port: config.serverPort,
+      });
     });
   });
 });

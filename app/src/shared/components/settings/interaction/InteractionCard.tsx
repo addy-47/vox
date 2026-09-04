@@ -168,10 +168,10 @@ export const InteractionCard = memo(
     const handlePillChange = (value: "local" | "remote" | "cloud") => {
       if (activeCategory === "STT") {
         setSttPillOverride(value === "local" ? null : value);
+        // Only "embedded" is supported by backend STT engine.
+        // Selecting "remote" or "cloud" sets the preview pill override for documentation/coming-soon desk.
         if (value === "local") {
           updateDraft("stt", "active", "embedded");
-        } else if (value === "cloud") {
-          updateDraft("stt", "active", "cloud");
         }
       } else if (activeCategory === "LLM") {
         handleLlmPillChange(value);

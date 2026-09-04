@@ -85,7 +85,7 @@ export function pttCancel(): Promise<void> {
 }
 
 export function testClip(clipId: string): Promise<void> {
-  return invoke("test_clip", { clipId });
+  return invoke("test_clip", { clip_id: clipId });
 }
 
 export function testClipCancel(): Promise<void> {
@@ -130,11 +130,11 @@ export function renameVoice(id: string, name: string): Promise<void> {
 }
 
 export function addVoiceFromFile(name: string, filePath: string): Promise<VoiceEntryDto> {
-  return invoke("add_voice_from_file", { name, filePath });
+  return invoke("add_voice_from_file", { name, file_path: filePath });
 }
 
 export function addVoiceFromRecording(name: string, pcmF32: number[], sampleRate: number): Promise<VoiceEntryDto> {
-  return invoke("add_voice_from_recording", { name, pcmF32, sampleRate });
+  return invoke("add_voice_from_recording", { name, pcm_f32: pcmF32, sample_rate: sampleRate });
 }
 
 export function deleteVoice(id: string): Promise<void> {
@@ -151,5 +151,11 @@ export interface RemoteServerConfig {
 }
 
 export function setupRemoteServer(config: RemoteServerConfig): Promise<void> {
-  return invoke("setup_remote_server", { ...config });
+  return invoke("setup_remote_server", {
+    connection_string: config.connectionString,
+    ssh_port: config.sshPort,
+    identity_key_path: config.identityKeyPath,
+    remote_path: config.remotePath,
+    server_port: config.serverPort,
+  });
 }

@@ -92,7 +92,7 @@ export async function getMemoryGraphTopology(includeInactive = false): Promise<M
  */
 export async function getMemoryFactDetail(factId: string): Promise<MemoryFactDetail | null> {
   try {
-    return await invoke<MemoryFactDetail>("get_memory_fact_detail", { factId });
+    return await invoke<MemoryFactDetail>("get_memory_fact_detail", { fact_id: factId });
   } catch (err) {
     console.error("Failed to fetch memory fact detail:", err);
     return null;
@@ -121,24 +121,26 @@ export async function softDeleteFact(factId: string): Promise<void> {
 }
 
 /**
- * Toggles background pipeline processing pause state.
+ * Toggles background pipeline processing state.
+ * @param enabled Optional explicit target state (true to enable/unpause, false to pause). If omitted, toggles.
+ * Returns true if enabled (unpaused), false if paused.
  */
-export async function togglePipelineProcessing(paused?: boolean): Promise<boolean> {
-  return await invoke<boolean>("toggle_pipeline_processing", { paused });
+export async function togglePipelineProcessing(enabled?: boolean): Promise<boolean> {
+  return await invoke<boolean>("toggle_pipeline_processing", { enabled });
 }
 
 /**
  * Resets all failed queue items back to staged_pending.
  */
 export async function retryFailedQueue(): Promise<number> {
-  return await invoke<number>("retry_failed_queue_items", { itemIds: null });
+  return await invoke<number>("retry_failed_queue_items", { item_ids: null });
 }
 
 /**
  * Resets specific failed queue items back to staged_pending.
  */
 export async function retryFailedQueueItems(itemIds: number[]): Promise<number> {
-  return await invoke<number>("retry_failed_queue_items", { itemIds });
+  return await invoke<number>("retry_failed_queue_items", { item_ids: itemIds });
 }
 
 /**

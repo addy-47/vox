@@ -136,7 +136,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
     setRunning(true);
     setLastProcessedCount(null);
     try {
-      const nextState = await togglePipelineProcessing(false);
+      const nextState = await togglePipelineProcessing(true);
       updateDraft("memory", "pipeline_processing_enabled", nextState);
       await commitChanges();
       onRefresh();

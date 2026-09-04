@@ -109,8 +109,12 @@ export const LlmConfigDesk = memo(({
     [draftSettings.tts.chatterbox_remote, updateDraft]
   );
 
+  const providerBaseUrl = currentProvider.base_url;
+  const providerApiKey = currentProvider.api_key;
+  const providerKind = currentProvider.kind;
+
   useEffect(() => {
-    if (currentProvider.kind !== "open_ai_compat" || !currentProvider.base_url) {
+    if (providerKind !== "open_ai_compat" || !providerBaseUrl) {
       setIsHealthy(null);
       setModelsError(null);
       return;
@@ -128,12 +132,13 @@ export const LlmConfigDesk = memo(({
           setIsHealthy(healthy);
 
           if (healthy && providerPill === "remote" && activeLlmProvider === "server") {
-            const detectedName = currentProvider.base_url?.includes("11434")
+            const detectedName = providerBaseUrl?.includes("11434")
               ? "Ollama"
               : "Remote Host";
-            if (currentProvider.provider_name !== detectedName) {
+            const currentServer = useSettingsStore.getState().draftSettings?.llm?.server;
+            if (currentServer && currentServer.provider_name !== detectedName) {
               updateDraft("llm", "server", {
-                ...draftSettings.llm.server,
+                ...currentServer,
                 provider_name: detectedName,
               });
             }
@@ -157,11 +162,12 @@ export const LlmConfigDesk = memo(({
       clearTimeout(timer);
     };
   }, [
-    currentProvider,
+    providerKind,
+    providerBaseUrl,
+    providerApiKey,
     providerPill,
     activeLlmProvider,
     updateDraft,
-    draftSettings.llm.server,
   ]);
 
   const handleUrlChange = useCallback(

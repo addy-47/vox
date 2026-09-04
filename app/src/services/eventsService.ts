@@ -99,6 +99,10 @@ export interface ToastPayload {
   duration_ms?: number;
 }
 
+export interface NotificationDismissedPayload {
+  id: string;
+}
+
 /**
  * Canonical IPC Event Map mirroring Rust `IpcEvent` registry in `core/events.rs`.
  */
@@ -114,6 +118,10 @@ export interface IpcEventMap {
   "settings-updated": void;
   toggle_tray: void;
   show_toast: ToastPayload;
+  notification_created: any;
+  notification_updated: any;
+  notification_dismissed: NotificationDismissedPayload;
+  notifications_marked_read: void;
 }
 
 /**
@@ -218,4 +226,20 @@ export function onSettingsUpdated(handler: () => void): () => void {
 
 export function onShowToast(handler: (payload: ToastPayload) => void): () => void {
   return on("show_toast", handler);
+}
+
+export function onNotificationCreated(handler: (payload: any) => void): () => void {
+  return on("notification_created", handler);
+}
+
+export function onNotificationUpdated(handler: (payload: any) => void): () => void {
+  return on("notification_updated", handler);
+}
+
+export function onNotificationDismissed(handler: (payload: NotificationDismissedPayload) => void): () => void {
+  return on("notification_dismissed", handler);
+}
+
+export function onNotificationsMarkedRead(handler: () => void): () => void {
+  return on("notifications_marked_read", handler);
 }
