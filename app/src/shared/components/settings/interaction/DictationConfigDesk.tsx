@@ -17,10 +17,10 @@ const OUTPUT_OPTIONS = [
 ];
 
 export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: DictationConfigDeskProps) => {
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const dictationDraft = useSettingsStore((s) => s.draftSettings?.dictation);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
-  const dictation = draftSettings?.dictation ?? {
+  const dictation = dictationDraft ?? {
     enabled: true,
     interaction_mode: "ptt",
     hotkey: "Alt+Space",

@@ -166,15 +166,15 @@ function parseXmlToSections(rawPrompt: string): ParsedSection[] {
   return sections;
 }
 
-const MarkdownPreviewComponents = {
-  h1: ({ ...props }: any) => <h1 className="text-[13px] font-bold mt-2 mb-1 text-[rgb(var(--accent))]" {...props} />,
-  h2: ({ ...props }: any) => <h2 className="text-[12.5px] font-bold mt-2 mb-1 text-[rgb(var(--accent))]" {...props} />,
-  h3: ({ ...props }: any) => <h3 className="text-[12px] font-bold mt-1.5 mb-1 text-[rgb(var(--accent))]" {...props} />,
-  p: ({ ...props }: any) => <p className="mb-1.5 last:mb-0 text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed" {...props} />,
-  ul: ({ ...props }: any) => <ul className="list-disc list-inside mb-2 pl-1 space-y-1 text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed" {...props} />,
-  ol: ({ ...props }: any) => <ol className="list-decimal list-inside mb-2 pl-1 space-y-1 text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed" {...props} />,
-  li: ({ ...props }: any) => <li className="ml-1" {...props} />,
-  code: ({ children, ...props }: any) => {
+const MarkdownPreviewComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
+  h1: ({ node, ...props }) => <h1 className="text-[13px] font-bold mt-2 mb-1 text-[rgb(var(--accent))]" {...props} />,
+  h2: ({ node, ...props }) => <h2 className="text-[12.5px] font-bold mt-2 mb-1 text-[rgb(var(--accent))]" {...props} />,
+  h3: ({ node, ...props }) => <h3 className="text-[12px] font-bold mt-1.5 mb-1 text-[rgb(var(--accent))]" {...props} />,
+  p: ({ node, ...props }) => <p className="mb-1.5 last:mb-0 text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed" {...props} />,
+  ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2 pl-1 space-y-1 text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed" {...props} />,
+  ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2 pl-1 space-y-1 text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed" {...props} />,
+  li: ({ node, ...props }) => <li className="ml-1" {...props} />,
+  code: ({ node, children, ...props }) => {
     const str = String(children);
     if (str === "<lang>" || str === "<script>") {
       return (
@@ -189,7 +189,7 @@ const MarkdownPreviewComponents = {
       </code>
     );
   },
-  pre: ({ ...props }: any) => (
+  pre: ({ node, ...props }) => (
     <pre className="bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.1)] rounded-lg p-2 font-mono text-[11px] overflow-x-auto my-1.5 w-full" {...props} />
   ),
 };

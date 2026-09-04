@@ -38,11 +38,8 @@ export interface DialogueTurn {
 export interface VoiceSessionContextValue {
   // State
   interactionState: InteractionState;
-  setInteractionState: (state: InteractionState) => void;
   interactionMode: InteractionMode;
-  setInteractionMode: (mode: InteractionMode) => void;
   pipelineMode: "modular" | "realtime";
-  setPipelineMode: (mode: "modular" | "realtime") => void;
   isEngaged: boolean;
   isSleeping: boolean;
   isPaused: boolean;
@@ -56,9 +53,7 @@ export interface VoiceSessionContextValue {
   setTestMode: (mode: boolean) => void;
   testingClip: string | null;
   dialogueHistory: DialogueTurn[];
-  setDialogueHistory: React.Dispatch<React.SetStateAction<DialogueTurn[]>>;
   errorAlert: string | null;
-  setErrorAlert: (error: string | null) => void;
   isThinking: boolean;
 
   // Discrete UI Actions
@@ -96,7 +91,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
 
   // Pure derived state from the canonical source of truth (interactionState)
   const isEngaged = interactionState !== "Idle";
-  const isSleeping = interactionState === "Paused";
+  const isSleeping = interactionState === "Sleeping";
   const isPaused = interactionState === "Paused";
   const isThinking = interactionState === "Thinking";
   const pttStatus: "IDLE" | "RECORDING" | "PROCESSING" =
@@ -264,7 +259,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     setAssistantText("");
     try {
       await testClip(clipId);
-      setInteractionState("Ready");
     } catch (err) {
       console.error("[VoiceSession] Test clip failed:", err);
       setTestingClip(null);
@@ -315,6 +309,8 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   useEffect(() => {
     let isMounted = true;
     const unlisteners: (() => void)[] = [];
+    let partialThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+    let tokenThrottleTimer: ReturnType<typeof setTimeout> | null = null;
 
     const setup = async () => {
       try {
@@ -355,9 +351,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
         } catch (e) {
           console.warn("[VoiceSession] Failed to sync initial state:", e);
         }
-
-        let partialThrottleTimer: ReturnType<typeof setTimeout> | null = null;
-        let tokenThrottleTimer: ReturnType<typeof setTimeout> | null = null;
 
         unlisteners.push(
           onStateChanged((payload: StateChangedPayload) => {
@@ -461,6 +454,14 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     setup();
     return () => {
       isMounted = false;
+      if (partialThrottleTimer) {
+        clearTimeout(partialThrottleTimer);
+        partialThrottleTimer = null;
+      }
+      if (tokenThrottleTimer) {
+        clearTimeout(tokenThrottleTimer);
+        tokenThrottleTimer = null;
+      }
       unlisteners.forEach((fn) => fn());
     };
   }, [archiveCurrentTurn]);
@@ -468,11 +469,8 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const value: VoiceSessionContextValue = useMemo(
     () => ({
       interactionState,
-      setInteractionState,
       interactionMode,
-      setInteractionMode,
       pipelineMode,
-      setPipelineMode,
       isEngaged,
       isSleeping,
       isPaused,
@@ -486,9 +484,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       setTestMode,
       testingClip,
       dialogueHistory,
-      setDialogueHistory,
       errorAlert,
-      setErrorAlert,
       isThinking,
       engage,
       disengage,

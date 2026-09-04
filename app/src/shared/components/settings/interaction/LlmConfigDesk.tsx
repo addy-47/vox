@@ -33,14 +33,12 @@ export const LlmConfigDesk = memo(({
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
   const [checkingHealth, setCheckingHealth] = useState(false);
 
-  if (!draftSettings || !settings) return null;
-
-  const activeLlmProvider = draftSettings.llm.active || "embedded";
+  const activeLlmProvider = draftSettings?.llm?.active || "embedded";
   const currentRemoteConfig =
     activeLlmProvider === "server"
-      ? draftSettings.llm.server
+      ? draftSettings?.llm?.server
       : activeLlmProvider === "cloud"
-      ? draftSettings.llm.cloud
+      ? draftSettings?.llm?.cloud
       : null;
 
   const currentProvider: LlmProviderConfig = useMemo(() => {
@@ -74,39 +72,39 @@ export const LlmConfigDesk = memo(({
 
   const url =
     activeLlmProvider === "server"
-      ? draftSettings.llm.server?.base_url ?? ""
+      ? draftSettings?.llm?.server?.base_url ?? ""
       : activeLlmProvider === "cloud"
-      ? draftSettings.llm.cloud?.base_url ?? ""
+      ? draftSettings?.llm?.cloud?.base_url ?? ""
       : "";
 
   const apiKey =
     activeLlmProvider === "server"
-      ? draftSettings.llm.server?.api_key ?? ""
+      ? draftSettings?.llm?.server?.api_key ?? ""
       : activeLlmProvider === "cloud"
-      ? draftSettings.llm.cloud?.api_key ?? ""
+      ? draftSettings?.llm?.cloud?.api_key ?? ""
       : "";
 
-  const remoteTtsEndpoint = draftSettings.tts.chatterbox_remote?.endpoint ?? "";
-  const remoteTtsPath = draftSettings.tts.chatterbox_remote?.remote_path ?? "";
+  const remoteTtsEndpoint = draftSettings?.tts?.chatterbox_remote?.endpoint ?? "";
+  const remoteTtsPath = draftSettings?.tts?.chatterbox_remote?.remote_path ?? "";
 
   const handleRemoteTtsEndpointChange = useCallback(
     (val: string) => {
       updateDraft("tts", "chatterbox_remote", {
-        ...draftSettings.tts.chatterbox_remote,
+        ...draftSettings?.tts?.chatterbox_remote,
         endpoint: val || "http://127.0.0.1:7860",
       });
     },
-    [draftSettings.tts.chatterbox_remote, updateDraft]
+    [draftSettings?.tts?.chatterbox_remote, updateDraft]
   );
 
   const handleRemoteTtsPathChange = useCallback(
     (val: string) => {
       updateDraft("tts", "chatterbox_remote", {
-        ...draftSettings.tts.chatterbox_remote,
+        ...draftSettings?.tts?.chatterbox_remote,
         remote_path: val || "~/.vox",
       });
     },
-    [draftSettings.tts.chatterbox_remote, updateDraft]
+    [draftSettings?.tts?.chatterbox_remote, updateDraft]
   );
 
   const providerBaseUrl = currentProvider.base_url;
@@ -174,34 +172,34 @@ export const LlmConfigDesk = memo(({
     (val: string) => {
       if (activeLlmProvider === "server") {
         updateDraft("llm", "server", {
-          ...draftSettings.llm.server,
+          ...draftSettings?.llm?.server,
           base_url: val || "http://127.0.0.1:11434",
         });
       } else if (activeLlmProvider === "cloud") {
         updateDraft("llm", "cloud", {
-          ...draftSettings.llm.cloud,
+          ...draftSettings?.llm?.cloud,
           base_url: val || CLOUD_PROVIDERS[0].url,
         });
       }
     },
-    [activeLlmProvider, draftSettings.llm.server, draftSettings.llm.cloud, updateDraft]
+    [activeLlmProvider, draftSettings?.llm?.server, draftSettings?.llm?.cloud, updateDraft]
   );
 
   const handleApiKeyChange = useCallback(
     (key: string) => {
       if (activeLlmProvider === "server") {
         updateDraft("llm", "server", {
-          ...draftSettings.llm.server,
+          ...draftSettings?.llm?.server,
           api_key: key || null,
         });
       } else if (activeLlmProvider === "cloud") {
         updateDraft("llm", "cloud", {
-          ...draftSettings.llm.cloud,
+          ...draftSettings?.llm?.cloud,
           api_key: key || null,
         });
       }
     },
-    [activeLlmProvider, draftSettings.llm.server, draftSettings.llm.cloud, updateDraft]
+    [activeLlmProvider, draftSettings?.llm?.server, draftSettings?.llm?.cloud, updateDraft]
   );
 
   const handleCloudCycle = useCallback(
@@ -213,17 +211,19 @@ export const LlmConfigDesk = memo(({
           : (currentIdx + 1) % CLOUD_PROVIDERS.length;
 
       updateDraft("llm", "cloud", {
-        ...draftSettings.llm.cloud,
+        ...draftSettings?.llm?.cloud,
         base_url: CLOUD_PROVIDERS[nextIdx].url,
         provider_name: CLOUD_PROVIDERS[nextIdx].name,
         api_key:
-          draftSettings.llm.cloud?.provider_name === CLOUD_PROVIDERS[nextIdx].name
-            ? draftSettings.llm.cloud?.api_key
+          draftSettings?.llm?.cloud?.provider_name === CLOUD_PROVIDERS[nextIdx].name
+            ? draftSettings?.llm?.cloud?.api_key
             : null,
       });
     },
-    [currentProvider.base_url, draftSettings.llm.cloud, updateDraft]
+    [currentProvider.base_url, draftSettings?.llm?.cloud, updateDraft]
   );
+
+  if (!draftSettings || !settings) return null;
 
   // ── Standard Level-2 Header ──────────────────────────────────────────────
   // Left: breadcrumb back button + stage/modality title

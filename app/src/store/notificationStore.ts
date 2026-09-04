@@ -50,8 +50,8 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
       set((state) => ({
         notifications: state.notifications.map((n) => ({
           ...n,
+          is_read: true,
           status: "read",
-          read_at_ms: Date.now(),
         })),
       }));
     } catch (e) {
@@ -145,8 +145,8 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
         set((state) => ({
           notifications: state.notifications.map((n) => ({
             ...n,
+            is_read: true,
             status: "read",
-            read_at_ms: Date.now(),
           })),
         }));
       })

@@ -14,11 +14,9 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
-  if (!draftSettings) return null;
-
   const currentProviderId =
-    draftSettings.realtime?.active ||
-    draftSettings.realtime?.provider ||
+    draftSettings?.realtime?.active ||
+    draftSettings?.realtime?.provider ||
     "gemini_live";
 
   const providerIndex = Math.max(
@@ -30,13 +28,13 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
   const activeProvider = REALTIME_PROVIDERS[providerIndex] || REALTIME_PROVIDERS[0];
 
   const activeSubkey = activeProvider.subkey as "gemini_live" | "deepgram_voice_agent";
+  const rt = draftSettings?.realtime;
   const activeConfig =
-    (draftSettings.realtime as any)?.[activeSubkey] ||
-    (draftSettings.realtime as any)?.[activeProvider.id] ||
-    (draftSettings.realtime as any)?.[activeSubkey === "gemini_live" ? "gemini" : "deepgram"] ||
-    {};
+    (activeSubkey === "gemini_live"
+      ? rt?.gemini_live || rt?.gemini
+      : rt?.deepgram_voice_agent || rt?.deepgram) || {};
 
-  const apiKey = activeConfig.api_key || "";
+  const apiKey = (activeConfig as { api_key?: string }).api_key || "";
 
   const handleApiKeyChange = useCallback(
     (key: string) => {
@@ -62,6 +60,8 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
     },
     [providerIndex, updateDraft]
   );
+
+  if (!draftSettings) return null;
 
   return (
     <div className="flex flex-col justify-between w-full mt-0.5 animate-fade-in flex-1">

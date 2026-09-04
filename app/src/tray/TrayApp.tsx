@@ -18,6 +18,7 @@ import {
   onTranscriptFinal,
   onSystemStats,
   onToggleTray,
+  type InteractionState,
 } from "@/services/eventsService";
 
 interface SystemStats {
@@ -59,11 +60,9 @@ export const TrayApp: React.FC = () => {
     state: visibilityState, setIsHovered, show, startFade, cancelFade, hideImmediately 
   } = useVisibility();
 
-  const [interactionState, setInteractionState] = useState<string>("Idle");
+  const [interactionState, setInteractionState] = useState<InteractionState>("Idle");
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState<SystemStats | null>(null);
-
-  const [pttStatus, setPttStatus] = useState<'IDLE' | 'RECORDING' | 'PROCESSING'>('IDLE');
 
   // Sync React state to OS Window and Backend state
   useEffect(() => {
@@ -74,7 +73,6 @@ export const TrayApp: React.FC = () => {
           setWindowClickThrough("tray", true);
           reset();
           setInteractionState("Idle");
-          setPttStatus("IDLE");
           setCopied(false);
           setHistoryIndex(-1);
           setViewingHistory(false);
@@ -93,7 +91,6 @@ export const TrayApp: React.FC = () => {
   const historyLimit = settings?.history?.tray_history_limit || 5;
 
   const stateRef = useRef({
-    pttStatus,
     visibilityState,
     interactionId,
     interactionState,
@@ -115,7 +112,6 @@ export const TrayApp: React.FC = () => {
 
   useEffect(() => {
     stateRef.current = { 
-      pttStatus, 
       visibilityState, 
       interactionId, 
       interactionState, 
@@ -134,7 +130,7 @@ export const TrayApp: React.FC = () => {
         reset
       }
     };
-  }, [pttStatus, visibilityState, interactionId, interactionState, history, historyLimit, 
+  }, [visibilityState, interactionId, interactionState, history, historyLimit, 
       liveTargetText, startNewInteraction, updatePartial, commitFinal, endSpeechSegment, show, startFade, cancelFade, hideImmediately, reset]);
 
   const copyToClipboard = async () => {
@@ -182,10 +178,10 @@ export const TrayApp: React.FC = () => {
 
   const togglePtt = async () => {
     try {
-      if (pttStatus === 'IDLE') {
-        pttStart();
-      } else {
+      if (interactionState === 'Listening') {
         pttStop();
+      } else {
+        pttStart();
       }
     } catch (e) {
       console.error("[TrayApp] Failed to toggle PTT:", e);
@@ -199,25 +195,19 @@ export const TrayApp: React.FC = () => {
     try {
       localUnlisteners.push(
         onStateChanged((payload) => {
-          if (!active) return;
-          if (payload && payload.owner === "Dictation") {
-            const newState = payload.state.toUpperCase();
-            if (newState === "RECORDING") {
-              setPttStatus("RECORDING");
-              stateRef.current.callbacks.reset();
-              setViewingHistory(false);
-              if (stateRef.current.visibilityState === 'HIDDEN') {
-                stateRef.current.callbacks.show();
-              }
-            } else if (newState === "TRANSCRIBING" || newState === "PROCESSING") {
-              setPttStatus("PROCESSING");
-            } else {
-              setPttStatus("IDLE");
+          if (!active || !payload) return;
+          const canonicalState = (payload.state.charAt(0).toUpperCase() + payload.state.slice(1).toLowerCase()) as InteractionState;
+          
+          if (canonicalState === "Listening") {
+            stateRef.current.callbacks.reset();
+            setViewingHistory(false);
+            if (stateRef.current.visibilityState === 'HIDDEN') {
+              stateRef.current.callbacks.show();
             }
-          } else {
-            if (stateRef.current.visibilityState !== 'HIDDEN') {
-              setInteractionState(payload?.state ?? String(payload));
-            }
+          }
+          
+          if (stateRef.current.visibilityState !== 'HIDDEN' || canonicalState === "Listening") {
+            setInteractionState(canonicalState);
           }
         })
       );
@@ -309,10 +299,9 @@ export const TrayApp: React.FC = () => {
           >
             <ErrorBoundary name="TrayAppContent">
               <Header 
-                isListening={interactionState === "Listening" || pttStatus === 'RECORDING'} 
+                isListening={interactionState === "Listening"} 
                 hasContent={!!currentTargetText} 
                 copied={copied} 
-                isPttActive={pttStatus !== 'IDLE'}
                 interactionMode={String(settings.dictation?.interaction_mode || "ptt").toUpperCase()}
                 onCopy={copyToClipboard} 
                 onClose={handleClose}
@@ -323,7 +312,6 @@ export const TrayApp: React.FC = () => {
                 <TranscriptRenderer 
                   displayText={displayText} 
                   interactionState={interactionState}
-                  pttStatus={pttStatus}
                   telemetryRef={telemetryRef}
                 />
               </div>

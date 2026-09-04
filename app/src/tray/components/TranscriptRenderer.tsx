@@ -3,19 +3,17 @@ import { motion } from 'framer-motion';
 import { Activity } from 'lucide-react';
 import { LiveWaveform } from '@/shared/components/common';
 import { cn } from '@/shared/lib/utils';
+import type { InteractionState } from '@/services/eventsService';
 
 interface TranscriptRendererProps {
   displayText: string;
-  interactionState: string;
-  pttStatus?: 'IDLE' | 'RECORDING' | 'PROCESSING';
+  interactionState: InteractionState;
   telemetryRef: React.MutableRefObject<{ energy: number; vad_prob: number }>;
 }
-
 
 export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(({ 
   displayText, 
   interactionState,
-  pttStatus = 'IDLE',
   telemetryRef
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -26,14 +24,18 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
     }
   }, [displayText]);
 
+  const isListening = interactionState === "Listening";
+  const isThinking = interactionState === "Thinking";
+  const showWaveform = (isListening || isThinking) && !displayText;
+
   return (
     <div 
       ref={scrollRef} 
       className="flex-1 overflow-y-auto px-5 py-2 custom-scrollbar relative z-10 mx-3"
     >
       <div className="min-h-full flex flex-col items-center justify-center relative">
-        {/* Waveform Layer (Recording or Processing) */}
-        {(pttStatus !== 'IDLE' || interactionState === "Thinking") && !displayText && (
+        {/* Waveform Layer (Listening or Thinking) */}
+        {showWaveform && (
           <motion.div 
             key="waveform-layer"
             initial={{ opacity: 0, scale: 0.98 }}
@@ -42,8 +44,8 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
             className="w-full flex flex-col items-center gap-6 px-4"
           >
             <LiveWaveform
-              active={pttStatus === 'RECORDING'}
-              processing={pttStatus === 'PROCESSING' || interactionState === "Thinking"}
+              active={isListening}
+              processing={isThinking}
               mode="scrolling"
               telemetryRef={telemetryRef}
               updateRate={50}
@@ -55,11 +57,11 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
               fadeWidth={40}
               className="w-full"
             />
-                <span className={cn(
+            <span className={cn(
               "text-[12px] font-black uppercase tracking-[0.4em] transition-colors duration-500",
-              pttStatus === 'RECORDING' ? "text-[rgb(var(--accent))]/80 animate-pulse" : "text-[rgb(var(--accent))]/80"
+              isListening ? "text-[rgb(var(--accent))]/80 animate-pulse" : "text-[rgb(var(--accent))]/80"
             )}>
-              {pttStatus === 'RECORDING' ? "Recording" : "Processing"}
+              {isListening ? "Listening" : "Processing"}
             </span>
           </motion.div>
         )}
@@ -74,7 +76,7 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
           >
             <div className="text-[18px] leading-snug font-medium tracking-tight text-[rgb(var(--foreground))]/90 drop-shadow-sm whitespace-pre-wrap">
               {displayText}
-              {(interactionState === "Listening" || pttStatus === 'PROCESSING') && (
+              {(isListening || isThinking) && (
                 <motion.span 
                   animate={{ opacity: [0, 1, 0] }}
                   transition={{ repeat: Infinity, duration: 0.8 }}
@@ -85,8 +87,8 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
           </motion.div>
         )}
 
-        {/* Idle Layer */}
-        {!displayText && pttStatus === 'IDLE' && interactionState !== "Thinking" && (
+        {/* Standby Layer */}
+        {!displayText && !showWaveform && (
           <motion.div 
             key="idle-layer"
             initial={{ opacity: 0 }}
@@ -104,3 +106,4 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
   );
 });
 
+TranscriptRenderer.displayName = "TranscriptRenderer";
