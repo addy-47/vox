@@ -78,6 +78,8 @@ pub fn benchmark_streaming_provider(
     let vad_config = VadActorConfig {
         initial_threshold: 0.3,
         initial_noise_gate: 0.001,
+        initial_silence_duration_ms: 800,
+        initial_speech_onset_ms: 32,
         initial_mode: InteractionMode::Passive,
         initial_audio_mode: AudioOutputMode::Headset,
     };
@@ -99,6 +101,7 @@ pub fn benchmark_streaming_provider(
         audio_suppressed: Arc::new(AtomicBool::new(false)),
         engine_shutdown: engine_shutdown.clone(),
         dropped_counter: Arc::new(AtomicU64::new(0)),
+        ingestion_gate: Arc::new(AtomicBool::new(true)),
     };
 
     let earshot_engine =

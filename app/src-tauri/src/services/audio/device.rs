@@ -24,7 +24,11 @@ unsafe impl Sync for AudioStream {}
 
 impl AudioStream {
     /// Creates and configures a new hardware audio ingestion stream.
-    pub fn new<P>(producer: P, device_name: Option<String>) -> Result<Self>
+    pub fn new<P>(
+        producer: P,
+        device_name: Option<String>,
+        ingestion_gate: Arc<AtomicBool>,
+    ) -> Result<Self>
     where
         P: Producer<Item = f32> + Send + 'static,
     {
@@ -42,7 +46,14 @@ impl AudioStream {
             channels
         );
 
-        let stream = build_input_stream(device, &config, channels, sample_rate, producer)?;
+        let stream = build_input_stream(
+            device,
+            &config,
+            channels,
+            sample_rate,
+            producer,
+            ingestion_gate,
+        )?;
         Ok(Self {
             _stream: Some(stream),
         })
@@ -115,6 +126,7 @@ fn build_input_stream<P>(
     channels: usize,
     sample_rate: u32,
     mut producer: P,
+    ingestion_gate: Arc<AtomicBool>,
 ) -> Result<cpal::Stream>
 where
     P: Producer<Item = f32> + Send + 'static,
@@ -127,6 +139,10 @@ where
     let stream = device.build_input_stream(
         config,
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
+            if !ingestion_gate.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+
             mono_buffer.clear();
             resampled_buffer.clear();
 

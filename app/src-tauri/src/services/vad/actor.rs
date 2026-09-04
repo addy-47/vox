@@ -264,6 +264,7 @@ pub struct VadActorHandles {
     pub audio_suppressed: Arc<AtomicBool>,
     pub engine_shutdown: Arc<AtomicBool>,
     pub dropped_counter: Arc<AtomicU64>,
+    pub ingestion_gate: Arc<AtomicBool>,
 }
 
 /// Communication channels utilized by the VAD actor.
@@ -481,6 +482,27 @@ where
 
             if process_vad_commands(&channels.vad_rx, &mut vad, &mut state) {
                 return Ok(());
+            }
+
+            if !handles.ingestion_gate.load(Ordering::Relaxed) {
+                if !state.pre_roll_buffer.is_empty()
+                    || !state.utterance_buffer.is_empty()
+                    || !state.window_buffer.is_empty()
+                    || state.in_speech
+                    || state.window_active
+                {
+                    state.pre_roll_buffer.clear();
+                    state.utterance_buffer.clear();
+                    state.window_buffer.clear();
+                    state.in_speech = false;
+                    state.window_active = false;
+                    log::debug!("[VAD Actor] Ingestion gate closed — purged in-flight audio buffers");
+                }
+                if consumer.occupied_len() >= VAD_CHUNK_SIZE {
+                    consumer.pop_slice(&mut chunk);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(VAD_ACTOR_IDLE_SLEEP_MS));
+                continue;
             }
 
             if consumer.occupied_len() >= VAD_CHUNK_SIZE {

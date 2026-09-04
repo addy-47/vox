@@ -72,28 +72,11 @@ async fn cancel_active_dictation_turn(state: &AppState) {
         .into();
 
     if owner == crate::core::state::InteractionOwner::Dictation {
-        state
-            .pipeline
-            .cancel_flag
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        if let Some(engine) = state.engine.lock().await.as_ref() {
-            let turn_id = state
-                .pipeline
-                .turn_id
-                .load(std::sync::atomic::Ordering::Relaxed);
-            if let Err(e) = engine
-                .pipeline_tx
-                .send(crate::core::events::VoxEvent::Cancelled { turn_id })
-            {
-                log::warn!("[Tray] Failed to send VoxEvent::Cancelled: {}", e);
+        let event_tx_opt = state.event_tx.lock().clone();
+        if let Some(tx) = event_tx_opt {
+            if let Err(e) = tx.send(crate::core::events::VoxEvent::PttCancel) {
+                log::warn!("[Tray] Failed to send VoxEvent::PttCancel: {}", e);
             }
-            if let Err(e) = engine
-                .stt_tx
-                .send(crate::services::stt::SttCommand::ResetStream)
-            {
-                log::warn!("[Tray] Failed to send SttCommand::ResetStream: {}", e);
-            }
-            engine.playback_engine.cancel();
         }
     }
 }

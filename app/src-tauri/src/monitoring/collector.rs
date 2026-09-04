@@ -52,6 +52,7 @@ fn map_pipeline_state_string(state_u32: u32) -> String {
         crate::core::state::InteractionState::Speaking => "Speaking".into(),
         crate::core::state::InteractionState::Paused => "Paused".into(),
         crate::core::state::InteractionState::Error => "Error".into(),
+        crate::core::state::InteractionState::Sleeping => "Sleeping".into(),
     }
 }
 

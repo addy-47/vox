@@ -37,6 +37,11 @@ impl PreRollBuffer {
         self.buffer.clear();
     }
 
+    /// Returns true if the pre-roll buffer contains zero samples.
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
+    }
+
     /// Copies stored samples into the target buffer in chronological order without linear shifting.
     pub fn copy_into(&self, target: &mut Vec<f32>) {
         let (front, back) = self.buffer.as_slices();

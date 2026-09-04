@@ -156,16 +156,9 @@ fn handle_partial_command(
     state.last_emit_time = Instant::now();
 }
 
-/// Emits the final or cancelled turn event to the pipeline event channel.
+/// Emits the final turn event to the pipeline event channel.
 fn emit_final_events(ctx: &WorkerContext<'_>, tid: u32, transcript: String) {
-    if transcript.trim().is_empty() {
-        log::info!("[STT] Discarding empty final transcript.");
-        if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
-            if let Err(e) = pipeline_tx.send(VoxEvent::Cancelled { turn_id: tid }) {
-                log::warn!("[STT] Error sending cancelled event: {:?}", e);
-            }
-        }
-    } else if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
+    if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
         if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptFinal {
             turn_id: tid,
             text: transcript,

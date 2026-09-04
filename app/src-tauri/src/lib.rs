@@ -276,7 +276,7 @@ pub fn run() {
                         p.into_inner()
                     });
                 if s.dictation.enabled {
-                    if let Err(e) = crate::pipeline::dictation::init_dictation_hotkey_listener(
+                    if let Err(e) = crate::services::dictation::init_dictation_hotkey_listener(
                         app.handle(),
                         &s.dictation.hotkey,
                     ) {
