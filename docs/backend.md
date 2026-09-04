@@ -12,7 +12,7 @@ related_docs:
 
 # Vox — Backend Architecture
 
-> **A realtime, event-driven native audio processing system** built in Rust with C++ inference backends (ONNX Runtime, llama.cpp). Runs entirely on-device with sub-200ms perceived pipeline latency on 8GB RAM systems. Handler event-driven: a central non-blocking router (`vox-router`, `pipeline/router.rs`) dispatches each `VoxEvent` to a flat set of handler functions (`pipeline/handlers/*` + `pipeline/dictation.rs`) instead of a domain-partitioned or monolithic loop (see `docs/features/voice-flow.md`).
+> **A realtime, event-driven native audio processing system** built in Rust with C++ inference backends (ONNX Runtime, llama.cpp). Runs entirely on-device with sub-200ms perceived pipeline latency on 8GB RAM systems. Handler event-driven: a central non-blocking router (`vox-router`, `pipeline/router.rs`) dispatches each `VoxEvent` to a flat set of handler functions (`pipeline/assistant/*` + `pipeline/dictation.rs`) instead of a domain-partitioned or monolithic loop (see `docs/features/voice-flow.md`).
 
 ---
 
@@ -22,7 +22,7 @@ related_docs:
 - **Scope:** the Rust 4-layer architecture, provider/trait system, threading model, lifecycle, and the Tauri IPC event contract.
 - **Convention:** claims use `path/file.rs` pointers; schemas are linked, not pasted.
 - **Non-goals:** not the frontend (→ `docs/frontend.md`), not model specs (→ `docs/models.md`). The IPC event list in §8 is the contract the frontend consumes.
-- **SSOT:** event payloads (§8), settings reload policies (§10), and hardware tiers (§2) are authoritative here. Orchestration topology is SSOT in `core/events.rs` (IPC contract), `pipeline/router.rs` (routing), and `pipeline/handlers/` (assistant handlers); `docs/features/voice-flow.md` is the handler-level companion reference.
+- **SSOT:** event payloads (§8), settings reload policies (§10), and hardware tiers (§2) are authoritative here. Orchestration topology is SSOT in `core/events.rs` (IPC contract), `pipeline/router.rs` (routing), and `pipeline/assistant/` (assistant handlers); `docs/features/voice-flow.md` is the handler-level companion reference.
 
 ## 1. Architecture Stack
 

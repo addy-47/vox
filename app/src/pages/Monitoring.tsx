@@ -8,6 +8,7 @@ import React, {
 import { AnimatePresence, motion } from "framer-motion";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { useOverlay } from "@/shared/hooks/useOverlay";
+import { HelpTriggerButton } from "@/shared/components/help/HelpTriggerButton";
 import {
   RefreshCw,
   X,
@@ -216,6 +217,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          <HelpTriggerButton deepLink="page:monitoring" size="sm" />
           {/* Memory Profiler Quick Launch Button (Disabled by default, can be toggled on for diagnostic sessions) */}
           {false && (
             <Tooltip label="Open UI Memory Attribution & RCA Profiler">
