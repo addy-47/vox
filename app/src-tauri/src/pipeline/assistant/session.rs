@@ -257,37 +257,33 @@ pub fn on_pause<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &R
         }
     }
 
-    let dictation_enabled = state
+    // Unconditionally yield owner to Dictation without reading settings for ownership.
+    // dictation_state (Ready vs Idle) governs whether dictation actually reacts.
+    state
+        .owner
+        .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
+
+    // Sync VAD operational mode to Dictation's configured interaction mode (Passive vs PTT)
+    let dictation_mode = state
         .settings
         .read()
-        .map(|s| s.dictation.enabled)
-        .unwrap_or(false);
-
-    if dictation_enabled {
-        state
-            .owner
-            .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
-        let dictation_mode = state
-            .settings
-            .read()
-            .map(|s| s.dictation.interaction_mode.clone())
-            .unwrap_or(crate::core::settings::DictationInteractionMode::Ptt);
-        let vad_mode = match dictation_mode {
-            crate::core::settings::DictationInteractionMode::Passive => {
-                VadOperationalMode::ContinuousSegmentation
-            }
-            crate::core::settings::DictationInteractionMode::Ptt => {
-                VadOperationalMode::WindowedValidation
-            }
-        };
-        if let Ok(guard) = state.engine.try_lock() {
-            if let Some(ref engine) = *guard {
-                if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {
-                    log::warn!(
-                        "[Pipeline::Session] Failed to set VAD mode for dictation on pause: {}",
-                        e
-                    );
-                }
+        .map(|s| s.dictation.interaction_mode.clone())
+        .unwrap_or(crate::core::settings::DictationInteractionMode::Ptt);
+    let vad_op_mode = match dictation_mode {
+        crate::core::settings::DictationInteractionMode::Passive => {
+            VadOperationalMode::ContinuousSegmentation
+        }
+        crate::core::settings::DictationInteractionMode::Ptt => {
+            VadOperationalMode::WindowedValidation
+        }
+    };
+    if let Ok(guard) = state.engine.try_lock() {
+        if let Some(ref engine) = *guard {
+            if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_op_mode)) {
+                log::warn!(
+                    "[Pipeline::Session] Failed to set VAD operational mode for dictation on pause: {}",
+                    e
+                );
             }
         }
     }
@@ -296,12 +292,15 @@ pub fn on_pause<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &R
     log::info!("[Pipeline::Session] Session paused");
 }
 
-/// Resumes a paused or error-state voice session, re-arming VAD and provider pipelines.
+/// Resumes a paused, sleeping, or error-state voice session, re-arming VAD and provider pipelines.
 pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {
     let current_state = state.pipeline.state();
-    if current_state != InteractionState::Paused && current_state != InteractionState::Error {
+    if current_state != InteractionState::Paused
+        && current_state != InteractionState::Sleeping
+        && current_state != InteractionState::Error
+    {
         log::warn!(
-            "[Pipeline::Session] Cannot resume session: current state is {:?}, expected Paused or Error",
+            "[Pipeline::Session] Cannot resume session: current state is {:?}, expected Paused, Sleeping, or Error",
             current_state
         );
         return;
@@ -319,14 +318,10 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &
                 InteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
                 InteractionMode::PTT => VadOperationalMode::WindowedValidation,
             };
-
             if let Ok(guard) = state.engine.try_lock() {
                 if let Some(ref engine) = *guard {
                     if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {
-                        log::warn!(
-                            "[Pipeline::Session] Failed to set VAD mode on resume: {}",
-                            e
-                        );
+                        log::warn!("[Pipeline::Session] Failed to set VAD mode on resume: {}", e);
                     }
                 }
             }
@@ -426,22 +421,23 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
         }
     }
 
-    let dictation_enabled = state
-        .settings
-        .read()
-        .map(|s| s.dictation.enabled)
-        .unwrap_or(false);
+    // Unconditionally yield owner to Dictation.
+    state
+        .owner
+        .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
 
-    if dictation_enabled {
-        state
-            .owner
-            .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
+    // Stop CPAL engine only if dictation is also disabled, otherwise switch VAD to dictation mode.
+    if state.pipeline.dictation_state() == InteractionState::Idle {
+        if let Err(e) = crate::core::stop_audio_engine_sync(state) {
+            log::warn!("[Pipeline::Session] Error stopping audio engine: {}", e);
+        }
+    } else {
         let dictation_mode = state
             .settings
             .read()
             .map(|s| s.dictation.interaction_mode.clone())
             .unwrap_or(crate::core::settings::DictationInteractionMode::Ptt);
-        let vad_mode = match dictation_mode {
+        let vad_op_mode = match dictation_mode {
             crate::core::settings::DictationInteractionMode::Passive => {
                 VadOperationalMode::ContinuousSegmentation
             }
@@ -451,17 +447,13 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
         };
         if let Ok(guard) = state.engine.try_lock() {
             if let Some(ref engine) = *guard {
-                if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {
+                if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_op_mode)) {
                     log::warn!(
-                        "[Pipeline::Session] Failed to set VAD mode for dictation: {}",
+                        "[Pipeline::Session] Failed to set VAD operational mode for dictation on session end: {}",
                         e
                     );
                 }
             }
-        }
-    } else {
-        if let Err(e) = crate::core::stop_audio_engine_sync(state) {
-            log::warn!("[Pipeline::Session] Error stopping audio engine: {}", e);
         }
     }
 

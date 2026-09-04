@@ -265,7 +265,7 @@ fn main() {
             let supertonic_path_str = supertonic_dir.to_string_lossy().to_string();
             let voice = base_voice;
             let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(
-                vox_lib::services::tts::TtsEngine::new(&supertonic_dir, voice, 16, 1.0)
+                vox_lib::services::tts::TtsEngine::new(&supertonic_dir, voice, 16, 1.0, 2)
                     .expect("Failed to init Supertonic"),
             );
             let run = benchmark_tts_provider(
@@ -292,7 +292,7 @@ fn main() {
             let kd_str = kokoro_dir.to_string_lossy().to_string();
             let voice = base_voice;
             let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(
-                vox_lib::services::tts::KokoroEngine::new(&kokoro_dir, voice, 1.0)
+                vox_lib::services::tts::KokoroEngine::new(&kokoro_dir, voice, 1.0, 2)
                     .expect("Failed to init Kokoro"),
             );
             let run = benchmark_tts_provider(

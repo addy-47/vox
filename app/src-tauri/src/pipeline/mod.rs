@@ -79,6 +79,7 @@ pub fn transition<R: tauri::Runtime>(
         InteractionState::Speaking => "Speaking",
         InteractionState::Paused => "Paused",
         InteractionState::Error => "Error",
+        InteractionState::Sleeping => "Sleeping",
     };
     let payload = crate::core::events::StateChangedPayload {
         owner: ctx.owner,
@@ -118,7 +119,7 @@ pub fn init_new_session_sync(state: &AppState, base_prompt: &str) {
 /// Spawns an idle observer for the assistant pipeline that auto-pauses after 7 minutes of Ready
 /// and reclaims model RAM after 5 minutes of sustained Paused state.
 pub fn spawn_idle_monitor<R: tauri::Runtime>(
-    _app: tauri::AppHandle<R>,
+    app: tauri::AppHandle<R>,
     state: std::sync::Arc<AppState>,
 ) {
     tauri::async_runtime::spawn(async move {
@@ -166,6 +167,22 @@ pub fn spawn_idle_monitor<R: tauri::Runtime>(
                             }
                             drop(lock);
                             crate::services::memory::trim_heap("secondary_paused_offload");
+
+                            state.pipeline.set_state(crate::core::state::InteractionState::Sleeping);
+                            let turn_id = state.pipeline.peek_turn_id();
+                            let payload = crate::core::events::StateChangedPayload {
+                                owner: crate::core::state::InteractionOwner::Assistant,
+                                state: "Sleeping".to_string(),
+                                turn_id,
+                            };
+                            if let Err(e) = crate::core::events::emit_ipc_to(
+                                &app,
+                                WINDOW_MAIN,
+                                crate::core::events::IpcEvent::StateChanged(payload),
+                            ) {
+                                log::warn!("[Pipeline] Failed to emit Sleeping state_changed: {}", e);
+                            }
+                            log::info!("[Pipeline] Transitioned to Sleeping after model offload");
                         }
                     }
                     res = state_rx.changed() => {

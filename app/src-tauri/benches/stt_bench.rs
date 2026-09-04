@@ -235,7 +235,7 @@ fn main() {
     if run_nemotron {
         if nemotron_dir.exists() {
             let provider = Box::new(
-                EmbeddedSttProvider::new(&nemotron_dir, "nvidia_nemotron")
+                EmbeddedSttProvider::new(&nemotron_dir, "nvidia_nemotron", 4)
                     .expect("Failed to initialize Nemotron EmbeddedSttProvider"),
             ) as Box<dyn SttProvider>;
 
@@ -259,7 +259,7 @@ fn main() {
     if run_qwen {
         if qwen_dir.exists() {
             let provider = Box::new(
-                EmbeddedSttProvider::new(&qwen_dir, "qwen3_asr")
+                EmbeddedSttProvider::new(&qwen_dir, "qwen3_asr", 4)
                     .expect("Failed to initialize Qwen3-ASR EmbeddedSttProvider"),
             ) as Box<dyn SttProvider>;
 

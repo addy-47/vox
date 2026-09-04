@@ -213,6 +213,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         audio_suppressed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
         dropped_counter: Arc::clone(&state.telemetry.dropped_telemetry_events),
+        ingestion_gate: Arc::clone(&state.pipeline.ingestion_gate),
     };
 
     let vad_channels = VadActorChannels {
@@ -277,7 +278,12 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         .audio
         .input_device
         .clone();
-    let audio_stream = AudioStream::new(producer, input_device).map_err(|e| e.to_string())?;
+    let audio_stream = AudioStream::new(
+        producer,
+        input_device,
+        Arc::clone(&state.pipeline.ingestion_gate),
+    )
+    .map_err(|e| e.to_string())?;
     audio_stream.start().map_err(|e| e.to_string())?;
 
     let playback_engine = create_playback_engine(state, vox_event_tx.clone())?;
