@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 
 export interface NotificationRecord {
   id: string;
@@ -32,41 +32,44 @@ export function dismissNotification(id: string): Promise<void> {
 
 /** Triggers background compaction for a session */
 export function triggerSessionCompaction(sessionId: number): Promise<void> {
-  return invoke("trigger_session_compaction", { sessionId });
+  return invoke("trigger_session_compaction", { session_id: sessionId });
 }
+
+import {
+  onNotificationCreated,
+  onNotificationUpdated,
+  onNotificationDismissed,
+  onNotificationsMarkedRead,
+} from "./eventsService";
 
 /** Subscribes to notification creation events */
 export function listenNotificationCreated(
   cb: (notif: NotificationRecord) => void
 ): Promise<UnlistenFn> {
-  return listen<NotificationRecord>("notification_created", (event) => {
-    cb(event.payload);
-  });
+  const unlisten = onNotificationCreated(cb);
+  return Promise.resolve(unlisten);
 }
 
 /** Subscribes to notification updated events */
 export function listenNotificationUpdated(
   cb: (notif: NotificationRecord) => void
 ): Promise<UnlistenFn> {
-  return listen<NotificationRecord>("notification_updated", (event) => {
-    cb(event.payload);
-  });
+  const unlisten = onNotificationUpdated(cb);
+  return Promise.resolve(unlisten);
 }
 
 /** Subscribes to notification dismissed events */
 export function listenNotificationDismissed(
   cb: (payload: { id: string }) => void
 ): Promise<UnlistenFn> {
-  return listen<{ id: string }>("notification_dismissed", (event) => {
-    cb(event.payload);
-  });
+  const unlisten = onNotificationDismissed(cb);
+  return Promise.resolve(unlisten);
 }
 
 /** Subscribes to mark all notifications read events */
 export function listenNotificationsMarkedRead(
   cb: () => void
 ): Promise<UnlistenFn> {
-  return listen("notifications_marked_read", () => {
-    cb();
-  });
+  const unlisten = onNotificationsMarkedRead(cb);
+  return Promise.resolve(unlisten);
 }

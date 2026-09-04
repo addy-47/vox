@@ -154,7 +154,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     setAssistantText("");
     try {
       await startSession();
-      setInteractionState("Ready");
+      // State transition to Ready is exclusively handled by onStateChanged IPC event
     } catch (err: any) {
       console.error("[VoiceSession] Start session failed:", err);
       setErrorAlert(err?.message || "Voice engagement failed");
@@ -170,6 +170,9 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     activeAiTextRef.current = "";
     setTranscript("");
     setAssistantText("");
+    // Transcripts tray clear on End per approved specification
+    setDialogueHistory([]);
+    turnIdCounter.current = 0;
 
     const wasTesting = !!testingClip;
     setTestingClip(null);
@@ -180,7 +183,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       } else {
         await endSession();
       }
-      setInteractionState("Idle");
+      // State transition to Idle is exclusively handled by onStateChanged IPC event
     } catch (err: any) {
       console.error("[VoiceSession] End session failed:", err);
       setErrorAlert(err?.message || "Ending session failed");
@@ -191,27 +194,24 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
 
   const pause = useCallback(async () => {
     if (interactionState === "Idle" || interactionState === "Paused" || interactionState === "Error") return;
-    setInteractionState("Paused");
     try {
       await pauseSession();
+      // State transition to Paused is exclusively handled by onStateChanged IPC event
     } catch (err: any) {
       console.error("[VoiceSession] Pause failed:", err);
       setErrorAlert(err?.message || "Pausing voice pipeline failed");
-      setInteractionState("Ready");
     }
   }, [interactionState]);
 
   const resume = useCallback(async () => {
     if (interactionState !== "Paused" && interactionState !== "Error") return;
-    const previousState = interactionState;
-    setInteractionState("Ready");
     try {
       await resumeSession();
       setErrorAlert(null);
+      // State transition to Ready is exclusively handled by onStateChanged IPC event
     } catch (err: any) {
       console.error("[VoiceSession] Resume failed:", err);
       setErrorAlert(err?.message || "Resuming voice pipeline failed");
-      setInteractionState(previousState);
     }
   }, [interactionState]);
 
@@ -420,7 +420,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
         unlisteners.push(
           onLlmToken((payload: LlmTokenPayload) => {
             if (!isMounted) return;
-            activeAiTextRef.current = payload.token;
+            activeAiTextRef.current += payload.token;
             if (!tokenThrottleTimer) {
               tokenThrottleTimer = setTimeout(() => {
                 if (isMounted) setAssistantText(activeAiTextRef.current);

@@ -53,7 +53,7 @@ const DEFAULT_CAPS: ProviderCaps = { voices: "catalog", speed: true, quality_ste
 /** Settings capabilities for a TTS provider id (ipc/settings/catalog.rs). */
 export async function getProviderCaps(providerId: string): Promise<ProviderCaps> {
   try {
-    return await invoke<ProviderCaps>("get_provider_caps", { providerId });
+    return await invoke<ProviderCaps>("get_provider_caps", { provider_id: providerId });
   } catch {
     return FALLBACK_CAPS[providerId] || DEFAULT_CAPS;
   }
@@ -64,41 +64,35 @@ export async function getProviderCaps(providerId: string): Promise<ProviderCaps>
  * (e.g. "ui"/"theme", snake_case keys). Returns the reload policy.
  * (ipc/settings.rs:98)
  */
-export function updateSetting(domain: string, key: string, value: unknown): Promise<SettingUpdateResult> {
-  return invoke("update_setting", { domain, key, value });
+export function updateSetting(
+  domain: string,
+  key: string,
+  value: unknown
+): Promise<SettingUpdateResult> {
+  return invoke<SettingUpdateResult>("update_setting", { domain, key, value });
 }
 
-/** Reset settings to defaults, returns the new settings (ipc/settings.rs:301). */
+/** Reset all settings to factory defaults. (ipc/settings/mutation.rs:267) */
 export function resetSettings(): Promise<VoxSettings> {
-  return invoke("reset_settings");
+  return invoke<VoxSettings>("reset_settings");
 }
 
-/** Unified provider health check across LLM, STT, and TTS. */
-export function checkProviderHealth(
-  kind: "llm" | "stt" | "tts",
-  provider?: LlmProviderConfig | SttProviderConfig | TtsProviderConfig
-): Promise<boolean> {
-  return invoke("check_provider_health", { kind, provider });
+/** Check health/connectivity for a specific provider. */
+export async function checkLlmProviderHealth(provider?: LlmProviderConfig): Promise<boolean> {
+  return invoke<boolean>("check_provider_health", { kind: "llm", provider });
 }
 
-/** Health-check the LLM provider; falls back to saved config when omitted. */
-export function checkLlmProviderHealth(provider?: LlmProviderConfig): Promise<boolean> {
-  return checkProviderHealth("llm", provider);
+export async function checkSttProviderHealth(provider?: SttProviderConfig): Promise<boolean> {
+  return invoke<boolean>("check_provider_health", { kind: "stt", provider });
 }
 
-/** Health-check the STT provider; falls back to saved config when omitted. */
-export function checkSttProviderHealth(provider?: SttProviderConfig): Promise<boolean> {
-  return checkProviderHealth("stt", provider);
+export async function checkTtsProviderHealth(provider?: TtsProviderConfig): Promise<boolean> {
+  return invoke<boolean>("check_provider_health", { kind: "tts", provider });
 }
 
-/** Health-check the TTS provider; falls back to saved config when omitted. */
-export function checkTtsProviderHealth(provider?: TtsProviderConfig): Promise<boolean> {
-  return checkProviderHealth("tts", provider);
-}
-
-/** List models for a provider; falls back to saved config when omitted (ipc/settings.rs:801). */
-export function listLlmModels(provider?: LlmProviderConfig): Promise<LlmModelInfo[]> {
-  return invoke("list_llm_models", { provider });
+/** Fetch dynamic list of models available from a remote or local LLM server. */
+export async function listLlmModels(provider?: LlmProviderConfig): Promise<LlmModelInfo[]> {
+  return invoke<LlmModelInfo[]>("list_llm_models", { provider });
 }
 
 export interface ModelProbeResult {
@@ -115,8 +109,8 @@ export async function probeModelCapabilities(
 ): Promise<ModelCapabilities> {
   const res = await invoke<ModelProbeResult>("probe_model_capabilities", {
     provider,
-    modelId,
-    targetCap,
+    model_id: modelId,
+    target_cap: targetCap,
   });
   return res.capabilities;
 }
@@ -129,8 +123,8 @@ export function probeModelCapabilitiesFull(
 ): Promise<ModelProbeResult> {
   return invoke<ModelProbeResult>("probe_model_capabilities", {
     provider,
-    modelId,
-    targetCap,
+    model_id: modelId,
+    target_cap: targetCap,
   });
 }
 
@@ -142,8 +136,8 @@ export async function validateLlmTokenCap(
 ): Promise<number | null> {
   const res = await invoke<ModelProbeResult>("probe_model_capabilities", {
     provider,
-    modelId,
-    targetCap,
+    model_id: modelId,
+    target_cap: targetCap,
   });
   return res.validated_cap;
 }

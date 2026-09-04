@@ -595,29 +595,6 @@ function UnifiedConfig({
   const voiceField = isGemini ? "voice_name" : "voice";
   const currentVoice = config[voiceField] || VOICE_OPTIONS[0];
 
-  const toggleEnabled = isGemini
-    ? Boolean(config.enable_web_search)
-    : isOpenAi
-    ? Boolean(config.voice_activity_detection)
-    : isDeepgram
-    ? Boolean(config.agent_mode)
-    : Boolean(config.dynamic_vars);
-
-  const toggleLabel = isGemini
-    ? "Google Search"
-    : isOpenAi
-    ? "VAD"
-    : isDeepgram
-    ? "Agent Mode"
-    : "Dynamic Vars";
-  const toggleSub = isGemini
-    ? "Live web grounding"
-    : isOpenAi
-    ? "Activity detection"
-    : isDeepgram
-    ? "AI agent routing"
-    : "Context variables";
-
   return (
     <div
       className={cn(
@@ -653,41 +630,34 @@ function UnifiedConfig({
           disabled={disabled}
         />
 
-        {/* Toggle */}
-        <ToggleRow
-          label={toggleLabel}
-          sub={toggleSub}
-          enabled={toggleEnabled}
-          onChange={() => {
-            if (disabled) return;
-            if (isGemini)
-              updateDraft("realtime", "gemini_live", {
-                ...config,
-                enable_web_search: !config.enable_web_search,
-              });
-            else if (isOpenAi)
-              updateDraft("realtime", "openai_realtime", {
-                ...config,
-                voice_activity_detection: !config.voice_activity_detection,
-              });
-            else if (isDeepgram)
-              updateDraft("realtime", "deepgram_voice_agent", {
-                ...config,
-                agent_mode: !config.agent_mode,
-              });
-            else
-              updateDraft("realtime", "elevenlabs_convai", {
-                ...config,
-                dynamic_vars: !config.dynamic_vars,
-              });
-          }}
-          icon={
-            isGemini ? (
-              <Search size={11} className="text-[rgb(var(--accent))]" />
-            ) : undefined
-          }
-          disabled={disabled}
-        />
+        {/* Toggle (only rendered when provider has supported boolean flags) */}
+        {(isGemini || isDeepgram) && (
+          <ToggleRow
+            label={isGemini ? "Google Search" : "Agent Mode"}
+            sub={isGemini ? "Live web grounding" : "AI agent routing"}
+            enabled={isGemini ? Boolean(config.enable_web_search) : Boolean(config.agent_mode)}
+            onChange={() => {
+              if (disabled) return;
+              if (isGemini) {
+                updateDraft("realtime", "gemini_live", {
+                  ...config,
+                  enable_web_search: !config.enable_web_search,
+                });
+              } else if (isDeepgram) {
+                updateDraft("realtime", "deepgram_voice_agent", {
+                  ...config,
+                  agent_mode: !config.agent_mode,
+                });
+              }
+            }}
+            icon={
+              isGemini ? (
+                <Search size={11} className="text-[rgb(var(--accent))]" />
+              ) : undefined
+            }
+            disabled={disabled}
+          />
+        )}
       </div>
 
       {/* Right column: Voice carousel */}

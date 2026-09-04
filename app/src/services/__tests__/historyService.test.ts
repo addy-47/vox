@@ -63,7 +63,7 @@ describe("historyService", () => {
       ];
       mockInvoke.mockResolvedValueOnce(mockTurns);
       const res = await getTurns(1);
-      expect(mockInvoke).toHaveBeenCalledWith("get_turns", { sessionId: 1 });
+      expect(mockInvoke).toHaveBeenCalledWith("get_turns", { session_id: 1 });
       expect(res).toEqual(mockTurns);
     });
 
