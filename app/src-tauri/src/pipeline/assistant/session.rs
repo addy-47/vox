@@ -311,7 +311,7 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &
         .owner
         .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
-    state.pipeline.renew_turn_token();
+    state.pipeline.rearm_turn_token();
 
     let resume_res = match ctx.pipeline_mode {
         PipelineMode::Modular => {

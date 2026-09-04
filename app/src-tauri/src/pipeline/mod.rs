@@ -1,5 +1,5 @@
+pub mod assistant;
 pub mod dictation;
-pub mod handlers;
 pub mod router;
 pub mod test;
 

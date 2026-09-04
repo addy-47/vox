@@ -121,7 +121,6 @@ pub struct PipelineAtomics {
     pub dictation_state_tx: tokio::sync::watch::Sender<DictationState>,
     pub dictation_state_rx: tokio::sync::watch::Receiver<DictationState>,
     pub turn_token: Arc<parking_lot::Mutex<tokio_util::sync::CancellationToken>>,
-    pub turn_epoch: Arc<std::sync::atomic::AtomicU64>,
     pub engine_shutdown: Arc<AtomicBool>,
 }
 
@@ -157,7 +156,6 @@ impl PipelineAtomics {
             turn_token: Arc::new(parking_lot::Mutex::new(
                 tokio_util::sync::CancellationToken::new(),
             )),
-            turn_epoch: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             engine_shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -211,9 +209,9 @@ impl PipelineAtomics {
         self.turn_token.lock().clone()
     }
 
-    /// Cancels the active turn's token, increments epoch, and returns a fresh cancellation token.
-    pub fn renew_turn_token(&self) -> tokio_util::sync::CancellationToken {
-        self.turn_epoch.fetch_add(1, Ordering::Relaxed);
+    /// Cancels the active turn's token and returns a fresh cancellation token without allocating a new turn ID.
+    /// Use this for session-level re-arming (e.g. on resume or test clip cancellation).
+    pub fn rearm_turn_token(&self) -> tokio_util::sync::CancellationToken {
         let mut guard = self.turn_token.lock();
         guard.cancel();
         let new_token = tokio_util::sync::CancellationToken::new();
@@ -234,7 +232,7 @@ impl PipelineAtomics {
     /// Atomically increments turn_id and rotates the per-turn cancellation token.
     pub fn next_turn(&self) -> (u32, tokio_util::sync::CancellationToken) {
         let id = self.next_turn_id();
-        let tok = self.renew_turn_token();
+        let tok = self.rearm_turn_token();
         (id, tok)
     }
 
@@ -299,7 +297,7 @@ pub struct AppState {
     pub event_tx:
         parking_lot::Mutex<Option<std::sync::mpsc::Sender<crate::core::events::VoxEvent>>>,
     pub pipeline_accumulator:
-        Arc<parking_lot::Mutex<crate::pipeline::handlers::accumulator::TurnAccumulator>>,
+        Arc<parking_lot::Mutex<crate::pipeline::assistant::accumulator::TurnAccumulator>>,
 }
 
 /// Telemetry handles and health atomics bundled for AppState and monitoring workers.
@@ -378,7 +376,7 @@ impl AppState {
             llm_provider: Arc::new(parking_lot::RwLock::new(None)),
             event_tx: parking_lot::Mutex::new(None),
             pipeline_accumulator: Arc::new(parking_lot::Mutex::new(
-                crate::pipeline::handlers::accumulator::TurnAccumulator::new(),
+                crate::pipeline::assistant::accumulator::TurnAccumulator::new(),
             )),
         }
     }

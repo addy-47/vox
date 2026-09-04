@@ -39,7 +39,7 @@ pub enum LlmCommand {
         turn_id: u32,
         cancel: tokio_util::sync::CancellationToken,
         accumulator:
-            Arc<parking_lot::Mutex<crate::pipeline::handlers::accumulator::TurnAccumulator>>,
+            Arc<parking_lot::Mutex<crate::pipeline::assistant::accumulator::TurnAccumulator>>,
         tts_tx: Option<std::sync::mpsc::Sender<crate::services::tts::actor::TtsCommand>>,
         pending_synthesis_jobs: Arc<std::sync::atomic::AtomicU32>,
     },
