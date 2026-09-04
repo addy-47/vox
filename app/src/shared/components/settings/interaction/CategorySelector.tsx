@@ -1,6 +1,7 @@
-import { memo, useCallback } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
+import { cn } from "@/shared/lib/utils";
+import { CATEGORY_SWITCH_COPY } from "@/data/settingsCopy";
 
 interface CategorySelectorProps {
   activeCategory: "STT" | "LLM" | "TTS";
@@ -8,70 +9,54 @@ interface CategorySelectorProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
-const STAGES: Array<{
+const TABS: Array<{
   id: "STT" | "LLM" | "TTS";
-  label: string;
-  sublabel: string;
+  labelKey: keyof typeof CATEGORY_SWITCH_COPY.tabs;
 }> = [
-  { id: "STT", label: "Listening", sublabel: "Speech Recognition" },
-  { id: "LLM", label: "Reasoning", sublabel: "Language Model" },
-  { id: "TTS", label: "Speaking", sublabel: "Voice Synthesis" },
+  { id: "STT", labelKey: "stt" },
+  { id: "LLM", labelKey: "llm" },
+  { id: "TTS", labelKey: "tts" },
 ];
 
 export const CategorySelector = memo(
   ({ activeCategory, onSetCategory }: CategorySelectorProps) => {
     const isCategoryDirty = useSettingsStore((s) => s.isCategoryDirty);
 
-    const currentIndex = STAGES.findIndex((s) => s.id === activeCategory);
-    const currentStage = STAGES[currentIndex >= 0 ? currentIndex : 1];
-    const isDirty = isCategoryDirty(currentStage.id.toLowerCase());
-
-    const handlePrev = useCallback(() => {
-      const prevIdx = (currentIndex - 1 + STAGES.length) % STAGES.length;
-      onSetCategory(STAGES[prevIdx].id);
-    }, [currentIndex, onSetCategory]);
-
-    const handleNext = useCallback(() => {
-      const nextIdx = (currentIndex + 1) % STAGES.length;
-      onSetCategory(STAGES[nextIdx].id);
-    }, [currentIndex, onSetCategory]);
-
     return (
-      <div className="w-full flex items-center justify-between py-1 px-0.5 select-none mb-2.5 shrink-0">
-        <button
-          type="button"
-          onClick={handlePrev}
-          className="p-1 rounded-lg text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors active:scale-90 cursor-pointer flex items-center justify-center shrink-0"
-          title="Previous stage"
-          aria-label="Previous stage"
-        >
-          <ChevronLeft size={16} />
-        </button>
+      <div className="w-full flex items-center justify-between pt-0.5 pb-1 shrink-0 border-b border-[rgba(var(--accent),0.08)] mb-2 px-0.5 select-none overflow-x-auto no-scrollbar">
+        {TABS.map((tab, idx, arr) => {
+          const isActive = activeCategory === tab.id;
+          const isDirty = isCategoryDirty(tab.id.toLowerCase());
+          const label = CATEGORY_SWITCH_COPY.tabs[tab.labelKey];
 
-        <div className="flex items-center justify-center gap-1.5 sm:gap-2 min-w-0 px-2 flex-1 animate-fade-in leading-none">
-          <span className="font-display font-black text-[12px] sm:text-[12.5px] uppercase tracking-[0.15em] text-[rgb(var(--foreground))] leading-none">
-            {currentStage.label}
-          </span>
-          <span className="text-[10.5px] sm:text-[11px] font-medium text-[rgb(var(--foreground-muted))]/65 leading-none truncate -translate-y-[0.5px]">
-            ({currentStage.sublabel})
-          </span>
-          {isDirty && (
-            <span
-              title="Unsaved changes in this stage"
-              className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)] shrink-0 ml-0.5"
-            />
-          )}
-        </div>
-
-        <button
-          type="button"
-          onClick={handleNext}
-          className="p-1 rounded-lg text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors active:scale-90 cursor-pointer flex items-center justify-center shrink-0"
-          title="Next stage"
-          aria-label="Next stage"
-        >
-          <ChevronRight size={16} />
-        </button>
+          return (
+            <div key={tab.id} className="flex-1 min-w-0 flex items-center justify-center">
+              <button
+                type="button"
+                onClick={() => onSetCategory(tab.id)}
+                className={cn(
+                  "w-full flex items-center justify-center gap-1.5 pb-1 border-b-2 transition-all duration-200 bg-transparent text-[9.5px] sm:text-[10.5px] xl:text-[11px] font-black uppercase tracking-[0.04em] sm:tracking-[0.08em] outline-none cursor-pointer text-center truncate px-0.5",
+                  isActive
+                    ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
+                    : "text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]"
+                )}
+              >
+                <span className="truncate">{label}</span>
+                {isDirty && (
+                  <span
+                    title="Unsaved changes in this stage"
+                    className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)] shrink-0"
+                  />
+                )}
+              </button>
+              {idx < arr.length - 1 && (
+                <span className="text-[10px] text-[rgb(var(--foreground-muted))]/25 font-light select-none pb-1 shrink-0 px-0.5 sm:px-1">
+                  |
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
     );
   }

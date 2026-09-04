@@ -26,7 +26,7 @@ import { SettingsTopologyMap } from "./SettingsTopologyMap";
 import { VadWorkspace } from "./VadWorkspace";
 import { AsrWorkspace } from "./AsrWorkspace";
 import { AuxiliaryWorkspace } from "./AuxiliaryWorkspace";
-import { RemoteServerSetup } from "./RemoteServerSetup";
+import { RemoteServerSetup, type RemoteSetupStatus } from "./RemoteServerSetup";
 import { TtsVoiceManager, type CustomVoice, type TtsSubTab } from "./TtsVoiceManager";
 import { TtsModelWorkspace } from "./TtsModelWorkspace";
 import { LlmCatalogView } from "./LlmCatalogView";
@@ -97,7 +97,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const [sshConnectionString, setSshConnectionString] = useState(() => localStorage.getItem("vox_ssh_conn") || "root@localhost");
   const [sshPort, setSshPort] = useState(() => localStorage.getItem("vox_ssh_port") || "22");
   const [sshIdentityKey, setSshIdentityKey] = useState(() => localStorage.getItem("vox_ssh_key") || "~/.ssh/id_rsa");
-  const [setupStatus, setSetupStatus] = useState<any>(null);
+  const [setupStatus, setSetupStatus] = useState<RemoteSetupStatus | null>(null);
 
   const [edgeTtsVoices, setEdgeTtsVoices] = useState<Array<{ name: string; short_name: string; gender: string; locale: string; friendly_name: string }>>([]);
   const [edgeTtsError, setEdgeTtsError] = useState<string | null>(null);

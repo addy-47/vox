@@ -14,13 +14,11 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
   const memory = useSettingsStore((s) => s.draftSettings?.memory);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
-  if (!memory) return null;
-
   const isSmall = layoutMode === "small";
   const isMin = layoutMode === "full-min";
 
-  const contextRetrievalEnabled = memory.context_retrieval_enabled ?? true;
-  const pipelineProcessingEnabled = memory.pipeline_processing_enabled ?? true;
+  const contextRetrievalEnabled = memory?.context_retrieval_enabled ?? true;
+  const pipelineProcessingEnabled = memory?.pipeline_processing_enabled ?? true;
 
   const handleToggleRetrieval = useCallback(() => {
     updateDraft("memory", "context_retrieval_enabled", !contextRetrievalEnabled);
@@ -29,6 +27,8 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
   const handleTogglePipeline = useCallback(() => {
     updateDraft("memory", "pipeline_processing_enabled", !pipelineProcessingEnabled);
   }, [pipelineProcessingEnabled, updateDraft]);
+
+  if (!memory) return null;
 
   const copy = MEMORY_CONFIG_DESK_COPY;
 

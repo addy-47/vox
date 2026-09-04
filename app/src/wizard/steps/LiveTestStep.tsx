@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { launchEngine, stopEngine } from '@/services/pipelineService';
-import { listen } from '@tauri-apps/api/event';
+import { onTranscriptPartial, onTranscriptFinal, onTelemetry } from '@/services/eventsService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Activity, X, MessageSquare, Sparkles } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
@@ -37,20 +37,20 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
   useEffect(() => {
     setup();
 
-    const unlistenPartial = listen<{ text: string, turn_id: number }>('transcript_partial', (event) => {
-      setTranscript(event.payload.text);
+    const unlistenPartial = onTranscriptPartial((payload) => {
+      setTranscript(payload.text);
       
       if (transcriptTimeoutRef.current) clearTimeout(transcriptTimeoutRef.current);
       transcriptTimeoutRef.current = setTimeout(() => {
-        if (event.payload.text.length > 2) {
+        if (payload.text.length > 2) {
           setTestComplete(true);
         }
       }, 2000);
     });
 
-    const unlistenFinal = listen<{ text: string, turn_id: number }>('transcript_final', (event) => {
-      setTranscript(event.payload.text);
-      if (event.payload.text.length > 2) {
+    const unlistenFinal = onTranscriptFinal((payload) => {
+      setTranscript(payload.text);
+      if (payload.text.length > 2) {
         setTestComplete(true);
       }
     });
@@ -59,8 +59,8 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
     let localEnergy = 0;
     const THROTTLE_MS = 40; // High-refresh responsive updates
 
-    const unlistenEnergy = listen<{ energy?: number }>('telemetry', (event) => {
-      const e = typeof event.payload === 'number' ? event.payload : event.payload?.energy || 0;
+    const unlistenEnergy = onTelemetry((payload) => {
+      const e = payload.energy ?? 0;
       
       const targetEnergy = e * 100;
       localEnergy = localEnergy * 0.75 + targetEnergy * 0.25;
@@ -73,9 +73,9 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
     });
 
     return () => {
-      unlistenPartial.then(u => u());
-      unlistenFinal.then(u => u());
-      unlistenEnergy.then(u => u());
+      unlistenPartial();
+      unlistenFinal();
+      unlistenEnergy();
       if (transcriptTimeoutRef.current) clearTimeout(transcriptTimeoutRef.current);
       stopEngine().catch(console.error);
     };

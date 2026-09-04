@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { launchEngine, stopEngine } from '@/services/pipelineService';
 import { listInputDevices, getSettings, updateSetting, type AudioDevice } from '@/services/settingsService';
-import { listen } from '@tauri-apps/api/event';
+import { onTelemetry } from '@/services/eventsService';
 import { motion } from 'framer-motion';
 import { Mic, Check, Volume2, Activity } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
@@ -20,12 +20,15 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
   const [energy, setEnergy] = useState(0);
 
   useEffect(() => {
+    let isMounted = true;
+
     const init = async () => {
       try {
         // Ensure engine is running so we get energy events
         await launchEngine();
         
         const devList = await listInputDevices();
+        if (!isMounted) return;
         setDevices(devList);
         
         // Try to get current device from settings first
@@ -52,8 +55,8 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
     let localEnergy = 0;
     const THROTTLE_MS = 60;
 
-    const unlisten = listen<{ energy?: number }>('telemetry', (event) => {
-      const val = typeof event.payload === 'number' ? event.payload : event.payload?.energy || 0;
+    const unlisten = onTelemetry((payload) => {
+      const val = payload.energy ?? 0;
       const targetEnergy = val * 100;
       
       // Exponential moving average smoothing for organic signal rise and slow decay (low-pass)
@@ -67,7 +70,9 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
     });
 
     return () => {
-      unlisten.then(u => u());
+      isMounted = false;
+      unlisten();
+      stopEngine().catch(console.error);
     };
   }, []);
 

@@ -10,11 +10,10 @@ interface HistoryCardProps {
 }
 
 export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) => {
-  const draftSettings = useSettingsStore((s) => s.draftSettings);
+  const history = useSettingsStore((s) => s.draftSettings?.history);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
-  if (!draftSettings) return null;
-  const { history } = draftSettings;
+  if (!history) return null;
 
   const isSmall = layoutMode === "small";
 

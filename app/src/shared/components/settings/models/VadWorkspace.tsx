@@ -27,17 +27,17 @@ export const VadWorkspace = memo(
     startDownload,
     deleteModel,
   }: VadWorkspaceProps) => {
-    const draftSettings = useSettingsStore((s) => s.draftSettings);
+    const vad = useSettingsStore((s) => s.draftSettings?.vad);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const modelCatalog = useSettingsStore((s) => s.modelCatalog);
 
-    if (!draftSettings) return null;
-    const activeVadBackend = draftSettings.vad?.vad_backend || "earshot";
+    if (!vad) return null;
+    const activeVadBackend = vad.vad_backend || "earshot";
     const vadModels = modelCatalog?.vad || [];
 
-    const currentThreshold = draftSettings.vad?.threshold ?? 0.5;
-    const currentSilenceMs = draftSettings.vad?.silence_duration_ms ?? 800;
-    const currentNoiseGate = draftSettings.vad?.ptt_noise_gate ?? 0.005;
+    const currentThreshold = vad.threshold ?? 0.5;
+    const currentSilenceMs = vad.silence_duration_ms ?? 800;
+    const currentNoiseGate = vad.ptt_noise_gate ?? 0.005;
 
     return (
       <div className="flex-1 min-h-0 w-full overflow-y-auto custom-scrollbar pr-1">

@@ -6,7 +6,6 @@ interface HeaderProps {
   isListening: boolean;
   hasContent: boolean;
   copied: boolean;
-  isPttActive: boolean;
   interactionMode: string;
   onCopy: () => void;
   onClose: () => void;
@@ -14,7 +13,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = React.memo(({ 
-  isListening, hasContent, copied, isPttActive, interactionMode,
+  isListening, hasContent, copied, interactionMode,
   onCopy, onClose, onTogglePtt
 }) => {
   return (
@@ -40,7 +39,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
         {interactionMode?.toUpperCase() === 'PTT' && (
           <button 
             onClick={(e) => { e.stopPropagation(); onTogglePtt(); }}
-            className={`p-2 rounded-lg transition-all active:scale-90 ${isPttActive ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--foreground))]/90'}`}
+            className={`p-2 rounded-lg transition-all active:scale-90 ${isListening ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--foreground))]/90'}`}
           >
             <Mic size={16} />
           </button>
