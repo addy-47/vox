@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { startModelSetup, fetchManifest, getRuntimeReport, type VoxManifest } from '@/services/modelService';
-import { listen } from '@tauri-apps/api/event';
+import { onModelProgress } from '@/services/eventsService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Database, BrainCircuit, Mic, 
@@ -79,8 +79,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
   }, [isAlreadyComplete]);
 
   useEffect(() => {
-    const unlistenStatus = listen<ModelProgress>('model_progress', (event) => {
-      const p = event.payload;
+    const unlisten = onModelProgress((p: any) => {
       setProgress(prev => ({ ...prev, [p.model_id]: p }));
       if (p.step === 'Complete' || p.step === 'Completed') {
         setIsFinished(true);
@@ -91,7 +90,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     });
 
     return () => {
-      unlistenStatus.then(u => u());
+      unlisten();
     };
   }, []);
 

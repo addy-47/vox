@@ -4,7 +4,16 @@ import { useSettingsStore } from "@/store/settingsStore";
 
 export function useSettingsPage() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [activeDomains, setActiveDomains] = useState<DomainId[]>([]);
+  const [activeDomains, setActiveDomains] = useState<DomainId[]>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get("tab");
+      if (tab && DOMAINS.some((d) => d.id === tab)) {
+        return [tab as DomainId];
+      }
+    }
+    return [];
+  });
   const [windowWidth, setWindowWidth] = useState(
     typeof window !== "undefined" ? window.innerWidth : 1280
   );
