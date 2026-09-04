@@ -28,6 +28,40 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
         let enabled = value.as_bool().unwrap_or(true);
         log::info!("[Settings] Dictation Lifecycle Event: enabled={}", enabled);
 
+        let new_dict_state = if enabled {
+            crate::core::state::InteractionState::Ready
+        } else {
+            crate::core::state::InteractionState::Idle
+        };
+        crate::pipeline::dictation::transition_dictation(new_dict_state, app, state);
+
+        let owner: crate::core::state::InteractionOwner = state
+            .owner
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .into();
+        if enabled && owner == crate::core::state::InteractionOwner::Dictation {
+            let dictation_mode = state
+                .settings
+                .read()
+                .map(|s| s.dictation.interaction_mode.clone())
+                .unwrap_or(crate::core::settings::DictationInteractionMode::Ptt);
+            let vad_op_mode = match dictation_mode {
+                crate::core::settings::DictationInteractionMode::Passive => {
+                    crate::services::vad::VadOperationalMode::ContinuousSegmentation
+                }
+                crate::core::settings::DictationInteractionMode::Ptt => {
+                    crate::services::vad::VadOperationalMode::WindowedValidation
+                }
+            };
+            if let Ok(guard) = state.engine.try_lock() {
+                if let Some(ref engine) = *guard {
+                    let _ = engine
+                        .vad_tx
+                        .send(crate::services::vad::VadCommand::SetOperationalMode(vad_op_mode));
+                }
+            }
+        }
+
         let is_tray_mode = state
             .settings
             .read()
@@ -108,6 +142,40 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
             }
         } else if !is_tray_mode {
             crate::tray::destroy_tray_window(app);
+        }
+    } else if key == "interaction_mode" {
+        let owner: crate::core::state::InteractionOwner = state
+            .owner
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .into();
+        if owner == crate::core::state::InteractionOwner::Dictation {
+            if let Ok(mode) = serde_json::from_value::<crate::core::settings::DictationInteractionMode>(value.clone()) {
+                let vad_op_mode = match mode {
+                    crate::core::settings::DictationInteractionMode::Passive => {
+                        crate::services::vad::VadOperationalMode::ContinuousSegmentation
+                    }
+                    crate::core::settings::DictationInteractionMode::Ptt => {
+                        crate::services::vad::VadOperationalMode::WindowedValidation
+                    }
+                };
+                if let Ok(guard) = state.engine.try_lock() {
+                    if let Some(ref engine) = *guard {
+                        if let Err(e) = engine
+                            .vad_tx
+                            .send(crate::services::vad::VadCommand::SetOperationalMode(vad_op_mode))
+                        {
+                            log::warn!("[Settings::Mutation] Failed to update VAD mode on dictation interaction_mode change: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+    } else if key == "hotkey" {
+        if let Some(new_shortcut) = value.as_str() {
+            log::info!("[Settings::Mutation] Re-registering global dictation hotkey: {}", new_shortcut);
+            if let Err(e) = crate::services::dictation::init_dictation_hotkey_listener(app, new_shortcut) {
+                log::warn!("[Settings::Mutation] Failed to re-register dictation hotkey: {:?}", e);
+            }
         }
     }
 }

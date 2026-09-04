@@ -56,7 +56,7 @@ fn main() -> Result<()> {
     }
 
     println!("[Generator] Loading Supertonic 3 TTS Engine...");
-    let tts_engine = TtsEngine::new(&super_tts_path, 0, 12, 1.05)?;
+    let tts_engine = TtsEngine::new(&super_tts_path, 0, 12, 1.05, 2)?;
 
     // We will generate audio clips for all 10 sessions
     let sessions = vec![

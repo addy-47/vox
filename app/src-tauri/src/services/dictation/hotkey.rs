@@ -68,3 +68,39 @@ pub fn register_global_hotkey<R: tauri::Runtime>(
     );
     Ok(())
 }
+
+/// Spawns the async dictation hotkey listener loop and registers global shortcut with OS.
+pub fn init_dictation_hotkey_listener<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    shortcut_str: &str,
+) -> Result<(), DictationError> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HotkeyAction>();
+    let app_handle = app.clone();
+
+    tauri::async_runtime::spawn(async move {
+        while let Some(action) = rx.recv().await {
+            use tauri::Manager;
+            let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
+                app_handle.state();
+            let event_tx_opt = state.event_tx.lock().clone();
+            if let Some(tx) = event_tx_opt {
+                match action {
+                    HotkeyAction::Press => {
+                        if let Err(e) = tx.send(crate::core::events::VoxEvent::PttStart) {
+                            log::error!("[Dictation::Hotkey] Failed to send VoxEvent::PttStart: {}", e);
+                        }
+                    }
+                    HotkeyAction::Release => {
+                        if let Err(e) = tx.send(crate::core::events::VoxEvent::PttStop) {
+                            log::error!("[Dictation::Hotkey] Failed to send VoxEvent::PttStop: {}", e);
+                        }
+                    }
+                }
+            } else {
+                log::warn!("[Dictation::Hotkey] Event router is not active; dropped hotkey event");
+            }
+        }
+    });
+
+    register_global_hotkey(app, shortcut_str, tx)
+}
