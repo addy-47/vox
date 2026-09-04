@@ -4,7 +4,7 @@ use tauri::AppHandle;
 
 use crate::core::settings::{InteractionMode, PipelineMode};
 use crate::core::state::{AppState, InteractionState};
-use crate::pipeline::handlers::interrupt::on_interrupt;
+use crate::pipeline::assistant::interrupt::on_interrupt;
 use crate::pipeline::{transition, RoutingContext};
 use crate::services::stt::actor::SttCommand;
 

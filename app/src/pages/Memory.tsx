@@ -32,6 +32,7 @@ import {
   getMemoryFactDetail,
 } from "@/services/memoryService";
 import { MEMORY_COPY } from "@/data/memoryCopy";
+import { HelpTriggerButton } from "@/shared/components/help/HelpTriggerButton";
 import { cn } from "@/shared/lib/utils";
 
 const EMPTY_CONFLICTS: { fact_a: MemoryNodeTopology; fact_b: MemoryNodeTopology }[] = [];
@@ -377,6 +378,7 @@ export const Memory: React.FC = () => {
 
             {/* Top-Right Horizontal Dynamic Action Tray */}
             <div className="pointer-events-auto flex items-center gap-1 p-1 rounded-2xl glass-card border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-2xl shadow-2xl overflow-hidden max-w-[calc(100vw-150px)]">
+              <HelpTriggerButton deepLink="page:memory" size="sm" />
               {/* Search Trigger */}
               <button
                 onClick={() => setIsMobileSearchOpen(true)}

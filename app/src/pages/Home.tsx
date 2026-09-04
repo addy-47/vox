@@ -8,6 +8,7 @@ import {
   ERROR_BANNER_COPY,
   DIALOGUE_COPY,
 } from "@/data/homeCopy";
+import { HelpTriggerButton } from "@/shared/components/help/HelpTriggerButton";
 import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle, RotateCcw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/shared/lib/utils";
@@ -169,7 +170,8 @@ export const Home = memo(() => {
       </AnimatePresence>
 
       {/* ── Top-right: Notification Bell ── */}
-      <div className="absolute top-4 right-5 z-30 flex items-center pointer-events-none">
+      <div className="absolute top-4 right-5 z-30 flex items-center gap-1.5 pointer-events-none">
+        <HelpTriggerButton deepLink="page:home" className="pointer-events-auto" />
         <NotificationBell />
       </div>
 

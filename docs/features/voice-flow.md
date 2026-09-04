@@ -11,13 +11,13 @@ related_docs:
 
 # Vox — End-to-End Voice Pipeline Flow & Architecture (Technical Reference)
 
-> **Purpose:** Implementation-accurate reference for the Vox voice runtime. After reading this a backend contributor should understand: how a `VoxEvent` travels from the cpal capture thread to the speaker, where every **handler**, **actor**, **engine**, **thread**, **mutex/Arc/atomic**, **channel**, and **streaming / blocking** boundary lives, and how the memory subsystem is wired into the live turn. All claims cite `path/file.rs:line` against the current tree (handler event-driven architecture: `pipeline/handlers/*` + `pipeline/dictation.rs` + `pipeline/router.rs`; no `modular/` or `realtime/` domain directories).
+> **Purpose:** Implementation-accurate reference for the Vox voice runtime. After reading this a backend contributor should understand: how a `VoxEvent` travels from the cpal capture thread to the speaker, where every **handler**, **actor**, **engine**, **thread**, **mutex/Arc/atomic**, **channel**, and **streaming / blocking** boundary lives, and how the memory subsystem is wired into the live turn. All claims cite `path/file.rs:line` against the current tree (assistant handler event-driven architecture: `pipeline/assistant/*` + `pipeline/dictation.rs` + `pipeline/router.rs`; no `modular/` or `realtime/` domain directories).
 
 ---
 
 ## 1. High-Level Architecture
 
-Vox uses a **handler event-driven pipeline**. Raw audio and all internal events flow through a lock-free `std::sync::mpsc` channel to a single **Central Event Router** (`vox-router` OS thread, `pipeline/router.rs:72`), which calls `route_event` — snapshotting a `RoutingContext` once per event and dispatching to a flat set of **handler functions** under `pipeline/handlers/` or `pipeline/dictation.rs`. There is no domain-partitioned directory tree and no monolithic loop.
+Vox uses a **handler event-driven pipeline**. Raw audio and all internal events flow through a lock-free `std::sync::mpsc` channel to a single **Central Event Router** (`vox-router` OS thread, `pipeline/router.rs:72`), which calls `route_event` — snapshotting a `RoutingContext` once per event and dispatching to a flat set of **handler functions** under `pipeline/assistant/` or `pipeline/dictation.rs`. There is no domain-partitioned directory tree and no monolithic loop.
 
 ```
                          ┌──────────────────────────────────────────────┐
@@ -262,10 +262,10 @@ The synchronous `prepare_turn_context` retrieval runs inside a `tauri::async_run
 ## 9. Central Router & Ownership Invariants
 
 - **`spawn_router`** (`pipeline/router.rs:72`): OS thread `vox-router`; blocking `recv()` loop, elevated to `ThreadPriority::Max`, exits on `VoxEvent::Shutdown`. No `recv_timeout` polling.
-- **`route_event`** (`pipeline/router.rs:10`): `RoutingContext::from_app_state` (one `settings.read()` + `owner` atomic load) → `Dictation` → `dictation::handle_event`; `Assistant` → flat `match event` dispatching to `handlers::speech / transcript / llm / playback / ptt / session / error`.
+- **`route_event`** (`pipeline/router.rs:10`): `RoutingContext::from_app_state` (one `settings.read()` + `owner` atomic load) → `Dictation` → `dictation::handle_event`; `Assistant` → flat `match event` dispatching to `assistant::speech / transcript / llm / playback / ptt / session / error`.
 - **Thin IPC adapters:** `ipc/pipeline/mod.rs` snapshots context and sends `VoxEvent::{SessionStart,PttStart,PttStop,PttCancel,EndSession,…}` via `AppState::event_tx`. Commands are `start_session`, `end_session`, `pause_session`, `resume_session`, `ptt_start`, `ptt_stop`, `ptt_cancel`, `launch_engine`, `stop_engine`, `check_engine_status`, `test_clip*`.
 - **No silent sends:** every `tx.send(..)` logs `warn!` on failure (no `let _ =`).
 
 ---
 
-**Last Updated:** 2026-09-03 — rewritten from domain-partitioned (`modular/`/`realtime/`/`dictation.rs`) to handler event-driven (`pipeline/handlers/*` + `pipeline/dictation.rs` + `pipeline/router.rs`) architecture.
+**Last Updated:** 2026-09-04 — renamed `pipeline/handlers/` to `pipeline/assistant/`; unified assistant handler event-driven (`pipeline/assistant/*` + `pipeline/dictation.rs` + `pipeline/router.rs`) architecture.

@@ -26,6 +26,7 @@ const AppearanceCard = lazy(loadAppearance);
 const InteractionCard = lazy(loadInteraction);
 
 import { SettingsCardSkeleton } from "@/shared/components/settings/SettingsCardSkeleton";
+import { HelpTriggerButton } from "@/shared/components/help/HelpTriggerButton";
 
 const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMode?: "full-max" | "full-min" | "small" }) => {
   const isRealtime = useSettingsStore((s) => s.draftSettings?.interaction?.pipeline_mode === "realtime");
@@ -197,6 +198,17 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
               hasChanges && "has-unsaved-changes"
             )}
           >
+            {/* Per-card Help trigger (desktop layouts only) */}
+            {(layoutMode === "full-max" || layoutMode === "full-min") && (
+              <div className="flex justify-end pr-1 -mb-1">
+                <HelpTriggerButton
+                  deepLink={`settings:${domain.id}`}
+                  size="sm"
+                  label={`Help: ${domain.label}`}
+                />
+              </div>
+            )}
+
             {/* Actual Card content */}
             <ErrorBoundary name={`Settings:${domain.id}`}>
               <DomainContent domain={domain.id} layoutMode={layoutMode} />
@@ -564,6 +576,16 @@ export const Settings: React.FC = () => {
                   </Tooltip>
                 </>
               )}
+
+              {/* Help & Guide */}
+              <Tooltip
+                label={SETTINGS_COPY.helpGuideTooltip}
+                side="bottom"
+              >
+                <span className="inline-block">
+                  <HelpTriggerButton deepLink="settings:overview" size="sm" label={SETTINGS_COPY.helpGuideTooltip} />
+                </span>
+              </Tooltip>
 
               {/* Restore Defaults with confirm state */}
               <Tooltip
