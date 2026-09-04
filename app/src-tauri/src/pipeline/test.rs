@@ -224,7 +224,7 @@ pub async fn cancel_test_clip<R: Runtime>(
     state: &AppState,
 ) -> Result<(), VoxIpcError> {
     state.pipeline.turn_token().cancel();
-    state.pipeline.renew_turn_token();
+    state.pipeline.rearm_turn_token();
     state.pipeline_accumulator.lock().clear();
 
     if let Ok(guard) = state.engine.try_lock() {

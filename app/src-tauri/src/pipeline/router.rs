@@ -16,53 +16,53 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
 
     match event {
         VoxEvent::SpeechStart => {
-            super::handlers::speech::on_speech_start(app, state, &ctx);
+            super::assistant::speech::on_speech_start(app, state, &ctx);
         }
         VoxEvent::SpeechEnd => {
-            super::handlers::speech::on_speech_end(app, state, &ctx);
+            super::assistant::speech::on_speech_end(app, state, &ctx);
         }
         VoxEvent::TranscriptFinal { turn_id, text, .. } => {
-            super::handlers::transcript::on_transcript_final(turn_id, text, app, state, &ctx);
+            super::assistant::transcript::on_transcript_final(turn_id, text, app, state, &ctx);
         }
         VoxEvent::LlmFinished { turn_id, .. } => {
-            super::handlers::llm::on_llm_finished(turn_id, state, &ctx);
+            super::assistant::llm::on_llm_finished(turn_id, state, &ctx);
         }
         VoxEvent::PlaybackStarted { turn_id } => {
-            super::handlers::playback::on_playback_started(turn_id, app, state, &ctx);
+            super::assistant::playback::on_playback_started(turn_id, app, state, &ctx);
         }
         VoxEvent::PlaybackFinished { turn_id } => {
-            super::handlers::playback::on_playback_finished(turn_id, app, state, &ctx);
+            super::assistant::playback::on_playback_finished(turn_id, app, state, &ctx);
         }
         VoxEvent::Error {
             turn_id,
             message,
             source,
         } => {
-            super::handlers::error::on_error(turn_id, message, source, app, state, &ctx);
+            super::assistant::error::on_error(turn_id, message, source, app, state, &ctx);
         }
         VoxEvent::Cancelled { turn_id } => {
-            super::handlers::error::on_cancelled(turn_id, app, state, &ctx);
+            super::assistant::error::on_cancelled(turn_id, app, state, &ctx);
         }
         VoxEvent::SessionStart { owner } => {
-            super::handlers::session::on_session_start(owner, app, state, &ctx);
+            super::assistant::session::on_session_start(owner, app, state, &ctx);
         }
         VoxEvent::PauseSession => {
-            super::handlers::session::on_pause(app, state, &ctx);
+            super::assistant::session::on_pause(app, state, &ctx);
         }
         VoxEvent::ResumeSession => {
-            super::handlers::session::on_resume(app, state, &ctx);
+            super::assistant::session::on_resume(app, state, &ctx);
         }
         VoxEvent::EndSession => {
-            super::handlers::session::on_end(app, state, &ctx);
+            super::assistant::session::on_end(app, state, &ctx);
         }
         VoxEvent::PttStart => {
-            super::handlers::ptt::on_ptt_start(app, state, &ctx);
+            super::assistant::ptt::on_ptt_start(app, state, &ctx);
         }
         VoxEvent::PttStop => {
-            super::handlers::ptt::on_ptt_stop(app, state, &ctx);
+            super::assistant::ptt::on_ptt_stop(app, state, &ctx);
         }
         VoxEvent::PttCancel => {
-            super::handlers::ptt::on_ptt_cancel(app, state, &ctx);
+            super::assistant::ptt::on_ptt_cancel(app, state, &ctx);
         }
         VoxEvent::Shutdown => {}
     }

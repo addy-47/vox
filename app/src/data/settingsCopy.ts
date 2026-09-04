@@ -160,6 +160,7 @@ export const SETTINGS_COPY = {
   closeDomain: "Close {label} settings",
   openAllDomains: "Open all settings",
   closeAllDomains: "Clear all settings",
+  helpGuideTooltip: "Open help & guide",
 };
 
 export const DICTATION_COPY = {

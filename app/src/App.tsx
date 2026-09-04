@@ -8,6 +8,7 @@ import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { MemoryProfilerProvider } from "@/shared/context/MemoryProfilerContext";
 import { VoiceSessionProvider } from "@/shared/context/VoiceSessionContext";
 import { ProfilerDrawerProvider } from "@/shared/components/profiler/ProfilerDrawer";
+import { HelpDrawerProvider } from "@/shared/components/help/HelpDrawerProvider";
 import { installOverlayStack } from "@/shared/lib/overlayStack";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -122,6 +123,7 @@ const App: React.FC = () => {
               <div className="relative h-full w-full">
                 {setupCompleted !== null && (
                   <Suspense fallback={null}>
+                    <HelpDrawerProvider>
                     <ProfilerDrawerProvider>
                       <Routes>
                       {/* If setup not completed, always redirect to wizard */}
@@ -146,6 +148,7 @@ const App: React.FC = () => {
                       )}
                     </Routes>
                     </ProfilerDrawerProvider>
+                    </HelpDrawerProvider>
                   </Suspense>
                 )}
 

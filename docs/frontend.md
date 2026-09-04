@@ -137,7 +137,7 @@ The Rust event contract is authoritative in `docs/backend.md` §8. The frontend 
 | `settings-updated` | — | Settings hot-reload |
 | `toggle_tray` | — | Tray HUD toggle |
 
-Commands are issued via the service modules in §6 — `pipelineService.ts` (`startSession`→`start_session`, `endSession`→`end_session`, `pauseSession`→`pause_session`, `pttStart`→`ptt_start`, etc.) (never bare `invoke` in components). Full command list and reload policies: `docs/backend.md` §10. Frontend never branches on `pipeline_mode` for lifecycle — always calls the same verbs; backend `RoutingContext` + handler dispatch (`pipeline/router.rs` → `pipeline/handlers/*`) resolves the path.
+Commands are issued via the service modules in §6 — `pipelineService.ts` (`startSession`→`start_session`, `endSession`→`end_session`, `pauseSession`→`pause_session`, `pttStart`→`ptt_start`, etc.) (never bare `invoke` in components). Full command list and reload policies: `docs/backend.md` §10. Frontend never branches on `pipeline_mode` for lifecycle — always calls the same verbs; backend `RoutingContext` + handler dispatch (`pipeline/router.rs` → `pipeline/assistant/*`) resolves the path.
 
 ## 10. Design system consumption
 
