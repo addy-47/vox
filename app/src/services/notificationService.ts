@@ -1,19 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import type { NotificationRecord } from "./eventsService";
 
-export interface NotificationRecord {
-  id: string;
-  category: string;
-  title: string;
-  message: string;
-  status: "unread" | "read" | "dismissed" | string;
-  session_id: number | null;
-  turn_id: number | null;
-  action_payload: string | null;
-  created_at_ms: number;
-  read_at_ms: number | null;
-  dismissed_at_ms: number | null;
-}
+export type { NotificationRecord };
 
 /** Fetches all active (unread or read) notifications */
 export function getNotifications(): Promise<NotificationRecord[]> {

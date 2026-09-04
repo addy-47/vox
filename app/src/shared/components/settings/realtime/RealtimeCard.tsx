@@ -1,5 +1,5 @@
 import { memo, useState, useMemo } from "react";
-import { useSettingsStore } from "@/store/settingsStore";
+import { useSettingsStore, type VoxSettings } from "@/store/settingsStore";
 import {
   Search,
   Cpu,
@@ -471,6 +471,12 @@ function VoiceCarousel({
     Math.max(0, VOICE_OPTIONS.indexOf(selected)),
   );
 
+  // Keep internal index in sync when parent changes selected voice
+  const selectedIndex = VOICE_OPTIONS.indexOf(selected);
+  if (selectedIndex !== -1 && selectedIndex !== index) {
+    setIndex(selectedIndex);
+  }
+
   const currentVoice = VOICE_OPTIONS[index] || VOICE_OPTIONS[0];
   const info = VOICE_INFO[currentVoice];
 
@@ -568,8 +574,8 @@ function UnifiedConfig({
   layoutMode = "full-max",
 }: {
   subkey: string;
-  draftSettings: any;
-  updateDraft: any;
+  draftSettings: VoxSettings;
+  updateDraft: (section: any, key: any, value: any) => void;
   disabled: boolean;
   layoutMode?: "full-max" | "full-min" | "small";
 }) {
@@ -586,14 +592,15 @@ function UnifiedConfig({
     ? "elevenlabs_convai"
     : "gemini_live";
 
-  const config =
-    draftSettings?.realtime?.[canonicalSubkey] ||
-    draftSettings?.realtime?.[subkey] ||
-    (isGemini ? draftSettings?.realtime?.gemini : isDeepgram ? draftSettings?.realtime?.deepgram : {});
+  const realtime = draftSettings.realtime;
+  const config: Record<string, any> =
+    (realtime as any)?.[canonicalSubkey] ||
+    (realtime as any)?.[subkey] ||
+    (isGemini ? realtime?.gemini : isDeepgram ? realtime?.deepgram : {}) ||
+    {};
 
-  if (!config) return null;
   const voiceField = isGemini ? "voice_name" : "voice";
-  const currentVoice = config[voiceField] || VOICE_OPTIONS[0];
+  const currentVoice = (config[voiceField] as string) || VOICE_OPTIONS[0];
 
   return (
     <div
@@ -687,11 +694,10 @@ interface RealtimeCardProps {
 
 export const RealtimeCard = memo(
   ({ layoutMode = "full-max" }: RealtimeCardProps) => {
-    const settings = useSettingsStore((s) => s.settings);
     const draftSettings = useSettingsStore((s) => s.draftSettings);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
 
-    if (!settings || !draftSettings) return null;
+    if (!draftSettings) return null;
 
     const providerId =
       draftSettings.realtime?.active ||

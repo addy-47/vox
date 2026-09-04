@@ -35,6 +35,7 @@ const BASE_AMP: Record<string, number> = {
   Thinking:  0.30,
   Speaking:  0.58,
   Paused:    0.02,
+  Sleeping:  0.02,
   Error:     0.02,
 };
 

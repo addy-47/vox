@@ -73,7 +73,7 @@ export const Home = memo(() => {
     dialogueHistory,
     telemetryRef,
     errorAlert,
-    setErrorAlert,
+    dismissError,
     dialogueScrollRef,
     isLaunching,
     isThinking,
@@ -141,7 +141,7 @@ export const Home = memo(() => {
                   <button
                     onClick={() => {
                       resume();
-                      setErrorAlert(null);
+                      dismissError();
                     }}
                     className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] hover:underline cursor-pointer"
                   >
@@ -149,7 +149,7 @@ export const Home = memo(() => {
                   </button>
                   <button
                     onClick={() => {
-                      setErrorAlert(null);
+                      dismissError();
                       navigate("/settings");
                     }}
                     className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))] cursor-pointer"
@@ -157,7 +157,7 @@ export const Home = memo(() => {
                     {ERROR_BANNER_COPY.configureButton}
                   </button>
                   <button
-                    onClick={() => setErrorAlert(null)}
+                    onClick={() => dismissError()}
                     className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer"
                   >
                     {ERROR_BANNER_COPY.dismissButton}
