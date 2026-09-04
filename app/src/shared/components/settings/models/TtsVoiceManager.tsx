@@ -78,17 +78,6 @@ export const TtsVoiceManager = memo(({
     });
   }, []);
 
-  if (!draftSettings) return null;
-
-  // Caps-driven voice source. While caps load, fall back to manifest tier flags.
-  // No provider id literals anywhere in this file.
-  const previewGroup = modelCatalog?.tts?.find((g) => g.id === providerId);
-  const voiceSource = caps?.voices ?? (previewGroup?.is_cloud ? "edge" : previewGroup?.is_remote ? "custom" : "catalog");
-  const allowClone = caps?.clone ?? !!previewGroup?.is_remote;
-  const isEdgeTts = voiceSource === "edge";
-  const isCustomVoices = voiceSource === "custom";
-  const isRemoteGroup = !!previewGroup?.is_remote;
-
   // Display names render as-is (data-driven). The id/name boundary:
   // `name` is UI text only, never a key.
   const displayName = (n: string) => n.trim() || n;
@@ -136,6 +125,15 @@ export const TtsVoiceManager = memo(({
       name: simplifyEdgeVoiceName(v.short_name, v.friendly_name),
     }));
   }, [edgeTtsVoices, selectedRegion]);
+
+  if (!draftSettings) return null;
+
+  const previewGroup = modelCatalog?.tts?.find((g) => g.id === providerId);
+  const voiceSource = caps?.voices ?? (previewGroup?.is_cloud ? "edge" : previewGroup?.is_remote ? "custom" : "catalog");
+  const allowClone = caps?.clone ?? !!previewGroup?.is_remote;
+  const isEdgeTts = voiceSource === "edge";
+  const isCustomVoices = voiceSource === "custom";
+  const isRemoteGroup = !!previewGroup?.is_remote;
 
   const localVoices = isCustomVoices
     ? [
@@ -228,9 +226,9 @@ export const TtsVoiceManager = memo(({
             {/* Right Side: Voice Selector Carousel */}
             <div className="shrink-0 w-[150px] sm:w-[175px] h-full flex flex-col justify-center">
               <VoiceCarousel
-                voices={activeVoices as any}
-                selected={selectedVoiceId as any}
-                onChange={handleVoiceChange as any}
+                voices={activeVoices}
+                selected={selectedVoiceId}
+                onChange={handleVoiceChange}
                 disabled={false}
                 onVoicesChanged={loadCustomVoices}
                 isAdding={chatterboxIsAdding}

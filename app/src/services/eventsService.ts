@@ -11,7 +11,8 @@ export type InteractionState =
   | "Thinking"
   | "Speaking"
   | "Paused"
-  | "Error";
+  | "Error"
+  | "Sleeping";
 
 /** Canonical Rust `InteractionOwner` enum (core/state.rs). */
 export type InteractionOwner = "Assistant" | "Dictation";
@@ -99,6 +100,18 @@ export interface ToastPayload {
   duration_ms?: number;
 }
 
+export interface NotificationRecord {
+  id: string;
+  category: string;
+  title: string;
+  message: string;
+  status: string;
+  session_id?: number | null;
+  metadata: string;
+  is_read: boolean;
+  created_at: number;
+}
+
 export interface NotificationDismissedPayload {
   id: string;
 }
@@ -118,8 +131,8 @@ export interface IpcEventMap {
   "settings-updated": void;
   toggle_tray: void;
   show_toast: ToastPayload;
-  notification_created: any;
-  notification_updated: any;
+  notification_created: NotificationRecord;
+  notification_updated: NotificationRecord;
   notification_dismissed: NotificationDismissedPayload;
   notifications_marked_read: void;
 }
@@ -228,11 +241,11 @@ export function onShowToast(handler: (payload: ToastPayload) => void): () => voi
   return on("show_toast", handler);
 }
 
-export function onNotificationCreated(handler: (payload: any) => void): () => void {
+export function onNotificationCreated(handler: (payload: NotificationRecord) => void): () => void {
   return on("notification_created", handler);
 }
 
-export function onNotificationUpdated(handler: (payload: any) => void): () => void {
+export function onNotificationUpdated(handler: (payload: NotificationRecord) => void): () => void {
   return on("notification_updated", handler);
 }
 

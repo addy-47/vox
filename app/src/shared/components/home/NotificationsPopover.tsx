@@ -25,7 +25,7 @@ const NotificationItem = memo(({
   onDismiss: (id: string) => void;
   onNavigateSession: (sessionId: number) => void;
 }) => {
-  const isUnread = notif.status === "unread";
+  const isUnread = !notif.is_read || notif.status === "unread";
   const hasSession = notif.session_id !== null && notif.session_id !== undefined;
 
   return (
@@ -130,7 +130,7 @@ export const NotificationsPopover = memo(({
   const dismiss = useNotificationStore((s) => s.dismiss);
   const triggerCompaction = useNotificationStore((s) => s.triggerCompaction);
 
-  const unreadCount = notifications.filter((n) => n.status === "unread").length;
+  const unreadCount = notifications.filter((n) => !n.is_read || n.status === "unread").length;
 
   const handleNavigateSession = useCallback((sessionId: number) => {
     onClose();

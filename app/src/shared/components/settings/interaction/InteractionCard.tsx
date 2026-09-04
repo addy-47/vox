@@ -37,6 +37,60 @@ export const InteractionCard = memo(
 
     const prevCategoryRef = useRef<string>(activeCategory);
 
+    // Auto-discard unsaved draft changes when leaving Level 2 back to Level 1
+    const handleBackFromLevel2 = useCallback(() => {
+      discardCategoryChanges(activeCategory.toLowerCase());
+      setSttPillOverride(null);
+      setTtsPillOverride(null);
+      setDrillDownProvider(null);
+    }, [activeCategory, discardCategoryChanges]);
+
+    // Auto-discard unsaved draft changes when switching category tabs
+    const handleSetCategory = useCallback(
+      (cat: "STT" | "LLM" | "TTS") => {
+        if (drillDownProvider !== null) {
+          discardCategoryChanges(activeCategory.toLowerCase());
+          setSttPillOverride(null);
+          setTtsPillOverride(null);
+        }
+        setActiveCategory(cat);
+        setDrillDownProvider(null);
+      },
+      [activeCategory, discardCategoryChanges, drillDownProvider]
+    );
+
+    // Guard sync_pipeline_tab event dispatch to prevent ping-pong loop
+    useEffect(() => {
+      if (prevCategoryRef.current !== activeCategory) {
+        prevCategoryRef.current = activeCategory;
+        const event = new CustomEvent("sync_pipeline_tab", {
+          detail: activeCategory.toLowerCase(),
+        });
+        window.dispatchEvent(event);
+      }
+    }, [activeCategory]);
+
+    useEffect(() => {
+      const handleSync = (e: Event) => {
+        const cat = (e as CustomEvent).detail;
+        if (cat === "stt" || cat === "llm" || cat === "tts") {
+          const upperCat = cat.toUpperCase() as "STT" | "LLM" | "TTS";
+          if (prevCategoryRef.current !== upperCat) {
+            if (drillDownProvider !== null) {
+              discardCategoryChanges(activeCategory.toLowerCase());
+              setSttPillOverride(null);
+              setTtsPillOverride(null);
+            }
+            prevCategoryRef.current = upperCat;
+            setActiveCategory(upperCat);
+            setDrillDownProvider(null);
+          }
+        }
+      };
+      window.addEventListener("sync_interaction_category", handleSync);
+      return () => window.removeEventListener("sync_interaction_category", handleSync);
+    }, [activeCategory, discardCategoryChanges, drillDownProvider]);
+
     if (!draftSettings || !settings) return null;
     const { interaction, llm, dictation } = draftSettings;
 
@@ -100,60 +154,6 @@ export const InteractionCard = memo(
         : activeCategory === "LLM"
         ? draftLlmPill
         : draftTtsPill;
-
-    // Auto-discard unsaved draft changes when leaving Level 2 back to Level 1
-    const handleBackFromLevel2 = useCallback(() => {
-      discardCategoryChanges(activeCategory.toLowerCase());
-      setSttPillOverride(null);
-      setTtsPillOverride(null);
-      setDrillDownProvider(null);
-    }, [activeCategory, discardCategoryChanges]);
-
-    // Auto-discard unsaved draft changes when switching category tabs
-    const handleSetCategory = useCallback(
-      (cat: "STT" | "LLM" | "TTS") => {
-        if (drillDownProvider !== null) {
-          discardCategoryChanges(activeCategory.toLowerCase());
-          setSttPillOverride(null);
-          setTtsPillOverride(null);
-        }
-        setActiveCategory(cat);
-        setDrillDownProvider(null);
-      },
-      [activeCategory, discardCategoryChanges, drillDownProvider]
-    );
-
-    // Guard sync_pipeline_tab event dispatch to prevent ping-pong loop
-    useEffect(() => {
-      if (prevCategoryRef.current !== activeCategory) {
-        prevCategoryRef.current = activeCategory;
-        const event = new CustomEvent("sync_pipeline_tab", {
-          detail: activeCategory.toLowerCase(),
-        });
-        window.dispatchEvent(event);
-      }
-    }, [activeCategory]);
-
-    useEffect(() => {
-      const handleSync = (e: Event) => {
-        const cat = (e as CustomEvent).detail;
-        if (cat === "stt" || cat === "llm" || cat === "tts") {
-          const upperCat = cat.toUpperCase() as "STT" | "LLM" | "TTS";
-          if (prevCategoryRef.current !== upperCat) {
-            if (drillDownProvider !== null) {
-              discardCategoryChanges(activeCategory.toLowerCase());
-              setSttPillOverride(null);
-              setTtsPillOverride(null);
-            }
-            prevCategoryRef.current = upperCat;
-            setActiveCategory(upperCat);
-            setDrillDownProvider(null);
-          }
-        }
-      };
-      window.addEventListener("sync_interaction_category", handleSync);
-      return () => window.removeEventListener("sync_interaction_category", handleSync);
-    }, [activeCategory, discardCategoryChanges, drillDownProvider]);
 
     const handleLlmPillChange = (value: string) => {
       if (value === "local") {

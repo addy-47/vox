@@ -81,9 +81,10 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
   useEffect(() => {
     const unlisten = onModelProgress((p: any) => {
       setProgress(prev => ({ ...prev, [p.model_id]: p }));
-      if (p.step === 'Complete' || p.step === 'Completed') {
+      const normalizedStep = typeof p.step === 'string' ? p.step.toLowerCase() : '';
+      if (normalizedStep === 'completed' || normalizedStep === 'complete') {
         setIsFinished(true);
-      } else if (p.step === 'Failed' && p.error) {
+      } else if (normalizedStep === 'failed' && p.error) {
         setInternalError(p.error);
         setView('catalog');
       }

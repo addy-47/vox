@@ -3,6 +3,13 @@ import { Network, Info, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { UnderlineInput } from "@/shared/ui";
 
+export interface RemoteSetupStatus {
+  step: "initiating" | "connecting" | "deploying" | "starting_service" | "verifying" | "complete" | "failed" | string;
+  progress: number;
+  log_line?: string | null;
+  error?: string | null;
+}
+
 export interface RemoteServerSetupProps {
   sshConnectionString: string;
   setSshConnectionString: (val: string) => void;
@@ -10,7 +17,7 @@ export interface RemoteServerSetupProps {
   setSshPort: (val: string) => void;
   sshIdentityKey: string;
   setSshIdentityKey: (val: string) => void;
-  setupStatus: any;
+  setupStatus: RemoteSetupStatus | null;
   triggerRemoteSetup: () => void;
   isRemoteTtsHealthy: boolean | null;
 }
@@ -117,7 +124,7 @@ export const RemoteServerSetup = memo(({
           <button
             type="button"
             onClick={triggerRemoteSetup}
-            disabled={setupStatus && setupStatus.step !== "failed" && setupStatus.step !== "complete"}
+            disabled={Boolean(setupStatus && setupStatus.step !== "failed" && setupStatus.step !== "complete")}
             className={cn(
               "px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 border shadow-[0_0_12px_rgba(var(--accent),0.15)]",
               setupStatus?.step === "complete"

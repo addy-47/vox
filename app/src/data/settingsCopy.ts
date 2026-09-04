@@ -193,6 +193,14 @@ export const CATEGORY_SWITCH_COPY = {
   switchTooltip: "Switch between hearing (STT), thinking (LLM), and speaking (TTS)",
   prevCategory: "Previous category",
   nextCategory: "Next category",
+  tabs: {
+    stt: "Listening",
+    sttSub: "Speech Recognition",
+    llm: "Reasoning",
+    llmSub: "Language Model",
+    tts: "Speaking",
+    ttsSub: "Voice Synthesis",
+  },
 };
 
 export const PERSONA_COPY = {
