@@ -1,5 +1,6 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
+import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { SlidersHorizontal, House, Activity, History, Network } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
@@ -66,7 +67,7 @@ export const EdgeNav: React.FC = () => {
               isActive && "text-[rgb(var(--accent))] bg-transparent"
             )
           }
-          aria-label="Engine Monitor"
+          aria-label={LAYOUT_COPY.nav.engineMonitor}
         >
           {({ isActive }) => (
             <>
@@ -77,7 +78,7 @@ export const EdgeNav: React.FC = () => {
               />
               {/* Tooltip */}
               <span className="absolute bottom-14 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none px-2.5 py-1 rounded-md text-[12px] font-bold tracking-wider uppercase bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground))] shadow-lg">
-                Monitor
+                {LAYOUT_COPY.nav.monitor}
               </span>
               {/* Active Indicator dot */}
               {isActive && (

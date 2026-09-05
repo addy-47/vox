@@ -144,7 +144,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
             <OutputIcon size={13} className="shrink-0 sm:w-3.5 sm:h-3.5" />
           </div>
           <span className="text-[12px] sm:text-[13px] font-black tracking-wider uppercase text-[rgb(var(--accent))] select-none">
-            Output
+            {DICTATION_COPY.outputTitle}
           </span>
         </div>
 
@@ -278,7 +278,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
                   </Tooltip>
                 </div>
               ) : (
-                <Tooltip label="Click to rebind activation shortcut">
+                <Tooltip label={DICTATION_COPY.rebindHint}>
                   <button
                     type="button"
                     onClick={() => {

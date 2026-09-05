@@ -1,4 +1,4 @@
-import React, { useEffect, ReactNode } from "react";
+import { useEffect } from "react";
 import { useMemoryProfilerContext } from "@/shared/context/MemoryProfilerContext";
 
 /**
@@ -18,15 +18,3 @@ export function useMemoryTrace(componentName: string): void {
   }, [componentName, registerMount, registerUnmount, isProfilerActive]);
 }
 
-export interface MemoryTrackedProps {
-  name: string;
-  children: ReactNode;
-}
-
-/**
- * Declarative wrapper component for memory attribution tracing.
- */
-export const MemoryTracked: React.FC<MemoryTrackedProps> = ({ name, children }) => {
-  useMemoryTrace(name);
-  return <>{children}</>;
-};

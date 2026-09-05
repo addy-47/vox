@@ -53,14 +53,6 @@ pub struct StateChangedPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VoiceErrorPayload {
-    pub message: String,
-    pub source: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub owner: Option<InteractionOwner>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemStatsPayload {
     pub system_cpu: f32,
     pub system_ram_pct: f32,
@@ -136,7 +128,6 @@ pub enum IpcEvent {
     TranscriptPartial(TranscriptPayload),
     TranscriptFinal(TranscriptPayload),
     LlmToken(LlmTokenPayload),
-    VoiceError(VoiceErrorPayload),
     ModelProgress(ModelSetupStatus),
     Telemetry(TelemetryData),
     SystemStats(SystemStatsPayload),
@@ -157,7 +148,6 @@ impl IpcEvent {
             Self::TranscriptPartial(_) => "transcript_partial",
             Self::TranscriptFinal(_) => "transcript_final",
             Self::LlmToken(_) => "llm_token",
-            Self::VoiceError(_) => "voice_error",
             Self::ModelProgress(_) => "model_progress",
             Self::Telemetry(_) => "telemetry",
             Self::SystemStats(_) => "system_stats",
@@ -180,7 +170,6 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::TranscriptPartial(payload) => app.emit(name, payload),
         IpcEvent::TranscriptFinal(payload) => app.emit(name, payload),
         IpcEvent::LlmToken(payload) => app.emit(name, payload),
-        IpcEvent::VoiceError(payload) => app.emit(name, payload),
         IpcEvent::ModelProgress(payload) => app.emit(name, payload),
         IpcEvent::Telemetry(payload) => app.emit(name, payload),
         IpcEvent::SystemStats(payload) => app.emit(name, payload),
@@ -206,7 +195,6 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::TranscriptPartial(payload) => app.emit_to(target, name, payload),
         IpcEvent::TranscriptFinal(payload) => app.emit_to(target, name, payload),
         IpcEvent::LlmToken(payload) => app.emit_to(target, name, payload),
-        IpcEvent::VoiceError(payload) => app.emit_to(target, name, payload),
         IpcEvent::ModelProgress(payload) => app.emit_to(target, name, payload),
         IpcEvent::Telemetry(payload) => app.emit_to(target, name, payload),
         IpcEvent::SystemStats(payload) => app.emit_to(target, name, payload),

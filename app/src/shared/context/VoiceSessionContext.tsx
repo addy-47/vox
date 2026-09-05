@@ -16,16 +16,19 @@ import {
   type StateChangedPayload,
   type TranscriptPayload,
   type LlmTokenPayload,
-  type VoiceErrorPayload,
   onStateChanged,
   onTranscriptPartial,
   onTranscriptFinal,
   onLlmToken,
-  onVoiceError,
   onSettingsUpdated,
 } from "@/services/eventsService";
 import { getSettings } from "@/services/settingsService";
-import { getTurns } from "@/services/historyService";
+import {
+  getTurns,
+  selectSession as selectSessionIpc,
+  startNewConversation as startNewConversationIpc,
+} from "@/services/historyService";
+import { SESSION_COPY } from "@/data/sessionCopy";
 
 export type InteractionMode = "PASSIVE" | "PTT";
 
@@ -53,8 +56,18 @@ export interface VoiceSessionContextValue {
   setTestMode: (mode: boolean) => void;
   testingClip: string | null;
   dialogueHistory: DialogueTurn[];
-  errorAlert: string | null;
   isThinking: boolean;
+
+  // Session continuation (§A/B)
+  activeSessionId: number | null;
+  isRestoring: boolean;
+  restoringSessionId: number | null;
+  restoreError: string | null;
+  restoreSignal: number;
+  sessionListVersion: number;
+  selectSession: (sessionId: number) => Promise<void>;
+  startNewConversation: () => Promise<void>;
+  dismissRestoreError: () => void;
 
   // Discrete UI Actions
   engage: () => Promise<void>;
@@ -77,7 +90,6 @@ export interface VoiceSessionContextValue {
   // Clip Testing & Reset
   handleTestClip: (clipId: string) => Promise<void>;
   clearHistory: () => void;
-  dismissError: () => void;
 }
 
 const VoiceSessionContext = createContext<VoiceSessionContextValue | null>(null);
@@ -110,13 +122,24 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const [testMode, setTestMode] = useState(false);
   const [testingClip, setTestingClip] = useState<string | null>(null);
   const [dialogueHistory, setDialogueHistory] = useState<DialogueTurn[]>([]);
-  const [errorAlert, setErrorAlert] = useState<string | null>(null);
+
+  // Session continuation state (§A/B): which persisted session subsequent
+  // turns append to, restore lifecycle, and rail list versioning.
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restoringSessionId, setRestoringSessionId] = useState<number | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoreSignal, setRestoreSignal] = useState(0);
+  const [sessionListVersion, setSessionListVersion] = useState(0);
 
   const activeUserTextRef = useRef("");
   const activeAiTextRef = useRef("");
   const turnIdCounter = useRef(0);
   const hasActiveTurnStarted = useRef(false);
   const isSpacePressedRef = useRef(false);
+  const activeSessionIdRef = useRef<number | null>(null);
+  activeSessionIdRef.current = activeSessionId;
+  const restoringRef = useRef(false);
 
   const archiveCurrentTurn = useCallback(() => {
     const userText = activeUserTextRef.current.trim();
@@ -150,9 +173,18 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     try {
       await startSession();
       // State transition to Ready is exclusively handled by onStateChanged IPC event
+      try {
+        const snapshot = await getRuntimeSnapshot();
+        if (snapshot && snapshot.conversation_id !== 0) {
+          setActiveSessionId(snapshot.conversation_id);
+        }
+      } catch {
+        // Active-session highlight is best-effort; the session still works.
+      } finally {
+        setSessionListVersion((v) => v + 1);
+      }
     } catch (err: any) {
       console.error("[VoiceSession] Start session failed:", err);
-      setErrorAlert(err?.message || "Voice engagement failed");
     } finally {
       setIsLaunching(false);
     }
@@ -168,6 +200,8 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     // Transcripts tray clear on End per approved specification
     setDialogueHistory([]);
     turnIdCounter.current = 0;
+    setActiveSessionId(null);
+    setSessionListVersion((v) => v + 1);
 
     const wasTesting = !!testingClip;
     setTestingClip(null);
@@ -181,7 +215,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       // State transition to Idle is exclusively handled by onStateChanged IPC event
     } catch (err: any) {
       console.error("[VoiceSession] End session failed:", err);
-      setErrorAlert(err?.message || "Ending session failed");
     } finally {
       setIsLaunching(false);
     }
@@ -194,7 +227,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       // State transition to Paused is exclusively handled by onStateChanged IPC event
     } catch (err: any) {
       console.error("[VoiceSession] Pause failed:", err);
-      setErrorAlert(err?.message || "Pausing voice pipeline failed");
     }
   }, [interactionState]);
 
@@ -202,11 +234,9 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     if (interactionState !== "Paused" && interactionState !== "Error") return;
     try {
       await resumeSession();
-      setErrorAlert(null);
       // State transition to Ready is exclusively handled by onStateChanged IPC event
     } catch (err: any) {
       console.error("[VoiceSession] Resume failed:", err);
-      setErrorAlert(err?.message || "Resuming voice pipeline failed");
     }
   }, [interactionState]);
 
@@ -217,7 +247,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       await pttStart();
     } catch (err: any) {
       console.error("[VoiceSession] PTT start failed:", err);
-      setErrorAlert(err?.message || "PTT start failed");
     }
   }, [isEngaged, isPaused, interactionState, archiveCurrentTurn]);
 
@@ -227,7 +256,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       await pttStop();
     } catch (err: any) {
       console.error("[VoiceSession] PTT stop failed:", err);
-      setErrorAlert(err?.message || "PTT stop failed");
     }
   }, [isEngaged, isPaused, interactionState]);
 
@@ -269,8 +297,75 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     setDialogueHistory([]);
   }, []);
 
-  const dismissError = useCallback(() => {
-    setErrorAlert(null);
+  const dismissRestoreError = useCallback(() => {
+    setRestoreError(null);
+  }, []);
+
+  /**
+   * Restore a persisted session and make it active (spec §B.7–8, §B.10).
+   * Loads turns in persisted order with no extras; selecting the
+   * already-active session is a no-op (no reload, no reset, no animation).
+   * Late live buffers from the previous session are discarded, never
+   * archived into the restored transcript (spec §B.9 frontend half).
+   */
+  const selectSession = useCallback(async (sessionId: number) => {
+    if (sessionId === activeSessionIdRef.current || restoringRef.current) return;
+    restoringRef.current = true;
+    setIsRestoring(true);
+    setRestoringSessionId(sessionId);
+    setRestoreError(null);
+    try {
+      const turns = await selectSessionIpc(sessionId);
+      activeUserTextRef.current = "";
+      activeAiTextRef.current = "";
+      setTranscript("");
+      setAssistantText("");
+      const history: DialogueTurn[] = turns.map((t) => ({
+        user: t.user_text,
+        assistant: t.assistant_text,
+        id: t.turn_id,
+      }));
+      turnIdCounter.current = history.reduce((max, h) => Math.max(max, h.id), 0);
+      setDialogueHistory(history);
+      setActiveSessionId(sessionId);
+      setRestoreSignal((s) => s + 1);
+      setSessionListVersion((v) => v + 1);
+    } catch (err: unknown) {
+      console.error("[VoiceSession] Restore session failed:", err);
+      setRestoreError(
+        err instanceof Error ? err.message : SESSION_COPY.restoreFailedFallback
+      );
+    } finally {
+      restoringRef.current = false;
+      setIsRestoring(false);
+      setRestoringSessionId(null);
+    }
+  }, []);
+
+  /**
+   * Start an explicit new conversation (spec §A.5, §B.16): empty session
+   * with no inherited turns — and no restore animation.
+   */
+  const startNewConversation = useCallback(async () => {
+    if (restoringRef.current) return;
+    activeUserTextRef.current = "";
+    activeAiTextRef.current = "";
+    setTranscript("");
+    setAssistantText("");
+    setDialogueHistory([]);
+    turnIdCounter.current = 0;
+    setActiveSessionId(null);
+    setRestoreError(null);
+    try {
+      await startNewConversationIpc();
+    } catch (err: unknown) {
+      console.error("[VoiceSession] New conversation failed:", err);
+      setRestoreError(
+        err instanceof Error ? err.message : SESSION_COPY.restoreFailedFallback
+      );
+    } finally {
+      setSessionListVersion((v) => v + 1);
+    }
   }, []);
 
   // Keyboard PTT integration
@@ -336,6 +431,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
             if (snapshot.conversation_id && snapshot.conversation_id !== 0) {
               const turns = await getTurns(snapshot.conversation_id);
               if (isMounted) {
+                setActiveSessionId(snapshot.conversation_id);
                 const history: DialogueTurn[] = turns.slice(-100).map((t) => ({
                   user: t.user_text,
                   assistant: t.assistant_text,
@@ -374,14 +470,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
             if (newState === "Listening") {
               archiveCurrentTurn();
             }
-          })
-        );
-
-        unlisteners.push(
-          onVoiceError((payload: VoiceErrorPayload) => {
-            if (!isMounted) return;
-            const msg = payload?.message || String(payload);
-            setErrorAlert(msg);
           })
         );
 
@@ -484,8 +572,16 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       setTestMode,
       testingClip,
       dialogueHistory,
-      errorAlert,
       isThinking,
+      activeSessionId,
+      isRestoring,
+      restoringSessionId,
+      restoreError,
+      restoreSignal,
+      sessionListVersion,
+      selectSession,
+      startNewConversation,
+      dismissRestoreError,
       engage,
       disengage,
       pause,
@@ -500,7 +596,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       togglePtt,
       handleTestClip,
       clearHistory,
-      dismissError,
     }),
     [
       interactionState,
@@ -518,8 +613,16 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       testMode,
       testingClip,
       dialogueHistory,
-      errorAlert,
       isThinking,
+      activeSessionId,
+      isRestoring,
+      restoringSessionId,
+      restoreError,
+      restoreSignal,
+      sessionListVersion,
+      selectSession,
+      startNewConversation,
+      dismissRestoreError,
       engage,
       disengage,
       pause,
@@ -530,7 +633,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       togglePtt,
       handleTestClip,
       clearHistory,
-      dismissError,
     ]
   );
 

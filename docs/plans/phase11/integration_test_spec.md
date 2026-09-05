@@ -459,7 +459,7 @@ Production Path D — Lifecycle integration (asserted lightly here, canonically 
   session.rs:on_pause + on_end unconditionally yield owner->Dictation and sync VAD SetOperationalMode to dictation.interaction_mode (Passive=>ContinuousSegmentation, Ptt=>WindowedValidation); on_end stops CPAL via stop_audio_engine_sync ONLY if dictation_state==Idle, else keeps engine for dictation.
   ipc/settings/mutation.rs:handle_dictation_side_effects: enabled toggle => transition_dictation(Ready|Idle) + VAD hot-reload when owner==Dictation + engine start/stop; interaction_mode change => live SetOperationalMode; hotkey key => init_dictation_hotkey_listener re-register.
   ipc/tray.rs:cancel_active_dictation_turn sends VoxEvent::PttCancel via event_tx when owner==Dictation (never calls on_ptt_cancel directly).
-  dictation/error.rs:on_error logs, transition Error, VoiceError{source:"Dictation",owner:Dictation} to TRAY, gated toast via should_show_error_toast, auto-recover Ready if !=Idle; on_cancelled => Ready.
+   dictation/error.rs:on_error logs, transition Error, VoiceError{source:"Dictation",owner:Dictation} to TRAY, gated toast via should_show_error_toast, auto-recover Ready when previously enabled / restore Idle when previously disabled; on_cancelled => Ready.
 
 Observable Exit:
   1. Speech PTT hold: dictation_state Ready->Listening (after PttStart) ->Thinking (after valid PttStop, asserted BEFORE transcript arrives) ->Ready (after TranscriptFinal, unless pipelined overlap holds Listening); VoxEvent::TranscriptFinal non-empty via pipeline_event_rx, sim>=0.90 vs EN ground truth.
@@ -524,17 +524,17 @@ fn test_dictation_transcript_never_touches_llm() // sync with Instant::now()+Dur
 ## Seam 5 — Transcript Handler → Context Harness → LLM Dispatch
 
 **File:** `tests/transcript_to_llm_test.rs`
-**Handlers:** `pipeline/assistant/transcript.rs:on_transcript_final` + `services/harness/facade.rs:prepare_turn_context` + `services/llm/actor.rs:spawn_llm_worker`
-**Status:** P2 — Requires Qwen GGUF at `~/.vox/models/llm/qwen/` or mock provider; no network if embedded
+**Handlers:** `pipeline/assistant/transcript.rs:on_transcript_final` + `services/harness/facade.rs:prepare_turn_context` + `services/llm/actor.rs:spawn_llm_worker` + `services/llm/embedded::EmbeddedProvider`
+**Status:** P1 Unblocked — Uses real local Qwen 3.5 GGUF model (`~/.vox/models/llm/qwen/qwen-3.5-0.8b-q4_k_m.gguf`) via `EmbeddedProvider`; zero mock LLM token generation; real GenerationRequest assembly, context harness thresholds, and real inference execution.
 
 ### Phase 1 — Production Path Trace
 
 ```
-SUT: Final user transcript triggers context preparation (buffer push + threshold maintenance + retrieval + prompt assembly) and dispatch of a GenerationRequest to the LLM worker; the LLM remains Listening->Thinking until token stream starts.
+SUT: Final user transcript triggers context preparation (buffer push + threshold maintenance + prompt assembly) and dispatch of a GenerationRequest to the LLM worker; the real LLM generates tokens into the accumulator and emits LlmFinished.
 
 Production Entry Seam:
   VoxEvent::TranscriptFinal { turn_id, text } delivered to pipeline router (or direct call to on_transcript_final for test isolation).
-  Test provides a valid non-empty transcript and mocked Retrieval profile. Test does NOT call llm_tx.send directly — the handler does.
+  Test provides a valid non-empty transcript. Test does NOT call llm_tx.send directly — the handler does.
 
 Direction Check: PASS — TranscriptFinal is upstream from LLM; invoking LlmCommand directly would test the sink. If LlmCommand were the entry, a broken transcript handler would still pass.
 
@@ -543,68 +543,56 @@ Production Path:
     → drops if state==Idle/Paused or not Thinking (guard 130-144)
     → transliterate_if_hi(text), empty check => Ready + toast if empty
     → set_user_transcript accumulator, emit_ipc_to TranscriptFinal{owner:Assistant}
-    → branch: if Modular => spawn_modular_llm_task(app, state, turn_id, text, ctx) // transcript.rs:28 spawns tauri::async_runtime::spawn
-         → inside async: clone conversation_manager, llm_provider cache via blocking_lock, cancel token via turn_token(), pending_synthesis_jobs atomic, TurnAccumulator arc
+    → branch: if Modular => spawn_modular_llm_task(turn_id, text, state) // transcript.rs:28
+         → inside async: clone conversation_manager, llm_provider cache via read(), cancel token via turn_token(), pending_synthesis_jobs atomic, TurnAccumulator arc
          → services/harness/facade.rs:prepare_turn_context(params): // facade.rs:38
               retrieval (if MemoryScope!=ChitChat embedding+retrieve_turn_profile:42) -> push_user_turn:80 -> ContextHarness::needs_threshold_maintenance()? // 88
-                if critical: pick TRANSITION_MESSAGES_EN/HI filler, choose FIFO vs compaction LLM (102), if filler dispatched: tts_tx.send(Generate filler:122) + pending.fetch_add(1) (transition speech immediate), run run_compaction on history_slice (152) with fallback FIFO on error (174)
+                if critical: pick TRANSITION_MESSAGES_EN/HI filler, choose FIFO vs compaction LLM (102), if filler dispatched: tts_tx.send(Generate filler:122) + pending.fetch_add(1), run run_compaction on history_slice with fallback FIFO
               build ConversationContext { messages, token_count, kv_synced_index } and GenerationRequest { input: ConversationalInput{messages}, options{temp, max_output_tokens}, output:Text, purpose:Conversation } // 254
-         → if transition_speech.is_some() => pending.fetch_add(1) (filler), early cancel check 91
+         → if transition_speech.is_some() => pending.fetch_add(1) (filler), early cancel check
          → llm_tx.send(LlmCommand::Generate{request, turn_id, cancel, accumulator, tts_tx, pending}) // 103-111
        if Realtime => pending.store(1) at transcript.rs:198 (no LLM dispatch)
-  → services/llm/actor.rs:spawn_llm_worker loop: recv Generate => create stream_tx/rx sync_channel, provider.generate(request, turn_id, cancel, &stream_tx) spawned on current_thread runtime
+  → services/llm/actor.rs:spawn_llm_worker loop: recv Generate => create stream_tx/rx sync_channel, provider.generate(request, turn_id, cancel, &stream_tx) spawned on current_thread runtime using real EmbeddedProvider
     → drain Token events via accumulator.lock().push_token(&token) => TtsClauseChunker -> pending.fetch_add(1), tts_tx.send(Generate clause), emit LlmToken direct
     → Finished => event_tx.send(VoxEvent::LlmFinished{turn_id})
-  → pipeline/assistant/llm.rs:on_llm_finished checks Thinking/Speaking else drop; for Modular flush chunker remainder, flush_pre_roll, take_assistant_response+user_transcript, persist via ConversationManager::push_assistant_turn + persist_tx.try_send(TurnCompleted)
+  → pipeline/assistant/llm.rs:on_llm_finished checks Thinking/Speaking else drop; persists via ConversationManager
 
 Observable Exit:
-  1. LlmCommand received on injected llm_rx (or VoxEvent::LlmFinished via event_tx when using real provider)
-  2. When using real embedded LLM: VoxEvent::LlmFinished + accumulator.assistant_response non-empty + LlmToken stream
-  3. Context harness filler path: pending_synthesis_jobs increment for filler + filler clause tts_tx entry when threshold exceeded
+  1. LlmCommand::Generate dispatched by transcript handler to worker with user query appended as last message.
+  2. Real EmbeddedProvider runs Qwen GGUF inference, streams tokens into accumulator, and emits VoxEvent::LlmFinished.
+  3. Context harness filler path: pending_synthesis_jobs increment for filler + filler clause tts_tx entry when threshold exceeded.
+  4. Empty / whitespace transcript guards to Ready without LLM dispatch.
+  5. Realtime mode sets pending to 1 without LLM dispatch.
 
 Production functions called:
-  setup: get_test_app_and_state, create_mock_llm_provider or warm_up_llm with Qwen, ConversationManager seeded with base_system_prompt + identity facts, AppState.llm_provider cache Some, PlaybackEngine mock, tts_tx channel for filler observation, pipeline state set to Listening then Thinking via transition()
-  entry: router send VoxEvent::TranscriptFinal or direct on_transcript_final(turn_id, "hello world".to_string(), app, state, &ctx) with RoutingContext{Modular, PTT or Passive, Assistant}
-  observe: llm_rx (MockProvider capture of GenerationRequest fields), event_rx for LlmFinished, accumulator.assistant_response, pending counter, tts_rx for filler
-  teardown: cancel tokens, cool_down_llm, join handles
+  setup: get_test_app_and_state, get_qwen_model_path -> EmbeddedProvider::new(2048, 4), ConversationManager seeded with base_system_prompt, AppState.llm_provider cache set to Some(Arc<EmbeddedProvider>), tts_tx and llm_tx attached to state, pipeline state set to Thinking
+  entry: on_transcript_final(turn_id, text, &app, &state, &ctx) with RoutingContext{Modular, PTT or Passive, Assistant}
+  observe: llm_rx for GenerationRequest fields, event_rx for VoxEvent::LlmFinished, accumulator.assistant_response, pending_synthesis_jobs counter, tts_rx for filler
+  teardown: cancel tokens, worker shutdown, join handles
 
-Functions written in test file: MockLlmProvider that captures request and returns synthetic token stream (or delegates to real provider when not mock).
+Functions written in test file:
+  None — Uses real EmbeddedProvider and real production worker threads.
 ```
 
 ### Phase 2b — False-Green Table
 
 | Defect | Would test fail? |
 | --- | --- |
-| **upstream producer completely silent (no VoxEvent::TranscriptFinal delivered / assistant/transcript.rs:on_transcript_final never invoked)** | **Yes — llm_rx empty after 3s, mandatory create-test:2b row** |
+| **upstream producer completely silent (no VoxEvent::TranscriptFinal delivered / assistant/transcript.rs:on_transcript_final never invoked)** | **Yes — llm_rx empty after 3s, VoxEvent::LlmFinished never received — mandatory create-test:2b row** |
 | on_transcript_final drops valid transcript (Idle/Paused guard inverted at `assistant/transcript.rs:on_transcript_final` state checks, or `!=Thinking` drop misfires) | Yes — no LlmCommand dispatched, llm_rx empty after 3s, assert fails |
-| prepare_turn_context never pushes user turn (push_user_turn deleted in harness) | Yes — GenerationRequest input.messages missing last user turn, mock asserts messages.len() fails |
+| prepare_turn_context never pushes user turn (push_user_turn deleted in harness) | Yes — GenerationRequest input.messages missing last user turn, assert messages.len() fails |
 | needs_threshold_maintenance inverted (always false) where buffer >0.85 | Yes — filler tts_tx empty when test seeded >0.85, filler assertion fails |
-| GenerationRequest built with wrong purpose/options (max_output_tokens not propagated) | Yes — mock capture asserts options.max_output_tokens == expected |
+| GenerationRequest built with wrong purpose/options (max_output_tokens not propagated) | Yes — GenerationRequest options.max_output_tokens != expected |
 | llm_tx.send skipped (early return before Generate send in `spawn_modular_llm_task`) | Yes — llm_rx stays empty, channel empty assertion fails |
 | Modular dispatch deleted (`spawn_modular_llm_task` call removed at `assistant/transcript.rs` Modular branch) | Yes — valid transcript in Modular yields no LlmCommand where expected one (Realtime path unaffected — branch-specific kill) |
 | Realtime pending arming deleted (`pending_synthesis_jobs.store(1)` removed at `assistant/transcript.rs` Realtime branch) | Yes — realtime transcript leaves pending 0 where test expects 1, downstream playback gate never arms |
 | prepare_turn_context fallback on compaction error not executed (FIFO fallback deleted) | Yes — seeded error case would panic instead of FIFO, no GenerationRequest dispatched |
-| retrieval ChitChat not pruned (MemoryScope::ChitChat still triggers vector search at facade.rs:47) | Yes — ChitChat query would incorrectly inject <user_profile> where test expects empty |
 
 ### Test Functions
 
 ```rust
 #[tokio::test]
-async fn test_transcript_dispatches_generation_request() // tokio::time::timeout(20s) — MockLlmProvider, send valid transcript, assert llm_rx receives request with last message == transcript, purpose==Conversation
-
-#[tokio::test]
-async fn test_transcript_empty_guards_to_ready() // timeout 15s Mock — transcript="   " -> state==Ready, llm_rx empty 500ms — NEGATIVE
-
-#[tokio::test]
-async fn test_transcript_critical_triggers_filler_and_pending() // timeout 20s — seed MessageBuffer 100 turns force accountant >0.85, assert tts_rx receives filler (TRANSITION_MESSAGES) + pending==1
-
-#[tokio::test]
-async fn test_transcript_compaction_fallback_to_fifo() // timeout 15s — mock run_compaction error path, assert fallback performs FIFO and still dispatches GenerationRequest with reduced messages
-
-#[tokio::test]
-async fn test_transcript_chitchat_yields_no_retrieval() // timeout 10s — query "hello" classified ChitChat, assert retrieved_profile empty, no vector search, still dispatches LLM
-
-// Real LLM variant #[ignore] (Qwen): Transcript -> LlmFinished + accumulator non-empty, asserts LlmToken stream at least 1 token, no cargo nextest default
+async fn test_transcript_to_llm_matrix() // Uses real EmbeddedProvider with local Qwen GGUF. Tests: Subtest 1 valid transcript dispatches GenerationRequest and real inference runs to LlmFinished; Subtest 2 empty transcript guards to Ready; Subtest 3 non-Thinking state drops; Subtest 4 Realtime arms pending without LLM; Subtest 5 critical threshold triggers filler and increments pending.
 ```
 
 ---
@@ -612,75 +600,89 @@ async fn test_transcript_chitchat_yields_no_retrieval() // timeout 10s — query
 ## Seam 6 — LLM Token Streaming → Clause Chunking → TTS Dispatch (LLM→TTS)
 
 **File:** `tests/llm_to_tts_test.rs`
-**Handlers:** `services/llm/actor.rs:Token loop` + `pipeline/assistant/accumulator.rs:TurnAccumulator::push_token` + `services/tts/actor.rs:TtsClauseChunker`
+**Handlers:** `services/llm/actor.rs:spawn_llm_worker` + `services/llm/embedded/mod.rs:EmbeddedProvider` + `pipeline/assistant/accumulator.rs:TurnAccumulator::push_token` + `services/tts/actor.rs:TtsClauseChunker` + `pipeline/assistant/llm.rs:on_llm_finished`
 **Doc:** `docs/plans/phase11/llm_to_playback_flow.md` steps 2-3 authoritative
-**Status:** P2 — Mock TTS provider (no audio) or real Supertonic/Kokoro; no Playback needed
+**Status:** P1 Unblocked — Uses real local Qwen GGUF model (`~/.vox/models/llm/qwen/qwen-3.5-0.8b-q4_k_m.gguf`) via `EmbeddedProvider`; zero mock LLM tokens; real token generation, streaming emitter, clause chunker, and TTS dispatch accounting.
 
 ### Phase 1 — Production Path Trace
 
 ```
-SUT: Streaming LLM tokens are deterministically chunked into speakable clauses and each clause is dispatched as a TTS synthesis job with pending accounting.
+SUT: Real local Qwen LLM generation streams tokens across threads into TurnAccumulator, chunks speakable clauses via TtsClauseChunker, and dispatches real TtsCommand::Generate synthesis jobs with atomic pending accounting and remainder flush.
 
 Production Entry Seam:
   LlmCommand::Generate { request, turn_id, cancel: CancellationToken, accumulator, tts_tx, pending_synthesis_jobs } sent to llm_tx.
-  Upstream is transcript handler; test does NOT directly call TtsCommand::Generate nor examine Playback — those are downstream.
+  Upstream is transcript handler (Seam 5); test invokes the real entry seam of the LLM subsystem without synthetic token injection.
 
-Direction Check: PASS — if test called TtsCommand directly it would test sink; thin wire is LLM token -> chunker -> TTS dispatch.
+Direction Check: PASS — LlmCommand::Generate triggers the full embedded llama.cpp inference engine on the dedicated worker OS thread.
 
 Production Path:
-  llm_tx.send(Generate) -> spawn_llm_worker loop (llm/actor.rs:108)
-    → gen via Embedded (Qwen GGUF via llama.cpp) or Remote (OpenAICompat SSE) produce LlmStreamEvent::Token(token_bytes) per sampled token (StreamingEmitter with partial_tag_len holdback)
-    → for each Token: let clauses = accumulator.lock().push_token(&token) // accumulator.rs:35 -> TtsClauseChunker::push_str -> extract_chunks loop find_split_point:289
-         for clause in clauses { pending.fetch_add(1); tts_tx.send(Generate{turn_id, text: clause}) } // pending per clause, llm/actor.rs:130-134
-         emit_ipc_to LlmToken{turn_id, token} (bypass router)
-    → on Finished break; runtime.block_on(provider.generate) Ok -> event_tx.send(VoxEvent::LlmFinished{turn_id}) // llm/actor.rs:172
-  → TTS side (observed via tts_rx channel, no synthesis needed for this seam): tts_rx.recv() yields Generate{turn_id, text: clause}
-  → After LlmFinished, pipeline/assistant/llm.rs:42 flush_modular_tts_remainder handles unpunctuated tail: accumulator.flush_chunker() -> Option<remainder> -> pending.fetch_add(1) -> tts_tx.send Generate remainder // llm.rs:47-66
+  llm_tx.send(Generate) -> spawn_llm_worker loop (services/llm/actor.rs:108)
+    → EmbeddedProvider::generate (services/llm/embedded/generate.rs:160)
+        loads context, prepares LlamaBatch, executes llama_cpp evaluation loop on dedicated OS thread
+    → StreamingEmitter evaluates sampled tokens, strips model template tags, and emits LlmStreamEvent::Token(token_bytes)
+    → for each Token in stream_rx:
+        clauses = accumulator.lock().push_token(&token)
+        for clause in clauses:
+            pending_synthesis_jobs.fetch_add(1, Relaxed)
+            tts_tx.send(TtsCommand::Generate { turn_id, text: clause })
+        emit_ipc_to(LlmToken { turn_id, token })
+    → on LlmStreamEvent::Finished:
+        event_tx.send(VoxEvent::LlmFinished { turn_id })
+  → Router dispatches VoxEvent::LlmFinished to pipeline/assistant/llm.rs:on_llm_finished
+  → on_llm_finished:
+      calls flush_modular_tts_remainder:
+        if let Some(remainder) = accumulator.lock().flush_chunker():
+            pending_synthesis_jobs.fetch_add(1, Relaxed)
+            tts_tx.send(TtsCommand::Generate { turn_id, text: remainder })
+      accumulated assistant response persisted to ConversationManager
 
 Observable Exit:
-  1. tts_rx receives N Generate messages with correct clause texts (deterministic splits per TtsClauseChunker spec) — count equals number of punctuation boundaries + emergency caps in token stream
-  2. pending_synthesis_jobs final count == number of dispatched clauses (including remainder if flushed)
-  3. LlmToken stream emitted (via event fast-path) mirrors input tokens
-  4. On LlmFinished, remainder tail (e.g. "hello world" without punctuation) appears as final TTS job via flush
+  1. Real Qwen LLM executes inference and emits authentic streamed tokens (verified via non-empty accumulator text and LlmFinished event).
+  2. tts_rx receives real speakable clauses matching English sentences generated by the model.
+  3. pending_synthesis_jobs equals exactly the count of dispatched clauses (including unpunctuated remainder if flushed).
+  4. Accumulator assistant response contains the full concatenated response text.
 
 Production functions called:
-  setup: create_mock_tts_channel (mpsc), MockLlmProvider emitting predetermined token array ["Hello", " world.", " How are", " you?", " This is", " a longer, sentence with comma", " and tail without punct"], TurnAccumulator::new(), pending AtomicU32(0), event_tx for LlmFinished, tts_tx Some
-  entry: llm_tx.send(Generate{request: Box::new(ConversationInput single turn "hello"), turn_id=1, cancel fresh, accumulator fresh, tts_tx Some, pending fresh})
-  observe: tts_rx drained with timeout 5s, pending counter, accumulator.buffer remaining, LlmFinished via event_rx, LlmToken count
-  teardown: cool_down_llm, join, Instant::now()+15s hard deadline
+  setup:
+    get_test_app_and_state()
+    get_qwen_model_path() -> EmbeddedProvider::new(path, ctx_size=2048, n_threads=4)
+    spawn_llm_worker(app, llm_rx, provider, event_tx)
+    attach_mock_engine_with_llm_tts_to_state(app, state, stt_tx, vad_tx, Some(llm_tx), Some(tts_tx))
+  entry:
+    llm_tx.send(LlmCommand::Generate { request, turn_id, cancel, accumulator, tts_tx, pending_synthesis_jobs })
+  observe:
+    event_rx for VoxEvent::LlmFinished
+    tts_rx for TtsCommand::Generate clauses
+    pending_synthesis_jobs atomic counter
+    accumulator.assistant_response
+  teardown:
+    llm_tx.send(LlmCommand::Shutdown)
+    worker_handle.join()
 
-Functions written in test file: MockLlmProvider (emits synthetic tokens with controlled timing) and mock TTS capture (channel count).
+Functions written in test file:
+  None — Uses production EmbeddedProvider and production worker loops.
 ```
 
 ### Phase 2b — False-Green Table
 
 | Defect | Would test fail? |
 | --- | --- |
-| **upstream producer completely silent (LlmCommand::Generate never sent to llm_tx / Token stream never emitted)** | **Yes — tts_rx empty after 5s, mandatory row** |
+| **upstream producer completely silent (LlmCommand::Generate never sent to llm_tx / Qwen model fails to load)** | **Yes — tts_rx empty after timeout, VoxEvent::LlmFinished never received — mandatory** |
+| Real Qwen inference loop fails to stream tokens (llama.cpp evaluation broken) | Yes — stream_rx empty, 0 clauses dispatched, accumulator empty |
 | Token->clause chunking bypassed: push_token returns vec![] always at accumulator.rs:35 | Yes — no TtsCommand dispatched, tts_rx empty, pending 0 |
-| find_split_point comma gate word_count>=5 removed (always splits on comma at tts/actor.rs:320) | Yes — "Hello, world" would split into two clauses where test with 2-word prefix expects 1, clause count assertion fails |
-| find_split_point period abbreviation guard deleted (is_abbreviation not checked at tts/actor.rs:350) | Yes — "Hello Dr. Smith is here. Next" would split at "Dr." incorrectly; chunk assertion fails |
-| emergency 25-word cap deleted at tts/actor.rs:294 | Yes — 30-word unpunctuated input would produce 0 clauses, expected 1 emergency chunk fails |
-| flush() deleted on LlmFinished (assistant/llm.rs:47 remainder not sent) | Yes — unpunctuated tail "hello world" never dispatched, tts_rx count off by one, pending mismatch |
-| pending fetch_add for clauses deleted at llm/actor.rs:131 | Yes — pending remains 0 while tts_rx has 2 entries, pending==count assertion fails |
+| flush() deleted on LlmFinished (assistant/llm.rs:47 remainder not sent) | Yes — unpunctuated tail never dispatched, tts_rx count off by one, pending mismatch |
+| pending fetch_add for clauses deleted at llm/actor.rs:135 | Yes — pending remains 0 while tts_rx has entries, pending==count assertion fails |
 | pending fetch_add for remainder deleted at assistant/llm.rs:53 | Yes — tail pending off by one |
+| StreamingEmitter holdback buffer corrupted (drops trailing tokens) | Yes — truncated generation, missing sentence termination |
 
 ### Test Functions
 
 ```rust
-#[test]
-fn test_llm_to_tts_clause_dispatches_per_punctuation() // Instant+15s — 4 synthetic tokens "Hello world. How are you?" -> expect 2 clauses split at "." -> 2 TTS jobs, pending==2, no playback needed
+#[tokio::test]
+async fn test_real_llm_to_tts_streaming_and_clause_dispatch() // Uses real EmbeddedProvider with Qwen GGUF, prompt "Count from 1 to 5 with periods.", asserts streaming tokens, >=1 clause on tts_rx, pending count matches dispatched clauses, LlmFinished emitted.
 
-#[test]
-fn test_llm_to_tts_flushes_tail_remainder() // Instant+10s — single token "hello world without punct" -> 0 chunks during stream, 1 tail via flush on LlmFinished, pending==1
-
-#[test]
-fn test_llm_to_tts_comma_gate_and_abbreviation() // Instant+10s — "Hello, world" (2w pre) -> 0 splits; "This is a longer sentence, and continues" (5w pre) -> 1 split; "Dr. Smith" not split
-
-#[test]
-fn test_llm_to_tts_emergency_cap() // Instant+10s — 30-word unpunctuated join(" ") -> 1 emergency chunk of 20 words
-
-// Real LLM variant #[ignore] 20s: real Qwen small prompt -> at least 1 clause dispatched, pending accurate
+#[tokio::test]
+async fn test_real_llm_to_tts_tail_flush_on_finished() // Uses real EmbeddedProvider with prompt without punctuation, verifies remainder flushed via on_llm_finished into tts_rx and pending incremented.
 ```
 
 ---
@@ -688,46 +690,61 @@ fn test_llm_to_tts_emergency_cap() // Instant+10s — 30-word unpunctuated join(
 ## Seam 7 — TTS Synthesis → Playback Ingest & Pre-roll Gates (TTS→Playback) — Spot-check only; canonical gate defer/cancel tests live in Seam 9
 
 **File:** `tests/tts_to_playback_test.rs`
-**Handlers:** `services/tts/actor.rs:spawn_tts_worker` + `services/tts/providers::{supertonic,kokoro,chatterbox,edge}*::synthesize_chunk` + `services/audio/playback.rs:ingest_chunk/flush_pre_roll` + `pipeline/assistant/playback.rs`
+**Handlers:** `services/tts/actor.rs:spawn_tts_worker` + `services/tts/providers/supertonic.rs:TtsEngine` + `services/audio/playback.rs:ingest_chunk/flush_pre_roll` + `pipeline/assistant/playback.rs`
 **Doc:** `docs/plans/phase11/llm_to_playback_flow.md` steps 4-5
-**Status:** P2 — Supertonic/Kokoro local (mock) + mock PlaybackEngine; no LLM
+**Status:** P1 Unblocked — Uses real local Supertonic TTS model (`~/.vox/models/tts/supertonic-3/`) via `warm_up_tts` / `create_tts_provider`; real ONNX text encoder, duration predictor, vector estimator, and vocoder generating real 24kHz/44.1kHz audio; mock PlaybackEngine (SPSC lock-free ring buffer without physical audio output device hardware).
 
 ### Phase 1 — Production Path Trace
 
 ```
-SUT: Dispatched TTS synthesis jobs produce PCM audio that prefills the lock-free playback ring and arms the Thinking→Speaking gate via pre-roll thresholds.
+SUT: Real Supertonic TTS synthesis jobs generate real PCM audio from text, upsample and ingest into the lock-free playback ring buffer, and satisfy the Thinking→Speaking pre-roll threshold gate.
 
 Production Entry Seam:
   TtsCommand::Generate { turn_id, text } sent to tts_tx (as produced by Seam 6).
   Upstream is clause chunker; test does NOT call PlaybackEngine::ingest_chunk directly — synthesis does.
 
-Direction Check: PASS — calling ingest_chunk would test playback only; thin wire is TTS dispatch -> synthesis -> playback ingest.
+Direction Check: PASS — calling ingest_chunk would test playback only; thin wire is TTS dispatch -> real synthesis -> playback ingest.
 
 Production Path:
   tts_tx.send(Generate{turn_id, text: clause text}) -> spawn_tts_worker loop (tts/actor.rs:30)
-    → provider.synthesize_chunk(text, turn_id, cancel_flag, &playback, event_tx, telemetry_rtf) // tts/providers/trait:41
-       Progressive (Supertonic generate_with_config callback:242, Kokoro:142): callback invoked per diffusion step → playback.ingest_chunk(&f32@24k) progressively
-       Batch (Chatterbox:172, EdgeTTS:316 chunks 2048): buffer full then for chunk in output.chunks(2048) ingest_chunk
-       All providers respect cancel_flag load at playback.rs:106 early return
-    → after synthesis returns: if pending Some{jobs.fetch_sub(1); if remaining<=1 { playback.flush_pre_roll() } } // tts/actor.rs:50
-  → PlaybackEngine::ingest_chunk_with_threshold(chunk_24k, MODULAR=12000 or REALTIME=3840) // playback.rs:105
-     → cancel_flag check, upsample_2x_into(chunk_24k, scratch)-> push_slice(scratch), if !turn_armed && occupied>=threshold { turn_armed=true; event_tx.send(PlaybackStarted{tid}) } // Gate1 playback.rs:123
-     → flush_pre_roll(): if !cancel && !turn_armed && occupied>0 { turn_armed=true; send PlaybackStarted } // playback.rs:176
-     → CPAL callback process_output_buffer: if pending>0 { underruns++ } else if armed && consumer.is_empty() { turn_armed=false; send PlaybackFinished } // aggregated to assistant/playback.rs:48 guard
-  → pipeline/assistant/playback.rs:on_playback_started (playback.rs:8) transition Thinking->Speaking if state==Thinking else drop
-  → pipeline/assistant/playback.rs:on_playback_finished (playback.rs:32) if state!=Speaking drop, if pending>0 defer, else transition Ready and persist
+    → Supertonic TtsEngine::synthesize_chunk(text, turn_id, cancel_flag, &playback, event_tx, telemetry_rtf) (providers/supertonic.rs:188)
+        generates speech with ONNX models progressively via callback → playback.ingest_chunk(&f32@24k)
+    → after synthesis returns:
+        if pending Some {
+            let remaining = jobs.fetch_sub(1, Relaxed);
+            if remaining <= 1 {
+                playback.flush_pre_roll();
+            }
+        }
+  → PlaybackEngine::ingest_chunk_with_threshold(chunk_24k, MODULAR=12000) (playback.rs:105)
+      → cancel_flag check, upsample_2x_into(chunk_24k, scratch) -> push_slice(scratch)
+      → if !turn_armed && occupied >= threshold { turn_armed=true; event_tx.send(PlaybackStarted{tid}) }
+  → pipeline/assistant/playback.rs:on_playback_started transitions Thinking -> Speaking
 
 Observable Exit:
-  1. After synthesis of first clause meeting threshold, PlaybackStarted dispatched (event_rx) and state transitions Thinking->Speaking
-  2. After synthesis of all clauses + flush + ring drained + pending==0, PlaybackFinished dispatched and state Speaking->Ready
-  3. Short utterance < threshold (e.g. "Hi." 180ms -> 8640 samples <12000) without flush would deadlock — flush_pre_roll ensures PlaybackStarted even for short
-  4. Overflow: push_slice returns pushed < len -> warn dropped (playback.rs:115) detectable via log capture
+  1. Real Supertonic synthesis runs on ONNX and ingests real audio samples into playback ring buffer (occupied_len > 0).
+  2. PlaybackStarted event emitted on event_rx upon satisfying pre-roll cushion threshold.
+  3. State transitions from Thinking to Speaking.
+  4. Pending synthesis jobs counter decrements upon synthesis chunk completion.
 
 Production functions called:
-  setup: create_mock_playback_engine (HeapRb 1_440_000, event_tx channel), TtsWarmUpHandles with pending atomic, warm_up_tts with Supertonic mock or real Supertonic dir, create MockTtsProvider that does ingest_chunk with synthetic 0.1 sine at 24k (or delegates to real provider), pending AtomicU32 pre-seeded, state PipelineAtomics set to Thinking, PlaybackEngineHandles with turn_armed/cancel_flag
-  entry: tts_tx.send(Generate{turn_id=1, text="Hello world."}) + tts_tx.send(Generate{turn_id=1, text="How are you?"}) or single filler
-  observe: event_rx (PlaybackStarted/Finished), playback.buffer_len(), pending counter, consumer HeapCons try_pop, state.pipeline.state(), underruns via playback telemetry
-  teardown: cool_down_tts, playback.cancel, join handles, Instant::now()+30s hard deadline
+  setup:
+    create_mock_playback_engine() (HeapRb 1_440_000, event_tx channel)
+    warm_up_tts with get_supertonic_model_dir()
+    attach_mock_engine_with_llm_tts_to_state
+  entry:
+    tts_tx.send(TtsCommand::Generate { turn_id: 1, text: "Hello world." })
+  observe:
+    event_rx for VoxEvent::PlaybackStarted
+    playback.buffer_len() / occupied samples
+    consumer HeapCons pop
+    state.pipeline.state()
+  teardown:
+    cool_down_tts(&mut tts_tx)
+    join handles
+
+Functions written in test file:
+  None — Uses real Supertonic provider and production worker loops.
 ```
 
 ### Phase 2b — False-Green Table
@@ -735,31 +752,23 @@ Production functions called:
 | Defect | Would test fail? |
 | --- | --- |
 | **upstream producer completely silent (TtsCommand::Generate never sent to tts_tx)** | **Yes — no synthesis, no ingest, PlaybackStarted timeout — mandatory** |
-| TTS synthesis deleted (provider.synthesize_chunk never calls ingest_chunk) | Yes — ring stays 0, no PlaybackStarted |
-| ingest_chunk cancel_flag check removed (deleted at playback.rs:106) | Negative: when cancel flag set during barge-in, audio would still push and arm, PlaybackStarted would fire when it should be suppressed — assert cancelled run has absent fails |
-| turn_armed gate deleted (always PlaybackStarted regardless of threshold at playback.rs:123) | Yes — short utterance <threshold would still arm, negative buffer_len 100 < threshold asserts PlaybackStarted absent before flush would now be present and fail negative |
-| flush_pre_roll deleted (deadlock guard at playback.rs:176 removed) | Yes — short utterance 8000 < 12000 never arms, PlaybackStarted absent, timeout |
-| Progressive provider callback not progressive (buffers full utterance then ingest once) | Yes — latency probe measuring time to first PlaybackStarted would exceed 500ms threshold where progressive should be <300ms; not strict fail but RTF metric regression detectable |
+| Real Supertonic synthesis fails to generate audio (ONNX session broken / zero samples) | Yes — ring stays 0, no PlaybackStarted |
+| ingest_chunk cancel_flag check removed (deleted at playback.rs:106) | Negative: when cancel flag set during barge-in, audio would still push and arm |
+| turn_armed gate deleted (always PlaybackStarted regardless of threshold at playback.rs:123) | Yes — short utterance <threshold would still arm prematurely |
+| flush_pre_roll deleted (deadlock guard at playback.rs:176 removed) | Yes — short utterance never arms, PlaybackStarted absent, timeout |
 | pending fetch_sub + flush pairing deleted at tts/actor.rs:50 | Yes — last clause never triggers flush_pre_roll, short tail deadlock, pending remains 1 while PlaybackFinished deferred |
 | pending guard at assistant/playback.rs:48 deleted (always Ready even if pending>0) | Yes — set pending=1 then drain ring => PlaybackFinished would incorrectly fire while synthesis still in-flight; test asserts deferred fails |
 
 ### Test Functions
 
+### Test Functions
+
 ```rust
-// NOTE: `pending>0 deferred` and `cancel suppress` gates are canonically asserted in Seam 9 `playback_interrupt_test.rs`; the two tests below are light spot-checks for ingest wiring to avoid duplicate wire per testing-style-guide.md:3 — not the canonical gate proof
-#[test]
-fn test_tts_to_playback_arms_and_completes() // Instant+30s — 2 clauses "Hello world." + "How are you?" -> PlaybackStarted after first threshold (12000) -> Speaking -> drain pending==0 -> Ready + Finished
+#[tokio::test]
+async fn test_real_tts_to_playback_synthesis_and_preroll() // Uses real local Supertonic ONNX model to synthesize "Hello world.", ingests real audio into mock PlaybackEngine (SPSC buffer), asserts occupied_len > 0, PlaybackStarted event emitted, transitions to Speaking, and pending decremented.
 
-#[test]
-fn test_tts_to_playback_short_utterance_flush_ensures_start() // Instant+15s NEGATIVE — single chunk 8000 (<12000) assert no Started after 200ms, flush_pre_roll => Started
-
-#[test]
-fn test_tts_to_playback_finished_deferred_while_pending() // Instant+10s — pending=1, ingest+drain -> assert no Finished, pending.store(0)+drain -> Finished
-
-#[test]
-fn test_tts_to_playback_cancellation_suppresses_ingest() // Instant+10s NEGATIVE — cancel_flag=true before ingest, send Generate "hello" -> ring stays empty, no Started
-
-// Real provider variant #[ignore] 30s: Supertonic real synthesis "One moment please." -> PlaybackStarted within 1s, acoustic RMS >0.01
+#[tokio::test]
+async fn test_tts_to_playback_short_utterance_flush() // Validates that short utterances < threshold trigger flush_pre_roll when pending reaches <= 1.
 ```
 
 ---
@@ -768,7 +777,7 @@ fn test_tts_to_playback_cancellation_suppresses_ingest() // Instant+10s NEGATIVE
 
 **File:** `tests/tts_transition_test.rs`
 **Handlers:** `services/tts/actor.rs:TtsCommand::SetVoice` + `services/tts/providers/{supertonic,kokoro,chatterbox}::set_voice` + `services/harness/facade.rs:transition_speech filler dispatch` + `services/audio/playback.rs:cancel/discard` + `core/settings.rs:voice_index reload`
-**Status:** P1 Unblocked — mock provider, no model weights required for SetVoice logic; filler uses mock TTS
+**Status:** P1 Unblocked — Uses real local Supertonic ONNX engine (`~/.vox/models/tts/supertonic-3/`) via `warm_up_tts` / `spawn_tts_worker` for SetVoice and synthesis; real local Qwen GGUF model (`~/.vox/models/llm/qwen/qwen-3.5-0.8b-q4_k_m.gguf`) via `EmbeddedProvider` for compaction threshold and filler transition.
 
 ### Phase 1 — Production Path Trace
 
@@ -790,7 +799,7 @@ Path A — Voice hot-swap (SetVoice without engine restart):
     // Critical: SetVoice must not clear pending jobs, turn_armed, or playback queue; it must be processed serially in the worker loop after any in-flight Generate completes
 
   Observable Exit:
-    1. After Generate clause A with voice0, send SetVoice(2), send Generate clause B -> both syntheses complete, tts_rx shows clause B audio with new voice characteristic (mock asserts provider.voice.load()==2) and no dropped clause
+    1. After Generate clause A with voice 0, send SetVoice(2), send Generate clause B -> both syntheses complete, real Supertonic synthesizes clause B with voice 2, audio ingested into playback buffer with no dropped clause
     2. Pending accounting remains symmetric: 2 fetch_add (2 clauses) -> 2 fetch_sub -> 0, flush still works, no deadlock
 
 Path B — Transition filler speech (compaction latency hiding):
@@ -817,16 +826,15 @@ Observable Exit (filler):
   4. On compaction error fallback, GenerationRequest still dispatched with FIFO-reduced messages and filler still exactly once
 
 Production functions called:
-  setup A: MockTtsProvider with AtomicU32 voice_idx 0, spawn_tts_worker with mock playback, tts_tx channel, pending AtomicU32, cancel_flag false
+  setup A: warm_up_tts with get_supertonic_model_dir(), spawn_tts_worker with mock playback, tts_tx channel, pending AtomicU32, cancel_flag false
   entry A: tts_tx.send(Generate{turn_id=1, text="hello."}) -> sleep 50ms -> tts_tx.send(SetVoice(2)) -> tts_tx.send(Generate{turn_id=1, text="world."}) -> drain tts completions
-  observe A: provider.voice==2 after SetVoice, tts_rx count 2, pending 0, playback.buffer_len >0 for both
+  observe A: tts_rx receives synthesized clauses for both voice 0 and voice 2, pending returns to 0, playback buffer receives audio samples
+  teardown A: cool_down_tts(&mut tts_tx)
 
-  setup B: ConversationManager seeded with 100-turn mock history to exceed 0.85 (sync accountant 0.9), MockLlmProvider for compaction, mock tts channel, db None or in-memory, context_window 4096, provider_kind OpenAiCompat (non-fifo path)
-  entry B: facade.prepare_turn_context(PrepareTurnParams{harness, tts_tx:Some, memory_tx, conn:None, query:"hello", turn_id:1, session_id:"s", memory: enabled, context_window, provider_kind, llm_provider:Some(mock), llm_settings}) -> await
+  setup B: ConversationManager seeded with 100-turn history to exceed 0.85 (sync accountant 0.9), real EmbeddedProvider with get_qwen_model_path(), mock tts channel, context_window 4096
+  entry B: facade.prepare_turn_context(PrepareTurnParams{harness, tts_tx:Some, memory_tx, conn:None, query:"hello", turn_id:1, session_id:"s", memory: enabled, context_window, provider_kind: ProviderKind::Embedded, llm_provider:Some(qwen), llm_settings}) -> await
   observe B: returned filler Some string from TRANSITION_MESSAGES set, tts_rx filler present, pending after transcript caller fetch_add ==1, second call with non-critical context yields None filler and pending not incremented
-  teardown: cool_down_tts, cancel, join
-
-Functions written in test file: MockTtsProvider capturing voice_idx and synthesize_chunk calling playback.ingest_chunk with synthetic samples, MockCompactionProvider returning ok or error for fallback path.
+Functions written in test file: None (all production components: real Supertonic ONNX engine via warm_up_tts / spawn_tts_worker, real Qwen EmbeddedProvider for compaction / filler trigger).
 ```
 
 ### Phase 2b — False-Green Table
@@ -1438,7 +1446,7 @@ Functions written in test file: None.
 fn test_onnx_model_singleton_lifecycle_eviction() // Instant+60s hard deadline — ensure 4 models true -> unload -> assert all false + embed should fail -> re-ensure true
 
 #[tokio::test]
-async fn test_llm_tts_cool_down_clears_handles() // tokio::time::timeout(15s, async { warm_up... }).await.expect("hard timeout") — warm_up mock (no real weights) -> cool_down -> tts_tx None + handle joined
+async fn test_llm_tts_cool_down_clears_handles() // tokio::time::timeout(15s, async { warm_up... }).await.expect("hard timeout") — warm_up_tts with local Supertonic -> cool_down_tts -> tts_tx None + handle joined
 ```
 
 ---
@@ -1525,10 +1533,10 @@ fn test_model_manager_removal_cleans_marker() // valid -> verify -> remove -> di
 | **P1** | 3 PTT Realtime | `ptt_window_realtime_test.rs` | Ready | Window trim + ghost gate Realtime commit (isolated from 2) |
 | **P1** | 4 Dictation window+passive+gate | `dictation_window_test.rs` | Ready | VoxEvent PTT/passive → STT → OutputRouter, LLM zero invariant, gate purge, Idle VoiceError |
 | **P1** | 9 Playback + Interrupt + Suppression | `playback_interrupt_test.rs` | Ready | Gates + pending defer + should_suppress + next_turn |
-| **P2** | 5 Transcript -> LLM | `transcript_to_llm_test.rs` | Ready (mock) | Valid/empty/filler/ChitChat/fallback, #[ignore] real Qwen |
-| **P2** | 6 LLM -> TTS | `llm_to_tts_test.rs` | Ready (mock) | Token -> clause determinism, flush tail, gated comma/abbr/cap |
-| **P2** | 7 TTS -> Playback | `tts_to_playback_test.rs` | Ready (mock) | Synthesis ingest + thresholds 12k/3840 + flush + cancel |
-| **P2** | 8 TTS Transition & Hot-Swap | `tts_transition_test.rs` | Ready (mock) | Filler pending once + SetVoice serialised |
+| **P2** | 5 Transcript -> LLM | `transcript_to_llm_test.rs` | Ready | Real local Qwen GGUF, GenerationRequest, threshold filler |
+| **P2** | 6 LLM -> TTS | `llm_to_tts_test.rs` | Ready | Real local Qwen GGUF, token streaming -> clause chunking -> TTS |
+| **P2** | 7 TTS -> Playback | `tts_to_playback_test.rs` | Ready | Real local Supertonic ONNX synthesis -> PlaybackEngine buffer pre-roll |
+| **P2** | 8 TTS Transition & Hot-Swap | `tts_transition_test.rs` | Ready | Real Supertonic SetVoice + real Qwen compaction filler |
 | **P2** | 10 Chunking determinism (X) | `chunking_determinism_test.rs` | Ready | Pure fragment determinism, no models |
 | **P2** | 13 Ingestion 4-stage | `memory_ingestion_test.rs` | Ready | Local ONNX 384-dim, Jaccard 1.0, cosine 0.95, NLI 0.85 |
 | **P2** | 14 Retrieval scope+BFS | `memory_retrieval_test.rs` | Ready | Scope matrix, BFS 2-hop, budget 0.15 |

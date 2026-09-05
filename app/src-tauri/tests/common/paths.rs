@@ -9,6 +9,9 @@ use vox_lib::services::tts::{CHATTERBOX_MODEL_DIR, SUPERTONIC_MODEL_DIR};
 use vox_lib::services::vad::{MODEL_DIR_VAD, MODEL_FILE_VAD};
 
 /// Resolves path to a test asset in `tests/assets/` directory.
+/// Self-containment rule: integration tests may ONLY use clips shipped in
+/// `tests/assets/` (the 4 golden clips). No fallback outside `tests/` —
+/// unknown files fail loudly here instead of silently resolving elsewhere.
 pub fn get_asset_path(filename: &str) -> PathBuf {
     let candidates = [
         PathBuf::from("tests/assets").join(filename),

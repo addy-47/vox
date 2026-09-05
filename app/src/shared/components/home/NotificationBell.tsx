@@ -3,11 +3,10 @@ import { Bell } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
 import { NOTIFICATION_COPY } from "@/data/notificationCopy";
-import { useNotificationStore } from "@/store/notificationStore";
+import { useNotificationStore, selectBadgeCount } from "@/store/notificationStore";
 import { NotificationsPopover } from "./NotificationsPopover";
 
 export const NotificationBell = memo(() => {
-  const notifications = useNotificationStore((s) => s.notifications);
   const isOpen = useNotificationStore((s) => s.isOpen);
   const setIsOpen = useNotificationStore((s) => s.setIsOpen);
   const fetchNotifications = useNotificationStore((s) => s.fetchNotifications);
@@ -16,7 +15,7 @@ export const NotificationBell = memo(() => {
   const containerRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  const unreadCount = notifications.filter((n) => n.status === "unread").length;
+  const unreadCount = useNotificationStore(selectBadgeCount);
 
   useEffect(() => {
     let isMounted = true;
@@ -74,7 +73,7 @@ export const NotificationBell = memo(() => {
         <Bell size={16} strokeWidth={1.75} className="shrink-0" />
 
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-[rgb(var(--accent))] text-black font-mono text-[10px] font-black leading-none flex items-center justify-center shadow-sm">
+          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-mono text-[10px] font-black leading-none flex items-center justify-center shadow-sm">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}

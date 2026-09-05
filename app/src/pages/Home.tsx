@@ -1,16 +1,16 @@
-import React, { memo, useMemo } from "react";
-import { VoxOrb, PipelineField, StatusCapsule, TestClipsPopover, NotificationBell } from "@/shared/components/home";
+import React, { memo, useMemo, useState } from "react";
+import { VoxOrb, PipelineField, StatusCapsule, TestClipsPopover, SessionRail, RestorePulse } from "@/shared/components/home";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
-import { ErrorBoundary } from "@/shared/components/common";
+import { SESSION_COPY } from "@/data/sessionCopy";
+import { ErrorBoundary, TopRightCluster } from "@/shared/components/common";
 import {
   GOVERNOR_LABELS,
   HOME_CONTROLS_COPY,
   ERROR_BANNER_COPY,
   DIALOGUE_COPY,
 } from "@/data/homeCopy";
-import { HelpTriggerButton } from "@/shared/components/help/HelpTriggerButton";
-import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle, RotateCcw } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+
+import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle, RotateCcw, PanelLeft } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { AnimatePresence, motion } from "framer-motion";
@@ -55,7 +55,6 @@ const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; 
 DialogueTurn.displayName = "DialogueTurn";
 
 export const Home = memo(() => {
-  const navigate = useNavigate();
   const {
     interactionState,
     interactionMode,
@@ -72,8 +71,9 @@ export const Home = memo(() => {
     testingClip,
     dialogueHistory,
     telemetryRef,
-    errorAlert,
-    dismissError,
+    restoreError,
+    dismissRestoreError,
+    restoreSignal,
     dialogueScrollRef,
     isLaunching,
     isThinking,
@@ -98,6 +98,8 @@ export const Home = memo(() => {
     active: testMode && !isEngaged,
   });
 
+  const [railOpen, setRailOpen] = useState(false);
+
   const statusLabel = toStatusLabel(
     interactionState,
     isEngaged,
@@ -119,61 +121,60 @@ export const Home = memo(() => {
       {/* Sentient Field Background Energy */}
       <PipelineField state={interactionState} />
 
-      {/* Floating Error Toast */}
+      {/* ── Top-right: Help + Notifications ── */}
+      <div className="absolute top-4 right-5 z-30">
+        <TopRightCluster deepLink="page:home" />
+      </div>
+
+      {/* ── Top-left: Conversation rail toggle ── */}
+      <div className="absolute top-4 left-5 z-30 flex items-center pointer-events-none">
+        <button
+          onClick={() => setRailOpen((v) => !v)}
+          aria-label={SESSION_COPY.openRailAriaLabel}
+          aria-expanded={railOpen}
+          className={cn(
+            "flex items-center justify-center w-10 h-10 rounded-full border transition-all duration-300 cursor-pointer pointer-events-auto glass-card",
+            railOpen
+              ? "bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/60"
+              : "bg-transparent border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
+          )}
+        >
+          <PanelLeft size={20} />
+        </button>
+      </div>
+
+      {/* ── Conversation side rail ── */}
       <AnimatePresence>
-        {errorAlert && (
+        {railOpen && <SessionRail open={railOpen} onClose={() => setRailOpen(false)} />}
+      </AnimatePresence>
+
+      {/* ── Restore ingestion pulse (single reverse-flow toward orb) ── */}
+      <RestorePulse signal={restoreSignal} />
+
+      {/* ── Restore error toast ── */}
+      <AnimatePresence>
+        {restoreError && (
           <motion.div
-            initial={{ opacity: 0, x: 50, scale: 0.95 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: 50, scale: 0.95 }}
-            className="absolute top-4 left-4 right-4 md:left-auto md:right-4 z-[100] md:max-w-sm pointer-events-auto"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="absolute top-16 left-1/2 -translate-x-1/2 z-[100] pointer-events-auto"
           >
-            <div className="glass-card p-4 rounded-xl flex items-start gap-3 border border-red-500/30 shadow-2xl bg-black/40 backdrop-blur-md">
-              <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={18} />
-              <div className="flex-1 flex flex-col gap-1.5 min-w-0">
-                <span className="text-xs font-bold tracking-wider uppercase text-red-400 text-left">
-                  {ERROR_BANNER_COPY.title}
-                </span>
-                <p className="text-[12px] text-[rgb(var(--foreground))]/90 leading-relaxed font-light break-words select-text text-left">
-                  {errorAlert}
-                </p>
-                <div className="flex gap-3 mt-1 justify-start">
-                  <button
-                    onClick={() => {
-                      resume();
-                      dismissError();
-                    }}
-                    className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--accent))] hover:underline cursor-pointer"
-                  >
-                    {ERROR_BANNER_COPY.reconnectButton}
-                  </button>
-                  <button
-                    onClick={() => {
-                      dismissError();
-                      navigate("/settings");
-                    }}
-                    className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/80 hover:text-[rgb(var(--foreground))] cursor-pointer"
-                  >
-                    {ERROR_BANNER_COPY.configureButton}
-                  </button>
-                  <button
-                    onClick={() => dismissError()}
-                    className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer"
-                  >
-                    {ERROR_BANNER_COPY.dismissButton}
-                  </button>
-                </div>
-              </div>
+            <div className="glass-card px-4 py-2.5 rounded-xl flex items-center gap-2.5 border border-red-500/30 shadow-2xl bg-black/40 backdrop-blur-md">
+              <AlertCircle className="text-red-400 shrink-0" size={16} />
+              <p className="text-[12px] text-[rgb(var(--foreground))]/90 break-words select-text">
+                {restoreError}
+              </p>
+              <button
+                onClick={() => dismissRestoreError()}
+                className="text-[11px] font-black uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer"
+              >
+                {ERROR_BANNER_COPY.dismissButton}
+              </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* ── Top-right: Notification Bell ── */}
-      <div className="absolute top-4 right-5 z-30 flex items-center gap-1.5 pointer-events-none">
-        <HelpTriggerButton deepLink="page:home" className="pointer-events-auto" />
-        <NotificationBell />
-      </div>
 
       {/* ── Status Capsule: Centered directly above the Orb (matching mobile on all viewports) ── */}
       <div className="absolute top-[10%] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 pointer-events-none">

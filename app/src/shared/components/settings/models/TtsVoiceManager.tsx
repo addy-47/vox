@@ -4,7 +4,7 @@ import { Metronome, Microchip, Zap, Battery, Gauge } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { RotaryKnob } from "@/shared/ui";
 import { VoiceCarousel } from "../voice/VoiceCarousel";
-import { TTS_VOICE_MANAGER_COPY } from "@/data/settingsCopy";
+import { TTS_VOICE_MANAGER_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
 
 export interface CustomVoice {
   id: string;
@@ -198,7 +198,7 @@ export const TtsVoiceManager = memo(({
                       type="button"
                       onClick={handlePrevRegion}
                       className="hover:text-[rgb(var(--foreground))] transition-colors px-0.5 cursor-pointer font-black text-[12px]"
-                      aria-label="Previous region"
+                      aria-label={TTS_VOICE_MANAGER_COPY.region.previous}
                     >
                       ‹
                     </button>
@@ -209,7 +209,7 @@ export const TtsVoiceManager = memo(({
                       type="button"
                       onClick={handleNextRegion}
                       className="hover:text-[rgb(var(--foreground))] transition-colors px-0.5 cursor-pointer font-black text-[12px]"
-                      aria-label="Next region"
+                      aria-label={TTS_VOICE_MANAGER_COPY.region.next}
                     >
                       ›
                     </button>
@@ -288,14 +288,14 @@ export const TtsVoiceManager = memo(({
                 <div className="flex items-center gap-2">
                   <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))] flex items-center gap-1.5">
                     <Microchip size={14} className="text-[rgb(var(--accent))]" />
-                    Compute Allocation
+                    {COMPUTE_PROFILE_COPY.title}
                   </span>
                   <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                     {currentThreads} / {totalCores} Cores
                   </span>
                 </div>
                 <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                  CPU worker threads for TTS synthesis. Higher counts reduce latency but share cores with STT and LLM.
+                  {TTS_VOICE_MANAGER_COPY.compute.description}
                 </p>
               </div>
 
@@ -311,7 +311,7 @@ export const TtsVoiceManager = memo(({
                   )}
                 >
                   <Zap size={11} className="text-[rgb(var(--accent))]" />
-                  <span>Auto</span>
+                  <span>{COMPUTE_PROFILE_COPY.auto}</span>
                 </button>
 
                 <button
@@ -325,7 +325,7 @@ export const TtsVoiceManager = memo(({
                   )}
                 >
                   <Battery size={11} className="text-emerald-400" />
-                  <span>Eco</span>
+                  <span>{COMPUTE_PROFILE_COPY.eco}</span>
                 </button>
 
                 <button
@@ -339,7 +339,7 @@ export const TtsVoiceManager = memo(({
                   )}
                 >
                   <Gauge size={11} className="text-amber-400" />
-                  <span>Max</span>
+                  <span>{COMPUTE_PROFILE_COPY.max}</span>
                 </button>
 
                 <div className={cn(
@@ -360,7 +360,7 @@ export const TtsVoiceManager = memo(({
                         updateDraft("tts", "threads", num);
                       }
                     }}
-                    placeholder="Custom"
+                    placeholder={COMPUTE_PROFILE_COPY.custom}
                     className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>

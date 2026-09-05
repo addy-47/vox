@@ -64,6 +64,31 @@ const HelpArticleInner = memo(
                   ))}
                 </ul>
               )}
+              {section.controls && (
+                <ul className="grid gap-1.5 sm:grid-cols-2">
+                  {section.controls.map((c, i) => {
+                    const ControlIcon = c.icon;
+                    return (
+                      <li
+                        key={`${article.id}-c-${idx}-${i}`}
+                        className="flex items-start gap-2.5 rounded-xl border border-[rgba(var(--border),0.1)] bg-[rgba(var(--card),0.5)] p-2.5"
+                      >
+                        <span className="w-8 h-8 rounded-lg border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--accent),0.08)] text-[rgb(var(--accent))] flex items-center justify-center shrink-0">
+                          <ControlIcon size={15} strokeWidth={1.75} />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-[12.5px] font-bold text-[rgb(var(--foreground))]">
+                            {c.name}
+                          </span>
+                          <span className="block text-[12px] leading-[1.5] text-[rgb(var(--foreground-muted))]">
+                            {c.body}
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
               {section.shortcuts && (
                 <div className="rounded-xl glass-whisper p-3 space-y-1.5">
                   {section.shortcuts.map((s, i) => (

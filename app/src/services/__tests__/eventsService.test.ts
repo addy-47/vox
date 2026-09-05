@@ -13,7 +13,6 @@ import {
   onTranscriptPartial,
   onTranscriptFinal,
   onLlmToken,
-  onVoiceError,
   onTelemetry,
   onSystemStats,
 } from "../eventsService";
@@ -120,7 +119,7 @@ describe("eventsService", () => {
       });
     });
 
-    it("should correctly handle streaming transcript, llm_token, and voice_error events", async () => {
+    it("should correctly handle streaming transcript, llm_token, and Error state_changed events", async () => {
       let registeredCallback: ((event: { payload: unknown }) => void) | null = null;
       mockListen.mockImplementation((_evt: string, callback: (event: { payload: unknown }) => void) => {
         registeredCallback = callback;
@@ -145,11 +144,12 @@ describe("eventsService", () => {
       registeredCallback!({ payload: { turn_id: 1, text: "Hey vox", owner: "Assistant" } });
       expect(finalHandler).toHaveBeenCalledWith({ turn_id: 1, text: "Hey vox", owner: "Assistant" });
 
-      const errorHandler = vi.fn();
-      onVoiceError(errorHandler);
-      expect(mockListen).toHaveBeenCalledWith("voice_error", expect.any(Function));
-      registeredCallback!({ payload: { message: "Failed", source: "ModularPassive", owner: "Assistant" } });
-      expect(errorHandler).toHaveBeenCalledWith({ message: "Failed", source: "ModularPassive", owner: "Assistant" });
+      // Pipeline failures surface as canonical Error state, not a bespoke event.
+      const errorStateHandler = vi.fn();
+      onStateChanged(errorStateHandler);
+      expect(mockListen).toHaveBeenCalledWith("state_changed", expect.any(Function));
+      registeredCallback!({ payload: { owner: "Assistant", state: "Error", turn_id: 7 } });
+      expect(errorStateHandler).toHaveBeenCalledWith({ owner: "Assistant", state: "Error", turn_id: 7 });
 
       const telemetryHandler = vi.fn();
       onTelemetry(telemetryHandler);
