@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Activity } from 'lucide-react';
 import { LiveWaveform } from '@/shared/components/common';
 import { cn } from '@/shared/lib/utils';
+import { TRAY_COPY } from '@/data/trayCopy';
 import type { InteractionState } from '@/services/eventsService';
 
 interface TranscriptRendererProps {
@@ -97,7 +98,7 @@ export const TranscriptRenderer: React.FC<TranscriptRendererProps> = React.memo(
           >
             <Activity size={24} className="mb-2 text-[rgb(var(--accent))]/50 animate-pulse " />
             <p className="text-[12px] font-black uppercase tracking-[0.4em] text-[rgb(var(--foreground))]/60 ">
-              Standby
+              {TRAY_COPY.standby}
             </p>
           </motion.div>
         )}

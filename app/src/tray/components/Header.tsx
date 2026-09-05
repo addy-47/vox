@@ -1,4 +1,5 @@
 import React from 'react';
+import { TRAY_COPY } from '@/data/trayCopy';
 import { motion } from 'framer-motion';
 import { X, Copy, Check, Mic } from 'lucide-react';
 
@@ -31,7 +32,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
           <div className={`w-2.5 h-2.5 rounded-full z-10 transition-all duration-700 ${isListening ? 'bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.8)]' : 'bg-[rgb(var(--foreground))]/30'}`} />
         </div>
         <span className="text-[12px] font-black tracking-[0.4em] text-[rgb(var(--foreground))]/90 uppercase">
-          Vox <span className="text-[rgb(var(--accent))]">Live</span>
+          {TRAY_COPY.brand} <span className="text-[rgb(var(--accent))]">{TRAY_COPY.live}</span>
         </span>
       </div>
       
@@ -49,7 +50,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
           <button 
             onClick={(e) => { e.stopPropagation(); onCopy(); }}
             className="p-2 rounded-lg transition-all text-[rgb(var(--foreground))]/60 hover:text-[rgb(var(--accent))] active:scale-90"
-            aria-label="Copy to Clipboard"
+            aria-label={TRAY_COPY.copyClipboard}
           >
             {copied ? <Check size={16} /> : <Copy size={16} />}
           </button>
@@ -58,7 +59,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
         <button 
           onClick={(e) => { e.stopPropagation(); onClose(); }}
           className="p-2 rounded-lg transition-all text-[rgb(var(--foreground))]/50 hover:text-[rgb(var(--foreground))]/90 active:scale-90"
-          aria-label="Close & Commit Session"
+          aria-label={TRAY_COPY.closeCommit}
         >
           <X size={16} />
         </button>

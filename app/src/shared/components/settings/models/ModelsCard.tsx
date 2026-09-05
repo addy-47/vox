@@ -16,6 +16,12 @@ import {
   getProviderCaps,
 } from "@/services/settingsService";
 import * as eventsService from "@/services/eventsService";
+import {
+  MODEL_HUB_COPY,
+  VAD_SETTINGS_COPY,
+  STT_SETTINGS_COPY,
+  LLM_SETTINGS_COPY,
+} from "@/data/settingsCopy";
 import { Orbit, Loader2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SegmentedControl } from "@/shared/ui";
@@ -669,7 +675,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           <div className="flex items-center gap-2 min-w-0">
             <Orbit className="text-[rgb(var(--accent))] shrink-0" size={17} />
             <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
-              Model Hub
+              {MODEL_HUB_COPY.title}
             </span>
           </div>
 
@@ -719,22 +725,22 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
               nodes={
                 activePipelineTab === "vad"
                   ? [
-                      { id: "sensitivity", label: "Sensitivity", Icon: AudioWaveform },
-                      { id: "silence", label: "Silence Cutoff", Icon: Hourglass },
-                      { id: "noiseGate", label: "Noise Gate", Icon: SlidersHorizontal },
+                      { id: "sensitivity", label: VAD_SETTINGS_COPY.tabs.sensitivity, Icon: AudioWaveform },
+                      { id: "silence", label: VAD_SETTINGS_COPY.tabs.silence, Icon: Hourglass },
+                      { id: "noiseGate", label: VAD_SETTINGS_COPY.tabs.noiseGate, Icon: SlidersHorizontal },
                     ]
                   : activePipelineTab === "stt"
                   ? [
-                      { id: "streamingRate", label: "Streaming Rate", Icon: Zap },
-                      { id: "transliteration", label: "Transliterate", Icon: Languages },
+                      { id: "streamingRate", label: STT_SETTINGS_COPY.tabs.streamingRate, Icon: Zap },
+                      { id: "transliteration", label: STT_SETTINGS_COPY.tabs.transliteration, Icon: Languages },
                       { id: "compute", label: "Compute", Icon: Microchip },
                     ]
                   : activePipelineTab === "llm"
                   ? [
-                      { id: "compute", label: "Compute", Icon: Microchip },
-                      { id: "tokens", label: "Response", Icon: TextCursorInput },
-                      { id: "context", label: "Context", Icon: Layers2 },
-                      { id: "creativity", label: "Creativity", Icon: WandSparkles },
+                      { id: "compute", label: LLM_SETTINGS_COPY.tabs.compute, Icon: Microchip },
+                      { id: "tokens", label: LLM_SETTINGS_COPY.tabs.tokens, Icon: TextCursorInput },
+                      { id: "context", label: LLM_SETTINGS_COPY.tabs.context, Icon: Layers2 },
+                      { id: "creativity", label: LLM_SETTINGS_COPY.tabs.creativity, Icon: WandSparkles },
                     ]
                   : [
                       { id: "voice", label: "Voice", Icon: AudioLines },

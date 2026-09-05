@@ -111,10 +111,10 @@ export const InsightsTab: React.FC<InsightsTabProps> = ({
             <Lightbulb size={17} className="text-[rgb(var(--accent))]" />
             <div>
               <h3 className="font-display text-sm font-bold tracking-wide text-[rgb(var(--foreground))]">
-                Root Cause Analysis & Heuristics
+                {PROFILER_COPY.insights.sectionTitle}
               </h3>
               <p className="text-[11px] text-[rgb(var(--foreground-muted))] mt-0.5">
-                Automated diagnostics for memory leaks, un-evicted textures, and GPU compositor strain
+                {PROFILER_COPY.insights.diagnosticsHint}
               </p>
             </div>
           </div>
@@ -157,7 +157,7 @@ export const InsightsTab: React.FC<InsightsTabProps> = ({
               <div className="pt-2 border-t border-[rgba(var(--border),0.06)] flex items-start gap-1.5 text-[11px] text-[rgb(var(--foreground))] font-sans">
                 <CheckCircle2 size={13} className="text-[rgb(var(--accent))] shrink-0 mt-0.5" />
                 <span>
-                  <strong>Action:</strong> {item.recommendation}
+                  <strong>{PROFILER_COPY.insights.actionLabel}</strong> {item.recommendation}
                 </span>
               </div>
             </div>
@@ -173,7 +173,7 @@ export const InsightsTab: React.FC<InsightsTabProps> = ({
             <div className="flex items-center gap-2">
               <FileCode size={17} className="text-[rgb(var(--accent))]" />
               <h3 className="font-display text-sm font-bold tracking-wide text-[rgb(var(--foreground))]">
-                Component Lifecycle Traces
+                {PROFILER_COPY.insights.tracesTitle}
               </h3>
             </div>
             <AccuracyBadge type="Correlated" />
@@ -188,10 +188,10 @@ export const InsightsTab: React.FC<InsightsTabProps> = ({
               <table className="w-full text-left text-xs font-mono">
                 <thead>
                   <tr className="border-b border-[rgba(var(--border),0.12)] text-[11px] text-[rgb(var(--foreground-muted))] uppercase">
-                    <th className="pb-2.5 font-semibold">Component</th>
-                    <th className="pb-2.5 font-semibold">Mounts</th>
-                    <th className="pb-2.5 font-semibold">Instances</th>
-                    <th className="pb-2.5 font-semibold">Last Active</th>
+                    <th className="pb-2.5 font-semibold">{PROFILER_COPY.insights.colComponent}</th>
+                    <th className="pb-2.5 font-semibold">{PROFILER_COPY.insights.colMounts}</th>
+                    <th className="pb-2.5 font-semibold">{PROFILER_COPY.insights.colInstances}</th>
+                    <th className="pb-2.5 font-semibold">{PROFILER_COPY.insights.colLastActive}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[rgba(var(--border),0.06)] text-[12px]">
@@ -229,11 +229,11 @@ export const InsightsTab: React.FC<InsightsTabProps> = ({
             <div className="flex items-center gap-2">
               <Clock size={17} className="text-[rgb(var(--accent))]" />
               <h3 className="font-display text-sm font-bold tracking-wide text-[rgb(var(--foreground))]">
-                Memory Event Stream
+                {PROFILER_COPY.insights.streamTitle}
               </h3>
             </div>
             <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-              Live Timeline
+              {PROFILER_COPY.insights.liveTimeline}
             </span>
           </div>
 

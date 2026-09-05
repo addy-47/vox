@@ -4,6 +4,7 @@ import {
   Microchip, Zap, Battery, TextCursorInput, Layers2, WandSparkles, Check, Gauge, Server
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { LLM_SETTINGS_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
 
 export type SettingsSubTab = "compute" | "tokens" | "context" | "creativity";
 
@@ -69,14 +70,14 @@ export const LlmSettingsView = memo(({
                   <div className="flex items-center gap-2">
                     <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))] flex items-center gap-1.5">
                       <Microchip size={14} className="text-[rgb(var(--accent))]" />
-                      Compute Allocation
+                      {COMPUTE_PROFILE_COPY.title}
                     </span>
                     <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                       {currentThreads} / {totalCores} Cores
                     </span>
                   </div>
                   <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                    Allocate local CPU worker threads for model reasoning. Auto balances thermal load and latency.
+                    {LLM_SETTINGS_COPY.compute.description}
                   </p>
                 </div>
 
@@ -93,7 +94,7 @@ export const LlmSettingsView = memo(({
                     )}
                   >
                     <Zap size={11} className="text-[rgb(var(--accent))]" />
-                    <span>Auto</span>
+                    <span>{COMPUTE_PROFILE_COPY.auto}</span>
                   </button>
 
                   <button
@@ -107,7 +108,7 @@ export const LlmSettingsView = memo(({
                     )}
                   >
                     <Battery size={11} className="text-emerald-400" />
-                    <span>Eco</span>
+                    <span>{COMPUTE_PROFILE_COPY.eco}</span>
                   </button>
 
                   <button
@@ -121,7 +122,7 @@ export const LlmSettingsView = memo(({
                     )}
                   >
                     <Gauge size={11} className="text-amber-400" />
-                    <span>Max</span>
+                    <span>{COMPUTE_PROFILE_COPY.max}</span>
                   </button>
 
                   <div className="py-1 rounded-lg border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] text-[10px] font-mono font-bold text-[rgb(var(--foreground-muted))]/70 flex items-center justify-center">
@@ -134,14 +135,14 @@ export const LlmSettingsView = memo(({
                 <div className="flex items-center gap-2">
                   <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))] flex items-center gap-1.5">
                     <Server size={14} className="text-[rgb(var(--accent))]" />
-                    {isCloudProvider ? "Cloud Infrastructure" : "Remote Compute"}
+                    {isCloudProvider ? LLM_SETTINGS_COPY.compute.remoteTitleLocal : LLM_SETTINGS_COPY.compute.remoteTitleRemote}
                   </span>
                   <span className="text-[10px] sm:text-[11px] font-bold text-emerald-400 flex items-center gap-1">
-                    <Check size={12} /> Active
+                    <Check size={12} /> {LLM_SETTINGS_COPY.compute.remoteActive}
                   </span>
                 </div>
                 <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                  Inference computation is offloaded entirely to the remote provider. Zero local CPU or RAM is consumed.
+                  {LLM_SETTINGS_COPY.compute.remoteDescription}
                 </p>
               </div>
             )}
@@ -155,14 +156,14 @@ export const LlmSettingsView = memo(({
               <div className="flex items-center gap-2">
                 <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))] flex items-center gap-1.5">
                   <TextCursorInput size={14} className="text-[rgb(var(--accent))]" />
-                  Token Limit
+                  {LLM_SETTINGS_COPY.tokens.title}
                 </span>
                 <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
-                  {currentTokens === 0 ? "Native" : `${currentTokens} tok`}
+                  {currentTokens === 0 ? LLM_SETTINGS_COPY.tokens.native : `${currentTokens} tok`}
                 </span>
               </div>
               <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                Maximum token generation per reply. Concise caps prevent rambling; Native lets the model complete reasoning.
+                {LLM_SETTINGS_COPY.tokens.description}
               </p>
             </div>
 
@@ -171,7 +172,7 @@ export const LlmSettingsView = memo(({
               {[
                 { label: "300", val: 300 },
                 { label: "1000", val: 1000 },
-                { label: "Native", val: 0 },
+                { label: LLM_SETTINGS_COPY.tokens.native, val: 0 },
               ].map(({ label, val }) => {
                 const isSelected = currentTokens === val;
                 return (
@@ -210,7 +211,7 @@ export const LlmSettingsView = memo(({
                       updateDraft("llm", "max_output_tokens", num);
                     }
                   }}
-                  placeholder="Custom"
+                  placeholder={COMPUTE_PROFILE_COPY.custom}
                   className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
@@ -225,14 +226,14 @@ export const LlmSettingsView = memo(({
               <div className="flex items-center gap-2">
                 <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))] flex items-center gap-1.5">
                   <Layers2 size={14} className="text-[rgb(var(--accent))]" />
-                  Context Window
+                  {LLM_SETTINGS_COPY.context.title}
                 </span>
                 <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                   {currentContext >= 1024 ? `${currentContext / 1024}k` : currentContext} tok
                 </span>
               </div>
               <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                RAM-allocated token budget for conversation history and retrieved memory facts.
+                {LLM_SETTINGS_COPY.context.description}
               </p>
             </div>
 
@@ -276,14 +277,14 @@ export const LlmSettingsView = memo(({
                         updateDraft("llm", "context_window", num);
                       }
                     }}
-                    placeholder="Custom"
+                    placeholder={COMPUTE_PROFILE_COPY.custom}
                     className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
               </div>
             ) : (
               <span className="text-[10px] sm:text-[11px] font-bold text-emerald-400 flex items-center gap-1 shrink-0">
-                <Check size={13} /> Managed
+                <Check size={13} /> {LLM_SETTINGS_COPY.compute.remoteManaged}
               </span>
             )}
           </div>
@@ -296,14 +297,14 @@ export const LlmSettingsView = memo(({
               <div className="flex items-center gap-2">
                 <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))] flex items-center gap-1.5">
                   <WandSparkles size={14} className="text-[rgb(var(--accent))]" />
-                  Creativity
+                  {LLM_SETTINGS_COPY.creativity.title}
                 </span>
                 <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                   {currentTemp.toFixed(2)}
                 </span>
               </div>
               <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                Sampling temperature. Lower values produce strict facts; higher values encourage conversational flair.
+                {LLM_SETTINGS_COPY.creativity.description}
               </p>
             </div>
 
@@ -355,7 +356,7 @@ export const LlmSettingsView = memo(({
                       updateDraft("llm", "temperature", num);
                     }
                   }}
-                  placeholder="Custom"
+                  placeholder={COMPUTE_PROFILE_COPY.custom}
                   className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>

@@ -105,11 +105,17 @@ pub fn on_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx:
 
     let turn_id = state.pipeline.peek_turn_id();
     let (vad_tx, stt_tx) = {
-        let guard = state.engine.blocking_lock();
-        match guard.as_ref() {
-            Some(engine) => (engine.vad_tx.clone(), engine.stt_tx.clone()),
-            None => {
-                log::error!("[Pipeline::Ptt] Engine not ready on PTT stop");
+        match state.engine.try_lock() {
+            Ok(guard) => match guard.as_ref() {
+                Some(engine) => (engine.vad_tx.clone(), engine.stt_tx.clone()),
+                None => {
+                    log::error!("[Pipeline::Ptt] Engine not ready on PTT stop");
+                    return;
+                }
+            },
+            Err(_) => {
+                log::warn!("[Pipeline::Ptt] Engine lock contended on PTT stop; discarding hold");
+                transition(InteractionState::Ready, ctx, app, state);
                 return;
             }
         }

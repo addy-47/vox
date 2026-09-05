@@ -4,14 +4,15 @@ import { HexColorPicker } from "react-colorful";
 import { Palette, Sun, Moon } from "lucide-react";
 import { cn, hexToRgb } from "@/shared/lib/utils";
 import { Card, SegmentedControl } from "@/shared/ui";
+import { APPEARANCE_COPY } from "@/data/settingsCopy";
 
 interface AppearanceCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
 const THEME_OPTIONS = [
-  { id: "dark", icon: Moon, title: "Dark Mode" },
-  { id: "light", icon: Sun, title: "Light Mode" },
+  { id: "dark", icon: Moon, title: APPEARANCE_COPY.darkMode },
+  { id: "light", icon: Sun, title: APPEARANCE_COPY.lightMode },
 ];
 
 export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardProps) => {
@@ -69,7 +70,7 @@ export const AppearanceCard = memo(({ layoutMode = "full-max" }: AppearanceCardP
         <div className="flex items-center gap-2">
           <Palette className="text-[rgb(var(--accent))]" size={17} />
           <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
-            Appearance
+            {APPEARANCE_COPY.cardTitle}
           </span>
         </div>
 

@@ -83,10 +83,10 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
         <div className="flex-1 flex items-center gap-4 justify-between p-3 rounded-xl border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]">
           <div className="flex flex-col gap-1 min-w-0 flex-1">
             <span className="text-[12px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]">
-              Session History Engine
+              {HISTORY_SETTINGS_COPY.engineTitle}
             </span>
             <span className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-normal">
-              Turso SQLite storage active. Conversations are recorded with zero arbitrary retention limits.
+              {HISTORY_SETTINGS_COPY.engineDesc}
             </span>
           </div>
 

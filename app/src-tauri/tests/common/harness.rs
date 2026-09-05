@@ -30,14 +30,32 @@ pub type RbProducer = Caching<Arc<HeapRb<f32>>, true, false>;
 
 /// Creates a mock/headless playback engine and consumer for integration tests without CPAL audio hardware.
 pub fn create_mock_playback_engine() -> (Arc<PlaybackEngine>, Arc<Mutex<HeapCons<f32>>>) {
+    let (event_tx, _rx) = std::sync::mpsc::channel();
+    create_mock_playback_engine_with_event_tx(event_tx)
+}
+
+/// Creates a mock/headless playback engine and consumer with a caller-provided event_tx channel.
+pub fn create_mock_playback_engine_with_event_tx(
+    event_tx: std::sync::mpsc::Sender<VoxEvent>,
+) -> (Arc<PlaybackEngine>, Arc<Mutex<HeapCons<f32>>>) {
+    create_mock_playback_engine_with_handles(
+        event_tx,
+        Arc::new(AtomicU32::new(0)),
+        Arc::new(AtomicU32::new(0)),
+    )
+}
+
+/// Creates a mock/headless playback engine and consumer with caller-provided event channel and atomics.
+pub fn create_mock_playback_engine_with_handles(
+    event_tx: std::sync::mpsc::Sender<VoxEvent>,
+    current_turn_id: Arc<AtomicU32>,
+    pending_synthesis_jobs: Arc<AtomicU32>,
+) -> (Arc<PlaybackEngine>, Arc<Mutex<HeapCons<f32>>>) {
     let rb = HeapRb::<f32>::new(vox_lib::services::audio::PLAYBACK_BUFFER_SAMPLES);
     let (producer, consumer) = rb.split();
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let discard_request = Arc::new(AtomicBool::new(false));
-    let (event_tx, _rx) = std::sync::mpsc::channel();
-    let current_turn_id = Arc::new(AtomicU32::new(0));
     let turn_armed = Arc::new(AtomicBool::new(false));
-    let pending_synthesis_jobs = Arc::new(AtomicU32::new(0));
 
     let handles = vox_lib::services::audio::playback::PlaybackEngineHandles {
         cancel_flag,
@@ -68,7 +86,7 @@ pub fn setup_stt_worker<R: tauri::Runtime + 'static>(
 ) {
     let nemotron_dir = super::paths::get_nemotron_model_dir();
     let provider = Box::new(
-        EmbeddedSttProvider::new(&nemotron_dir, "nemotron")
+        EmbeddedSttProvider::new(&nemotron_dir, "nemotron", 2)
             .expect("Failed to instantiate EmbeddedSttProvider with Nemotron"),
     ) as Box<dyn SttProvider>;
 
@@ -100,7 +118,9 @@ pub fn setup_vad_actor(
     stt_tx: Sender<SttCommand>,
     config: VadActorConfig,
     state_atomic: Arc<AtomicU32>,
+    turn_id_atomic: Arc<AtomicU32>,
     audio_suppressed: Arc<AtomicBool>,
+    ingestion_gate: Arc<AtomicBool>,
     engine_shutdown: Arc<AtomicBool>,
 ) -> (
     Sender<VadCommand>,
@@ -127,10 +147,11 @@ pub fn setup_vad_actor(
 
     let vad_handles = VadActorHandles {
         state_atomic,
-        turn_id_atomic: Arc::new(AtomicU32::new(0)),
+        turn_id_atomic,
         audio_suppressed,
         engine_shutdown,
         dropped_counter: Arc::new(AtomicU64::new(0)),
+        ingestion_gate,
     };
 
     let join_handle = std::thread::Builder::new()
@@ -351,4 +372,53 @@ pub fn attach_mock_engine_to_state<R: tauri::Runtime>(
 ) {
     let (vad_tx, _) = std::sync::mpsc::channel();
     attach_mock_engine_with_vad_to_state(app, state, stt_tx, vad_tx);
+}
+
+/// Attaches a mock VoxEngine with VAD, STT, and LLM capture channels for verifying LLM-zero invariants.
+pub fn attach_mock_engine_with_llm_vad_to_state<R: tauri::Runtime>(
+    _app: &AppHandle<R>,
+    state: &vox_lib::core::state::AppState,
+    stt_tx: std::sync::mpsc::Sender<SttCommand>,
+    vad_tx: std::sync::mpsc::Sender<VadCommand>,
+    llm_tx: Option<std::sync::mpsc::Sender<vox_lib::services::llm::LlmCommand>>,
+) {
+    attach_mock_engine_with_llm_tts_to_state(_app, state, stt_tx, vad_tx, llm_tx, None);
+}
+
+/// Attaches a mock VoxEngine with VAD, STT, LLM, and TTS capture channels for pipeline orchestration tests.
+pub fn attach_mock_engine_with_llm_tts_to_state<R: tauri::Runtime>(
+    _app: &AppHandle<R>,
+    state: &vox_lib::core::state::AppState,
+    stt_tx: std::sync::mpsc::Sender<SttCommand>,
+    vad_tx: std::sync::mpsc::Sender<VadCommand>,
+    llm_tx: Option<std::sync::mpsc::Sender<vox_lib::services::llm::LlmCommand>>,
+    tts_tx: Option<std::sync::mpsc::Sender<vox_lib::services::tts::TtsCommand>>,
+) {
+    let (pipeline_tx, _) = std::sync::mpsc::channel();
+    let (telemetry_tx, _) = crossbeam_channel::unbounded();
+    let (playback_engine, _) = create_mock_playback_engine();
+
+    let engine = vox_lib::core::state::VoxEngine {
+        audio_stream: vox_lib::services::audio::AudioStream::mock(),
+        stt_tx,
+        vad_tx,
+        llm_tx,
+        tts_tx,
+        telemetry_tx,
+        pipeline_tx,
+        playback_engine,
+        stt_handle: None,
+        vad_handle: None,
+        llm_handle: None,
+        tts_handle: None,
+        orchestrator_handle: None,
+    };
+    if let Ok(mut guard) = state.engine.try_lock() {
+        *guard = Some(engine);
+    } else {
+        *state.engine.blocking_lock() = Some(engine);
+    }
+    state
+        .pipeline
+        .set_state(vox_lib::core::state::InteractionState::Ready);
 }

@@ -1,3 +1,29 @@
+import type { LucideIcon } from "lucide-react";
+import {
+  Power,
+  Pause,
+  Mic,
+  PanelLeft,
+  Bell,
+  FlaskConical,
+  AlertTriangle,
+  History,
+  CalendarDays,
+  CalendarRange,
+  Trash2,
+  RotateCcw,
+  Search,
+  Focus,
+  RefreshCw,
+  Eye,
+  GitCompare,
+  Cpu,
+  Plus,
+  Minus,
+  Skull,
+  Gauge,
+} from "lucide-react";
+
 export type HelpTier = "1A" | "1B" | "2A" | "2B" | "3";
 
 export type HelpGroup = "page" | "settings" | "wizard" | "faq";
@@ -7,10 +33,18 @@ export interface HelpShortcut {
   label: string;
 }
 
+/** One interactive control on the page: icon + name + one-line effect. */
+export interface HelpControl {
+  icon: LucideIcon;
+  name: string;
+  body: string;
+}
+
 export interface HelpSection {
   heading: string;
   paragraphs?: readonly string[];
   bullets?: readonly string[];
+  controls?: readonly HelpControl[];
   shortcuts?: readonly HelpShortcut[];
   tip?: { title: string; body: string };
 }
@@ -46,21 +80,52 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
     pinnedFrom: "Home",
     sections: [
       {
-        heading: "What this screen is",
-        paragraphs: [
-          "Home is the central ambient surface. The animated orb reacts to the voice pipeline in real time and reflects what Vox is doing under the hood.",
+        heading: "Session controls",
+        controls: [
+          {
+            icon: Power,
+            name: "Power button",
+            body: "Starts a voice session. Press again (X) to end it — ending clears the visible transcript.",
+          },
+          {
+            icon: Pause,
+            name: "Pause / resume",
+            body: "Freezes a session without ending it. Shown instead of the mic in continuous listening mode.",
+          },
+          {
+            icon: Mic,
+            name: "Hold to talk",
+            body: "Push-to-talk mode only: hold while speaking, release to send. Leaving the button cancels the take.",
+          },
+          {
+            icon: PanelLeft,
+            name: "Conversations rail",
+            body: "Top-left. Reopens a past conversation so you can continue where you left off, or starts a fresh one.",
+          },
         ],
       },
       {
-        heading: "How to start a session",
-        bullets: [
-          "Tap the orb, or use the activation hotkey from Settings to engage Vox.",
-          "Speak naturally. The orb shifts to listening the moment your voice is detected.",
-          "Stop talking for a beat and Vox responds in turn.",
+        heading: "Status and alerts",
+        controls: [
+          {
+            icon: Bell,
+            name: "Notifications",
+            body: "Top-right. Session reminders and background updates, newest first. A dot means something needs you.",
+          },
+          {
+            icon: FlaskConical,
+            name: "Test clips",
+            body: "Desktop only, while idle. Replays a recorded voice clip through the pipeline to check quality.",
+          },
+          {
+            icon: AlertTriangle,
+            name: "Error banner",
+            body: "Reconnect retries the session, Configure jumps to Settings, Dismiss hides it.",
+          },
         ],
       },
       {
-        heading: "Reading the orb's mood",
+        heading: "Reading the orb",
         bullets: [
           "Calm glow: idle or sleeping.",
           "Bright pulse: actively listening to you.",
@@ -69,11 +134,12 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
         ],
       },
       {
-        heading: "Controls around the orb",
-        bullets: [
-          "Bottom nav switches between Home, History, Memory, and Settings.",
-          "Monitoring popover on the bottom-left shows live system vitals.",
-          "Profiler opens a memory snapshot of the running app.",
+        heading: "Keyboard",
+        shortcuts: [
+          { keys: "Space", label: "Hold to talk (push-to-talk mode, outside text fields)" },
+          { keys: "← / →", label: "Switch pages" },
+          { keys: "Shift + ?", label: "Open or close this guide" },
+          { keys: "Esc", label: "Close the topmost panel" },
         ],
       },
     ],
@@ -85,28 +151,47 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
     pinnedFrom: "History",
     sections: [
       {
-        heading: "What lives here",
-        paragraphs: [
-          "Every past conversation is kept as a session card. Open one to read the full transcript, copy useful passages, or resume the thread.",
+        heading: "Browsing sessions",
+        controls: [
+          {
+            icon: History,
+            name: "Session orbit",
+            body: "Every past conversation is a node. Pick one to open its full transcript in the bottom sheet.",
+          },
+          {
+            icon: CalendarDays,
+            name: "Day view",
+            body: "Sessions grouped by day on the orbit. Your words read left, Vox's replies right.",
+          },
+          {
+            icon: CalendarRange,
+            name: "Month view",
+            body: "Zoomed-out overview. Tap a day to drill back into it.",
+          },
+          {
+            icon: Trash2,
+            name: "Delete session",
+            body: "Two taps to confirm. Deleting removes the session and all its turns for good.",
+          },
+          {
+            icon: RotateCcw,
+            name: "Retry",
+            body: "Reloads a transcript that failed to open. Your sessions are never lost by a failed load.",
+          },
         ],
       },
       {
         heading: "Reading a session",
         bullets: [
-          "Your words appear on the left, Vox's replies on the right.",
-          "Tap any card to open it in the bottom drawer.",
-          "Use the search bar to find a session by keyword.",
+          "Long transcripts page in 20 turns at a time — use the loader button at the bottom for older turns.",
+          "The header shows when the session happened and how many turns it holds.",
         ],
       },
       {
         heading: "Privacy",
         paragraphs: [
-          "Enable Private Mode in Settings to stop new turns from being recorded. Existing sessions are not deleted automatically; you can clear them manually from a session's overflow menu.",
+          "Private Mode in Settings stops new turns from being recorded. It never deletes anything already saved — remove those with the delete control above.",
         ],
-        tip: {
-          title: "Quick toggle",
-          body: "Private Mode is found under Settings → History. It only affects new sessions, not ones already saved.",
-        },
       },
     ],
   },
@@ -117,9 +202,48 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
     pinnedFrom: "Memory",
     sections: [
       {
-        heading: "What Vox remembers",
-        paragraphs: [
-          "Memory is a long-term knowledge graph. When processing is on, Vox quietly extracts facts, preferences, and entities from your sessions and links them together.",
+        heading: "Graph controls",
+        controls: [
+          {
+            icon: Search,
+            name: "Search memories",
+            body: "Finds a fact node by keyword and jumps the graph to it.",
+          },
+          {
+            icon: Plus,
+            name: "Zoom in",
+            body: "Moves the camera closer to the selected area of the graph.",
+          },
+          {
+            icon: Minus,
+            name: "Zoom out",
+            body: "Pulls the camera back for the full-graph overview.",
+          },
+          {
+            icon: Focus,
+            name: "Recenter",
+            body: "Snaps the view back to the center of the graph.",
+          },
+          {
+            icon: RefreshCw,
+            name: "Refresh",
+            body: "Reloads facts and edges from the database.",
+          },
+          {
+            icon: Eye,
+            name: "Show inactive",
+            body: "Toggles retired facts. Off by default so only live knowledge shows.",
+          },
+          {
+            icon: GitCompare,
+            name: "Conflicts",
+            body: "Contradicting facts waiting on review. The badge counts how many are open.",
+          },
+          {
+            icon: Cpu,
+            name: "Ingestion queue",
+            body: "Opens the pipeline drawer: facts waiting to be checked, embedded, and linked.",
+          },
         ],
       },
       {
@@ -127,13 +251,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
         bullets: [
           "Each node is one fact or entity. Lines show how they connect.",
           "Drag to rotate, scroll to zoom, click a node to inspect it.",
-          "Color groups are collections; the legend on the right explains them.",
-        ],
-      },
-      {
-        heading: "Turning memory on and off",
-        paragraphs: [
-          "There are two switches in Settings → Memory: Retrieval and Processing. Retrieval injects stored facts into each new turn. Processing adds new facts as you talk.",
+          "Colors mark collections; the legend explains them.",
         ],
         tip: {
           title: "Tiers that support memory",
@@ -151,23 +269,36 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
       {
         heading: "What you can see here",
         paragraphs: [
-          "Monitoring is a live read-out of CPU, memory, model load, and pipeline state. It is read-only — nothing you change here affects Vox.",
+          "Monitoring is a live read-out of CPU, memory, model load, and pipeline state.",
         ],
       },
       {
-        heading: "Reading the panels",
+        heading: "Controls",
+        controls: [
+          {
+            icon: Skull,
+            name: "Unload / reload engines",
+            body: "Frees all model memory in one tap, or loads everything back. Use it before a heavy session on small machines.",
+          },
+          {
+            icon: Gauge,
+            name: "Metric cards",
+            body: "Pipeline state, model latency, queue depth, and RAM headroom. Read-only — nothing here changes Vox.",
+          },
+        ],
+      },
+      {
+        heading: "Where it lives",
         bullets: [
-          "Top row: pipeline mood and current state (Idle, Listening, Thinking, etc.).",
-          "Middle row: model latency and queue depth.",
-          "Bottom row: process memory and system RAM headroom.",
+          "Wide screens: a popover from the pulse button at the bottom-left.",
+          "Narrow screens: its own page in the bottom nav.",
         ],
       },
       {
         heading: "If something looks wrong",
         bullets: [
           "High memory use on tier 1A is expected during long sessions.",
-          "A stuck 'Thinking' state for over a minute usually means the LLM is being reloaded — wait it out or open Profiler to confirm.",
-          "Profiling lets you snapshot exactly what the webview is holding at this instant.",
+          "A stuck 'Thinking' state for over a minute usually means the LLM is reloading — wait it out or open Profiler to confirm.",
         ],
       },
     ],
@@ -599,10 +730,15 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
 ];
 
 export const HELP_DRAWER_COPY = {
+  drawerAria: "Help & guide",
+  closeHelp: "Close help",
+  closeButton: "Close",
+  emptyClose: "Close",
   triggerLabel: "Help & guide",
   headerTitle: "Help & guide",
   headerSubtitle: "Walkthroughs, settings reference, and quick answers",
   tocHeading: "Contents",
+  allGuidesHeading: "All guides",
   searchPlaceholder: "Search the guide",
   pinnedCrumbPrefix: "Pinned to",
   pinnedCrumbClear: "Clear pin",

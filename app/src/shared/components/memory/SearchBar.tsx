@@ -163,7 +163,7 @@ export const SearchBar = memo<SearchBarProps>(({
             <button
               onClick={onClose}
               className="p-1 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer shrink-0"
-              aria-label="Close search"
+              aria-label={MEMORY_COPY.closeSearch}
             >
               <X size={14} />
             </button>

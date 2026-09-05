@@ -1,6 +1,7 @@
 import React, { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
+import { DIALOGUE_COPY } from "@/data/homeCopy";
 
 interface ActiveTranscriptProps {
   transcript: string;
@@ -31,7 +32,7 @@ export const ActiveTranscript: React.FC<ActiveTranscriptProps> = memo(({ transcr
       {streamedTranscript && (
         <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--foreground))] font-normal text-[13px] leading-relaxed prose prose-invert select-text p-3 rounded-2xl bg-[rgb(var(--card))]/80 border border-[rgba(var(--border),0.15)] shadow-lg backdrop-blur-xl">
           <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-1 font-bold">
-            USER
+            {DIALOGUE_COPY.userBadge}
           </span>
           {hasMarkdownSyntax(streamedTranscript) ? (
             <ReactMarkdown components={MarkdownComponents}>{streamedTranscript}</ReactMarkdown>
