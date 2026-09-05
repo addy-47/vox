@@ -10,66 +10,22 @@
 
 mod common;
 
+use common::harness::attach_lifecycle_mock_engine;
+
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::time::Duration;
-use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{
     DictationInteractionMode, InteractionMode, PipelineMode,
 };
-use vox_lib::core::state::{AppState, InteractionOwner, InteractionState, VoxEngine};
+use vox_lib::core::state::{AppState, InteractionOwner, InteractionState};
 use vox_lib::persistence::events::{MemoryWorkerEvent, PersistenceEvent};
 use vox_lib::pipeline::assistant::session::{on_end, on_pause, on_resume, on_session_start};
 use vox_lib::pipeline::dictation::transition_dictation;
 use vox_lib::pipeline::RoutingContext;
-use vox_lib::services::audio::AudioStream;
-use vox_lib::services::stt::actor::SttCommand;
 use vox_lib::services::vad::{VadCommand, VadOperationalMode};
-use tauri::AppHandle;
 
-/// Helper: Attaches an engine with pre-populated dummy LLM and TTS channels so that
-/// `ensure_modular_workers_sync` sees `needs_llm == false` and `needs_tts == false`,
-/// allowing pure lifecycle testing without model weight I/O contention.
-fn attach_lifecycle_mock_engine<R: tauri::Runtime>(
-    _app: &AppHandle<R>,
-    state: &AppState,
-    vad_tx: mpsc::Sender<VadCommand>,
-) -> (
-    mpsc::Sender<SttCommand>,
-    mpsc::Receiver<VoxEvent>,
-    mpsc::Sender<VoxEvent>,
-) {
-    let (stt_tx, _stt_rx) = mpsc::channel::<SttCommand>();
-    let (pipeline_tx, pipeline_rx) = mpsc::channel::<VoxEvent>();
-    let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();
-    let (playback_engine, _consumer) = common::harness::create_mock_playback_engine();
-    let (llm_tx, _llm_rx) = mpsc::channel();
-    let (tts_tx, _tts_rx) = mpsc::channel();
 
-    let engine = VoxEngine {
-        audio_stream: AudioStream::mock(),
-        stt_tx: stt_tx.clone(),
-        vad_tx,
-        llm_tx: Some(llm_tx),
-        tts_tx: Some(tts_tx),
-        telemetry_tx,
-        pipeline_tx: pipeline_tx.clone(),
-        playback_engine,
-        stt_handle: None,
-        vad_handle: None,
-        llm_handle: None,
-        tts_handle: None,
-        orchestrator_handle: None,
-    };
-
-    let mut guard = state
-        .engine
-        .try_lock()
-        .expect("state.engine mutex must be uncontended in test setup");
-    *guard = Some(engine);
-
-    (stt_tx, pipeline_rx, pipeline_tx)
-}
 
 /// Helper: Sets up channels on `state.persist_tx` and `state.memory_tx` to capture lifecycle events.
 fn setup_lifecycle_channels(

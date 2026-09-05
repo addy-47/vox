@@ -4,6 +4,7 @@
 
 #![allow(dead_code)]
 
+pub mod archive;
 pub mod audio;
 pub mod harness;
 pub mod paths;
