@@ -422,3 +422,48 @@ pub fn attach_mock_engine_with_llm_tts_to_state<R: tauri::Runtime>(
         .pipeline
         .set_state(vox_lib::core::state::InteractionState::Ready);
 }
+
+
+/// Attaches an engine with pre-populated dummy LLM and TTS channels so that
+/// `ensure_modular_workers_sync` sees `needs_llm == false` and `needs_tts == false`,
+/// allowing pure lifecycle testing without model weight I/O contention.
+pub fn attach_lifecycle_mock_engine<R: tauri::Runtime>(
+    _app: &tauri::AppHandle<R>,
+    state: &vox_lib::core::state::AppState,
+    vad_tx: std::sync::mpsc::Sender<VadCommand>,
+) -> (
+    std::sync::mpsc::Sender<SttCommand>,
+    std::sync::mpsc::Receiver<VoxEvent>,
+    std::sync::mpsc::Sender<VoxEvent>,
+) {
+    let (stt_tx, _stt_rx) = std::sync::mpsc::channel::<SttCommand>();
+    let (pipeline_tx, pipeline_rx) = std::sync::mpsc::channel::<VoxEvent>();
+    let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();
+    let (playback_engine, _consumer) = create_mock_playback_engine();
+    let (llm_tx, _llm_rx) = std::sync::mpsc::channel();
+    let (tts_tx, _tts_rx) = std::sync::mpsc::channel();
+
+    let engine = vox_lib::core::state::VoxEngine {
+        audio_stream: vox_lib::services::audio::AudioStream::mock(),
+        stt_tx: stt_tx.clone(),
+        vad_tx,
+        llm_tx: Some(llm_tx),
+        tts_tx: Some(tts_tx),
+        telemetry_tx,
+        pipeline_tx: pipeline_tx.clone(),
+        playback_engine,
+        stt_handle: None,
+        vad_handle: None,
+        llm_handle: None,
+        tts_handle: None,
+        orchestrator_handle: None,
+    };
+
+    let mut guard = state
+        .engine
+        .try_lock()
+        .expect("state.engine mutex must be uncontended in test setup");
+    *guard = Some(engine);
+
+    (stt_tx, pipeline_rx, pipeline_tx)
+}

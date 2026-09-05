@@ -89,3 +89,19 @@ pub fn get_gemma_model_path() -> PathBuf {
     let models_dir = vox_lib::utils::paths::get().models.clone();
     models_dir.join(GEMMA_MODEL_DIR).join(GEMMA_MODEL_FILE)
 }
+
+
+/// RAII guard to initialize VoxPaths with a temporary root directory and ensure clean isolation.
+pub struct TempPathsGuard {
+    _dir: tempfile::TempDir,
+}
+
+impl TempPathsGuard {
+    pub fn new() -> Self {
+        let dir = tempfile::tempdir().expect("Failed to create temporary directory for test");
+        vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
+        Self {
+            _dir: dir,
+        }
+    }
+}
