@@ -60,39 +60,53 @@ impl EmbeddedSttProvider {
 }
 
 impl SttProvider for EmbeddedSttProvider {
-    /// Transcribes streaming audio chunks with transcript stitching and final turn flushing.
+    /// Transcribes streaming audio chunks or finalizes the active turn transcript.
     fn transcribe_chunk(&self, chunk: &[f32], is_final: bool) -> anyhow::Result<String> {
         let mut inner = self.inner.lock();
         inner.ensure_loaded()?;
 
-        let transcript = if let Some(ref engine) = inner.nemotron_engine {
-            engine.transcribe(chunk)?
+        if is_final {
+            let transcript = if let Some(ref engine) = inner.nemotron_engine {
+                if chunk.is_empty() {
+                    engine.finalize_stream()?
+                } else {
+                    engine.transcribe(chunk)?
+                }
+            } else if let Some(ref engine) = inner.qwen_engine {
+                engine.transcribe(chunk)?
+            } else {
+                anyhow::bail!("No STT engine initialized");
+            };
+
+            inner.stitched_transcript.clear();
+            Ok(transcript)
+        } else if let Some(ref engine) = inner.nemotron_engine {
+            engine.accept_audio_chunk(chunk)?;
+            let partial = engine.get_partial_result()?;
+            inner.stitched_transcript = partial.clone();
+            Ok(partial)
         } else if let Some(ref engine) = inner.qwen_engine {
-            engine.transcribe(chunk)?
+            let transcript = engine.transcribe(chunk)?;
+            if !transcript.is_empty() {
+                inner.stitched_transcript = if inner.stitched_transcript.is_empty() {
+                    transcript
+                } else {
+                    crate::services::stt::stitch_transcripts(&inner.stitched_transcript, &transcript)
+                };
+            }
+            Ok(inner.stitched_transcript.clone())
         } else {
             anyhow::bail!("No STT engine initialized");
-        };
-
-        if !transcript.is_empty() {
-            inner.stitched_transcript = if inner.stitched_transcript.is_empty() {
-                transcript
-            } else {
-                crate::services::stt::stitch_transcripts(&inner.stitched_transcript, &transcript)
-            };
-        }
-
-        if is_final {
-            let result = std::mem::take(&mut inner.stitched_transcript);
-            Ok(result)
-        } else {
-            Ok(inner.stitched_transcript.clone())
         }
     }
 
-    /// Clears internal accumulated stitched transcripts.
+    /// Clears internal accumulated stitched transcripts and resets active online stream.
     fn reset_state(&self) -> anyhow::Result<()> {
         let mut inner = self.inner.lock();
         inner.stitched_transcript.clear();
+        if let Some(ref engine) = inner.nemotron_engine {
+            engine.reset_stream()?;
+        }
         Ok(())
     }
 

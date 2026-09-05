@@ -547,10 +547,11 @@ impl Default for TtsChatterboxRemoteConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TtsProviderConfig {
     Supertonic,
+    #[default]
     Kokoro,
     Chatterbox {
         language: String,
@@ -572,12 +573,6 @@ pub enum TtsProviderConfig {
         #[serde(default)]
         voice: Option<String>,
     },
-}
-
-impl Default for TtsProviderConfig {
-    fn default() -> Self {
-        TtsProviderConfig::Kokoro
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

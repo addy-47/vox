@@ -75,7 +75,7 @@ async fn seed_test_identity_facts(db_path: &std::path::Path) -> anyhow::Result<(
 async fn test_session_start_modular_sets_ready_and_identity() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
-        vox_lib::utils::paths::init();
+        let _paths_guard = common::paths::TempPathsGuard::new();
         let (app, state) = common::harness::get_test_app_and_state();
 
         let db_path = vox_lib::utils::paths::db_path();
@@ -193,7 +193,7 @@ async fn test_session_start_modular_sets_ready_and_identity() {
 async fn test_session_pause_resume_transitions() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
-        vox_lib::utils::paths::init();
+        let _paths_guard = common::paths::TempPathsGuard::new();
         let (app, state) = common::harness::get_test_app_and_state();
 
         let (vad_cmd_tx, vad_cmd_rx) = mpsc::channel::<VadCommand>();
@@ -299,7 +299,7 @@ async fn test_session_pause_resume_transitions() {
 async fn test_session_resume_from_sleeping_and_error() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
-        vox_lib::utils::paths::init();
+        let _paths_guard = common::paths::TempPathsGuard::new();
         let (app, state) = common::harness::get_test_app_and_state();
 
         let (vad_cmd_tx, _vad_cmd_rx) = mpsc::channel::<VadCommand>();
@@ -362,7 +362,7 @@ async fn test_session_resume_from_sleeping_and_error() {
 async fn test_session_end_dictation_gate_keeps_engine() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
-        vox_lib::utils::paths::init();
+        let _paths_guard = common::paths::TempPathsGuard::new();
 
         // --------------------------------------------------------------------
         // Scenario 1: Dictation is enabled (dictation_state == Ready)
@@ -488,7 +488,7 @@ async fn test_session_end_dictation_gate_keeps_engine() {
 async fn test_session_end_purges_and_idles() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
-        vox_lib::utils::paths::init();
+        let _paths_guard = common::paths::TempPathsGuard::new();
         let (app, state) = common::harness::get_test_app_and_state();
 
         let (vad_cmd_tx, _vad_cmd_rx) = mpsc::channel::<VadCommand>();

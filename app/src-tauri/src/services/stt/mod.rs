@@ -50,6 +50,18 @@ pub trait SttProvider: Send {
 /// Speech-to-Text inference engine contract for ONNX models.
 pub trait SttEngine: Send + Sync {
     fn transcribe(&self, audio: &[f32]) -> anyhow::Result<String>;
+    fn accept_audio_chunk(&self, _audio: &[f32]) -> anyhow::Result<()> {
+        Ok(())
+    }
+    fn get_partial_result(&self) -> anyhow::Result<String> {
+        Ok(String::new())
+    }
+    fn finalize_stream(&self) -> anyhow::Result<String> {
+        Ok(String::new())
+    }
+    fn reset_stream(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 /// Instantiates an SttProvider instance from the specified configuration and model path.

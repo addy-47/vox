@@ -11,7 +11,7 @@ pub const DEFAULT_DICTATION_HOTKEY: &str = "Alt+Space";
 pub const DEFAULT_VAD_BACKEND: &str = "ten_vad";
 pub const DEFAULT_VAD_THRESHOLD: f32 = 0.5;
 pub const DEFAULT_VAD_PTT_NOISE_GATE: f32 = 0.005;
-pub const DEFAULT_VAD_SILENCE_DURATION_MS: u32 = 800;
+pub const DEFAULT_VAD_SILENCE_DURATION_MS: u32 = 400;
 pub const DEFAULT_VAD_SPEECH_ONSET_MS: u32 = 32;
 
 pub const DEFAULT_ASR_MODEL: &str = "nvidia_nemotron";
