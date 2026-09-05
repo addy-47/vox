@@ -2,12 +2,13 @@ use crate::core::error::VoxIpcError;
 use crate::core::state::AppState;
 use crate::monitoring::snapshot::RuntimeSnapshot;
 use crate::monitoring::{MemoryProfileLogEvent, ProfilerSnapshot};
+use std::sync::Arc;
 use tauri::State;
 
 /// Get the most recent runtime snapshot.
 /// Throttled pull-based IPC for frontend monitoring.
 #[tauri::command]
-pub fn get_runtime_snapshot(state: State<'_, std::sync::Arc<AppState>>) -> Option<RuntimeSnapshot> {
+pub fn get_runtime_snapshot(state: State<'_, Arc<AppState>>) -> Option<RuntimeSnapshot> {
     state.monitoring.get_latest()
 }
 

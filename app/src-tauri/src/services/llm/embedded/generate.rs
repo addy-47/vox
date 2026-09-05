@@ -1,12 +1,15 @@
-use super::family::{partial_tag_len, ModelFamily};
-use super::worker::{CacheState, LlmWorker};
-use crate::services::harness::ConversationContext;
-use crate::services::llm::LlmEngine;
+use std::sync::mpsc;
+
 use anyhow::{anyhow, Result};
 use llama_cpp_4::{
     context::LlamaContext, llama_batch::LlamaBatch, model::AddBos, sampling::LlamaSampler,
     token::data_array::LlamaTokenDataArray, token::LlamaToken,
 };
+
+use super::family::{partial_tag_len, ModelFamily};
+use super::worker::{CacheState, LlmWorker};
+use crate::services::harness::ConversationContext;
+use crate::services::llm::LlmEngine;
 
 /// Soft-cap limits and state for stream generation.
 struct GenerationLimits {
@@ -17,7 +20,11 @@ struct GenerationLimits {
 }
 
 impl GenerationLimits {
-    pub fn new(total_input_tokens: usize, max_ctx_size: u32, max_output_tokens: Option<u32>) -> Self {
+    pub fn new(
+        total_input_tokens: usize,
+        max_ctx_size: u32,
+        max_output_tokens: Option<u32>,
+    ) -> Self {
         Self {
             total_input_tokens,
             max_ctx_size,
@@ -53,7 +60,7 @@ impl GenerationLimits {
 /// Helper struct managing incremental streaming buffer, tag stripping, and partial emission.
 struct StreamingEmitter<'a> {
     family: &'a ModelFamily,
-    tx: &'a std::sync::mpsc::Sender<crate::services::llm::LlmStreamEvent>,
+    tx: &'a mpsc::Sender<crate::services::llm::LlmStreamEvent>,
     raw_gen_buf: String,
     emitted_clean_len: usize,
     byte_buf: Vec<u8>,
@@ -62,7 +69,7 @@ struct StreamingEmitter<'a> {
 impl<'a> StreamingEmitter<'a> {
     pub fn new(
         family: &'a ModelFamily,
-        tx: &'a std::sync::mpsc::Sender<crate::services::llm::LlmStreamEvent>,
+        tx: &'a mpsc::Sender<crate::services::llm::LlmStreamEvent>,
     ) -> Self {
         Self {
             family,
@@ -186,7 +193,7 @@ impl LlmWorker {
         conv_ctx: &ConversationContext,
         turn_id: u32,
         cancel: &tokio_util::sync::CancellationToken,
-        tx: &std::sync::mpsc::Sender<crate::services::llm::LlmStreamEvent>,
+        tx: &mpsc::Sender<crate::services::llm::LlmStreamEvent>,
     ) -> Result<Option<(usize, i32)>> {
         let last_user_text = conv_ctx
             .messages
@@ -356,7 +363,7 @@ impl LlmEngine for LlmWorker {
         turn_id: u32,
         max_output_tokens: Option<u32>,
         cancel: &tokio_util::sync::CancellationToken,
-        tx: &std::sync::mpsc::Sender<crate::services::llm::LlmStreamEvent>,
+        tx: &mpsc::Sender<crate::services::llm::LlmStreamEvent>,
     ) -> Result<()> {
         self.init_context()?;
 
@@ -393,10 +400,7 @@ impl LlmEngine for LlmWorker {
             Some(toks) => (toks as usize).min(self.ctx_size as usize),
             None => crate::services::llm::DEFAULT_MAX_GENERATION_SAFETY_TOKENS,
         };
-        let mut batch = LlamaBatch::new(
-            total_input_tokens + max_new_batch,
-            1,
-        );
+        let mut batch = LlamaBatch::new(total_input_tokens + max_new_batch, 1);
 
         let mut qwen_sampler = if self.family == ModelFamily::Qwen {
             Some(LlamaSampler::chain_simple([

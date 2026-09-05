@@ -3,7 +3,9 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 
-use crate::core::events::VoxEvent;
+use crate::core::events::{emit_ipc_to, IpcEvent, PipelineError, VoxEvent};
+use crate::core::settings::InteractionMode;
+use crate::core::state::InteractionOwner;
 use crate::services::audio::PlaybackEngine;
 use crate::services::realtime::{
     audio_bridge::AudioBridge, RealtimeProviderEvent, RealtimeSession, RealtimeVoiceProvider,
@@ -37,7 +39,7 @@ impl RealtimeActor {
     /// Initializes playback, connects to the realtime provider, and spawns the event routing loop.
     pub fn start<R: tauri::Runtime + 'static>(
         &mut self,
-        interaction_mode: crate::core::settings::InteractionMode,
+        interaction_mode: InteractionMode,
         playback_engine: Arc<PlaybackEngine>,
         event_tx: Sender<VoxEvent>,
         app: tauri::AppHandle<R>,
@@ -79,19 +81,15 @@ impl RealtimeActor {
                         }
                     }
                     RealtimeProviderEvent::TranscriptPartial { turn_id, text } => {
-                        let target = crate::pipeline::target_window(
-                            crate::core::state::InteractionOwner::Assistant,
-                        );
-                        if let Err(e) = crate::core::events::emit_ipc_to(
+                        let target = crate::pipeline::target_window(InteractionOwner::Assistant);
+                        if let Err(e) = emit_ipc_to(
                             &app,
                             target,
-                            crate::core::events::IpcEvent::TranscriptPartial(
-                                crate::core::events::TranscriptPayload {
-                                    turn_id,
-                                    text,
-                                    owner: Some(crate::core::state::InteractionOwner::Assistant),
-                                },
-                            ),
+                            IpcEvent::TranscriptPartial(crate::core::events::TranscriptPayload {
+                                turn_id,
+                                text,
+                                owner: Some(InteractionOwner::Assistant),
+                            }),
                         ) {
                             log::trace!(
                                 "[RealtimeActor] Failed to emit TranscriptPartial IPC: {}",
@@ -110,15 +108,14 @@ impl RealtimeActor {
                         }
                     }
                     RealtimeProviderEvent::LlmToken { turn_id, token } => {
-                        let target = crate::pipeline::target_window(
-                            crate::core::state::InteractionOwner::Assistant,
-                        );
-                        if let Err(e) = crate::core::events::emit_ipc_to(
+                        let target = crate::pipeline::target_window(InteractionOwner::Assistant);
+                        if let Err(e) = emit_ipc_to(
                             &app,
                             target,
-                            crate::core::events::IpcEvent::LlmToken(
-                                crate::core::events::LlmTokenPayload { turn_id, token },
-                            ),
+                            IpcEvent::LlmToken(crate::core::events::LlmTokenPayload {
+                                turn_id,
+                                token,
+                            }),
                         ) {
                             log::trace!("[RealtimeActor] Failed to emit LlmToken IPC: {}", e);
                         }
@@ -128,12 +125,19 @@ impl RealtimeActor {
                             log::warn!("[RealtimeActor] Failed to forward LlmFinished: {:?}", e);
                         }
                     }
-                    RealtimeProviderEvent::Error { turn_id, message } => {
-                        if let Err(e) = loop_event_tx.send(VoxEvent::Error {
+                    RealtimeProviderEvent::Error {
+                        turn_id,
+                        message,
+                        impact,
+                        actionability,
+                    } => {
+                        if let Err(e) = loop_event_tx.send(VoxEvent::Error(PipelineError {
                             turn_id,
                             message,
                             source: "RealtimeActor".to_string(),
-                        }) {
+                            impact,
+                            actionability,
+                        })) {
                             log::warn!("[RealtimeActor] Failed to forward Error: {:?}", e);
                         }
                     }

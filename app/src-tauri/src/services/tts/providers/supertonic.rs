@@ -12,6 +12,7 @@ use sherpa_onnx::{
 };
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::AtomicI32;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -82,7 +83,7 @@ pub struct TtsEngine {
     tts: Mutex<OfflineTts>,
     quality_steps: AtomicU32,
     speed: AtomicF32,
-    voice: std::sync::atomic::AtomicI32,
+    voice: AtomicI32,
 }
 
 struct AtomicF32 {
@@ -110,7 +111,13 @@ impl AtomicF32 {
 
 impl TtsEngine {
     /// Initializes Supertonic ONNX offline TTS components from the specified model directory.
-    pub fn new(model_path: &Path, voice: i32, quality_steps: u32, speed: f32, num_threads: u32) -> Result<Self> {
+    pub fn new(
+        model_path: &Path,
+        voice: i32,
+        quality_steps: u32,
+        speed: f32,
+        num_threads: u32,
+    ) -> Result<Self> {
         let mp = |f: &str| -> String { model_path.join(f).to_string_lossy().into() };
 
         let config = OfflineTtsConfig {
@@ -150,7 +157,7 @@ impl TtsEngine {
                 quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_SUPERTONIC),
             ),
             speed: AtomicF32::new(speed.clamp(MIN_SPEED, MAX_SPEED)),
-            voice: std::sync::atomic::AtomicI32::new(voice.clamp(0, 9)),
+            voice: AtomicI32::new(voice.clamp(0, 9)),
         })
     }
 }

@@ -1,14 +1,18 @@
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
+use tauri::{AppHandle, Manager, State};
+
 use crate::core::error::VoxIpcError;
-use crate::core::events::{emit_ipc, IpcEvent};
-use crate::core::state::AppState;
+use crate::core::events::{emit_ipc, IpcEvent, VoxEvent};
+use crate::core::state::{AppState, InteractionOwner};
 use crate::tray::position_tray_window;
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
-use tauri::{AppHandle, Manager, State};
 
 /// Toggles the tray window visibility and updates the menu checkmark state (internal native menu callback).
 pub async fn toggle_tray_visibility_internal<R: tauri::Runtime>(app: AppHandle<R>) {
-    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    let state: State<'_, Arc<AppState>> = app.state();
 
     let (setup_completed, dictation_enabled, is_tray_mode) = match state.settings.read() {
         Ok(s) => (
@@ -30,10 +34,8 @@ pub async fn toggle_tray_visibility_internal<R: tauri::Runtime>(app: AppHandle<R
         return;
     }
 
-    let new_state = !state.hud_visible.load(std::sync::atomic::Ordering::Relaxed);
-    state
-        .hud_visible
-        .store(new_state, std::sync::atomic::Ordering::Relaxed);
+    let new_state = !state.hud_visible.load(Ordering::Relaxed);
+    state.hud_visible.store(new_state, Ordering::Relaxed);
 
     if new_state {
         if let Ok(window) = crate::tray::ensure_tray_window(&app) {
@@ -66,15 +68,12 @@ pub async fn toggle_tray_visibility_internal<R: tauri::Runtime>(app: AppHandle<R
 use gtk::prelude::*;
 
 async fn cancel_active_dictation_turn(state: &AppState) {
-    let owner: crate::core::state::InteractionOwner = state
-        .owner
-        .load(std::sync::atomic::Ordering::Relaxed)
-        .into();
+    let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
 
-    if owner == crate::core::state::InteractionOwner::Dictation {
+    if owner == InteractionOwner::Dictation {
         let event_tx_opt = state.event_tx.lock().clone();
         if let Some(tx) = event_tx_opt {
-            if let Err(e) = tx.send(crate::core::events::VoxEvent::PttCancel) {
+            if let Err(e) = tx.send(VoxEvent::PttCancel) {
                 log::warn!("[Tray] Failed to send VoxEvent::PttCancel: {}", e);
             }
         }
@@ -84,10 +83,8 @@ async fn cancel_active_dictation_turn(state: &AppState) {
 /// Hide the tray overlay window and cancel active dictation turns.
 #[tauri::command]
 pub async fn hide_tray_window<R: tauri::Runtime>(app: AppHandle<R>) {
-    let state: State<'_, std::sync::Arc<AppState>> = app.state();
-    let was_visible = state
-        .hud_visible
-        .swap(false, std::sync::atomic::Ordering::Relaxed);
+    let state: State<'_, Arc<AppState>> = app.state();
+    let was_visible = state.hud_visible.swap(false, Ordering::Relaxed);
     if was_visible {
         log::info!("[Tray] Ending Tray user session (Tray window hidden).");
     }

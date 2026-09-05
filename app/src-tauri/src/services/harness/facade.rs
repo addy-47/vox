@@ -1,4 +1,5 @@
- use super::buffer::{current_timestamp_ms, ConversationContext};
+
+use super::buffer::{current_timestamp_ms, ConversationContext};
 use super::manager::ConversationManager;
 use super::prompt_builder::format_retrieved_profile;
 use crate::core::constants::{TRANSITION_MESSAGES_EN, TRANSITION_MESSAGES_HI};
@@ -17,7 +18,7 @@ use turso::Connection;
 /// Bundled parameters for the `prepare_turn_context` public facade.
 pub struct PrepareTurnParams<'a> {
     pub harness: &'a Arc<Mutex<ConversationManager>>,
-    pub tts_tx: Option<&'a std::sync::mpsc::Sender<crate::services::tts::TtsCommand>>,
+    pub tts_tx: Option<&'a mpsc::Sender<crate::services::tts::TtsCommand>>,
     pub memory_tx: Option<
         &'a parking_lot::Mutex<
             Option<crossbeam_channel::Sender<crate::persistence::events::MemoryWorkerEvent>>,
@@ -171,13 +172,16 @@ pub async fn prepare_turn_context(
                     );
                 }
                 Err(e) => {
-                    log::error!(
-                        "[Harness] Critical LLM compaction failed: {}. Transitioning to pipeline error.",
+                    log::warn!(
+                        "[Harness] Critical LLM compaction failed: {}. Falling back to FIFO maintenance.",
                         e
                     );
-                    return Err(MemoryError::CompactionFailed {
-                        message: e.to_string(),
-                    });
+                    let mut lock = params.harness.lock();
+                    let mut context_harness =
+                        super::accountant::ContextHarness::new(params.context_window);
+                    context_harness.sync_tokens_from_buffer(&lock.buffer);
+                    lock.buffer.messages.push(last_user_turn);
+                    context_harness.perform_fifo_maintenance(&mut lock.buffer);
                 }
             }
         } else {
@@ -264,7 +268,10 @@ pub async fn prepare_turn_context(
     Ok((request, transition_speech))
 }
 
+use crate::core::settings::PipelineMode;
 use crate::core::state::{AppState, InteractionState};
+use std::sync::atomic::Ordering;
+use std::sync::mpsc;
 use std::sync::LazyLock;
 use std::time::Instant;
 
@@ -287,7 +294,7 @@ pub fn trigger_background_compaction(
     let is_modular = state
         .settings
         .read()
-        .map(|s| s.interaction.pipeline_mode == crate::core::settings::PipelineMode::Modular)
+        .map(|s| s.interaction.pipeline_mode == PipelineMode::Modular)
         .unwrap_or(true);
     if !is_modular {
         return;
@@ -321,14 +328,11 @@ pub fn trigger_background_compaction(
         if messages.len() <= 3 {
             return;
         }
-        let h: std::sync::Arc<Mutex<ConversationManager>> = std::sync::Arc::clone(harness);
+        let h: Arc<Mutex<ConversationManager>> = Arc::clone(harness);
         let settings_resolved =
             settings.or_else(|| state.settings.read().ok().map(|s| s.llm.clone()));
         let cached_provider = state.llm_provider.read().clone();
-        let session_id = state
-            .conversation_id
-            .load(std::sync::atomic::Ordering::Relaxed)
-            .to_string();
+        let session_id = state.conversation_id.load(Ordering::Relaxed).to_string();
 
         tauri::async_runtime::spawn(async move {
             if cancel_flag.is_cancelled() {
@@ -392,13 +396,14 @@ pub fn trigger_background_compaction(
                         let facts = result.personal_memory;
                         tauri::async_runtime::spawn(async move {
                             if let Ok(conn) = crate::persistence::db::VoxDb::open(&db_path).await {
-                                if let Err(e) = crate::persistence::memory_mutations::enqueue_personal_facts(
-                                    &conn,
-                                    facts,
-                                    &active_session,
-                                    true,
-                                )
-                                .await
+                                if let Err(e) =
+                                    crate::persistence::memory_mutations::enqueue_personal_facts(
+                                        &conn,
+                                        facts,
+                                        &active_session,
+                                        true,
+                                    )
+                                    .await
                                 {
                                     log::warn!(
                                         "[Harness] Soft compaction personal facts enqueue failed: {}",

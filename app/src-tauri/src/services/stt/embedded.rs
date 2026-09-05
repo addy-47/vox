@@ -45,7 +45,11 @@ pub struct EmbeddedSttProvider {
 
 impl EmbeddedSttProvider {
     /// Instantiates an embedded speech-to-text provider with lazy engine loading on first transcription.
-    pub fn new(model_path: &std::path::Path, model_type: &str, num_threads: u32) -> anyhow::Result<Self> {
+    pub fn new(
+        model_path: &std::path::Path,
+        model_type: &str,
+        num_threads: u32,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             inner: Mutex::new(EmbeddedSttProviderInner {
                 model_path: model_path.to_path_buf(),
@@ -91,7 +95,10 @@ impl SttProvider for EmbeddedSttProvider {
                 inner.stitched_transcript = if inner.stitched_transcript.is_empty() {
                     transcript
                 } else {
-                    crate::services::stt::stitch_transcripts(&inner.stitched_transcript, &transcript)
+                    crate::services::stt::stitch_transcripts(
+                        &inner.stitched_transcript,
+                        &transcript,
+                    )
                 };
             }
             Ok(inner.stitched_transcript.clone())

@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -9,11 +10,11 @@ use super::telemetry::process_and_emit_telemetry;
 use super::utils::{f32_to_i16_pcm, PreRollBuffer};
 use super::{
     VadBackend, VadEngine as _, VadOperationalMode, VAD_ACTOR_IDLE_SLEEP_MS, VAD_CHUNK_SIZE,
-    VAD_MIN_UTTERANCE_SAMPLES, VAD_PARTIAL_INTERVAL_SAMPLES,
-    VAD_PRE_ROLL_CAPACITY,
+    VAD_MIN_UTTERANCE_SAMPLES, VAD_PARTIAL_INTERVAL_SAMPLES, VAD_PRE_ROLL_CAPACITY,
 };
 use crate::core::events::VoxEvent;
 use crate::core::settings::{AudioOutputMode, InteractionMode};
+use crate::core::state::InteractionState;
 use crate::monitoring::aggregator::TelemetryEvent;
 use crate::services::stt::SttCommand;
 use crate::services::vad::VadCommand;
@@ -46,10 +47,10 @@ pub struct VadActorState {
     pub pre_roll_buffer: PreRollBuffer,
     pub realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>>,
     pub pcm_scratch: Vec<i16>,
-    pub partial_recycle_tx: std::sync::mpsc::SyncSender<Vec<f32>>,
-    pub partial_recycle_rx: std::sync::mpsc::Receiver<Vec<f32>>,
-    pub realtime_recycle_tx: std::sync::mpsc::SyncSender<Vec<i16>>,
-    pub realtime_recycle_rx: std::sync::mpsc::Receiver<Vec<i16>>,
+    pub partial_recycle_tx: mpsc::SyncSender<Vec<f32>>,
+    pub partial_recycle_rx: mpsc::Receiver<Vec<f32>>,
+    pub realtime_recycle_tx: mpsc::SyncSender<Vec<i16>>,
+    pub realtime_recycle_rx: mpsc::Receiver<Vec<i16>>,
 
     // WindowedValidation state tracking
     pub window_active: bool,
@@ -78,8 +79,8 @@ impl VadActorState {
         let speech_end_frames = (silence_duration_ms as usize / 16).max(1);
         let speech_start_frames = (speech_onset_ms as usize / 16).max(1);
 
-        let (partial_recycle_tx, partial_recycle_rx) = std::sync::mpsc::sync_channel(4);
-        let (realtime_recycle_tx, realtime_recycle_rx) = std::sync::mpsc::sync_channel(32);
+        let (partial_recycle_tx, partial_recycle_rx) = mpsc::sync_channel(4);
+        let (realtime_recycle_tx, realtime_recycle_rx) = mpsc::sync_channel(32);
 
         Self {
             threshold,
@@ -94,7 +95,9 @@ impl VadActorState {
             active_frames: 0,
             inactive_frames: 0,
             samples_since_partial: 0,
-            utterance_buffer: Vec::with_capacity(VAD_PRE_ROLL_CAPACITY + VAD_PARTIAL_INTERVAL_SAMPLES * 2),
+            utterance_buffer: Vec::with_capacity(
+                VAD_PRE_ROLL_CAPACITY + VAD_PARTIAL_INTERVAL_SAMPLES * 2,
+            ),
             pre_roll_buffer: PreRollBuffer::new(VAD_PRE_ROLL_CAPACITY),
             realtime_tx: None,
             pcm_scratch: Vec::with_capacity(VAD_CHUNK_SIZE),
@@ -114,7 +117,7 @@ impl VadActorState {
 
 /// Drains and applies pending hot-reload commands without acquiring locks.
 fn process_vad_commands(
-    vad_rx: &std::sync::mpsc::Receiver<VadCommand>,
+    vad_rx: &mpsc::Receiver<VadCommand>,
     vad: &mut VadBackend,
     state: &mut VadActorState,
 ) -> bool {
@@ -240,8 +243,8 @@ fn should_suppress_audio(
     }
 
     state.realtime_tx.is_none()
-        && crate::core::state::InteractionState::from(state_atomic.load(Ordering::Relaxed))
-            == crate::core::state::InteractionState::Speaking
+        && InteractionState::from(state_atomic.load(Ordering::Relaxed))
+            == InteractionState::Speaking
         && state.audio_mode == AudioOutputMode::Speaker
 }
 
@@ -269,27 +272,23 @@ pub struct VadActorHandles {
 
 /// Communication channels utilized by the VAD actor.
 pub struct VadActorChannels {
-    pub stt_tx: std::sync::mpsc::Sender<SttCommand>,
-    pub vad_rx: std::sync::mpsc::Receiver<VadCommand>,
+    pub stt_tx: mpsc::Sender<SttCommand>,
+    pub vad_rx: mpsc::Receiver<VadCommand>,
     pub telemetry_tx: crossbeam_channel::Sender<TelemetryEvent>,
-    pub vox_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
+    pub vox_event_tx: Option<mpsc::Sender<VoxEvent>>,
 }
 
 /// Handles speech start event transition, stream resets, and pre-roll transfer.
 fn handle_speech_start(
     state: &mut VadActorState,
     handles: &VadActorHandles,
-    stt_tx: &std::sync::mpsc::Sender<SttCommand>,
-    vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
+    stt_tx: &mpsc::Sender<SttCommand>,
+    vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
 ) {
     state.in_speech = true;
     state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
 
     log::info!("[VAD Actor] Speech Start (turn: {})", state.current_turn_id);
-
-    if let Err(e) = stt_tx.send(SttCommand::ResetStream) {
-        log::warn!("[VAD Actor] Failed to send ResetStream to STT: {}", e);
-    }
 
     if let Some(tx) = vox_event_tx {
         if let Err(e) = tx.send(VoxEvent::SpeechStart) {
@@ -317,8 +316,8 @@ fn handle_speech_start(
 fn handle_speech_end(
     vad: &mut VadBackend,
     state: &mut VadActorState,
-    stt_tx: &std::sync::mpsc::Sender<SttCommand>,
-    vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
+    stt_tx: &mpsc::Sender<SttCommand>,
+    vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
 ) {
     state.in_speech = false;
     log::info!("[VAD Actor] Speech End (turn: {})", state.current_turn_id);
@@ -348,7 +347,7 @@ fn handle_speech_end(
 fn accumulate_speech_frames(
     chunk: &[f32],
     state: &mut VadActorState,
-    stt_tx: &std::sync::mpsc::Sender<SttCommand>,
+    stt_tx: &mpsc::Sender<SttCommand>,
 ) {
     state.utterance_buffer.extend_from_slice(chunk);
     state.samples_since_partial += chunk.len();
@@ -370,8 +369,8 @@ fn process_continuous_segmentation(
     vad: &mut VadBackend,
     state: &mut VadActorState,
     handles: &VadActorHandles,
-    stt_tx: &std::sync::mpsc::Sender<SttCommand>,
-    vox_event_tx: Option<&std::sync::mpsc::Sender<VoxEvent>>,
+    stt_tx: &mpsc::Sender<SttCommand>,
+    vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
 ) {
     let is_speech = vad.predict(chunk) && vad.is_above_noise_gate(raw_energy, state.noise_gate);
 
@@ -382,19 +381,24 @@ fn process_continuous_segmentation(
         if !state.in_speech && state.active_frames >= state.speech_start_frames {
             handle_speech_start(state, handles, stt_tx, vox_event_tx);
         }
+
+        if state.in_speech {
+            accumulate_speech_frames(chunk, state, stt_tx);
+        }
     } else {
         state.inactive_frames += 1;
         state.active_frames = 0;
 
-        if state.in_speech && state.inactive_frames >= state.speech_end_frames {
-            handle_speech_end(vad, state, stt_tx, vox_event_tx);
+        if state.in_speech {
+            if state.inactive_frames >= state.speech_end_frames {
+                handle_speech_end(vad, state, stt_tx, vox_event_tx);
+                state.pre_roll_buffer.push(chunk);
+            } else {
+                accumulate_speech_frames(chunk, state, stt_tx);
+            }
+        } else {
+            state.pre_roll_buffer.push(chunk);
         }
-    }
-
-    if state.in_speech {
-        accumulate_speech_frames(chunk, state, stt_tx);
-    } else {
-        state.pre_roll_buffer.push(chunk);
     }
 }
 
@@ -492,7 +496,9 @@ where
                     state.window_buffer.clear();
                     state.in_speech = false;
                     state.window_active = false;
-                    log::debug!("[VAD Actor] Ingestion gate closed — purged in-flight audio buffers");
+                    log::debug!(
+                        "[VAD Actor] Ingestion gate closed — purged in-flight audio buffers"
+                    );
                 }
                 if consumer.occupied_len() >= VAD_CHUNK_SIZE {
                     consumer.pop_slice(&mut chunk);
@@ -557,7 +563,11 @@ mod tests {
     use crate::core::state::InteractionState;
     use std::sync::atomic::{AtomicBool, AtomicU32};
 
-    fn make_state(audio_mode: AudioOutputMode, state_val: u32, realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>>) -> (VadActorState, Arc<AtomicU32>, Arc<AtomicBool>) {
+    fn make_state(
+        audio_mode: AudioOutputMode,
+        state_val: u32,
+        realtime_tx: Option<tokio::sync::mpsc::Sender<Vec<i16>>>,
+    ) -> (VadActorState, Arc<AtomicU32>, Arc<AtomicBool>) {
         let mut s = VadActorState::new(0.5, 0.001, 800, 32, InteractionMode::Passive, audio_mode);
         s.realtime_tx = realtime_tx;
         let state_atomic = Arc::new(AtomicU32::new(state_val));
@@ -568,23 +578,39 @@ mod tests {
     /// Tests should_suppress_audio returns false when state is not Speaking.
     #[test]
     fn test_suppression_requires_speaking_state() {
-        let (state, atomic, suppressed) = make_state(AudioOutputMode::Speaker, InteractionState::Ready as u32, None);
+        let (state, atomic, suppressed) = make_state(
+            AudioOutputMode::Speaker,
+            InteractionState::Ready as u32,
+            None,
+        );
         assert!(!should_suppress_audio(&suppressed, &atomic, &state));
-        let (state2, atomic2, suppressed2) = make_state(AudioOutputMode::Speaker, InteractionState::Listening as u32, None);
+        let (state2, atomic2, suppressed2) = make_state(
+            AudioOutputMode::Speaker,
+            InteractionState::Listening as u32,
+            None,
+        );
         assert!(!should_suppress_audio(&suppressed2, &atomic2, &state2));
     }
 
     /// Tests suppression active only for Speaker + Speaking + no realtime_tx.
     #[test]
     fn test_suppression_speaker_speaking_no_realtime() {
-        let (state, atomic, suppressed) = make_state(AudioOutputMode::Speaker, InteractionState::Speaking as u32, None);
+        let (state, atomic, suppressed) = make_state(
+            AudioOutputMode::Speaker,
+            InteractionState::Speaking as u32,
+            None,
+        );
         assert!(should_suppress_audio(&suppressed, &atomic, &state));
     }
 
     /// Tests Headset never suppresses even while Speaking.
     #[test]
     fn test_headset_never_suppresses() {
-        let (state, atomic, suppressed) = make_state(AudioOutputMode::Headset, InteractionState::Speaking as u32, None);
+        let (state, atomic, suppressed) = make_state(
+            AudioOutputMode::Headset,
+            InteractionState::Speaking as u32,
+            None,
+        );
         assert!(!should_suppress_audio(&suppressed, &atomic, &state));
     }
 
@@ -592,17 +618,29 @@ mod tests {
     #[test]
     fn test_realtime_bypasses_suppression() {
         let (tx, _rx) = tokio::sync::mpsc::channel(1);
-        let (state, atomic, suppressed) = make_state(AudioOutputMode::Speaker, InteractionState::Speaking as u32, Some(tx));
+        let (state, atomic, suppressed) = make_state(
+            AudioOutputMode::Speaker,
+            InteractionState::Speaking as u32,
+            Some(tx),
+        );
         assert!(!should_suppress_audio(&suppressed, &atomic, &state));
     }
 
     /// Tests explicit audio_suppressed flag forces suppression regardless of state/mode.
     #[test]
     fn test_audio_suppressed_flag_forces_suppression() {
-        let (state, atomic, suppressed) = make_state(AudioOutputMode::Headset, InteractionState::Ready as u32, None);
+        let (state, atomic, suppressed) = make_state(
+            AudioOutputMode::Headset,
+            InteractionState::Ready as u32,
+            None,
+        );
         suppressed.store(true, Ordering::Relaxed);
         assert!(should_suppress_audio(&suppressed, &atomic, &state));
-        let (state2, atomic2, suppressed2) = make_state(AudioOutputMode::Speaker, InteractionState::Ready as u32, None);
+        let (state2, atomic2, suppressed2) = make_state(
+            AudioOutputMode::Speaker,
+            InteractionState::Ready as u32,
+            None,
+        );
         suppressed2.store(true, Ordering::Relaxed);
         assert!(should_suppress_audio(&suppressed2, &atomic2, &state2));
     }
@@ -610,7 +648,14 @@ mod tests {
     /// Tests VadValidationResult trimming: speech window within buffer bounds.
     #[test]
     fn test_window_validation_trimming_logic() {
-        let mut s = VadActorState::new(0.5, 0.001, 800, 32, InteractionMode::PTT, AudioOutputMode::Speaker);
+        let mut s = VadActorState::new(
+            0.5,
+            0.001,
+            800,
+            32,
+            InteractionMode::PTT,
+            AudioOutputMode::Speaker,
+        );
         s.window_active = true;
         s.window_buffer = vec![0.0; 1000];
         s.window_speech_detected = true;
@@ -624,4 +669,3 @@ mod tests {
         assert!(start < end && (end - start) >= 256);
     }
 }
-

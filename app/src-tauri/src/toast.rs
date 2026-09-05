@@ -3,10 +3,14 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+use crate::core::events::emit_ipc_to;
+use crate::core::events::IpcEvent;
+use crate::core::events::ToastLevel;
+use crate::core::events::ToastPayload;
 #[cfg(target_os = "linux")]
 use gtk::prelude::{GtkWindowExt, WidgetExt};
 
-static LAST_TOAST: LazyLock<parking_lot::Mutex<Option<crate::core::events::ToastPayload>>> =
+static LAST_TOAST: LazyLock<parking_lot::Mutex<Option<ToastPayload>>> =
     LazyLock::new(|| parking_lot::Mutex::new(None));
 
 /// Ensures the "toast" WebviewWindow exists, lazily constructing it if absent.
@@ -106,12 +110,16 @@ pub fn setup_linux_toast_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &st
         None => return,
     };
 
-    let mon = window
-        .primary_monitor()
-        .ok()
-        .flatten()
-        .or_else(|| window.current_monitor().ok().flatten())
-        .or_else(|| window.app_handle().primary_monitor().ok().flatten());
+    let mon = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        window
+            .primary_monitor()
+            .ok()
+            .flatten()
+            .or_else(|| window.current_monitor().ok().flatten())
+            .or_else(|| window.app_handle().primary_monitor().ok().flatten())
+    }))
+    .ok()
+    .flatten();
 
     if let Some(mon) = mon {
         let size = mon.size();
@@ -184,7 +192,7 @@ pub fn manage_toast_window<R: tauri::Runtime>(
 
 /// Returns the last emitted toast for late-joining webviews that missed the `show_toast` event.
 #[tauri::command]
-pub fn get_last_toast() -> Option<crate::core::events::ToastPayload> {
+pub fn get_last_toast() -> Option<ToastPayload> {
     LAST_TOAST.lock().clone()
 }
 
@@ -192,7 +200,7 @@ pub fn get_last_toast() -> Option<crate::core::events::ToastPayload> {
 pub fn should_show_error_toast<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
     match app.get_webview_window(crate::pipeline::WINDOW_MAIN) {
         Some(w) => !w.is_visible().unwrap_or(true),
-        None => true,
+        None => false,
     }
 }
 
@@ -201,13 +209,23 @@ pub fn show_toast<R: tauri::Runtime>(
     app: &AppHandle<R>,
     title: &str,
     message: &str,
-    level: crate::core::events::ToastLevel,
+    level: ToastLevel,
 ) -> Result<(), String> {
-    let _window = ensure_toast_window(app)?;
+    let window_res =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ensure_toast_window(app)));
+
+    let _window = match window_res {
+        Ok(Ok(w)) => w,
+        Ok(Err(e)) => return Err(e),
+        Err(_) => {
+            log::debug!("[Toast] Window creation unimplemented on current runtime (mock/headless)");
+            return Ok(());
+        }
+    };
     let title_owned = title.to_string();
     let message_owned = message.to_string();
 
-    let payload = crate::core::events::ToastPayload {
+    let payload = ToastPayload {
         title: title_owned,
         message: message_owned,
         level,
@@ -222,19 +240,19 @@ pub fn show_toast<R: tauri::Runtime>(
 
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_millis(420)).await;
-        if let Err(e) = crate::core::events::emit_ipc_to(
+        if let Err(e) = emit_ipc_to(
             &app_for_emit,
             "toast",
-            crate::core::events::IpcEvent::ShowToast(payload_for_emit.clone()),
+            IpcEvent::ShowToast(payload_for_emit.clone()),
         ) {
             log::warn!("[Toast] Delayed emit show_toast failed: {}", e);
         }
 
         tokio::time::sleep(Duration::from_millis(300)).await;
-        if let Err(e) = crate::core::events::emit_ipc_to(
+        if let Err(e) = emit_ipc_to(
             &app_for_emit,
             "toast",
-            crate::core::events::IpcEvent::ShowToast(payload_for_emit),
+            IpcEvent::ShowToast(payload_for_emit),
         ) {
             log::debug!("[Toast] Second emit (late mount) failed: {}", e);
         }
@@ -252,11 +270,7 @@ pub fn show_toast<R: tauri::Runtime>(
         drop(win_for_show);
     });
 
-    if let Err(e) = crate::core::events::emit_ipc_to(
-        app,
-        "toast",
-        crate::core::events::IpcEvent::ShowToast(payload),
-    ) {
+    if let Err(e) = emit_ipc_to(app, "toast", IpcEvent::ShowToast(payload)) {
         log::debug!(
             "[Toast] Immediate emit show_toast (expected miss before mount): {}",
             e
@@ -281,8 +295,7 @@ fn with_gtk_window<R: tauri::Runtime>(
     window: &WebviewWindow<R>,
     f: impl FnOnce(&gtk::ApplicationWindow),
 ) {
-    let result =
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| window.gtk_window()));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| window.gtk_window()));
     match result {
         Ok(Ok(gtk_window)) => f(&gtk_window),
         Ok(Err(e)) => log::debug!("[Toast] No GTK handle available: {}", e),

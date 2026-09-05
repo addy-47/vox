@@ -3,6 +3,7 @@ use crate::services::harness::buffer::ChatMessage;
 use crate::services::llm::LlmProvider;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
+use std::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 /// Extracted facts and summary resulting from LLM conversation compaction.
@@ -19,7 +20,7 @@ async fn execute_compaction_attempt(
     request: &crate::services::llm::GenerationRequest,
     cancel: &CancellationToken,
 ) -> Result<String> {
-    let (tx, rx) = std::sync::mpsc::channel();
+    let (tx, rx) = mpsc::channel();
     let (async_tx, mut async_rx) = tokio::sync::mpsc::unbounded_channel();
 
     let pump_handle = tokio::task::spawn_blocking(move || {

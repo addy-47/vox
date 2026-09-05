@@ -9,9 +9,7 @@ pub use crate::persistence::events::{MemoryWorkerEvent, PersistenceEvent};
 
 #[derive(Debug, Clone)]
 pub enum VoxEvent {
-    SessionStart {
-        owner: InteractionOwner,
-    },
+    SessionStart { owner: InteractionOwner },
     PauseSession,
     ResumeSession,
     EndSession,
@@ -20,28 +18,43 @@ pub enum VoxEvent {
     PttCancel,
     SpeechStart,
     SpeechEnd,
-    TranscriptFinal {
-        turn_id: u32,
-        text: String,
-    },
-    LlmFinished {
-        turn_id: u32,
-    },
-    PlaybackStarted {
-        turn_id: u32,
-    },
-    PlaybackFinished {
-        turn_id: u32,
-    },
-    Cancelled {
-        turn_id: u32,
-    },
-    Error {
-        turn_id: u32,
-        message: String,
-        source: String,
-    },
+    TranscriptFinal { turn_id: u32, text: String },
+    LlmFinished { turn_id: u32 },
+    PlaybackStarted { turn_id: u32 },
+    PlaybackFinished { turn_id: u32 },
+    Cancelled { turn_id: u32 },
+    Error(PipelineError),
     Shutdown,
+}
+
+/// Unified error payload for pipeline subsystem errors.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PipelineError {
+    pub turn_id: u32,
+    pub message: String,
+    pub source: String,
+    pub impact: PipelineImpact,
+    pub actionability: Actionability,
+}
+
+/// Execution and state machine impact of an error on the pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PipelineImpact {
+    /// Pipeline does not stop; turn completes with degraded fidelity. State transition: None.
+    Degraded,
+    /// Active turn fails cleanly; resets state directly to Ready without locking into Error.
+    TurnAborted,
+    /// Unrecoverable failure; transitions state to Error.
+    SessionHalted,
+}
+
+/// Degree of user transparency and actionability for an error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Actionability {
+    /// Transient/internal glitch; ephemeral toast only.
+    None,
+    /// Requires or warrants user action; ephemeral toast AND persistent notification.
+    Actionable { category: String, hint: String },
 }
 
 /// Unified payload emitted on `state_changed` — SSOT for all pipeline + dictation state transitions.

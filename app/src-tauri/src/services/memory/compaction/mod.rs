@@ -6,8 +6,8 @@ pub use coordinator::{CompactionCoordinator, CompactionExecutionSummary};
 pub use prompt::{build_compaction_request, COMPACTION_SYSTEM_PROMPT};
 pub use runner::{run_compaction, CompactionResult};
 
-use std::sync::Arc;
 use anyhow::Result;
+use std::sync::Arc;
 use tauri::AppHandle;
 
 use crate::core::state::AppState;

@@ -2,7 +2,10 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
 
-use crate::core::events::{emit_ipc_to, IpcEvent, ToastLevel, TranscriptPayload};
+use crate::core::events::{
+    emit_ipc_to, Actionability, IpcEvent, PipelineError, PipelineImpact, ToastLevel,
+    TranscriptPayload, VoxEvent,
+};
 use crate::core::settings::PipelineMode;
 use crate::core::state::{AppState, InteractionState};
 use crate::pipeline::{target_window, transition, RoutingContext};
@@ -42,7 +45,13 @@ fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
     let (tts_tx, llm_tx, pipeline_tx) = match state.engine.try_lock() {
         Ok(guard) => guard
             .as_ref()
-            .map(|e| (e.tts_tx.clone(), e.llm_tx.clone(), Some(e.pipeline_tx.clone())))
+            .map(|e| {
+                (
+                    e.tts_tx.clone(),
+                    e.llm_tx.clone(),
+                    Some(e.pipeline_tx.clone()),
+                )
+            })
             .unwrap_or((None, None, None)),
         Err(_) => {
             log::warn!("[Pipeline::Transcript] Engine lock contended; could not access channels");
@@ -88,11 +97,13 @@ fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
                     e
                 );
                 if let Some(ref p_tx) = pipeline_tx {
-                    if let Err(send_err) = p_tx.send(crate::core::events::VoxEvent::Error {
+                    if let Err(send_err) = p_tx.send(VoxEvent::Error(PipelineError {
                         turn_id,
                         message: format!("Turn context preparation failed: {}", e),
                         source: "CriticalCompaction".to_string(),
-                    }) {
+                        impact: PipelineImpact::TurnAborted,
+                        actionability: Actionability::None,
+                    })) {
                         log::warn!(
                             "[Pipeline::Transcript] Failed to emit CriticalCompaction error: {}",
                             send_err

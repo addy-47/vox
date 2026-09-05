@@ -314,10 +314,7 @@ pub async fn update_memory_fact(
 }
 
 /// Marks a memory fact as superseded and creates a user tombstone linking it.
-pub async fn delete_memory_fact(
-    conn: &Connection,
-    fact_id: &str,
-) -> Result<()> {
+pub async fn delete_memory_fact(conn: &Connection, fact_id: &str) -> Result<()> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -396,7 +393,9 @@ pub async fn retry_failed_queue_items(
     let affected = match item_ids {
         Some(ids) if !ids.is_empty() => {
             if ids.len() > 1000 {
-                return Err(anyhow!("Too many items in retry batch. Maximum allowed is 1000."));
+                return Err(anyhow!(
+                    "Too many items in retry batch. Maximum allowed is 1000."
+                ));
             }
             let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
             let sql = format!(

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
+use crate::core::events::ToastLevel;
 use crate::core::settings::{InteractionMode, PipelineMode};
 use crate::core::state::{AppState, InteractionOwner, InteractionState};
 use crate::pipeline::{spawn_idle_monitor, transition, RoutingContext};
@@ -279,7 +280,10 @@ pub fn on_pause<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &R
     };
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
-            if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_op_mode)) {
+            if let Err(e) = engine
+                .vad_tx
+                .send(VadCommand::SetOperationalMode(vad_op_mode))
+            {
                 log::warn!(
                     "[Pipeline::Session] Failed to set VAD operational mode for dictation on pause: {}",
                     e
@@ -321,7 +325,10 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &
             if let Ok(guard) = state.engine.try_lock() {
                 if let Some(ref engine) = *guard {
                     if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {
-                        log::warn!("[Pipeline::Session] Failed to set VAD mode on resume: {}", e);
+                        log::warn!(
+                            "[Pipeline::Session] Failed to set VAD mode on resume: {}",
+                            e
+                        );
                     }
                 }
             }
@@ -337,12 +344,9 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &
             "Resumption failed: {}. Please end session and start a new session.",
             e
         );
-        if let Err(toast_err) = crate::toast::show_toast(
-            app,
-            "Resumption failed",
-            &toast_msg,
-            crate::core::events::ToastLevel::Error,
-        ) {
+        if let Err(toast_err) =
+            crate::toast::show_toast(app, "Resumption failed", &toast_msg, ToastLevel::Error)
+        {
             log::warn!(
                 "[Pipeline::Session] Failed to show resume failure toast: {}",
                 toast_err
@@ -399,10 +403,12 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
     {
         let persist_lock = state.persist_tx.lock();
         if let Some(ref tx) = *persist_lock {
-            if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
-                id: conv_id,
-                timestamp_ms: now,
-            }) {
+            if let Err(e) =
+                tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
+                    id: conv_id,
+                    timestamp_ms: now,
+                })
+            {
                 log::warn!(
                     "[Pipeline::Session] Failed to send SessionEnded to persistence: {}",
                     e
@@ -452,7 +458,10 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
         };
         if let Ok(guard) = state.engine.try_lock() {
             if let Some(ref engine) = *guard {
-                if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_op_mode)) {
+                if let Err(e) = engine
+                    .vad_tx
+                    .send(VadCommand::SetOperationalMode(vad_op_mode))
+                {
                     log::warn!(
                         "[Pipeline::Session] Failed to set VAD operational mode for dictation on session end: {}",
                         e
@@ -480,12 +489,22 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
 
         let db_path = crate::utils::paths::db_path();
         if let Ok(conn) = crate::persistence::db::VoxDb::open(&db_path).await {
-            let last_compacted = match crate::persistence::compactions::fetch_latest_compaction_run(&conn, session_id).await {
+            let last_compacted = match crate::persistence::compactions::fetch_latest_compaction_run(
+                &conn, session_id,
+            )
+            .await
+            {
                 Ok(Some(run)) if run.status == "completed" => run.to_turn_id,
                 _ => 0,
             };
 
-            if let Ok(turns) = crate::persistence::compactions::fetch_turns_for_compaction(&conn, session_id, last_compacted).await {
+            if let Ok(turns) = crate::persistence::compactions::fetch_turns_for_compaction(
+                &conn,
+                session_id,
+                last_compacted,
+            )
+            .await
+            {
                 let uncompacted_count = turns.len() as u32;
                 if uncompacted_count > 0 {
                     if auto_compaction {

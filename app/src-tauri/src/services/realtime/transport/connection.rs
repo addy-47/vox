@@ -9,7 +9,9 @@ use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::core::state::InteractionState;
-use crate::services::realtime::{OutboundCommand, RealtimeProviderEvent, BRIDGE_CHANNEL_CAPACITY};
+use crate::services::realtime::{
+    Actionability, OutboundCommand, PipelineImpact, RealtimeProviderEvent, BRIDGE_CHANNEL_CAPACITY,
+};
 
 use super::{
     FrameAction, HarnessConfig, HarnessHandles, HarnessInit, ProviderDriver, WsReader, WsWriter,
@@ -151,6 +153,11 @@ pub(crate) fn spawn_harness<D: ProviderDriver>(
                     turn_id: tid,
                     message: "Realtime connection permanently lost after max reconnect attempts."
                         .to_string(),
+                    impact: PipelineImpact::SessionHalted,
+                    actionability: Actionability::Actionable {
+                        category: "network_error".to_string(),
+                        hint: "Realtime WebSocket connection failed after multiple retries. Check your network or provider endpoint.".to_string(),
+                    },
                 }) {
                     log::warn!(
                         "[RealtimeHarness] Failed to emit terminal error event: {:?}",

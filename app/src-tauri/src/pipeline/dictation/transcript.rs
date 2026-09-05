@@ -1,5 +1,6 @@
 use tauri::AppHandle;
 
+use crate::core::events::ToastLevel;
 use crate::core::events::{emit_ipc_to, IpcEvent, TranscriptPayload};
 use crate::core::state::{AppState, InteractionOwner, InteractionState};
 use crate::pipeline::dictation::transition_dictation;
@@ -24,12 +25,9 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         if state.pipeline.dictation_state() != InteractionState::Listening {
             transition_dictation(InteractionState::Ready, app, state);
         }
-        if let Err(e) = crate::toast::show_toast(
-            app,
-            "Dictation",
-            "No speech recognized",
-            crate::core::events::ToastLevel::Info,
-        ) {
+        if let Err(e) =
+            crate::toast::show_toast(app, "Dictation", "No speech recognized", ToastLevel::Info)
+        {
             log::warn!("[Dictation::Transcript] Failed to show empty toast: {}", e);
         }
         return;
@@ -80,6 +78,9 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             owner: Some(InteractionOwner::Dictation),
         }),
     ) {
-        log::warn!("[Dictation::Transcript] Failed to emit transcript_final: {}", e);
+        log::warn!(
+            "[Dictation::Transcript] Failed to emit transcript_final: {}",
+            e
+        );
     }
 }

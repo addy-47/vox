@@ -135,10 +135,17 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
         {
             SettingReloadPolicy::Hot
         }
-        "vad" if key == "threshold" || key == "ptt_noise_gate" || key == "silence_duration_ms" || key == "speech_onset_ms" => {
+        "vad"
+            if key == "threshold"
+                || key == "ptt_noise_gate"
+                || key == "silence_duration_ms"
+                || key == "speech_onset_ms" =>
+        {
             SettingReloadPolicy::WorkerCommand
         }
-        "stt" if key == "transliterate_enabled" || key == "partial_throttle_ms" => SettingReloadPolicy::Hot,
+        "stt" if key == "transliterate_enabled" || key == "partial_throttle_ms" => {
+            SettingReloadPolicy::Hot
+        }
         "stt" if key == "threads" => SettingReloadPolicy::Restart,
         "tts" if key == "threads" => SettingReloadPolicy::Restart,
         "interaction" if key == "auto_sleep_timeout" => SettingReloadPolicy::Hot,

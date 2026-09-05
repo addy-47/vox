@@ -16,7 +16,14 @@ pub mod window_customizer;
 pub mod window_main;
 pub mod wizard;
 
-use crate::core::state::AppState;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
+
+use tauri::tray::TrayIconBuilder;
+use tauri::{Manager, State};
+
+use crate::core::events::{ToastLevel, VoxEvent};
+use crate::core::state::{AppState, InteractionState, RuntimeStatus};
 use crate::ipc::history::{
     commit_session_to_history, delete_session, get_sessions, get_transcript_history, get_turns,
 };
@@ -31,15 +38,11 @@ use crate::ipc::settings::{
 use crate::ipc::tray::{
     hide_tray_window, set_window_click_through, show_main_window, toggle_tray_visibility_internal,
 };
+use crate::monitoring::system_monitor::spawn_system_monitor;
 #[cfg(target_os = "linux")]
 use crate::toast::setup_linux_toast_layer;
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
-
-use crate::monitoring::system_monitor::spawn_system_monitor;
-
-use tauri::tray::TrayIconBuilder;
-use tauri::{Manager, State};
 
 /// Main entry point for the Vox application.
 ///
@@ -47,6 +50,49 @@ use tauri::{Manager, State};
 /// engine on startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Global panic containment hook: Captures backtraces, logs at FATAL, and writes emergency reports without dying silently
+    std::panic::set_hook(Box::new(|panic_info| {
+        let location = panic_info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+
+        let payload = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Box<Any> panic payload".to_string()
+        };
+
+        let backtrace = std::backtrace::Backtrace::capture();
+        log::error!(
+            target: "panic",
+            "[FATAL PANIC] Thread '{}' panicked at '{}': {}\nBacktrace:\n{}",
+            std::thread::current().name().unwrap_or("unnamed"),
+            location,
+            payload,
+            backtrace
+        );
+
+        // Emergency write to crash_reports if paths are available
+        let crash_dir = crate::utils::paths::get().root.join("crash_reports");
+        if std::fs::create_dir_all(&crash_dir).is_ok() {
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            let crash_file = crash_dir.join(format!("crash_{}.log", timestamp));
+            let _ = std::fs::write(
+                crash_file,
+                format!(
+                    "Panic: {}\nLocation: {}\nBacktrace:\n{}",
+                    payload, location, backtrace
+                ),
+            );
+        }
+    }));
+
     if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
         log::debug!(
             "[Crypto] Ring default provider already installed or failed: {:?}",
@@ -136,47 +182,47 @@ pub fn run() {
             });
 
             // ── 0.6 Telemetry Aggregator ───────────────────────────────────────────
-            let latest_energy = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_vad_prob = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_low = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_mid = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_high = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_playback_energy = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_playback_low = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_playback_mid = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_playback_high = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_sys_cpu = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_sys_ram = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_vox_cpu = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_vox_ram = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
-            let latest_stt_ms = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
-            let latest_ttft_ms = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
-            let latest_voice_latency_ms = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
-            let latest_threads = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
-            let latest_tts_rtf = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let latest_playback_start_ms = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
-            let latest_persistence_rate = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0f32.to_bits()));
-            let is_db_healthy = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-            let is_private_mode = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let dropped_telemetry_events = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let latest_energy = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let latest_vad_prob = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let latest_low = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let latest_mid = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let latest_high = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let latest_playback_energy = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let latest_playback_low = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let latest_playback_mid = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let latest_playback_high = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let latest_sys_cpu = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let latest_sys_ram = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let latest_vox_cpu = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let latest_vox_ram = Arc::new(AtomicU32::new(0));
+            let latest_stt_ms = Arc::new(AtomicU32::new(0));
+            let latest_ttft_ms = Arc::new(AtomicU32::new(0));
+            let latest_voice_latency_ms = Arc::new(AtomicU32::new(0));
+            let latest_threads = Arc::new(AtomicU32::new(0));
+            let latest_tts_rtf = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let latest_playback_start_ms = Arc::new(AtomicU32::new(0));
+            let latest_persistence_rate = Arc::new(AtomicU32::new(0f32.to_bits()));
+            let is_db_healthy = Arc::new(AtomicBool::new(true));
+            let is_private_mode = Arc::new(AtomicBool::new(false));
+            let dropped_telemetry_events = Arc::new(AtomicU64::new(0));
 
             let (telemetry_worker, telemetry_tx) = crate::monitoring::aggregator::TelemetryAggregator::new(
                 crate::monitoring::aggregator::TelemetryAggregatorHandles {
-                    latest_energy: std::sync::Arc::clone(&latest_energy),
-                    latest_vad_prob: std::sync::Arc::clone(&latest_vad_prob),
-                    latest_low: std::sync::Arc::clone(&latest_low),
-                    latest_mid: std::sync::Arc::clone(&latest_mid),
-                    latest_high: std::sync::Arc::clone(&latest_high),
-                    latest_sys_cpu: std::sync::Arc::clone(&latest_sys_cpu),
-                    latest_sys_ram: std::sync::Arc::clone(&latest_sys_ram),
-                    latest_vox_cpu: std::sync::Arc::clone(&latest_vox_cpu),
-                    latest_vox_ram: std::sync::Arc::clone(&latest_vox_ram),
-                    dropped_events: std::sync::Arc::clone(&dropped_telemetry_events),
+                    latest_energy: Arc::clone(&latest_energy),
+                    latest_vad_prob: Arc::clone(&latest_vad_prob),
+                    latest_low: Arc::clone(&latest_low),
+                    latest_mid: Arc::clone(&latest_mid),
+                    latest_high: Arc::clone(&latest_high),
+                    latest_sys_cpu: Arc::clone(&latest_sys_cpu),
+                    latest_sys_ram: Arc::clone(&latest_sys_ram),
+                    latest_vox_cpu: Arc::clone(&latest_vox_cpu),
+                    latest_vox_ram: Arc::clone(&latest_vox_ram),
+                    dropped_events: Arc::clone(&dropped_telemetry_events),
                 },
             );
             telemetry_worker.start();
 
-            let telemetry_state = std::sync::Arc::new(crate::core::state::TelemetryState {
+            let telemetry_state = Arc::new(crate::core::state::TelemetryState {
                 telemetry_tx,
                 latest_energy,
                 latest_vad_prob,
@@ -206,16 +252,16 @@ pub fn run() {
             // ── 0.7 Persistence Worker ─────────────────────────────────────────────
             let persist_tx = crate::persistence::worker::spawn_persistence_worker(
                 crate::utils::paths::get().db.clone(),
-                std::sync::Arc::clone(&telemetry_state.is_db_healthy),
-                std::sync::Arc::clone(&telemetry_state.latest_persistence_rate),
-                std::sync::Arc::clone(&telemetry_state.is_private_mode),
+                Arc::clone(&telemetry_state.is_db_healthy),
+                Arc::clone(&telemetry_state.latest_persistence_rate),
+                Arc::clone(&telemetry_state.is_private_mode),
             );
 
             // ── 1. App State ────────────────────────────────────────────────────────
             let mut app_state = AppState::new(
                 app.handle(),
                 Some(log_guard),
-                std::sync::Arc::clone(&telemetry_state),
+                Arc::clone(&telemetry_state),
             );
             app_state.persist_tx = parking_lot::Mutex::new(Some(persist_tx));
 
@@ -243,7 +289,7 @@ pub fn run() {
             if memory_enabled && local_gpu_info.has_gpu {
                 let memory_tx = crate::persistence::memory_worker::spawn_memory_worker(
                     crate::utils::paths::get().db.clone(),
-                    std::sync::Arc::clone(&app_state.settings),
+                    Arc::clone(&app_state.settings),
                     app_state.memory.graph_version.clone(),
                     app_state.pipeline.state_rx.clone(),
                 );
@@ -258,13 +304,13 @@ pub fn run() {
             }
 
             // ── 1.5 Monitoring Collector ──────────────────────────────────────────
-            let state_arc = std::sync::Arc::new(app_state);
+            let state_arc = Arc::new(app_state);
             app.manage(state_arc.clone());
 
-            crate::monitoring::collector::spawn_monitoring_collector(std::sync::Arc::clone(&state_arc));
+            crate::monitoring::collector::spawn_monitoring_collector(Arc::clone(&state_arc));
             spawn_system_monitor(app.handle().clone());
             crate::monitoring::telemetry_emitter::spawn_telemetry_emitter(app.handle().clone());
-            crate::services::harness::spawn_state_compaction_observer(std::sync::Arc::clone(&state_arc));
+            crate::services::harness::spawn_state_compaction_observer(Arc::clone(&state_arc));
 
             // ── 1.6 Dictation Global Hotkey Registration ──────────────────────────
             {
@@ -323,7 +369,7 @@ pub fn run() {
                     if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
                         let app = tray.app_handle().clone();
                         let dictation_enabled = {
-                            let state: State<'_, std::sync::Arc<AppState>> = app.state();
+                            let state: State<'_, Arc<AppState>> = app.state();
                             let s = state
                                 .settings
                                 .read()
@@ -347,12 +393,12 @@ pub fn run() {
 
             // ── 1.7.5 CPU Governor Check (Linux only — warns if not "performance") ──
             {
-                let state: tauri::State<'_, std::sync::Arc<AppState>> = app.state();
+                let state: tauri::State<'_, Arc<AppState>> = app.state();
                 if let Some(governor) = crate::utils::check_cpu_governor() {
                     let is_optimal = governor == "performance";
                     // Store in AppState so frontend can read from snapshot (avoids race with listener setup)
                     *state.cpu_governor.lock() = governor.clone();
-                    state.cpu_governor_optimal.store(is_optimal, std::sync::atomic::Ordering::Relaxed);
+                    state.cpu_governor_optimal.store(is_optimal, Ordering::Relaxed);
 
                     if !is_optimal {
                         log::warn!(
@@ -367,9 +413,7 @@ pub fn run() {
 
             // ── 1.8 Runtime Ready ───────────────────────────────────────────────────
             {
-                use crate::core::state::RuntimeStatus;
-                use std::sync::atomic::Ordering;
-                let state: State<'_, std::sync::Arc<AppState>> = app.state();
+                let state: State<'_, Arc<AppState>> = app.state();
                 state.runtime_status.store(RuntimeStatus::Ready as u32, Ordering::Relaxed);
                 log::info!("[BOOTSTRAP] Runtime Ready.");
             }
@@ -391,10 +435,10 @@ pub fn run() {
                             _ => format!("Voice Error — simulated poll tick {tick}."),
                         };
                         let level = match tick % 4 {
-                            0 => crate::core::events::ToastLevel::Success,
-                            1 => crate::core::events::ToastLevel::Success,
-                            2 => crate::core::events::ToastLevel::Warning,
-                            _ => crate::core::events::ToastLevel::Error,
+                            0 => ToastLevel::Success,
+                            1 => ToastLevel::Success,
+                            2 => ToastLevel::Warning,
+                            _ => ToastLevel::Error,
                         };
                         if let Err(e) = crate::toast::show_toast(&handle, &title, &message, level) {
                             log::warn!("[Toast::Poll] Failed to emit test toast: {}", e);
@@ -408,7 +452,7 @@ pub fn run() {
             // ── 2. Conditionally construct tray HUD on demand ─────────────────────────
             {
                 let (should_show_tray, setup_completed) = {
-                    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+                    let state: State<'_, Arc<AppState>> = app.state();
                     let s = state
                         .settings
                         .read()
@@ -439,7 +483,7 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let (dictation_enabled, dictation_mode, setup_completed) = {
-                    let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
+                    let state: tauri::State<'_, Arc<AppState>> = handle.state();
 
                     // ── 3.1 Auto-detect existing models ────────────────────────────
                     let mut settings = state
@@ -486,7 +530,7 @@ pub fn run() {
             // ── 4. Background boot reconciliation for crash-recovery & uncompacted sessions ──
             let boot_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let state: tauri::State<'_, std::sync::Arc<AppState>> = boot_handle.state();
+                let state: tauri::State<'_, Arc<AppState>> = boot_handle.state();
                 if let Err(e) = crate::services::memory::compaction::reconcile_uncompacted_sessions_on_boot(
                     &boot_handle,
                     state.inner(),
@@ -529,10 +573,10 @@ pub fn run() {
                     // Evaluate engine offload if the main window is hidden
                     let handle = window.app_handle().clone();
                     tauri::async_runtime::spawn(async move {
-                        let state: tauri::State<'_, std::sync::Arc<AppState>> = handle.state();
+                        let state: tauri::State<'_, Arc<AppState>> = handle.state();
                         let dictation_enabled = state.settings.read().map(|s| s.dictation.enabled).unwrap_or(false);
 
-                        if !dictation_enabled && state.pipeline.state() == crate::core::state::InteractionState::Idle {
+                        if !dictation_enabled && state.pipeline.state() == InteractionState::Idle {
                             log::info!("[Window] Main window hidden, Dictation is disabled, and assistant is Idle. Offloading engine...");
                             if let Err(e) = crate::ipc::pipeline::stop_engine(handle).await {
                                 log::warn!("[Window] Failed to stop engine on window hide: {}", e);
@@ -619,12 +663,12 @@ pub fn run() {
             match event {
                 tauri::RunEvent::Exit => {
                     log::info!("[Vox] Shutting down engine...");
-                    let state: State<'_, std::sync::Arc<AppState>> = app_handle.state();
+                    let state: State<'_, Arc<AppState>> = app_handle.state();
 
                     // Clear engine (this will drop VoxEngine and close channels)
                     let mut engine_lock = state.engine.blocking_lock();
                     if let Some(engine) = engine_lock.take() {
-                        if let Err(e) = engine.pipeline_tx.send(crate::core::events::VoxEvent::Shutdown) {
+                        if let Err(e) = engine.pipeline_tx.send(VoxEvent::Shutdown) {
                             log::trace!("[Vox] Pipeline worker already closed: {}", e);
                         }
                         if let Err(e) = engine.stt_tx.send(crate::services::stt::SttCommand::Shutdown) {
@@ -666,10 +710,10 @@ pub fn run() {
                             log::warn!(
                                 "[Vox] Main window destroyed (renderer crash?). Marking for rebuild on next Launch."
                             );
-                            let state = app_handle.state::<std::sync::Arc<AppState>>();
+                            let state = app_handle.state::<Arc<AppState>>();
                             state
                                 .main_window_destroyed
-                                .store(true, std::sync::atomic::Ordering::Relaxed);
+                                .store(true, Ordering::Relaxed);
                             crate::tray::refresh_tray_menu(app_handle);
                         }
                     }

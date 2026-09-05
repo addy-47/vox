@@ -4,12 +4,13 @@ use crate::core::state::AppState;
 use crate::services::health::{self, ProviderConfigPayload};
 use crate::services::llm::probe::{self, ModelProbeResult};
 use crate::setup::remote_server;
+use std::sync::Arc;
 use tauri::State;
 
 /// Unified health-check command across LLM, STT, and TTS engine providers.
 #[tauri::command]
 pub async fn check_provider_health(
-    state: State<'_, std::sync::Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
     kind: String,
     provider: Option<ProviderConfigPayload>,
 ) -> Result<bool, VoxIpcError> {
@@ -21,7 +22,7 @@ pub async fn check_provider_health(
 /// List available LLM models for embedded GGUFs or OpenAI-compatible remote servers.
 #[tauri::command]
 pub async fn list_llm_models(
-    state: State<'_, std::sync::Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
     provider: Option<LlmProviderConfig>,
 ) -> Result<Vec<LlmModelInfo>, VoxIpcError> {
     probe::list_models(&state, provider)
@@ -32,7 +33,7 @@ pub async fn list_llm_models(
 /// Probe capabilities for an LLM model and return capabilities, ceiling token cap, and cached map.
 #[tauri::command]
 pub async fn probe_model_capabilities(
-    state: State<'_, std::sync::Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
     provider: Option<LlmProviderConfig>,
     model_id: Option<String>,
     target_cap: Option<u32>,

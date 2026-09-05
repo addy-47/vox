@@ -64,7 +64,8 @@ pub fn spawn_persistence_worker(
 }
 
 fn run_startup_sweeps(db: &turso::Connection, rt_handle: &tokio::runtime::Handle) {
-    if let Err(e) = rt_handle.block_on(crate::persistence::sessions::cleanup_zero_turn_sessions(db)) {
+    if let Err(e) = rt_handle.block_on(crate::persistence::sessions::cleanup_zero_turn_sessions(db))
+    {
         log::warn!(
             "[Persistence::Worker] Zero-turn startup cleanup failed (non-fatal): {}",
             e

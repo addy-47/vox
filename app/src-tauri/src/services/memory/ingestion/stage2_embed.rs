@@ -61,8 +61,7 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
     }
 
     let fact_str = item.fact.clone();
-    let embedding_res =
-        tokio::task::spawn_blocking(move || generate_embedding(&fact_str)).await?;
+    let embedding_res = tokio::task::spawn_blocking(move || generate_embedding(&fact_str)).await?;
     match embedding_res {
         Ok(Some(vec)) => {
             let blob_bytes = encode_f32_blob(&vec);

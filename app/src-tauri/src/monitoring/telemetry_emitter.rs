@@ -1,20 +1,21 @@
 use crate::core::events::{emit_ipc_to, IpcEvent};
+use crate::core::state::AppState;
+use crate::core::state::InteractionOwner;
+use crate::core::state::InteractionState;
 use crate::monitoring::TELEMETRY_EMITTER_INTERVAL;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
 /// Spawns periodic background task pushing audio and VAD telemetry to active window.
 pub fn spawn_telemetry_emitter(app: AppHandle) {
-    let state = app
-        .state::<std::sync::Arc<crate::core::state::AppState>>()
-        .inner()
-        .clone();
+    let state = app.state::<Arc<AppState>>().inner().clone();
 
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(TELEMETRY_EMITTER_INTERVAL).await;
 
-            if state.pipeline.state() == crate::core::state::InteractionState::Paused {
+            if state.pipeline.state() == InteractionState::Paused {
                 continue;
             }
 
@@ -42,8 +43,8 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
     });
 }
 
-fn get_current_audio_levels(state: &crate::core::state::AppState) -> (f32, f32, f32, f32) {
-    if state.pipeline.state() == crate::core::state::InteractionState::Speaking {
+fn get_current_audio_levels(state: &AppState) -> (f32, f32, f32, f32) {
+    if state.pipeline.state() == InteractionState::Speaking {
         (
             f32::from_bits(
                 state
@@ -65,11 +66,10 @@ fn get_current_audio_levels(state: &crate::core::state::AppState) -> (f32, f32, 
     }
 }
 
-fn get_target_window(state: &crate::core::state::AppState) -> &'static str {
-    let owner_enum: crate::core::state::InteractionOwner =
-        state.owner.load(Ordering::Relaxed).into();
+fn get_target_window(state: &AppState) -> &'static str {
+    let owner_enum: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
     match owner_enum {
-        crate::core::state::InteractionOwner::Assistant => "main",
-        crate::core::state::InteractionOwner::Dictation => "tray",
+        InteractionOwner::Assistant => "main",
+        InteractionOwner::Dictation => "tray",
     }
 }

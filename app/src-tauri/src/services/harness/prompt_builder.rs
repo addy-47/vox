@@ -222,7 +222,10 @@ mod tests {
     fn test_assemble_system_prompt_base_only() {
         let base = "Base prompt.";
         assert_eq!(assemble_system_prompt(base, &[], None), "Base prompt.");
-        assert_eq!(assemble_system_prompt(base, &[], Some("   ")), "Base prompt.");
+        assert_eq!(
+            assemble_system_prompt(base, &[], Some("   ")),
+            "Base prompt."
+        );
         assert_eq!(assemble_system_prompt(base, &[], Some("")), "Base prompt.");
     }
 

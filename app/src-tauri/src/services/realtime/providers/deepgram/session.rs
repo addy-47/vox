@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,12 +9,13 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::services::realtime::transport::{FrameAction, ProviderDriver};
 use crate::services::realtime::{
-    OutboundCommand, RealtimeProviderEvent, RealtimeSession, WS_KEEPALIVE_INTERVAL,
+    Actionability, OutboundCommand, PipelineImpact, RealtimeProviderEvent, RealtimeSession,
+    WS_KEEPALIVE_INTERVAL,
 };
 
 pub(super) struct DeepgramSessionState {
     pub(super) last_assistant_text: String,
-    pub(super) turn_id: Arc<std::sync::atomic::AtomicU32>,
+    pub(super) turn_id: Arc<AtomicU32>,
     pub(super) server_turn_cursor: Option<u32>,
 }
 
@@ -243,9 +244,26 @@ fn dispatch_deepgram_server_message(
                 log::error!("[DeepgramVoiceAgent] Server error/warning: {:?}", val);
                 if let Some(err_msg) = val.get("message").and_then(|v| v.as_str()) {
                     let err_turn_id = state.lock().peek_or_current_turn_id();
+                    let is_auth = err_msg.contains("401")
+                        || err_msg.contains("Unauthorized")
+                        || err_msg.contains("API key");
+                    let (impact, actionability) = if is_auth {
+                        (
+                            PipelineImpact::SessionHalted,
+                            Actionability::Actionable {
+                                category: "auth_failure".to_string(),
+                                hint: "Deepgram API key is invalid or expired. Update in Settings."
+                                    .to_string(),
+                            },
+                        )
+                    } else {
+                        (PipelineImpact::TurnAborted, Actionability::None)
+                    };
                     if let Err(e) = provider_event_tx.try_send(RealtimeProviderEvent::Error {
                         turn_id: err_turn_id,
                         message: format!("Deepgram server error: {}", err_msg),
+                        impact,
+                        actionability,
                     }) {
                         log::warn!(
                             "[DeepgramVoiceAgent] Failed to forward Error event: {:?}",

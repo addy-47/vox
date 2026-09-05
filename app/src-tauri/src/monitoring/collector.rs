@@ -1,4 +1,6 @@
 use crate::core::state::AppState;
+use crate::core::state::InteractionOwner;
+use crate::core::state::InteractionState;
 use crate::monitoring::snapshot::RuntimeSnapshot;
 use crate::monitoring::COLLECTOR_TICK_INTERVAL;
 use std::sync::atomic::Ordering;
@@ -44,15 +46,15 @@ pub fn spawn_monitoring_collector(state: Arc<AppState>) {
 }
 
 fn map_pipeline_state_string(state_u32: u32) -> String {
-    match crate::core::state::InteractionState::from(state_u32) {
-        crate::core::state::InteractionState::Idle => "Idle".into(),
-        crate::core::state::InteractionState::Ready => "Ready".into(),
-        crate::core::state::InteractionState::Listening => "Listening".into(),
-        crate::core::state::InteractionState::Thinking => "Thinking".into(),
-        crate::core::state::InteractionState::Speaking => "Speaking".into(),
-        crate::core::state::InteractionState::Paused => "Paused".into(),
-        crate::core::state::InteractionState::Error => "Error".into(),
-        crate::core::state::InteractionState::Sleeping => "Sleeping".into(),
+    match InteractionState::from(state_u32) {
+        InteractionState::Idle => "Idle".into(),
+        InteractionState::Ready => "Ready".into(),
+        InteractionState::Listening => "Listening".into(),
+        InteractionState::Thinking => "Thinking".into(),
+        InteractionState::Speaking => "Speaking".into(),
+        InteractionState::Paused => "Paused".into(),
+        InteractionState::Error => "Error".into(),
+        InteractionState::Sleeping => "Sleeping".into(),
     }
 }
 
@@ -105,8 +107,7 @@ fn collect_snapshot(
 
     let pa = &state.pipeline;
     let pipeline_state = map_pipeline_state_string(pa.current_state_atomic.load(Ordering::Relaxed));
-    let owner_enum: crate::core::state::InteractionOwner =
-        state.owner.load(Ordering::Relaxed).into();
+    let owner_enum: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
     let owner = format!("{:?}", owner_enum);
     let buffer_samples = get_playback_buffer_samples(state);
     let sys_ram_pct = f32::from_bits(state.telemetry.latest_sys_ram.load(Ordering::Relaxed));
@@ -117,7 +118,7 @@ fn collect_snapshot(
         current_turn_id: pa.turn_id.load(Ordering::Relaxed),
         conversation_id: state.conversation_id.load(Ordering::Relaxed),
 
-        playback_active: pa.state() == crate::core::state::InteractionState::Speaking,
+        playback_active: pa.state() == InteractionState::Speaking,
 
         system_cpu_usage: f32::from_bits(state.telemetry.latest_sys_cpu.load(Ordering::Relaxed)),
         system_ram_mb: (sys_ram_pct * 0.01 * total_ram_mb as f32) as u32,

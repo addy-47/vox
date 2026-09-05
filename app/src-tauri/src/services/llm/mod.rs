@@ -212,7 +212,7 @@ pub trait LlmEngine {
         turn_id: u32,
         max_output_tokens: Option<u32>,
         cancel: &tokio_util::sync::CancellationToken,
-        tx: &std::sync::mpsc::Sender<crate::services::llm::LlmStreamEvent>,
+        tx: &mpsc::Sender<crate::services::llm::LlmStreamEvent>,
     ) -> anyhow::Result<()>;
 }
 

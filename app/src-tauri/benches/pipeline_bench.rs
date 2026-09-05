@@ -20,9 +20,11 @@ use common::reporting::{
 };
 use common::utils::{downsample_48k_to_24k, drain_consumer, write_wav_f32};
 use ringbuf::traits::{Observer, Producer};
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::{
+    path::PathBuf,
+    sync::{atomic::Ordering, Arc},
+    time::{Duration, Instant},
+};
 
 use vox_lib::core::events::VoxEvent;
 use vox_lib::core::settings::{
@@ -95,6 +97,12 @@ fn load_nvidia_api_key() -> String {
 }
 
 fn main() {
+    let _ = env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("debug,ort=warn,sherpa_rs=warn,llama=warn"),
+    )
+    .format_timestamp_millis()
+    .try_init();
+
     let args = CliArgs::parse();
 
     println!("================================================================================");
@@ -128,7 +136,9 @@ fn main() {
         "nvidia" | "cloud" => {
             let api_key = load_nvidia_api_key();
             if api_key.is_empty() {
-                panic!("NVIDIA_API_KEY must be provided in environment or temp/.env for --llm nvidia");
+                panic!(
+                    "NVIDIA_API_KEY must be provided in environment or temp/.env for --llm nvidia"
+                );
             }
             settings.llm.active = LlmActiveProvider::Cloud;
             settings.llm.cloud.provider_name = Some("nvidia".to_string());
@@ -141,14 +151,15 @@ fn main() {
 
     let clip_path = resolve_clip_path(&args.clip, None)
         .unwrap_or_else(|e| panic!("Failed to resolve audio clip: {}", e));
-    let (audio_samples, duration_s) = load_wav(&clip_path)
-        .unwrap_or_else(|e| panic!("Failed to load WAV audio: {}", e));
+    let (audio_samples, duration_s) =
+        load_wav(&clip_path).unwrap_or_else(|e| panic!("Failed to load WAV audio: {}", e));
 
     println!("Audio Clip Loaded: {:?} ({:.2}s)", clip_path, duration_s);
 
     // 2. Initialize Pipeline & Capture Tap
     let mem_before = get_process_memory_mb();
-    let (app, state, in_prod_arc, playback_cons, event_rx) = setup_e2e_pipeline(settings);
+    let (app, state, in_prod_arc, playback_cons, event_rx, _bench_guard) =
+        setup_e2e_pipeline(settings);
     let mem_after = get_process_memory_mb();
 
     println!(
@@ -206,9 +217,11 @@ fn main() {
         if is_ptt {
             let app_c = app_feed.clone();
             let state_c = state_feed.clone();
-            tokio::runtime::Runtime::new().unwrap().block_on(async move {
-                let _ = vox_lib::pipeline::assistant::ptt::ptt_stop(&app_c, &state_c).await;
-            });
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(async move {
+                    let _ = vox_lib::pipeline::assistant::ptt::ptt_stop(&app_c, &state_c).await;
+                });
         } else {
             // Trailing silence to trigger VAD SpeechEnd: 1.5s = 94 chunks of 256 samples @ 16ms
             let silence = vec![0.0f32; chunk_size];
@@ -241,19 +254,30 @@ fn main() {
                 VoxEvent::SpeechStart => {
                     if speech_start_time.is_none() {
                         speech_start_time = Some(Instant::now());
-                        println!("  [VAD] SpeechStart detected at +{:.2}s", run_start.elapsed().as_secs_f64());
+                        println!(
+                            "  [VAD] SpeechStart detected at +{:.2}s",
+                            run_start.elapsed().as_secs_f64()
+                        );
                     }
                 }
                 VoxEvent::SpeechEnd => {
                     if playback_start_time.is_none() {
                         speech_end_time = Some(Instant::now());
-                        println!("  [VAD] SpeechEnd detected at +{:.2}s", run_start.elapsed().as_secs_f64());
+                        println!(
+                            "  [VAD] SpeechEnd detected at +{:.2}s",
+                            run_start.elapsed().as_secs_f64()
+                        );
                     }
                 }
                 VoxEvent::TranscriptFinal { turn_id, text } => {
                     transcript_final_time = Some(Instant::now());
                     captured_transcript = text.clone();
-                    println!("  [STT] TranscriptFinal (turn {}): \"{}\" at +{:.2}s", turn_id, text, run_start.elapsed().as_secs_f64());
+                    println!(
+                        "  [STT] TranscriptFinal (turn {}): \"{}\" at +{:.2}s",
+                        turn_id,
+                        text,
+                        run_start.elapsed().as_secs_f64()
+                    );
                 }
                 VoxEvent::PlaybackStarted { turn_id } => {
                     if playback_start_time.is_none() {
@@ -263,19 +287,33 @@ fn main() {
                 }
                 VoxEvent::LlmFinished { turn_id } => {
                     llm_finished = true;
-                    println!("  [LLM] LlmFinished (turn {}) at +{:.2}s", turn_id, run_start.elapsed().as_secs_f64());
+                    println!(
+                        "  [LLM] LlmFinished (turn {}) at +{:.2}s",
+                        turn_id,
+                        run_start.elapsed().as_secs_f64()
+                    );
                 }
                 VoxEvent::PlaybackFinished { turn_id } => {
-                    println!("  [AUDIO] PlaybackFinished (turn {}) at +{:.2}s", turn_id, run_start.elapsed().as_secs_f64());
+                    println!(
+                        "  [AUDIO] PlaybackFinished (turn {}) at +{:.2}s",
+                        turn_id,
+                        run_start.elapsed().as_secs_f64()
+                    );
                 }
-                VoxEvent::Error { message, source, .. } => {
-                    eprintln!("  [ERROR] Event received from {}: {}", source, message);
+                VoxEvent::Error(err) => {
+                    eprintln!(
+                        "  [ERROR] Event received from {}: {}",
+                        err.source, err.message
+                    );
                 }
                 _ => {}
             }
         }
 
-        let pending = state.pipeline.pending_synthesis_jobs.load(std::sync::atomic::Ordering::Relaxed);
+        let pending = state
+            .pipeline
+            .pending_synthesis_jobs
+            .load(Ordering::Relaxed);
         let cons_empty = playback_cons.lock().is_empty();
         if (llm_finished && pending == 0 && cons_empty && playback_start_time.is_some())
             || (playback_start_time.is_some() && state.pipeline.state() == InteractionState::Ready)
@@ -295,7 +333,8 @@ fn main() {
     let audio_24k = downsample_48k_to_24k(&captured_audio);
     let synth_duration_s = audio_24k.len() as f32 / 24000.0;
 
-    let e2e_response_time_ms = if let (Some(se), Some(ps)) = (speech_end_time, playback_start_time) {
+    let e2e_response_time_ms = if let (Some(se), Some(ps)) = (speech_end_time, playback_start_time)
+    {
         ps.duration_since(se).as_secs_f64() * 1000.0
     } else {
         total_elapsed * 1000.0
@@ -307,7 +346,9 @@ fn main() {
         0.0
     };
 
-    let base_out = args.output_dir.unwrap_or_else(|| PathBuf::from("benches/results/pipeline_bench"));
+    let base_out = args
+        .output_dir
+        .unwrap_or_else(|| PathBuf::from("benches/results/pipeline_bench"));
     let run_id = generate_run_id();
     let run_dir = base_out.join(&run_id);
     let wav_dir = run_dir.join("wav");
@@ -332,16 +373,25 @@ fn main() {
     };
 
     println!("\n================================================================================");
-    println!("Pipeline Benchmark Summary: {} + {} + {}", args.stt, args.llm, args.tts);
+    println!(
+        "Pipeline Benchmark Summary: {} + {} + {}",
+        args.stt, args.llm, args.tts
+    );
     println!("================================================================================");
     println!("  [1. STT Transcript]     : \"{}\"", captured_transcript);
     println!("  [2. LLM Response]       : \"{}\"", captured_llm_response);
     println!("  [3. Synthesized Audio]  : {:?}", wav_path);
     println!("--------------------------------------------------------------------------------");
     println!("  Input Speech Duration   : {:.2} s", duration_s);
-    println!("  Output Synthesized Audio: {:.2} s (24 kHz)", synth_duration_s);
+    println!(
+        "  Output Synthesized Audio: {:.2} s (24 kHz)",
+        synth_duration_s
+    );
     println!("  STT Post-Speech Latency : {:.1} ms", stt_latency_ms);
-    println!("  Perceived E2E Latency   : {:.1} ms (SpeechEnd -> PlaybackStarted)", e2e_response_time_ms);
+    println!(
+        "  Perceived E2E Latency   : {:.1} ms (SpeechEnd -> PlaybackStarted)",
+        e2e_response_time_ms
+    );
     println!("  Total Pipeline Elapsed  : {:.2} s", total_elapsed);
     println!("  Memory RSS              : ~{} MB", mem_after);
 
@@ -368,7 +418,10 @@ fn main() {
         benchmark_name: "pipeline_bench".to_string(),
         system_info: BenchmarkSystemInfo::default(),
         runs: vec![EngineBenchmarkRun {
-            engine_name: format!("Pipeline [{}] ({}+{}+{})", args.mode, args.stt, args.llm, args.tts),
+            engine_name: format!(
+                "Pipeline [{}] ({}+{}+{})",
+                args.mode, args.stt, args.llm, args.tts
+            ),
             model_type: format!("{}_{}_{}", args.mode, args.llm, args.tts),
             model_path: "live_pipeline".to_string(),
             memory_rss_mb: mem_after,
@@ -384,6 +437,9 @@ fn main() {
 
     if let Ok(path) = save_benchmark_report(&base_out, &report) {
         println!("  Benchmark Report Saved  : {:?}", path);
-        println!("  Latest Report Symlink   : {:?}", base_out.join("latest.json"));
+        println!(
+            "  Latest Report Symlink   : {:?}",
+            base_out.join("latest.json")
+        );
     }
 }

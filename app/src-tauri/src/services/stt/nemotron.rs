@@ -115,7 +115,11 @@ impl SttEngineTrait for SttEngine {
         inner.stream_start = None;
 
         let elapsed = start.elapsed().as_secs_f32();
-        let rtf = if duration_s > 0.0 { elapsed / duration_s } else { 0.0 };
+        let rtf = if duration_s > 0.0 {
+            elapsed / duration_s
+        } else {
+            0.0
+        };
 
         log::info!(
             "[STT-Nemotron] Stream Finalized: {:?}. (Audio: {:.2}s, Finalize Latency: {:.3}s, RTF: {:.3})",

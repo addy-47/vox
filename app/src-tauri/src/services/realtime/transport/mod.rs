@@ -7,7 +7,10 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::core::state::InteractionState;
 use crate::services::realtime::{OutboundCommand, RealtimeProviderEvent};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU32;
 
 /// WebSocket sink half for a TLS-wrapped TCP connection.
 pub(crate) type WsWriter = futures_util::stream::SplitSink<
@@ -57,8 +60,8 @@ pub(crate) struct HarnessInit {
     pub(crate) ws_read: WsReader,
     pub(crate) reconnect_fn: ReconnectFn,
     pub(crate) provider_event_tx: mpsc::Sender<RealtimeProviderEvent>,
-    pub(crate) state_rx: tokio::sync::watch::Receiver<crate::core::state::InteractionState>,
-    pub(crate) turn_id_ref: Arc<std::sync::atomic::AtomicU32>,
+    pub(crate) state_rx: tokio::sync::watch::Receiver<InteractionState>,
+    pub(crate) turn_id_ref: Arc<AtomicU32>,
     pub(crate) tokio_handle: tokio::runtime::Handle,
 }
 
@@ -66,5 +69,5 @@ pub(crate) struct HarnessInit {
 pub(crate) struct HarnessHandles {
     pub(crate) outbound_tx: mpsc::Sender<OutboundCommand>,
     pub(crate) shutdown_tx: parking_lot::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
-    pub(crate) terminated: Arc<std::sync::atomic::AtomicBool>,
+    pub(crate) terminated: Arc<AtomicBool>,
 }
