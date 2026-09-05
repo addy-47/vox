@@ -1,5 +1,7 @@
 //! Canonical speech boundary event handlers for passive interaction domains.
 
+use std::sync::atomic::Ordering;
+
 use tauri::AppHandle;
 
 use crate::core::settings::{InteractionMode, PipelineMode};
@@ -41,6 +43,7 @@ pub fn on_speech_start<R: tauri::Runtime>(
                 engine.playback_engine.cancel();
             }
         }
+        state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
         transition(InteractionState::Listening, ctx, app, state);
         new_turn_id

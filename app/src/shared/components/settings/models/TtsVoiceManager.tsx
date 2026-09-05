@@ -2,8 +2,7 @@ import React, { useState, useMemo, memo, useCallback } from "react";
 import { useSettingsStore, type ProviderCaps } from "@/store/settingsStore";
 import { Metronome, Microchip, Zap, Battery, Gauge } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { RotaryKnob } from "@/shared/ui";
-import { VoiceCarousel } from "../voice/VoiceCarousel";
+import { RotaryKnob, VoiceCarousel } from "@/shared/ui";
 import { TTS_VOICE_MANAGER_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
 
 export interface CustomVoice {

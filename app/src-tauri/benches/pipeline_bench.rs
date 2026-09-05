@@ -19,8 +19,9 @@ use common::reporting::{
     BenchmarkSystemInfo, ClipBenchmarkResult, EngineBenchmarkRun,
 };
 use common::utils::{downsample_48k_to_24k, drain_consumer, write_wav_f32};
-use ringbuf::traits::Producer;
+use ringbuf::traits::{Observer, Producer};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use vox_lib::core::events::VoxEvent;
@@ -143,40 +144,47 @@ fn main() {
     let mut playback_start_time = None;
     let mut captured_transcript = String::new();
     let mut captured_audio = Vec::new();
+    let mut llm_finished = false;
 
-    if is_ptt {
-        let _ = vox_lib::pipeline::assistant::ptt::ptt_start(&app, &state);
-    }
-
-    // Stream audio chunks in real-time pace (32ms frames @ 16kHz = 512 samples)
-    let chunk_size = 512;
-    for chunk in audio_samples.chunks(chunk_size) {
-        {
-            let mut lock = in_prod_arc.lock();
-            let _ = lock.push_slice(chunk);
+    let in_prod_feed = Arc::clone(&in_prod_arc);
+    let audio_feed = audio_samples.clone();
+    let app_feed = app.clone();
+    let state_feed = state.clone();
+    let feed_handle = std::thread::spawn(move || {
+        if is_ptt {
+            let _ = vox_lib::pipeline::assistant::ptt::ptt_start(&app_feed, &state_feed);
         }
-        std::thread::sleep(Duration::from_millis(15));
-    }
 
-    if is_ptt {
-        let app_c = app.clone();
-        let state_c = state.clone();
-        tokio::runtime::Runtime::new().unwrap().block_on(async move {
-            let _ = vox_lib::pipeline::assistant::ptt::ptt_stop(&app_c, &state_c).await;
-        });
-    } else {
-        // Trailing silence to trigger VAD SpeechEnd
-        let silence = vec![0.0f32; chunk_size];
-        for _ in 0..40 {
+        // Stream audio chunks in real-time pace (16ms frames @ 16kHz = 256 samples)
+        let chunk_size = 256;
+        for chunk in audio_feed.chunks(chunk_size) {
             {
-                let mut lock = in_prod_arc.lock();
-                let _ = lock.push_slice(&silence);
+                let mut lock = in_prod_feed.lock();
+                let _ = lock.push_slice(chunk);
             }
-            std::thread::sleep(Duration::from_millis(20));
+            std::thread::sleep(Duration::from_millis(16));
         }
-    }
 
-    println!("Audio Fed. Waiting for Pipeline Orchestration to Synthesize & Playback Output...");
+        if is_ptt {
+            let app_c = app_feed.clone();
+            let state_c = state_feed.clone();
+            tokio::runtime::Runtime::new().unwrap().block_on(async move {
+                let _ = vox_lib::pipeline::assistant::ptt::ptt_stop(&app_c, &state_c).await;
+            });
+        } else {
+            // Trailing silence to trigger VAD SpeechEnd: 1.5s = 94 chunks of 256 samples @ 16ms
+            let silence = vec![0.0f32; chunk_size];
+            for _ in 0..94 {
+                {
+                    let mut lock = in_prod_feed.lock();
+                    let _ = lock.push_slice(&silence);
+                }
+                std::thread::sleep(Duration::from_millis(16));
+            }
+        }
+    });
+
+    println!("Audio streaming started. Polling pipeline events & playback tap...");
 
     let deadline = Instant::now() + Duration::from_secs(60);
     while Instant::now() < deadline {
@@ -199,7 +207,7 @@ fn main() {
                     }
                 }
                 VoxEvent::SpeechEnd => {
-                    if speech_end_time.is_none() {
+                    if playback_start_time.is_none() {
                         speech_end_time = Some(Instant::now());
                         println!("  [VAD] SpeechEnd detected at +{:.2}s", run_start.elapsed().as_secs_f64());
                     }
@@ -215,6 +223,10 @@ fn main() {
                         println!("  [AUDIO] PlaybackStarted (turn {}) at +{:.2}s (First audio byte reached speaker!)", turn_id, run_start.elapsed().as_secs_f64());
                     }
                 }
+                VoxEvent::LlmFinished { turn_id } => {
+                    llm_finished = true;
+                    println!("  [LLM] LlmFinished (turn {}) at +{:.2}s", turn_id, run_start.elapsed().as_secs_f64());
+                }
                 VoxEvent::PlaybackFinished { turn_id } => {
                     println!("  [AUDIO] PlaybackFinished (turn {}) at +{:.2}s", turn_id, run_start.elapsed().as_secs_f64());
                 }
@@ -225,15 +237,21 @@ fn main() {
             }
         }
 
-        if playback_start_time.is_some() && state.pipeline.state() == InteractionState::Ready {
-            println!("Pipeline returned to Ready. Draining remaining audio...");
-            std::thread::sleep(Duration::from_millis(500));
+        let pending = state.pipeline.pending_synthesis_jobs.load(std::sync::atomic::Ordering::Relaxed);
+        let cons_empty = playback_cons.lock().is_empty();
+        if (llm_finished && pending == 0 && cons_empty && playback_start_time.is_some())
+            || (playback_start_time.is_some() && state.pipeline.state() == InteractionState::Ready)
+        {
+            println!("Pipeline finished synthesis and playback drained. Finalizing...");
+            std::thread::sleep(Duration::from_millis(200));
             let mut cons = playback_cons.lock();
             let drained = drain_consumer(&mut cons);
             captured_audio.extend_from_slice(&drained);
             break;
         }
     }
+
+    let _ = feed_handle.join();
 
     let total_elapsed = run_start.elapsed().as_secs_f64();
     let audio_24k = downsample_48k_to_24k(&captured_audio);
@@ -260,15 +278,33 @@ fn main() {
     let wav_path = wav_dir.join(format!("{}_{}_{}.wav", args.mode, args.llm, args.tts));
     let _ = write_wav_f32(&wav_path, &audio_24k, 24000);
 
+    let captured_llm_response = {
+        let acc = state.pipeline_accumulator.lock();
+        if !acc.assistant_response.is_empty() {
+            acc.assistant_response.clone()
+        } else {
+            let mgr = state.conversation_manager.lock();
+            mgr.get_messages()
+                .iter()
+                .rev()
+                .find(|m| m.role == vox_lib::services::harness::Role::Assistant)
+                .map(|m| m.content.clone())
+                .unwrap_or_default()
+        }
+    };
+
     println!("\n================================================================================");
     println!("Pipeline Benchmark Summary: {} + {} + {}", args.stt, args.llm, args.tts);
     println!("================================================================================");
+    println!("  [1. STT Transcript]     : \"{}\"", captured_transcript);
+    println!("  [2. LLM Response]       : \"{}\"", captured_llm_response);
+    println!("  [3. Synthesized Audio]  : {:?}", wav_path);
+    println!("--------------------------------------------------------------------------------");
     println!("  Input Speech Duration   : {:.2} s", duration_s);
     println!("  Output Synthesized Audio: {:.2} s (24 kHz)", synth_duration_s);
     println!("  STT Post-Speech Latency : {:.1} ms", stt_latency_ms);
     println!("  Perceived E2E Latency   : {:.1} ms (SpeechEnd -> PlaybackStarted)", e2e_response_time_ms);
     println!("  Total Pipeline Elapsed  : {:.2} s", total_elapsed);
-    println!("  Synthesized WAV Output  : {:?}", wav_path);
     println!("  Memory RSS              : ~{} MB", mem_after);
 
     let result = ClipBenchmarkResult {
