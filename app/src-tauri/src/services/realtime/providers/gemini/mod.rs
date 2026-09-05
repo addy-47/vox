@@ -16,21 +16,23 @@ use crate::services::realtime::{
     RECONNECT_BASE_DELAY_SECS, RECONNECT_FACTOR_SECS, WS_HEALTH_CHECK_TIMEOUT,
 };
 
+use crate::core::state::InteractionState;
 use session::{GeminiDriver, GeminiLiveSession, GeminiSessionState};
+use std::sync::atomic::AtomicU32;
 
 pub struct GeminiLiveProvider {
     config: GeminiRealtimeConfig,
     system_prompt: String,
-    state_rx: tokio::sync::watch::Receiver<crate::core::state::InteractionState>,
-    turn_id: Arc<std::sync::atomic::AtomicU32>,
+    state_rx: tokio::sync::watch::Receiver<InteractionState>,
+    turn_id: Arc<AtomicU32>,
 }
 
 impl GeminiLiveProvider {
     pub fn new(
         config: GeminiRealtimeConfig,
         system_prompt: String,
-        state_rx: tokio::sync::watch::Receiver<crate::core::state::InteractionState>,
-        turn_id: Arc<std::sync::atomic::AtomicU32>,
+        state_rx: tokio::sync::watch::Receiver<InteractionState>,
+        turn_id: Arc<AtomicU32>,
     ) -> Self {
         Self {
             config,

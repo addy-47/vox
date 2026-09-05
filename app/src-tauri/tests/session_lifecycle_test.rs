@@ -15,17 +15,13 @@ use common::harness::attach_lifecycle_mock_engine;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::time::Duration;
-use vox_lib::core::settings::{
-    DictationInteractionMode, InteractionMode, PipelineMode,
-};
+use vox_lib::core::settings::{DictationInteractionMode, InteractionMode, PipelineMode};
 use vox_lib::core::state::{AppState, InteractionOwner, InteractionState};
 use vox_lib::persistence::events::{MemoryWorkerEvent, PersistenceEvent};
 use vox_lib::pipeline::assistant::session::{on_end, on_pause, on_resume, on_session_start};
 use vox_lib::pipeline::dictation::transition_dictation;
 use vox_lib::pipeline::RoutingContext;
 use vox_lib::services::vad::{VadCommand, VadOperationalMode};
-
-
 
 /// Helper: Sets up channels on `state.persist_tx` and `state.memory_tx` to capture lifecycle events.
 fn setup_lifecycle_channels(
@@ -103,7 +99,12 @@ async fn test_session_start_modular_sets_ready_and_identity() {
         let state_clone = state.clone();
         let ctx_clone = ctx.clone();
         std::thread::spawn(move || {
-            on_session_start(InteractionOwner::Assistant, &app_clone, &state_clone, &ctx_clone);
+            on_session_start(
+                InteractionOwner::Assistant,
+                &app_clone,
+                &state_clone,
+                &ctx_clone,
+            );
         })
         .join()
         .expect("on_session_start thread panicked");
@@ -125,7 +126,10 @@ async fn test_session_start_modular_sets_ready_and_identity() {
             .expect("Persistence event must be received on session start");
         match persist_ev {
             PersistenceEvent::SessionStarted { id, .. } => {
-                assert_eq!(id, conv_id, "Persistence event ID must match conversation ID");
+                assert_eq!(
+                    id, conv_id,
+                    "Persistence event ID must match conversation ID"
+                );
             }
             _ => panic!("Expected PersistenceEvent::SessionStarted"),
         }
@@ -172,7 +176,12 @@ async fn test_session_start_modular_sets_ready_and_identity() {
         let state_clone = state.clone();
         let ctx_clone = ctx.clone();
         std::thread::spawn(move || {
-            on_session_start(InteractionOwner::Assistant, &app_clone, &state_clone, &ctx_clone);
+            on_session_start(
+                InteractionOwner::Assistant,
+                &app_clone,
+                &state_clone,
+                &ctx_clone,
+            );
         })
         .join()
         .expect("on_session_start second call thread panicked");
@@ -398,7 +407,8 @@ async fn test_session_end_dictation_gate_keeps_engine() {
             let ctx_clone = ctx.clone();
             let join_res = std::thread::spawn(move || {
                 on_end(&app_clone, &state_clone, &ctx_clone);
-            }).join();
+            })
+            .join();
             join_res.expect("on_end thread panicked");
 
             // Assertions for Scenario 1:
@@ -464,7 +474,8 @@ async fn test_session_end_dictation_gate_keeps_engine() {
             let ctx_clone = ctx.clone();
             let join_res = std::thread::spawn(move || {
                 on_end(&app_clone, &state_clone, &ctx_clone);
-            }).join();
+            })
+            .join();
             join_res.expect("on_end thread panicked");
 
             // Assertions for Scenario 2:
@@ -513,8 +524,15 @@ async fn test_session_end_purges_and_idles() {
             .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
 
         // Put some dummy tokens in accumulator
-        state.pipeline_accumulator.lock().push_token("residual token");
-        assert!(!state.pipeline_accumulator.lock().assistant_response.is_empty());
+        state
+            .pipeline_accumulator
+            .lock()
+            .push_token("residual token");
+        assert!(!state
+            .pipeline_accumulator
+            .lock()
+            .assistant_response
+            .is_empty());
 
         let ctx = RoutingContext {
             pipeline_mode: PipelineMode::Realtime,
@@ -528,7 +546,8 @@ async fn test_session_end_purges_and_idles() {
         let ctx_clone = ctx.clone();
         let join_res = std::thread::spawn(move || {
             on_end(&app_clone, &state_clone, &ctx_clone);
-        }).join();
+        })
+        .join();
         join_res.expect("on_end thread panicked");
 
         // 1. Assert state transitioned to Idle
@@ -536,7 +555,11 @@ async fn test_session_end_purges_and_idles() {
 
         // 2. Assert accumulator cleared
         assert!(
-            state.pipeline_accumulator.lock().assistant_response.is_empty(),
+            state
+                .pipeline_accumulator
+                .lock()
+                .assistant_response
+                .is_empty(),
             "Accumulator response must be cleared on session end"
         );
         assert!(

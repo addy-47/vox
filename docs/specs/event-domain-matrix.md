@@ -37,10 +37,12 @@ This document establishes the **target behavioral, concurrency, and resilience s
 7. **Transition Filler Speech Lifecycle:**
    When identity recall or context compaction causes LLM generation delay, `prepare_turn_context` yields a transition filler (e.g. *"Checking notes..."*), increments `pending_synthesis_jobs`, and dispatches it to TTS. As soon as filler audio reaches the pre-roll threshold ($12{,}000$ samples @ 48kHz = 250ms), `PlaybackStarted` transitions `Thinking` $\to$ `Speaking`, giving instant audible confirmation to the user while the primary LLM response continues generating in the background.
 
-8. **Two-Stage Error Recovery Protocol:**
-   When an error occurs, state transitions to `Error` and broadcasts `voice_error`.
-   - **Stage 1 (Resume Attempt):** The user triggers `resume_session`. The handler attempts to re-arm hardware, restart VAD, or reconnect the WebSocket. If successful, state transitions `Error` $\to$ `Ready`.
-   - **Stage 2 (Fallback on Resumption Failure):** If resumption fails, state returns to `Error` and an explicit UI Toast is displayed: *"Resumption failed: [Reason]. Please end session and start a new session."* The user must then execute `end_session` $\to$ `Idle` followed by `session_start`.
+8. **Resilient 2D Error Handling & Routing Protocol:**
+   `VoxEvent::Error { turn_id, message, source, impact, actionability }` decouples execution from user transparency:
+   - **`impact: PipelineImpact::Degraded`**: No state change. Turn completes with degraded fidelity (e.g. identity facts capped to 15%, critical compaction falls back to FIFO, speech synthesis drops while text streams).
+   - **`impact: PipelineImpact::TurnAborted`**: The active turn fails cleanly. State transitions **directly to `Ready`** (never locking the assistant in `Error`). Audio playback and turn tokens are cancelled.
+   - **`impact: PipelineImpact::SessionHalted`**: The session cannot continue (bad API keys, missing models, audio device unplugged). State transitions to `InteractionState::Error`.
+   - **`actionability: Actionability`**: Transient hiccups (`NonActionable`) trigger an ephemeral UI Toast only; persistent or configuration-related issues (`Actionable { category, hint }`) trigger both an ephemeral UI Toast AND a persistent notification in the Notifications drawer (`IpcEvent::NotificationCreated`).
 
 9. **Lock-Free Audio Ingestion Gate Invariant (`ingestion_gate`):**
    Audio ingestion from CPAL into the ring buffer is governed strictly by a single derived `AtomicBool` (`ingestion_gate`) recomputed upon every transition in either track. Zero settings reads on the audio hot path:
@@ -72,7 +74,7 @@ This document establishes the **target behavioral, concurrency, and resilience s
 - **`LlmFinished { turn_id }`**: Emitted when LLM completes text generation (modular) or server finishes synthesis (realtime). Persists turn context to database and flushes audio pre-roll.
 - **`PlaybackStarted { turn_id }`**: Emitted by PlaybackEngine when ring buffer samples satisfy pre-roll threshold or flush. Transitions `Thinking` $\to$ `Speaking`.
 - **`PlaybackFinished { turn_id }`**: Emitted by PlaybackEngine when output ring buffer drains to empty and no synthesis jobs remain. Transitions `Speaking` $\to$ `Ready`.
-- **`Error { turn_id, message, source }`**: Emitted on subsystem failures. Transitions state to `Error` and broadcasts `voice_error` IPC event.
+- **`Error(PipelineError)`**: Emitted on subsystem failures with explicit 2D classification struct `PipelineError { turn_id, message, source, impact, actionability }`. Governs non-fatal recovery (e.g. `Degraded` with no state change, `TurnAborted` resetting to `Ready`, `SessionHalted` transitioning to `Error`).
 - **`Cancelled { turn_id }`**: Emitted on turn aborts. Transitions state to `Ready`.
 - **`Shutdown`**: Router loop termination sentinel.
 
@@ -85,7 +87,7 @@ This document establishes the **target behavioral, concurrency, and resilience s
 - **`TranscriptFinal { turn_id, text }`**: Finalized user speech transcription $\to$ translated to `VoxEvent::TranscriptFinal`.
 - **`LlmToken { turn_id, token }`**: Streamed assistant text tokens $\to$ emitted directly to UI via IPC (bypasses Router).
 - **`LlmFinished { turn_id }`**: Model generation complete marker $\to$ translated to `VoxEvent::LlmFinished`.
-- **`Error { turn_id, message }`**: Provider network/protocol error $\to$ translated to `VoxEvent::Error`.
+- **`Error { turn_id, message, impact, actionability }`**: Provider network/protocol error $\to$ translated directly to `VoxEvent::Error(PipelineError)`.
 - **`SessionResumptionHandle { handle, model }`**: Session cache token $\to$ written to disk non-blocking.
 
 ---
@@ -116,7 +118,7 @@ The system interaction topology is partitioned into 6 distinct, mutually exclusi
 | **LLM / RealtimeActor** | **`LlmFinished`** | **Pre:** `Thinking` or `Speaking`<br>**Trans:** None (Playback controls return to `Ready`)<br>**Shared FX:** Consume `ACCUMULATOR` assistant text, push turn to `ConversationManager`, dispatch `PersistenceEvent::TurnCompleted`<br>**Domain FX:** Flush `TtsClauseChunker` remainder to TTS worker; `TtsActor` naturally decrements `pending_synthesis_jobs` on per-job completion; invoke `PlaybackEngine::flush_pre_roll()` | Same shared FX and domain FX | Same shared FX.<br>**Domain FX:** Reset `pending_synthesis_jobs=0` (cloud server stream complete; ring buffer drains to empty); invoke `PlaybackEngine::flush_pre_roll()` | Same as Realtime Passive | **N/A** (Zero LLM/TTS in dictation) | **N/A** (Zero LLM/TTS in dictation) |
 | **PlaybackEngine** | **`PlaybackStarted`** | **Pre:** `Thinking` (if `!=Thinking` $\to$ drop)<br>**Trans:** `Thinking` $\to$ `Speaking`<br>**Shared FX:** Emit `IpcEvent::StateChanged(Speaking)`<br>**Domain FX:** Triggered when playback ring buffer reaches modular pre-roll threshold (12,000 samples @ 48kHz = 250ms) or on `flush_pre_roll()` (including filler speech) | Same | **Pre:** `Thinking` (if `!=Thinking` $\to$ drop)<br>**Trans:** `Thinking` $\to$ `Speaking`<br>**Shared FX:** Emit `IpcEvent::StateChanged(Speaking)`<br>**Domain FX:** Triggered when playback ring buffer reaches realtime pre-roll threshold (3,840 samples @ 48kHz = 80ms) or on `flush_pre_roll()` | Same | **N/A** | **N/A** |
 | **PlaybackEngine** | **`PlaybackFinished`** | **Pre:** `Speaking` (if `!=Speaking` $\to$ drop)<br>**Trans:** `Speaking` $\to$ `Ready`<br>**Shared FX:** Emit `IpcEvent::StateChanged(Ready)`<br>**Domain FX:** Fired when output ring buffer drains to empty and `pending_synthesis_jobs == 0` | Same | Same (guarded by `pending_synthesis_jobs == 0`, preventing mid-speech network jitter cutoffs) | Same | **N/A** | **N/A** |
-| **Any Actor** | **`Error`** | **Pre:** Any state<br>**Trans:** `Current` $\to$ `Error`<br>**Shared FX:** Log error with source attribution, cancel `PlaybackEngine`, cancel turn token, reset `pending_synthesis_jobs=0`, emit `IpcEvent::VoiceError`, display UI error toast. Session remains in `Error` until user resumes or ends | Same | Same | Same | **Pre:** Any state<br>**Trans:** `Current` $\to$ `Error` $\to$ auto-recover to `Ready` (if enabled) or `Idle` (if disabled)<br>**Shared FX:** Emit `voice_error` to `WINDOW_TRAY`, trigger OS Error Toast | Same as Dictation Passive |
+| **Any Actor** | **`Error`** | **Pre:** Any state<br>**Trans:**<br>- If `Degraded` $\to$ No state change<br>- If `TurnAborted` $\to$ `Ready`<br>- If `SessionHalted` $\to$ `Error`<br>**Shared FX:** Attributed logging; if `TurnAborted` or `SessionHalted`, cancel `PlaybackEngine`, cancel turn token, and reset `pending_synthesis_jobs=0`. If `Actionable`, emit `IpcEvent::NotificationCreated`. If `NonActionable`, emit ephemeral UI toast only. | Same | Same | Same | **Pre:** Any state<br>**Trans:**<br>- If `Degraded` $\to$ No state change<br>- If `TurnAborted` $\to$ auto-recover to `Ready` (if enabled) or `Idle` (if disabled)<br>- If `SessionHalted` $\to$ `Error`<br>**Shared FX:** Attributed logging, ephemeral toast to `WINDOW_TRAY`, notifications only if `Actionable`. | Same as Dictation Passive |
 | **Any Actor** | **`Cancelled`** | **Pre:** Any state<br>**Trans:** `Current` $\to$ `Ready`<br>**Shared FX:** Clear `TurnAccumulator`, reset `pending_synthesis_jobs=0`, cancel audio playback | Same | Same | Same | **Pre:** Any state<br>**Trans:** `Current` $\to$ `Ready`<br>**Shared FX:** Reset STT stream, clear last transcript | Same as Dictation Passive |
 
 ---
@@ -221,4 +223,44 @@ app/src-tauri/src/pipeline/
 
 ### 9. Non-Destructive Dictation Overlap
 - In Dictation PTT and Passive modes, speech or hotkey triggers during `Thinking` do not abort or drop the prior STT inference task. Turn $N$ completes and routes its transcript to the target destination, while Turn $N+1$ begins recording speech immediately.
+
+---
+
+## 8. Exhaustive Subsystem Error Domain Matrix & Panic Containment
+
+### 1. Orthogonal 2D Classification Schema
+Every pipeline error decouples state transition impact from user UI actionability:
+- **`PipelineImpact`**:
+  - `Degraded`: The pipeline does not halt; the turn completes with degraded fidelity. State transition: **None**.
+  - `TurnAborted`: The active turn fails cleanly; state transitions **directly to `Ready`** (never locking into `Error`). Audio playback and turn tokens are cancelled.
+  - `SessionHalted`: The session cannot proceed without external intervention. State transitions to **`InteractionState::Error`**.
+- **`Actionability`**:
+  - `None`: Transient internal hiccups. Emits an ephemeral **UI Toast only**. Never persists to the Notifications drawer.
+  - `Actionable { category, hint }`: User configuration or hardware intervention needed. Emits an ephemeral **UI Toast AND a persistent record in the Notifications drawer** (`IpcEvent::NotificationCreated`).
+
+### 2. Comprehensive Subsystem Error Domain Table
+
+| # | Subsystem / Error Trigger | Root Cause & Mechanism | Impact | Actionability | State Target | UI Surface |
+|---|---|---|---|---|---|---|
+| 1 | **Identity Memory Overflow** | Preloaded active identity facts exceed `DEFAULT_MEMORY_MAX_PERSONAL_SHARE` (15% of `context_window`) | `Degraded` | `Actionable` (if recurring) | *No change* | Ephemeral Toast + Notification ("Memory approaching context limit. Consider increasing context_window.") |
+| 2 | **Critical Compaction Failure** | LLM compaction crash or memory DB error during turn prep in `transcript.rs` | `Degraded` | `NonActionable` | *No change* | Logged at WARN; falls back immediately to FIFO sliding window without interrupting user turn. Subtle toast only. |
+| 3 | **Dynamic Retrieval Failure** | Semantic memory retrieval query errors or returns empty | `Degraded` | `NonActionable` | *No change* | Turn proceeds without memory enrichment. Debug log / subtle toast; no persistent notification. |
+| 4 | **TTS Synthesis / Audio Decode Failure** | Kokoro ONNX or Edge TTS drops clause or fails decoding | `Degraded` | `NonActionable` | *No change* | Turn text preserved on screen; audio playback dropped. Ephemeral Toast ("Voice output issue; text preserved"). |
+| 5 | **Remote LLM Rate Limit (429 / 503)** | Upstream cloud provider quota or timeout | `TurnAborted` | `NonActionable` (transient) | `Ready` | Ephemeral Toast ("Provider busy; please speak again"). |
+| 6 | **STT Audio Buffer Dropped / VAD Glitch** | Ring buffer overflow or audio anomaly | `TurnAborted` | `NonActionable` | `Ready` | Ephemeral Toast ("Did not catch that; please repeat"). |
+| 7 | **System Prompt Exceeds Context Window** | Base system prompt alone exceeds `context_window` | `TurnAborted` | `Actionable` | `Ready` | Ephemeral Toast + Persistent Notification ("System prompt exceeds context window. Increase context_window in Settings.") |
+| 8 | **LLM Decode Error (`NoKvCacheSlot`)** | Context preflight guard catch in `generate.rs` | `TurnAborted` | `Actionable` | `Ready` | Ephemeral Toast + Persistent Notification ("Turn exceeded context window.") |
+| 9 | **Provider 401 Unauthorized** | Missing or invalid API key | `SessionHalted` | `Actionable` | `Error` | Ephemeral Toast + Persistent Notification ("API Key invalid for provider. Update in Settings.") |
+| 10 | **Audio Device Disconnected** | CPAL output device unplugged | `SessionHalted` | `Actionable` | `Error` | Ephemeral Toast + Persistent Notification ("Audio device disconnected. Reconnect device.") |
+| 11 | **Model Weights Missing / Corrupted** | Local GGUF or ONNX file missing on disk | `SessionHalted` | `Actionable` | `Error` | Ephemeral Toast + Persistent Notification ("Model files missing. Check Models tab.") |
+
+### 3. Context Budgeting & Personal Share Guard (15%)
+- Enforces `DEFAULT_MEMORY_MAX_PERSONAL_SHARE = 0.15` on `ConversationManager::set_identity_facts` and `load_identity_into_system_prompt`:
+  $$\text{identity\_budget} = \lfloor \text{context\_window} \times \text{settings.memory.max\_context\_share} \rfloor$$
+- Bounded newest-first: Facts are loaded in reverse chronological order until the token estimate reaches `identity_budget`. Excess facts are omitted from the active system prompt, preventing llama.cpp `NoKvCacheSlot` failures before decode begins.
+
+### 4. Panic Containment Architecture
+- **Global Panic Hook:** `vox_lib::run()` registers `std::panic::set_hook` to log thread backtraces at `FATAL` and write an emergency crash log to `~/.vox/crash_reports/`.
+- **Worker Thread Isolation:** Background actor threads (`LlmWorker`, `VadActor`, `TtsActor`, `AudioEngine`) wrap their turn processing loops in `std::panic::catch_unwind(AssertUnwindSafe(...))`. Unhandled unwinds are intercepted, logged, and converted into `VoxEvent::Error` (`TurnAborted` or `SessionHalted`) rather than killing the process.
+
 

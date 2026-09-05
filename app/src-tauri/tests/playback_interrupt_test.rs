@@ -63,9 +63,9 @@ async fn test_playback_gates_thinking_to_speaking_and_speaking_to_ready() {
         playback_engine.ingest_chunk(&chunk_24k);
 
         // Assert PlaybackStarted was emitted
-        let ev = event_rx
-            .recv_timeout(Duration::from_millis(500))
-            .expect("PlaybackStarted must be emitted once pre-roll cushion (12,000 samples) is met");
+        let ev = event_rx.recv_timeout(Duration::from_millis(500)).expect(
+            "PlaybackStarted must be emitted once pre-roll cushion (12,000 samples) is met",
+        );
         match ev {
             VoxEvent::PlaybackStarted { turn_id: tid } => {
                 assert_eq!(tid, turn_id, "Emitted turn_id must match active turn");
@@ -85,7 +85,10 @@ async fn test_playback_gates_thinking_to_speaking_and_speaking_to_ready() {
             let mut cons = consumer_arc.lock();
             let len = cons.occupied_len();
             let drained = cons.skip(len);
-            assert!(drained >= 12000, "Buffer must contain at least 12000 samples");
+            assert!(
+                drained >= 12000,
+                "Buffer must contain at least 12000 samples"
+            );
             assert!(cons.is_empty(), "Consumer must be drained completely");
         }
 
@@ -374,7 +377,10 @@ async fn test_barge_in_cancels_and_advances_turn() {
 
         // Get Turn 1 cancellation token
         let turn_1_token = state.pipeline.turn_token();
-        assert!(!turn_1_token.is_cancelled(), "Turn 1 token must be active initially");
+        assert!(
+            !turn_1_token.is_cancelled(),
+            "Turn 1 token must be active initially"
+        );
 
         // Seed pending jobs and accumulator
         state
@@ -401,12 +407,7 @@ async fn test_barge_in_cancels_and_advances_turn() {
 
         let (stt_tx, _) = mpsc::channel();
         let (vad_tx, _) = mpsc::channel();
-        common::harness::attach_mock_engine_with_vad_to_state(
-            &app,
-            &state,
-            stt_tx,
-            vad_tx,
-        );
+        common::harness::attach_mock_engine_with_vad_to_state(&app, &state, stt_tx, vad_tx);
 
         // Replace attached engine's playback_engine with our tracked instance
         if let Ok(mut guard) = state.engine.try_lock() {
@@ -452,7 +453,10 @@ async fn test_barge_in_cancels_and_advances_turn() {
 
         // - Pending synthesis jobs must be reset to 0
         assert_eq!(
-            state.pipeline.pending_synthesis_jobs.load(Ordering::Relaxed),
+            state
+                .pipeline
+                .pending_synthesis_jobs
+                .load(Ordering::Relaxed),
             0,
             "pending_synthesis_jobs must be reset to 0 upon barge-in"
         );

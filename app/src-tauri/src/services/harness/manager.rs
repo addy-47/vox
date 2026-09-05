@@ -59,9 +59,34 @@ impl ConversationManager {
         }
     }
 
-    /// Sets active Identity facts and reassembles the system prompt.
-    pub fn set_identity_facts(&mut self, identity_facts: Vec<String>) {
-        self.identity_facts = identity_facts;
+    /// Sets active Identity facts and reassembles the system prompt, enforcing max personal context share.
+    pub fn set_identity_facts(
+        &mut self,
+        identity_facts: Vec<String>,
+        context_window: usize,
+        max_context_share: f32,
+    ) {
+        let budget = ((context_window as f32) * max_context_share) as usize;
+        let mut bounded_facts = Vec::new();
+        let mut total_tokens = 0;
+
+        // Bounded newest-first (facts are typically ordered chronological, reverse iterate to preserve freshest)
+        for fact in identity_facts.into_iter().rev() {
+            let tokens = crate::services::memory::ml::estimate_tokens(&fact);
+            if total_tokens + tokens > budget && !bounded_facts.is_empty() {
+                log::warn!(
+                    "[ConversationManager] Identity facts reached budget cap ({} / {} tokens). Older facts truncated.",
+                    total_tokens,
+                    budget
+                );
+                break;
+            }
+            total_tokens += tokens;
+            bounded_facts.push(fact);
+        }
+        bounded_facts.reverse();
+
+        self.identity_facts = bounded_facts;
         let assembled = self.assemble_system_prompt();
         self.system_prompt.content = assembled.clone();
         if !self.buffer.messages.is_empty() && self.buffer.messages[0].role == Role::System {
@@ -69,20 +94,24 @@ impl ConversationManager {
         }
         self.buffer.kv_synced_index = 0;
         log::info!(
-            "[ConversationManager] Successfully preloaded {} Identity facts into System Prompt.",
-            self.identity_facts.len()
+            "[ConversationManager] Successfully preloaded {} Identity facts into System Prompt ({} tokens, budget {}).",
+            self.identity_facts.len(),
+            total_tokens,
+            budget
         );
     }
 
-    /// Preloads active Identity facts into the base system prompt block.
+    /// Preloads active Identity facts into the base system prompt block with token budgeting.
     pub async fn load_identity_into_system_prompt(
         &mut self,
         conn: &Connection,
+        context_window: usize,
+        max_context_share: f32,
     ) -> anyhow::Result<()> {
         let active_identities =
             crate::persistence::queries::fetch_all_active_identity(conn).await?;
         let facts = active_identities.into_iter().map(|f| f.fact).collect();
-        self.set_identity_facts(facts);
+        self.set_identity_facts(facts, context_window, max_context_share);
         Ok(())
     }
 

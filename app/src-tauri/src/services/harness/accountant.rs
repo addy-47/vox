@@ -441,10 +441,7 @@ mod tests {
         let chain2 = TokenAccountant::build_narrative_context_chain(&ctxs, 1000);
         assert!(chain2.contains("first context"));
         assert!(chain2.contains("second context"));
-        assert_eq!(
-            TokenAccountant::build_narrative_context_chain(&[], 100),
-            ""
-        );
+        assert_eq!(TokenAccountant::build_narrative_context_chain(&[], 100), "");
     }
 
     /// Tests ContextHarness opportunistic trigger and cancel/commit race guards.
@@ -473,7 +470,8 @@ mod tests {
             assert!(harness.try_trigger_opportunistic(&buf).is_none());
             // Race: buffer grew, commit must reject
             buf.push_user_turn("new turn".to_string());
-            let ok = harness.commit_opportunistic(&mut buf, &sys_msg(), snap_len, "summary".to_string());
+            let ok =
+                harness.commit_opportunistic(&mut buf, &sys_msg(), snap_len, "summary".to_string());
             assert!(!ok);
         }
         harness.cancel_opportunistic();

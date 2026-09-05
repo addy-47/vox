@@ -1,16 +1,15 @@
 use crate::core::events::SystemStatsPayload;
 use crate::core::events::{emit_ipc, IpcEvent};
+use crate::core::state::AppState;
 use crate::monitoring::SYSTEM_MONITOR_INTERVAL;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use sysinfo::{Pid, System};
 use tauri::{AppHandle, Manager};
 
 /// Spawns the background system monitor task to collect and broadcast CPU and RAM statistics.
 pub fn spawn_system_monitor(app: AppHandle) {
-    let state_arc: std::sync::Arc<crate::core::state::AppState> = app
-        .state::<std::sync::Arc<crate::core::state::AppState>>()
-        .inner()
-        .clone();
+    let state_arc: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
     let telemetry_tx = state_arc.telemetry.telemetry_tx.clone();
     let pid = sysinfo::get_current_pid().ok();
 
@@ -112,7 +111,7 @@ fn is_descendant_process(sys: &System, p_pid: Pid, target_pid: Pid) -> bool {
 }
 
 fn update_shared_metrics(
-    state: &crate::core::state::AppState,
+    state: &AppState,
     system_cpu: f32,
     system_ram_pct: f32,
     vox_cpu: f32,

@@ -8,8 +8,8 @@
 //! Metrics      : Schema migrations, CRUD lifecycle, compaction status tracking
 //! ============================================================================
 
-use std::time::Duration;
 use std::collections::HashMap;
+use std::time::Duration;
 use tempfile::tempdir;
 use vox_lib::persistence::compactions::{
     commit_compaction_results, fetch_latest_compaction_run, fetch_turns_for_compaction,
@@ -27,86 +27,86 @@ use vox_lib::persistence::schema::run_migrations;
 async fn test_notifications_crud_lifecycle() {
     tokio::time::timeout(Duration::from_secs(30), async {
         let dir = tempdir().expect("Failed to create tempdir");
-    let db_path = dir.path().join("test_notifs_crud.db");
+        let db_path = dir.path().join("test_notifs_crud.db");
 
-    let conn = VoxDb::open(&db_path)
-        .await
-        .expect("Failed to open database connection");
+        let conn = VoxDb::open(&db_path)
+            .await
+            .expect("Failed to open database connection");
 
-    run_migrations(&conn)
-        .await
-        .expect("Failed to run schema migrations");
+        run_migrations(&conn)
+            .await
+            .expect("Failed to run schema migrations");
 
-    // 1. Initially empty
-    let active = fetch_active_notifications(&conn)
-        .await
-        .expect("Failed to fetch active");
-    assert!(active.is_empty(), "Initial notifications should be empty");
+        // 1. Initially empty
+        let active = fetch_active_notifications(&conn)
+            .await
+            .expect("Failed to fetch active");
+        assert!(active.is_empty(), "Initial notifications should be empty");
 
-    // 2. Create notification
-    let notif1 = NewNotification {
-        id: "notif_1".to_string(),
-        category: "session_compaction".to_string(),
-        title: "Session Finished".to_string(),
-        message: "Session #1 has 5 uncompacted turns".to_string(),
-        status: "pending".to_string(),
-        session_id: Some(1),
-        metadata: "{\"uncompacted_turns\": 5}".to_string(),
-    };
-    let rec1 = create_notification(&conn, &notif1)
-        .await
-        .expect("Failed to create notification 1");
-    assert_eq!(rec1.id, "notif_1");
-    assert!(!rec1.is_read);
-    assert_eq!(rec1.status, "pending");
+        // 2. Create notification
+        let notif1 = NewNotification {
+            id: "notif_1".to_string(),
+            category: "session_compaction".to_string(),
+            title: "Session Finished".to_string(),
+            message: "Session #1 has 5 uncompacted turns".to_string(),
+            status: "pending".to_string(),
+            session_id: Some(1),
+            metadata: "{\"uncompacted_turns\": 5}".to_string(),
+        };
+        let rec1 = create_notification(&conn, &notif1)
+            .await
+            .expect("Failed to create notification 1");
+        assert_eq!(rec1.id, "notif_1");
+        assert!(!rec1.is_read);
+        assert_eq!(rec1.status, "pending");
 
-    let notif2 = NewNotification {
-        id: "notif_2".to_string(),
-        category: "system_alert".to_string(),
-        title: "Audio Device Changed".to_string(),
-        message: "Switched to Headset".to_string(),
-        status: "pending".to_string(),
-        session_id: None,
-        metadata: "{}".to_string(),
-    };
-    create_notification(&conn, &notif2)
-        .await
-        .expect("Failed to create notification 2");
+        let notif2 = NewNotification {
+            id: "notif_2".to_string(),
+            category: "system_alert".to_string(),
+            title: "Audio Device Changed".to_string(),
+            message: "Switched to Headset".to_string(),
+            status: "pending".to_string(),
+            session_id: None,
+            metadata: "{}".to_string(),
+        };
+        create_notification(&conn, &notif2)
+            .await
+            .expect("Failed to create notification 2");
 
-    // 3. Fetch active: should have 2 notifications
-    let active = fetch_active_notifications(&conn)
-        .await
-        .expect("Failed to fetch active");
-    assert_eq!(active.len(), 2);
+        // 3. Fetch active: should have 2 notifications
+        let active = fetch_active_notifications(&conn)
+            .await
+            .expect("Failed to fetch active");
+        assert_eq!(active.len(), 2);
 
-    // 4. Mark all read
-    mark_all_notifications_read(&conn)
-        .await
-        .expect("Failed to mark read");
-    let active = fetch_active_notifications(&conn)
-        .await
-        .expect("Failed to fetch active");
-    assert!(active.iter().all(|n| n.is_read));
+        // 4. Mark all read
+        mark_all_notifications_read(&conn)
+            .await
+            .expect("Failed to mark read");
+        let active = fetch_active_notifications(&conn)
+            .await
+            .expect("Failed to fetch active");
+        assert!(active.iter().all(|n| n.is_read));
 
-    // 5. Update status
-    update_notification_status(&conn, "notif_1", "in_progress")
-        .await
-        .expect("Failed to update status");
-    let found = find_active_notification_by_session(&conn, 1, "session_compaction")
-        .await
-        .expect("Failed to find by session");
-    assert!(found.is_some());
-    assert_eq!(found.unwrap().status, "in_progress");
+        // 5. Update status
+        update_notification_status(&conn, "notif_1", "in_progress")
+            .await
+            .expect("Failed to update status");
+        let found = find_active_notification_by_session(&conn, 1, "session_compaction")
+            .await
+            .expect("Failed to find by session");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().status, "in_progress");
 
-    // 6. Dismiss
-    dismiss_notification(&conn, "notif_2")
-        .await
-        .expect("Failed to dismiss");
-    let active = fetch_active_notifications(&conn)
-        .await
-        .expect("Failed to fetch active");
-    assert_eq!(active.len(), 1);
-    assert_eq!(active[0].id, "notif_1");
+        // 6. Dismiss
+        dismiss_notification(&conn, "notif_2")
+            .await
+            .expect("Failed to dismiss");
+        let active = fetch_active_notifications(&conn)
+            .await
+            .expect("Failed to fetch active");
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].id, "notif_1");
     })
     .await
     .expect("test_notifications_crud_lifecycle timed out");

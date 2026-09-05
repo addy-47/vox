@@ -11,6 +11,7 @@
 >
 > **Step 2 — Only when approaching 175 lines: Migrate Section 5.**
 > After appending, check `AGENTS.md` total line count. If it is at or above **125 lines** (the warning threshold before the 175-line ceiling):
+>
 > 1. Migrate **only the delta**: append to `docs/plans/<current_phase>/recent_work.md` under a `## Past Work (YYYY-MM-DD)` heading just the Section 5 entries added since the last migration. Dedupe against the file first — never re-archive entries already present there (snapshotting the whole Section 5 duplicates history).
 > 2. Replace Section 5 in `AGENTS.md` with a compact 3–5 bullet summary of only the highest-level milestones.
 > 3. Keep the deep link at the top of Section 5: `📖 Full History: [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/<current_phase>/recent_work.md)`.
@@ -55,14 +56,13 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
    ```bash
    RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1
    ```
-   _Single test:_ `cargo nextest run --test <test_file> --release --nocapture --test-threads=1`  
+   _Single test:_ `cargo nextest run --test <test_file> --release --nocapture --test-threads=1`
    > ⏱️ **Full Suite Baseline Run Time:** ~34.5s test execution (~35s wall-clock with compilation cache hit; ~1m55s cold compile + run) across all 87 tests in 17 binaries (52 unit tests, 35 integration tests across Seams 1–11, 15–17, plus notifications CRUD).
 4. **External API Keys (`#[ignore]`):** Cloud provider tests (Nvidia, Gemini Live, Deepgram, OpenAI, ElevenLabs) must be marked `#[ignore]` and run manually only with explicit user approval: `cargo nextest -- --ignored`.
-5. **NO BLIND RUNS**: 
 
 ---
 
-## 4. Invariants and Workflow Gates
+## 4. Invariants ,Rules and Specs [MUST FOLLOW]
 
 ### 4.1 Critical Architectural & Logical Invariants (Non-Negotiable Concepts)
 
@@ -98,27 +98,22 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 | ML Research Engineer | `.agents/rules/ml-research-engineer.md` | ML model research, evaluation, and fine-tuning dataset curation  |
 | Test Engineer        | `.agents/rules/test-engineer.md`        | Test case design, benchmark validation, and performance analysis |
 
+
+### 4.4 Specs that outlines the behaviour and contracts of the pipeline
+
+1. [Target Event-Domain Architectural Specification (Ground Truth)](file:///home/addy/projects/apps/vox/docs/specs/event-domain-matrix.md) - this is the golden source of truth for the pipeline behaviour and contracts , if pipeline diverges any work must behalted and the user must be grilled for the correct behaviour.
+
 ---
 
 ## 5. Phase 11 Test Suite & Verification Ledger
 
 > 📖 **Full History: [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase11/recent_work.md)** | Phase 10 Archive: [phase10/recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase10/recent_work.md)
 
-- **Test-suite engineering (Seams 1,2,4–11,15 green + mutate-verified):** real-model ITs (Qwen 3.5 GGUF, Supertonic/Sherpa ONNX) with zero production diff; Sprint 1 (Seams 1–4) complete; Debugging Protocol added to testing guides.
-- **Backend pipeline hardening:** unified `InteractionState` (+`Sleeping=7`), Option-C `ingestion_gate`, `dictation/{mod,ptt,speech,transcript,error}` split, `try_lock()` discipline, session self-deadlock fix, settings-persistence atomic writes + corrupt-backup recovery.
-- **Frontend session + notification/help + copy sweeps:** side rail + `RestorePulse` restore flows; popover rewrite + `TopRightCluster` on 5 pages + scoped help atlases; `voice_error` prune (V6-F1); copy-fragmentation fix (V14-F1); zero-hardcode sweep + dead-component pass (COPY-F1, build green, 113/6).
-- **Unified cross-examination:** `frontend_review.md` rewritten — 6 voice-path ✅ fixed, 3 ⚠️ partial, 10 ❌/regressed; 3 🔴 regressions queued (history `sessionId`/`session_id` arg drift, MemoryCard toggle, conditional-hook class in 13 cards).
-- **Seam 16 green + mutate-verified (2026-09-05):** Authored `tests/model_eviction_test.rs` covering MiniLM text embedder, DeBERTa v3 NLI, ModernBERT edge classifier, ModernBERT memory scope classifier, and Seq2Seq Hindi transliteration engine ONNX singleton eviction + zero-leak heap trimming, plus TTS persistent worker `cool_down_tts` handle take and clean thread join; PASS 4.93s in release mode; 2/2 mutants killed (Mutant 16.1 embedder unload suppressed, Mutant 16.2 `tts_tx` drop/take suppressed); zero clippy warnings.
-- **Seam 17 green + mutate-verified (2026-09-05):** Authored `tests/model_manager_test.rs` covering SHA256 integrity verification, `.verified` marker lifecycle + caching, Zip-Slip and Tar-Slip vulnerability traversal rejection in `ModelManager::do_extract`, and recursive deletion + marker pruning in `delete_model_file`; PASS 0.046s in release mode; 2/2 mutants killed (Mutant 17.1 Zip-Slip check bypassed, Mutant 17.2 `.verified` marker file deletion suppressed); zero clippy warnings; Sprint 5 complete.
-- **Test refactoring & style guide compliance (2026-09-05):** added mandatory standard header + 30s timeout to `notifications_crud_test.rs`; extracted `TempPathsGuard` to `common/paths.rs`; moved `attach_lifecycle_mock_engine` to `common/harness.rs`; extracted archive synthesis helpers to `common/archive.rs`; full test suite 88/88 passed.
-- **E2E Pipeline Benchmark Harness & Kokoro Promotion (2026-09-05):** Promoted Kokoro v1.0 as default TTS with Devanagari guard; implemented plug-and-play `pipeline_bench` with `--mode`, `--stt`, `--llm`, `--tts` flags; ran default baseline (`Nemotron + Qwen + Kokoro`, modular passive) on `clip_01_en_briefing.wav` (`5.45s` perceived end-to-end response time; 4.86s synthesized audio); documented metrics and full 28-pair combinatorial matrix in `docs/tests/pipeline_benchmark_report.md`.
-- **Second-pass feedback-review of `frontend_review.md` (2026-09-05):** Audited every claim in the first-pass review against live code; found 2 false-positive ❌ verdicts (V8 test-clip Ready writer fixed, V10 wizard raw listen fixed), re-classified session-continuation IPC findings as deliberate deferred-backend design (not 3-regression cluster — only `get_turns` arg-case is a real P0), corrected hook-violation file list inflation (MemoryCard clean), identified 4 new missed issues (undocumented dual `InteractionMode` vocabulary, `clearHistory` dead production API, incorrect `return null` reasoning in review, `interaction_mode` naming ambiguity); full report in `brain/05066b1f/frontend_review_second_pass.md`.
-- **Default Pipeline Benchmark Run Verified (2026-09-05):** Fixed passive speech onset `cancel_flag` reset in `pipeline/assistant/speech.rs`; updated benchmark harness to feed audio concurrently in real-time 16ms chunks and write standard 16-bit Microsoft PCM WAV; ran default baseline (`Nemotron` + `Qwen` + `Kokoro`, modular passive) on `clip_01_en_briefing.wav`, generating STT transcript, LLM response, and 3.68s audio (`20260905_125146_7ddbc968`); updated ledger artifact in `docs/tests/pipeline_benchmark_report.md`.
-- **Frontend Sprints 1–3 Complete & Verified (2026-09-05):** Resolved IPC `session_id` contract in `historyService`, pruned zombie `PROGRESS` event handling in `setupMachine`/`WizardRoot`, pruned dead `clearHistory` in `VoiceSessionContext`, wired pipeline toggle in `MemoryCard`, suppressed cloud STT banner flash in `Settings`, eliminated object spread in `useHomePage`, moved `useHistory.ts` to `shared/hooks/`, normalized `InteractionMode` via `shared/lib/interactionMode.ts`, centralized realtime subkeys in `shared/lib/realtimeProviders.ts`, and extracted display helpers to `shared/lib/voiceDisplay.ts`; pruned legacy tests; full `tsc --noEmit && pnpm build` passes with zero errors in 4.67s.
-- **Frontend Tier 1 Bloated-File Extraction Complete (2026-09-05):** Extracted visual elements from `RealtimeCard.tsx` (763 -> 211 LOC) into `RealtimeVisualElements.tsx`; extracted `HubCenter` and dynamic SVG overlay from `Settings.tsx` (629 -> 502 LOC) into `SettingsVisualConnectors.tsx`; zero logic or state changes; full `tsc --noEmit && pnpm build` passes cleanly in 4.55s.
-- **History IPC Contract Fix & Memory Graph Seeding (2026-09-05):** Restored Tauri v2 camelCase `{ sessionId }` contract in `historyService.getTurns` resolving frontend load error; authored `sandbox/seed_mock_facts.py` and populated `~/.vox/vox.db` with 320 diverse ontology facts and 161 relation edges across all 5 collections from `gate3_v7_ontology_6000p.json`, providing balanced 3D graph cluster rendering.
-- **Frontend Tier 2 Extractions (2026-09-05):** Extracted `SettingsCardWrapper` (card frame, header, dynamic restart action bar / auto-save banner) from `Settings.tsx` (502 -> 348 LOC) into `shared/components/settings/SettingsCardWrapper.tsx` without micro-splitting; kept `RealtimeCard.tsx` (212 LOC) lean and intact; `tsc && pnpm build` 100% green in 8.00s.
-- **ModelsCard Modularization Complete (2026-09-05):** Extracted `useModelDownloads.ts` (196 LOC) and `useRemoteLlmProbing.ts` (160 LOC) from `ModelsCard.tsx` (921 -> 623 LOC), separating model file presence/downloads and remote LLM capability probing with zero logic regressions; `tsc && pnpm build` 100% green in 5.55s.
-- **Integration Test Isolation & DB Asset Fixture (2026-09-05):** Replaced hard-locked `OnceLock` with `parking_lot::RwLock` in `utils/paths.rs`; created isolated `tests/assets/test_vox.db` fixture; updated `TempPathsGuard` to copy asset db into ephemeral temp dir and isolate `VOX_HOME` across subtests; full `session_lifecycle_test` passes (5/5 in 0.46s) while preserving host `~/.vox/vox.db` facts.
-- **IPC Contract & Clippy Clean (2026-09-05):** Aligned `get_memory_fact_detail` (`factId`) and `retry_failed_queue_items` (`itemIds`) to camelCase in `memoryService.ts`; fixed `clippy::derivable_impls` on `TtsProviderConfig`, `type_complexity` in `pipeline_harness.rs`, and `redundant_pattern_matching` in `playback_interrupt_test.rs`; `cargo clippy --all-targets` and `pnpm build` 100% clean.
+- **Test Suite & Engine Hardening:** Seams 1–11, 15–17 green & mutate-verified in release mode; isolated test DB fixture created; `notifications_crud_test.rs` stabilized; E2E benchmark harness validated with Kokoro default TTS.
+- **Frontend IPC & Sprints 1–3 Complete:** Aligned `sessionId` contract in `historyService.getTurns`; pruned dead events and listeners; normalized `InteractionMode` and realtime subkeys; zero `tsc` or build errors.
+- **Frontend Bloated File Decompositions:** Extracted visual connectors from `Settings.tsx`, visual elements from `RealtimeCard.tsx`, card frame into `SettingsCardWrapper.tsx`, and downloads/probing from `ModelsCard.tsx`.
+- **Memory Graph Modularization & Dynamic Viewport Sizing (2026-09-05):** Modularized `MemoryGraph.tsx` (1,583 -> 280 LOC) by extracting `useMemoryGraphScene.ts` (Three.js WebGL & force simulation) and `MemoryGraphClusterBadges.tsx` (DOM overlays); shaped initial cluster centroids and simulation boundaries by viewport aspect ratio ($vw / vh$), enabling wide horizontal layout and aspect-aware camera distance fitting; `pnpm build` 100% green in 5.79s.
+- **Pipeline Bench RCA & Prompt-Budget-Guard Spec (2026-09-05):** Diagnosed `pipeline_bench` Nemotron+Qwen+Kokoro hang (60s timeout, 0s audio) via `RUST_BACKTRACE=full` + `RUST_LOG=debug`; isolated real production failure — `n_ctx=2048` < 3004-token prefill (207 identity facts + convo), llama.cpp returns `Decode Error 1: NoKvCacheSlot` at `services/llm/embedded/generate.rs:315`; added `env_logger::init()` + `bench-pipeline-tee` to surface router-input events to bench observer (no production diff); authored `docs/plans/phase11/pipeline-prompt-budget-guard-spec.md` specifying bounded truncation at prefill boundary + new `VoxEvent::PromptTruncated` + `IpcEvent::Notification(category=prompt_truncated)` + bench `context_retrieval_enabled=false` + ephemeral `vox.db` fixture + `prefill` outcome in `report.json`; spec is the deliverable, no production code changed.
+- **2D Error Domain Matrix, Budget Guard & Panic Containment (2026-09-05):** Implemented orthogonal 2D error matrix (`PipelineImpact`: `Degraded`, `TurnAborted`, `SessionHalted`; `Actionability`: `None`, `Actionable`); decoupled subsystem failures so non-fatal errors never halt sessions; bounded identity facts in `ConversationManager` to `DEFAULT_MEMORY_MAX_PERSONAL_SHARE` (15% context window, newest-first); compaction errors degrade to FIFO; added global panic hook (`std::panic::set_hook`) and unwind containment around workers; isolated `pipeline_bench` with `benches/assets/bench_vox.db` (retrieval enabled); full release test suite 100% green (88/88 passed in 39.1s); `pipeline_bench` modular passive (Nemotron + Qwen + Kokoro) passed (21.49s audio synthesized, 9.1s E2E latency); `cargo clippy --all-targets -- -D warnings` 100% clean.
+
 

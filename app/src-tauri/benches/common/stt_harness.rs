@@ -19,6 +19,7 @@ use vox_lib::services::vad::{VAD_CHUNK_SIZE, VAD_SPEECH_END_FRAMES};
 
 use super::reporting::{get_process_memory_mb, ClipBenchmarkResult, EngineBenchmarkRun};
 use super::scoring::levenshtein_similarity;
+use std::sync::atomic::AtomicUsize;
 
 /// Input ground truth clip definition.
 #[derive(Debug, Clone)]
@@ -53,10 +54,10 @@ pub fn benchmark_streaming_provider(
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let engine_shutdown = Arc::new(AtomicBool::new(false));
 
-    let partials_counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let partials_counter = Arc::new(AtomicUsize::new(0));
     let partials_clone = Arc::clone(&partials_counter);
     let partial_emitter = Some(Arc::new(move |_turn_id: u32, _text: String| {
-        partials_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        partials_clone.fetch_add(1, Ordering::Relaxed);
     }) as Arc<dyn Fn(u32, String) + Send + Sync>);
 
     let channels = SttActorChannels {
@@ -230,7 +231,7 @@ pub fn benchmark_streaming_provider(
         }
 
         let final_transcript = final_utterances.join(" ");
-        let partials_count = partials_counter.swap(0, std::sync::atomic::Ordering::Relaxed);
+        let partials_count = partials_counter.swap(0, Ordering::Relaxed);
 
         // Clean isolation between clips: ensure queues are fully empty before next clip
         std::thread::sleep(Duration::from_millis(100));

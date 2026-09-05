@@ -1,6 +1,9 @@
 use std::sync::atomic::Ordering;
+use std::sync::mpsc;
+
 use tauri::AppHandle;
 
+use crate::core::events::{Actionability, PipelineError, PipelineImpact};
 use crate::core::state::{AppState, InteractionState};
 use crate::pipeline::dictation::transition_dictation;
 
@@ -10,8 +13,17 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
     match current {
         InteractionState::Idle => {
             crate::pipeline::dictation::error::on_error(
-                0,
-                "Dictation is disabled in Settings.".to_string(),
+                PipelineError {
+                    turn_id: 0,
+                    message: "Dictation is disabled in Settings.".to_string(),
+                    source: "DictationPtt".to_string(),
+                    impact: PipelineImpact::TurnAborted,
+                    actionability: Actionability::Actionable {
+                        category: "dictation_disabled".to_string(),
+                        hint: "Enable dictation in Settings to use the Push-To-Talk hotkey."
+                            .to_string(),
+                    },
+                },
                 app,
                 state,
             );
@@ -52,7 +64,7 @@ pub fn on_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
 pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
-    stt_tx: Option<&std::sync::mpsc::Sender<crate::services::stt::SttCommand>>,
+    stt_tx: Option<&mpsc::Sender<crate::services::stt::SttCommand>>,
 ) {
     if state.pipeline.dictation_state() != InteractionState::Listening {
         log::debug!("[Dictation::PTT] PttStop dropped: state is not Listening");
@@ -73,7 +85,7 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
     };
 
     let validation_result = if let Some(vad_tx) = vad_tx_opt {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = mpsc::channel();
         if vad_tx
             .send(crate::services::vad::VadCommand::StopWindowValidation { response_tx: tx })
             .is_ok()
@@ -114,11 +126,17 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
         }
     } else if let Some(stt_tx) = engine_stt_tx_opt {
         if let Err(e) = stt_tx.send(crate::services::stt::SttCommand::Final(turn_id, audio)) {
-            log::warn!("[Dictation::PTT] Failed to dispatch Final audio to STT: {}", e);
+            log::warn!(
+                "[Dictation::PTT] Failed to dispatch Final audio to STT: {}",
+                e
+            );
         }
     }
 
-    log::info!("[Dictation::PTT] Hotkey recording finalized (turn: {})", turn_id);
+    log::info!(
+        "[Dictation::PTT] Hotkey recording finalized (turn: {})",
+        turn_id
+    );
 }
 
 /// Cancels in-flight PTT dictation recording and discards audio.
@@ -129,7 +147,7 @@ pub fn on_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
-            let (resp_tx, _) = std::sync::mpsc::channel();
+            let (resp_tx, _) = mpsc::channel();
             let _ = engine
                 .vad_tx
                 .send(crate::services::vad::VadCommand::StopWindowValidation {

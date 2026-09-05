@@ -1,11 +1,15 @@
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::time::Duration;
+
+use tauri::{AppHandle, Manager, State};
+
 use crate::core::error::VoxIpcError;
 use crate::core::events::{emit_ipc, IpcEvent};
 use crate::core::settings::{
     get_setting_reload_policy, InteractionMode, SettingReloadPolicy, VoxSettings,
 };
-use crate::core::state::AppState;
-use std::time::Duration;
-use tauri::{AppHandle, Manager, State};
+use crate::core::state::{AppState, InteractionOwner, InteractionState};
 
 /// Disk write is deferred by this duration after the last setting change.
 /// Prevents thrashing disk on rapid slider updates (dozens of changes/sec).
@@ -29,17 +33,14 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
         log::info!("[Settings] Dictation Lifecycle Event: enabled={}", enabled);
 
         let new_dict_state = if enabled {
-            crate::core::state::InteractionState::Ready
+            InteractionState::Ready
         } else {
-            crate::core::state::InteractionState::Idle
+            InteractionState::Idle
         };
         crate::pipeline::dictation::transition_dictation(new_dict_state, app, state);
 
-        let owner: crate::core::state::InteractionOwner = state
-            .owner
-            .load(std::sync::atomic::Ordering::Relaxed)
-            .into();
-        if enabled && owner == crate::core::state::InteractionOwner::Dictation {
+        let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+        if enabled && owner == InteractionOwner::Dictation {
             let dictation_mode = state
                 .settings
                 .read()
@@ -55,9 +56,12 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
             };
             if let Ok(guard) = state.engine.try_lock() {
                 if let Some(ref engine) = *guard {
-                    let _ = engine
-                        .vad_tx
-                        .send(crate::services::vad::VadCommand::SetOperationalMode(vad_op_mode));
+                    let _ =
+                        engine
+                            .vad_tx
+                            .send(crate::services::vad::VadCommand::SetOperationalMode(
+                                vad_op_mode,
+                            ));
                 }
             }
         }
@@ -76,7 +80,7 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
                     e
                 );
             }
-            let hud_visible = state.hud_visible.load(std::sync::atomic::Ordering::Relaxed);
+            let hud_visible = state.hud_visible.load(Ordering::Relaxed);
             if let Err(e) = live_i.set_checked(hud_visible && is_clickable) {
                 log::warn!(
                     "[Settings::Mutation] Failed to set menu item checked: {}",
@@ -88,8 +92,8 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
         if !enabled {
             crate::tray::destroy_tray_window(app);
 
-            if state.pipeline.state() == crate::core::state::InteractionState::Idle {
-                let state_clone = app.state::<std::sync::Arc<AppState>>().inner().clone();
+            if state.pipeline.state() == InteractionState::Idle {
+                let state_clone = app.state::<Arc<AppState>>().inner().clone();
                 tauri::async_runtime::spawn(async move {
                     if let Err(e) = crate::core::stop_audio_engine(&state_clone).await {
                         log::warn!("[Settings::Mutation] Failed to stop audio engine: {}", e);
@@ -103,7 +107,7 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
                 }
             }
             let app_clone = app.clone();
-            let state_clone = app.state::<std::sync::Arc<AppState>>().inner().clone();
+            let state_clone = app.state::<Arc<AppState>>().inner().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = crate::core::start_audio_engine(&app_clone, &state_clone).await {
                     log::error!("[Settings] Failed to launch engine for dictation: {}", e);
@@ -127,7 +131,7 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
                     e
                 );
             }
-            let hud_visible = state.hud_visible.load(std::sync::atomic::Ordering::Relaxed);
+            let hud_visible = state.hud_visible.load(Ordering::Relaxed);
             if let Err(e) = live_i.set_checked(hud_visible && is_clickable) {
                 log::warn!(
                     "[Settings::Mutation] Failed to set menu item checked: {}",
@@ -144,12 +148,12 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
             crate::tray::destroy_tray_window(app);
         }
     } else if key == "interaction_mode" {
-        let owner: crate::core::state::InteractionOwner = state
-            .owner
-            .load(std::sync::atomic::Ordering::Relaxed)
-            .into();
-        if owner == crate::core::state::InteractionOwner::Dictation {
-            if let Ok(mode) = serde_json::from_value::<crate::core::settings::DictationInteractionMode>(value.clone()) {
+        let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+        if owner == InteractionOwner::Dictation {
+            if let Ok(mode) = serde_json::from_value::<
+                crate::core::settings::DictationInteractionMode,
+            >(value.clone())
+            {
                 let vad_op_mode = match mode {
                     crate::core::settings::DictationInteractionMode::Passive => {
                         crate::services::vad::VadOperationalMode::ContinuousSegmentation
@@ -160,10 +164,9 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
                 };
                 if let Ok(guard) = state.engine.try_lock() {
                     if let Some(ref engine) = *guard {
-                        if let Err(e) = engine
-                            .vad_tx
-                            .send(crate::services::vad::VadCommand::SetOperationalMode(vad_op_mode))
-                        {
+                        if let Err(e) = engine.vad_tx.send(
+                            crate::services::vad::VadCommand::SetOperationalMode(vad_op_mode),
+                        ) {
                             log::warn!("[Settings::Mutation] Failed to update VAD mode on dictation interaction_mode change: {}", e);
                         }
                     }
@@ -172,9 +175,17 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
         }
     } else if key == "hotkey" {
         if let Some(new_shortcut) = value.as_str() {
-            log::info!("[Settings::Mutation] Re-registering global dictation hotkey: {}", new_shortcut);
-            if let Err(e) = crate::services::dictation::init_dictation_hotkey_listener(app, new_shortcut) {
-                log::warn!("[Settings::Mutation] Failed to re-register dictation hotkey: {:?}", e);
+            log::info!(
+                "[Settings::Mutation] Re-registering global dictation hotkey: {}",
+                new_shortcut
+            );
+            if let Err(e) =
+                crate::services::dictation::init_dictation_hotkey_listener(app, new_shortcut)
+            {
+                log::warn!(
+                    "[Settings::Mutation] Failed to re-register dictation hotkey: {:?}",
+                    e
+                );
             }
         }
     }
@@ -194,7 +205,7 @@ async fn handle_interaction_side_effects<R: tauri::Runtime>(
             .unwrap_or((false, InteractionMode::PTT));
 
         if !dictation_enabled
-            && state.pipeline.state() == crate::core::state::InteractionState::Idle
+            && state.pipeline.state() == InteractionState::Idle
             && interaction_mode == InteractionMode::PTT
         {
             let app_clone = app.clone();
@@ -212,15 +223,10 @@ async fn handle_interaction_side_effects<R: tauri::Runtime>(
             });
         }
 
-        let owner: crate::core::state::InteractionOwner = state
-            .owner
-            .load(std::sync::atomic::Ordering::Relaxed)
-            .into();
-        if owner == crate::core::state::InteractionOwner::Assistant {
+        let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+        if owner == InteractionOwner::Assistant {
             if let Some(engine) = state.engine.lock().await.as_ref() {
-                if let Ok(mode) =
-                    serde_json::from_value::<crate::core::settings::InteractionMode>(value.clone())
-                {
+                if let Ok(mode) = serde_json::from_value::<InteractionMode>(value.clone()) {
                     if let Err(e) = engine
                         .vad_tx
                         .send(crate::services::vad::VadCommand::UpdateMode(mode))
@@ -245,7 +251,7 @@ async fn handle_setting_side_effects<R: tauri::Runtime>(
         state
             .telemetry
             .is_private_mode
-            .store(is_private, std::sync::atomic::Ordering::Relaxed);
+            .store(is_private, Ordering::Relaxed);
         log::info!("[Settings] Privacy Mode updated: enabled={}", is_private);
     } else if domain == "dictation" {
         handle_dictation_side_effects(app, state, key, value).await;
@@ -279,7 +285,7 @@ pub async fn update_setting<R: tauri::Runtime>(
     value: serde_json::Value,
     app: AppHandle<R>,
 ) -> Result<SettingUpdateResult, VoxIpcError> {
-    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    let state: State<'_, Arc<AppState>> = app.state();
     let policy = get_setting_reload_policy(&domain, &key);
 
     let applied = {
@@ -335,7 +341,7 @@ pub async fn update_setting<R: tauri::Runtime>(
 pub async fn reset_settings<R: tauri::Runtime>(
     app: AppHandle<R>,
 ) -> Result<VoxSettings, VoxIpcError> {
-    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    let state: State<'_, Arc<AppState>> = app.state();
     let defaults = VoxSettings::default();
     {
         let mut settings = state
@@ -414,7 +420,9 @@ fn apply_vad_mutation(
                 value.as_f64().ok_or("ptt_noise_gate must be a number")? as f32;
         }
         "silence_duration_ms" => {
-            let duration = value.as_u64().ok_or("silence_duration_ms must be an integer")? as u32;
+            let duration = value
+                .as_u64()
+                .ok_or("silence_duration_ms must be an integer")? as u32;
             if !(100..=5000).contains(&duration) {
                 return Err("silence_duration_ms must be between 100 and 5000 ms".to_string());
             }
@@ -451,7 +459,9 @@ fn apply_stt_mutation(
                 value.as_str().ok_or("model must be a string")?.to_string();
         }
         "partial_throttle_ms" => {
-            let throttle = value.as_u64().ok_or("partial_throttle_ms must be an integer")?;
+            let throttle = value
+                .as_u64()
+                .ok_or("partial_throttle_ms must be an integer")?;
             if !(50..=2000).contains(&throttle) {
                 return Err("partial_throttle_ms must be between 50 and 2000 ms".to_string());
             }
@@ -996,7 +1006,7 @@ async fn dispatch_worker_command<R: tauri::Runtime>(
     key: &str,
     value: &serde_json::Value,
 ) {
-    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    let state: State<'_, Arc<AppState>> = app.state();
     let engine_lock = state.engine.lock().await;
 
     if let Some(engine) = engine_lock.as_ref() {
@@ -1031,23 +1041,32 @@ async fn dispatch_worker_command<R: tauri::Runtime>(
             }
             ("vad", "silence_duration_ms") => {
                 if let Some(v) = value.as_u64() {
-                    if let Err(e) = engine
-                        .vad_tx
-                        .send(crate::services::vad::VadCommand::UpdateSilenceDuration(v as u32))
+                    if let Err(e) =
+                        engine
+                            .vad_tx
+                            .send(crate::services::vad::VadCommand::UpdateSilenceDuration(
+                                v as u32,
+                            ))
                     {
                         log::warn!(
                             "[Settings] Failed to send VadCommand::UpdateSilenceDuration: {}",
                             e
                         );
                     }
-                    log::debug!("[Settings] VadCommand::UpdateSilenceDuration({}) dispatched", v);
+                    log::debug!(
+                        "[Settings] VadCommand::UpdateSilenceDuration({}) dispatched",
+                        v
+                    );
                 }
             }
             ("vad", "speech_onset_ms") => {
                 if let Some(v) = value.as_u64() {
-                    if let Err(e) = engine
-                        .vad_tx
-                        .send(crate::services::vad::VadCommand::UpdateSpeechOnset(v as u32))
+                    if let Err(e) =
+                        engine
+                            .vad_tx
+                            .send(crate::services::vad::VadCommand::UpdateSpeechOnset(
+                                v as u32,
+                            ))
                     {
                         log::warn!(
                             "[Settings] Failed to send VadCommand::UpdateSpeechOnset: {}",
@@ -1096,7 +1115,7 @@ async fn dispatch_worker_command<R: tauri::Runtime>(
 
 /// Schedules a debounced settings save: cancels any pending save, spawns a new
 /// task that waits `SETTINGS_SAVE_DEBOUNCE_MS` then writes to disk.
-async fn schedule_debounced_save(state: State<'_, std::sync::Arc<AppState>>) {
+async fn schedule_debounced_save(state: State<'_, Arc<AppState>>) {
     let mut debounce = state.save_debounce.lock().await;
 
     // Cancel the previous pending write

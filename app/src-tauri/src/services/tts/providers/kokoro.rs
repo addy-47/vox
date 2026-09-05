@@ -1,5 +1,5 @@
 use super::{TtsProvider, TtsProviderKind};
-use crate::core::events::VoxEvent;
+use crate::core::events::{Actionability, PipelineError, PipelineImpact, VoxEvent};
 use crate::services::tts::{MAX_SPEED, MIN_SPEED};
 use anyhow::{anyhow, Result};
 use parking_lot::Mutex;
@@ -122,11 +122,17 @@ impl TtsProvider for KokoroEngine {
                 "[Kokoro] Devanagari script detected in turn {}: Kokoro does not support Hindi synthesis",
                 turn_id
             );
-            if let Err(e) = event_tx.send(VoxEvent::Error {
+            if let Err(e) = event_tx.send(VoxEvent::Error(PipelineError {
                 turn_id,
-                message: "Kokoro TTS does not support Hindi (Devanagari). Please switch to Supertonic or Edge TTS.".to_string(),
+                message: "Kokoro TTS does not support Hindi (Devanagari).".to_string(),
                 source: "tts_kokoro".to_string(),
-            }) {
+                impact: PipelineImpact::Degraded,
+                actionability: Actionability::Actionable {
+                    category: "tts_unsupported_language".to_string(),
+                    hint: "Please switch TTS provider to Supertonic or Edge TTS in Settings."
+                        .to_string(),
+                },
+            })) {
                 log::warn!("[Kokoro] Failed to emit Error event: {}", e);
             }
             return Ok(());

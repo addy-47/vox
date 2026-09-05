@@ -1,10 +1,14 @@
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::mpsc;
+use std::sync::{Arc, RwLock};
+
+use tokio::sync::Mutex;
+
+use crate::core::events::VoxEvent;
 use crate::core::settings::VoxSettings;
 use crate::services::audio::AudioStream;
 use crate::services::stt::SttCommand;
-use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
-use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum InteractionOwner {
@@ -70,12 +74,12 @@ impl From<InteractionState> for u32 {
 
 pub struct VoxEngine {
     pub audio_stream: AudioStream,
-    pub stt_tx: std::sync::mpsc::Sender<SttCommand>,
-    pub vad_tx: std::sync::mpsc::Sender<crate::services::vad::VadCommand>,
-    pub llm_tx: Option<std::sync::mpsc::Sender<crate::services::llm::LlmCommand>>,
-    pub tts_tx: Option<std::sync::mpsc::Sender<crate::services::tts::TtsCommand>>,
+    pub stt_tx: mpsc::Sender<SttCommand>,
+    pub vad_tx: mpsc::Sender<crate::services::vad::VadCommand>,
+    pub llm_tx: Option<mpsc::Sender<crate::services::llm::LlmCommand>>,
+    pub tts_tx: Option<mpsc::Sender<crate::services::tts::TtsCommand>>,
     pub telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
-    pub pipeline_tx: std::sync::mpsc::Sender<crate::core::events::VoxEvent>,
+    pub pipeline_tx: mpsc::Sender<VoxEvent>,
     pub playback_engine: Arc<crate::services::audio::PlaybackEngine>,
     pub stt_handle: Option<std::thread::JoinHandle<()>>,
     pub vad_handle: Option<std::thread::JoinHandle<()>>,
@@ -88,12 +92,12 @@ pub struct PipelineAtomics {
     pub cancel_flag: Arc<AtomicBool>,
     pub turn_id: Arc<AtomicU32>,
     pub transcript_history: Arc<parking_lot::Mutex<VecDeque<String>>>,
-    pub playback_underruns: Arc<std::sync::atomic::AtomicU64>,
+    pub playback_underruns: Arc<AtomicU64>,
     pub pending_synthesis_jobs: Arc<AtomicU32>,
-    pub current_state_atomic: Arc<std::sync::atomic::AtomicU32>,
+    pub current_state_atomic: Arc<AtomicU32>,
     pub state_tx: tokio::sync::watch::Sender<InteractionState>,
     pub state_rx: tokio::sync::watch::Receiver<InteractionState>,
-    pub dictation_state_atomic: Arc<std::sync::atomic::AtomicU32>,
+    pub dictation_state_atomic: Arc<AtomicU32>,
     pub dictation_state_tx: tokio::sync::watch::Sender<InteractionState>,
     pub dictation_state_rx: tokio::sync::watch::Receiver<InteractionState>,
     pub ingestion_gate: Arc<AtomicBool>,
@@ -118,16 +122,12 @@ impl PipelineAtomics {
             transcript_history: Arc::new(parking_lot::Mutex::new(VecDeque::with_capacity(
                 crate::core::constants::TRANSCRIPT_HISTORY_LIMIT,
             ))),
-            playback_underruns: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            playback_underruns: Arc::new(AtomicU64::new(0)),
             pending_synthesis_jobs: Arc::new(AtomicU32::new(0)),
-            current_state_atomic: Arc::new(std::sync::atomic::AtomicU32::new(
-                InteractionState::Idle as u32,
-            )),
+            current_state_atomic: Arc::new(AtomicU32::new(InteractionState::Idle as u32)),
             state_tx,
             state_rx,
-            dictation_state_atomic: Arc::new(std::sync::atomic::AtomicU32::new(
-                InteractionState::Idle as u32,
-            )),
+            dictation_state_atomic: Arc::new(AtomicU32::new(InteractionState::Idle as u32)),
             dictation_state_tx,
             dictation_state_rx,
             ingestion_gate: Arc::new(AtomicBool::new(false)),
@@ -274,7 +274,7 @@ pub struct AppState {
     pub telemetry: Arc<TelemetryState>,
     pub dictation_last_transcript: parking_lot::Mutex<Option<String>>,
     pub conversation_id: Arc<AtomicU64>,
-    pub runtime_status: Arc<std::sync::atomic::AtomicU32>,
+    pub runtime_status: Arc<AtomicU32>,
     pub main_window_destroyed: Arc<AtomicBool>,
     pub persist_tx: parking_lot::Mutex<
         Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>,
@@ -282,7 +282,7 @@ pub struct AppState {
     pub memory_tx: parking_lot::Mutex<
         Option<crossbeam_channel::Sender<crate::persistence::events::MemoryWorkerEvent>>,
     >,
-    pub dropped_persistence_events: Arc<std::sync::atomic::AtomicU64>,
+    pub dropped_persistence_events: Arc<AtomicU64>,
     pub monitoring: Arc<crate::monitoring::runtime_state::MonitoringState>,
     pub model_manager: Arc<crate::setup::model_manager::ModelManager>,
     pub manifest: Arc<tokio::sync::RwLock<Option<crate::setup::manifest::VoxManifest>>>,
@@ -292,8 +292,7 @@ pub struct AppState {
     pub conversation_manager:
         Arc<parking_lot::Mutex<crate::services::harness::ConversationManager>>,
     pub llm_provider: Arc<parking_lot::RwLock<Option<Arc<dyn crate::services::llm::LlmProvider>>>>,
-    pub event_tx:
-        parking_lot::Mutex<Option<std::sync::mpsc::Sender<crate::core::events::VoxEvent>>>,
+    pub event_tx: parking_lot::Mutex<Option<mpsc::Sender<VoxEvent>>>,
     pub pipeline_accumulator:
         Arc<parking_lot::Mutex<crate::pipeline::assistant::accumulator::TurnAccumulator>>,
 }
@@ -361,7 +360,7 @@ impl AppState {
             main_window_destroyed: Arc::new(AtomicBool::new(false)),
             persist_tx: parking_lot::Mutex::new(None),
             memory_tx: parking_lot::Mutex::new(None),
-            dropped_persistence_events: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            dropped_persistence_events: Arc::new(AtomicU64::new(0)),
             monitoring: Arc::new(crate::monitoring::runtime_state::MonitoringState::new()),
             model_manager,
             manifest,

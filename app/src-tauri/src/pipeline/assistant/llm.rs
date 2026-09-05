@@ -6,6 +6,7 @@ use crate::core::settings::PipelineMode;
 use crate::core::state::{AppState, InteractionState};
 use crate::pipeline::RoutingContext;
 use crate::services::tts::actor::TtsCommand;
+use std::sync::mpsc;
 
 /// Commits finalized assistant turn to conversation memory and dispatches persistence event.
 fn persist_assistant_turn(turn_id: u32, full_text: String, user_text: String, state: &AppState) {
@@ -42,7 +43,7 @@ fn persist_assistant_turn(turn_id: u32, full_text: String, user_text: String, st
 fn flush_modular_tts_remainder(
     turn_id: u32,
     state: &AppState,
-    tts_tx: Option<&std::sync::mpsc::Sender<TtsCommand>>,
+    tts_tx: Option<&mpsc::Sender<TtsCommand>>,
 ) {
     let remainder = state.pipeline_accumulator.lock().flush_chunker();
     if let Some(remainder_text) = remainder {

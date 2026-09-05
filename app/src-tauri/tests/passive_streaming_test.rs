@@ -89,8 +89,14 @@ fn test_passive_streaming_matrix() {
                 }
             }
         }
-        assert!(saw_speech_start, "Did not receive VoxEvent::SpeechStart for EN clip");
-        assert!(saw_speech_end, "Did not receive VoxEvent::SpeechEnd for EN clip");
+        assert!(
+            saw_speech_start,
+            "Did not receive VoxEvent::SpeechStart for EN clip"
+        );
+        assert!(
+            saw_speech_end,
+            "Did not receive VoxEvent::SpeechEnd for EN clip"
+        );
 
         // Await the single TranscriptFinal for the one segmented utterance.
         let transcript = common::harness::collect_all_final_transcripts(
@@ -136,8 +142,14 @@ fn test_passive_streaming_matrix() {
                 }
             }
         }
-        assert!(saw_speech_start, "Did not receive VoxEvent::SpeechStart for HI clip");
-        assert!(saw_speech_end, "Did not receive VoxEvent::SpeechEnd for HI clip");
+        assert!(
+            saw_speech_start,
+            "Did not receive VoxEvent::SpeechStart for HI clip"
+        );
+        assert!(
+            saw_speech_end,
+            "Did not receive VoxEvent::SpeechEnd for HI clip"
+        );
 
         let transcript = common::harness::collect_all_final_transcripts(
             &pipeline_event_rx,
@@ -205,6 +217,10 @@ fn test_passive_streaming_matrix() {
     vad_shutdown.store(true, Ordering::SeqCst);
     stt_shutdown.store(true, Ordering::SeqCst);
 
-    vad_join.join().expect("VAD worker thread panicked during test execution");
-    stt_join.join().expect("STT worker thread panicked during test execution");
+    vad_join
+        .join()
+        .expect("VAD worker thread panicked during test execution");
+    stt_join
+        .join()
+        .expect("STT worker thread panicked during test execution");
 }

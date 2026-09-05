@@ -4,6 +4,8 @@ pub mod providers;
 pub mod session;
 pub mod transport;
 
+pub use crate::core::events::{Actionability, PipelineError, PipelineImpact};
+use crate::core::settings::InteractionMode;
 pub use crate::core::settings::RealtimeProviderKind;
 pub use actor::RealtimeActor;
 use anyhow::Result;
@@ -46,12 +48,31 @@ pub enum RealtimeProviderEvent {
     AudioChunk(Vec<i16>),
     SpeechStart,
     SpeechEnd,
-    TranscriptPartial { turn_id: u32, text: String },
-    TranscriptFinal { turn_id: u32, text: String },
-    LlmToken { turn_id: u32, token: String },
-    LlmFinished { turn_id: u32 },
-    Error { turn_id: u32, message: String },
-    SessionResumptionHandle { handle: String, model: String },
+    TranscriptPartial {
+        turn_id: u32,
+        text: String,
+    },
+    TranscriptFinal {
+        turn_id: u32,
+        text: String,
+    },
+    LlmToken {
+        turn_id: u32,
+        token: String,
+    },
+    LlmFinished {
+        turn_id: u32,
+    },
+    Error {
+        turn_id: u32,
+        message: String,
+        impact: PipelineImpact,
+        actionability: Actionability,
+    },
+    SessionResumptionHandle {
+        handle: String,
+        model: String,
+    },
 }
 
 /// Typed commands dispatched outbound from session callers to the WebSocket connection writer.
@@ -79,7 +100,7 @@ pub trait RealtimeVoiceProvider: Send + Sync {
     fn audio_config(&self) -> RealtimeAudioConfig;
     fn connect(
         &self,
-        interaction_mode: crate::core::settings::InteractionMode,
+        interaction_mode: InteractionMode,
     ) -> Result<(
         Box<dyn RealtimeSession>,
         tokio::sync::mpsc::Receiver<RealtimeProviderEvent>,

@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use anyhow::{anyhow, Result};
+use std::collections::HashMap;
 use turso::Connection;
 
 use crate::services::memory::QueueStatus;
@@ -185,7 +185,13 @@ pub async fn record_compaction_finish(
         "UPDATE session_compactions
          SET status = ?, facts_count = ?, error_msg = ?, completed_at = ?
          WHERE id = ?",
-        (status.to_string(), facts_count as i64, error.map(|s| s.to_string()), now, run_id),
+        (
+            status.to_string(),
+            facts_count as i64,
+            error.map(|s| s.to_string()),
+            now,
+            run_id,
+        ),
     )
     .await?;
 

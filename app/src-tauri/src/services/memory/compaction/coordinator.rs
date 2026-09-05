@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use anyhow::{anyhow, Result};
+use std::sync::Arc;
 use tauri::AppHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -38,10 +38,10 @@ impl CompactionCoordinator {
         trigger_kind: &str,
         cancel_token: Option<&CancellationToken>,
     ) -> Result<Option<CompactionExecutionSummary>> {
-
         if trigger_kind == "auto" {
             let current_state = state.pipeline.state();
-            if current_state != InteractionState::Idle && current_state != InteractionState::Paused {
+            if current_state != InteractionState::Idle && current_state != InteractionState::Paused
+            {
                 log::info!(
                     "[CompactionCoordinator] Deferring auto-compaction for session {}: pipeline state is {:?}",
                     session_id,
@@ -82,14 +82,9 @@ impl CompactionCoordinator {
         let from_turn_id = turns.first().map(|t| t.turn_id).unwrap_or(1);
         let to_turn_id = turns.last().map(|t| t.turn_id).unwrap_or(from_turn_id);
 
-        let run_id = record_compaction_start(
-            &conn,
-            session_id,
-            trigger_kind,
-            from_turn_id,
-            to_turn_id,
-        )
-        .await?;
+        let run_id =
+            record_compaction_start(&conn, session_id, trigger_kind, from_turn_id, to_turn_id)
+                .await?;
 
         let mut history_messages = Vec::with_capacity(turns.len() * 2);
         for turn in &turns {
@@ -159,21 +154,11 @@ impl CompactionCoordinator {
                     session_id,
                     err_str
                 );
-                let _ = record_compaction_finish(
-                    &conn,
-                    run_id,
-                    "failed",
-                    0,
-                    Some(&err_str),
-                )
-                .await;
+                let _ = record_compaction_finish(&conn, run_id, "failed", 0, Some(&err_str)).await;
 
-                if let Ok(Some(mut notif)) = find_active_notification_by_session(
-                    &conn,
-                    session_id,
-                    "session_compaction",
-                )
-                .await
+                if let Ok(Some(mut notif)) =
+                    find_active_notification_by_session(&conn, session_id, "session_compaction")
+                        .await
                 {
                     let _ = update_notification_status(&conn, &notif.id, "failed").await;
                     notif.status = "failed".to_string();

@@ -1,12 +1,13 @@
 use crate::core::error::VoxIpcError;
 use crate::core::state::AppState;
 use crate::persistence::db::VoxDb;
+use std::sync::Arc;
 use tauri::State;
 
 /// Retrieves the current in-memory transcript history (tray ephemeral buffer).
 #[tauri::command]
 pub async fn get_transcript_history(
-    state: State<'_, std::sync::Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<String>, VoxIpcError> {
     let history = state.pipeline.transcript_history.lock();
     Ok(history.iter().cloned().collect())
@@ -18,7 +19,7 @@ const MAX_HISTORY_TEXT_CHARS: usize = 10_000;
 #[tauri::command]
 pub async fn commit_session_to_history(
     text: String,
-    state: State<'_, std::sync::Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
     let trimmed = text.trim();
     if !trimmed.is_empty() {

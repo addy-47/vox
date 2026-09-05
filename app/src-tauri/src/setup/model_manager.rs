@@ -1,4 +1,6 @@
 use super::{MODEL_CONNECT_TIMEOUT_SECS, MODEL_DOWNLOAD_TIMEOUT_SECS, PROGRESS_EMIT_INTERVAL_MS};
+use crate::core::events::emit_ipc;
+use crate::core::events::IpcEvent;
 use crate::setup::manifest::{ModelEntry, VerifiedMarker};
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -44,10 +46,7 @@ impl ModelManager {
     pub fn new<R: tauri::Runtime>(app: Option<AppHandle<R>>) -> Self {
         let app_emitter: Option<ModelStatusEmitter> = app.map(|handle| {
             Arc::new(move |payload: ModelSetupStatus| {
-                if let Err(e) = crate::core::events::emit_ipc(
-                    &handle,
-                    crate::core::events::IpcEvent::ModelProgress(payload),
-                ) {
+                if let Err(e) = emit_ipc(&handle, IpcEvent::ModelProgress(payload)) {
                     log::warn!("[ModelManager] Failed to emit model_progress: {}", e);
                 }
             }) as ModelStatusEmitter

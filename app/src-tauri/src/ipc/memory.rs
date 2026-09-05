@@ -2,31 +2,27 @@ use crate::core::error::VoxIpcError;
 use crate::core::state::AppState;
 use crate::persistence::db::VoxDb;
 pub use crate::persistence::graph::{
-    MemoryConflictItem as MemoryConflict, MemoryEdgeTopology, MemoryFactDetail,
-    MemoryGraphPayload, MemoryGraphQueryFilter, MemoryNodeTopology,
+    MemoryConflictItem as MemoryConflict, MemoryEdgeTopology, MemoryFactDetail, MemoryGraphPayload,
+    MemoryGraphQueryFilter, MemoryNodeTopology,
 };
 pub use crate::persistence::{MemoryQueueItem, MemoryQueueSummary};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tauri::State;
 
 // ── Graph Commands ─────────────────────────────────────────────────────────────
 
 /// Retrieve the current monotonic memory graph version.
 #[tauri::command]
-pub async fn get_graph_version(
-    state: State<'_, std::sync::Arc<AppState>>,
-) -> Result<u64, VoxIpcError> {
-    Ok(state
-        .memory
-        .graph_version
-        .load(Ordering::SeqCst))
+pub async fn get_graph_version(state: State<'_, Arc<AppState>>) -> Result<u64, VoxIpcError> {
+    Ok(state.memory.graph_version.load(Ordering::SeqCst))
 }
 
 /// Retrieve the full memory graph topology filtered by collection or active status.
 #[tauri::command]
 pub async fn get_memory_graph_topology(
-    state: State<'_, std::sync::Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
     filter: Option<MemoryGraphQueryFilter>,
 ) -> Result<MemoryGraphPayload, VoxIpcError> {
     let db_path = crate::utils::paths::get().db.clone();
@@ -34,10 +30,7 @@ pub async fn get_memory_graph_topology(
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    let version = state
-        .memory
-        .graph_version
-        .load(Ordering::SeqCst);
+    let version = state.memory.graph_version.load(Ordering::SeqCst);
 
     crate::persistence::graph::fetch_memory_graph(&conn, filter.as_ref(), version)
         .await
@@ -76,7 +69,7 @@ pub async fn get_unresolved_conflicts() -> Result<Vec<MemoryConflict>, VoxIpcErr
 /// Resolve a memory conflict by marking the loser as superseded and linking the winner.
 #[tauri::command]
 pub async fn resolve_memory_conflict(
-    state: State<'_, std::sync::Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
     winner_id: String,
     loser_id: String,
 ) -> Result<(), VoxIpcError> {
@@ -113,7 +106,7 @@ pub enum ManageFactResult {
 /// Unified command for modifying, superseding, reassigning, and deleting memory facts.
 #[tauri::command]
 pub async fn manage_memory_fact(
-    state: State<'_, std::sync::Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
     payload: ManageFactPayload,
 ) -> Result<ManageFactResult, VoxIpcError> {
     match payload.action.to_lowercase().as_str() {
@@ -129,7 +122,7 @@ pub async fn manage_memory_fact(
 }
 
 async fn edit_fact_in_place_internal(
-    state: &State<'_, std::sync::Arc<AppState>>,
+    state: &State<'_, Arc<AppState>>,
     payload: ManageFactPayload,
 ) -> Result<ManageFactResult, VoxIpcError> {
     let new_content = payload.new_content.ok_or_else(|| {
@@ -183,7 +176,7 @@ async fn edit_fact_in_place_internal(
 }
 
 async fn supersede_fact_internal(
-    state: &State<'_, std::sync::Arc<AppState>>,
+    state: &State<'_, Arc<AppState>>,
     payload: ManageFactPayload,
 ) -> Result<ManageFactResult, VoxIpcError> {
     let new_content = payload.new_content.ok_or_else(|| {
@@ -234,7 +227,7 @@ async fn supersede_fact_internal(
 }
 
 async fn reassign_fact_internal(
-    state: &State<'_, std::sync::Arc<AppState>>,
+    state: &State<'_, Arc<AppState>>,
     payload: ManageFactPayload,
 ) -> Result<ManageFactResult, VoxIpcError> {
     let new_collection = payload.new_collection.ok_or_else(|| {
@@ -245,16 +238,20 @@ async fn reassign_fact_internal(
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    crate::persistence::memory_mutations::reassign_memory_fact(&conn, &payload.fact_id, &new_collection)
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    crate::persistence::memory_mutations::reassign_memory_fact(
+        &conn,
+        &payload.fact_id,
+        &new_collection,
+    )
+    .await
+    .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(ManageFactResult::Done)
 }
 
 async fn delete_fact_internal(
-    state: &State<'_, std::sync::Arc<AppState>>,
+    state: &State<'_, Arc<AppState>>,
     payload: ManageFactPayload,
 ) -> Result<ManageFactResult, VoxIpcError> {
     let db_path = crate::utils::paths::get().db.clone();
@@ -288,7 +285,7 @@ pub async fn get_memory_queue_status() -> Result<MemoryQueueSummary, VoxIpcError
 /// Pause or resume background processing for personal memory queue.
 #[tauri::command]
 pub async fn toggle_pipeline_processing(
-    state: State<'_, std::sync::Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
     enabled: Option<bool>,
 ) -> Result<bool, VoxIpcError> {
     let new_paused = match enabled {
@@ -318,7 +315,7 @@ pub async fn toggle_pipeline_processing(
 /// Reset failed memory queue items to staged_pending for retry (all items if item_ids is None/empty).
 #[tauri::command]
 pub async fn retry_failed_queue_items(
-    state: State<'_, std::sync::Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
     item_ids: Option<Vec<i64>>,
 ) -> Result<u32, VoxIpcError> {
     if state.memory.user_paused_ingestion.load(Ordering::SeqCst) {
