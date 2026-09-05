@@ -118,7 +118,7 @@ pub fn setup_e2e_pipeline(
     let vad_config = VadActorConfig {
         initial_threshold: 0.4,
         initial_noise_gate: 0.005,
-        initial_silence_duration_ms: 600,
+        initial_silence_duration_ms: 800,
         initial_speech_onset_ms: 32,
         initial_mode: InteractionMode::Passive,
         initial_audio_mode: AudioOutputMode::Headset,
@@ -142,8 +142,22 @@ pub fn setup_e2e_pipeline(
         let _ = spawn_vad_actor(vad_backend, in_cons, vad_channels, vad_handles, vad_config);
     });
 
-    // 4. Central Router
+    // 4. Central Router with Benchmark Observer Split
     let (router_tx, router_rx) = mpsc::channel::<VoxEvent>();
+    let (bench_tx, bench_rx) = mpsc::channel::<VoxEvent>();
+
+    // Forward events from actors to BOTH the router pump (driving state) and bench_tx (measuring latency)
+    let router_tx_clone = router_tx.clone();
+    std::thread::Builder::new()
+        .name("bench-event-tee".to_string())
+        .spawn(move || {
+            while let Ok(ev) = event_rx.recv() {
+                let _ = bench_tx.send(ev.clone());
+                let _ = router_tx_clone.send(ev);
+            }
+        })
+        .expect("Failed to spawn bench-event-tee");
+
     let router_handle = vox_lib::pipeline::router::spawn_router(app.clone(), router_rx)
         .expect("Failed to spawn router");
 
@@ -170,5 +184,5 @@ pub fn setup_e2e_pipeline(
     vox_lib::core::engine::ensure_modular_workers_sync(&app, &state)
         .expect("Failed to warm up modular workers");
 
-    (app, state, in_prod_arc, Arc::new(parking_lot::Mutex::new(pb_cons)), event_rx)
+    (app, state, in_prod_arc, Arc::new(parking_lot::Mutex::new(pb_cons)), bench_rx)
 }

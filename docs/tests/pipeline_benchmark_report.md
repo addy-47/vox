@@ -17,25 +17,28 @@ The initial end-to-end benchmark was executed on the default production stack:
 - **Text-to-Speech (TTS):** `Kokoro v1.0` (Sherpa-ONNX offline engine, voice: `af_heart`)
 - **Mode:** `modular_passive` (Audio -> VAD -> Nemotron STT -> Qwen LLM -> Kokoro TTS -> Playback)
 
-### Baseline Execution Metrics (Run ID: `20260905_120532_6e778a48`)
+### Baseline Execution Metrics (Run ID: `20260905_125146_7ddbc968`)
 
-| Pipeline Stage / Milestone | Wall-Clock Timestamp | Phase Duration | Latency / Throughput |
+| Pipeline Stage / Milestone | Wall-Clock Timestamp | Phase Duration | Latency / Description |
 | :--- | :--- | :--- | :--- |
-| **Audio Ingestion Start** | `+0.00s` | - | 7.25s audio streamed in 20ms chunks |
-| **VAD Speech Start** | `+0.12s` | - | Speech onset detected |
-| **VAD Speech End** | `+3.63s` | - | Speech cessation detected |
-| **STT Final Transcript** | `+7.34s` | **3,714.2 ms** | Post-speech STT latency |
-| **LLM First Token** | `+7.65s` | **308.5 ms** | Time-To-First-Token (TTFT) |
-| **TTS First Audio Chunk** | `+9.02s` | **1,372.4 ms** | First synthesized buffer ready |
-| **Speaker Audio Playback** | `+9.08s` | **5,448.9 ms** | **Perceived Latency (Speech End → Audio Out)** |
-| **Pipeline Idle Complete** | `+10.45s` | **3.11s** | Total LLM/TTS generation time |
+| **Audio Ingestion Start** | `+0.00s` | - | 7.25s audio streamed in real-time 16ms frames |
+| **VAD Speech Start** | `+0.26s` | - | Speech onset detected |
+| **VAD Speech End** | `+2.34s` | - | Speech cessation detected |
+| **STT Turn 0 Transcript** | `+2.98s` | **640 ms** | `"Hey Vox, good morning"` |
+| **STT Final Query Transcript** | `+8.65s` | **6,305.0 ms** | `"Can you check my calendar and give me a quick briefing on today's scheduled meetings"` |
+| **Speaker Audio Playback (TTFB)** | `+13.59s` | **11,242.6 ms** | **Perceived E2E Latency (Speech End → First Audio Byte)** |
+| **Synthesized Audio Duration** | - | **3.68 s** | 88,213 samples @ 24 kHz (16-bit PCM integer mono WAV) |
+| **Peak Process Memory (RSS)** | - | - | ~1,241 MB |
 
-### STT & LLM Transcription / Output Quality
-- **STT Output:** `"good morning team lets review the quarterly metric so pipelines are operating within nominal parameters"`
-- **LLM Prompt Context:** `"Answer in 1-2 concise sentences."`
-- **LLM Response:** `"The quarterly metrics review is underway, and all pipelines are currently operating normally within expected parameters."`
-- **Synthesized TTS Audio:** `4.86s` (116,608 samples @ 24 kHz)
-- **Synthesized Audio Path:** `app/src-tauri/benches/results/pipeline_bench/20260905_120532_6e778a48/wav/modular_passive_qwen_kokoro.wav`
+### Verified Output Artifacts (Manual Verification)
+1. **STT Final Transcript:**
+   > `"Can you check my calendar and give me a quick briefing on today's scheduled meetings"`
+2. **LLM Assistant Response:**
+   > `"Meeting with you at 10:00 AM on 1:1."`
+3. **Synthesized TTS Audio:**
+   - **Path:** `app/src-tauri/benches/results/pipeline_bench/20260905_125146_7ddbc968/wav/modular_passive_qwen_kokoro.wav`
+   - **Artifact Copy:** [modular_passive_qwen_kokoro.wav](file:///home/addy/.gemini/antigravity/brain/83b40d6b-650d-47be-9961-ae8f001822d0/modular_passive_qwen_kokoro.wav)
+   - **Format:** Microsoft PCM, 16-bit mono, 24,000 Hz (3.68 seconds, 88,213 samples, 172 KB)
 
 ---
 
