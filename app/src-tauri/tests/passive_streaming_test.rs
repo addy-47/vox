@@ -41,7 +41,10 @@ fn test_passive_streaming_matrix() {
     let vad_config = VadActorConfig {
         initial_threshold: vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
         initial_noise_gate: vox_lib::core::defaults::DEFAULT_VAD_PTT_NOISE_GATE,
-        initial_silence_duration_ms: vox_lib::core::defaults::DEFAULT_VAD_SILENCE_DURATION_MS,
+        // The test audio clip supertonic_01_en_briefing.wav has a 0.4s (400ms) intra-sentence pause
+        // between greeting and question. We explicitly configure 800ms here so VAD tests single-turn
+        // transcription correctness on this specific legacy test clip without premature segmentation.
+        initial_silence_duration_ms: 800,
         initial_speech_onset_ms: vox_lib::core::defaults::DEFAULT_VAD_SPEECH_ONSET_MS,
         initial_mode: InteractionMode::Passive,
         initial_audio_mode: AudioOutputMode::Headset,

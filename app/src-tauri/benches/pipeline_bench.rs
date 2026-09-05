@@ -67,6 +67,33 @@ struct CliArgs {
     bench: bool,
 }
 
+fn load_nvidia_api_key() -> String {
+    if let Ok(k) = std::env::var("NVIDIA_API_KEY") {
+        if !k.trim().is_empty() {
+            return k.trim().to_string();
+        }
+    }
+    let paths = [
+        "temp/.env",
+        "../../temp/.env",
+        "../temp/.env",
+        "/home/addy/projects/apps/vox/temp/.env",
+    ];
+    for p in paths {
+        if let Ok(content) = std::fs::read_to_string(p) {
+            for line in content.lines() {
+                if let Some(rest) = line.strip_prefix("NVIDIA_API_KEY=") {
+                    let val = rest.trim();
+                    if !val.is_empty() {
+                        return val.to_string();
+                    }
+                }
+            }
+        }
+    }
+    String::new()
+}
+
 fn main() {
     let args = CliArgs::parse();
 
@@ -98,6 +125,17 @@ fn main() {
     }
 
     match args.llm.to_lowercase().as_str() {
+        "nvidia" | "cloud" => {
+            let api_key = load_nvidia_api_key();
+            if api_key.is_empty() {
+                panic!("NVIDIA_API_KEY must be provided in environment or temp/.env for --llm nvidia");
+            }
+            settings.llm.active = LlmActiveProvider::Cloud;
+            settings.llm.cloud.provider_name = Some("nvidia".to_string());
+            settings.llm.cloud.base_url = "https://integrate.api.nvidia.com/v1".to_string();
+            settings.llm.cloud.model = "meta/llama-3.1-8b-instruct".to_string();
+            settings.llm.cloud.api_key = Some(api_key);
+        }
         _ => settings.llm.active = LlmActiveProvider::Embedded,
     }
 
