@@ -92,7 +92,7 @@ export async function getMemoryGraphTopology(includeInactive = false): Promise<M
  */
 export async function getMemoryFactDetail(factId: string): Promise<MemoryFactDetail | null> {
   try {
-    return await invoke<MemoryFactDetail>("get_memory_fact_detail", { fact_id: factId });
+    return await invoke<MemoryFactDetail>("get_memory_fact_detail", { factId });
   } catch (err) {
     console.error("Failed to fetch memory fact detail:", err);
     return null;
@@ -133,14 +133,14 @@ export async function togglePipelineProcessing(enabled?: boolean): Promise<boole
  * Resets all failed queue items back to staged_pending.
  */
 export async function retryFailedQueue(): Promise<number> {
-  return await invoke<number>("retry_failed_queue_items", { item_ids: null });
+  return await invoke<number>("retry_failed_queue_items", { itemIds: null });
 }
 
 /**
  * Resets specific failed queue items back to staged_pending.
  */
 export async function retryFailedQueueItems(itemIds: number[]): Promise<number> {
-  return await invoke<number>("retry_failed_queue_items", { item_ids: itemIds });
+  return await invoke<number>("retry_failed_queue_items", { itemIds });
 }
 
 /**

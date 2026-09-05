@@ -20,16 +20,18 @@ use vox_lib::services::vad::actor::{spawn_vad_actor, VadActorChannels, VadActorC
 use vox_lib::services::vad::earshot_vad::EarshotVadEngine;
 use vox_lib::services::vad::{VadBackend, VadCommand};
 
-/// Sets up production-wiring for an E2E pipeline run without CPAL hardware.
-pub fn setup_e2e_pipeline(
-    settings: VoxSettings,
-) -> (
+pub type E2ePipelineSetup = (
     AppHandle<tauri::test::MockRuntime>,
     Arc<AppState>,
     Arc<parking_lot::Mutex<ringbuf::HeapProd<f32>>>,
     Arc<parking_lot::Mutex<HeapCons<f32>>>,
     mpsc::Receiver<VoxEvent>,
-) {
+);
+
+/// Sets up production-wiring for an E2E pipeline run without CPAL hardware.
+pub fn setup_e2e_pipeline(
+    settings: VoxSettings,
+) -> E2ePipelineSetup {
     let app = tauri::test::mock_app().handle().clone();
     let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();
     let telemetry = Arc::new(TelemetryState {
@@ -61,7 +63,7 @@ pub fn setup_e2e_pipeline(
 
     vox_lib::utils::paths::init();
     let state = Arc::new(AppState::new(&app, None, telemetry));
-    *state.settings.write().unwrap() = settings;
+    *state.settings.write().unwrap() = settings.clone();
     tauri::Manager::manage(&app, state.clone());
 
     // 1. Playback engine with tap
@@ -118,7 +120,7 @@ pub fn setup_e2e_pipeline(
     let vad_config = VadActorConfig {
         initial_threshold: 0.4,
         initial_noise_gate: 0.005,
-        initial_silence_duration_ms: 800,
+        initial_silence_duration_ms: settings.vad.silence_duration_ms,
         initial_speech_onset_ms: 32,
         initial_mode: InteractionMode::Passive,
         initial_audio_mode: AudioOutputMode::Headset,

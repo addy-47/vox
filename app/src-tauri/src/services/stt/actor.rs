@@ -8,6 +8,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub enum SttCommand {
+    StreamChunk {
+        turn_id: u32,
+        audio: Vec<f32>,
+    },
     Partial {
         turn_id: u32,
         audio: Vec<f32>,
@@ -156,6 +160,48 @@ fn handle_partial_command(
     state.last_emit_time = Instant::now();
 }
 
+/// Ingests streaming audio chunk into provider active stream and throttles partial UI updates.
+fn handle_stream_chunk_command(
+    ctx: &WorkerContext<'_>,
+    tid: u32,
+    chunk: &[f32],
+    state: &mut WorkerState,
+) {
+    if tid != state.current_active_turn {
+        log::info!(
+            "[STT] New turn ID {} detected on stream chunk (prev {}). Resetting buffers.",
+            tid,
+            state.current_active_turn
+        );
+        state.current_active_turn = tid;
+        state.last_transcript.clear();
+        if let Err(e) = ctx.provider.reset_state() {
+            log::warn!("[STT] Error resetting state for new turn {}: {:?}", tid, e);
+        }
+    }
+
+    if ctx.cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+        state.last_transcript.clear();
+        if let Err(e) = ctx.provider.reset_state() {
+            log::warn!("[STT] Error resetting state on cancellation: {:?}", e);
+        }
+        return;
+    }
+
+    match ctx.provider.transcribe_chunk(chunk, false) {
+        Ok(text) => {
+            let dynamic_throttle = Duration::from_millis(STT_MIN_PARTIAL_THROTTLE_MS);
+            if state.last_emit_time.elapsed() >= dynamic_throttle {
+                emit_partial_event(ctx, tid, text, state);
+                state.last_emit_time = Instant::now();
+            }
+        }
+        Err(e) => {
+            log::warn!("[STT] Error ingesting streaming chunk: {:?}", e);
+        }
+    }
+}
+
 /// Emits the final turn event to the pipeline event channel.
 fn emit_final_events(ctx: &WorkerContext<'_>, tid: u32, transcript: String) {
     if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
@@ -225,6 +271,7 @@ fn drain_reset_stream(
     }
     while let Ok(cmd) = rx.try_recv() {
         match cmd {
+            SttCommand::StreamChunk { .. } => continue,
             SttCommand::Partial {
                 audio, recycle_tx, ..
             } => {
@@ -291,6 +338,9 @@ fn run_worker_loop(
             SttCommand::Shutdown => {
                 log::info!("[STT] Shutdown signal received. Exiting worker thread.");
                 break;
+            }
+            SttCommand::StreamChunk { turn_id, audio } => {
+                handle_stream_chunk_command(&ctx, turn_id, &audio, &mut state);
             }
             SttCommand::Partial {
                 turn_id,
