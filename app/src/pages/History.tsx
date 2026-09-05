@@ -8,8 +8,8 @@ import {
   OrbitCarousel,
   MonthDayCard,
   HistoryListView,
-  useHistory,
 } from "@/shared/components/history";
+import { useHistory } from "@/shared/hooks/useHistory";
 import { EmptyState, OrbitalLoader, ErrorBoundary, TopRightCluster } from "@/shared/components/common";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import type { SessionRow } from "@/services/historyService";

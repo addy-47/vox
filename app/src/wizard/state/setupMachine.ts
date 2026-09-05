@@ -8,18 +8,8 @@ export type SetupStep =
   | 'testing'
   | 'completed';
 
-export interface ModelProgress {
-  id: string;
-  progress: number;
-  step: string;
-  bytesDownloaded: number;
-  totalBytes: number;
-}
-
 export interface SetupContext {
   currentStep: SetupStep;
-  models: Record<string, ModelProgress>;
-  totalProgress: number;
   manifestReady: boolean;
   setupComplete: boolean;
   error?: string;
@@ -36,12 +26,11 @@ export const setupMachine = createMachine({
   initial: 'welcome',
   context: {
     currentStep: 'welcome',
-    models: {},
-    totalProgress: 0,
     manifestReady: false,
     setupComplete: false,
     maxReachedIndex: 0,
   } as SetupContext,
+
   on: {
     GO_TO: [
       { target: '.welcome', guard: ({ context, event }) => (event as any).targetStep === 'welcome' && context.maxReachedIndex >= 0 },
@@ -84,35 +73,6 @@ export const setupMachine = createMachine({
           actions: assign({ setupComplete: true })
         },
         BACK: 'checking',
-        PROGRESS: {
-          actions: assign(({ context, event }) => {
-            const data = (event as any).data;
-            if (!data) return {};
-            
-            const { model_id, progress, step, bytes_downloaded, total_bytes, error } = data;
-            const newModels = {
-              ...context.models,
-              [model_id]: {
-                id: model_id,
-                progress,
-                step,
-                bytesDownloaded: bytes_downloaded,
-                totalBytes: total_bytes,
-              }
-            };
-            
-            const modelList = Object.values(newModels);
-            const totalProgress = modelList.length > 0 
-              ? modelList.reduce((acc: number, m) => acc + (m as ModelProgress).progress, 0) / modelList.length
-              : 0;
-
-            return {
-              models: newModels,
-              totalProgress,
-              error: error || context.error,
-            };
-          })
-        },
         ERROR: {
           target: 'downloading', // Stay in downloading but show error in UI
           actions: assign({ error: ({ event }) => (event as any).message })
