@@ -9,3 +9,4 @@ export * from "./UnderlineInput";
 export * from "./CarouselSelector";
 export * from "./RotaryKnob";
 export * from "./Tooltip";
+export * from "./VoiceCarousel";

@@ -1,5 +1,6 @@
 import { memo, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
+import { togglePipelineProcessing } from "@/services/memoryService";
 import { Archive, Brain, Workflow } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, ToggleTile } from "@/shared/ui";
@@ -13,6 +14,7 @@ interface MemoryCardProps {
 export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) => {
   const memory = useSettingsStore((s) => s.draftSettings?.memory);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
+  const commitChanges = useSettingsStore((s) => s.commitChanges);
 
   const isSmall = layoutMode === "small";
   const isMin = layoutMode === "full-min";
@@ -24,9 +26,15 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
     updateDraft("memory", "context_retrieval_enabled", !contextRetrievalEnabled);
   }, [contextRetrievalEnabled, updateDraft]);
 
-  const handleTogglePipeline = useCallback(() => {
-    updateDraft("memory", "pipeline_processing_enabled", !pipelineProcessingEnabled);
-  }, [pipelineProcessingEnabled, updateDraft]);
+  const handleTogglePipeline = useCallback(async () => {
+    try {
+      const nextState = await togglePipelineProcessing(!pipelineProcessingEnabled);
+      updateDraft("memory", "pipeline_processing_enabled", nextState);
+      await commitChanges();
+    } catch (e) {
+      console.error("[MemoryCard] Toggle pipeline processing error:", e);
+    }
+  }, [pipelineProcessingEnabled, updateDraft, commitChanges]);
 
   if (!memory) return null;
 

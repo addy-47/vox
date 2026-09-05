@@ -10,14 +10,16 @@ pub fn write_wav_f32(path: &Path, samples: &[f32], sample_rate: u32) -> Result<(
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate,
-        bits_per_sample: 32,
-        sample_format: hound::SampleFormat::Float,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
     };
     let mut writer = hound::WavWriter::create(path, spec)
         .map_err(|e| format!("Failed to create WAV {:?}: {}", path, e))?;
     for s in samples {
+        let clamped = s.clamp(-1.0, 1.0);
+        let sample_i16 = (clamped * 32767.0) as i16;
         writer
-            .write_sample(*s)
+            .write_sample(sample_i16)
             .map_err(|e| format!("WAV write failed: {}", e))?;
     }
     writer

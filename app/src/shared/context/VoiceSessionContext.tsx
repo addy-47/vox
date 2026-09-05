@@ -29,8 +29,12 @@ import {
   startNewConversation as startNewConversationIpc,
 } from "@/services/historyService";
 import { SESSION_COPY } from "@/data/sessionCopy";
+import {
+  type InteractionModeUpper,
+  normalizeToInteractionModeUpper,
+} from "@/shared/lib/interactionMode";
 
-export type InteractionMode = "PASSIVE" | "PTT";
+export type InteractionMode = InteractionModeUpper;
 
 export interface DialogueTurn {
   user: string;
@@ -89,7 +93,6 @@ export interface VoiceSessionContextValue {
 
   // Clip Testing & Reset
   handleTestClip: (clipId: string) => Promise<void>;
-  clearHistory: () => void;
 }
 
 const VoiceSessionContext = createContext<VoiceSessionContextValue | null>(null);
@@ -293,9 +296,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
   }, [isEngaged, archiveCurrentTurn]);
 
-  const clearHistory = useCallback(() => {
-    setDialogueHistory([]);
-  }, []);
 
   const dismissRestoreError = useCallback(() => {
     setRestoreError(null);
@@ -412,7 +412,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
         const res = await getSettings();
         const settings = (res as any)?.settings ?? res;
         if (settings?.interaction?.mode) {
-          setInteractionMode(settings.interaction.mode.toUpperCase() as InteractionMode);
+          setInteractionMode(normalizeToInteractionModeUpper(settings.interaction.mode));
         }
         if (settings?.interaction?.pipeline_mode) {
           setPipelineMode(settings.interaction.pipeline_mode.toLowerCase() as "modular" | "realtime");
@@ -518,7 +518,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
               const b = await getSettings();
               const s = b?.settings;
               if (s?.interaction?.mode && isMounted) {
-                setInteractionMode(s.interaction.mode.toUpperCase() as InteractionMode);
+                setInteractionMode(normalizeToInteractionModeUpper(s.interaction.mode));
               }
               if (s?.interaction?.pipeline_mode && isMounted) {
                 setPipelineMode(s.interaction.pipeline_mode.toLowerCase() as "modular" | "realtime");
@@ -595,7 +595,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       handleResume: resume,
       togglePtt,
       handleTestClip,
-      clearHistory,
     }),
     [
       interactionState,
@@ -632,7 +631,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       handlePttCancel,
       togglePtt,
       handleTestClip,
-      clearHistory,
     ]
   );
 
