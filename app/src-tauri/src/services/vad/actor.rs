@@ -9,7 +9,7 @@ use super::telemetry::process_and_emit_telemetry;
 use super::utils::{f32_to_i16_pcm, PreRollBuffer};
 use super::{
     VadBackend, VadEngine as _, VadOperationalMode, VAD_ACTOR_IDLE_SLEEP_MS, VAD_CHUNK_SIZE,
-    VAD_MAX_PARTIAL_WINDOW_SAMPLES, VAD_MIN_UTTERANCE_SAMPLES, VAD_PARTIAL_INTERVAL_SAMPLES,
+    VAD_MIN_UTTERANCE_SAMPLES, VAD_PARTIAL_INTERVAL_SAMPLES,
     VAD_PRE_ROLL_CAPACITY,
 };
 use crate::core::events::VoxEvent;
@@ -300,6 +300,16 @@ fn handle_speech_start(
     state.utterance_buffer.clear();
     state.pre_roll_buffer.copy_into(&mut state.utterance_buffer);
     state.samples_since_partial = state.utterance_buffer.len();
+
+    if !state.utterance_buffer.is_empty() && state.realtime_tx.is_none() {
+        if let Err(e) = stt_tx.send(SttCommand::StreamChunk {
+            turn_id: state.current_turn_id,
+            audio: state.utterance_buffer.clone(),
+        }) {
+            log::warn!("[VAD Actor] Failed to send pre-roll chunk to STT: {}", e);
+        }
+    }
+
     state.pre_roll_buffer.clear();
 }
 
@@ -334,7 +344,7 @@ fn handle_speech_end(
     state.samples_since_partial = 0;
 }
 
-/// Accumulates streaming audio frames during active speech and triggers periodic partial STT transcriptions.
+/// Accumulates streaming audio frames during active speech and forwards chunks to STT worker.
 fn accumulate_speech_frames(
     chunk: &[f32],
     state: &mut VadActorState,
@@ -343,27 +353,13 @@ fn accumulate_speech_frames(
     state.utterance_buffer.extend_from_slice(chunk);
     state.samples_since_partial += chunk.len();
 
-    if state.samples_since_partial >= VAD_PARTIAL_INTERVAL_SAMPLES {
-        if state.realtime_tx.is_none() {
-            let start_idx = state
-                .utterance_buffer
-                .len()
-                .saturating_sub(VAD_MAX_PARTIAL_WINDOW_SAMPLES);
-            let mut buf = state
-                .partial_recycle_rx
-                .try_recv()
-                .unwrap_or_else(|_| Vec::with_capacity(VAD_MAX_PARTIAL_WINDOW_SAMPLES));
-            buf.clear();
-            buf.extend_from_slice(&state.utterance_buffer[start_idx..]);
-            if let Err(e) = stt_tx.send(SttCommand::Partial {
-                turn_id: state.current_turn_id,
-                audio: buf,
-                recycle_tx: state.partial_recycle_tx.clone(),
-            }) {
-                log::warn!("[VAD Actor] Failed to send Partial audio to STT: {}", e);
-            }
+    if state.realtime_tx.is_none() {
+        if let Err(e) = stt_tx.send(SttCommand::StreamChunk {
+            turn_id: state.current_turn_id,
+            audio: chunk.to_vec(),
+        }) {
+            log::warn!("[VAD Actor] Failed to send streaming chunk to STT: {}", e);
         }
-        state.samples_since_partial = 0;
     }
 }
 

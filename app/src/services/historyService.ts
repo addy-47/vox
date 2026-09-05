@@ -51,7 +51,7 @@ export function getSessions(): Promise<SessionRow[]> {
 
 /** All turns for a session, oldest first (ipc/history.rs:99, arg `session_id`). */
 export function getTurns(sessionId: number): Promise<TurnRow[]> {
-  return invoke("get_turns", { session_id: sessionId });
+  return invoke("get_turns", { sessionId });
 }
 
 /** Delete a session and its turns (CASCADE) (ipc/history.rs:138). */

@@ -325,7 +325,7 @@ fn test_vad_ducking_resumes_after_playback_and_headset_never_suppresses() {
     );
 
     // Drain remaining events
-    while let Ok(_) = vox_event_rx.try_recv() {}
+    while vox_event_rx.try_recv().is_ok() {}
 
     // Case 2: Headset mode, state is Speaking
     vad_cmd_tx

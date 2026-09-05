@@ -91,17 +91,46 @@ pub fn get_gemma_model_path() -> PathBuf {
 }
 
 
-/// RAII guard to initialize VoxPaths with a temporary root directory and ensure clean isolation.
+/// RAII guard to initialize VoxPaths with a temporary root directory and isolated test database.
 pub struct TempPathsGuard {
     _dir: tempfile::TempDir,
+    prev_vox_home: Option<String>,
 }
 
 impl TempPathsGuard {
     pub fn new() -> Self {
         let dir = tempfile::tempdir().expect("Failed to create temporary directory for test");
-        vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
+        let temp_path = dir.path().to_path_buf();
+
+        // Seed test database from tests/assets/test_vox.db if available
+        let asset_db = get_asset_path("test_vox.db");
+        if asset_db.exists() {
+            let target_db = temp_path.join(vox_lib::core::constants::DB_FILENAME);
+            let _ = std::fs::copy(&asset_db, &target_db);
+        }
+
+        let prev_vox_home = std::env::var("VOX_HOME").ok();
+        std::env::set_var("VOX_HOME", &temp_path);
+        vox_lib::utils::paths::init_with_root(temp_path);
+
         Self {
             _dir: dir,
+            prev_vox_home,
+        }
+    }
+}
+
+impl Drop for TempPathsGuard {
+    fn drop(&mut self) {
+        if let Some(ref prev) = self.prev_vox_home {
+            std::env::set_var("VOX_HOME", prev);
+            vox_lib::utils::paths::init_with_root(std::path::PathBuf::from(prev));
+        } else {
+            std::env::remove_var("VOX_HOME");
+            // Reset back to user default vox home
+            if let Some(home) = dirs::home_dir() {
+                vox_lib::utils::paths::init_with_root(home.join(".vox"));
+            }
         }
     }
 }

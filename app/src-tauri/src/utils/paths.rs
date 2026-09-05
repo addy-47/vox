@@ -1,8 +1,9 @@
 use crate::core::constants::*;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use parking_lot::RwLock;
 
 /// Fully-resolved filesystem layout for the Vox application.
+#[derive(Clone)]
 pub struct VoxPaths {
     pub root: PathBuf,
     pub models: PathBuf,
@@ -14,11 +15,15 @@ pub struct VoxPaths {
     pub voices: PathBuf,
 }
 
-static PATHS: OnceLock<VoxPaths> = OnceLock::new();
+static PATHS: RwLock<Option<VoxPaths>> = RwLock::new(None);
 
 /// Initialize the path singleton. Must be called ONCE at startup,
 /// before any call to `paths::get()`.
 pub fn init() {
+    if PATHS.read().is_some() {
+        return;
+    }
+
     let root = if let Ok(env_path) = std::env::var("VOX_HOME") {
         PathBuf::from(env_path)
     } else {
@@ -60,21 +65,18 @@ pub fn init_with_root(root: PathBuf) {
         root,
     };
 
-    if PATHS.set(paths).is_err() {
-        log::debug!(
-            "[Paths] VoxPaths singleton was already initialized; skipping re-initialization."
-        );
-    }
+    let mut lock = PATHS.write();
+    *lock = Some(paths);
 }
 
-/// Returns the initialized `VoxPaths` singleton if initialized, or None.
-pub fn try_get() -> Option<&'static VoxPaths> {
-    PATHS.get()
+/// Returns a clone of the initialized `VoxPaths` singleton if initialized, or None.
+pub fn try_get() -> Option<VoxPaths> {
+    PATHS.read().clone()
 }
 
-/// Returns the initialized `VoxPaths` singleton.
-pub fn get() -> &'static VoxPaths {
-    PATHS.get().expect(
+/// Returns a clone of the initialized `VoxPaths` singleton.
+pub fn get() -> VoxPaths {
+    PATHS.read().clone().expect(
         "[FATAL] paths::init() was not called before paths::get(). Check app startup order.",
     )
 }
