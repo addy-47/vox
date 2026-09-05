@@ -8,29 +8,18 @@
 //! Metrics      : JSON file atomic write, round-trip serialization equality, malformed fallback
 //! ============================================================================
 
+mod common;
+
+use common::paths::TempPathsGuard;
 use std::fs;
 use std::time::{Duration, Instant};
-use tempfile::tempdir;
 use vox_lib::core::settings::{
     AudioOutputMode, DictationOutputMode, LlmActiveProvider, PipelineMode, SttActiveProvider,
     TtsActiveProvider, VadBackendOption, VoxSettings,
 };
 use vox_lib::ipc::settings::apply_setting_mutation;
 
-/// RAII guard to initialize VoxPaths with a temporary root directory and ensure clean isolation.
-struct TempPathsGuard {
-    _dir: tempfile::TempDir,
-}
 
-impl TempPathsGuard {
-    fn new() -> Self {
-        let dir = tempdir().expect("Failed to create temporary directory for test");
-        vox_lib::utils::paths::init_with_root(dir.path().to_path_buf());
-        Self {
-            _dir: dir,
-        }
-    }
-}
 
 // ============================================================================
 // Subtest 1: test_settings_json_roundtrip_persistence

@@ -110,10 +110,25 @@ impl TtsProvider for KokoroEngine {
         turn_id: u32,
         cancel: Arc<AtomicBool>,
         playback: &Arc<crate::services::audio::PlaybackEngine>,
-        _event_tx: Sender<VoxEvent>,
+        event_tx: Sender<VoxEvent>,
         telemetry_rtf: Option<&Arc<AtomicU32>>,
     ) -> Result<()> {
         if cancel.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+
+        if crate::services::translit::is_devanagari(text) {
+            log::error!(
+                "[Kokoro] Devanagari script detected in turn {}: Kokoro does not support Hindi synthesis",
+                turn_id
+            );
+            if let Err(e) = event_tx.send(VoxEvent::Error {
+                turn_id,
+                message: "Kokoro TTS does not support Hindi (Devanagari). Please switch to Supertonic or Edge TTS.".to_string(),
+                source: "tts_kokoro".to_string(),
+            }) {
+                log::warn!("[Kokoro] Failed to emit Error event: {}", e);
+            }
             return Ok(());
         }
 

@@ -1,3 +1,14 @@
+//! ============================================================================
+//! notifications_crud_test.rs — Notifications & Compactions SQLite CRUD Integration Test
+//! ============================================================================
+//! Category     : Integration Test
+//! Component    : persistence/{notifications,compactions,schema,db}
+//! Prerequisites: SQLite in-memory / tempdir
+//! Execution    : cargo nextest run --test notifications_crud_test --release --nocapture --test-threads=1
+//! Metrics      : Schema migrations, CRUD lifecycle, compaction status tracking
+//! ============================================================================
+
+use std::time::Duration;
 use std::collections::HashMap;
 use tempfile::tempdir;
 use vox_lib::persistence::compactions::{
@@ -14,7 +25,8 @@ use vox_lib::persistence::schema::run_migrations;
 
 #[tokio::test]
 async fn test_notifications_crud_lifecycle() {
-    let dir = tempdir().expect("Failed to create tempdir");
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let dir = tempdir().expect("Failed to create tempdir");
     let db_path = dir.path().join("test_notifs_crud.db");
 
     let conn = VoxDb::open(&db_path)
@@ -95,11 +107,15 @@ async fn test_notifications_crud_lifecycle() {
         .expect("Failed to fetch active");
     assert_eq!(active.len(), 1);
     assert_eq!(active[0].id, "notif_1");
+    })
+    .await
+    .expect("test_notifications_crud_lifecycle timed out");
 }
 
 #[tokio::test]
 async fn test_compaction_ledger_queries_and_mutations() {
-    let dir = tempdir().expect("Failed to create tempdir");
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let dir = tempdir().expect("Failed to create tempdir");
     let db_path = dir.path().join("test_compaction_ledger.db");
 
     let conn = VoxDb::open(&db_path)
@@ -209,4 +225,7 @@ async fn test_compaction_ledger_queries_and_mutations() {
         .expect("Expected latest run");
     assert_eq!(latest.status, "failed");
     assert_eq!(latest.error_msg.as_deref(), Some("LLM timed out"));
+    })
+    .await
+    .expect("test_compaction_ledger_queries_and_mutations timed out");
 }

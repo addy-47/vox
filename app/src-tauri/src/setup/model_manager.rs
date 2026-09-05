@@ -324,7 +324,11 @@ impl ModelManager {
         Ok(hash)
     }
 
-    fn do_extract(archive_path: &Path, archive_type: &str, dest_dir: &Path) -> anyhow::Result<()> {
+    pub fn do_extract(
+        archive_path: &Path,
+        archive_type: &str,
+        dest_dir: &Path,
+    ) -> anyhow::Result<()> {
         let file = std::fs::File::open(archive_path)?;
 
         match archive_type {

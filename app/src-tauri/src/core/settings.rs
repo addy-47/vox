@@ -491,9 +491,9 @@ impl LlmSettings {
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TtsActiveProvider {
-    #[default]
     EdgeTts,
     Supertonic,
+    #[default]
     Kokoro,
     Chatterbox,
     ChatterboxRemote,
@@ -576,7 +576,7 @@ pub enum TtsProviderConfig {
 
 impl Default for TtsProviderConfig {
     fn default() -> Self {
-        TtsProviderConfig::EdgeTts { voice: None }
+        TtsProviderConfig::Kokoro
     }
 }
 
