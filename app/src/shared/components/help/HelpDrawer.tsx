@@ -18,7 +18,7 @@ const HelpDrawerInner = memo(({ open, onClose, deepLink }: HelpDrawerProps) => {
       open={open}
       onClose={onClose}
       position="global"
-      ariaLabel="Help & guide"
+      ariaLabel={HELP_DRAWER_COPY.drawerAria}
       height={72}
       minHeight={45}
       maxHeight={92}
@@ -39,13 +39,13 @@ const HelpDrawerInner = memo(({ open, onClose, deepLink }: HelpDrawerProps) => {
         </p>
       }
       headerActions={
-        <Tooltip label="Close" side="bottom">
+        <Tooltip label={HELP_DRAWER_COPY.closeButton} side="bottom">
           <button
             onClick={onClose}
             className={cn(
               "flex items-center justify-center w-8 h-8 rounded-full glass-card text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
             )}
-            aria-label="Close help"
+            aria-label={HELP_DRAWER_COPY.closeHelp}
           >
             <X size={18} />
           </button>

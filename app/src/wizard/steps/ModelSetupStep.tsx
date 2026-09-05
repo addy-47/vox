@@ -8,7 +8,7 @@ import {
   Layers, ShieldCheck, Filter
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { WIZARD_CTA_LABELS } from '@/data/welcomeCopy';
+import { WIZARD_CTA_LABELS, WIZARD_STEP_HEADERS, MODEL_SETUP_COPY } from '@/data/welcomeCopy';
 
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
@@ -234,10 +234,10 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             exit={{ opacity: 0, x: -20 }}
             className="flex flex-col h-full"
           >
-            <WizardHeader 
-                step="Step 3 of 6 · Choosing Voice Models"
-                title="Choose Your Voice Models"
-                description="Pick which voice features Vox uses. The essential ones make conversation work; the extra ones unlock smarter replies and memory."
+            <WizardHeader
+                step={WIZARD_STEP_HEADERS.selection.step}
+                title={WIZARD_STEP_HEADERS.selection.title}
+                description={WIZARD_STEP_HEADERS.selection.description}
                 rightContent={
                     <div className="flex flex-col items-end">
                         <span className="text-[14px] font-bold text-[rgb(var(--foreground))]/80  tracking-tight mb-1">
@@ -246,7 +246,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                         <div className="flex items-center gap-2">
                             <div className="h-1.5 w-1.5 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.8)]" />
                             <span className="text-[13px] font-black text-[rgb(var(--accent))]  tracking-widest">
-                                {formatSize(totalSize)} Total
+                                {formatSize(totalSize)} {MODEL_SETUP_COPY.totalSuffix}
                             </span>
                         </div>
                     </div>
@@ -261,7 +261,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                         onClick={() => window.location.reload()} 
                         className="px-3 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded text-[11px] font-bold uppercase tracking-wider transition-all"
                     >
-                        Retry Load
+                        {MODEL_SETUP_COPY.retryLoad}
                     </button>
                 </div>
             )}
@@ -290,7 +290,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             <div className="mt-8 pt-8 border-t border-[rgba(var(--foreground),0.1)]">
                 <div className="flex gap-4">
                     <button onClick={onBack} className="px-8 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--foreground))] transition-colors">
-                        Back
+                        {MODEL_SETUP_COPY.back}
                     </button>
                     <button 
                         onClick={startSetup}
@@ -317,10 +317,10 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             exit={{ opacity: 0, scale: 1.02 }}
             className="flex flex-col h-full"
           >
-             <WizardHeader 
-                step="Step 3 of 6 · Downloading Voice Models"
-                title="Downloading Voice Models"
-                description="Vox is downloading the voice models to your computer. They run locally, so your voice never leaves your device."
+              <WizardHeader
+                step={WIZARD_STEP_HEADERS.syncing.step}
+                title={WIZARD_STEP_HEADERS.syncing.title}
+                description={WIZARD_STEP_HEADERS.syncing.description}
                 color="rgb(var(--accent))"
             />
 
@@ -374,11 +374,11 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
             <WizardFooter 
                 onBack={() => setView('catalog')}
                 onNext={() => setView('complete')}
-                nextLabel={isFinished ? "Continue" : "Downloading..."}
+                nextLabel={isFinished ? WIZARD_CTA_LABELS.continueToVerification : WIZARD_CTA_LABELS.synchronizing}
                 isNextDisabled={!isFinished}
                 showBack={true}
                 error={internalError || externalError}
-                errorLabel="Download Error"
+                errorLabel={MODEL_SETUP_COPY.downloadError}
             />
           </motion.div>
         )}
@@ -401,9 +401,9 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     </div>
                 </div>
 
-                <h1 className="text-4xl font-display font-black text-[rgb(var(--foreground))] tracking-tighter uppercase mb-4">Models Ready</h1>
+                <h1 className="text-4xl font-display font-black text-[rgb(var(--foreground))] tracking-tighter uppercase mb-4">{MODEL_SETUP_COPY.readyTitle}</h1>
                 <p className="text-[rgb(var(--foreground-muted))]/80 text-sm max-w-sm leading-relaxed mb-12">
-                    All selected voice models have been downloaded and checked on your system.
+                    {MODEL_SETUP_COPY.readyBody}
                 </p>
 
                 <div className="flex flex-col gap-4 w-full max-w-xs">
@@ -413,7 +413,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                     >
                         <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/10 to-[rgba(var(--accent),0.03)] opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: `linear-gradient(90deg, rgba(var(--accent), 0.1) 0%, rgba(var(--accent), 0.03) 100%)` }} />
                         <span className="relative z-10 flex items-center justify-center gap-3 tracking-widest uppercase text-xs">
-                            Continue Setup <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                            {WIZARD_CTA_LABELS.continueSetup} <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                         </span>
                     </button>
                     
@@ -421,7 +421,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
                         onClick={() => setView('catalog')}
                         className="py-3 text-xs font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest hover:text-[rgb(var(--foreground))]/60 transition-colors"
                     >
-                        Return to Selection
+                        {WIZARD_CTA_LABELS.returnToSelection}
                     </button>
                 </div>
             </motion.div>

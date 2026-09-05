@@ -53,9 +53,9 @@ const ProfilerDrawer: React.FC<ProfilerDrawerProps> = ({ open, onClose }) => {
       open={open}
       onClose={onClose}
       position="global"
-      ariaLabel="UI Memory Profiler"
+      ariaLabel={PROFILER_COPY.drawer.triggerAria}
       height={75}
-      resizeHint="Drag to resize · double-click to expand"
+      resizeHint={PROFILER_COPY.drawer.resizeHint}
       icon={
         <div className="p-2.5 rounded-xl bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))]">
           <Activity size={20} />
@@ -89,17 +89,17 @@ const ProfilerDrawer: React.FC<ProfilerDrawerProps> = ({ open, onClose }) => {
                 isSampling ? "bg-[rgb(var(--accent))] animate-ping" : "bg-[rgb(var(--accent))]"
               )}
             />
-            <span className="text-[rgb(var(--foreground-muted))]">On-Demand</span>
+            <span className="text-[rgb(var(--foreground-muted))]">{PROFILER_COPY.drawer.onDemand}</span>
           </div>
 
-          <Tooltip label="Trigger immediate on-demand OS process sample & write snapshot to temp/">
+          <Tooltip label={PROFILER_COPY.drawer.onDemandHint}>
             <button
               onClick={() => captureSnapshot({ isManual: true })}
               disabled={isSampling}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-sans font-bold uppercase tracking-wider bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/30 transition-all border border-[rgb(var(--accent))]/30 cursor-pointer disabled:opacity-50"
             >
               <RefreshCw size={14} className={cn(isSampling && "animate-spin")} />
-              <span>{isSampling ? "Capturing..." : PROFILER_COPY.snapshotButton}</span>
+              <span>{isSampling ? PROFILER_COPY.drawer.capturing : PROFILER_COPY.snapshotButton}</span>
             </button>
           </Tooltip>
         </>

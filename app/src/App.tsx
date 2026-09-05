@@ -5,6 +5,7 @@ import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
 import { WizardRoot } from "@/wizard/WizardRoot";
 import { TitleBar } from "@/layout/TitleBar";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
+import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { MemoryProfilerProvider } from "@/shared/context/MemoryProfilerContext";
 import { VoiceSessionProvider } from "@/shared/context/VoiceSessionContext";
 import { ProfilerDrawerProvider } from "@/shared/components/profiler/ProfilerDrawer";
@@ -25,9 +26,9 @@ const PageLoader = () => (
   <div className="flex h-screen w-full items-center justify-center bg-[rgb(var(--background))]">
     <OrbitalLoader
       size="lg"
-      title="SYNCHRONIZING"
-      subtitle="Preparing neural models and interface"
-      statusText="VOX RUNTIME READY"
+      title={LAYOUT_COPY.boot.title}
+      subtitle={LAYOUT_COPY.boot.subtitle}
+      statusText={LAYOUT_COPY.boot.status}
     />
   </div>
 );

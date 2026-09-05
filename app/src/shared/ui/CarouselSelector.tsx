@@ -1,5 +1,6 @@
 import { memo, ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { cn } from "@/shared/lib/utils";
 
 export interface CarouselSelectorProps {
@@ -44,8 +45,8 @@ export const CarouselSelector = memo(
             onClick={onPrev}
             disabled={disabled}
             className="p-1 rounded text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-all active:scale-90 cursor-pointer flex items-center justify-center shrink-0"
-            title="Previous"
-            aria-label="Previous item"
+            title={LAYOUT_COPY.carousel.previous}
+            aria-label={LAYOUT_COPY.carousel.previousItem}
           >
             <ChevronLeft size={16} />
           </button>
@@ -62,8 +63,8 @@ export const CarouselSelector = memo(
             onClick={onNext}
             disabled={disabled}
             className="p-1 rounded text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-all active:scale-90 cursor-pointer flex items-center justify-center shrink-0"
-            title="Next"
-            aria-label="Next item"
+            title={LAYOUT_COPY.carousel.next}
+            aria-label={LAYOUT_COPY.carousel.nextItem}
           >
             <ChevronRight size={16} />
           </button>

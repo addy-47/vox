@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '@/shared/lib/utils';
+import { LAYOUT_COPY } from '@/data/layoutCopy';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -63,7 +64,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             {/* Error Title */}
             <div>
               <h2 className="font-display text-lg font-black text-[rgb(var(--foreground))] uppercase tracking-tight mb-2">
-                Render Error
+                {LAYOUT_COPY.errorBoundary.title}
               </h2>
               <p className="text-[12px] font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-[0.2em]">
                 {name}
@@ -73,7 +74,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             {/* Error Message */}
             <div className="glass px-4 py-3 text-left">
               <p className="text-xs font-mono text-[rgb(var(--foreground-muted))] leading-relaxed break-words">
-                {this.state.error?.message || 'An unexpected error occurred'}
+                {this.state.error?.message || LAYOUT_COPY.errorBoundary.fallback}
               </p>
             </div>
 
@@ -81,7 +82,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             {this.state.error?.stack && (
               <details className="text-left">
                 <summary className="text-[12px] font-bold text-[rgb(var(--foreground-muted))]/50 uppercase tracking-widest cursor-pointer hover:text-[rgb(var(--foreground-muted))] transition-colors">
-                  Stack Trace
+                  {LAYOUT_COPY.errorBoundary.stackTrace}
                 </summary>
                 <pre className="mt-2 glass p-3 text-[12px] font-mono text-[rgb(var(--foreground-muted))]/60 leading-relaxed overflow-auto max-h-[160px] custom-scrollbar whitespace-pre-wrap">
                   {this.state.error.stack}
@@ -95,13 +96,13 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
                 onClick={this.handleGoHome}
                 className="flex-1 py-3 text-[12px] font-black uppercase tracking-[0.3em] glass text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
               >
-                Home
+                {LAYOUT_COPY.errorBoundary.home}
               </button>
               <button
                 onClick={this.handleRetry}
                 className="flex-1 py-3 text-[12px] font-black uppercase tracking-[0.3em] glass-card hover:border-[rgb(var(--accent))]/70 transition-all active:scale-[0.98]"
               >
-                Retry
+                {LAYOUT_COPY.errorBoundary.retry}
               </button>
             </div>
           </div>

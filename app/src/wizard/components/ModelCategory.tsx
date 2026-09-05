@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+import { MODEL_CATEGORY_COPY } from '@/data/welcomeCopy';
 
 interface ModelEntry {
   id: string;
@@ -79,9 +80,9 @@ export const ModelCategory = ({
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="font-display text-[14px] font-black text-[rgb(var(--foreground))] uppercase tracking-[0.15em]">{label}</span>
                             {required ? (
-                                <span className="text-[11px] font-black bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgb(var(--accent))]/20 shrink-0">Mandatory</span>
+                                <span className="text-[11px] font-black bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgb(var(--accent))]/20 shrink-0">{MODEL_CATEGORY_COPY.mandatory}</span>
                             ) : (
-                                <span className="text-[11px] font-black bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgba(var(--border),0.08)] shrink-0">Optional</span>
+                                <span className="text-[11px] font-black bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))] px-2 py-0.5 rounded-full uppercase tracking-tighter border border-[rgba(var(--border),0.08)] shrink-0">{MODEL_CATEGORY_COPY.optional}</span>
                             )}
                         </div>
                         <p className="text-[12px] text-[rgb(var(--foreground-muted))] font-bold uppercase tracking-[0.05em] truncate">

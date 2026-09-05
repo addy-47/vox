@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { MemoryNodeTopology, MemoryEdgeTopology, MemoryFactDetail } from "@/services/memoryService";
+import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { OrbitalLoader } from "@/shared/components/common";
@@ -71,17 +72,17 @@ class GraphErrorBoundary extends Component<GraphErrorBoundaryProps, GraphErrorBo
             </div>
             <div>
               <h3 className="font-display text-[13px] font-sans font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                Couldn't Draw Your Memories
+                {MEMORY_COPY.graphErrorTitle}
               </h3>
               <p className="text-[11px] text-[rgb(var(--foreground-muted))] mt-1 break-words">
-                {this.state.error?.message || "Your graphics hardware couldn't render the memory map."}
+                {this.state.error?.message || MEMORY_COPY.graphErrorFallback}
               </p>
             </div>
             <button
               onClick={this.handleRetry}
               className="px-4 py-2 text-[11px] font-bold uppercase tracking-widest glass-card hover:border-[rgb(var(--accent))]/50 transition-colors cursor-pointer rounded-xl"
             >
-              Retry WebGL Context
+              {MEMORY_COPY.graphRetry}
             </button>
           </div>
         </div>
@@ -1362,7 +1363,7 @@ export const MemoryGraph = memo(
               >
                 <OrbitalLoader
                   size="lg"
-                  title="Building memory graph..."
+                  title={MEMORY_COPY.graphBuilding}
                   subtitle={`${nodes.length.toLocaleString()} nodes · ${edges.length.toLocaleString()} edges`}
                   statusText="Optimizing layout and relationships"
                 />
@@ -1500,7 +1501,7 @@ export const MemoryGraph = memo(
                             >
                               {activeBadge.factCount} Memories
                             </span>
-                            <Tooltip label="Close details">
+                            <Tooltip label={MEMORY_COPY.closeDetails}>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -1524,7 +1525,7 @@ export const MemoryGraph = memo(
                           <div className="flex flex-col gap-1.5 pt-2 border-t" style={{ borderColor: `${activeBadge.color}20` }}>
                             <div className="flex items-center justify-between px-0.5">
                               <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: activeBadge.color }}>
-                                Connected Clusters
+                                {MEMORY_COPY.connectedClusters}
                               </span>
                               <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
                                 {activeBadge.totalRelations} Edges

@@ -16,7 +16,7 @@ export const TriggerModeCard = memo(({ layoutMode }: TriggerModeCardProps) => {
 
   return (
     <ToggleTile
-      title="Trigger"
+      title={TRIGGER_MODE_COPY.cardTitle}
       active={isPassive}
       activeLabel={TRIGGER_MODE_COPY.continuousTitle}
       inactiveLabel={TRIGGER_MODE_COPY.pttTitle}

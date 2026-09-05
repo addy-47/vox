@@ -2,6 +2,7 @@ import { memo } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Check, ArrowLeft, Trash2, Info, Lock, Download } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { MODEL_HUB_COPY } from "@/data/settingsCopy";
 
 interface SubModelCardProps {
   id: string;
@@ -60,8 +61,8 @@ export const SubModelCard = memo<SubModelCardProps>(({
             startDownload();
           }}
           className="p-1.5 rounded-lg text-[rgb(var(--accent))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.15)] transition-colors shrink-0 cursor-pointer"
-          aria-label="Download model"
-          title="Download model"
+          aria-label={MODEL_HUB_COPY.row.downloadModel}
+          title={MODEL_HUB_COPY.row.downloadModel}
         >
           <Download size={16} />
         </button>
@@ -70,12 +71,12 @@ export const SubModelCard = memo<SubModelCardProps>(({
 
     if (isRequired) {
       return (
-        <Tooltip label="Mandatory core model (cannot be deleted)">
+        <Tooltip label={MODEL_HUB_COPY.row.mandatoryNote}>
           <div
             className="p-1.5 rounded-lg bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.1)] text-[rgb(var(--foreground-muted))] cursor-not-allowed shrink-0 flex items-center gap-1"
           >
             <Lock size={12} className="opacity-70" />
-            <span className="text-[11px] font-mono font-bold uppercase tracking-wider">Required</span>
+            <span className="text-[11px] font-mono font-bold uppercase tracking-wider">{MODEL_HUB_COPY.row.required}</span>
           </div>
         </Tooltip>
       );
@@ -84,7 +85,7 @@ export const SubModelCard = memo<SubModelCardProps>(({
     if (isConfirmingDelete) {
       return (
         <div className="flex items-center gap-1.5 transition-all duration-300 shrink-0">
-          <span className="text-[11px] text-rose-400 font-bold uppercase tracking-wider">Delete?</span>
+          <span className="text-[11px] text-rose-400 font-bold uppercase tracking-wider">{MODEL_HUB_COPY.row.deleteConfirm}</span>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -92,7 +93,7 @@ export const SubModelCard = memo<SubModelCardProps>(({
               setConfirmDeleteId(null);
             }}
             className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 transition-colors flex items-center justify-center cursor-pointer"
-            aria-label="Confirm Delete"
+            aria-label={MODEL_HUB_COPY.row.confirmDelete}
           >
             <Check size={14} className="font-bold" />
           </button>
@@ -102,7 +103,7 @@ export const SubModelCard = memo<SubModelCardProps>(({
               setConfirmDeleteId(null);
             }}
             className="p-1.5 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.1)] transition-colors flex items-center justify-center cursor-pointer"
-            aria-label="Cancel"
+            aria-label={MODEL_HUB_COPY.row.cancel}
           >
             <ArrowLeft size={14} />
           </button>
@@ -117,7 +118,7 @@ export const SubModelCard = memo<SubModelCardProps>(({
           setConfirmDeleteId(id);
         }}
         className="p-1.5 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-500/15 transition-colors shrink-0 cursor-pointer"
-        aria-label="Delete weights"
+        aria-label={MODEL_HUB_COPY.row.deleteWeights}
       >
         <Trash2 size={16} />
       </button>
@@ -154,7 +155,7 @@ export const SubModelCard = memo<SubModelCardProps>(({
                 <div className="absolute right-full top-0 mr-2 hidden group-hover:block group-hover:opacity-100 w-52 p-2.5 rounded-lg bg-[rgb(var(--card))]/95 border border-[rgba(var(--accent),0.25)] text-[12px] text-[rgb(var(--foreground-muted))] shadow-2xl leading-normal z-50 transition-opacity duration-200 pointer-events-none">
                   <div className="space-y-1">
                     <div className="flex justify-between border-b border-[rgba(var(--accent),0.08)] pb-0.5 mb-1 font-bold">
-                      <span className="text-[11px] text-[rgb(var(--accent))] uppercase tracking-wider">Specs</span>
+                      <span className="text-[11px] text-[rgb(var(--accent))] uppercase tracking-wider">{MODEL_HUB_COPY.row.specs}</span>
                       <span className="font-mono text-[11px] text-[rgb(var(--foreground-muted))]">{parameters}</span>
                     </div>
                     {description && <div className="text-[11px] text-[rgb(var(--foreground))] leading-normal mb-1">{description}</div>}

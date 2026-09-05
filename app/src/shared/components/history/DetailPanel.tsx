@@ -99,7 +99,7 @@ export const DetailPanel = memo(
         open={open}
         onClose={onClose}
         position="global"
-        ariaLabel="Session transcript"
+        ariaLabel={HISTORY_COPY.sessionTranscript}
         resizeHint={HISTORY_COPY.resizeHint}
         bodyClassName="px-6 py-4"
         title={
@@ -123,8 +123,8 @@ export const DetailPanel = memo(
           <div className="flex justify-center py-12">
             <OrbitalLoader
               size="sm"
-              title="Loading conversation transcript..."
-              subtitle="Fetching turns and voice telemetry"
+              title={HISTORY_COPY.loadingTranscript}
+              subtitle={HISTORY_COPY.fetchingTurns}
             />
           </div>
         ) : error ? (

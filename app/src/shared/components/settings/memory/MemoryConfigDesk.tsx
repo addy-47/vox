@@ -1,7 +1,7 @@
 import { useState, memo, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
-import { MEMORY_CONFIG_DESK_COPY } from "@/data/settingsCopy";
+import { MEMORY_CONFIG_DESK_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
 
 export interface MemoryConfigDeskProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -171,7 +171,7 @@ export const MemoryConfigDesk = memo(({ layoutMode }: MemoryConfigDeskProps) => 
                   inputMode="numeric"
                   value={isDepthCustom ? topKFacts : ""}
                   onChange={handleCustomDepthChange}
-                  placeholder="Custom"
+                  placeholder={COMPUTE_PROFILE_COPY.custom}
                   className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
@@ -226,7 +226,7 @@ export const MemoryConfigDesk = memo(({ layoutMode }: MemoryConfigDeskProps) => 
                   inputMode="numeric"
                   value={isCutoffCustom ? cutoffPct : ""}
                   onChange={handleCustomCutoffChange}
-                  placeholder="Custom"
+                  placeholder={COMPUTE_PROFILE_COPY.custom}
                   className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
@@ -320,7 +320,7 @@ export const MemoryConfigDesk = memo(({ layoutMode }: MemoryConfigDeskProps) => 
                   inputMode="numeric"
                   value={isBudgetCustom ? budgetPct : ""}
                   onChange={handleCustomBudgetChange}
-                  placeholder="Custom"
+                  placeholder={COMPUTE_PROFILE_COPY.custom}
                   className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
@@ -375,7 +375,7 @@ export const MemoryConfigDesk = memo(({ layoutMode }: MemoryConfigDeskProps) => 
                   inputMode="numeric"
                   value={isWindowCustom ? contextChainingWindowHours : ""}
                   onChange={handleCustomWindowChange}
-                  placeholder="Custom"
+                  placeholder={COMPUTE_PROFILE_COPY.custom}
                   className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>

@@ -224,20 +224,20 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                 </div>
                 <div className="flex flex-col">
                   <h2 className="font-display text-[13px] font-sans font-black tracking-wider uppercase text-[rgb(var(--foreground))]">
-                    HOW VOX REMEMBERS
+                    {MEMORY_COPY.drawer.title}
                   </h2>
                   <span
                     style={{ color: `rgba(${stageColors.stage1}, 0.85)` }}
                     className="text-[11px] font-sans font-medium"
                   >
-                    Live memory activity
+                    {MEMORY_COPY.drawer.liveActivity}
                   </span>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
                 <Tooltip
-                  label={pipelineProcessingEnabled ? "Pause saving new memories" : "Resume saving new memories"}
+                  label={pipelineProcessingEnabled ? MEMORY_COPY.drawer.pauseSaving : MEMORY_COPY.drawer.resumeSaving}
                 >
                   <button
                     onClick={handleTogglePause}
@@ -249,10 +249,10 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     )}
                   >
                     {!pipelineProcessingEnabled ? <Play size={12} /> : <Pause size={12} />}
-                    <span>{!pipelineProcessingEnabled ? "PAUSED" : "ACTIVE"}</span>
+                    <span>{!pipelineProcessingEnabled ? MEMORY_COPY.drawer.paused : MEMORY_COPY.drawer.activeWord}</span>
                   </button>
                 </Tooltip>
-                <Tooltip label="Refresh memory activity">
+                <Tooltip label={MEMORY_COPY.drawer.refreshActivity}>
                   <button
                     onClick={onRefresh}
                     style={{ color: `rgb(${stageColors.stage1})` }}
@@ -264,7 +264,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                 <button
                   onClick={onClose}
                   className="p-1.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
-                  aria-label="Close drawer"
+                  aria-label={MEMORY_COPY.drawer.closeDrawer}
                 >
                   <X size={15} />
                 </button>
@@ -291,7 +291,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     color: activeTab === "pipeline" ? `rgb(${stageColors.stage1})` : undefined,
                   }}
                 />
-                <span>How It Works</span>
+                <span>{MEMORY_COPY.drawer.howItWorks}</span>
               </button>
 
               <span className="text-[rgb(var(--foreground-muted))]/30 font-light select-none pb-2">|</span>
@@ -309,7 +309,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                   size={14}
                   className={cn(activeTab === "failed" ? "text-red-400" : undefined)}
                 />
-                <span>Failed Items</span>
+                <span>{MEMORY_COPY.drawer.failedItems}</span>
                 {failedCount > 0 && (
                   <span className="px-1.5 py-0.2 rounded-full bg-red-500/20 text-red-400 text-[11px] font-mono border border-red-500/30 font-bold">
                     {failedCount}
@@ -357,7 +357,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                           )}
                         </div>
                         <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]">
-                          Removes repeated memories
+                          {MEMORY_COPY.drawer.stageDedupe}
                         </span>
                         <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
                           <div className="flex items-center gap-1">
@@ -444,7 +444,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                           )}
                         </div>
                         <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]">
-                          Working out what each memory means
+                          {MEMORY_COPY.drawer.stageUnderstand}
                         </span>
                         <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
                           <div className="flex items-center gap-1">
@@ -503,7 +503,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                           )}
                         </div>
                         <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]">
-                          Double-checks each memory
+                          {MEMORY_COPY.drawer.stageVerify}
                         </span>
                         <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
                           <div className="flex items-center gap-1">
@@ -590,7 +590,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                           )}
                         </div>
                         <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]">
-                          Stores it for later
+                          {MEMORY_COPY.drawer.stageSave}
                         </span>
                         <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
                           <div className="flex items-center gap-1">
@@ -644,11 +644,11 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                           )}
                         </div>
                         <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))]">
-                          Memories you may want to check
+                          {MEMORY_COPY.drawer.stageReview}
                         </span>
                         <div className="flex items-center justify-between mt-1 pt-1 border-t border-[rgba(var(--border),0.06)]">
                           <span className="text-[11px] text-[rgb(var(--foreground-muted))]">
-                            {failedCount > 0 ? "Click to view errors" : "No errors"}
+                            {failedCount > 0 ? MEMORY_COPY.drawer.clickToViewErrors : MEMORY_COPY.drawer.noErrors}
                           </span>
                           <span className={cn("px-2 py-0.5 rounded-lg text-[11px] font-bold border", failedCount > 0 ? "bg-[rgba(var(--danger),0.2)] text-[rgb(var(--danger))] border-[rgb(var(--danger))]/30" : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))] border-[rgba(var(--border),0.08)]")}>
                             {failedCount} failed
@@ -686,7 +686,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                         className="px-3 py-1.5 rounded-xl border text-[11px] font-sans font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
                       >
                         <RotateCcw size={12} className={cn(retrying && "animate-spin")} />
-                        <span>Retry All</span>
+                        <span>{MEMORY_COPY.drawer.retryAll}</span>
                       </button>
                     )}
                   </div>
@@ -695,10 +695,10 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[rgba(var(--foreground),0.02)] rounded-2xl border border-[rgba(var(--border),0.06)]">
                       <CheckCircle2 size={32} className="text-emerald-400 mb-2" />
                       <span className="text-[13px] font-sans font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">
-                        Nothing Needs Attention
+                        {MEMORY_COPY.drawer.nothingNeedsAttention}
                       </span>
                       <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] mt-1 max-w-xs">
-                        Everything was saved without problems.
+                        {MEMORY_COPY.drawer.allSaved}
                       </span>
                     </div>
                   ) : (
@@ -709,20 +709,20 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                             <span className="text-[12px] font-sans text-[rgb(var(--foreground))] font-medium">
                               "{item.fact}"
                             </span>
-                            <Tooltip label="Try this one again">
+                            <Tooltip label={MEMORY_COPY.drawer.retryOne}>
                             <button
                               onClick={() => handleRetrySingleItem(item.id)}
                               className="px-2.5 py-1 rounded-lg bg-[rgba(var(--foreground),0.05)] hover:bg-[rgba(var(--foreground),0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] text-[11px] font-sans font-medium transition-colors cursor-pointer shrink-0 border border-[rgba(var(--border),0.1)] flex items-center gap-1"
                             >
                               <RotateCcw size={10} />
-                              <span>Retry</span>
+                              <span>{MEMORY_COPY.retry}</span>
                             </button>
                           </Tooltip>
                           </div>
 
                           <div className="flex items-center justify-between text-[11px] font-sans text-[rgb(var(--foreground-muted))] pt-1 border-t border-[rgba(var(--border),0.06)]">
-                            <span>Category: <strong style={{ color: `rgb(${stageColors.stage1})` }} className="font-semibold">{item.collection}</strong></span>
-                            <span>Tries: <strong style={{ color: `rgb(${stageColors.stage3})` }} className="font-semibold">{item.attempts}</strong></span>
+                            <span>{MEMORY_COPY.drawer.categoryLabel} <strong style={{ color: `rgb(${stageColors.stage1})` }} className="font-semibold">{item.collection}</strong></span>
+                            <span>{MEMORY_COPY.drawer.triesLabel} <strong style={{ color: `rgb(${stageColors.stage3})` }} className="font-semibold">{item.attempts}</strong></span>
                           </div>
 
                           {item.error_msg && (
@@ -759,7 +759,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     {activeNodesCount.toLocaleString()}
                   </span>
                   <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
-                    Memories
+                    {MEMORY_COPY.drawer.statMemories}
                   </span>
                 </div>
 
@@ -769,7 +769,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     {activeEdgesCount.toLocaleString()}
                   </span>
                   <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
-                    Connections
+                    {MEMORY_COPY.drawer.statConnections}
                   </span>
                 </div>
 
@@ -779,17 +779,17 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     {totalPending}
                   </span>
                   <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
-                    Waiting to Save
+                    {MEMORY_COPY.drawer.statWaiting}
                   </span>
                 </div>
 
                 <div className="flex flex-col items-center border-l border-[rgba(var(--border),0.08)]">
                   <ShieldCheck size={16} className={cn("mb-0.5", failedCount > 0 ? "text-red-400" : "text-emerald-400")} />
                   <span className="text-[14px] font-sans font-black text-[rgb(var(--foreground))]">
-                    {failedCount > 0 ? `${failedCount} to check` : "All Good"}
+                    {failedCount > 0 ? `${failedCount} ${MEMORY_COPY.drawer.toCheck}` : MEMORY_COPY.drawer.allGood}
                   </span>
                   <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] uppercase font-semibold">
-                    Memory Health
+                    {MEMORY_COPY.drawer.statHealth}
                   </span>
                 </div>
               </div>
@@ -819,10 +819,10 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                 ) : (
                   <Zap size={16} />
                 )}
-                <span>{running ? MEMORY_COPY.consolidating : "SAVE PENDING MEMORIES"}</span>
+                <span>{running ? MEMORY_COPY.consolidating : MEMORY_COPY.drawer.savePending}</span>
               </button>
               <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] text-center">
-                Organizes the memories Vox hasn't saved yet
+                {MEMORY_COPY.drawer.organizesUnsaved}
               </span>
             </div>
           </motion.div>

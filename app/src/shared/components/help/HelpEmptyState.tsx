@@ -22,7 +22,7 @@ const HelpEmptyStateInner = memo(({ onClose }: HelpEmptyStateProps) => {
         onClick={onClose}
         className="mt-2 px-3.5 py-1.5 rounded-xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[12px] font-bold uppercase tracking-wider hover:brightness-110 transition-all cursor-pointer"
       >
-        Close
+        {HELP_DRAWER_COPY.emptyClose}
       </button>
     </div>
   );

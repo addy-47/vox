@@ -18,7 +18,7 @@ import { useSettingsStore } from '@/store/settingsStore';
 import logo from '@/assets/logo.webp';
 import logoLight from '@/assets/logo-light.webp';
 
-import { WIZARD_STEPS } from '@/data/welcomeCopy';
+import { WIZARD_STEPS, WIZARD_STATUS_COPY } from '@/data/welcomeCopy';
 
 export const WizardRoot: React.FC = () => {
   const [state, send] = useMachine(setupMachine);
@@ -90,7 +90,7 @@ export const WizardRoot: React.FC = () => {
       case state.matches('completed'): 
         return <CompletedStep key="completed" onBack={onBack} />;
       
-      default: return <div>Unknown State</div>;
+      default: return <div>{WIZARD_STATUS_COPY.unknownState}</div>;
     }
   };
 
@@ -179,7 +179,7 @@ export const WizardRoot: React.FC = () => {
           <div className="mt-auto pt-6 border-t border-[rgba(var(--border),0.05)]">
             <div className="flex items-center gap-2 px-3 py-2 glass">
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[12px] font-bold text-[rgb(var(--foreground-muted))] tracking-wider uppercase">System Ready</span>
+              <span className="text-[12px] font-bold text-[rgb(var(--foreground-muted))] tracking-wider uppercase">{WIZARD_STATUS_COPY.systemReady}</span>
             </div>
           </div>
         </div>

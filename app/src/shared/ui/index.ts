@@ -3,11 +3,9 @@ export * from "./Drawer";
 export * from "./Badge";
 export * from "./SegmentedControl";
 export * from "./ToggleTile";
-export * from "./SearchInput";
-export * from "./SliderField";
+
 export * from "./ApiKeyField";
 export * from "./UnderlineInput";
 export * from "./CarouselSelector";
-export * from "./ProgressBar";
 export * from "./RotaryKnob";
 export * from "./Tooltip";

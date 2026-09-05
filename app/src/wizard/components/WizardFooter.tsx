@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+import { WIZARD_CTA_LABELS } from '@/data/welcomeCopy';
 
 interface WizardFooterProps {
   onBack?: () => void;
@@ -47,7 +48,7 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
             onClick={onBack}
             className="px-8 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
           >
-            Back
+            {WIZARD_CTA_LABELS.back}
           </button>
         )}
 
@@ -56,7 +57,7 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
             onClick={onSkip}
             className="px-6 py-5 text-[12px] font-black uppercase tracking-[0.3em] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors border border-dashed border-[rgba(var(--border),0.08)] hover:border-[rgb(var(--accent))]/30 rounded-2xl glass transition-all duration-300"
           >
-            Skip
+            {WIZARD_CTA_LABELS.skip}
           </button>
         )}
 
@@ -70,7 +71,7 @@ export const WizardFooter: React.FC<WizardFooterProps> = ({
         >
           <div className="absolute inset-0 bg-gradient-to-r from-[rgb(var(--accent))]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <span className="relative z-10 flex items-center justify-center gap-4 uppercase tracking-[0.4em] text-[12px]">
-            {isNextLoading ? 'Processing...' : nextLabel}
+            {isNextLoading ? WIZARD_CTA_LABELS.processing : nextLabel}
             {!isNextLoading && <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1 text-[rgb(var(--accent))]" />}
           </span>
         </button>

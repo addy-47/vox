@@ -39,12 +39,15 @@ fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
 
     let cached_provider = state.llm_provider.read().clone();
     let memory_tx = parking_lot::Mutex::new(state.memory_tx.lock().clone());
-    let (tts_tx, llm_tx, pipeline_tx) = {
-        let guard = state.engine.blocking_lock();
-        guard
+    let (tts_tx, llm_tx, pipeline_tx) = match state.engine.try_lock() {
+        Ok(guard) => guard
             .as_ref()
             .map(|e| (e.tts_tx.clone(), e.llm_tx.clone(), Some(e.pipeline_tx.clone())))
-            .unwrap_or((None, None, None))
+            .unwrap_or((None, None, None)),
+        Err(_) => {
+            log::warn!("[Pipeline::Transcript] Engine lock contended; could not access channels");
+            (None, None, None)
+        }
     };
 
     tauri::async_runtime::spawn(async move {

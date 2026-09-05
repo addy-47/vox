@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect, lazy, Suspense } from "react";
 import { EdgeNav } from "./EdgeNav";
+import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { TitleBar } from "./TitleBar";
 import { AmbientBackground } from "@/shared/components/common";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -162,7 +163,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
                   ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/60"
                   : "bg-transparent border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
               )}
-              aria-label="Engine Monitor"
+              aria-label={LAYOUT_COPY.nav.engineMonitor}
               aria-expanded={monitorOpen}
               aria-haspopup="dialog"
             >
@@ -171,7 +172,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
             {/* Mini footprint HUD — CPU% · RAM MB (Click to launch Memory Profiler) */}
             {isReady && (
-              <Tooltip label="Open UI Memory Profiler">
+              <Tooltip label={LAYOUT_COPY.nav.openProfiler}>
                 <button
                   onClick={() => {
                     setMonitorOpen(false);

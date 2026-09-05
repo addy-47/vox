@@ -8,6 +8,7 @@ import { cn } from '@/shared/lib/utils';
 
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
+import { WIZARD_STEP_HEADERS, AUDIO_SETUP_COPY, WIZARD_CTA_LABELS } from '@/data/welcomeCopy';
 
 interface Props {
   onNext: () => void;
@@ -90,10 +91,10 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
 
   return (
     <div className="flex flex-col h-full relative">
-      <WizardHeader 
-        step="Step 4 of 6 · Choosing Your Microphone"
-        title="Choose Your Microphone"
-        description="Pick the microphone Vox will listen to. This is how Vox hears you."
+      <WizardHeader
+        step={WIZARD_STEP_HEADERS.audio.step}
+        title={WIZARD_STEP_HEADERS.audio.title}
+        description={WIZARD_STEP_HEADERS.audio.description}
       />
  
       <div className="flex-1 flex flex-col gap-6 min-h-0">
@@ -123,7 +124,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
             <div className="flex-1">
                 <div className="flex items-center justify-between mb-2">
                 <span className="text-[12px] font-black text-[rgb(var(--foreground))]/80 uppercase tracking-widest flex items-center gap-2">
-                    <Activity className="w-3 h-3" /> Your Voice
+                    <Activity className="w-3 h-3" /> {AUDIO_SETUP_COPY.liveLabel}
                 </span>
                 <span className="text-[12px] font-bold text-[rgb(var(--accent))] font-mono">{Math.round(energy)}%</span>
                 </div>
@@ -139,7 +140,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
         </div>
     
         <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
-            <span className="text-[12px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest px-1">Choose a Microphone</span>
+            <span className="text-[12px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest px-1">{AUDIO_SETUP_COPY.listTitle}</span>
             <div className="space-y-2">
             {devices.map(device => (
                 <button
@@ -161,7 +162,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
             ))}
             {devices.length === 0 && (
                 <div className="p-8 text-center border border-dashed border-[rgba(var(--border),0.08)] rounded-xl glass">
-                <span className="text-[12px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest">No microphones detected</span>
+                <span className="text-[12px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest">{AUDIO_SETUP_COPY.empty}</span>
                 </div>
             )}
             </div>
@@ -171,7 +172,7 @@ export const AudioSetupStep: React.FC<Props> = ({ onNext, onBack }) => {
       <WizardFooter 
         onBack={onBack}
         onNext={onNext}
-        nextLabel="Continue"
+        nextLabel={WIZARD_CTA_LABELS.continueToVerification}
         isNextDisabled={!selected}
         showBack={true}
       />

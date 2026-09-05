@@ -241,7 +241,7 @@ export const LlmConfigDesk = memo(({
           return (
             <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-amber-400 px-2 py-0.5 rounded-full bg-amber-400/10 border border-amber-400/20 animate-pulse">
               <RefreshCw size={9} className="animate-spin" />
-              Testing
+              {INTERACTION_CONFIG_DESK_COPY.status.testing}
             </span>
           );
         }
@@ -249,7 +249,7 @@ export const LlmConfigDesk = memo(({
           return (
             <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-rose-400 px-2 py-0.5 rounded-full bg-rose-400/10 border border-rose-400/20">
               <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
-              Offline
+              {INTERACTION_CONFIG_DESK_COPY.status.offline}
             </span>
           );
         }
@@ -257,7 +257,7 @@ export const LlmConfigDesk = memo(({
           return (
             <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-400/10 border border-emerald-400/20">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)] shrink-0" />
-              Online
+              {INTERACTION_CONFIG_DESK_COPY.status.online}
             </span>
           );
         }
@@ -265,7 +265,7 @@ export const LlmConfigDesk = memo(({
       return (
         <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-400/10 border border-emerald-400/20">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)] shrink-0" />
-          Active
+          {INTERACTION_CONFIG_DESK_COPY.status.active}
         </span>
       );
     };
@@ -279,10 +279,10 @@ export const LlmConfigDesk = memo(({
               type="button"
               onClick={onBack}
               className="inline-flex items-center gap-1 text-[10.5px] font-bold text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer shrink-0 group"
-              aria-label="Back to providers"
+              aria-label={INTERACTION_CONFIG_DESK_COPY.status.backToProviders}
             >
               <ArrowLeft size={12} strokeWidth={2.5} className="group-hover:-translate-x-0.5 transition-transform" />
-              <span>Providers</span>
+              <span>{INTERACTION_CONFIG_DESK_COPY.status.providers}</span>
             </button>
           )}
           {onBack && <span className="text-[rgb(var(--foreground-muted))]/30 text-[10px] shrink-0">/</span>}

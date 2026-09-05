@@ -399,8 +399,14 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
 
 /// Synchronous wrapper for stop_audio_engine executed via the global Tokio runtime handle.
 pub fn stop_audio_engine_sync(state: &AppState) -> Result<(), String> {
-    let handle = crate::persistence::db::get_tokio_handle();
-    handle.block_on(stop_audio_engine(state))
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        tokio::task::block_in_place(|| {
+            handle.block_on(stop_audio_engine(state))
+        })
+    } else {
+        let handle = crate::persistence::db::get_tokio_handle();
+        handle.block_on(stop_audio_engine(state))
+    }
 }
 
 /// Initializes and warms up the LLM and TTS actor threads asynchronously if not already loaded.

@@ -143,3 +143,32 @@ All benchmarks, evals, and CLI simulation tools must serialize structured JSON r
 ### 8.3 Common Harness Decoupling (`benches/common/` & `tests/common/`)
 - Shared audio parsing, Levenshtein scoring, streaming ring-buffer feeders, bounded channel drains, and report writers MUST live in decoupled modules (`benches/common/` and `tests/common/`), NEVER duplicated inside standalone benchmark or test files.
 
+---
+
+## 9. Debugging, Subtest Isolation & Blocker Protocol (Mandatory)
+
+### 9.1 Single-Subtest Isolation First
+- **Never Run the Entire Suite on Failure:** If any test or subtest fails or hangs, immediately narrow the execution filter to that single, specific test:
+  ```bash
+  cargo nextest run --test <test_binary> -E 'test(<specific_subtest_fn>)' --release --nocapture --test-threads=1
+  ```
+- **Zero Multi-Test Looping During Debugging:** Do not re-run all subtests or the full binary until the isolated subtest passes cleanly.
+
+### 9.2 Zero Guessing — Line-by-Line Instrumented Tracing
+- **Do Not Speculate or Guess Root Cause:** Never push speculative multi-line changes or run trial-and-error loops hoping an issue disappears.
+- **Instrument Every Line:** When a test hangs or fails unpredictably, place explicit synchronous standard error markers (`eprintln!("[DEBUG checkpoint X]")`) before and after every single critical operation, mutex lock, channel send, thread spawn/join, and async boundary.
+- **Isolate the Exact Line Number:** Determine precisely which line fails to complete within 1 iteration. Remove the debug markers once the root cause is confirmed and resolved.
+
+### 9.3 The 2-Attempt Rule & Blocker Escalation
+- **Strict 2-Attempt Limit:** If a test failure or hang persists after **2 targeted attempts** with no new confirmed hypothesis, **STOP IMMEDIATELY**.
+- **Report, Never Work Around:**
+  1. Halt execution immediately without making further trial edits.
+  2. Report:
+     - Exact test and line number where the failure occurs.
+     - Observed symptoms and logs from instrumented checkpoints.
+     - The two hypotheses already attempted and their results.
+     - The specific dependency, deadlocking primitive, or architectural blocker identified.
+     - What is required to unblock progress.
+  3. Never silently bypass, stub with mock data, remove assertions, or delete tests to fake a green result.
+
+

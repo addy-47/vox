@@ -254,7 +254,7 @@ export const CentralClockNode = memo(
                     : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] opacity-60 hover:opacity-100 border border-transparent"
                 )}
               >
-                MONTH
+                {HISTORY_COPY.clockMonth}
               </button>
             </div>
 
@@ -309,7 +309,7 @@ export const CentralClockNode = memo(
                       {sessionsCount}
                     </span>
                     <span className="text-[11px] font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))] uppercase">
-                      SESSIONS
+                      {HISTORY_COPY.clockSessions}
                     </span>
                   </div>
                 </div>
@@ -325,7 +325,7 @@ export const CentralClockNode = memo(
                       {memoriesCount}
                     </span>
                     <span className="text-[11px] font-mono font-bold tracking-wider text-[rgb(var(--foreground-muted))] uppercase">
-                      MEMORIES
+                      {HISTORY_COPY.clockMemories}
                     </span>
                   </div>
                 </div>
@@ -337,7 +337,7 @@ export const CentralClockNode = memo(
               <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-[rgba(var(--accent),0.25)] to-transparent" />
               <div className="flex items-center justify-center gap-1.5 text-[11px] font-mono text-[rgb(var(--foreground-muted))] pt-0.5">
                 <Clock size={11} className="text-[rgb(var(--accent))]" />
-                <span className="text-[11px] font-bold uppercase tracking-wider">SPAN</span>
+                <span className="text-[11px] font-bold uppercase tracking-wider">{HISTORY_COPY.clockSpan}</span>
                 <span className="text-[11px] font-bold text-[rgb(var(--foreground))]">
                   {timeSpanLabel || windowLabel || "00:00 – 23:59"}
                 </span>

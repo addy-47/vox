@@ -2,6 +2,7 @@ import { memo } from "react";
 import { AudioWaveform, Ear, BrainCircuit, AudioLines, LifeBuoy } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
+import { DIRTY_STATE_COPY } from "@/data/settingsCopy";
 
 export type PipelineTab = "vad" | "stt" | "llm" | "tts" | "auxiliary";
 
@@ -64,7 +65,7 @@ export const ModelsTopologyMap = memo(
             >
               {isDirty && (
                 <span
-                  title="Unsaved changes in this category"
+                  title={DIRTY_STATE_COPY.category}
                   className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)] shrink-0"
                 />
               )}

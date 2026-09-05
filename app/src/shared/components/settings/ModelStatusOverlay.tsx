@@ -2,6 +2,7 @@ import { memo, useState, useEffect, useCallback } from "react";
 import { checkModelExists } from "@/services/modelService";
 import { useSettings } from "@/shared/hooks/useSettings";
 import { Brain, Sparkles, Volume2, AlertTriangle, AlertCircle } from "lucide-react";
+import { MODEL_HUB_COPY } from "@/data/settingsCopy";
 
 /** Extract a compact single-word model identifier from a display name. */
 const compactModelName = (name: string): string => {
@@ -103,7 +104,7 @@ export const ModelStatusOverlay = memo(() => {
           <div className="min-w-0 overflow-hidden">
             <div className="font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1 truncate">
               {llmName}
-              {!llmExists && <span className="text-[11px] text-[rgb(var(--danger))] font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
+              {!llmExists && <span className="text-[11px] text-[rgb(var(--danger))] font-bold uppercase tracking-wide leading-none shrink-0">{MODEL_HUB_COPY.missing}</span>}
             </div>
             {!isNarrow && (
               <div className="text-[11px] font-mono mt-0.5 leading-none truncate">{activeLlm.parameters || "LLM"}</div>
@@ -116,7 +117,7 @@ export const ModelStatusOverlay = memo(() => {
             {activeLlm.tradeoffs && <p className="mt-1.5 pt-1.5 border-t border-[rgba(var(--accent),0.06)] text-[11px] opacity-75">{activeLlm.tradeoffs}</p>}
             {!llmExists && (
               <p className="mt-1.5 text-[rgb(var(--danger))] font-semibold text-[11px] flex items-center gap-1">
-                <AlertCircle size={12} className="shrink-0" /> This model file is not downloaded yet.
+                <AlertCircle size={12} className="shrink-0" /> {MODEL_HUB_COPY.notDownloadedDesc}
               </p>
             )}
           </div>
@@ -134,7 +135,7 @@ export const ModelStatusOverlay = memo(() => {
           <div className="min-w-0 overflow-hidden">
             <div className="font-bold text-[rgb(var(--foreground))]/70 leading-none flex items-center gap-1 truncate">
               {asrName}
-              {!asrExists && <span className="text-[11px] text-[rgb(var(--danger))] font-bold uppercase tracking-wide leading-none shrink-0">Missing</span>}
+              {!asrExists && <span className="text-[11px] text-[rgb(var(--danger))] font-bold uppercase tracking-wide leading-none shrink-0">{MODEL_HUB_COPY.missing}</span>}
             </div>
             {!isNarrow && (
               <div className="text-[11px] font-mono mt-0.5 leading-none truncate">{activeAsr.parameters || "ASR"}</div>
@@ -146,7 +147,7 @@ export const ModelStatusOverlay = memo(() => {
             {activeAsr.description}
             {!asrExists && (
               <p className="mt-1.5 text-[rgb(var(--danger))] font-semibold text-[11px] flex items-center gap-1">
-                <AlertCircle size={12} className="shrink-0" /> This model file is not downloaded yet.
+                <AlertCircle size={12} className="shrink-0" /> {MODEL_HUB_COPY.notDownloadedDesc}
               </p>
             )}
           </div>

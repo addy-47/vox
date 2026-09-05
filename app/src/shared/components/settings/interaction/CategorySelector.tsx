@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
-import { CATEGORY_SWITCH_COPY } from "@/data/settingsCopy";
+import { CATEGORY_SWITCH_COPY, DIRTY_STATE_COPY } from "@/data/settingsCopy";
 
 interface CategorySelectorProps {
   activeCategory: "STT" | "LLM" | "TTS";
@@ -44,7 +44,7 @@ export const CategorySelector = memo(
                 <span className="truncate">{label}</span>
                 {isDirty && (
                   <span
-                    title="Unsaved changes in this stage"
+                    title={DIRTY_STATE_COPY.stage}
                     className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)] shrink-0"
                   />
                 )}

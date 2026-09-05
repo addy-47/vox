@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo, memo } from "react";
 import { cn } from "@/shared/lib/utils";
+import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { Minus, Plus } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
 
@@ -110,7 +111,7 @@ export const RotaryKnob = memo(({
       {/* Main Knob Control Row with Quick Micro Steppers */}
       <div className="flex items-center gap-3">
         {/* Step Down (-) Micro Button */}
-        <Tooltip label="Decrease Value">
+        <Tooltip label={LAYOUT_COPY.knob.decrease}>
         <button
           type="button"
           onClick={stepDown}
@@ -122,7 +123,7 @@ export const RotaryKnob = memo(({
         </Tooltip>
 
         {/* Interactive Rotary Dial */}
-        <Tooltip label="Drag up/down or use - / + steppers. Double-click to reset">
+        <Tooltip label={LAYOUT_COPY.knob.hint}>
         <div
           onMouseDown={handleMouseDown}
           onDoubleClick={resetDefault}
@@ -174,7 +175,7 @@ export const RotaryKnob = memo(({
         </Tooltip>
 
         {/* Step Up (+) Micro Button */}
-        <Tooltip label="Increase Value">
+        <Tooltip label={LAYOUT_COPY.knob.increase}>
         <button
           type="button"
           onClick={stepUp}
