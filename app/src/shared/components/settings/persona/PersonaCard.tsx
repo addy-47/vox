@@ -416,7 +416,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
         <p className="text-[11px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/60 leading-normal font-semibold uppercase tracking-wide px-0.5">
           {activeTab === "modular" ? (
             <>
-              Supports <code className="text-amber-400 font-mono font-bold bg-amber-400/10 px-1 py-0.2 rounded border border-amber-400/20">&lt;lang&gt;</code> and <code className="text-amber-400 font-mono font-bold bg-amber-400/10 px-1 py-0.2 rounded border border-amber-400/20">&lt;script&gt;</code> template variables, dynamically resolved based on user speech language.
+              {PERSONA_COPY.modularFooterPrefix}<code className="text-amber-400 font-mono font-bold bg-amber-400/10 px-1 py-0.2 rounded border border-amber-400/20">&lt;lang&gt;</code>{PERSONA_COPY.modularFooterMid}<code className="text-amber-400 font-mono font-bold bg-amber-400/10 px-1 py-0.2 rounded border border-amber-400/20">&lt;script&gt;</code>{PERSONA_COPY.modularFooterSuffix}
             </>
           ) : (
             PERSONA_COPY.realtimeFooterHint

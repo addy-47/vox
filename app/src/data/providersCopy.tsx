@@ -1,6 +1,4 @@
 import React from "react";
-import type { LucideIcon } from "lucide-react";
-import { Brain, Cloud, Server } from "lucide-react";
 
 export interface CloudProvider {
   id: string;
@@ -16,8 +14,6 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
   { id: "anthropic", name: "Anthropic", url: "https://api.anthropic.com/v1", keyPlaceholder: "sk-ant-..." },
   { id: "groq", name: "Groq", url: "https://api.groq.com/openai/v1", keyPlaceholder: "gsk_..." },
 ];
-
-export type CloudProviderId = (typeof CLOUD_PROVIDERS)[number]["id"];
 
 export const CLOUD_PROVIDER_HOSTS = ["openai.com", "googleapis.com", "anthropic.com", "groq.com", "nvidia.com"] as const;
 
@@ -98,13 +94,7 @@ export const ElevenLabsLogo = ({
 
 export const checkIfCloudUrl = (url: string) => {
   if (!url) return false;
-  return (
-    url.includes("openai.com") ||
-    url.includes("googleapis.com") ||
-    url.includes("anthropic.com") ||
-    url.includes("groq.com") ||
-    url.includes("nvidia.com")
-  );
+  return CLOUD_PROVIDER_HOSTS.some((host) => url.includes(host));
 };
 
 export const REALTIME_PROVIDERS = [
@@ -130,56 +120,3 @@ export const REALTIME_PROVIDERS = [
   },
 ] as const;
 
-export type RealtimeProvider = (typeof REALTIME_PROVIDERS)[number];
-
-export const REALTIME_PROVIDER_SUBKEY: Record<string, string> = {
-  gemini_live: "gemini_live",
-  gemini: "gemini_live",
-  openai_realtime: "openai_realtime",
-  openai: "openai_realtime",
-  deepgram_voice_agent: "deepgram_voice_agent",
-  deepgram: "deepgram_voice_agent",
-  elevenlabs_convai: "elevenlabs_convai",
-  elevenlabs: "elevenlabs_convai",
-};
-
-export const REALTIME_PROVIDER_DISPLAY_NAMES = {
-  gemini_live: "Gemini Multimodal API",
-  openai_realtime: "OpenAI Realtime API",
-  deepgram_voice_agent: "Deepgram Voice Agent",
-  elevenlabs_convai: "ElevenLabs Conversational AI",
-} as const;
-
-
-export const REALTIME_PROVIDER_SHORT_NAMES = {
-  gemini_live: "Gemini",
-  openai_realtime: "OpenAI",
-  deepgram_voice_agent: "Deepgram",
-  elevenlabs_convai: "ElevenLabs",
-} as const;
-
-export const REALTIME_DEFAULT_MODEL_IDS = {
-  gemini: "gemini-2.5-flash",
-  openai: "gpt-4o-realtime-preview",
-  deepgram: "gpt-4o-mini",
-  elevenlabs: "",
-} as const;
-
-export const REALTIME_SUBKEY_TOGGLES = {
-  gemini: { field: "enable_web_search", voiceField: "voice_name", label: "Google Search", sub: "Live web grounding" },
-  openai: { field: "voice_activity_detection", voiceField: "voice", label: "VAD", sub: "Activity detection" },
-  deepgram: { field: "agent_mode", voiceField: "voice", label: "Agent Mode", sub: "AI agent routing" },
-  elevenlabs: { field: "dynamic_vars", voiceField: "voice", label: "Dynamic Vars", sub: "Context variables" },
-} as const;
-
-export interface ProviderCategoryPill {
-  id: "local" | "remote" | "cloud";
-  label: string;
-  icon: LucideIcon;
-}
-
-export const PROVIDER_CATEGORY_PILLS: ProviderCategoryPill[] = [
-  { id: "local", label: "Embedded", icon: Brain },
-  { id: "remote", label: "Server", icon: Server },
-  { id: "cloud", label: "Cloud", icon: Cloud },
-];

@@ -3,6 +3,7 @@ import { Brain, Mic, Volume2 } from "lucide-react";
 import { type RuntimeSnapshot } from "@/services/pipelineService";
 import { type DynamicColors } from "./colorUtils";
 import { cn } from "@/shared/lib/utils";
+import { MONITORING_COPY } from "@/data/monitoringCopy";
 
 interface LiquidChamberProps {
   latest: RuntimeSnapshot | null;
@@ -409,11 +410,11 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
 
         <div className="mt-2 flex items-center gap-2">
           <span className="text-[12px] font-bold tracking-[0.25em] uppercase text-[rgb(var(--foreground))] drop-shadow-sm">
-            {activeModelsCount === 1 ? "MODEL IN MEMORY" : "MODELS IN MEMORY"}
+            {activeModelsCount === 1 ? MONITORING_COPY.modelInMemory : MONITORING_COPY.modelsInMemory}
           </span>
         </div>
         <span className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] tracking-wider mt-0.5 max-w-[240px]">
-          Your computer's activity, visualized
+          {MONITORING_COPY.chamberSubtitle}
         </span>
       </div>
 
@@ -438,7 +439,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
         >
           <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase">
             <Brain size={11} style={{ color: `rgb(${colors.primary})` }} />
-            <span>Thinking</span>
+            <span>{MONITORING_COPY.chamberThinking}</span>
           </div>
           <span
             style={{
@@ -469,7 +470,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
         >
           <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase">
             <Mic size={11} style={{ color: `rgb(${colors.complementary})` }} />
-            <span>Hearing</span>
+            <span>{MONITORING_COPY.chamberHearing}</span>
           </div>
           <span
             style={{
@@ -502,7 +503,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
         >
           <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold text-[rgb(var(--foreground-muted))] uppercase">
             <Volume2 size={11} style={{ color: `rgb(${colors.primary})` }} />
-            <span>Speaking</span>
+            <span>{MONITORING_COPY.chamberSpeaking}</span>
           </div>
           <span
             style={{

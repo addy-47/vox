@@ -10,9 +10,7 @@ import {
   HistoryListView,
   useHistory,
 } from "@/shared/components/history";
-import { EmptyState, OrbitalLoader, ErrorBoundary } from "@/shared/components/common";
-import { NotificationBell } from "@/shared/components/home/NotificationBell";
-import { HelpTriggerButton } from "@/shared/components/help/HelpTriggerButton";
+import { EmptyState, OrbitalLoader, ErrorBoundary, TopRightCluster } from "@/shared/components/common";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import type { SessionRow } from "@/services/historyService";
 
@@ -142,10 +140,9 @@ export const History: React.FC = () => {
       onClick={handleStageClick}
       className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none"
     >
-      {/* ── Top-right: Notification Bell ── */}
-      <div className="absolute top-4 right-5 z-30 flex items-center gap-1.5 pointer-events-none">
-        <HelpTriggerButton deepLink="page:history" className="pointer-events-auto" />
-        <NotificationBell />
+      {/* ── Top-right: Help + Notifications ── */}
+      <div className="absolute top-4 right-5 z-30">
+        <TopRightCluster deepLink="page:history" />
       </div>
 
       {/* Delete Error Notification Banner */}
@@ -327,8 +324,8 @@ export const History: React.FC = () => {
           >
             <OrbitalLoader
               size="md"
-              title="Loading conversations..."
-              subtitle="Accessing local voice history"
+              title={HISTORY_COPY.loadingConversations}
+              subtitle={HISTORY_COPY.accessingHistory}
               statusText="SYNCHRONIZING ORBIT"
             />
           </motion.div>

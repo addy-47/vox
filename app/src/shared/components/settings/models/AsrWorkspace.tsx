@@ -3,6 +3,7 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
 import { cn } from "@/shared/lib/utils";
 import { Microchip, Zap, Battery, Gauge } from "lucide-react";
+import { STT_SETTINGS_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
 
 interface AsrWorkspaceProps {
   activeCategoryTab?: "model" | "settings";
@@ -98,14 +99,14 @@ export const AsrWorkspace = memo(
                 <div className="flex flex-col gap-1 min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                      Subtitle Cadence
+                      {STT_SETTINGS_COPY.streamingRate.title}
                     </span>
                     <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                       {currentThrottle} ms
                     </span>
                   </div>
                   <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                    Interim partial transcription update frequency. Faster updates give immediate feedback; slower updates preserve CPU.
+                    {STT_SETTINGS_COPY.streamingRate.description}
                   </p>
                 </div>
 
@@ -155,7 +156,7 @@ export const AsrWorkspace = memo(
                           updateDraft("stt", "partial_throttle_ms", num);
                         }
                       }}
-                      placeholder="Custom"
+                      placeholder={COMPUTE_PROFILE_COPY.custom}
                       className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                   </div>
@@ -169,14 +170,14 @@ export const AsrWorkspace = memo(
                 <div className="flex flex-col gap-1 min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                      Script Transliteration
+                      {STT_SETTINGS_COPY.transliteration.title}
                     </span>
                     <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                       {transliterateEnabled ? "ACTIVE" : "DISABLED"}
                     </span>
                   </div>
                   <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                    Automatically normalizes and maps recognized multilingual phonemes into target orthography during live transcription.
+                    {STT_SETTINGS_COPY.transliteration.description}
                   </p>
                 </div>
 
@@ -222,14 +223,14 @@ export const AsrWorkspace = memo(
                     <div className="flex items-center gap-2">
                       <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))] flex items-center gap-1.5">
                         <Microchip size={14} className="text-[rgb(var(--accent))]" />
-                        Compute Allocation
+                        {COMPUTE_PROFILE_COPY.title}
                       </span>
                       <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                         {currentThreads} / {totalCores} Cores
                       </span>
                     </div>
                     <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                      CPU worker threads allocated for speech recognition inference. Requires restart to apply.
+                      {STT_SETTINGS_COPY.compute.description}
                     </p>
                   </div>
 
@@ -245,7 +246,7 @@ export const AsrWorkspace = memo(
                       )}
                     >
                       <Zap size={11} className="text-[rgb(var(--accent))]" />
-                      <span>Auto</span>
+                      <span>{COMPUTE_PROFILE_COPY.auto}</span>
                     </button>
 
                     <button
@@ -259,7 +260,7 @@ export const AsrWorkspace = memo(
                       )}
                     >
                       <Battery size={11} className="text-emerald-400" />
-                      <span>Eco</span>
+                      <span>{COMPUTE_PROFILE_COPY.eco}</span>
                     </button>
 
                     <button
@@ -273,7 +274,7 @@ export const AsrWorkspace = memo(
                       )}
                     >
                       <Gauge size={11} className="text-amber-400" />
-                      <span>Max</span>
+                      <span>{COMPUTE_PROFILE_COPY.max}</span>
                     </button>
 
                     <div className={cn(
@@ -294,7 +295,7 @@ export const AsrWorkspace = memo(
                             updateDraft("stt", "threads", num);
                           }
                         }}
-                        placeholder="Custom"
+                        placeholder={COMPUTE_PROFILE_COPY.custom}
                         className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                     </div>

@@ -3,6 +3,7 @@ import { Activity, Layers, Terminal } from "lucide-react";
 import type { ProfilerSnapshot, JSHeapSample } from "@/services/memoryProfilerService";
 import { AccuracyBadge } from "./AccuracyBadge";
 import { cn } from "@/shared/lib/utils";
+import { PROFILER_COPY } from "@/data/profilerCopy";
 
 interface OverviewTabProps {
   latestSnapshot: ProfilerSnapshot | null;
@@ -61,10 +62,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   // Donut chart calculations
   const totalAllocated = totalRss || 1;
   const segments = [
-    { label: "Main WebView", val: mainWebview, color: "rgb(var(--accent))", pct: (mainWebview / totalAllocated) * 100 },
-    { label: "Rust Core", val: rustCore, color: "rgba(var(--accent), 0.7)", pct: (rustCore / totalAllocated) * 100 },
-    { label: "Tray HUD", val: trayWebview, color: "rgba(var(--accent), 0.45)", pct: (trayWebview / totalAllocated) * 100 },
-    { label: "Other / Network", val: otherRss, color: "rgba(var(--foreground-muted), 0.35)", pct: (otherRss / totalAllocated) * 100 },
+    { label: PROFILER_COPY.overview.mainWebView, val: mainWebview, color: "rgb(var(--accent))", pct: (mainWebview / totalAllocated) * 100 },
+    { label: PROFILER_COPY.overview.rustCore, val: rustCore, color: "rgba(var(--accent), 0.7)", pct: (rustCore / totalAllocated) * 100 },
+    { label: PROFILER_COPY.overview.trayHud, val: trayWebview, color: "rgba(var(--accent), 0.45)", pct: (trayWebview / totalAllocated) * 100 },
+    { label: PROFILER_COPY.overview.otherNetwork, val: otherRss, color: "rgba(var(--foreground-muted), 0.35)", pct: (otherRss / totalAllocated) * 100 },
   ];
 
   const radius = 48;
@@ -82,7 +83,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         <div className="p-4 rounded-2xl border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--card),0.92)] shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
-              Total Vox RSS
+              {PROFILER_COPY.overview.totalVoxRss}
             </span>
             <AccuracyBadge type="Measured" />
           </div>
@@ -93,14 +94,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <span className="font-mono text-xs text-[rgb(var(--foreground-muted))]">MB</span>
           </div>
           <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] mt-1 truncate">
-            Process tree aggregate
+            {PROFILER_COPY.overview.processTreeAggregate}
           </p>
         </div>
 
         <div className="p-4 rounded-2xl border border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.92)] shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
-              Main WebView
+              {PROFILER_COPY.overview.mainWebView}
             </span>
             <AccuracyBadge type={mainWebview > 0 ? "Measured" : "Unattributed"} />
           </div>
@@ -111,14 +112,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <span className="font-mono text-xs text-[rgb(var(--foreground-muted))]">MB</span>
           </div>
           <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] mt-1 truncate">
-            Primary UI surface
+            {PROFILER_COPY.overview.primaryUiSurface}
           </p>
         </div>
 
         <div className="p-4 rounded-2xl border border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.92)] shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
-              Rust Core
+              {PROFILER_COPY.overview.rustCore}
             </span>
             <AccuracyBadge type="Measured" />
           </div>
@@ -136,7 +137,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         <div className="p-4 rounded-2xl border border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.92)] shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
-              JS Heap
+              {PROFILER_COPY.overview.jsHeap}
             </span>
             <AccuracyBadge type={jsHeap.available ? "Measured" : "Unattributed"} />
           </div>
@@ -147,14 +148,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <span className="font-mono text-xs text-[rgb(var(--foreground-muted))]">MB</span>
           </div>
           <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] mt-1 truncate">
-            {jsHeap.available && jsHeap.limitMb ? `Limit: ${jsHeap.limitMb.toFixed(0)} MB` : "V8/WebKit heap"}
+            {jsHeap.available && jsHeap.limitMb ? `Limit: ${jsHeap.limitMb.toFixed(0)} MB` : PROFILER_COPY.overview.heapFallback}
           </p>
         </div>
 
         <div className="p-4 rounded-2xl border border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.92)] shadow-sm col-span-2 md:col-span-1">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
-              Tray WebView
+              {PROFILER_COPY.overview.trayWebView}
             </span>
             <AccuracyBadge type={trayWebview > 0 ? "Measured" : "Unattributed"} />
           </div>
@@ -165,7 +166,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <span className="font-mono text-xs text-[rgb(var(--foreground-muted))]">MB</span>
           </div>
           <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] mt-1 truncate">
-            HUD tray overlay
+            {PROFILER_COPY.overview.hudTrayOverlay}
           </p>
         </div>
       </div>
@@ -178,7 +179,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <div className="flex items-center gap-2">
               <Activity size={17} className="text-[rgb(var(--accent))]" />
               <h3 className="font-display text-sm font-bold tracking-wide text-[rgb(var(--foreground))]">
-                Memory Over Time
+                {PROFILER_COPY.overview.memoryOverTime}
               </h3>
             </div>
             <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
@@ -188,7 +189,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
           <div className="w-full h-56 relative flex items-center justify-center my-2">
             {historyPoints.length === 0 ? (
-              <div className="text-xs text-[rgb(var(--foreground-muted))]">Sampling telemetry...</div>
+              <div className="text-xs text-[rgb(var(--foreground-muted))]">{PROFILER_COPY.overview.sampling}</div>
             ) : (
               <svg
                 viewBox={`0 0 ${chartWidth} ${chartHeight}`}
@@ -251,7 +252,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <div className="flex items-center justify-between pt-3 border-t border-[rgba(var(--border),0.08)] text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))]" />
-              Total Process Tree RSS
+              {PROFILER_COPY.overview.totalProcessTreeRss}
             </span>
             <span className="text-[rgb(var(--foreground))] font-bold">Current: {totalRss.toFixed(1)} MB</span>
           </div>
@@ -263,7 +264,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <div className="flex items-center gap-2">
               <Layers size={17} className="text-[rgb(var(--accent))]" />
               <h3 className="font-display text-sm font-bold tracking-wide text-[rgb(var(--foreground))]">
-                Memory Distribution
+                {PROFILER_COPY.overview.memoryDistribution}
               </h3>
             </div>
           </div>
@@ -296,7 +297,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 <span className="font-mono text-base font-bold text-[rgb(var(--foreground))]">
                   {totalRss.toFixed(0)}
                 </span>
-                <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">MB Total</span>
+                <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">{PROFILER_COPY.overview.mbTotal}</span>
               </div>
             </div>
           </div>
@@ -324,7 +325,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <div className="flex items-center gap-2">
             <Terminal size={17} className="text-[rgb(var(--accent))]" />
             <h3 className="font-display text-sm font-bold tracking-wide text-[rgb(var(--foreground))]">
-              OS Process Tree Hierarchy
+              {PROFILER_COPY.overview.processTreeTitle}
             </h3>
           </div>
           <AccuracyBadge type="Measured" />
@@ -334,11 +335,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <table className="w-full text-left text-xs font-mono">
             <thead>
               <tr className="border-b border-[rgba(var(--border),0.12)] text-[11px] text-[rgb(var(--foreground-muted))] uppercase">
-                <th className="pb-3 font-semibold">PID</th>
-                <th className="pb-3 font-semibold">Process Name</th>
-                <th className="pb-3 font-semibold">Inferred Role</th>
-                <th className="pb-3 font-semibold">Physical RSS</th>
-                <th className="pb-3 font-semibold">CPU Load</th>
+                <th className="pb-3 font-semibold">{PROFILER_COPY.overview.pid}</th>
+                <th className="pb-3 font-semibold">{PROFILER_COPY.overview.processName}</th>
+                <th className="pb-3 font-semibold">{PROFILER_COPY.overview.inferredRole}</th>
+                <th className="pb-3 font-semibold">{PROFILER_COPY.overview.physicalRss}</th>
+                <th className="pb-3 font-semibold">{PROFILER_COPY.overview.cpuLoad}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[rgba(var(--border),0.06)] text-[12px]">

@@ -16,7 +16,7 @@ export const PipelineModeCard = memo(({ layoutMode }: PipelineModeCardProps) => 
 
   return (
     <ToggleTile
-      title="Pipeline"
+      title={PIPELINE_MODE_COPY.cardTitle}
       active={isModular}
       activeLabel={PIPELINE_MODE_COPY.modularTitle}
       inactiveLabel={PIPELINE_MODE_COPY.realtimeTitle}

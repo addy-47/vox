@@ -964,7 +964,7 @@ fn apply_system_mutation(
 
 /// Applies a mutation to the settings struct by domain+key routing.
 /// Returns `true` if the key was recognized and applied.
-pub(crate) fn apply_setting_mutation(
+pub fn apply_setting_mutation(
     settings: &mut VoxSettings,
     domain: &str,
     key: &str,

@@ -7,6 +7,7 @@ import { cn } from '@/shared/lib/utils';
 
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
+import { WIZARD_STEP_HEADERS, LIVE_TEST_COPY } from '@/data/welcomeCopy';
 
 interface Props {
   onNext: () => void;
@@ -83,10 +84,10 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
 
   return (
     <div className="flex flex-col h-full max-h-[100vh] overflow-hidden justify-between relative select-none">
-      <WizardHeader 
-        step="Step 5 of 6 · Test Your Voice"
-        title="Try It Out"
-        description="Say something and watch Vox understand you in real time — entirely on your computer."
+      <WizardHeader
+        step={WIZARD_STEP_HEADERS.testing.step}
+        title={WIZARD_STEP_HEADERS.testing.title}
+        description={WIZARD_STEP_HEADERS.testing.description}
       />
 
       <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-hidden justify-center">
@@ -100,12 +101,12 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                       <X className="w-5 h-5" />
                   </div>
                   <div className="flex flex-col">
-                      <h3 className="text-[rgb(var(--foreground))] font-black uppercase tracking-widest text-[12px]">Couldn't Start the Voice Engine</h3>
+                      <h3 className="text-[rgb(var(--foreground))] font-black uppercase tracking-widest text-[12px]">{LIVE_TEST_COPY.engineErrorTitle}</h3>
                       <button 
                           onClick={setup}
                           className="text-[12px] font-black uppercase tracking-widest text-[rgb(var(--accent))] hover:underline text-left mt-0.5"
                       >
-                          Try Again
+                          {LIVE_TEST_COPY.tryAgain}
                       </button>
                   </div>
               </div>
@@ -147,7 +148,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
         )}>
             <div className="flex items-center justify-between mb-2">
                 <span className="text-[12px] font-black text-[rgb(var(--foreground-muted))]/50 uppercase tracking-[0.3em] flex items-center gap-2">
-                    <MessageSquare className="w-3.5 h-3.5 text-[rgb(var(--accent))]/60" /> Your Words
+                    <MessageSquare className="w-3.5 h-3.5 text-[rgb(var(--accent))]/60" /> {LIVE_TEST_COPY.demoHint}
                 </span>
                 {testComplete && (
                     <motion.span 
@@ -155,7 +156,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                         animate={{ opacity: 1, scale: 1 }}
                         className="text-[12px] font-black bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full uppercase tracking-tighter"
                     >
-                        Processed
+                        {LIVE_TEST_COPY.processed}
                     </motion.span>
                 )}
             </div>
@@ -196,9 +197,9 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                     <Activity className="w-4 h-4" />
                 </div>
                 <div className="flex flex-col min-w-0">
-                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest truncate">Voice Level</span>
+                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest truncate">{LIVE_TEST_COPY.voiceLevel}</span>
                     <span className="text-xs font-black text-[rgb(var(--foreground))] truncate">
-                        {isEngineReady ? (energy > 2 ? "Voice Detected" : "Listening...") : "---"}
+                        {isEngineReady ? (energy > 2 ? LIVE_TEST_COPY.voiceDetected : LIVE_TEST_COPY.listening) : "---"}
                     </span>
                 </div>
             </div>
@@ -210,9 +211,9 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
                     {testComplete ? <Check className="w-4 h-4" /> : <Sparkles className="w-4 h-4 animate-pulse" />}
                 </div>
                 <div className="flex flex-col min-w-0">
-                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest truncate">Your Words</span>
+                    <span className="text-[11px] font-bold text-[rgb(var(--foreground-muted))]/70 uppercase tracking-widest truncate">{LIVE_TEST_COPY.demoHint}</span>
                     <span className="text-xs font-black text-[rgb(var(--foreground))] truncate">
-                        {testComplete ? "Text Received" : "Waiting..."}
+                        {testComplete ? LIVE_TEST_COPY.textReceived : LIVE_TEST_COPY.waiting}
                     </span>
                 </div>
             </div>
@@ -223,7 +224,7 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
         onBack={onBack}
         onNext={onNext}
         onSkip={onNext}
-        nextLabel="Confirm & Continue"
+        nextLabel={LIVE_TEST_COPY.confirmContinue}
         isNextDisabled={!testComplete}
         showBack={true}
         showSkip={true}

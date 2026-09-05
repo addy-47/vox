@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Layers, ChevronDown, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { MEMORY_COPY } from "@/data/memoryCopy";
 
 interface MemoryLegendCardProps {
   selectedCollection: string;
@@ -55,11 +56,11 @@ export const MemoryLegendCard: React.FC<MemoryLegendCardProps> = ({
               <div className="flex items-center gap-1.5">
                 <Layers size={13} className="text-[rgb(var(--accent))]" />
                 <span className="text-[11px] font-sans font-bold uppercase tracking-[0.14em] text-[rgb(var(--foreground-muted))]">
-                  Memory Legend
+                  {MEMORY_COPY.legendTitle}
                 </span>
               </div>
               {isFiltered && (
-                <Tooltip label="Reset filters">
+                <Tooltip label={MEMORY_COPY.resetFilters}>
                   <button
                     type="button"
                     onClick={() => {
@@ -79,7 +80,7 @@ export const MemoryLegendCard: React.FC<MemoryLegendCardProps> = ({
               {/* Left column: Collections */}
               <div className="flex-1 min-w-0 flex flex-col gap-1">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70 px-1">
-                  Clusters
+                  {MEMORY_COPY.clusters}
                 </span>
                 <div className="flex flex-col">
                   {COLLECTIONS_LIST.map((col) => {
@@ -111,7 +112,7 @@ export const MemoryLegendCard: React.FC<MemoryLegendCardProps> = ({
               {/* Right column: Relations */}
               <div className="flex-1 min-w-0 flex flex-col gap-1">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70 px-1">
-                  Edges
+                  {MEMORY_COPY.edges}
                 </span>
                 <div className="flex flex-col">
                   {RELATIONS_LIST.map((rel) => {
@@ -158,7 +159,7 @@ export const MemoryLegendCard: React.FC<MemoryLegendCardProps> = ({
       >
         <Layers size={18} className={cn("transition-colors", open ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--accent))]")} />
         <span className="text-[12px] font-sans font-bold uppercase tracking-[0.14em]">
-          Legend
+          {MEMORY_COPY.legendToggle}
         </span>
         {isFiltered && (
           <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />

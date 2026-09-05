@@ -120,15 +120,34 @@ export const DOMAIN_DIRTY_KEYS: Record<SettingsDomainId, readonly DomainDirtyKey
 };
 
 export const REALTIME_CONFIG_DESK_COPY = {
-  title: "Live Voice Provider",
+  title: "Realtime Direct Voice Connection",
+  bannerDescPrefix: "Full duplex speech-to-speech engine with ",
+  bannerHighlight: "sub-200ms",
+  bannerDescSuffix: " live audio streaming, native grounding, and dynamic turn detection.",
   duplexBadge: "Direct Voice",
   providerLabel: "Voice Provider",
   apiKeyLabel: "API Key (Required)",
   prevProvider: "Previous provider",
   nextProvider: "Next provider",
+  stages: {
+    capture: "Capture",
+    think: "Think",
+    speak: "Speak",
+  },
+  voice: {
+    selectVoice: "Select Voice",
+    prevVoice: "Previous Voice",
+    nextVoice: "Next Voice",
+  },
+  modelLabel: "Model",
+  modelPlaceholder: "Model ID",
+  temperature: "Temperature",
+  hubTitle: "Realtime Hub",
+  liveMode: "Live Mode",
 };
 
 export const PIPELINE_MODE_COPY = {
+  cardTitle: "Pipeline",
   modularTitle: "Modular",
   modularSub: "Custom Models",
   realtimeTitle: "Realtime",
@@ -136,10 +155,21 @@ export const PIPELINE_MODE_COPY = {
 };
 
 export const TRIGGER_MODE_COPY = {
+  cardTitle: "Trigger",
   continuousTitle: "Continuous",
   continuousSub: "Always Listening",
   pttTitle: "Push-To-Talk",
   pttSub: "Hold to Speak",
+};
+
+export const INTERACTION_CARD_COPY = {
+  cardTitle: "Interaction",
+  viewAssistant: "Assistant",
+  viewDictation: "Dictation",
+  voiceTyping: "Voice Typing",
+  triggerMode: "Trigger Mode",
+  toggleEnabled: "Enabled",
+  toggleDisabled: "Disabled",
 };
 
 export const SETTINGS_COPY = {
@@ -154,6 +184,9 @@ export const SETTINGS_COPY = {
   apiKeyRequired: "API Key Required for Cloud Provider",
   restartRequired: "Restart Required to Apply Changes",
   restoreDefaults: "Restore All Defaults",
+  restoreAria: "Restore default settings",
+  restoreConfirmAria: "Confirm restore defaults",
+  restoreConfirmHint: "Click again to reset",
   confirmRestoreTitle: "Are you sure you want to restore defaults?",
   confirmRestoreDesc: "This will reset all persona, model, voice, interaction, and system configurations to default factory settings.",
   openDomain: "Open {label} settings",
@@ -161,6 +194,9 @@ export const SETTINGS_COPY = {
   openAllDomains: "Open all settings",
   closeAllDomains: "Clear all settings",
   helpGuideTooltip: "Open help & guide",
+  loadingSettings: "Loading Settings...",
+  loadingHint: "Reading hardware and model configurations",
+  initializingEngine: "INITIALIZING CONFIG ENGINE",
 };
 
 export const DICTATION_COPY = {
@@ -186,6 +222,8 @@ export const DICTATION_COPY = {
   triggerPttSub: "Hold Hotkey",
   voiceTypingActive: "Ready to Transcribe",
   voiceTypingInactive: "System Muted",
+  outputTitle: "Output",
+  rebindHint: "Click to rebind activation shortcut",
 };
 
 export const CATEGORY_SWITCH_COPY = {
@@ -212,7 +250,9 @@ export const PERSONA_COPY = {
   viewPreview: "Preview",
   modularPlaceholder: "Modular instruction prompt...",
   realtimePlaceholder: "Realtime instruction prompt...",
-  modularFooterHint: "Supports <lang> and <script> template variables, dynamically resolved based on user speech language.",
+  modularFooterPrefix: "Supports ",
+  modularFooterMid: " and ",
+  modularFooterSuffix: " template variables, dynamically resolved based on user speech language.",
   realtimeFooterHint: "Instructions supplied to duplex cloud speech-to-speech models (e.g. Gemini Live).",
   emptyPrompt: "No instructions defined. Switch to Edit to write prompt directives.",
 };
@@ -256,6 +296,14 @@ export const INTERACTION_CONFIG_DESK_COPY = {
       providerLabel: "Cloud Provider",
       apiKeyLabel: "API Key (Required)",
     },
+  },
+  status: {
+    testing: "Testing",
+    offline: "Offline",
+    online: "Online",
+    active: "Active",
+    backToProviders: "Back to providers",
+    providers: "Providers",
   },
   tts: {
     local: {
@@ -339,14 +387,136 @@ export const TTS_VOICE_MANAGER_COPY = {
     title: "Speech Rate",
     description: "Fine-tune speech synthesis playback tempo and velocity across assistant responses without pitch distortion.",
   },
+  compute: {
+    title: "Compute Allocation",
+    description:
+      "CPU worker threads for TTS synthesis. Higher counts reduce latency but share cores with STT and LLM.",
+  },
+  region: {
+    previous: "Previous region",
+    next: "Next region",
+  },
 };
 
+export const VOICE_CAROUSEL_COPY = {
+  namePlaceholder: "Enter voice name...",
+  chooseFile: "Choose WAV File",
+  fileSelected: "File Selected:",
+  stopRecording: "Stop Recording",
+  recordVoice: "Record Voice",
+  cancel: "Cancel",
+  cloning: "Cloning...",
+  processing: "Processing...",
+  cloneVoice: "Clone Voice",
+  searchPlaceholder: "Search voice...",
+  clear: "Clear",
+  closeSearch: "Close search",
+  searchVoices: "Search Voices",
+  searchVoice: "Search Voice",
+  saveVoiceName: "Save voice name",
+  cancelRename: "Cancel rename",
+  noVoice: "No Voice",
+  renameCustomVoice: "Rename Custom Voice",
+  renameVoice: "Rename voice",
+  deleteCustomVoice: "Delete Custom Voice",
+  deleteVoice: "Delete voice",
+  cloneVoiceProfile: "Clone Voice Profile",
+  prevVoice: "Previous Voice",
+  nextVoice: "Next Voice",
+} as const;
+
+export const LLM_CATALOG_COPY = {
+  connectedServer: "Connected Server",
+  fetching: "Fetching...",
+  customModelPlaceholder: "Enter custom model ID (e.g. mistralai/mistral-large)...",
+  customModelTitle: "Enter custom model ID",
+  customModelAria: "Custom model ID",
+  searchPlaceholder: "Filter models with fuzzy matching (e.g. llama 70b, gemma q4)...",
+  searchTitle: "Search models (fzf fuzzy filter)",
+  searchAria: "Search models",
+  emptyTitle: "No remote models loaded",
+  emptyHint: "Ensure the remote server is online and configured in the Interaction Card.",
+  clearSearch: "Clear Search",
+  use: "Use",
+  noServer: "No server configured",
+  noModelsMatch: "No models matching",
+  toolsSupported: "Supported",
+  toolsNone: "None",
+  languageStandard: "Standard",
+  managed: "Managed",
+  gpuBadge: "🚀 GPU",
+  cpuBadge: "⚠️ CPU",
+  rerunBenchmark: "Re-run capability benchmark",
+  runBenchmark: "Run capability benchmark",
+  benchmark: "Benchmark",
+  benchmarking: "Benchmarking...",
+  capabilities: "Capabilities",
+  modelCapabilities: "Model Capabilities",
+  notBenchmarked: "Not benchmarked",
+  speed: "Speed:",
+  context: "Context:",
+  vram: "VRAM:",
+  tools: "Tools:",
+  languages: "Languages:",
+} as const;
+
+export const REMOTE_SERVER_COPY = {
+  bannerTitle: "Chatterbox Remote Deployment",
+  bannerBody:
+    "Deploy Chatterbox on a remote CUDA-accelerated GPU host (e.g. RunPod, Vast.ai, or homelab) to offload memory-intensive flow-matching voice synthesis. Enter your SSH connection info below to automatically sync the codebase, download GGUF models, and run the server.",
+  panelTitle: "Setup Remote GPU Server (SSH Setup Required)",
+  online: "Online / Connected",
+  offline: "Offline / Unconfigured",
+  hostLabel: "SSH Host / Profile",
+  hostPlaceholder: "user@hostname",
+  portLabel: "SSH Port",
+  portPlaceholder: "22",
+  keyLabel: "Identity Key Path",
+  keyPlaceholder: "~/.ssh/id_rsa",
+  steps: {
+    initiating: "Initializing Setup...",
+    connecting: "Testing SSH Connection...",
+    deploying: "Configuring Remote Server...",
+    starting_service: "Starting Chatterbox Service...",
+    verifying: "Verifying Health Endpoint...",
+    complete: "Setup Completed Successfully",
+    failed: "Setup Failed",
+  } as Record<string, string>,
+  footerReady: "Ready to synthesize flow-matching audio.",
+  footerBusy: "Syncs scripts and installs PyTorch CUDA on remote host.",
+  deployed: "Deployed & Active",
+  deploying: "Deploying...",
+  deploy: "Deploy Chatterbox Server",
+} as const;
+
 export const MODEL_HUB_COPY = {
-  backToModels: "Models",
-  present: "Ready",
-  notPresent: "Not downloaded",
-  unsavedChanges: "Unsaved changes for this provider",
+  title: "Model Hub",
+  missing: "Missing",
+  notDownloadedDesc: "This model file is not downloaded yet.",
+  row: {
+    cancel: "Cancel",
+    confirmDelete: "Confirm Delete",
+    deleteWeights: "Delete weights",
+    deleteConfirm: "Delete?",
+    downloadModel: "Download model",
+    mandatoryNote: "Mandatory core model (cannot be deleted)",
+    required: "Required",
+    specs: "Specs",
+  },
 };
+
+export const DIRTY_STATE_COPY = {
+  category: "Unsaved changes in this category",
+  stage: "Unsaved changes in this stage",
+} as const;
+
+export const COMPUTE_PROFILE_COPY = {
+  title: "Compute Allocation",
+  auto: "Auto",
+  eco: "Eco",
+  max: "Max",
+  custom: "Custom",
+} as const;
 
 export const LLM_SETTINGS_COPY = {
   tabs: {
@@ -355,9 +525,44 @@ export const LLM_SETTINGS_COPY = {
     context: "Context",
     creativity: "Creativity",
   },
+  compute: {
+    title: "Compute Allocation",
+    description:
+      "Allocate local CPU worker threads for model reasoning. Auto balances thermal load and latency.",
+    remoteTitleLocal: "Cloud Infrastructure",
+    remoteTitleRemote: "Remote Compute",
+    remoteActive: "Active",
+    remoteDescription:
+      "Inference computation is offloaded entirely to the remote provider. Zero local CPU or RAM is consumed.",
+    remoteManaged: "Managed",
+  },
+  tokens: {
+    title: "Token Limit",
+    native: "Native",
+    description:
+      "Maximum token generation per reply. Concise caps prevent rambling; Native lets the model complete reasoning.",
+  },
+  context: {
+    title: "Context Window",
+    description:
+      "RAM-allocated token budget for conversation history and retrieved memory facts.",
+  },
+  creativity: {
+    title: "Creativity",
+    description:
+      "Sampling temperature. Lower values produce strict facts; higher values encourage conversational flair.",
+  },
 };
 
+export const APPEARANCE_COPY = {
+  cardTitle: "Appearance",
+  darkMode: "Dark Mode",
+  lightMode: "Light Mode",
+} as const;
+
 export const HISTORY_SETTINGS_COPY = {
+  engineTitle: "Session History Engine",
+  engineDesc: "Turso SQLite storage active. Conversations are recorded with zero arbitrary retention limits.",
   privateModeTitle: "Session Storage",
   privateModeActive: "Incognito Active",
   privateModeInactive: "Logging Active",
@@ -378,15 +583,18 @@ export const VAD_SETTINGS_COPY = {
   },
   sensitivity: {
     title: "Voice Sensitivity",
-    description: "Neural probability threshold required to detect user speech. Lower values detect soft whispers; higher values prevent ambient pickup.",
+    description:
+      "Speech detection probability threshold. Lower values catch whispers; higher values prevent ambient room triggers.",
   },
   silence: {
-    title: "Silence Duration",
-    description: "Pause duration before Vox considers speech finished and initiates response reasoning.",
+    title: "Silence Cutoff",
+    description:
+      "Pause duration before speech turn finishes and initiates response reasoning. Snappy for quick orders; patient for contemplation.",
   },
   noiseGate: {
-    title: "Acoustic Noise Gate",
-    description: "Raw microphone energy floor to suppress background PC fans, air conditioners, and mechanical keystrokes.",
+    title: "Noise Gate Floor",
+    description:
+      "Minimum microphone energy threshold to discard ambient PC fans, air conditioners, and mechanical keyboard clicks.",
   },
 };
 
@@ -395,13 +603,20 @@ export const STT_SETTINGS_COPY = {
     streamingRate: "Streaming Rate",
     transliteration: "Transliterate",
   },
+  compute: {
+    title: "Compute Allocation",
+    description:
+      "CPU worker threads allocated for speech recognition inference. Requires restart to apply.",
+  },
   streamingRate: {
-    title: "Live Subtitle Cadence",
-    description: "Throttle interval for interim partial speech transcription. Faster cadences yield immediate visual feedback at higher CPU load.",
+    title: "Subtitle Cadence",
+    description:
+      "Interim partial transcription update frequency. Faster updates give immediate feedback; slower updates preserve CPU.",
   },
   transliteration: {
     title: "Script Transliteration",
-    description: "Automatically transliterates non-Latin or phonetic scripts to standard script formats during transcription.",
+    description:
+      "Automatically normalizes and maps recognized multilingual phonemes into target orthography during live transcription.",
   },
 };
 

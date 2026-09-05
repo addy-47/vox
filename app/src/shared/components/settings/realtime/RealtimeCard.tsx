@@ -10,6 +10,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { REALTIME_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 
 
 
@@ -73,7 +74,7 @@ const PipelineFlow = ({ active }: { active: boolean }) => {
                 : "text-[rgb(var(--foreground-muted))]/40",
             )}
           >
-            Capture
+            {REALTIME_CONFIG_DESK_COPY.stages.capture}
           </span>
         </div>
 
@@ -163,7 +164,7 @@ const PipelineFlow = ({ active }: { active: boolean }) => {
                 : "text-[rgb(var(--foreground-muted))]/40",
             )}
           >
-            Think
+            {REALTIME_CONFIG_DESK_COPY.stages.think}
           </span>
           {active && (
             <span className="absolute -top-0.5 -right-0.5 w-[6px] h-[6px] rounded-full bg-[rgb(var(--accent))]">
@@ -253,7 +254,7 @@ const PipelineFlow = ({ active }: { active: boolean }) => {
                 : "text-[rgb(var(--foreground-muted))]/40",
             )}
           >
-            Speak
+            {REALTIME_CONFIG_DESK_COPY.stages.speak}
           </span>
         </div>
       </div>
@@ -496,7 +497,7 @@ function VoiceCarousel({
     >
       {/* Voice Title */}
       <span className="text-[11px] font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/60 block text-center leading-none">
-        Select Voice
+        {REALTIME_CONFIG_DESK_COPY.voice.selectVoice}
       </span>
 
 
@@ -507,7 +508,7 @@ function VoiceCarousel({
           onClick={() => cycle(-1)}
           disabled={disabled}
           className="p-1.5 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
-          aria-label="Previous Voice"
+          aria-label={REALTIME_CONFIG_DESK_COPY.voice.prevVoice}
         >
           <ChevronLeft size={16} />
         </button>
@@ -536,7 +537,7 @@ function VoiceCarousel({
           onClick={() => cycle(1)}
           disabled={disabled}
           className="p-1.5 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-300 shrink-0 disabled:opacity-20 disabled:cursor-not-allowed"
-          aria-label="Next Voice"
+          aria-label={REALTIME_CONFIG_DESK_COPY.voice.nextVoice}
         >
           <ChevronRight size={16} />
         </button>
@@ -616,19 +617,19 @@ function UnifiedConfig({
       <div className="flex-[3] flex flex-col gap-3 min-w-0">
         {/* Model ID — default shows the model name */}
         <Input
-          label="Model"
+          label={REALTIME_CONFIG_DESK_COPY.modelLabel}
           value={config.model || ""}
           onChange={(v) => {
             if (!disabled)
               updateDraft("realtime", canonicalSubkey, { ...config, model: v });
           }}
-          placeholder={"Model ID"}
+          placeholder={REALTIME_CONFIG_DESK_COPY.modelPlaceholder}
           disabled={disabled}
         />
 
         {/* Temperature */}
         <TemperatureSlider
-          label="Temperature"
+          label={REALTIME_CONFIG_DESK_COPY.temperature}
           value={config.temperature ?? 0.7}
           onChange={(v) => {
             if (!disabled)
@@ -739,11 +740,11 @@ export const RealtimeCard = memo(
             <div className="flex items-center gap-2">
               <Cpu className="text-[rgb(var(--accent))]" size={16} />
               <span className="font-display text-[12px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
-                Realtime Hub
+                {REALTIME_CONFIG_DESK_COPY.hubTitle}
               </span>
             </div>
             <span className="text-[11px] font-bold uppercase text-[rgb(var(--foreground-muted))]/60">
-              Live Mode
+              {REALTIME_CONFIG_DESK_COPY.liveMode}
             </span>
           </div>
         )}

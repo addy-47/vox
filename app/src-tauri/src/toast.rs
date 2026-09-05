@@ -74,10 +74,10 @@ pub fn setup_toast_window<R: tauri::Runtime>(window: &WebviewWindow<R>) {
         log::debug!("[Toast] Failed to set window resizable: {}", e);
     }
     #[cfg(target_os = "linux")]
-    if let Ok(gtk_window) = window.gtk_window() {
+    with_gtk_window(window, |gtk_window| {
         gtk_window.set_accept_focus(false);
         gtk_window.set_focus_on_map(false);
-    }
+    });
 }
 
 /// Positions the toast window at top-center with 24px top inset.
@@ -129,7 +129,7 @@ pub fn setup_linux_toast_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &st
             }
         }
 
-        if let Ok(gtk_window) = window.gtk_window() {
+        with_gtk_window(&window, |gtk_window| {
             gtk_window.set_accept_focus(false);
             gtk_window.set_focus_on_map(false);
 
@@ -147,7 +147,7 @@ pub fn setup_linux_toast_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &st
             let rect = cairo::RectangleInt::new(x, y, toast_w, toast_h);
             let region = cairo::Region::create_rectangle(&rect);
             gtk_window.input_shape_combine_region(Some(&region));
-        }
+        });
     }
 }
 
@@ -273,4 +273,19 @@ pub fn show_toast<R: tauri::Runtime>(
     });
 
     Ok(())
+}
+
+/// Runs a GTK-handle operation without letting exotic backends panic the caller.
+#[cfg(target_os = "linux")]
+fn with_gtk_window<R: tauri::Runtime>(
+    window: &WebviewWindow<R>,
+    f: impl FnOnce(&gtk::ApplicationWindow),
+) {
+    let result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| window.gtk_window()));
+    match result {
+        Ok(Ok(gtk_window)) => f(&gtk_window),
+        Ok(Err(e)) => log::debug!("[Toast] No GTK handle available: {}", e),
+        Err(_) => log::debug!("[Toast] GTK backend unimplemented (mock/headless runtime)"),
+    }
 }

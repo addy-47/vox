@@ -1,10 +1,15 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { HelpToc } from "./HelpToc";
 import { HelpArticle } from "./HelpArticle";
 import { HelpTierBadge } from "./HelpTierBadge";
 import { HelpPinnedCrumb } from "./HelpPinnedCrumb";
 import { HelpEmptyState } from "./HelpEmptyState";
-import { HELP_ARTICLES, type HelpArticle as HelpArticleT } from "@/data/helpCopy";
+import {
+  HELP_ARTICLES,
+  HELP_DRAWER_COPY,
+  type HelpArticle as HelpArticleT,
+} from "@/data/helpCopy";
 import { deriveTier } from "@/services/helpService";
 import { cn } from "@/shared/lib/utils";
 
@@ -20,10 +25,35 @@ const filterArticles = (tier: ReturnType<typeof deriveTier>): HelpArticleT[] => 
   });
 };
 
+/**
+ * Scope rule: an exact deepLink shows that article only; a settings-domain
+ * link without its own article falls back to the settings group; no link
+ * shows everything (global `?` entry point).
+ */
+export function scopeArticles(
+  tiered: readonly HelpArticleT[],
+  deepLink: string | null
+): { scoped: HelpArticleT[]; rest: HelpArticleT[] } {
+  if (!deepLink) return { scoped: [...tiered], rest: [] };
+  const exact = tiered.find((a) => a.id === deepLink);
+  if (exact) {
+    return { scoped: [exact], rest: tiered.filter((a) => a.id !== deepLink) };
+  }
+  if (deepLink.startsWith("settings:")) {
+    const group = tiered.filter((a) => a.group === "settings");
+    if (group.length > 0) {
+      return { scoped: group, rest: tiered.filter((a) => a.group !== "settings") };
+    }
+  }
+  return { scoped: [...tiered], rest: [] };
+}
+
 const HelpContentInner = memo(({ deepLink, onClose }: HelpContentProps) => {
   const [tier, setTier] = useState<ReturnType<typeof deriveTier>>("1A");
   const [activeArticleId, setActiveArticleId] = useState<string | null>(null);
   const [pinned, setPinned] = useState<string | null>(deepLink);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [guidesOpen, setGuidesOpen] = useState(false);
   const articleRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
@@ -33,14 +63,25 @@ const HelpContentInner = memo(({ deepLink, onClose }: HelpContentProps) => {
 
   useEffect(() => {
     setPinned(deepLink);
+    setExpandedId(null);
+    setGuidesOpen(false);
   }, [deepLink]);
 
-  const articles = useMemo(() => filterArticles(tier), [tier]);
+  const tiered = useMemo(() => filterArticles(tier), [tier]);
+  const { scoped, rest } = useMemo(() => scopeArticles(tiered, deepLink), [tiered, deepLink]);
+
+  const articles = useMemo(() => {
+    if (!expandedId) return scoped;
+    const extra = tiered.find((a) => a.id === expandedId);
+    if (!extra || scoped.some((a) => a.id === expandedId)) return scoped;
+    return [...scoped, extra];
+  }, [scoped, tiered, expandedId]);
 
   const initialArticleId = useMemo<string | null>(() => {
+    if (expandedId && articles.some((a) => a.id === expandedId)) return expandedId;
     if (deepLink && articles.some((a) => a.id === deepLink)) return deepLink;
     return articles[0]?.id ?? null;
-  }, [deepLink, articles]);
+  }, [deepLink, articles, expandedId]);
 
   useEffect(() => {
     if (!initialArticleId) return;
@@ -90,6 +131,24 @@ const HelpContentInner = memo(({ deepLink, onClose }: HelpContentProps) => {
     }
   };
 
+  const handleSelectFromRest = (id: string) => {
+    setExpandedId(id);
+    setGuidesOpen(false);
+  };
+
+  useEffect(() => {
+    if (!expandedId) return;
+    const t = window.setTimeout(() => {
+      const el = articleRefs.current.get(expandedId);
+      const scroller = scrollerRef.current;
+      if (el && scroller) {
+        scroller.scrollTo({ top: el.offsetTop - 16, behavior: "smooth" });
+        setActiveArticleId(expandedId);
+      }
+    }, 60);
+    return () => window.clearTimeout(t);
+  }, [expandedId, articles]);
+
   const handleUnpin = () => setPinned(null);
 
   const pinnedArticle = useMemo(
@@ -127,6 +186,31 @@ const HelpContentInner = memo(({ deepLink, onClose }: HelpContentProps) => {
                 isActive={activeArticleId === article.id}
               />
             ))}
+            {rest.length > 0 && (
+              <div className="rounded-xl border border-[rgba(var(--border),0.12)] overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setGuidesOpen((v) => !v)}
+                  aria-expanded={guidesOpen}
+                  className="w-full flex items-center justify-between gap-2 px-4 py-3 text-[12px] font-bold uppercase tracking-[0.16em] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                >
+                  <span>{HELP_DRAWER_COPY.allGuidesHeading}</span>
+                  <ChevronDown
+                    size={15}
+                    className={cn("transition-transform", guidesOpen && "rotate-180")}
+                  />
+                </button>
+                {guidesOpen && (
+                  <div className="border-t border-[rgba(var(--border),0.1)] max-h-64 overflow-y-auto custom-scrollbar">
+                    <HelpToc
+                      articles={rest}
+                      activeId={expandedId}
+                      onSelect={handleSelectFromRest}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <HelpToc

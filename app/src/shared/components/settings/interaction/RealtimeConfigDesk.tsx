@@ -70,12 +70,12 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
         <div className="flex items-center gap-1.5">
           <Radio size={14} className="text-[rgb(var(--accent))] animate-pulse shrink-0" />
           <span className="text-[13px] font-bold text-[rgb(var(--foreground))]">
-            Realtime Direct Voice Connection
+            {REALTIME_CONFIG_DESK_COPY.title}
           </span>
         </div>
         <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 leading-relaxed">
-          Full duplex speech-to-speech engine with{" "}
-          <span className="text-[rgb(var(--accent))] font-semibold">sub-200ms</span> live audio streaming, native grounding, and dynamic turn detection.
+          {REALTIME_CONFIG_DESK_COPY.bannerDescPrefix}
+          <span className="text-[rgb(var(--accent))] font-semibold">{REALTIME_CONFIG_DESK_COPY.bannerHighlight}</span>{REALTIME_CONFIG_DESK_COPY.bannerDescSuffix}
         </p>
       </div>
 
@@ -88,7 +88,7 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
       >
         {/* Left Column: Clean Borderless Provider Carousel */}
         <CarouselSelector
-          label="Voice Provider"
+          label={REALTIME_CONFIG_DESK_COPY.providerLabel}
           value={activeProvider.name}
           onPrev={() => handleProviderCycle("left")}
           onNext={() => handleProviderCycle("right")}

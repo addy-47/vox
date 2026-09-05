@@ -10,6 +10,7 @@ import {
   Database,
 } from "lucide-react";
 import { type RuntimeSnapshot } from "@/services/pipelineService";
+import { MONITORING_COPY } from "@/data/monitoringCopy";
 import { type DynamicColors } from "./colorUtils";
 
 interface MetricCarouselProps {
@@ -102,7 +103,7 @@ export const MetricCarousel = memo<MetricCarouselProps>(({
         {/* Left Arrow Button */}
         <button
           onClick={handlePrevPage}
-          aria-label="Previous metrics page"
+          aria-label={MONITORING_COPY.carouselPrev}
           className="absolute -left-1.5 z-20 p-1 rounded-full bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground))] hover:scale-110 transition-transform shadow-md cursor-pointer backdrop-blur-sm"
         >
           <ChevronLeft size={14} />
@@ -136,7 +137,7 @@ export const MetricCarousel = memo<MetricCarouselProps>(({
         {/* Right Arrow Button */}
         <button
           onClick={handleNextPage}
-          aria-label="Next metrics page"
+          aria-label={MONITORING_COPY.carouselNext}
           className="absolute -right-1.5 z-20 p-1 rounded-full bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground))] hover:scale-110 transition-transform shadow-md cursor-pointer backdrop-blur-sm"
         >
           <ChevronRight size={14} />

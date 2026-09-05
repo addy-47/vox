@@ -2,6 +2,7 @@ import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
 import { cn } from "@/shared/lib/utils";
+import { VAD_SETTINGS_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
 
 interface VadWorkspaceProps {
   activeCategoryTab: "model" | "settings";
@@ -92,14 +93,14 @@ export const VadWorkspace = memo(
                   <div className="flex flex-col gap-1 min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                        Voice Sensitivity
+                        {VAD_SETTINGS_COPY.sensitivity.title}
                       </span>
                       <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                         {Math.round(currentThreshold * 100)}%
                       </span>
                     </div>
                     <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                      Speech detection probability threshold. Lower values catch whispers; higher values prevent ambient room triggers.
+                      {VAD_SETTINGS_COPY.sensitivity.description}
                     </p>
                   </div>
 
@@ -151,7 +152,7 @@ export const VadWorkspace = memo(
                             updateDraft("vad", "threshold", num / 100);
                           }
                         }}
-                        placeholder="Custom"
+                        placeholder={COMPUTE_PROFILE_COPY.custom}
                         className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                     </div>
@@ -165,14 +166,14 @@ export const VadWorkspace = memo(
                   <div className="flex flex-col gap-1 min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                        Silence Cutoff
+                        {VAD_SETTINGS_COPY.silence.title}
                       </span>
                       <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                         {currentSilenceMs} ms
                       </span>
                     </div>
                     <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                      Pause duration before speech turn finishes and initiates response reasoning. Snappy for quick orders; patient for contemplation.
+                      {VAD_SETTINGS_COPY.silence.description}
                     </p>
                   </div>
 
@@ -222,7 +223,7 @@ export const VadWorkspace = memo(
                             updateDraft("vad", "silence_duration_ms", num);
                           }
                         }}
-                        placeholder="Custom"
+                        placeholder={COMPUTE_PROFILE_COPY.custom}
                         className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                     </div>
@@ -236,14 +237,14 @@ export const VadWorkspace = memo(
                   <div className="flex flex-col gap-1 min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                        Noise Gate Floor
+                        {VAD_SETTINGS_COPY.noiseGate.title}
                       </span>
                       <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
                         {currentNoiseGate.toFixed(3)}
                       </span>
                     </div>
                     <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
-                      Minimum microphone energy threshold to discard ambient PC fans, air conditioners, and mechanical keyboard clicks.
+                      {VAD_SETTINGS_COPY.noiseGate.description}
                     </p>
                   </div>
 
@@ -295,7 +296,7 @@ export const VadWorkspace = memo(
                             updateDraft("vad", "ptt_noise_gate", num);
                           }
                         }}
-                        placeholder="Custom"
+                        placeholder={COMPUTE_PROFILE_COPY.custom}
                         className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                     </div>

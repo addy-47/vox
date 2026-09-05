@@ -46,4 +46,13 @@ export const HISTORY_COPY = {
   sessionPrefix: "Session #",
   dismissError: "Dismiss error",
   closeSession: "Close session",
+  fetchingTurns: "Fetching turns and voice telemetry",
+  loadingTranscript: "Loading conversation transcript...",
+  sessionTranscript: "Session transcript",
+  accessingHistory: "Accessing local voice history",
+  loadingConversations: "Loading conversations...",
+  clockMemories: "MEMORIES",
+  clockMonth: "MONTH",
+  clockSessions: "SESSIONS",
+  clockSpan: "SPAN",
 };

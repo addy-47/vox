@@ -8,7 +8,7 @@ import React, {
 import { AnimatePresence, motion } from "framer-motion";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { useOverlay } from "@/shared/hooks/useOverlay";
-import { HelpTriggerButton } from "@/shared/components/help/HelpTriggerButton";
+import { TopRightCluster } from "@/shared/components/common";
 import {
   RefreshCw,
   X,
@@ -217,10 +217,10 @@ export const Monitoring: React.FC<MonitoringProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <HelpTriggerButton deepLink="page:monitoring" size="sm" />
+          <TopRightCluster deepLink="page:monitoring" className="pointer-events-auto" />
           {/* Memory Profiler Quick Launch Button (Disabled by default, can be toggled on for diagnostic sessions) */}
           {false && (
-            <Tooltip label="Open UI Memory Attribution & RCA Profiler">
+            <Tooltip label={MONITORING_COPY.openProfiler}>
               <button
                 onClick={() => {
                   onClose?.();
@@ -234,7 +234,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
                 className="px-2.5 py-1.5 rounded-xl border transition-all duration-300 flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase cursor-pointer shadow-md hover:scale-[1.02]"
               >
                 <Layers size={13} />
-                <span>PROFILER</span>
+                <span>{MONITORING_COPY.profilerBadge}</span>
               </button>
             </Tooltip>
           )}
@@ -275,7 +275,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
             <button
               onClick={onClose}
               className="p-1.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.08)] transition-colors cursor-pointer"
-              aria-label="Close monitor"
+              aria-label={MONITORING_COPY.closeMonitor}
             >
               <X size={16} />
             </button>
@@ -324,7 +324,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="fixed z-[200] bottom-[72px] left-4 w-[414px] max-w-[calc(100vw-32px)] h-[580px] max-h-[calc(100vh-96px)] glass-card p-4 flex flex-col shadow-2xl rounded-3xl"
             role="dialog"
-            aria-label="System Monitoring"
+            aria-label={MONITORING_COPY.monitorAria}
           >
             {containerContent}
           </motion.div>
@@ -340,4 +340,3 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     </div>
   );
 };
-export default Monitoring;

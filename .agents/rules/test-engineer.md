@@ -30,6 +30,11 @@ When an integration test fails because production logic dropped data or misroute
 - **Preferred test runner is `cargo-nextest`.** Always execute test suites using `cargo nextest run --release --nocapture --test-threads=1` with explicit Rayon/OMP thread allocation to isolate processes, capture standard outputs completely, and prevent static runtime contamination.
 - **Post-green regression proof follows `mutate` discipline.** Read that skill after getting a test green. The skill turns the Phase 2b False-Green table into real, minimal code mutations to empirically prove the test goes RED when production logic breaks.
 - **Measurement tasks follow `testing-style-guide.md` standards.** Ground truth thresholds, execution mode (sequential, `--release`), per-stage latency recording, and Section 7 multi-threading/async timeout invariants live there.
+- **Debugging & blocker protocol is mandatory (`testing-style-guide.md §9`).** On any failure or hang:
+  1. Immediately isolate to the single failing subtest via `cargo nextest run --test <binary> -E 'test(<subtest_fn>)'`. Never re-run the full suite.
+  2. Zero guessing: instrument every single line/operation with explicit `eprintln!` markers to isolate the exact hanging or failing line on iteration 1.
+  3. Strict 2-attempt rule: after 2 targeted attempts without resolution, stop immediately and report the exact blocker, attempted hypotheses, and requirements. Never work around, mock, or bypass.
+
 
 ## Skills You Reach For
 

@@ -6,6 +6,7 @@ import { getRuntimeReport, type RuntimeReport } from '@/services/modelService';
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';
 import { StatusCard } from '../components/StatusCard';
+import { WIZARD_STEP_HEADERS, SYSTEM_CHECK_LABELS, WIZARD_CTA_LABELS } from '@/data/welcomeCopy';
 
 interface Props {
   onNext: () => void;
@@ -39,10 +40,10 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
 
   return (
     <div className="flex flex-col h-full relative">
-      <WizardHeader 
-        step="Step 2 of 6 · Checking Your Computer"
-        title="Checking Your Computer"
-        description="Making sure your computer is ready for Vox. We verify everything works before we move on."
+      <WizardHeader
+        step={WIZARD_STEP_HEADERS.checking.step}
+        title={WIZARD_STEP_HEADERS.checking.title}
+        description={WIZARD_STEP_HEADERS.checking.description}
       />
 
       <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
@@ -55,7 +56,7 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
             >
                 <StatusCard 
                     icon={<HardDrive className="w-4 h-4" />}
-                    label="STORAGE SPACE"
+                    label={SYSTEM_CHECK_LABELS[0]}
                     value={report ? (report.disk_space_ok ? `${report.available_space_gb.toFixed(1)} GB` : "INSUFFICIENT") : "Checking..."}
                     subValue={report ? (report.disk_space_ok ? "Sufficient for neural models" : "At least 10GB recommended") : "Measuring available space..."}
                     ok={report?.disk_space_ok}
@@ -70,7 +71,7 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
             >
                 <StatusCard 
                     icon={<Mic className="w-4 h-4" />}
-                    label="MICROPHONE"
+                    label={SYSTEM_CHECK_LABELS[1]}
                     value={report ? (report.mic_access ? "DETECTED" : "NOT FOUND") : "Checking..."}
                     subValue={report ? (report.mic_access ? "Audio input available" : "No capture device found") : "Testing audio devices..."}
                     ok={report?.mic_access}
@@ -85,7 +86,7 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
             >
                 <StatusCard 
                     icon={<ShieldCheck className="w-4 h-4" />}
-                    label="PERMISSIONS"
+                    label={SYSTEM_CHECK_LABELS[2]}
                     value={report ? (report.write_access ? "GRANTED" : "DENIED") : "Checking..."}
                     subValue={report ? (report.write_access ? "Sandbox I/O verified" : "Check folder access") : "Verifying access..."}
                     ok={report?.write_access}
@@ -100,7 +101,7 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
             >
                 <StatusCard 
                     icon={<Cpu className="w-4 h-4" />}
-                    label="HARDWARE"
+                    label={SYSTEM_CHECK_LABELS[3]}
                     value={report ? `${report.cpu_cores} THREADS` : "Scanning..."}
                     subValue={report ? `${report.ram_gb.toFixed(1)} GB RAM detected` : "Detecting memory..."}
                     ok={true}
@@ -115,7 +116,7 @@ export const SystemCheckStep: React.FC<Props> = ({ onNext, onBack, error: extern
         onNext={onNext}
         onSkip={micMissingOnly ? onNext : undefined}
         showSkip={micMissingOnly}
-        nextLabel="Continue to Models"
+        nextLabel={WIZARD_CTA_LABELS.continueToModels}
         isNextDisabled={!allOk || isLoading}
         showBack={true}
         error={

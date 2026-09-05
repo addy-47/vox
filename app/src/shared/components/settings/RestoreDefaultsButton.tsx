@@ -2,6 +2,7 @@ import { memo, useState, useEffect } from "react";
 import { RotateCcw, AlertTriangle } from "lucide-react";
 import { useSettings } from "@/shared/hooks/useSettings";
 import { cn } from "@/shared/lib/utils";
+import { SETTINGS_COPY } from "@/data/settingsCopy";
 
 export const RestoreDefaultsButton = memo(() => {
   const { restoreDefaults } = useSettings();
@@ -31,7 +32,7 @@ export const RestoreDefaultsButton = memo(() => {
           ? "border-[rgb(var(--danger))]/80 bg-[rgba(var(--danger),0.18)] text-[rgb(var(--danger))] shadow-[0_0_18px_rgba(var(--danger),0.3)]"
           : "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] dark:bg-[rgba(var(--foreground),0.12)] dark:border-[rgba(var(--accent),0.35)] hover:bg-[rgb(var(--accent))]/20"
       )}
-      aria-label={isConfirming ? "Confirm restore defaults" : "Restore default settings"}
+      aria-label={isConfirming ? SETTINGS_COPY.restoreConfirmAria : SETTINGS_COPY.restoreAria}
     >
       {isConfirming ? (
         <AlertTriangle size={22} />
@@ -47,7 +48,7 @@ export const RestoreDefaultsButton = memo(() => {
             : "bg-[rgb(var(--background))]/95 dark:bg-zinc-950/95 border border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))]"
         )}
       >
-        {isConfirming ? "Click again to reset" : "Restore default settings"}
+        {isConfirming ? SETTINGS_COPY.restoreConfirmHint : SETTINGS_COPY.restoreAria}
       </div>
     </button>
   );

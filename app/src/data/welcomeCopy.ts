@@ -34,12 +34,6 @@ export interface StepHeader {
 }
 
 export const WIZARD_STEP_HEADERS: Record<string, StepHeader> = {
-  welcome: {
-    step: "Step 1 of 6 · Getting Started",
-    title: "Welcome to Vox.",
-    description:
-      "Vox is your personal voice assistant. It listens, answers, and lives quietly in your menu bar — everything runs privately on your computer.",
-  },
   checking: {
     step: "Step 2 of 6 · Checking Your Computer",
     title: "Checking Your Computer",
@@ -86,17 +80,17 @@ export const WELCOME_SUBSTEPS: WelcomeSubStep[] = [
   {
     title: "Welcome to Vox.",
     tagline:
-      "Vox is your personal voice assistant — fast, always ready, and fully private. Everything runs on your computer, never in the cloud.",
+      "Vox listens to your voice, understands what you say, and talks back — all on your own computer. It lives quietly in your menu bar, ready when you need it.",
   },
   {
-    title: "Your Voice Assistant",
+    title: "The AI Core",
     tagline:
-      "Vox listens and replies using on-device voice AI. It works offline, instantly, and privately on your hardware.",
+      "Powered by on-device voice AI. Everything runs locally on your hardware — fast, private, and offline.",
   },
   {
-    title: "The Voice Overlay",
+    title: "Voice Overlay",
     tagline:
-      "When you speak, a live transcript follows your voice. It appears the moment you talk and fades when you stop.",
+      "A live transcript that follows your voice. It appears the moment you speak and fades when you stop.",
   },
 ];
 
@@ -107,16 +101,16 @@ export interface FeatureCard {
 }
 
 export const WELCOME_FEATURE_CARDS: FeatureCard[] = [
-  { icon: ShieldCheck, title: "Private", desc: "Never leaves your device" },
-  { icon: Zap, title: "Instant", desc: "Replies in under a second" },
-  { icon: Globe, title: "Always On", desc: "Lives in your menu bar" },
-  { icon: Activity, title: "Ready", desc: "Set up in minutes" },
+  { icon: ShieldCheck, title: "Privacy", desc: "100% On-device" },
+  { icon: Zap, title: "Speed", desc: "Instant Responses" },
+  { icon: Globe, title: "Always On", desc: "Lives in Your Menu Bar" },
+  { icon: Activity, title: "Status", desc: "Ready to Start" },
 ];
 
 export const WELCOME_TOOLTIPS = {
   status: {
-    title: "Live Status",
-    desc: "Shows when Vox is listening for your voice in the background.",
+    title: "Listening",
+    desc: "Shows when Vox is hearing you. It only listens while you hold the button or talk.",
   },
   mic: {
     title: "Push-To-Talk",
@@ -132,16 +126,18 @@ export const WELCOME_TOOLTIPS = {
   },
   renderer: {
     title: "Instant Words",
-    desc: "Words appear as you speak them — no waiting for the transcript.",
+    desc: "Your words appear on screen as you speak, almost immediately.",
   },
 } as const;
 
 export const WELCOME_DEMO_DEFAULT = {
   title: "Interactive Demo",
   desc: "Hover over Vox's screen to see what each part does.",
+  statsActive: "Active",
+  listeningHint: "Listening... your words will appear here.",
 } as const;
 
-export const SYSTEM_CHECK_LABELS = ["STORAGE", "AUDIO", "PERMISSIONS", "HARDWARE"] as const;
+export const SYSTEM_CHECK_LABELS = ["STORAGE SPACE", "MICROPHONE", "PERMISSIONS", "HARDWARE"] as const;
 
 export interface StatusCardData {
   label: string;
@@ -161,14 +157,55 @@ export const COMPLETED_TIP = {
   text: "Click the Vox icon in your menu bar or press your shortcut key to start talking.",
 } as const;
 
+export const WIZARD_STATUS_COPY = {
+  systemReady: "System Ready",
+  unknownState: "Unknown State",
+} as const;
+
+export const AUDIO_SETUP_COPY = {
+  liveLabel: "Your Voice",
+  listTitle: "Choose a Microphone",
+  empty: "No microphones detected",
+} as const;
+
+export const LIVE_TEST_COPY = {
+  confirmContinue: "Confirm & Continue",
+  engineErrorTitle: "Couldn't Start the Voice Engine",
+  tryAgain: "Try Again",
+  voiceLevel: "Voice Level",
+  demoHint: "Your Words",
+  processed: "Processed",
+  voiceDetected: "Voice Detected",
+  listening: "Listening...",
+  textReceived: "Text Received",
+  waiting: "Waiting...",
+} as const;
+
+export const MODEL_SETUP_COPY = {
+  readyTitle: "Models Ready",
+  readyBody: "All selected voice models have been downloaded and checked on your system.",
+  retryLoad: "Retry Load",
+  back: "Back",
+  downloadError: "Download Error",
+  totalSuffix: "Total",
+} as const;
+
+export const MODEL_CATEGORY_COPY = {
+  mandatory: "Mandatory",
+  optional: "Optional",
+} as const;
+
 export const WIZARD_CTA_LABELS = {
   beginSetup: "Begin Setup",
   beginSynchronization: "Download Models",
   synchronizing: "Downloading...",
   fetchingCatalog: "Loading Models...",
-  proceedToModelSync: "Continue to Download",
   continueToVerification: "Continue",
   startUsingVox: "Start Using Vox",
   continueSetup: "Continue Setup",
   returnToSelection: "Return to Selection",
+  back: "Back",
+  skip: "Skip",
+  processing: "Processing...",
+  continueToModels: "Continue to Models",
 } as const;

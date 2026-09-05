@@ -11,15 +11,15 @@ import { LlmConfigDesk } from "./LlmConfigDesk";
 import { RealtimeConfigDesk } from "./RealtimeConfigDesk";
 import { DictationConfigDesk } from "./DictationConfigDesk";
 import { checkIfCloudUrl } from "@/data/providersCopy";
-import { DICTATION_COPY } from "@/data/settingsCopy";
+import { DICTATION_COPY, INTERACTION_CARD_COPY } from "@/data/settingsCopy";
 
 interface InteractionCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
 const VIEW_OPTIONS = [
-  { id: "assistant" as const, label: "Assistant" },
-  { id: "dictation" as const, label: "Dictation" },
+  { id: "assistant" as const, label: INTERACTION_CARD_COPY.viewAssistant },
+  { id: "dictation" as const, label: INTERACTION_CARD_COPY.viewDictation },
 ];
 
 export const InteractionCard = memo(
@@ -211,7 +211,7 @@ export const InteractionCard = memo(
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="text-[rgb(var(--accent))]" size={17} />
             <span className="font-display text-[13px] font-black uppercase tracking-[0.2em] text-[rgb(var(--foreground))]">
-              Interaction
+              {INTERACTION_CARD_COPY.cardTitle}
             </span>
           </div>
           {/* Top Right Assistant / Dictation Switcher */}
@@ -298,10 +298,10 @@ export const InteractionCard = memo(
                 )}
               >
                 <ToggleTile
-                  title="Voice Typing"
+                  title={INTERACTION_CARD_COPY.voiceTyping}
                   active={dictationEnabled}
-                  activeLabel="Enabled"
-                  inactiveLabel="Disabled"
+                  activeLabel={INTERACTION_CARD_COPY.toggleEnabled}
+                  inactiveLabel={INTERACTION_CARD_COPY.toggleDisabled}
                   activeSublabel={DICTATION_COPY.voiceTypingActive}
                   inactiveSublabel={DICTATION_COPY.voiceTypingInactive}
                   icon={dictationEnabled ? Mic : MicOff}
@@ -310,7 +310,7 @@ export const InteractionCard = memo(
                 />
 
                 <ToggleTile
-                  title="Trigger Mode"
+                  title={INTERACTION_CARD_COPY.triggerMode}
                   active={dictationInteractionMode === "passive"}
                   activeLabel={DICTATION_COPY.triggerContinuous}
                   inactiveLabel={DICTATION_COPY.triggerPtt}

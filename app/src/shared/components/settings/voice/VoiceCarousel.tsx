@@ -10,6 +10,7 @@ import {
   renameVoice,
   deleteVoice,
 } from "@/services/pipelineService";
+import { VOICE_CAROUSEL_COPY } from "@/data/settingsCopy";
 import { Edit2, Check } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
 
@@ -194,7 +195,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
 
   const handleCloneVoice = async () => {
     if (!newVoiceName.trim()) return;
-    setCloningStatus("Cloning...");
+    setCloningStatus(VOICE_CAROUSEL_COPY.cloning);
     try {
       let entry;
       if (activeTab === "upload") {
@@ -263,13 +264,13 @@ export const VoiceCarousel = memo(function VoiceCarousel({
               value={newVoiceName}
               autoFocus
               onChange={(e) => setNewVoiceName(e.target.value)}
-              placeholder="Enter voice name..."
+              placeholder={VOICE_CAROUSEL_COPY.namePlaceholder}
               className="flex-1 bg-transparent border-none outline-none text-[12.5px] py-0.5 text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 font-bold"
             />
 
             <div className="flex items-center gap-1 shrink-0">
               <Tooltip
-                label={selectedFile ? `File Selected: ${selectedFile.split(/[/\\]/).pop()}` : "Choose WAV File"}
+                label={selectedFile ? `${VOICE_CAROUSEL_COPY.fileSelected} ${selectedFile.split(/[/\\]/).pop()}` : VOICE_CAROUSEL_COPY.chooseFile}
               >
                 <button
                   type="button"
@@ -286,7 +287,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                 </button>
               </Tooltip>
 
-              <Tooltip label={isRecording ? "Stop Recording" : "Record Voice"}>
+              <Tooltip label={isRecording ? VOICE_CAROUSEL_COPY.stopRecording : VOICE_CAROUSEL_COPY.recordVoice}>
                 <button
                   type="button"
                   onClick={isRecording ? handleStopRecording : handleStartRecording}
@@ -343,7 +344,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
               onClick={resetAddingState}
               className="flex-1 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.08)] text-[rgb(var(--foreground-muted))]/80 hover:bg-[rgba(var(--foreground),0.05)] transition-all cursor-pointer"
             >
-              Cancel
+              {VOICE_CAROUSEL_COPY.cancel}
             </button>
             <button
               type="button"
@@ -357,7 +358,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
               }
               className="flex-[2] py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:brightness-110 active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all cursor-pointer"
             >
-              {cloningStatus === "Cloning..." ? "Processing..." : "Clone Voice"}
+              {cloningStatus === VOICE_CAROUSEL_COPY.cloning ? VOICE_CAROUSEL_COPY.processing : VOICE_CAROUSEL_COPY.cloneVoice}
             </button>
           </div>
         </div>
@@ -374,7 +375,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                   value={searchQuery}
                   autoFocus
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search voice..."
+                  placeholder={VOICE_CAROUSEL_COPY.searchPlaceholder}
                   className="flex-1 bg-transparent border-none outline-none text-[11.5px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/35"
                 />
                 {searchQuery && (
@@ -383,7 +384,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                     onClick={() => setSearchQuery("")}
                     className="text-[10px] font-bold text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] px-0.5 cursor-pointer"
                   >
-                    Clear
+                    {VOICE_CAROUSEL_COPY.clear}
                   </button>
                 )}
                 <button
@@ -393,19 +394,19 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                     setSearchQuery("");
                   }}
                   className="p-0.5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
-                  aria-label="Close search"
+                  aria-label={VOICE_CAROUSEL_COPY.closeSearch}
                 >
                   <X size={12} />
                 </button>
               </div>
             ) : (
               <div className="flex items-center justify-center gap-1.5 w-full px-1">
-                <Tooltip label="Search Voices">
+                <Tooltip label={VOICE_CAROUSEL_COPY.searchVoices}>
                   <button
                     type="button"
                     onClick={() => setIsSearching(true)}
                     className="p-1 text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] rounded transition-all duration-150 cursor-pointer shrink-0"
-                    aria-label="Search Voice"
+                    aria-label={VOICE_CAROUSEL_COPY.searchVoice}
                   >
                     <Search size={12} />
                   </button>
@@ -428,7 +429,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                       type="button"
                       onClick={handleSaveRename}
                       className="p-1 text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] rounded transition-colors cursor-pointer shrink-0"
-                      aria-label="Save voice name"
+                      aria-label={VOICE_CAROUSEL_COPY.saveVoiceName}
                     >
                       <Check size={12} />
                     </button>
@@ -436,7 +437,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                       type="button"
                       onClick={() => setEditingVoiceId(null)}
                       className="p-1 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] rounded transition-colors cursor-pointer shrink-0"
-                      aria-label="Cancel rename"
+                      aria-label={VOICE_CAROUSEL_COPY.cancelRename}
                     >
                       <X size={12} />
                     </button>
@@ -444,28 +445,28 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                 ) : (
                   <>
                     <span className="text-[13px] font-black tracking-wide text-[rgb(var(--foreground))] truncate text-center flex-1 max-w-[140px] sm:max-w-[160px]">
-                      {currentVoice?.name || "No Voice"}
+                      {currentVoice?.name || VOICE_CAROUSEL_COPY.noVoice}
                     </span>
 
                     {currentVoice?.isCustom && (
                       <>
-                        <Tooltip label="Rename Custom Voice">
+                        <Tooltip label={VOICE_CAROUSEL_COPY.renameCustomVoice}>
                           <button
                             type="button"
                             onClick={() => handleStartRename(currentVoice.id, currentVoice.name)}
                             className="p-1 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] hover:scale-110 transition-all duration-150 cursor-pointer shrink-0"
-                            aria-label="Rename voice"
+                            aria-label={VOICE_CAROUSEL_COPY.renameVoice}
                           >
                             <Edit2 size={12} />
                           </button>
                         </Tooltip>
 
-                        <Tooltip label="Delete Custom Voice">
+                        <Tooltip label={VOICE_CAROUSEL_COPY.deleteCustomVoice}>
                           <button
                             type="button"
                             onClick={() => handleDeleteVoice(currentVoice.id)}
                             className="p-1 text-rose-400 hover:text-rose-300 hover:scale-110 transition-all duration-150 cursor-pointer shrink-0"
-                            aria-label="Delete voice"
+                            aria-label={VOICE_CAROUSEL_COPY.deleteVoice}
                           >
                             <Trash2 size={12} />
                           </button>
@@ -476,7 +477,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
                 )}
 
                 {allowClone && (
-                  <Tooltip label="Clone Voice Profile">
+                  <Tooltip label={VOICE_CAROUSEL_COPY.cloneVoiceProfile}>
                     <button
                       type="button"
                       onClick={() => setIsAdding(true)}
@@ -497,7 +498,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
               onClick={() => cycle(-1)}
               disabled={disabled || activeList.length <= 1}
               className="p-1.5 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-200 shrink-0 disabled:opacity-15 cursor-pointer"
-              aria-label="Previous Voice"
+              aria-label={VOICE_CAROUSEL_COPY.prevVoice}
             >
               <ChevronLeft size={16} />
             </button>
@@ -511,7 +512,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
               onClick={() => cycle(1)}
               disabled={disabled || activeList.length <= 1}
               className="p-1.5 rounded-lg hover:bg-[rgb(var(--foreground))]/5 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--accent))] transition-all duration-200 shrink-0 disabled:opacity-15 cursor-pointer"
-              aria-label="Next Voice"
+              aria-label={VOICE_CAROUSEL_COPY.nextVoice}
             >
               <ChevronRight size={16} />
             </button>

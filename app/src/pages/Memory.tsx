@@ -19,7 +19,7 @@ import { SearchBar } from "@/shared/components/memory/SearchBar";
 import { MemoryLegendCard } from "@/shared/components/memory/MemoryLegendCard";
 import { MemoryNodeTooltip } from "@/shared/components/memory/MemoryNodeTooltip";
 import { MemoryPipelineDrawer } from "@/shared/components/memory/MemoryPipelineDrawer";
-import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
+import { AmbientBackground, ErrorBoundary, TopRightCluster } from "@/shared/components/common";
 import {
   MemoryNodeTopology,
   MemoryEdgeTopology,
@@ -32,7 +32,6 @@ import {
   getMemoryFactDetail,
 } from "@/services/memoryService";
 import { MEMORY_COPY } from "@/data/memoryCopy";
-import { HelpTriggerButton } from "@/shared/components/help/HelpTriggerButton";
 import { cn } from "@/shared/lib/utils";
 
 const EMPTY_CONFLICTS: { fact_a: MemoryNodeTopology; fact_b: MemoryNodeTopology }[] = [];
@@ -256,7 +255,7 @@ export const Memory: React.FC = () => {
             <div className="glass-card px-4 py-2 rounded-2xl border border-[rgba(var(--accent),0.3)] bg-[rgb(var(--card))]/90 backdrop-blur-2xl flex items-center justify-center gap-2 shadow-2xl">
               <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))]" />
               <span className="text-[11px] font-sans font-bold uppercase tracking-wider text-[rgb(var(--accent))]">
-                Memory is up to date
+                {MEMORY_COPY.upToDate}
               </span>
             </div>
           </motion.div>
@@ -278,7 +277,7 @@ export const Memory: React.FC = () => {
                 onClick={() => fetchTopology(true)}
                 className="px-3 py-1 rounded-xl text-[11px] font-sans font-bold uppercase tracking-wider bg-[rgba(var(--danger),0.18)] text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.28)] transition-colors shrink-0 cursor-pointer shadow-sm"
               >
-                Retry
+                {MEMORY_COPY.retry}
               </button>
             </div>
           </motion.div>
@@ -330,6 +329,10 @@ export const Memory: React.FC = () => {
             {MEMORY_COPY.zoomOut}
           </span>
         </button>
+
+        <div className="w-[1px] h-4 bg-[rgba(var(--border),0.2)]" />
+
+        <TopRightCluster deepLink="page:memory" className="pointer-events-auto" />
       </div>
 
       {/* ── Small / Mobile Layout Header & Horizontal Action Bar (< 640px) ── */}
@@ -378,7 +381,7 @@ export const Memory: React.FC = () => {
 
             {/* Top-Right Horizontal Dynamic Action Tray */}
             <div className="pointer-events-auto flex items-center gap-1 p-1 rounded-2xl glass-card border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-2xl shadow-2xl overflow-hidden max-w-[calc(100vw-150px)]">
-              <HelpTriggerButton deepLink="page:memory" size="sm" />
+              <TopRightCluster deepLink="page:memory" className="pointer-events-auto" />
               {/* Search Trigger */}
               <button
                 onClick={() => setIsMobileSearchOpen(true)}
@@ -436,7 +439,7 @@ export const Memory: React.FC = () => {
                       onClick={handleRefreshGraph}
                       disabled={isRefreshing}
                       className="w-8 h-8 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer disabled:opacity-40 shrink-0"
-                      aria-label="Refresh Memories"
+                      aria-label={MEMORY_COPY.refreshMemories}
                     >
                       <RefreshCw size={15} className={cn(isRefreshing && "animate-spin")} />
                     </button>
@@ -508,7 +511,7 @@ export const Memory: React.FC = () => {
         >
           <RefreshCw size={18} className={cn(isRefreshing && "animate-spin")} />
           <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">
-            Refresh Memories
+            {MEMORY_COPY.refreshMemories}
           </span>
         </button>
 

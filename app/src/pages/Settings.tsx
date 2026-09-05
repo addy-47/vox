@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, memo, Suspense, lazy } from 
 import { RotateCcw, AlertCircle, Check, RefreshCw, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
-import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
+import { ErrorBoundary, OrbitalLoader, TopRightCluster } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId, type SettingsDomain as Domain } from "@/data/settingsCopy";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
@@ -230,7 +230,7 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
                     {isMissingCloudKey ? (
                       <>
                         <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
-                          <AlertCircle size={14} /> API Key Required for Cloud Provider
+                          <AlertCircle size={14} /> {SETTINGS_COPY.apiKeyRequired}
                         </span>
                         <div className="flex gap-2">
                           <button
@@ -282,9 +282,9 @@ const SettingsCardWrapper = memo(({ domain, isActive, layoutMode }: SettingsCard
                     className="w-full py-2 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
                   >
                     <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5">
-                      <Check size={14} /> Changes Saved
+                      <Check size={14} /> {SETTINGS_COPY.changesSaved}
                     </span>
-                    <span className="text-[11px] text-[rgb(var(--accent))]/70 font-mono">Auto-synced</span>
+                    <span className="text-[11px] text-[rgb(var(--accent))]/70 font-mono">{SETTINGS_COPY.autoSynced}</span>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -363,9 +363,9 @@ export const Settings: React.FC = () => {
       <div className="flex-1 flex flex-col items-center justify-center min-w-0 z-10 h-full relative overflow-hidden bg-transparent px-6 md:px-10 py-6 md:py-10">
         <OrbitalLoader
           size="md"
-          title="Loading Settings..."
-          subtitle="Reading hardware and model configurations"
-          statusText="INITIALIZING CONFIG ENGINE"
+          title={SETTINGS_COPY.loadingSettings}
+          subtitle={SETTINGS_COPY.loadingHint}
+          statusText={SETTINGS_COPY.initializingEngine}
         />
       </div>
     );
@@ -577,15 +577,8 @@ export const Settings: React.FC = () => {
                 </>
               )}
 
-              {/* Help & Guide */}
-              <Tooltip
-                label={SETTINGS_COPY.helpGuideTooltip}
-                side="bottom"
-              >
-                <span className="inline-block">
-                  <HelpTriggerButton deepLink="settings:overview" size="sm" label={SETTINGS_COPY.helpGuideTooltip} />
-                </span>
-              </Tooltip>
+              {/* Help & Notifications */}
+              <TopRightCluster deepLink="settings:overview" className="pointer-events-auto" />
 
               {/* Restore Defaults with confirm state */}
               <Tooltip

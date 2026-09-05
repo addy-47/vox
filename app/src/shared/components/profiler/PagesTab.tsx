@@ -4,7 +4,7 @@ import type { PageMemoryRecord } from "@/shared/hooks/useMemoryProfiler";
 import type { JSHeapSample, DOMSample, CSSIndicatorsSample } from "@/services/memoryProfilerService";
 import { AccuracyBadge } from "./AccuracyBadge";
 import { cn } from "@/shared/lib/utils";
-import { TRACKED_PAGES } from "@/data/profilerCopy";
+import { TRACKED_PAGES, PROFILER_COPY } from "@/data/profilerCopy";
 
 interface PagesTabProps {
   pageRecords: Record<string, PageMemoryRecord>;
@@ -30,7 +30,7 @@ export const PagesTab: React.FC<PagesTabProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Code size={16} className="text-[rgb(var(--accent))]" />
-              <span className="text-xs font-bold text-[rgb(var(--foreground))]">DOM Elements</span>
+              <span className="text-xs font-bold text-[rgb(var(--foreground))]">{PROFILER_COPY.pages.domTitle}</span>
             </div>
             <AccuracyBadge type={domStats.accuracy} />
           </div>
@@ -39,7 +39,7 @@ export const PagesTab: React.FC<PagesTabProps> = ({
               {domStats.nodeCount.toLocaleString()}
             </div>
             <p className="text-[11px] text-[rgb(var(--foreground-muted))] mt-0.5">
-              Active DOM tree elements
+              {PROFILER_COPY.pages.domHint}
             </p>
           </div>
           <div className="pt-2 border-t border-[rgba(var(--border),0.08)] text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
@@ -52,7 +52,7 @@ export const PagesTab: React.FC<PagesTabProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Palette size={16} className="text-[rgb(var(--accent))]" />
-              <span className="text-xs font-bold text-[rgb(var(--foreground))]">Typography Faces</span>
+              <span className="text-xs font-bold text-[rgb(var(--foreground))]">{PROFILER_COPY.pages.typographyTitle}</span>
             </div>
             <AccuracyBadge type={domStats.accuracy} />
           </div>
@@ -61,11 +61,11 @@ export const PagesTab: React.FC<PagesTabProps> = ({
               {domStats.fontFaceCount}
             </div>
             <p className="text-[11px] text-[rgb(var(--foreground-muted))] mt-0.5">
-              Loaded @font-face sets
+              {PROFILER_COPY.pages.fontsHint}
             </p>
           </div>
           <div className="pt-2 border-t border-[rgba(var(--border),0.08)] text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-            Sora, DM Sans, JetBrains Mono
+            {PROFILER_COPY.pages.fontsValue}
           </div>
         </div>
 
@@ -74,7 +74,7 @@ export const PagesTab: React.FC<PagesTabProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Box size={16} className="text-[rgb(var(--accent))]" />
-              <span className="text-xs font-bold text-[rgb(var(--foreground))]">JS Heap V8/WebKit</span>
+              <span className="text-xs font-bold text-[rgb(var(--foreground))]">{PROFILER_COPY.pages.heapTitle}</span>
             </div>
             <AccuracyBadge type={jsHeap.accuracy} />
           </div>
@@ -96,7 +96,7 @@ export const PagesTab: React.FC<PagesTabProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Activity size={16} className="text-[rgb(var(--accent))]" />
-              <span className="text-xs font-bold text-[rgb(var(--foreground))]">GPU Layers</span>
+              <span className="text-xs font-bold text-[rgb(var(--foreground))]">{PROFILER_COPY.pages.gpuTitle}</span>
             </div>
             <AccuracyBadge type={cssStats.accuracy} />
           </div>
@@ -120,11 +120,11 @@ export const PagesTab: React.FC<PagesTabProps> = ({
           <div className="flex items-center gap-2">
             <Layers size={17} className="text-[rgb(var(--accent))]" />
             <h3 className="font-display text-sm font-bold tracking-wide text-[rgb(var(--foreground))]">
-              Page Lifecycle Attribution Matrix
+              {PROFILER_COPY.pages.matrixTitle}
             </h3>
           </div>
           <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-            Standard Page Experiment (Baseline → Peak → Retained)
+            {PROFILER_COPY.pages.matrixHint}
           </span>
         </div>
 
@@ -132,13 +132,13 @@ export const PagesTab: React.FC<PagesTabProps> = ({
           <table className="w-full text-left text-xs font-sans">
             <thead>
               <tr className="border-b border-[rgba(var(--border),0.12)] text-[11px] font-mono text-[rgb(var(--foreground-muted))] uppercase">
-                <th className="pb-3 font-semibold">Route / Page</th>
-                <th className="pb-3 font-semibold">Status</th>
-                <th className="pb-3 font-semibold">Baseline</th>
-                <th className="pb-3 font-semibold">Current</th>
-                <th className="pb-3 font-semibold">Peak (Δ)</th>
-                <th className="pb-3 font-semibold">Retained (Δ)</th>
-                <th className="pb-3 font-semibold">Risk / Observation</th>
+                <th className="pb-3 font-semibold">{PROFILER_COPY.pages.routePage}</th>
+                <th className="pb-3 font-semibold">{PROFILER_COPY.pages.status}</th>
+                <th className="pb-3 font-semibold">{PROFILER_COPY.pages.baseline}</th>
+                <th className="pb-3 font-semibold">{PROFILER_COPY.pages.current}</th>
+                <th className="pb-3 font-semibold">{PROFILER_COPY.pages.peak}</th>
+                <th className="pb-3 font-semibold">{PROFILER_COPY.pages.retained}</th>
+                <th className="pb-3 font-semibold">{PROFILER_COPY.pages.riskObservation}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[rgba(var(--border),0.06)] font-mono text-[12px]">
@@ -153,19 +153,19 @@ export const PagesTab: React.FC<PagesTabProps> = ({
                 const retainedDelta = rec?.retainedDeltaMb;
 
                 let riskBadge = (
-                  <span className="text-[rgb(var(--accent))] font-sans text-[11px] font-medium">Normal</span>
+                  <span className="text-[rgb(var(--accent))] font-sans text-[11px] font-medium">{PROFILER_COPY.pages.riskNormal}</span>
                 );
                 if (retainedDelta !== null && retainedDelta !== undefined) {
                   if (retainedDelta > 40) {
                     riskBadge = (
                       <span className="text-[rgb(var(--accent))] font-sans text-[11px] font-bold flex items-center gap-1">
-                        <AlertTriangle size={12} /> Critical Retention (+{retainedDelta}MB)
+                        <AlertTriangle size={12} /> {PROFILER_COPY.pages.riskCritical} (+{retainedDelta}MB)
                       </span>
                     );
                   } else if (retainedDelta > 15) {
                     riskBadge = (
                       <span className="text-[rgb(var(--foreground))] font-sans text-[11px] font-semibold flex items-center gap-1">
-                        <AlertTriangle size={12} /> Suspicious (+{retainedDelta}MB)
+                        <AlertTriangle size={12} /> {PROFILER_COPY.pages.riskSuspicious} (+{retainedDelta}MB)
                       </span>
                     );
                   }
@@ -194,14 +194,14 @@ export const PagesTab: React.FC<PagesTabProps> = ({
                     <td className="py-3 font-sans">
                       {isCurrent ? (
                         <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/30">
-                          Active
+                          {PROFILER_COPY.pages.statusActive}
                         </span>
                       ) : rec?.unmountedAt ? (
                         <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[rgba(var(--foreground-muted),0.15)] text-[rgb(var(--foreground-muted))]">
-                          Unmounted
+                          {PROFILER_COPY.pages.statusUnmounted}
                         </span>
                       ) : (
-                        <span className="text-[11px] text-[rgb(var(--foreground-muted))]">Unvisited</span>
+                        <span className="text-[11px] text-[rgb(var(--foreground-muted))]">{PROFILER_COPY.pages.statusUnvisited}</span>
                       )}
                     </td>
                     <td className="py-3 text-[rgb(var(--foreground))]">
@@ -241,7 +241,7 @@ export const PagesTab: React.FC<PagesTabProps> = ({
                         </span>
                       ) : isCurrent ? (
                         <span className="text-[11px] text-[rgb(var(--foreground-muted))] font-sans italic">
-                          Measuring on exit...
+                          {PROFILER_COPY.pages.measuringOnExit}
                         </span>
                       ) : (
                         "--"

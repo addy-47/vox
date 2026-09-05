@@ -58,10 +58,14 @@ export const HOME_CONTROLS_COPY = {
 } as const;
 
 export const ERROR_BANNER_COPY = {
-  title: "Connection Error",
-  reconnectButton: "Reconnect",
-  configureButton: "Configure Settings",
   dismissButton: "Dismiss",
+} as const;
+
+export const TEST_CLIPS_COPY = {
+  title: "Test Input Audio",
+  closePanel: "Close test input panel",
+  englishTitle: "English Conversations",
+  hindiTitle: "Hindi Conversations (हिंदी)",
 } as const;
 
 export const DIALOGUE_COPY = {

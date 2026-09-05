@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertTriangle, AlertCircle, Info, X } from "lucide-react";
 import { onShowToast, type ToastPayload } from "@/services/eventsService";
+import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { manageToastWindow, getLastToast } from "@/services/toastService";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -131,7 +132,7 @@ export const ToastApp: React.FC = () => {
 
               <button
                 onClick={hide}
-                aria-label="Dismiss"
+                aria-label={LAYOUT_COPY.toast.dismiss}
                 className="shrink-0 -mr-1 w-6 h-6 rounded-full flex items-center justify-center text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))]/80 hover:bg-[rgba(var(--foreground),0.06)] transition-colors"
               >
                 <X size={12} strokeWidth={1.8} />

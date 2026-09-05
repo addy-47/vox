@@ -112,8 +112,28 @@ pub async fn init_new_session(state: &AppState, base_prompt: &str) {
 
 /// Synchronous wrapper for init_new_session executed via the global Tokio runtime handle.
 pub fn init_new_session_sync(state: &AppState, base_prompt: &str) {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
+            tokio::task::block_in_place(|| {
+                handle.block_on(init_new_session(state, base_prompt));
+            });
+            return;
+        }
+    }
     let handle = crate::persistence::db::get_tokio_handle();
-    handle.block_on(init_new_session(state, base_prompt));
+    if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
+        tokio::task::block_in_place(|| {
+            handle.block_on(init_new_session(state, base_prompt));
+        });
+    } else {
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                handle.block_on(init_new_session(state, base_prompt));
+            })
+            .join()
+            .expect("init_new_session worker panicked");
+        });
+    }
 }
 
 /// Spawns an idle observer for the assistant pipeline that auto-pauses after 7 minutes of Ready

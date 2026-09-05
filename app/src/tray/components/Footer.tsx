@@ -1,4 +1,5 @@
 import React from 'react';
+import { TRAY_COPY } from '@/data/trayCopy';
 import { Cpu, Zap } from 'lucide-react';
 
 interface SystemStats {
@@ -31,17 +32,17 @@ export const Footer: React.FC<FooterProps> = React.memo(({
        <div className="flex items-center gap-3">
           {stats ? (
             <>
-              <div className="flex items-center gap-2" aria-label="Vox CPU Usage">
+              <div className="flex items-center gap-2" aria-label={TRAY_COPY.cpuUsage}>
                 <Cpu size={12} className="text-[rgb(var(--accent))]" />
                 <span className="text-[12px] font-mono text-[rgb(var(--foreground))]/90 font-bold">{stats.vox_cpu.toFixed(1)}%</span>
               </div>
-              <div className="flex items-center gap-2" aria-label="Vox RAM Usage">
+              <div className="flex items-center gap-2" aria-label={TRAY_COPY.ramUsage}>
                 <Zap size={12} className="text-[rgb(var(--accent))]" />
                 <span className="text-[12px] font-mono text-[rgb(var(--foreground))]/90 font-bold">{stats.vox_ram_mb}MB</span>
               </div>
             </>
           ) : (
-            <span className="text-[12px] font-mono text-[rgb(var(--foreground))]/60 uppercase tracking-widest">System Ready</span>
+            <span className="text-[12px] font-mono text-[rgb(var(--foreground))]/60 uppercase tracking-widest">{TRAY_COPY.systemReady}</span>
           )}
        </div>
         
@@ -50,7 +51,7 @@ export const Footer: React.FC<FooterProps> = React.memo(({
             onClick={onPrev}
             disabled={historyIndex === 0 || historyCount === 0}
             className="p-1 rounded-md text-[rgb(var(--accent))]/80 hover:text-[rgb(var(--accent))] disabled:opacity-30 disabled:hover:text-[rgb(var(--accent))]/80 transition-all hover:scale-110 active:scale-90"
-            aria-label="Previous Transcription"
+            aria-label={TRAY_COPY.prevTranscription}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           </button>
@@ -58,7 +59,7 @@ export const Footer: React.FC<FooterProps> = React.memo(({
             onClick={onNext}
             disabled={!viewingHistory || historyCount === 0}
             className="p-1 rounded-md text-[rgb(var(--accent))]/80 hover:text-[rgb(var(--accent))] disabled:opacity-30 disabled:hover:text-[rgb(var(--accent))]/80 transition-all hover:scale-110 active:scale-90"
-            aria-label="Next Transcription"
+            aria-label={TRAY_COPY.nextTranscription}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           </button>

@@ -5,6 +5,7 @@ import { Loader2, Network, RefreshCw, AlertCircle, Sparkles, Search, X, Plus } f
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { fzfMultiTermScore } from "@/shared/lib/fuzzy";
+import { LLM_CATALOG_COPY } from "@/data/settingsCopy";
 
 export interface LlmCatalogViewProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -167,7 +168,7 @@ export const LlmCatalogView = memo(({
                   type="text"
                   value={customModelId}
                   onChange={(e) => setCustomModelId(e.target.value)}
-                  placeholder="Enter custom model ID (e.g. mistralai/mistral-large)..."
+                  placeholder={LLM_CATALOG_COPY.customModelPlaceholder}
                   className="w-full bg-transparent border-none outline-none text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
                   onKeyDown={(e) => {
                     if (e.key === "Escape") {
@@ -193,7 +194,7 @@ export const LlmCatalogView = memo(({
                 onClick={handleApplyCustomModel}
                 className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] text-[11px] font-bold uppercase tracking-wider hover:brightness-110 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shrink-0"
               >
-                Use
+                {LLM_CATALOG_COPY.use}
               </button>
               <button
                 type="button"
@@ -223,7 +224,7 @@ export const LlmCatalogView = memo(({
                       searchInputRef.current?.blur();
                     }
                   }}
-                  placeholder="Filter models with fuzzy matching (e.g. llama 70b, gemma q4)..."
+                  placeholder={LLM_CATALOG_COPY.searchPlaceholder}
                   className="w-full bg-transparent border-none outline-none text-[12px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40"
                 />
                 {searchQuery && (
@@ -252,17 +253,17 @@ export const LlmCatalogView = memo(({
               <div className="flex flex-col min-w-0">
                 <span className="font-bold text-[rgb(var(--foreground))] text-[13px] flex items-center gap-1.5 truncate">
                   <Network size={15} className="text-[rgb(var(--accent))] shrink-0" />
-                  <span>Connected Server</span>
+                  <span>{LLM_CATALOG_COPY.connectedServer}</span>
                 </span>
                 <span className="text-[11px] text-[rgb(var(--foreground-muted))] font-mono truncate max-w-[200px] sm:max-w-[280px]">
-                  {remoteUrl || "No server configured"}
+                  {remoteUrl || LLM_CATALOG_COPY.noServer}
                 </span>
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
                 {loadingRemoteModels ? (
                   <span className="text-[11px] font-bold text-[rgb(var(--accent))] flex items-center gap-1 px-2 py-1 rounded-lg bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/20">
-                    <RefreshCw size={12} className="animate-spin" /> Fetching...
+                    <RefreshCw size={12} className="animate-spin" /> {LLM_CATALOG_COPY.fetching}
                   </span>
                 ) : (
                   <>
@@ -273,8 +274,8 @@ export const LlmCatalogView = memo(({
                         setIsSearching(false);
                       }}
                       className="p-1.5 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] hover:border-[rgb(var(--accent))]/40 hover:bg-[rgba(var(--accent),0.08)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all cursor-pointer shadow-sm flex items-center justify-center"
-                      title="Enter custom model ID"
-                      aria-label="Custom model ID"
+                      title={LLM_CATALOG_COPY.customModelTitle}
+                      aria-label={LLM_CATALOG_COPY.customModelAria}
                     >
                       <Plus size={15} />
                     </button>
@@ -285,8 +286,8 @@ export const LlmCatalogView = memo(({
                         setIsCustomInputOpen(false);
                       }}
                       className="p-1.5 rounded-lg bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] hover:border-[rgb(var(--accent))]/40 hover:bg-[rgba(var(--accent),0.08)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all cursor-pointer shadow-sm flex items-center justify-center"
-                      title="Search models (fzf fuzzy filter)"
-                      aria-label="Search models"
+                      title={LLM_CATALOG_COPY.searchTitle}
+                      aria-label={LLM_CATALOG_COPY.searchAria}
                     >
                       <Search size={15} />
                     </button>
@@ -316,18 +317,18 @@ export const LlmCatalogView = memo(({
         >
           {remoteModels.length === 0 ? (
             <div className="col-span-full text-center py-8 text-[12px] text-[rgb(var(--foreground-muted))]/70 space-y-1">
-              <p className="font-semibold text-[rgb(var(--foreground))]/80">No remote models loaded</p>
-              <p className="text-[11px]">Ensure the remote server is online and configured in the Interaction Card.</p>
+              <p className="font-semibold text-[rgb(var(--foreground))]/80">{LLM_CATALOG_COPY.emptyTitle}</p>
+              <p className="text-[11px]">{LLM_CATALOG_COPY.emptyHint}</p>
             </div>
           ) : filteredRemoteModels.length === 0 ? (
             <div className="col-span-full text-center py-8 text-[12px] text-[rgb(var(--foreground-muted))]/70 space-y-2">
-              <p className="font-semibold text-[rgb(var(--foreground))]/80">No models matching &ldquo;{searchQuery}&rdquo;</p>
+              <p className="font-semibold text-[rgb(var(--foreground))]/80">{LLM_CATALOG_COPY.noModelsMatch} &ldquo;{searchQuery}&rdquo;</p>
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
                 className="px-3 py-1 rounded-lg text-[11px] font-bold text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/25 hover:bg-[rgb(var(--accent))]/20 transition-all cursor-pointer"
               >
-                Clear Search
+                {LLM_CATALOG_COPY.clearSearch}
               </button>
             </div>
           ) : (
@@ -454,7 +455,7 @@ export const LlmCatalogView = memo(({
                             handleProbeCapabilities(model.id);
                           }}
                           className="p-1 rounded-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-all cursor-pointer"
-                          title="Re-run capability benchmark"
+                          title={LLM_CATALOG_COPY.rerunBenchmark}
                         >
                           <RefreshCw size={12} />
                         </button>
@@ -469,7 +470,7 @@ export const LlmCatalogView = memo(({
                       {isTesting ? (
                         <span className="font-bold text-[rgb(var(--accent))] flex items-center gap-1.5 py-0.5">
                           <Loader2 size={12} className="animate-spin shrink-0" />
-                          <span className="truncate">Benchmarking...</span>
+                          <span className="truncate">{LLM_CATALOG_COPY.benchmarking}</span>
                         </span>
                       ) : probed ? (
                         <Tooltip
@@ -479,49 +480,49 @@ export const LlmCatalogView = memo(({
                           label={
                             <div className="space-y-1.5 text-[11px] font-sans">
                               <div className="font-bold text-[rgb(var(--foreground))] border-b border-[rgba(var(--foreground),0.08)] pb-1 flex items-center justify-between">
-                                <span>Model Capabilities</span>
+                                <span>{LLM_CATALOG_COPY.modelCapabilities}</span>
                                 {isGpu ? (
-                                  <span className="text-purple-400 font-mono text-[10px] font-bold">🚀 GPU</span>
+                                  <span className="text-purple-400 font-mono text-[10px] font-bold">{LLM_CATALOG_COPY.gpuBadge}</span>
                                 ) : probed?.server_has_gpu ? (
-                                  <span className="text-amber-400 font-mono text-[10px] font-bold">⚠️ CPU</span>
+                                  <span className="text-amber-400 font-mono text-[10px] font-bold">{LLM_CATALOG_COPY.cpuBadge}</span>
                                 ) : null}
                               </div>
                               <div className="space-y-1 font-mono text-[10.5px]">
                                 {probed.tps != null && probed.tps > 0 && (
                                   <div className="flex justify-between gap-3">
-                                    <span className="text-[rgb(var(--foreground-muted))]">Speed:</span>
+                                    <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.speed}</span>
                                     <span className="text-emerald-400 font-bold">⚡ {probed.tps.toFixed(1)} tps</span>
                                   </div>
                                 )}
                                 <div className="flex justify-between gap-3">
-                                  <span className="text-[rgb(var(--foreground-muted))]">Context:</span>
+                                    <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.context}</span>
                                   <span className="text-[rgb(var(--foreground))]">
                                     {probed.context_window
                                       ? probed.context_window >= 1000000
                                         ? `${(probed.context_window / 1000000).toFixed(1)}M tokens`
                                         : `${Math.round(probed.context_window / 1024)}k tokens`
-                                      : "Managed"}
+                                      : LLM_CATALOG_COPY.managed}
                                   </span>
                                 </div>
                                 {probed.vram_bytes ? (
                                   <div className="flex justify-between gap-3">
-                                    <span className="text-[rgb(var(--foreground-muted))]">VRAM:</span>
+                                    <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.vram}</span>
                                     <span className="text-purple-300">{(probed.vram_bytes / (1024 * 1024)).toFixed(0)} MB</span>
                                   </div>
                                 ) : null}
                                 <div className="flex justify-between gap-3">
-                                  <span className="text-[rgb(var(--foreground-muted))]">Tools:</span>
+                                    <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.tools}</span>
                                   <span className={probed.supports_tools ? "text-blue-400 font-bold" : "text-[rgb(var(--foreground-muted))]/60"}>
-                                    {probed.supports_tools ? "Supported" : "None"}
+                                    {probed.supports_tools ? LLM_CATALOG_COPY.toolsSupported : LLM_CATALOG_COPY.toolsNone}
                                   </span>
                                 </div>
                                 <div className="flex justify-between gap-3">
-                                  <span className="text-[rgb(var(--foreground-muted))]">Languages:</span>
+                                    <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.languages}</span>
                                   <span className="text-[rgb(var(--foreground))] font-bold">
                                     {[
                                       probed.supports_latin && "EN",
                                       probed.supports_devanagari && "HIN",
-                                    ].filter(Boolean).join(", ") || "Standard"}
+                                    ].filter(Boolean).join(", ") || LLM_CATALOG_COPY.languageStandard}
                                   </span>
                                 </div>
                               </div>
@@ -530,11 +531,11 @@ export const LlmCatalogView = memo(({
                         >
                           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--foreground),0.08)] text-[10.5px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.4)] transition-all cursor-help">
                             <Sparkles size={11} className="text-[rgb(var(--accent))] shrink-0" />
-                            <span>Capabilities</span>
+                            <span>{LLM_CATALOG_COPY.capabilities}</span>
                           </div>
                         </Tooltip>
                       ) : (
-                        <span className="text-[10.5px] text-[rgb(var(--foreground-muted))]/50 font-mono">Not benchmarked</span>
+                        <span className="text-[10.5px] text-[rgb(var(--foreground-muted))]/50 font-mono">{LLM_CATALOG_COPY.notBenchmarked}</span>
                       )}
                     </div>
 
@@ -554,10 +555,10 @@ export const LlmCatalogView = memo(({
                             handleProbeCapabilities(model.id);
                           }}
                           className="text-[11px] font-bold text-[rgb(var(--accent))] px-2.5 py-0.5 rounded-lg bg-[rgb(var(--accent))]/10 border border-[rgb(var(--accent))]/25 hover:bg-[rgb(var(--accent))]/20 transition-all flex items-center gap-1 cursor-pointer"
-                          title="Run capability benchmark"
+                          title={LLM_CATALOG_COPY.runBenchmark}
                         >
                           <Sparkles size={11} />
-                          <span>Benchmark</span>
+                          <span>{LLM_CATALOG_COPY.benchmark}</span>
                         </button>
                       )}
                     </div>

@@ -382,9 +382,10 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
     }
 
     if ctx.pipeline_mode == PipelineMode::Realtime {
-        let mut rt_guard = state.realtime_engine.blocking_lock();
-        if let Some(mut rt_actor) = rt_guard.take() {
-            rt_actor.stop();
+        if let Ok(mut rt_guard) = state.realtime_engine.try_lock() {
+            if let Some(mut rt_actor) = rt_guard.take() {
+                rt_actor.stop();
+            }
         }
         crate::services::realtime::session::purge_session_cache();
     }
@@ -395,29 +396,33 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
 
-    let persist_lock = state.persist_tx.lock();
-    if let Some(ref tx) = *persist_lock {
-        if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
-            id: conv_id,
-            timestamp_ms: now,
-        }) {
-            log::warn!(
-                "[Pipeline::Session] Failed to send SessionEnded to persistence: {}",
-                e
-            );
+    {
+        let persist_lock = state.persist_tx.lock();
+        if let Some(ref tx) = *persist_lock {
+            if let Err(e) = tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
+                id: conv_id,
+                timestamp_ms: now,
+            }) {
+                log::warn!(
+                    "[Pipeline::Session] Failed to send SessionEnded to persistence: {}",
+                    e
+                );
+            }
         }
     }
 
-    let mem_lock = state.memory_tx.lock();
-    if let Some(ref tx) = *mem_lock {
-        if let Err(e) = tx.try_send(crate::persistence::events::MemoryWorkerEvent::SessionEnd {
-            session_id: conv_id.to_string(),
-            summary: String::new(),
-        }) {
-            log::trace!(
-                "[Pipeline::Session] Failed to send SessionEnd to memory: {}",
-                e
-            );
+    {
+        let mem_lock = state.memory_tx.lock();
+        if let Some(ref tx) = *mem_lock {
+            if let Err(e) = tx.try_send(crate::persistence::events::MemoryWorkerEvent::SessionEnd {
+                session_id: conv_id.to_string(),
+                summary: String::new(),
+            }) {
+                log::trace!(
+                    "[Pipeline::Session] Failed to send SessionEnd to memory: {}",
+                    e
+                );
+            }
         }
     }
 

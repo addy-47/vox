@@ -24,13 +24,6 @@ export interface StateChangedPayload {
   turn_id: number;
 }
 
-/** `voice_error` payload emitted on pipeline/engine failure. */
-export interface VoiceErrorPayload {
-  message: string;
-  source: string;
-  owner?: InteractionOwner;
-}
-
 /** `transcript_partial` / `transcript_final` payload. */
 export interface TranscriptPayload {
   turn_id: number;
@@ -116,6 +109,12 @@ export interface NotificationDismissedPayload {
   id: string;
 }
 
+/** `session_title_updated` payload — backend title consumer persisted a title. */
+export interface SessionTitleUpdatedPayload {
+  session_id: number;
+  title: string;
+}
+
 /**
  * Canonical IPC Event Map mirroring Rust `IpcEvent` registry in `core/events.rs`.
  */
@@ -124,7 +123,6 @@ export interface IpcEventMap {
   transcript_partial: TranscriptPayload;
   transcript_final: TranscriptPayload;
   llm_token: LlmTokenPayload;
-  voice_error: VoiceErrorPayload;
   model_progress: ModelProgressPayload;
   telemetry: TelemetryData;
   system_stats: SystemStatsPayload;
@@ -135,6 +133,8 @@ export interface IpcEventMap {
   notification_updated: NotificationRecord;
   notification_dismissed: NotificationDismissedPayload;
   notifications_marked_read: void;
+  session_title_updated: SessionTitleUpdatedPayload;
+  sessions_changed: void;
 }
 
 /**
@@ -213,10 +213,6 @@ export function onLlmToken(handler: (payload: LlmTokenPayload) => void): () => v
   return on("llm_token", handler);
 }
 
-export function onVoiceError(handler: (payload: VoiceErrorPayload) => void): () => void {
-  return on("voice_error", handler);
-}
-
 export function onModelProgress(handler: (payload: ModelProgressPayload) => void): () => void {
   return on("model_progress", handler);
 }
@@ -255,4 +251,14 @@ export function onNotificationDismissed(handler: (payload: NotificationDismissed
 
 export function onNotificationsMarkedRead(handler: () => void): () => void {
   return on("notifications_marked_read", handler);
+}
+
+export function onSessionTitleUpdated(
+  handler: (payload: SessionTitleUpdatedPayload) => void
+): () => void {
+  return on("session_title_updated", handler);
+}
+
+export function onSessionsChanged(handler: () => void): () => void {
+  return on("sessions_changed", handler);
 }

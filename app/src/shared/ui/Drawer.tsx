@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { Tooltip } from "./Tooltip";
+import { LAYOUT_COPY } from "@/data/layoutCopy";
 
 
 export interface DrawerProps {
@@ -68,7 +69,7 @@ export const Drawer = memo(
     zIndex,
     resizeHint,
     footer,
-    ariaLabel = "Drawer",
+    ariaLabel = LAYOUT_COPY.drawer.defaultAria,
     className,
     bodyClassName,
     children,
@@ -212,7 +213,7 @@ export const Drawer = memo(
                     onDoubleClick={handleToggleExpand}
                     role="separator"
                     aria-orientation="horizontal"
-                    aria-label={resizeHint ?? "Resize drawer"}
+                    aria-label={resizeHint ?? LAYOUT_COPY.drawer.resizeFallback}
                     className="w-full h-5 flex items-center justify-center cursor-row-resize group hover:bg-[rgb(var(--accent))]/5 transition-colors touch-none shrink-0"
                   >
                     <div className="w-12 h-1 rounded-full bg-[rgba(var(--accent),0.3)] group-hover:bg-[rgb(var(--accent))] transition-colors shadow-sm" />

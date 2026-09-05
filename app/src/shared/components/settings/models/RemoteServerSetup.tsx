@@ -2,6 +2,7 @@ import { memo } from "react";
 import { Network, Info, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { UnderlineInput } from "@/shared/ui";
+import { REMOTE_SERVER_COPY } from "@/data/settingsCopy";
 
 export interface RemoteSetupStatus {
   step: "initiating" | "connecting" | "deploying" | "starting_service" | "verifying" | "complete" | "failed" | string;
@@ -40,11 +41,11 @@ export const RemoteServerSetup = memo(({
         <div className="flex items-center gap-2 text-[rgb(var(--accent))]">
           <Info size={16} />
           <span className="font-bold text-[12px] uppercase tracking-[0.1em]">
-            Chatterbox Remote Deployment
+            {REMOTE_SERVER_COPY.bannerTitle}
           </span>
         </div>
         <p className="text-[12px] text-[rgb(var(--foreground-muted))]/80 leading-relaxed font-medium">
-          Deploy Chatterbox on a remote CUDA-accelerated GPU host (e.g. RunPod, Vast.ai, or homelab) to offload memory-intensive flow-matching voice synthesis. Enter your SSH connection info below to automatically sync the codebase, download GGUF models, and run the server.
+          {REMOTE_SERVER_COPY.bannerBody}
         </p>
       </div>
 
@@ -53,7 +54,7 @@ export const RemoteServerSetup = memo(({
         <div className="flex items-center justify-between border-b border-[rgba(var(--accent),0.08)] pb-1.5">
           <span className="font-bold text-[12px] text-[rgb(var(--foreground))] flex items-center gap-1.5">
             <Network size={14} className="text-[rgb(var(--accent))]" />
-            Setup Remote GPU Server (SSH Setup Required)
+            {REMOTE_SERVER_COPY.panelTitle}
           </span>
           <span className={cn(
             "text-[11px] font-black uppercase px-1.5 py-0.5 rounded border",
@@ -61,28 +62,28 @@ export const RemoteServerSetup = memo(({
               ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
               : "bg-rose-500/10 text-rose-400 border-rose-500/20"
           )}>
-            {isRemoteTtsHealthy ? "Online / Connected" : "Offline / Unconfigured"}
+            {isRemoteTtsHealthy ? REMOTE_SERVER_COPY.online : REMOTE_SERVER_COPY.offline}
           </span>
         </div>
 
         <div className="grid grid-cols-[2.5fr_1fr_2.5fr] gap-3">
           <UnderlineInput
-            label="SSH Host / Profile"
+            label={REMOTE_SERVER_COPY.hostLabel}
             value={sshConnectionString}
             onChange={(e) => setSshConnectionString(e.target.value)}
-            placeholder="user@hostname"
+            placeholder={REMOTE_SERVER_COPY.hostPlaceholder}
           />
           <UnderlineInput
-            label="SSH Port"
+            label={REMOTE_SERVER_COPY.portLabel}
             value={sshPort}
             onChange={(e) => setSshPort(e.target.value)}
-            placeholder="22"
+            placeholder={REMOTE_SERVER_COPY.portPlaceholder}
           />
           <UnderlineInput
-            label="Identity Key Path"
+            label={REMOTE_SERVER_COPY.keyLabel}
             value={sshIdentityKey}
             onChange={(e) => setSshIdentityKey(e.target.value)}
-            placeholder="~/.ssh/id_rsa"
+            placeholder={REMOTE_SERVER_COPY.keyPlaceholder}
           />
         </div>
 
@@ -90,13 +91,7 @@ export const RemoteServerSetup = memo(({
           <div className="space-y-1.5 pt-1">
             <div className="flex items-center justify-between text-[11px]">
               <span className="font-bold text-[rgb(var(--foreground))] uppercase tracking-wider">
-                {setupStatus.step === "initiating" && "Initializing Setup..."}
-                {setupStatus.step === "connecting" && "Testing SSH Connection..."}
-                {setupStatus.step === "deploying" && "Configuring Remote Server..."}
-                {setupStatus.step === "starting_service" && "Starting Chatterbox Service..."}
-                {setupStatus.step === "verifying" && "Verifying Health Endpoint..."}
-                {setupStatus.step === "complete" && "Setup Completed Successfully"}
-                {setupStatus.step === "failed" && "Setup Failed"}
+                {REMOTE_SERVER_COPY.steps[setupStatus.step] ?? setupStatus.step}
               </span>
               <span className="font-mono text-[rgb(var(--accent))]">{setupStatus.progress}%</span>
             </div>
@@ -119,7 +114,7 @@ export const RemoteServerSetup = memo(({
 
         <div className="flex items-center justify-between pt-1">
           <p className="text-[11px] text-[rgb(var(--foreground-muted))]/60">
-            {setupStatus?.step === "complete" ? "Ready to synthesize flow-matching audio." : "Syncs scripts and installs PyTorch CUDA on remote host."}
+            {setupStatus?.step === "complete" ? REMOTE_SERVER_COPY.footerReady : REMOTE_SERVER_COPY.footerBusy}
           </p>
           <button
             type="button"
@@ -135,15 +130,15 @@ export const RemoteServerSetup = memo(({
             {setupStatus?.step === "complete" ? (
               <>
                 <Check size={12} />
-                Deployed & Active
+                {REMOTE_SERVER_COPY.deployed}
               </>
             ) : setupStatus && setupStatus.step !== "failed" ? (
               <>
                 <RefreshCw size={12} className="animate-spin" />
-                Deploying...
+                {REMOTE_SERVER_COPY.deploying}
               </>
             ) : (
-              "Deploy Chatterbox Server"
+              REMOTE_SERVER_COPY.deploy
             )}
           </button>
         </div>

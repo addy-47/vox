@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   type NotificationRecord,
+  countsTowardBadge,
   getNotifications,
   markNotificationsRead,
   dismissNotification,
@@ -162,4 +163,9 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
 
 function logError(msg: string, e: unknown) {
   console.error(`[NotificationStore] ${msg}:`, e);
+}
+
+/** Badge weight: unread, actionable notifications only (receipts excluded). */
+export function selectBadgeCount(state: NotificationStoreState): number {
+  return state.notifications.filter(countsTowardBadge).length;
 }

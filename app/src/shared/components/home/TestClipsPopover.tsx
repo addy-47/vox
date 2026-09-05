@@ -2,7 +2,7 @@ import React, { memo, useMemo } from "react";
 import { motion } from "framer-motion";
 import { FlaskConical, Play, X, Loader2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { TEST_CLIPS, type TestClip } from "@/data/homeCopy";
+import { TEST_CLIPS, TEST_CLIPS_COPY, type TestClip } from "@/data/homeCopy";
 
 interface TestClipsPopoverProps {
   panelRef: React.RefObject<HTMLDivElement | null>;
@@ -112,7 +112,7 @@ export const TestClipsPopover = memo(({
             <FlaskConical size={14} />
           </div>
           <span className="text-[11px] font-mono tracking-widest text-[rgb(var(--foreground))] uppercase font-bold">
-            Test Input Audio
+            {TEST_CLIPS_COPY.title}
           </span>
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.2)] font-semibold">
             {TEST_CLIPS.length}
@@ -124,7 +124,7 @@ export const TestClipsPopover = memo(({
             type="button"
             onClick={onClose}
             className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-all cursor-pointer"
-            aria-label="Close test input panel"
+            aria-label={TEST_CLIPS_COPY.closePanel}
           >
             <X size={14} />
           </button>
@@ -134,7 +134,7 @@ export const TestClipsPopover = memo(({
       {/* ── Inner Scrolling Clips Container ────────────── */}
       <div className="max-h-[360px] overflow-y-auto pr-1 space-y-3.5 scrollbar-thin scrollbar-thumb-[rgba(var(--foreground),0.15)] scrollbar-track-transparent">
         <ClipGroup
-          title="English Conversations"
+          title={TEST_CLIPS_COPY.englishTitle}
           count={englishClips.length}
           clips={englishClips}
           onSelectClip={onSelectClip}
@@ -143,7 +143,7 @@ export const TestClipsPopover = memo(({
         />
 
         <ClipGroup
-          title="Hindi Conversations (हिंदी)"
+          title={TEST_CLIPS_COPY.hindiTitle}
           count={hindiClips.length}
           clips={hindiClips}
           onSelectClip={onSelectClip}
