@@ -1,12 +1,13 @@
-use crate::core::state::AppState;
-use crate::core::state::InteractionOwner;
-use crate::core::state::InteractionState;
-use crate::monitoring::snapshot::RuntimeSnapshot;
-use crate::monitoring::COLLECTOR_TICK_INTERVAL;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::{atomic::Ordering, Arc},
+    thread,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use crate::{
+    core::state::{AppState, InteractionOwner, InteractionState},
+    monitoring::{snapshot::RuntimeSnapshot, COLLECTOR_TICK_INTERVAL},
+};
 
 /// Spawn the Monitoring Collector on a dedicated OS thread.
 pub fn spawn_monitoring_collector(state: Arc<AppState>) {

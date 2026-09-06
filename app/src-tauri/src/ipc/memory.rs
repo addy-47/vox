@@ -1,15 +1,29 @@
-use crate::core::error::VoxIpcError;
-use crate::core::state::AppState;
-use crate::persistence::db::VoxDb;
-pub use crate::persistence::graph::{
-    MemoryConflictItem as MemoryConflict, MemoryEdgeTopology, MemoryFactDetail, MemoryGraphPayload,
-    MemoryGraphQueryFilter, MemoryNodeTopology,
-};
-pub use crate::persistence::{MemoryQueueItem, MemoryQueueSummary};
+use std::sync::{atomic::Ordering, Arc};
+
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use tauri::State;
+
+pub use crate::persistence::{
+    graph::{
+        MemoryConflictItem as MemoryConflict, MemoryEdgeTopology, MemoryFactDetail,
+        MemoryGraphPayload, MemoryGraphQueryFilter, MemoryNodeTopology,
+    },
+    MemoryQueueItem, MemoryQueueSummary,
+};
+use crate::{
+    core::{error::VoxIpcError, state::AppState},
+    persistence::{
+        db::VoxDb,
+        graph::{fetch_fact_detail, fetch_memory_conflicts, fetch_memory_graph},
+        memory_mutations::{
+            self, delete_memory_fact, reassign_memory_fact, resolve_fact_conflict,
+            supersede_user_fact, update_memory_fact,
+        },
+        memory_queries::fetch_memory_queue_status,
+    },
+    services::memory::{ensure_embedder_loaded, generate_embedding},
+    utils::paths::get,
+};
 
 // ── Graph Commands ─────────────────────────────────────────────────────────────
 
@@ -25,14 +39,14 @@ pub async fn get_memory_graph_topology(
     state: State<'_, Arc<AppState>>,
     filter: Option<MemoryGraphQueryFilter>,
 ) -> Result<MemoryGraphPayload, VoxIpcError> {
-    let db_path = crate::utils::paths::get().db.clone();
+    let db_path = get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     let version = state.memory.graph_version.load(Ordering::SeqCst);
 
-    crate::persistence::graph::fetch_memory_graph(&conn, filter.as_ref(), version)
+    fetch_memory_graph(&conn, filter.as_ref(), version)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
@@ -40,12 +54,12 @@ pub async fn get_memory_graph_topology(
 /// Retrieve detailed information for a single memory fact by ID.
 #[tauri::command]
 pub async fn get_memory_fact_detail(fact_id: String) -> Result<MemoryFactDetail, VoxIpcError> {
-    let db_path = crate::utils::paths::get().db.clone();
+    let db_path = get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    crate::persistence::graph::fetch_fact_detail(&conn, &fact_id)
+    fetch_fact_detail(&conn, &fact_id)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?
         .ok_or_else(|| VoxIpcError::NotFound(format!("Memory fact not found: {}", fact_id)))
@@ -56,12 +70,12 @@ pub async fn get_memory_fact_detail(fact_id: String) -> Result<MemoryFactDetail,
 /// Retrieve all unresolved memory fact conflicts from the graph.
 #[tauri::command]
 pub async fn get_unresolved_conflicts() -> Result<Vec<MemoryConflict>, VoxIpcError> {
-    let db_path = crate::utils::paths::get().db.clone();
+    let db_path = get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    crate::persistence::graph::fetch_memory_conflicts(&conn)
+    fetch_memory_conflicts(&conn)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
@@ -73,12 +87,12 @@ pub async fn resolve_memory_conflict(
     winner_id: String,
     loser_id: String,
 ) -> Result<(), VoxIpcError> {
-    let db_path = crate::utils::paths::get().db.clone();
+    let db_path = get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    crate::persistence::memory_mutations::resolve_fact_conflict(&conn, &winner_id, &loser_id)
+    resolve_fact_conflict(&conn, &winner_id, &loser_id)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
@@ -146,30 +160,25 @@ async fn edit_fact_in_place_internal(
         ));
     }
 
-    let db_path = crate::utils::paths::get().db.clone();
+    let db_path = get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
     let trimmed_clone = trimmed.to_string();
     let embedding = tokio::task::spawn_blocking(move || {
-        crate::services::memory::ensure_embedder_loaded(true)
+        ensure_embedder_loaded(true)
             .map_err(|e| VoxIpcError::Engine(format!("Embedder loading failed: {}", e)))?;
-        crate::services::memory::generate_embedding(&trimmed_clone)
+        generate_embedding(&trimmed_clone)
             .map_err(|e| VoxIpcError::Engine(format!("Embedding generation failed: {}", e)))?
             .ok_or_else(|| VoxIpcError::Engine("Failed to generate embedding vector".to_string()))
     })
     .await
     .map_err(|e| VoxIpcError::Internal(format!("Task panicked: {}", e)))??;
 
-    crate::persistence::memory_mutations::update_memory_fact(
-        &conn,
-        &payload.fact_id,
-        trimmed,
-        &embedding,
-    )
-    .await
-    .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    update_memory_fact(&conn, &payload.fact_id, trimmed, &embedding)
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(ManageFactResult::Done)
@@ -203,19 +212,14 @@ async fn supersede_fact_internal(
         ));
     }
 
-    let db_path = crate::utils::paths::get().db.clone();
+    let db_path = get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    let new_id = crate::persistence::memory_mutations::supersede_user_fact(
-        &conn,
-        &payload.fact_id,
-        trimmed,
-        &collection,
-    )
-    .await
-    .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let new_id = supersede_user_fact(&conn, &payload.fact_id, trimmed, &collection)
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     log::info!(
@@ -233,18 +237,14 @@ async fn reassign_fact_internal(
     let new_collection = payload.new_collection.ok_or_else(|| {
         VoxIpcError::InvalidArgument("new_collection required for reassign action".to_string())
     })?;
-    let db_path = crate::utils::paths::get().db.clone();
+    let db_path = get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    crate::persistence::memory_mutations::reassign_memory_fact(
-        &conn,
-        &payload.fact_id,
-        &new_collection,
-    )
-    .await
-    .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    reassign_memory_fact(&conn, &payload.fact_id, &new_collection)
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
     Ok(ManageFactResult::Done)
@@ -254,12 +254,12 @@ async fn delete_fact_internal(
     state: &State<'_, Arc<AppState>>,
     payload: ManageFactPayload,
 ) -> Result<ManageFactResult, VoxIpcError> {
-    let db_path = crate::utils::paths::get().db.clone();
+    let db_path = get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    crate::persistence::memory_mutations::delete_memory_fact(&conn, &payload.fact_id)
+    delete_memory_fact(&conn, &payload.fact_id)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
@@ -272,12 +272,12 @@ async fn delete_fact_internal(
 /// Retrieve queue status counts and the most recent 50 queue items.
 #[tauri::command]
 pub async fn get_memory_queue_status() -> Result<MemoryQueueSummary, VoxIpcError> {
-    let db_path = crate::utils::paths::get().db.clone();
+    let db_path = get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    crate::persistence::memory_queries::fetch_memory_queue_status(&conn)
+    fetch_memory_queue_status(&conn)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
@@ -324,12 +324,12 @@ pub async fn retry_failed_queue_items(
         ));
     }
 
-    let db_path = crate::utils::paths::get().db.clone();
+    let db_path = get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    let affected = crate::persistence::memory_mutations::retry_failed_queue_items(&conn, item_ids)
+    let affected = memory_mutations::retry_failed_queue_items(&conn, item_ids)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 

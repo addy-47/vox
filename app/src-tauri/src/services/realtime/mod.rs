@@ -4,13 +4,17 @@ pub mod providers;
 pub mod session;
 pub mod transport;
 
-pub use crate::core::events::{Actionability, PipelineError, PipelineImpact};
-use crate::core::settings::InteractionMode;
-pub use crate::core::settings::RealtimeProviderKind;
+use std::time::Duration;
+
 pub use actor::RealtimeActor;
 use anyhow::Result;
 pub use session::{create_realtime_provider, purge_session_cache};
-use std::time::Duration;
+
+use crate::core::settings::InteractionMode;
+pub use crate::core::{
+    events::{Actionability, PipelineError, PipelineImpact},
+    settings::RealtimeProviderKind,
+};
 
 pub const DEFAULT_INPUT_SAMPLE_RATE: u32 = 16000;
 pub const DEFAULT_OUTPUT_SAMPLE_RATE: u32 = 24000;

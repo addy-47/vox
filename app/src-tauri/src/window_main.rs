@@ -1,7 +1,8 @@
-use crate::core::state::AppState;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
+
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+
+use crate::{core::state::AppState, tray::refresh_tray_menu};
 
 /// Returns the live "main" webview, rebuilding it if it was destroyed.
 pub fn ensure_main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
@@ -57,7 +58,7 @@ pub fn ensure_main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
 
     let state = app.state::<Arc<AppState>>();
     state.main_window_destroyed.store(false, Ordering::Relaxed);
-    crate::tray::refresh_tray_menu(app);
+    refresh_tray_menu(app);
 
     if let Err(e) = window.show() {
         log::debug!("[MainWindow] Failed to show newly created window: {}", e);

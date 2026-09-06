@@ -1,19 +1,22 @@
-use super::{BatchEvaluationResult, CandidateAuditLog, RelationEdge};
-use crate::persistence::{decode_f32_blob, queries};
-use crate::services::memory::ml::edge_classifier as inter_edge_classifier;
-use crate::services::memory::ml::nli::{
-    classify_batch, ensure_nli_loaded, relation_from_result, NliRelation,
-};
-use crate::services::memory::{
-    is_valid_inter_collection_pair, MemoryCollection, QueueStatus, Relation,
-};
-use crate::services::memory::{
-    INTER_COLLECTION_CANDIDATE_SEARCH, NLI_CONTRADICTION_CONFIDENCE_THRESHOLD,
-    NLI_CONTRADICTION_MARGIN_THRESHOLD, NLI_ENTAILMENT_CONFIDENCE_THRESHOLD, NLI_MODEL_DIR,
-    SAME_COLLECTION_CANDIDATE_SEARCH, STAGE3_BATCH_SIZE,
-};
 use anyhow::Result;
 use turso::Connection;
+
+use super::{BatchEvaluationResult, CandidateAuditLog, RelationEdge};
+use crate::{
+    persistence::{decode_f32_blob, mutations, queries},
+    services::memory::{
+        has_inter_collection_relationship, inverse_edge_for_relation,
+        is_valid_inter_collection_pair,
+        ml::{
+            edge_classifier as inter_edge_classifier,
+            nli::{classify_batch, ensure_nli_loaded, relation_from_result, NliRelation},
+        },
+        MemoryCollection, QueueStatus, Relation, INTER_COLLECTION_CANDIDATE_SEARCH,
+        NLI_CONTRADICTION_CONFIDENCE_THRESHOLD, NLI_CONTRADICTION_MARGIN_THRESHOLD,
+        NLI_ENTAILMENT_CONFIDENCE_THRESHOLD, NLI_MODEL_DIR, SAME_COLLECTION_CANDIDATE_SEARCH,
+        STAGE3_BATCH_SIZE,
+    },
+};
 
 /// Claimed item pending stage 3 NLI and edge classification.
 #[derive(Debug, Clone)]
@@ -188,7 +191,7 @@ fn eval_subbranch_b_edges_sync(
                 Ok((Some(pred_edge), score)) => {
                     edge_score_val = Some(score);
                     decision = pred_edge.clone();
-                    let inv_edge = crate::services::memory::inverse_edge_for_relation(&pred_edge);
+                    let inv_edge = inverse_edge_for_relation(&pred_edge);
 
                     if is_forward {
                         relations.push(RelationEdge {
@@ -327,9 +330,7 @@ async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()
     let policy_targets: Vec<&'static str> = MemoryCollection::SEMANTIC_GRAPH_NAMES
         .iter()
         .copied()
-        .filter(|&tgt| {
-            crate::services::memory::has_inter_collection_relationship(&item.collection, tgt)
-        })
+        .filter(|&tgt| has_inter_collection_relationship(&item.collection, tgt))
         .collect();
 
     let edge_candidates = if !policy_targets.is_empty() {
@@ -421,12 +422,8 @@ async fn evaluate_stage3_item(conn: &Connection, item: &Stage3Item) -> Result<()
     .await?;
 
     if !eval_result.candidate_logs.is_empty() {
-        if let Err(e) = crate::persistence::mutations::write_candidate_audit(
-            conn,
-            item.id,
-            &eval_result.candidate_logs,
-        )
-        .await
+        if let Err(e) =
+            mutations::write_candidate_audit(conn, item.id, &eval_result.candidate_logs).await
         {
             log::warn!(
                 "[MemoryPipeline::Stage3] Failed to write candidate audit: {}",
@@ -503,7 +500,7 @@ pub async fn run_stage3_eval_with_metrics_seq(
             error_count,
             duration_ms,
         };
-        if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {
+        if let Err(e) = mutations::record_stage_metrics(conn, &metrics).await {
             log::warn!(
                 "[MemoryPipeline::Stage3] Failed to record stage metrics: {}",
                 e

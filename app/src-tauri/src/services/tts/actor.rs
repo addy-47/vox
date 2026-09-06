@@ -1,15 +1,25 @@
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::mpsc;
-use std::sync::Arc;
+use std::{
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc, Arc,
+    },
+};
 
-use crate::core::events::{Actionability, PipelineError, PipelineImpact, VoxEvent};
-use crate::core::settings::{TtsProviderConfig, VoxSettings};
-use crate::services::audio::PlaybackEngine;
-use crate::services::tts::providers::TtsProvider;
-use crate::services::tts::{
-    ChatterboxEngine, ChatterboxRemoteProvider, EdgeTtsProvider, KokoroEngine,
-    TtsEngine as SupertonicEngine,
+use crate::{
+    core::{
+        events::{Actionability, PipelineError, PipelineImpact, VoxEvent},
+        settings::{TtsProviderConfig, VoxSettings},
+    },
+    persistence::{db::VoxDb, voices::get_voice},
+    services::{
+        audio::PlaybackEngine,
+        tts::{
+            providers::TtsProvider, ChatterboxEngine, ChatterboxRemoteProvider, EdgeTtsProvider,
+            KokoroEngine, TtsEngine as SupertonicEngine, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR,
+        },
+    },
+    utils::paths::{db_path, model_dir},
 };
 
 /// Commands accepted by the dedicated TTS synthesis worker thread.
@@ -114,15 +124,11 @@ pub fn spawn_tts_worker(
 /// Resolves a voice UUID to a WAV file path for Chatterbox voice conditioning.
 pub async fn resolve_reference_audio(voice_id: Option<&str>) -> Option<String> {
     let id = voice_id?;
-    let db_path = crate::utils::paths::db_path();
+    let db_path = db_path();
 
-    let conn = crate::persistence::db::VoxDb::open_readonly(&db_path)
-        .await
-        .ok()?;
+    let conn = VoxDb::open_readonly(&db_path).await.ok()?;
 
-    let entry = crate::persistence::voices::get_voice(&conn, id)
-        .await
-        .ok()??;
+    let entry = get_voice(&conn, id).await.ok()??;
 
     if let Some(ref dir) = entry.voice_dir {
         let path = std::path::Path::new(dir);
@@ -164,7 +170,7 @@ pub fn create_tts_provider(
         }
         TtsProviderConfig::Kokoro => {
             log::info!("[TTS Actor] Initializing Kokoro Multi-Lang engine");
-            let kokoro_path = crate::utils::paths::model_dir(super::KOKORO_MODEL_DIR);
+            let kokoro_path = model_dir(KOKORO_MODEL_DIR);
             KokoroEngine::new(&kokoro_path, voice, speed, num_threads)
                 .map(|e| Box::new(e) as Box<dyn TtsProvider>)
                 .map_err(|e| format!("Failed to create Kokoro engine: {}", e))
@@ -176,7 +182,7 @@ pub fn create_tts_provider(
             voice_id: _,
         } => {
             log::info!("[TTS Actor] Initializing Chatterbox engine");
-            let chatterbox_path = crate::utils::paths::model_dir(super::CHATTERBOX_MODEL_DIR);
+            let chatterbox_path = model_dir(CHATTERBOX_MODEL_DIR);
             ChatterboxEngine::new(
                 &chatterbox_path,
                 language,

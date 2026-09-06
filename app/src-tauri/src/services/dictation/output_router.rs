@@ -1,9 +1,10 @@
-use crate::core::error::DictationError;
-use crate::core::events::ToastLevel;
-use crate::core::settings::DictationOutputMode;
-use crate::services::dictation::clipboard;
-use crate::services::dictation::input::create_input_adapter;
 use tauri::AppHandle;
+
+use crate::{
+    core::{error::DictationError, events::ToastLevel, settings::DictationOutputMode},
+    services::dictation::{clipboard, input::create_input_adapter},
+    toast::show_toast,
+};
 
 /// Routes a completed transcript to the configured OS output destination (Clipboard or OS Paste).
 pub async fn route_transcript<R: tauri::Runtime>(
@@ -34,7 +35,7 @@ fn dispatch_to_clipboard<R: tauri::Runtime>(
 ) -> Result<(), DictationError> {
     clipboard::set_text(text)?;
     log::info!("[Dictation::Router] Transcript written to system clipboard.");
-    if let Err(e) = crate::toast::show_toast(app, "Dictation Copied", text, ToastLevel::Success) {
+    if let Err(e) = show_toast(app, "Dictation Copied", text, ToastLevel::Success) {
         log::warn!("[Dictation::Router] Failed to show toast: {}", e);
     }
     Ok(())
@@ -54,9 +55,7 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
             log::info!(
                 "[Dictation::Router] Transcript successfully pasted into focused application."
             );
-            if let Err(e) =
-                crate::toast::show_toast(app, "Dictation Pasted", text, ToastLevel::Success)
-            {
+            if let Err(e) = show_toast(app, "Dictation Pasted", text, ToastLevel::Success) {
                 log::warn!("[Dictation::Router] Failed to show toast: {}", e);
             }
             Ok(())
@@ -66,7 +65,7 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
                 "[Dictation::Router] Paste simulation failed ({:?}). Transcript is preserved on clipboard.",
                 e
             );
-            if let Err(toast_err) = crate::toast::show_toast(
+            if let Err(toast_err) = show_toast(
                 app,
                 "Paste Blocked by OS",
                 "Transcript saved to clipboard — paste manually with Ctrl+V.",

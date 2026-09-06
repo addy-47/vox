@@ -10,24 +10,31 @@
 
 mod common;
 
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc, Arc,
+    },
+    time::Duration,
+};
+
 use anyhow::Result;
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::time::Duration;
-use vox_lib::core::settings::{
-    AudioOutputMode, InteractionMode, PipelineMode, RealtimeProviderKind,
+use vox_lib::{
+    core::{
+        settings::{AudioOutputMode, InteractionMode, PipelineMode, RealtimeProviderKind},
+        state::{InteractionOwner, InteractionState},
+    },
+    pipeline::assistant::ptt::{ptt_cancel, ptt_start, ptt_stop},
+    services::{
+        realtime::{
+            RealtimeActor, RealtimeAudioConfig, RealtimeProviderEvent, RealtimeSession,
+            RealtimeVoiceProvider,
+        },
+        stt::actor::SttCommand,
+        vad::{actor::VadActorConfig, VadCommand},
+    },
 };
-use vox_lib::core::state::{InteractionOwner, InteractionState};
-use vox_lib::pipeline::assistant::ptt::{ptt_cancel, ptt_start, ptt_stop};
-use vox_lib::services::realtime::{
-    RealtimeActor, RealtimeAudioConfig, RealtimeProviderEvent, RealtimeSession,
-    RealtimeVoiceProvider,
-};
-use vox_lib::services::stt::actor::SttCommand;
-use vox_lib::services::vad::actor::VadActorConfig;
-use vox_lib::services::vad::VadCommand;
 
 /// Thread-safe counters capturing calls to MockRealtimeSession.
 #[derive(Default, Clone)]

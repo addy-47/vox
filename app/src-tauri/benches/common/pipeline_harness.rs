@@ -2,31 +2,37 @@
 //! benches/common/pipeline_harness.rs — E2E Audio-In to Audio-Out Pipeline Harness
 //! ============================================================================
 
-use ringbuf::traits::Split;
-use ringbuf::{HeapCons, HeapRb};
-use std::sync::{
-    atomic::{AtomicBool, AtomicU32, AtomicU64},
-    mpsc, Arc,
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, AtomicU32, AtomicU64},
+        mpsc, Arc,
+    },
 };
-use tauri::AppHandle;
-use vox_lib::core::{
-    events::VoxEvent,
-    settings::{AudioOutputMode, InteractionMode, VoxSettings},
-    state::{AppState, TelemetryState, VoxEngine},
-};
-use vox_lib::services::audio::playback::PlaybackEngineHandles;
-use vox_lib::services::audio::{AudioStream, PlaybackEngine, PLAYBACK_BUFFER_SAMPLES};
-use vox_lib::services::stt::actor::{
-    spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand,
-};
-use vox_lib::services::stt::{EmbeddedSttProvider, SttProvider};
-use vox_lib::services::vad::actor::{
-    spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles,
-};
-use vox_lib::services::vad::earshot_vad::EarshotVadEngine;
-use vox_lib::services::vad::{VadBackend, VadCommand};
 
-use std::path::PathBuf;
+use ringbuf::{traits::Split, HeapCons, HeapRb};
+use tauri::AppHandle;
+use vox_lib::{
+    core::{
+        events::VoxEvent,
+        settings::{AudioOutputMode, InteractionMode, VoxSettings},
+        state::{AppState, TelemetryState, VoxEngine},
+    },
+    services::{
+        audio::{
+            playback::PlaybackEngineHandles, AudioStream, PlaybackEngine, PLAYBACK_BUFFER_SAMPLES,
+        },
+        stt::{
+            actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
+            EmbeddedSttProvider, SttProvider,
+        },
+        vad::{
+            actor::{spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles},
+            earshot_vad::EarshotVadEngine,
+            VadBackend, VadCommand,
+        },
+    },
+};
 
 /// RAII guard to initialize VoxPaths with an isolated temporary root directory and benchmark fixture database.
 pub struct BenchPathsGuard {

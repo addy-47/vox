@@ -1,14 +1,20 @@
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
 use tauri::{AppHandle, Manager, State};
 
-use crate::core::error::VoxIpcError;
-use crate::core::events::{emit_ipc, IpcEvent, VoxEvent};
-use crate::core::state::{AppState, InteractionOwner};
-use crate::tray::position_tray_window;
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
+use crate::{
+    core::{
+        error::VoxIpcError,
+        events::{emit_ipc, IpcEvent, VoxEvent},
+        settings::DictationOutputMode,
+        state::{AppState, InteractionOwner},
+    },
+    toast::setup_linux_toast_layer,
+    tray::{ensure_tray_window, position_tray_window},
+    window_main::ensure_main_window,
+};
 
 /// Toggles the tray window visibility and updates the menu checkmark state (internal native menu callback).
 pub async fn toggle_tray_visibility_internal<R: tauri::Runtime>(app: AppHandle<R>) {
@@ -18,7 +24,7 @@ pub async fn toggle_tray_visibility_internal<R: tauri::Runtime>(app: AppHandle<R
         Ok(s) => (
             s.system.setup_completed,
             s.dictation.enabled,
-            s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
+            s.dictation.output_mode == DictationOutputMode::Tray,
         ),
         Err(e) => {
             log::warn!("[Tray] Failed to acquire settings read lock: {}", e);
@@ -38,7 +44,7 @@ pub async fn toggle_tray_visibility_internal<R: tauri::Runtime>(app: AppHandle<R
     state.hud_visible.store(new_state, Ordering::Relaxed);
 
     if new_state {
-        if let Ok(window) = crate::tray::ensure_tray_window(&app) {
+        if let Ok(window) = ensure_tray_window(&app) {
             if let Err(e) = window.show() {
                 log::warn!("[Tray] Failed to show tray window: {}", e);
             }
@@ -125,7 +131,7 @@ pub fn set_window_click_through<R: tauri::Runtime>(
         } else if window == "tray" {
             setup_linux_virtual_layer(&app, "tray");
         } else if window == "toast" {
-            crate::toast::setup_linux_toast_layer(&app, "toast");
+            setup_linux_toast_layer(&app, "toast");
         }
     }
     #[cfg(not(target_os = "linux"))]
@@ -143,6 +149,6 @@ pub fn set_window_click_through<R: tauri::Runtime>(
 
 #[tauri::command]
 pub async fn show_main_window(app: AppHandle) -> Result<(), VoxIpcError> {
-    crate::window_main::ensure_main_window(&app).map_err(VoxIpcError::Internal)?;
+    ensure_main_window(&app).map_err(VoxIpcError::Internal)?;
     Ok(())
 }

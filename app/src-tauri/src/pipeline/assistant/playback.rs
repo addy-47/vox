@@ -1,8 +1,11 @@
 use std::sync::atomic::Ordering;
+
 use tauri::AppHandle;
 
-use crate::core::state::{AppState, InteractionState};
-use crate::pipeline::{transition, RoutingContext};
+use crate::{
+    core::state::{AppState, InteractionState},
+    pipeline::{transition, RoutingContext},
+};
 
 /// Handles onset of audio playback, transitioning pipeline state from Thinking to Speaking.
 pub fn on_playback_started<R: tauri::Runtime>(

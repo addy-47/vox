@@ -1,15 +1,22 @@
-use super::{MODEL_CONNECT_TIMEOUT_SECS, MODEL_DOWNLOAD_TIMEOUT_SECS, PROGRESS_EMIT_INTERVAL_MS};
-use crate::core::events::emit_ipc;
-use crate::core::events::IpcEvent;
-use crate::setup::manifest::{ModelEntry, VerifiedMarker};
+use std::{
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
+
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use tauri::AppHandle;
+
+use super::{MODEL_CONNECT_TIMEOUT_SECS, MODEL_DOWNLOAD_TIMEOUT_SECS, PROGRESS_EMIT_INTERVAL_MS};
+use crate::{
+    core::events::{emit_ipc, IpcEvent},
+    setup::manifest::{ModelEntry, VerifiedMarker},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]

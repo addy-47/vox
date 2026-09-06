@@ -8,20 +8,22 @@
 //! Metrics      : Schema migrations, CRUD lifecycle, compaction status tracking
 //! ============================================================================
 
-use std::collections::HashMap;
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
+
 use tempfile::tempdir;
-use vox_lib::persistence::compactions::{
-    commit_compaction_results, fetch_latest_compaction_run, fetch_turns_for_compaction,
-    fetch_uncompacted_sessions, record_compaction_finish, record_compaction_start,
+use vox_lib::persistence::{
+    compactions::{
+        commit_compaction_results, fetch_latest_compaction_run, fetch_turns_for_compaction,
+        fetch_uncompacted_sessions, record_compaction_finish, record_compaction_start,
+    },
+    db::VoxDb,
+    notifications::{
+        create_notification, dismiss_notification, fetch_active_notifications,
+        find_active_notification_by_session, mark_all_notifications_read,
+        update_notification_status, NewNotification,
+    },
+    schema::run_migrations,
 };
-use vox_lib::persistence::db::VoxDb;
-use vox_lib::persistence::notifications::{
-    create_notification, dismiss_notification, fetch_active_notifications,
-    find_active_notification_by_session, mark_all_notifications_read, update_notification_status,
-    NewNotification,
-};
-use vox_lib::persistence::schema::run_migrations;
 
 #[tokio::test]
 async fn test_notifications_crud_lifecycle() {

@@ -1,5 +1,6 @@
-use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use serde::Serialize;
 use sysinfo::System;
 
 /// Process memory entry capturing RSS, CPU, and assigned role in the application tree.

@@ -10,15 +10,25 @@
 
 mod common;
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
-use vox_lib::core::settings::{AudioOutputMode, InteractionMode, PipelineMode};
-use vox_lib::core::state::{InteractionOwner, InteractionState};
-use vox_lib::pipeline::assistant::ptt::{ptt_cancel, ptt_start, ptt_stop};
-use vox_lib::services::stt::actor::SttCommand;
-use vox_lib::services::vad::actor::VadActorConfig;
-use vox_lib::services::vad::VadCommand;
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
+
+use vox_lib::{
+    core::{
+        settings::{AudioOutputMode, InteractionMode, PipelineMode},
+        state::{InteractionOwner, InteractionState},
+    },
+    pipeline::assistant::ptt::{ptt_cancel, ptt_start, ptt_stop},
+    services::{
+        stt::actor::SttCommand,
+        vad::{actor::VadActorConfig, VadCommand},
+    },
+};
 
 #[tokio::test]
 async fn test_ptt_modular_matrix() {

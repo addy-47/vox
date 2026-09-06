@@ -1,11 +1,17 @@
-use crate::services::audio::AudioResampler;
-use crate::services::realtime::{
-    RealtimeAudioConfig, RealtimeSession, BRIDGE_CHANNEL_CAPACITY, DEFAULT_INPUT_SAMPLE_RATE,
-    LOG_INTERVAL_PACKETS, SINC_CHUNK_SIZE_INPUT,
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
 };
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+
 use tokio::sync::mpsc::{channel, Sender};
+
+use crate::services::{
+    audio::AudioResampler,
+    realtime::{
+        RealtimeAudioConfig, RealtimeSession, BRIDGE_CHANNEL_CAPACITY, DEFAULT_INPUT_SAMPLE_RATE,
+        LOG_INTERVAL_PACKETS, SINC_CHUNK_SIZE_INPUT,
+    },
+};
 
 static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
 

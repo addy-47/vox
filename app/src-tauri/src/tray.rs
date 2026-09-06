@@ -1,16 +1,23 @@
-use crate::core::constants::{
-    TRAY_HUD_HEIGHT_LOGICAL, TRAY_HUD_WIDTH_LOGICAL, TRAY_PADDING_TOP_VH, TRAY_PADDING_X_LOGICAL,
-    WINDOW_TRAY,
+use std::{
+    sync::{atomic::Ordering, Arc},
+    time::Duration,
 };
-use std::time::Duration;
-use tauri::menu::{CheckMenuItem, CheckMenuItemBuilder, Menu, MenuItemBuilder, PredefinedMenuItem};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
-use crate::core::state::AppState;
 #[cfg(target_os = "linux")]
 use gtk::prelude::WidgetExt;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use tauri::{
+    menu::{CheckMenuItem, CheckMenuItemBuilder, Menu, MenuItemBuilder, PredefinedMenuItem},
+    AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+};
+
+use crate::core::{
+    constants::{
+        TRAY_HUD_HEIGHT_LOGICAL, TRAY_HUD_WIDTH_LOGICAL, TRAY_PADDING_TOP_VH,
+        TRAY_PADDING_X_LOGICAL, WINDOW_TRAY,
+    },
+    settings::DictationOutputMode,
+    state::AppState,
+};
 
 /// Ensures the "tray" WebviewWindow exists, lazily constructing it if it was closed to save RAM.
 pub fn ensure_tray_window<R: tauri::Runtime>(
@@ -104,7 +111,7 @@ pub fn sync_live_menu_item(app: &AppHandle<tauri::Wry>, live_i: &CheckMenuItem<t
         (
             v,
             s.dictation.enabled,
-            s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
+            s.dictation.output_mode == DictationOutputMode::Tray,
         )
     };
     let is_clickable = dictation_enabled && is_tray_mode;

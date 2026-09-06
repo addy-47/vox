@@ -1,5 +1,6 @@
-use crate::services::harness::{ChatMessage, Role};
 use std::path::Path;
+
+use crate::services::harness::{ChatMessage, Role};
 
 /// Supported LLM model families for architecture-specific prompt formatting and stop token handling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]

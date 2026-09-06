@@ -29,11 +29,12 @@
 //! └── pain/ ...
 //! ```
 
-use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::{
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
 use clap::Parser;
-
 use vox_lib::services::audio::decode as audio_decode;
 
 const DEFAULT_EN_PROMPT: &str = "Hello, this is a sample of my cloned voice. I hope you like it. \
@@ -448,6 +449,7 @@ fn sanitise_name(name: &str) -> String {
 /// Calculate the total size of a directory in bytes.
 fn dir_size(path: &PathBuf) -> u64 {
     use std::fs;
+
     use walkdir::WalkDir;
 
     WalkDir::new(path)

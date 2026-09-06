@@ -1,13 +1,35 @@
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::{atomic::Ordering, Arc},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 use tauri::{AppHandle, Manager};
 
-use crate::core::events::ToastLevel;
-use crate::core::settings::{InteractionMode, PipelineMode};
-use crate::core::state::{AppState, InteractionOwner, InteractionState};
-use crate::pipeline::{spawn_idle_monitor, transition, RoutingContext};
-use crate::services::vad::{VadCommand, VadOperationalMode};
+use crate::{
+    core::{
+        engine::ensure_modular_workers_sync,
+        events::ToastLevel,
+        settings::{DictationInteractionMode, InteractionMode, PipelineMode},
+        state::{AppState, InteractionOwner, InteractionState},
+        stop_audio_engine_sync,
+    },
+    persistence::{
+        compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
+        db::{get_tokio_handle, VoxDb},
+        events::{MemoryWorkerEvent, PersistenceEvent},
+    },
+    pipeline::{init_new_session_sync, spawn_idle_monitor, transition, RoutingContext},
+    services::{
+        memory::compaction::coordinator::CompactionCoordinator,
+        realtime::{
+            session::{create_realtime_provider, purge_session_cache},
+            RealtimeActor,
+        },
+        vad::{VadCommand, VadOperationalMode},
+    },
+    toast::show_toast,
+    utils::paths::db_path,
+};
 
 /// Configures and arms the modular speech-to-text, LLM, and TTS worker pipelines.
 fn start_modular_session<R: tauri::Runtime + 'static>(
@@ -15,7 +37,7 @@ fn start_modular_session<R: tauri::Runtime + 'static>(
     state: &AppState,
     ctx: &RoutingContext,
 ) -> Result<(), String> {
-    crate::core::engine::ensure_modular_workers_sync(app, state)?;
+    ensure_modular_workers_sync(app, state)?;
 
     let vad_mode = match ctx.interaction_mode {
         InteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
@@ -60,9 +82,9 @@ fn start_realtime_session<R: tauri::Runtime + 'static>(
         }
     }
 
-    let provider = crate::services::realtime::session::create_realtime_provider(state)?;
-    let tokio_handle = crate::persistence::db::get_tokio_handle();
-    let mut rt_actor = crate::services::realtime::RealtimeActor::new(provider, tokio_handle);
+    let provider = create_realtime_provider(state)?;
+    let tokio_handle = get_tokio_handle();
+    let mut rt_actor = RealtimeActor::new(provider, tokio_handle);
 
     rt_actor
         .start(
@@ -169,12 +191,10 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
 
     let persist_lock = state.persist_tx.lock();
     if let Some(ref tx) = *persist_lock {
-        if let Err(e) = tx.try_send(
-            crate::persistence::events::PersistenceEvent::SessionStarted {
-                id: conv_id,
-                timestamp_ms: now,
-            },
-        ) {
+        if let Err(e) = tx.try_send(PersistenceEvent::SessionStarted {
+            id: conv_id,
+            timestamp_ms: now,
+        }) {
             log::warn!(
                 "[Pipeline::Session] Failed to send SessionStarted to persistence: {}",
                 e
@@ -184,11 +204,9 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
 
     let mem_lock = state.memory_tx.lock();
     if let Some(ref tx) = *mem_lock {
-        if let Err(e) = tx.try_send(
-            crate::persistence::events::MemoryWorkerEvent::ActiveSessionChanged {
-                session_id: conv_id,
-            },
-        ) {
+        if let Err(e) = tx.try_send(MemoryWorkerEvent::ActiveSessionChanged {
+            session_id: conv_id,
+        }) {
             log::trace!(
                 "[Pipeline::Session] Failed to send ActiveSessionChanged to memory: {}",
                 e
@@ -204,7 +222,7 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
         }
     };
 
-    crate::pipeline::init_new_session_sync(state, &prompt);
+    init_new_session_sync(state, &prompt);
 
     let state_arc: tauri::State<'_, Arc<AppState>> = app.state();
     spawn_idle_monitor(app.clone(), Arc::clone(state_arc.inner()));
@@ -269,14 +287,10 @@ pub fn on_pause<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &R
         .settings
         .read()
         .map(|s| s.dictation.interaction_mode.clone())
-        .unwrap_or(crate::core::settings::DictationInteractionMode::Ptt);
+        .unwrap_or(DictationInteractionMode::Ptt);
     let vad_op_mode = match dictation_mode {
-        crate::core::settings::DictationInteractionMode::Passive => {
-            VadOperationalMode::ContinuousSegmentation
-        }
-        crate::core::settings::DictationInteractionMode::Ptt => {
-            VadOperationalMode::WindowedValidation
-        }
+        DictationInteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
+        DictationInteractionMode::Ptt => VadOperationalMode::WindowedValidation,
     };
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
@@ -344,8 +358,7 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &
             "Resumption failed: {}. Please end session and start a new session.",
             e
         );
-        if let Err(toast_err) =
-            crate::toast::show_toast(app, "Resumption failed", &toast_msg, ToastLevel::Error)
+        if let Err(toast_err) = show_toast(app, "Resumption failed", &toast_msg, ToastLevel::Error)
         {
             log::warn!(
                 "[Pipeline::Session] Failed to show resume failure toast: {}",
@@ -391,7 +404,7 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
                 rt_actor.stop();
             }
         }
-        crate::services::realtime::session::purge_session_cache();
+        purge_session_cache();
     }
 
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
@@ -403,12 +416,10 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
     {
         let persist_lock = state.persist_tx.lock();
         if let Some(ref tx) = *persist_lock {
-            if let Err(e) =
-                tx.try_send(crate::persistence::events::PersistenceEvent::SessionEnded {
-                    id: conv_id,
-                    timestamp_ms: now,
-                })
-            {
+            if let Err(e) = tx.try_send(PersistenceEvent::SessionEnded {
+                id: conv_id,
+                timestamp_ms: now,
+            }) {
                 log::warn!(
                     "[Pipeline::Session] Failed to send SessionEnded to persistence: {}",
                     e
@@ -420,7 +431,7 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
     {
         let mem_lock = state.memory_tx.lock();
         if let Some(ref tx) = *mem_lock {
-            if let Err(e) = tx.try_send(crate::persistence::events::MemoryWorkerEvent::SessionEnd {
+            if let Err(e) = tx.try_send(MemoryWorkerEvent::SessionEnd {
                 session_id: conv_id.to_string(),
                 summary: String::new(),
             }) {
@@ -439,7 +450,7 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
 
     // Stop CPAL engine only if dictation is also disabled, otherwise switch VAD to dictation mode.
     if state.pipeline.dictation_state() == InteractionState::Idle {
-        if let Err(e) = crate::core::stop_audio_engine_sync(state) {
+        if let Err(e) = stop_audio_engine_sync(state) {
             log::warn!("[Pipeline::Session] Error stopping audio engine: {}", e);
         }
     } else {
@@ -447,14 +458,10 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
             .settings
             .read()
             .map(|s| s.dictation.interaction_mode.clone())
-            .unwrap_or(crate::core::settings::DictationInteractionMode::Ptt);
+            .unwrap_or(DictationInteractionMode::Ptt);
         let vad_op_mode = match dictation_mode {
-            crate::core::settings::DictationInteractionMode::Passive => {
-                VadOperationalMode::ContinuousSegmentation
-            }
-            crate::core::settings::DictationInteractionMode::Ptt => {
-                VadOperationalMode::WindowedValidation
-            }
+            DictationInteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
+            DictationInteractionMode::Ptt => VadOperationalMode::WindowedValidation,
         };
         if let Ok(guard) = state.engine.try_lock() {
             if let Some(ref engine) = *guard {
@@ -487,31 +494,21 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-        let db_path = crate::utils::paths::db_path();
-        if let Ok(conn) = crate::persistence::db::VoxDb::open(&db_path).await {
-            let last_compacted = match crate::persistence::compactions::fetch_latest_compaction_run(
-                &conn, session_id,
-            )
-            .await
-            {
+        let db_path = db_path();
+        if let Ok(conn) = VoxDb::open(&db_path).await {
+            let last_compacted = match fetch_latest_compaction_run(&conn, session_id).await {
                 Ok(Some(run)) if run.status == "completed" => run.to_turn_id,
                 _ => 0,
             };
 
-            if let Ok(turns) = crate::persistence::compactions::fetch_turns_for_compaction(
-                &conn,
-                session_id,
-                last_compacted,
-            )
-            .await
-            {
+            if let Ok(turns) = fetch_turns_for_compaction(&conn, session_id, last_compacted).await {
                 let uncompacted_count = turns.len() as u32;
                 if uncompacted_count > 0 {
                     if auto_compaction {
                         use tauri::Manager;
                         let state_handle: tauri::State<'_, Arc<AppState>> = app_handle.state();
                         let app_state: &Arc<AppState> = state_handle.inner();
-                        if let Err(e) = crate::services::memory::compaction::coordinator::CompactionCoordinator::run_compaction_slice(
+                        if let Err(e) = CompactionCoordinator::run_compaction_slice(
                             &app_handle,
                             app_state,
                             session_id,
@@ -522,10 +519,11 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
                         {
                             log::warn!(
                                 "[Pipeline::Session] Auto-compaction failed for session {}: {}",
-                                session_id, e
+                                session_id,
+                                e
                             );
                         }
-                    } else if let Err(e) = crate::services::memory::compaction::coordinator::CompactionCoordinator::notify_uncompacted_session(
+                    } else if let Err(e) = CompactionCoordinator::notify_uncompacted_session(
                         &app_handle,
                         session_id,
                         uncompacted_count,

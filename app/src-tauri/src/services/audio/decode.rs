@@ -1,22 +1,22 @@
 //! Audio decoding utilities — convert any supported format to 24 kHz mono f32 WAV.
 
-use std::fs::File;
-use std::path::Path;
+use std::{fs::File, path::Path};
+
+use symphonia_core::{
+    audio::{Audio, GenericAudioBufferRef},
+    codecs::{
+        audio::{AudioDecoder, AudioDecoderOptions},
+        CodecParameters,
+    },
+    errors::Error,
+    formats::{probe::Hint, FormatOptions, FormatReader},
+    io::MediaSourceStream,
+    meta::MetadataOptions,
+};
 
 use super::{
     CLONE_SAMPLE_RATE, PCM_I16_SCALE, PCM_S16_SCALE, PCM_S32_SCALE, PCM_U16_SCALE, PCM_U8_SCALE,
 };
-use symphonia_core::audio::Audio;
-use symphonia_core::audio::GenericAudioBufferRef;
-use symphonia_core::codecs::audio::AudioDecoder;
-use symphonia_core::codecs::audio::AudioDecoderOptions;
-use symphonia_core::codecs::CodecParameters;
-use symphonia_core::errors::Error;
-use symphonia_core::formats::probe::Hint;
-use symphonia_core::formats::FormatOptions;
-use symphonia_core::formats::FormatReader;
-use symphonia_core::io::MediaSourceStream;
-use symphonia_core::meta::MetadataOptions;
 
 /// Result type for decode operations.
 pub type DecodeResult<T> = Result<T, String>;

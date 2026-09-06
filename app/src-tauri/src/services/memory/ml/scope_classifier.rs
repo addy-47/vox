@@ -1,9 +1,14 @@
-use crate::services::memory::{
-    CLASSIFIER_MODEL_FILENAME, CLASSIFIER_TOKENIZER_FILENAME, MEMORY_SCOPE_MODEL_DIR,
-};
+use std::path::Path;
+
 use anyhow::{anyhow, Result};
 use query_sieve::{MemoryScope, MemoryScopeClassifier};
-use std::path::Path;
+
+use crate::{
+    services::memory::{
+        CLASSIFIER_MODEL_FILENAME, CLASSIFIER_TOKENIZER_FILENAME, MEMORY_SCOPE_MODEL_DIR,
+    },
+    utils::paths::try_get,
+};
 
 /// Engine wrapper for the ModernBERT 4-Class MemoryScope Classifier.
 pub struct QueryScopeClassifier {
@@ -80,7 +85,7 @@ pub fn ensure_scope_classifier_loaded() -> Result<bool> {
         return Ok(true);
     }
 
-    let models_dir = if let Some(p) = crate::utils::paths::try_get() {
+    let models_dir = if let Some(p) = try_get() {
         p.models.clone()
     } else {
         dirs::home_dir()
