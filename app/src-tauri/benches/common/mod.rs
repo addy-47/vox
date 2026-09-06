@@ -5,6 +5,8 @@
 #[allow(dead_code)]
 pub mod audio;
 #[allow(dead_code)]
+pub mod llm_harness;
+#[allow(dead_code)]
 pub mod pipeline_harness;
 #[allow(dead_code)]
 pub mod reporting;

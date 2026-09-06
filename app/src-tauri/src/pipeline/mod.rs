@@ -11,10 +11,22 @@ use std::{
 use tauri::AppHandle;
 
 pub use crate::core::constants::{WINDOW_MAIN, WINDOW_TOAST, WINDOW_TRAY, WINDOW_WIZARD};
-use crate::core::{
-    events::{emit_ipc_to, IpcEvent, VoxEvent},
-    settings::{DictationInteractionMode, InteractionMode, PipelineMode},
-    state::{AppState, InteractionOwner, InteractionState},
+use crate::{
+    core::{
+        events::{emit_ipc_to, IpcEvent, StateChangedPayload, VoxEvent},
+        settings::{DictationInteractionMode, InteractionMode, PipelineMode},
+        state::{AppState, InteractionOwner, InteractionState},
+    },
+    persistence::{
+        db::{get_tokio_handle, VoxDb},
+        queries::fetch_all_active_identity,
+    },
+    services::{
+        llm::actor::cool_down_llm,
+        memory::trim_heap,
+        tts::actor::cool_down_tts,
+    },
+    utils::paths::db_path,
 };
 
 pub const ROUTER_THREAD_NAME: &str = "vox-router";
@@ -87,7 +99,7 @@ pub fn transition<R: tauri::Runtime>(
         InteractionState::Error => "Error",
         InteractionState::Sleeping => "Sleeping",
     };
-    let payload = crate::core::events::StateChangedPayload {
+    let payload = StateChangedPayload {
         owner: ctx.owner,
         state: state_str.to_string(),
         turn_id,
@@ -112,11 +124,9 @@ pub async fn init_new_session(state: &AppState, base_prompt: &str) {
             settings.memory.max_context_share,
         )
     };
-    let db_path = crate::utils::paths::db_path();
-    if let Ok(conn) = crate::persistence::db::VoxDb::open_readonly(&db_path).await {
-        if let Ok(active_identities) =
-            crate::persistence::queries::fetch_all_active_identity(&conn).await
-        {
+    let path = db_path();
+    if let Ok(conn) = VoxDb::open_readonly(&path).await {
+        if let Ok(active_identities) = fetch_all_active_identity(&conn).await {
             let facts = active_identities.into_iter().map(|f| f.fact).collect();
             state.conversation_manager.lock().set_identity_facts(
                 facts,
@@ -137,7 +147,7 @@ pub fn init_new_session_sync(state: &AppState, base_prompt: &str) {
             return;
         }
     }
-    let handle = crate::persistence::db::get_tokio_handle();
+    let handle = get_tokio_handle();
     if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
         tokio::task::block_in_place(|| {
             handle.block_on(init_new_session(state, base_prompt));
@@ -193,18 +203,15 @@ pub fn spawn_idle_monitor<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: Ar
                             log::info!("[Pipeline] Offloading idle models after 5 minutes of sustained Paused state.");
                             let mut lock = state.engine.lock().await;
                             if let Some(ref mut engine) = *lock {
-                                crate::services::llm::actor::cool_down_llm(
-                                    &mut engine.llm_tx,
-                                    Some(&state.llm_provider),
-                                );
-                                crate::services::tts::actor::cool_down_tts(&mut engine.tts_tx);
+                                cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));
+                                cool_down_tts(&mut engine.tts_tx);
                             }
                             drop(lock);
-                            crate::services::memory::trim_heap("secondary_paused_offload");
+                            trim_heap("secondary_paused_offload");
 
                             state.pipeline.set_state(InteractionState::Sleeping);
                             let turn_id = state.pipeline.peek_turn_id();
-                            let payload = crate::core::events::StateChangedPayload {
+                            let payload = StateChangedPayload {
                                 owner: InteractionOwner::Assistant,
                                 state: "Sleeping".to_string(),
                                 turn_id,

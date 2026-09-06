@@ -54,7 +54,7 @@ impl ModelFamily {
         match self {
             ModelFamily::Gemma => format!("<|turn>user {}<turn|>\n<|turn>model\n", text),
             ModelFamily::Qwen => format!(
-                "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+                "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n<think>\n</think>\n",
                 text
             ),
             ModelFamily::Llama3 => format!(

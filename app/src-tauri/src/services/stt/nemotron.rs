@@ -151,9 +151,12 @@ impl SttEngineTrait for SttEngine {
         let start = Instant::now();
         let mut inner = self.inner.lock();
 
-        // If audio was already fully fed incrementally via accept_audio_chunk, finalize the active stream directly.
-        let stream = if inner.stream.is_some() && inner.fed_samples == audio.len() {
-            inner.stream.take().unwrap()
+        // If audio was already partially or fully fed incrementally via accept_audio_chunk, reuse the active stream.
+        let stream = if let Some(stream) = inner.stream.take() {
+            if inner.fed_samples < audio.len() {
+                stream.accept_waveform(SAMPLE_RATE as i32, &audio[inner.fed_samples..]);
+            }
+            stream
         } else {
             let stream = inner.recognizer.create_stream();
             stream.accept_waveform(SAMPLE_RATE as i32, audio);
