@@ -1,16 +1,12 @@
-//! Canonical speech boundary event handlers for passive interaction domains.
-
 use std::sync::atomic::Ordering;
-
 use tauri::AppHandle;
 
 use crate::{
     core::{
-        settings::{InteractionMode, PipelineMode},
+        settings::InteractionMode,
         state::{AppState, InteractionState},
     },
     pipeline::{assistant::interrupt::on_interrupt, transition, RoutingContext},
-    services::stt::actor::SttCommand,
 };
 
 /// Handles user speech onset for passive domains, evaluating barge-in vs direct onset and resetting STT stream.
@@ -53,19 +49,6 @@ pub fn on_speech_start<R: tauri::Runtime>(
     } else {
         return;
     };
-
-    if ctx.pipeline_mode == PipelineMode::Modular {
-        if let Ok(guard) = state.engine.try_lock() {
-            if let Some(ref engine) = *guard {
-                if let Err(e) = engine.stt_tx.send(SttCommand::ResetStream) {
-                    log::warn!(
-                        "[Pipeline::Speech] Failed to send ResetStream to STT: {}",
-                        e
-                    );
-                }
-            }
-        }
-    }
 
     log::info!(
         "[Pipeline::Speech] Speech start processed (turn: {})",

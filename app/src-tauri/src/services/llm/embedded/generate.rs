@@ -16,7 +16,8 @@ use super::{
 use crate::services::{
     harness::ConversationContext,
     llm::{
-        LlmEngine, LlmStreamEvent, DEFAULT_BATCH_CHUNK_SIZE, DEFAULT_MAX_GENERATION_SAFETY_TOKENS,
+        GenerationOptions, LlmEngine, LlmStreamEvent, DEFAULT_BATCH_CHUNK_SIZE,
+        DEFAULT_MAX_GENERATION_SAFETY_TOKENS,
     },
 };
 
@@ -361,7 +362,7 @@ impl LlmEngine for LlmWorker {
         &self,
         conv_ctx: &ConversationContext,
         turn_id: u32,
-        max_output_tokens: Option<u32>,
+        options: &GenerationOptions,
         cancel: &tokio_util::sync::CancellationToken,
         tx: &mpsc::Sender<LlmStreamEvent>,
     ) -> Result<()> {
@@ -390,6 +391,7 @@ impl LlmEngine for LlmWorker {
             return Ok(());
         }
 
+        let max_output_tokens = options.max_output_tokens;
         let mut n_cur = total_input_tokens as i32;
         let limits = GenerationLimits::new(total_input_tokens, self.ctx_size, max_output_tokens);
         let mut emitter = StreamingEmitter::new(&self.family, tx);
@@ -402,17 +404,27 @@ impl LlmEngine for LlmWorker {
         };
         let mut batch = LlamaBatch::new(total_input_tokens + max_new_batch, 1);
 
-        let mut qwen_sampler = if self.family == ModelFamily::Qwen {
+        let temp = options.temperature.unwrap_or(0.7);
+        let top_p = options.top_p.unwrap_or(0.8);
+        let top_k = options.top_k.unwrap_or(20) as i32;
+        let seed = options.seed.unwrap_or(42) as u32;
+
+        let mut sampler = if self.family == ModelFamily::Qwen {
             Some(LlamaSampler::chain_simple([
-                LlamaSampler::penalties(self.ctx_size as i32, 1.0, 0.0, 2.0),
-                LlamaSampler::top_k(20),
-                LlamaSampler::top_p(1.0, 1),
+                LlamaSampler::penalties(self.ctx_size as i32, 1.05, 0.0, 0.0),
+                LlamaSampler::top_k(top_k),
+                LlamaSampler::top_p(top_p, 1),
                 LlamaSampler::min_p(0.0, 1),
-                LlamaSampler::temp(1.0),
-                LlamaSampler::dist(42),
+                LlamaSampler::temp(temp),
+                LlamaSampler::dist(seed),
             ]))
         } else {
-            None
+            Some(LlamaSampler::chain_simple([
+                LlamaSampler::penalties(self.ctx_size as i32, 1.05, 0.0, 0.0),
+                LlamaSampler::top_p(top_p, 1),
+                LlamaSampler::temp(temp),
+                LlamaSampler::dist(seed),
+            ]))
         };
 
         loop {
@@ -428,7 +440,7 @@ impl LlmEngine for LlmWorker {
                 return Ok(());
             }
 
-            let token = Self::sample_token(ctx, sample_ith, &mut qwen_sampler);
+            let token = Self::sample_token(ctx, sample_ith, &mut sampler);
 
             if self.model.is_eog_token(token) {
                 log::info!("[LLM] EOS reached (turn: {})", turn_id);

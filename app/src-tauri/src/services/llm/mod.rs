@@ -215,7 +215,7 @@ pub trait LlmEngine {
         &self,
         ctx: &ConversationContext,
         turn_id: u32,
-        max_output_tokens: Option<u32>,
+        options: &GenerationOptions,
         cancel: &tokio_util::sync::CancellationToken,
         tx: &mpsc::Sender<LlmStreamEvent>,
     ) -> anyhow::Result<()>;

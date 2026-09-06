@@ -20,7 +20,10 @@ use crate::{
         state::InteractionOwner,
     },
     pipeline::{assistant::accumulator::TurnAccumulator, target_window},
-    services::tts::actor::TtsCommand,
+    services::{
+        harness::{ChatMessage, Role},
+        tts::actor::TtsCommand,
+    },
 };
 
 pub type LlmProviderCache = Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>>>;
@@ -50,6 +53,9 @@ pub struct LlmWarmUpHandles<'a> {
 /// Commands processed by the background LLM worker thread.
 #[derive(Debug)]
 pub enum LlmCommand {
+    Warmup {
+        system_prompt: String,
+    },
     Generate {
         request: Box<GenerationRequest>,
         turn_id: u32,
@@ -123,6 +129,38 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
 
     while let Ok(cmd) = rx.recv() {
         match cmd {
+            LlmCommand::Warmup { system_prompt } => {
+                let (stream_tx, _stream_rx) = mpsc::channel::<super::LlmStreamEvent>();
+                let provider_clone = Arc::clone(&provider);
+                let cancel = tokio_util::sync::CancellationToken::new();
+                let warmup_request = GenerationRequest {
+                    input: ConversationInput {
+                        messages: vec![
+                            ChatMessage {
+                                role: Role::System,
+                                content: system_prompt,
+                                timestamp_ms: 0,
+                            },
+                            ChatMessage {
+                                role: Role::User,
+                                content: "[WARMUP]".to_string(),
+                                timestamp_ms: 0,
+                            },
+                        ],
+                    },
+                    options: GenerationOptions::default(),
+                    output: OutputConstraint::Text,
+                    purpose: GenerationPurpose::Conversation,
+                };
+                let gen_handle = runtime.spawn(async move {
+                    provider_clone
+                        .generate(warmup_request, 0, &cancel, &stream_tx)
+                        .await
+                });
+                if let Err(e) = runtime.block_on(gen_handle) {
+                    log::warn!("[LLM Worker] Warmup task join error: {:?}", e);
+                }
+            }
             LlmCommand::Generate {
                 request,
                 turn_id,
