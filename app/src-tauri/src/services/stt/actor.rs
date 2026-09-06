@@ -1,13 +1,16 @@
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    },
+    time::{Duration, Instant},
+};
+
 use super::{
     SttProvider, STT_DEFAULT_INFERENCE_DURATION_MS, STT_MIN_PARTIAL_THROTTLE_MS,
     STT_PARTIAL_ERROR_PENALTY_MS, STT_WORKER_RECV_TIMEOUT_MS, STT_WORKER_THREAD_PRIORITY,
 };
 use crate::core::events::VoxEvent;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 pub enum SttCommand {
     StreamChunk {

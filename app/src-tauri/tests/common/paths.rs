@@ -3,10 +3,13 @@
 //! ============================================================================
 
 use std::path::PathBuf;
-use vox_lib::services::llm::{GEMMA_MODEL_DIR, GEMMA_MODEL_FILE, QWEN_MODEL_DIR, QWEN_MODEL_FILE};
-use vox_lib::services::stt::{NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR};
-use vox_lib::services::tts::{CHATTERBOX_MODEL_DIR, SUPERTONIC_MODEL_DIR};
-use vox_lib::services::vad::{MODEL_DIR_VAD, MODEL_FILE_VAD};
+
+use vox_lib::services::{
+    llm::{GEMMA_MODEL_DIR, GEMMA_MODEL_FILE, QWEN_MODEL_DIR, QWEN_MODEL_FILE},
+    stt::{NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
+    tts::{CHATTERBOX_MODEL_DIR, SUPERTONIC_MODEL_DIR},
+    vad::{MODEL_DIR_VAD, MODEL_FILE_VAD},
+};
 
 /// Resolves path to a test asset in `tests/assets/` directory.
 /// Self-containment rule: integration tests may ONLY use clips shipped in

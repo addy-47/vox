@@ -1,9 +1,15 @@
-use crate::persistence::db::VoxDb;
-use crate::persistence::{encode_f32_blob, MAX_QUEUE_RETRY_ATTEMPTS};
-use crate::services::memory::{collection_type, CollectionType, FactSource, QueueStatus, Relation};
-use anyhow::{anyhow, Result};
 use std::collections::HashMap;
+
+use anyhow::{anyhow, Result};
 use turso::Connection;
+
+use crate::{
+    persistence::{db::VoxDb, encode_f32_blob, MAX_QUEUE_RETRY_ATTEMPTS},
+    services::memory::{
+        collection_type, ensure_embedder_loaded, generate_embedding, ingestion, CollectionType,
+        FactSource, QueueStatus, Relation,
+    },
+};
 
 /// Enqueues extracted personal memory facts into `personal_memory_queue`.
 pub async fn enqueue_personal_facts(
@@ -139,9 +145,9 @@ pub async fn supersede_user_fact(
     let new_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
     let fact_type = collection_type(collection);
 
-    let embedding_opt = if fact_type == CollectionType::SemanticGraph {
-        crate::services::memory::ensure_embedder_loaded(true)?;
-        match crate::services::memory::generate_embedding(new_fact_text)? {
+    let embedding_opt: Option<Vec<f32>> = if fact_type == CollectionType::SemanticGraph {
+        ensure_embedder_loaded(true)?;
+        match generate_embedding(new_fact_text)? {
             Some(v) => Some(v),
             None => return Err(anyhow!("Failed to generate embedding for edited fact.")),
         }
@@ -211,7 +217,7 @@ pub async fn supersede_user_fact(
 /// Records operational pipeline stage metrics into `memory_pipeline_metrics`.
 pub async fn record_stage_metrics(
     conn: &Connection,
-    metrics: &crate::services::memory::ingestion::PipelineStageMetrics,
+    metrics: &ingestion::PipelineStageMetrics,
 ) -> Result<()> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -242,7 +248,7 @@ pub async fn record_stage_metrics(
 pub async fn write_dedup_audit(
     conn: &Connection,
     item_id: i64,
-    log: &crate::services::memory::ingestion::DedupAuditLog,
+    log: &ingestion::DedupAuditLog,
 ) -> Result<()> {
     let json_str = serde_json::to_string(log)?;
     conn.execute(
@@ -257,7 +263,7 @@ pub async fn write_dedup_audit(
 pub async fn write_candidate_audit(
     conn: &Connection,
     item_id: i64,
-    logs: &[crate::services::memory::ingestion::CandidateAuditLog],
+    logs: &[ingestion::CandidateAuditLog],
 ) -> Result<()> {
     let json_str = serde_json::to_string(logs)?;
     conn.execute(

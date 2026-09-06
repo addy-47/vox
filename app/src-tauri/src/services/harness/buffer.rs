@@ -1,5 +1,6 @@
-use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use serde::{Deserialize, Serialize};
 
 /// Conversational message participant roles.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

@@ -1,13 +1,15 @@
-use super::buffer::{current_timestamp_ms, ChatMessage, MessageBuffer, Role};
-use super::prompt_builder::{build_session_history_xml, consolidate_system_message};
-use crate::services::memory::compaction::CompactionResult;
-use crate::services::memory::ml::estimate_tokens;
-use crate::services::memory::MemoryCollection;
+use std::collections::HashMap;
+
+use tokio_util::sync::CancellationToken;
+
+use super::{
+    buffer::{current_timestamp_ms, ChatMessage, MessageBuffer, Role},
+    prompt_builder::{build_session_history_xml, consolidate_system_message},
+};
 use crate::services::memory::{
+    compaction::CompactionResult, ml::estimate_tokens, MemoryCollection,
     CONTEXT_CRITICAL_THRESHOLD, CONTEXT_SOFT_THRESHOLD, RESERVED_GENERATION_TOKENS,
 };
-use std::collections::HashMap;
-use tokio_util::sync::CancellationToken;
 
 /// Manages context budgeting, sliding-window compaction, and background opportunistic compaction for Modular LLM.
 pub struct ContextHarness {
@@ -353,8 +355,10 @@ impl ContextHarness {
 
 #[cfg(test)]
 mod tests {
-    use super::super::buffer::{ChatMessage, MessageBuffer, Role};
-    use super::*;
+    use super::{
+        super::buffer::{ChatMessage, MessageBuffer, Role},
+        *,
+    };
 
     fn sys_msg() -> ChatMessage {
         ChatMessage {

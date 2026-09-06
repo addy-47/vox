@@ -1,17 +1,17 @@
 pub mod actor;
 pub mod providers;
 pub mod voice;
-pub use crate::core::error::TtsError;
 pub use actor::{
     cool_down_tts, create_tts_provider, resolve_reference_audio, spawn_tts_worker, warm_up_tts,
     TtsClauseChunker, TtsCommand,
 };
-pub use providers::chatterbox::ChatterboxEngine;
-pub use providers::chatterbox_remote::ChatterboxRemoteProvider;
-pub use providers::edge_tts::EdgeTtsProvider;
-pub use providers::kokoro::KokoroEngine;
-pub use providers::supertonic::TtsEngine;
-pub use providers::{TtsProvider, TtsProviderKind};
+pub use providers::{
+    chatterbox::ChatterboxEngine, chatterbox_remote::ChatterboxRemoteProvider,
+    edge_tts::EdgeTtsProvider, kokoro::KokoroEngine, supertonic::TtsEngine, TtsProvider,
+    TtsProviderKind,
+};
+
+pub use crate::core::error::TtsError;
 
 pub const TTS_SAMPLE_RATE: u32 = 24000;
 pub const SUPER_SAMPLE_RATE: u32 = 44100;

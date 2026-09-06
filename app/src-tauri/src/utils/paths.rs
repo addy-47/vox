@@ -1,6 +1,8 @@
-use crate::core::constants::*;
-use parking_lot::RwLock;
 use std::path::PathBuf;
+
+use parking_lot::RwLock;
+
+use crate::core::constants::*;
 
 /// Fully-resolved filesystem layout for the Vox application.
 #[derive(Clone)]

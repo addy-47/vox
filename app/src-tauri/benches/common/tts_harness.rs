@@ -1,21 +1,29 @@
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::{
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc, Arc,
+    },
+    time::{Duration, Instant},
+};
 
-use ringbuf::traits::Split;
-use ringbuf::HeapRb;
+use ringbuf::{traits::Split, HeapRb};
+use vox_lib::{
+    core::events::VoxEvent,
+    services::{
+        audio::{playback::PlaybackEngineHandles, PlaybackEngine, PLAYBACK_BUFFER_SAMPLES},
+        tts::{
+            actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
+            providers::TtsProvider,
+            TTS_SAMPLE_RATE,
+        },
+    },
+};
 
-use vox_lib::core::events::VoxEvent;
-use vox_lib::services::audio::playback::PlaybackEngineHandles;
-use vox_lib::services::audio::{PlaybackEngine, PLAYBACK_BUFFER_SAMPLES};
-use vox_lib::services::tts::actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles};
-use vox_lib::services::tts::providers::TtsProvider;
-use vox_lib::services::tts::TTS_SAMPLE_RATE;
-
-use super::reporting::{get_process_memory_mb, ClipBenchmarkResult, EngineBenchmarkRun};
-use super::utils::{downsample_48k_to_24k, drain_consumer, write_wav_f32};
-use std::sync::mpsc;
+use super::{
+    reporting::{get_process_memory_mb, ClipBenchmarkResult, EngineBenchmarkRun},
+    utils::{downsample_48k_to_24k, drain_consumer, write_wav_f32},
+};
 
 /// Text prompt derived from canonical test-clips transcripts (verbatim).
 #[derive(Debug, Clone)]

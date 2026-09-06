@@ -1,9 +1,13 @@
-use super::RelationEdge;
-use crate::services::memory::STAGE4_BATCH_SIZE;
-use crate::services::memory::{collection_type, QueueStatus};
-use anyhow::Result;
 use std::collections::HashMap;
+
+use anyhow::Result;
 use turso::Connection;
+
+use super::RelationEdge;
+use crate::{
+    persistence::mutations,
+    services::memory::{collection_type, QueueStatus, Relation, STAGE4_BATCH_SIZE},
+};
 
 /// Claimed item pending stage 4 SQL database commit and queue deletion.
 #[derive(Debug, Clone)]
@@ -122,7 +126,7 @@ async fn commit_item_to_storage(
 
                         relations_count += 1;
 
-                        if rel.relation == crate::services::memory::Relation::Supersedes.as_str() {
+                        if rel.relation == Relation::Supersedes.as_str() {
                             conn.execute(
                                 "UPDATE memory_facts SET status = 'inactive' WHERE id = ?",
                                 (to_id,),
@@ -220,7 +224,7 @@ pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> 
             error_count,
             duration_ms,
         };
-        if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {
+        if let Err(e) = mutations::record_stage_metrics(conn, &metrics).await {
             log::warn!(
                 "[MemoryPipeline::Stage4] Failed to record stage metrics: {}",
                 e

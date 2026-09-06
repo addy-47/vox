@@ -10,18 +10,25 @@
 
 mod common;
 
-use common::harness::attach_lifecycle_mock_engine;
+use std::{
+    sync::{atomic::Ordering, mpsc},
+    time::Duration,
+};
 
-use std::sync::atomic::Ordering;
-use std::sync::mpsc;
-use std::time::Duration;
-use vox_lib::core::settings::{DictationInteractionMode, InteractionMode, PipelineMode};
-use vox_lib::core::state::{AppState, InteractionOwner, InteractionState};
-use vox_lib::persistence::events::{MemoryWorkerEvent, PersistenceEvent};
-use vox_lib::pipeline::assistant::session::{on_end, on_pause, on_resume, on_session_start};
-use vox_lib::pipeline::dictation::transition_dictation;
-use vox_lib::pipeline::RoutingContext;
-use vox_lib::services::vad::{VadCommand, VadOperationalMode};
+use common::harness::attach_lifecycle_mock_engine;
+use vox_lib::{
+    core::{
+        settings::{DictationInteractionMode, InteractionMode, PipelineMode},
+        state::{AppState, InteractionOwner, InteractionState},
+    },
+    persistence::events::{MemoryWorkerEvent, PersistenceEvent},
+    pipeline::{
+        assistant::session::{on_end, on_pause, on_resume, on_session_start},
+        dictation::transition_dictation,
+        RoutingContext,
+    },
+    services::vad::{VadCommand, VadOperationalMode},
+};
 
 /// Helper: Sets up channels on `state.persist_tx` and `state.memory_tx` to capture lifecycle events.
 fn setup_lifecycle_channels(

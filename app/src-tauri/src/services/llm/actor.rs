@@ -1,17 +1,27 @@
+use std::{
+    path::Path,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        mpsc, Arc,
+    },
+};
+
 use super::{
     ConversationInput, EmbeddedProvider, GenerationOptions, GenerationPurpose, GenerationRequest,
     LlmProvider, OutputConstraint, RemoteTransport,
 };
-use crate::core::events::emit_ipc_to;
-use crate::core::events::IpcEvent;
-use crate::core::events::{Actionability, PipelineError, PipelineImpact, VoxEvent};
-use crate::core::settings::{LlmProviderConfig, LlmSettings, VoxSettings};
-use crate::core::state::InteractionOwner;
-use std::path::Path;
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::Ordering;
-use std::sync::mpsc;
-use std::sync::Arc;
+use crate::{
+    core::{
+        events::{
+            emit_ipc_to, Actionability, IpcEvent, LlmTokenPayload, PipelineError, PipelineImpact,
+            VoxEvent,
+        },
+        settings::{LlmProviderConfig, LlmSettings, VoxSettings},
+        state::InteractionOwner,
+    },
+    pipeline::{assistant::accumulator::TurnAccumulator, target_window},
+    services::tts::actor::TtsCommand,
+};
 
 pub type LlmProviderCache = Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>>>;
 
@@ -44,9 +54,8 @@ pub enum LlmCommand {
         request: Box<GenerationRequest>,
         turn_id: u32,
         cancel: tokio_util::sync::CancellationToken,
-        accumulator:
-            Arc<parking_lot::Mutex<crate::pipeline::assistant::accumulator::TurnAccumulator>>,
-        tts_tx: Option<mpsc::Sender<crate::services::tts::actor::TtsCommand>>,
+        accumulator: Arc<parking_lot::Mutex<TurnAccumulator>>,
+        tts_tx: Option<mpsc::Sender<TtsCommand>>,
         pending_synthesis_jobs: Arc<AtomicU32>,
     },
     Shutdown,
@@ -138,12 +147,10 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
                             if let Some(ref tx) = tts_tx {
                                 for clause in clauses {
                                     pending_synthesis_jobs.fetch_add(1, Ordering::Relaxed);
-                                    if let Err(e) =
-                                        tx.send(crate::services::tts::actor::TtsCommand::Generate {
-                                            turn_id,
-                                            text: clause,
-                                        })
-                                    {
+                                    if let Err(e) = tx.send(TtsCommand::Generate {
+                                        turn_id,
+                                        text: clause,
+                                    }) {
                                         pending_synthesis_jobs.fetch_sub(1, Ordering::Relaxed);
                                         log::warn!(
                                             "[LLM Worker] Failed to dispatch clause to TTS: {}",
@@ -153,15 +160,11 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
                                 }
                             }
 
-                            let target =
-                                crate::pipeline::target_window(InteractionOwner::Assistant);
+                            let target = target_window(InteractionOwner::Assistant);
                             if let Err(e) = emit_ipc_to(
                                 &app,
                                 target,
-                                IpcEvent::LlmToken(crate::core::events::LlmTokenPayload {
-                                    turn_id,
-                                    token,
-                                }),
+                                IpcEvent::LlmToken(LlmTokenPayload { turn_id, token }),
                             ) {
                                 log::trace!("[LLM Worker] Failed to emit LlmToken IPC: {}", e);
                             }
@@ -275,7 +278,7 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
 
 /// Creates a boxed LLM provider directly from LlmSettings configuration.
 pub fn create_llm_provider_from_llm_settings(
-    llm_settings: &crate::core::settings::LlmSettings,
+    llm_settings: &LlmSettings,
     llm_path: &Path,
 ) -> Result<Box<dyn LlmProvider>, String> {
     let provider_config = llm_settings.to_provider_config();

@@ -1,7 +1,9 @@
 //! Generic TCP connectivity health checks for realtime provider WebSocket endpoints.
 
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::time::Duration;
+use std::{
+    net::{SocketAddr, ToSocketAddrs},
+    time::Duration,
+};
 
 /// Tests TCP reachability of the given resolved socket address within the specified timeout.
 pub(crate) fn tcp_health_check(addr: SocketAddr, timeout: Duration) -> bool {

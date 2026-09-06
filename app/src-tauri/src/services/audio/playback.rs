@@ -1,21 +1,23 @@
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::mpsc::Sender;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU32, Ordering},
+    mpsc::Sender,
+    Arc,
+};
 
 use anyhow::Result;
 use parking_lot::Mutex;
-use ringbuf::traits::*;
-use ringbuf::HeapProd;
+use ringbuf::{traits::*, HeapProd};
 
-use super::resampler::upsample_2x_into;
 use super::{
-    build_output_stream, AudioResampler, MODULAR_PREROLL_THRESHOLD_SAMPLES,
-    PLAYBACK_BUFFER_SAMPLES, PLAYBACK_PRODUCER_SCRATCH_CAPACITY,
+    build_output_stream, resampler::upsample_2x_into, AudioResampler,
+    MODULAR_PREROLL_THRESHOLD_SAMPLES, PLAYBACK_BUFFER_SAMPLES, PLAYBACK_PRODUCER_SCRATCH_CAPACITY,
     REALTIME_PREROLL_THRESHOLD_SAMPLES, SINC_CHUNK_SIZE_OUTPUT,
 };
 pub use super::{PlaybackEngineHandles, PlaybackTelemetryHandles};
-use crate::core::events::VoxEvent;
-use crate::services::realtime::{RealtimeAudioConfig, DEFAULT_OUTPUT_SAMPLE_RATE};
+use crate::{
+    core::events::VoxEvent,
+    services::realtime::{RealtimeAudioConfig, DEFAULT_OUTPUT_SAMPLE_RATE},
+};
 
 /// Core audio playback engine managing a CPAL stream, SPSC lock-free ring buffer, and volume ramps.
 pub struct PlaybackEngine {

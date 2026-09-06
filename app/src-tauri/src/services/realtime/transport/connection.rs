@@ -1,20 +1,25 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
+use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_tungstenite::tungstenite::Message;
-
-use crate::core::state::InteractionState;
-use crate::services::realtime::{
-    Actionability, OutboundCommand, PipelineImpact, RealtimeProviderEvent, BRIDGE_CHANNEL_CAPACITY,
-};
 
 use super::{
     FrameAction, HarnessConfig, HarnessHandles, HarnessInit, ProviderDriver, WsReader, WsWriter,
+};
+use crate::{
+    core::state::InteractionState,
+    services::realtime::{
+        Actionability, OutboundCommand, PipelineImpact, RealtimeProviderEvent,
+        BRIDGE_CHANNEL_CAPACITY,
+    },
 };
 
 /// Context forwarded to each `(write_task, receiver_task)` pair for a single connection lifetime.

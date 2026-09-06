@@ -1,7 +1,36 @@
-use crate::utils::paths;
+use std::fs;
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::fs;
+
+use crate::{
+    core::{
+        constants::{SYSTEM_PROMPT_MODULAR, SYSTEM_PROMPT_REALTIME},
+        defaults::{
+            DEFAULT_ASR_MODEL, DEFAULT_ASR_TRANSLITERATE_ENABLED, DEFAULT_AUTO_SLEEP_TIMEOUT,
+            DEFAULT_DEEPGRAM_MODEL, DEFAULT_DEEPGRAM_TEMP, DEFAULT_DEEPGRAM_VOICE,
+            DEFAULT_DICTATION_ENABLED, DEFAULT_DICTATION_HOTKEY, DEFAULT_GEMINI_REALTIME_LANG,
+            DEFAULT_GEMINI_REALTIME_MODEL, DEFAULT_GEMINI_REALTIME_TEMP,
+            DEFAULT_GEMINI_REALTIME_VOICE, DEFAULT_HISTORY_AUTO_COMPACTION,
+            DEFAULT_HISTORY_PRIVATE_MODE, DEFAULT_HISTORY_TRAY_LIMIT, DEFAULT_LLM_CLOUD_BASE_URL,
+            DEFAULT_LLM_CLOUD_MODEL, DEFAULT_LLM_CLOUD_PROVIDER_NAME,
+            DEFAULT_LLM_COMPACTION_TEMPERATURE, DEFAULT_LLM_CONTEXT_WINDOW,
+            DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_MODEL, DEFAULT_LLM_SERVER_BASE_URL,
+            DEFAULT_LLM_SERVER_MODEL, DEFAULT_LLM_SERVER_PROVIDER_NAME, DEFAULT_LLM_TEMPERATURE,
+            DEFAULT_LLM_THREADS, DEFAULT_MEMORY_CONTEXT_CHAINING_HOURS,
+            DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED, DEFAULT_MEMORY_MAX_HOPS,
+            DEFAULT_MEMORY_MAX_PERSONAL_SHARE, DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED,
+            DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF, DEFAULT_MEMORY_TOP_K_FACTS,
+            DEFAULT_STT_CLOUD_LANGUAGE, DEFAULT_STT_CLOUD_MODEL, DEFAULT_STT_CLOUD_PROVIDER,
+            DEFAULT_STT_CLOUD_REGION, DEFAULT_STT_PARTIAL_THROTTLE_MS, DEFAULT_STT_THREADS,
+            DEFAULT_TELEMETRY_ENABLED, DEFAULT_TELEMETRY_LOG_LEVEL, DEFAULT_TTS_QUALITY_STEPS,
+            DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS, DEFAULT_TTS_VOICE_INDEX,
+            DEFAULT_UI_ACCENT_SEED, DEFAULT_UI_THEME, DEFAULT_VAD_PTT_NOISE_GATE,
+            DEFAULT_VAD_SILENCE_DURATION_MS, DEFAULT_VAD_SPEECH_ONSET_MS, DEFAULT_VAD_THRESHOLD,
+        },
+    },
+    utils::paths,
+};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub enum AudioOutputMode {
@@ -166,8 +195,8 @@ pub struct AppearanceSettings {
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
-            theme: crate::core::defaults::DEFAULT_UI_THEME.into(),
-            accent_seed: crate::core::defaults::DEFAULT_UI_ACCENT_SEED.into(),
+            theme: DEFAULT_UI_THEME.into(),
+            accent_seed: DEFAULT_UI_ACCENT_SEED.into(),
         }
     }
 }
@@ -201,11 +230,11 @@ pub struct VadSettings {
 impl Default for VadSettings {
     fn default() -> Self {
         Self {
-            threshold: crate::core::defaults::DEFAULT_VAD_THRESHOLD,
-            ptt_noise_gate: crate::core::defaults::DEFAULT_VAD_PTT_NOISE_GATE,
+            threshold: DEFAULT_VAD_THRESHOLD,
+            ptt_noise_gate: DEFAULT_VAD_PTT_NOISE_GATE,
             vad_backend: VadBackendOption::TenVad,
-            silence_duration_ms: crate::core::defaults::DEFAULT_VAD_SILENCE_DURATION_MS,
-            speech_onset_ms: crate::core::defaults::DEFAULT_VAD_SPEECH_ONSET_MS,
+            silence_duration_ms: DEFAULT_VAD_SILENCE_DURATION_MS,
+            speech_onset_ms: DEFAULT_VAD_SPEECH_ONSET_MS,
         }
     }
 }
@@ -229,9 +258,9 @@ pub struct SttEmbeddedConfig {
 impl Default for SttEmbeddedConfig {
     fn default() -> Self {
         Self {
-            model: crate::core::defaults::DEFAULT_ASR_MODEL.to_string(),
-            partial_throttle_ms: crate::core::defaults::DEFAULT_STT_PARTIAL_THROTTLE_MS,
-            threads: crate::core::defaults::DEFAULT_STT_THREADS,
+            model: DEFAULT_ASR_MODEL.to_string(),
+            partial_throttle_ms: DEFAULT_STT_PARTIAL_THROTTLE_MS,
+            threads: DEFAULT_STT_THREADS,
         }
     }
 }
@@ -252,10 +281,10 @@ pub struct SttCloudConfig {
 impl Default for SttCloudConfig {
     fn default() -> Self {
         Self {
-            provider: crate::core::defaults::DEFAULT_STT_CLOUD_PROVIDER.to_string(),
-            model: crate::core::defaults::DEFAULT_STT_CLOUD_MODEL.to_string(),
-            language: crate::core::defaults::DEFAULT_STT_CLOUD_LANGUAGE.to_string(),
-            region: crate::core::defaults::DEFAULT_STT_CLOUD_REGION.to_string(),
+            provider: DEFAULT_STT_CLOUD_PROVIDER.to_string(),
+            model: DEFAULT_STT_CLOUD_MODEL.to_string(),
+            language: DEFAULT_STT_CLOUD_LANGUAGE.to_string(),
+            region: DEFAULT_STT_CLOUD_REGION.to_string(),
             credentials_path: None,
             credentials_json: None,
             project_id: None,
@@ -300,16 +329,16 @@ impl Default for SttProviderConfig {
 }
 
 fn default_stt_model() -> String {
-    crate::core::defaults::DEFAULT_ASR_MODEL.into()
+    DEFAULT_ASR_MODEL.into()
 }
 fn default_cloud_model() -> String {
-    crate::core::defaults::DEFAULT_STT_CLOUD_MODEL.into()
+    DEFAULT_STT_CLOUD_MODEL.into()
 }
 fn default_cloud_language() -> String {
-    crate::core::defaults::DEFAULT_STT_CLOUD_LANGUAGE.into()
+    DEFAULT_STT_CLOUD_LANGUAGE.into()
 }
 fn default_cloud_region() -> String {
-    crate::core::defaults::DEFAULT_STT_CLOUD_REGION.into()
+    DEFAULT_STT_CLOUD_REGION.into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -325,7 +354,7 @@ impl Default for SttSettings {
     fn default() -> Self {
         Self {
             active: SttActiveProvider::Embedded,
-            transliterate_enabled: crate::core::defaults::DEFAULT_ASR_TRANSLITERATE_ENABLED,
+            transliterate_enabled: DEFAULT_ASR_TRANSLITERATE_ENABLED,
             embedded: SttEmbeddedConfig::default(),
             cloud: SttCloudConfig::default(),
         }
@@ -377,7 +406,7 @@ pub struct LlmEmbeddedConfig {
 impl Default for LlmEmbeddedConfig {
     fn default() -> Self {
         Self {
-            model: crate::core::defaults::DEFAULT_LLM_MODEL.to_string(),
+            model: DEFAULT_LLM_MODEL.to_string(),
         }
     }
 }
@@ -394,21 +423,19 @@ pub struct LlmRemoteConfig {
 impl LlmRemoteConfig {
     pub fn server_default() -> Self {
         Self {
-            base_url: crate::core::defaults::DEFAULT_LLM_SERVER_BASE_URL.to_string(),
-            model: crate::core::defaults::DEFAULT_LLM_SERVER_MODEL.to_string(),
+            base_url: DEFAULT_LLM_SERVER_BASE_URL.to_string(),
+            model: DEFAULT_LLM_SERVER_MODEL.to_string(),
             api_key: None,
-            provider_name: Some(
-                crate::core::defaults::DEFAULT_LLM_SERVER_PROVIDER_NAME.to_string(),
-            ),
+            provider_name: Some(DEFAULT_LLM_SERVER_PROVIDER_NAME.to_string()),
         }
     }
 
     pub fn cloud_default() -> Self {
         Self {
-            base_url: crate::core::defaults::DEFAULT_LLM_CLOUD_BASE_URL.to_string(),
-            model: crate::core::defaults::DEFAULT_LLM_CLOUD_MODEL.to_string(),
+            base_url: DEFAULT_LLM_CLOUD_BASE_URL.to_string(),
+            model: DEFAULT_LLM_CLOUD_MODEL.to_string(),
             api_key: None,
-            provider_name: Some(crate::core::defaults::DEFAULT_LLM_CLOUD_PROVIDER_NAME.to_string()),
+            provider_name: Some(DEFAULT_LLM_CLOUD_PROVIDER_NAME.to_string()),
         }
     }
 }
@@ -451,11 +478,11 @@ impl Default for LlmSettings {
     fn default() -> Self {
         Self {
             active: LlmActiveProvider::Embedded,
-            temperature: crate::core::defaults::DEFAULT_LLM_TEMPERATURE,
-            compaction_temperature: crate::core::defaults::DEFAULT_LLM_COMPACTION_TEMPERATURE,
-            max_output_tokens: crate::core::defaults::DEFAULT_LLM_MAX_OUTPUT_TOKENS,
-            context_window: crate::core::defaults::DEFAULT_LLM_CONTEXT_WINDOW,
-            threads: crate::core::defaults::DEFAULT_LLM_THREADS,
+            temperature: DEFAULT_LLM_TEMPERATURE,
+            compaction_temperature: DEFAULT_LLM_COMPACTION_TEMPERATURE,
+            max_output_tokens: DEFAULT_LLM_MAX_OUTPUT_TOKENS,
+            context_window: DEFAULT_LLM_CONTEXT_WINDOW,
+            threads: DEFAULT_LLM_THREADS,
             embedded: LlmEmbeddedConfig::default(),
             server: LlmRemoteConfig::server_default(),
             cloud: LlmRemoteConfig::cloud_default(),
@@ -648,10 +675,10 @@ impl Default for TtsSettings {
     fn default() -> Self {
         Self {
             active: TtsActiveProvider::EdgeTts,
-            voice_index: crate::core::defaults::DEFAULT_TTS_VOICE_INDEX,
-            quality_steps: crate::core::defaults::DEFAULT_TTS_QUALITY_STEPS,
-            speed: crate::core::defaults::DEFAULT_TTS_SPEED,
-            threads: crate::core::defaults::DEFAULT_TTS_THREADS,
+            voice_index: DEFAULT_TTS_VOICE_INDEX,
+            quality_steps: DEFAULT_TTS_QUALITY_STEPS,
+            speed: DEFAULT_TTS_SPEED,
+            threads: DEFAULT_TTS_THREADS,
             edge_tts: TtsEdgeConfig::default(),
             supertonic: TtsSupertonicConfig::default(),
             kokoro: TtsKokoroConfig::default(),
@@ -699,7 +726,7 @@ impl Default for InteractionSettings {
     fn default() -> Self {
         Self {
             mode: InteractionMode::Passive,
-            auto_sleep_timeout: crate::core::defaults::DEFAULT_AUTO_SLEEP_TIMEOUT,
+            auto_sleep_timeout: DEFAULT_AUTO_SLEEP_TIMEOUT,
             pipeline_mode: PipelineMode::Modular,
         }
     }
@@ -717,9 +744,9 @@ pub struct DictationSettings {
 impl Default for DictationSettings {
     fn default() -> Self {
         Self {
-            enabled: crate::core::defaults::DEFAULT_DICTATION_ENABLED,
+            enabled: DEFAULT_DICTATION_ENABLED,
             interaction_mode: DictationInteractionMode::Ptt,
-            hotkey: crate::core::defaults::DEFAULT_DICTATION_HOTKEY.into(),
+            hotkey: DEFAULT_DICTATION_HOTKEY.into(),
             output_mode: DictationOutputMode::Paste,
         }
     }
@@ -736,9 +763,9 @@ pub struct HistorySettings {
 impl Default for HistorySettings {
     fn default() -> Self {
         Self {
-            private_mode: crate::core::defaults::DEFAULT_HISTORY_PRIVATE_MODE,
-            tray_history_limit: crate::core::defaults::DEFAULT_HISTORY_TRAY_LIMIT,
-            auto_compaction: crate::core::defaults::DEFAULT_HISTORY_AUTO_COMPACTION,
+            private_mode: DEFAULT_HISTORY_PRIVATE_MODE,
+            tray_history_limit: DEFAULT_HISTORY_TRAY_LIMIT,
+            auto_compaction: DEFAULT_HISTORY_AUTO_COMPACTION,
         }
     }
 }
@@ -758,17 +785,13 @@ pub struct MemorySettings {
 impl Default for MemorySettings {
     fn default() -> Self {
         Self {
-            context_retrieval_enabled:
-                crate::core::defaults::DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
-            pipeline_processing_enabled:
-                crate::core::defaults::DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED,
-            max_context_share: crate::core::defaults::DEFAULT_MEMORY_MAX_PERSONAL_SHARE,
-            context_chaining_window_hours:
-                crate::core::defaults::DEFAULT_MEMORY_CONTEXT_CHAINING_HOURS,
-            top_k_facts: crate::core::defaults::DEFAULT_MEMORY_TOP_K_FACTS,
-            max_hops: crate::core::defaults::DEFAULT_MEMORY_MAX_HOPS,
-            semantic_similarity_cutoff:
-                crate::core::defaults::DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF,
+            context_retrieval_enabled: DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
+            pipeline_processing_enabled: DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED,
+            max_context_share: DEFAULT_MEMORY_MAX_PERSONAL_SHARE,
+            context_chaining_window_hours: DEFAULT_MEMORY_CONTEXT_CHAINING_HOURS,
+            top_k_facts: DEFAULT_MEMORY_TOP_K_FACTS,
+            max_hops: DEFAULT_MEMORY_MAX_HOPS,
+            semantic_similarity_cutoff: DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF,
         }
     }
 }
@@ -783,8 +806,8 @@ pub struct PersonaSettings {
 impl Default for PersonaSettings {
     fn default() -> Self {
         Self {
-            modular_prompt: crate::core::constants::SYSTEM_PROMPT_MODULAR.into(),
-            realtime_prompt: crate::core::constants::SYSTEM_PROMPT_REALTIME.into(),
+            modular_prompt: SYSTEM_PROMPT_MODULAR.into(),
+            realtime_prompt: SYSTEM_PROMPT_REALTIME.into(),
         }
     }
 }
@@ -815,10 +838,10 @@ impl Default for GeminiRealtimeConfig {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            model: crate::core::defaults::DEFAULT_GEMINI_REALTIME_MODEL.to_string(),
-            voice_name: crate::core::defaults::DEFAULT_GEMINI_REALTIME_VOICE.to_string(),
-            language_code: crate::core::defaults::DEFAULT_GEMINI_REALTIME_LANG.to_string(),
-            temperature: crate::core::defaults::DEFAULT_GEMINI_REALTIME_TEMP,
+            model: DEFAULT_GEMINI_REALTIME_MODEL.to_string(),
+            voice_name: DEFAULT_GEMINI_REALTIME_VOICE.to_string(),
+            language_code: DEFAULT_GEMINI_REALTIME_LANG.to_string(),
+            temperature: DEFAULT_GEMINI_REALTIME_TEMP,
             enable_web_search: true,
             resume_handle: None,
         }
@@ -847,9 +870,9 @@ impl Default for DeepgramVoiceAgentConfig {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            model: crate::core::defaults::DEFAULT_DEEPGRAM_MODEL.to_string(),
-            voice: crate::core::defaults::DEFAULT_DEEPGRAM_VOICE.to_string(),
-            temperature: crate::core::defaults::DEFAULT_DEEPGRAM_TEMP,
+            model: DEFAULT_DEEPGRAM_MODEL.to_string(),
+            voice: DEFAULT_DEEPGRAM_VOICE.to_string(),
+            temperature: DEFAULT_DEEPGRAM_TEMP,
             agent_mode: false,
         }
     }
@@ -900,8 +923,8 @@ pub struct SystemSettings {
 impl Default for SystemSettings {
     fn default() -> Self {
         Self {
-            log_level: crate::core::defaults::DEFAULT_TELEMETRY_LOG_LEVEL.into(),
-            telemetry_enabled: crate::core::defaults::DEFAULT_TELEMETRY_ENABLED,
+            log_level: DEFAULT_TELEMETRY_LOG_LEVEL.into(),
+            telemetry_enabled: DEFAULT_TELEMETRY_ENABLED,
             setup_completed: false,
         }
     }

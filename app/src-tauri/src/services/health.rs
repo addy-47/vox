@@ -1,8 +1,18 @@
-use crate::core::settings::{LlmProviderConfig, SttProviderConfig, TtsProviderConfig};
-use crate::core::state::AppState;
-use crate::services::llm::{LlmProvider, RemoteTransport};
-use crate::utils::paths;
 use std::sync::Arc;
+
+use crate::{
+    core::{
+        defaults::DEFAULT_STT_THREADS,
+        settings::{LlmProviderConfig, SttProviderConfig, TtsProviderConfig},
+        state::AppState,
+    },
+    services::{
+        llm::{ConnectionConfig, LlmProvider, RemoteTransport, QWEN_MODEL_DIR, QWEN_MODEL_FILE},
+        stt::{create_stt_provider, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
+        tts::{CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, SUPERTONIC_MODEL_DIR},
+    },
+    utils::paths,
+};
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(untagged)]
@@ -51,19 +61,13 @@ pub async fn check_llm_health(
                     if let Some(file) = group.files.first() {
                         models_dir.join(&file.path)
                     } else {
-                        models_dir
-                            .join(crate::services::llm::QWEN_MODEL_DIR)
-                            .join(crate::services::llm::QWEN_MODEL_FILE)
+                        models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE)
                     }
                 } else {
-                    models_dir
-                        .join(crate::services::llm::QWEN_MODEL_DIR)
-                        .join(crate::services::llm::QWEN_MODEL_FILE)
+                    models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE)
                 }
             } else {
-                models_dir
-                    .join(crate::services::llm::QWEN_MODEL_DIR)
-                    .join(crate::services::llm::QWEN_MODEL_FILE)
+                models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE)
             };
 
             Ok(llm_path.exists())
@@ -74,7 +78,7 @@ pub async fn check_llm_health(
             api_key,
             provider_name,
         } => {
-            let conn_cfg = crate::services::llm::ConnectionConfig::new(
+            let conn_cfg = ConnectionConfig::new(
                 &base_url,
                 &model,
                 api_key.as_deref(),
@@ -102,17 +106,13 @@ pub async fn check_stt_health(
         SttProviderConfig::Embedded { model_type } => {
             let models_dir = paths::get().models.clone();
             let model_path = match model_type.as_str() {
-                "nvidia_nemotron" => models_dir.join(crate::services::stt::NEMOTRON_MODEL_DIR),
-                _ => models_dir.join(crate::services::stt::QWEN_ASR_MODEL_DIR),
+                "nvidia_nemotron" => models_dir.join(NEMOTRON_MODEL_DIR),
+                _ => models_dir.join(QWEN_ASR_MODEL_DIR),
             };
             Ok(model_path.exists())
         }
         SttProviderConfig::Cloud { .. } => tokio::task::spawn_blocking(move || {
-            match crate::services::stt::create_stt_provider(
-                &config,
-                &std::path::PathBuf::new(),
-                crate::core::defaults::DEFAULT_STT_THREADS,
-            ) {
+            match create_stt_provider(&config, &std::path::PathBuf::new(), DEFAULT_STT_THREADS) {
                 Ok(provider) => provider.health_check(),
                 Err(e) => {
                     log::warn!("[Settings] Cloud STT provider health check failed: {}", e);
@@ -140,21 +140,15 @@ pub async fn check_tts_health(
     match config {
         TtsProviderConfig::Supertonic => {
             let models_dir = paths::get().models.clone();
-            Ok(models_dir
-                .join(crate::services::tts::SUPERTONIC_MODEL_DIR)
-                .exists())
+            Ok(models_dir.join(SUPERTONIC_MODEL_DIR).exists())
         }
         TtsProviderConfig::Kokoro => {
             let models_dir = paths::get().models.clone();
-            Ok(models_dir
-                .join(crate::services::tts::KOKORO_MODEL_DIR)
-                .exists())
+            Ok(models_dir.join(KOKORO_MODEL_DIR).exists())
         }
         TtsProviderConfig::Chatterbox { .. } => {
             let models_dir = paths::get().models.clone();
-            Ok(models_dir
-                .join(crate::services::tts::CHATTERBOX_MODEL_DIR)
-                .exists())
+            Ok(models_dir.join(CHATTERBOX_MODEL_DIR).exists())
         }
         TtsProviderConfig::ChatterboxRemote { ref endpoint, .. } => {
             let client = reqwest::Client::builder()

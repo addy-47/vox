@@ -1,14 +1,17 @@
-use crossbeam_channel::{bounded, Receiver, Sender};
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
-use std::time::Instant;
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        Arc,
+    },
+    time::Instant,
+};
 
-use crate::persistence::db::VoxDb;
-use crate::persistence::events::PersistenceEvent;
-use crate::persistence::schema;
+use crossbeam_channel::{bounded, Receiver, Sender};
+
 use crate::persistence::{
-    PERSISTENCE_CHANNEL_CAPACITY, PERSISTENCE_RATE_INTERVAL, WORKER_EVENT_POLL_TIMEOUT,
+    db::VoxDb, events::PersistenceEvent, schema, PERSISTENCE_CHANNEL_CAPACITY,
+    PERSISTENCE_RATE_INTERVAL, WORKER_EVENT_POLL_TIMEOUT,
 };
 
 /// Spawn the persistence worker on a dedicated OS thread.

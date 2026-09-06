@@ -14,12 +14,13 @@
 
 mod common;
 
-use clap::Parser;
-use common::reporting::{
-    generate_run_id, save_benchmark_report, BenchmarkReport, BenchmarkSystemInfo,
-};
-use common::tts_harness::{benchmark_tts_provider, TtsBenchmarkPrompt};
 use std::path::{Path, PathBuf};
+
+use clap::Parser;
+use common::{
+    reporting::{generate_run_id, save_benchmark_report, BenchmarkReport, BenchmarkSystemInfo},
+    tts_harness::{benchmark_tts_provider, TtsBenchmarkPrompt},
+};
 
 #[derive(Parser, Debug)]
 #[command(

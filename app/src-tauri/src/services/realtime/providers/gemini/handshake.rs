@@ -2,11 +2,14 @@ use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::core::settings::GeminiRealtimeConfig;
-use crate::services::realtime::transport::{WsReader, WsWriter};
-use crate::services::realtime::{GEMINI_DEFAULT_WS_URL_BASE, WS_HANDSHAKE_TIMEOUT};
-
 use super::protocol::build_setup_frame;
+use crate::{
+    core::settings::GeminiRealtimeConfig,
+    services::realtime::{
+        transport::{WsReader, WsWriter},
+        GEMINI_DEFAULT_WS_URL_BASE, WS_HANDSHAKE_TIMEOUT,
+    },
+};
 
 pub(super) fn build_url(api_key: &str) -> String {
     if let Ok(override_url) = std::env::var("GEMINI_LIVE_ENDPOINT_OVERRIDE") {

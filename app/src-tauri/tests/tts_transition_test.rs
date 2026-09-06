@@ -10,20 +10,29 @@
 
 mod common;
 
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc, Arc,
+    },
+    time::Duration,
+};
+
 use ringbuf::traits::Consumer;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::time::Duration;
-use vox_lib::core::constants::TRANSITION_MESSAGES_EN;
-use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::MemorySettings;
-use vox_lib::core::state::InteractionState;
-use vox_lib::services::harness::facade::{prepare_turn_context, PrepareTurnParams};
-use vox_lib::services::llm::ProviderKind;
-use vox_lib::services::tts::actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles};
-use vox_lib::services::tts::providers::supertonic::TtsEngine as SupertonicEngine;
-use vox_lib::services::tts::providers::TtsProvider;
+use vox_lib::{
+    core::{
+        constants::TRANSITION_MESSAGES_EN, events::VoxEvent, settings::MemorySettings,
+        state::InteractionState,
+    },
+    services::{
+        harness::facade::{prepare_turn_context, PrepareTurnParams},
+        llm::ProviderKind,
+        tts::{
+            actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
+            providers::{supertonic::TtsEngine as SupertonicEngine, TtsProvider},
+        },
+    },
+};
 
 /// Path A: Verifies TtsCommand::SetVoice hot-swaps active speaker voice without thread restart,
 /// preserves pending job accounting, and synthesizes subsequent clauses cleanly.

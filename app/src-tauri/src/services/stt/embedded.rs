@@ -1,8 +1,11 @@
-use super::nemotron::SttEngine as NemotronEngine;
-use super::qwen::SttEngine as QwenEngine;
-use super::{SttEngine, SttProvider, SttProviderKind};
-use parking_lot::Mutex;
 use std::path::PathBuf;
+
+use parking_lot::Mutex;
+
+use super::{
+    nemotron::SttEngine as NemotronEngine, qwen::SttEngine as QwenEngine, stitch_transcripts,
+    SttEngine, SttProvider, SttProviderKind,
+};
 
 struct EmbeddedSttProviderInner {
     model_path: PathBuf,
@@ -95,10 +98,7 @@ impl SttProvider for EmbeddedSttProvider {
                 inner.stitched_transcript = if inner.stitched_transcript.is_empty() {
                     transcript
                 } else {
-                    crate::services::stt::stitch_transcripts(
-                        &inner.stitched_transcript,
-                        &transcript,
-                    )
+                    stitch_transcripts(&inner.stitched_transcript, &transcript)
                 };
             }
             Ok(inner.stitched_transcript.clone())

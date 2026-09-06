@@ -22,6 +22,8 @@ pub use scope_classifier::{
 };
 pub use tokenizer::estimate_tokens;
 
+use crate::services::translit::unload_transliteration_engine;
+
 /// Evicts the 3 memory pipeline worker ONNX models (MiniLM embedder, DeBERTa v3 NLI, ModernBERT Edge Classifier).
 pub fn unload_memory_pipeline_onnx_models() {
     embedder::unload_embedder();
@@ -35,7 +37,7 @@ pub fn unload_memory_pipeline_onnx_models() {
 pub fn unload_all_onnx_models() {
     unload_memory_pipeline_onnx_models();
     scope_classifier::unload_scope_classifier();
-    crate::services::translit::unload_transliteration_engine();
+    unload_transliteration_engine();
     trim_heap("MemorySubsystem::unload_all_onnx_models");
     log::info!("[MemorySubsystem] Evicted all ONNX models from process memory.");
 }

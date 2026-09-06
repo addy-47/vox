@@ -1,19 +1,28 @@
-use crate::core::settings::{LlmModelInfo, LlmProviderConfig, ModelCapabilities};
-use crate::core::state::AppState;
-use crate::services::llm::transport::{
-    inject_auth_headers, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType,
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
 };
-use crate::services::llm::{
-    lookup_preset, EmbeddedProvider, LlmProvider, RemoteTransport, QWEN_MODEL_DIR,
-};
-use crate::utils::paths;
+
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+
+use crate::{
+    core::{
+        settings::{LlmModelInfo, LlmProviderConfig, ModelCapabilities},
+        state::AppState,
+    },
+    services::llm::{
+        lookup_preset,
+        transport::{
+            inject_auth_headers, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType,
+        },
+        EmbeddedProvider, LlmProvider, RemoteTransport, QWEN_MODEL_DIR,
+    },
+    utils::paths,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ModelProbeResult {

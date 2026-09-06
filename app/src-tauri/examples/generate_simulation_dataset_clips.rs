@@ -7,16 +7,20 @@
 //! Execution    : cargo run --example generate_simulation_dataset_clips
 //! ============================================================================
 
+use std::{
+    fs,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, AtomicU32},
+        mpsc::channel,
+        Arc,
+    },
+};
+
 use anyhow::{anyhow, Result};
 use ringbuf::traits::*;
 use serde::Deserialize;
-use std::fs;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU32};
-use std::sync::mpsc::channel;
-use std::sync::Arc;
-use vox_lib::services::tts::providers::supertonic::TtsEngine;
-use vox_lib::services::tts::providers::TtsProvider;
+use vox_lib::services::tts::providers::{supertonic::TtsEngine, TtsProvider};
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]

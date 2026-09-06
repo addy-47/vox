@@ -4,18 +4,23 @@ pub mod ollama;
 pub mod responses;
 pub mod sse;
 
-pub use config::{AuthScheme, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType};
-
-use crate::core::settings::LlmModelInfo;
-use crate::services::llm::{
-    GenerationRequest, LlmError, ProviderCapabilities, ProviderKind, Support,
+use std::{
+    sync::{mpsc, Arc},
+    time::Duration,
 };
+
+pub use config::{AuthScheme, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType};
 use futures_util::future::BoxFuture;
 use parking_lot::RwLock;
 use serde::Deserialize;
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::time::Duration;
+
+use crate::{
+    core::settings::LlmModelInfo,
+    services::llm::{
+        GenerationRequest, LlmError, ProviderCapabilities, ProviderKind, Support,
+        DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS, DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS,
+    },
+};
 
 #[derive(Deserialize)]
 struct ModelListResponse {
@@ -75,12 +80,8 @@ impl RemoteTransport {
     pub fn new(config: ConnectionConfig) -> Self {
         let initial_field = config.token_limit_field;
         let client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(
-                crate::services::llm::DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS,
-            ))
-            .timeout(Duration::from_secs(
-                crate::services::llm::DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS,
-            ))
+            .connect_timeout(Duration::from_secs(DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS))
             .build()
             .unwrap_or_else(|e| {
                 log::warn!(

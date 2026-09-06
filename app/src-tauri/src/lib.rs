@@ -16,33 +16,84 @@ pub mod window_customizer;
 pub mod window_main;
 pub mod wizard;
 
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+    Arc,
+};
 
-use tauri::tray::TrayIconBuilder;
-use tauri::{Manager, State};
+use tauri::{tray::TrayIconBuilder, Manager, State};
 
-use crate::core::events::{ToastLevel, VoxEvent};
-use crate::core::state::{AppState, InteractionState, RuntimeStatus};
-use crate::ipc::history::{
-    commit_session_to_history, delete_session, get_sessions, get_transcript_history, get_turns,
-};
-use crate::ipc::pipeline::{
-    end_session, launch_engine, pause_session, ptt_cancel, ptt_start, ptt_stop, resume_session,
-    start_session, stop_engine, test_clip, test_clip_cancel,
-};
-use crate::ipc::settings::{
-    check_provider_health, get_model_catalog, get_settings, list_llm_models, reset_settings,
-    setup_remote_server, update_setting,
-};
-use crate::ipc::tray::{
-    hide_tray_window, set_window_click_through, show_main_window, toggle_tray_visibility_internal,
-};
-use crate::monitoring::system_monitor::spawn_system_monitor;
 #[cfg(target_os = "linux")]
 use crate::toast::setup_linux_toast_layer;
 #[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
+use crate::{
+    core::{
+        events::{ToastLevel, VoxEvent},
+        settings::{DictationInteractionMode, DictationOutputMode},
+        state::{AppState, InteractionState, RuntimeStatus, TelemetryState},
+    },
+    ipc::{
+        audio::list_audio_devices,
+        history::{
+            commit_session_to_history, delete_session, get_sessions, get_transcript_history,
+            get_turns,
+        },
+        memory::{
+            get_graph_version, get_memory_fact_detail, get_memory_graph_topology,
+            get_memory_queue_status, get_unresolved_conflicts, manage_memory_fact,
+            resolve_memory_conflict, retry_failed_queue_items, toggle_pipeline_processing,
+        },
+        monitoring::{get_profiler_snapshot, get_runtime_snapshot, record_memory_profile_event},
+        notifications::{
+            dismiss_notification, get_notifications, mark_notifications_read,
+            trigger_session_compaction,
+        },
+        pipeline::{
+            end_session, launch_engine, pause_session, ptt_cancel, ptt_start, ptt_stop,
+            resume_session, start_session, stop_engine, test_clip, test_clip_cancel,
+        },
+        settings::{
+            catalog::get_provider_caps, check_provider_health, get_model_catalog, get_settings,
+            list_llm_models, probe_model_capabilities, reset_settings, setup_remote_server,
+            update_setting,
+        },
+        setup::{
+            check_updates, complete_setup_wizard, fetch_manifest, get_onboarding_status,
+            get_runtime_report, manage_models, reveal_wizard,
+        },
+        tray::{
+            hide_tray_window, set_window_click_through, show_main_window,
+            toggle_tray_visibility_internal,
+        },
+        voices::{
+            add_voice_from_file, add_voice_from_recording, delete_voice, list_voices, rename_voice,
+            start_backend_recording, stop_backend_recording,
+        },
+    },
+    monitoring::{
+        aggregator::{TelemetryAggregator, TelemetryAggregatorHandles},
+        collector::spawn_monitoring_collector,
+        system_monitor::spawn_system_monitor,
+        telemetry_emitter::spawn_telemetry_emitter,
+    },
+    persistence::{
+        db::TOKIO_HANDLE,
+        events::{MemoryWorkerEvent, PersistenceEvent},
+        memory_worker::spawn_memory_worker,
+        worker::spawn_persistence_worker,
+    },
+    services::{
+        dictation::init_dictation_hotkey_listener, harness::spawn_state_compaction_observer,
+        memory::compaction::reconcile_uncompacted_sessions_on_boot, stt::SttCommand,
+        vad::VadCommand,
+    },
+    setup::manifest::{AppManifest, VoxManifest},
+    toast::{get_last_toast, manage_toast_window, show_toast},
+    tray::{build_main_tray_menu, ensure_tray_window, refresh_tray_menu, sync_live_menu_item},
+    utils::{check_cpu_governor, hardware::detect_local_gpu, logging, paths},
+    wizard::ensure_wizard_window,
+};
 
 /// Main entry point for the Vox application.
 ///
@@ -76,7 +127,7 @@ pub fn run() {
         );
 
         // Emergency write to crash_reports if paths are available
-        let crash_dir = crate::utils::paths::get().root.join("crash_reports");
+        let crash_dir = paths::get().root.join("crash_reports");
         if std::fs::create_dir_all(&crash_dir).is_ok() {
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -133,25 +184,25 @@ pub fn run() {
             // Capture the Tokio runtime handle early
             tauri::async_runtime::spawn(async {
                 if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    if crate::persistence::db::TOKIO_HANDLE.set(handle).is_err() {
+                    if TOKIO_HANDLE.set(handle).is_err() {
                         log::debug!("[Persistence] Tokio handle already initialized.");
                     }
                 }
             });
 
             // ── 0. Paths Singleton (must be first) ──────────────────────────────────
-            crate::utils::paths::init();
-            crate::utils::paths::ensure_dirs().ok();
+            paths::init();
+            paths::ensure_dirs().ok();
 
             // ── 0.1 Logging (must be initialized immediately after paths) ───────────
-            let log_guard = crate::utils::logging::init(crate::utils::paths::get().logs.clone());
+            let log_guard = logging::init(paths::get().logs.clone());
 
             // ── Background Manifest Caching (fetches once at boot) ──────────────────
             tauri::async_runtime::spawn(async {
-                let cache_dir = crate::utils::paths::cache_dir();
+                let cache_dir = paths::cache_dir();
 
                 // Fetch and cache App Manifest
-                match crate::setup::manifest::AppManifest::fetch().await {
+                match AppManifest::fetch().await {
                     Ok(manifest) => {
                         let path = cache_dir.join("app_manifest.json");
                         if let Ok(content) = serde_json::to_string_pretty(&manifest) {
@@ -166,7 +217,7 @@ pub fn run() {
                 }
 
                 // Fetch and cache Models Manifest
-                match crate::setup::manifest::VoxManifest::fetch().await {
+                match VoxManifest::fetch().await {
                     Ok(manifest) => {
                         let path = cache_dir.join("models_manifest.json");
                         if let Ok(content) = serde_json::to_string_pretty(&manifest) {
@@ -206,8 +257,8 @@ pub fn run() {
             let is_private_mode = Arc::new(AtomicBool::new(false));
             let dropped_telemetry_events = Arc::new(AtomicU64::new(0));
 
-            let (telemetry_worker, telemetry_tx) = crate::monitoring::aggregator::TelemetryAggregator::new(
-                crate::monitoring::aggregator::TelemetryAggregatorHandles {
+            let (telemetry_worker, telemetry_tx) = TelemetryAggregator::new(
+                TelemetryAggregatorHandles {
                     latest_energy: Arc::clone(&latest_energy),
                     latest_vad_prob: Arc::clone(&latest_vad_prob),
                     latest_low: Arc::clone(&latest_low),
@@ -222,7 +273,7 @@ pub fn run() {
             );
             telemetry_worker.start();
 
-            let telemetry_state = Arc::new(crate::core::state::TelemetryState {
+            let telemetry_state = Arc::new(TelemetryState {
                 telemetry_tx,
                 latest_energy,
                 latest_vad_prob,
@@ -250,8 +301,8 @@ pub fn run() {
             });
 
             // ── 0.7 Persistence Worker ─────────────────────────────────────────────
-            let persist_tx = crate::persistence::worker::spawn_persistence_worker(
-                crate::utils::paths::get().db.clone(),
+            let persist_tx = spawn_persistence_worker(
+                paths::get().db.clone(),
                 Arc::clone(&telemetry_state.is_db_healthy),
                 Arc::clone(&telemetry_state.latest_persistence_rate),
                 Arc::clone(&telemetry_state.is_private_mode),
@@ -266,7 +317,7 @@ pub fn run() {
             app_state.persist_tx = parking_lot::Mutex::new(Some(persist_tx));
 
             // ── 0.8 Hardware GPU & Tier Resolution ─────────────────────────────────
-            let local_gpu_info = crate::utils::hardware::detect_local_gpu();
+            let local_gpu_info = detect_local_gpu();
             log::info!(
                 "[BOOTSTRAP] Hardware GPU Detection: vendor='{}', device='{}', tier='{}'",
                 local_gpu_info.vendor,
@@ -287,8 +338,8 @@ pub fn run() {
             };
 
             if memory_enabled && local_gpu_info.has_gpu {
-                let memory_tx = crate::persistence::memory_worker::spawn_memory_worker(
-                    crate::utils::paths::get().db.clone(),
+                let memory_tx = spawn_memory_worker(
+                    paths::get().db.clone(),
                     Arc::clone(&app_state.settings),
                     app_state.memory.graph_version.clone(),
                     app_state.pipeline.state_rx.clone(),
@@ -307,10 +358,10 @@ pub fn run() {
             let state_arc = Arc::new(app_state);
             app.manage(state_arc.clone());
 
-            crate::monitoring::collector::spawn_monitoring_collector(Arc::clone(&state_arc));
+            spawn_monitoring_collector(Arc::clone(&state_arc));
             spawn_system_monitor(app.handle().clone());
-            crate::monitoring::telemetry_emitter::spawn_telemetry_emitter(app.handle().clone());
-            crate::services::harness::spawn_state_compaction_observer(Arc::clone(&state_arc));
+            spawn_telemetry_emitter(app.handle().clone());
+            spawn_state_compaction_observer(Arc::clone(&state_arc));
 
             // ── 1.6 Dictation Global Hotkey Registration ──────────────────────────
             {
@@ -322,7 +373,7 @@ pub fn run() {
                         p.into_inner()
                     });
                 if s.dictation.enabled {
-                    if let Err(e) = crate::services::dictation::init_dictation_hotkey_listener(
+                    if let Err(e) = init_dictation_hotkey_listener(
                         app.handle(),
                         &s.dictation.hotkey,
                     ) {
@@ -332,10 +383,10 @@ pub fn run() {
             }
 
             // ── 1. System Tray ───────────────────────────────────────────────────────
-            let (tray_menu, live_i) = crate::tray::build_main_tray_menu(app.handle())?;
+            let (tray_menu, live_i) = build_main_tray_menu(app.handle())?;
 
             // Store live_i handle in state for synchronization
-            crate::tray::sync_live_menu_item(app.handle(), &live_i);
+            sync_live_menu_item(app.handle(), &live_i);
 
 
             let mut tray_builder = TrayIconBuilder::with_id("vox-tray").menu(&tray_menu);
@@ -394,7 +445,7 @@ pub fn run() {
             // ── 1.7.5 CPU Governor Check (Linux only — warns if not "performance") ──
             {
                 let state: tauri::State<'_, Arc<AppState>> = app.state();
-                if let Some(governor) = crate::utils::check_cpu_governor() {
+                if let Some(governor) = check_cpu_governor() {
                     let is_optimal = governor == "performance";
                     // Store in AppState so frontend can read from snapshot (avoids race with listener setup)
                     *state.cpu_governor.lock() = governor.clone();
@@ -440,7 +491,7 @@ pub fn run() {
                             2 => ToastLevel::Warning,
                             _ => ToastLevel::Error,
                         };
-                        if let Err(e) = crate::toast::show_toast(&handle, &title, &message, level) {
+                        if let Err(e) = show_toast(&handle, &title, &message, level) {
                             log::warn!("[Toast::Poll] Failed to emit test toast: {}", e);
                         } else {
                             log::info!("[Toast::Poll] Emitted test toast #{tick}: {}", title);
@@ -462,14 +513,14 @@ pub fn run() {
                         });
                     (
                         s.dictation.enabled
-                            && s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray,
+                            && s.dictation.output_mode == DictationOutputMode::Tray,
                         s.system.setup_completed,
                     )
                 };
 
                 if setup_completed && should_show_tray {
                     log::info!("[BOOTSTRAP] Tray HUD mode active. Lazily constructing tray window...");
-                    if let Err(e) = crate::tray::ensure_tray_window(app.handle()) {
+                    if let Err(e) = ensure_tray_window(app.handle()) {
                         log::error!("[BOOTSTRAP] Failed to construct tray window on startup: {}", e);
                     }
                 } else if !setup_completed {
@@ -508,16 +559,16 @@ pub fn run() {
                     )
                 };
 
-                if setup_completed && dictation_enabled && dictation_mode == crate::core::settings::DictationInteractionMode::Passive {
+                if setup_completed && dictation_enabled && dictation_mode == DictationInteractionMode::Passive {
                     log::info!("[BOOTSTRAP] Passive Dictation enabled. Auto-launching audio/STT engine...");
                     if let Err(e) = launch_engine(handle).await {
                         log::error!("[BOOTSTRAP] Engine auto-launch failed: {}", e);
                     }
-                } else if setup_completed && dictation_enabled && dictation_mode == crate::core::settings::DictationInteractionMode::Ptt {
+                } else if setup_completed && dictation_enabled && dictation_mode == DictationInteractionMode::Ptt {
                     log::info!("[BOOTSTRAP] PTT Dictation enabled. Zero-idle-RAM preserved (models will load on-demand when hotkey is triggered).");
                 } else if !setup_completed {
                     log::info!("[BOOTSTRAP] Setup not completed. Launching onboarding wizard...");
-                    if let Ok(wizard_win) = crate::wizard::ensure_wizard_window(&handle) {
+                    if let Ok(wizard_win) = ensure_wizard_window(&handle) {
                         if let Err(e) = wizard_win.show() {
                             log::warn!("[BOOTSTRAP] Failed to show wizard window: {}", e);
                         }
@@ -531,7 +582,7 @@ pub fn run() {
             let boot_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state: tauri::State<'_, Arc<AppState>> = boot_handle.state();
-                if let Err(e) = crate::services::memory::compaction::reconcile_uncompacted_sessions_on_boot(
+                if let Err(e) = reconcile_uncompacted_sessions_on_boot(
                     &boot_handle,
                     state.inner(),
                 )
@@ -578,7 +629,7 @@ pub fn run() {
 
                         if !dictation_enabled && state.pipeline.state() == InteractionState::Idle {
                             log::info!("[Window] Main window hidden, Dictation is disabled, and assistant is Idle. Offloading engine...");
-                            if let Err(e) = crate::ipc::pipeline::stop_engine(handle).await {
+                            if let Err(e) = stop_engine(handle).await {
                                 log::warn!("[Window] Failed to stop engine on window hide: {}", e);
                             }
                         } else {
@@ -600,14 +651,14 @@ pub fn run() {
             hide_tray_window,
             set_window_click_through,
             show_main_window,
-            crate::toast::manage_toast_window,
-            crate::toast::get_last_toast,
+            manage_toast_window,
+            get_last_toast,
             get_settings,
             get_model_catalog,
-            crate::ipc::settings::catalog::get_provider_caps,
+            get_provider_caps,
             check_provider_health,
             list_llm_models,
-            crate::ipc::settings::probe_model_capabilities,
+            probe_model_capabilities,
             setup_remote_server,
             update_setting,
             reset_settings,
@@ -620,42 +671,42 @@ pub fn run() {
             get_turns,
             delete_session,
             // Voices
-            crate::ipc::voices::list_voices,
-            crate::ipc::voices::add_voice_from_file,
-            crate::ipc::voices::add_voice_from_recording,
-            crate::ipc::voices::start_backend_recording,
-            crate::ipc::voices::stop_backend_recording,
-            crate::ipc::voices::delete_voice,
-            crate::ipc::voices::rename_voice,
+            list_voices,
+            add_voice_from_file,
+            add_voice_from_recording,
+            start_backend_recording,
+            stop_backend_recording,
+            delete_voice,
+            rename_voice,
             // Monitoring & Profiler
-            crate::ipc::monitoring::get_runtime_snapshot,
-            crate::ipc::monitoring::get_profiler_snapshot,
-            crate::ipc::monitoring::record_memory_profile_event,
+            get_runtime_snapshot,
+            get_profiler_snapshot,
+            record_memory_profile_event,
             // Setup
-            crate::ipc::setup::fetch_manifest,
-            crate::ipc::setup::check_updates,
-            crate::ipc::setup::get_onboarding_status,
-            crate::ipc::setup::get_runtime_report,
-            crate::ipc::setup::manage_models,
-            crate::ipc::setup::complete_setup_wizard,
-            crate::ipc::setup::reveal_wizard,
+            fetch_manifest,
+            check_updates,
+            get_onboarding_status,
+            get_runtime_report,
+            manage_models,
+            complete_setup_wizard,
+            reveal_wizard,
             // Audio
-            crate::ipc::audio::list_audio_devices,
+            list_audio_devices,
             // Memory Subsystem
-            crate::ipc::memory::get_graph_version,
-            crate::ipc::memory::get_memory_graph_topology,
-            crate::ipc::memory::get_memory_fact_detail,
-            crate::ipc::memory::manage_memory_fact,
-            crate::ipc::memory::get_unresolved_conflicts,
-            crate::ipc::memory::resolve_memory_conflict,
-            crate::ipc::memory::get_memory_queue_status,
-            crate::ipc::memory::toggle_pipeline_processing,
-            crate::ipc::memory::retry_failed_queue_items,
+            get_graph_version,
+            get_memory_graph_topology,
+            get_memory_fact_detail,
+            manage_memory_fact,
+            get_unresolved_conflicts,
+            resolve_memory_conflict,
+            get_memory_queue_status,
+            toggle_pipeline_processing,
+            retry_failed_queue_items,
             // Notifications & Compaction
-            crate::ipc::notifications::get_notifications,
-            crate::ipc::notifications::mark_notifications_read,
-            crate::ipc::notifications::dismiss_notification,
-            crate::ipc::notifications::trigger_session_compaction,
+            get_notifications,
+            mark_notifications_read,
+            dismiss_notification,
+            trigger_session_compaction,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -671,10 +722,10 @@ pub fn run() {
                         if let Err(e) = engine.pipeline_tx.send(VoxEvent::Shutdown) {
                             log::trace!("[Vox] Pipeline worker already closed: {}", e);
                         }
-                        if let Err(e) = engine.stt_tx.send(crate::services::stt::SttCommand::Shutdown) {
+                        if let Err(e) = engine.stt_tx.send(SttCommand::Shutdown) {
                             log::trace!("[Vox] STT worker already closed: {}", e);
                         }
-                        if let Err(e) = engine.vad_tx.send(crate::services::vad::VadCommand::Shutdown) {
+                        if let Err(e) = engine.vad_tx.send(VadCommand::Shutdown) {
                             log::trace!("[Vox] VAD worker already closed: {}", e);
                         }
                     }
@@ -684,7 +735,7 @@ pub fn run() {
                         let mut memory_tx_lock = state.memory_tx.lock();
                         if let Some(tx) = memory_tx_lock.take() {
                             log::info!("[Vox] Sending Shutdown signal to memory worker...");
-                            if let Err(e) = tx.send(crate::persistence::events::MemoryWorkerEvent::Shutdown) {
+                            if let Err(e) = tx.send(MemoryWorkerEvent::Shutdown) {
                                 log::trace!("[Vox] Memory worker already closed: {}", e);
                             }
                         }
@@ -695,7 +746,7 @@ pub fn run() {
                         let mut persist_tx_lock = state.persist_tx.lock();
                         if let Some(tx) = persist_tx_lock.take() {
                             log::info!("[Vox] Sending Shutdown signal to persistence worker...");
-                            if let Err(e) = tx.send(crate::persistence::events::PersistenceEvent::Shutdown) {
+                            if let Err(e) = tx.send(PersistenceEvent::Shutdown) {
                                 log::trace!("[Vox] Persistence worker already closed: {}", e);
                             }
                         }
@@ -714,7 +765,7 @@ pub fn run() {
                             state
                                 .main_window_destroyed
                                 .store(true, Ordering::Relaxed);
-                            crate::tray::refresh_tray_menu(app_handle);
+                            refresh_tray_menu(app_handle);
                         }
                     }
                 }

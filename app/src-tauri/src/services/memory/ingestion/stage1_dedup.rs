@@ -1,9 +1,15 @@
-use super::DedupAuditLog;
-use crate::services::memory::QueueStatus;
-use crate::services::memory::STAGE1_BATCH_CEILING;
-use anyhow::Result;
 use std::collections::{HashMap, HashSet};
+
+use anyhow::Result;
 use turso::Connection;
+
+use super::DedupAuditLog;
+use crate::{
+    persistence::mutations::{record_stage_metrics, write_candidate_audit, write_dedup_audit},
+    services::memory::{
+        MemoryCollection, QueueStatus, JACCARD_EXACT_MATCH_THRESHOLD, STAGE1_BATCH_CEILING,
+    },
+};
 
 /// Calculates Jaccard Word-Set Overlap Similarity between two strings.
 pub fn jaccard_similarity(s1: &str, s2: &str) -> f32 {
@@ -156,8 +162,7 @@ async fn dedup_item_against_active(
             matched_fact: String::new(),
             score: 0.0,
         };
-        if let Err(e) = crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await
-        {
+        if let Err(e) = write_dedup_audit(conn, item.id, &log).await {
             log::warn!(
                 "[MemoryPipeline::Stage1] Failed to write empty fact dedup audit: {}",
                 e
@@ -166,7 +171,7 @@ async fn dedup_item_against_active(
         return Ok(());
     }
 
-    let incoming_priority = crate::services::memory::MemoryCollection::parse(&item.collection)
+    let incoming_priority = MemoryCollection::parse(&item.collection)
         .map(|c| c.priority())
         .unwrap_or(0);
 
@@ -176,7 +181,7 @@ async fn dedup_item_against_active(
                 .iter()
                 .find_map(|(cand_id, cand_coll, cand_fact)| {
                     let jacc_sim = jaccard_similarity(trimmed_fact, cand_fact);
-                    if jacc_sim >= crate::services::memory::JACCARD_EXACT_MATCH_THRESHOLD {
+                    if jacc_sim >= JACCARD_EXACT_MATCH_THRESHOLD {
                         Some((
                             cand_id.clone(),
                             cand_coll.clone(),
@@ -191,7 +196,7 @@ async fn dedup_item_against_active(
     });
 
     if let Some((matched_id, matched_coll, matched_fact, jacc_sim)) = matched {
-        let existing_priority = crate::services::memory::MemoryCollection::parse(&matched_coll)
+        let existing_priority = MemoryCollection::parse(&matched_coll)
             .map(|c| c.priority())
             .unwrap_or(0);
 
@@ -208,9 +213,7 @@ async fn dedup_item_against_active(
                 matched_fact: matched_fact.clone(),
                 score: jacc_sim,
             };
-            if let Err(e) =
-                crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await
-            {
+            if let Err(e) = write_dedup_audit(conn, item.id, &log).await {
                 log::warn!(
                     "[MemoryPipeline::Stage1] Failed to write dedup audit: {}",
                     e
@@ -237,10 +240,7 @@ async fn dedup_item_against_active(
                 decision: "duplicate_dropped".to_string(),
                 rejection_reason: Some("exact_jaccard_match".to_string()),
             };
-            if let Err(e) =
-                crate::persistence::mutations::write_candidate_audit(conn, item.id, &[cand_log])
-                    .await
-            {
+            if let Err(e) = write_candidate_audit(conn, item.id, &[cand_log]).await {
                 log::warn!(
                     "[MemoryPipeline::Stage1] Failed to write candidate audit: {}",
                     e
@@ -273,9 +273,7 @@ async fn dedup_item_against_active(
                 matched_fact: matched_fact.clone(),
                 score: jacc_sim,
             };
-            if let Err(e) =
-                crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await
-            {
+            if let Err(e) = write_dedup_audit(conn, item.id, &log).await {
                 log::warn!(
                     "[MemoryPipeline::Stage1] Failed to write dedup audit: {}",
                     e
@@ -302,10 +300,7 @@ async fn dedup_item_against_active(
                 decision: "superseded_existing".to_string(),
                 rejection_reason: None,
             };
-            if let Err(e) =
-                crate::persistence::mutations::write_candidate_audit(conn, item.id, &[cand_log])
-                    .await
-            {
+            if let Err(e) = write_candidate_audit(conn, item.id, &[cand_log]).await {
                 log::warn!(
                     "[MemoryPipeline::Stage1] Failed to write candidate audit: {}",
                     e
@@ -421,7 +416,7 @@ pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> R
             error_count,
             duration_ms,
         };
-        if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {
+        if let Err(e) = record_stage_metrics(conn, &metrics).await {
             log::warn!(
                 "[MemoryPipeline::Stage1] Failed to record stage metrics: {}",
                 e

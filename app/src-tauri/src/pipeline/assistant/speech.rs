@@ -4,11 +4,14 @@ use std::sync::atomic::Ordering;
 
 use tauri::AppHandle;
 
-use crate::core::settings::{InteractionMode, PipelineMode};
-use crate::core::state::{AppState, InteractionState};
-use crate::pipeline::assistant::interrupt::on_interrupt;
-use crate::pipeline::{transition, RoutingContext};
-use crate::services::stt::actor::SttCommand;
+use crate::{
+    core::{
+        settings::{InteractionMode, PipelineMode},
+        state::{AppState, InteractionState},
+    },
+    pipeline::{assistant::interrupt::on_interrupt, transition, RoutingContext},
+    services::stt::actor::SttCommand,
+};
 
 /// Handles user speech onset for passive domains, evaluating barge-in vs direct onset and resetting STT stream.
 pub fn on_speech_start<R: tauri::Runtime>(

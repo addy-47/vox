@@ -2,18 +2,25 @@ pub mod family;
 pub mod generate;
 pub mod worker;
 
+use std::{
+    path::{Path, PathBuf},
+    sync::{mpsc, Arc},
+};
+
 pub use family::ModelFamily;
+use futures_util::future::BoxFuture;
 pub use worker::LlmWorker;
 
-use crate::core::settings::LlmModelInfo;
-use crate::services::harness::ConversationContext;
-use crate::services::llm::{
-    GenerationRequest, LlmEngine, LlmError, ProviderCapabilities, ProviderKind, Support,
+use crate::{
+    core::settings::LlmModelInfo,
+    services::{
+        harness::ConversationContext,
+        llm::{
+            GenerationRequest, LlmEngine, LlmError, LlmProvider, LlmStreamEvent,
+            ProviderCapabilities, ProviderKind, Support,
+        },
+    },
 };
-use futures_util::future::BoxFuture;
-use std::path::{Path, PathBuf};
-use std::sync::mpsc;
-use std::sync::Arc;
 
 /// In-process embedded LLM provider backed by `llama.cpp`.
 pub struct EmbeddedProvider {
@@ -82,13 +89,13 @@ impl EmbeddedProvider {
     }
 }
 
-impl crate::services::llm::LlmProvider for EmbeddedProvider {
+impl LlmProvider for EmbeddedProvider {
     fn generate<'a>(
         &'a self,
         request: GenerationRequest,
         turn_id: u32,
         cancel: &'a tokio_util::sync::CancellationToken,
-        tx: &'a mpsc::Sender<crate::services::llm::LlmStreamEvent>,
+        tx: &'a mpsc::Sender<LlmStreamEvent>,
     ) -> BoxFuture<'a, Result<(), LlmError>> {
         Box::pin(async move {
             let conv_ctx = ConversationContext {

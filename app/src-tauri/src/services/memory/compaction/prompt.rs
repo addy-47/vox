@@ -1,4 +1,10 @@
-use crate::services::harness::buffer::{ChatMessage, Role};
+use crate::{
+    core::settings::LlmSettings,
+    services::{
+        harness::buffer::{ChatMessage, Role},
+        llm::{ConversationInput, GenerationPolicy, GenerationPurpose, GenerationRequest},
+    },
+};
 
 /// Prompt instructions instructing the LLM to extract durable facts into the 6 memory collections.
 pub const COMPACTION_SYSTEM_PROMPT: &str = r#"<role>
@@ -81,8 +87,8 @@ pub fn calculate_compaction_max_tokens(ctx_size: u32) -> u32 {
 /// Builds the provider-neutral GenerationRequest for compaction.
 pub fn build_compaction_request(
     history_messages: &[ChatMessage],
-    settings: Option<&crate::core::settings::LlmSettings>,
-) -> crate::services::llm::GenerationRequest {
+    settings: Option<&LlmSettings>,
+) -> GenerationRequest {
     let mut history_text = String::new();
     for msg in history_messages {
         history_text.push_str(&format!("{}: {}\n\n", msg.role, msg.content));
@@ -102,18 +108,15 @@ pub fn build_compaction_request(
         .unwrap_or_default()
         .as_millis() as u64;
 
-    let default_settings = crate::core::settings::LlmSettings::default();
+    let default_settings = LlmSettings::default();
     let effective_settings = settings.unwrap_or(&default_settings);
     let eff_ctx = effective_settings.effective_ctx_size();
     let compaction_max_tokens = calculate_compaction_max_tokens(eff_ctx);
-    let policy = crate::services::llm::GenerationPolicy::from_settings(
-        effective_settings,
-        Some(compaction_max_tokens),
-    );
+    let policy = GenerationPolicy::from_settings(effective_settings, Some(compaction_max_tokens));
 
     policy.build_request(
-        crate::services::llm::GenerationPurpose::MemoryCompaction,
-        crate::services::llm::ConversationInput {
+        GenerationPurpose::MemoryCompaction,
+        ConversationInput {
             messages: vec![
                 ChatMessage {
                     role: Role::System,

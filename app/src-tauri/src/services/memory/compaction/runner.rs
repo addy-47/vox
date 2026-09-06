@@ -1,10 +1,18 @@
-use super::prompt::build_compaction_request;
-use crate::services::harness::buffer::ChatMessage;
-use crate::services::llm::LlmProvider;
+use std::{collections::HashMap, sync::mpsc};
+
 use anyhow::{anyhow, Result};
-use std::collections::HashMap;
-use std::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+
+use super::prompt::build_compaction_request;
+use crate::{
+    core::settings::LlmSettings,
+    services::{
+        harness::buffer::ChatMessage,
+        llm::{GenerationRequest, LlmProvider, LlmStreamEvent},
+        memory::COMPACTION_SENTINEL_TURN_ID,
+    },
+    utils::json::parse_compaction_json,
+};
 
 /// Extracted facts and summary resulting from LLM conversation compaction.
 #[derive(Debug, Clone)]
@@ -17,7 +25,7 @@ pub struct CompactionResult {
 /// Dispatches a single compaction generation request to the provider and collects streamed tokens asynchronously.
 async fn execute_compaction_attempt(
     provider: &dyn LlmProvider,
-    request: &crate::services::llm::GenerationRequest,
+    request: &GenerationRequest,
     cancel: &CancellationToken,
 ) -> Result<String> {
     let (tx, rx) = mpsc::channel();
@@ -31,12 +39,7 @@ async fn execute_compaction_attempt(
         }
     });
 
-    let gen_future = provider.generate(
-        request.clone(),
-        crate::services::memory::COMPACTION_SENTINEL_TURN_ID,
-        cancel,
-        &tx,
-    );
+    let gen_future = provider.generate(request.clone(), COMPACTION_SENTINEL_TURN_ID, cancel, &tx);
 
     let mut summary_content = String::new();
 
@@ -50,10 +53,10 @@ async fn execute_compaction_attempt(
             }
             while let Ok(event) = async_rx.try_recv() {
                 match event {
-                    crate::services::llm::LlmStreamEvent::Token(token) => {
+                    LlmStreamEvent::Token(token) => {
                         summary_content.push_str(&token);
                     }
-                    crate::services::llm::LlmStreamEvent::Finished => {
+                    LlmStreamEvent::Finished => {
                         log::info!(
                             "[MemoryCompaction] LlmFinished received; full summary received."
                         );
@@ -92,7 +95,7 @@ async fn execute_compaction_attempt(
 pub async fn run_compaction(
     provider: &dyn LlmProvider,
     history_messages: &[ChatMessage],
-    settings: Option<&crate::core::settings::LlmSettings>,
+    settings: Option<&LlmSettings>,
     cancel_token: Option<&CancellationToken>,
 ) -> Result<CompactionResult> {
     if history_messages.is_empty() {
@@ -129,7 +132,7 @@ pub async fn run_compaction(
         {
             summary_content = content;
             if !summary_content.trim().is_empty() {
-                if let Some(resp) = crate::utils::json::parse_compaction_json(&summary_content) {
+                if let Some(resp) = parse_compaction_json(&summary_content) {
                     personal_memory = resp;
                     log::info!(
                         "[MemoryCompaction] Compaction JSON parsed successfully on attempt {}.",

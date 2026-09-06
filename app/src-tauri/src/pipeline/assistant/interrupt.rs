@@ -1,9 +1,15 @@
 use std::sync::atomic::Ordering;
+
 use tauri::AppHandle;
 
-use crate::core::settings::{InteractionMode, PipelineMode};
-use crate::core::state::{AppState, InteractionState};
-use crate::pipeline::{transition, RoutingContext};
+use crate::{
+    core::{
+        settings::{InteractionMode, PipelineMode},
+        state::{AppState, InteractionState},
+    },
+    persistence::events::PersistenceEvent,
+    pipeline::{transition, RoutingContext},
+};
 
 /// Executes the 6-step canonical barge-in sequence when an interruption occurs during Thinking or Speaking.
 pub fn on_interrupt<R: tauri::Runtime>(
@@ -58,16 +64,14 @@ pub fn on_interrupt<R: tauri::Runtime>(
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
     let persist_lock = state.persist_tx.lock();
     if let Some(ref tx) = *persist_lock {
-        if let Err(e) = tx.try_send(
-            crate::persistence::events::PersistenceEvent::TurnCompleted {
-                conversation_id: conv_id,
-                turn_id: interrupted_turn_id,
-                user_text,
-                assistant_text: partial_assistant,
-                stt_latency_ms: 0,
-                ttft_ms: 0,
-            },
-        ) {
+        if let Err(e) = tx.try_send(PersistenceEvent::TurnCompleted {
+            conversation_id: conv_id,
+            turn_id: interrupted_turn_id,
+            user_text,
+            assistant_text: partial_assistant,
+            stt_latency_ms: 0,
+            ttft_ms: 0,
+        }) {
             log::warn!(
                 "[Pipeline::Interrupt] Failed to send TurnCompleted on interrupt: {}",
                 e
