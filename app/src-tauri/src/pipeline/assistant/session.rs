@@ -20,6 +20,7 @@ use crate::{
     },
     pipeline::{init_new_session_sync, spawn_idle_monitor, transition, RoutingContext},
     services::{
+        llm::actor::LlmCommand,
         memory::compaction::coordinator::CompactionCoordinator,
         realtime::{
             session::{create_realtime_provider, purge_session_cache},
@@ -44,6 +45,11 @@ fn start_modular_session<R: tauri::Runtime + 'static>(
         InteractionMode::PTT => VadOperationalMode::WindowedValidation,
     };
 
+    let prompt = {
+        let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
+        settings.persona.modular_prompt.clone()
+    };
+
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {
@@ -51,6 +57,13 @@ fn start_modular_session<R: tauri::Runtime + 'static>(
                     "[Pipeline::Session] Failed to set VAD operational mode: {}",
                     e
                 );
+            }
+            if let Some(ref llm_tx) = engine.llm_tx {
+                if let Err(e) = llm_tx.send(LlmCommand::Warmup {
+                    system_prompt: prompt,
+                }) {
+                    log::warn!("[Pipeline::Session] Failed to dispatch LLM Warmup: {}", e);
+                }
             }
         }
     }
