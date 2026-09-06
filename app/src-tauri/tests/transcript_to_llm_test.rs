@@ -12,6 +12,7 @@ mod common;
 
 use futures_util::future::BoxFuture;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 use vox_lib::core::settings::{LlmActiveProvider, LlmModelInfo, PipelineMode};
@@ -37,7 +38,7 @@ impl LlmProvider for TestMockLlmProvider {
         _request: GenerationRequest,
         _turn_id: u32,
         _cancel: &'a tokio_util::sync::CancellationToken,
-        tx: &'a std::sync::mpsc::Sender<LlmStreamEvent>,
+        tx: &'a mpsc::Sender<LlmStreamEvent>,
     ) -> BoxFuture<'a, Result<(), LlmError>> {
         Box::pin(async move {
             let _ = tx.send(LlmStreamEvent::Token("Hello from mock LLM".to_string()));
@@ -88,10 +89,10 @@ async fn test_transcript_to_llm_matrix() {
         *state.llm_provider.write() = Some(mock_provider);
 
         // 3. Channels for observing LLM dispatch, TTS filler, and STT commands
-        let (llm_tx, llm_rx) = std::sync::mpsc::channel::<LlmCommand>();
-        let (tts_tx, tts_rx) = std::sync::mpsc::channel::<TtsCommand>();
-        let (stt_tx, _stt_rx) = std::sync::mpsc::channel();
-        let (vad_tx, _vad_rx) = std::sync::mpsc::channel();
+        let (llm_tx, llm_rx) = mpsc::channel::<LlmCommand>();
+        let (tts_tx, tts_rx) = mpsc::channel::<TtsCommand>();
+        let (stt_tx, _stt_rx) = mpsc::channel();
+        let (vad_tx, _vad_rx) = mpsc::channel();
 
         common::harness::attach_mock_engine_with_llm_tts_to_state(
             &app,
@@ -165,7 +166,7 @@ async fn test_transcript_to_llm_matrix() {
         // Subtest 2: Empty / whitespace transcript guards to Ready (No LLM dispatch)
         // =====================================================================
         {
-            let (new_llm_tx, new_llm_rx) = std::sync::mpsc::channel::<LlmCommand>();
+            let (new_llm_tx, new_llm_rx) = mpsc::channel::<LlmCommand>();
             if let Ok(mut guard) = state.engine.try_lock() {
                 if let Some(ref mut engine) = *guard {
                     engine.llm_tx = Some(new_llm_tx);
@@ -194,7 +195,7 @@ async fn test_transcript_to_llm_matrix() {
         // Subtest 3: Non-Thinking state drops transcript silently
         // =====================================================================
         {
-            let (new_llm_tx, new_llm_rx) = std::sync::mpsc::channel::<LlmCommand>();
+            let (new_llm_tx, new_llm_rx) = mpsc::channel::<LlmCommand>();
             if let Ok(mut guard) = state.engine.try_lock() {
                 if let Some(ref mut engine) = *guard {
                     engine.llm_tx = Some(new_llm_tx);
@@ -215,7 +216,7 @@ async fn test_transcript_to_llm_matrix() {
         // Subtest 4: Realtime pipeline mode arms pending without LLM dispatch
         // =====================================================================
         {
-            let (new_llm_tx, new_llm_rx) = std::sync::mpsc::channel::<LlmCommand>();
+            let (new_llm_tx, new_llm_rx) = mpsc::channel::<LlmCommand>();
             if let Ok(mut guard) = state.engine.try_lock() {
                 if let Some(ref mut engine) = *guard {
                     engine.llm_tx = Some(new_llm_tx);
@@ -247,7 +248,7 @@ async fn test_transcript_to_llm_matrix() {
         // Subtest 5: Critical threshold triggers transition speech filler & pending
         // =====================================================================
         {
-            let (new_llm_tx, _new_llm_rx) = std::sync::mpsc::channel::<LlmCommand>();
+            let (new_llm_tx, _new_llm_rx) = mpsc::channel::<LlmCommand>();
             if let Ok(mut guard) = state.engine.try_lock() {
                 if let Some(ref mut engine) = *guard {
                     engine.llm_tx = Some(new_llm_tx);

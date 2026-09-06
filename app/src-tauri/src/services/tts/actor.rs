@@ -1,13 +1,16 @@
-use crate::core::events::VoxEvent;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::mpsc;
+use std::sync::Arc;
+
+use crate::core::events::{Actionability, PipelineError, PipelineImpact, VoxEvent};
 use crate::core::settings::{TtsProviderConfig, VoxSettings};
+use crate::services::audio::PlaybackEngine;
 use crate::services::tts::providers::TtsProvider;
 use crate::services::tts::{
     ChatterboxEngine, ChatterboxRemoteProvider, EdgeTtsProvider, KokoroEngine,
     TtsEngine as SupertonicEngine,
 };
-use std::path::Path;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
 /// Commands accepted by the dedicated TTS synthesis worker thread.
 #[derive(Debug)]
@@ -19,16 +22,16 @@ pub enum TtsCommand {
 
 /// Execution handles and atomics passed to the dedicated TTS worker thread.
 pub struct TtsWorkerHandles {
-    pub playback: Arc<crate::services::audio::PlaybackEngine>,
-    pub event_tx: std::sync::mpsc::Sender<VoxEvent>,
+    pub playback: Arc<PlaybackEngine>,
+    pub event_tx: mpsc::Sender<VoxEvent>,
     pub cancel_flag: Arc<AtomicBool>,
-    pub pending_synthesis_jobs: Option<Arc<std::sync::atomic::AtomicU32>>,
-    pub telemetry_rtf: Option<Arc<std::sync::atomic::AtomicU32>>,
+    pub pending_synthesis_jobs: Option<Arc<AtomicU32>>,
+    pub telemetry_rtf: Option<Arc<AtomicU32>>,
 }
 
 /// Spawns the dedicated TTS worker thread and processes incoming synthesis requests.
 pub fn spawn_tts_worker(
-    rx: std::sync::mpsc::Receiver<TtsCommand>,
+    rx: mpsc::Receiver<TtsCommand>,
     provider: Box<dyn TtsProvider>,
     handles: TtsWorkerHandles,
 ) {
@@ -38,28 +41,60 @@ pub fn spawn_tts_worker(
         match cmd {
             TtsCommand::Generate { turn_id, text } => {
                 log::debug!("[TTS Worker] Processing TTS chunk: '{}'", text);
-                let res = provider.synthesize_chunk(
-                    &text,
-                    turn_id,
-                    handles.cancel_flag.clone(),
-                    &handles.playback,
-                    handles.event_tx.clone(),
-                    handles.telemetry_rtf.as_ref(),
-                );
+                let text_clone = text.clone();
+                let cancel_flag = handles.cancel_flag.clone();
+                let playback = handles.playback.clone();
+                let event_tx = handles.event_tx.clone();
+                let telemetry_rtf = handles.telemetry_rtf.clone();
+
+                let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    provider.synthesize_chunk(
+                        &text_clone,
+                        turn_id,
+                        cancel_flag,
+                        &playback,
+                        event_tx,
+                        telemetry_rtf.as_ref(),
+                    )
+                }));
 
                 if let Some(ref jobs) = handles.pending_synthesis_jobs {
-                    let remaining = jobs.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                    let remaining = jobs.fetch_sub(1, Ordering::Relaxed);
                     if remaining <= 1 {
                         handles.playback.flush_pre_roll();
                     }
                 }
 
-                if let Err(e) = res {
-                    log::warn!(
-                        "[TTS Worker] Synthesis chunk failed for turn {}: {}",
-                        turn_id,
-                        e
-                    );
+                match res {
+                    Ok(Err(e)) => {
+                        log::warn!(
+                            "[TTS Worker] Synthesis chunk failed for turn {}: {}",
+                            turn_id,
+                            e
+                        );
+                    }
+                    Err(panic_payload) => {
+                        let panic_msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                            s.to_string()
+                        } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                            s.clone()
+                        } else {
+                            "TTS synthesize_chunk panicked".to_string()
+                        };
+                        log::error!(
+                            "[TTS Worker] Panic caught during synthesis of turn {}: {}",
+                            turn_id,
+                            panic_msg
+                        );
+                        let _ = handles.event_tx.send(VoxEvent::Error(PipelineError {
+                            turn_id,
+                            message: format!("TTS synthesis panic: {}", panic_msg),
+                            source: "TtsActor".to_string(),
+                            impact: PipelineImpact::Degraded,
+                            actionability: Actionability::None,
+                        }));
+                    }
+                    Ok(Ok(())) => {}
                 }
             }
             TtsCommand::SetVoice(voice) => {
@@ -180,12 +215,12 @@ pub fn create_tts_provider(
 
 /// Handles and flags passed when warming up the TTS actor.
 pub struct TtsWarmUpHandles<'a> {
-    pub tts_tx: &'a mut Option<std::sync::mpsc::Sender<TtsCommand>>,
+    pub tts_tx: &'a mut Option<mpsc::Sender<TtsCommand>>,
     pub tts_handle: &'a mut Option<std::thread::JoinHandle<()>>,
     pub cancel_flag: Arc<AtomicBool>,
-    pub playback_engine: Arc<crate::services::audio::PlaybackEngine>,
-    pub pending_synthesis_jobs: Option<Arc<std::sync::atomic::AtomicU32>>,
-    pub telemetry_rtf: Option<Arc<std::sync::atomic::AtomicU32>>,
+    pub playback_engine: Arc<PlaybackEngine>,
+    pub pending_synthesis_jobs: Option<Arc<AtomicU32>>,
+    pub telemetry_rtf: Option<Arc<AtomicU32>>,
 }
 
 /// Spawns and initializes a persistent TTS worker actor thread.
@@ -194,7 +229,7 @@ pub fn warm_up_tts(
     settings: &VoxSettings,
     super_tts_path: &Path,
     reference_audio: Option<&str>,
-    event_tx: std::sync::mpsc::Sender<VoxEvent>,
+    event_tx: mpsc::Sender<VoxEvent>,
 ) -> Result<(), String> {
     if handles.tts_tx.is_some() {
         return Ok(());
@@ -203,7 +238,7 @@ pub fn warm_up_tts(
     log::info!("[TTS Actor] Warming up TTS worker");
     let provider = create_tts_provider(settings, super_tts_path, reference_audio)?;
 
-    let (tx, rx) = std::sync::mpsc::channel::<TtsCommand>();
+    let (tx, rx) = mpsc::channel::<TtsCommand>();
     *handles.tts_tx = Some(tx);
 
     let worker_handles = TtsWorkerHandles {
@@ -231,7 +266,7 @@ pub fn warm_up_tts(
 }
 
 /// Signals the running TTS worker thread to shutdown and drop its model instance.
-pub fn cool_down_tts(tts_tx: &mut Option<std::sync::mpsc::Sender<TtsCommand>>) {
+pub fn cool_down_tts(tts_tx: &mut Option<mpsc::Sender<TtsCommand>>) {
     if let Some(tx) = tts_tx.take() {
         if let Err(e) = tx.send(TtsCommand::Shutdown) {
             log::warn!("[TTS Actor] Failed to send Shutdown command: {}", e);
@@ -515,7 +550,8 @@ mod tests {
     #[test]
     fn test_chunker_multiple_clauses() {
         let mut c = TtsClauseChunker::new();
-        let chunks = c.push_str("First sentence! Second? Third, with many words before comma, and tail.");
+        let chunks =
+            c.push_str("First sentence! Second? Third, with many words before comma, and tail.");
         assert!(chunks.len() >= 2);
         assert_eq!(chunks[0], "First sentence!");
         assert_eq!(chunks[1], "Second?");

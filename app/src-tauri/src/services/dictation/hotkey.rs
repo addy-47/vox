@@ -1,4 +1,7 @@
 use crate::core::error::DictationError;
+use crate::core::events::VoxEvent;
+use crate::core::state::AppState;
+use std::sync::Arc;
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tokio::sync::mpsc::UnboundedSender;
@@ -80,19 +83,24 @@ pub fn init_dictation_hotkey_listener<R: tauri::Runtime>(
     tauri::async_runtime::spawn(async move {
         while let Some(action) = rx.recv().await {
             use tauri::Manager;
-            let state: tauri::State<'_, std::sync::Arc<crate::core::state::AppState>> =
-                app_handle.state();
+            let state: tauri::State<'_, Arc<AppState>> = app_handle.state();
             let event_tx_opt = state.event_tx.lock().clone();
             if let Some(tx) = event_tx_opt {
                 match action {
                     HotkeyAction::Press => {
-                        if let Err(e) = tx.send(crate::core::events::VoxEvent::PttStart) {
-                            log::error!("[Dictation::Hotkey] Failed to send VoxEvent::PttStart: {}", e);
+                        if let Err(e) = tx.send(VoxEvent::PttStart) {
+                            log::error!(
+                                "[Dictation::Hotkey] Failed to send VoxEvent::PttStart: {}",
+                                e
+                            );
                         }
                     }
                     HotkeyAction::Release => {
-                        if let Err(e) = tx.send(crate::core::events::VoxEvent::PttStop) {
-                            log::error!("[Dictation::Hotkey] Failed to send VoxEvent::PttStop: {}", e);
+                        if let Err(e) = tx.send(VoxEvent::PttStop) {
+                            log::error!(
+                                "[Dictation::Hotkey] Failed to send VoxEvent::PttStop: {}",
+                                e
+                            );
                         }
                     }
                 }

@@ -12,12 +12,14 @@ use crate::services::realtime::{
 };
 
 use super::protocol::{encode_activity_end, encode_activity_start};
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::AtomicU64;
 
 pub(super) struct GeminiSessionState {
     pub(super) interrupt_active: bool,
     pub(super) resume_handle: Option<String>,
     pub(super) model: String,
-    pub(super) turn_id: Arc<std::sync::atomic::AtomicU32>,
+    pub(super) turn_id: Arc<AtomicU32>,
     pub(super) server_turn_cursor: Option<u32>,
 }
 
@@ -221,8 +223,7 @@ fn dispatch_server_message(
                                     .chunks_exact(2)
                                     .map(|c| i16::from_le_bytes([c[0], c[1]]))
                                     .collect();
-                                static RECV_COUNT: std::sync::atomic::AtomicU64 =
-                                    std::sync::atomic::AtomicU64::new(0);
+                                static RECV_COUNT: AtomicU64 = AtomicU64::new(0);
                                 let count = RECV_COUNT.fetch_add(1, Ordering::Relaxed);
                                 if (count + 1).is_multiple_of(LOG_INTERVAL_PACKETS) {
                                     log::debug!(

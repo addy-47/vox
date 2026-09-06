@@ -4,21 +4,96 @@
 
 use ringbuf::traits::Split;
 use ringbuf::{HeapCons, HeapRb};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
-use std::sync::mpsc;
-use std::sync::Arc;
-
+use std::sync::{
+    atomic::{AtomicBool, AtomicU32, AtomicU64},
+    mpsc, Arc,
+};
 use tauri::AppHandle;
-use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::{AudioOutputMode, InteractionMode, VoxSettings};
-use vox_lib::core::state::{AppState, TelemetryState, VoxEngine};
+use vox_lib::core::{
+    events::VoxEvent,
+    settings::{AudioOutputMode, InteractionMode, VoxSettings},
+    state::{AppState, TelemetryState, VoxEngine},
+};
 use vox_lib::services::audio::playback::PlaybackEngineHandles;
 use vox_lib::services::audio::{AudioStream, PlaybackEngine, PLAYBACK_BUFFER_SAMPLES};
-use vox_lib::services::stt::actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand};
+use vox_lib::services::stt::actor::{
+    spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand,
+};
 use vox_lib::services::stt::{EmbeddedSttProvider, SttProvider};
-use vox_lib::services::vad::actor::{spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles};
+use vox_lib::services::vad::actor::{
+    spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles,
+};
 use vox_lib::services::vad::earshot_vad::EarshotVadEngine;
 use vox_lib::services::vad::{VadBackend, VadCommand};
+
+use std::path::PathBuf;
+
+/// RAII guard to initialize VoxPaths with an isolated temporary root directory and benchmark fixture database.
+pub struct BenchPathsGuard {
+    _dir: tempfile::TempDir,
+    prev_vox_home: Option<String>,
+}
+
+impl BenchPathsGuard {
+    pub fn new() -> Self {
+        let dir = tempfile::tempdir().expect("Failed to create temporary directory for benchmark");
+        let temp_path = dir.path().to_path_buf();
+
+        // Seed benchmark database from benches/assets/bench_vox.db if available
+        let candidates = [
+            PathBuf::from("benches/assets/bench_vox.db"),
+            PathBuf::from("app/src-tauri/benches/assets/bench_vox.db"),
+            PathBuf::from("../benches/assets/bench_vox.db"),
+            PathBuf::from("tests/assets/test_vox.db"),
+            PathBuf::from("app/src-tauri/tests/assets/test_vox.db"),
+        ];
+        for c in &candidates {
+            if c.exists() {
+                let target_db = temp_path.join(vox_lib::core::constants::DB_FILENAME);
+                let _ = std::fs::copy(c, &target_db);
+                break;
+            }
+        }
+
+        // Symlink existing models and voices directory from ~/.vox so embedded providers can load weights
+        if let Some(home) = dirs::home_dir() {
+            let real_vox = home.join(".vox");
+            let real_models = real_vox.join("models");
+            if real_models.exists() {
+                #[cfg(unix)]
+                let _ = std::os::unix::fs::symlink(&real_models, temp_path.join("models"));
+            }
+            let real_voices = real_vox.join("voices");
+            if real_voices.exists() {
+                #[cfg(unix)]
+                let _ = std::os::unix::fs::symlink(&real_voices, temp_path.join("voices"));
+            }
+        }
+
+        let prev_vox_home = std::env::var("VOX_HOME").ok();
+        std::env::set_var("VOX_HOME", &temp_path);
+        vox_lib::utils::paths::init_with_root(temp_path);
+
+        Self {
+            _dir: dir,
+            prev_vox_home,
+        }
+    }
+}
+
+impl Drop for BenchPathsGuard {
+    fn drop(&mut self) {
+        if let Some(ref prev) = self.prev_vox_home {
+            std::env::set_var("VOX_HOME", prev);
+            vox_lib::utils::paths::init_with_root(PathBuf::from(prev));
+        } else {
+            std::env::remove_var("VOX_HOME");
+            if let Some(home) = dirs::home_dir() {
+                vox_lib::utils::paths::init_with_root(home.join(".vox"));
+            }
+        }
+    }
+}
 
 pub type E2ePipelineSetup = (
     AppHandle<tauri::test::MockRuntime>,
@@ -26,12 +101,11 @@ pub type E2ePipelineSetup = (
     Arc<parking_lot::Mutex<ringbuf::HeapProd<f32>>>,
     Arc<parking_lot::Mutex<HeapCons<f32>>>,
     mpsc::Receiver<VoxEvent>,
+    BenchPathsGuard,
 );
 
 /// Sets up production-wiring for an E2E pipeline run without CPAL hardware.
-pub fn setup_e2e_pipeline(
-    settings: VoxSettings,
-) -> E2ePipelineSetup {
+pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
     let app = tauri::test::mock_app().handle().clone();
     let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();
     let telemetry = Arc::new(TelemetryState {
@@ -61,7 +135,8 @@ pub fn setup_e2e_pipeline(
         dropped_telemetry_events: Arc::new(AtomicU64::new(0)),
     });
 
-    vox_lib::utils::paths::init();
+    // RAII isolated bench paths guard: copies benches/assets/bench_vox.db to temp VOX_HOME
+    let _bench_guard = BenchPathsGuard::new();
     let state = Arc::new(AppState::new(&app, None, telemetry));
     *state.settings.write().unwrap() = settings.clone();
     tauri::Manager::manage(&app, state.clone());
@@ -147,6 +222,7 @@ pub fn setup_e2e_pipeline(
     // 4. Central Router with Benchmark Observer Split
     let (router_tx, router_rx) = mpsc::channel::<VoxEvent>();
     let (bench_tx, bench_rx) = mpsc::channel::<VoxEvent>();
+    let bench_tx_tee = bench_tx.clone();
 
     // Forward events from actors to BOTH the router pump (driving state) and bench_tx (measuring latency)
     let router_tx_clone = router_tx.clone();
@@ -154,7 +230,7 @@ pub fn setup_e2e_pipeline(
         .name("bench-event-tee".to_string())
         .spawn(move || {
             while let Ok(ev) = event_rx.recv() {
-                let _ = bench_tx.send(ev.clone());
+                let _ = bench_tx_tee.send(ev.clone());
                 let _ = router_tx_clone.send(ev);
             }
         })
@@ -162,6 +238,25 @@ pub fn setup_e2e_pipeline(
 
     let router_handle = vox_lib::pipeline::router::spawn_router(app.clone(), router_rx)
         .expect("Failed to spawn router");
+
+    // BENCH-ONLY tee: wrap pipeline_tx so LLM/TTS worker events (LlmFinished, Cancelled,
+    // Error) are also mirrored to bench_tx. The router still owns its events for
+    // production routing; the bench observes the same production events flowing through.
+    let pipeline_tx = {
+        let (tee_tx, tee_rx) = mpsc::channel::<VoxEvent>();
+        let bench_tx_clone = bench_tx.clone();
+        let router_tx_clone2 = router_tx.clone();
+        std::thread::Builder::new()
+            .name("bench-pipeline-tee".to_string())
+            .spawn(move || {
+                while let Ok(ev) = tee_rx.recv() {
+                    let _ = bench_tx_clone.send(ev.clone());
+                    let _ = router_tx_clone2.send(ev);
+                }
+            })
+            .expect("Failed to spawn bench-pipeline-tee");
+        tee_tx
+    };
 
     // Connect Engine
     let engine = VoxEngine {
@@ -171,7 +266,7 @@ pub fn setup_e2e_pipeline(
         llm_tx: None,
         tts_tx: None,
         telemetry_tx: state.telemetry.telemetry_tx.clone(),
-        pipeline_tx: router_tx,
+        pipeline_tx,
         playback_engine,
         stt_handle: Some(stt_handle),
         vad_handle: Some(vad_handle),
@@ -186,5 +281,12 @@ pub fn setup_e2e_pipeline(
     vox_lib::core::engine::ensure_modular_workers_sync(&app, &state)
         .expect("Failed to warm up modular workers");
 
-    (app, state, in_prod_arc, Arc::new(parking_lot::Mutex::new(pb_cons)), bench_rx)
+    (
+        app,
+        state,
+        in_prod_arc,
+        Arc::new(parking_lot::Mutex::new(pb_cons)),
+        bench_rx,
+        _bench_guard,
+    )
 }

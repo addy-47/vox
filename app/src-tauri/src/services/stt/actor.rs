@@ -4,6 +4,8 @@ use super::{
 };
 use crate::core::events::VoxEvent;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -15,7 +17,7 @@ pub enum SttCommand {
     Partial {
         turn_id: u32,
         audio: Vec<f32>,
-        recycle_tx: std::sync::mpsc::SyncSender<Vec<f32>>,
+        recycle_tx: mpsc::SyncSender<Vec<f32>>,
     },
     Final(u32, Vec<f32>),
     ResetStream,
@@ -23,8 +25,8 @@ pub enum SttCommand {
 }
 
 pub struct SttActorChannels {
-    pub rx: std::sync::mpsc::Receiver<SttCommand>,
-    pub pipeline_event_tx: Option<std::sync::mpsc::Sender<VoxEvent>>,
+    pub rx: mpsc::Receiver<SttCommand>,
+    pub pipeline_event_tx: Option<mpsc::Sender<VoxEvent>>,
     pub partial_emitter: Option<Arc<dyn Fn(u32, String) + Send + Sync>>,
 }
 
@@ -42,7 +44,7 @@ struct WorkerState {
 
 struct WorkerContext<'a> {
     pub provider: &'a dyn SttProvider,
-    pub pipeline_event_tx: &'a Option<std::sync::mpsc::Sender<VoxEvent>>,
+    pub pipeline_event_tx: &'a Option<mpsc::Sender<VoxEvent>>,
     pub partial_emitter: &'a Option<Arc<dyn Fn(u32, String) + Send + Sync>>,
     pub cancel_flag: &'a Arc<AtomicBool>,
 }
@@ -50,7 +52,7 @@ struct WorkerContext<'a> {
 /// Drains subsequent partial commands from the channel and returns the latest audio slice.
 fn coalesce_partials(
     cmd: SttCommand,
-    rx: &std::sync::mpsc::Receiver<SttCommand>,
+    rx: &mpsc::Receiver<SttCommand>,
     pending_cmd: &mut Option<SttCommand>,
 ) -> SttCommand {
     if let SttCommand::Partial {
@@ -128,7 +130,7 @@ fn handle_partial_command(
         return;
     }
 
-    if ctx.cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+    if ctx.cancel_flag.load(Ordering::Relaxed) {
         state.last_transcript.clear();
         if let Err(e) = ctx.provider.reset_state() {
             log::warn!("[STT] Error resetting state on cancellation: {:?}", e);
@@ -141,7 +143,7 @@ fn handle_partial_command(
         Ok(text) => {
             state.last_inference_duration = start_inference.elapsed();
 
-            if ctx.cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            if ctx.cancel_flag.load(Ordering::Relaxed) {
                 state.last_transcript.clear();
                 if let Err(e) = ctx.provider.reset_state() {
                     log::warn!("[STT] Error resetting state on cancellation: {:?}", e);
@@ -180,7 +182,7 @@ fn handle_stream_chunk_command(
         }
     }
 
-    if ctx.cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+    if ctx.cancel_flag.load(Ordering::Relaxed) {
         state.last_transcript.clear();
         if let Err(e) = ctx.provider.reset_state() {
             log::warn!("[STT] Error resetting state on cancellation: {:?}", e);
@@ -221,8 +223,7 @@ fn handle_final_command(
     utterance: &[f32],
     state: &mut WorkerState,
 ) {
-    if ctx.cancel_flag.load(std::sync::atomic::Ordering::Relaxed) || tid < state.current_active_turn
-    {
+    if ctx.cancel_flag.load(Ordering::Relaxed) || tid < state.current_active_turn {
         state.last_transcript.clear();
         if let Err(e) = ctx.provider.reset_state() {
             log::warn!("[STT] Error resetting state on stale final: {:?}", e);
@@ -259,7 +260,7 @@ fn handle_final_command(
 
 /// Drains stream reset commands and clears transcription state.
 fn drain_reset_stream(
-    rx: &std::sync::mpsc::Receiver<SttCommand>,
+    rx: &mpsc::Receiver<SttCommand>,
     provider: &dyn SttProvider,
     state: &mut WorkerState,
     pending_cmd: &mut Option<SttCommand>,
@@ -311,10 +312,7 @@ fn run_worker_loop(
     let mut pending_cmd = None;
 
     loop {
-        if handles
-            .engine_shutdown
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
+        if handles.engine_shutdown.load(Ordering::Relaxed) {
             log::info!("[STT] Engine shutdown flag detected. Exiting loop.");
             break;
         }
@@ -327,8 +325,8 @@ fn run_worker_loop(
                 .recv_timeout(Duration::from_millis(STT_WORKER_RECV_TIMEOUT_MS))
             {
                 Ok(c) => c,
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
         };
 

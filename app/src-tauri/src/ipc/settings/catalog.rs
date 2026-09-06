@@ -2,6 +2,7 @@ use crate::core::error::VoxIpcError;
 use crate::core::settings::VoxSettings;
 use crate::core::state::AppState;
 use crate::utils::paths;
+use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
 /// Initial boot payload returned to the frontend during application initialization.
@@ -28,7 +29,7 @@ pub struct ModelCatalog {
 /// Called by the frontend on mount to load initial settings snapshot and model paths.
 #[tauri::command]
 pub async fn get_settings<R: tauri::Runtime>(app: AppHandle<R>) -> Result<BootState, VoxIpcError> {
-    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    let state: State<'_, Arc<AppState>> = app.state();
     let settings = state
         .settings
         .read()
@@ -55,7 +56,7 @@ pub async fn get_settings<R: tauri::Runtime>(app: AppHandle<R>) -> Result<BootSt
 pub async fn get_model_catalog<R: tauri::Runtime>(
     app: AppHandle<R>,
 ) -> Result<ModelCatalog, VoxIpcError> {
-    let state: State<'_, std::sync::Arc<AppState>> = app.state();
+    let state: State<'_, Arc<AppState>> = app.state();
     let manifest_opt = {
         let guard = state.manifest.read().await;
         guard.clone()

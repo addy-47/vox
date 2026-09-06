@@ -8,6 +8,7 @@ use crate::pipeline::assistant::interrupt::on_interrupt;
 use crate::pipeline::{transition, RoutingContext};
 use crate::services::stt::actor::SttCommand;
 use crate::services::vad::{VadCommand, VAD_VALIDATION_TIMEOUT_MS};
+use std::sync::mpsc;
 
 /// Handles Push-To-Talk key press event, evaluating barge-in and opening the VAD validation window.
 pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {
@@ -64,7 +65,7 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx
 fn dispatch_ptt_speech_audio<R: tauri::Runtime>(
     turn_id: u32,
     audio: Vec<f32>,
-    stt_tx: &std::sync::mpsc::Sender<SttCommand>,
+    stt_tx: &mpsc::Sender<SttCommand>,
     app: &AppHandle<R>,
     state: &AppState,
     ctx: &RoutingContext,
@@ -121,7 +122,7 @@ pub fn on_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx:
         }
     };
 
-    let (response_tx, response_rx) = std::sync::mpsc::channel();
+    let (response_tx, response_rx) = mpsc::channel();
     if let Err(e) = vad_tx.send(VadCommand::StopWindowValidation { response_tx }) {
         log::warn!("[Pipeline::Ptt] Failed to stop window validation: {}", e);
         transition(InteractionState::Ready, ctx, app, state);
@@ -174,7 +175,7 @@ pub fn on_ptt_cancel<R: tauri::Runtime>(
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             engine.playback_engine.cancel();
-            let (response_tx, _) = std::sync::mpsc::channel();
+            let (response_tx, _) = mpsc::channel();
             if let Err(e) = engine
                 .vad_tx
                 .send(VadCommand::StopWindowValidation { response_tx })

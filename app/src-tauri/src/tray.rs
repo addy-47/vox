@@ -6,8 +6,11 @@ use std::time::Duration;
 use tauri::menu::{CheckMenuItem, CheckMenuItemBuilder, Menu, MenuItemBuilder, PredefinedMenuItem};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+use crate::core::state::AppState;
 #[cfg(target_os = "linux")]
 use gtk::prelude::WidgetExt;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 /// Ensures the "tray" WebviewWindow exists, lazily constructing it if it was closed to save RAM.
 pub fn ensure_tray_window<R: tauri::Runtime>(
@@ -57,10 +60,8 @@ pub fn destroy_tray_window<R: tauri::Runtime>(app: &AppHandle<R>) {
 pub fn build_main_tray_menu(
     app: &AppHandle<tauri::Wry>,
 ) -> tauri::Result<(Menu<tauri::Wry>, CheckMenuItem<tauri::Wry>)> {
-    let state = app.state::<std::sync::Arc<crate::core::state::AppState>>();
-    let crash_detected = state
-        .main_window_destroyed
-        .load(std::sync::atomic::Ordering::Relaxed);
+    let state = app.state::<Arc<AppState>>();
+    let crash_detected = state.main_window_destroyed.load(Ordering::Relaxed);
 
     let tray_menu = Menu::new(app)?;
     let launch_i = MenuItemBuilder::new("Launch Vox").id("launch").build(app)?;
@@ -88,7 +89,7 @@ pub fn build_main_tray_menu(
 /// Syncs the "Vox Live" check item against current dictation settings and stores
 /// its handle in `AppState` for backend-driven updates.
 pub fn sync_live_menu_item(app: &AppHandle<tauri::Wry>, live_i: &CheckMenuItem<tauri::Wry>) {
-    let state = app.state::<std::sync::Arc<crate::core::state::AppState>>();
+    let state = app.state::<Arc<AppState>>();
     {
         let mut menu_item_lock = state.hud_menu_item.lock();
         *menu_item_lock = Some(live_i.clone());
@@ -99,7 +100,7 @@ pub fn sync_live_menu_item(app: &AppHandle<tauri::Wry>, live_i: &CheckMenuItem<t
             log::warn!("[Tray] Settings RwLock poisoned; recovering inner state.");
             p.into_inner()
         });
-        let v = state.hud_visible.load(std::sync::atomic::Ordering::Relaxed);
+        let v = state.hud_visible.load(Ordering::Relaxed);
         (
             v,
             s.dictation.enabled,

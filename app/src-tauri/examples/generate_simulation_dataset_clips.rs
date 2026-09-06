@@ -12,7 +12,7 @@ use ringbuf::traits::*;
 use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::mpsc::channel;
 use std::sync::Arc;
 use vox_lib::services::tts::providers::supertonic::TtsEngine;
@@ -148,17 +148,16 @@ fn main() -> Result<()> {
             let discard_request = Arc::new(AtomicBool::new(false));
             let (tx, _rx) = channel();
             let (event_tx, _event_rx) = channel();
-            let current_turn_id =
-                Arc::new(std::sync::atomic::AtomicU32::new(turn_item.turn as u32));
+            let current_turn_id = Arc::new(AtomicU32::new(turn_item.turn as u32));
             let turn_armed = Arc::new(AtomicBool::new(false));
-            let pending_synthesis_jobs = Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let pending_synthesis_jobs = Arc::new(AtomicU32::new(0));
 
             let rb = ringbuf::HeapRb::<f32>::new(vox_lib::services::audio::PLAYBACK_BUFFER_SAMPLES);
             let (producer, mut consumer) = rb.split();
 
             let handles = vox_lib::services::audio::playback::PlaybackEngineHandles {
                 cancel_flag: cancel.clone(),
-                state_atomic: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+                state_atomic: Arc::new(AtomicU32::new(0)),
                 current_turn_id,
                 pending_synthesis_jobs,
                 event_tx,

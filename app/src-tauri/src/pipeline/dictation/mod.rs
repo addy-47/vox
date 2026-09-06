@@ -54,9 +54,7 @@ pub fn handle_event<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, eve
             transcript::on_transcript_final(turn_id, text, app, state)
         }
         VoxEvent::Cancelled { turn_id } => error::on_cancelled(turn_id, app, state),
-        VoxEvent::Error {
-            turn_id, message, ..
-        } => error::on_error(turn_id, message, app, state),
+        VoxEvent::Error(err) => error::on_error(err, app, state),
         _ => {}
     }
 }
