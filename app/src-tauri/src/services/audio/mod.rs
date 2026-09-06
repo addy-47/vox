@@ -1,6 +1,8 @@
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
-use std::sync::mpsc::Sender;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU32, AtomicU64},
+    mpsc::Sender,
+    Arc,
+};
 
 use crate::core::events::VoxEvent;
 

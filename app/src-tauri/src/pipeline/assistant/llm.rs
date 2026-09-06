@@ -1,12 +1,16 @@
 //! Canonical LLM generation completed event handler.
 
-use std::sync::atomic::Ordering;
+use std::sync::{atomic::Ordering, mpsc};
 
-use crate::core::settings::PipelineMode;
-use crate::core::state::{AppState, InteractionState};
-use crate::pipeline::RoutingContext;
-use crate::services::tts::actor::TtsCommand;
-use std::sync::mpsc;
+use crate::{
+    core::{
+        settings::PipelineMode,
+        state::{AppState, InteractionState},
+    },
+    persistence::events::PersistenceEvent,
+    pipeline::RoutingContext,
+    services::tts::actor::TtsCommand,
+};
 
 /// Commits finalized assistant turn to conversation memory and dispatches persistence event.
 fn persist_assistant_turn(turn_id: u32, full_text: String, user_text: String, state: &AppState) {
@@ -21,16 +25,14 @@ fn persist_assistant_turn(turn_id: u32, full_text: String, user_text: String, st
 
     let persist_lock = state.persist_tx.lock();
     if let Some(ref tx) = *persist_lock {
-        if let Err(e) = tx.try_send(
-            crate::persistence::events::PersistenceEvent::TurnCompleted {
-                conversation_id: conv_id,
-                turn_id,
-                user_text,
-                assistant_text: full_text,
-                stt_latency_ms,
-                ttft_ms,
-            },
-        ) {
+        if let Err(e) = tx.try_send(PersistenceEvent::TurnCompleted {
+            conversation_id: conv_id,
+            turn_id,
+            user_text,
+            assistant_text: full_text,
+            stt_latency_ms,
+            ttft_ms,
+        }) {
             log::warn!(
                 "[Pipeline::Llm] Failed to send TurnCompleted to persistence: {}",
                 e

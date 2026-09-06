@@ -2,11 +2,14 @@ use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::core::settings::DeepgramVoiceAgentConfig;
-use crate::services::realtime::transport::{WsReader, WsWriter};
-use crate::services::realtime::WS_HANDSHAKE_TIMEOUT;
-
 use super::protocol::build_settings_frame;
+use crate::{
+    core::settings::DeepgramVoiceAgentConfig,
+    services::realtime::{
+        transport::{WsReader, WsWriter},
+        WS_HANDSHAKE_TIMEOUT,
+    },
+};
 
 pub(super) async fn perform_handshake(
     url: &str,

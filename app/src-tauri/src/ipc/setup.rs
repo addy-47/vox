@@ -1,13 +1,16 @@
-use crate::core::error::VoxIpcError;
-use crate::core::state::AppState;
-use crate::setup::manager_ops;
-use crate::setup::manifest::VoxManifest;
-use crate::setup::runtime_check::{verify_runtime, RuntimeReport};
-use crate::setup::update_check::{
-    check_app_updates, check_model_updates, ModelUpdateReport, UpdateReport,
-};
 use std::sync::Arc;
+
 use tauri::{AppHandle, Manager, State};
+
+use crate::{
+    core::{error::VoxIpcError, state::AppState},
+    setup::{
+        manager_ops,
+        manifest::VoxManifest,
+        runtime_check::{verify_runtime, RuntimeReport},
+        update_check::{check_app_updates, check_model_updates, ModelUpdateReport, UpdateReport},
+    },
+};
 
 #[derive(Debug, serde::Serialize)]
 pub struct UnifiedUpdateReport {

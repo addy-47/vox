@@ -1,6 +1,7 @@
+use std::collections::HashMap;
+
 use super::buffer::{ChatMessage, Role};
 use crate::services::memory::ml::estimate_tokens;
-use std::collections::HashMap;
 
 /// Formats a millisecond epoch timestamp as a human-readable relative time label.
 pub fn format_relative_timestamp(created_at_ms: i64) -> String {
@@ -198,9 +199,10 @@ pub fn consolidate_system_message(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::services::memory::retrieval::{GraphEdge, MemoryFact, RetrievedProfile, ScoredFact};
-    use std::collections::HashMap;
 
     /// Tests assemble_system_prompt merges identity and dynamic profile with wrappers.
     #[test]

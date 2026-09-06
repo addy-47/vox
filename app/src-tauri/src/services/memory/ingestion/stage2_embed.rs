@@ -1,10 +1,14 @@
-use super::RelationEdge;
-use crate::persistence::{encode_f32_blob, mutations, queries};
-use crate::services::memory::ml::embedder::{ensure_embedder_loaded, generate_embedding};
-use crate::services::memory::{QueueStatus, Relation};
-use crate::services::memory::{SOFT_VECTOR_DEDUP_THRESHOLD, STAGE2_BATCH_SIZE};
 use anyhow::Result;
 use turso::Connection;
+
+use super::RelationEdge;
+use crate::{
+    persistence::{encode_f32_blob, mutations, queries},
+    services::memory::{
+        ml::embedder::{ensure_embedder_loaded, generate_embedding},
+        MemoryCollection, QueueStatus, Relation, SOFT_VECTOR_DEDUP_THRESHOLD, STAGE2_BATCH_SIZE,
+    },
+};
 
 /// Claimed item pending stage 2 vector embedding and soft deduplication.
 #[derive(Debug, Clone)]
@@ -83,10 +87,10 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
             })?;
 
             let best_match = soft_dups.iter().max_by(|a, b| {
-                let prio_a = crate::services::memory::MemoryCollection::parse(&a.2)
+                let prio_a = MemoryCollection::parse(&a.2)
                     .map(|c| c.priority())
                     .unwrap_or(0);
-                let prio_b = crate::services::memory::MemoryCollection::parse(&b.2)
+                let prio_b = MemoryCollection::parse(&b.2)
                     .map(|c| c.priority())
                     .unwrap_or(0);
                 prio_a
@@ -95,14 +99,12 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
             });
 
             if let Some((match_id, match_fact, match_coll, sim)) = best_match {
-                let incoming_priority =
-                    crate::services::memory::MemoryCollection::parse(&item.collection)
-                        .map(|c| c.priority())
-                        .unwrap_or(0);
-                let existing_priority =
-                    crate::services::memory::MemoryCollection::parse(match_coll)
-                        .map(|c| c.priority())
-                        .unwrap_or(0);
+                let incoming_priority = MemoryCollection::parse(&item.collection)
+                    .map(|c| c.priority())
+                    .unwrap_or(0);
+                let existing_priority = MemoryCollection::parse(match_coll)
+                    .map(|c| c.priority())
+                    .unwrap_or(0);
 
                 if incoming_priority <= existing_priority {
                     let rel = vec![RelationEdge {
@@ -130,9 +132,7 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                         matched_fact: match_fact.clone(),
                         score: *sim,
                     };
-                    if let Err(e) =
-                        crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await
-                    {
+                    if let Err(e) = mutations::write_dedup_audit(conn, item.id, &log).await {
                         log::warn!(
                             "[MemoryPipeline::Stage2] Failed to write dedup audit: {}",
                             e
@@ -169,9 +169,7 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                         matched_fact: match_fact.clone(),
                         score: *sim,
                     };
-                    if let Err(e) =
-                        crate::persistence::mutations::write_dedup_audit(conn, item.id, &log).await
-                    {
+                    if let Err(e) = mutations::write_dedup_audit(conn, item.id, &log).await {
                         log::warn!(
                             "[MemoryPipeline::Stage2] Failed to write dedup audit: {}",
                             e
@@ -253,7 +251,7 @@ pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> R
             error_count,
             duration_ms,
         };
-        if let Err(e) = crate::persistence::mutations::record_stage_metrics(conn, &metrics).await {
+        if let Err(e) = mutations::record_stage_metrics(conn, &metrics).await {
             log::warn!(
                 "[MemoryPipeline::Stage2] Failed to record stage metrics: {}",
                 e

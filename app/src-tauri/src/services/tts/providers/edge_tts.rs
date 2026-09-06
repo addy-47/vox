@@ -1,23 +1,31 @@
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::mpsc::Sender;
-use std::sync::Arc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc::Sender,
+        Arc,
+    },
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::Result;
-use futures_util::SinkExt;
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use sha2::{Digest, Sha256};
-use tokio_tungstenite::connect_async;
-use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{client::IntoClientRequest, Message},
+};
 
 use super::{TtsProvider, TtsProviderKind};
-use crate::core::events::{Actionability, PipelineError, PipelineImpact, VoxEvent};
-use crate::services::audio::decode::decode_bytes_to_24khz_mono;
-use crate::services::tts::{
-    EDGE_TTS_DEFAULT_VOICE, EDGE_TTS_HOST, EDGE_TTS_ORIGIN, EDGE_TTS_PORT,
-    EDGE_TTS_SEC_MS_GEC_VERSION, EDGE_TTS_USER_AGENT, EDGE_TTS_WIN_EPOCH, EDGE_TTS_WS_URL_BASE,
-    MAX_SPEED_EDGE, MIN_SPEED_EDGE,
+use crate::{
+    core::events::{Actionability, PipelineError, PipelineImpact, VoxEvent},
+    services::{
+        audio::{decode::decode_bytes_to_24khz_mono, PlaybackEngine},
+        tts::{
+            EDGE_TTS_DEFAULT_VOICE, EDGE_TTS_HOST, EDGE_TTS_ORIGIN, EDGE_TTS_PORT,
+            EDGE_TTS_SEC_MS_GEC_VERSION, EDGE_TTS_USER_AGENT, EDGE_TTS_WIN_EPOCH,
+            EDGE_TTS_WS_URL_BASE, MAX_SPEED_EDGE, MIN_SPEED_EDGE, TTS_CHUNK_SIZE,
+        },
+    },
 };
 
 /// Returns the Microsoft Edge ReadAloud client token bytes as a decoded UTF-8 string.
@@ -275,7 +283,7 @@ impl TtsProvider for EdgeTtsProvider {
         text: &str,
         turn_id: u32,
         cancel: Arc<AtomicBool>,
-        playback: &Arc<crate::services::audio::PlaybackEngine>,
+        playback: &Arc<PlaybackEngine>,
         event_tx: Sender<VoxEvent>,
         telemetry_rtf: Option<&Arc<AtomicU32>>,
     ) -> anyhow::Result<()> {
@@ -340,7 +348,7 @@ impl TtsProvider for EdgeTtsProvider {
                             0.0
                         };
 
-                        for chunk in decoded.samples.chunks(crate::services::tts::TTS_CHUNK_SIZE) {
+                        for chunk in decoded.samples.chunks(TTS_CHUNK_SIZE) {
                             if cancel.load(Ordering::Relaxed) {
                                 log::info!(
                                     "[EdgeTTS] Synthesis cancelled mid-emission (turn {})",

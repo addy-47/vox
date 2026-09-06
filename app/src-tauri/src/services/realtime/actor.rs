@@ -1,15 +1,26 @@
+use std::sync::{mpsc::Sender, Arc};
+
 use anyhow::Result;
-use std::sync::mpsc::Sender;
-use std::sync::Arc;
 use tokio::task::JoinHandle;
 
-use crate::core::events::{emit_ipc_to, IpcEvent, PipelineError, VoxEvent};
-use crate::core::settings::InteractionMode;
-use crate::core::state::InteractionOwner;
-use crate::services::audio::PlaybackEngine;
-use crate::services::realtime::{
-    audio_bridge::AudioBridge, RealtimeProviderEvent, RealtimeSession, RealtimeVoiceProvider,
-    BRIDGE_CHANNEL_CAPACITY, SESSION_CACHE_FILENAME, SESSION_CACHE_TTL_MS,
+use crate::{
+    core::{
+        events::{
+            emit_ipc_to, IpcEvent, LlmTokenPayload, PipelineError, TranscriptPayload, VoxEvent,
+        },
+        settings::InteractionMode,
+        state::InteractionOwner,
+    },
+    pipeline::target_window,
+    services::{
+        audio::PlaybackEngine,
+        realtime::{
+            audio_bridge::AudioBridge, RealtimeProviderEvent, RealtimeSession,
+            RealtimeVoiceProvider, BRIDGE_CHANNEL_CAPACITY, SESSION_CACHE_FILENAME,
+            SESSION_CACHE_TTL_MS,
+        },
+    },
+    utils::paths::cache_dir,
 };
 
 /// High-level orchestration actor coordinating realtime duplex voice sessions, audio bridges, and event translation.
@@ -81,11 +92,11 @@ impl RealtimeActor {
                         }
                     }
                     RealtimeProviderEvent::TranscriptPartial { turn_id, text } => {
-                        let target = crate::pipeline::target_window(InteractionOwner::Assistant);
+                        let target = target_window(InteractionOwner::Assistant);
                         if let Err(e) = emit_ipc_to(
                             &app,
                             target,
-                            IpcEvent::TranscriptPartial(crate::core::events::TranscriptPayload {
+                            IpcEvent::TranscriptPartial(TranscriptPayload {
                                 turn_id,
                                 text,
                                 owner: Some(InteractionOwner::Assistant),
@@ -108,14 +119,11 @@ impl RealtimeActor {
                         }
                     }
                     RealtimeProviderEvent::LlmToken { turn_id, token } => {
-                        let target = crate::pipeline::target_window(InteractionOwner::Assistant);
+                        let target = target_window(InteractionOwner::Assistant);
                         if let Err(e) = emit_ipc_to(
                             &app,
                             target,
-                            IpcEvent::LlmToken(crate::core::events::LlmTokenPayload {
-                                turn_id,
-                                token,
-                            }),
+                            IpcEvent::LlmToken(LlmTokenPayload { turn_id, token }),
                         ) {
                             log::trace!("[RealtimeActor] Failed to emit LlmToken IPC: {}", e);
                         }
@@ -209,7 +217,7 @@ impl RealtimeActor {
 
 /// Asynchronously saves the session resumption handle to disk without blocking the Tokio runtime.
 async fn write_session_cache_non_blocking(handle: &str, model: &str) {
-    let cache_path = crate::utils::paths::cache_dir().join(SESSION_CACHE_FILENAME);
+    let cache_path = cache_dir().join(SESSION_CACHE_FILENAME);
     let now_ms = chrono::Utc::now().timestamp_millis() as u64;
     let expires_at = now_ms + SESSION_CACHE_TTL_MS;
     let payload = serde_json::json!({

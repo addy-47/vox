@@ -20,7 +20,6 @@ use tauri::{
     plugin::{self, TauriPlugin},
     Result, Runtime,
 };
-
 #[cfg(feature = "tray-icon")]
 use tauri::{tray::TrayIconEvent, AppHandle, Manager, PhysicalPosition, PhysicalSize};
 

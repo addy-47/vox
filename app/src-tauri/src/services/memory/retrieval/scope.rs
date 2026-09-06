@@ -1,5 +1,6 @@
-use crate::services::memory::MemoryCollection;
 use query_sieve::MemoryScope;
+
+use crate::services::memory::MemoryCollection;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopeRouting {

@@ -1,10 +1,10 @@
-use crate::core::error::DictationError;
-use crate::core::events::VoxEvent;
-use crate::core::state::AppState;
 use std::sync::Arc;
+
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tokio::sync::mpsc::UnboundedSender;
+
+use crate::core::{error::DictationError, events::VoxEvent, state::AppState};
 
 /// Actions triggered by the global dictation shortcut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

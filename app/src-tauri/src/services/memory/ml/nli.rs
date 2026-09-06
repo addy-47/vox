@@ -1,11 +1,16 @@
-use crate::services::memory::{
-    NLI_CONTRADICTION_THRESHOLD, NLI_ENTAILMENT_THRESHOLD, NLI_MODEL_DIR, NLI_MODEL_FILENAME,
-    NLI_TOKENIZER_FILENAME,
-};
+use std::path::Path;
+
 use anyhow::{anyhow, Result};
 use ndarray::Array2;
-use std::path::Path;
 use tokenizers::Tokenizer;
+
+use crate::{
+    services::memory::{
+        NLI_CONTRADICTION_THRESHOLD, NLI_ENTAILMENT_THRESHOLD, NLI_MODEL_DIR, NLI_MODEL_FILENAME,
+        NLI_TOKENIZER_FILENAME,
+    },
+    utils::paths::try_get,
+};
 
 /// Output classification classes produced by the Natural Language Inference model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -327,7 +332,7 @@ pub fn ensure_nli_loaded(model_name: &str) -> Result<bool> {
         return Ok(true);
     }
 
-    let models_dir = if let Some(p) = crate::utils::paths::try_get() {
+    let models_dir = if let Some(p) = try_get() {
         p.models.clone()
     } else {
         dirs::home_dir()

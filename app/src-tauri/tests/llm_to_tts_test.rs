@@ -10,21 +10,27 @@
 
 mod common;
 
-use std::sync::atomic::Ordering;
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::time::Duration;
-use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::PipelineMode;
-use vox_lib::core::state::{InteractionOwner, InteractionState};
-use vox_lib::pipeline::assistant::llm::on_llm_finished;
-use vox_lib::pipeline::RoutingContext;
-use vox_lib::services::harness::{ChatMessage, Role};
-use vox_lib::services::llm::{
-    ConversationInput, EmbeddedProvider, GenerationOptions, GenerationPurpose, GenerationRequest,
-    LlmCommand, OutputConstraint,
+use std::{
+    sync::{atomic::Ordering, mpsc, Arc},
+    time::Duration,
 };
-use vox_lib::services::tts::TtsCommand;
+
+use vox_lib::{
+    core::{
+        events::VoxEvent,
+        settings::PipelineMode,
+        state::{InteractionOwner, InteractionState},
+    },
+    pipeline::{assistant::llm::on_llm_finished, RoutingContext},
+    services::{
+        harness::{ChatMessage, Role},
+        llm::{
+            ConversationInput, EmbeddedProvider, GenerationOptions, GenerationPurpose,
+            GenerationRequest, LlmCommand, OutputConstraint,
+        },
+        tts::TtsCommand,
+    },
+};
 
 #[tokio::test]
 async fn test_real_llm_to_tts_matrix() {

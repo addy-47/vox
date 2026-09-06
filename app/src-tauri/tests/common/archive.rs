@@ -2,9 +2,9 @@
 //! tests/common/archive.rs — Archive and Model Synthesis Helpers for Tests
 //! ============================================================================
 
+use std::{io::Write, path::Path};
+
 use sha2::{Digest, Sha256};
-use std::io::Write;
-use std::path::Path;
 use vox_lib::setup::manifest::ModelEntry;
 
 /// Computes lowercase hex-encoded SHA-256 digest of byte slice.

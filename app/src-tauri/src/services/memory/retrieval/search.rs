@@ -1,12 +1,15 @@
-use super::scope::ScopeRouting;
-use crate::core::settings::MemorySettings;
-use crate::persistence::queries;
-use crate::services::memory::ml::estimate_tokens;
-use crate::services::memory::MemoryCollection;
+use std::collections::HashSet;
+
 use anyhow::Result;
 use query_sieve::MemoryScope;
-use std::collections::HashSet;
 use turso::Connection;
+
+use super::scope::ScopeRouting;
+use crate::{
+    core::settings::MemorySettings,
+    persistence::queries,
+    services::memory::{ml::estimate_tokens, MemoryCollection},
+};
 
 /// A structured memory fact retrieved from persistence.
 #[derive(Debug, Clone)]

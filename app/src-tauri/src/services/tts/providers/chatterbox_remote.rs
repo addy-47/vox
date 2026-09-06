@@ -1,14 +1,24 @@
+use std::{
+    io::Read,
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc::Sender,
+        Arc,
+    },
+};
+
 use anyhow::{anyhow, Result};
-use std::io::Read;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::mpsc::Sender;
-use std::sync::Arc;
 
 use super::{TtsProvider, TtsProviderKind};
-use crate::core::events::VoxEvent;
-use crate::services::tts::{
-    MAX_QUALITY_STEPS_CHATTERBOX, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED, TTS_CHUNK_SIZE,
-    TTS_SAMPLE_RATE,
+use crate::{
+    core::events::VoxEvent,
+    services::{
+        audio::PlaybackEngine,
+        tts::{
+            MAX_QUALITY_STEPS_CHATTERBOX, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED, TTS_CHUNK_SIZE,
+            TTS_SAMPLE_RATE,
+        },
+    },
 };
 
 /// Remote speech synthesis provider offloading Chatterbox inference to a GPU server via HTTP streaming.
@@ -43,11 +53,7 @@ impl ChatterboxRemoteProvider {
             quality_steps: AtomicU32::new(
                 quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_CHATTERBOX),
             ),
-            speed: AtomicU32::new(
-                speed
-                    .clamp(MIN_SPEED, crate::services::tts::MAX_SPEED)
-                    .to_bits(),
-            ),
+            speed: AtomicU32::new(speed.clamp(MIN_SPEED, MAX_SPEED).to_bits()),
         };
 
         if !prov.health_check() {
@@ -138,7 +144,7 @@ fn stream_pcm_response(
     speed: f32,
     turn_id: u32,
     cancel: &Arc<AtomicBool>,
-    playback: &Arc<crate::services::audio::PlaybackEngine>,
+    playback: &Arc<PlaybackEngine>,
 ) -> Result<usize> {
     let mut byte_buf = Vec::new();
     let mut raw_pcm_samples = Vec::new();
@@ -243,7 +249,7 @@ impl TtsProvider for ChatterboxRemoteProvider {
         text: &str,
         turn_id: u32,
         cancel: Arc<AtomicBool>,
-        playback: &Arc<crate::services::audio::PlaybackEngine>,
+        playback: &Arc<PlaybackEngine>,
         _event_tx: Sender<VoxEvent>,
         telemetry_rtf: Option<&Arc<AtomicU32>>,
     ) -> Result<()> {

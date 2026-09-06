@@ -1,11 +1,14 @@
 //! Central non-blocking pipeline event router.
 
-use super::{RoutingContext, ROUTER_THREAD_NAME};
-use crate::core::events::VoxEvent;
-use crate::core::state::{AppState, InteractionOwner};
-use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
+
 use tauri::{AppHandle, Manager};
+
+use super::{RoutingContext, ROUTER_THREAD_NAME};
+use crate::core::{
+    events::VoxEvent,
+    state::{AppState, InteractionOwner},
+};
 
 /// Routes an incoming pipeline event to canonical handlers based on snapshot context.
 fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState, event: VoxEvent) {

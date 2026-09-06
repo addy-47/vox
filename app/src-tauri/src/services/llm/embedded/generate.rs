@@ -2,14 +2,23 @@ use std::sync::mpsc;
 
 use anyhow::{anyhow, Result};
 use llama_cpp_4::{
-    context::LlamaContext, llama_batch::LlamaBatch, model::AddBos, sampling::LlamaSampler,
-    token::data_array::LlamaTokenDataArray, token::LlamaToken,
+    context::LlamaContext,
+    llama_batch::LlamaBatch,
+    model::AddBos,
+    sampling::LlamaSampler,
+    token::{data_array::LlamaTokenDataArray, LlamaToken},
 };
 
-use super::family::{partial_tag_len, ModelFamily};
-use super::worker::{CacheState, LlmWorker};
-use crate::services::harness::ConversationContext;
-use crate::services::llm::LlmEngine;
+use super::{
+    family::{partial_tag_len, ModelFamily},
+    worker::{CacheState, LlmWorker},
+};
+use crate::services::{
+    harness::ConversationContext,
+    llm::{
+        LlmEngine, LlmStreamEvent, DEFAULT_BATCH_CHUNK_SIZE, DEFAULT_MAX_GENERATION_SAFETY_TOKENS,
+    },
+};
 
 /// Soft-cap limits and state for stream generation.
 struct GenerationLimits {
@@ -28,7 +37,7 @@ impl GenerationLimits {
         Self {
             total_input_tokens,
             max_ctx_size,
-            max_safety_tokens: crate::services::llm::DEFAULT_MAX_GENERATION_SAFETY_TOKENS,
+            max_safety_tokens: DEFAULT_MAX_GENERATION_SAFETY_TOKENS,
             max_output_tokens,
         }
     }
@@ -60,17 +69,14 @@ impl GenerationLimits {
 /// Helper struct managing incremental streaming buffer, tag stripping, and partial emission.
 struct StreamingEmitter<'a> {
     family: &'a ModelFamily,
-    tx: &'a mpsc::Sender<crate::services::llm::LlmStreamEvent>,
+    tx: &'a mpsc::Sender<LlmStreamEvent>,
     raw_gen_buf: String,
     emitted_clean_len: usize,
     byte_buf: Vec<u8>,
 }
 
 impl<'a> StreamingEmitter<'a> {
-    pub fn new(
-        family: &'a ModelFamily,
-        tx: &'a mpsc::Sender<crate::services::llm::LlmStreamEvent>,
-    ) -> Self {
+    pub fn new(family: &'a ModelFamily, tx: &'a mpsc::Sender<LlmStreamEvent>) -> Self {
         Self {
             family,
             tx,
@@ -130,9 +136,7 @@ impl<'a> StreamingEmitter<'a> {
         if cleaned_trimmed.len() > self.emitted_clean_len {
             let delta = &cleaned_trimmed[self.emitted_clean_len..];
             if !delta.is_empty() {
-                if let Err(e) = self.tx.send(crate::services::llm::LlmStreamEvent::Token(
-                    delta.to_string(),
-                )) {
+                if let Err(e) = self.tx.send(LlmStreamEvent::Token(delta.to_string())) {
                     log::warn!("[LLM::Embedded] Failed to send Token stream event: {}", e);
                 }
             }
@@ -149,9 +153,7 @@ impl<'a> StreamingEmitter<'a> {
         if clean_len > self.emitted_clean_len {
             let delta = &cleaned[self.emitted_clean_len..clean_len];
             if !delta.is_empty() {
-                if let Err(e) = self.tx.send(crate::services::llm::LlmStreamEvent::Token(
-                    delta.to_string(),
-                )) {
+                if let Err(e) = self.tx.send(LlmStreamEvent::Token(delta.to_string())) {
                     log::warn!(
                         "[LLM::Embedded] Failed to send partial Token stream event: {}",
                         e
@@ -172,9 +174,7 @@ impl<'a> StreamingEmitter<'a> {
         if final_trimmed.len() > self.emitted_clean_len {
             let delta = &final_trimmed[self.emitted_clean_len..];
             if !delta.is_empty() {
-                if let Err(e) = self.tx.send(crate::services::llm::LlmStreamEvent::Token(
-                    delta.to_string(),
-                )) {
+                if let Err(e) = self.tx.send(LlmStreamEvent::Token(delta.to_string())) {
                     log::warn!(
                         "[LLM::Embedded] Failed to send final Token stream event: {}",
                         e
@@ -193,7 +193,7 @@ impl LlmWorker {
         conv_ctx: &ConversationContext,
         turn_id: u32,
         cancel: &tokio_util::sync::CancellationToken,
-        tx: &mpsc::Sender<crate::services::llm::LlmStreamEvent>,
+        tx: &mpsc::Sender<LlmStreamEvent>,
     ) -> Result<Option<(usize, i32)>> {
         let last_user_text = conv_ctx
             .messages
@@ -242,7 +242,7 @@ impl LlmWorker {
                         );
                         *self.cache_state.lock() = None;
                         ctx.clear_kv_cache();
-                        if let Err(e) = tx.send(crate::services::llm::LlmStreamEvent::Finished) {
+                        if let Err(e) = tx.send(LlmStreamEvent::Finished) {
                             log::warn!("[LLM::Embedded] Failed to send Finished on cancel: {}", e);
                         }
                         return Ok(None);
@@ -289,7 +289,7 @@ impl LlmWorker {
 
             let mut last_sample_ith = 0;
             if !prompt_tokens.is_empty() {
-                let n_batch_chunk = crate::services::llm::DEFAULT_BATCH_CHUNK_SIZE;
+                let n_batch_chunk = DEFAULT_BATCH_CHUNK_SIZE;
                 let total = prompt_tokens.len();
                 let mut offset = 0;
                 while offset < total {
@@ -300,7 +300,7 @@ impl LlmWorker {
                         );
                         *self.cache_state.lock() = None;
                         ctx.clear_kv_cache();
-                        if let Err(e) = tx.send(crate::services::llm::LlmStreamEvent::Finished) {
+                        if let Err(e) = tx.send(LlmStreamEvent::Finished) {
                             log::warn!(
                                 "[LLM::Embedded] Failed to send Finished on cancel during prefill: {}",
                                 e
@@ -363,7 +363,7 @@ impl LlmEngine for LlmWorker {
         turn_id: u32,
         max_output_tokens: Option<u32>,
         cancel: &tokio_util::sync::CancellationToken,
-        tx: &mpsc::Sender<crate::services::llm::LlmStreamEvent>,
+        tx: &mpsc::Sender<LlmStreamEvent>,
     ) -> Result<()> {
         self.init_context()?;
 
@@ -398,7 +398,7 @@ impl LlmEngine for LlmWorker {
 
         let max_new_batch = match max_output_tokens {
             Some(toks) => (toks as usize).min(self.ctx_size as usize),
-            None => crate::services::llm::DEFAULT_MAX_GENERATION_SAFETY_TOKENS,
+            None => DEFAULT_MAX_GENERATION_SAFETY_TOKENS,
         };
         let mut batch = LlamaBatch::new(total_input_tokens + max_new_batch, 1);
 
@@ -419,7 +419,7 @@ impl LlmEngine for LlmWorker {
             if cancel.is_cancelled() {
                 log::info!("[LLM] Cancelled at token {} (turn: {})", n_cur, turn_id);
                 *self.cache_state.lock() = None;
-                if let Err(e) = tx.send(crate::services::llm::LlmStreamEvent::Finished) {
+                if let Err(e) = tx.send(LlmStreamEvent::Finished) {
                     log::warn!(
                         "[LLM::Embedded] Failed to send Finished on cancel during loop: {}",
                         e
@@ -478,7 +478,7 @@ impl LlmEngine for LlmWorker {
             tps
         );
 
-        if let Err(e) = tx.send(crate::services::llm::LlmStreamEvent::Finished) {
+        if let Err(e) = tx.send(LlmStreamEvent::Finished) {
             log::warn!("[LLM::Embedded] Failed to send Finished event: {}", e);
         }
         Ok(())

@@ -10,15 +10,25 @@
 
 mod common;
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::{AudioOutputMode, InteractionMode};
-use vox_lib::core::state::InteractionState;
-use vox_lib::services::stt::actor::SttCommand;
-use vox_lib::services::vad::actor::VadActorConfig;
-use vox_lib::services::vad::VadCommand;
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
+};
+
+use vox_lib::{
+    core::{
+        events::VoxEvent,
+        settings::{AudioOutputMode, InteractionMode},
+        state::InteractionState,
+    },
+    services::{
+        stt::actor::SttCommand,
+        vad::{actor::VadActorConfig, VadCommand},
+    },
+};
 
 #[test]
 fn test_passive_streaming_matrix() {

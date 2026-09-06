@@ -3,15 +3,19 @@ pub mod dictation;
 pub mod router;
 pub mod test;
 
-pub use crate::core::constants::{WINDOW_MAIN, WINDOW_TOAST, WINDOW_TRAY, WINDOW_WIZARD};
-use crate::core::events::VoxEvent;
-use crate::core::events::{emit_ipc_to, IpcEvent};
-use crate::core::settings::{DictationInteractionMode, InteractionMode, PipelineMode};
-use crate::core::state::{AppState, InteractionOwner, InteractionState};
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    sync::{atomic::Ordering, Arc},
+    time::Duration,
+};
+
 use tauri::AppHandle;
+
+pub use crate::core::constants::{WINDOW_MAIN, WINDOW_TOAST, WINDOW_TRAY, WINDOW_WIZARD};
+use crate::core::{
+    events::{emit_ipc_to, IpcEvent, VoxEvent},
+    settings::{DictationInteractionMode, InteractionMode, PipelineMode},
+    state::{AppState, InteractionOwner, InteractionState},
+};
 
 pub const ROUTER_THREAD_NAME: &str = "vox-router";
 pub const INACTIVITY_READY_TIMEOUT: Duration = Duration::from_secs(420);

@@ -1,5 +1,6 @@
-use crate::core::error::DictationError;
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+
+use crate::core::error::DictationError;
 
 /// Abstract interface for simulated OS input actions.
 pub trait SystemInputAdapter: Send + Sync {

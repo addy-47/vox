@@ -1,17 +1,19 @@
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+    Arc,
+};
 
-use ringbuf::traits::*;
-use ringbuf::HeapCons;
+use ringbuf::{traits::*, HeapCons};
 
 use super::{
     PlaybackEngineHandles, PlaybackTelemetryHandles, PLAYBACK_CHANNELS, PLAYBACK_DEFAULT_VOLUME,
     PLAYBACK_ENERGY_EXPONENT, PLAYBACK_ENERGY_MULTIPLIER, PLAYBACK_SAMPLE_RATE,
     PLAYBACK_VOLUME_RAMP_STEP,
 };
-use crate::core::events::VoxEvent;
-use crate::core::state::InteractionState;
-use crate::utils::audio_filters::FilterBank;
+use crate::{
+    core::{events::VoxEvent, state::InteractionState},
+    utils::audio_filters::FilterBank,
+};
 
 /// Context state held exclusively by the real-time CPAL output stream callback.
 pub(crate) struct PlaybackStreamContext {

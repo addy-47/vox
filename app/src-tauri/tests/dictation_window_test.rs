@@ -10,19 +10,28 @@
 
 mod common;
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::time::Duration;
-use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::{
-    AudioOutputMode, DictationInteractionMode, DictationOutputMode, InteractionMode,
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    },
+    time::Duration,
 };
-use vox_lib::core::state::{InteractionOwner, InteractionState};
-use vox_lib::pipeline::dictation::transition_dictation;
-use vox_lib::services::llm::LlmCommand;
-use vox_lib::services::vad::actor::VadActorConfig;
-use vox_lib::services::vad::VadCommand;
+
+use vox_lib::{
+    core::{
+        events::VoxEvent,
+        settings::{
+            AudioOutputMode, DictationInteractionMode, DictationOutputMode, InteractionMode,
+        },
+        state::{InteractionOwner, InteractionState},
+    },
+    pipeline::dictation::transition_dictation,
+    services::{
+        llm::LlmCommand,
+        vad::{actor::VadActorConfig, VadCommand},
+    },
+};
 
 #[tokio::test]
 async fn test_dictation_matrix() {

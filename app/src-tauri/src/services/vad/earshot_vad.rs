@@ -1,6 +1,7 @@
-use super::VadEngine;
 use anyhow::Result;
 use earshot::Detector;
+
+use super::VadEngine;
 
 /// Voice Activity Detection engine wrapping pure Rust Earshot neural model without ONNX dependency.
 pub struct EarshotVadEngine {

@@ -1,12 +1,17 @@
-use crate::services::memory::is_valid_inter_collection_pair;
-use crate::services::memory::{
-    EDGE_CLASSIFIER_MODEL_DIR, EDGE_CLASSIFIER_MODEL_FILENAME, EDGE_CLASSIFIER_THRESHOLD,
-    EDGE_CLASSIFIER_TOKENIZER_FILENAME,
-};
+use std::path::Path;
+
 use anyhow::{anyhow, Result};
 use ndarray::Array2;
-use std::path::Path;
 use tokenizers::Tokenizer;
+
+use crate::{
+    services::memory::{
+        is_valid_inter_collection_pair, Relation, EDGE_CLASSIFIER_MODEL_DIR,
+        EDGE_CLASSIFIER_MODEL_FILENAME, EDGE_CLASSIFIER_THRESHOLD,
+        EDGE_CLASSIFIER_TOKENIZER_FILENAME,
+    },
+    utils::paths::try_get,
+};
 
 /// Runtime state container holding the ONNX inference session and tokenizer for edge classification.
 pub struct EdgeClassifierEngine {
@@ -102,7 +107,7 @@ pub fn ensure_edge_classifier_loaded() -> Result<()> {
         return Ok(());
     }
 
-    let models_dir = if let Some(p) = crate::utils::paths::try_get() {
+    let models_dir = if let Some(p) = try_get() {
         p.models.clone()
     } else {
         dirs::home_dir()
@@ -245,9 +250,9 @@ pub fn classify_edge(
     let (max_idx, max_prob) = compute_softmax(&logits);
 
     let predicted_label = match max_idx {
-        0 => crate::services::memory::Relation::Shapes.as_str(),
-        1 => crate::services::memory::Relation::DependsOn.as_str(),
-        2 => crate::services::memory::Relation::Conflicts.as_str(),
+        0 => Relation::Shapes.as_str(),
+        1 => Relation::DependsOn.as_str(),
+        2 => Relation::Conflicts.as_str(),
         _ => "",
     };
 

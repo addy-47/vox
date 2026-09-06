@@ -1,8 +1,13 @@
 use tauri::AppHandle;
 
-use crate::core::events::{PipelineError, PipelineImpact, ToastLevel};
-use crate::core::state::{AppState, InteractionState};
-use crate::pipeline::dictation::transition_dictation;
+use crate::{
+    core::{
+        events::{PipelineError, PipelineImpact, ToastLevel},
+        state::{AppState, InteractionState},
+    },
+    pipeline::dictation::transition_dictation,
+    toast::{should_show_error_toast, show_toast},
+};
 
 /// Logs dictation errors, updates tray state, and handles recovery per 2D Error Classification.
 pub fn on_error<R: tauri::Runtime>(err: PipelineError, app: &AppHandle<R>, state: &AppState) {
@@ -33,12 +38,12 @@ pub fn on_error<R: tauri::Runtime>(err: PipelineError, app: &AppHandle<R>, state
         }
     }
 
-    if crate::toast::should_show_error_toast(app) {
+    if should_show_error_toast(app) {
         let level = match err.impact {
             PipelineImpact::Degraded => ToastLevel::Warning,
             _ => ToastLevel::Error,
         };
-        if let Err(e) = crate::toast::show_toast(app, "Dictation Notice", &err.message, level) {
+        if let Err(e) = show_toast(app, "Dictation Notice", &err.message, level) {
             log::warn!("[Dictation::Error] Failed to show error toast: {}", e);
         }
     }

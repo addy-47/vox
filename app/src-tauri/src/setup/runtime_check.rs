@@ -1,10 +1,14 @@
-use crate::core::settings::VoxSettings;
-use crate::setup::manifest::{VerifiedMarker, VoxManifest};
-use crate::utils::paths;
+use std::path::Path;
+
 use cpal::traits::HostTrait;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 use sysinfo::{Disks, System};
+
+use crate::{
+    core::settings::VoxSettings,
+    setup::manifest::{VerifiedMarker, VoxManifest},
+    utils::paths,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeReport {

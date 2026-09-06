@@ -1,9 +1,18 @@
-use crate::core::state::AppState;
-use crate::setup::manifest::{ModelEntry, VerifiedMarker, VoxManifest};
-use crate::setup::model_manager::ModelManager;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
 use tauri::AppHandle;
+
+use crate::{
+    core::state::AppState,
+    setup::{
+        manifest::{ModelEntry, VerifiedMarker, VoxManifest},
+        model_manager::ModelManager,
+    },
+    utils::paths,
+};
 
 pub async fn ensure_manifest_loaded(state: &AppState) -> Result<(), String> {
     {
@@ -13,9 +22,7 @@ pub async fn ensure_manifest_loaded(state: &AppState) -> Result<(), String> {
         }
     }
 
-    let manifest_path = crate::utils::paths::get()
-        .models
-        .join("models_manifest.json");
+    let manifest_path = paths::get().models.join("models_manifest.json");
 
     if manifest_path.exists() {
         let p = manifest_path.clone();
@@ -208,7 +215,7 @@ pub async fn check_model_exists(
         return Ok(true);
     }
 
-    let models_dir = crate::utils::paths::get().models.clone();
+    let models_dir = paths::get().models.clone();
     let exists = group
         .files
         .iter()
@@ -252,7 +259,7 @@ pub async fn download_single_model(
 
     let setup_running = Arc::clone(&state.setup_running);
     tauri::async_runtime::spawn(async move {
-        let p = crate::utils::paths::get();
+        let p = paths::get();
         let base_url = "https://huggingface.co/addyo07/vox-models/resolve/main";
 
         for model in target_models {
@@ -304,7 +311,7 @@ pub async fn start_batch_setup<R: tauri::Runtime + 'static>(
     };
 
     let manager = state.model_manager.clone();
-    let models_dir = crate::utils::paths::get().models.clone();
+    let models_dir = paths::get().models.clone();
     let base_url = "https://huggingface.co/addyo07/vox-models/resolve/main".to_string();
 
     tauri::async_runtime::spawn(execute_model_setup_task(
@@ -331,7 +338,7 @@ pub async fn delete_model_group(state: &AppState, model_id: Option<String>) -> R
         .find(|g| g.id == id)
         .ok_or_else(|| format!("Model group {} not found in manifest", id))?;
 
-    let models_dir = crate::utils::paths::get().models.clone();
+    let models_dir = paths::get().models.clone();
     for file in &group.files {
         delete_model_file(file, &models_dir);
     }

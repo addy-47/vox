@@ -2,17 +2,19 @@ pub mod coordinator;
 pub mod prompt;
 pub mod runner;
 
+use std::sync::Arc;
+
+use anyhow::Result;
 pub use coordinator::{CompactionCoordinator, CompactionExecutionSummary};
 pub use prompt::{build_compaction_request, COMPACTION_SYSTEM_PROMPT};
 pub use runner::{run_compaction, CompactionResult};
-
-use anyhow::Result;
-use std::sync::Arc;
 use tauri::AppHandle;
 
-use crate::core::state::AppState;
-use crate::persistence::compactions::fetch_uncompacted_sessions;
-use crate::persistence::db::VoxDb;
+use crate::{
+    core::state::AppState,
+    persistence::{compactions::fetch_uncompacted_sessions, db::VoxDb},
+    utils::paths::db_path,
+};
 
 /// Runs a startup sweep across all past sessions to detect any sessions that ended with
 /// uncompacted turns (e.g. from an OS crash, hard reboot, or sudden termination).
@@ -20,7 +22,7 @@ pub async fn reconcile_uncompacted_sessions_on_boot(
     app: &AppHandle,
     state: &Arc<AppState>,
 ) -> Result<u32> {
-    let db_path = crate::utils::paths::db_path();
+    let db_path = db_path();
     let conn = VoxDb::open(&db_path).await?;
 
     let uncompacted = fetch_uncompacted_sessions(&conn).await?;

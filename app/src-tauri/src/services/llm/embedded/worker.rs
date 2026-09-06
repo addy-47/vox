@@ -1,12 +1,16 @@
-use super::family::ModelFamily;
+use std::{num::NonZeroU32, path::Path};
+
 use anyhow::{anyhow, Result};
 use llama_cpp_4::{
-    context::params::LlamaContextParams, context::LlamaContext, llama_backend::LlamaBackend,
-    model::params::LlamaModelParams, model::LlamaModel, token::LlamaToken,
+    context::{params::LlamaContextParams, LlamaContext},
+    llama_backend::LlamaBackend,
+    model::{params::LlamaModelParams, LlamaModel},
+    token::LlamaToken,
 };
 use parking_lot::Mutex;
-use std::num::NonZeroU32;
-use std::path::Path;
+
+use super::family::ModelFamily;
+use crate::services::llm::{global_llama_backend, DEFAULT_BATCH_CHUNK_SIZE};
 
 unsafe impl Send for LlmWorker {}
 unsafe impl Sync for LlmWorker {}
@@ -45,7 +49,7 @@ impl LlmWorker {
         let family = ModelFamily::detect(&resolved);
         log::info!("[LLM] Detected model family: {:?}", family);
 
-        let backend = crate::services::llm::global_llama_backend();
+        let backend = global_llama_backend();
 
         let model_params = LlamaModelParams::default()
             .with_n_gpu_layers(0)
@@ -107,8 +111,8 @@ impl LlmWorker {
                 .with_n_ctx(NonZeroU32::new(effective_ctx))
                 .with_n_threads(self.n_threads as i32)
                 .with_n_threads_batch(self.n_threads as i32)
-                .with_n_batch(crate::services::llm::DEFAULT_BATCH_CHUNK_SIZE as u32)
-                .with_n_ubatch(crate::services::llm::DEFAULT_BATCH_CHUNK_SIZE as u32);
+                .with_n_batch(DEFAULT_BATCH_CHUNK_SIZE as u32)
+                .with_n_ubatch(DEFAULT_BATCH_CHUNK_SIZE as u32);
 
             let ctx = self
                 .model

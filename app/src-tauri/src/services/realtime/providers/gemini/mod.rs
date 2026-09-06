@@ -2,23 +2,30 @@ mod handshake;
 mod protocol;
 mod session;
 
-use std::sync::Arc;
+use std::sync::{atomic::AtomicU32, Arc};
 
 use anyhow::{bail, Result};
 use parking_lot::Mutex;
-
-use crate::core::settings::{GeminiRealtimeConfig, InteractionMode};
-use crate::services::realtime::transport::{connection::spawn_harness, HarnessConfig, HarnessInit};
-use crate::services::realtime::{
-    RealtimeAudioConfig, RealtimeProviderEvent, RealtimeProviderKind, RealtimeSession,
-    RealtimeVoiceProvider, DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE,
-    GEMINI_HEALTH_CHECK_ADDR, GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR, MAX_RECONNECT_ATTEMPTS,
-    RECONNECT_BASE_DELAY_SECS, RECONNECT_FACTOR_SECS, WS_HEALTH_CHECK_TIMEOUT,
-};
-
-use crate::core::state::InteractionState;
 use session::{GeminiDriver, GeminiLiveSession, GeminiSessionState};
-use std::sync::atomic::AtomicU32;
+
+use crate::{
+    core::{
+        settings::{GeminiRealtimeConfig, InteractionMode},
+        state::InteractionState,
+    },
+    services::realtime::{
+        transport::{
+            connection::spawn_harness,
+            health::{resolve_or_fallback, tcp_health_check},
+            HarnessConfig, HarnessInit,
+        },
+        RealtimeAudioConfig, RealtimeProviderEvent, RealtimeProviderKind, RealtimeSession,
+        RealtimeVoiceProvider, BRIDGE_CHANNEL_CAPACITY, DEFAULT_INPUT_SAMPLE_RATE,
+        DEFAULT_OUTPUT_SAMPLE_RATE, GEMINI_HEALTH_CHECK_ADDR,
+        GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR, MAX_RECONNECT_ATTEMPTS,
+        RECONNECT_BASE_DELAY_SECS, RECONNECT_FACTOR_SECS, WS_HEALTH_CHECK_TIMEOUT,
+    },
+};
 
 pub struct GeminiLiveProvider {
     config: GeminiRealtimeConfig,
@@ -91,9 +98,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         })?;
 
         let (provider_event_tx, provider_event_rx) =
-            tokio::sync::mpsc::channel::<RealtimeProviderEvent>(
-                crate::services::realtime::BRIDGE_CHANNEL_CAPACITY,
-            );
+            tokio::sync::mpsc::channel::<RealtimeProviderEvent>(BRIDGE_CHANNEL_CAPACITY);
 
         let session_state = Arc::new(Mutex::new(GeminiSessionState {
             interrupt_active: false,
@@ -162,7 +167,6 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
     }
 
     fn health_check(&self) -> bool {
-        use crate::services::realtime::transport::health::{resolve_or_fallback, tcp_health_check};
         let addr = resolve_or_fallback(
             GEMINI_HEALTH_CHECK_ADDR,
             GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR,

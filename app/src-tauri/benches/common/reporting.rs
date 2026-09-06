@@ -2,9 +2,12 @@
 //! benches/common/reporting.rs — Structured Benchmark Results Persistence
 //! ============================================================================
 
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::{Path, PathBuf};
 use sysinfo::{MemoryRefreshKind, ProcessRefreshKind, RefreshKind, System};
 
 /// Returns active process memory (RSS) in megabytes.

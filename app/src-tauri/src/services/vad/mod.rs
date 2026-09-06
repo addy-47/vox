@@ -8,8 +8,9 @@ pub mod earshot_vad;
 pub mod telemetry;
 pub mod ten_onnx;
 pub mod utils;
-use crate::core::settings::InteractionMode;
 use std::sync::mpsc;
+
+use crate::core::settings::{AudioOutputMode, InteractionMode};
 
 pub const MODEL_DIR_VAD: &str = "vad";
 pub const MODEL_FILE_VAD: &str = "ten_vad.onnx";
@@ -34,7 +35,7 @@ pub enum VadCommand {
     UpdateSilenceDuration(u32),
     UpdateSpeechOnset(u32),
     UpdateMode(InteractionMode),
-    UpdateAudioMode(crate::core::settings::AudioOutputMode),
+    UpdateAudioMode(AudioOutputMode),
     SetOperationalMode(VadOperationalMode),
     StartWindowValidation,
     StopWindowValidation {

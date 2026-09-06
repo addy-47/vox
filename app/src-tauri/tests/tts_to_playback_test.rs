@@ -10,18 +10,23 @@
 
 mod common;
 
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc, Arc,
+    },
+    time::Duration,
+};
+
 use ringbuf::traits::Consumer;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::time::Duration;
-use vox_lib::core::events::VoxEvent;
-use vox_lib::core::state::InteractionState;
-use vox_lib::pipeline::assistant::playback::on_playback_started;
-use vox_lib::pipeline::RoutingContext;
-use vox_lib::services::tts::actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles};
-use vox_lib::services::tts::providers::supertonic::TtsEngine as SupertonicEngine;
-use vox_lib::services::tts::providers::TtsProvider;
+use vox_lib::{
+    core::{events::VoxEvent, state::InteractionState},
+    pipeline::{assistant::playback::on_playback_started, RoutingContext},
+    services::tts::{
+        actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
+        providers::{supertonic::TtsEngine as SupertonicEngine, TtsProvider},
+    },
+};
 
 #[tokio::test]
 async fn test_real_tts_to_playback_synthesis_and_preroll() {

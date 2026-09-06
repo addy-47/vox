@@ -1,9 +1,17 @@
-use crate::core::error::VoxIpcError;
-use crate::core::settings::VoxSettings;
-use crate::core::state::AppState;
-use crate::utils::paths;
 use std::sync::Arc;
+
 use tauri::{AppHandle, Manager, State};
+
+use crate::{
+    core::{
+        error::VoxIpcError,
+        settings::{caps_for_id, get_preset_colors, ProviderCaps, VoiceProfile, VoxSettings},
+        state::AppState,
+    },
+    services::tts::voice::get_voice_profiles,
+    setup::manifest::{ModelGroup, VoxManifest},
+    utils::paths,
+};
 
 /// Initial boot payload returned to the frontend during application initialization.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -16,13 +24,13 @@ pub struct BootState {
 /// Categorized catalog of available local and cloud AI models.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ModelCatalog {
-    pub llm: Vec<crate::setup::manifest::ModelGroup>,
-    pub stt: Vec<crate::setup::manifest::ModelGroup>,
-    pub tts: Vec<crate::setup::manifest::ModelGroup>,
-    pub vad: Vec<crate::setup::manifest::ModelGroup>,
-    pub auxiliary: Vec<crate::setup::manifest::ModelGroup>,
-    pub model_groups: Vec<crate::setup::manifest::ModelGroup>,
-    pub voices: Vec<crate::core::settings::VoiceProfile>,
+    pub llm: Vec<ModelGroup>,
+    pub stt: Vec<ModelGroup>,
+    pub tts: Vec<ModelGroup>,
+    pub vad: Vec<ModelGroup>,
+    pub auxiliary: Vec<ModelGroup>,
+    pub model_groups: Vec<ModelGroup>,
+    pub voices: Vec<VoiceProfile>,
     pub preset_colors: Vec<String>,
 }
 
@@ -72,7 +80,7 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
                 .await
                 .map_err(|e| VoxIpcError::Internal(e.to_string()))?
                 .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
-            serde_json::from_str::<crate::setup::manifest::VoxManifest>(&content)
+            serde_json::from_str::<VoxManifest>(&content)
                 .map_err(|e| VoxIpcError::Internal(e.to_string()))?
         } else {
             return Err(VoxIpcError::NotFound("Manifest not available".to_string()));
@@ -120,12 +128,12 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         vad,
         auxiliary,
         model_groups: groups,
-        voices: crate::services::tts::voice::get_voice_profiles(),
-        preset_colors: crate::core::settings::get_preset_colors(),
+        voices: get_voice_profiles(),
+        preset_colors: get_preset_colors(),
     })
 }
 
 #[tauri::command]
-pub fn get_provider_caps(provider_id: String) -> crate::core::settings::ProviderCaps {
-    crate::core::settings::caps_for_id(&provider_id)
+pub fn get_provider_caps(provider_id: String) -> ProviderCaps {
+    caps_for_id(&provider_id)
 }

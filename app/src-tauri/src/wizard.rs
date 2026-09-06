@@ -1,9 +1,13 @@
-use crate::services::llm::{QWEN_MODEL_DIR, QWEN_MODEL_FILE};
-use crate::services::stt::{MODEL_FILE_ASR_ENCODER, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR};
-use crate::services::vad::{MODEL_DIR_VAD, MODEL_FILE_VAD};
-use crate::utils::paths;
-
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+
+use crate::{
+    services::{
+        llm::{QWEN_MODEL_DIR, QWEN_MODEL_FILE},
+        stt::{MODEL_FILE_ASR_ENCODER, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
+        vad::{MODEL_DIR_VAD, MODEL_FILE_VAD},
+    },
+    utils::paths,
+};
 
 /// Lazily constructs the wizard setup window on-demand.
 pub fn ensure_wizard_window(app: &AppHandle) -> Result<WebviewWindow, String> {

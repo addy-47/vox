@@ -1,11 +1,15 @@
-use crate::core::events::SystemStatsPayload;
-use crate::core::events::{emit_ipc, IpcEvent};
-use crate::core::state::AppState;
-use crate::monitoring::SYSTEM_MONITOR_INTERVAL;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
+
 use sysinfo::{Pid, System};
 use tauri::{AppHandle, Manager};
+
+use crate::{
+    core::{
+        events::{emit_ipc, IpcEvent, SystemStatsPayload},
+        state::AppState,
+    },
+    monitoring::{aggregator::TelemetryEvent, SYSTEM_MONITOR_INTERVAL},
+};
 
 /// Spawns the background system monitor task to collect and broadcast CPU and RAM statistics.
 pub fn spawn_system_monitor(app: AppHandle) {
@@ -45,14 +49,12 @@ pub fn spawn_system_monitor(app: AppHandle) {
                 thread_count,
             );
 
-            if let Err(e) = telemetry_tx.try_send(
-                crate::monitoring::aggregator::TelemetryEvent::SystemHealth {
-                    system_cpu,
-                    system_ram_pct,
-                    vox_cpu,
-                    vox_ram_mb,
-                },
-            ) {
+            if let Err(e) = telemetry_tx.try_send(TelemetryEvent::SystemHealth {
+                system_cpu,
+                system_ram_pct,
+                vox_cpu,
+                vox_ram_mb,
+            }) {
                 log::warn!("[Monitoring::SystemMonitor] Failed to send SystemHealth to telemetry aggregator: {}", e);
             }
         }

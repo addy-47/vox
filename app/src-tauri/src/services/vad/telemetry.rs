@@ -1,11 +1,12 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 
-use crate::monitoring::aggregator::TelemetryEvent;
-use crate::utils::audio_filters::FilterBank;
 use crossbeam_channel::Sender;
 
 use super::utils::calculate_rms;
+use crate::{monitoring::aggregator::TelemetryEvent, utils::audio_filters::FilterBank};
 
 /// Calculates 3-band audio energy telemetry and dispatches to the monitoring channel.
 /// Returns the raw RMS energy value for downstream threshold gating.

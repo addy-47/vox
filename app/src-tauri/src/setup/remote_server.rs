@@ -1,7 +1,11 @@
-use crate::core::events::{emit_ipc, IpcEvent};
-use crate::setup::model_manager::{ModelSetupStatus, SetupStep};
 use std::sync::atomic::{AtomicBool, Ordering};
+
 use tauri::Manager;
+
+use crate::{
+    core::events::{emit_ipc, IpcEvent},
+    setup::model_manager::{ModelSetupStatus, SetupStep},
+};
 
 static REMOTE_SETUP_RUNNING: AtomicBool = AtomicBool::new(false);
 
@@ -73,8 +77,11 @@ pub async fn run_remote_ssh_task<R: tauri::Runtime>(
 ) {
     let _guard = RemoteSetupGuard;
     use std::process::Stdio;
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-    use tokio::process::Command;
+
+    use tokio::{
+        io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+        process::Command,
+    };
 
     let mut cmd = Command::new("ssh");
     if let Some(ref key_path) = identity_key_path {

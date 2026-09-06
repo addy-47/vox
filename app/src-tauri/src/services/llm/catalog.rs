@@ -1,5 +1,6 @@
-use super::transport::{CapabilitySource, TokenLimitField, TransportType};
 use serde::{Deserialize, Serialize};
+
+use super::transport::{CapabilitySource, TokenLimitField, TransportType};
 
 /// Catalog authentication scheme declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

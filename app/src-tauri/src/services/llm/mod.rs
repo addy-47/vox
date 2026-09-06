@@ -33,10 +33,15 @@ pub const DEFAULT_PROBE_MAX_TOKENS: u32 = 40;
 pub const DEFAULT_TOOL_PROBE_MAX_TOKENS: u32 = 80;
 pub const DEFAULT_PROBE_TEMPERATURE: f32 = 0.1;
 
-use crate::core::settings::LlmModelInfo;
+use std::sync::mpsc;
+
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
-use std::sync::mpsc;
+
+use crate::{
+    core::settings::LlmModelInfo,
+    services::harness::{ChatMessage, ConversationContext},
+};
 
 /// Purpose of generation, allowing default policy selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,7 +79,7 @@ pub enum OutputConstraint {
 /// Neutral container for input messages.
 #[derive(Debug, Clone)]
 pub struct ConversationInput {
-    pub messages: Vec<crate::services::harness::ChatMessage>,
+    pub messages: Vec<ChatMessage>,
 }
 
 /// Provider-neutral generation request payload.
@@ -208,16 +213,17 @@ pub trait LlmProvider: Send + Sync {
 pub trait LlmEngine {
     fn generate(
         &self,
-        ctx: &crate::services::harness::ConversationContext,
+        ctx: &ConversationContext,
         turn_id: u32,
         max_output_tokens: Option<u32>,
         cancel: &tokio_util::sync::CancellationToken,
-        tx: &mpsc::Sender<crate::services::llm::LlmStreamEvent>,
+        tx: &mpsc::Sender<LlmStreamEvent>,
     ) -> anyhow::Result<()>;
 }
 
-use llama_cpp_4::llama_backend::LlamaBackend;
 use std::sync::OnceLock;
+
+use llama_cpp_4::llama_backend::LlamaBackend;
 
 /// Returns the process-wide llama.cpp backend singleton.
 pub fn global_llama_backend() -> &'static LlamaBackend {

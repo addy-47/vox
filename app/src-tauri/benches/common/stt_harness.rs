@@ -1,25 +1,37 @@
-use ringbuf::traits::{Observer, Producer, Split};
-use ringbuf::HeapRb;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tauri::AppHandle;
-use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::{AudioOutputMode, InteractionMode};
-use vox_lib::services::stt::actor::{
-    spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand,
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
+        mpsc, Arc,
+    },
+    time::{Duration, Instant},
 };
-use vox_lib::services::stt::SttProvider;
-use vox_lib::services::vad::actor::{
-    spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles,
-};
-use vox_lib::services::vad::VadCommand;
-use vox_lib::services::vad::{VAD_CHUNK_SIZE, VAD_SPEECH_END_FRAMES};
 
-use super::reporting::{get_process_memory_mb, ClipBenchmarkResult, EngineBenchmarkRun};
-use super::scoring::levenshtein_similarity;
-use std::sync::atomic::AtomicUsize;
+use ringbuf::{
+    traits::{Observer, Producer, Split},
+    HeapRb,
+};
+use tauri::AppHandle;
+use vox_lib::{
+    core::{
+        events::VoxEvent,
+        settings::{AudioOutputMode, InteractionMode},
+    },
+    services::{
+        stt::{
+            actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
+            SttProvider,
+        },
+        vad::{
+            actor::{spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles},
+            VadCommand, VAD_CHUNK_SIZE, VAD_SPEECH_END_FRAMES,
+        },
+    },
+};
+
+use super::{
+    reporting::{get_process_memory_mb, ClipBenchmarkResult, EngineBenchmarkRun},
+    scoring::levenshtein_similarity,
+};
 
 /// Input ground truth clip definition.
 #[derive(Debug, Clone)]

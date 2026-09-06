@@ -1,6 +1,6 @@
-use crate::core::error::PersistenceError;
-use crate::persistence::SQLITE_BUSY_TIMEOUT_MS;
 use turso::{Builder, Connection};
+
+use crate::{core::error::PersistenceError, persistence::SQLITE_BUSY_TIMEOUT_MS};
 
 /// Global static cell to hold the main Tokio runtime handle.
 pub static TOKIO_HANDLE: once_cell::sync::OnceCell<tokio::runtime::Handle> =

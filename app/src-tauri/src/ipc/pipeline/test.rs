@@ -1,8 +1,8 @@
 use std::sync::Arc;
+
 use tauri::{AppHandle, State};
 
-use crate::core::error::VoxIpcError;
-use crate::core::state::AppState;
+use crate::core::{error::VoxIpcError, state::AppState};
 
 /// Injects a pre-recorded audio clip directly into the active voice pipeline seam.
 #[tauri::command]

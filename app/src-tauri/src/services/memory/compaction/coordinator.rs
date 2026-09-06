@@ -1,22 +1,35 @@
-use anyhow::{anyhow, Result};
 use std::sync::Arc;
+
+use anyhow::{anyhow, Result};
 use tauri::AppHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::core::events::{emit_ipc, IpcEvent, NotificationRecord};
-use crate::core::state::{AppState, InteractionState};
-use crate::persistence::compactions::{
-    commit_compaction_results, fetch_latest_compaction_run, fetch_turns_for_compaction,
-    record_compaction_finish, record_compaction_start,
+use crate::{
+    core::{
+        events::{emit_ipc, IpcEvent, NotificationRecord},
+        state::{AppState, InteractionState},
+    },
+    persistence::{
+        compactions::{
+            commit_compaction_results, fetch_latest_compaction_run, fetch_turns_for_compaction,
+            record_compaction_finish, record_compaction_start,
+        },
+        db::VoxDb,
+        notifications::{
+            create_notification, find_active_notification_by_session, update_notification_status,
+            NewNotification,
+        },
+    },
+    services::{
+        harness::buffer::{ChatMessage, Role},
+        llm::{
+            actor::create_llm_provider_from_llm_settings, LlmProvider, QWEN_MODEL_DIR,
+            QWEN_MODEL_FILE,
+        },
+        memory::compaction::runner::run_compaction,
+    },
+    utils::paths::{db_path, get},
 };
-use crate::persistence::db::VoxDb;
-use crate::persistence::notifications::{
-    create_notification, find_active_notification_by_session, update_notification_status,
-    NewNotification,
-};
-use crate::services::harness::buffer::{ChatMessage, Role};
-use crate::services::llm::LlmProvider;
-use crate::services::memory::compaction::runner::run_compaction;
 
 /// Summary of a successfully executed compaction slice.
 #[derive(Debug, Clone)]
@@ -51,7 +64,7 @@ impl CompactionCoordinator {
             }
         }
 
-        let db_path = crate::utils::paths::db_path();
+        let db_path = db_path();
         let conn = VoxDb::open(&db_path).await?;
 
         // 2. Prevent concurrent / duplicate compaction for the same session
@@ -110,15 +123,9 @@ impl CompactionCoordinator {
         };
 
         let provider_box: Option<Box<dyn LlmProvider>> = {
-            let models_dir = crate::utils::paths::get().models.clone();
-            let llm_path = models_dir
-                .join(crate::services::llm::QWEN_MODEL_DIR)
-                .join(crate::services::llm::QWEN_MODEL_FILE);
-            crate::services::llm::actor::create_llm_provider_from_llm_settings(
-                &llm_settings,
-                &llm_path,
-            )
-            .ok()
+            let models_dir = get().models.clone();
+            let llm_path = models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE);
+            create_llm_provider_from_llm_settings(&llm_settings, &llm_path).ok()
         };
 
         let active_provider = match provider_box {
@@ -208,7 +215,7 @@ impl CompactionCoordinator {
         session_id: i64,
         uncompacted_turns: u32,
     ) -> Result<NotificationRecord> {
-        let db_path = crate::utils::paths::db_path();
+        let db_path = db_path();
         let conn = VoxDb::open(&db_path).await?;
 
         if let Some(existing) =

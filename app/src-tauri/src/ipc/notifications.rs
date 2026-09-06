@@ -1,20 +1,30 @@
 use std::sync::Arc;
+
 use tauri::{AppHandle, State};
 
-use crate::core::error::VoxIpcError;
-use crate::core::events::{emit_ipc, IpcEvent};
-use crate::core::state::AppState;
-use crate::persistence::db::VoxDb;
-use crate::persistence::notifications::{
-    self, dismiss_notification as db_dismiss_notification,
-    fetch_active_notifications as db_fetch_active, mark_all_notifications_read as db_mark_all_read,
-    update_notification_status as db_update_status, NotificationRecord,
+use crate::{
+    core::{
+        error::VoxIpcError,
+        events::{emit_ipc, IpcEvent},
+        state::AppState,
+    },
+    persistence::{
+        db::VoxDb,
+        notifications::{
+            self, dismiss_notification as db_dismiss_notification,
+            fetch_active_notifications as db_fetch_active,
+            mark_all_notifications_read as db_mark_all_read,
+            update_notification_status as db_update_status, NotificationRecord,
+        },
+    },
+    services::memory::compaction::coordinator::CompactionCoordinator,
+    utils::paths::db_path,
 };
 
 /// Retrieves all active notifications ordered newest first.
 #[tauri::command]
 pub async fn get_notifications() -> Result<Vec<NotificationRecord>, VoxIpcError> {
-    let db_path = crate::utils::paths::db_path();
+    let db_path = db_path();
     let conn = VoxDb::open_readonly(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
@@ -27,7 +37,7 @@ pub async fn get_notifications() -> Result<Vec<NotificationRecord>, VoxIpcError>
 /// Marks all unread notifications as read and broadcasts `notifications_marked_read`.
 #[tauri::command]
 pub async fn mark_notifications_read(app: AppHandle) -> Result<(), VoxIpcError> {
-    let db_path = crate::utils::paths::db_path();
+    let db_path = db_path();
     let conn = VoxDb::open(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
@@ -49,7 +59,7 @@ pub async fn mark_notifications_read(app: AppHandle) -> Result<(), VoxIpcError> 
 /// Dismisses a notification by id and broadcasts `notification_dismissed`.
 #[tauri::command]
 pub async fn dismiss_notification(id: String, app: AppHandle) -> Result<(), VoxIpcError> {
-    let db_path = crate::utils::paths::db_path();
+    let db_path = db_path();
     let conn = VoxDb::open(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
@@ -75,7 +85,7 @@ pub async fn trigger_session_compaction(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    let db_path = crate::utils::paths::db_path();
+    let db_path = db_path();
     let conn = VoxDb::open(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
@@ -99,7 +109,7 @@ pub async fn trigger_session_compaction(
     let app_handle = app.clone();
     let app_state = state.inner().clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = crate::services::memory::compaction::coordinator::CompactionCoordinator::run_compaction_slice(
+        if let Err(e) = CompactionCoordinator::run_compaction_slice(
             &app_handle,
             &app_state,
             session_id,
@@ -110,7 +120,8 @@ pub async fn trigger_session_compaction(
         {
             log::error!(
                 "[Notifications::IPC] Manual compaction failed for session {}: {}",
-                session_id, e
+                session_id,
+                e
             );
         }
     });

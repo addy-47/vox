@@ -2,29 +2,33 @@
 //! tests/common/harness.rs — Test Harness Constructors & Actor Lifecycle Helpers
 //! ============================================================================
 
-use ringbuf::traits::Split;
-use ringbuf::wrap::caching::Caching;
-use ringbuf::HeapRb;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tauri::AppHandle;
-use vox_lib::core::events::VoxEvent;
-use vox_lib::services::stt::actor::{
-    spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand,
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU32, AtomicU64},
+        mpsc::{self, Receiver, Sender},
+        Arc,
+    },
+    time::{Duration, Instant},
 };
-use vox_lib::services::stt::{EmbeddedSttProvider, SttProvider};
-use vox_lib::services::vad::actor::{
-    spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles,
-};
-use vox_lib::services::vad::earshot_vad::EarshotVadEngine;
-use vox_lib::services::vad::VadBackend;
-use vox_lib::services::vad::VadCommand;
 
 use parking_lot::Mutex;
-use ringbuf::HeapCons;
-use vox_lib::services::audio::PlaybackEngine;
+use ringbuf::{traits::Split, wrap::caching::Caching, HeapCons, HeapRb};
+use tauri::AppHandle;
+use vox_lib::{
+    core::events::VoxEvent,
+    services::{
+        audio::PlaybackEngine,
+        stt::{
+            actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
+            EmbeddedSttProvider, SttProvider,
+        },
+        vad::{
+            actor::{spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles},
+            earshot_vad::EarshotVadEngine,
+            VadBackend, VadCommand,
+        },
+    },
+};
 
 pub type RbProducer = Caching<Arc<HeapRb<f32>>, true, false>;
 
@@ -252,6 +256,7 @@ pub fn get_test_app_and_state() -> (
     Arc<vox_lib::core::state::AppState>,
 ) {
     use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
+
     use tauri::Manager;
     use vox_lib::core::state::TelemetryState;
 
@@ -293,6 +298,7 @@ pub fn get_test_app_and_state() -> (
 /// Constructs an AppState instance tailored for testing environments.
 pub fn get_test_app_state() -> vox_lib::core::state::AppState {
     use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
+
     use vox_lib::core::state::TelemetryState;
 
     let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();

@@ -1,10 +1,15 @@
 use tauri::AppHandle;
 
-use crate::core::events::ToastLevel;
-use crate::core::events::{emit_ipc_to, IpcEvent, TranscriptPayload};
-use crate::core::state::{AppState, InteractionOwner, InteractionState};
-use crate::pipeline::dictation::transition_dictation;
-use crate::pipeline::WINDOW_TRAY;
+use crate::{
+    core::{
+        events::{emit_ipc_to, IpcEvent, ToastLevel, TranscriptPayload},
+        settings::DictationOutputMode,
+        state::{AppState, InteractionOwner, InteractionState},
+    },
+    pipeline::{dictation::transition_dictation, WINDOW_TRAY},
+    services::{dictation::output_router::route_transcript, translit::transliterate_if_hi},
+    toast::show_toast,
+};
 
 /// Routes finalized transcript directly to OS input simulation without invoking LLM or TTS.
 pub fn on_transcript_final<R: tauri::Runtime>(
@@ -25,9 +30,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         if state.pipeline.dictation_state() != InteractionState::Listening {
             transition_dictation(InteractionState::Ready, app, state);
         }
-        if let Err(e) =
-            crate::toast::show_toast(app, "Dictation", "No speech recognized", ToastLevel::Info)
-        {
+        if let Err(e) = show_toast(app, "Dictation", "No speech recognized", ToastLevel::Info) {
             log::warn!("[Dictation::Transcript] Failed to show empty toast: {}", e);
         }
         return;
@@ -39,14 +42,13 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         .unwrap_or_else(|p| p.into_inner())
         .stt
         .transliterate_enabled;
-    let processed_text =
-        crate::services::translit::transliterate_if_hi(&text, true, transliterate_enabled);
+    let processed_text = transliterate_if_hi(&text, true, transliterate_enabled);
 
     let output_mode = state
         .settings
         .read()
         .map(|s| s.dictation.output_mode.clone())
-        .unwrap_or(crate::core::settings::DictationOutputMode::Paste);
+        .unwrap_or(DictationOutputMode::Paste);
 
     *state.dictation_last_transcript.lock() = Some(processed_text.clone());
 
@@ -54,13 +56,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
     let text_clone = processed_text.clone();
 
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = crate::services::dictation::output_router::route_transcript(
-            &app_handle,
-            &text_clone,
-            output_mode,
-        )
-        .await
-        {
+        if let Err(e) = route_transcript(&app_handle, &text_clone, output_mode).await {
             log::warn!("[Dictation::Transcript] Output routing failed: {}", e);
         }
     });

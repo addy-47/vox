@@ -1,9 +1,10 @@
-use super::config::ConnectionConfig;
-use super::sse::SseDecoder;
-use crate::services::llm::{GenerationRequest, LlmError, OutputConstraint};
+use std::sync::mpsc;
+
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::sync::mpsc;
+
+use super::{config::ConnectionConfig, sse::SseDecoder};
+use crate::services::llm::{GenerationRequest, LlmError, OutputConstraint};
 
 #[derive(Serialize)]
 struct ChatMessage {

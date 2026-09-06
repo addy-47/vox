@@ -9,8 +9,9 @@
 //!                determinism, comma prosody gating stability, clean buffer flush.
 //! ============================================================================
 
-use vox_lib::pipeline::assistant::accumulator::TurnAccumulator;
-use vox_lib::services::tts::actor::TtsClauseChunker;
+use vox_lib::{
+    pipeline::assistant::accumulator::TurnAccumulator, services::tts::actor::TtsClauseChunker,
+};
 
 /// Subtest 1: The exact same logical text fed across two wildly different
 /// token fragmentations must yield identical clause sequences byte-for-byte and order-preserved.
