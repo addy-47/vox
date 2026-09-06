@@ -33,14 +33,11 @@ pub fn create_synthetic_model_entry(
 }
 
 /// Builds a zip archive containing entries (filename, content bytes) and writes to dest_path.
-pub fn create_test_zip_archive(
-    dest_path: &Path,
-    entries: &[(&str, &[u8])],
-) -> anyhow::Result<()> {
+pub fn create_test_zip_archive(dest_path: &Path, entries: &[(&str, &[u8])]) -> anyhow::Result<()> {
     let file = std::fs::File::create(dest_path)?;
     let mut zip_writer = zip::ZipWriter::new(file);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Stored);
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     for (name, content) in entries {
         zip_writer.start_file(*name, options)?;

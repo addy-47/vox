@@ -218,12 +218,12 @@ async fn test_tts_to_playback_short_utterance_flush() {
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let discard_request = Arc::new(AtomicBool::new(false));
         let turn_armed = Arc::new(AtomicBool::new(false));
-        let current_turn_id = Arc::new(std::sync::atomic::AtomicU32::new(turn_id));
-        let pending_jobs = Arc::new(std::sync::atomic::AtomicU32::new(1));
+        let current_turn_id = Arc::new(AtomicU32::new(turn_id));
+        let pending_jobs = Arc::new(AtomicU32::new(1));
 
         let playback_handles = vox_lib::services::audio::playback::PlaybackEngineHandles {
             cancel_flag: Arc::clone(&cancel_flag),
-            state_atomic: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            state_atomic: Arc::new(AtomicU32::new(0)),
             current_turn_id: Arc::clone(&current_turn_id),
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
             event_tx,
@@ -264,7 +264,10 @@ async fn test_tts_to_playback_short_utterance_flush() {
             Ok(VoxEvent::PlaybackStarted { turn_id: tid }) => {
                 assert_eq!(tid, turn_id);
             }
-            other => panic!("Expected PlaybackStarted after flush_pre_roll, got {:?}", other),
+            other => panic!(
+                "Expected PlaybackStarted after flush_pre_roll, got {:?}",
+                other
+            ),
         }
     })
     .await

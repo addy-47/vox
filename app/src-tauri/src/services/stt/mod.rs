@@ -71,9 +71,11 @@ pub fn create_stt_provider(
     num_threads: u32,
 ) -> anyhow::Result<Box<dyn SttProvider>> {
     match provider_config {
-        SttProviderConfig::Embedded { model_type } => {
-            Ok(Box::new(EmbeddedSttProvider::new(model_path, model_type, num_threads)?))
-        }
+        SttProviderConfig::Embedded { model_type } => Ok(Box::new(EmbeddedSttProvider::new(
+            model_path,
+            model_type,
+            num_threads,
+        )?)),
         SttProviderConfig::Cloud { provider, .. } => {
             anyhow::bail!("Unknown cloud STT provider: \"{}\"", provider)
         }

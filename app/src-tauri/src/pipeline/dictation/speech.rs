@@ -18,7 +18,10 @@ pub fn on_speech_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) 
 
     let (turn_id, _token) = state.pipeline.next_turn();
     transition_dictation(InteractionState::Listening, app, state);
-    log::info!("[Dictation::Speech] Passive speech started (turn: {})", turn_id);
+    log::info!(
+        "[Dictation::Speech] Passive speech started (turn: {})",
+        turn_id
+    );
 }
 
 /// Handles user speech completion for background passive dictation.
@@ -29,5 +32,8 @@ pub fn on_speech_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
 
     let turn_id = state.pipeline.peek_turn_id();
     transition_dictation(InteractionState::Thinking, app, state);
-    log::info!("[Dictation::Speech] Passive speech ended -> Thinking (turn: {})", turn_id);
+    log::info!(
+        "[Dictation::Speech] Passive speech ended -> Thinking (turn: {})",
+        turn_id
+    );
 }

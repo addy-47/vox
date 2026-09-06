@@ -5,7 +5,10 @@ use ringbuf::traits::Split;
 use tauri::AppHandle;
 
 use crate::core::constants::RING_BUFFER_SIZE;
+use crate::core::events::emit_ipc_to;
+use crate::core::events::IpcEvent;
 use crate::core::events::VoxEvent;
+use crate::core::state::InteractionOwner;
 use crate::core::state::{AppState, InteractionState, VoxEngine};
 use crate::pipeline::router::spawn_router;
 use crate::services::audio::playback::PlaybackTelemetryHandles;
@@ -22,6 +25,8 @@ use crate::services::vad::{
     earshot_vad::EarshotVadEngine, ten_onnx::VadEngine as TenVadEngine, VadBackend,
 };
 use crate::utils::paths;
+use std::sync::atomic::AtomicBool;
+use std::sync::mpsc;
 
 /// Ensures the persistence background worker is active and holds a valid channel.
 fn ensure_persistence_worker(state: &AppState) {
@@ -128,7 +133,7 @@ async fn create_vad_instance(state: &AppState) -> Result<VadBackend, String> {
 /// Creates and initializes the CPAL audio playback engine.
 fn create_playback_engine(
     state: &AppState,
-    event_tx: std::sync::mpsc::Sender<VoxEvent>,
+    event_tx: mpsc::Sender<VoxEvent>,
 ) -> Result<Arc<PlaybackEngine>, String> {
     let telemetry_handles = PlaybackTelemetryHandles {
         energy: Arc::clone(&state.telemetry.latest_playback_energy),
@@ -168,9 +173,9 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     ensure_manifest_loaded(state).await;
     ensure_persistence_worker(state);
 
-    let (stt_tx, stt_rx) = std::sync::mpsc::channel();
-    let (vad_tx, vad_rx) = std::sync::mpsc::channel();
-    let (vox_event_tx, vox_event_rx) = std::sync::mpsc::channel();
+    let (stt_tx, stt_rx) = mpsc::channel();
+    let (vad_tx, vad_rx) = mpsc::channel();
+    let (vox_event_tx, vox_event_rx) = mpsc::channel();
 
     let stt_provider = create_stt_instance(state)?;
     let vad = create_vad_instance(state).await?;
@@ -210,7 +215,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
     let vad_handles = VadActorHandles {
         state_atomic: Arc::clone(&state.pipeline.current_state_atomic),
         turn_id_atomic: Arc::clone(&state.pipeline.turn_id),
-        audio_suppressed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        audio_suppressed: Arc::new(AtomicBool::new(false)),
         engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
         dropped_counter: Arc::clone(&state.telemetry.dropped_telemetry_events),
         ingestion_gate: Arc::clone(&state.pipeline.ingestion_gate),
@@ -237,18 +242,15 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
 
     let app_handle = app.clone();
     let partial_emitter = Some(Arc::new(move |turn_id: u32, text: String| {
-        let target =
-            crate::pipeline::target_window(crate::core::state::InteractionOwner::Assistant);
-        if let Err(e) = crate::core::events::emit_ipc_to(
+        let target = crate::pipeline::target_window(InteractionOwner::Assistant);
+        if let Err(e) = emit_ipc_to(
             &app_handle,
             target,
-            crate::core::events::IpcEvent::TranscriptPartial(
-                crate::core::events::TranscriptPayload {
-                    turn_id,
-                    text,
-                    owner: Some(crate::core::state::InteractionOwner::Assistant),
-                },
-            ),
+            IpcEvent::TranscriptPartial(crate::core::events::TranscriptPayload {
+                turn_id,
+                text,
+                owner: Some(InteractionOwner::Assistant),
+            }),
         ) {
             log::trace!(
                 "[Core::Engine] Failed to emit partial transcript IPC: {}",
@@ -400,9 +402,7 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
 /// Synchronous wrapper for stop_audio_engine executed via the global Tokio runtime handle.
 pub fn stop_audio_engine_sync(state: &AppState) -> Result<(), String> {
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        tokio::task::block_in_place(|| {
-            handle.block_on(stop_audio_engine(state))
-        })
+        tokio::task::block_in_place(|| handle.block_on(stop_audio_engine(state)))
     } else {
         let handle = crate::persistence::db::get_tokio_handle();
         handle.block_on(stop_audio_engine(state))
@@ -511,4 +511,3 @@ pub fn ensure_modular_workers_sync<R: tauri::Runtime + 'static>(
     let handle = crate::persistence::db::get_tokio_handle();
     handle.block_on(ensure_modular_workers(app, state))
 }
-

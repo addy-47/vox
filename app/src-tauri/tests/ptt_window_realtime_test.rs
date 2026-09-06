@@ -13,6 +13,7 @@ mod common;
 use anyhow::Result;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 use vox_lib::core::settings::{
@@ -129,7 +130,7 @@ async fn test_ptt_realtime_matrix() {
 
         let mut actor = RealtimeActor::new(provider, tokio::runtime::Handle::current());
         let (playback_engine, _) = common::harness::create_mock_playback_engine();
-        let (event_tx, _event_rx) = std::sync::mpsc::channel();
+        let (event_tx, _event_rx) = mpsc::channel();
         actor
             .start(InteractionMode::PTT, playback_engine, event_tx, app.clone())
             .expect("Failed to start Mock RealtimeActor");
@@ -137,7 +138,7 @@ async fn test_ptt_realtime_matrix() {
         *state.realtime_engine.lock().await = Some(actor);
 
         // 3. Setup production VAD actor in WindowedValidation (PTT) mode
-        let (stt_tx, _stt_rx) = std::sync::mpsc::channel::<SttCommand>();
+        let (stt_tx, _stt_rx) = mpsc::channel::<SttCommand>();
         let vad_config = VadActorConfig {
             initial_threshold: vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
             initial_noise_gate: vox_lib::core::defaults::DEFAULT_VAD_PTT_NOISE_GATE,
@@ -179,8 +180,7 @@ async fn test_ptt_realtime_matrix() {
                 "State must be Listening after ptt_start"
             );
 
-            let clip_path =
-                common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
+            let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
             let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
                 .expect("Failed to decode supertonic_01_en_briefing.wav");
 

@@ -19,8 +19,6 @@ use vox_lib::core::settings::{
 };
 use vox_lib::ipc::settings::apply_setting_mutation;
 
-
-
 // ============================================================================
 // Subtest 1: test_settings_json_roundtrip_persistence
 // ============================================================================
@@ -69,13 +67,8 @@ fn test_settings_json_roundtrip_persistence() {
 
     // VAD
     assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "vad",
-            "threshold",
-            &serde_json::json!(0.72)
-        )
-        .expect("vad.threshold mutation failed"),
+        apply_setting_mutation(&mut settings, "vad", "threshold", &serde_json::json!(0.72))
+            .expect("vad.threshold mutation failed"),
         "vad.threshold should be recognized"
     );
     assert!(
@@ -101,13 +94,8 @@ fn test_settings_json_roundtrip_persistence() {
 
     // STT
     assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "stt",
-            "active",
-            &serde_json::json!("cloud")
-        )
-        .expect("stt.active mutation failed"),
+        apply_setting_mutation(&mut settings, "stt", "active", &serde_json::json!("cloud"))
+            .expect("stt.active mutation failed"),
         "stt.active should be recognized"
     );
     assert!(
@@ -123,13 +111,8 @@ fn test_settings_json_roundtrip_persistence() {
 
     // LLM
     assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "llm",
-            "active",
-            &serde_json::json!("server")
-        )
-        .expect("llm.active mutation failed"),
+        apply_setting_mutation(&mut settings, "llm", "active", &serde_json::json!("server"))
+            .expect("llm.active mutation failed"),
         "llm.active should be recognized"
     );
     assert!(
@@ -165,33 +148,18 @@ fn test_settings_json_roundtrip_persistence() {
         "tts.active should be recognized"
     );
     assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "tts",
-            "voice_index",
-            &serde_json::json!(42)
-        )
-        .expect("tts.voice_index mutation failed"),
+        apply_setting_mutation(&mut settings, "tts", "voice_index", &serde_json::json!(42))
+            .expect("tts.voice_index mutation failed"),
         "tts.voice_index should be recognized"
     );
     assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "tts",
-            "speed",
-            &serde_json::json!(1.15)
-        )
-        .expect("tts.speed mutation failed"),
+        apply_setting_mutation(&mut settings, "tts", "speed", &serde_json::json!(1.15))
+            .expect("tts.speed mutation failed"),
         "tts.speed should be recognized"
     );
     assert!(
-        apply_setting_mutation(
-            &mut settings,
-            "tts",
-            "quality_steps",
-            &serde_json::json!(8)
-        )
-        .expect("tts.quality_steps mutation failed"),
+        apply_setting_mutation(&mut settings, "tts", "quality_steps", &serde_json::json!(8))
+            .expect("tts.quality_steps mutation failed"),
         "tts.quality_steps should be recognized"
     );
 
@@ -260,16 +228,16 @@ fn test_settings_json_roundtrip_persistence() {
         "settings.json must exist at paths::settings_path() after save"
     );
 
-    let raw_content = fs::read_to_string(&settings_path)
-        .expect("settings.json must be readable after save");
+    let raw_content =
+        fs::read_to_string(&settings_path).expect("settings.json must be readable after save");
     assert!(
         !raw_content.is_empty(),
         "settings.json content must not be empty"
     );
 
     // Validate raw JSON schema contains mutated values
-    let json_val: serde_json::Value = serde_json::from_str(&raw_content)
-        .expect("settings.json must be valid JSON");
+    let json_val: serde_json::Value =
+        serde_json::from_str(&raw_content).expect("settings.json must be valid JSON");
     assert_eq!(
         json_val["tts"]["voice_index"], 42,
         "Raw JSON must contain mutated tts.voice_index == 42"
@@ -344,15 +312,17 @@ fn test_settings_malformed_fallback_to_default() {
     );
 
     // 2. Assert the corrupt file was backed up to settings.corrupt.<ts>.json
-    let parent = settings_path.parent().expect("settings_path parent must exist");
+    let parent = settings_path
+        .parent()
+        .expect("settings_path parent must exist");
     let mut found_corrupt_backup = false;
     if let Ok(entries) = fs::read_dir(parent) {
         for entry in entries.flatten() {
             let filename = entry.file_name().to_string_lossy().to_string();
             if filename.starts_with("settings.corrupt.") && filename.ends_with(".json") {
                 found_corrupt_backup = true;
-                let backup_content = fs::read_to_string(entry.path())
-                    .expect("Backup file must be readable");
+                let backup_content =
+                    fs::read_to_string(entry.path()).expect("Backup file must be readable");
                 assert!(
                     backup_content.contains("corrupt_json_unclosed"),
                     "Backup file must contain original corrupt content"

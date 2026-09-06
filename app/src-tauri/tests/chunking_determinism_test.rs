@@ -27,16 +27,40 @@ fn test_chunking_determinism_across_fragmentations() {
 
     // Fragmentation A: Fine-grained tokenization (word/sub-word tokens from LLM)
     let tokens_a = vec![
-        "Good", " morning", " everyone", ",", " today", " we", " are", " testing", ".",
-        " Dr. Smith", " is", " here", ".",
-        " How", " are", " you", " doing", " today", "?",
-        " Let's", " verify", " this", " now", ".",
+        "Good",
+        " morning",
+        " everyone",
+        ",",
+        " today",
+        " we",
+        " are",
+        " testing",
+        ".",
+        " Dr. Smith",
+        " is",
+        " here",
+        ".",
+        " How",
+        " are",
+        " you",
+        " doing",
+        " today",
+        "?",
+        " Let's",
+        " verify",
+        " this",
+        " now",
+        ".",
     ];
 
     // Fragmentation B: Coarse/erratic tokenization (varying chunk sizes, split across punctuation)
     let tokens_b = vec![
-        "Good morning", " everyone,", " today we are", " testing.",
-        " Dr. Smith is here. How are you", " doing today? Let's verify this now.",
+        "Good morning",
+        " everyone,",
+        " today we are",
+        " testing.",
+        " Dr. Smith is here. How are you",
+        " doing today? Let's verify this now.",
     ];
 
     // Verify both token streams reconstruct the exact logical text
@@ -104,9 +128,10 @@ fn test_chunking_determinism_across_fragmentations() {
 fn test_chunking_determinism_emergency_cap() {
     // 30 unpunctuated words
     let words = vec![
-        "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet",
-        "kilo", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra", "tango",
-        "uniform", "victor", "whiskey", "xray", "yankee", "zulu", "one", "two", "three", "four",
+        "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india",
+        "juliet", "kilo", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra",
+        "tango", "uniform", "victor", "whiskey", "xray", "yankee", "zulu", "one", "two", "three",
+        "four",
     ];
     assert_eq!(words.len(), 30);
 
@@ -114,10 +139,7 @@ fn test_chunking_determinism_emergency_cap() {
     let tokens_a: Vec<String> = words.iter().map(|w| format!("{} ", w)).collect();
 
     // Fragmentation B: 3 words per token
-    let tokens_b: Vec<String> = words
-        .chunks(3)
-        .map(|chunk| chunk.join(" ") + " ")
-        .collect();
+    let tokens_b: Vec<String> = words.chunks(3).map(|chunk| chunk.join(" ") + " ").collect();
 
     // Run A
     let mut chunker_a = TtsClauseChunker::new();
@@ -214,7 +236,11 @@ fn test_chunking_determinism_comma_gate_stable() {
         "and here is the remainder.",
     ];
     let tokens_long_2 = vec![
-        "This", " is a ", "longer prefix ", "before comma", ",",
+        "This",
+        " is a ",
+        "longer prefix ",
+        "before comma",
+        ",",
         " and here is the remainder.",
     ];
 

@@ -15,6 +15,7 @@ use vox_lib::services::tts::TTS_SAMPLE_RATE;
 
 use super::reporting::{get_process_memory_mb, ClipBenchmarkResult, EngineBenchmarkRun};
 use super::utils::{downsample_48k_to_24k, drain_consumer, write_wav_f32};
+use std::sync::mpsc;
 
 /// Text prompt derived from canonical test-clips transcripts (verbatim).
 #[derive(Debug, Clone)]
@@ -71,7 +72,7 @@ pub fn benchmark_tts_provider(
     let state_atomic = Arc::new(AtomicU32::new(0));
     let current_turn_id = Arc::new(AtomicU32::new(1));
     let pending_jobs = Arc::new(AtomicU32::new(0));
-    let (event_tx, _event_rx) = std::sync::mpsc::channel::<VoxEvent>();
+    let (event_tx, _event_rx) = mpsc::channel::<VoxEvent>();
 
     let playback_handles = PlaybackEngineHandles {
         cancel_flag: Arc::clone(&cancel_flag),
@@ -97,7 +98,7 @@ pub fn benchmark_tts_provider(
     );
 
     // Persistent worker thread — single provider, hot-swap voices via SetVoice
-    let (tx, rx) = std::sync::mpsc::channel::<TtsCommand>();
+    let (tx, rx) = mpsc::channel::<TtsCommand>();
     let rtf_atomic = Arc::new(AtomicU32::new(0));
     let worker_handles = TtsWorkerHandles {
         playback: Arc::clone(&playback),

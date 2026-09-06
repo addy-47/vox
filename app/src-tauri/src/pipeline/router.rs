@@ -3,6 +3,7 @@
 use super::{RoutingContext, ROUTER_THREAD_NAME};
 use crate::core::events::VoxEvent;
 use crate::core::state::{AppState, InteractionOwner};
+use std::sync::mpsc;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
@@ -48,12 +49,8 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
         VoxEvent::PlaybackFinished { turn_id } => {
             super::assistant::playback::on_playback_finished(turn_id, app, state, &ctx);
         }
-        VoxEvent::Error {
-            turn_id,
-            message,
-            source,
-        } => {
-            super::assistant::error::on_error(turn_id, message, source, app, state, &ctx);
+        VoxEvent::Error(err) => {
+            super::assistant::error::on_error(err, app, state, &ctx);
         }
         VoxEvent::Cancelled { turn_id } => {
             super::assistant::error::on_cancelled(turn_id, app, state, &ctx);
@@ -68,7 +65,7 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
 /// Spawns the central non-blocking event pump thread for VoxEvent routing.
 pub fn spawn_router<R: tauri::Runtime + 'static>(
     app: AppHandle<R>,
-    event_rx: std::sync::mpsc::Receiver<VoxEvent>,
+    event_rx: mpsc::Receiver<VoxEvent>,
 ) -> Result<std::thread::JoinHandle<()>, String> {
     std::thread::Builder::new()
         .name(ROUTER_THREAD_NAME.to_string())

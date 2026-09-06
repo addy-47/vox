@@ -90,7 +90,6 @@ pub fn get_gemma_model_path() -> PathBuf {
     models_dir.join(GEMMA_MODEL_DIR).join(GEMMA_MODEL_FILE)
 }
 
-
 /// RAII guard to initialize VoxPaths with a temporary root directory and isolated test database.
 pub struct TempPathsGuard {
     _dir: tempfile::TempDir,

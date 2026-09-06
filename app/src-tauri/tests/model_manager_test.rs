@@ -46,12 +46,19 @@ fn test_model_manager_valid_payload_verification() {
 
     // Initial check: is_model_file_present should recognize size match and create marker
     let present = is_model_file_present(&entry, models_dir);
-    assert!(present, "Model file with matching size must be marked present");
+    assert!(
+        present,
+        "Model file with matching size must be marked present"
+    );
 
     let verified_path = models_dir.join(model_rel_path).with_extension("verified");
-    assert!(verified_path.exists(), ".verified marker must exist on disk");
+    assert!(
+        verified_path.exists(),
+        ".verified marker must exist on disk"
+    );
 
-    let marker = VerifiedMarker::load(&verified_path).expect("Marker should load and parse as JSON");
+    let marker =
+        VerifiedMarker::load(&verified_path).expect("Marker should load and parse as JSON");
     assert_eq!(marker.model_id.as_deref(), Some("ten_vad"));
     assert_eq!(marker.sha256, sha256);
     assert_eq!(marker.expected_size, payload.len() as u64);
@@ -92,7 +99,10 @@ fn test_model_manager_corrupted_payload_detection() {
 
     // Size doesn't match expected_size, so is_model_file_present returns false
     let present = is_model_file_present(&entry, models_dir);
-    assert!(!present, "Corrupted model file with mismatching size must fail verification");
+    assert!(
+        !present,
+        "Corrupted model file with mismatching size must fail verification"
+    );
 
     let verified_path = models_dir.join(model_rel_path).with_extension("verified");
     assert!(
@@ -143,7 +153,10 @@ fn test_model_manager_zip_slip_rejection() {
 
     // Verify evil file was never extracted outside extract_dir
     let evil_file = base_dir.join("evil.txt");
-    assert!(!evil_file.exists(), "Zip slip file must not exist on filesystem");
+    assert!(
+        !evil_file.exists(),
+        "Zip slip file must not exist on filesystem"
+    );
 }
 
 #[test]
@@ -164,7 +177,9 @@ fn test_model_manager_tar_slip_rejection() {
     for entry_res in archive.entries().unwrap() {
         let entry = entry_res.unwrap();
         let path = entry.path().unwrap();
-        let has_parent = path.components().any(|c| c == std::path::Component::ParentDir);
+        let has_parent = path
+            .components()
+            .any(|c| c == std::path::Component::ParentDir);
         assert!(
             has_parent,
             "Tar archive traversal component ParentDir must be detected"

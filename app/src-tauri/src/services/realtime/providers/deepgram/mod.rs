@@ -17,21 +17,23 @@ use crate::services::realtime::{
     RECONNECT_BASE_DELAY_SECS, RECONNECT_FACTOR_SECS, WS_HEALTH_CHECK_TIMEOUT,
 };
 
+use crate::core::state::InteractionState;
 use session::{DeepgramDriver, DeepgramSessionState, DeepgramVoiceAgentSession};
+use std::sync::atomic::AtomicU32;
 
 pub struct DeepgramVoiceAgentProvider {
     config: DeepgramVoiceAgentConfig,
     system_prompt: String,
-    state_rx: tokio::sync::watch::Receiver<crate::core::state::InteractionState>,
-    turn_id: Arc<std::sync::atomic::AtomicU32>,
+    state_rx: tokio::sync::watch::Receiver<InteractionState>,
+    turn_id: Arc<AtomicU32>,
 }
 
 impl DeepgramVoiceAgentProvider {
     pub fn new(
         config: DeepgramVoiceAgentConfig,
         system_prompt: String,
-        state_rx: tokio::sync::watch::Receiver<crate::core::state::InteractionState>,
-        turn_id: Arc<std::sync::atomic::AtomicU32>,
+        state_rx: tokio::sync::watch::Receiver<InteractionState>,
+        turn_id: Arc<AtomicU32>,
     ) -> Self {
         Self {
             config,

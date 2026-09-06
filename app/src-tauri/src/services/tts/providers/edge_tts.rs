@@ -12,7 +12,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{TtsProvider, TtsProviderKind};
-use crate::core::events::VoxEvent;
+use crate::core::events::{Actionability, PipelineError, PipelineImpact, VoxEvent};
 use crate::services::audio::decode::decode_bytes_to_24khz_mono;
 use crate::services::tts::{
     EDGE_TTS_DEFAULT_VOICE, EDGE_TTS_HOST, EDGE_TTS_ORIGIN, EDGE_TTS_PORT,
@@ -106,11 +106,13 @@ async fn connect_edge_websocket(event_tx: &Sender<VoxEvent>, turn_id: u32) -> Op
         let mut req = match url_str.into_client_request() {
             Ok(r) => r,
             Err(e) => {
-                if let Err(send_err) = event_tx.send(VoxEvent::Error {
+                if let Err(send_err) = event_tx.send(VoxEvent::Error(PipelineError {
                     turn_id,
                     message: format!("Edge TTS URL parse error: {}", e),
                     source: "EdgeTts".to_string(),
-                }) {
+                    impact: PipelineImpact::Degraded,
+                    actionability: Actionability::None,
+                })) {
                     log::warn!("[EdgeTTS] Failed to emit error event: {}", send_err);
                 }
                 return None;
@@ -149,11 +151,13 @@ async fn connect_edge_websocket(event_tx: &Sender<VoxEvent>, turn_id: u32) -> Op
             Err(e) => {
                 log::warn!("[EdgeTTS] Connection attempt {} failed: {:?}", attempt, e);
                 if attempt == 3 {
-                    if let Err(send_err) = event_tx.send(VoxEvent::Error {
+                    if let Err(send_err) = event_tx.send(VoxEvent::Error(PipelineError {
                         turn_id,
                         message: format!("Edge TTS WebSocket connect error (attempt 3/3): {:?}", e),
                         source: "EdgeTts".to_string(),
-                    }) {
+                        impact: PipelineImpact::Degraded,
+                        actionability: Actionability::None,
+                    })) {
                         log::warn!("[EdgeTTS] Failed to emit error event: {}", send_err);
                     }
                     return None;
@@ -179,11 +183,13 @@ async fn send_ssml_request(
     let speech_config = "Content-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"},\"outputFormat\":\"audio-24khz-96kbitrate-mono-mp3\"}}}}";
 
     if let Err(e) = ws_stream.send(Message::Text(speech_config.into())).await {
-        if let Err(send_err) = event_tx.send(VoxEvent::Error {
+        if let Err(send_err) = event_tx.send(VoxEvent::Error(PipelineError {
             turn_id,
             message: format!("Edge TTS config send error: {}", e),
             source: "EdgeTts".to_string(),
-        }) {
+            impact: PipelineImpact::Degraded,
+            actionability: Actionability::None,
+        })) {
             log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
         }
         return Err(e.into());
@@ -204,11 +210,13 @@ async fn send_ssml_request(
     );
 
     if let Err(e) = ws_stream.send(Message::Text(ssml_msg.into())).await {
-        if let Err(send_err) = event_tx.send(VoxEvent::Error {
+        if let Err(send_err) = event_tx.send(VoxEvent::Error(PipelineError {
             turn_id,
             message: format!("Edge TTS SSML send error: {}", e),
             source: "EdgeTts".to_string(),
-        }) {
+            impact: PipelineImpact::Degraded,
+            actionability: Actionability::None,
+        })) {
             log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
         }
         return Err(e.into());
@@ -269,7 +277,7 @@ impl TtsProvider for EdgeTtsProvider {
         cancel: Arc<AtomicBool>,
         playback: &Arc<crate::services::audio::PlaybackEngine>,
         event_tx: Sender<VoxEvent>,
-        telemetry_rtf: Option<&Arc<std::sync::atomic::AtomicU32>>,
+        telemetry_rtf: Option<&Arc<AtomicU32>>,
     ) -> anyhow::Result<()> {
         let text_clean = text.trim();
         log::debug!("[EdgeTTS] Entering synthesize_chunk: '{}'", text_clean);
@@ -350,11 +358,13 @@ impl TtsProvider for EdgeTtsProvider {
                         }
                     }
                     Err(e) => {
-                        if let Err(send_err) = event_tx.send(VoxEvent::Error {
+                        if let Err(send_err) = event_tx.send(VoxEvent::Error(PipelineError {
                             turn_id,
                             message: format!("Edge TTS MP3 decode error: {}", e),
                             source: "EdgeTts".to_string(),
-                        }) {
+                            impact: PipelineImpact::Degraded,
+                            actionability: Actionability::None,
+                        })) {
                             log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
                         }
                     }

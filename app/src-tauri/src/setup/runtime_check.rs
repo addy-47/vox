@@ -1,3 +1,4 @@
+use crate::core::settings::VoxSettings;
 use crate::setup::manifest::{VerifiedMarker, VoxManifest};
 use crate::utils::paths;
 use cpal::traits::HostTrait;
@@ -41,7 +42,7 @@ pub fn verify_runtime(manifest: Option<&VoxManifest>) -> RuntimeReport {
     let models_dir_exists = p.models.exists();
     let (missing, models_verified) = check_model_integrity(&p.models, manifest);
     let setup_completed = p.settings.exists() && {
-        let settings = crate::core::settings::VoxSettings::load();
+        let settings = VoxSettings::load();
         settings.system.setup_completed
     };
 

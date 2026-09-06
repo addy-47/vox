@@ -37,7 +37,10 @@ pub async fn mark_notifications_read(app: AppHandle) -> Result<(), VoxIpcError> 
         .map_err(|e| VoxIpcError::Database(format!("Mark all read failed: {}", e)))?;
 
     if let Err(e) = emit_ipc(&app, IpcEvent::NotificationsMarkedRead) {
-        log::warn!("[Notifications::IPC] Failed to emit notifications_marked_read: {}", e);
+        log::warn!(
+            "[Notifications::IPC] Failed to emit notifications_marked_read: {}",
+            e
+        );
     }
 
     Ok(())
@@ -56,7 +59,10 @@ pub async fn dismiss_notification(id: String, app: AppHandle) -> Result<(), VoxI
         .map_err(|e| VoxIpcError::Database(format!("Dismiss notification failed: {}", e)))?;
 
     if let Err(e) = emit_ipc(&app, IpcEvent::NotificationDismissed { id }) {
-        log::warn!("[Notifications::IPC] Failed to emit notification_dismissed: {}", e);
+        log::warn!(
+            "[Notifications::IPC] Failed to emit notification_dismissed: {}",
+            e
+        );
     }
 
     Ok(())
@@ -82,7 +88,10 @@ pub async fn trigger_session_compaction(
         let _ = db_update_status(&conn, &notif.id, "in_progress").await;
         notif.status = "in_progress".to_string();
         if let Err(e) = emit_ipc(&app, IpcEvent::NotificationUpdated(notif.clone())) {
-            log::warn!("[Notifications::IPC] Failed to emit NotificationUpdated: {}", e);
+            log::warn!(
+                "[Notifications::IPC] Failed to emit NotificationUpdated: {}",
+                e
+            );
         }
     }
 

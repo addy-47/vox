@@ -1,7 +1,6 @@
 import React, {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useImperativeHandle,
   forwardRef,
@@ -13,23 +12,24 @@ import React, {
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import {
-  Heart,
-  User,
-  Compass,
-  BookOpen,
-  Box,
-  ShieldAlert,
-  Archive,
-  X,
-} from "lucide-react";
 import { MemoryNodeTopology, MemoryEdgeTopology, MemoryFactDetail } from "@/services/memoryService";
 import { MEMORY_COPY } from "@/data/memoryCopy";
-import { cn } from "@/shared/lib/utils";
-import { Tooltip } from "@/shared/ui/Tooltip";
 import { OrbitalLoader } from "@/shared/components/common";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
+import { useMemoryGraphScene } from "@/shared/hooks/useMemoryGraphScene";
+import { MemoryGraphClusterBadges } from "./MemoryGraphClusterBadges";
+import {
+  GNode,
+  GLink,
+  MemoryGraphRef,
+  getCollectionColor,
+  getRelationStyle,
+  getCollectionIcon,
+} from "./memoryGraphTypes";
+
+// Re-export public interfaces and color helpers for backward-compatibility
+export type { GNode, GLink, MemoryGraphRef };
+export { getCollectionColor, getRelationStyle, getCollectionIcon };
 
 interface GraphErrorBoundaryProps {
   children: ReactNode;
@@ -93,194 +93,6 @@ class GraphErrorBoundary extends Component<GraphErrorBoundaryProps, GraphErrorBo
   }
 }
 
-export interface GNode {
-  id: string;
-  label: string;
-  compactId: string;
-  collection: string;
-  status: "active" | "inactive";
-  topologyNode: MemoryNodeTopology;
-  color: string;
-  degree: number;
-  x: number;
-  y: number;
-  z: number;
-  vx: number;
-  vy: number;
-  vz: number;
-}
-
-export interface GLink {
-  id: string;
-  sourceIndex: number;
-  targetIndex: number;
-  fromId: string;
-  toId: string;
-  relation: string;
-  color: string;
-  isDashed: boolean;
-}
-
-export interface MemoryGraphRef {
-  recenter: () => void;
-  zoomIn: () => void;
-  zoomOut: () => void;
-}
-
-// Persistent node position cache map
-const nodePosCache = new Map<string, { x: number; y: number; z: number }>();
-
-// Theme-Aware Vibrant Color Palettes (Dark vs Light contrast optimized)
-const DARK_COLLECTION_COLORS: Record<string, { main: string; glow: string; text: string; desc: string }> = {
-  Identity: {
-    main: "#38bdf8",
-    glow: "rgba(56, 189, 248, 0.4)",
-    text: "#38bdf8",
-    desc: "Core identity facts, user name, preferences, and foundational attributes.",
-  },
-  Profile: {
-    main: "#34d399",
-    glow: "rgba(52, 211, 153, 0.4)",
-    text: "#34d399",
-    desc: "Personal background, career history, contacts, and personal metadata.",
-  },
-  Directives: {
-    main: "#a78bfa",
-    glow: "rgba(167, 139, 250, 0.4)",
-    text: "#a78bfa",
-    desc: "Active operational rules, user instructions, system prompts, and priorities.",
-  },
-  Narrative: {
-    main: "#f472b6",
-    glow: "rgba(244, 114, 182, 0.4)",
-    text: "#f472b6",
-    desc: "Temporal story facts, conversation context, historical events, and session logs.",
-  },
-  Entities: {
-    main: "#facc15",
-    glow: "rgba(250, 204, 21, 0.4)",
-    text: "#facc15",
-    desc: "Projects, codebase modules, tools, software stack, and external references.",
-  },
-  Constraints: {
-    main: "#f43f5e",
-    glow: "rgba(244, 63, 94, 0.4)",
-    text: "#f43f5e",
-    desc: "Hard system constraints, hardware limits, security bounds, and forbidden rules.",
-  },
-  Inactive: {
-    main: "#64748b",
-    glow: "rgba(100, 116, 139, 0.3)",
-    text: "#64748b",
-    desc: "Historical tombstones and superseded memory facts.",
-  },
-};
-
-const LIGHT_COLLECTION_COLORS: Record<string, { main: string; glow: string; text: string; desc: string }> = {
-  Identity: {
-    main: "#0369a1", // Deep Sapphire
-    glow: "rgba(3, 105, 161, 0.45)",
-    text: "#0369a1",
-    desc: "Core identity facts, user name, preferences, and foundational attributes.",
-  },
-  Profile: {
-    main: "#047857", // Deep Emerald
-    glow: "rgba(4, 120, 87, 0.45)",
-    text: "#047857",
-    desc: "Personal background, career history, contacts, and personal metadata.",
-  },
-  Directives: {
-    main: "#6d28d9", // Deep Royal Violet
-    glow: "rgba(109, 40, 217, 0.45)",
-    text: "#6d28d9",
-    desc: "Active operational rules, user instructions, system prompts, and priorities.",
-  },
-  Narrative: {
-    main: "#be185d", // Deep Magenta
-    glow: "rgba(190, 24, 93, 0.45)",
-    text: "#be185d",
-    desc: "Temporal story facts, conversation context, historical events, and session logs.",
-  },
-  Entities: {
-    main: "#b45309", // Deep Burnt Amber
-    glow: "rgba(180, 83, 9, 0.45)",
-    text: "#b45309",
-    desc: "Projects, codebase modules, tools, software stack, and external references.",
-  },
-  Constraints: {
-    main: "#be123c", // Deep Ruby
-    glow: "rgba(190, 18, 60, 0.45)",
-    text: "#be123c",
-    desc: "Hard system constraints, hardware limits, security bounds, and forbidden rules.",
-  },
-  Inactive: {
-    main: "#334155", // Slate 700
-    glow: "rgba(51, 65, 85, 0.35)",
-    text: "#334155",
-    desc: "Historical tombstones and superseded memory facts.",
-  },
-};
-
-function getThemeCollectionColors(isLight: boolean) {
-  return isLight ? LIGHT_COLLECTION_COLORS : DARK_COLLECTION_COLORS;
-}
-
-export function getCollectionColor(rawCollection: string, isSuperseded = false, isLight = false) {
-  const palette = getThemeCollectionColors(isLight);
-  if (isSuperseded) return palette.Inactive;
-  const norm = rawCollection.toLowerCase();
-  if (norm.includes("identity")) return palette.Identity;
-  if (norm.includes("profile")) return palette.Profile;
-  if (norm.includes("directive")) return palette.Directives;
-  if (norm.includes("narrative") || norm.includes("context")) return palette.Narrative;
-  if (norm.includes("entity") || norm.includes("entities") || norm.includes("project")) return palette.Entities;
-  if (norm.includes("constraint")) return palette.Constraints;
-  return palette.Identity;
-}
-
-export function getRelationStyle(rawRelation: string, isLight = false) {
-  const norm = rawRelation.toUpperCase();
-  if (norm.includes("SUPPORT")) return { color: isLight ? "#047857" : "#34d399", isDashed: false };
-  if (norm.includes("SUPERSEDE")) return { color: isLight ? "#0369a1" : "#38bdf8", isDashed: false };
-  if (norm.includes("SHAPE")) return { color: isLight ? "#6d28d9" : "#a78bfa", isDashed: false };
-  if (norm.includes("DEPEND")) return { color: isLight ? "#b45309" : "#facc15", isDashed: false };
-  if (norm.includes("CONFLICT") || norm.includes("RESTRICT")) return { color: isLight ? "#be123c" : "#ef4444", isDashed: true };
-  return { color: isLight ? "#475569" : "#64748b", isDashed: true };
-}
-
-export function getCollectionIcon(collectionName: string) {
-  const norm = collectionName.toLowerCase();
-  if (norm.includes("identity")) return Heart;
-  if (norm.includes("profile")) return User;
-  if (norm.includes("directive")) return Compass;
-  if (norm.includes("narrative")) return BookOpen;
-  if (norm.includes("entity") || norm.includes("entities")) return Box;
-  if (norm.includes("constraint")) return ShieldAlert;
-  if (norm.includes("inactive")) return Archive;
-  return User;
-}
-
-interface CrossRelation {
-  targetCollection: string;
-  relation: string;
-  count: number;
-}
-
-interface ClusterBadgeData {
-  collection: string;
-  graphX: number;
-  graphY: number;
-  screenX: number;
-  screenY: number;
-  factCount: number;
-  color: string;
-  desc: string;
-  activeFacts: number;
-  totalRelations: number;
-  avgConnections: number;
-  crossRelations: CrossRelation[];
-}
-
 interface MemoryGraphProps {
   nodes: MemoryNodeTopology[];
   edges: MemoryEdgeTopology[];
@@ -318,1265 +130,193 @@ export const MemoryGraph = memo(
       useMemoryTrace("MemoryGraph (WebGL InstancedMesh)");
 
       const canvasContainerRef = useRef<HTMLDivElement>(null);
-      const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-      const sceneRef = useRef<THREE.Scene | null>(null);
-      const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-      const controlsRef = useRef<OrbitControls | null>(null);
-
-      const instancedMeshRef = useRef<THREE.InstancedMesh | null>(null);
-      const instancedRingRef = useRef<THREE.InstancedMesh | null>(null);
-      const lineSegmentsRef = useRef<THREE.LineSegments | null>(null);
-
-      const gNodesRef = useRef<GNode[]>([]);
-      const gLinksRef = useRef<GLink[]>([]);
-      const idToNodeIndexMap = useRef<Map<string, number>>(new Map());
       const mouseVecRef = useRef(new THREE.Vector2());
       const raycasterRef = useRef(new THREE.Raycaster());
       const tempVecRef = useRef(new THREE.Vector3());
-      const isSettledRef = useRef(false);
-      const ticksRef = useRef(0);
-      const animFrameRef = useRef<number | null>(null);
-      const isRenderingRef = useRef(false);
-      const wakeRenderLoopRef = useRef<() => void>(() => {});
-      const userHasNavigatedCameraRef = useRef(false);
-      const hasFittedInitialCameraRef = useRef(false);
-      const lastBadgeUpdateRef = useRef(0);
-
-      // Reusable Three.js math objects to eliminate per-frame allocations in updateWebGLBuffers
-      const dummyObjRef = useRef(new THREE.Object3D());
-      const colorObjRef = useRef(new THREE.Color());
-
-      const [clusterBadges, setClusterBadges] = useState<ClusterBadgeData[]>([]);
       const [expandedBadge, setExpandedBadge] = useState<string | null>(null);
-      const [isLayoutStable, setIsLayoutStable] = useState(false);
-      const [isLightMode, setIsLightMode] = useState(false);
 
-      // Props Refs to avoid Three.js Scene Setup useEffect re-creation on node clicks/filters
-      const selectedFactIdRef = useRef(selectedFactId);
-      selectedFactIdRef.current = selectedFactId;
+      // Encapsulated Three.js Scene, WebGL Buffers & Aspect-Ratio Responsive Simulation Hook
+      const {
+        isLayoutStable,
+        isLightMode,
+        clusterBadges,
+        gNodesRef,
+        cameraRef,
+        rendererRef,
+        instancedMeshRef,
+        isNodeVisible,
+        recenter,
+        zoomIn,
+        zoomOut,
+      } = useMemoryGraphScene({
+        canvasContainerRef,
+        nodes,
+        edges,
+        width,
+        height,
+        searchQuery,
+        selectedCollection,
+        selectedRelation,
+        selectedFactId,
+        selectedFactDetail,
+        conflictPairs,
+        clearCacheOnUnmount,
+      });
 
-      const selectedFactDetailRef = useRef(selectedFactDetail);
-      selectedFactDetailRef.current = selectedFactDetail;
+      // Expose imperative camera navigation methods
+      useImperativeHandle(ref, () => ({
+        recenter,
+        zoomIn,
+        zoomOut,
+      }));
 
-      const searchQueryRef = useRef(searchQuery);
-      searchQueryRef.current = searchQuery;
-
-      const selectedCollectionRef = useRef(selectedCollection);
-      selectedCollectionRef.current = selectedCollection;
-
-      const selectedRelationRef = useRef(selectedRelation);
-      selectedRelationRef.current = selectedRelation;
-
-      // Detect dark / light mode from documentElement class attribute
+      // Dismiss expanded cluster badge card on click outside
       useEffect(() => {
-        const updateTheme = () => {
-          setIsLightMode(document.documentElement.classList.contains("light"));
+        if (!expandedBadge) return;
+        const handleDocClick = (e: MouseEvent | PointerEvent) => {
+          const badgeElem = document.getElementById(`badge-card-${expandedBadge}`);
+          if (badgeElem && !badgeElem.contains(e.target as Node)) {
+            setExpandedBadge(null);
+          }
         };
-        updateTheme();
-        const observer = new MutationObserver(updateTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-        return () => observer.disconnect();
-      }, []);
-
-      // Cache eviction on unmount or excessive size
-      useEffect(() => {
+        const timer = setTimeout(() => {
+          document.addEventListener("pointerdown", handleDocClick);
+        }, 50);
         return () => {
-          if (clearCacheOnUnmount || nodePosCache.size > 2000) {
-            nodePosCache.clear();
+          clearTimeout(timer);
+          document.removeEventListener("pointerdown", handleDocClick);
+        };
+      }, [expandedBadge]);
+
+      // Dismiss expanded badge card on Escape key
+      useEffect(() => {
+        if (!expandedBadge) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+          if (e.key === "Escape") {
+            setExpandedBadge(null);
           }
         };
-      }, [clearCacheOnUnmount]);
-
-      const conflictNodeIds = useMemo(() => {
-        const set = new Set<string>();
-        conflictPairs.forEach((pair) => {
-          set.add(pair.fact_a.id);
-          set.add(pair.fact_b.id);
-        });
-        return set;
-      }, [conflictPairs]);
-
-      // Precomputed relation adjacency map: UpperRelation -> Set of Node IDs (O(1) lookups)
-      const relationAdjacencyMap = useMemo(() => {
-        const map = new Map<string, Set<string>>();
-        for (const e of edges) {
-          const relUpper = e.relation.toUpperCase();
-          let set = map.get(relUpper);
-          if (!set) {
-            set = new Set();
-            map.set(relUpper, set);
-          }
-          set.add(e.from_id);
-          set.add(e.to_id);
-        }
-        return map;
-      }, [edges]);
-
-      const isNodeVisible = useCallback((node: GNode) => {
-        const selRel = selectedRelationRef.current;
-        const selCol = selectedCollectionRef.current;
-
-        if (selRel !== "all") {
-          const selRelUpper = selRel.toUpperCase();
-          let hasRel = false;
-          for (const [relKey, nodeSet] of relationAdjacencyMap.entries()) {
-            if (relKey.includes(selRelUpper) && nodeSet.has(node.id)) {
-              hasRel = true;
-              break;
-            }
-          }
-          if (!hasRel) return false;
-        }
-
-        if (selCol === "all") return true;
-        if (selCol === "Inactive") return node.status === "inactive";
-        return node.collection.toLowerCase().includes(selCol.toLowerCase());
-      }, [relationAdjacencyMap]);
-
-    const isNodeMatchingSearch = useCallback((node: GNode) => {
-      const sq = searchQueryRef.current.trim().toLowerCase();
-      if (!sq) return true;
-      const selFactDetail = selectedFactDetailRef.current;
-      return (
-        node.id.toLowerCase().includes(sq) ||
-        node.collection.toLowerCase().includes(sq) ||
-        (node.topologyNode?.fact && node.topologyNode.fact.toLowerCase().includes(sq)) ||
-        (selFactDetail?.id === node.id &&
-          (selFactDetail?.fact.toLowerCase().includes(sq) ||
-            selFactDetail?.session_id.toLowerCase().includes(sq)))
-      );
-    }, []);
-
-    // Fast 3D/2.5D Force Layout Simulation step
-    const stepSimulation = useCallback(() => {
-      const gNodes = gNodesRef.current;
-      const gLinks = gLinksRef.current;
-      if (gNodes.length === 0) return false;
-
-      let maxVel = 0;
-      const alpha = 0.08;
-      const repulsion = 1200;
-      const springLength = 85;
-
-      // Node Repulsion
-      for (let i = 0; i < gNodes.length; i++) {
-        const na = gNodes[i];
-        for (let j = i + 1; j < gNodes.length; j++) {
-          const nb = gNodes[j];
-          let dx = nb.x - na.x;
-          let dy = nb.y - na.y;
-          let dz = nb.z - na.z;
-          let distSq = dx * dx + dy * dy + dz * dz + 0.1;
-          if (distSq < 120000) {
-            let dist = Math.sqrt(distSq);
-            let force = (repulsion / (distSq * dist)) * alpha;
-            let fx = dx * force;
-            let fy = dy * force;
-            let fz = dz * force;
-
-            na.vx -= fx;
-            na.vy -= fy;
-            na.vz -= fz;
-            nb.vx += fx;
-            nb.vy += fy;
-            nb.vz += fz;
-          }
-        }
-      }
-
-      // Link Springs
-      for (let k = 0; k < gLinks.length; k++) {
-        const link = gLinks[k];
-        const na = gNodes[link.sourceIndex];
-        const nb = gNodes[link.targetIndex];
-        if (!na || !nb) continue;
-
-        let dx = nb.x - na.x;
-        let dy = nb.y - na.y;
-        let dz = nb.z - na.z;
-        let dist = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.01;
-        let delta = dist - springLength;
-        let force = (delta / dist) * alpha * 0.3;
-
-        let fx = dx * force;
-        let fy = dy * force;
-        let fz = dz * force;
-
-        na.vx += fx;
-        na.vy += fy;
-        na.vz += fz;
-        nb.vx -= fx;
-        nb.vy -= fy;
-        nb.vz -= fz;
-      }
-
-      // Apply velocity and damping
-      for (let i = 0; i < gNodes.length; i++) {
-        const n = gNodes[i];
-        n.vx *= 0.85;
-        n.vy *= 0.85;
-        n.vz *= 0.85;
-
-        n.x += n.vx;
-        n.y += n.vy;
-        n.z += n.vz;
-
-        let vel = Math.abs(n.vx) + Math.abs(n.vy) + Math.abs(n.vz);
-        if (vel > maxVel) maxVel = vel;
-
-        nodePosCache.set(n.id, { x: n.x, y: n.y, z: n.z });
-      }
-
-      return maxVel > 0.15;
-    }, []);
-
-    const graphRadiusRef = useRef<number>(800);
-
-    // Helper: Compute Bounding Sphere Camera Distance for 100% Zoomed-Out View & 80% vh ceiling
-    const fitCameraToEntireGraph = useCallback(() => {
-      const camera = cameraRef.current;
-      const controls = controlsRef.current;
-      const gNodes = gNodesRef.current;
-      if (!camera || !controls || gNodes.length === 0) return;
-
-      let maxRadiusSq = 0;
-      gNodes.forEach((n) => {
-        const distSq = n.x * n.x + n.y * n.y + n.z * n.z;
-        if (distSq > maxRadiusSq) maxRadiusSq = distSq;
-      });
-
-      const radius = Math.max(300, Math.sqrt(maxRadiusSq));
-      graphRadiusRef.current = radius;
-
-      // At FOV = 60° (vertical), visible height at distance Z = 2 * Z * tan(30°) ≈ 1.1547 * Z.
-      // For graph (diameter = 2*R) to span at least 80% of viewport height (0.80 * visibleHeight),
-      // 2 * R >= 0.80 * (2 * Z * tan(30°)) => Z <= R / (0.80 * tan(30°)) ≈ R / 0.46188 ≈ R * 2.165
-      // We set targetZ and controls.maxDistance so graph is never smaller than ~80% vh.
-      const maxZoomOutZ = Math.max(1200, (radius / (0.80 * Math.tan((30 * Math.PI) / 180))));
-      const targetZ = Math.min(maxZoomOutZ, Math.max(800, radius * 2.1));
-
-      controls.maxDistance = maxZoomOutZ * 1.05;
-      controls.minDistance = 200;
-
-      controls.target.set(0, 0, 0);
-      camera.position.set(0, 0, targetZ);
-      controls.update();
-      hasFittedInitialCameraRef.current = true;
-    }, []);
-
-    // Build GNodes and GLinks from backend topology & Synchronously Pre-warm Simulation
-    useEffect(() => {
-      if (nodes.length === 0) {
-        gNodesRef.current = [];
-        gLinksRef.current = [];
-        idToNodeIndexMap.current.clear();
-        isSettledRef.current = true;
-        setIsLayoutStable(true);
-        return;
-      }
-
-      // Re-arm simulation layout settlement whenever topology nodes or edges update
-      isSettledRef.current = false;
-      ticksRef.current = 0;
-      setIsLayoutStable(false);
-
-      const degreeMap = new Map<string, number>();
-      nodes.forEach((n) => degreeMap.set(n.id, 0));
-      edges.forEach((e) => {
-        degreeMap.set(e.from_id, (degreeMap.get(e.from_id) || 0) + 1);
-        degreeMap.set(e.to_id, (degreeMap.get(e.to_id) || 0) + 1);
-      });
-
-      const nodeIndexMap = new Map<string, number>();
-      const gNodes: GNode[] = nodes.map((n, idx) => {
-        nodeIndexMap.set(n.id, idx);
-        const colPalette = getCollectionColor(n.collection, n.is_superseded, isLightMode);
-        const compactId = n.id.startsWith("mem_")
-          ? `MEM-${n.id.split("_")[1]?.slice(0, 6) || n.id.slice(4, 10)}`
-          : n.id;
-
-        const cachedPos = nodePosCache.get(n.id);
-        let x: number, y: number, z: number;
-        if (cachedPos) {
-          x = cachedPos.x;
-          y = cachedPos.y;
-          z = cachedPos.z;
-        } else {
-          const angle = (idx / Math.max(1, nodes.length)) * Math.PI * 2;
-          const dist = 80 + (idx % 15) * 45;
-          x = Math.cos(angle) * dist;
-          y = Math.sin(angle) * dist;
-          z = (Math.random() - 0.5) * 10;
-          nodePosCache.set(n.id, { x, y, z });
-        }
-
-        return {
-          id: n.id,
-          label: n.id,
-          compactId,
-          collection: n.collection,
-          status: n.is_superseded ? "inactive" : "active",
-          topologyNode: n,
-          color: colPalette.main,
-          degree: degreeMap.get(n.id) || 0,
-          x,
-          y,
-          z,
-          vx: 0,
-          vy: 0,
-          vz: 0,
-        };
-      });
-
-      idToNodeIndexMap.current = nodeIndexMap;
-
-      const gLinks: GLink[] = [];
-      edges.forEach((rel) => {
-        const srcIdx = nodeIndexMap.get(rel.from_id);
-        const tgtIdx = nodeIndexMap.get(rel.to_id);
-        if (srcIdx !== undefined && tgtIdx !== undefined) {
-          const relStyle = getRelationStyle(rel.relation, isLightMode);
-          gLinks.push({
-            id: `rel_${rel.id}`,
-            sourceIndex: srcIdx,
-            targetIndex: tgtIdx,
-            fromId: rel.from_id,
-            toId: rel.to_id,
-            relation: rel.relation,
-            color: relStyle.color,
-            isDashed: relStyle.isDashed,
-          });
-        }
-      });
-
-      gNodesRef.current = gNodes;
-      gLinksRef.current = gLinks;
-
-      // Synchronous Pre-warm (40 ticks) before first canvas render
-      for (let i = 0; i < 40; i++) {
-        stepSimulation();
-      }
-
-      // Initial Camera Fit: Only set zoomed-out position if user hasn't manually zoomed/panned
-      if (!userHasNavigatedCameraRef.current && cameraRef.current && controlsRef.current) {
-        fitCameraToEntireGraph();
-      }
-
-      wakeRenderLoopRef.current();
-    }, [nodes, edges, isLightMode, stepSimulation, fitCameraToEntireGraph]);
-
-    // 100% Pixel-Perfect Centroid Badges Update (Throttled to avoid 60fps React state updates)
-    const updateCentroidBadgesSync = useCallback((force = false) => {
-      const now = performance.now();
-      if (!force && now - lastBadgeUpdateRef.current < 120) return; // ~8Hz max
-      lastBadgeUpdateRef.current = now;
-
-      const camera = cameraRef.current;
-      const renderer = rendererRef.current;
-      const gNodes = gNodesRef.current;
-      if (!camera || !renderer || gNodes.length === 0) return;
-
-      const groups = new Map<string, { nodes: GNode[]; color: string }>();
-      const nodeById = new Map<string, GNode>();
-
-      for (let i = 0; i < gNodes.length; i++) {
-        const n = gNodes[i];
-        nodeById.set(n.id, n);
-        if (!isNodeVisible(n)) continue;
-        const col = n.collection || "Identity";
-        if (!groups.has(col)) {
-          groups.set(col, { nodes: [], color: n.color });
-        }
-        groups.get(col)!.nodes.push(n);
-      }
-
-      const badges: ClusterBadgeData[] = [];
-      const tempVec = tempVecRef.current;
-      const paletteMap = getThemeCollectionColors(isLightMode);
-
-      groups.forEach((data, colName) => {
-        if (data.nodes.length === 0) return;
-
-        let sumX = 0, sumY = 0, sumZ = 0;
-        data.nodes.forEach((n) => {
-          sumX += n.x;
-          sumY += n.y;
-          sumZ += n.z;
-        });
-
-        const gx = sumX / data.nodes.length;
-        const gy = sumY / data.nodes.length;
-        const gz = sumZ / data.nodes.length;
-
-        tempVec.set(gx, gy, gz);
-        tempVec.project(camera);
-
-        const screenX = ((tempVec.x + 1) * width) / 2;
-        const screenY = ((-tempVec.y + 1) * height) / 2;
-
-        if (isNaN(screenX) || isNaN(screenY)) return;
-
-        const palette = paletteMap[colName] || paletteMap.Identity;
-        const colNodesSet = new Set(data.nodes.map((n) => n.id));
-
-        // Calculate unique cross-collection relation edge counts
-        const relMap = new Map<string, number>();
-        let totalRels = 0;
-        edges.forEach((e) => {
-          const fromInCol = colNodesSet.has(e.from_id);
-          const toInCol = colNodesSet.has(e.to_id);
-
-          if (fromInCol || toInCol) {
-            totalRels++;
-          }
-
-          if (fromInCol && !toInCol) {
-            const targetNode = nodeById.get(e.to_id);
-            if (targetNode) {
-              const key = `${e.relation.toUpperCase()} ➔ ${targetNode.collection}`;
-              relMap.set(key, (relMap.get(key) || 0) + 1);
-            }
-          } else if (!fromInCol && toInCol) {
-            const srcNode = nodeById.get(e.from_id);
-            if (srcNode) {
-              const key = `${srcNode.collection} ➔ ${e.relation.toUpperCase()}`;
-              relMap.set(key, (relMap.get(key) || 0) + 1);
-            }
-          }
-        });
-
-        const crossRelations: CrossRelation[] = Array.from(relMap.entries())
-          .map(([key, count]) => {
-            const parts = key.split(" ➔ ");
-            return {
-              relation: parts[0] || key,
-              targetCollection: parts[1] || "",
-              count,
-            };
-          })
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 4);
-
-        const avgConn = data.nodes.length > 0 ? (totalRels / data.nodes.length).toFixed(2) : "0.00";
-
-        badges.push({
-          collection: colName,
-          graphX: gx,
-          graphY: gy,
-          screenX,
-          screenY,
-          factCount: data.nodes.length,
-          color: palette.main,
-          desc: palette.desc,
-          activeFacts: data.nodes.filter((n) => n.status === "active").length,
-          totalRelations: totalRels,
-          avgConnections: Number(avgConn),
-          crossRelations,
-        });
-      });
-
-      setClusterBadges(badges);
-    }, [edges, width, height, isLightMode, isNodeVisible]);
-
-    // Imperative methods exposed to parent (Recenter, Zoom In, Zoom Out)
-    useImperativeHandle(ref, () => ({
-      recenter: () => {
-        userHasNavigatedCameraRef.current = false;
-        fitCameraToEntireGraph();
-        wakeRenderLoopRef.current();
-      },
-      zoomIn: () => {
-        const camera = cameraRef.current;
-        const controls = controlsRef.current;
-        if (!camera || !controls) return;
-        userHasNavigatedCameraRef.current = true;
-
-        const newZ = Math.max(controls.minDistance || 200, camera.position.z * 0.75);
-        camera.position.z = newZ;
-        controls.update();
-        wakeRenderLoopRef.current();
-      },
-      zoomOut: () => {
-        const camera = cameraRef.current;
-        const controls = controlsRef.current;
-        if (!camera || !controls) return;
-        userHasNavigatedCameraRef.current = true;
-
-        const newZ = Math.min(controls.maxDistance || 4000, camera.position.z * 1.3);
-        camera.position.z = newZ;
-        controls.update();
-        wakeRenderLoopRef.current();
-      },
-    }));
-
-    // Update WebGL InstancedMesh and LineBuffers from GNodes & GLinks
-    const updateWebGLBuffers = useCallback(() => {
-      const gNodes = gNodesRef.current;
-      const gLinks = gLinksRef.current;
-
-      const instancedMesh = instancedMeshRef.current;
-      const instancedRing = instancedRingRef.current;
-      const lineSegments = lineSegmentsRef.current;
-
-      if (!instancedMesh || !instancedRing || !lineSegments) return;
-
-      const dummy = dummyObjRef.current;
-      const color = colorObjRef.current;
-
-      // Update Node Instances
-      let visibleNodeCount = 0;
-      const selFactId = selectedFactIdRef.current;
-      const sq = searchQueryRef.current.trim().toLowerCase();
-      const hasSearch = sq.length > 0;
-
-      gNodes.forEach((node, i) => {
-        const visible = isNodeVisible(node);
-        const matchesSearch = !hasSearch || isNodeMatchingSearch(node);
-        const colPalette = getCollectionColor(node.collection, node.status === "inactive", isLightMode);
-        const isSelected = selFactId === node.id;
-        const isConflict = conflictNodeIds.has(node.id);
-
-        let radius: number;
-        let mainColorHex: string;
-
-        if (!visible) {
-          radius = 0;
-          mainColorHex = colPalette.main;
-        } else if (hasSearch && !matchesSearch) {
-          // Ghosted Context Node
-          radius = 2.0;
-          mainColorHex = isLightMode ? "#94a3b8" : "#334155";
-        } else {
-          // Active Matching Node
-          radius = isSelected
-            ? 12
-            : node.status === "inactive"
-            ? 3.5
-            : Math.min(10, 4.5 + node.degree * 1.2);
-
-          mainColorHex = isConflict
-            ? isLightMode
-              ? "#dc2626"
-              : "#ef4444"
-            : isSelected
-            ? isLightMode
-              ? "#000000"
-              : "#ffffff"
-            : colPalette.main;
-        }
-
-        dummy.position.set(node.x, node.y, node.z);
-        dummy.scale.set(radius, radius, radius);
-        dummy.updateMatrix();
-
-        instancedMesh.setMatrixAt(i, dummy.matrix);
-        color.set(mainColorHex);
-        instancedMesh.setColorAt(i, color);
-
-        // Ring Halos for high degree, selected, or active search matches
-        if (visible && matchesSearch && (node.degree >= 2 || isSelected || isConflict || hasSearch)) {
-          dummy.scale.set(radius + 2.5, radius + 2.5, 1);
-          dummy.updateMatrix();
-          instancedRing.setMatrixAt(visibleNodeCount, dummy.matrix);
-          instancedRing.setColorAt(visibleNodeCount, color);
-          visibleNodeCount++;
-        }
-      });
-
-      instancedMesh.count = gNodes.length;
-      instancedMesh.instanceMatrix.needsUpdate = true;
-      if (instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
-
-      instancedRing.count = visibleNodeCount;
-      instancedRing.instanceMatrix.needsUpdate = true;
-      if (instancedRing.instanceColor) instancedRing.instanceColor.needsUpdate = true;
-
-      // Update Line Buffer Attributes
-      const lineGeo = lineSegments.geometry;
-      const posAttr = lineGeo.attributes.position as THREE.BufferAttribute;
-      const colAttr = lineGeo.attributes.color as THREE.BufferAttribute;
-
-      const posArray = posAttr.array as Float32Array;
-      const colArray = colAttr.array as Float32Array;
-
-      let posOffset = 0;
-      let activeLinks = 0;
-      gLinks.forEach((link) => {
-        const na = gNodes[link.sourceIndex];
-        const nb = gNodes[link.targetIndex];
-        if (!na || !nb || !isNodeVisible(na) || !isNodeVisible(nb)) return;
-
-        const naMatch = !hasSearch || isNodeMatchingSearch(na);
-        const nbMatch = !hasSearch || isNodeMatchingSearch(nb);
-        const bothMatch = naMatch && nbMatch;
-
-        posArray[posOffset] = na.x;
-        posArray[posOffset + 1] = na.y;
-        posArray[posOffset + 2] = na.z;
-
-        posArray[posOffset + 3] = nb.x;
-        posArray[posOffset + 4] = nb.y;
-        posArray[posOffset + 5] = nb.z;
-
-        if (hasSearch && !bothMatch) {
-          // Ghosted Edge connecting non-matching nodes
-          color.set(isLightMode ? "#e2e8f0" : "#1e293b");
-        } else {
-          // Active Edge connecting matching nodes
-          color.set(link.color || (isLightMode ? "#94a3b8" : "#475569"));
-        }
-
-        colArray[posOffset] = color.r;
-        colArray[posOffset + 1] = color.g;
-        colArray[posOffset + 2] = color.b;
-
-        colArray[posOffset + 3] = color.r;
-        colArray[posOffset + 4] = color.g;
-        colArray[posOffset + 5] = color.b;
-
-        posOffset += 6;
-        activeLinks++;
-      });
-
-      lineGeo.setDrawRange(0, activeLinks * 2);
-      posAttr.needsUpdate = true;
-      colAttr.needsUpdate = true;
-    }, [conflictNodeIds, isLightMode, isNodeVisible, isNodeMatchingSearch]);
-
-    const updateWebGLBuffersRef = useRef(updateWebGLBuffers);
-    updateWebGLBuffersRef.current = updateWebGLBuffers;
-
-    const updateCentroidBadgesSyncRef = useRef(updateCentroidBadgesSync);
-    updateCentroidBadgesSyncRef.current = updateCentroidBadgesSync;
-
-    // Imperatively trigger GPU buffer updates when prop refs change without re-creating Three.js scene
-    useEffect(() => {
-      updateWebGLBuffers();
-      wakeRenderLoopRef.current();
-    }, [selectedFactId, selectedFactDetail, searchQuery, selectedCollection, selectedRelation, updateWebGLBuffers]);
-
-    const flyToTargetRef = useRef<{ x: number; y: number; z: number } | null>(null);
-
-    // Trigger smooth camera fly-to when selectedFactId changes and is non-null
-    useEffect(() => {
-      if (!selectedFactId) {
-        flyToTargetRef.current = null;
-        return;
-      }
-      const targetNode = gNodesRef.current.find((n) => n.id === selectedFactId);
-      if (targetNode) {
-        const currentZ = cameraRef.current ? cameraRef.current.position.z : 1200;
-        const targetZ = Math.min(currentZ, 1200);
-        flyToTargetRef.current = { x: targetNode.x, y: targetNode.y, z: targetZ };
-        wakeRenderLoopRef.current();
-      }
-    }, [selectedFactId]);
-
-    // Theme synchronization without WebGL context destruction
-    useEffect(() => {
-      if (lineSegmentsRef.current) {
-        const mat = lineSegmentsRef.current.material as THREE.LineBasicMaterial;
-        mat.opacity = isLightMode ? 0.6 : 0.45;
-        mat.needsUpdate = true;
-      }
-      updateWebGLBuffers();
-      updateCentroidBadgesSync(true);
-      wakeRenderLoopRef.current();
-    }, [isLightMode, updateWebGLBuffers, updateCentroidBadgesSync]);
-
-    // Three.js Scene Setup & Render Loop (NEVER destroyed on layout stabilization or prop changes)
-    useEffect(() => {
-      const container = canvasContainerRef.current;
-      if (!container || width === 0 || height === 0) return;
-
-      // 1. Scene
-      const scene = new THREE.Scene();
-      sceneRef.current = scene;
-
-      // 2. Camera initialized to zoomed-out default distance (2800)
-      const camera = new THREE.PerspectiveCamera(60, width / height, 1, 30000);
-      camera.position.set(0, 0, 2800);
-      cameraRef.current = camera;
-
-      // 3. Renderer
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setSize(width, height);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      container.appendChild(renderer.domElement);
-      rendererRef.current = renderer;
-
-      // 4. OrbitControls configured explicitly for 2.5D Plane Panning (Left Drag = Pan)
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableRotate = false; // Disable 3D rotation for pure 2D plane navigation
-      controls.mouseButtons = {
-        LEFT: THREE.MOUSE.PAN,
-        MIDDLE: THREE.MOUSE.DOLLY,
-        RIGHT: THREE.MOUSE.PAN,
-      };
-      controls.touches = {
-        ONE: THREE.TOUCH.PAN,
-        TWO: THREE.TOUCH.DOLLY_PAN,
-      };
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.08;
-      controls.minDistance = 10;
-      controls.maxDistance = 20000;
-      controls.zoomSpeed = 0.8;
-      controls.panSpeed = 0.8;
-      controls.screenSpacePanning = true;
-      controlsRef.current = controls;
-
-      // Track user interaction so topology updates don't overwrite user pan/zoom
-      controls.addEventListener("start", () => {
-        userHasNavigatedCameraRef.current = true;
-      });
-      controls.addEventListener("change", () => {
-        userHasNavigatedCameraRef.current = true;
-      });
-
-      // 5. InstancedMesh for Nodes (Single GPU Draw Call for ALL Nodes)
-      const maxNodes = 10000;
-      const sphereGeo = new THREE.SphereGeometry(1, 14, 14);
-      const nodeMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
-      const instancedMesh = new THREE.InstancedMesh(sphereGeo, nodeMat, maxNodes);
-      instancedMesh.count = 0;
-      instancedMesh.frustumCulled = false; // Prevent whole-mesh culling when graph center moves off-camera
-      scene.add(instancedMesh);
-      instancedMeshRef.current = instancedMesh;
-
-      // 6. InstancedMesh for Glow Halo Rings
-      const ringGeo = new THREE.RingGeometry(1, 1.35, 18);
-      const ringMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.4, side: THREE.DoubleSide });
-      const instancedRing = new THREE.InstancedMesh(ringGeo, ringMat, maxNodes);
-      instancedRing.count = 0;
-      instancedRing.frustumCulled = false; // Prevent culling when graph center moves off-camera
-      scene.add(instancedRing);
-      instancedRingRef.current = instancedRing;
-
-      // 7. LineSegments for Edges (Single GPU Draw Call for ALL Edges)
-      const maxEdges = 20000;
-      const linePositions = new Float32Array(maxEdges * 6);
-      const lineColors = new Float32Array(maxEdges * 6);
-
-      const lineGeo = new THREE.BufferGeometry();
-      lineGeo.setAttribute("position", new THREE.BufferAttribute(linePositions, 3));
-      lineGeo.setAttribute("color", new THREE.BufferAttribute(lineColors, 3));
-
-      const lineMat = new THREE.LineBasicMaterial({
-        vertexColors: true,
-        transparent: true,
-        opacity: isLightMode ? 0.6 : 0.45,
-      });
-
-      const lineSegments = new THREE.LineSegments(lineGeo, lineMat);
-      lineSegments.frustumCulled = false; // Prevent line culling when graph center moves off-camera
-      scene.add(lineSegments);
-      lineSegmentsRef.current = lineSegments;
-
-      // Initial buffer population
-      updateWebGLBuffersRef.current();
-      updateCentroidBadgesSyncRef.current(true);
-
-      // Demand-Driven Animation & Simulation Loop
-      const render = () => {
-        isRenderingRef.current = true;
-
-        // Smooth Camera Fly-To Lerp
-        let cameraFlying = false;
-        if (flyToTargetRef.current && cameraRef.current && controlsRef.current) {
-          const target = flyToTargetRef.current;
-          const cam = cameraRef.current;
-          const ctrl = controlsRef.current;
-
-          ctrl.target.x += (target.x - ctrl.target.x) * 0.12;
-          ctrl.target.y += (target.y - ctrl.target.y) * 0.12;
-          ctrl.target.z += (0 - ctrl.target.z) * 0.12;
-
-          cam.position.x += (target.x - cam.position.x) * 0.12;
-          cam.position.y += (target.y - cam.position.y) * 0.12;
-          cam.position.z += (target.z - cam.position.z) * 0.12;
-
-          const dx = target.x - cam.position.x;
-          const dy = target.y - cam.position.y;
-          const dz = target.z - cam.position.z;
-          if (dx * dx + dy * dy + dz * dz < 2) {
-            flyToTargetRef.current = null;
-          } else {
-            cameraFlying = true;
-          }
-        }
-
-        controls.update();
-
-        // ── Drag & Pan Boundary Clamping ──────────────────────────────────
-        const R = graphRadiusRef.current || 800;
-        const maxPanX = R * 1.5;
-        const maxPanY = R * 1.5;
-
-        if (Math.abs(controls.target.x) > maxPanX || Math.abs(controls.target.y) > maxPanY) {
-          const clampedX = Math.max(-maxPanX, Math.min(maxPanX, controls.target.x));
-          const clampedY = Math.max(-maxPanY, Math.min(maxPanY, controls.target.y));
-          const diffX = clampedX - controls.target.x;
-          const diffY = clampedY - controls.target.y;
-          controls.target.x = clampedX;
-          controls.target.y = clampedY;
-          camera.position.x += diffX;
-          camera.position.y += diffY;
-        }
-
-        if (!isSettledRef.current) {
-          const isMoving = stepSimulation();
-          ticksRef.current++;
-          updateWebGLBuffersRef.current();
-
-          if (ticksRef.current >= 75 || (!isMoving && ticksRef.current >= 35)) {
-            isSettledRef.current = true;
-            setIsLayoutStable(true);
-            updateCentroidBadgesSyncRef.current(true);
-          }
-        }
-
-        updateCentroidBadgesSyncRef.current();
-        renderer.render(scene, camera);
-
-        // Keep loop running if still settling or camera actively moving/damping
-        const isInteracting = cameraFlying || !isSettledRef.current;
-        if (isInteracting) {
-          animFrameRef.current = requestAnimationFrame(render);
-        } else {
-          isRenderingRef.current = false;
-          animFrameRef.current = null;
-        }
-      };
-
-      const wakeRenderLoop = () => {
-        if (!isRenderingRef.current) {
-          isRenderingRef.current = true;
-          animFrameRef.current = requestAnimationFrame(render);
-        }
-      };
-      wakeRenderLoopRef.current = wakeRenderLoop;
-
-      controls.addEventListener("change", wakeRenderLoop);
-      controls.addEventListener("start", wakeRenderLoop);
-
-      wakeRenderLoop();
-
-      // Failsafe timer: Ensure graph loader overlay dismisses after 700ms max
-      const failsafeTimer = setTimeout(() => {
-        isSettledRef.current = true;
-        setIsLayoutStable(true);
-        updateCentroidBadgesSyncRef.current(true);
-      }, 700);
-
-      return () => {
-        clearTimeout(failsafeTimer);
-        if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-        animFrameRef.current = null;
-        isRenderingRef.current = false;
-        controls.dispose();
-
-        // ── Comprehensive WebGL GPU Resource Teardown ───────────────────────
-        if (instancedMeshRef.current) {
-          instancedMeshRef.current.geometry.dispose();
-          if (Array.isArray(instancedMeshRef.current.material)) {
-            instancedMeshRef.current.material.forEach((m) => m.dispose());
-          } else {
-            instancedMeshRef.current.material.dispose();
-          }
-          instancedMeshRef.current = null;
-        }
-
-        if (instancedRingRef.current) {
-          instancedRingRef.current.geometry.dispose();
-          if (Array.isArray(instancedRingRef.current.material)) {
-            instancedRingRef.current.material.forEach((m) => m.dispose());
-          } else {
-            instancedRingRef.current.material.dispose();
-          }
-          instancedRingRef.current = null;
-        }
-
-        if (lineSegmentsRef.current) {
-          lineSegmentsRef.current.geometry.dispose();
-          if (Array.isArray(lineSegmentsRef.current.material)) {
-            lineSegmentsRef.current.material.forEach((m) => m.dispose());
-          } else {
-            lineSegmentsRef.current.material.dispose();
-          }
-          lineSegmentsRef.current = null;
-        }
-
-        if (sceneRef.current) {
-          sceneRef.current.clear();
-          sceneRef.current = null;
-        }
-
-        renderer.forceContextLoss();
-        renderer.dispose();
-        rendererRef.current = null;
-        if (container && renderer.domElement && container.contains(renderer.domElement)) {
-          container.removeChild(renderer.domElement);
-        }
-
-        if (clearCacheOnUnmount) {
-          nodePosCache.clear();
-        }
-      };
-    }, [stepSimulation, clearCacheOnUnmount]);
-
-    // Dedicated lightweight camera & renderer resize effect (prevents WebGL scene teardown)
-    useEffect(() => {
-      const renderer = rendererRef.current;
-      const camera = cameraRef.current;
-      if (!renderer || !camera || width === 0 || height === 0) return;
-
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
-      updateCentroidBadgesSyncRef.current(true);
-      wakeRenderLoopRef.current();
-    }, [width, height]);
-
-    // Dismiss expanded cluster badge card on click outside
-    useEffect(() => {
-      if (!expandedBadge) return;
-      const handleDocClick = (e: MouseEvent | PointerEvent) => {
-        const badgeElem = document.getElementById(`badge-card-${expandedBadge}`);
-        if (badgeElem && !badgeElem.contains(e.target as Node)) {
-          setExpandedBadge(null);
-        }
-      };
-      const timer = setTimeout(() => {
-        document.addEventListener("pointerdown", handleDocClick);
-      }, 50);
-      return () => {
-        clearTimeout(timer);
-        document.removeEventListener("pointerdown", handleDocClick);
-      };
-    }, [expandedBadge]);
-
-    // Handle Raycaster + Screen-Space Proximity Node Click Picking
-    const handlePointerDown = useCallback(
-      (e: React.PointerEvent<HTMLDivElement>) => {
-        // If clicking on floating UI controls or overlay buttons, let their click handlers handle it
-        if ((e.target as HTMLElement).closest(".pointer-events-auto") && (e.target as HTMLElement) !== canvasContainerRef.current) {
-          return;
-        }
-
-        const renderer = rendererRef.current;
-        const camera = cameraRef.current;
-        const instancedMesh = instancedMeshRef.current;
-        const gNodes = gNodesRef.current;
-
-        if (!renderer || !camera || !instancedMesh || gNodes.length === 0) return;
-
-        const rect = renderer.domElement.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const clickY = e.clientY - rect.top;
-
-        // 1. Raycaster Direct Hit Test (Reusing Ref instances)
-        const mouse = mouseVecRef.current;
-        mouse.set(
-          (clickX / rect.width) * 2 - 1,
-          -(clickY / rect.height) * 2 + 1
-        );
-
-        const raycaster = raycasterRef.current;
-        raycaster.setFromCamera(mouse, camera);
-
-        const intersects = raycaster.intersectObject(instancedMesh);
-        if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
-          const idx = intersects[0].instanceId;
-          const node = gNodes[idx];
-          if (node && isNodeVisible(node)) {
-            onSelectNode(node.id, { x: e.clientX, y: e.clientY });
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+      }, [expandedBadge]);
+
+      // Raycaster + Screen-Space Proximity Node Click Picking
+      const handlePointerDown = useCallback(
+        (e: React.PointerEvent<HTMLDivElement>) => {
+          if (
+            (e.target as HTMLElement).closest(".pointer-events-auto") &&
+            (e.target as HTMLElement) !== canvasContainerRef.current
+          ) {
             return;
           }
-        }
 
-        // 2. Fallback Screen-Space Proximity Hit Test (24px Touch/Click Radius Threshold)
-        let closestNode: GNode | null = null;
-        let minSqDist = 24 * 24; // 24px radius
-        const tempVec = tempVecRef.current;
+          const renderer = rendererRef.current;
+          const camera = cameraRef.current;
+          const instancedMesh = instancedMeshRef.current;
+          const gNodes = gNodesRef.current;
 
-        for (let i = 0; i < gNodes.length; i++) {
-          const n = gNodes[i];
-          if (!isNodeVisible(n)) continue;
+          if (!renderer || !camera || !instancedMesh || gNodes.length === 0) return;
 
-          tempVec.set(n.x, n.y, n.z);
-          tempVec.project(camera);
+          const rect = renderer.domElement.getBoundingClientRect();
+          const clickX = e.clientX - rect.left;
+          const clickY = e.clientY - rect.top;
 
-          const screenX = ((tempVec.x + 1) * width) / 2;
-          const screenY = ((-tempVec.y + 1) * height) / 2;
+          // 1. Raycaster Direct Hit Test
+          const mouse = mouseVecRef.current;
+          mouse.set((clickX / rect.width) * 2 - 1, -(clickY / rect.height) * 2 + 1);
 
-          const dx = screenX - clickX;
-          const dy = screenY - clickY;
-          const sqDist = dx * dx + dy * dy;
+          const raycaster = raycasterRef.current;
+          raycaster.setFromCamera(mouse, camera);
 
-          if (sqDist < minSqDist) {
-            minSqDist = sqDist;
-            closestNode = n;
+          const intersects = raycaster.intersectObject(instancedMesh);
+          if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
+            const idx = intersects[0].instanceId;
+            const node = gNodes[idx];
+            if (node && isNodeVisible(node)) {
+              onSelectNode(node.id, { x: e.clientX, y: e.clientY });
+              return;
+            }
           }
-        }
 
-        if (closestNode) {
-          onSelectNode(closestNode.id, { x: e.clientX, y: e.clientY });
-          return;
-        }
+          // 2. Fallback Screen-Space Proximity Hit Test (24px Touch/Click Radius Threshold)
+          let closestNode: GNode | null = null;
+          let minSqDist = 24 * 24;
+          const tempVec = tempVecRef.current;
 
-        if (expandedBadge) {
-          setExpandedBadge(null);
-        }
+          for (let i = 0; i < gNodes.length; i++) {
+            const n = gNodes[i];
+            if (!isNodeVisible(n)) continue;
 
-        onSelectNode(null);
-      },
-      [onSelectNode, isNodeVisible, width, height, expandedBadge]
-    );
+            tempVec.set(n.x, n.y, n.z);
+            tempVec.project(camera);
 
-    useEffect(() => {
-      if (!expandedBadge) return;
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-          setExpandedBadge(null);
-        }
-      };
-      window.addEventListener("keydown", handleKeyDown);
-      return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [expandedBadge]);
+            const screenX = ((tempVec.x + 1) * width) / 2;
+            const screenY = ((-tempVec.y + 1) * height) / 2;
 
-    return (
-      <GraphErrorBoundary>
-        <div
-          ref={canvasContainerRef}
-          onPointerDown={handlePointerDown}
-          className="relative w-full h-full cursor-grab active:cursor-grabbing select-none"
-        >
-          {/* Borderless Organic Memory Network Loader Overlay */}
-          <AnimatePresence>
-            {!isLayoutStable && (
-              <motion.div
-                initial={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.6, ease: "easeInOut" }}
-                className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[rgb(var(--background))]/90 backdrop-blur-3xl pointer-events-none select-none"
-              >
-                <OrbitalLoader
-                  size="lg"
-                  title={MEMORY_COPY.graphBuilding}
-                  subtitle={`${nodes.length.toLocaleString()} nodes · ${edges.length.toLocaleString()} edges`}
-                  statusText="Optimizing layout and relationships"
-                />
-              </motion.div>
+            const dx = screenX - clickX;
+            const dy = screenY - clickY;
+            const sqDist = dx * dx + dy * dy;
+
+            if (sqDist < minSqDist) {
+              minSqDist = sqDist;
+              closestNode = n;
+            }
+          }
+
+          if (closestNode) {
+            onSelectNode(closestNode.id, { x: e.clientX, y: e.clientY });
+            return;
+          }
+
+          if (expandedBadge) {
+            setExpandedBadge(null);
+          }
+
+          onSelectNode(null);
+        },
+        [onSelectNode, isNodeVisible, width, height, expandedBadge, rendererRef, cameraRef, instancedMeshRef, gNodesRef]
+      );
+
+      return (
+        <GraphErrorBoundary>
+          <div
+            ref={canvasContainerRef}
+            onPointerDown={handlePointerDown}
+            className="relative w-full h-full cursor-grab active:cursor-grabbing select-none"
+          >
+            {/* Borderless Organic Memory Network Loader Overlay */}
+            <AnimatePresence>
+              {!isLayoutStable && (
+                <motion.div
+                  initial={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.6, ease: "easeInOut" }}
+                  className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[rgb(var(--background))]/90 backdrop-blur-3xl pointer-events-none select-none"
+                >
+                  <OrbitalLoader
+                    size="lg"
+                    title={MEMORY_COPY.graphBuilding}
+                    subtitle={`${nodes.length.toLocaleString()} nodes · ${edges.length.toLocaleString()} edges`}
+                    statusText="Optimizing layout and relationships"
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Prominent Cluster Centroid Badges & Overlay Cards */}
+            {isLayoutStable && (
+              <MemoryGraphClusterBadges
+                clusterBadges={clusterBadges}
+                expandedBadge={expandedBadge}
+                onToggleBadge={setExpandedBadge}
+                isLightMode={isLightMode}
+              />
             )}
-          </AnimatePresence>
-
-          {/* Prominent & Legible Cluster Centroid Badges */}
-          {isLayoutStable && (
-            <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
-              {clusterBadges.map((badge) => {
-                const IconComp = getCollectionIcon(badge.collection);
-                const isSelected = expandedBadge === badge.collection;
-
-                return (
-                  <div
-                    key={badge.collection}
-                    id={`badge-pill-${badge.collection}`}
-                    style={{
-                      left: `${badge.screenX}px`,
-                      top: `${badge.screenY}px`,
-                      transform: "translate(-50%, -50%)",
-                    }}
-                    className="absolute pointer-events-auto z-20"
-                  >
-                    {/* Persistent Badge Button */}
-                    <motion.button
-                      type="button"
-                      initial={{ opacity: 0, scale: 0.92 }}
-                      animate={{ opacity: 1, scale: isSelected ? 1.06 : 1 }}
-                      exit={{ opacity: 0, scale: 0.92 }}
-                      transition={{ duration: 0.12, ease: "easeOut" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setExpandedBadge(isSelected ? null : badge.collection);
-                      }}
-                      style={{
-                        backgroundColor: isLightMode ? "#ffffff" : "rgba(var(--glass-navy), 0.98)",
-                        border: `1.5px solid ${badge.color}${isSelected ? "ff" : "70"}`,
-                        boxShadow: isSelected
-                          ? `0 0 16px ${badge.color}60`
-                          : isLightMode
-                          ? "0 4px 14px -2px rgba(15, 23, 42, 0.12), 0 1px 4px -1px rgba(0, 0, 0, 0.06)"
-                          : "0 6px 18px -2px rgba(0, 0, 0, 0.6), 0 2px 4px -1px rgba(0, 0, 0, 0.4)",
-                      }}
-                      className="flex items-center gap-2 px-3.5 py-1.5 rounded-full hover:scale-105 transition-transform cursor-pointer select-none text-[rgb(var(--foreground))]"
-                    >
-                      <IconComp size={16} style={{ color: badge.color }} className="shrink-0" />
-                      <span className="text-[12px] font-sans font-black tracking-wider text-[rgb(var(--foreground))] uppercase">
-                        {badge.collection}
-                      </span>
-                      <span
-                        className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full shadow-xs"
-                        style={{ backgroundColor: `${badge.color}25`, color: badge.color }}
-                      >
-                        {badge.factCount}
-                      </span>
-                    </motion.button>
-                  </div>
-                );
-              })}
-
-              {/* Separate Floating / Fixed Bottom Overlay Card */}
-              <AnimatePresence>
-                {expandedBadge && (() => {
-                  const activeBadge = clusterBadges.find((b) => b.collection === expandedBadge);
-                  if (!activeBadge) return null;
-                  const IconComp = getCollectionIcon(activeBadge.collection);
-                  const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : false;
-
-                  return (
-                    <motion.div
-                      key={`expanded-card-${activeBadge.collection}`}
-                      id={`badge-card-${activeBadge.collection}`}
-                      initial={{ opacity: 0, scale: 0.94, y: 8 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.94, y: 8 }}
-                      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                      onClick={(e) => e.stopPropagation()}
-                      style={
-                        isMobile
-                          ? {
-                              left: "16px",
-                              right: "16px",
-                              bottom: "76px",
-                              maxWidth: "380px",
-                              margin: "0 auto",
-                              backgroundColor: isLightMode ? "#ffffff" : "rgba(var(--glass-navy), 0.98)",
-                              border: `1.5px solid ${activeBadge.color}`,
-                              boxShadow: isLightMode
-                                ? "0 12px 32px -4px rgba(15, 23, 42, 0.20), 0 3px 8px -1px rgba(0, 0, 0, 0.10)"
-                                : "0 16px 40px -4px rgba(0, 0, 0, 0.85), 0 3px 8px -1px rgba(0, 0, 0, 0.5)",
-                            }
-                          : {
-                              left: `${Math.min(typeof window !== "undefined" ? window.innerWidth - 340 : 500, Math.max(20, activeBadge.screenX - 160))}px`,
-                              top: `${Math.min(typeof window !== "undefined" ? window.innerHeight - 380 : 400, Math.max(80, activeBadge.screenY + 24))}px`,
-                              backgroundColor: isLightMode ? "#ffffff" : "rgba(var(--glass-navy), 0.98)",
-                              border: `1.5px solid ${activeBadge.color}`,
-                              boxShadow: isLightMode
-                                ? "0 12px 32px -4px rgba(15, 23, 42, 0.20), 0 3px 8px -1px rgba(0, 0, 0, 0.10)"
-                                : "0 16px 40px -4px rgba(0, 0, 0, 0.85), 0 3px 8px -1px rgba(0, 0, 0, 0.5)",
-                            }
-                      }
-                      className={cn(
-                        "fixed z-40 p-4 sm:p-5 rounded-3xl cursor-default select-none text-[rgb(var(--foreground))] pointer-events-auto shadow-2xl",
-                        isMobile
-                          ? "max-h-[calc(100vh-150px)] overflow-y-auto custom-scrollbar"
-                          : "w-[320px] max-h-[520px] overflow-y-auto custom-scrollbar"
-                      )}
-                    >
-                      <div className="flex flex-col gap-3 w-full">
-                        {/* Header with Close Button */}
-                        <div className="flex items-center justify-between border-b pb-2.5" style={{ borderColor: `${activeBadge.color}25` }}>
-                          <div className="flex items-center gap-2.5">
-                            <div
-                              className="p-2 rounded-xl flex items-center justify-center shrink-0 shadow-xs"
-                              style={{ backgroundColor: `${activeBadge.color}20`, color: activeBadge.color }}
-                            >
-                              <IconComp size={16} />
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="text-[12px] font-sans font-black tracking-wider uppercase text-[rgb(var(--foreground))]">
-                                {activeBadge.collection}
-                              </span>
-                              <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-                                {activeBadge.activeFacts} Active Facts
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-full shadow-xs"
-                              style={{ backgroundColor: `${activeBadge.color}25`, color: activeBadge.color }}
-                            >
-                              {activeBadge.factCount} Memories
-                            </span>
-                            <Tooltip label={MEMORY_COPY.closeDetails}>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setExpandedBadge(null);
-                                }}
-                                className="p-1.5 rounded-xl hover:bg-black/10 dark:hover:bg-white/10 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
-                              >
-                                <X size={14} />
-                              </button>
-                            </Tooltip>
-                          </div>
-                        </div>
-
-                        {/* Description */}
-                        <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] leading-relaxed">
-                          {activeBadge.desc}
-                        </p>
-
-                        {/* Cross-Collection Directed Edges */}
-                        {activeBadge.crossRelations.length > 0 && (
-                          <div className="flex flex-col gap-1.5 pt-2 border-t" style={{ borderColor: `${activeBadge.color}20` }}>
-                            <div className="flex items-center justify-between px-0.5">
-                              <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: activeBadge.color }}>
-                                {MEMORY_COPY.connectedClusters}
-                              </span>
-                              <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-                                {activeBadge.totalRelations} Edges
-                              </span>
-                            </div>
-
-                            <div className="flex flex-col gap-1.5">
-                              {activeBadge.crossRelations.map((rel) => {
-                                const targetColColor = getCollectionColor(rel.targetCollection, false, isLightMode).main;
-                                return (
-                                  <div
-                                    key={`${activeBadge.collection}-${rel.relation}-${rel.targetCollection}`}
-                                    className={cn(
-                                      "flex items-center justify-between text-[11px] font-sans p-2 rounded-xl border shadow-xs",
-                                      isLightMode
-                                        ? "bg-slate-100 border-slate-200 text-slate-800"
-                                        : "bg-white/[0.06] border-white/10 text-white"
-                                    )}
-                                  >
-                                    <div className="flex items-center gap-1.5 font-mono text-[11px] truncate">
-                                      <span className="font-bold" style={{ color: activeBadge.color }}>
-                                        {rel.relation}
-                                      </span>
-                                      <span className="text-[rgb(var(--foreground-muted))]">➔</span>
-                                      <span className="font-semibold text-[rgb(var(--foreground))] truncate" style={{ color: targetColColor }}>
-                                        {rel.targetCollection}
-                                      </span>
-                                    </div>
-                                    <span
-                                      className="font-mono font-bold text-[11px] px-2 py-0.5 rounded-full shrink-0 shadow-xs"
-                                      style={{ backgroundColor: `${activeBadge.color}20`, color: activeBadge.color }}
-                                    >
-                                      {rel.count}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  );
-                })()}
-              </AnimatePresence>
-            </div>
-          )}
-        </div>
-      </GraphErrorBoundary>
-    );
-  })
+          </div>
+        </GraphErrorBoundary>
+      );
+    }
+  )
 );
 
 MemoryGraph.displayName = "MemoryGraph";

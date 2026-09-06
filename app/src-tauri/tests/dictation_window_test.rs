@@ -11,10 +11,13 @@
 mod common;
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::{AudioOutputMode, DictationInteractionMode, DictationOutputMode, InteractionMode};
+use vox_lib::core::settings::{
+    AudioOutputMode, DictationInteractionMode, DictationOutputMode, InteractionMode,
+};
 use vox_lib::core::state::{InteractionOwner, InteractionState};
 use vox_lib::pipeline::dictation::transition_dictation;
 use vox_lib::services::llm::LlmCommand;
@@ -69,7 +72,7 @@ async fn test_dictation_matrix() {
         );
 
         // 4. Attach mock engine with LLM capture channel to verify LLM Zero Invariant
-        let (llm_tx, llm_rx) = std::sync::mpsc::channel::<LlmCommand>();
+        let (llm_tx, llm_rx) = mpsc::channel::<LlmCommand>();
         common::harness::attach_mock_engine_with_llm_vad_to_state(
             &app,
             &state,
@@ -79,7 +82,7 @@ async fn test_dictation_matrix() {
         );
 
         // 5. Setup and spawn central event router
-        let (event_tx, event_rx) = std::sync::mpsc::channel::<VoxEvent>();
+        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
         *state.event_tx.lock() = Some(event_tx.clone());
         let router_join = vox_lib::pipeline::router::spawn_router(app.clone(), event_rx)
             .expect("Failed to spawn router thread");

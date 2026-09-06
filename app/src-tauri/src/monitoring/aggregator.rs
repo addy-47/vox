@@ -1,6 +1,8 @@
 use crate::monitoring::TELEMETRY_AGGREGATOR_CHANNEL_CAPACITY;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use serde::Serialize;
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -28,30 +30,30 @@ pub enum TelemetryEvent {
 /// A dedicated background worker that aggregates telemetry events.
 pub struct TelemetryAggregator {
     rx: Receiver<TelemetryEvent>,
-    latest_energy: Arc<std::sync::atomic::AtomicU32>,
-    latest_vad_prob: Arc<std::sync::atomic::AtomicU32>,
-    latest_low: Arc<std::sync::atomic::AtomicU32>,
-    latest_mid: Arc<std::sync::atomic::AtomicU32>,
-    latest_high: Arc<std::sync::atomic::AtomicU32>,
-    latest_sys_cpu: Arc<std::sync::atomic::AtomicU32>,
-    latest_sys_ram: Arc<std::sync::atomic::AtomicU32>,
-    latest_vox_cpu: Arc<std::sync::atomic::AtomicU32>,
-    latest_vox_ram: Arc<std::sync::atomic::AtomicU32>,
-    dropped_events: Arc<std::sync::atomic::AtomicU64>,
+    latest_energy: Arc<AtomicU32>,
+    latest_vad_prob: Arc<AtomicU32>,
+    latest_low: Arc<AtomicU32>,
+    latest_mid: Arc<AtomicU32>,
+    latest_high: Arc<AtomicU32>,
+    latest_sys_cpu: Arc<AtomicU32>,
+    latest_sys_ram: Arc<AtomicU32>,
+    latest_vox_cpu: Arc<AtomicU32>,
+    latest_vox_ram: Arc<AtomicU32>,
+    dropped_events: Arc<AtomicU64>,
 }
 
 /// Target atomics updated by the telemetry aggregator loop.
 pub struct TelemetryAggregatorHandles {
-    pub latest_energy: Arc<std::sync::atomic::AtomicU32>,
-    pub latest_vad_prob: Arc<std::sync::atomic::AtomicU32>,
-    pub latest_low: Arc<std::sync::atomic::AtomicU32>,
-    pub latest_mid: Arc<std::sync::atomic::AtomicU32>,
-    pub latest_high: Arc<std::sync::atomic::AtomicU32>,
-    pub latest_sys_cpu: Arc<std::sync::atomic::AtomicU32>,
-    pub latest_sys_ram: Arc<std::sync::atomic::AtomicU32>,
-    pub latest_vox_cpu: Arc<std::sync::atomic::AtomicU32>,
-    pub latest_vox_ram: Arc<std::sync::atomic::AtomicU32>,
-    pub dropped_events: Arc<std::sync::atomic::AtomicU64>,
+    pub latest_energy: Arc<AtomicU32>,
+    pub latest_vad_prob: Arc<AtomicU32>,
+    pub latest_low: Arc<AtomicU32>,
+    pub latest_mid: Arc<AtomicU32>,
+    pub latest_high: Arc<AtomicU32>,
+    pub latest_sys_cpu: Arc<AtomicU32>,
+    pub latest_sys_ram: Arc<AtomicU32>,
+    pub latest_vox_cpu: Arc<AtomicU32>,
+    pub latest_vox_ram: Arc<AtomicU32>,
+    pub dropped_events: Arc<AtomicU64>,
 }
 
 impl TelemetryAggregator {

@@ -13,6 +13,8 @@ use super::{
     INGESTION_OVERFLOW_LOG_INTERVAL, PLAYBACK_CHANNELS, PLAYBACK_SAMPLE_RATE,
 };
 use crate::core::constants::SAMPLE_RATE;
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering;
 
 /// Manages the low-level CPAL hardware audio stream for microphone capture.
 pub struct AudioStream {
@@ -139,7 +141,7 @@ where
     let stream = device.build_input_stream(
         config,
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            if !ingestion_gate.load(std::sync::atomic::Ordering::Relaxed) {
+            if !ingestion_gate.load(Ordering::Relaxed) {
                 return;
             }
 
@@ -172,9 +174,8 @@ where
             if !resampled_buffer.is_empty() {
                 let pushed = producer.push_slice(&resampled_buffer);
                 if pushed < resampled_buffer.len() {
-                    static DROP_COUNT: std::sync::atomic::AtomicU32 =
-                        std::sync::atomic::AtomicU32::new(0);
-                    let prev = DROP_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    static DROP_COUNT: AtomicU32 = AtomicU32::new(0);
+                    let prev = DROP_COUNT.fetch_add(1, Ordering::Relaxed);
                     if prev.is_multiple_of(INGESTION_OVERFLOW_LOG_INTERVAL) {
                         log::warn!(
                             "[Audio::Device] Ring buffer overflow! Dropped {} chunks so far",
@@ -238,13 +239,8 @@ pub fn build_output_stream(
     let host = resolve_audio_host();
     let (device, config) = resolve_output_device_and_config(&host)?;
 
-    let mut cb_ctx = PlaybackStreamContext::new(
-        consumer,
-        handles,
-        discard_request,
-        turn_armed,
-        telemetry,
-    );
+    let mut cb_ctx =
+        PlaybackStreamContext::new(consumer, handles, discard_request, turn_armed, telemetry);
 
     let stream = device
         .build_output_stream(
