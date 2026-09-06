@@ -149,3 +149,8 @@ harness = false
 name = "pipeline_bench"
 harness = false
 
+[[bench]]
+name = "llm_bench"
+harness = false
+
+

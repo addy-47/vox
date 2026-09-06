@@ -57,6 +57,10 @@ struct CliArgs {
     #[arg(long, default_value = "qwen")]
     llm: String,
 
+    /// LLM Model override (e.g. meta/llama-3.2-11b-vision-instruct)
+    #[arg(long)]
+    model: Option<String>,
+
     /// TTS Provider: 'kokoro', 'supertonic', 'edge'
     #[arg(long, default_value = "kokoro")]
     tts: String,
@@ -148,7 +152,7 @@ fn main() {
             settings.llm.active = LlmActiveProvider::Cloud;
             settings.llm.cloud.provider_name = Some("nvidia".to_string());
             settings.llm.cloud.base_url = "https://integrate.api.nvidia.com/v1".to_string();
-            settings.llm.cloud.model = "meta/llama-3.1-8b-instruct".to_string();
+            settings.llm.cloud.model = args.model.unwrap_or_else(|| "meta/llama-3.2-11b-vision-instruct".to_string());
             settings.llm.cloud.api_key = Some(api_key);
         }
         _ => settings.llm.active = LlmActiveProvider::Embedded,
@@ -301,6 +305,13 @@ fn main() {
                 VoxEvent::PlaybackFinished { turn_id } => {
                     println!(
                         "  [AUDIO] PlaybackFinished (turn {}) at +{:.2}s",
+                        turn_id,
+                        run_start.elapsed().as_secs_f64()
+                    );
+                }
+                VoxEvent::Cancelled { turn_id } => {
+                    println!(
+                        "  [CANCELLED] Turn {} cancelled at +{:.2}s",
                         turn_id,
                         run_start.elapsed().as_secs_f64()
                     );

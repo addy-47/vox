@@ -102,7 +102,16 @@ pub fn generate_run_id() -> String {
 
 /// Saves the benchmark report artifact into `<base_dir>/<run_id>/report.json` and updates `<base_dir>/latest.json`.
 pub fn save_benchmark_report(base_dir: &Path, report: &BenchmarkReport) -> Result<PathBuf, String> {
-    let run_dir = base_dir.join(&report.run_id);
+    save_json_report(base_dir, &report.run_id, report)
+}
+
+/// Saves any serializable benchmark report artifact into `<base_dir>/<run_id>/report.json` and updates `<base_dir>/latest.json`.
+pub fn save_json_report<T: Serialize>(
+    base_dir: &Path,
+    run_id: &str,
+    report: &T,
+) -> Result<PathBuf, String> {
+    let run_dir = base_dir.join(run_id);
     fs::create_dir_all(&run_dir).map_err(|e| {
         format!(
             "Failed to create benchmark result dir at {:?}: {}",
