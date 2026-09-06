@@ -1,14 +1,16 @@
-use crate::core::constants::{TOAST_HEIGHT, TOAST_PAD_TOP, TOAST_WIDTH, WINDOW_TOAST};
-use std::sync::LazyLock;
-use std::time::Duration;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use std::{sync::LazyLock, time::Duration};
 
-use crate::core::events::emit_ipc_to;
-use crate::core::events::IpcEvent;
-use crate::core::events::ToastLevel;
-use crate::core::events::ToastPayload;
 #[cfg(target_os = "linux")]
 use gtk::prelude::{GtkWindowExt, WidgetExt};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+
+use crate::{
+    core::{
+        constants::{TOAST_HEIGHT, TOAST_PAD_TOP, TOAST_WIDTH, WINDOW_TOAST},
+        events::{emit_ipc_to, IpcEvent, ToastLevel, ToastPayload},
+    },
+    pipeline::WINDOW_MAIN,
+};
 
 static LAST_TOAST: LazyLock<parking_lot::Mutex<Option<ToastPayload>>> =
     LazyLock::new(|| parking_lot::Mutex::new(None));
@@ -198,7 +200,7 @@ pub fn get_last_toast() -> Option<ToastPayload> {
 
 /// Returns true when the main window is hidden and a toast should supplement the error.
 pub fn should_show_error_toast<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
-    match app.get_webview_window(crate::pipeline::WINDOW_MAIN) {
+    match app.get_webview_window(WINDOW_MAIN) {
         Some(w) => !w.is_visible().unwrap_or(true),
         None => false,
     }

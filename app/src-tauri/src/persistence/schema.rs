@@ -1,5 +1,6 @@
-use crate::core::error::PersistenceError;
 use turso::Connection;
+
+use crate::core::error::PersistenceError;
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 

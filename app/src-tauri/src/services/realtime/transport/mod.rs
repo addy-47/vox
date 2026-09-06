@@ -1,16 +1,21 @@
 pub mod connection;
 pub mod health;
 
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU32},
+        Arc,
+    },
+    time::Duration,
+};
 
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::core::state::InteractionState;
-use crate::services::realtime::{OutboundCommand, RealtimeProviderEvent};
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicU32;
+use crate::{
+    core::state::InteractionState,
+    services::realtime::{OutboundCommand, RealtimeProviderEvent},
+};
 
 /// WebSocket sink half for a TLS-wrapped TCP connection.
 pub(crate) type WsWriter = futures_util::stream::SplitSink<

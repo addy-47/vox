@@ -1,8 +1,17 @@
-use crate::core::error::VoxIpcError;
-use crate::core::state::AppState;
-use crate::persistence::db::VoxDb;
 use std::sync::Arc;
+
 use tauri::State;
+
+/// Re-exports of session row types for frontend IPC serialization.
+pub use crate::persistence::sessions::{SessionRow, TurnRow};
+use crate::{
+    core::{error::VoxIpcError, state::AppState},
+    persistence::{
+        db::VoxDb,
+        sessions::{delete_session as delete_session_row, fetch_sessions, fetch_turns},
+    },
+    utils::paths::get,
+};
 
 /// Retrieves the current in-memory transcript history (tray ephemeral buffer).
 #[tauri::command]
@@ -49,17 +58,15 @@ pub async fn commit_session_to_history(
     Ok(())
 }
 
-pub use crate::persistence::sessions::{SessionRow, TurnRow};
-
 /// Returns all sessions ordered by most recent first.
 #[tauri::command]
 pub async fn get_sessions() -> Result<Vec<SessionRow>, VoxIpcError> {
-    let db_path = crate::utils::paths::get().db.clone();
+    let db_path = get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    crate::persistence::sessions::fetch_sessions(&conn, 500)
+    fetch_sessions(&conn, 500)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
@@ -67,12 +74,12 @@ pub async fn get_sessions() -> Result<Vec<SessionRow>, VoxIpcError> {
 /// Returns all turns for a given session, oldest first.
 #[tauri::command]
 pub async fn get_turns(session_id: i64) -> Result<Vec<TurnRow>, VoxIpcError> {
-    let db_path = crate::utils::paths::get().db.clone();
+    let db_path = get().db.clone();
     let conn = VoxDb::open_readonly(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    crate::persistence::sessions::fetch_turns(&conn, session_id)
+    fetch_turns(&conn, session_id)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
@@ -80,12 +87,12 @@ pub async fn get_turns(session_id: i64) -> Result<Vec<TurnRow>, VoxIpcError> {
 /// Deletes a session and all its turns (CASCADE).
 #[tauri::command]
 pub async fn delete_session(id: i64) -> Result<(), VoxIpcError> {
-    let db_path = crate::utils::paths::get().db.clone();
+    let db_path = get().db.clone();
     let conn = VoxDb::open(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
 
-    crate::persistence::sessions::delete_session(&conn, id)
+    delete_session_row(&conn, id)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }

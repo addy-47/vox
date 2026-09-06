@@ -8,20 +8,26 @@
 //! Metrics      : Stage Latencies (ms), Dedup Audit, Stage 3 Per-Batch Audit, Master Synthesis
 //! ============================================================================
 
-use anyhow::Result;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-use std::sync::Arc;
-use turso::Builder;
-use vox_lib::persistence::{decode_f32_blob, encode_f32_blob, mutations};
-use vox_lib::services::memory::ingestion::{
-    run_stage1_dedup, run_stage2_embed, stage3_eval, stage4_commit,
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
-use vox_lib::services::memory::ingestion::{CandidateAuditLog, DedupAuditLog};
-use vox_lib::services::memory::{is_valid_inter_collection_pair, PM_SEMANTIC_GRAPH_COLLECTIONS};
-use vox_lib::services::memory::{
-    INTER_COLLECTION_CANDIDATE_SEARCH, SAME_COLLECTION_CANDIDATE_SEARCH, SUBFLOOR_CANDIDATE_FLOOR,
+
+use anyhow::Result;
+use turso::Builder;
+use vox_lib::{
+    persistence::{decode_f32_blob, encode_f32_blob, mutations},
+    services::memory::{
+        ingestion::{
+            run_stage1_dedup, run_stage2_embed, stage3_eval, stage4_commit, CandidateAuditLog,
+            DedupAuditLog,
+        },
+        is_valid_inter_collection_pair, INTER_COLLECTION_CANDIDATE_SEARCH,
+        PM_SEMANTIC_GRAPH_COLLECTIONS, SAME_COLLECTION_CANDIDATE_SEARCH, SUBFLOOR_CANDIDATE_FLOOR,
+    },
 };
 
 async fn fetch_intra_subfloor_candidates(

@@ -1,11 +1,14 @@
 //! Strongly-typed IPC command handlers for assistant pipeline control.
 
 use std::sync::Arc;
+
 use tauri::{AppHandle, Manager, State};
 
-use crate::core::error::VoxIpcError;
-use crate::core::events::VoxEvent;
-use crate::core::state::{AppState, InteractionOwner, InteractionState};
+use crate::core::{
+    error::VoxIpcError,
+    events::VoxEvent,
+    state::{AppState, InteractionOwner, InteractionState},
+};
 
 /// Launches and initializes the 3-tier audio engine.
 #[tauri::command]

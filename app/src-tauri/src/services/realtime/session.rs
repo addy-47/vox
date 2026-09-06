@@ -1,8 +1,11 @@
-use crate::core::settings::RealtimeProviderKind;
-use crate::core::state::AppState;
-use crate::services::realtime::providers::DeepgramVoiceAgentProvider;
-use crate::services::realtime::providers::GeminiLiveProvider;
-use crate::services::realtime::RealtimeVoiceProvider;
+use crate::{
+    core::{settings::RealtimeProviderKind, state::AppState},
+    services::realtime::{
+        providers::{DeepgramVoiceAgentProvider, GeminiLiveProvider},
+        RealtimeVoiceProvider, SESSION_CACHE_FILENAME,
+    },
+    utils::paths::cache_dir,
+};
 
 /// Instantiates the configured cloud real-time voice provider.
 pub fn create_realtime_provider(
@@ -16,8 +19,7 @@ pub fn create_realtime_provider(
     let assembled_prompt = state.conversation_manager.lock().assemble_system_prompt();
 
     // Check cached session resumption token with 2-hour TTL
-    let cache_path =
-        crate::utils::paths::cache_dir().join(crate::services::realtime::SESSION_CACHE_FILENAME);
+    let cache_path = cache_dir().join(SESSION_CACHE_FILENAME);
     let mut cached_handle = None;
     if cache_path.exists() {
         if let Ok(data) = std::fs::read_to_string(&cache_path) {
@@ -67,8 +69,7 @@ pub fn create_realtime_provider(
 
 /// Explicitly purges the disk cache file containing the session resumption token.
 pub fn purge_session_cache() {
-    let cache_path =
-        crate::utils::paths::cache_dir().join(crate::services::realtime::SESSION_CACHE_FILENAME);
+    let cache_path = cache_dir().join(SESSION_CACHE_FILENAME);
     if cache_path.exists() {
         if let Err(e) = std::fs::remove_file(&cache_path) {
             log::warn!(

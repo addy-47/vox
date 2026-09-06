@@ -10,21 +10,27 @@
 
 mod common;
 
-use futures_util::future::BoxFuture;
-use std::sync::atomic::Ordering;
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::time::Duration;
-use vox_lib::core::settings::{LlmActiveProvider, LlmModelInfo, PipelineMode};
-use vox_lib::core::state::{InteractionOwner, InteractionState};
-use vox_lib::pipeline::assistant::transcript::on_transcript_final;
-use vox_lib::pipeline::RoutingContext;
-use vox_lib::services::harness::Role;
-use vox_lib::services::llm::{
-    GenerationPurpose, GenerationRequest, LlmCommand, LlmError, LlmProvider, LlmStreamEvent,
-    ProviderCapabilities, ProviderKind,
+use std::{
+    sync::{atomic::Ordering, mpsc, Arc},
+    time::Duration,
 };
-use vox_lib::services::tts::TtsCommand;
+
+use futures_util::future::BoxFuture;
+use vox_lib::{
+    core::{
+        settings::{LlmActiveProvider, LlmModelInfo, PipelineMode},
+        state::{InteractionOwner, InteractionState},
+    },
+    pipeline::{assistant::transcript::on_transcript_final, RoutingContext},
+    services::{
+        harness::Role,
+        llm::{
+            GenerationPurpose, GenerationRequest, LlmCommand, LlmError, LlmProvider,
+            LlmStreamEvent, ProviderCapabilities, ProviderKind,
+        },
+        tts::TtsCommand,
+    },
+};
 
 /// Minimal mock LLM provider capturing calls for integration testing.
 #[derive(Clone, Default)]

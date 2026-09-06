@@ -10,14 +10,19 @@
 
 mod common;
 
-use common::paths::TempPathsGuard;
-use std::fs;
-use std::time::{Duration, Instant};
-use vox_lib::core::settings::{
-    AudioOutputMode, DictationOutputMode, LlmActiveProvider, PipelineMode, SttActiveProvider,
-    TtsActiveProvider, VadBackendOption, VoxSettings,
+use std::{
+    fs,
+    time::{Duration, Instant},
 };
-use vox_lib::ipc::settings::apply_setting_mutation;
+
+use common::paths::TempPathsGuard;
+use vox_lib::{
+    core::settings::{
+        AudioOutputMode, DictationOutputMode, LlmActiveProvider, PipelineMode, SttActiveProvider,
+        TtsActiveProvider, VadBackendOption, VoxSettings,
+    },
+    ipc::settings::apply_setting_mutation,
+};
 
 // ============================================================================
 // Subtest 1: test_settings_json_roundtrip_persistence

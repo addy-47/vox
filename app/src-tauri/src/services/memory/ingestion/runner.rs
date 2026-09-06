@@ -1,11 +1,15 @@
-use super::stage1_dedup::run_stage1_dedup_with_metrics;
-use super::stage2_embed::run_stage2_embed_with_metrics;
-use super::stage3_eval::run_stage3_eval_with_metrics_seq;
-use super::stage4_commit::run_stage4_commit_with_metrics;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
 use anyhow::Result;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use turso::Connection;
+
+use super::{
+    stage1_dedup::run_stage1_dedup_with_metrics, stage2_embed::run_stage2_embed_with_metrics,
+    stage3_eval::run_stage3_eval_with_metrics_seq, stage4_commit::run_stage4_commit_with_metrics,
+};
 
 /// Drives the 4-Stage Ingestion Pipeline sequentially:
 /// Stage 1 (Dedup) -> Stage 2 (Embed) -> Stage 3 (Eval) -> Stage 4 (Commit & Prune)

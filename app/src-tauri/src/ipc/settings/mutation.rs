@@ -1,15 +1,33 @@
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    sync::{atomic::Ordering, Arc},
+    time::Duration,
+};
 
 use tauri::{AppHandle, Manager, State};
 
-use crate::core::error::VoxIpcError;
-use crate::core::events::{emit_ipc, IpcEvent};
-use crate::core::settings::{
-    get_setting_reload_policy, InteractionMode, SettingReloadPolicy, VoxSettings,
+use crate::{
+    core::{
+        error::VoxIpcError,
+        events::{emit_ipc, IpcEvent},
+        settings::{
+            get_setting_reload_policy, AudioOutputMode, DictationInteractionMode,
+            DictationOutputMode, InteractionMode, LlmActiveProvider, LlmProviderConfig,
+            LlmRemoteConfig, SettingReloadPolicy, SttActiveProvider, SttCloudConfig,
+            SttProviderConfig, TtsActiveProvider, TtsProviderConfig, VoxSettings,
+        },
+        start_audio_engine,
+        state::{AppState, InteractionOwner, InteractionState},
+        stop_audio_engine,
+    },
+    ipc::pipeline::{launch_engine, stop_engine},
+    pipeline::dictation::transition_dictation,
+    services::{
+        dictation::init_dictation_hotkey_listener,
+        tts::TtsCommand,
+        vad::{VadCommand, VadOperationalMode},
+    },
+    tray::{destroy_tray_window, ensure_tray_window},
 };
-use crate::core::state::{AppState, InteractionOwner, InteractionState};
 
 /// Disk write is deferred by this duration after the last setting change.
 /// Prevents thrashing disk on rapid slider updates (dozens of changes/sec).
@@ -37,7 +55,7 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
         } else {
             InteractionState::Idle
         };
-        crate::pipeline::dictation::transition_dictation(new_dict_state, app, state);
+        transition_dictation(new_dict_state, app, state);
 
         let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
         if enabled && owner == InteractionOwner::Dictation {
@@ -45,23 +63,16 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
                 .settings
                 .read()
                 .map(|s| s.dictation.interaction_mode.clone())
-                .unwrap_or(crate::core::settings::DictationInteractionMode::Ptt);
+                .unwrap_or(DictationInteractionMode::Ptt);
             let vad_op_mode = match dictation_mode {
-                crate::core::settings::DictationInteractionMode::Passive => {
-                    crate::services::vad::VadOperationalMode::ContinuousSegmentation
-                }
-                crate::core::settings::DictationInteractionMode::Ptt => {
-                    crate::services::vad::VadOperationalMode::WindowedValidation
-                }
+                DictationInteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
+                DictationInteractionMode::Ptt => VadOperationalMode::WindowedValidation,
             };
             if let Ok(guard) = state.engine.try_lock() {
                 if let Some(ref engine) = *guard {
-                    let _ =
-                        engine
-                            .vad_tx
-                            .send(crate::services::vad::VadCommand::SetOperationalMode(
-                                vad_op_mode,
-                            ));
+                    let _ = engine
+                        .vad_tx
+                        .send(VadCommand::SetOperationalMode(vad_op_mode));
                 }
             }
         }
@@ -69,7 +80,7 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
         let is_tray_mode = state
             .settings
             .read()
-            .map(|s| s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray)
+            .map(|s| s.dictation.output_mode == DictationOutputMode::Tray)
             .unwrap_or(false);
         let is_clickable = enabled && is_tray_mode;
         let menu_item_lock = state.hud_menu_item.lock();
@@ -90,26 +101,26 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
         }
 
         if !enabled {
-            crate::tray::destroy_tray_window(app);
+            destroy_tray_window(app);
 
             if state.pipeline.state() == InteractionState::Idle {
                 let state_clone = app.state::<Arc<AppState>>().inner().clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = crate::core::stop_audio_engine(&state_clone).await {
+                    if let Err(e) = stop_audio_engine(&state_clone).await {
                         log::warn!("[Settings::Mutation] Failed to stop audio engine: {}", e);
                     }
                 });
             }
         } else {
             if is_tray_mode {
-                if let Err(e) = crate::tray::ensure_tray_window(app) {
+                if let Err(e) = ensure_tray_window(app) {
                     log::warn!("[Settings::Mutation] Failed to ensure tray window: {}", e);
                 }
             }
             let app_clone = app.clone();
             let state_clone = app.state::<Arc<AppState>>().inner().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = crate::core::start_audio_engine(&app_clone, &state_clone).await {
+                if let Err(e) = start_audio_engine(&app_clone, &state_clone).await {
                     log::error!("[Settings] Failed to launch engine for dictation: {}", e);
                 }
             });
@@ -119,8 +130,8 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
             .settings
             .read()
             .map(|s| (s.dictation.enabled, s.dictation.output_mode.clone()))
-            .unwrap_or((false, crate::core::settings::DictationOutputMode::Paste));
-        let is_tray_mode = output_mode == crate::core::settings::DictationOutputMode::Tray;
+            .unwrap_or((false, DictationOutputMode::Paste));
+        let is_tray_mode = output_mode == DictationOutputMode::Tray;
         let is_clickable = enabled && is_tray_mode;
 
         let menu_item_lock = state.hud_menu_item.lock();
@@ -141,32 +152,26 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
         }
 
         if enabled && is_tray_mode {
-            if let Err(e) = crate::tray::ensure_tray_window(app) {
+            if let Err(e) = ensure_tray_window(app) {
                 log::warn!("[Settings::Mutation] Failed to ensure tray window: {}", e);
             }
         } else if !is_tray_mode {
-            crate::tray::destroy_tray_window(app);
+            destroy_tray_window(app);
         }
     } else if key == "interaction_mode" {
         let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
         if owner == InteractionOwner::Dictation {
-            if let Ok(mode) = serde_json::from_value::<
-                crate::core::settings::DictationInteractionMode,
-            >(value.clone())
-            {
+            if let Ok(mode) = serde_json::from_value::<DictationInteractionMode>(value.clone()) {
                 let vad_op_mode = match mode {
-                    crate::core::settings::DictationInteractionMode::Passive => {
-                        crate::services::vad::VadOperationalMode::ContinuousSegmentation
-                    }
-                    crate::core::settings::DictationInteractionMode::Ptt => {
-                        crate::services::vad::VadOperationalMode::WindowedValidation
-                    }
+                    DictationInteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
+                    DictationInteractionMode::Ptt => VadOperationalMode::WindowedValidation,
                 };
                 if let Ok(guard) = state.engine.try_lock() {
                     if let Some(ref engine) = *guard {
-                        if let Err(e) = engine.vad_tx.send(
-                            crate::services::vad::VadCommand::SetOperationalMode(vad_op_mode),
-                        ) {
+                        if let Err(e) = engine
+                            .vad_tx
+                            .send(VadCommand::SetOperationalMode(vad_op_mode))
+                        {
                             log::warn!("[Settings::Mutation] Failed to update VAD mode on dictation interaction_mode change: {}", e);
                         }
                     }
@@ -179,9 +184,7 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
                 "[Settings::Mutation] Re-registering global dictation hotkey: {}",
                 new_shortcut
             );
-            if let Err(e) =
-                crate::services::dictation::init_dictation_hotkey_listener(app, new_shortcut)
-            {
+            if let Err(e) = init_dictation_hotkey_listener(app, new_shortcut) {
                 log::warn!(
                     "[Settings::Mutation] Failed to re-register dictation hotkey: {:?}",
                     e
@@ -210,14 +213,14 @@ async fn handle_interaction_side_effects<R: tauri::Runtime>(
         {
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = crate::ipc::pipeline::stop_engine(app_clone).await {
+                if let Err(e) = stop_engine(app_clone).await {
                     log::warn!("[Settings::Mutation] Failed to stop engine: {}", e);
                 }
             });
         } else if interaction_mode == InteractionMode::Passive {
             let app_clone = app.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = crate::ipc::pipeline::launch_engine(app_clone).await {
+                if let Err(e) = launch_engine(app_clone).await {
                     log::warn!("[Settings::Mutation] Failed to launch engine: {}", e);
                 }
             });
@@ -227,10 +230,7 @@ async fn handle_interaction_side_effects<R: tauri::Runtime>(
         if owner == InteractionOwner::Assistant {
             if let Some(engine) = state.engine.lock().await.as_ref() {
                 if let Ok(mode) = serde_json::from_value::<InteractionMode>(value.clone()) {
-                    if let Err(e) = engine
-                        .vad_tx
-                        .send(crate::services::vad::VadCommand::UpdateMode(mode))
-                    {
+                    if let Err(e) = engine.vad_tx.send(VadCommand::UpdateMode(mode)) {
                         log::warn!("[Settings] Failed to send VadCommand::UpdateMode: {}", e);
                     }
                 }
@@ -261,13 +261,13 @@ async fn handle_setting_side_effects<R: tauri::Runtime>(
         log::info!("[Settings] VAD backend changed. Hot-swapping 3-Tier Engine...");
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(e) = crate::ipc::pipeline::stop_engine(app_clone.clone()).await {
+            if let Err(e) = stop_engine(app_clone.clone()).await {
                 log::warn!(
                     "[Settings::Mutation] Failed to stop engine on VAD swap: {}",
                     e
                 );
             }
-            if let Err(e) = crate::ipc::pipeline::launch_engine(app_clone).await {
+            if let Err(e) = launch_engine(app_clone).await {
                 log::warn!(
                     "[Settings::Mutation] Failed to launch engine on VAD swap: {}",
                     e
@@ -488,15 +488,13 @@ fn apply_stt_mutation(
                 .map_err(|e| format!("Invalid STT cloud config: {}", e))?;
         }
         "provider" => {
-            if let Ok(config) =
-                serde_json::from_value::<crate::core::settings::SttProviderConfig>(value.clone())
-            {
+            if let Ok(config) = serde_json::from_value::<SttProviderConfig>(value.clone()) {
                 match config {
-                    crate::core::settings::SttProviderConfig::Embedded { model_type } => {
-                        settings.stt.active = crate::core::settings::SttActiveProvider::Embedded;
+                    SttProviderConfig::Embedded { model_type } => {
+                        settings.stt.active = SttActiveProvider::Embedded;
                         settings.stt.embedded.model = model_type;
                     }
-                    crate::core::settings::SttProviderConfig::Cloud {
+                    SttProviderConfig::Cloud {
                         provider,
                         model,
                         language,
@@ -506,8 +504,8 @@ fn apply_stt_mutation(
                         project_id,
                         endpoint,
                     } => {
-                        settings.stt.active = crate::core::settings::SttActiveProvider::Cloud;
-                        settings.stt.cloud = crate::core::settings::SttCloudConfig {
+                        settings.stt.active = SttActiveProvider::Cloud;
+                        settings.stt.cloud = SttCloudConfig {
                             provider,
                             model,
                             language,
@@ -539,13 +537,13 @@ fn apply_llm_mutation(
         "model" => {
             let model_str = value.as_str().ok_or("model must be a string")?.to_string();
             match settings.llm.active {
-                crate::core::settings::LlmActiveProvider::Embedded => {
+                LlmActiveProvider::Embedded => {
                     settings.llm.embedded.model = model_str;
                 }
-                crate::core::settings::LlmActiveProvider::Server => {
+                LlmActiveProvider::Server => {
                     settings.llm.server.model = model_str;
                 }
-                crate::core::settings::LlmActiveProvider::Cloud => {
+                LlmActiveProvider::Cloud => {
                     settings.llm.cloud.model = model_str;
                 }
             }
@@ -575,8 +573,7 @@ fn apply_llm_mutation(
                 .ok_or("context_window must be a positive integer")? as u32;
             if matches!(
                 settings.llm.active,
-                crate::core::settings::LlmActiveProvider::Server
-                    | crate::core::settings::LlmActiveProvider::Cloud
+                LlmActiveProvider::Server | LlmActiveProvider::Cloud
             ) && val < 8192
             {
                 return Err(
@@ -606,14 +603,12 @@ fn apply_llm_mutation(
                 .map_err(|e| format!("Invalid LLM cloud config: {}", e))?;
         }
         "provider" => {
-            if let Ok(prov) =
-                serde_json::from_value::<crate::core::settings::LlmProviderConfig>(value.clone())
-            {
+            if let Ok(prov) = serde_json::from_value::<LlmProviderConfig>(value.clone()) {
                 match prov {
-                    crate::core::settings::LlmProviderConfig::Embedded => {
-                        settings.llm.active = crate::core::settings::LlmActiveProvider::Embedded;
+                    LlmProviderConfig::Embedded => {
+                        settings.llm.active = LlmActiveProvider::Embedded;
                     }
-                    crate::core::settings::LlmProviderConfig::OpenAiCompat {
+                    LlmProviderConfig::OpenAiCompat {
                         base_url,
                         model,
                         api_key,
@@ -630,16 +625,16 @@ fn apply_llm_mutation(
                                 || pl.contains("mistral")
                         });
                         if is_cloud {
-                            settings.llm.active = crate::core::settings::LlmActiveProvider::Cloud;
-                            settings.llm.cloud = crate::core::settings::LlmRemoteConfig {
+                            settings.llm.active = LlmActiveProvider::Cloud;
+                            settings.llm.cloud = LlmRemoteConfig {
                                 base_url,
                                 model,
                                 api_key,
                                 provider_name,
                             };
                         } else {
-                            settings.llm.active = crate::core::settings::LlmActiveProvider::Server;
-                            settings.llm.server = crate::core::settings::LlmRemoteConfig {
+                            settings.llm.active = LlmActiveProvider::Server;
+                            settings.llm.server = LlmRemoteConfig {
                                 base_url,
                                 model,
                                 api_key,
@@ -708,33 +703,31 @@ fn apply_tts_mutation(
                 .map_err(|e| format!("Invalid chatterbox_remote config: {}", e))?;
         }
         "provider" => {
-            if let Ok(prov) =
-                serde_json::from_value::<crate::core::settings::TtsProviderConfig>(value.clone())
-            {
+            if let Ok(prov) = serde_json::from_value::<TtsProviderConfig>(value.clone()) {
                 match prov {
-                    crate::core::settings::TtsProviderConfig::Supertonic => {
-                        settings.tts.active = crate::core::settings::TtsActiveProvider::Supertonic;
+                    TtsProviderConfig::Supertonic => {
+                        settings.tts.active = TtsActiveProvider::Supertonic;
                     }
-                    crate::core::settings::TtsProviderConfig::Kokoro => {
-                        settings.tts.active = crate::core::settings::TtsActiveProvider::Kokoro;
+                    TtsProviderConfig::Kokoro => {
+                        settings.tts.active = TtsActiveProvider::Kokoro;
                     }
-                    crate::core::settings::TtsProviderConfig::EdgeTts { voice } => {
-                        settings.tts.active = crate::core::settings::TtsActiveProvider::EdgeTts;
+                    TtsProviderConfig::EdgeTts { voice } => {
+                        settings.tts.active = TtsActiveProvider::EdgeTts;
                         settings.tts.edge_tts.voice = voice;
                     }
-                    crate::core::settings::TtsProviderConfig::Chatterbox {
+                    TtsProviderConfig::Chatterbox {
                         language,
                         quality_steps,
                         speed,
                         voice_id,
                     } => {
-                        settings.tts.active = crate::core::settings::TtsActiveProvider::Chatterbox;
+                        settings.tts.active = TtsActiveProvider::Chatterbox;
                         settings.tts.chatterbox.language = language;
                         settings.tts.chatterbox.voice_id = voice_id;
                         settings.tts.quality_steps = quality_steps;
                         settings.tts.speed = speed;
                     }
-                    crate::core::settings::TtsProviderConfig::ChatterboxRemote {
+                    TtsProviderConfig::ChatterboxRemote {
                         endpoint,
                         language,
                         quality_steps,
@@ -742,8 +735,7 @@ fn apply_tts_mutation(
                         remote_path,
                         voice_id,
                     } => {
-                        settings.tts.active =
-                            crate::core::settings::TtsActiveProvider::ChatterboxRemote;
+                        settings.tts.active = TtsActiveProvider::ChatterboxRemote;
                         settings.tts.chatterbox_remote.endpoint = endpoint;
                         settings.tts.chatterbox_remote.language = language;
                         settings.tts.chatterbox_remote.remote_path = remote_path;
@@ -1013,10 +1005,7 @@ async fn dispatch_worker_command<R: tauri::Runtime>(
         match (domain, key) {
             ("vad", "threshold") => {
                 if let Some(v) = value.as_f64() {
-                    if let Err(e) = engine
-                        .vad_tx
-                        .send(crate::services::vad::VadCommand::UpdateThreshold(v as f32))
-                    {
+                    if let Err(e) = engine.vad_tx.send(VadCommand::UpdateThreshold(v as f32)) {
                         log::warn!(
                             "[Settings] Failed to send VadCommand::UpdateThreshold: {}",
                             e
@@ -1027,10 +1016,7 @@ async fn dispatch_worker_command<R: tauri::Runtime>(
             }
             ("vad", "ptt_noise_gate") => {
                 if let Some(v) = value.as_f64() {
-                    if let Err(e) = engine
-                        .vad_tx
-                        .send(crate::services::vad::VadCommand::UpdateNoiseGate(v as f32))
-                    {
+                    if let Err(e) = engine.vad_tx.send(VadCommand::UpdateNoiseGate(v as f32)) {
                         log::warn!(
                             "[Settings] Failed to send VadCommand::UpdateNoiseGate: {}",
                             e
@@ -1041,12 +1027,9 @@ async fn dispatch_worker_command<R: tauri::Runtime>(
             }
             ("vad", "silence_duration_ms") => {
                 if let Some(v) = value.as_u64() {
-                    if let Err(e) =
-                        engine
-                            .vad_tx
-                            .send(crate::services::vad::VadCommand::UpdateSilenceDuration(
-                                v as u32,
-                            ))
+                    if let Err(e) = engine
+                        .vad_tx
+                        .send(VadCommand::UpdateSilenceDuration(v as u32))
                     {
                         log::warn!(
                             "[Settings] Failed to send VadCommand::UpdateSilenceDuration: {}",
@@ -1061,13 +1044,7 @@ async fn dispatch_worker_command<R: tauri::Runtime>(
             }
             ("vad", "speech_onset_ms") => {
                 if let Some(v) = value.as_u64() {
-                    if let Err(e) =
-                        engine
-                            .vad_tx
-                            .send(crate::services::vad::VadCommand::UpdateSpeechOnset(
-                                v as u32,
-                            ))
-                    {
+                    if let Err(e) = engine.vad_tx.send(VadCommand::UpdateSpeechOnset(v as u32)) {
                         log::warn!(
                             "[Settings] Failed to send VadCommand::UpdateSpeechOnset: {}",
                             e
@@ -1077,13 +1054,8 @@ async fn dispatch_worker_command<R: tauri::Runtime>(
                 }
             }
             ("audio", "output_mode") => {
-                if let Ok(mode) =
-                    serde_json::from_value::<crate::core::settings::AudioOutputMode>(value.clone())
-                {
-                    if let Err(e) = engine
-                        .vad_tx
-                        .send(crate::services::vad::VadCommand::UpdateAudioMode(mode))
-                    {
+                if let Ok(mode) = serde_json::from_value::<AudioOutputMode>(value.clone()) {
+                    if let Err(e) = engine.vad_tx.send(VadCommand::UpdateAudioMode(mode)) {
                         log::warn!(
                             "[Settings] Failed to send VadCommand::UpdateAudioMode: {}",
                             e
@@ -1099,9 +1071,7 @@ async fn dispatch_worker_command<R: tauri::Runtime>(
                         .map(|v| v as i32)
                         .or_else(|| value.as_str().and_then(|s| s.parse::<i32>().ok()));
                     if let Some(voice) = voice_opt {
-                        if let Err(e) =
-                            tts_tx.send(crate::services::tts::TtsCommand::SetVoice(voice))
-                        {
+                        if let Err(e) = tts_tx.send(TtsCommand::SetVoice(voice)) {
                             log::warn!("[Settings] Failed to send TtsCommand::SetVoice: {}", e);
                         }
                         log::debug!("[Settings] TtsCommand::SetVoice({}) dispatched", voice);

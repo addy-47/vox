@@ -1,19 +1,18 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+    Arc,
+};
 
 use anyhow::{anyhow, bail, Result};
 use parking_lot::Mutex;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::services::realtime::transport::{FrameAction, ProviderDriver};
+use super::protocol::{encode_activity_end, encode_activity_start};
 use crate::services::realtime::{
+    transport::{FrameAction, ProviderDriver},
     OutboundCommand, RealtimeProviderEvent, RealtimeSession, LOG_INTERVAL_PACKETS,
 };
-
-use super::protocol::{encode_activity_end, encode_activity_start};
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::AtomicU64;
 
 pub(super) struct GeminiSessionState {
     pub(super) interrupt_active: bool,

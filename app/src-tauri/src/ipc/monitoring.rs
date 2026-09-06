@@ -1,9 +1,11 @@
-use crate::core::error::VoxIpcError;
-use crate::core::state::AppState;
-use crate::monitoring::snapshot::RuntimeSnapshot;
-use crate::monitoring::{MemoryProfileLogEvent, ProfilerSnapshot};
 use std::sync::Arc;
+
 use tauri::State;
+
+use crate::{
+    core::{error::VoxIpcError, state::AppState},
+    monitoring::{snapshot::RuntimeSnapshot, MemoryProfileLogEvent, ProfilerSnapshot},
+};
 
 /// Get the most recent runtime snapshot.
 /// Throttled pull-based IPC for frontend monitoring.
@@ -17,8 +19,9 @@ pub fn get_runtime_snapshot(state: State<'_, Arc<AppState>>) -> Option<RuntimeSn
 pub async fn get_profiler_snapshot<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
 ) -> Result<ProfilerSnapshot, VoxIpcError> {
-    use crate::core::constants::{WINDOW_MAIN, WINDOW_TRAY, WINDOW_WIZARD};
     use tauri::Manager;
+
+    use crate::core::constants::{WINDOW_MAIN, WINDOW_TRAY, WINDOW_WIZARD};
     let has_main = app.get_webview_window(WINDOW_MAIN).is_some();
     let has_tray = app.get_webview_window(WINDOW_TRAY).is_some();
     let has_wizard = app.get_webview_window(WINDOW_WIZARD).is_some();

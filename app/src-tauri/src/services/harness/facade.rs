@@ -1,29 +1,45 @@
+use std::{collections::HashMap, sync::Arc};
 
-use super::buffer::{current_timestamp_ms, ConversationContext};
-use super::manager::ConversationManager;
-use super::prompt_builder::format_retrieved_profile;
-use crate::core::constants::{TRANSITION_MESSAGES_EN, TRANSITION_MESSAGES_HI};
-use crate::core::error::MemoryError;
-use crate::core::settings::{LlmSettings, MemorySettings};
-use crate::services::llm::{
-    ConversationInput, GenerationOptions, GenerationPurpose, GenerationRequest, LlmProvider,
-    OutputConstraint, ProviderKind,
-};
 use parking_lot::Mutex;
 use query_sieve::MemoryScope;
-use std::collections::HashMap;
-use std::sync::Arc;
 use turso::Connection;
+
+use super::{
+    buffer::{current_timestamp_ms, ConversationContext},
+    manager::ConversationManager,
+    prompt_builder::format_retrieved_profile,
+};
+use crate::{
+    core::{
+        constants::{TRANSITION_MESSAGES_EN, TRANSITION_MESSAGES_HI},
+        error::MemoryError,
+        settings::{LlmSettings, MemorySettings},
+    },
+    persistence::{db::VoxDb, events::MemoryWorkerEvent, mutations::enqueue_personal_facts},
+    services::{
+        llm::{
+            actor::create_llm_provider_from_llm_settings, ConversationInput, GenerationOptions,
+            GenerationPurpose, GenerationRequest, LlmProvider, OutputConstraint, ProviderKind,
+            QWEN_MODEL_DIR, QWEN_MODEL_FILE,
+        },
+        memory::{
+            compaction::run_compaction,
+            ml::{classify_scope, estimate_tokens, generate_embedding},
+            retrieval::{retrieve_turn_profile, RetrievedProfile},
+            NARRATIVE_CHAIN_SOFT_CAP_SHARE,
+        },
+        translit::is_devanagari,
+        tts::TtsCommand,
+    },
+    utils::paths,
+};
 
 /// Bundled parameters for the `prepare_turn_context` public facade.
 pub struct PrepareTurnParams<'a> {
     pub harness: &'a Arc<Mutex<ConversationManager>>,
-    pub tts_tx: Option<&'a mpsc::Sender<crate::services::tts::TtsCommand>>,
-    pub memory_tx: Option<
-        &'a parking_lot::Mutex<
-            Option<crossbeam_channel::Sender<crate::persistence::events::MemoryWorkerEvent>>,
-        >,
-    >,
+    pub tts_tx: Option<&'a mpsc::Sender<TtsCommand>>,
+    pub memory_tx:
+        Option<&'a parking_lot::Mutex<Option<crossbeam_channel::Sender<MemoryWorkerEvent>>>>,
     pub conn: Option<&'a Connection>,
     pub query: &'a str,
     pub turn_id: u32,
@@ -41,16 +57,14 @@ pub async fn prepare_turn_context(
 ) -> Result<(GenerationRequest, Option<String>), MemoryError> {
     let query_trimmed = params.query.trim();
 
-    let mut retrieved_profile = crate::services::memory::retrieval::RetrievedProfile::default();
+    let mut retrieved_profile = RetrievedProfile::default();
     if params.memory.context_retrieval_enabled && params.conn.is_some() && !query_trimmed.is_empty()
     {
-        let scope = crate::services::memory::ml::classify_scope(query_trimmed);
+        let scope = classify_scope(query_trimmed);
         if scope != MemoryScope::ChitChat {
-            if let Ok(Some(embedding)) =
-                crate::services::memory::ml::generate_embedding(query_trimmed)
-            {
+            if let Ok(Some(embedding)) = generate_embedding(query_trimmed) {
                 if let Some(conn) = params.conn {
-                    if let Ok(profile) = crate::services::memory::retrieval::retrieve_turn_profile(
+                    if let Ok(profile) = retrieve_turn_profile(
                         conn,
                         &embedding,
                         scope,
@@ -73,7 +87,7 @@ pub async fn prepare_turn_context(
         Some(profile_rendered)
     };
 
-    let is_deva = crate::services::translit::is_devanagari(query_trimmed);
+    let is_deva = is_devanagari(query_trimmed);
 
     let (transition_speech, compaction_job) = {
         let mut cm = params.harness.lock();
@@ -120,7 +134,7 @@ pub async fn prepare_turn_context(
     if let Some((history_slice, last_user_turn)) = compaction_job {
         if let Some(ref filler) = transition_speech {
             if let Some(tts_sender) = params.tts_tx {
-                if let Err(e) = tts_sender.send(crate::services::tts::TtsCommand::Generate {
+                if let Err(e) = tts_sender.send(TtsCommand::Generate {
                     turn_id: params.turn_id,
                     text: filler.clone(),
                 }) {
@@ -134,12 +148,9 @@ pub async fn prepare_turn_context(
 
         let provider_box: Option<Box<dyn LlmProvider>> = if params.llm_provider.is_none() {
             if let Some(s) = params.llm_settings {
-                let models_dir = crate::utils::paths::get().models.clone();
-                let llm_path = models_dir
-                    .join(crate::services::llm::QWEN_MODEL_DIR)
-                    .join(crate::services::llm::QWEN_MODEL_FILE);
-                crate::services::llm::actor::create_llm_provider_from_llm_settings(s, &llm_path)
-                    .ok()
+                let models_dir = paths::get().models.clone();
+                let llm_path = models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE);
+                create_llm_provider_from_llm_settings(s, &llm_path).ok()
             } else {
                 None
             }
@@ -151,14 +162,7 @@ pub async fn prepare_turn_context(
             params.llm_provider.or(provider_box.as_deref());
 
         if let Some(provider) = active_provider {
-            match crate::services::memory::compaction::run_compaction(
-                provider,
-                &history_slice,
-                params.llm_settings,
-                None,
-            )
-            .await
-            {
+            match run_compaction(provider, &history_slice, params.llm_settings, None).await {
                 Ok(result) => {
                     let mut lock = params.harness.lock();
                     let mut context_harness =
@@ -199,8 +203,7 @@ pub async fn prepare_turn_context(
         context_harness.sync_tokens_from_buffer(&cm.buffer);
 
         let soft_cap = ((context_harness.accountant.max_context_tokens() as f32)
-            * crate::services::memory::NARRATIVE_CHAIN_SOFT_CAP_SHARE)
-            as usize;
+            * NARRATIVE_CHAIN_SOFT_CAP_SHARE) as usize;
         let session_history = context_harness.build_session_history_xml(soft_cap);
         let sys_prompt = cm.system_prompt().clone();
         context_harness.consolidate_system_message(&mut cm.buffer, &sys_prompt, &session_history);
@@ -213,7 +216,7 @@ pub async fn prepare_turn_context(
 
         let mut total_tokens = 0;
         for msg in &cm.buffer.messages {
-            total_tokens += crate::services::memory::ml::estimate_tokens(&msg.content);
+            total_tokens += estimate_tokens(&msg.content);
         }
 
         ConversationContext {
@@ -226,12 +229,10 @@ pub async fn prepare_turn_context(
     if !diff_to_enqueue.is_empty() && params.memory.pipeline_processing_enabled {
         let mem_sender = params.memory_tx.and_then(|m| m.lock().clone());
         if let Some(tx) = mem_sender {
-            if let Err(e) = tx.try_send(
-                crate::persistence::events::MemoryWorkerEvent::PersonalFactsReady {
-                    facts: diff_to_enqueue.clone(),
-                    session_id: params.session_id.to_string(),
-                },
-            ) {
+            if let Err(e) = tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
+                facts: diff_to_enqueue.clone(),
+                session_id: params.session_id.to_string(),
+            }) {
                 log::warn!(
                     "[Harness] Failed to dispatch PersonalFactsReady to worker: {}",
                     e
@@ -239,14 +240,7 @@ pub async fn prepare_turn_context(
             }
         } else if let Some(conn) = params.conn {
             let session_id = params.session_id.to_string();
-            if let Err(e) = crate::persistence::mutations::enqueue_personal_facts(
-                conn,
-                diff_to_enqueue,
-                &session_id,
-                true,
-            )
-            .await
-            {
+            if let Err(e) = enqueue_personal_facts(conn, diff_to_enqueue, &session_id, true).await {
                 log::warn!("[Harness] Failed to enqueue personal memory: {}", e);
             }
         }
@@ -268,12 +262,15 @@ pub async fn prepare_turn_context(
     Ok((request, transition_speech))
 }
 
-use crate::core::settings::PipelineMode;
-use crate::core::state::{AppState, InteractionState};
-use std::sync::atomic::Ordering;
-use std::sync::mpsc;
-use std::sync::LazyLock;
-use std::time::Instant;
+use std::{
+    sync::{atomic::Ordering, mpsc, LazyLock},
+    time::Instant,
+};
+
+use crate::core::{
+    settings::PipelineMode,
+    state::{AppState, InteractionState},
+};
 
 pub const SOFT_COMPACTION_DEBOUNCE_SECS: u64 = 20;
 
@@ -303,8 +300,7 @@ pub fn trigger_background_compaction(
     {
         let last = LAST_SOFT_COMPACTION.lock();
         if let Some(instant) = *last {
-            if instant.elapsed().as_secs() < crate::services::memory::SOFT_COMPACTION_DEBOUNCE_SECS
-            {
+            if instant.elapsed().as_secs() < SOFT_COMPACTION_DEBOUNCE_SECS {
                 return;
             }
         }
@@ -344,16 +340,11 @@ pub fn trigger_background_compaction(
                 Some(p) => p,
                 None => {
                     let s_ref = settings_resolved.as_ref();
-                    let models_dir = crate::utils::paths::get().models.clone();
-                    let llm_path = models_dir
-                        .join(crate::services::llm::QWEN_MODEL_DIR)
-                        .join(crate::services::llm::QWEN_MODEL_FILE);
-                    match s_ref.and_then(|s| {
-                        crate::services::llm::actor::create_llm_provider_from_llm_settings(
-                            s, &llm_path,
-                        )
-                        .ok()
-                    }) {
+                    let models_dir = paths::get().models.clone();
+                    let llm_path = models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE);
+                    match s_ref
+                        .and_then(|s| create_llm_provider_from_llm_settings(s, &llm_path).ok())
+                    {
                         Some(p) => Arc::from(p),
                         None => {
                             log::warn!("[Harness] Failed to instantiate LLM provider for background compaction.");
@@ -363,7 +354,7 @@ pub fn trigger_background_compaction(
                 }
             };
 
-            match crate::services::memory::compaction::run_compaction(
+            match run_compaction(
                 provider_inst.as_ref(),
                 history_slice,
                 settings_resolved.as_ref(),
@@ -391,19 +382,14 @@ pub fn trigger_background_compaction(
                     }
 
                     if !result.personal_memory.is_empty() {
-                        let db_path = crate::utils::paths::db_path();
+                        let db_path = paths::db_path();
                         let active_session = session_id.clone();
                         let facts = result.personal_memory;
                         tauri::async_runtime::spawn(async move {
-                            if let Ok(conn) = crate::persistence::db::VoxDb::open(&db_path).await {
+                            if let Ok(conn) = VoxDb::open(&db_path).await {
                                 if let Err(e) =
-                                    crate::persistence::memory_mutations::enqueue_personal_facts(
-                                        &conn,
-                                        facts,
-                                        &active_session,
-                                        true,
-                                    )
-                                    .await
+                                    enqueue_personal_facts(&conn, facts, &active_session, true)
+                                        .await
                                 {
                                     log::warn!(
                                         "[Harness] Soft compaction personal facts enqueue failed: {}",

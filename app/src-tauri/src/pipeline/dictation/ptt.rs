@@ -1,11 +1,14 @@
-use std::sync::atomic::Ordering;
-use std::sync::mpsc;
+use std::sync::{atomic::Ordering, mpsc};
 
 use tauri::AppHandle;
 
-use crate::core::events::{Actionability, PipelineError, PipelineImpact};
-use crate::core::state::{AppState, InteractionState};
-use crate::pipeline::dictation::transition_dictation;
+use crate::{
+    core::{
+        events::{Actionability, PipelineError, PipelineImpact},
+        state::{AppState, InteractionState},
+    },
+    pipeline::dictation::transition_dictation,
+};
 
 /// Starts Push-To-Talk dictation recording on hotkey press.
 pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {

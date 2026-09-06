@@ -1,16 +1,28 @@
-use super::{TtsProvider, TtsProviderKind};
-use crate::core::events::VoxEvent;
-use crate::services::tts::{
-    MAX_QUALITY_STEPS_CHATTERBOX, MIN_QUALITY_STEPS, MIN_SPEED, MODEL_FILE_TTS_CHATTERBOX_S3GEN,
-    MODEL_FILE_TTS_CHATTERBOX_T3, TTS_CHUNK_SIZE, TTS_SAMPLE_RATE,
+use std::{
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc::Sender,
+        Arc,
+    },
 };
+
 use anyhow::{anyhow, Result};
 use chatterbox_rs::{Engine, EngineOptions};
 use parking_lot::Mutex;
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::mpsc::Sender;
-use std::sync::Arc;
+
+use super::{TtsProvider, TtsProviderKind};
+use crate::{
+    core::events::VoxEvent,
+    services::{
+        audio::PlaybackEngine,
+        tts::{
+            MAX_QUALITY_STEPS_CHATTERBOX, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED,
+            MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3, TTS_CHUNK_SIZE,
+            TTS_SAMPLE_RATE,
+        },
+    },
+};
 
 /// Speech synthesis engine wrapping the local Chatterbox GGUF model via chatterbox-rs.
 pub struct ChatterboxEngine {
@@ -136,7 +148,7 @@ impl TtsProvider for ChatterboxEngine {
 
     /// Hot-updates the speech playback speed factor.
     fn set_speed(&self, speed: f32) {
-        let clamped = speed.clamp(MIN_SPEED, crate::services::tts::MAX_SPEED);
+        let clamped = speed.clamp(MIN_SPEED, MAX_SPEED);
         self.speed.store(clamped.to_bits(), Ordering::Relaxed);
         log::info!("[Chatterbox] Speed set to {:.2}", clamped);
     }
@@ -157,7 +169,7 @@ impl TtsProvider for ChatterboxEngine {
         text: &str,
         turn_id: u32,
         cancel: Arc<AtomicBool>,
-        playback: &Arc<crate::services::audio::PlaybackEngine>,
+        playback: &Arc<PlaybackEngine>,
         _event_tx: Sender<VoxEvent>,
         telemetry_rtf: Option<&Arc<AtomicU32>>,
     ) -> Result<()> {

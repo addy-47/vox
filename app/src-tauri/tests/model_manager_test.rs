@@ -10,14 +10,18 @@
 
 mod common;
 
-use common::archive::{
-    compute_sha256, create_synthetic_model_entry, create_test_tar_gz_archive,
-    create_test_zip_archive,
+use common::{
+    archive::{
+        compute_sha256, create_synthetic_model_entry, create_test_tar_gz_archive,
+        create_test_zip_archive,
+    },
+    paths::TempPathsGuard,
 };
-use common::paths::TempPathsGuard;
 use tempfile::tempdir;
-use vox_lib::setup::manager_ops::{delete_model_file, is_model_file_present};
-use vox_lib::setup::manifest::VerifiedMarker;
+use vox_lib::setup::{
+    manager_ops::{delete_model_file, is_model_file_present},
+    manifest::VerifiedMarker,
+};
 
 // ============================================================================
 // Subtest 1: Valid payload verification and marker generation

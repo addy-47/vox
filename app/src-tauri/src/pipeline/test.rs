@@ -1,14 +1,21 @@
-use std::borrow::Cow;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
+use std::{
+    borrow::Cow,
+    path::{Path, PathBuf},
+    sync::atomic::Ordering,
+};
+
 use tauri::{AppHandle, Runtime};
 
-use crate::core::error::VoxIpcError;
-use crate::core::events::VoxEvent;
-use crate::core::settings::PipelineMode;
-use crate::core::state::{AppState, InteractionOwner, InteractionState};
-use crate::pipeline::{transition, RoutingContext};
-use crate::services::stt::SttCommand;
+use crate::{
+    core::{
+        error::VoxIpcError,
+        events::VoxEvent,
+        settings::PipelineMode,
+        state::{AppState, InteractionOwner, InteractionState},
+    },
+    pipeline::{transition, RoutingContext},
+    services::stt::SttCommand,
+};
 
 /// Resamples audio samples linearly from source sample rate to 16kHz for STT.
 fn resample_to_16k(samples: &[f32], source_rate: u32) -> Cow<'_, [f32]> {

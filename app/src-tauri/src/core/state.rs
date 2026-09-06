@@ -1,14 +1,29 @@
-use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::mpsc;
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::VecDeque,
+    sync::{
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        mpsc, Arc, RwLock,
+    },
+};
 
 use tokio::sync::Mutex;
 
-use crate::core::events::VoxEvent;
-use crate::core::settings::VoxSettings;
-use crate::services::audio::AudioStream;
-use crate::services::stt::SttCommand;
+use crate::{
+    core::{constants::TRANSCRIPT_HISTORY_LIMIT, events::VoxEvent, settings::VoxSettings},
+    monitoring::{aggregator::TelemetryEvent, runtime_state::MonitoringState},
+    persistence::events::{MemoryWorkerEvent, PersistenceEvent},
+    pipeline::assistant::accumulator::TurnAccumulator,
+    services::{
+        audio::{AudioStream, PlaybackEngine},
+        harness::ConversationManager,
+        llm::{LlmCommand, LlmProvider},
+        realtime::RealtimeActor,
+        stt::SttCommand,
+        tts::TtsCommand,
+        vad::VadCommand,
+    },
+    setup::{manifest::VoxManifest, model_manager::ModelManager},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum InteractionOwner {
@@ -75,12 +90,12 @@ impl From<InteractionState> for u32 {
 pub struct VoxEngine {
     pub audio_stream: AudioStream,
     pub stt_tx: mpsc::Sender<SttCommand>,
-    pub vad_tx: mpsc::Sender<crate::services::vad::VadCommand>,
-    pub llm_tx: Option<mpsc::Sender<crate::services::llm::LlmCommand>>,
-    pub tts_tx: Option<mpsc::Sender<crate::services::tts::TtsCommand>>,
-    pub telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
+    pub vad_tx: mpsc::Sender<VadCommand>,
+    pub llm_tx: Option<mpsc::Sender<LlmCommand>>,
+    pub tts_tx: Option<mpsc::Sender<TtsCommand>>,
+    pub telemetry_tx: crossbeam_channel::Sender<TelemetryEvent>,
     pub pipeline_tx: mpsc::Sender<VoxEvent>,
-    pub playback_engine: Arc<crate::services::audio::PlaybackEngine>,
+    pub playback_engine: Arc<PlaybackEngine>,
     pub stt_handle: Option<std::thread::JoinHandle<()>>,
     pub vad_handle: Option<std::thread::JoinHandle<()>>,
     pub llm_handle: Option<std::thread::JoinHandle<()>>,
@@ -120,7 +135,7 @@ impl PipelineAtomics {
             cancel_flag: Arc::new(AtomicBool::new(false)),
             turn_id: Arc::new(AtomicU32::new(0)),
             transcript_history: Arc::new(parking_lot::Mutex::new(VecDeque::with_capacity(
-                crate::core::constants::TRANSCRIPT_HISTORY_LIMIT,
+                TRANSCRIPT_HISTORY_LIMIT,
             ))),
             playback_underruns: Arc::new(AtomicU64::new(0)),
             pending_synthesis_jobs: Arc::new(AtomicU32::new(0)),
@@ -262,7 +277,7 @@ impl MemoryAppState {
 
 pub struct AppState {
     pub engine: Mutex<Option<VoxEngine>>,
-    pub realtime_engine: Mutex<Option<crate::services::realtime::RealtimeActor>>,
+    pub realtime_engine: Mutex<Option<RealtimeActor>>,
     pub owner: Arc<AtomicU32>,
     pub hud_visible: Arc<AtomicBool>,
     pub memory: MemoryAppState,
@@ -276,31 +291,25 @@ pub struct AppState {
     pub conversation_id: Arc<AtomicU64>,
     pub runtime_status: Arc<AtomicU32>,
     pub main_window_destroyed: Arc<AtomicBool>,
-    pub persist_tx: parking_lot::Mutex<
-        Option<crossbeam_channel::Sender<crate::persistence::events::PersistenceEvent>>,
-    >,
-    pub memory_tx: parking_lot::Mutex<
-        Option<crossbeam_channel::Sender<crate::persistence::events::MemoryWorkerEvent>>,
-    >,
+    pub persist_tx: parking_lot::Mutex<Option<crossbeam_channel::Sender<PersistenceEvent>>>,
+    pub memory_tx: parking_lot::Mutex<Option<crossbeam_channel::Sender<MemoryWorkerEvent>>>,
     pub dropped_persistence_events: Arc<AtomicU64>,
-    pub monitoring: Arc<crate::monitoring::runtime_state::MonitoringState>,
-    pub model_manager: Arc<crate::setup::model_manager::ModelManager>,
-    pub manifest: Arc<tokio::sync::RwLock<Option<crate::setup::manifest::VoxManifest>>>,
+    pub monitoring: Arc<MonitoringState>,
+    pub model_manager: Arc<ModelManager>,
+    pub manifest: Arc<tokio::sync::RwLock<Option<VoxManifest>>>,
     pub cpu_governor: parking_lot::Mutex<String>,
     pub cpu_governor_optimal: Arc<AtomicBool>,
     pub setup_running: Arc<Mutex<bool>>,
-    pub conversation_manager:
-        Arc<parking_lot::Mutex<crate::services::harness::ConversationManager>>,
-    pub llm_provider: Arc<parking_lot::RwLock<Option<Arc<dyn crate::services::llm::LlmProvider>>>>,
+    pub conversation_manager: Arc<parking_lot::Mutex<ConversationManager>>,
+    pub llm_provider: Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>>>,
     pub event_tx: parking_lot::Mutex<Option<mpsc::Sender<VoxEvent>>>,
-    pub pipeline_accumulator:
-        Arc<parking_lot::Mutex<crate::pipeline::assistant::accumulator::TurnAccumulator>>,
+    pub pipeline_accumulator: Arc<parking_lot::Mutex<TurnAccumulator>>,
 }
 
 /// Telemetry handles and health atomics bundled for AppState and monitoring workers.
 #[derive(Clone)]
 pub struct TelemetryState {
-    pub telemetry_tx: crossbeam_channel::Sender<crate::monitoring::aggregator::TelemetryEvent>,
+    pub telemetry_tx: crossbeam_channel::Sender<TelemetryEvent>,
     pub latest_energy: Arc<AtomicU32>,
     pub latest_vad_prob: Arc<AtomicU32>,
     pub latest_low: Arc<AtomicU32>,
@@ -337,9 +346,7 @@ impl AppState {
             .is_private_mode
             .store(settings.history.private_mode, Ordering::Relaxed);
 
-        let model_manager = Arc::new(crate::setup::model_manager::ModelManager::new(Some(
-            app_handle.clone(),
-        )));
+        let model_manager = Arc::new(ModelManager::new(Some(app_handle.clone())));
         let manifest = Arc::new(tokio::sync::RwLock::new(None));
 
         Self {
@@ -361,20 +368,16 @@ impl AppState {
             persist_tx: parking_lot::Mutex::new(None),
             memory_tx: parking_lot::Mutex::new(None),
             dropped_persistence_events: Arc::new(AtomicU64::new(0)),
-            monitoring: Arc::new(crate::monitoring::runtime_state::MonitoringState::new()),
+            monitoring: Arc::new(MonitoringState::new()),
             model_manager,
             manifest,
             cpu_governor: parking_lot::Mutex::new("ondemand".into()),
             cpu_governor_optimal: Arc::new(AtomicBool::new(true)),
             setup_running: Arc::new(Mutex::new(false)),
-            conversation_manager: Arc::new(parking_lot::Mutex::new(
-                crate::services::harness::ConversationManager::new(),
-            )),
+            conversation_manager: Arc::new(parking_lot::Mutex::new(ConversationManager::new())),
             llm_provider: Arc::new(parking_lot::RwLock::new(None)),
             event_tx: parking_lot::Mutex::new(None),
-            pipeline_accumulator: Arc::new(parking_lot::Mutex::new(
-                crate::pipeline::assistant::accumulator::TurnAccumulator::new(),
-            )),
+            pipeline_accumulator: Arc::new(parking_lot::Mutex::new(TurnAccumulator::new())),
         }
     }
 }

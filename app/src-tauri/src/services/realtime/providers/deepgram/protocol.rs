@@ -1,5 +1,7 @@
-use crate::core::settings::DeepgramVoiceAgentConfig;
-use crate::services::realtime::{DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE};
+use crate::{
+    core::settings::DeepgramVoiceAgentConfig,
+    services::realtime::{DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE},
+};
 
 pub(super) fn build_settings_frame(
     config: &DeepgramVoiceAgentConfig,

@@ -1,11 +1,14 @@
-use crate::core::events::{emit_ipc_to, IpcEvent};
-use crate::core::state::AppState;
-use crate::core::state::InteractionOwner;
-use crate::core::state::InteractionState;
-use crate::monitoring::TELEMETRY_EMITTER_INTERVAL;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
+
 use tauri::{AppHandle, Manager};
+
+use crate::{
+    core::{
+        events::{emit_ipc_to, IpcEvent, TelemetryData},
+        state::{AppState, InteractionOwner, InteractionState},
+    },
+    monitoring::TELEMETRY_EMITTER_INTERVAL,
+};
 
 /// Spawns periodic background task pushing audio and VAD telemetry to active window.
 pub fn spawn_telemetry_emitter(app: AppHandle) {
@@ -26,7 +29,7 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
             if let Err(e) = emit_ipc_to(
                 &app,
                 target,
-                IpcEvent::Telemetry(crate::core::events::TelemetryData {
+                IpcEvent::Telemetry(TelemetryData {
                     energy,
                     vad_prob,
                     low,

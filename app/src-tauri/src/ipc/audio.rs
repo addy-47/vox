@@ -1,7 +1,7 @@
+use std::time::{Duration, Instant};
+
 use cpal::traits::{DeviceTrait, HostTrait};
 use serde::{Deserialize, Serialize};
-
-use std::time::{Duration, Instant};
 
 /// System audio device descriptor with default designation.
 #[derive(Debug, Clone, Serialize, Deserialize)]

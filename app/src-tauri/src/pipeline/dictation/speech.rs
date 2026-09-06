@@ -1,7 +1,9 @@
 use tauri::AppHandle;
 
-use crate::core::state::{AppState, InteractionState};
-use crate::pipeline::dictation::transition_dictation;
+use crate::{
+    core::state::{AppState, InteractionState},
+    pipeline::dictation::transition_dictation,
+};
 
 /// Handles user speech onset for background passive dictation.
 pub fn on_speech_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {

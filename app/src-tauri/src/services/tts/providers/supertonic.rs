@@ -1,21 +1,35 @@
-use super::{TtsProvider, TtsProviderKind};
-use crate::core::events::VoxEvent;
-use crate::services::tts::{
-    MAX_QUALITY_STEPS_SUPERTONIC, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED, SUPER_SAMPLE_RATE,
-    TTS_SAMPLE_RATE,
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
+        mpsc::Sender,
+        Arc,
+    },
 };
+
 use anyhow::{anyhow, Result};
 use parking_lot::Mutex;
 use sherpa_onnx::{
     GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsModelConfig,
     OfflineTtsSupertonicModelConfig,
 };
-use std::collections::HashMap;
-use std::path::Path;
-use std::sync::atomic::AtomicI32;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::mpsc::Sender;
-use std::sync::Arc;
+
+use super::{TtsProvider, TtsProviderKind};
+use crate::{
+    core::events::VoxEvent,
+    services::{
+        audio::PlaybackEngine,
+        translit::is_devanagari,
+        tts::{
+            MAX_QUALITY_STEPS_SUPERTONIC, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED,
+            MODEL_FILE_TTS_SUPER_CONFIG, MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR,
+            MODEL_FILE_TTS_SUPER_INDEXER, MODEL_FILE_TTS_SUPER_TEXT_ENCODER,
+            MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR, MODEL_FILE_TTS_SUPER_VOCODER,
+            MODEL_FILE_TTS_SUPER_VOICE, SUPER_SAMPLE_RATE, TTS_SAMPLE_RATE,
+        },
+    },
+};
 
 struct BiquadFilter {
     b0: f32,
@@ -123,17 +137,13 @@ impl TtsEngine {
         let config = OfflineTtsConfig {
             model: OfflineTtsModelConfig {
                 supertonic: OfflineTtsSupertonicModelConfig {
-                    duration_predictor: Some(mp(
-                        crate::services::tts::MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR,
-                    )),
-                    text_encoder: Some(mp(crate::services::tts::MODEL_FILE_TTS_SUPER_TEXT_ENCODER)),
-                    vector_estimator: Some(mp(
-                        crate::services::tts::MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR,
-                    )),
-                    vocoder: Some(mp(crate::services::tts::MODEL_FILE_TTS_SUPER_VOCODER)),
-                    tts_json: Some(mp(crate::services::tts::MODEL_FILE_TTS_SUPER_CONFIG)),
-                    unicode_indexer: Some(mp(crate::services::tts::MODEL_FILE_TTS_SUPER_INDEXER)),
-                    voice_style: Some(mp(crate::services::tts::MODEL_FILE_TTS_SUPER_VOICE)),
+                    duration_predictor: Some(mp(MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR)),
+                    text_encoder: Some(mp(MODEL_FILE_TTS_SUPER_TEXT_ENCODER)),
+                    vector_estimator: Some(mp(MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR)),
+                    vocoder: Some(mp(MODEL_FILE_TTS_SUPER_VOCODER)),
+                    tts_json: Some(mp(MODEL_FILE_TTS_SUPER_CONFIG)),
+                    unicode_indexer: Some(mp(MODEL_FILE_TTS_SUPER_INDEXER)),
+                    voice_style: Some(mp(MODEL_FILE_TTS_SUPER_VOICE)),
                 },
                 num_threads: num_threads as i32,
                 debug: false,
@@ -201,7 +211,7 @@ impl TtsProvider for TtsEngine {
         text: &str,
         turn_id: u32,
         cancel: Arc<AtomicBool>,
-        playback: &Arc<crate::services::audio::PlaybackEngine>,
+        playback: &Arc<PlaybackEngine>,
         _event_tx: Sender<VoxEvent>,
         telemetry_rtf: Option<&Arc<AtomicU32>>,
     ) -> Result<()> {
@@ -209,11 +219,7 @@ impl TtsProvider for TtsEngine {
             return Ok(());
         }
 
-        let lang = if crate::services::translit::is_devanagari(text) {
-            "hi"
-        } else {
-            "en"
-        };
+        let lang = if is_devanagari(text) { "hi" } else { "en" };
 
         let sid = self.voice.load(Ordering::Relaxed);
 

@@ -1,20 +1,21 @@
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU32, Ordering},
+    Arc,
+};
 
 use anyhow::{anyhow, Result};
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleFormat, StreamConfig};
-use ringbuf::traits::*;
-use ringbuf::HeapCons;
+use cpal::{
+    traits::{DeviceTrait, HostTrait, StreamTrait},
+    SampleFormat, StreamConfig,
+};
+use ringbuf::{traits::*, HeapCons};
 
-use super::sink::PlaybackStreamContext;
 use super::{
-    PlaybackEngineHandles, PlaybackTelemetryHandles, INGESTION_BUFFER_CAPACITY_SAMPLES,
-    INGESTION_OVERFLOW_LOG_INTERVAL, PLAYBACK_CHANNELS, PLAYBACK_SAMPLE_RATE,
+    sink::PlaybackStreamContext, PlaybackEngineHandles, PlaybackTelemetryHandles,
+    INGESTION_BUFFER_CAPACITY_SAMPLES, INGESTION_OVERFLOW_LOG_INTERVAL, PLAYBACK_CHANNELS,
+    PLAYBACK_SAMPLE_RATE,
 };
 use crate::core::constants::SAMPLE_RATE;
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::Ordering;
 
 /// Manages the low-level CPAL hardware audio stream for microphone capture.
 pub struct AudioStream {

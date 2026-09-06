@@ -1,7 +1,9 @@
-use crate::monitoring::snapshot::RuntimeSnapshot;
-use crate::monitoring::MAX_SNAPSHOT_HISTORY;
-use std::collections::VecDeque;
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, RwLock},
+};
+
+use crate::monitoring::{snapshot::RuntimeSnapshot, MAX_SNAPSHOT_HISTORY};
 
 /// Shared thread-safe state for runtime monitoring.
 pub struct MonitoringState {

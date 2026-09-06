@@ -2,9 +2,9 @@
 //! tests/common/audio.rs — Shared Audio Helpers for Integration Tests
 //! ============================================================================
 
+use std::{path::Path, time::Duration};
+
 use ringbuf::traits::{Observer, Producer};
-use std::path::Path;
-use std::time::Duration;
 use vox_lib::services::vad::VAD_CHUNK_SIZE;
 
 /// Decodes a WAV file into 16kHz mono f32 PCM samples normalized to [-1.0, 1.0].

@@ -3,14 +3,22 @@
 //! DB operations run on `spawn_blocking` threads; voices are a standalone
 //! persistence and audio management concern.
 
-use crate::core::error::VoxIpcError;
-use crate::persistence::voices::{self, VoiceEntry};
-use crate::services::tts::voice::{
-    convert_and_validate_audio, fetch_remote_edge_voices, pre_bake_speaker_tensors,
-    start_recording, stop_recording, write_pcm_to_wav, EdgeTtsVoiceEntry,
-};
-use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use serde::Serialize;
+
+use crate::{
+    core::error::VoxIpcError,
+    persistence::{
+        db::VoxDb,
+        voices::{self, VoiceEntry},
+    },
+    services::tts::voice::{
+        convert_and_validate_audio, fetch_remote_edge_voices, pre_bake_speaker_tensors,
+        start_recording, stop_recording, write_pcm_to_wav, EdgeTtsVoiceEntry,
+    },
+    utils::paths::{db_path, voice_dir},
+};
 
 /// Frontend-safe representation of a voice entry.
 #[derive(Debug, Clone, Serialize)]
@@ -37,8 +45,8 @@ impl From<VoiceEntry> for VoiceEntryDto {
 pub type EdgeTtsVoiceDto = EdgeTtsVoiceEntry;
 
 async fn open_db() -> Result<turso::Connection, VoxIpcError> {
-    let db_path = crate::utils::paths::db_path();
-    crate::persistence::db::VoxDb::open(&db_path)
+    let db_path = db_path();
+    VoxDb::open(&db_path)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))
 }
@@ -113,7 +121,7 @@ pub async fn add_voice_from_file(
     }
 
     let id = uuid::Uuid::new_v4().to_string();
-    let voice_dir = crate::utils::paths::voice_dir(&id);
+    let voice_dir = voice_dir(&id);
     std::fs::create_dir_all(&voice_dir)
         .map_err(|e| VoxIpcError::Internal(format!("Failed to create voice directory: {}", e)))?;
 
@@ -190,7 +198,7 @@ pub async fn add_voice_from_recording(
     }
 
     let id = uuid::Uuid::new_v4().to_string();
-    let voice_dir = crate::utils::paths::voice_dir(&id);
+    let voice_dir = voice_dir(&id);
     std::fs::create_dir_all(&voice_dir)
         .map_err(|e| VoxIpcError::Internal(format!("Failed to create voice directory: {}", e)))?;
 
@@ -245,7 +253,7 @@ pub async fn delete_voice(id: String) -> Result<(), VoxIpcError> {
         .await
         .map_err(|e| VoxIpcError::Database(format!("Failed to delete voice from DB: {}", e)))?;
 
-    let voice_dir = crate::utils::paths::voice_dir(&entry.id);
+    let voice_dir = voice_dir(&entry.id);
     if voice_dir.exists() {
         tokio::task::spawn_blocking(move || {
             std::fs::remove_dir_all(&voice_dir)

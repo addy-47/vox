@@ -2,24 +2,28 @@ mod handshake;
 mod protocol;
 mod session;
 
-use std::sync::Arc;
+use std::sync::{atomic::AtomicU32, Arc};
 
 use anyhow::{bail, Result};
 use parking_lot::Mutex;
-
-use crate::core::settings::{DeepgramVoiceAgentConfig, InteractionMode};
-use crate::services::realtime::transport::connection::spawn_harness;
-use crate::services::realtime::transport::{HarnessConfig, HarnessInit};
-use crate::services::realtime::{
-    RealtimeAudioConfig, RealtimeProviderEvent, RealtimeProviderKind, RealtimeSession,
-    RealtimeVoiceProvider, DEEPGRAM_DEFAULT_WS_URL, DEEPGRAM_HEALTH_CHECK_ADDR,
-    DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE, MAX_RECONNECT_ATTEMPTS,
-    RECONNECT_BASE_DELAY_SECS, RECONNECT_FACTOR_SECS, WS_HEALTH_CHECK_TIMEOUT,
-};
-
-use crate::core::state::InteractionState;
 use session::{DeepgramDriver, DeepgramSessionState, DeepgramVoiceAgentSession};
-use std::sync::atomic::AtomicU32;
+
+use crate::{
+    core::{
+        settings::{DeepgramVoiceAgentConfig, InteractionMode},
+        state::InteractionState,
+    },
+    services::realtime::{
+        transport::{
+            connection::spawn_harness, health::tcp_health_check, HarnessConfig, HarnessInit,
+        },
+        RealtimeAudioConfig, RealtimeProviderEvent, RealtimeProviderKind, RealtimeSession,
+        RealtimeVoiceProvider, BRIDGE_CHANNEL_CAPACITY, DEEPGRAM_DEFAULT_WS_URL,
+        DEEPGRAM_HEALTH_CHECK_ADDR, DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE,
+        MAX_RECONNECT_ATTEMPTS, RECONNECT_BASE_DELAY_SECS, RECONNECT_FACTOR_SECS,
+        WS_HEALTH_CHECK_TIMEOUT,
+    },
+};
 
 pub struct DeepgramVoiceAgentProvider {
     config: DeepgramVoiceAgentConfig,
@@ -89,9 +93,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         })?;
 
         let (provider_event_tx, provider_event_rx) =
-            tokio::sync::mpsc::channel::<RealtimeProviderEvent>(
-                crate::services::realtime::BRIDGE_CHANNEL_CAPACITY,
-            );
+            tokio::sync::mpsc::channel::<RealtimeProviderEvent>(BRIDGE_CHANNEL_CAPACITY);
 
         let session_state = Arc::new(Mutex::new(DeepgramSessionState {
             last_assistant_text: String::new(),
@@ -150,10 +152,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         use std::net::ToSocketAddrs;
         if let Ok(mut addrs) = DEEPGRAM_HEALTH_CHECK_ADDR.to_socket_addrs() {
             if let Some(addr) = addrs.next() {
-                return crate::services::realtime::transport::health::tcp_health_check(
-                    addr,
-                    WS_HEALTH_CHECK_TIMEOUT,
-                );
+                return tcp_health_check(addr, WS_HEALTH_CHECK_TIMEOUT);
             }
         }
         false

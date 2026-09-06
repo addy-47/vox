@@ -1,11 +1,12 @@
-use super::{
-    PCM_I16_SCALE, PCM_S16_SCALE, SINC_CUTOFF_FREQUENCY, SINC_OVERSAMPLING_FACTOR, SINC_WINDOW_LEN,
-};
 use anyhow::{anyhow, Result};
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{
     Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
     WindowFunction,
+};
+
+use super::{
+    PCM_I16_SCALE, PCM_S16_SCALE, SINC_CUTOFF_FREQUENCY, SINC_OVERSAMPLING_FACTOR, SINC_WINDOW_LEN,
 };
 
 /// High-quality sinc interpolation audio resampler based on Rubato.

@@ -1,14 +1,18 @@
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use anyhow::{anyhow, bail, Result};
 use parking_lot::Mutex;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::services::realtime::transport::{FrameAction, ProviderDriver};
 use crate::services::realtime::{
+    transport::{FrameAction, ProviderDriver},
     Actionability, OutboundCommand, PipelineImpact, RealtimeProviderEvent, RealtimeSession,
     WS_KEEPALIVE_INTERVAL,
 };

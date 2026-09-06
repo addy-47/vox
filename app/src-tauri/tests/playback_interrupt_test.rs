@@ -12,19 +12,30 @@
 
 mod common;
 
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc, Arc,
+    },
+    time::{Duration, Instant},
+};
+
 use ringbuf::traits::{Consumer, Observer};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::{AudioOutputMode, InteractionMode, PipelineMode};
-use vox_lib::core::state::{InteractionOwner, InteractionState};
-use vox_lib::pipeline::assistant::interrupt::on_interrupt;
-use vox_lib::pipeline::assistant::playback::{on_playback_finished, on_playback_started};
-use vox_lib::pipeline::RoutingContext;
-use vox_lib::services::vad::actor::VadActorConfig;
-use vox_lib::services::vad::VadCommand;
+use vox_lib::{
+    core::{
+        events::VoxEvent,
+        settings::{AudioOutputMode, InteractionMode, PipelineMode},
+        state::{InteractionOwner, InteractionState},
+    },
+    pipeline::{
+        assistant::{
+            interrupt::on_interrupt,
+            playback::{on_playback_finished, on_playback_started},
+        },
+        RoutingContext,
+    },
+    services::vad::{actor::VadActorConfig, VadCommand},
+};
 
 /// Subtest 1: Ingest >= 12,000 samples while in Thinking -> triggers PlaybackStarted -> Speaking.
 /// Drain buffer with pending_jobs == 0 -> triggers PlaybackFinished -> Ready.

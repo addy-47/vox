@@ -1,6 +1,13 @@
-use super::buffer::{current_timestamp_ms, ChatMessage, MessageBuffer, Role};
-use super::prompt_builder::assemble_system_prompt;
 use turso::Connection;
+
+use super::{
+    buffer::{current_timestamp_ms, ChatMessage, MessageBuffer, Role},
+    prompt_builder::assemble_system_prompt,
+};
+use crate::{
+    core::constants::SYSTEM_PROMPT_MODULAR, persistence::queries::fetch_all_active_identity,
+    services::memory::ml::estimate_tokens,
+};
 
 /// Orchestrates pure conversational turns and system prompt assembly.
 pub struct ConversationManager {
@@ -14,7 +21,7 @@ pub struct ConversationManager {
 impl ConversationManager {
     /// Creates a new ConversationManager instance.
     pub fn new() -> Self {
-        let base_system_prompt = crate::core::constants::SYSTEM_PROMPT_MODULAR.to_string();
+        let base_system_prompt = SYSTEM_PROMPT_MODULAR.to_string();
         let default_sys_prompt = ChatMessage {
             role: Role::System,
             content: base_system_prompt.clone(),
@@ -72,7 +79,7 @@ impl ConversationManager {
 
         // Bounded newest-first (facts are typically ordered chronological, reverse iterate to preserve freshest)
         for fact in identity_facts.into_iter().rev() {
-            let tokens = crate::services::memory::ml::estimate_tokens(&fact);
+            let tokens = estimate_tokens(&fact);
             if total_tokens + tokens > budget && !bounded_facts.is_empty() {
                 log::warn!(
                     "[ConversationManager] Identity facts reached budget cap ({} / {} tokens). Older facts truncated.",
@@ -108,8 +115,7 @@ impl ConversationManager {
         context_window: usize,
         max_context_share: f32,
     ) -> anyhow::Result<()> {
-        let active_identities =
-            crate::persistence::queries::fetch_all_active_identity(conn).await?;
+        let active_identities = fetch_all_active_identity(conn).await?;
         let facts = active_identities.into_iter().map(|f| f.fact).collect();
         self.set_identity_facts(facts, context_window, max_context_share);
         Ok(())

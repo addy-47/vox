@@ -1,9 +1,11 @@
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
+
 use super::{
     APP_MANIFEST_FETCH_TIMEOUT_SECS, APP_MANIFEST_URL, MANIFEST_FETCH_TIMEOUT_SECS,
     MODELS_MANIFEST_URL,
 };
-use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelEntry {

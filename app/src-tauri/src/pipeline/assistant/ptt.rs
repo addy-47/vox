@@ -1,14 +1,21 @@
-use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::{
+    sync::{atomic::Ordering, mpsc},
+    time::Duration,
+};
+
 use tauri::AppHandle;
 
-use crate::core::settings::{InteractionMode, PipelineMode};
-use crate::core::state::{AppState, InteractionState};
-use crate::pipeline::assistant::interrupt::on_interrupt;
-use crate::pipeline::{transition, RoutingContext};
-use crate::services::stt::actor::SttCommand;
-use crate::services::vad::{VadCommand, VAD_VALIDATION_TIMEOUT_MS};
-use std::sync::mpsc;
+use crate::{
+    core::{
+        settings::{InteractionMode, PipelineMode},
+        state::{AppState, InteractionState},
+    },
+    pipeline::{assistant::interrupt::on_interrupt, transition, RoutingContext},
+    services::{
+        stt::actor::SttCommand,
+        vad::{VadCommand, VAD_VALIDATION_TIMEOUT_MS},
+    },
+};
 
 /// Handles Push-To-Talk key press event, evaluating barge-in and opening the VAD validation window.
 pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {

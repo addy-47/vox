@@ -1,5 +1,6 @@
-use crate::core::error::PersistenceError;
 use serde::{Deserialize, Serialize};
+
+use crate::core::error::PersistenceError;
 
 /// Topology node representing a single fact entity in the memory graph.
 #[derive(Debug, Serialize, Deserialize, Clone)]

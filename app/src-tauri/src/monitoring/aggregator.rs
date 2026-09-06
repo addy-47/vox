@@ -1,10 +1,12 @@
-use crate::monitoring::TELEMETRY_AGGREGATOR_CHANNEL_CAPACITY;
+use std::sync::{
+    atomic::{AtomicU32, AtomicU64, Ordering},
+    Arc,
+};
+
 use crossbeam_channel::{bounded, Receiver, Sender};
 use serde::Serialize;
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+
+use crate::monitoring::TELEMETRY_AGGREGATOR_CHANNEL_CAPACITY;
 
 /// Structured telemetry events emitted by various engine subsystems.
 #[derive(Debug, Clone, Serialize)]

@@ -1,11 +1,19 @@
-use crate::core::error::VoxIpcError;
-use crate::core::settings::{LlmModelInfo, LlmProviderConfig};
-use crate::core::state::AppState;
-use crate::services::health::{self, ProviderConfigPayload};
-use crate::services::llm::probe::{self, ModelProbeResult};
-use crate::setup::remote_server;
 use std::sync::Arc;
+
 use tauri::State;
+
+use crate::{
+    core::{
+        error::VoxIpcError,
+        settings::{LlmModelInfo, LlmProviderConfig},
+        state::AppState,
+    },
+    services::{
+        health::{self, ProviderConfigPayload},
+        llm::probe::{self, ModelProbeResult},
+    },
+    setup::remote_server,
+};
 
 /// Unified health-check command across LLM, STT, and TTS engine providers.
 #[tauri::command]

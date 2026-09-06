@@ -4,15 +4,15 @@ pub mod nemotron;
 pub mod qwen;
 pub mod stitcher;
 
-pub use crate::core::constants::SAMPLE_RATE;
-pub use crate::core::error::SttError;
+use std::path::Path;
+
 pub use actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand};
 pub use embedded::EmbeddedSttProvider;
+use serde::{Deserialize, Serialize};
 pub use stitcher::stitch_transcripts;
 
 use crate::core::settings::SttProviderConfig;
-use serde::{Deserialize, Serialize};
-use std::path::Path;
+pub use crate::core::{constants::SAMPLE_RATE, error::SttError};
 
 pub const QWEN_ASR_MODEL_DIR: &str = "stt/qwen3-asr";
 pub const NEMOTRON_MODEL_DIR: &str = "stt/nemotron-3.5";

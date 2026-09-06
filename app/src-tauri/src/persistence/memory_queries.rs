@@ -1,8 +1,9 @@
-use crate::persistence::encode_f32_blob;
-use crate::services::memory::MemoryFact;
-use anyhow::Result;
 use std::collections::HashMap;
+
+use anyhow::Result;
 use turso::Connection;
+
+use crate::{persistence::encode_f32_blob, services::memory::MemoryFact};
 
 /// Fetches all active Identity facts (deterministic baseline for non-ChitChat scopes).
 pub async fn fetch_all_active_identity(conn: &Connection) -> Result<Vec<MemoryFact>> {

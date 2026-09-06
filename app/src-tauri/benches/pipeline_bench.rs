@@ -11,28 +11,33 @@
 
 mod common;
 
-use clap::Parser;
-use common::audio::{load_wav, resolve_clip_path};
-use common::pipeline_harness::setup_e2e_pipeline;
-use common::reporting::{
-    generate_run_id, get_process_memory_mb, save_benchmark_report, BenchmarkReport,
-    BenchmarkSystemInfo, ClipBenchmarkResult, EngineBenchmarkRun,
-};
-use common::utils::{downsample_48k_to_24k, drain_consumer, write_wav_f32};
-use ringbuf::traits::{Observer, Producer};
 use std::{
     path::PathBuf,
     sync::{atomic::Ordering, Arc},
     time::{Duration, Instant},
 };
 
-use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::{
-    InteractionMode, LlmActiveProvider, PipelineMode, TtsActiveProvider, VoxSettings,
+use clap::Parser;
+use common::{
+    audio::{load_wav, resolve_clip_path},
+    pipeline_harness::setup_e2e_pipeline,
+    reporting::{
+        generate_run_id, get_process_memory_mb, save_benchmark_report, BenchmarkReport,
+        BenchmarkSystemInfo, ClipBenchmarkResult, EngineBenchmarkRun,
+    },
+    utils::{downsample_48k_to_24k, drain_consumer, write_wav_f32},
 };
-use vox_lib::core::state::{InteractionOwner, InteractionState};
-use vox_lib::pipeline::assistant::session::on_session_start;
-use vox_lib::pipeline::RoutingContext;
+use ringbuf::traits::{Observer, Producer};
+use vox_lib::{
+    core::{
+        events::VoxEvent,
+        settings::{
+            InteractionMode, LlmActiveProvider, PipelineMode, TtsActiveProvider, VoxSettings,
+        },
+        state::{InteractionOwner, InteractionState},
+    },
+    pipeline::{assistant::session::on_session_start, RoutingContext},
+};
 
 #[derive(Parser, Debug)]
 #[command(

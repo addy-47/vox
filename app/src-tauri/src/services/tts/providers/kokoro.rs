@@ -1,16 +1,31 @@
-use super::{TtsProvider, TtsProviderKind};
-use crate::core::events::{Actionability, PipelineError, PipelineImpact, VoxEvent};
-use crate::services::tts::{MAX_SPEED, MIN_SPEED};
+use std::{
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
+        mpsc::Sender,
+        Arc,
+    },
+};
+
 use anyhow::{anyhow, Result};
 use parking_lot::Mutex;
 use sherpa_onnx::{
     GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsKokoroModelConfig,
     OfflineTtsModelConfig,
 };
-use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
-use std::sync::mpsc::Sender;
-use std::sync::Arc;
+
+use super::{TtsProvider, TtsProviderKind};
+use crate::{
+    core::events::{Actionability, PipelineError, PipelineImpact, VoxEvent},
+    services::{
+        audio::PlaybackEngine,
+        translit::is_devanagari,
+        tts::{
+            MAX_SPEED, MIN_SPEED, MODEL_DIRNAME_TTS_KOKORO_ESPEAK, MODEL_FILE_TTS_KOKORO_MODEL,
+            MODEL_FILE_TTS_KOKORO_TOKENS, MODEL_FILE_TTS_KOKORO_VOICES,
+        },
+    },
+};
 
 struct AtomicF32 {
     inner: AtomicU32,
@@ -47,10 +62,10 @@ impl KokoroEngine {
         let config = OfflineTtsConfig {
             model: OfflineTtsModelConfig {
                 kokoro: OfflineTtsKokoroModelConfig {
-                    model: Some(mp(crate::services::tts::MODEL_FILE_TTS_KOKORO_MODEL)),
-                    voices: Some(mp(crate::services::tts::MODEL_FILE_TTS_KOKORO_VOICES)),
-                    tokens: Some(mp(crate::services::tts::MODEL_FILE_TTS_KOKORO_TOKENS)),
-                    data_dir: Some(mp(crate::services::tts::MODEL_DIRNAME_TTS_KOKORO_ESPEAK)),
+                    model: Some(mp(MODEL_FILE_TTS_KOKORO_MODEL)),
+                    voices: Some(mp(MODEL_FILE_TTS_KOKORO_VOICES)),
+                    tokens: Some(mp(MODEL_FILE_TTS_KOKORO_TOKENS)),
+                    data_dir: Some(mp(MODEL_DIRNAME_TTS_KOKORO_ESPEAK)),
                     length_scale: 1.0,
                     ..Default::default()
                 },
@@ -109,7 +124,7 @@ impl TtsProvider for KokoroEngine {
         text: &str,
         turn_id: u32,
         cancel: Arc<AtomicBool>,
-        playback: &Arc<crate::services::audio::PlaybackEngine>,
+        playback: &Arc<PlaybackEngine>,
         event_tx: Sender<VoxEvent>,
         telemetry_rtf: Option<&Arc<AtomicU32>>,
     ) -> Result<()> {
@@ -117,7 +132,7 @@ impl TtsProvider for KokoroEngine {
             return Ok(());
         }
 
-        if crate::services::translit::is_devanagari(text) {
+        if is_devanagari(text) {
             log::error!(
                 "[Kokoro] Devanagari script detected in turn {}: Kokoro does not support Hindi synthesis",
                 turn_id

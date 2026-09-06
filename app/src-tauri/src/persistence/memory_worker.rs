@@ -1,19 +1,27 @@
-use crate::core::settings::VoxSettings;
-use crate::core::state::InteractionState;
-pub use crate::persistence::events::MemoryWorkerEvent;
-pub use crate::persistence::mutations::{enqueue_personal_facts, session_end_consolidation};
-pub use crate::persistence::{decode_f32_blob, encode_f32_blob};
-use crate::persistence::{
-    MEMORY_WORKER_CHANNEL_CAPACITY, MEMORY_WORKER_POLL_TIMEOUT, MIN_IDLE_DEBOUNCE_SECS,
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, RwLock,
+    },
+    time::{Duration, Instant},
 };
-pub use crate::services::memory::ingestion::run_pipeline_cycle;
+
 use crossbeam_channel::{bounded, Receiver, Sender};
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
 use tokio::sync::watch;
 use turso::Connection;
+
+use crate::{
+    core::{settings::VoxSettings, state::InteractionState},
+    persistence::{
+        db::{get_tokio_handle, VoxDb},
+        events::MemoryWorkerEvent,
+        mutations::{enqueue_personal_facts, session_end_consolidation},
+        MAX_QUEUE_RETRY_ATTEMPTS, MEMORY_WORKER_CHANNEL_CAPACITY, MEMORY_WORKER_POLL_TIMEOUT,
+        MIN_IDLE_DEBOUNCE_SECS,
+    },
+    services::memory::{ingestion::run_pipeline_cycle, unload_memory_pipeline_onnx_models},
+};
 
 struct WorkerState {
     current_session_id: u64,
@@ -37,10 +45,8 @@ pub fn spawn_memory_worker(
                 db_path
             );
 
-            let handle = crate::persistence::db::get_tokio_handle();
-            let conn = match handle
-                .block_on(async { crate::persistence::db::VoxDb::open(&db_path).await })
-            {
+            let handle = get_tokio_handle();
+            let conn = match handle.block_on(async { VoxDb::open(&db_path).await }) {
                 Ok(c) => Some(c),
                 Err(e) => {
                     log::error!(
@@ -102,7 +108,7 @@ fn run_worker_loop(
             } else {
                 state.idle_since = None;
                 ctx.cancel_flag.store(true, Ordering::Relaxed);
-                crate::services::memory::unload_memory_pipeline_onnx_models();
+                unload_memory_pipeline_onnx_models();
             }
         }
 
@@ -267,9 +273,8 @@ fn run_drain_queue(
             break;
         }
 
-        let processed_count = handle.block_on(async {
-            crate::services::memory::ingestion::run_pipeline_cycle(db_conn, cancel_flag).await
-        });
+        let processed_count =
+            handle.block_on(async { run_pipeline_cycle(db_conn, cancel_flag).await });
 
         match processed_count {
             Ok(n) if n > 0 => {
@@ -281,7 +286,7 @@ fn run_drain_queue(
                         "UPDATE personal_memory_queue 
                          SET status = 'staged_pending', attempts = attempts + 1, retry_count = retry_count + 1 
                          WHERE status = 'failed' AND retry_count < {}",
-                        crate::persistence::MAX_QUEUE_RETRY_ATTEMPTS
+                         MAX_QUEUE_RETRY_ATTEMPTS
                     );
                     db_conn
                         .execute(&update_sql, ())
@@ -298,7 +303,7 @@ fn run_drain_queue(
                 }
 
                 state.idle_since = Some(Instant::now());
-                crate::services::memory::unload_memory_pipeline_onnx_models();
+                unload_memory_pipeline_onnx_models();
                 break;
             }
         }

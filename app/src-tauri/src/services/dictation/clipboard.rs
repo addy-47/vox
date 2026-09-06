@@ -1,5 +1,6 @@
-use crate::core::error::DictationError;
 use arboard::Clipboard;
+
+use crate::core::error::DictationError;
 
 /// Retrieve the current text from the system clipboard.
 pub fn get_text() -> Result<String, DictationError> {

@@ -1,5 +1,9 @@
-use crate::setup::manifest::{AppManifest, VoxManifest};
 use serde::{Deserialize, Serialize};
+
+use crate::{
+    setup::manifest::{AppManifest, VerifiedMarker, VoxManifest},
+    utils::paths,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateReport {
@@ -45,7 +49,7 @@ fn is_newer_version(remote: &str, local: &str) -> bool {
 
 /// Helper to load the cached AppManifest, falling back to network fetch if not cached.
 async fn get_app_manifest() -> anyhow::Result<AppManifest> {
-    let cache_path = crate::utils::paths::get().cache.join("app_manifest.json");
+    let cache_path = paths::get().cache.join("app_manifest.json");
     if cache_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&cache_path) {
             if let Ok(m) = serde_json::from_str::<AppManifest>(&content) {
@@ -69,9 +73,7 @@ async fn get_app_manifest() -> anyhow::Result<AppManifest> {
 
 /// Helper to load the cached VoxManifest, falling back to network fetch if not cached.
 async fn get_models_manifest() -> anyhow::Result<VoxManifest> {
-    let cache_path = crate::utils::paths::get()
-        .cache
-        .join("models_manifest.json");
+    let cache_path = paths::get().cache.join("models_manifest.json");
     if cache_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&cache_path) {
             if let Ok(m) = serde_json::from_str::<VoxManifest>(&content) {
@@ -119,9 +121,7 @@ pub struct ModelUpdateReport {
 
 /// Performs a version and individual model checksum comparison check against HF remote manifest.
 pub async fn check_model_updates() -> anyhow::Result<ModelUpdateReport> {
-    let local_manifest_path = crate::utils::paths::get()
-        .models
-        .join("models_manifest.json");
+    let local_manifest_path = paths::get().models.join("models_manifest.json");
 
     let local_version = if local_manifest_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&local_manifest_path) {
@@ -141,7 +141,7 @@ pub async fn check_model_updates() -> anyhow::Result<ModelUpdateReport> {
     let remote_version = remote_manifest.models_version.clone();
 
     let mut outdated_models = Vec::new();
-    let models_dir = crate::utils::paths::get().models.clone();
+    let models_dir = paths::get().models.clone();
 
     for group in &remote_manifest.model_groups {
         let mut group_ok = true;
@@ -167,7 +167,7 @@ pub async fn check_model_updates() -> anyhow::Result<ModelUpdateReport> {
 
             let mut file_ok = false;
             if verified_path.exists() {
-                if let Ok(marker) = crate::setup::manifest::VerifiedMarker::load(&verified_path) {
+                if let Ok(marker) = VerifiedMarker::load(&verified_path) {
                     if marker.sha256 == file.sha256 && dest_path.exists() {
                         file_ok = true;
                     }

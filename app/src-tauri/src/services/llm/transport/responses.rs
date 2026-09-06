@@ -1,9 +1,13 @@
-use super::config::ConnectionConfig;
-use super::sse::SseDecoder;
-use crate::services::llm::{GenerationRequest, LlmError, OutputConstraint};
+use std::sync::mpsc;
+
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::sync::mpsc;
+
+use super::{config::ConnectionConfig, sse::SseDecoder};
+use crate::services::{
+    harness::Role,
+    llm::{GenerationRequest, LlmError, OutputConstraint},
+};
 
 #[derive(Serialize)]
 struct ResponsesInputItem {
@@ -27,7 +31,7 @@ pub fn build_request_body(
     let mut input_items = Vec::new();
 
     for msg in &request.input.messages {
-        if msg.role == crate::services::harness::Role::System {
+        if msg.role == Role::System {
             system_instructions = Some(msg.content.clone());
         } else {
             input_items.push(ResponsesInputItem {
@@ -232,10 +236,12 @@ pub async fn stream_responses(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::harness::{ChatMessage as MemMsg, Role};
-    use crate::services::llm::{
-        AuthScheme, CapabilitySource, ConversationInput, GenerationOptions, GenerationPurpose,
-        OutputConstraint, TokenLimitField, TransportType,
+    use crate::services::{
+        harness::{ChatMessage as MemMsg, Role},
+        llm::{
+            AuthScheme, CapabilitySource, ConversationInput, GenerationOptions, GenerationPurpose,
+            OutputConstraint, TokenLimitField, TransportType,
+        },
     };
 
     #[test]

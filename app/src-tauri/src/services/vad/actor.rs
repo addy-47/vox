@@ -1,24 +1,28 @@
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+    mpsc, Arc,
+};
 
 use anyhow::Result;
 use ringbuf::traits::Consumer;
 use thread_priority::{set_current_thread_priority, ThreadPriority};
 
-use super::telemetry::process_and_emit_telemetry;
-use super::utils::{f32_to_i16_pcm, PreRollBuffer};
 use super::{
+    telemetry::process_and_emit_telemetry,
+    utils::{f32_to_i16_pcm, PreRollBuffer},
     VadBackend, VadEngine as _, VadOperationalMode, VAD_ACTOR_IDLE_SLEEP_MS, VAD_CHUNK_SIZE,
     VAD_MIN_UTTERANCE_SAMPLES, VAD_PARTIAL_INTERVAL_SAMPLES, VAD_PRE_ROLL_CAPACITY,
 };
-use crate::core::events::VoxEvent;
-use crate::core::settings::{AudioOutputMode, InteractionMode};
-use crate::core::state::InteractionState;
-use crate::monitoring::aggregator::TelemetryEvent;
-use crate::services::stt::SttCommand;
-use crate::services::vad::VadCommand;
-use crate::utils::audio_filters::FilterBank;
+use crate::{
+    core::{
+        events::VoxEvent,
+        settings::{AudioOutputMode, InteractionMode},
+        state::InteractionState,
+    },
+    monitoring::aggregator::TelemetryEvent,
+    services::{stt::SttCommand, vad::VadCommand},
+    utils::audio_filters::FilterBank,
+};
 
 /// Result returned from windowed speech validation.
 #[derive(Debug, Clone)]
@@ -558,10 +562,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::core::settings::AudioOutputMode;
-    use crate::core::state::InteractionState;
     use std::sync::atomic::{AtomicBool, AtomicU32};
+
+    use super::*;
+    use crate::core::{settings::AudioOutputMode, state::InteractionState};
 
     fn make_state(
         audio_mode: AudioOutputMode,

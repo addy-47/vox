@@ -1,17 +1,21 @@
 //! Voice service for audio validation, decoding, resampling, speaker pre-baking, and recording.
 
-use crate::services::tts::{
-    CHATTERBOX_MODEL_DIR, EDGE_TTS_USER_AGENT, EDGE_TTS_VOICES_URL_BASE,
-    MIN_VOICE_CLONE_DURATION_SECS, MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3,
-    TARGET_VOICE_SAMPLE_DURATION_SECS, TTS_SAMPLE_RATE,
-};
+use std::{fs::File, path::Path, sync::Arc};
+
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::path::Path;
-use std::sync::Arc;
-use symphonia_core::audio::Audio;
+use symphonia_core::audio::{Audio, GenericAudioBufferRef};
+
+use crate::{
+    core::settings::VoiceProfile,
+    services::tts::{
+        providers::edge_tts::get_trusted_client_token, CHATTERBOX_MODEL_DIR, EDGE_TTS_USER_AGENT,
+        EDGE_TTS_VOICES_URL_BASE, MIN_VOICE_CLONE_DURATION_SECS, MODEL_FILE_TTS_CHATTERBOX_S3GEN,
+        MODEL_FILE_TTS_CHATTERBOX_T3, TARGET_VOICE_SAMPLE_DURATION_SECS, TTS_SAMPLE_RATE,
+    },
+    utils::paths::model_dir,
+};
 
 /// Metadata describing an online Edge TTS neural voice.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,11 +27,7 @@ pub struct EdgeTtsVoiceEntry {
     pub friendly_name: String,
 }
 
-fn extract_mono_f32_samples(
-    buf_ref: crate::symphonia_core::audio::GenericAudioBufferRef<'_>,
-    raw_samples: &mut Vec<f32>,
-) {
-    use crate::symphonia_core::audio::GenericAudioBufferRef;
+fn extract_mono_f32_samples(buf_ref: GenericAudioBufferRef<'_>, raw_samples: &mut Vec<f32>) {
     match buf_ref {
         GenericAudioBufferRef::F32(buf) => {
             let channels = buf.spec().channels().count();
@@ -71,12 +71,13 @@ fn extract_mono_f32_samples(
 }
 
 fn decode_audio_stream(src_path: &str) -> Result<(Vec<f32>, u32), String> {
-    use crate::symphonia_core::codecs::audio::AudioDecoderOptions;
-    use crate::symphonia_core::errors::Error;
-    use crate::symphonia_core::formats::probe::Hint;
-    use crate::symphonia_core::formats::FormatOptions;
-    use crate::symphonia_core::io::MediaSourceStream;
-    use crate::symphonia_core::meta::MetadataOptions;
+    use symphonia_core::{
+        codecs::audio::AudioDecoderOptions,
+        errors::Error,
+        formats::{probe::Hint, FormatOptions},
+        io::MediaSourceStream,
+        meta::MetadataOptions,
+    };
 
     let file = File::open(src_path).map_err(|e| format!("Failed to open audio file: {}", e))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
@@ -101,7 +102,7 @@ fn decode_audio_stream(src_path: &str) -> Result<(Vec<f32>, u32), String> {
         .ok_or_else(|| "No audio track found in file".to_string())?;
 
     let codec_params = match &track.codec_params {
-        Some(crate::symphonia_core::codecs::CodecParameters::Audio(params)) => params,
+        Some(symphonia_core::codecs::CodecParameters::Audio(params)) => params,
         _ => return Err("Track is not an audio track or lacks codec parameters".to_string()),
     };
 
@@ -231,7 +232,7 @@ pub fn pre_bake_speaker_tensors(source_wav: &Path, baked_dir: &Path) -> Result<(
     std::fs::create_dir_all(baked_dir)
         .map_err(|e| format!("Failed to create baked voice directory: {}", e))?;
 
-    let tts_model_dir = crate::utils::paths::model_dir(CHATTERBOX_MODEL_DIR);
+    let tts_model_dir = model_dir(CHATTERBOX_MODEL_DIR);
     let t3_path = tts_model_dir.join(MODEL_FILE_TTS_CHATTERBOX_T3);
     let s3_path = tts_model_dir.join(MODEL_FILE_TTS_CHATTERBOX_S3GEN);
 
@@ -353,7 +354,7 @@ pub async fn fetch_remote_edge_voices() -> Result<Vec<EdgeTtsVoiceEntry>, String
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
-    let token = crate::services::tts::providers::edge_tts::get_trusted_client_token();
+    let token = get_trusted_client_token();
     let url = format!("{}{}", EDGE_TTS_VOICES_URL_BASE, token);
     let resp = client
         .get(url)
@@ -398,45 +399,45 @@ pub async fn fetch_remote_edge_voices() -> Result<Vec<EdgeTtsVoiceEntry>, String
 }
 
 /// Returns default system voice profiles (Supertonic/Kokoro speaker mappings).
-pub fn get_voice_profiles() -> Vec<crate::core::settings::VoiceProfile> {
+pub fn get_voice_profiles() -> Vec<VoiceProfile> {
     vec![
-        crate::core::settings::VoiceProfile {
+        VoiceProfile {
             id: 0,
             name: "James".to_string(),
         },
-        crate::core::settings::VoiceProfile {
+        VoiceProfile {
             id: 1,
             name: "David".to_string(),
         },
-        crate::core::settings::VoiceProfile {
+        VoiceProfile {
             id: 2,
             name: "Alex".to_string(),
         },
-        crate::core::settings::VoiceProfile {
+        VoiceProfile {
             id: 3,
             name: "Ryan".to_string(),
         },
-        crate::core::settings::VoiceProfile {
+        VoiceProfile {
             id: 4,
             name: "Ethan".to_string(),
         },
-        crate::core::settings::VoiceProfile {
+        VoiceProfile {
             id: 5,
             name: "Sophia".to_string(),
         },
-        crate::core::settings::VoiceProfile {
+        VoiceProfile {
             id: 6,
             name: "Olivia".to_string(),
         },
-        crate::core::settings::VoiceProfile {
+        VoiceProfile {
             id: 7,
             name: "Emma".to_string(),
         },
-        crate::core::settings::VoiceProfile {
+        VoiceProfile {
             id: 8,
             name: "Ava".to_string(),
         },
-        crate::core::settings::VoiceProfile {
+        VoiceProfile {
             id: 9,
             name: "Mia".to_string(),
         },

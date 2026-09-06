@@ -10,20 +10,27 @@
 
 mod common;
 
-use std::sync::atomic::{AtomicBool, AtomicU32};
-use std::sync::mpsc;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use vox_lib::core::events::VoxEvent;
-use vox_lib::core::settings::VoxSettings;
-use vox_lib::services::memory::ml::{
-    ensure_edge_classifier_loaded, ensure_embedder_loaded, ensure_nli_loaded,
-    ensure_scope_classifier_loaded, generate_embedding, is_edge_classifier_loaded,
-    is_embedder_loaded, is_nli_loaded, is_scope_classifier_loaded, unload_all_onnx_models,
-    unload_memory_pipeline_onnx_models,
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU32},
+        mpsc, Arc,
+    },
+    time::{Duration, Instant},
 };
-use vox_lib::services::translit::{init_transliteration_engine, is_transliteration_engine_loaded};
-use vox_lib::services::tts::actor::{cool_down_tts, warm_up_tts, TtsCommand, TtsWarmUpHandles};
+
+use vox_lib::{
+    core::{events::VoxEvent, settings::VoxSettings},
+    services::{
+        memory::ml::{
+            ensure_edge_classifier_loaded, ensure_embedder_loaded, ensure_nli_loaded,
+            ensure_scope_classifier_loaded, generate_embedding, is_edge_classifier_loaded,
+            is_embedder_loaded, is_nli_loaded, is_scope_classifier_loaded, unload_all_onnx_models,
+            unload_memory_pipeline_onnx_models,
+        },
+        translit::{init_transliteration_engine, is_transliteration_engine_loaded},
+        tts::actor::{cool_down_tts, warm_up_tts, TtsCommand, TtsWarmUpHandles},
+    },
+};
 
 // ============================================================================
 // Subtest 1: test_onnx_model_singleton_lifecycle_eviction

@@ -1,5 +1,6 @@
-use ringbuf::traits::Consumer;
 use std::path::Path;
+
+use ringbuf::traits::Consumer;
 
 /// Persist mono f32 samples as 32-bit float WAV.
 pub fn write_wav_f32(path: &Path, samples: &[f32], sample_rate: u32) -> Result<(), String> {

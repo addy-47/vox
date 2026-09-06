@@ -1,39 +1,57 @@
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc, Arc,
+};
 
 use ringbuf::traits::Split;
 use tauri::AppHandle;
 
-use crate::core::constants::RING_BUFFER_SIZE;
-use crate::core::events::emit_ipc_to;
-use crate::core::events::IpcEvent;
-use crate::core::events::VoxEvent;
-use crate::core::state::InteractionOwner;
-use crate::core::state::{AppState, InteractionState, VoxEngine};
-use crate::pipeline::router::spawn_router;
-use crate::services::audio::playback::PlaybackTelemetryHandles;
-use crate::services::audio::{AudioStream, PlaybackEngine};
-use crate::services::stt::actor::{
-    spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand,
+use crate::{
+    core::{
+        constants::RING_BUFFER_SIZE,
+        events::{emit_ipc_to, IpcEvent, TranscriptPayload, VoxEvent},
+        settings::{SttProviderConfig, TtsActiveProvider, VadBackendOption},
+        state::{AppState, InteractionOwner, InteractionState, VoxEngine},
+    },
+    persistence::{
+        db::get_tokio_handle, events::PersistenceEvent, worker::spawn_persistence_worker,
+    },
+    pipeline::{router::spawn_router, target_window},
+    services::{
+        audio::{
+            playback::{PlaybackEngineHandles, PlaybackTelemetryHandles},
+            AudioStream, PlaybackEngine,
+        },
+        llm::{
+            actor::{cool_down_llm, warm_up_llm, LlmWarmUpHandles},
+            QWEN_MODEL_DIR, QWEN_MODEL_FILE,
+        },
+        memory::{trim_heap, unload_all_onnx_models},
+        stt::{
+            actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
+            create_stt_provider, SttProvider, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR,
+        },
+        tts::{
+            actor::{cool_down_tts, warm_up_tts, TtsWarmUpHandles},
+            resolve_reference_audio, SUPERTONIC_MODEL_DIR,
+        },
+        vad::{
+            actor::{spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles},
+            earshot_vad::EarshotVadEngine,
+            ten_onnx::VadEngine as TenVadEngine,
+            VadBackend, VadCommand, MODEL_DIR_VAD, MODEL_FILE_VAD,
+        },
+    },
+    setup::manifest::VoxManifest,
+    utils::paths,
 };
-use crate::services::stt::{create_stt_provider, SttProvider};
-use crate::services::vad::actor::{
-    spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles,
-};
-use crate::services::vad::VadCommand;
-use crate::services::vad::{
-    earshot_vad::EarshotVadEngine, ten_onnx::VadEngine as TenVadEngine, VadBackend,
-};
-use crate::utils::paths;
-use std::sync::atomic::AtomicBool;
-use std::sync::mpsc;
 
 /// Ensures the persistence background worker is active and holds a valid channel.
 fn ensure_persistence_worker(state: &AppState) {
     let mut persist_lock = state.persist_tx.lock();
     if persist_lock.is_none() {
         log::info!("[Core::Engine] Spawning persistence worker");
-        let tx = crate::persistence::worker::spawn_persistence_worker(
+        let tx = spawn_persistence_worker(
             paths::get().db.clone(),
             Arc::clone(&state.telemetry.is_db_healthy),
             Arc::clone(&state.telemetry.latest_persistence_rate),
@@ -50,9 +68,7 @@ async fn ensure_manifest_loaded(state: &AppState) {
         let manifest_path = paths::get().models.join("models_manifest.json");
         if manifest_path.exists() {
             if let Ok(content) = std::fs::read_to_string(&manifest_path) {
-                if let Ok(manifest) =
-                    serde_json::from_str::<crate::setup::manifest::VoxManifest>(&content)
-                {
+                if let Ok(manifest) = serde_json::from_str::<VoxManifest>(&content) {
                     *m = Some(manifest);
                 }
             }
@@ -72,15 +88,15 @@ fn create_stt_instance(state: &AppState) -> Result<Box<dyn SttProvider>, String>
     let models_dir = paths::get().models.clone();
 
     match asr_provider {
-        crate::core::settings::SttProviderConfig::Embedded { ref model_type } => {
+        SttProviderConfig::Embedded { ref model_type } => {
             let path = match model_type.as_str() {
-                "nvidia_nemotron" => models_dir.join(crate::services::stt::NEMOTRON_MODEL_DIR),
-                _ => models_dir.join(crate::services::stt::QWEN_ASR_MODEL_DIR),
+                "nvidia_nemotron" => models_dir.join(NEMOTRON_MODEL_DIR),
+                _ => models_dir.join(QWEN_ASR_MODEL_DIR),
             };
             create_stt_provider(&asr_provider, &path, stt_threads)
                 .map_err(|e| format!("[Core::Engine] STT provider creation failed: {}", e))
         }
-        crate::core::settings::SttProviderConfig::Cloud { .. } => {
+        SttProviderConfig::Cloud { .. } => {
             let path = models_dir.join("stt");
             create_stt_provider(&asr_provider, &path, stt_threads)
                 .map_err(|e| format!("[Core::Engine] STT provider creation failed: {}", e))
@@ -99,17 +115,14 @@ async fn create_vad_instance(state: &AppState) -> Result<VadBackend, String> {
     };
 
     match vad_backend {
-        crate::core::settings::VadBackendOption::Earshot => {
+        VadBackendOption::Earshot => {
             log::info!("[Core::Engine] Initializing pure-Rust Earshot VAD");
             EarshotVadEngine::new(threshold)
                 .map(VadBackend::Earshot)
                 .map_err(|e| format!("[Core::Engine] Earshot VAD init failed: {}", e))
         }
-        crate::core::settings::VadBackendOption::TenVad => {
-            let vad_path = paths::get()
-                .models
-                .join(crate::services::vad::MODEL_DIR_VAD)
-                .join(crate::services::vad::MODEL_FILE_VAD);
+        VadBackendOption::TenVad => {
+            let vad_path = paths::get().models.join(MODEL_DIR_VAD).join(MODEL_FILE_VAD);
             if !vad_path.exists() {
                 log::warn!(
                     "[Core::Engine] Ten VAD model missing at {:?}. Falling back to Earshot.",
@@ -143,7 +156,7 @@ fn create_playback_engine(
         underruns: Arc::clone(&state.pipeline.playback_underruns),
     };
 
-    let engine_handles = crate::services::audio::playback::PlaybackEngineHandles {
+    let engine_handles = PlaybackEngineHandles {
         cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
         state_atomic: Arc::clone(&state.pipeline.current_state_atomic),
         current_turn_id: Arc::clone(&state.pipeline.turn_id),
@@ -242,11 +255,11 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
 
     let app_handle = app.clone();
     let partial_emitter = Some(Arc::new(move |turn_id: u32, text: String| {
-        let target = crate::pipeline::target_window(InteractionOwner::Assistant);
+        let target = target_window(InteractionOwner::Assistant);
         if let Err(e) = emit_ipc_to(
             &app_handle,
             target,
-            IpcEvent::TranscriptPartial(crate::core::events::TranscriptPayload {
+            IpcEvent::TranscriptPartial(TranscriptPayload {
                 turn_id,
                 text,
                 owner: Some(InteractionOwner::Assistant),
@@ -342,8 +355,8 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
         log::warn!("[Core::Engine] Failed to send Shutdown to VAD: {}", e);
     }
 
-    crate::services::llm::actor::cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));
-    crate::services::tts::actor::cool_down_tts(&mut engine.tts_tx);
+    cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));
+    cool_down_tts(&mut engine.tts_tx);
 
     let llm_handle = engine.llm_handle.take();
     let tts_handle = engine.tts_handle.take();
@@ -384,7 +397,7 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
     {
         let mut persist_lock = state.persist_tx.lock();
         if let Some(tx) = persist_lock.take() {
-            if let Err(e) = tx.send(crate::persistence::events::PersistenceEvent::Shutdown) {
+            if let Err(e) = tx.send(PersistenceEvent::Shutdown) {
                 log::warn!(
                     "[Core::Engine] Failed to send Shutdown to persistence: {}",
                     e
@@ -393,8 +406,8 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
         }
     }
 
-    crate::services::memory::unload_all_onnx_models();
-    crate::services::memory::trim_heap("stop_audio_engine");
+    unload_all_onnx_models();
+    trim_heap("stop_audio_engine");
     log::info!("[Core::Engine] Audio engine resources cleanly released");
     Ok(())
 }
@@ -404,7 +417,7 @@ pub fn stop_audio_engine_sync(state: &AppState) -> Result<(), String> {
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         tokio::task::block_in_place(|| handle.block_on(stop_audio_engine(state)))
     } else {
-        let handle = crate::persistence::db::get_tokio_handle();
+        let handle = get_tokio_handle();
         handle.block_on(stop_audio_engine(state))
     }
 }
@@ -420,24 +433,18 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
             .read()
             .unwrap_or_else(|p| p.into_inner())
             .clone();
-        let models_dir = crate::utils::paths::get().models.clone();
-        let llm = models_dir
-            .join(crate::services::llm::QWEN_MODEL_DIR)
-            .join(crate::services::llm::QWEN_MODEL_FILE);
-        let tts = models_dir.join(crate::services::tts::SUPERTONIC_MODEL_DIR);
+        let models_dir = paths::get().models.clone();
+        let llm = models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE);
+        let tts = models_dir.join(SUPERTONIC_MODEL_DIR);
         (llm, tts, s)
     };
 
     let voice_id = match settings.tts.active {
-        crate::core::settings::TtsActiveProvider::Chatterbox => {
-            settings.tts.chatterbox.voice_id.as_deref()
-        }
-        crate::core::settings::TtsActiveProvider::ChatterboxRemote => {
-            settings.tts.chatterbox_remote.voice_id.as_deref()
-        }
+        TtsActiveProvider::Chatterbox => settings.tts.chatterbox.voice_id.as_deref(),
+        TtsActiveProvider::ChatterboxRemote => settings.tts.chatterbox_remote.voice_id.as_deref(),
         _ => None,
     };
-    let reference_audio = crate::services::tts::resolve_reference_audio(voice_id).await;
+    let reference_audio = resolve_reference_audio(voice_id).await;
 
     // Check if workers are already active under a short lock
     let (needs_llm, needs_tts, playback_engine, pipeline_tx) = {
@@ -454,9 +461,9 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
     let mut new_llm_tx = None;
     let mut new_llm_handle = None;
     if needs_llm {
-        crate::services::llm::actor::warm_up_llm(
+        warm_up_llm(
             app,
-            crate::services::llm::actor::LlmWarmUpHandles {
+            LlmWarmUpHandles {
                 llm_tx: &mut new_llm_tx,
                 llm_handle: &mut new_llm_handle,
                 llm_provider_cache: Some(Arc::clone(&state.llm_provider)),
@@ -470,8 +477,8 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
     let mut new_tts_tx = None;
     let mut new_tts_handle = None;
     if needs_tts {
-        crate::services::tts::actor::warm_up_tts(
-            crate::services::tts::actor::TtsWarmUpHandles {
+        warm_up_tts(
+            TtsWarmUpHandles {
                 tts_tx: &mut new_tts_tx,
                 tts_handle: &mut new_tts_handle,
                 cancel_flag: Arc::clone(&state.pipeline.cancel_flag),
@@ -508,6 +515,6 @@ pub fn ensure_modular_workers_sync<R: tauri::Runtime + 'static>(
     app: &AppHandle<R>,
     state: &AppState,
 ) -> Result<(), String> {
-    let handle = crate::persistence::db::get_tokio_handle();
+    let handle = get_tokio_handle();
     handle.block_on(ensure_modular_workers(app, state))
 }

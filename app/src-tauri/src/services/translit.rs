@@ -1,8 +1,10 @@
+use std::{collections::HashMap, path::Path};
+
 use ndarray::{Array1, Array2, Array3};
 use ort::session::Session;
 use parking_lot::Mutex;
-use std::collections::HashMap;
-use std::path::Path;
+
+use crate::{setup::TRANSLIT_MODEL_DIR, utils::paths::try_get};
 
 pub const TRANSLIT_MAX_DECODE_STEPS: usize = 32;
 
@@ -283,7 +285,7 @@ pub fn init_transliteration_engine() -> Result<(), String> {
         return Ok(());
     }
 
-    let models_dir = if let Some(p) = crate::utils::paths::try_get() {
+    let models_dir = if let Some(p) = try_get() {
         p.models.clone()
     } else {
         dirs::home_dir()
@@ -292,7 +294,7 @@ pub fn init_transliteration_engine() -> Result<(), String> {
             .join("models")
     };
 
-    let model_path = models_dir.join(crate::setup::TRANSLIT_MODEL_DIR);
+    let model_path = models_dir.join(TRANSLIT_MODEL_DIR);
     let engine = TransliterationEngine::new(&model_path)?;
     *lock = Some(engine);
     log::info!("[Translit] Transliteration ONNX engine loaded into memory.");

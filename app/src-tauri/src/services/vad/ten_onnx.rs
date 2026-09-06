@@ -1,7 +1,9 @@
-use super::VadEngine as VadEngineTrait;
+use std::path::{Path, PathBuf};
+
 use anyhow::{anyhow, Result};
 use sherpa_onnx::{TenVadModelConfig, VadModelConfig, VoiceActivityDetector};
-use std::path::{Path, PathBuf};
+
+use super::VadEngine as VadEngineTrait;
 
 /// Voice Activity Detection engine wrapping TenVAD ONNX model via Sherpa-ONNX.
 pub struct VadEngine {

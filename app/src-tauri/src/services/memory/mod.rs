@@ -3,28 +3,32 @@ pub mod ingestion;
 pub mod ml;
 pub mod retrieval;
 
-pub use crate::core::error::MemoryError;
 pub use compaction::{run_compaction, CompactionResult, COMPACTION_SYSTEM_PROMPT};
-pub use ml::edge_classifier::{
-    classify_edge, ensure_edge_classifier_loaded, init_edge_classifier, is_edge_classifier_loaded,
-};
-pub use ml::embedder::{
-    cosine_similarity, ensure_embedder_loaded, generate_embedding, init_embedder,
-    is_embedder_loaded,
-};
-pub use ml::nli::{
-    classify_batch, ensure_nli_loaded, init_nli_engine, is_nli_loaded, relation_from_result,
-    NliLabel, NliRelation,
-};
-pub use ml::scope_classifier::{
-    classify_scope, ensure_scope_classifier_loaded, init_scope_classifier,
-    is_scope_classifier_loaded,
-};
-pub use ml::tokenizer::estimate_tokens;
 pub(crate) use ml::trim_heap;
-pub use ml::{unload_all_onnx_models, unload_memory_pipeline_onnx_models};
+pub use ml::{
+    edge_classifier::{
+        classify_edge, ensure_edge_classifier_loaded, init_edge_classifier,
+        is_edge_classifier_loaded,
+    },
+    embedder::{
+        cosine_similarity, ensure_embedder_loaded, generate_embedding, init_embedder,
+        is_embedder_loaded,
+    },
+    nli::{
+        classify_batch, ensure_nli_loaded, init_nli_engine, is_nli_loaded, relation_from_result,
+        NliLabel, NliRelation,
+    },
+    scope_classifier::{
+        classify_scope, ensure_scope_classifier_loaded, init_scope_classifier,
+        is_scope_classifier_loaded,
+    },
+    tokenizer::estimate_tokens,
+    unload_all_onnx_models, unload_memory_pipeline_onnx_models,
+};
 pub use query_sieve::MemoryScope;
 pub use retrieval::{retrieve_turn_profile, MemoryFact, RetrievedProfile};
+
+pub use crate::core::error::MemoryError;
 
 pub const RESERVED_GENERATION_TOKENS: usize = 512;
 pub const CONTEXT_CRITICAL_THRESHOLD: f32 = 0.85;

@@ -3,14 +3,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-#[cfg(feature = "tray-icon")]
-use crate::Tray;
 use serde_repr::Deserialize_repr;
 #[cfg(feature = "tray-icon")]
 use tauri::Manager;
 #[cfg(feature = "tray-icon")]
 use tauri::Monitor;
 use tauri::{PhysicalPosition, PhysicalSize, Result, Runtime, WebviewWindow, Window};
+
+#[cfg(feature = "tray-icon")]
+use crate::Tray;
 
 /// Well known window positions.
 #[derive(Debug, Deserialize_repr)]

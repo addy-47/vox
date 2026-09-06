@@ -1,29 +1,32 @@
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
+
 use tauri::AppHandle;
 
-use crate::core::events::{
-    emit_ipc_to, Actionability, IpcEvent, PipelineError, PipelineImpact, ToastLevel,
-    TranscriptPayload, VoxEvent,
+use crate::{
+    core::{
+        events::{
+            emit_ipc_to, Actionability, IpcEvent, PipelineError, PipelineImpact, ToastLevel,
+            TranscriptPayload, VoxEvent,
+        },
+        settings::{LlmActiveProvider, PipelineMode},
+        state::{AppState, InteractionState},
+    },
+    persistence::db::VoxDb,
+    pipeline::{target_window, transition, RoutingContext},
+    services::{
+        harness::{prepare_turn_context, PrepareTurnParams},
+        llm::{actor::LlmCommand, ProviderKind},
+        translit::transliterate_if_hi,
+    },
+    toast::show_toast,
+    utils::paths::db_path,
 };
-use crate::core::settings::PipelineMode;
-use crate::core::state::{AppState, InteractionState};
-use crate::pipeline::{target_window, transition, RoutingContext};
-use crate::services::llm::actor::LlmCommand;
-use crate::toast::show_toast;
 
 /// Resolves the provider classification based on the configured active LLM setting.
-fn determine_provider_kind(
-    active: &crate::core::settings::LlmActiveProvider,
-) -> crate::services::llm::ProviderKind {
+fn determine_provider_kind(active: &LlmActiveProvider) -> ProviderKind {
     match active {
-        crate::core::settings::LlmActiveProvider::Embedded => {
-            crate::services::llm::ProviderKind::Embedded
-        }
-        crate::core::settings::LlmActiveProvider::Server
-        | crate::core::settings::LlmActiveProvider::Cloud => {
-            crate::services::llm::ProviderKind::OpenAiCompat
-        }
+        LlmActiveProvider::Embedded => ProviderKind::Embedded,
+        LlmActiveProvider::Server | LlmActiveProvider::Cloud => ProviderKind::OpenAiCompat,
     }
 }
 
@@ -60,33 +63,29 @@ fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
     };
 
     tauri::async_runtime::spawn(async move {
-        let db_path = crate::utils::paths::db_path();
+        let db_path = db_path();
         let conn_opt = if settings.memory.context_retrieval_enabled {
-            crate::persistence::db::VoxDb::open_readonly(&db_path)
-                .await
-                .ok()
+            VoxDb::open_readonly(&db_path).await.ok()
         } else {
             None
         };
 
         let provider_kind = determine_provider_kind(&settings.llm.active);
         let session_id = conv_id.to_string();
-        let res = crate::services::harness::prepare_turn_context(
-            crate::services::harness::PrepareTurnParams {
-                harness: &cm_arc,
-                tts_tx: tts_tx.as_ref(),
-                memory_tx: Some(&memory_tx),
-                conn: conn_opt.as_ref(),
-                query: &query,
-                turn_id,
-                session_id: &session_id,
-                memory: &settings.memory,
-                context_window: settings.llm.context_window as usize,
-                provider_kind,
-                llm_provider: cached_provider.as_deref(),
-                llm_settings: Some(&settings.llm),
-            },
-        )
+        let res = prepare_turn_context(PrepareTurnParams {
+            harness: &cm_arc,
+            tts_tx: tts_tx.as_ref(),
+            memory_tx: Some(&memory_tx),
+            conn: conn_opt.as_ref(),
+            query: &query,
+            turn_id,
+            session_id: &session_id,
+            memory: &settings.memory,
+            context_window: settings.llm.context_window as usize,
+            provider_kind,
+            llm_provider: cached_provider.as_deref(),
+            llm_settings: Some(&settings.llm),
+        })
         .await;
 
         let (request, transition_speech) = match res {
@@ -175,8 +174,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         .unwrap_or_else(|p| p.into_inner())
         .stt
         .transliterate_enabled;
-    let processed_text =
-        crate::services::translit::transliterate_if_hi(&text, true, transliterate_enabled);
+    let processed_text = transliterate_if_hi(&text, true, transliterate_enabled);
 
     if processed_text.trim().is_empty() {
         state.pipeline_accumulator.lock().clear();
