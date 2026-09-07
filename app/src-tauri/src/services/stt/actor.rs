@@ -3,6 +3,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc, Arc,
     },
+    thread::{Builder, JoinHandle},
     time::{Duration, Instant},
 };
 
@@ -369,8 +370,8 @@ pub fn spawn_stt_worker(
     channels: SttActorChannels,
     provider: Box<dyn SttProvider>,
     handles: SttActorHandles,
-) -> Result<std::thread::JoinHandle<()>, String> {
-    std::thread::Builder::new()
+) -> Result<JoinHandle<()>, String> {
+    Builder::new()
         .name("vox-stt-worker".to_string())
         .spawn(move || {
             use thread_priority::*;

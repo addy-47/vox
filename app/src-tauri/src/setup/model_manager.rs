@@ -1,9 +1,12 @@
 use std::{
-    path::Path,
+    fs::{create_dir_all, read_dir, remove_dir_all, remove_file, rename, File},
+    io::copy,
+    path::{Component, Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use futures_util::StreamExt;
@@ -60,8 +63,8 @@ impl ModelManager {
         });
 
         let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(MODEL_DOWNLOAD_TIMEOUT_SECS))
-            .connect_timeout(std::time::Duration::from_secs(MODEL_CONNECT_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(MODEL_DOWNLOAD_TIMEOUT_SECS))
+            .connect_timeout(Duration::from_secs(MODEL_CONNECT_TIMEOUT_SECS))
             .build()
             .unwrap_or_else(|_| Client::new());
 
@@ -117,7 +120,7 @@ impl ModelManager {
         self.cleanup_old_versions(model_id, &entry.sha256, models_dir);
 
         if let Some(parent) = dest_path.parent() {
-            std::fs::create_dir_all(parent)?;
+            create_dir_all(parent)?;
         }
 
         self.emit_status(
@@ -149,7 +152,7 @@ impl ModelManager {
                     entry.size_bytes,
                     Some(e.to_string()),
                 );
-                if let Err(err) = std::fs::remove_file(&temp_path) {
+                if let Err(err) = remove_file(&temp_path) {
                     log::debug!("[ModelManager] Temp file cleanup notice: {}", err);
                 }
                 return Err(e);
@@ -183,7 +186,7 @@ impl ModelManager {
                 entry.size_bytes,
                 Some(err.clone()),
             );
-            if let Err(cleanup_err) = std::fs::remove_file(&temp_path) {
+            if let Err(cleanup_err) = remove_file(&temp_path) {
                 log::debug!("[ModelManager] Temp file cleanup notice: {}", cleanup_err);
             }
             return Err(anyhow::anyhow!(err));
@@ -229,7 +232,7 @@ impl ModelManager {
                         entry.size_bytes,
                         Some(e.to_string()),
                     );
-                    if let Err(cleanup_err) = std::fs::remove_file(&temp_path) {
+                    if let Err(cleanup_err) = remove_file(&temp_path) {
                         log::debug!("[ModelManager] Temp file cleanup notice: {}", cleanup_err);
                     }
                     return Err(e);
@@ -244,24 +247,24 @@ impl ModelManager {
                         entry.size_bytes,
                         Some(err.clone()),
                     );
-                    if let Err(cleanup_err) = std::fs::remove_file(&temp_path) {
+                    if let Err(cleanup_err) = remove_file(&temp_path) {
                         log::debug!("[ModelManager] Temp file cleanup notice: {}", cleanup_err);
                     }
                     return Err(anyhow::anyhow!(err));
                 }
             }
-            if let Err(cleanup_err) = std::fs::remove_file(&temp_path) {
+            if let Err(cleanup_err) = remove_file(&temp_path) {
                 log::debug!("[ModelManager] Temp file cleanup notice: {}", cleanup_err);
             }
         } else {
-            std::fs::rename(&temp_path, &dest_path)?;
+            rename(&temp_path, &dest_path)?;
         }
 
         let marker = VerifiedMarker {
             model_id: Some(model_id.clone()),
             sha256: entry.sha256.clone(),
-            verified_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)?
+            verified_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)?
                 .as_millis() as u64,
             expected_size: entry.size_bytes,
         };
@@ -299,7 +302,7 @@ impl ModelManager {
         let mut hasher = Sha256::new();
         let mut downloaded: u64 = 0;
         let mut stream = response.bytes_stream();
-        let mut last_emit = std::time::Instant::now();
+        let mut last_emit = Instant::now();
 
         while let Some(chunk_result) = stream.next().await {
             if self.cancel_flag.load(Ordering::Relaxed) {
@@ -311,7 +314,7 @@ impl ModelManager {
             hasher.update(&chunk);
             downloaded += chunk.len() as u64;
 
-            if last_emit.elapsed() > std::time::Duration::from_millis(PROGRESS_EMIT_INTERVAL_MS) {
+            if last_emit.elapsed() > Duration::from_millis(PROGRESS_EMIT_INTERVAL_MS) {
                 let progress = (downloaded as f32 / expected_size as f32) * 100.0;
                 self.emit_status(
                     model_id,
@@ -321,7 +324,7 @@ impl ModelManager {
                     expected_size,
                     None,
                 );
-                last_emit = std::time::Instant::now();
+                last_emit = Instant::now();
             }
         }
 
@@ -335,7 +338,7 @@ impl ModelManager {
         archive_type: &str,
         dest_dir: &Path,
     ) -> anyhow::Result<()> {
-        let file = std::fs::File::open(archive_path)?;
+        let file = File::open(archive_path)?;
 
         match archive_type {
             "zip" => {
@@ -353,15 +356,15 @@ impl ModelManager {
                     let outpath = dest_dir.join(enclosed);
 
                     if entry.name().ends_with('/') {
-                        std::fs::create_dir_all(&outpath)?;
+                        create_dir_all(&outpath)?;
                     } else {
                         if let Some(parent) = outpath.parent() {
                             if !parent.exists() {
-                                std::fs::create_dir_all(parent)?;
+                                create_dir_all(parent)?;
                             }
                         }
-                        let mut outfile = std::fs::File::create(&outpath)?;
-                        std::io::copy(&mut entry, &mut outfile)?;
+                        let mut outfile = File::create(&outpath)?;
+                        copy(&mut entry, &mut outfile)?;
                     }
                 }
             }
@@ -373,7 +376,7 @@ impl ModelManager {
                     let path = entry.path()?;
                     if path
                         .components()
-                        .any(|c| c == std::path::Component::ParentDir)
+                        .any(|c| c == Component::ParentDir)
                     {
                         return Err(anyhow::anyhow!(
                             "Tar-Slip vulnerability detected: illegal path traversal in archive: {:?}",
@@ -420,12 +423,12 @@ impl ModelManager {
             model_id
         );
 
-        let walk_dir = |dir: &Path| -> Vec<std::path::PathBuf> {
+        let walk_dir = |dir: &Path| -> Vec<PathBuf> {
             let mut verified_files = Vec::new();
             let mut stack = vec![dir.to_path_buf()];
 
             while let Some(current_dir) = stack.pop() {
-                if let Ok(entries) = std::fs::read_dir(current_dir) {
+                if let Ok(entries) = read_dir(current_dir) {
                     for entry in entries.flatten() {
                         let path = entry.path();
                         if path.is_dir() {
@@ -455,14 +458,14 @@ impl ModelManager {
                     let model_file_path = verified_path.with_extension("");
                     if model_file_path.exists() {
                         if model_file_path.is_dir() {
-                            if let Err(e) = std::fs::remove_dir_all(&model_file_path) {
+                            if let Err(e) = remove_dir_all(&model_file_path) {
                                 log::warn!(
                                     "[ModelManager] Failed to remove outdated dir {:?}: {}",
                                     model_file_path,
                                     e
                                 );
                             }
-                        } else if let Err(e) = std::fs::remove_file(&model_file_path) {
+                        } else if let Err(e) = remove_file(&model_file_path) {
                             log::warn!(
                                 "[ModelManager] Failed to remove outdated file {:?}: {}",
                                 model_file_path,
@@ -470,7 +473,7 @@ impl ModelManager {
                             );
                         }
                     }
-                    if let Err(e) = std::fs::remove_file(&verified_path) {
+                    if let Err(e) = remove_file(&verified_path) {
                         log::warn!(
                             "[ModelManager] Failed to remove outdated marker {:?}: {}",
                             verified_path,

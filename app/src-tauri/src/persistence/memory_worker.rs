@@ -4,6 +4,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, RwLock,
     },
+    thread::Builder,
     time::{Duration, Instant},
 };
 
@@ -37,7 +38,7 @@ pub fn spawn_memory_worker(
 ) -> Sender<MemoryWorkerEvent> {
     let (tx, rx) = bounded::<MemoryWorkerEvent>(MEMORY_WORKER_CHANNEL_CAPACITY);
 
-    std::thread::Builder::new()
+    Builder::new()
         .name("vox-memory-worker".to_string())
         .spawn(move || {
             log::info!(

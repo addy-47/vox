@@ -1,4 +1,8 @@
-use std::{sync::LazyLock, time::Duration};
+use std::{
+    panic::{catch_unwind, AssertUnwindSafe},
+    sync::LazyLock,
+    time::Duration,
+};
 
 #[cfg(target_os = "linux")]
 use gtk::prelude::{GtkWindowExt, WidgetExt};
@@ -112,7 +116,7 @@ pub fn setup_linux_toast_layer<R: tauri::Runtime>(app: &AppHandle<R>, label: &st
         None => return,
     };
 
-    let mon = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let mon = catch_unwind(AssertUnwindSafe(|| {
         window
             .primary_monitor()
             .ok()
@@ -213,8 +217,7 @@ pub fn show_toast<R: tauri::Runtime>(
     message: &str,
     level: ToastLevel,
 ) -> Result<(), String> {
-    let window_res =
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ensure_toast_window(app)));
+    let window_res = catch_unwind(AssertUnwindSafe(|| ensure_toast_window(app)));
 
     let _window = match window_res {
         Ok(Ok(w)) => w,
@@ -297,7 +300,7 @@ fn with_gtk_window<R: tauri::Runtime>(
     window: &WebviewWindow<R>,
     f: impl FnOnce(&gtk::ApplicationWindow),
 ) {
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| window.gtk_window()));
+    let result = catch_unwind(AssertUnwindSafe(|| window.gtk_window()));
     match result {
         Ok(Ok(gtk_window)) => f(&gtk_window),
         Ok(Err(e)) => log::debug!("[Toast] No GTK handle available: {}", e),

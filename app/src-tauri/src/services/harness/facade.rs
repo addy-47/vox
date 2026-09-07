@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{atomic::Ordering, mpsc, Arc, LazyLock},
+    time::Instant,
+};
 
 use parking_lot::Mutex;
 use query_sieve::MemoryScope;
@@ -13,7 +17,8 @@ use crate::{
     core::{
         constants::{TRANSITION_MESSAGES_EN, TRANSITION_MESSAGES_HI},
         error::MemoryError,
-        settings::{LlmSettings, MemorySettings},
+        settings::{LlmSettings, MemorySettings, PipelineMode},
+        state::{AppState, InteractionState},
     },
     persistence::{db::VoxDb, events::MemoryWorkerEvent, mutations::enqueue_personal_facts},
     services::{
@@ -33,6 +38,10 @@ use crate::{
     },
     utils::paths,
 };
+
+pub const SOFT_COMPACTION_DEBOUNCE_SECS: u64 = 20;
+
+static LAST_SOFT_COMPACTION: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
 
 /// Bundled parameters for the `prepare_turn_context` public facade.
 pub struct PrepareTurnParams<'a> {
@@ -261,20 +270,6 @@ pub async fn prepare_turn_context(
 
     Ok((request, transition_speech))
 }
-
-use std::{
-    sync::{atomic::Ordering, mpsc, LazyLock},
-    time::Instant,
-};
-
-use crate::core::{
-    settings::PipelineMode,
-    state::{AppState, InteractionState},
-};
-
-pub const SOFT_COMPACTION_DEBOUNCE_SECS: u64 = 20;
-
-static LAST_SOFT_COMPACTION: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
 
 /// Triggers opportunistic background compaction if conversation memory utilization is in the soft window,
 /// pipeline state is in {Ready, Paused}, and at least 20 seconds have elapsed since last compaction.

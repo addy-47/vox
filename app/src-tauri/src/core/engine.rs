@@ -1,6 +1,10 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    mpsc, Arc,
+use std::{
+    fs::read_to_string,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    },
+    thread::Builder,
 };
 
 use ringbuf::traits::Split;
@@ -67,7 +71,7 @@ async fn ensure_manifest_loaded(state: &AppState) {
     if m.is_none() {
         let manifest_path = paths::get().models.join("models_manifest.json");
         if manifest_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+            if let Ok(content) = read_to_string(&manifest_path) {
                 if let Ok(manifest) = serde_json::from_str::<VoxManifest>(&content) {
                     *m = Some(manifest);
                 }
@@ -241,7 +245,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         vox_event_tx: Some(vox_event_tx.clone()),
     };
 
-    let vad_handle = std::thread::Builder::new()
+    let vad_handle = Builder::new()
         .name("vox-vad-actor".to_string())
         .spawn(move || {
             if let Err(e) = spawn_vad_actor(vad, consumer, vad_channels, vad_handles, vad_config) {

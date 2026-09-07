@@ -1,5 +1,5 @@
-/// A simple, fast 1st-order Infinite Impulse Response (IIR) Low-Pass Filter.
-/// Formula: y[n] = y[n-1] + alpha * (x[n] - y[n-1])
+use std::f32::consts::PI;
+
 pub struct LowPass {
     alpha: f32,
     prev_y: f32,
@@ -7,7 +7,7 @@ pub struct LowPass {
 
 impl LowPass {
     pub fn new(cutoff_hz: f32, sample_rate: f32) -> Self {
-        let omega = 2.0 * std::f32::consts::PI * cutoff_hz / sample_rate;
+        let omega = 2.0 * PI * cutoff_hz / sample_rate;
         let alpha = omega / (1.0 + omega);
         Self { alpha, prev_y: 0.0 }
     }
@@ -25,17 +25,6 @@ impl LowPass {
 }
 
 /// A 3-band digital filter bank that splits a signal into:
-/// - Lows (Bass, chest voice): < 250 Hz
-/// - Mids (Vowels, vocal power): 250 Hz - 2000 Hz
-/// - Highs (Treble, sibilance, consonants): > 2000 Hz
-///
-/// Uses a subtractive approach:
-/// - Low = LowPass(250Hz)
-/// - Mid = LowPass(2000Hz) - Low
-/// - High = Input - LowPass(2000Hz)
-///
-/// This guarantees stable 1st-order operations with zero phase/group delay issues
-/// and sums exactly back to the original input buffer.
 pub struct FilterBank {
     lp_low: LowPass,
     lp_high: LowPass,
@@ -126,8 +115,7 @@ mod tests {
 
         for i in 0..500 {
             let t = i as f32 / 16000.0;
-            let x = (2.0 * std::f32::consts::PI * 440.0 * t).sin()
-                + 0.5 * (2.0 * std::f32::consts::PI * 3000.0 * t).sin();
+            let x = (2.0 * PI * 440.0 * t).sin() + 0.5 * (2.0 * PI * 3000.0 * t).sin();
             let (low, mid, high) = fb.tick(x);
             let sum = low + mid + high;
             assert!(
@@ -155,7 +143,7 @@ mod tests {
         let mut signal = [0.0f32; 256];
         for (i, sample) in signal.iter_mut().enumerate() {
             let t = i as f32 / 16000.0;
-            *sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin();
+            *sample = (2.0 * PI * 1000.0 * t).sin();
         }
         let (r_l, r_m, r_h) = fb.process_chunk(&signal);
         assert!(r_l >= 0.0 && r_m >= 0.0 && r_h >= 0.0);

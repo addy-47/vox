@@ -1,4 +1,8 @@
-use std::sync::mpsc;
+use std::{
+    str::from_utf8,
+    sync::mpsc,
+    time::{Duration, Instant},
+};
 
 use anyhow::{anyhow, Result};
 use llama_cpp_4::{
@@ -91,13 +95,13 @@ impl<'a> StreamingEmitter<'a> {
     pub fn process_token_bytes(
         &mut self,
         token_bytes: &[u8],
-        ttft: &mut Option<std::time::Duration>,
-        start_time: &std::time::Instant,
+        ttft: &mut Option<Duration>,
+        start_time: &Instant,
         tokens_generated: &mut usize,
     ) -> bool {
         self.byte_buf.extend_from_slice(token_bytes);
 
-        if let Ok(s) = std::str::from_utf8(&self.byte_buf) {
+        if let Ok(s) = from_utf8(&self.byte_buf) {
             let token_str = s.to_string();
             self.byte_buf.clear();
 
@@ -371,8 +375,8 @@ impl LlmEngine for LlmWorker {
         let mut ctx_lock = self.ctx.lock();
         let ctx = ctx_lock.as_mut().unwrap();
 
-        let start_time = std::time::Instant::now();
-        let mut ttft: Option<std::time::Duration> = None;
+        let start_time = Instant::now();
+        let mut ttft: Option<Duration> = None;
         let mut tokens_generated = 0;
 
         let prefill_res = self.prefill_or_reuse_kv_cache(ctx, conv_ctx, turn_id, cancel, tx)?;

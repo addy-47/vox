@@ -1,6 +1,9 @@
-use std::sync::{
-    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-    Arc,
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
 };
 
 use anyhow::{anyhow, bail, Result};
@@ -95,7 +98,7 @@ impl ProviderDriver for GeminiDriver {
         FrameAction::Continue
     }
 
-    fn keepalive_interval(&self) -> Option<std::time::Duration> {
+    fn keepalive_interval(&self) -> Option<Duration> {
         None
     }
 }

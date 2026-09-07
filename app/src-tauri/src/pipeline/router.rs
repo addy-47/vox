@@ -1,6 +1,9 @@
 //! Central non-blocking pipeline event router.
 
-use std::sync::{mpsc, Arc};
+use std::{
+    sync::{mpsc, Arc},
+    thread::{Builder, JoinHandle},
+};
 
 use tauri::{AppHandle, Manager};
 
@@ -69,8 +72,8 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
 pub fn spawn_router<R: tauri::Runtime + 'static>(
     app: AppHandle<R>,
     event_rx: mpsc::Receiver<VoxEvent>,
-) -> Result<std::thread::JoinHandle<()>, String> {
-    std::thread::Builder::new()
+) -> Result<JoinHandle<()>, String> {
+    Builder::new()
         .name(ROUTER_THREAD_NAME.to_string())
         .spawn(move || {
             if let Err(e) =

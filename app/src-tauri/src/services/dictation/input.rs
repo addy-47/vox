@@ -1,14 +1,13 @@
+use std::env::var;
+
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
 use crate::core::error::DictationError;
 
-/// Abstract interface for simulated OS input actions.
 pub trait SystemInputAdapter: Send + Sync {
-    /// Simulates pasting the current clipboard into the focused OS application.
     fn simulate_paste(&self) -> Result<(), DictationError>;
 }
 
-/// Linux X11 implementation using Enigo + x11rb backend.
 #[derive(Default)]
 pub struct X11InputAdapter;
 
@@ -186,8 +185,8 @@ impl SystemInputAdapter for WindowsInputAdapter {
 pub fn create_input_adapter() -> Box<dyn SystemInputAdapter> {
     #[cfg(target_os = "linux")]
     {
-        let is_wayland = std::env::var("WAYLAND_DISPLAY").is_ok()
-            || std::env::var("XDG_SESSION_TYPE")
+        let is_wayland = var("WAYLAND_DISPLAY").is_ok()
+            || var("XDG_SESSION_TYPE")
                 .map(|v| v.to_lowercase() == "wayland")
                 .unwrap_or(false);
 

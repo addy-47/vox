@@ -1,4 +1,8 @@
 use anyhow::Result;
+use std::{
+    cmp::Ordering,
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
 use turso::Connection;
 
 use super::RelationEdge;
@@ -95,7 +99,7 @@ async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<boo
                     .unwrap_or(0);
                 prio_a
                     .cmp(&prio_b)
-                    .then_with(|| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal))
+                    .then_with(|| a.3.partial_cmp(&b.3).unwrap_or(Ordering::Equal))
             });
 
             if let Some((match_id, match_fact, match_coll, sim)) = best_match {
@@ -204,9 +208,9 @@ pub async fn run_stage2_embed(conn: &Connection) -> Result<usize> {
 
 /// Executes Stage 2 embedding with metrics recording.
 pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> Result<usize> {
-    let start_time = std::time::Instant::now();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let start_time = Instant::now();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 

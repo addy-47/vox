@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use turso::Connection;
 
 use super::{BatchEvaluationResult, CandidateAuditLog, RelationEdge};
@@ -451,9 +452,9 @@ pub async fn run_stage3_eval_with_metrics_seq(
     run_id: &str,
     batch_seq: usize,
 ) -> Result<usize> {
-    let start_time = std::time::Instant::now();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let start_time = Instant::now();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 

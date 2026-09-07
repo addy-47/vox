@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 pub fn clean_json_content(content: &str) -> String {
     let mut cleaned = content.trim().to_string();
     if cleaned.starts_with("```") {
@@ -137,12 +139,12 @@ pub fn escape_control_chars_in_json(input: &str) -> String {
 
 pub fn parse_compaction_json(
     content: &str,
-) -> Option<std::collections::HashMap<String, Vec<String>>> {
+) -> Option<HashMap<String, Vec<String>>> {
     let cleaned = clean_json_content(content);
     let parsed_val = serde_json::from_str::<serde_json::Value>(&cleaned).ok()?;
     let obj = parsed_val.as_object()?;
 
-    let mut results = std::collections::HashMap::new();
+    let mut results = HashMap::new();
     let primary_keys = [
         "Identity",
         "Directives",

@@ -63,7 +63,9 @@ impl RealtimeActor {
 
         playback_engine.spawn_pcm_stream_worker(playback_rx, config, &self.tokio_handle);
 
-        let (session, mut provider_event_rx) = self.provider.connect(interaction_mode)?;
+        let (session, mut provider_event_rx) = self
+            .provider
+            .connect(interaction_mode, &self.tokio_handle)?;
         let session_arc: Arc<dyn RealtimeSession> = session.into();
         self.session = Some(session_arc.clone());
 

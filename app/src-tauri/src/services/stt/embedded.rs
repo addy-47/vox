@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use parking_lot::Mutex;
 
@@ -49,7 +49,7 @@ pub struct EmbeddedSttProvider {
 impl EmbeddedSttProvider {
     /// Instantiates an embedded speech-to-text provider with lazy engine loading on first transcription.
     pub fn new(
-        model_path: &std::path::Path,
+        model_path: &Path,
         model_type: &str,
         num_threads: u32,
     ) -> anyhow::Result<Self> {

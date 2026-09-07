@@ -5,6 +5,7 @@ pub mod test;
 
 use std::{
     sync::{atomic::Ordering, Arc},
+    thread::scope,
     time::Duration,
 };
 
@@ -21,11 +22,7 @@ use crate::{
         db::{get_tokio_handle, VoxDb},
         queries::fetch_all_active_identity,
     },
-    services::{
-        llm::actor::cool_down_llm,
-        memory::trim_heap,
-        tts::actor::cool_down_tts,
-    },
+    services::{llm::actor::cool_down_llm, memory::trim_heap, tts::actor::cool_down_tts},
     utils::paths::db_path,
 };
 
@@ -153,7 +150,7 @@ pub fn init_new_session_sync(state: &AppState, base_prompt: &str) {
             handle.block_on(init_new_session(state, base_prompt));
         });
     } else {
-        std::thread::scope(|s| {
+        scope(|s| {
             s.spawn(|| {
                 handle.block_on(init_new_session(state, base_prompt));
             })

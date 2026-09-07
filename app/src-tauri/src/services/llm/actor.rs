@@ -4,6 +4,7 @@ use std::{
         atomic::{AtomicU32, Ordering},
         mpsc, Arc,
     },
+    thread::{Builder, JoinHandle},
 };
 
 use super::{
@@ -46,7 +47,7 @@ pub struct GenerationPolicy {
 /// Handles and flags passed when warming up the LLM actor.
 pub struct LlmWarmUpHandles<'a> {
     pub llm_tx: &'a mut Option<mpsc::Sender<LlmCommand>>,
-    pub llm_handle: &'a mut Option<std::thread::JoinHandle<()>>,
+    pub llm_handle: &'a mut Option<JoinHandle<()>>,
     pub llm_provider_cache: Option<LlmProviderCache>,
 }
 
@@ -386,7 +387,7 @@ pub fn warm_up_llm<R: tauri::Runtime + 'static>(
     let app_clone = app.clone();
     let worker_provider = Arc::clone(&provider_arc);
 
-    let handle = std::thread::Builder::new()
+    let handle = Builder::new()
         .name("vox-llm-persistent".to_string())
         .spawn(move || {
             spawn_llm_worker(app_clone, rx, worker_provider, event_tx);

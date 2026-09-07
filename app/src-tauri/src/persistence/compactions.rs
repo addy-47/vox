@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{anyhow, Result};
 use turso::Connection;
@@ -148,8 +151,8 @@ pub async fn record_compaction_start(
     from_turn: u32,
     to_turn: u32,
 ) -> Result<i64> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 
@@ -177,8 +180,8 @@ pub async fn record_compaction_finish(
     facts_count: u32,
     error: Option<&str>,
 ) -> Result<()> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 
@@ -209,8 +212,8 @@ pub async fn commit_compaction_results(
     facts: HashMap<String, Vec<String>>,
     pipeline_enabled: bool,
 ) -> Result<u32> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 

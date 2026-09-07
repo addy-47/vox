@@ -3,7 +3,11 @@
 //! DB operations run on `spawn_blocking` threads; voices are a standalone
 //! persistence and audio management concern.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    fs::{create_dir_all, remove_dir_all},
+    path::Path,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use serde::Serialize;
 
@@ -102,7 +106,7 @@ pub async fn add_voice_from_file(
         ));
     }
 
-    let path = std::path::Path::new(&file_path);
+    let path = Path::new(&file_path);
     if !path.is_file() {
         return Err(VoxIpcError::InvalidArgument(
             "Selected path is not a valid regular file".to_string(),
@@ -122,7 +126,7 @@ pub async fn add_voice_from_file(
 
     let id = uuid::Uuid::new_v4().to_string();
     let voice_dir = voice_dir(&id);
-    std::fs::create_dir_all(&voice_dir)
+    create_dir_all(&voice_dir)
         .map_err(|e| VoxIpcError::Internal(format!("Failed to create voice directory: {}", e)))?;
 
     let dest = voice_dir.join("source.wav");
@@ -199,7 +203,7 @@ pub async fn add_voice_from_recording(
 
     let id = uuid::Uuid::new_v4().to_string();
     let voice_dir = voice_dir(&id);
-    std::fs::create_dir_all(&voice_dir)
+    create_dir_all(&voice_dir)
         .map_err(|e| VoxIpcError::Internal(format!("Failed to create voice directory: {}", e)))?;
 
     let dest = voice_dir.join("source.wav");
@@ -256,7 +260,7 @@ pub async fn delete_voice(id: String) -> Result<(), VoxIpcError> {
     let voice_dir = voice_dir(&entry.id);
     if voice_dir.exists() {
         tokio::task::spawn_blocking(move || {
-            std::fs::remove_dir_all(&voice_dir)
+            remove_dir_all(&voice_dir)
                 .map_err(|e| VoxIpcError::Internal(format!("Failed to remove voice files: {}", e)))
         })
         .await
