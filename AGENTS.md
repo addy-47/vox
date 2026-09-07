@@ -115,7 +115,4 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 - **Memory Graph & 2D Error Handling:** Refactored `MemoryGraph.tsx` to 280 LOC with viewport-aware Three.js simulation; implemented orthogonal 2D error matrix and prompt budget containment.
 - **Import Standardization & Engine Polish:** Hoisted imports in `rustfmt.toml`; eradicated inline `crate::` qualifiers; eliminated swallowed errors across pipeline and memory workers.
 - **Single-Turn Verification & E2E Latency Optimization (2026-09-06):** Surgically trimmed intra-sentence silence in `clip_01_en_briefing.wav` to guarantee single-turn processing (`turn_id = 0`, 0 cancellations); benchmarked Local (Qwen 0.8B, 8.67s perceived latency) vs Cloud (NVIDIA NIM, 2.59s perceived latency, 70% reduction) on 4 CPU threads.
-
-
-
-
+- **Session Resume & Realtime Actor Fix (2026-09-07):** Recreated `sessionStore.ts`; resolved Tokio reactor panic on non-async OS threads in realtime providers via `tokio_handle.block_on`; fixed `resume_realtime` by invoking `rt_actor.stop()` prior to re-arming; routed `on_pause` and `on_resume` transitions to `InteractionOwner::Assistant` (`WINDOW_MAIN`), eliminating IPC state desynchronization where frontend missed `Ready` events.

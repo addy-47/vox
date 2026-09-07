@@ -1,3 +1,5 @@
+use std::{future::Future, time::Duration};
+
 use arboard::Clipboard;
 
 use crate::core::error::DictationError;
@@ -52,7 +54,7 @@ pub fn set_text(text: &str) -> Result<(), DictationError> {
 pub async fn with_clipboard_safe<F, Fut, R>(new_text: &str, action: F) -> Result<R, DictationError>
 where
     F: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = Result<R, DictationError>>,
+    Fut: Future<Output = Result<R, DictationError>>,
 {
     let previous_text = get_text().ok();
     set_text(new_text)?;
@@ -62,7 +64,7 @@ where
     match result {
         Ok(val) => {
             if let Some(prev) = previous_text {
-                tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+                tokio::time::sleep(Duration::from_millis(350)).await;
                 if let Err(e) = set_text(&prev) {
                     log::warn!(
                         "[Dictation::Clipboard] Failed to restore previous clipboard content: {}",

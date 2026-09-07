@@ -1,6 +1,14 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    path::PathBuf,
+    process::Stdio,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use tauri::Manager;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    process::Command,
+};
 
 use crate::{
     core::events::{emit_ipc, IpcEvent},
@@ -19,7 +27,7 @@ impl Drop for RemoteSetupGuard {
 
 pub fn resolve_setup_script<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
-) -> Result<std::path::PathBuf, String> {
+) -> Result<PathBuf, String> {
     let resource_path = app
         .path()
         .resource_dir()
@@ -27,7 +35,7 @@ pub fn resolve_setup_script<R: tauri::Runtime>(
         .join("resources")
         .join("setup_server.sh");
 
-    let dev_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("resources")
         .join("setup_server.sh");
 
@@ -68,7 +76,7 @@ pub fn parse_setup_progress(line: &str) -> (SetupStep, f32) {
 
 pub async fn run_remote_ssh_task<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
-    script_path: std::path::PathBuf,
+    script_path: PathBuf,
     connection_string: String,
     ssh_port: Option<u16>,
     identity_key_path: Option<String>,
@@ -76,12 +84,6 @@ pub async fn run_remote_ssh_task<R: tauri::Runtime>(
     server_port: u16,
 ) {
     let _guard = RemoteSetupGuard;
-    use std::process::Stdio;
-
-    use tokio::{
-        io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-        process::Command,
-    };
 
     let mut cmd = Command::new("ssh");
     if let Some(ref key_path) = identity_key_path {

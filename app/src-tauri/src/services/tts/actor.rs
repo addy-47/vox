@@ -1,9 +1,11 @@
 use std::{
+    panic::{catch_unwind, AssertUnwindSafe},
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc, Arc,
     },
+    thread::{Builder, JoinHandle},
 };
 
 use crate::{
@@ -57,7 +59,7 @@ pub fn spawn_tts_worker(
                 let event_tx = handles.event_tx.clone();
                 let telemetry_rtf = handles.telemetry_rtf.clone();
 
-                let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let res = catch_unwind(AssertUnwindSafe(|| {
                     provider.synthesize_chunk(
                         &text_clone,
                         turn_id,
@@ -131,14 +133,14 @@ pub async fn resolve_reference_audio(voice_id: Option<&str>) -> Option<String> {
     let entry = get_voice(&conn, id).await.ok()??;
 
     if let Some(ref dir) = entry.voice_dir {
-        let path = std::path::Path::new(dir);
+        let path = Path::new(dir);
         if path.exists() && path.join("speaker_emb.npy").exists() {
             return Some(dir.clone());
         }
     }
 
     let wav = entry.wav_path?;
-    if !std::path::Path::new(&wav).exists() {
+    if !Path::new(&wav).exists() {
         log::warn!(
             "[TTS Actor] Voice {} wav_path not found on disk: {}. Using built-in voice.",
             id,
@@ -222,7 +224,7 @@ pub fn create_tts_provider(
 /// Handles and flags passed when warming up the TTS actor.
 pub struct TtsWarmUpHandles<'a> {
     pub tts_tx: &'a mut Option<mpsc::Sender<TtsCommand>>,
-    pub tts_handle: &'a mut Option<std::thread::JoinHandle<()>>,
+    pub tts_handle: &'a mut Option<JoinHandle<()>>,
     pub cancel_flag: Arc<AtomicBool>,
     pub playback_engine: Arc<PlaybackEngine>,
     pub pending_synthesis_jobs: Option<Arc<AtomicU32>>,
@@ -255,7 +257,7 @@ pub fn warm_up_tts(
         telemetry_rtf: handles.telemetry_rtf,
     };
 
-    let handle = std::thread::Builder::new()
+    let handle = Builder::new()
         .name("vox-tts-persistent".to_string())
         .spawn(move || {
             if let Err(e) =

@@ -1,4 +1,8 @@
-use std::path::Path;
+use std::{
+    fs::{read_to_string, write},
+    path::Path,
+    time::Duration,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -78,7 +82,7 @@ impl VoxManifest {
 
         let client = reqwest::Client::builder()
             .user_agent("Vox-App/0.8.1")
-            .timeout(std::time::Duration::from_secs(MANIFEST_FETCH_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(MANIFEST_FETCH_TIMEOUT_SECS))
             .build()?;
 
         let response = client.get(url).send().await?;
@@ -110,7 +114,7 @@ pub struct VerifiedMarker {
 
 impl VerifiedMarker {
     pub fn load(path: &Path) -> anyhow::Result<Self> {
-        let content = std::fs::read_to_string(path)?;
+        let content = read_to_string(path)?;
         let marker = serde_json::from_str(&content)?;
         Ok(marker)
     }
@@ -124,7 +128,7 @@ impl VerifiedMarker {
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, content)?;
+        write(path, content)?;
         Ok(())
     }
 
@@ -158,7 +162,7 @@ impl AppManifest {
 
         let client = reqwest::Client::builder()
             .user_agent("Vox-App/0.8.1")
-            .timeout(std::time::Duration::from_secs(
+            .timeout(Duration::from_secs(
                 APP_MANIFEST_FETCH_TIMEOUT_SECS,
             ))
             .build()?;

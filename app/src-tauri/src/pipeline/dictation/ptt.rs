@@ -1,4 +1,7 @@
-use std::sync::{atomic::Ordering, mpsc};
+use std::{
+    sync::{atomic::Ordering, mpsc},
+    time::Duration,
+};
 
 use tauri::AppHandle;
 
@@ -93,7 +96,7 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
             .send(crate::services::vad::VadCommand::StopWindowValidation { response_tx: tx })
             .is_ok()
         {
-            rx.recv_timeout(std::time::Duration::from_millis(
+            rx.recv_timeout(Duration::from_millis(
                 crate::services::vad::VAD_VALIDATION_TIMEOUT_MS,
             ))
             .ok()

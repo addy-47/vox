@@ -1,3 +1,5 @@
+use std::env::var;
+
 use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
@@ -12,7 +14,7 @@ use crate::{
 };
 
 pub(super) fn build_url(api_key: &str) -> String {
-    if let Ok(override_url) = std::env::var("GEMINI_LIVE_ENDPOINT_OVERRIDE") {
+    if let Ok(override_url) = var("GEMINI_LIVE_ENDPOINT_OVERRIDE") {
         format!("{}/?key={}", override_url.trim_end_matches('/'), api_key)
     } else {
         format!("{}?key={}", GEMINI_DEFAULT_WS_URL_BASE, api_key)

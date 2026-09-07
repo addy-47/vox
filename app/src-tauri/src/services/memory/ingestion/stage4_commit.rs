@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::Result;
 use turso::Connection;
@@ -149,9 +152,9 @@ pub async fn run_stage4_commit(conn: &Connection) -> Result<usize> {
 
 /// Executes Stage 4 fact commit and queue cleanup with metrics recording.
 pub async fn run_stage4_commit_with_metrics(conn: &Connection, run_id: &str) -> Result<usize> {
-    let start_time = std::time::Instant::now();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let start_time = Instant::now();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 

@@ -4,7 +4,10 @@ pub mod providers;
 pub mod session;
 pub mod transport;
 
-use std::time::Duration;
+use std::{
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    time::Duration,
+};
 
 pub use actor::RealtimeActor;
 use anyhow::Result;
@@ -41,8 +44,8 @@ pub const DEEPGRAM_DEFAULT_WS_URL: &str = "wss://agent.deepgram.com/v1/agent/con
 pub const DEEPGRAM_HEALTH_CHECK_ADDR: &str = "agent.deepgram.com:443";
 pub const GEMINI_DEFAULT_WS_URL_BASE: &str = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 pub const GEMINI_HEALTH_CHECK_ADDR: &str = "generativelanguage.googleapis.com:443";
-pub const GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR: std::net::SocketAddr = std::net::SocketAddr::V4(
-    std::net::SocketAddrV4::new(std::net::Ipv4Addr::new(142, 250, 190, 42), 443),
+pub const GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR:SocketAddr = SocketAddr::V4(
+    SocketAddrV4::new(Ipv4Addr::new(142, 250, 190, 42), 443),
 );
 pub const SESSION_CACHE_FILENAME: &str = "realtime_session.json";
 
@@ -105,6 +108,7 @@ pub trait RealtimeVoiceProvider: Send + Sync {
     fn connect(
         &self,
         interaction_mode: InteractionMode,
+        tokio_handle: &tokio::runtime::Handle,
     ) -> Result<(
         Box<dyn RealtimeSession>,
         tokio::sync::mpsc::Receiver<RealtimeProviderEvent>,

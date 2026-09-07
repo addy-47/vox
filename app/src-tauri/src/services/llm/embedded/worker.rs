@@ -1,4 +1,8 @@
-use std::{num::NonZeroU32, path::Path};
+use std::{
+    mem::transmute,
+    num::NonZeroU32, 
+    path::Path,
+};
 
 use anyhow::{anyhow, Result};
 use llama_cpp_4::{
@@ -119,7 +123,7 @@ impl LlmWorker {
                 .new_context(self.backend, ctx_params)
                 .map_err(|e| anyhow!("[LLM] Lazy context creation failed: {}", e))?;
 
-            let static_ctx: LlamaContext<'static> = unsafe { std::mem::transmute(ctx) };
+            let static_ctx: LlamaContext<'static> = unsafe {transmute(ctx) };
             *ctx_lock = Some(static_ctx);
         }
         Ok(())

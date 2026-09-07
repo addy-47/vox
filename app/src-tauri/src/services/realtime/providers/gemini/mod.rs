@@ -67,12 +67,11 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
     fn connect(
         &self,
         interaction_mode: InteractionMode,
+        tokio_handle: &tokio::runtime::Handle,
     ) -> Result<(
         Box<dyn RealtimeSession>,
         tokio::sync::mpsc::Receiver<RealtimeProviderEvent>,
     )> {
-        let handle = tokio::runtime::Handle::current();
-
         if self.config.api_key.is_empty() {
             bail!("No API key configured for Gemini Live.");
         }
@@ -86,16 +85,14 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         let is_ptt = interaction_mode == InteractionMode::PTT;
         let resume_handle = self.config.resume_handle.clone();
 
-        let (ws_write, ws_read) = tokio::task::block_in_place(|| {
-            handle.block_on(handshake::perform_handshake(
-                &url,
-                &model,
-                &self.config,
-                &self.system_prompt,
-                is_ptt,
-                resume_handle.as_deref(),
-            ))
-        })?;
+        let (ws_write, ws_read) = tokio_handle.block_on(handshake::perform_handshake(
+            &url,
+            &model,
+            &self.config,
+            &self.system_prompt,
+            is_ptt,
+            resume_handle.as_deref(),
+        ))?;
 
         let (provider_event_tx, provider_event_rx) =
             tokio::sync::mpsc::channel::<RealtimeProviderEvent>(BRIDGE_CHANNEL_CAPACITY);
@@ -152,7 +149,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                 provider_event_tx,
                 state_rx: self.state_rx.clone(),
                 turn_id_ref: self.turn_id.clone(),
-                tokio_handle: handle,
+                tokio_handle: tokio_handle.clone(),
             },
         );
 

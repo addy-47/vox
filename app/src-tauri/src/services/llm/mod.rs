@@ -1,3 +1,14 @@
+use std::sync::{mpsc, OnceLock};
+
+use futures_util::future::BoxFuture;
+use llama_cpp_4::llama_backend::LlamaBackend;
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    core::settings::LlmModelInfo,
+    services::harness::{ChatMessage, ConversationContext},
+};
+
 pub mod actor;
 pub mod catalog;
 pub mod embedded;
@@ -32,16 +43,6 @@ pub const DEFAULT_CANCEL_POLL_INTERVAL_MS: u64 = 50;
 pub const DEFAULT_PROBE_MAX_TOKENS: u32 = 40;
 pub const DEFAULT_TOOL_PROBE_MAX_TOKENS: u32 = 80;
 pub const DEFAULT_PROBE_TEMPERATURE: f32 = 0.1;
-
-use std::sync::mpsc;
-
-use futures_util::future::BoxFuture;
-use serde::{Deserialize, Serialize};
-
-use crate::{
-    core::settings::LlmModelInfo,
-    services::harness::{ChatMessage, ConversationContext},
-};
 
 /// Purpose of generation, allowing default policy selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -220,10 +221,6 @@ pub trait LlmEngine {
         tx: &mpsc::Sender<LlmStreamEvent>,
     ) -> anyhow::Result<()>;
 }
-
-use std::sync::OnceLock;
-
-use llama_cpp_4::llama_backend::LlamaBackend;
 
 /// Returns the process-wide llama.cpp backend singleton.
 pub fn global_llama_backend() -> &'static LlamaBackend {

@@ -1,10 +1,13 @@
 use std::{
+    fmt::Write,
+    net::{TcpStream,ToSocketAddrs},
     sync::{
+        Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc::Sender,
-        Arc,
+        LazyLock,
     },
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Result;
@@ -53,7 +56,6 @@ pub fn generate_sec_ms_gec() -> String {
     let hash = hasher.finalize();
     let mut hex_str = String::with_capacity(64);
     for b in hash {
-        use std::fmt::Write;
         if let Err(e) = write!(hex_str, "{:02X}", b) {
             log::warn!("[EdgeTTS] Failed to format hash byte: {}", e);
         }
@@ -170,7 +172,7 @@ async fn connect_edge_websocket(event_tx: &Sender<VoxEvent>, turn_id: u32) -> Op
                     }
                     return None;
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                tokio::time::sleep(Duration::from_millis(150)).await;
             }
         }
     }
@@ -232,8 +234,6 @@ async fn send_ssml_request(
 
     Ok(())
 }
-
-use std::time::Duration;
 
 /// Receives and strips Microsoft binary audio framing headers, returning raw MP3 byte stream.
 async fn collect_mp3_payload(ws_stream: &mut EdgeWsStream, cancel: &Arc<AtomicBool>) -> Vec<u8> {
@@ -298,8 +298,8 @@ impl TtsProvider for EdgeTtsProvider {
         let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
         let speed_pct = format!("{:+}%", ((speed - 1.0) * 100.0) as i32);
 
-        static EDGE_TTS_RUNTIME: std::sync::LazyLock<tokio::runtime::Runtime> =
-            std::sync::LazyLock::new(|| {
+        static EDGE_TTS_RUNTIME: LazyLock<tokio::runtime::Runtime> =
+            LazyLock::new(|| {
                 tokio::runtime::Builder::new_multi_thread()
                     .worker_threads(2)
                     .enable_all()
@@ -396,13 +396,12 @@ impl TtsProvider for EdgeTtsProvider {
 
     /// Checks network reachability against Microsoft Speech Platform endpoint.
     fn health_check(&self) -> bool {
-        use std::net::ToSocketAddrs;
         let host_port = format!("{}:{}", EDGE_TTS_HOST, EDGE_TTS_PORT);
         if let Ok(mut addrs) = host_port.to_socket_addrs() {
             if let Some(addr) = addrs.next() {
-                return std::net::TcpStream::connect_timeout(
+                return TcpStream::connect_timeout(
                     &addr,
-                    std::time::Duration::from_secs(2),
+                    Duration::from_secs(2),
                 )
                 .is_ok();
             }

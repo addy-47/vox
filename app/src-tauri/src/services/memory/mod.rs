@@ -3,6 +3,8 @@ pub mod ingestion;
 pub mod ml;
 pub mod retrieval;
 
+use std::fmt::{Display, Formatter, Result};
+
 pub use compaction::{run_compaction, CompactionResult, COMPACTION_SYSTEM_PROMPT};
 pub(crate) use ml::trim_heap;
 pub use ml::{
@@ -151,8 +153,8 @@ impl MemoryCollection {
     }
 }
 
-impl std::fmt::Display for MemoryCollection {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for MemoryCollection {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.as_str())
     }
 }
@@ -173,8 +175,8 @@ impl CollectionType {
     }
 }
 
-impl std::fmt::Display for CollectionType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for CollectionType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.as_str())
     }
 }
