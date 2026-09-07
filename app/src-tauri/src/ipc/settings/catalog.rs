@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fs::read_to_string, sync::Arc};
 
 use tauri::{AppHandle, Manager, State};
 
@@ -76,7 +76,7 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         let manifest_path = paths::get().models.join("models_manifest.json");
         if manifest_path.exists() {
             let p = manifest_path.clone();
-            let content = tokio::task::spawn_blocking(move || std::fs::read_to_string(&p))
+            let content = tokio::task::spawn_blocking(move || read_to_string(&p))
                 .await
                 .map_err(|e| VoxIpcError::Internal(e.to_string()))?
                 .map_err(|e| VoxIpcError::Internal(e.to_string()))?;

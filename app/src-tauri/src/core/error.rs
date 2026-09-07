@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{io::Error, path::PathBuf};
 
 use thiserror::Error;
 
@@ -27,7 +27,7 @@ pub enum VoxError {
     Dictation(#[from] DictationError),
 
     #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] Error),
 }
 
 /// Audio subsystem domain error types.
@@ -111,7 +111,7 @@ pub enum PersistenceError {
     Database(#[from] turso::Error),
 
     #[error("I/O error in persistence: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] Error),
 
     #[error("Schema migration failed for version {version}: {message}")]
     MigrationError { version: u32, message: String },
@@ -180,8 +180,8 @@ impl From<turso::Error> for VoxIpcError {
     }
 }
 
-impl From<std::io::Error> for VoxIpcError {
-    fn from(e: std::io::Error) -> Self {
+impl From<Error> for VoxIpcError {
+    fn from(e: Error) -> Self {
         VoxIpcError::Internal(e.to_string())
     }
 }

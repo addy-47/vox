@@ -1,6 +1,6 @@
 use std::{
     sync::{atomic::Ordering, Arc},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use tauri::{AppHandle, Manager};
@@ -145,6 +145,7 @@ fn resume_realtime<R: tauri::Runtime + 'static>(
 
     let mut rt_guard = state.realtime_engine.blocking_lock();
     if let Some(ref mut rt_actor) = *rt_guard {
+        rt_actor.stop();
         rt_actor
             .start(
                 ctx.interaction_mode.clone(),
@@ -319,7 +320,11 @@ pub fn on_pause<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &R
         }
     }
 
-    transition(InteractionState::Paused, ctx, app, state);
+    let assistant_ctx = RoutingContext {
+        owner: InteractionOwner::Assistant,
+        ..ctx.clone()
+    };
+    transition(InteractionState::Paused, &assistant_ctx, app, state);
     log::info!("[Pipeline::Session] Session paused");
 }
 
@@ -343,9 +348,14 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
     state.pipeline.rearm_turn_token();
 
-    let resume_res = match ctx.pipeline_mode {
+    let assistant_ctx = RoutingContext {
+        owner: InteractionOwner::Assistant,
+        ..ctx.clone()
+    };
+
+    let resume_res = match assistant_ctx.pipeline_mode {
         PipelineMode::Modular => {
-            let vad_mode = match ctx.interaction_mode {
+            let vad_mode = match assistant_ctx.interaction_mode {
                 InteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
                 InteractionMode::PTT => VadOperationalMode::WindowedValidation,
             };
@@ -361,12 +371,12 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &
             }
             Ok(())
         }
-        PipelineMode::Realtime => resume_realtime(app, state, ctx),
+        PipelineMode::Realtime => resume_realtime(app, state, &assistant_ctx),
     };
 
     if let Err(e) = resume_res {
         log::error!("[Pipeline::Session] Resumption failed: {}", e);
-        transition(InteractionState::Error, ctx, app, state);
+        transition(InteractionState::Error, &assistant_ctx, app, state);
         let toast_msg = format!(
             "Resumption failed: {}. Please end session and start a new session.",
             e
@@ -381,7 +391,7 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &
         return;
     }
 
-    transition(InteractionState::Ready, ctx, app, state);
+    transition(InteractionState::Ready, &assistant_ctx, app, state);
     log::info!("[Pipeline::Session] Session resumed -> Ready");
 }
 
@@ -505,7 +515,7 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
     let session_id = conv_id as i64;
 
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
 
         let db_path = db_path();
         if let Ok(conn) = VoxDb::open(&db_path).await {

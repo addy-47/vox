@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{anyhow, Result};
 use turso::Connection;
@@ -18,8 +21,8 @@ pub async fn enqueue_personal_facts(
     session_id: &str,
     pipeline_processing_enabled: bool,
 ) -> Result<()> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 
@@ -92,8 +95,8 @@ pub async fn session_end_consolidation(
     session_id: &str,
     session_context_raw: &str,
 ) -> Result<()> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 
@@ -137,8 +140,8 @@ pub async fn supersede_user_fact(
     new_fact_text: &str,
     collection: &str,
 ) -> Result<String> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 
@@ -219,8 +222,8 @@ pub async fn record_stage_metrics(
     conn: &Connection,
     metrics: &ingestion::PipelineStageMetrics,
 ) -> Result<()> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 
@@ -321,8 +324,8 @@ pub async fn update_memory_fact(
 
 /// Marks a memory fact as superseded and creates a user tombstone linking it.
 pub async fn delete_memory_fact(conn: &Connection, fact_id: &str) -> Result<()> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
     let tombstone_id = format!("mem_{}_{}", now, uuid::Uuid::new_v4().simple());
@@ -363,8 +366,8 @@ pub async fn resolve_fact_conflict(
     winner_id: &str,
     loser_id: &str,
 ) -> Result<()> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 
@@ -448,8 +451,8 @@ pub async fn reassign_memory_fact(
     let source_str: String = row.get(1)?;
     let session_id: String = row.get(2).unwrap_or_default();
 
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 

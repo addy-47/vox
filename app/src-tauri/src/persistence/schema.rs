@@ -1,3 +1,9 @@
+use std::{
+    fs::read_dir,
+    path::Path,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 use turso::Connection;
 
 use crate::core::error::PersistenceError;
@@ -211,7 +217,7 @@ async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
         return Ok(());
     }
 
-    let entries = std::fs::read_dir(&packaged_voices_dir)?;
+    let entries = read_dir(&packaged_voices_dir)?;
 
     for entry in entries {
         let entry = entry?;
@@ -226,11 +232,7 @@ async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-async fn seed_single_voice(
-    conn: &Connection,
-    name_str: &str,
-    path: &std::path::Path,
-) -> Result<()> {
+async fn seed_single_voice(conn: &Connection, name_str: &str, path: &Path) -> Result<()> {
     let id = format!("chatterbox_voice_{}", name_str);
     let mut rows = conn
         .query("SELECT 1 FROM voices WHERE id = ?", (id.clone(),))
@@ -252,8 +254,8 @@ async fn seed_single_voice(
 
         let wav_path = path.join("source.wav").to_string_lossy().into_owned();
         let voice_dir = path.join("baked").to_string_lossy().into_owned();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
 

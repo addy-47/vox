@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::mpsc};
+use std::{
+    time::Duration,
+    collections::HashMap, 
+    sync::mpsc,
+};
 
 use anyhow::{anyhow, Result};
 use tokio_util::sync::CancellationToken;
@@ -43,7 +47,7 @@ async fn execute_compaction_attempt(
 
     let mut summary_content = String::new();
 
-    let gen_res = tokio::time::timeout(std::time::Duration::from_secs(45), gen_future).await;
+    let gen_res = tokio::time::timeout(Duration::from_secs(45), gen_future).await;
     drop(tx);
 
     match gen_res {

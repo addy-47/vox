@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    time::{Instant, SystemTime, UNIX_EPOCH}
+};
 
 use anyhow::Result;
 use turso::Connection;
@@ -363,9 +366,9 @@ pub async fn run_stage1_dedup(conn: &Connection) -> Result<usize> {
 
 /// Executes Stage 1 deduplication with structured metrics emission.
 pub async fn run_stage1_dedup_with_metrics(conn: &Connection, run_id: &str) -> Result<usize> {
-    let start_time = std::time::Instant::now();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let start_time = Instant::now();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 

@@ -10,19 +10,16 @@
 
 mod common;
 
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use clap::Parser;
 use common::{
-    llm_harness::{
-        benchmark_llm_provider, LlmBenchmarkParams, LlmBenchmarkReport,
-    },
+    llm_harness::{benchmark_llm_provider, LlmBenchmarkParams, LlmBenchmarkReport},
     reporting::{generate_run_id, save_json_report, BenchmarkSystemInfo},
 };
-use vox_lib::core::constants::SYSTEM_PROMPT_MODULAR;
-use vox_lib::services::llm::{
-    embedded::EmbeddedProvider, QWEN_MODEL_DIR, QWEN_MODEL_FILE,
+use vox_lib::{
+    core::constants::SYSTEM_PROMPT_MODULAR,
+    services::llm::{embedded::EmbeddedProvider, QWEN_MODEL_DIR, QWEN_MODEL_FILE},
 };
 
 #[derive(Parser, Debug)]
@@ -170,12 +167,16 @@ fn main() {
 
     match save_json_report(&base_output_dir, &run_id, &report) {
         Ok(path) => {
-            println!("================================================================================");
+            println!(
+                "================================================================================"
+            );
             println!("Benchmark Result Artifact Successfully Saved!");
             println!("Run ID   : {}", run_id);
             println!("Report   : {:?}", path);
             println!("Latest   : {:?}", base_output_dir.join("latest.json"));
-            println!("================================================================================");
+            println!(
+                "================================================================================"
+            );
         }
         Err(e) => {
             eprintln!("[ERROR] Failed to save benchmark report: {}", e);

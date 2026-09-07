@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use anyhow::Result;
 use turso::Connection;
 
@@ -20,8 +22,8 @@ pub async fn create_notification(
     conn: &Connection,
     notif: &NewNotification,
 ) -> Result<NotificationRecord> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
 

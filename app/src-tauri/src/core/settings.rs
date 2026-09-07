@@ -1,4 +1,8 @@
-use std::fs;
+use std::{
+    fs,
+    io::Write,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -1047,8 +1051,8 @@ impl VoxSettings {
             }
 
             // Total JSON parse failure: backup to timestamped file without clobbering prior backups
-            let ts = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            let ts = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
             let bak = path.with_file_name(format!("settings.corrupt.{}.json", ts));
@@ -1078,13 +1082,12 @@ impl VoxSettings {
         }
 
         let content = serde_json::to_string_pretty(self)?;
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         let tmp_path = path.with_file_name(format!("settings.{}.tmp", nanos));
         {
-            use std::io::Write;
             let mut file = match fs::File::create(&tmp_path) {
                 Ok(f) => f,
                 Err(e) => {

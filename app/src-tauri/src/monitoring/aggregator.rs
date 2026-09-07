@@ -1,6 +1,9 @@
-use std::sync::{
-    atomic::{AtomicU32, AtomicU64, Ordering},
-    Arc,
+use std::{
+    sync::{
+        atomic::{AtomicU32, AtomicU64, Ordering},
+        Arc,
+    },
+    thread::Builder,
 };
 
 use crossbeam_channel::{bounded, Receiver, Sender};
@@ -82,7 +85,7 @@ impl TelemetryAggregator {
 
     /// Spawns the aggregator loop on a dedicated OS thread.
     pub fn start(self) {
-        std::thread::Builder::new()
+        Builder::new()
             .name("vox-telemetry".to_string())
             .spawn(move || {
                 log::info!("[Monitoring::Aggregator] Aggregator worker started");

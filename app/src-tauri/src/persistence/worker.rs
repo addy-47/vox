@@ -4,7 +4,8 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
     },
-    time::Instant,
+    thread::Builder,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use crossbeam_channel::{bounded, Receiver, Sender};
@@ -23,7 +24,7 @@ pub fn spawn_persistence_worker(
 ) -> Sender<PersistenceEvent> {
     let (tx, rx) = bounded::<PersistenceEvent>(PERSISTENCE_CHANNEL_CAPACITY);
 
-    std::thread::Builder::new()
+    Builder::new()
         .name("vox-persistence".to_string())
         .spawn(move || {
             let rt_handle = crate::persistence::db::get_tokio_handle();
@@ -200,8 +201,8 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
             if conversation_id == 0 {
                 return Ok(());
             }
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as i64;
 

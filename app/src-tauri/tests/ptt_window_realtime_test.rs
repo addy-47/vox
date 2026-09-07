@@ -95,6 +95,7 @@ impl RealtimeVoiceProvider for MockRealtimeProvider {
     fn connect(
         &self,
         _interaction_mode: InteractionMode,
+        _tokio_handle: &tokio::runtime::Handle,
     ) -> Result<(
         Box<dyn RealtimeSession>,
         tokio::sync::mpsc::Receiver<RealtimeProviderEvent>,

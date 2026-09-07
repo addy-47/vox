@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, time::Instant};
 
 use anyhow::{anyhow, Result};
 use sherpa_onnx::{OfflineQwen3ASRModelConfig, OfflineRecognizer, OfflineRecognizerConfig};
@@ -92,7 +92,7 @@ impl SttEngineTrait for SttEngine {
             return Ok(String::new());
         }
 
-        let start = std::time::Instant::now();
+        let start = Instant::now();
 
         let stream = self.recognizer.create_stream();
         stream.accept_waveform(SAMPLE_RATE as i32, audio);

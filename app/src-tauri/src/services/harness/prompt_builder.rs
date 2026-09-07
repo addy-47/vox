@@ -1,12 +1,15 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use super::buffer::{ChatMessage, Role};
-use crate::services::memory::ml::estimate_tokens;
+use crate::services::memory::{ml::estimate_tokens, retrieval::RetrievedProfile};
 
 /// Formats a millisecond epoch timestamp as a human-readable relative time label.
 pub fn format_relative_timestamp(created_at_ms: i64) -> String {
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
     let diff_ms = now_ms - created_at_ms;
@@ -40,8 +43,6 @@ pub fn format_relative_timestamp(created_at_ms: i64) -> String {
         format!("{} days ago", days)
     }
 }
-
-use crate::services::memory::retrieval::RetrievedProfile;
 
 /// Formats a RetrievedProfile into formatted user profile XML sub-blocks.
 pub fn format_retrieved_profile(profile: &RetrievedProfile) -> String {
@@ -199,7 +200,6 @@ pub fn consolidate_system_message(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
 
     use super::*;
     use crate::services::memory::retrieval::{GraphEdge, MemoryFact, RetrievedProfile, ScoredFact};
@@ -321,8 +321,8 @@ mod tests {
     /// Tests relative timestamp humanization across minute, hour, day, and week intervals.
     #[test]
     fn test_format_relative_timestamp_buckets() {
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as i64;
 

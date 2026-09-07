@@ -3,6 +3,7 @@ pub mod generate;
 pub mod worker;
 
 use std::{
+    fs::read_dir,
     path::{Path, PathBuf},
     sync::{mpsc, Arc},
 };
@@ -59,7 +60,7 @@ impl EmbeddedProvider {
     pub fn list_models_in_dir(dir: &Path) -> Result<Vec<LlmModelInfo>, LlmError> {
         let mut models = Vec::new();
         if dir.exists() {
-            if let Ok(entries) = std::fs::read_dir(dir) {
+            if let Ok(entries) = read_dir(dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("gguf") {

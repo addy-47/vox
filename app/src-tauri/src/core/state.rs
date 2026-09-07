@@ -4,6 +4,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         mpsc, Arc, RwLock,
     },
+    thread::JoinHandle,
 };
 
 use tokio::sync::Mutex;
@@ -96,11 +97,11 @@ pub struct VoxEngine {
     pub telemetry_tx: crossbeam_channel::Sender<TelemetryEvent>,
     pub pipeline_tx: mpsc::Sender<VoxEvent>,
     pub playback_engine: Arc<PlaybackEngine>,
-    pub stt_handle: Option<std::thread::JoinHandle<()>>,
-    pub vad_handle: Option<std::thread::JoinHandle<()>>,
-    pub llm_handle: Option<std::thread::JoinHandle<()>>,
-    pub tts_handle: Option<std::thread::JoinHandle<()>>,
-    pub orchestrator_handle: Option<std::thread::JoinHandle<()>>,
+    pub stt_handle: Option<JoinHandle<()>>,
+    pub vad_handle: Option<JoinHandle<()>>,
+    pub llm_handle: Option<JoinHandle<()>>,
+    pub tts_handle: Option<JoinHandle<()>>,
+    pub orchestrator_handle: Option<JoinHandle<()>>,
 }
 
 pub struct PipelineAtomics {

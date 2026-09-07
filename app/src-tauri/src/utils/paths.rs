@@ -1,4 +1,9 @@
-use std::path::PathBuf;
+use std::{
+    env::{current_dir, var},
+    fs::create_dir_all,
+    io::Result,
+    path::PathBuf,
+};
 
 use parking_lot::RwLock;
 
@@ -26,7 +31,7 @@ pub fn init() {
         return;
     }
 
-    let root = if let Ok(env_path) = std::env::var("VOX_HOME") {
+    let root = if let Ok(env_path) = var("VOX_HOME") {
         PathBuf::from(env_path)
     } else {
         #[cfg(target_os = "linux")]
@@ -36,7 +41,7 @@ pub fn init() {
             } else if let Some(data_dir) = dirs::data_local_dir() {
                 data_dir.join("vox")
             } else {
-                std::env::current_dir().unwrap_or_default().join(".vox")
+                current_dir().unwrap_or_default().join(".vox")
             }
         }
         #[cfg(not(target_os = "linux"))]
@@ -46,7 +51,7 @@ pub fn init() {
             } else if let Some(home) = dirs::home_dir() {
                 home.join(".vox")
             } else {
-                std::env::current_dir().unwrap_or_default().join(".vox")
+                current_dir().unwrap_or_default().join(".vox")
             }
         }
     };
@@ -84,14 +89,14 @@ pub fn get() -> VoxPaths {
 }
 
 /// Ensures all required directories exist on disk. Called once at startup.
-pub fn ensure_dirs() -> std::io::Result<()> {
+pub fn ensure_dirs() -> Result<()> {
     let p = get();
-    std::fs::create_dir_all(&p.root)?;
-    std::fs::create_dir_all(&p.models)?;
-    std::fs::create_dir_all(&p.logs)?;
-    std::fs::create_dir_all(&p.cache)?;
-    std::fs::create_dir_all(&p.temp)?;
-    std::fs::create_dir_all(&p.voices)?;
+    create_dir_all(&p.root)?;
+    create_dir_all(&p.models)?;
+    create_dir_all(&p.logs)?;
+    create_dir_all(&p.cache)?;
+    create_dir_all(&p.temp)?;
+    create_dir_all(&p.voices)?;
     Ok(())
 }
 

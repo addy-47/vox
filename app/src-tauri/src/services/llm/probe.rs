@@ -1,7 +1,8 @@
 use std::{
     collections::HashMap,
+    error::Error,
     sync::Arc,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use futures_util::StreamExt;
@@ -191,7 +192,7 @@ impl CapabilityProbeEngine {
     /// Executes capability probing for the specified provider configuration.
     pub async fn probe(
         config: &LlmProviderConfig,
-    ) -> Result<ModelCapabilities, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<ModelCapabilities, Box<dyn Error + Send + Sync>> {
         Self::probe_capabilities(config, None).await
     }
 
@@ -199,9 +200,9 @@ impl CapabilityProbeEngine {
     pub async fn probe_capabilities(
         config: &LlmProviderConfig,
         target_model: Option<&str>,
-    ) -> Result<ModelCapabilities, Box<dyn std::error::Error + Send + Sync>> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+    ) -> Result<ModelCapabilities, Box<dyn Error + Send + Sync>> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
 
@@ -263,7 +264,7 @@ impl CapabilityProbeEngine {
         client: &Client,
         config: &ConnectionConfig,
         now: u64,
-    ) -> Result<ModelCapabilities, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<ModelCapabilities, Box<dyn Error + Send + Sync>> {
         let preset_meta = config.provider_preset.as_deref().and_then(lookup_preset);
 
         let (supports_latin, supports_devanagari, tps, ttft_ms) =

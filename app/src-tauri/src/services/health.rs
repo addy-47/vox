@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use crate::{
     core::{
@@ -112,7 +112,7 @@ pub async fn check_stt_health(
             Ok(model_path.exists())
         }
         SttProviderConfig::Cloud { .. } => tokio::task::spawn_blocking(move || {
-            match create_stt_provider(&config, &std::path::PathBuf::new(), DEFAULT_STT_THREADS) {
+            match create_stt_provider(&config, &PathBuf::new(), DEFAULT_STT_THREADS) {
                 Ok(provider) => provider.health_check(),
                 Err(e) => {
                     log::warn!("[Settings] Cloud STT provider health check failed: {}", e);
@@ -152,7 +152,7 @@ pub async fn check_tts_health(
         }
         TtsProviderConfig::ChatterboxRemote { ref endpoint, .. } => {
             let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(2))
+                .timeout(Duration::from_secs(2))
                 .build()
                 .map_err(|e| e.to_string())?;
             let health_url = format!("{}/health", endpoint.trim_end_matches('/'));
@@ -169,7 +169,7 @@ pub async fn check_tts_health(
         }
         TtsProviderConfig::EdgeTts { .. } => {
             let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(2))
+                .timeout(Duration::from_secs(2))
                 .build()
                 .map_err(|e| e.to_string())?;
             match client.head("https://speech.platform.bing.com").send().await {

@@ -5,6 +5,7 @@ use std::{
         mpsc::Sender,
         Arc,
     },
+    time::Instant,
 };
 
 use anyhow::{anyhow, Result};
@@ -60,7 +61,7 @@ impl ChatterboxEngine {
         let ref_audio = reference_audio.unwrap_or("").to_string();
 
         if !ref_audio.is_empty() {
-            if std::path::Path::new(&ref_audio).exists() {
+            if Path::new(&ref_audio).exists() {
                 log::info!(
                     "[Chatterbox] Loading engine with voice clone. lang={}, cfm_steps={}, speed={:.2}, ref={}",
                     language, cfm, speed, ref_audio
@@ -96,7 +97,7 @@ impl ChatterboxEngine {
         };
 
         if !ref_audio.is_empty() {
-            if std::path::Path::new(&ref_audio).is_dir() {
+            if Path::new(&ref_audio).is_dir() {
                 opts.voice_dir = ref_audio;
             } else {
                 opts.reference_audio = ref_audio;
@@ -179,7 +180,7 @@ impl TtsProvider for ChatterboxEngine {
             text
         );
 
-        let start = std::time::Instant::now();
+        let start = Instant::now();
 
         let pcm = {
             let engine = self.engine.lock();
