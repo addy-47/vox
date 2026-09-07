@@ -1,4 +1,10 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    env::current_dir,
+    fs::{create_dir_all, write, OpenOptions},
+    io::Write,
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use serde::Serialize;
 use sysinfo::System;
@@ -56,18 +62,18 @@ pub struct MemoryProfileLogEvent {
 }
 
 /// Robustly resolves the workspace `temp` directory across any execution working directory.
-pub fn resolve_temp_dir() -> std::path::PathBuf {
+pub fn resolve_temp_dir() -> PathBuf {
     let candidates = [
-        std::path::PathBuf::from("temp"),
-        std::path::PathBuf::from("../temp"),
-        std::path::PathBuf::from("../../temp"),
+        PathBuf::from("temp"),
+        PathBuf::from("../temp"),
+        PathBuf::from("../../temp"),
     ];
     for candidate in &candidates {
         if candidate.is_dir() {
             return candidate.clone();
         }
     }
-    if let Ok(mut dir) = std::env::current_dir() {
+    if let Ok(mut dir) = current_dir() {
         for _ in 0..5 {
             let temp_candidate = dir.join("temp");
             if temp_candidate.is_dir() {
@@ -78,8 +84,8 @@ pub fn resolve_temp_dir() -> std::path::PathBuf {
             }
         }
     }
-    let fallback = std::path::PathBuf::from("temp");
-    if let Err(e) = std::fs::create_dir_all(&fallback) {
+    let fallback = PathBuf::from("temp");
+    if let Err(e) = create_dir_all(&fallback) {
         log::warn!(
             target: "memory_profiler",
             "Failed to create fallback temp directory {:?}: {}",
@@ -302,7 +308,6 @@ pub fn persist_memory_profile_event(event: &MemoryProfileLogEvent) -> Result<(),
     }
 
     let serialized = serde_json::to_string(event).map_err(|e| e.to_string())?;
-    use std::io::Write;
     let temp_dir = resolve_temp_dir();
     let page = sanitize_page_name(&event.route);
     let ts = if event.timestamp_ms > 0 {
@@ -316,7 +321,7 @@ pub fn persist_memory_profile_event(event: &MemoryProfileLogEvent) -> Result<(),
     let filename = format!("{}-{}.jsonl", ts, page);
     let file_path = temp_dir.join(&filename);
 
-    if let Ok(mut file) = std::fs::OpenOptions::new()
+    if let Ok(mut file) = OpenOptions::new()
         .create(true)
         .append(true)
         .open(&file_path)
@@ -328,7 +333,7 @@ pub fn persist_memory_profile_event(event: &MemoryProfileLogEvent) -> Result<(),
         log::warn!(target: "memory_profiler", "Failed to open snapshot JSONL file at {:?}", file_path);
     }
 
-    if let Err(e) = std::fs::write(temp_dir.join("memory_profile_latest.json"), &serialized) {
+    if let Err(e) = write(temp_dir.join("memory_profile_latest.json"), &serialized) {
         log::warn!(target: "memory_profiler", "Failed to write latest snapshot JSON: {}", e);
     }
 

@@ -145,7 +145,11 @@ pub fn benchmark_llm_provider(
     let turns_to_run = params.turns.min(CANONICAL_CONVERSATION_TURNS.len());
     let mut turn_results = Vec::new();
 
-    for (turn_idx, &prompt_text) in CANONICAL_CONVERSATION_TURNS.iter().enumerate().take(turns_to_run) {
+    for (turn_idx, &prompt_text) in CANONICAL_CONVERSATION_TURNS
+        .iter()
+        .enumerate()
+        .take(turns_to_run)
+    {
         let turn_id = (turn_idx + 1) as u32;
 
         history.push(ChatMessage {
@@ -181,7 +185,9 @@ pub fn benchmark_llm_provider(
         let mut token_count = 0;
 
         let gen_handle = runtime.spawn(async move {
-            provider_clone.generate(request, turn_id, &cancel_clone, &tx).await
+            provider_clone
+                .generate(request, turn_id, &cancel_clone, &tx)
+                .await
         });
 
         while let Ok(event) = rx.recv_timeout(Duration::from_secs(60)) {

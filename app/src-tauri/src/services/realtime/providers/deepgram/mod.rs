@@ -2,7 +2,10 @@ mod handshake;
 mod protocol;
 mod session;
 
-use std::sync::{atomic::AtomicU32, Arc};
+use std::{
+    net::ToSocketAddrs,
+    sync::{atomic::AtomicU32, Arc},
+};
 
 use anyhow::{bail, Result};
 use parking_lot::Mutex;
@@ -65,6 +68,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
     fn connect(
         &self,
         interaction_mode: InteractionMode,
+        tokio_handle: &tokio::runtime::Handle,
     ) -> Result<(
         Box<dyn RealtimeSession>,
         tokio::sync::mpsc::Receiver<RealtimeProviderEvent>,
@@ -73,7 +77,6 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
             "[DeepgramVoiceAgent] Connecting with interaction_mode: {:?}",
             interaction_mode
         );
-        let handle = tokio::runtime::Handle::current();
 
         if self.config.api_key.is_empty() {
             bail!("No API key configured for Deepgram Voice Agent. Please check settings.");
@@ -83,14 +86,12 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         let url = std::env::var("DEEPGRAM_AGENT_ENDPOINT_OVERRIDE")
             .unwrap_or_else(|_| DEEPGRAM_DEFAULT_WS_URL.to_string());
 
-        let (ws_write, ws_read) = tokio::task::block_in_place(|| {
-            handle.block_on(handshake::perform_handshake(
-                &url,
-                &api_key,
-                &self.config,
-                &self.system_prompt,
-            ))
-        })?;
+        let (ws_write, ws_read) = tokio_handle.block_on(handshake::perform_handshake(
+            &url,
+            &api_key,
+            &self.config,
+            &self.system_prompt,
+        ))?;
 
         let (provider_event_tx, provider_event_rx) =
             tokio::sync::mpsc::channel::<RealtimeProviderEvent>(BRIDGE_CHANNEL_CAPACITY);
@@ -134,7 +135,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
                 provider_event_tx,
                 state_rx: self.state_rx.clone(),
                 turn_id_ref: self.turn_id.clone(),
-                tokio_handle: handle,
+                tokio_handle: tokio_handle.clone(),
             },
         );
 
@@ -149,7 +150,6 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
     }
 
     fn health_check(&self) -> bool {
-        use std::net::ToSocketAddrs;
         if let Ok(mut addrs) = DEEPGRAM_HEALTH_CHECK_ADDR.to_socket_addrs() {
             if let Some(addr) = addrs.next() {
                 return tcp_health_check(addr, WS_HEALTH_CHECK_TIMEOUT);

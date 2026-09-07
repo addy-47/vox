@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, fs::read_to_string, path::Path};
 
 use ndarray::{Array1, Array2, Array3};
 use ort::session::Session;
@@ -33,12 +33,12 @@ impl TransliterationEngine {
             return Err(format!("Model files not found in {:?}", model_dir));
         }
 
-        let src_vocab_str = std::fs::read_to_string(&src_vocab_path)
+        let src_vocab_str = read_to_string(&src_vocab_path)
             .map_err(|e| format!("Failed to read input_vocab.json: {}", e))?;
         let src_vocab: HashMap<String, i64> = serde_json::from_str(&src_vocab_str)
             .map_err(|e| format!("Failed to parse input_vocab.json: {}", e))?;
 
-        let tgt_vocab_str = std::fs::read_to_string(&tgt_vocab_path)
+        let tgt_vocab_str = read_to_string(&tgt_vocab_path)
             .map_err(|e| format!("Failed to read target_vocab.json: {}", e))?;
         let tgt_vocab: HashMap<String, i64> = serde_json::from_str(&tgt_vocab_str)
             .map_err(|e| format!("Failed to parse target_vocab.json: {}", e))?;

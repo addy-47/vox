@@ -1,4 +1,5 @@
 use std::sync::atomic::Ordering;
+
 use tauri::AppHandle;
 
 use crate::{

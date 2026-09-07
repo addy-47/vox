@@ -1,3 +1,5 @@
+use std::fs::{read_to_string, remove_file};
+
 use crate::{
     core::{settings::RealtimeProviderKind, state::AppState},
     services::realtime::{
@@ -22,7 +24,7 @@ pub fn create_realtime_provider(
     let cache_path = cache_dir().join(SESSION_CACHE_FILENAME);
     let mut cached_handle = None;
     if cache_path.exists() {
-        if let Ok(data) = std::fs::read_to_string(&cache_path) {
+        if let Ok(data) = read_to_string(&cache_path) {
             if let Ok(cached) = serde_json::from_str::<serde_json::Value>(&data) {
                 let expires_at = cached["expires_at"].as_u64().unwrap_or(0);
                 let now_ms = chrono::Utc::now().timestamp_millis() as u64;
@@ -71,7 +73,7 @@ pub fn create_realtime_provider(
 pub fn purge_session_cache() {
     let cache_path = cache_dir().join(SESSION_CACHE_FILENAME);
     if cache_path.exists() {
-        if let Err(e) = std::fs::remove_file(&cache_path) {
+        if let Err(e) = remove_file(&cache_path) {
             log::warn!(
                 "[RealtimeSession] Failed to delete session cache file: {}",
                 e

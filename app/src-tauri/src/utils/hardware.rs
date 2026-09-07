@@ -1,3 +1,4 @@
+use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -23,8 +24,8 @@ pub fn detect_local_gpu() -> LocalHardwareGpuInfo {
 
     #[cfg(target_os = "linux")]
     {
-        if std::path::Path::new("/dev/nvidia0").exists()
-            || std::path::Path::new("/dev/nvidiactl").exists()
+        if Path::new("/dev/nvidia0").exists()
+            || Path::new("/dev/nvidiactl").exists()
         {
             return LocalHardwareGpuInfo {
                 has_gpu: true,
@@ -34,7 +35,7 @@ pub fn detect_local_gpu() -> LocalHardwareGpuInfo {
             };
         }
 
-        if std::path::Path::new("/dev/dri/renderD128").exists() {
+        if Path::new("/dev/dri/renderD128").exists() {
             return LocalHardwareGpuInfo {
                 has_gpu: true,
                 vendor: "DRI/Linux".to_string(),

@@ -1,6 +1,10 @@
 //! Audio decoding utilities — convert any supported format to 24 kHz mono f32 WAV.
 
-use std::{fs::File, path::Path};
+use std::{
+    fs::File,
+    io::{Cursor, ErrorKind},
+    path::Path,
+};
 
 use symphonia_core::{
     audio::{Audio, GenericAudioBufferRef},
@@ -34,7 +38,7 @@ pub struct DecodedAudio {
 
 /// Decode raw in-memory audio bytes to 24 kHz mono f32 PCM given a format hint.
 pub fn decode_bytes_to_24khz_mono(bytes: &[u8], format_hint: &str) -> DecodeResult<DecodedAudio> {
-    let cursor = std::io::Cursor::new(bytes);
+    let cursor = Cursor::new(bytes);
     let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
 
     let mut hint = Hint::new();
@@ -118,7 +122,7 @@ fn decode_packets(
         let packet = match format.next_packet() {
             Ok(Some(packet)) => packet,
             Ok(None) => break,
-            Err(Error::IoError(ref err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
+            Err(Error::IoError(ref err)) if err.kind() == ErrorKind::UnexpectedEof => {
                 break;
             }
             Err(e) => return Err(format!("Decoding error: {}", e)),

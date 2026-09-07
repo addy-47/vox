@@ -1,11 +1,14 @@
-use std::path::PathBuf;
+use std::{
+    fs::{create_dir_all, metadata, read_dir, remove_file},
+    path::{Path, PathBuf},
+};
 
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 /// Initializes the tracing-based logging system.
 pub fn init(log_dir: PathBuf) -> WorkerGuard {
-    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+    if let Err(e) = create_dir_all(&log_dir) {
         eprintln!(
             "[Logging] Failed to create log directory {:?}: {}",
             log_dir, e
@@ -36,14 +39,14 @@ pub fn init(log_dir: PathBuf) -> WorkerGuard {
     guard
 }
 
-fn cleanup_old_logs(log_dir: &std::path::Path, max_files: usize) {
-    let mut files = match std::fs::read_dir(log_dir) {
+fn cleanup_old_logs(log_dir: &Path, max_files: usize) {
+    let mut files = match read_dir(log_dir) {
         Ok(entries) => entries
             .filter_map(|e| e.ok())
             .filter(|e| e.path().is_file())
             .filter_map(|e| {
                 let path = e.path();
-                let meta = std::fs::metadata(&path).ok()?;
+                let meta = metadata(&path).ok()?;
                 let modified = meta.modified().ok()?;
                 Some((path, modified))
             })
@@ -56,7 +59,7 @@ fn cleanup_old_logs(log_dir: &std::path::Path, max_files: usize) {
 
         let to_delete = files.len() - max_files;
         for (path, _) in files.iter().take(to_delete) {
-            if let Err(e) = std::fs::remove_file(path) {
+            if let Err(e) = remove_file(path) {
                 log::debug!("[Logging] Old log deletion notice for {:?}: {}", path, e);
             }
         }

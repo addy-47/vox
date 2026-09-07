@@ -1,7 +1,14 @@
-use std::sync::{
-    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-    mpsc, Arc,
+use std::{
+    mem::take,
+    panic::{AssertUnwindSafe, catch_unwind},
+    sync::{
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        mpsc, Arc,
+    },
+    thread::sleep,
+    time::Duration, 
 };
+
 
 use anyhow::Result;
 use ringbuf::traits::Consumer;
@@ -195,7 +202,7 @@ fn process_vad_commands(
                     if state.window_speech_detected && start < end && (end - start) >= 256 {
                         state.window_buffer[start..end].to_vec()
                     } else if state.window_speech_detected {
-                        std::mem::take(&mut state.window_buffer)
+                       take(&mut state.window_buffer)
                     } else {
                         Vec::new()
                     };
@@ -466,7 +473,7 @@ where
 
     log::info!("[VAD Actor] Starting synchronous VAD loop on dedicated thread");
 
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let result = catch_unwind(AssertUnwindSafe(|| {
         let mut state = VadActorState::new(
             config.initial_threshold,
             config.initial_noise_gate,
@@ -507,7 +514,7 @@ where
                 if consumer.occupied_len() >= VAD_CHUNK_SIZE {
                     consumer.pop_slice(&mut chunk);
                 }
-                std::thread::sleep(std::time::Duration::from_millis(VAD_ACTOR_IDLE_SLEEP_MS));
+                sleep(Duration::from_millis(VAD_ACTOR_IDLE_SLEEP_MS));
                 continue;
             }
 
@@ -546,7 +553,7 @@ where
                     }
                 }
             } else {
-                std::thread::sleep(std::time::Duration::from_millis(VAD_ACTOR_IDLE_SLEEP_MS));
+                sleep(Duration::from_millis(VAD_ACTOR_IDLE_SLEEP_MS));
             }
         }
     }));
@@ -562,7 +569,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicBool, AtomicU32};
 
     use super::*;
     use crate::core::{settings::AudioOutputMode, state::InteractionState};

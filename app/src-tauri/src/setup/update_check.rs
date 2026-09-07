@@ -1,3 +1,8 @@
+use std::{
+    cmp::max,
+    fs::{create_dir_all, read_to_string, write},
+};
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -22,7 +27,7 @@ fn is_newer_version(remote: &str, local: &str) -> bool {
     let remote_parts: Vec<&str> = remote_clean.split('.').collect();
     let local_parts: Vec<&str> = local_clean.split('.').collect();
 
-    for i in 0..std::cmp::max(remote_parts.len(), local_parts.len()) {
+    for i in 0..max(remote_parts.len(), local_parts.len()) {
         let r_val: u32 = remote_parts
             .get(i)
             .and_then(|&s| s.parse().ok())
@@ -51,7 +56,7 @@ fn is_newer_version(remote: &str, local: &str) -> bool {
 async fn get_app_manifest() -> anyhow::Result<AppManifest> {
     let cache_path = paths::get().cache.join("app_manifest.json");
     if cache_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&cache_path) {
+        if let Ok(content) = read_to_string(&cache_path) {
             if let Ok(m) = serde_json::from_str::<AppManifest>(&content) {
                 return Ok(m);
             }
@@ -60,11 +65,11 @@ async fn get_app_manifest() -> anyhow::Result<AppManifest> {
     let m = AppManifest::fetch().await?;
     if let Ok(serialized) = serde_json::to_string_pretty(&m) {
         if let Some(parent) = cache_path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
+            if let Err(e) = create_dir_all(parent) {
                 log::warn!("[UpdateCheck] Failed to create cache directory: {}", e);
             }
         }
-        if let Err(e) = std::fs::write(&cache_path, serialized) {
+        if let Err(e) = write(&cache_path, serialized) {
             log::warn!("[UpdateCheck] Failed to write app manifest cache: {}", e);
         }
     }
@@ -75,7 +80,7 @@ async fn get_app_manifest() -> anyhow::Result<AppManifest> {
 async fn get_models_manifest() -> anyhow::Result<VoxManifest> {
     let cache_path = paths::get().cache.join("models_manifest.json");
     if cache_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&cache_path) {
+        if let Ok(content) = read_to_string(&cache_path) {
             if let Ok(m) = serde_json::from_str::<VoxManifest>(&content) {
                 return Ok(m);
             }
@@ -84,11 +89,11 @@ async fn get_models_manifest() -> anyhow::Result<VoxManifest> {
     let m = VoxManifest::fetch().await?;
     if let Ok(serialized) = serde_json::to_string_pretty(&m) {
         if let Some(parent) = cache_path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
+            if let Err(e) = create_dir_all(parent) {
                 log::warn!("[UpdateCheck] Failed to create cache directory: {}", e);
             }
         }
-        if let Err(e) = std::fs::write(&cache_path, serialized) {
+        if let Err(e) = write(&cache_path, serialized) {
             log::warn!("[UpdateCheck] Failed to write models manifest cache: {}", e);
         }
     }
@@ -124,7 +129,7 @@ pub async fn check_model_updates() -> anyhow::Result<ModelUpdateReport> {
     let local_manifest_path = paths::get().models.join("models_manifest.json");
 
     let local_version = if local_manifest_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&local_manifest_path) {
+        if let Ok(content) = read_to_string(&local_manifest_path) {
             if let Ok(m) = serde_json::from_str::<VoxManifest>(&content) {
                 m.models_version
             } else {

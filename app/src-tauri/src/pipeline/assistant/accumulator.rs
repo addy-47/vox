@@ -1,3 +1,5 @@
+use std::mem::take;
+
 use crate::services::tts::actor::TtsClauseChunker;
 
 /// Canonical turn-level textual accumulator and TTS clause chunker.
@@ -49,7 +51,7 @@ impl TurnAccumulator {
 
     /// Extracts the full assistant response, leaving an empty string in place.
     pub fn take_assistant_response(&mut self) -> String {
-        std::mem::take(&mut self.assistant_response)
+        take(&mut self.assistant_response)
     }
 
     /// Returns a copy of the current user transcript.

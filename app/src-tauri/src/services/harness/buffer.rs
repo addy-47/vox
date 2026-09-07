@@ -1,4 +1,7 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    fmt::{Display, Formatter, Result},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -11,9 +14,9 @@ pub enum Role {
     Assistant,
 }
 
-impl std::fmt::Display for Role {
+impl Display for Role {
     /// Formats the role enum into its canonical lowercase string identifier.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Role::System => write!(f, "system"),
             Role::User => write!(f, "user"),

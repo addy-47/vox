@@ -1,6 +1,8 @@
 use std::{
+    fs::{metadata, read_dir, read_to_string, remove_dir, remove_dir_all, remove_file, write},
     path::{Path, PathBuf},
     sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use tauri::AppHandle;
@@ -27,7 +29,7 @@ pub async fn ensure_manifest_loaded(state: &AppState) -> Result<(), String> {
     if manifest_path.exists() {
         let p = manifest_path.clone();
         let loaded = tokio::task::spawn_blocking(move || {
-            std::fs::read_to_string(&p)
+            read_to_string(&p)
                 .ok()
                 .and_then(|c| serde_json::from_str::<VoxManifest>(&c).ok())
         })
@@ -49,7 +51,7 @@ pub async fn ensure_manifest_loaded(state: &AppState) -> Result<(), String> {
     let m_clone = manifest.clone();
     tokio::task::spawn_blocking(move || {
         if let Ok(serialized) = serde_json::to_string_pretty(&m_clone) {
-            if let Err(e) = std::fs::write(&p, serialized) {
+            if let Err(e) = write(&p, serialized) {
                 log::warn!("[Setup] Failed to write manifest to disk: {}", e);
             }
         }
@@ -96,15 +98,15 @@ pub fn is_model_file_present(file: &ModelEntry, models_dir: &Path) -> bool {
 
     if dest_path.exists() {
         let size_matches = is_archive
-            || std::fs::metadata(&dest_path)
+            || metadata(&dest_path)
                 .map(|m| m.len() == file.size_bytes)
                 .unwrap_or(false);
         if size_matches {
             let marker = VerifiedMarker {
                 model_id: Some(file.id.clone()),
                 sha256: file.sha256.clone(),
-                verified_at: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
+                verified_at: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_millis() as u64,
                 expected_size: file.size_bytes,
@@ -124,7 +126,7 @@ pub fn delete_model_file(file: &ModelEntry, models_dir: &Path) {
     let verified_path = models_dir.join(&file.path).with_extension("verified");
 
     if verified_path.exists() {
-        if let Err(e) = std::fs::remove_file(&verified_path) {
+        if let Err(e) = remove_file(&verified_path) {
             log::warn!(
                 "[Setup] Failed to remove verified marker {:?}: {}",
                 verified_path,
@@ -135,23 +137,23 @@ pub fn delete_model_file(file: &ModelEntry, models_dir: &Path) {
 
     if dest_path.exists() {
         if dest_path.is_dir() {
-            if let Err(e) = std::fs::remove_dir_all(&dest_path) {
+            if let Err(e) = remove_dir_all(&dest_path) {
                 log::warn!(
                     "[Setup] Failed to remove model directory {:?}: {}",
                     dest_path,
                     e
                 );
             }
-        } else if let Err(e) = std::fs::remove_file(&dest_path) {
+        } else if let Err(e) = remove_file(&dest_path) {
             log::warn!("[Setup] Failed to remove model file {:?}: {}", dest_path, e);
         }
     }
 
     if let Some(parent) = dest_path.parent() {
         if parent.exists() && parent != models_dir {
-            if let Ok(entries) = std::fs::read_dir(parent) {
+            if let Ok(entries) = read_dir(parent) {
                 if entries.count() == 0 {
-                    if let Err(e) = std::fs::remove_dir(parent) {
+                    if let Err(e) = remove_dir(parent) {
                         log::warn!(
                             "[Setup] Failed to remove empty parent directory {:?}: {}",
                             parent,

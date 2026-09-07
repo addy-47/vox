@@ -1,4 +1,7 @@
-use std::path::Path;
+use std::{
+    fs::{metadata, remove_file, write},
+    path::Path,
+};
 
 use cpal::traits::HostTrait;
 use serde::{Deserialize, Serialize};
@@ -77,9 +80,9 @@ fn check_write_access(path: &Path) -> bool {
     }
 
     let test_file = path.join(".write_test");
-    match std::fs::write(&test_file, "vox") {
+    match write(&test_file, "vox") {
         Ok(_) => {
-            if let Err(e) = std::fs::remove_file(test_file) {
+            if let Err(e) = remove_file(test_file) {
                 log::debug!("[RuntimeCheck] Write test file cleanup notice: {}", e);
             }
             true
@@ -177,7 +180,7 @@ fn check_model_integrity(models_dir: &Path, manifest: Option<&VoxManifest>) -> (
             }
 
             if !is_archive {
-                if let Ok(metadata) = std::fs::metadata(&model_path) {
+                if let Ok(metadata) = metadata(&model_path) {
                     if metadata.len() != entry.size_bytes {
                         missing.push(format!("{} (size mismatch)", entry.id));
                         all_verified = false;

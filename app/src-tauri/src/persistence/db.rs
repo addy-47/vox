@@ -1,3 +1,5 @@
+use std::{future::Future, path::Path, sync::LazyLock};
+
 use turso::{Builder, Connection};
 
 use crate::{core::error::PersistenceError, persistence::SQLITE_BUSY_TIMEOUT_MS};
@@ -10,13 +12,12 @@ pub static TOKIO_HANDLE: once_cell::sync::OnceCell<tokio::runtime::Handle> =
 pub fn get_tokio_handle() -> tokio::runtime::Handle {
     TOKIO_HANDLE.get().cloned().unwrap_or_else(|| {
         tokio::runtime::Handle::try_current().unwrap_or_else(|_| {
-            static FALLBACK_RT: std::sync::LazyLock<tokio::runtime::Runtime> =
-                std::sync::LazyLock::new(|| {
-                    tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("[Persistence::Db] Failed to create fallback tokio runtime")
-                });
+            static FALLBACK_RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("[Persistence::Db] Failed to create fallback tokio runtime")
+            });
             FALLBACK_RT.handle().clone()
         })
     })
@@ -27,7 +28,7 @@ pub struct VoxDb;
 
 impl VoxDb {
     /// Opens a connection to the local database file.
-    pub async fn open(path: &std::path::Path) -> Result<Connection, PersistenceError> {
+    pub async fn open(path: &Path) -> Result<Connection, PersistenceError> {
         let path_str = path.to_string_lossy();
         let db = Builder::new_local(&path_str)
             .experimental_index_method(true)
@@ -50,7 +51,7 @@ impl VoxDb {
     }
 
     /// Open a connection for IPC history queries without re-issuing writer pragmas.
-    pub async fn open_readonly(path: &std::path::Path) -> Result<Connection, PersistenceError> {
+    pub async fn open_readonly(path: &Path) -> Result<Connection, PersistenceError> {
         let path_str = path.to_string_lossy();
         let db = Builder::new_local(&path_str).build().await?;
         let conn = db.connect()?;
@@ -67,7 +68,7 @@ impl VoxDb {
     /// Executes a future within a SQLite transaction with automatic rollback on error.
     pub async fn with_transaction<Fut, T>(conn: &Connection, fut: Fut) -> Result<T, String>
     where
-        Fut: std::future::Future<Output = Result<T, String>>,
+        Fut: Future<Output = Result<T, String>>,
     {
         conn.execute("BEGIN TRANSACTION;", ())
             .await

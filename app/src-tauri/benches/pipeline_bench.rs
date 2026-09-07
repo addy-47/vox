@@ -152,7 +152,9 @@ fn main() {
             settings.llm.active = LlmActiveProvider::Cloud;
             settings.llm.cloud.provider_name = Some("nvidia".to_string());
             settings.llm.cloud.base_url = "https://integrate.api.nvidia.com/v1".to_string();
-            settings.llm.cloud.model = args.model.unwrap_or_else(|| "meta/llama-3.2-11b-vision-instruct".to_string());
+            settings.llm.cloud.model = args
+                .model
+                .unwrap_or_else(|| "meta/llama-3.2-11b-vision-instruct".to_string());
             settings.llm.cloud.api_key = Some(api_key);
         }
         _ => settings.llm.active = LlmActiveProvider::Embedded,

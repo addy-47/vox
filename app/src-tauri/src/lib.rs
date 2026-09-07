@@ -16,9 +16,17 @@ pub mod window_customizer;
 pub mod window_main;
 pub mod wizard;
 
-use std::sync::{
-    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-    Arc,
+use std::{
+    backtrace::Backtrace,
+    env::set_var,
+    fs::{create_dir_all, write},
+    panic::set_hook,
+    sync::{
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        Arc,
+    },
+    thread::{current, sleep},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use tauri::{tray::TrayIconBuilder, Manager, State};
@@ -102,7 +110,7 @@ use crate::{
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Global panic containment hook: Captures backtraces, logs at FATAL, and writes emergency reports without dying silently
-    std::panic::set_hook(Box::new(|panic_info| {
+    set_hook(Box::new(|panic_info| {
         let location = panic_info
             .location()
             .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
@@ -116,11 +124,11 @@ pub fn run() {
             "Box<Any> panic payload".to_string()
         };
 
-        let backtrace = std::backtrace::Backtrace::capture();
+        let backtrace = Backtrace::capture();
         log::error!(
             target: "panic",
             "[FATAL PANIC] Thread '{}' panicked at '{}': {}\nBacktrace:\n{}",
-            std::thread::current().name().unwrap_or("unnamed"),
+            current().name().unwrap_or("unnamed"),
             location,
             payload,
             backtrace
@@ -128,19 +136,21 @@ pub fn run() {
 
         // Emergency write to crash_reports if paths are available
         let crash_dir = paths::get().root.join("crash_reports");
-        if std::fs::create_dir_all(&crash_dir).is_ok() {
-            let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+        if create_dir_all(&crash_dir).is_ok() {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis();
             let crash_file = crash_dir.join(format!("crash_{}.log", timestamp));
-            let _ = std::fs::write(
+            if let Err(err) = write(
                 crash_file,
                 format!(
                     "Panic: {}\nLocation: {}\nBacktrace:\n{}",
                     payload, location, backtrace
                 ),
-            );
+            ) {
+                log::error!("Failed to write crash log: {:?}", err);
+            }
         }
     }));
 
@@ -154,7 +164,7 @@ pub fn run() {
     // Suppress ALSA/Jack noisy logs on Linux
     #[cfg(target_os = "linux")]
     {
-        std::env::set_var("ALSA_LOG_LEVEL", "0");
+        set_var("ALSA_LOG_LEVEL", "0");
     }
 
     tauri::Builder::default()
@@ -206,7 +216,7 @@ pub fn run() {
                     Ok(manifest) => {
                         let path = cache_dir.join("app_manifest.json");
                         if let Ok(content) = serde_json::to_string_pretty(&manifest) {
-                            if let Err(e) = std::fs::write(&path, content) {
+                            if let Err(e) = write(&path, content) {
                                 log::warn!("[BOOTSTRAP] Failed to write app manifest cache: {}", e);
                             } else {
                                 log::info!("[BOOTSTRAP] Successfully cached app manifest.");
@@ -221,7 +231,7 @@ pub fn run() {
                     Ok(manifest) => {
                         let path = cache_dir.join("models_manifest.json");
                         if let Ok(content) = serde_json::to_string_pretty(&manifest) {
-                            if let Err(e) = std::fs::write(&path, content) {
+                            if let Err(e) = write(&path, content) {
                                 log::warn!("[BOOTSTRAP] Failed to write models manifest cache: {}", e);
                             } else {
                                 log::info!("[BOOTSTRAP] Successfully cached models manifest.");
@@ -473,10 +483,10 @@ pub fn run() {
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    tokio::time::sleep(Duration::from_secs(2)).await;
                     let mut tick: u32 = 0;
                     loop {
-                        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                        tokio::time::sleep(Duration::from_secs(60)).await;
                         tick = tick.wrapping_add(1);
                         let title = format!("Toast Test #{tick}");
                         let message = match tick % 4 {
@@ -753,7 +763,7 @@ pub fn run() {
                     }
 
                     // Allow time for threads to join
-                    std::thread::sleep(std::time::Duration::from_millis(150));
+                    sleep(Duration::from_millis(150));
                 }
                 tauri::RunEvent::WindowEvent { label, event: win_event, .. } => {
                     if label == "main" {
