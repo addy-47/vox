@@ -26,6 +26,7 @@ export const InteractionCard = memo(
   ({ layoutMode = "full-max" }: InteractionCardProps) => {
     const settings = useSettingsStore((s) => s.settings);
     const draftSettings = useSettingsStore((s) => s.draftSettings);
+    const modelCatalog = useSettingsStore((s) => s.modelCatalog);
     const updateDraft = useSettingsStore((s) => s.updateDraft);
     const discardCategoryChanges = useSettingsStore((s) => s.discardCategoryChanges);
 
@@ -112,12 +113,18 @@ export const InteractionCard = memo(
 
     const savedSttPill = settings.stt?.active === "cloud" ? "cloud" : "local";
     const savedTtsKind = settings.tts?.active || "supertonic";
-    const savedTtsPill =
-      savedTtsKind === "chatterbox_remote"
+    const savedTtsModel = modelCatalog?.tts?.find((m) => m.id === savedTtsKind);
+    const savedTtsPill: "local" | "remote" | "cloud" = savedTtsModel
+      ? savedTtsModel.is_remote
         ? "remote"
-        : savedTtsKind === "supertonic" || savedTtsKind === "chatterbox"
-        ? "local"
-        : "cloud";
+        : savedTtsModel.is_cloud
+        ? "cloud"
+        : "local"
+      : savedTtsKind === "chatterbox_remote"
+      ? "remote"
+      : savedTtsKind === "edge_tts"
+      ? "cloud"
+      : "local";
 
     const savedPill =
       activeCategory === "STT"
@@ -140,13 +147,20 @@ export const InteractionCard = memo(
 
     const draftSttPill = sttPillOverride || (draftSettings.stt?.active === "cloud" ? "cloud" : "local");
     const draftTtsKind = draftSettings.tts?.active || "supertonic";
-    const draftTtsPill =
+    const draftTtsModel = modelCatalog?.tts?.find((m) => m.id === draftTtsKind);
+    const draftTtsPill: "local" | "remote" | "cloud" =
       ttsPillOverride ||
-      (draftTtsKind === "chatterbox_remote"
+      (draftTtsModel
+        ? draftTtsModel.is_remote
+          ? "remote"
+          : draftTtsModel.is_cloud
+          ? "cloud"
+          : "local"
+        : draftTtsKind === "chatterbox_remote"
         ? "remote"
-        : draftTtsKind === "supertonic" || draftTtsKind === "chatterbox"
-        ? "local"
-        : "cloud");
+        : draftTtsKind === "edge_tts"
+        ? "cloud"
+        : "local");
 
     const draftPill =
       activeCategory === "STT"

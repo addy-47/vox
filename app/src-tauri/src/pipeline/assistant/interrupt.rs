@@ -7,7 +7,7 @@ use crate::{
         settings::{InteractionMode, PipelineMode},
         state::{AppState, InteractionState},
     },
-    persistence::events::PersistenceEvent,
+    persistence::PersistenceEvent,
     pipeline::{transition, RoutingContext},
 };
 

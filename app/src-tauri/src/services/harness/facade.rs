@@ -20,7 +20,7 @@ use crate::{
         settings::{LlmSettings, MemorySettings, PipelineMode},
         state::{AppState, InteractionState},
     },
-    persistence::{db::VoxDb, events::MemoryWorkerEvent, mutations::enqueue_personal_facts},
+    persistence::{db::VoxDb, MemoryWorkerEvent, mutations::enqueue_personal_facts},
     services::{
         llm::{
             actor::create_llm_provider_from_llm_settings, ConversationInput, GenerationOptions,
