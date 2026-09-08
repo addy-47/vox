@@ -11,7 +11,7 @@ use std::{
 use crossbeam_channel::{bounded, Receiver, Sender};
 
 use crate::persistence::{
-    db::VoxDb, events::PersistenceEvent, schema, PERSISTENCE_CHANNEL_CAPACITY,
+    db::VoxDb, PersistenceEvent, schema, PERSISTENCE_CHANNEL_CAPACITY,
     PERSISTENCE_RATE_INTERVAL, WORKER_EVENT_POLL_TIMEOUT,
 };
 

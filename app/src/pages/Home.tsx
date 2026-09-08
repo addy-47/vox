@@ -280,8 +280,8 @@ export const Home = memo(() => {
           ) : isEngaged ? (
             /* Engaged Controls */
             <React.Fragment>
-              {/* Passive Mode: Pause / Resume Button */}
-              {interactionMode !== "PTT" && !testingClip && (
+              {/* Pause / Resume Button (available in both Passive and PTT modes) */}
+              {!testingClip && (
                 <button
                   onClick={isPaused ? resume : pause}
                   className={cn(

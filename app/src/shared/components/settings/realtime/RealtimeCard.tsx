@@ -180,7 +180,7 @@ export const RealtimeCard = memo(
           <div className="flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
               <Cpu className="text-[rgb(var(--accent))]" size={16} />
-              <span className="font-display text-[12px] font-bold uppercase tracking-[0.2em] text-[rgb(var(--accent))]/80">
+              <span className="font-display text-[12px] font-bold uppercase tracking-[0.2em] text/80">
                 {REALTIME_CONFIG_DESK_COPY.hubTitle}
               </span>
             </div>

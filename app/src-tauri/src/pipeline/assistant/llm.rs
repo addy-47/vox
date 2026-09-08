@@ -7,7 +7,7 @@ use crate::{
         settings::PipelineMode,
         state::{AppState, InteractionState},
     },
-    persistence::events::PersistenceEvent,
+    persistence::PersistenceEvent,
     pipeline::RoutingContext,
     services::tts::actor::TtsCommand,
 };

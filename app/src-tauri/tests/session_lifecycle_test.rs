@@ -21,7 +21,7 @@ use vox_lib::{
         settings::{DictationInteractionMode, InteractionMode, PipelineMode},
         state::{AppState, InteractionOwner, InteractionState},
     },
-    persistence::events::{MemoryWorkerEvent, PersistenceEvent},
+    persistence::{MemoryWorkerEvent, PersistenceEvent},
     pipeline::{
         assistant::session::{on_end, on_pause, on_resume, on_session_start},
         dictation::transition_dictation,

@@ -16,7 +16,7 @@ use crate::{
     core::{settings::VoxSettings, state::InteractionState},
     persistence::{
         db::{get_tokio_handle, VoxDb},
-        events::MemoryWorkerEvent,
+        MemoryWorkerEvent,
         mutations::{enqueue_personal_facts, session_end_consolidation},
         MAX_QUEUE_RETRY_ATTEMPTS, MEMORY_WORKER_CHANNEL_CAPACITY, MEMORY_WORKER_POLL_TIMEOUT,
         MIN_IDLE_DEBOUNCE_SECS,

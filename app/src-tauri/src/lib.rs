@@ -87,7 +87,8 @@ use crate::{
     },
     persistence::{
         db::TOKIO_HANDLE,
-        events::{MemoryWorkerEvent, PersistenceEvent},
+        MemoryWorkerEvent, 
+        PersistenceEvent,
         memory_worker::spawn_memory_worker,
         worker::spawn_persistence_worker,
     },
@@ -486,7 +487,7 @@ pub fn run() {
                     tokio::time::sleep(Duration::from_secs(2)).await;
                     let mut tick: u32 = 0;
                     loop {
-                        tokio::time::sleep(Duration::from_secs(60)).await;
+                        tokio::time::sleep(Duration::from_secs(600)).await;
                         tick = tick.wrapping_add(1);
                         let title = format!("Toast Test #{tick}");
                         let message = match tick % 4 {
