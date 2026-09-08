@@ -3,7 +3,7 @@ use tauri::{AppHandle, Emitter, Runtime};
 
 // Re-export subsystem events for centralized SSOT registry discovery (2. use/imports)
 pub use crate::monitoring::aggregator::TelemetryEvent;
-pub use crate::persistence::events::{MemoryWorkerEvent, PersistenceEvent};
+pub use crate::persistence::{MemoryWorkerEvent, PersistenceEvent};
 use crate::{core::state::InteractionOwner, setup::model_manager::ModelSetupStatus};
 
 #[derive(Debug, Clone)]

@@ -36,7 +36,8 @@ impl VoxDb {
             .await?;
         let conn = db.connect()?;
 
-        if let Err(e) = conn.execute("PRAGMA journal_mode = WAL;", ()).await {
+        // PRAGMA journal_mode returns a row with the result (e.g. "wal"), so use query() instead of execute()
+        if let Err(e) = conn.query("PRAGMA journal_mode = WAL;", ()).await {
             log::warn!("[Persistence::Db] Failed to set journal_mode WAL: {}", e);
         }
         let timeout_pragma = format!("PRAGMA busy_timeout = {};", SQLITE_BUSY_TIMEOUT_MS);
