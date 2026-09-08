@@ -1,4 +1,5 @@
 use std::time::Duration;
+use std::collections::HashMap;
 
 pub const PERSISTENCE_CHANNEL_CAPACITY: usize = 128;
 pub const MEMORY_WORKER_CHANNEL_CAPACITY: usize = 32;
@@ -11,7 +12,6 @@ pub const SQLITE_BUSY_TIMEOUT_MS: u32 = 5000;
 
 pub mod compactions;
 pub mod db;
-pub mod events;
 pub mod graph;
 pub mod memory_mutations;
 pub mod memory_queries;
@@ -31,6 +31,47 @@ pub use memory_queries as queries;
 pub use memory_queries::{MemoryQueueItem, MemoryQueueSummary};
 pub use notifications::{NewNotification, NotificationRecord};
 pub use sessions::{SessionRow, TurnRow};
+
+#[derive(Debug, Clone)]
+pub enum PersistenceEvent {
+    SessionStarted {
+        id: u64,
+        timestamp_ms: u64,
+    },
+    SessionEnded {
+        id: u64,
+        timestamp_ms: u64,
+    },
+    TurnCompleted {
+        conversation_id: u64,
+        turn_id: u32,
+        user_text: String,
+        assistant_text: String,
+        stt_latency_ms: u32,
+        ttft_ms: u32,
+    },
+    TurnCancelled {
+        conversation_id: u64,
+        turn_id: u32,
+    },
+    Shutdown,
+}
+
+#[derive(Debug, Clone)]
+pub enum MemoryWorkerEvent {
+    SessionEnd {
+        session_id: String,
+        summary: String,
+    },
+    PersonalFactsReady {
+        facts: HashMap<String, Vec<String>>,
+        session_id: String,
+    },
+    ActiveSessionChanged {
+        session_id: u64,
+    },
+    Shutdown,
+}
 
 /// Floating-point vector byte-blob encoding and decoding helpers for Turso F32_BLOB columns.
 pub fn encode_f32_blob(floats: &[f32]) -> Vec<u8> {

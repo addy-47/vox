@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 use crate::{
     core::{constants::TRANSCRIPT_HISTORY_LIMIT, events::VoxEvent, settings::VoxSettings},
     monitoring::{aggregator::TelemetryEvent, runtime_state::MonitoringState},
-    persistence::events::{MemoryWorkerEvent, PersistenceEvent},
+    persistence::{MemoryWorkerEvent, PersistenceEvent},
     pipeline::assistant::accumulator::TurnAccumulator,
     services::{
         audio::{AudioStream, PlaybackEngine},

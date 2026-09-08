@@ -18,7 +18,7 @@ use crate::{
         state::{AppState, InteractionOwner, InteractionState, VoxEngine},
     },
     persistence::{
-        db::get_tokio_handle, events::PersistenceEvent, worker::spawn_persistence_worker,
+        db::get_tokio_handle, PersistenceEvent, worker::spawn_persistence_worker,
     },
     pipeline::{router::spawn_router, target_window},
     services::{
