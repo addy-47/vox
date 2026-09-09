@@ -2,7 +2,8 @@ import { useState, useMemo, useEffect, memo, Suspense, lazy } from "react";
 import { RotateCcw, Check, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
-import { ErrorBoundary, OrbitalLoader, TopRightCluster } from "@/shared/components/common";
+import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
+import { TopRightCluster } from "@/shared/ui";
 import { AnimatePresence, motion } from "framer-motion";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
@@ -297,7 +298,7 @@ export const Settings: React.FC = () => {
               )}
 
               {/* Help & Notifications */}
-              <TopRightCluster deepLink="settings:overview" className="pointer-events-auto" />
+              <TopRightCluster className="pointer-events-auto" />
 
               {/* Restore Defaults with confirm state */}
               <Tooltip

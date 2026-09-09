@@ -8,7 +8,6 @@ import React, {
 import { AnimatePresence, motion } from "framer-motion";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { useOverlay } from "@/shared/hooks/useOverlay";
-import { TopRightCluster } from "@/shared/components/common";
 import {
   RefreshCw,
   X,
@@ -217,7 +216,6 @@ export const Monitoring: React.FC<MonitoringProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <TopRightCluster deepLink="page:monitoring" className="pointer-events-auto" />
           {/* Memory Profiler Quick Launch Button (Disabled by default, can be toggled on for diagnostic sessions) */}
           {false && (
             <Tooltip label={MONITORING_COPY.openProfiler}>

@@ -70,20 +70,23 @@ async fn run_consolidation_once<R: tauri::Runtime>(
     let provider = resolve_provider(state)
         .ok_or_else(|| anyhow!("Failed to initialize LLM provider for consolidation"))?;
 
-    let record =
-        consolidate_personal_memory(&state.db, provider.as_ref(), None, None).await?;
+    let record = consolidate_personal_memory(&state.db, provider.as_ref(), None, None).await?;
 
     let (context_window, max_context_share) = {
         let s = state.settings.read().unwrap_or_else(|p| p.into_inner());
         (s.llm.context_window as usize, s.memory.max_context_share)
     };
-    state
-        .conversation_manager
-        .lock()
-        .set_personal_memory(Some(record.content.clone()), context_window, max_context_share);
+    state.conversation_manager.lock().set_personal_memory(
+        Some(record.content.clone()),
+        context_window,
+        max_context_share,
+    );
 
     if let Err(e) = emit_ipc(app, IpcEvent::PersonalMemoryUpdated(record)) {
-        log::warn!("[Memory::Scheduler] Failed to emit PersonalMemoryUpdated: {}", e);
+        log::warn!(
+            "[Memory::Scheduler] Failed to emit PersonalMemoryUpdated: {}",
+            e
+        );
     }
 
     flip_missed_card_to_completed(app, &state.db).await;
@@ -115,11 +118,17 @@ async fn ensure_card<R: tauri::Runtime>(
     match create_notification(conn, &notif).await {
         Ok(record) => {
             if let Err(e) = emit_ipc(app, IpcEvent::NotificationCreated(record)) {
-                log::warn!("[Memory::Scheduler] Failed to emit NotificationCreated: {}", e);
+                log::warn!(
+                    "[Memory::Scheduler] Failed to emit NotificationCreated: {}",
+                    e
+                );
             }
         }
         Err(e) => {
-            log::warn!("[Memory::Scheduler] Failed to create consolidation card: {}", e);
+            log::warn!(
+                "[Memory::Scheduler] Failed to create consolidation card: {}",
+                e
+            );
         }
     }
 }
@@ -137,7 +146,10 @@ async fn flip_card<R: tauri::Runtime>(
     if let Ok(Some(mut record)) = fetch_notification_by_id(conn, id).await {
         record.status = status.to_string();
         if let Err(e) = emit_ipc(app, IpcEvent::NotificationUpdated(record)) {
-            log::warn!("[Memory::Scheduler] Failed to emit NotificationUpdated: {}", e);
+            log::warn!(
+                "[Memory::Scheduler] Failed to emit NotificationUpdated: {}",
+                e
+            );
         }
     }
 }

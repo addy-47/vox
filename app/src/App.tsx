@@ -1,15 +1,19 @@
-import React, { Suspense, lazy, useEffect, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { getOnboardingStatus } from "@/services/modelService";
 import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
 import { WizardRoot } from "@/wizard/WizardRoot";
 import { TitleBar } from "@/layout/TitleBar";
-import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
+import { ErrorBoundary, OrbitalLoader, HelpPanel, NotificationPanel } from "@/shared/components/common";
+import { EdgePanel } from "@/shared/ui";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
+import { HELP_DRAWER_COPY } from "@/data/helpCopy";
+import { NOTIFICATION_COPY } from "@/data/notificationCopy";
 import { MemoryProfilerProvider } from "@/shared/context/MemoryProfilerContext";
 import { VoiceSessionProvider } from "@/shared/context/VoiceSessionContext";
 import { ProfilerDrawerProvider } from "@/shared/components/profiler/ProfilerDrawer";
-import { HelpDrawerProvider } from "@/shared/components/help/HelpDrawerProvider";
+import { PanelStateProvider, usePanelStateContext } from "@/shared/hooks/usePanelState";
+import { useNotificationStore } from "@/store/notificationStore";
 import { installOverlayStack } from "@/shared/lib/overlayStack";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -20,6 +24,28 @@ const History = lazy(() => import("@/pages/History").then(m => ({ default: m.His
 const Memory = lazy(() => import("@/pages/Memory").then(m => ({ default: m.Memory })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
 const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({ default: m.Monitoring })));
+
+/**
+ * Right-edge rails (Help / Notifications) mounted once at app level.
+ * Help and Notifications share one exclusive group via usePanelState.
+ */
+const AppPanels: React.FC = () => {
+  const { isPanelOpen, closePanel } = usePanelStateContext();
+
+  const closeHelp = useCallback(() => closePanel("help"), [closePanel]);
+  const closeNotifications = useCallback(() => closePanel("notifications"), [closePanel]);
+
+  return (
+    <>
+      <EdgePanel side="right" open={isPanelOpen("help")} onClose={closeHelp} title={HELP_DRAWER_COPY.headerTitle}>
+        <HelpPanel onClose={closeHelp} />
+      </EdgePanel>
+      <EdgePanel side="right" open={isPanelOpen("notifications")} onClose={closeNotifications} title={NOTIFICATION_COPY.title}>
+        <NotificationPanel onClose={closeNotifications} />
+      </EdgePanel>
+    </>
+  );
+};
 
 // Premium Shared Orbital Loading Screen
 const PageLoader = () => (
@@ -99,6 +125,32 @@ const App: React.FC = () => {
 
   const isLoading = setupCompleted === null || !readyToTransition;
 
+  // Single app-level notification fetch + listener lifecycle. Panels are
+  // pure lists; this effect runs once (store actions are stable references).
+  const fetchNotifications = useNotificationStore((s) => s.fetchNotifications);
+  const initListeners = useNotificationStore((s) => s.initListeners);
+  useEffect(() => {
+    let isMounted = true;
+    let cleanupListeners: (() => void) | null = null;
+
+    fetchNotifications().catch(() => {});
+
+    initListeners()
+      .then((cleanup) => {
+        if (isMounted) {
+          cleanupListeners = cleanup;
+        } else {
+          cleanup();
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+      if (cleanupListeners) cleanupListeners();
+    };
+  }, [fetchNotifications, initListeners]);
+
   // Global overlay stack — single authority for FILO Escape / outside-click
   // dismissal. Deferred to requestIdleCallback so it doesn't run during the
   // critical first-paint path. The overlay system is only needed once the
@@ -124,32 +176,33 @@ const App: React.FC = () => {
               <div className="relative h-full w-full">
                 {setupCompleted !== null && (
                   <Suspense fallback={null}>
-                    <HelpDrawerProvider>
-                    <ProfilerDrawerProvider>
-                      <Routes>
-                      {/* If setup not completed, always redirect to wizard */}
-                      {!setupCompleted && (
-                        <>
-                          <Route path="/wizard" element={<WizardRoot />} />
-                          <Route path="*" element={<Navigate to="/wizard" replace />} />
-                        </>
-                      )}
+                    <PanelStateProvider>
+                      <ProfilerDrawerProvider>
+                        <Routes>
+                        {/* If setup not completed, always redirect to wizard */}
+                        {!setupCompleted && (
+                          <>
+                            <Route path="/wizard" element={<WizardRoot />} />
+                            <Route path="*" element={<Navigate to="/wizard" replace />} />
+                          </>
+                        )}
 
-                      {/* Main App Routes */}
-                      {setupCompleted && (
-                        <Route element={<ResponsiveLayout />}>
-                          <Route path="/" element={<ErrorBoundary name="Home"><Home /></ErrorBoundary>} />
-                          <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
-                          <Route path="/memory" element={<ErrorBoundary name="Memory"><Memory /></ErrorBoundary>} />
-                          <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
-                          <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
-                          <Route path="/wizard" element={<Navigate to="/" replace />} />
-                          <Route path="*" element={<Navigate to="/" replace />} />
-                        </Route>
-                      )}
-                    </Routes>
-                    </ProfilerDrawerProvider>
-                    </HelpDrawerProvider>
+                        {/* Main App Routes */}
+                        {setupCompleted && (
+                          <Route element={<ResponsiveLayout />}>
+                            <Route path="/" element={<ErrorBoundary name="Home"><Home /></ErrorBoundary>} />
+                            <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
+                            <Route path="/memory" element={<ErrorBoundary name="Memory"><Memory /></ErrorBoundary>} />
+                            <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
+                            <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
+                            <Route path="/wizard" element={<Navigate to="/" replace />} />
+                            <Route path="*" element={<Navigate to="/" replace />} />
+                          </Route>
+                        )}
+                      </Routes>
+                        <AppPanels />
+                      </ProfilerDrawerProvider>
+                    </PanelStateProvider>
                   </Suspense>
                 )}
 

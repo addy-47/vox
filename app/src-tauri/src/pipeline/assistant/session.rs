@@ -548,6 +548,5 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
                 }
             }
         }
-
     });
 }
