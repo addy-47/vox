@@ -233,7 +233,10 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
                                 e
                             );
                             if let Err(send_err) = event_tx.send(VoxEvent::Cancelled { turn_id }) {
-                                log::warn!("[LLM Worker] Failed to dispatch Cancelled: {}", send_err);
+                                log::warn!(
+                                    "[LLM Worker] Failed to dispatch Cancelled: {}",
+                                    send_err
+                                );
                             }
                         } else {
                             log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);

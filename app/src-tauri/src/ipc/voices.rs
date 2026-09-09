@@ -6,22 +6,21 @@
 use std::{
     fs::{create_dir_all, remove_dir_all},
     path::Path,
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::Serialize;
+use tauri::State;
 
 use crate::{
-    core::error::VoxIpcError,
-    persistence::{
-        db::VoxDb,
-        voices::{self, VoiceEntry},
-    },
+    core::{error::VoxIpcError, state::AppState},
+    persistence::voices::{self, VoiceEntry},
     services::tts::voice::{
         convert_and_validate_audio, fetch_remote_edge_voices, pre_bake_speaker_tensors,
         start_recording, stop_recording, write_pcm_to_wav, EdgeTtsVoiceEntry,
     },
-    utils::paths::{db_path, voice_dir},
+    utils::paths::voice_dir,
 };
 
 /// Frontend-safe representation of a voice entry.
@@ -48,13 +47,6 @@ impl From<VoiceEntry> for VoiceEntryDto {
 
 pub type EdgeTtsVoiceDto = EdgeTtsVoiceEntry;
 
-async fn open_db() -> Result<turso::Connection, VoxIpcError> {
-    let db_path = db_path();
-    VoxDb::open(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))
-}
-
 fn now_epoch() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -64,7 +56,10 @@ fn now_epoch() -> i64 {
 
 /// Return saved voices from SQLite database or remote Edge TTS voices based on provider.
 #[tauri::command]
-pub async fn list_voices(provider: Option<String>) -> Result<Vec<VoiceEntryDto>, VoxIpcError> {
+pub async fn list_voices(
+    provider: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<VoiceEntryDto>, VoxIpcError> {
     if let Some(p) = provider.as_deref() {
         if p.to_lowercase() == "edge" || p.to_lowercase() == "edge_tts" {
             let edge_voices = fetch_remote_edge_voices()
@@ -84,8 +79,8 @@ pub async fn list_voices(provider: Option<String>) -> Result<Vec<VoiceEntryDto>,
         }
     }
 
-    let conn = open_db().await?;
-    voices::list_voices(&conn)
+    let conn = &state.db;
+    voices::list_voices(conn)
         .await
         .map(|entries| entries.into_iter().map(VoiceEntryDto::from).collect())
         .map_err(|e| VoxIpcError::Database(format!("Failed to list voices: {}", e)))
@@ -98,6 +93,7 @@ const MAX_VOICE_RECORDING_SAMPLES: usize = 1_600_000; // ~100s at 16kHz (~6.4 MB
 pub async fn add_voice_from_file(
     name: String,
     file_path: String,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<VoiceEntryDto, VoxIpcError> {
     let name = name.trim().to_string();
     if name.is_empty() {
@@ -155,8 +151,8 @@ pub async fn add_voice_from_file(
         preview_wav: None,
     };
 
-    let conn = open_db().await?;
-    voices::insert_voice(&conn, &entry)
+    let conn = &state.db;
+    voices::insert_voice(conn, &entry)
         .await
         .map_err(|e| VoxIpcError::Database(format!("Failed to save voice: {}", e)))?;
 
@@ -174,6 +170,7 @@ pub async fn add_voice_from_recording(
     name: String,
     pcm_f32: Vec<f32>,
     sample_rate: u32,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<VoiceEntryDto, VoxIpcError> {
     let name = name.trim().to_string();
     if name.is_empty() {
@@ -231,8 +228,8 @@ pub async fn add_voice_from_recording(
         preview_wav: None,
     };
 
-    let conn = open_db().await?;
-    voices::insert_voice(&conn, &entry)
+    let conn = &state.db;
+    voices::insert_voice(conn, &entry)
         .await
         .map_err(|e| VoxIpcError::Database(format!("Failed to save voice: {}", e)))?;
 
@@ -246,14 +243,17 @@ pub async fn add_voice_from_recording(
 
 /// Delete a voice entry from the database and remove all associated files from disk.
 #[tauri::command]
-pub async fn delete_voice(id: String) -> Result<(), VoxIpcError> {
-    let conn = open_db().await?;
-    let entry = voices::get_voice(&conn, &id)
+pub async fn delete_voice(
+    id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
+    let conn = &state.db;
+    let entry = voices::get_voice(conn, &id)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB error: {}", e)))?
         .ok_or_else(|| VoxIpcError::NotFound(format!("Voice not found: {}", id)))?;
 
-    voices::delete_voice(&conn, &id)
+    voices::delete_voice(conn, &id)
         .await
         .map_err(|e| VoxIpcError::Database(format!("Failed to delete voice from DB: {}", e)))?;
 
@@ -273,10 +273,14 @@ pub async fn delete_voice(id: String) -> Result<(), VoxIpcError> {
 
 /// Rename a voice entry in the database.
 #[tauri::command]
-pub async fn rename_voice(id: String, name: String) -> Result<(), VoxIpcError> {
+pub async fn rename_voice(
+    id: String,
+    name: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
     let name = name.trim().to_string();
-    let conn = open_db().await?;
-    voices::rename_voice(&conn, &id, &name)
+    let conn = &state.db;
+    voices::rename_voice(conn, &id, &name)
         .await
         .map_err(|e| VoxIpcError::Database(format!("Failed to rename voice: {}", e)))?;
     log::info!("[Voices] Renamed voice {} to '{}'", id, name);

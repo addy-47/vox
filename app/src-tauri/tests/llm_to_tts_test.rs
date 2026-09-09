@@ -36,7 +36,7 @@ use vox_lib::{
 async fn test_real_llm_to_tts_matrix() {
     let test_timeout = Duration::from_secs(60);
     tokio::time::timeout(test_timeout, async {
-        let (app, state) = common::harness::get_test_app_and_state();
+        let (app, state) = common::harness::get_test_app_and_state().await;
 
         let qwen_model_path = common::paths::get_qwen_model_path();
         assert!(

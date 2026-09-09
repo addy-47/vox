@@ -1,7 +1,6 @@
 use std::sync::{atomic::Ordering, Arc};
 
 use tauri::AppHandle;
-
 use turso::Connection;
 
 use crate::{
@@ -83,6 +82,8 @@ fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
             provider_kind,
             llm_provider: cached_provider.as_deref(),
             llm_settings: Some(&settings.llm),
+            cancel_token: Some(&cancel),
+            pipeline_tx: pipeline_tx.as_ref(),
         })
         .await;
 

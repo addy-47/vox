@@ -23,6 +23,7 @@ use crate::{
     pipeline::dictation::transition_dictation,
     services::{
         dictation::init_dictation_hotkey_listener,
+        memory::scheduler::parse_consolidation_time,
         tts::TtsCommand,
         vad::{VadCommand, VadOperationalMode},
     },
@@ -74,7 +75,10 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
                         .vad_tx
                         .send(VadCommand::SetOperationalMode(vad_op_mode))
                     {
-                        log::warn!("[SettingsMutation] Failed to send SetOperationalMode to VAD: {}", e);
+                        log::warn!(
+                            "[SettingsMutation] Failed to send SetOperationalMode to VAD: {}",
+                            e
+                        );
                     }
                 }
             }
@@ -935,6 +939,25 @@ fn apply_memory_mutation(
                 return Err("semantic_similarity_cutoff must be between 0.0 and 1.0".to_string());
             }
             settings.memory.semantic_similarity_cutoff = val;
+        }
+        "consolidation_cadence" => {
+            let val = value
+                .as_str()
+                .ok_or("consolidation_cadence must be a string")?;
+            if !matches!(val, "manual" | "daily") {
+                return Err(
+                    "consolidation_cadence must be one of: manual, daily".to_string(),
+                );
+            }
+            settings.memory.consolidation_cadence = val.to_string();
+        }
+        "consolidation_time" => {
+            let val = value
+                .as_str()
+                .ok_or("consolidation_time must be a string")?;
+            parse_consolidation_time(val)
+                .ok_or("consolidation_time must be in HH:MM 24-hour format".to_string())?;
+            settings.memory.consolidation_time = val.to_string();
         }
         _ => return Ok(false),
     }

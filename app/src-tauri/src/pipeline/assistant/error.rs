@@ -95,11 +95,17 @@ pub fn on_error<R: tauri::Runtime + 'static>(
             match create_notification(&db, &new_notif).await {
                 Ok(record) => {
                     if let Err(e) = emit_ipc(&app_handle, IpcEvent::NotificationCreated(record)) {
-                        log::warn!("[ErrorNotification] Failed to emit NotificationCreated: {}", e);
+                        log::warn!(
+                            "[ErrorNotification] Failed to emit NotificationCreated: {}",
+                            e
+                        );
                     }
                 }
                 Err(e) => {
-                    log::warn!("[ErrorNotification] Failed to create notification in db: {}", e);
+                    log::warn!(
+                        "[ErrorNotification] Failed to create notification in db: {}",
+                        e
+                    );
                 }
             }
         });

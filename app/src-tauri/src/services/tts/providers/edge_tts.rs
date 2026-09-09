@@ -1,11 +1,10 @@
 use std::{
     fmt::Write,
-    net::{TcpStream,ToSocketAddrs},
+    net::{TcpStream, ToSocketAddrs},
     sync::{
-        Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc::Sender,
-        LazyLock,
+        Arc, LazyLock,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -298,15 +297,14 @@ impl TtsProvider for EdgeTtsProvider {
         let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
         let speed_pct = format!("{:+}%", ((speed - 1.0) * 100.0) as i32);
 
-        static EDGE_TTS_RUNTIME: LazyLock<tokio::runtime::Runtime> =
-            LazyLock::new(|| {
-                tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(2)
-                    .enable_all()
-                    .thread_name("vox-edge-tts")
-                    .build()
-                    .expect("Failed to build Edge TTS shared Tokio runtime")
-            });
+        static EDGE_TTS_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .thread_name("vox-edge-tts")
+                .build()
+                .expect("Failed to build Edge TTS shared Tokio runtime")
+        });
 
         if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
             log::debug!(
@@ -399,11 +397,7 @@ impl TtsProvider for EdgeTtsProvider {
         let host_port = format!("{}:{}", EDGE_TTS_HOST, EDGE_TTS_PORT);
         if let Ok(mut addrs) = host_port.to_socket_addrs() {
             if let Some(addr) = addrs.next() {
-                return TcpStream::connect_timeout(
-                    &addr,
-                    Duration::from_secs(2),
-                )
-                .is_ok();
+                return TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_ok();
             }
         }
         false

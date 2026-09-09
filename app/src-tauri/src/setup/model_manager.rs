@@ -263,9 +263,7 @@ impl ModelManager {
         let marker = VerifiedMarker {
             model_id: Some(model_id.clone()),
             sha256: entry.sha256.clone(),
-            verified_at: SystemTime::now()
-                .duration_since(UNIX_EPOCH)?
-                .as_millis() as u64,
+            verified_at: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
             expected_size: entry.size_bytes,
         };
         marker.save_async(&verified_path).await?;
@@ -374,10 +372,7 @@ impl ModelManager {
                 for entry_res in archive.entries()? {
                     let mut entry = entry_res?;
                     let path = entry.path()?;
-                    if path
-                        .components()
-                        .any(|c| c == Component::ParentDir)
-                    {
+                    if path.components().any(|c| c == Component::ParentDir) {
                         return Err(anyhow::anyhow!(
                             "Tar-Slip vulnerability detected: illegal path traversal in archive: {:?}",
                             path
