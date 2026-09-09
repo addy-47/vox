@@ -218,10 +218,7 @@ pub async fn commit_compaction_output(
 /// Resolves the compactable turn range for a session as `(from_turn_id, to_turn_id)`,
 /// where `from` is one past the latest completed run and `to` is the highest persisted turn.
 /// `to` may be less than `from` when no uncompacted turns are persisted yet (empty range marker).
-pub async fn resolve_uncompacted_range(
-    conn: &Connection,
-    session_id: i64,
-) -> Result<(u32, u32)> {
+pub async fn resolve_uncompacted_range(conn: &Connection, session_id: i64) -> Result<(u32, u32)> {
     let from = match fetch_latest_compaction_run(conn, session_id).await? {
         Some(run) if run.status == "completed" => run.to_turn_id.saturating_add(1),
         _ => 1,

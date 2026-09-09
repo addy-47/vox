@@ -6,7 +6,8 @@ import { ErrorBoundary } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
 import type { SettingsDomain as Domain } from "@/data/settingsCopy";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
-import { HelpTriggerButton } from "@/shared/components/help/HelpTriggerButton";
+import { HelpCircle } from "lucide-react";
+import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 
 export interface SettingsCardWrapperProps {
   domain: Domain;
@@ -21,6 +22,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   const commitChanges = useSettingsStore((s) => s.commitChanges);
 
   const hasChanges = useSettingsStore(useCallback((s: any) => Boolean(s.isDomainDirty(domain.id)), [domain.id]));
+  const { openPanel } = usePanelStateContext();
 
   const requiresRestart = useMemo(() => {
     if (!settings || !draftSettings) return false;
@@ -80,11 +82,14 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
             {/* Per-card Help trigger (desktop layouts only) */}
             {(layoutMode === "full-max" || layoutMode === "full-min") && (
               <div className="flex justify-end pr-1 -mb-1">
-                <HelpTriggerButton
-                  deepLink={`settings:${domain.id}`}
-                  size="sm"
-                  label={`Help: ${domain.label}`}
-                />
+                <button
+                  onClick={() => openPanel("help")}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.06)] transition-all cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                  aria-label={`Help: ${domain.label}`}
+                >
+                  <HelpCircle size={12} strokeWidth={1.75} />
+                  Help
+                </button>
               </div>
             )}
 

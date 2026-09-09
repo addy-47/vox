@@ -18,6 +18,13 @@ export const SESSION_COPY = {
   retry: "Retry",
   restoreFailedFallback: "Failed to restore conversation.",
   restoringAriaLabel: "Restoring conversation",
+  pinAriaLabel: "Pin conversation",
+  unpinAriaLabel: "Unpin conversation",
+  pinnedSection: "Pinned",
+  projectsSection: "Projects",
+  uncategorizedSection: "More conversations",
+  newProjectPlaceholder: "New project name",
+  createProjectAriaLabel: "Create project",
   turnSingular: "turn",
   turnPlural: "turns",
   recency: {

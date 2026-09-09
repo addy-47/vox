@@ -945,9 +945,7 @@ fn apply_memory_mutation(
                 .as_str()
                 .ok_or("consolidation_cadence must be a string")?;
             if !matches!(val, "manual" | "daily") {
-                return Err(
-                    "consolidation_cadence must be one of: manual, daily".to_string(),
-                );
+                return Err("consolidation_cadence must be one of: manual, daily".to_string());
             }
             settings.memory.consolidation_cadence = val.to_string();
         }
