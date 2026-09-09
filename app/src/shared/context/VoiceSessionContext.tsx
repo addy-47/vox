@@ -15,8 +15,8 @@ import {
 } from "@/services/sessionService";
 import { testClip } from "@/services/pipelineService";
 import {
-  selectSession as selectSessionIpc,
-  startNewConversation as startNewConversationIpc,
+  continueSession as continueSessionIpc,
+  createSession as createSessionIpc,
 } from "@/services/historyService";
 import { getSettings } from "@/services/settingsService";
 import { SESSION_COPY } from "@/data/sessionCopy";
@@ -292,8 +292,8 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     if (sessionId === s.activeSessionId || s.isRestoring) return;
     storeApi().setIsRestoring(true);
     try {
-      const turns = await selectSessionIpc(sessionId);
-      const history: DialogueTurn[] = turns.map((t) => ({
+      const result = await continueSessionIpc(sessionId);
+      const history: DialogueTurn[] = result.turns.map((t) => ({
         user: t.user_text,
         assistant: t.assistant_text,
         id: t.turn_id,
@@ -321,7 +321,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     api.setActiveSessionId(null);
     api.setRestoreError(null);
     try {
-      await startNewConversationIpc();
+      await createSessionIpc();
     } catch (err: unknown) {
       storeApi().setRestoreError(err instanceof Error ? err.message : SESSION_COPY.restoreFailedFallback);
     }

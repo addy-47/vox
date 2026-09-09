@@ -211,7 +211,6 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
         let params = PrepareTurnParams {
             harness: &state.conversation_manager,
             tts_tx: Some(&tts_tx),
-            memory_tx: None,
             conn: None,
             query: "How does memory threshold compaction work?",
             turn_id,
@@ -266,7 +265,6 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
         let normal_params = PrepareTurnParams {
             harness: &state.conversation_manager,
             tts_tx: Some(&tts_tx),
-            memory_tx: None,
             conn: None,
             query: "Another short query",
             turn_id: turn_id + 1,

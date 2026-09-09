@@ -8,8 +8,6 @@ import {
   triggerSessionCompaction,
   listenNotificationCreated,
   listenNotificationUpdated,
-  listenNotificationDismissed,
-  listenNotificationsMarkedRead,
 } from "@/services/notificationService";
 
 interface NotificationStoreState {
@@ -130,26 +128,6 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
             compactingSessionIds: nextCompacting,
           };
         });
-      })
-    );
-
-    unlisteners.push(
-      await listenNotificationDismissed(({ id }) => {
-        set((state) => ({
-          notifications: state.notifications.filter((n) => n.id !== id),
-        }));
-      })
-    );
-
-    unlisteners.push(
-      await listenNotificationsMarkedRead(() => {
-        set((state) => ({
-          notifications: state.notifications.map((n) => ({
-            ...n,
-            is_read: true,
-            status: "read",
-          })),
-        }));
       })
     );
 

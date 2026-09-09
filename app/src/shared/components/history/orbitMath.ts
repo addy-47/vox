@@ -141,7 +141,7 @@ export function chunkSessionsIntoWindows(
   maxPerWindow: number
 ): SessionWindow[] {
   if (sessions.length === 0 || maxPerWindow <= 0) return [];
-  const sorted = [...sessions].sort((a, b) => b.started_at - a.started_at);
+  const sorted = [...sessions].sort((a, b) => b.created_at - a.created_at);
   const windows: SessionWindow[] = [];
   for (let i = 0; i < sorted.length; i += maxPerWindow) {
     const slice = sorted.slice(i, i + maxPerWindow);
@@ -149,9 +149,9 @@ export function chunkSessionsIntoWindows(
     const newest = slice[0];
     windows.push({
       sessions: slice,
-      startMs: newest.started_at,
-      endMs: oldest.started_at,
-      label: formatTimeRange(oldest.started_at, newest.started_at),
+      startMs: newest.created_at,
+      endMs: oldest.created_at,
+      label: formatTimeRange(oldest.created_at, newest.created_at),
     });
   }
   return windows;
@@ -376,7 +376,7 @@ export interface MonthGroup {
 export function groupSessionsByDay(sessions: SessionRow[]): DayGroup[] {
   const map = new Map<string, SessionRow[]>();
   for (const session of sessions) {
-    const key = toDayKey(session.started_at);
+    const key = toDayKey(session.created_at);
     const existing = map.get(key);
     if (existing) {
       existing.push(session);
@@ -388,8 +388,8 @@ export function groupSessionsByDay(sessions: SessionRow[]): DayGroup[] {
     .map(([dayKey, daySessions]) => ({
       dayKey,
       dayLabel: formatDayLabel(dayKey),
-      latestTimestamp: daySessions[0].started_at,
-      sessions: daySessions.sort((a, b) => b.started_at - a.started_at),
+      latestTimestamp: daySessions[0].created_at,
+      sessions: daySessions.sort((a, b) => b.created_at - a.created_at),
     }))
     .sort((a, b) => b.latestTimestamp - a.latestTimestamp);
 }

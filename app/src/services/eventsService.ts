@@ -1,4 +1,5 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { PersonalMemoryRecord } from "./memoryService";
 
 /**
  * Canonical Rust `InteractionState` enum (core/state.rs).
@@ -105,15 +106,6 @@ export interface NotificationRecord {
   created_at: number;
 }
 
-export interface NotificationDismissedPayload {
-  id: string;
-}
-
-/** `session_title_updated` payload — backend title consumer persisted a title. */
-export interface SessionTitleUpdatedPayload {
-  session_id: number;
-  title: string;
-}
 
 /**
  * Canonical IPC Event Map mirroring Rust `IpcEvent` registry in `core/events.rs`.
@@ -131,10 +123,9 @@ export interface IpcEventMap {
   show_toast: ToastPayload;
   notification_created: NotificationRecord;
   notification_updated: NotificationRecord;
-  notification_dismissed: NotificationDismissedPayload;
-  notifications_marked_read: void;
-  session_title_updated: SessionTitleUpdatedPayload;
+  session_title_updated?: never; // removed in v2 — title changes surface via sessions_changed
   sessions_changed: void;
+  personal_memory_updated: PersonalMemoryRecord;
 }
 
 /**
@@ -245,20 +236,12 @@ export function onNotificationUpdated(handler: (payload: NotificationRecord) => 
   return on("notification_updated", handler);
 }
 
-export function onNotificationDismissed(handler: (payload: NotificationDismissedPayload) => void): () => void {
-  return on("notification_dismissed", handler);
-}
-
-export function onNotificationsMarkedRead(handler: () => void): () => void {
-  return on("notifications_marked_read", handler);
-}
-
-export function onSessionTitleUpdated(
-  handler: (payload: SessionTitleUpdatedPayload) => void
-): () => void {
-  return on("session_title_updated", handler);
-}
-
 export function onSessionsChanged(handler: () => void): () => void {
   return on("sessions_changed", handler);
+}
+
+export function onPersonalMemoryUpdated(
+  handler: (payload: PersonalMemoryRecord) => void
+): () => void {
+  return on("personal_memory_updated", handler);
 }

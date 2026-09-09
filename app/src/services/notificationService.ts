@@ -76,11 +76,9 @@ export function triggerSessionCompaction(sessionId: number): Promise<void> {
 import {
   onNotificationCreated,
   onNotificationUpdated,
-  onNotificationDismissed,
-  onNotificationsMarkedRead,
 } from "./eventsService";
 
-/** Subscribes to notification creation events */
+/** Subscribes to notification creation events. */
 export function listenNotificationCreated(
   cb: (notif: NotificationRecord) => void
 ): Promise<UnlistenFn> {
@@ -88,26 +86,10 @@ export function listenNotificationCreated(
   return Promise.resolve(unlisten);
 }
 
-/** Subscribes to notification updated events */
+/** Subscribes to notification updated events. */
 export function listenNotificationUpdated(
   cb: (notif: NotificationRecord) => void
 ): Promise<UnlistenFn> {
   const unlisten = onNotificationUpdated(cb);
-  return Promise.resolve(unlisten);
-}
-
-/** Subscribes to notification dismissed events */
-export function listenNotificationDismissed(
-  cb: (payload: { id: string }) => void
-): Promise<UnlistenFn> {
-  const unlisten = onNotificationDismissed(cb);
-  return Promise.resolve(unlisten);
-}
-
-/** Subscribes to mark all notifications read events */
-export function listenNotificationsMarkedRead(
-  cb: () => void
-): Promise<UnlistenFn> {
-  const unlisten = onNotificationsMarkedRead(cb);
   return Promise.resolve(unlisten);
 }

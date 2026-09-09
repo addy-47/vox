@@ -129,103 +129,63 @@ pub fn ensure_embedder_loaded(memory_enabled: bool) -> Result<bool> {
     }
 }
 
-struct TextEncodingTensors {
-    input_ids: Array2<i64>,
-    attention_mask: Array2<i64>,
-    type_ids: Option<Array2<i64>>,
-    encoding: tokenizers::Encoding,
-    seq_len: usize,
-}
 
-/// Encodes input string into 2D tensor arrays and extracts encoding tokens.
-fn encode_text(embedder: &TextEmbedder, text: &str) -> Result<TextEncodingTensors> {
-    let encoding = embedder
-        .tokenizer
-        .encode(text, true)
-        .map_err(|e| anyhow::anyhow!("Tokenization failed: {:?}", e))?;
-
-    let ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
-    let mask: Vec<i64> = encoding
-        .get_attention_mask()
-        .iter()
-        .map(|&x| x as i64)
-        .collect();
-    let seq_len = ids.len();
-
-    let input_ids_arr = Array2::<i64>::from_shape_vec((1, seq_len), ids)?;
-    let attention_mask_arr = Array2::<i64>::from_shape_vec((1, seq_len), mask)?;
-
-    let type_ids_arr = if embedder.has_token_type_ids {
-        let type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&x| x as i64).collect();
-        Some(Array2::<i64>::from_shape_vec((1, seq_len), type_ids)?)
-    } else {
-        None
-    };
-
-    Ok(TextEncodingTensors {
-        input_ids: input_ids_arr,
-        attention_mask: attention_mask_arr,
-        type_ids: type_ids_arr,
-        encoding,
-        seq_len,
-    })
-}
-
-/// Pools token hidden states via attention mask weighting and applies L2 normalization.
-fn mean_pool_and_normalize(
-    last_hidden_state: &ndarray::ArrayViewD<f32>,
-    encoding_mask: &[u32],
-) -> Vec<f32> {
-    let shape = last_hidden_state.shape();
-    let out_seq_len = shape[1];
-    let hidden_size = shape[2];
-
-    let mut sum_embeddings = vec![0.0f32; hidden_size];
-    let mut sum_mask = 0.0f32;
-
-    for token_idx in 0..out_seq_len {
-        let mask_val = if token_idx < encoding_mask.len() {
-            encoding_mask[token_idx] as f32
-        } else {
-            0.0
-        };
-        sum_mask += mask_val;
-        for dim in 0..hidden_size {
-            sum_embeddings[dim] += last_hidden_state[[0, token_idx, dim]] * mask_val;
-        }
-    }
-
-    let divisor = if sum_mask > 0.0 { sum_mask } else { 1.0 };
-    for val in sum_embeddings.iter_mut().take(hidden_size) {
-        *val /= divisor;
-    }
-
-    l2_normalize_in_place(&mut sum_embeddings);
-    sum_embeddings
-}
-
-/// Generates a dense vector embedding for the input text.
-pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
+/// Generates dense vector embeddings for a batch of input texts in a single ONNX inference pass.
+pub fn generate_embeddings_batch(texts: &[&str]) -> Result<Option<Vec<Vec<f32>>>> {
     let lock = EMBEDDER.read();
     let embedder = match lock.as_ref() {
         Some(e) => e,
         None => return Ok(None),
     };
 
-    let tensors = encode_text(embedder, text)?;
-
-    if tensors.seq_len == 0 {
-        return Ok(Some(vec![0.0f32; embedder.dim]));
+    if texts.is_empty() {
+        return Ok(Some(Vec::new()));
     }
 
-    let input_ids_tensor = ort::value::Tensor::from_array(tensors.input_ids)
+    let batch_size = texts.len();
+    let encodings = embedder
+        .tokenizer
+        .encode_batch(texts.to_vec(), true)
+        .map_err(|e| anyhow::anyhow!("Batch tokenization failed: {:?}", e))?;
+
+    let max_len = encodings.iter().map(|e| e.get_ids().len()).max().unwrap_or(0);
+    if max_len == 0 {
+        return Ok(Some(vec![vec![0.0f32; embedder.dim]; batch_size]));
+    }
+
+    let mut input_ids_arr = Array2::<i64>::zeros((batch_size, max_len));
+    let mut attention_mask_arr = Array2::<i64>::zeros((batch_size, max_len));
+    let mut type_ids_arr = if embedder.has_token_type_ids {
+        Some(Array2::<i64>::zeros((batch_size, max_len)))
+    } else {
+        None
+    };
+
+    for (i, enc) in encodings.iter().enumerate() {
+        let ids = enc.get_ids();
+        let mask = enc.get_attention_mask();
+        for (j, &id) in ids.iter().enumerate() {
+            input_ids_arr[[i, j]] = id as i64;
+        }
+        for (j, &m) in mask.iter().enumerate() {
+            attention_mask_arr[[i, j]] = m as i64;
+        }
+        if let Some(ref mut type_arr) = type_ids_arr {
+            let type_ids = enc.get_type_ids();
+            for (j, &t) in type_ids.iter().enumerate() {
+                type_arr[[i, j]] = t as i64;
+            }
+        }
+    }
+
+    let input_ids_tensor = ort::value::Tensor::from_array(input_ids_arr)
         .map_err(|e| anyhow::anyhow!("Failed to create input_ids tensor: {:?}", e))?;
-    let attention_mask_tensor = ort::value::Tensor::from_array(tensors.attention_mask)
+    let attention_mask_tensor = ort::value::Tensor::from_array(attention_mask_arr.clone())
         .map_err(|e| anyhow::anyhow!("Failed to create attention_mask tensor: {:?}", e))?;
 
     let mut session_guard = embedder.session.lock();
 
-    let outputs = if let Some(type_ids_arr) = tensors.type_ids {
+    let outputs = if let Some(type_ids_arr) = type_ids_arr {
         let type_ids_tensor = ort::value::Tensor::from_array(type_ids_arr)
             .map_err(|e| anyhow::anyhow!("Failed to create type_ids tensor: {:?}", e))?;
 
@@ -235,14 +195,14 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
                 "attention_mask" => attention_mask_tensor,
                 "token_type_ids" => type_ids_tensor
             ])
-            .map_err(|e| anyhow::anyhow!("ONNX inference error: {:?}", e))?
+            .map_err(|e| anyhow::anyhow!("ONNX batch inference error: {:?}", e))?
     } else {
         session_guard
             .run(ort::inputs![
                 "input_ids" => input_ids_tensor,
                 "attention_mask" => attention_mask_tensor
             ])
-            .map_err(|e| anyhow::anyhow!("ONNX inference error: {:?}", e))?
+            .map_err(|e| anyhow::anyhow!("ONNX batch inference error: {:?}", e))?
     };
 
     let output_key = outputs
@@ -253,8 +213,44 @@ pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
         .try_extract_array::<f32>()
         .map_err(|e| anyhow::anyhow!("Failed to extract output array: {:?}", e))?;
 
-    let pooled = mean_pool_and_normalize(&last_hidden_state, tensors.encoding.get_attention_mask());
-    Ok(Some(pooled))
+    let shape = last_hidden_state.shape();
+    let out_seq_len = shape[1];
+    let hidden_size = shape[2];
+
+    let mut results = Vec::with_capacity(batch_size);
+
+    for i in 0..batch_size {
+        let mut sum_embeddings = vec![0.0f32; hidden_size];
+        let mut sum_mask = 0.0f32;
+
+        for token_idx in 0..out_seq_len {
+            let mask_val = if token_idx < max_len {
+                attention_mask_arr[[i, token_idx]] as f32
+            } else {
+                0.0
+            };
+            sum_mask += mask_val;
+            for dim in 0..hidden_size {
+                sum_embeddings[dim] += last_hidden_state[[i, token_idx, dim]] * mask_val;
+            }
+        }
+
+        let divisor = if sum_mask > 0.0 { sum_mask } else { 1.0 };
+        for val in sum_embeddings.iter_mut().take(hidden_size) {
+            *val /= divisor;
+        }
+
+        l2_normalize_in_place(&mut sum_embeddings);
+        results.push(sum_embeddings);
+    }
+
+    Ok(Some(results))
+}
+
+/// Generates a dense vector embedding for the input text.
+pub fn generate_embedding(text: &str) -> Result<Option<Vec<f32>>> {
+    let batch_res = generate_embeddings_batch(&[text])?;
+    Ok(batch_res.and_then(|mut v| v.pop()))
 }
 
 /// Returns true if the text embedder model is loaded and ready.

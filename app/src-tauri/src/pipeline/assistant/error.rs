@@ -10,13 +10,9 @@ use crate::{
         events::{emit_ipc, Actionability, IpcEvent, PipelineError, PipelineImpact, ToastLevel},
         state::{AppState, InteractionState},
     },
-    persistence::{
-        db::VoxDb,
-        notifications::{create_notification, NewNotification},
-    },
+    persistence::notifications::{create_notification, NewNotification},
     pipeline::{transition, RoutingContext},
     toast::{should_show_error_toast, show_toast},
-    utils::paths::db_path,
 };
 
 /// Handles pipeline subsystem errors according to the 2D Error Classification Matrix.
@@ -83,22 +79,27 @@ pub fn on_error<R: tauri::Runtime + 'static>(
     // Persistent Notification Surface (only when actionability is Actionable)
     if let Actionability::Actionable { category, hint } = err.actionability {
         let app_handle = app.clone();
+        let db = std::sync::Arc::clone(&state.db);
         let notif_id = format!("err_{}_{}", err.turn_id, current_timestamp_ms());
         let full_msg = format!("{}\nHint: {}", err.message, hint);
         tauri::async_runtime::spawn(async move {
-            let db_path = db_path();
-            if let Ok(conn) = VoxDb::open(&db_path).await {
-                let new_notif = NewNotification {
-                    id: notif_id,
-                    category: category.to_string(),
-                    title: format!("Action Required: {}", err.source),
-                    message: full_msg,
-                    status: "active".to_string(),
-                    session_id: None,
-                    metadata: String::new(),
-                };
-                if let Ok(record) = create_notification(&conn, &new_notif).await {
-                    let _ = emit_ipc(&app_handle, IpcEvent::NotificationCreated(record));
+            let new_notif = NewNotification {
+                id: notif_id,
+                category: category.to_string(),
+                title: format!("Action Required: {}", err.source),
+                message: full_msg,
+                status: "active".to_string(),
+                session_id: None,
+                metadata: String::new(),
+            };
+            match create_notification(&db, &new_notif).await {
+                Ok(record) => {
+                    if let Err(e) = emit_ipc(&app_handle, IpcEvent::NotificationCreated(record)) {
+                        log::warn!("[ErrorNotification] Failed to emit NotificationCreated: {}", e);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[ErrorNotification] Failed to create notification in db: {}", e);
                 }
             }
         });

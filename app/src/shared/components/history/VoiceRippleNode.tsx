@@ -4,7 +4,7 @@ import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { type SessionRow } from "@/services/historyService";
 import { HISTORY_COPY } from "@/data/historyCopy";
-import { formatClockTime, formatDuration, ORBIT_CARD_WIDTH } from "./orbitMath";
+import { formatClockTime, ORBIT_CARD_WIDTH } from "./orbitMath";
 
 export interface VoiceRippleNodeProps {
   session: SessionRow;
@@ -37,13 +37,8 @@ export const VoiceRippleNode = memo(
       return words.slice(0, 7).join(" ") + "...";
     }, [session.first_message]);
 
-    const durationLabel = useMemo(
-      () =>
-        session.ended_at !== null && session.ended_at >= session.started_at
-          ? formatDuration(session.ended_at - session.started_at)
-          : null,
-      [session.ended_at, session.started_at]
-    );
+    // Duration label removed in v2 — sessions no longer carry an ended_at timestamp.
+    // Session length is not tracked at the persistence layer.
 
     const bars = useMemo(
       () => Array.from({ length: 4 }, (_, i) => barHeight(session.turn_count, i)),
@@ -91,7 +86,7 @@ export const VoiceRippleNode = memo(
               )}
             </div>
             <span className="text-[12px] font-mono text-[rgb(var(--foreground))] font-bold">
-              {formatClockTime(session.started_at)}
+              {formatClockTime(session.created_at)}
             </span>
           </div>
 
@@ -137,12 +132,6 @@ export const VoiceRippleNode = memo(
                 </Tooltip>
               )}
             </div>
-
-            {durationLabel && (
-              <span className="text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))]">
-                {durationLabel}
-              </span>
-            )}
           </div>
         </div>
 

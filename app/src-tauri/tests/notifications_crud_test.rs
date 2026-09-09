@@ -167,7 +167,7 @@ async fn test_compaction_ledger_queries_and_mutations() {
     assert_eq!(uncompacted[0].last_compacted_turn_id, 0);
 
     // Fetch turns for compaction
-    let turns = fetch_turns_for_compaction(&conn, 100, 0)
+    let turns = fetch_turns_for_compaction(&conn, 100, 0, u32::MAX)
         .await
         .expect("Failed to fetch turns");
     assert_eq!(turns.len(), 3);
@@ -217,7 +217,7 @@ async fn test_compaction_ledger_queries_and_mutations() {
     let fail_run_id = record_compaction_start(&conn, 100, "manual", 4, 5)
         .await
         .expect("Failed to record start");
-    record_compaction_finish(&conn, fail_run_id, "failed", 0, Some("LLM timed out"))
+    record_compaction_finish(&conn, fail_run_id, "", "failed", Some("LLM timed out"))
         .await
         .expect("Failed to record finish");
 

@@ -21,7 +21,7 @@ use vox_lib::{
         settings::{DictationInteractionMode, InteractionMode, PipelineMode},
         state::{AppState, InteractionOwner, InteractionState},
     },
-    persistence::{MemoryWorkerEvent, PersistenceEvent},
+    persistence::PersistenceEvent,
     pipeline::{
         assistant::session::{on_end, on_pause, on_resume, on_session_start},
         dictation::transition_dictation,
@@ -30,40 +30,24 @@ use vox_lib::{
     services::vad::{VadCommand, VadOperationalMode},
 };
 
-/// Helper: Sets up channels on `state.persist_tx` and `state.memory_tx` to capture lifecycle events.
+/// Helper: Sets up channel on `state.persist_tx` to capture lifecycle events.
 fn setup_lifecycle_channels(
     state: &AppState,
-) -> (
-    crossbeam_channel::Receiver<PersistenceEvent>,
-    crossbeam_channel::Receiver<MemoryWorkerEvent>,
-) {
+) -> crossbeam_channel::Receiver<PersistenceEvent> {
     let (persist_tx, persist_rx) = crossbeam_channel::bounded::<PersistenceEvent>(32);
-    let (memory_tx, memory_rx) = crossbeam_channel::bounded::<MemoryWorkerEvent>(32);
 
     *state.persist_tx.lock() = Some(persist_tx);
-    *state.memory_tx.lock() = Some(memory_tx);
 
-    (persist_rx, memory_rx)
+    persist_rx
 }
 
-/// Helper: Seeds active Identity facts in the SQLite database to verify preloading during `on_session_start`.
+/// Helper: Seeds active Identity facts in personal_memory to verify preloading during `on_session_start`.
 async fn seed_test_identity_facts(db_path: &std::path::Path) -> anyhow::Result<()> {
     let conn = vox_lib::persistence::db::VoxDb::open(db_path).await?;
     vox_lib::persistence::schema::run_migrations(&conn).await?;
 
-    // Clear existing memory facts to make assertion deterministic
-    conn.execute("DELETE FROM memory_facts;", ()).await?;
-
     conn.execute(
-        "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
-         VALUES ('id_1', 'Fact', 'Identity', 'User is an advanced systems engineer.', 'User', 'active', 1000);",
-        (),
-    )
-    .await?;
-
-    conn.execute(
-        "INSERT INTO memory_facts (id, type, collection, fact, source, status, created_at)
-         VALUES ('id_2', 'Fact', 'Identity', 'Preferred language is Rust.', 'User', 'active', 2000);",
+        "UPDATE personal_memory SET content = 'User is an advanced systems engineer. Preferred language is Rust.' WHERE project_id IS NULL;",
         (),
     )
     .await?;
@@ -89,7 +73,7 @@ async fn test_session_start_modular_sets_ready_and_identity() {
         let (vad_cmd_tx, vad_cmd_rx) = mpsc::channel::<VadCommand>();
         let (_stt_tx, _pipeline_rx, _pipeline_tx) =
             attach_lifecycle_mock_engine(&app, &state, vad_cmd_tx);
-        let (persist_rx, memory_rx) = setup_lifecycle_channels(&state);
+        let persist_rx = setup_lifecycle_channels(&state);
 
         // State starts Idle
         state.pipeline.set_state(InteractionState::Idle);
@@ -132,28 +116,16 @@ async fn test_session_start_modular_sets_ready_and_identity() {
             .recv_timeout(Duration::from_millis(500))
             .expect("Persistence event must be received on session start");
         match persist_ev {
-            PersistenceEvent::SessionStarted { id, .. } => {
+            PersistenceEvent::SessionStarted { session_id, .. } => {
                 assert_eq!(
-                    id, conv_id,
+                    session_id, conv_id as i64,
                     "Persistence event ID must match conversation ID"
                 );
             }
             _ => panic!("Expected PersistenceEvent::SessionStarted"),
         }
 
-        // 4. Assert ActiveSessionChanged dispatched to memory
-        let memory_ev = memory_rx
-            .recv_timeout(Duration::from_millis(500))
-            .expect("Memory event must be received on session start");
-        match memory_ev {
-            MemoryWorkerEvent::ActiveSessionChanged { session_id } => {
-                assert_eq!(
-                    session_id, conv_id,
-                    "Memory session ID must match conversation ID"
-                );
-            }
-            _ => panic!("Expected MemoryWorkerEvent::ActiveSessionChanged"),
-        }
+
 
         // 5. Assert identity facts seeded from DB into Working Memory system prompt
         let assembled_prompt = state.conversation_manager.lock().assemble_system_prompt();
@@ -512,7 +484,7 @@ async fn test_session_end_purges_and_idles() {
         let (vad_cmd_tx, _vad_cmd_rx) = mpsc::channel::<VadCommand>();
         let (_stt_tx, _pipeline_rx, _pipeline_tx) =
             attach_lifecycle_mock_engine(&app, &state, vad_cmd_tx);
-        let (persist_rx, memory_rx) = setup_lifecycle_channels(&state);
+        let persist_rx = setup_lifecycle_channels(&state);
 
         // Populate session cache file
         let cache_dir = vox_lib::utils::paths::cache_dir();
@@ -579,22 +551,16 @@ async fn test_session_end_purges_and_idles() {
             .recv_timeout(Duration::from_millis(500))
             .expect("Persistence event must be received on session end");
         match persist_ev {
-            PersistenceEvent::SessionEnded { id, .. } => {
-                assert_eq!(id, conv_id, "Persistence event id must match conv_id");
+            PersistenceEvent::SessionEnded { session_id, .. } => {
+                assert_eq!(
+                    session_id, conv_id as i64,
+                    "Persistence event id must match conv_id"
+                );
             }
             other => panic!("Unexpected persistence event: {:?}", other),
         }
 
-        // 4. Assert SessionEnd memory event dispatched
-        let mem_ev = memory_rx
-            .recv_timeout(Duration::from_millis(500))
-            .expect("Memory worker event must be received on session end");
-        match mem_ev {
-            MemoryWorkerEvent::SessionEnd { session_id, .. } => {
-                assert_eq!(session_id, conv_id.to_string());
-            }
-            other => panic!("Unexpected memory event: {:?}", other),
-        }
+
 
         // 5. Assert realtime resumption cache purged from disk
         assert!(

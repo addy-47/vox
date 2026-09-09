@@ -4,7 +4,6 @@ import ReactMarkdown from "react-markdown";
 import { formatDateTime, type SessionRow, type TurnRow } from "@/services/historyService";
 import { EmptyState, OrbitalLoader } from "@/shared/components/common";
 import { HISTORY_COPY } from "@/data/historyCopy";
-import { Tooltip } from "@/shared/ui/Tooltip";
 import { Drawer } from "@/shared/ui/Drawer";
 
 function formatTime(ms: number): string {
@@ -58,20 +57,6 @@ const TurnBubble = memo(({ turn }: { turn: TurnRow }) => {
             <ReactMarkdown>{turn.assistant_text}</ReactMarkdown>
           )}
           <div className="flex gap-3 mt-2 border-t border-[rgba(var(--accent),0.1)] pt-1.5 shrink-0 text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-            {turn.stt_latency_ms !== null && (
-              <Tooltip label={HISTORY_COPY.hearingTime}>
-                <span className="cursor-help hover:text-[rgb(var(--accent))] transition-colors">
-                  {HISTORY_COPY.hearingPrefix} {turn.stt_latency_ms}ms
-                </span>
-              </Tooltip>
-            )}
-            {turn.ttft_ms !== null && (
-              <Tooltip label={HISTORY_COPY.thinkingTime}>
-                <span className="cursor-help hover:text-[rgb(var(--accent))] transition-colors">
-                  {HISTORY_COPY.thinkingPrefix} {turn.ttft_ms}ms
-                </span>
-              </Tooltip>
-            )}
             <span className="ml-auto text-[rgb(var(--foreground-muted))] font-medium">
               {formatTime(turn.created_at)}
             </span>
@@ -113,7 +98,7 @@ export const DetailPanel = memo(
         subtitle={
           session ? (
             <div className="text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))] mt-0.5">
-              {formatDateTime(session.started_at)} · {session.turn_count}{" "}
+              {formatDateTime(session.created_at)} · {session.turn_count}{" "}
               {session.turn_count === 1 ? HISTORY_COPY.turnSingular : HISTORY_COPY.turnPlural}
             </div>
           ) : undefined

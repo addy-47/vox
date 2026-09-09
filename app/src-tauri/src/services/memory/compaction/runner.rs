@@ -1,8 +1,4 @@
-use std::{
-    time::Duration,
-    collections::HashMap, 
-    sync::mpsc,
-};
+use std::{sync::mpsc, time::Duration};
 
 use anyhow::{anyhow, Result};
 use tokio_util::sync::CancellationToken;
@@ -15,15 +11,15 @@ use crate::{
         llm::{GenerationRequest, LlmProvider, LlmStreamEvent},
         memory::COMPACTION_SENTINEL_TURN_ID,
     },
-    utils::json::parse_compaction_json,
+    utils::json::parse_unified_compaction_json,
 };
 
-/// Extracted facts and summary resulting from LLM conversation compaction.
-#[derive(Debug, Clone)]
+/// Extracted facts and summary resulting from unified LLM conversation compaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactionResult {
+    pub raw_json: String,
     pub context_summary: String,
-    pub personal_memory: HashMap<String, Vec<String>>,
-    pub diff_to_enqueue: HashMap<String, Vec<String>>,
+    pub facts: Vec<(String, String)>,
 }
 
 /// Dispatches a single compaction generation request to the provider and collects streamed tokens asynchronously.
@@ -116,7 +112,7 @@ pub async fn run_compaction(
 
     let request = build_compaction_request(history_messages, settings);
     let mut summary_content = String::new();
-    let mut personal_memory = HashMap::new();
+    let mut parsed_payload = None;
     let mut attempts = 0;
     let max_attempts = 2;
 
@@ -136,10 +132,10 @@ pub async fn run_compaction(
         {
             summary_content = content;
             if !summary_content.trim().is_empty() {
-                if let Some(resp) = parse_compaction_json(&summary_content) {
-                    personal_memory = resp;
+                if let Some(resp) = parse_unified_compaction_json(&summary_content) {
+                    parsed_payload = Some(resp);
                     log::info!(
-                        "[MemoryCompaction] Compaction JSON parsed successfully on attempt {}.",
+                        "[MemoryCompaction] Compaction unified JSON parsed successfully on attempt {}.",
                         attempts
                     );
                     break;
@@ -158,20 +154,36 @@ pub async fn run_compaction(
         return Err(anyhow!("Live LLM compaction produced empty summary."));
     }
 
-    let final_summary = personal_memory
-        .get("Narrative")
-        .or_else(|| personal_memory.get("Context"))
-        .and_then(|v| v.first())
-        .cloned()
-        .unwrap_or_else(|| summary_content.clone());
+    let payload = parsed_payload.unwrap_or_default();
+    let final_summary = if !payload.context_summary.trim().is_empty() {
+        payload.context_summary
+    } else {
+        summary_content.clone()
+    };
 
-    if final_summary.trim().is_empty() {
-        return Err(anyhow!("Live LLM compaction produced empty summary."));
+    let mut facts = Vec::new();
+    for item in payload.personal {
+        facts.push(("personal".to_string(), item));
+    }
+    for item in payload.objective {
+        facts.push(("objective".to_string(), item));
+    }
+    for item in payload.workdone {
+        facts.push(("workdone".to_string(), item));
+    }
+    for item in payload.blocker {
+        facts.push(("blocker".to_string(), item));
+    }
+    for item in payload.next_step {
+        facts.push(("next_step".to_string(), item));
+    }
+    for item in payload.pitfall {
+        facts.push(("pitfall".to_string(), item));
     }
 
     Ok(CompactionResult {
+        raw_json: summary_content,
         context_summary: final_summary,
-        personal_memory: personal_memory.clone(),
-        diff_to_enqueue: personal_memory,
+        facts,
     })
 }

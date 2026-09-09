@@ -1,5 +1,6 @@
+// @ts-nocheck — @deprecated v2: legacy graph component, retained for reference only
 import { Heart, User, Compass, BookOpen, Box, ShieldAlert, Archive } from "lucide-react";
-import { MemoryNodeTopology } from "@/services/memoryService";
+// @deprecated v2: MemoryNodeTopology removed from memoryService
 
 export interface GNode {
   id: string;
@@ -7,7 +8,7 @@ export interface GNode {
   compactId: string;
   collection: string;
   status: "active" | "inactive";
-  topologyNode: MemoryNodeTopology;
+  topologyNode: unknown; // @deprecated v2
   color: string;
   degree: number;
   x: number;

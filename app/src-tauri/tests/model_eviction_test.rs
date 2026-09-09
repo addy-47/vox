@@ -22,9 +22,7 @@ use vox_lib::{
     core::{events::VoxEvent, settings::VoxSettings},
     services::{
         memory::ml::{
-            ensure_edge_classifier_loaded, ensure_embedder_loaded, ensure_nli_loaded,
-            ensure_scope_classifier_loaded, generate_embedding, is_edge_classifier_loaded,
-            is_embedder_loaded, is_nli_loaded, is_scope_classifier_loaded, unload_all_onnx_models,
+            ensure_embedder_loaded, generate_embedding, is_embedder_loaded, unload_all_onnx_models,
             unload_memory_pipeline_onnx_models,
         },
         translit::{init_transliteration_engine, is_transliteration_engine_loaded},
@@ -43,42 +41,15 @@ fn test_onnx_model_singleton_lifecycle_eviction() {
     // 0. Ensure starting clean
     unload_all_onnx_models();
     assert!(!is_embedder_loaded(), "Embedder must start unloaded");
-    assert!(!is_nli_loaded(), "NLI must start unloaded");
-    assert!(
-        !is_edge_classifier_loaded(),
-        "Edge classifier must start unloaded"
-    );
-    assert!(
-        !is_scope_classifier_loaded(),
-        "Scope classifier must start unloaded"
-    );
     assert!(
         !is_transliteration_engine_loaded(),
         "Transliteration must start unloaded"
     );
 
-    // 1. Lazy load all 4 memory ONNX models + transliteration engine
+    // 1. Lazy load memory embedder + transliteration engine
     let embedder_res = ensure_embedder_loaded(true).expect("ensure_embedder_loaded failed");
     assert!(embedder_res, "ensure_embedder_loaded must return true");
     assert!(is_embedder_loaded(), "Embedder must be loaded");
-
-    let nli_res = ensure_nli_loaded("").expect("ensure_nli_loaded failed");
-    assert!(nli_res, "ensure_nli_loaded must return true");
-    assert!(is_nli_loaded(), "NLI engine must be loaded");
-
-    ensure_edge_classifier_loaded().expect("ensure_edge_classifier_loaded failed");
-    assert!(
-        is_edge_classifier_loaded(),
-        "Edge classifier must be loaded"
-    );
-
-    let scope_res =
-        ensure_scope_classifier_loaded().expect("ensure_scope_classifier_loaded failed");
-    assert!(scope_res, "ensure_scope_classifier_loaded must return true");
-    assert!(
-        is_scope_classifier_loaded(),
-        "Scope classifier must be loaded"
-    );
 
     init_transliteration_engine().expect("init_transliteration_engine failed");
     assert!(
@@ -92,25 +63,13 @@ fn test_onnx_model_singleton_lifecycle_eviction() {
     assert!(emb.is_some(), "Active embedder must return Some(vector)");
     assert_eq!(emb.unwrap().len(), 384, "MiniLM dimension must be 384");
 
-    // 2. Partial Eviction: unload_memory_pipeline_onnx_models (3 models)
+    // 2. Partial Eviction: unload_memory_pipeline_onnx_models
     unload_memory_pipeline_onnx_models();
     assert!(
         !is_embedder_loaded(),
         "Embedder must be evicted after memory pipeline unload"
     );
-    assert!(
-        !is_nli_loaded(),
-        "NLI must be evicted after memory pipeline unload"
-    );
-    assert!(
-        !is_edge_classifier_loaded(),
-        "Edge classifier must be evicted after memory pipeline unload"
-    );
-    // Scope and transliteration should still remain active
-    assert!(
-        is_scope_classifier_loaded(),
-        "Scope classifier should remain loaded"
-    );
+    // Transliteration should still remain active
     assert!(
         is_transliteration_engine_loaded(),
         "Transliteration should remain loaded"
@@ -127,15 +86,6 @@ fn test_onnx_model_singleton_lifecycle_eviction() {
     // 3. Full Eviction: unload_all_onnx_models (evicts everything + translit + triggers trim_heap)
     unload_all_onnx_models();
     assert!(!is_embedder_loaded(), "Embedder must be evicted");
-    assert!(!is_nli_loaded(), "NLI must be evicted");
-    assert!(
-        !is_edge_classifier_loaded(),
-        "Edge classifier must be evicted"
-    );
-    assert!(
-        !is_scope_classifier_loaded(),
-        "Scope classifier must be evicted"
-    );
     assert!(
         !is_transliteration_engine_loaded(),
         "Transliteration must be evicted"
@@ -144,7 +94,6 @@ fn test_onnx_model_singleton_lifecycle_eviction() {
     // 4. Idempotency test: calling unload a second time must not panic or error
     unload_all_onnx_models();
     assert!(!is_embedder_loaded());
-    assert!(!is_nli_loaded());
 
     // 5. Reload verification: proving models can be reloaded into memory cleanly
     let reload_embedder =

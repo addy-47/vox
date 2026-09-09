@@ -15,8 +15,7 @@ use crate::{
     },
     persistence::{
         compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
-        db::{get_tokio_handle, VoxDb},
-        MemoryWorkerEvent, 
+        db::get_tokio_handle,
         PersistenceEvent,
     },
     pipeline::{init_new_session_sync, spawn_idle_monitor, transition, RoutingContext},
@@ -30,7 +29,6 @@ use crate::{
         vad::{VadCommand, VadOperationalMode},
     },
     toast::show_toast,
-    utils::paths::db_path,
 };
 
 /// Configures and arms the modular speech-to-text, LLM, and TTS worker pipelines.
@@ -207,7 +205,7 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
     let persist_lock = state.persist_tx.lock();
     if let Some(ref tx) = *persist_lock {
         if let Err(e) = tx.try_send(PersistenceEvent::SessionStarted {
-            id: conv_id,
+            session_id: conv_id as i64,
             timestamp_ms: now,
         }) {
             log::warn!(
@@ -217,17 +215,6 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
         }
     }
 
-    let mem_lock = state.memory_tx.lock();
-    if let Some(ref tx) = *mem_lock {
-        if let Err(e) = tx.try_send(MemoryWorkerEvent::ActiveSessionChanged {
-            session_id: conv_id,
-        }) {
-            log::trace!(
-                "[Pipeline::Session] Failed to send ActiveSessionChanged to memory: {}",
-                e
-            );
-        }
-    }
 
     let prompt = {
         let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
@@ -441,7 +428,7 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
         let persist_lock = state.persist_tx.lock();
         if let Some(ref tx) = *persist_lock {
             if let Err(e) = tx.try_send(PersistenceEvent::SessionEnded {
-                id: conv_id,
+                session_id: conv_id as i64,
                 timestamp_ms: now,
             }) {
                 log::warn!(
@@ -452,20 +439,6 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
         }
     }
 
-    {
-        let mem_lock = state.memory_tx.lock();
-        if let Some(ref tx) = *mem_lock {
-            if let Err(e) = tx.try_send(MemoryWorkerEvent::SessionEnd {
-                session_id: conv_id.to_string(),
-                summary: String::new(),
-            }) {
-                log::trace!(
-                    "[Pipeline::Session] Failed to send SessionEnd to memory: {}",
-                    e
-                );
-            }
-        }
-    }
 
     // Unconditionally yield owner to Dictation.
     state
@@ -514,18 +487,20 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
 
     let app_handle = app.clone();
     let session_id = conv_id as i64;
+    let db = state.db.clone();
 
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
-        let db_path = db_path();
-        if let Ok(conn) = VoxDb::open(&db_path).await {
-            let last_compacted = match fetch_latest_compaction_run(&conn, session_id).await {
-                Ok(Some(run)) if run.status == "completed" => run.to_turn_id,
-                _ => 0,
-            };
+        let conn = &db;
+        let last_compacted = match fetch_latest_compaction_run(conn, session_id).await {
+            Ok(Some(run)) if run.status == "completed" => run.to_turn_id,
+            _ => 0,
+        };
 
-            if let Ok(turns) = fetch_turns_for_compaction(&conn, session_id, last_compacted).await {
+        if let Ok(turns) =
+            fetch_turns_for_compaction(conn, session_id, last_compacted, u32::MAX).await
+        {
                 let uncompacted_count = turns.len() as u32;
                 if uncompacted_count > 0 {
                     if auto_compaction {
@@ -549,6 +524,7 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
                         }
                     } else if let Err(e) = CompactionCoordinator::notify_uncompacted_session(
                         &app_handle,
+                        &db,
                         session_id,
                         uncompacted_count,
                     )
@@ -561,6 +537,5 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
                     }
                 }
             }
-        }
     });
 }

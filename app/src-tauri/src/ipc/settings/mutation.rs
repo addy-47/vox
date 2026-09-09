@@ -70,9 +70,12 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
             };
             if let Ok(guard) = state.engine.try_lock() {
                 if let Some(ref engine) = *guard {
-                    let _ = engine
+                    if let Err(e) = engine
                         .vad_tx
-                        .send(VadCommand::SetOperationalMode(vad_op_mode));
+                        .send(VadCommand::SetOperationalMode(vad_op_mode))
+                    {
+                        log::warn!("[SettingsMutation] Failed to send SetOperationalMode to VAD: {}", e);
+                    }
                 }
             }
         }
