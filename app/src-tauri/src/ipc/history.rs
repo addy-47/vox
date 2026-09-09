@@ -46,7 +46,9 @@ pub async fn create_session(
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     init_new_session(&state, SYSTEM_PROMPT_MODULAR).await;
-    state.conversation_id.store(session_id as u64, Ordering::Relaxed);
+    state
+        .conversation_id
+        .store(session_id as u64, Ordering::Relaxed);
 
     if let Err(e) = emit_ipc(&app, IpcEvent::SessionsChanged) {
         log::warn!("[IPC::History] Failed to emit SessionsChanged: {}", e);
@@ -71,7 +73,9 @@ pub async fn continue_session(
         .await
         .map_err(|e| VoxIpcError::Pipeline(e.to_string()))?;
 
-    state.conversation_id.store(session_id as u64, Ordering::Relaxed);
+    state
+        .conversation_id
+        .store(session_id as u64, Ordering::Relaxed);
 
     if let Err(e) = emit_ipc(&app, IpcEvent::SessionsChanged) {
         log::warn!("[IPC::History] Failed to emit SessionsChanged: {}", e);
@@ -121,6 +125,9 @@ pub async fn update_session(
     project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
+    if title.is_none() && is_pinned.is_none() && project_id.is_none() {
+        return Ok(());
+    }
     update_session_metadata(
         &state.db,
         session_id,

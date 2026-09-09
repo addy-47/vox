@@ -153,22 +153,23 @@ pub async fn resume_session(
         _ => None,
     };
 
-    let (latest_summary, last_compacted) = match fetch_latest_compaction_run(&state.db, session_id).await? {
-        Some(run) if run.status == "completed" => {
-            let summary = parse_unified_compaction_json(&run.compaction_output)
-                .and_then(|p| if !p.context_summary.trim().is_empty() { Some(p.context_summary.trim().to_string()) } else { None });
-            (summary, run.to_turn_id)
-        }
-        _ => (None, 0),
-    };
+    let (latest_summary, last_compacted) =
+        match fetch_latest_compaction_run(&state.db, session_id).await? {
+            Some(run) if run.status == "completed" => {
+                let summary = parse_unified_compaction_json(&run.compaction_output).and_then(|p| {
+                    if !p.context_summary.trim().is_empty() {
+                        Some(p.context_summary.trim().to_string())
+                    } else {
+                        None
+                    }
+                });
+                (summary, run.to_turn_id)
+            }
+            _ => (None, 0),
+        };
 
-    let turns = fetch_turns_for_compaction(
-        &state.db,
-        session_id,
-        last_compacted + 1,
-        u32::MAX,
-    )
-    .await?;
+    let turns =
+        fetch_turns_for_compaction(&state.db, session_id, last_compacted + 1, u32::MAX).await?;
 
     let mut cm = state.conversation_manager.lock();
     cm.restore_session_continuation(

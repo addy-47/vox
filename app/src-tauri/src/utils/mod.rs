@@ -4,10 +4,7 @@ pub mod json;
 pub mod logging;
 pub mod paths;
 
-use std::{
-    path::Path,
-    fs::read_to_string,
-};
+use std::{fs::read_to_string, path::Path};
 
 /// Checks the Linux CPU frequency governor. Returns `true` if it's "performance",
 pub fn check_cpu_governor() -> Option<String> {

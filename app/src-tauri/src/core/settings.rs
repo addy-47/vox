@@ -25,6 +25,7 @@ use crate::{
             DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED, DEFAULT_MEMORY_MAX_HOPS,
             DEFAULT_MEMORY_MAX_PERSONAL_SHARE, DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED,
             DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF, DEFAULT_MEMORY_TOP_K_FACTS,
+            DEFAULT_MEMORY_CONSOLIDATION_CADENCE, DEFAULT_MEMORY_CONSOLIDATION_TIME,
             DEFAULT_STT_CLOUD_LANGUAGE, DEFAULT_STT_CLOUD_MODEL, DEFAULT_STT_CLOUD_PROVIDER,
             DEFAULT_STT_CLOUD_REGION, DEFAULT_STT_PARTIAL_THROTTLE_MS, DEFAULT_STT_THREADS,
             DEFAULT_TELEMETRY_ENABLED, DEFAULT_TELEMETRY_LOG_LEVEL, DEFAULT_TTS_QUALITY_STEPS,
@@ -784,6 +785,8 @@ pub struct MemorySettings {
     pub top_k_facts: u32,
     pub max_hops: u32,
     pub semantic_similarity_cutoff: f32,
+    pub consolidation_cadence: String,
+    pub consolidation_time: String,
 }
 
 impl Default for MemorySettings {
@@ -796,6 +799,8 @@ impl Default for MemorySettings {
             top_k_facts: DEFAULT_MEMORY_TOP_K_FACTS,
             max_hops: DEFAULT_MEMORY_MAX_HOPS,
             semantic_similarity_cutoff: DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF,
+            consolidation_cadence: DEFAULT_MEMORY_CONSOLIDATION_CADENCE.to_string(),
+            consolidation_time: DEFAULT_MEMORY_CONSOLIDATION_TIME.to_string(),
         }
     }
 }

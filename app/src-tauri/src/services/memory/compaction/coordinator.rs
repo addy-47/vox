@@ -54,10 +54,9 @@ impl CompactionCoordinator {
         trigger_kind: &str,
         cancel_token: Option<&CancellationToken>,
     ) -> Result<Option<CompactionExecutionSummary>> {
-        if trigger_kind == "soft" || trigger_kind == "auto" {
+        if trigger_kind == "soft" {
             let current_state = state.pipeline.state();
-            if current_state != InteractionState::Idle
-                && current_state != InteractionState::Ready
+            if current_state != InteractionState::Ready
                 && current_state != InteractionState::Paused
             {
                 log::info!(
@@ -100,18 +99,38 @@ impl CompactionCoordinator {
         let to_turn_id = turns.last().map(|t| t.turn_id).unwrap_or(from_turn_id);
 
         let run_id =
-            record_compaction_start(conn, session_id, trigger_kind, from_turn_id, to_turn_id)
-                .await?;
+            match record_compaction_start(conn, session_id, trigger_kind, from_turn_id, to_turn_id)
+                .await
+            {
+                Ok(id) => id,
+                Err(e) if e.to_string().contains("UNIQUE constraint failed") => {
+                    log::info!(
+                        "[CompactionCoordinator] Duplicate compaction run rejected for session {}",
+                        session_id
+                    );
+                    return Ok(None);
+                }
+                Err(e) => return Err(e),
+            };
 
         let history_messages = build_history_messages(&turns);
-        let llm_settings = state.settings.read().map(|s| s.llm.clone()).unwrap_or_default();
+        let llm_settings = state
+            .settings
+            .read()
+            .map(|s| s.llm.clone())
+            .unwrap_or_default();
 
         let active_provider = match resolve_llm_provider(&llm_settings) {
             Some(p) => p,
             None => {
                 let err_msg = "Failed to initialize LLM provider for compaction";
-                if let Err(e) = record_compaction_finish(conn, run_id, "", "failed", Some(err_msg)).await {
-                    log::warn!("[CompactionCoordinator] Failed to record compaction finish: {}", e);
+                if let Err(e) =
+                    record_compaction_finish(conn, run_id, "", "failed", Some(err_msg)).await
+                {
+                    log::warn!(
+                        "[CompactionCoordinator] Failed to record compaction finish: {}",
+                        e
+                    );
                 }
                 return Err(anyhow!(err_msg));
             }
@@ -141,8 +160,13 @@ impl CompactionCoordinator {
                     session_id,
                     err_str
                 );
-                if let Err(record_err) = record_compaction_finish(conn, run_id, "", "failed", Some(&err_str)).await {
-                    log::warn!("[CompactionCoordinator] Failed to record compaction failure: {}", record_err);
+                if let Err(record_err) =
+                    record_compaction_finish(conn, run_id, "", "failed", Some(&err_str)).await
+                {
+                    log::warn!(
+                        "[CompactionCoordinator] Failed to record compaction failure: {}",
+                        record_err
+                    );
                 }
                 update_session_notification_on_failure(app, conn, session_id).await;
                 return Err(e);
@@ -253,11 +277,17 @@ async fn update_session_notification_on_failure<R: tauri::Runtime>(
         find_active_notification_by_session(conn, session_id, "session_compaction").await
     {
         if let Err(e) = update_notification_status(conn, &notif.id, "failed").await {
-            log::warn!("[CompactionCoordinator] Failed to update notification status to failed: {}", e);
+            log::warn!(
+                "[CompactionCoordinator] Failed to update notification status to failed: {}",
+                e
+            );
         }
         notif.status = "failed".to_string();
         if let Err(e) = emit_ipc(app, IpcEvent::NotificationUpdated(notif)) {
-            log::warn!("[CompactionCoordinator] Failed to emit NotificationUpdated: {}", e);
+            log::warn!(
+                "[CompactionCoordinator] Failed to emit NotificationUpdated: {}",
+                e
+            );
         }
     }
 }
@@ -272,11 +302,17 @@ async fn update_session_notification_on_success<R: tauri::Runtime>(
         find_active_notification_by_session(conn, session_id, "session_compaction").await
     {
         if let Err(e) = update_notification_status(conn, &notif.id, "completed").await {
-            log::warn!("[CompactionCoordinator] Failed to update notification status to completed: {}", e);
+            log::warn!(
+                "[CompactionCoordinator] Failed to update notification status to completed: {}",
+                e
+            );
         }
         notif.status = "completed".to_string();
         if let Err(e) = emit_ipc(app, IpcEvent::NotificationUpdated(notif)) {
-            log::warn!("[CompactionCoordinator] Failed to emit NotificationUpdated: {}", e);
+            log::warn!(
+                "[CompactionCoordinator] Failed to emit NotificationUpdated: {}",
+                e
+            );
         }
     }
 }

@@ -41,7 +41,7 @@ async fn test_tts_voice_switch_without_worker_restart() {
     let test_timeout = Duration::from_secs(45);
     tokio::time::timeout(test_timeout, async {
         vox_lib::utils::paths::init();
-        let (_app, state) = common::harness::get_test_app_and_state();
+        let (_app, state) = common::harness::get_test_app_and_state().await;
 
         let supertonic_model_dir = common::paths::get_supertonic_model_dir();
         assert!(
@@ -177,7 +177,7 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
     let test_timeout = Duration::from_secs(30);
     tokio::time::timeout(test_timeout, async {
         vox_lib::utils::paths::init();
-        let (_app, state) = common::harness::get_test_app_and_state();
+        let (_app, state) = common::harness::get_test_app_and_state().await;
 
         let (tts_tx, tts_rx) = mpsc::channel::<TtsCommand>();
         let turn_id = 402;
@@ -220,6 +220,8 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
             provider_kind: ProviderKind::OpenAiCompat,
             llm_provider: None,
             llm_settings: None,
+            cancel_token: None,
+            pipeline_tx: None,
         };
 
         let result = prepare_turn_context(params).await;
@@ -274,6 +276,8 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
             provider_kind: ProviderKind::Embedded,
             llm_provider: None,
             llm_settings: None,
+            cancel_token: None,
+            pipeline_tx: None,
         };
 
         let normal_result = prepare_turn_context(normal_params).await;

@@ -39,21 +39,28 @@ impl QueueStatus {
 
 #[cfg(test)]
 mod tests {
+    use turso::Builder;
+
     use super::*;
     use crate::persistence::{
         compactions::record_compaction_start,
-        facts::{fetch_active_facts_by_type, fetch_active_vectors_by_type, insert_fact, insert_vector, FactRecord},
+        facts::{
+            fetch_active_facts_by_type, fetch_active_vectors_by_type, insert_fact, insert_vector,
+            FactRecord,
+        },
         queue::enqueue_fact,
         schema::recreate_schema,
         sessions::create_session,
     };
-    use turso::Builder;
 
     #[test]
     fn test_jaccard_similarity_calculation() {
         assert_eq!(jaccard_similarity("", ""), 1.0);
         assert_eq!(jaccard_similarity("hello world", "HELLO WORLD!"), 1.0);
-        assert_eq!(jaccard_similarity("User likes Rust", "user likes rust."), 1.0);
+        assert_eq!(
+            jaccard_similarity("User likes Rust", "user likes rust."),
+            1.0
+        );
         assert_eq!(jaccard_similarity("apples", "oranges"), 0.0);
         let sim = jaccard_similarity("apple orange banana", "apple orange pear");
         assert!((sim - 0.5).abs() < 0.001);
@@ -97,11 +104,19 @@ mod tests {
         assert_eq!(summary.duplicates_deactivated, 1);
         assert_eq!(summary.errors, 0);
 
-        let active_facts = fetch_active_facts_by_type(&conn, "objective").await.unwrap();
-        assert!(active_facts.is_empty(), "Older fact should have been deactivated");
+        let active_facts = fetch_active_facts_by_type(&conn, "objective")
+            .await
+            .unwrap();
+        assert!(
+            active_facts.is_empty(),
+            "Older fact should have been deactivated"
+        );
 
         let mut rows = conn
-            .query("SELECT status FROM memory_ingestion_queue WHERE id = ?", (q_id,))
+            .query(
+                "SELECT status FROM memory_ingestion_queue WHERE id = ?",
+                (q_id,),
+            )
             .await
             .unwrap();
         let row = rows.next().await.unwrap().unwrap();
@@ -161,11 +176,10 @@ mod tests {
         .unwrap();
 
         let mock_vec = base_vector.clone();
-        let summary = run_stage2_cosine_dedup_with_embedder(&conn, move |_| {
-            Ok(Some(mock_vec.clone()))
-        })
-        .await
-        .unwrap();
+        let summary =
+            run_stage2_cosine_dedup_with_embedder(&conn, move |_| Ok(Some(mock_vec.clone())))
+                .await
+                .unwrap();
 
         assert_eq!(summary.processed, 1);
         assert_eq!(summary.inserted, 1);
@@ -175,14 +189,22 @@ mod tests {
         let active_facts = fetch_active_facts_by_type(&conn, "workdone").await.unwrap();
         assert_eq!(active_facts.len(), 1);
         assert_ne!(active_facts[0].id, "fact_old_vec");
-        assert_eq!(active_facts[0].text, "Rewrote audio ring buffer implementation");
+        assert_eq!(
+            active_facts[0].text,
+            "Rewrote audio ring buffer implementation"
+        );
 
-        let active_vecs = fetch_active_vectors_by_type(&conn, "workdone").await.unwrap();
+        let active_vecs = fetch_active_vectors_by_type(&conn, "workdone")
+            .await
+            .unwrap();
         assert_eq!(active_vecs.len(), 1);
         assert_eq!(active_vecs[0].0, active_facts[0].id);
 
         let mut rows = conn
-            .query("SELECT status FROM memory_ingestion_queue WHERE id = ?", (q_id,))
+            .query(
+                "SELECT status FROM memory_ingestion_queue WHERE id = ?",
+                (q_id,),
+            )
             .await
             .unwrap();
         let row = rows.next().await.unwrap().unwrap();
@@ -196,12 +218,24 @@ mod tests {
         let conn = db.connect().unwrap();
         recreate_schema(&conn).await.unwrap();
 
+        let session_id = create_session(&conn, Some("default")).await.unwrap();
+        let compaction_id = record_compaction_start(&conn, session_id, "soft", 0, 5)
+            .await
+            .unwrap();
+
         conn.execute(
             "INSERT INTO memory_ingestion_queue (session_id, compaction_id, type, text, status, retry_count, created_at)
-             VALUES (NULL, 1, 'personal', 'fact 1', 'stage1_processing', 0, 100),
-                    (NULL, 1, 'personal', 'fact 2', 'stage2_processing', 1, 100),
-                    (NULL, 1, 'personal', 'fact 3', 'stage1_processing', 3, 100)",
-            (),
+             VALUES (?, ?, 'personal', 'fact 1', 'stage1_processing', 0, 100),
+                    (?, ?, 'personal', 'fact 2', 'stage2_processing', 1, 100),
+                    (?, ?, 'personal', 'fact 3', 'stage1_processing', 3, 100)",
+            (
+                session_id,
+                compaction_id,
+                session_id,
+                compaction_id,
+                session_id,
+                compaction_id,
+            ),
         )
         .await
         .unwrap();
@@ -210,7 +244,10 @@ mod tests {
         assert_eq!(reconciled, 3);
 
         let mut rows = conn
-            .query("SELECT id, status, retry_count FROM memory_ingestion_queue ORDER BY id ASC", ())
+            .query(
+                "SELECT id, status, retry_count FROM memory_ingestion_queue ORDER BY id ASC",
+                (),
+            )
             .await
             .unwrap();
 

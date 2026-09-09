@@ -109,7 +109,7 @@ Tracks rolling compaction-of-compactions passes and retains raw outputs for roll
 |---|---|---|---|
 | `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Compaction run counter |
 | `session_id` | INTEGER | NOT NULL REFERENCES `sessions(id)` ON DELETE CASCADE | Target session |
-| `trigger_kind` | TEXT | NOT NULL | `'critical'`, `'soft'`, or `'manual'` |
+| `trigger_kind` | TEXT | NOT NULL | `'critical'`, `'soft'`, `'manual'` (user button), `'auto'` (session-end with auto-compaction on), or `'boot_auto'` (boot reconciliation with auto-compaction on) |
 | `from_turn_id` | INTEGER | NOT NULL | Starting turn ID included in slice |
 | `to_turn_id` | INTEGER | NOT NULL | Ending turn ID included in slice |
 | `compaction_output` | TEXT | NOT NULL | Exact JSON output string from LLM (audit, context injection & rollback) |
@@ -120,6 +120,7 @@ Tracks rolling compaction-of-compactions passes and retains raw outputs for roll
 
 *Indexes:*
 - `idx_compactions_session_status`: `(session_id, status)`
+- `idx_compactions_one_in_progress`: partial unique `(session_id) WHERE status = 'in_progress'` (mutual exclusion: at most one running compaction per session; concurrent duplicates fail at insert)
 
 ---
 

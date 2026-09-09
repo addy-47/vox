@@ -17,9 +17,7 @@ use crate::{
         settings::{SttProviderConfig, TtsActiveProvider, VadBackendOption},
         state::{AppState, InteractionOwner, InteractionState, VoxEngine},
     },
-    persistence::{
-        db::get_tokio_handle, PersistenceEvent, worker::spawn_persistence_worker,
-    },
+    persistence::{db::get_tokio_handle, worker::spawn_persistence_worker, PersistenceEvent},
     pipeline::{router::spawn_router, target_window},
     services::{
         audio::{
@@ -56,7 +54,7 @@ fn ensure_persistence_worker(state: &AppState) {
     if persist_lock.is_none() {
         log::info!("[Core::Engine] Spawning persistence worker");
         let tx = spawn_persistence_worker(
-            paths::get().db.clone(),
+            Arc::clone(&state.db),
             Arc::clone(&state.telemetry.is_db_healthy),
             Arc::clone(&state.telemetry.latest_persistence_rate),
             Arc::clone(&state.telemetry.is_private_mode),

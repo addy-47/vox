@@ -5,11 +5,11 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
 use crate::core::{
-    start_audio_engine,
-    stop_audio_engine,
     error::VoxIpcError,
     events::VoxEvent,
+    start_audio_engine,
     state::{AppState, InteractionOwner, InteractionState},
+    stop_audio_engine,
 };
 
 /// Launches and initializes the 3-tier audio engine.
@@ -25,9 +25,7 @@ pub async fn launch_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), V
 #[tauri::command]
 pub async fn stop_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), VoxIpcError> {
     let state: State<'_, Arc<AppState>> = app.state();
-    stop_audio_engine(&state)
-        .await
-        .map_err(VoxIpcError::Engine)
+    stop_audio_engine(&state).await.map_err(VoxIpcError::Engine)
 }
 
 /// Starts the voice assistant session by booting audio engine and routing SessionStart.

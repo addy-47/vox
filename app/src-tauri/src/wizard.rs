@@ -3,9 +3,9 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder}
 use crate::{
     services::{
         llm::{QWEN_MODEL_DIR, QWEN_MODEL_FILE},
+        memory::{PRIMARY_EMBEDDING_MODEL_DIR, PRIMARY_EMBEDDING_MODEL_FILENAME},
         stt::{MODEL_FILE_ASR_ENCODER, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
         vad::{MODEL_DIR_VAD, MODEL_FILE_VAD},
-        memory::{PRIMARY_EMBEDDING_MODEL_DIR, PRIMARY_EMBEDDING_MODEL_FILENAME},
     },
     utils::paths,
 };

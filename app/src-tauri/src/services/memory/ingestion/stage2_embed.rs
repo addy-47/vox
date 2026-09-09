@@ -8,6 +8,7 @@ use crate::{
     persistence::{
         deactivate_fact,
         facts::{fetch_active_vectors_by_type, insert_fact, insert_vector, FactRecord},
+        fetch_session_project_id,
         queue::claim_pending_queue_batch,
         record_queue_item_failure, update_queue_item_status, QueueItem,
     },
@@ -66,13 +67,9 @@ pub async fn run_stage2_cosine_dedup_with_batch_embedder<F>(
 where
     F: Fn(&[&str]) -> Result<Option<Vec<Vec<f32>>>> + Send + Sync + 'static,
 {
-    let items = claim_pending_queue_batch(
-        conn,
-        "stage1_done",
-        "stage2_processing",
-        STAGE2_BATCH_SIZE,
-    )
-    .await?;
+    let items =
+        claim_pending_queue_batch(conn, "stage1_done", "stage2_processing", STAGE2_BATCH_SIZE)
+            .await?;
 
     if items.is_empty() {
         return Ok(Stage2Summary::default());
@@ -127,7 +124,7 @@ where
                     e
                 );
                 if let Err(rec_err) =
-                    record_queue_item_failure(conn, item.id, item.retry_count, &e.to_string()).await
+                    record_queue_item_failure(conn, item.id, item.retry_count, "stage1_done", &e.to_string()).await
                 {
                     log::warn!(
                         "[Memory::Ingestion::Stage2] Failed to record failure for item {}: {}",
@@ -157,7 +154,6 @@ async fn process_stage2_item_with_embedding(
     item: &QueueItem,
     embedding: &[f32],
 ) -> Result<(usize, usize)> {
-
     let active_vectors = fetch_active_vectors_by_type(conn, &item.fact_type).await?;
     let mut deactivated = 0;
 
@@ -215,14 +211,5 @@ async fn resolve_project_id(conn: &Connection, session_id: Option<i64>) -> Resul
         None => return Ok(None),
     };
 
-    let mut rows = conn
-        .query("SELECT project_id FROM sessions WHERE id = ?", (sid,))
-        .await?;
-
-    if let Some(row) = rows.next().await? {
-        let pid: Option<String> = row.get(0).ok();
-        Ok(pid)
-    } else {
-        Ok(None)
-    }
+    fetch_session_project_id(conn, sid).await
 }

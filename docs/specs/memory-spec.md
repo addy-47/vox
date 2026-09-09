@@ -54,21 +54,24 @@ Every compaction pass (Critical, Soft, or Manual) produces a single unified JSON
 ```
 - **Provenance Retention**: The raw JSON output string is stored directly in `session_compactions(compaction_output)`.
 - **Buffer Pruning**: Compacted turns are pruned from the in-memory FIFO buffer.
-- **Staging**: Extracted facts are inserted into `memory_ingestion_queue` with `status = 'pending'` and linked to `compaction_id`.
+- **Staging**: Extracted facts are inserted into `memory_ingestion_queue` with `status = 'pending'` and linked to a real `compaction_id` on every trigger path, including critical inline compaction.
 
 ### 3.3 Compaction Triggers & Behavioral Rules
 
 #### A. Critical Inline Compaction (`CONTEXT_CRITICAL_THRESHOLD = 0.85`)
 - **Trigger**: Fired synchronously in `prepare_turn_context` prior to LLM generation when context utilization reaches or exceeds 85% of `context_window`.
 - **Speech Transition Filler**: An organic transition phrase is randomly selected based on language (English: `TRANSITION_MESSAGES_EN`, Hindi: `TRANSITION_MESSAGES_HI`) and dispatched immediately to `TtsActor` for playback to prevent dead air while compaction executes.
-- **Execution & Timeout**: Dispatches compaction request with a 45-second timeout, bound to the turn's `CancellationToken`. User speech onset (`InteractionState::Listening`) aborts compaction immediately.
-- **Fallback Policy**: Compaction attempts generation with up to 2 retries. If all retries fail:
+- **Ledger & Staging**: The critical path records a `session_compactions` run (`trigger_kind = 'critical'`, from/to resolved as min/max uncompacted turn at slice time) and stages extracted facts via the same atomic commit as every other trigger, so critical-path facts enter deduplication with full provenance.
+- **Preemptive FIFO**: No compaction is attempted when the provider is `Embedded` with `context_window <= 4096` or the buffer holds 3 or fewer messages; raw FIFO truncation applies directly in those cases.
+- **Execution & Timeout**: Dispatches compaction request with a 45-second timeout per attempt and 2 attempts total, bound to the turn's `CancellationToken`. User speech onset (`InteractionState::Listening`) aborts compaction immediately.
+- **Lenient Parse Fallback**: If the model returns non-empty text that fails JSON parsing on both attempts, the raw text is kept as `context_summary` with zero staged facts rather than failing the turn.
+- **Failure Policy**: If all attempts fail:
   1. Falls back to raw FIFO truncation: pops oldest turns until utilization $< 85\%$ to ensure voice response is never blocked.
   2. Emits `VoxEvent::Error(PipelineError)` with `impact: PipelineImpact::Degraded` and `actionability: Actionability::Actionable { category: "compaction_failure", hint: "Context compaction failed; fell back to FIFO" }`.
 
 #### B. Opportunistic Soft Compaction (`CONTEXT_SOFT_THRESHOLD = 0.65`)
 - **Trigger Condition**: Context utilization is between $65\%$ and $85\%$ (`0.65 <= util < 0.85`).
-- **Gating**:
+- **Gating** (all required):
   1. `settings.history.auto_compaction` must be `true`.
   2. Pipeline mode must be `Modular`.
   3. Pipeline state must be in `InteractionState::Ready` or `InteractionState::Paused`.
@@ -76,14 +79,15 @@ Every compaction pass (Critical, Soft, or Manual) produces a single unified JSON
   - Entering `Ready` or `Paused` arms a 20-second debounce timer.
   - Any voice interaction, speech onset, or state transition aborts the timer.
   - Compaction executes in background only after 20 continuous seconds of quiet state.
+- **Ledger Watermark**: Soft runs record the real compacted turn range (resolved as min/max uncompacted turn at commit time), never message counts, so later slices resume after the true watermark.
 
 #### C. Manual & Session-End Boundary Compaction
-- **Trigger Condition**: Session terminates, app restarts, or user switches sessions while uncompacted turns remain.
-- **Notification Record**: A persistent notification (`category: "session_compaction"`) is always created in Turso DB and emitted via IPC.
+- **Trigger Condition**: Session terminates, app restarts, or user switches sessions while uncompacted turns remain. Trigger kinds: `'manual'` (user button), `'auto'` (session-end with auto-compaction on), `'boot_auto'` (boot reconciliation with auto-compaction on).
+- **Notification Record**: A persistent notification (`category: "session_compaction"`) is always created in Turso DB and emitted via IPC — including when the backend compacts automatically, so every boundary run has a visible receipt that flips to `'completed'`/`'failed'`.
 - **Execution Routing**:
-  - If `settings.history.auto_compaction == true`: The backend automatically executes the background compaction slice. On completion, notification status transitions to `'completed'`.
-  - If `settings.history.auto_compaction == false`: Compaction waits for user action via `[Compact Now]` button in the notification drawer.
-- **Mutual Exclusion**: Exactly one compaction run may execute per session at any time (`status = 'in_progress'`). Duplicate concurrent runs are rejected.
+  - If `settings.history.auto_compaction == true`: The backend automatically executes the background compaction slice against the pre-created notification. On completion, notification status transitions to `'completed'` (or `'failed'` with the error).
+  - If `settings.history.auto_compaction == false`: The notification waits for user action via `[Compact Now]` button in the notification drawer.
+- **Mutual Exclusion**: Exactly one compaction run may execute per session at any time, enforced by a partial unique index (`one in_progress run per session_id`); concurrent duplicate runs are rejected at insert time, not just by pre-check.
 
 ---
 
@@ -95,7 +99,8 @@ Facts are tagged with a flat `type` column without nested hierarchies:
 
 ### 4.2 Queue Status Lifecycle (Strongly-Typed)
 Items in `memory_ingestion_queue` transition through a strongly-typed enum (`QueueStatus`):
-`Pending` $\to$ `Stage1Processing` $\to$ `Stage1Done` $\to$ `Stage2Processing` $\to$ `Completed` (or `Failed` on 3 errors).
+`Pending` $\to$ `Stage1Processing` $\to$ `Stage1Done` $\to$ `Stage2Processing` $\to$ `Completed` (or `Failed` after 3 errors on the same stage).
+A per-item failure requeues the item at the same stage's input (`pending` after a Stage 1 failure, `stage1_done` after a Stage 2 failure) with `retry_count + 1`; only the third failure on the same stage moves it to `Failed`.
 On application boot, crash reconciliation resets any `Stage1Processing` or `Stage2Processing` items back to `Pending` or `Stage1Done`.
 
 ### 4.3 Deduplication Workflow & Batching Logic
@@ -142,20 +147,24 @@ Merges newly accumulated personal facts into the existing document:
 2. **Execution Gating & Preconditions**:
    Consolidation MUST NOT run if:
    - An active compaction run is in progress (`session_compactions.status = 'in_progress'`).
-   - Unprocessed items exist in the ingestion queue (`memory_ingestion_queue.status != 'completed'`).
+    - Unprocessed items exist in the ingestion queue (`memory_ingestion_queue.status != 'completed'`).
+    This gate applies equally to fact-merge consolidation and comment-driven regeneration.
 3. **Consolidation Prompt & Merge**:
    - The LLM receives `[Current Personal Memory] + [Active Personal Facts]`.
    - Reorganizes sections and resolves contradictions using model reasoning (zero NLI or secondary classifier models).
 4. **State Transition on Success**:
-   - On successful merge, merged personal facts transition from `status = 'active'` to `status = 'consolidated'`.
+    - On successful merge, the document is saved with `last_consolidated_at` stamped to now, and merged personal facts transition from `status = 'active'` to `status = 'consolidated'`.
 5. **UI Lock**:
    - While consolidation or regeneration executes, the UI locks the editor to prevent concurrent edit collisions.
 
 ### 5.4 Consolidation Cadence
-User-configurable in settings:
-- **On Session Close**: Automatically runs after a session terminates (once compaction and dedup settle).
-- **Scheduled Time**: E.g. daily at a user-specified time.
-- **Manual Only**: Runs strictly when triggered by `[Consolidate Now]` or comment regeneration.
+Configurable in `settings.memory.consolidation_cadence` (`"manual"` default, `"daily"` with `settings.memory.consolidation_time` as `"HH:MM"`):
+- **Manual**: Runs strictly when triggered by `[Consolidate Now]` or comment regeneration (today's behavior, the default).
+- **Scheduled Time**: Runs daily at the configured time. The scheduler sleeps until the next scheduled time and wakes once per run (no polling); a run deferred by the §5.3 gate retries at the next scheduled time. Boot reconciliation detects runs missed while the app was down.
+- **Missed & Failed Runs**: A run due while the app was down emits a persistent `personal_consolidation` notification card (`pending`, tap-to-run) instead of running silently. A failed run flips its card to `failed` with the error; successes complete silently.
+
+### 5.5 Project Scope (Current)
+Memory is global: the merge folds all `status = 'active'` personal facts into the single document regardless of `project_id` (which is reserved scaffolding for future project-specific memory). Import replaces only the document text and leaves waiting facts active by design.
 
 ---
 

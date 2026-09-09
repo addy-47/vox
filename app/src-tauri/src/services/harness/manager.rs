@@ -3,8 +3,7 @@ use super::{
     prompt_builder::assemble_system_prompt,
 };
 use crate::{
-    core::constants::SYSTEM_PROMPT_MODULAR,
-    persistence::sessions::TurnRow,
+    core::constants::SYSTEM_PROMPT_MODULAR, persistence::sessions::TurnRow,
     services::memory::ml::estimate_tokens,
 };
 

@@ -6,14 +6,11 @@ use std::{
 
 use crate::{
     core::{
-        state::{AppState, InteractionOwner, InteractionState},
         settings::LlmActiveProvider,
+        state::{AppState, InteractionOwner, InteractionState},
     },
     monitoring::{snapshot::RuntimeSnapshot, COLLECTOR_TICK_INTERVAL},
-    services::{
-        memory::is_embedder_loaded,
-        translit::is_transliteration_engine_loaded,
-    },
+    services::{memory::is_embedder_loaded, translit::is_transliteration_engine_loaded},
     utils::check_cpu_governor,
 };
 

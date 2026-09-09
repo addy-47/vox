@@ -9,11 +9,8 @@ use crate::{
         state::AppState,
     },
     monitoring::{
-        collect_profiler_snapshot,
-        persist_memory_profile_event,
-        snapshot::RuntimeSnapshot, 
-        MemoryProfileLogEvent, 
-        ProfilerSnapshot
+        collect_profiler_snapshot, persist_memory_profile_event, snapshot::RuntimeSnapshot,
+        MemoryProfileLogEvent, ProfilerSnapshot,
     },
 };
 
@@ -35,11 +32,11 @@ pub async fn get_profiler_snapshot<R: tauri::Runtime>(
     let has_tray = app.get_webview_window(WINDOW_TRAY).is_some();
     let has_wizard = app.get_webview_window(WINDOW_WIZARD).is_some();
 
-    tokio::task::spawn_blocking(move || {
-        collect_profiler_snapshot(has_main, has_tray, has_wizard)
-    })
-    .await
-    .map_err(|e| VoxIpcError::Internal(format!("Failed to collect memory profiler snapshot: {e}")))
+    tokio::task::spawn_blocking(move || collect_profiler_snapshot(has_main, has_tray, has_wizard))
+        .await
+        .map_err(|e| {
+            VoxIpcError::Internal(format!("Failed to collect memory profiler snapshot: {e}"))
+        })
 }
 
 /// Record a structured frontend memory profile event to tracing and persisted JSONL log.

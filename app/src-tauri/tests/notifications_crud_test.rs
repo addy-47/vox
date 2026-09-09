@@ -23,6 +23,7 @@ use vox_lib::persistence::{
         update_notification_status, NewNotification,
     },
     schema::run_migrations,
+    sessions::{create_session, create_session_with_id},
 };
 
 #[tokio::test]
@@ -46,13 +47,16 @@ async fn test_notifications_crud_lifecycle() {
         assert!(active.is_empty(), "Initial notifications should be empty");
 
         // 2. Create notification
+        let session_id = create_session(&conn, None)
+            .await
+            .expect("Failed to create session");
         let notif1 = NewNotification {
             id: "notif_1".to_string(),
             category: "session_compaction".to_string(),
             title: "Session Finished".to_string(),
             message: "Session #1 has 5 uncompacted turns".to_string(),
             status: "pending".to_string(),
-            session_id: Some(1),
+            session_id: Some(session_id),
             metadata: "{\"uncompacted_turns\": 5}".to_string(),
         };
         let rec1 = create_notification(&conn, &notif1)
@@ -94,7 +98,7 @@ async fn test_notifications_crud_lifecycle() {
         update_notification_status(&conn, "notif_1", "in_progress")
             .await
             .expect("Failed to update status");
-        let found = find_active_notification_by_session(&conn, 1, "session_compaction")
+        let found = find_active_notification_by_session(&conn, session_id, "session_compaction")
             .await
             .expect("Failed to find by session");
         assert!(found.is_some());
@@ -129,12 +133,9 @@ async fn test_compaction_ledger_queries_and_mutations() {
         .expect("Failed to run schema migrations");
 
     // Insert a dummy session and 3 turns
-    conn.execute(
-        "INSERT INTO sessions (id, started_at, turn_count) VALUES (100, 1000, 3)",
-        (),
-    )
-    .await
-    .expect("Failed to insert session");
+    create_session_with_id(&conn, 100, Some("default"))
+        .await
+        .expect("Failed to insert session");
 
     conn.execute(
         "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, created_at) VALUES (100, 1, 'Hello', 'Hi there', 1001)",
@@ -176,7 +177,7 @@ async fn test_compaction_ledger_queries_and_mutations() {
     assert_eq!(turns[2].user_text, "I love Rust");
 
     // Record compaction start
-    let run_id = record_compaction_start(&conn, 100, "session_end", 1, 3)
+    let run_id = record_compaction_start(&conn, 100, "manual", 1, 3)
         .await
         .expect("Failed to record start");
     assert!(run_id > 0);

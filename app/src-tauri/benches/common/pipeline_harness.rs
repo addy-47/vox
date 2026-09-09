@@ -145,7 +145,9 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
     let _bench_guard = BenchPathsGuard::new();
     let rt_handle = vox_lib::persistence::db::get_tokio_handle();
     let db_conn = rt_handle
-        .block_on(vox_lib::persistence::db::VoxDb::open(&vox_lib::utils::paths::db_path()))
+        .block_on(vox_lib::persistence::db::VoxDb::open(
+            &vox_lib::utils::paths::db_path(),
+        ))
         .expect("Failed to open bench database");
     let db = Arc::new(db_conn);
     let state = Arc::new(AppState::new(&app, None, telemetry, db));

@@ -250,8 +250,21 @@ pub fn assert_channel_empty_after<T: std::fmt::Debug>(
     }
 }
 
+/// Synchronous wrapper around `get_test_app_and_state` for plain `#[test]` functions.
+/// Builds a throwaway current-thread runtime for setup only; test bodies stay runtime-free.
+pub fn get_test_app_and_state_sync() -> (
+    AppHandle<tauri::test::MockRuntime>,
+    Arc<vox_lib::core::state::AppState>,
+) {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to build sync test runtime")
+        .block_on(get_test_app_and_state())
+}
+
 /// Constructs an AppHandle and managed AppState pair tailored for testing environments.
-pub fn get_test_app_and_state() -> (
+pub async fn get_test_app_and_state() -> (
     AppHandle<tauri::test::MockRuntime>,
     Arc<vox_lib::core::state::AppState>,
 ) {
@@ -290,18 +303,19 @@ pub fn get_test_app_and_state() -> (
     });
 
     vox_lib::utils::paths::init();
-    let rt_handle = vox_lib::persistence::db::get_tokio_handle();
-    let db_conn = rt_handle
-        .block_on(vox_lib::persistence::db::VoxDb::open(&vox_lib::utils::paths::db_path()))
+    let db_conn = vox_lib::persistence::db::VoxDb::open(&vox_lib::utils::paths::db_path())
+        .await
         .expect("Failed to open test database");
     let db = Arc::new(db_conn);
-    let state = Arc::new(vox_lib::core::state::AppState::new(&app, None, telemetry, db));
+    let state = Arc::new(vox_lib::core::state::AppState::new(
+        &app, None, telemetry, db,
+    ));
     app.manage(state.clone());
     (app, state)
 }
 
 /// Constructs an AppState instance tailored for testing environments.
-pub fn get_test_app_state() -> vox_lib::core::state::AppState {
+pub async fn get_test_app_state() -> vox_lib::core::state::AppState {
     use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
 
     use vox_lib::core::state::TelemetryState;
@@ -335,9 +349,8 @@ pub fn get_test_app_state() -> vox_lib::core::state::AppState {
     });
 
     vox_lib::utils::paths::init();
-    let rt_handle = vox_lib::persistence::db::get_tokio_handle();
-    let db_conn = rt_handle
-        .block_on(vox_lib::persistence::db::VoxDb::open(&vox_lib::utils::paths::db_path()))
+    let db_conn = vox_lib::persistence::db::VoxDb::open(&vox_lib::utils::paths::db_path())
+        .await
         .expect("Failed to open test database");
     let db = Arc::new(db_conn);
     let app = get_test_app_handle();

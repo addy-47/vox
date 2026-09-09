@@ -116,11 +116,27 @@ async fn collect_session_rows(rows: &mut turso::Rows) -> Result<Vec<SessionRow>>
     Ok(sessions)
 }
 
-/// Returns a single session by its unique ID.
-pub async fn fetch_session_by_id(
+/// Returns the parent project ID for a session, if the session exists.
+pub async fn fetch_session_project_id(
     conn: &Connection,
     session_id: i64,
-) -> Result<Option<SessionRow>> {
+) -> Result<Option<String>> {
+    let mut rows = conn
+        .query(
+            "SELECT project_id FROM sessions WHERE id = ?",
+            (session_id,),
+        )
+        .await?;
+
+    if let Some(row) = rows.next().await? {
+        Ok(row.get(0).ok())
+    } else {
+        Ok(None)
+    }
+}
+
+/// Returns a single session by its unique ID.
+pub async fn fetch_session_by_id(conn: &Connection, session_id: i64) -> Result<Option<SessionRow>> {
     let mut rows = conn
         .query(
             "SELECT s.id, s.project_id, s.title, s.is_pinned, s.deleted_at, s.created_at, s.updated_at,
