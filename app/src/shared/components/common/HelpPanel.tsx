@@ -446,7 +446,7 @@ export const HelpPanel = memo(({ deepLink, onClose }: HelpPanelProps) => {
         </div>
       </nav>
 
-      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar px-3 py-4">
+      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar px-3.5 pt-3 pb-16">
         <div className="space-y-8">
           {articles.map((article) => (
             <ArticleView
@@ -490,6 +490,8 @@ export const HelpPanel = memo(({ deepLink, onClose }: HelpPanelProps) => {
               )}
             </div>
           )}
+          {/* Bottom spacing cushion so the final section is never clipped */}
+          <div className="h-8 shrink-0" aria-hidden="true" />
         </div>
       </div>
     </div>

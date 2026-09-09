@@ -95,6 +95,7 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 3. **[Minimal Cognitive Memory & Session Continuation Spec (v2)](file:///home/addy/projects/apps/vox/docs/specs/memory-spec.md)** — *Status: Approved Target Spec*. 2-stage dedup, single evolving personal memory document, rolling working compaction, and deferred episodic tool retrieval.
 4. **[IPC Command & Event Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/ipc-spec.md)** — *Status: Proposed / Target Spec*. Grouped frontend-to-backend commands and backend-to-frontend IPC events.
 5. **[LLM Agent Harness & Dual-Stream Demuxer Spec (v2)](file:///home/addy/projects/apps/vox/docs/specs/harness-spec.md)** — *Status: DRAFT / Under Active Architectural Discussion*. Dynamic streaming tag demuxing, `InteractionState::Working`, and decoupled LLM actor.
+6. **[Notification Center Behavioral & Interface Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/notifications-spec.md)** — *Status: Approved Target Spec*. Append storage with correlation key, task idempotency, and frontend stream rollup.
 
 ---
 
@@ -105,4 +106,6 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 - **Suite green:** Full release suite 93/93 (post `ort` rc.13 bump fixing ReshapeFusion SIGSEGVs); `clippy -D warnings` clean; Seams 1–11, 15–17 mutate-verified.
 - **Memory v2 complete:** 10-table Turso schema, 2-stage dedup, compaction coordinator + ledger, session continuation, IPC drift fixed, sleep-until consolidation scheduler (`manual|daily` only).
 - **Frontend in flight:** Service layer on v2 shapes (0 TS errors), memory graph redesign, Edge Panel batches 1–2 done (batch 3 pending); notification rework is a DRAFT plan awaiting 3 locked decisions.
+- **Edge panels & shell unified:** EdgePanel converted from popover to true full-vh docked side panels (flush edges, framer-motion slide, outside-click & escape dismissal, z-[45] overlapping corner controls, generous internal bottom spacing & cushions); usePanelState per-edge exclusivity (left sessions and right help/notifications open simultaneously); top-left menu button matched to top-right icon styles; TopRightCluster added to desktop Settings; SessionPanel redesigned with clean borderless IDE style (+ New Session, Pinned section, Projects with FolderPlus, and project accordions).
+- **Session panel persistent layout & null safety:** Guaranteed persistent IDE panel structure (+ New conversation, Pinned, Projects with FolderPlus accordions, and Conversations) regardless of empty or null states; replaced full-panel error screen with inline transient banner; hardened null/undefined handling in `historyService.ts` and `useSessionPanel.ts`.
 

@@ -1,18 +1,15 @@
-import React, { Suspense, lazy, useCallback, useEffect, useState } from "react";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { getOnboardingStatus } from "@/services/modelService";
 import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
 import { WizardRoot } from "@/wizard/WizardRoot";
 import { TitleBar } from "@/layout/TitleBar";
-import { ErrorBoundary, OrbitalLoader, HelpPanel, NotificationPanel } from "@/shared/components/common";
-import { EdgePanel } from "@/shared/ui";
+import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
-import { HELP_DRAWER_COPY } from "@/data/helpCopy";
-import { NOTIFICATION_COPY } from "@/data/notificationCopy";
 import { MemoryProfilerProvider } from "@/shared/context/MemoryProfilerContext";
 import { VoiceSessionProvider } from "@/shared/context/VoiceSessionContext";
 import { ProfilerDrawerProvider } from "@/shared/components/profiler/ProfilerDrawer";
-import { PanelStateProvider, usePanelStateContext } from "@/shared/hooks/usePanelState";
+import { PanelStateProvider } from "@/shared/hooks/usePanelState";
 import { useNotificationStore } from "@/store/notificationStore";
 import { installOverlayStack } from "@/shared/lib/overlayStack";
 import { AnimatePresence, motion } from "framer-motion";
@@ -25,27 +22,6 @@ const Memory = lazy(() => import("@/pages/Memory").then(m => ({ default: m.Memor
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
 const Monitoring = lazy(() => import("@/pages/Monitoring").then(m => ({ default: m.Monitoring })));
 
-/**
- * Right-edge rails (Help / Notifications) mounted once at app level.
- * Help and Notifications share one exclusive group via usePanelState.
- */
-const AppPanels: React.FC = () => {
-  const { isPanelOpen, closePanel } = usePanelStateContext();
-
-  const closeHelp = useCallback(() => closePanel("help"), [closePanel]);
-  const closeNotifications = useCallback(() => closePanel("notifications"), [closePanel]);
-
-  return (
-    <>
-      <EdgePanel side="right" open={isPanelOpen("help")} onClose={closeHelp} title={HELP_DRAWER_COPY.headerTitle}>
-        <HelpPanel onClose={closeHelp} />
-      </EdgePanel>
-      <EdgePanel side="right" open={isPanelOpen("notifications")} onClose={closeNotifications} title={NOTIFICATION_COPY.title}>
-        <NotificationPanel onClose={closeNotifications} />
-      </EdgePanel>
-    </>
-  );
-};
 
 // Premium Shared Orbital Loading Screen
 const PageLoader = () => (
@@ -200,7 +176,6 @@ const App: React.FC = () => {
                           </Route>
                         )}
                       </Routes>
-                        <AppPanels />
                       </ProfilerDrawerProvider>
                     </PanelStateProvider>
                   </Suspense>

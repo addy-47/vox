@@ -1,8 +1,10 @@
-import React, { memo, useMemo, useState } from "react";
-import { VoxOrb, PipelineField, StatusCapsule, TestClipsPopover, SessionRail, RestorePulse } from "@/shared/components/home";
+import React, { memo, useMemo } from "react";
+import { VoxOrb, PipelineField, StatusCapsule, TestClipsPopover, RestorePulse } from "@/shared/components/home";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
 import { SESSION_COPY } from "@/data/sessionCopy";
-import { ErrorBoundary, TopRightCluster } from "@/shared/components/common";
+import { ErrorBoundary } from "@/shared/components/common";
+import { TopRightCluster, Tooltip } from "@/shared/ui";
+import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import {
   GOVERNOR_LABELS,
   HOME_CONTROLS_COPY,
@@ -98,7 +100,8 @@ export const Home = memo(() => {
     active: testMode && !isEngaged,
   });
 
-  const [railOpen, setRailOpen] = useState(false);
+  const { isPanelOpen, togglePanel } = usePanelStateContext();
+  const sessionsOpen = isPanelOpen("sessions");
 
   const statusLabel = toStatusLabel(
     interactionState,
@@ -123,30 +126,29 @@ export const Home = memo(() => {
 
       {/* ── Top-right: Help + Notifications ── */}
       <div className="absolute top-4 right-5 z-30">
-        <TopRightCluster deepLink="page:home" />
+        <TopRightCluster />
       </div>
 
       {/* ── Top-left: Conversation rail toggle ── */}
       <div className="absolute top-4 left-5 z-30 flex items-center pointer-events-none">
-        <button
-          onClick={() => setRailOpen((v) => !v)}
-          aria-label={SESSION_COPY.openRailAriaLabel}
-          aria-expanded={railOpen}
-          className={cn(
-            "flex items-center justify-center w-10 h-10 rounded-full border transition-all duration-300 cursor-pointer pointer-events-auto glass-card",
-            railOpen
-              ? "bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/60"
-              : "bg-transparent border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
-          )}
-        >
-          <PanelLeft size={20} />
-        </button>
+        <Tooltip label={SESSION_COPY.railTitle} side="bottom">
+          <button
+            onClick={() => togglePanel("sessions")}
+            aria-label={SESSION_COPY.openRailAriaLabel}
+            aria-expanded={sessionsOpen}
+            className={cn(
+              "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer pointer-events-auto shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+              sessionsOpen
+                ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
+                : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
+            )}
+          >
+            <PanelLeft size={14} strokeWidth={1.75} />
+          </button>
+        </Tooltip>
       </div>
 
-      {/* ── Conversation side rail ── */}
-      <AnimatePresence>
-        {railOpen && <SessionRail open={railOpen} onClose={() => setRailOpen(false)} />}
-      </AnimatePresence>
+
 
       {/* ── Restore ingestion pulse (single reverse-flow toward orb) ── */}
       <RestorePulse signal={restoreSignal} />
