@@ -31,9 +31,7 @@ use vox_lib::{
 };
 
 /// Helper: Sets up channel on `state.persist_tx` to capture lifecycle events.
-fn setup_lifecycle_channels(
-    state: &AppState,
-) -> crossbeam_channel::Receiver<PersistenceEvent> {
+fn setup_lifecycle_channels(state: &AppState) -> crossbeam_channel::Receiver<PersistenceEvent> {
     let (persist_tx, persist_rx) = crossbeam_channel::bounded::<PersistenceEvent>(32);
 
     *state.persist_tx.lock() = Some(persist_tx);
@@ -63,7 +61,7 @@ async fn test_session_start_modular_sets_ready_and_identity() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         let _paths_guard = common::paths::TempPathsGuard::new();
-        let (app, state) = common::harness::get_test_app_and_state();
+        let (app, state) = common::harness::get_test_app_and_state().await;
 
         let db_path = vox_lib::utils::paths::db_path();
         seed_test_identity_facts(&db_path)
@@ -125,8 +123,6 @@ async fn test_session_start_modular_sets_ready_and_identity() {
             _ => panic!("Expected PersistenceEvent::SessionStarted"),
         }
 
-
-
         // 5. Assert identity facts seeded from DB into Working Memory system prompt
         let assembled_prompt = state.conversation_manager.lock().assemble_system_prompt();
         assert!(
@@ -182,7 +178,7 @@ async fn test_session_pause_resume_transitions() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         let _paths_guard = common::paths::TempPathsGuard::new();
-        let (app, state) = common::harness::get_test_app_and_state();
+        let (app, state) = common::harness::get_test_app_and_state().await;
 
         let (vad_cmd_tx, vad_cmd_rx) = mpsc::channel::<VadCommand>();
         let (_stt_tx, _pipeline_rx, _pipeline_tx) =
@@ -288,7 +284,7 @@ async fn test_session_resume_from_sleeping_and_error() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         let _paths_guard = common::paths::TempPathsGuard::new();
-        let (app, state) = common::harness::get_test_app_and_state();
+        let (app, state) = common::harness::get_test_app_and_state().await;
 
         let (vad_cmd_tx, _vad_cmd_rx) = mpsc::channel::<VadCommand>();
         let (_stt_tx, _pipeline_rx, _pipeline_tx) =
@@ -357,7 +353,7 @@ async fn test_session_end_dictation_gate_keeps_engine() {
         // Ending assistant session MUST preserve CPAL engine and switch VAD to dictation mode
         // --------------------------------------------------------------------
         {
-            let (app, state) = common::harness::get_test_app_and_state();
+            let (app, state) = common::harness::get_test_app_and_state().await;
             let (vad_cmd_tx, vad_cmd_rx) = mpsc::channel::<VadCommand>();
             let (_stt_tx, _pipeline_rx, _pipeline_tx) =
                 attach_lifecycle_mock_engine(&app, &state, vad_cmd_tx);
@@ -425,7 +421,7 @@ async fn test_session_end_dictation_gate_keeps_engine() {
         // Ending assistant session MUST tear down CPAL audio engine (stop_audio_engine_sync)
         // --------------------------------------------------------------------
         {
-            let (app, state) = common::harness::get_test_app_and_state();
+            let (app, state) = common::harness::get_test_app_and_state().await;
             let (vad_cmd_tx, _vad_cmd_rx) = mpsc::channel::<VadCommand>();
             let (_stt_tx, _pipeline_rx, _pipeline_tx) =
                 attach_lifecycle_mock_engine(&app, &state, vad_cmd_tx);
@@ -479,7 +475,7 @@ async fn test_session_end_purges_and_idles() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         let _paths_guard = common::paths::TempPathsGuard::new();
-        let (app, state) = common::harness::get_test_app_and_state();
+        let (app, state) = common::harness::get_test_app_and_state().await;
 
         let (vad_cmd_tx, _vad_cmd_rx) = mpsc::channel::<VadCommand>();
         let (_stt_tx, _pipeline_rx, _pipeline_tx) =
@@ -559,8 +555,6 @@ async fn test_session_end_purges_and_idles() {
             }
             other => panic!("Unexpected persistence event: {:?}", other),
         }
-
-
 
         // 5. Assert realtime resumption cache purged from disk
         assert!(

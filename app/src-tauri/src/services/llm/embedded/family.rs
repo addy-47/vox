@@ -1,7 +1,4 @@
-use std::{
-    path::Path,
-    sync::OnceLock,
-};
+use std::{path::Path, sync::OnceLock};
 
 use crate::services::harness::{ChatMessage, Role};
 
@@ -156,8 +153,7 @@ impl ModelFamily {
 
         match self {
             ModelFamily::Gemma => {
-                static RE_GEMMA_TAGS: OnceLock<regex::Regex> =
-                    OnceLock::new();
+                static RE_GEMMA_TAGS: OnceLock<regex::Regex> = OnceLock::new();
                 let re_tags = RE_GEMMA_TAGS.get_or_init(|| {
                     regex::Regex::new(
                         r"<\|turn>|<turn\|>|<channel\|>|system\s*\n|user\s*\n|model\s*\n",
@@ -171,8 +167,7 @@ impl ModelFamily {
                 }
             }
             ModelFamily::Qwen => {
-                static RE_QWEN_THINK: OnceLock<regex::Regex> =
-                    OnceLock::new();
+                static RE_QWEN_THINK: OnceLock<regex::Regex> = OnceLock::new();
                 let re_think = RE_QWEN_THINK
                     .get_or_init(|| regex::Regex::new(r"(?s)<think>.*?</think>").unwrap());
                 cleaned = re_think.replace_all(&cleaned, "").to_string();

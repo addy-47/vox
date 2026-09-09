@@ -12,13 +12,16 @@ use crate::{
     core::settings::LlmSettings,
     persistence::{
         facts::{fetch_active_facts_by_type, mark_facts_consolidated},
-        personal_memory::{get_personal_memory, save_personal_memory, PersonalMemoryRecord},
+        has_in_progress_compaction, has_unfinished_items,
+        personal_memory::{
+            get_personal_memory, save_consolidated_memory, save_personal_memory,
+            PersonalMemoryRecord,
+        },
     },
     services::{
         harness::buffer::{ChatMessage, Role},
         llm::{
-            ConversationInput, GenerationPolicy, GenerationPurpose, LlmProvider,
-            LlmStreamEvent,
+            ConversationInput, GenerationPolicy, GenerationPurpose, LlmProvider, LlmStreamEvent,
         },
         memory::COMPACTION_SENTINEL_TURN_ID,
     },
@@ -60,7 +63,15 @@ pub async fn consolidate_personal_memory(
         if user_comments.is_empty() {
             return Ok(current_record);
         }
-        return regenerate_with_comments(conn, llm_provider, &current_record, &user_comments, project_id).await;
+        verify_ingestion_quiescence(conn).await?;
+        return regenerate_with_comments(
+            conn,
+            llm_provider,
+            &current_record,
+            &user_comments,
+            project_id,
+        )
+        .await;
     }
 
     verify_ingestion_quiescence(conn).await?;
@@ -95,13 +106,7 @@ pub async fn consolidate_personal_memory(
     )
     .await?;
 
-    let saved = save_personal_memory(
-        conn,
-        project_id,
-        &updated_markdown,
-        current_record.version,
-    )
-    .await?;
+    let saved = save_consolidated_memory(conn, project_id, &updated_markdown, current_record.version).await?;
 
     let fact_ids: Vec<String> = active_facts.into_iter().map(|f| f.id).collect();
     mark_facts_consolidated(conn, &fact_ids).await?;
@@ -122,8 +127,13 @@ pub async fn export_personal_memory(
     project_id: Option<&str>,
 ) -> Result<()> {
     let record = get_personal_memory(conn, project_id).await?;
-    std::fs::write(target_path, record.content)
-        .map_err(|e| anyhow!("Failed to export personal memory to {:?}: {}", target_path, e))?;
+    std::fs::write(target_path, record.content).map_err(|e| {
+        anyhow!(
+            "Failed to export personal memory to {:?}: {}",
+            target_path,
+            e
+        )
+    })?;
     Ok(())
 }
 
@@ -133,8 +143,13 @@ pub async fn import_personal_memory(
     source_path: &Path,
     project_id: Option<&str>,
 ) -> Result<PersonalMemoryRecord> {
-    let imported_text = std::fs::read_to_string(source_path)
-        .map_err(|e| anyhow!("Failed to read personal memory from {:?}: {}", source_path, e))?;
+    let imported_text = std::fs::read_to_string(source_path).map_err(|e| {
+        anyhow!(
+            "Failed to read personal memory from {:?}: {}",
+            source_path,
+            e
+        )
+    })?;
     let current = get_personal_memory(conn, project_id).await?;
     save_personal_memory(conn, project_id, &imported_text, current.version).await
 }
@@ -162,36 +177,18 @@ async fn regenerate_with_comments(
     )
     .await?;
 
-    save_personal_memory(
-        conn,
-        project_id,
-        &updated_markdown,
-        current_record.version,
-    )
-    .await
+    save_personal_memory(conn, project_id, &updated_markdown, current_record.version).await
 }
 
 /// Checks that no compaction or pending ingestion queue items are currently executing.
 async fn verify_ingestion_quiescence(conn: &Connection) -> Result<()> {
-    let mut comp_rows = conn
-        .query(
-            "SELECT id FROM session_compactions WHERE status = 'in_progress' LIMIT 1",
-            (),
-        )
-        .await?;
-    if comp_rows.next().await?.is_some() {
+    if has_in_progress_compaction(conn).await? {
         return Err(anyhow!(
             "Precondition failed: active compaction is in progress; personal consolidation deferred"
         ));
     }
 
-    let mut queue_rows = conn
-        .query(
-            "SELECT id FROM memory_ingestion_queue WHERE status NOT IN ('completed', 'failed') LIMIT 1",
-            (),
-        )
-        .await?;
-    if queue_rows.next().await?.is_some() {
+    if has_unfinished_items(conn).await? {
         return Err(anyhow!(
             "Precondition failed: pending items in memory ingestion queue; personal consolidation deferred"
         ));
@@ -268,7 +265,9 @@ async fn execute_personal_llm_pass(
             if let Err(join_err) = pump_handle.await {
                 log::warn!("[PersonalMemory] Token pump task join error: {}", join_err);
             }
-            return Err(anyhow!("LLM personal memory consolidation timed out after 45s"));
+            return Err(anyhow!(
+                "LLM personal memory consolidation timed out after 45s"
+            ));
         }
     }
 

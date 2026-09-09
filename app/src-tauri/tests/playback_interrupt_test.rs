@@ -44,7 +44,7 @@ async fn test_playback_gates_thinking_to_speaking_and_speaking_to_ready() {
     let test_timeout = Duration::from_secs(15);
     tokio::time::timeout(test_timeout, async {
         vox_lib::utils::paths::init();
-        let (app, state) = common::harness::get_test_app_and_state();
+        let (app, state) = common::harness::get_test_app_and_state().await;
 
         let turn_id = 901;
         state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
@@ -137,7 +137,7 @@ async fn test_short_utterance_requires_flush_to_arm() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         vox_lib::utils::paths::init();
-        let (_app, state) = common::harness::get_test_app_and_state();
+        let (_app, state) = common::harness::get_test_app_and_state().await;
 
         let turn_id = 902;
         state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
@@ -191,7 +191,7 @@ async fn test_playback_finished_deferred_while_pending() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         vox_lib::utils::paths::init();
-        let (app, state) = common::harness::get_test_app_and_state();
+        let (app, state) = common::harness::get_test_app_and_state().await;
 
         let turn_id = 903;
         state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
@@ -236,7 +236,7 @@ async fn test_playback_finished_deferred_while_pending() {
 #[test]
 fn test_vad_ducking_suppresses_during_speaker_playback() {
     vox_lib::utils::paths::init();
-    let (_app, state) = common::harness::get_test_app_and_state();
+    let (_app, state) = common::harness::get_test_app_and_state_sync();
 
     let (stt_tx, _stt_rx) = mpsc::channel();
     let vad_config = VadActorConfig {
@@ -290,7 +290,7 @@ fn test_vad_ducking_suppresses_during_speaker_playback() {
 #[test]
 fn test_vad_ducking_resumes_after_playback_and_headset_never_suppresses() {
     vox_lib::utils::paths::init();
-    let (_app, state) = common::harness::get_test_app_and_state();
+    let (_app, state) = common::harness::get_test_app_and_state_sync();
 
     let (stt_tx, _stt_rx) = mpsc::channel();
     let vad_config = VadActorConfig {
@@ -379,7 +379,7 @@ async fn test_barge_in_cancels_and_advances_turn() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
         vox_lib::utils::paths::init();
-        let (app, state) = common::harness::get_test_app_and_state();
+        let (app, state) = common::harness::get_test_app_and_state().await;
 
         // 1. Seed Turn 1 in Speaking state
         let turn_1_id = 1;

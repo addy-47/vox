@@ -6,6 +6,7 @@ pub mod compaction;
 pub mod ingestion;
 pub mod ml;
 pub mod personal;
+pub mod scheduler;
 
 pub use compaction::{run_compaction, CompactionResult, COMPACTION_SYSTEM_PROMPT};
 pub use ingestion::QueueStatus;

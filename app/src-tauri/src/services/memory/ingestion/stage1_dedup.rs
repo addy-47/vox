@@ -5,8 +5,7 @@ use turso::Connection;
 
 use crate::{
     persistence::{
-        deactivate_facts_batch, fetch_active_facts_by_type,
-        queue::claim_pending_queue_batch,
+        deactivate_facts_batch, fetch_active_facts_by_type, queue::claim_pending_queue_batch,
         record_queue_item_failure, update_queue_item_status, QueueItem,
     },
     services::memory::{JACCARD_EXACT_MATCH_THRESHOLD, STAGE1_BATCH_CEILING},
@@ -56,13 +55,9 @@ pub fn jaccard_similarity(s1: &str, s2: &str) -> f32 {
 
 /// Executes Stage 1 exact match deduplication for up to `STAGE1_BATCH_CEILING` pending items.
 pub async fn run_stage1_exact_dedup(conn: &Connection) -> Result<Stage1Summary> {
-    let items = claim_pending_queue_batch(
-        conn,
-        "pending",
-        "stage1_processing",
-        STAGE1_BATCH_CEILING,
-    )
-    .await?;
+    let items =
+        claim_pending_queue_batch(conn, "pending", "stage1_processing", STAGE1_BATCH_CEILING)
+            .await?;
 
     if items.is_empty() {
         return Ok(Stage1Summary::default());
@@ -92,7 +87,7 @@ pub async fn run_stage1_exact_dedup(conn: &Connection) -> Result<Stage1Summary> 
                     e
                 );
                 if let Err(rec_err) =
-                    record_queue_item_failure(conn, item.id, item.retry_count, &e.to_string()).await
+                    record_queue_item_failure(conn, item.id, item.retry_count, "pending", &e.to_string()).await
                 {
                     log::warn!(
                         "[Memory::Ingestion::Stage1] Failed to record failure for item {}: {}",

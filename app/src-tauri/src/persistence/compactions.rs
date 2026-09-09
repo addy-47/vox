@@ -215,6 +215,43 @@ pub async fn commit_compaction_output(
     }
 }
 
+/// Resolves the compactable turn range for a session as `(from_turn_id, to_turn_id)`,
+/// where `from` is one past the latest completed run and `to` is the highest persisted turn.
+/// `to` may be less than `from` when no uncompacted turns are persisted yet (empty range marker).
+pub async fn resolve_uncompacted_range(
+    conn: &Connection,
+    session_id: i64,
+) -> Result<(u32, u32)> {
+    let from = match fetch_latest_compaction_run(conn, session_id).await? {
+        Some(run) if run.status == "completed" => run.to_turn_id.saturating_add(1),
+        _ => 1,
+    };
+    let mut rows = conn
+        .query(
+            "SELECT COALESCE(MAX(turn_id), 0) FROM turns WHERE session_id = ?",
+            (session_id,),
+        )
+        .await?;
+    let max_turn: i64 = if let Some(row) = rows.next().await? {
+        row.get(0)?
+    } else {
+        0
+    };
+    let to = (max_turn as u32).max(from.saturating_sub(1));
+    Ok((from, to))
+}
+
+/// Returns true when any compaction run is currently in progress.
+pub async fn has_in_progress_compaction(conn: &Connection) -> Result<bool> {
+    let mut rows = conn
+        .query(
+            "SELECT id FROM session_compactions WHERE status = 'in_progress' LIMIT 1",
+            (),
+        )
+        .await?;
+    Ok(rows.next().await?.is_some())
+}
+
 /// Item representing a session with pending uncompacted turns.
 #[derive(Debug, Clone)]
 pub struct UncompactedSessionItem {
@@ -224,9 +261,7 @@ pub struct UncompactedSessionItem {
 }
 
 /// Fetches all active sessions where turns exist beyond the latest completed compaction.
-pub async fn fetch_uncompacted_sessions(
-    conn: &Connection,
-) -> Result<Vec<UncompactedSessionItem>> {
+pub async fn fetch_uncompacted_sessions(conn: &Connection) -> Result<Vec<UncompactedSessionItem>> {
     let mut rows = conn
         .query(
             "SELECT s.id,

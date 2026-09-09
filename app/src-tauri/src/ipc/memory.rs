@@ -10,11 +10,12 @@ use crate::{
         state::AppState,
     },
     persistence::{
+        fetch_all_active_facts,
         personal_memory::{
             get_personal_memory as db_get_personal_memory,
             save_personal_memory as db_save_personal_memory,
         },
-        fetch_all_active_facts, FactRecord,
+        FactRecord,
     },
     services::{
         llm::{
@@ -67,10 +68,11 @@ pub async fn save_personal_memory(
         let s = state.settings.read().unwrap_or_else(|p| p.into_inner());
         (s.llm.context_window as usize, s.memory.max_context_share)
     };
-    state
-        .conversation_manager
-        .lock()
-        .set_personal_memory(Some(record.content.clone()), context_window, max_context_share);
+    state.conversation_manager.lock().set_personal_memory(
+        Some(record.content.clone()),
+        context_window,
+        max_context_share,
+    );
 
     if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
         log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
@@ -101,7 +103,9 @@ pub async fn consolidate_personal_memory(
             let llm_path = models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE);
             create_llm_provider_from_llm_settings(&llm_settings, &llm_path)
                 .map(Arc::from)
-                .map_err(|e| VoxIpcError::Engine(format!("Failed to initialize LLM provider: {e}")))?
+                .map_err(|e| {
+                    VoxIpcError::Engine(format!("Failed to initialize LLM provider: {e}"))
+                })?
         }
     };
 
@@ -119,10 +123,11 @@ pub async fn consolidate_personal_memory(
         let s = state.settings.read().unwrap_or_else(|p| p.into_inner());
         (s.llm.context_window as usize, s.memory.max_context_share)
     };
-    state
-        .conversation_manager
-        .lock()
-        .set_personal_memory(Some(record.content.clone()), context_window, max_context_share);
+    state.conversation_manager.lock().set_personal_memory(
+        Some(record.content.clone()),
+        context_window,
+        max_context_share,
+    );
 
     if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
         log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
@@ -158,48 +163,47 @@ pub async fn import_personal_memory(
     project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<PersonalMemoryRecord, VoxIpcError> {
-    let content = tokio::fs::read_to_string(&source_path)
-        .await
-        .map_err(|e| VoxIpcError::Internal(format!("Failed to read memory file {}: {}", source_path, e)))?;
+    let content = tokio::fs::read_to_string(&source_path).await.map_err(|e| {
+        VoxIpcError::Internal(format!("Failed to read memory file {}: {}", source_path, e))
+    })?;
 
     let current = db_get_personal_memory(&state.db, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
-    let record = db_save_personal_memory(
-        &state.db,
-        project_id.as_deref(),
-        &content,
-        current.version,
-    )
-    .await
-    .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let record =
+        db_save_personal_memory(&state.db, project_id.as_deref(), &content, current.version)
+            .await
+            .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     let (context_window, max_context_share) = {
         let s = state.settings.read().unwrap_or_else(|p| p.into_inner());
         (s.llm.context_window as usize, s.memory.max_context_share)
     };
-    state
-        .conversation_manager
-        .lock()
-        .set_personal_memory(Some(record.content.clone()), context_window, max_context_share);
+    state.conversation_manager.lock().set_personal_memory(
+        Some(record.content.clone()),
+        context_window,
+        max_context_share,
+    );
 
     if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
         log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
     }
 
-    log::info!("[IPC::Memory] Imported personal memory from {}", source_path);
+    log::info!(
+        "[IPC::Memory] Imported personal memory from {}",
+        source_path
+    );
     Ok(record)
 }
-/// Returns all active memory facts for graph visualization, ordered newest first.
+/// Returns active memory facts for graph visualization, optionally scoped to one project, ordered newest first.
 #[tauri::command]
 pub async fn get_active_facts(
     project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<FactRecord>, VoxIpcError> {
     let conn = Arc::clone(&state.db);
-    let _ = project_id; // reserved for future project-scoped filtering
-    fetch_all_active_facts(&conn)
+    fetch_all_active_facts(&conn, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }

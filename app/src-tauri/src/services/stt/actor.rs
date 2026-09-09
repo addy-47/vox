@@ -286,7 +286,10 @@ fn drain_reset_stream(
                 audio, recycle_tx, ..
             } => {
                 if let Err(e) = recycle_tx.try_send(audio) {
-                    log::warn!("[STT] Failed to recycle previous partial audio buffer: {}", e);
+                    log::warn!(
+                        "[STT] Failed to recycle previous partial audio buffer: {}",
+                        e
+                    );
                 }
                 continue;
             }

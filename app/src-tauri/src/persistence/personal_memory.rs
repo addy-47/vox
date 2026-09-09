@@ -138,6 +138,53 @@ pub async fn save_personal_memory(
     get_personal_memory(conn, project_id).await
 }
 
+/// Saves consolidated content with optimistic concurrency control, stamping `last_consolidated_at`.
+/// Used by the background consolidation path so schedule bookkeeping reflects actual merges.
+pub async fn save_consolidated_memory(
+    conn: &Connection,
+    project_id: Option<&str>,
+    content: &str,
+    expected_version: i64,
+) -> Result<PersonalMemoryRecord> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    let affected = if let Some(pid) = project_id {
+        conn.execute(
+            "UPDATE personal_memory
+             SET content = ?, version = version + 1, last_consolidated_at = ?, updated_at = ?
+             WHERE project_id = ? AND version = ?",
+            (
+                content.to_string(),
+                now,
+                now,
+                pid.to_string(),
+                expected_version,
+            ),
+        )
+        .await?
+    } else {
+        conn.execute(
+            "UPDATE personal_memory
+             SET content = ?, version = version + 1, last_consolidated_at = ?, updated_at = ?
+             WHERE project_id IS NULL AND version = ?",
+            (content.to_string(), now, now, expected_version),
+        )
+        .await?
+    };
+
+    if affected == 0 {
+        return Err(anyhow!(
+            "Optimistic version conflict for personal memory: expected version {}",
+            expected_version
+        ));
+    }
+
+    get_personal_memory(conn, project_id).await
+}
+
 /// Updates personal memory content as part of background consolidation, updating both
 /// `last_consolidated_at` and `updated_at`.
 pub async fn update_consolidated_memory(

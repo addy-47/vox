@@ -7,8 +7,8 @@ use super::{
     prompt_builder::{build_session_history_xml, consolidate_system_message},
 };
 use crate::services::memory::{
-    compaction::CompactionResult, ml::estimate_tokens,
-    CONTEXT_CRITICAL_THRESHOLD, CONTEXT_SOFT_THRESHOLD, RESERVED_GENERATION_TOKENS,
+    compaction::CompactionResult, ml::estimate_tokens, CONTEXT_CRITICAL_THRESHOLD,
+    CONTEXT_SOFT_THRESHOLD, RESERVED_GENERATION_TOKENS,
 };
 
 /// Manages context budgeting, sliding-window compaction, and background opportunistic compaction for Modular LLM.

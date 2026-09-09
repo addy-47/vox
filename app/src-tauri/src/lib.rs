@@ -56,11 +56,11 @@ use crate::{
             dismiss_notification, get_notifications, mark_notifications_read,
             trigger_session_compaction,
         },
-        projects::{create_project, delete_project, get_projects, rename_project},
         pipeline::{
             end_session, launch_engine, pause_session, ptt_cancel, ptt_start, ptt_stop,
             resume_session, start_session, stop_engine, test_clip, test_clip_cancel,
         },
+        projects::{create_project, delete_project, get_projects, rename_project},
         settings::{
             catalog::get_provider_caps, check_provider_health, get_model_catalog, get_settings,
             list_llm_models, probe_model_capabilities, reset_settings, setup_remote_server,
@@ -85,15 +85,14 @@ use crate::{
         system_monitor::spawn_system_monitor,
         telemetry_emitter::spawn_telemetry_emitter,
     },
-    persistence::{
-        db::TOKIO_HANDLE,
-        PersistenceEvent,
-        worker::spawn_persistence_worker,
-    },
+    persistence::{db::TOKIO_HANDLE, worker::spawn_persistence_worker, PersistenceEvent},
     services::{
-        dictation::init_dictation_hotkey_listener, harness::spawn_state_compaction_observer,
+        dictation::init_dictation_hotkey_listener,
+        harness::spawn_state_compaction_observer,
         memory::{
-            compaction::reconcile_uncompacted_sessions_on_boot, spawn_quiet_ingestion_observer,
+            compaction::reconcile_uncompacted_sessions_on_boot,
+            scheduler::{check_missed_consolidation_on_boot, spawn_consolidation_scheduler},
+            spawn_quiet_ingestion_observer,
         },
         stt::SttCommand,
         vad::VadCommand,
@@ -312,14 +311,7 @@ pub fn run() {
                 dropped_telemetry_events,
             });
 
-            // ── 0.7 Persistence Worker ─────────────────────────────────────────────
-            let persist_tx = spawn_persistence_worker(
-                paths::get().db.clone(),
-                Arc::clone(&telemetry_state.is_db_healthy),
-                Arc::clone(&telemetry_state.latest_persistence_rate),
-                Arc::clone(&telemetry_state.is_private_mode),
-            );
-
+            // ── 0.7 Database & Persistence Worker ──────────────────────────────────
             let rt_handle = persistence::db::get_tokio_handle();
             let db_conn = match rt_handle.block_on(persistence::db::VoxDb::open(&paths::get().db)) {
                 Ok(conn) => conn,
@@ -328,7 +320,18 @@ pub fn run() {
                     panic!("Database initialization failed: {}", e);
                 }
             };
+            if let Err(e) = rt_handle.block_on(persistence::schema::run_migrations(&db_conn)) {
+                log::error!("[BOOTSTRAP] Database migration failed: {}", e);
+                panic!("Database migration failed: {}", e);
+            }
             let db = Arc::new(db_conn);
+
+            let persist_tx = spawn_persistence_worker(
+                Arc::clone(&db),
+                Arc::clone(&telemetry_state.is_db_healthy),
+                Arc::clone(&telemetry_state.latest_persistence_rate),
+                Arc::clone(&telemetry_state.is_private_mode),
+            );
 
             // ── 1. App State ────────────────────────────────────────────────────────
             let mut app_state = AppState::new(
@@ -357,6 +360,7 @@ pub fn run() {
             spawn_telemetry_emitter(app.handle().clone());
             spawn_state_compaction_observer(Arc::clone(&state_arc));
             spawn_quiet_ingestion_observer(Arc::clone(&state_arc));
+            spawn_consolidation_scheduler(app.handle().clone(), Arc::clone(&state_arc));
 
             // ── 1.6 Dictation Global Hotkey Registration ──────────────────────────
             {
@@ -585,6 +589,7 @@ pub fn run() {
                 {
                     log::warn!("[BOOTSTRAP] Boot memory compaction reconciliation failed: {}", e);
                 }
+                check_missed_consolidation_on_boot(&boot_handle, state.inner()).await;
             });
 
             Ok(())

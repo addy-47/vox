@@ -10,10 +10,7 @@ pub use prompt::{build_compaction_request, COMPACTION_SYSTEM_PROMPT};
 pub use runner::{run_compaction, CompactionResult};
 use tauri::AppHandle;
 
-use crate::{
-    core::state::AppState,
-    persistence::compactions::fetch_uncompacted_sessions,
-};
+use crate::{core::state::AppState, persistence::compactions::fetch_uncompacted_sessions};
 
 /// Runs a startup sweep across all past sessions to detect any sessions that ended with
 /// uncompacted turns (e.g. from an OS crash, hard reboot, or sudden termination).

@@ -1,10 +1,10 @@
 use std::{
-    collections::HashMap,
     sync::{atomic::Ordering, mpsc, Arc, LazyLock},
     time::Instant,
 };
 
 use parking_lot::Mutex;
+use tokio_util::sync::CancellationToken;
 use turso::Connection;
 
 use super::{
@@ -15,10 +15,11 @@ use crate::{
     core::{
         constants::{TRANSITION_MESSAGES_EN, TRANSITION_MESSAGES_HI},
         error::MemoryError,
+        events::{Actionability, PipelineError, PipelineImpact, VoxEvent},
         settings::{LlmSettings, MemorySettings, PipelineMode},
         state::{AppState, InteractionState},
     },
-    persistence::{commit_compaction_output, enqueue_fact, record_compaction_start},
+    persistence::{commit_compaction_output, record_compaction_start, resolve_uncompacted_range},
     services::{
         llm::{
             actor::create_llm_provider_from_llm_settings, ConversationInput, GenerationOptions,
@@ -26,17 +27,14 @@ use crate::{
             QWEN_MODEL_DIR, QWEN_MODEL_FILE,
         },
         memory::{
-            compaction::run_compaction,
-            ml::estimate_tokens,
-            NARRATIVE_CHAIN_SOFT_CAP_SHARE,
+            compaction::run_compaction, ml::estimate_tokens, NARRATIVE_CHAIN_SOFT_CAP_SHARE,
+            SOFT_COMPACTION_DEBOUNCE_SECS,
         },
         translit::is_devanagari,
         tts::TtsCommand,
     },
     utils::paths,
 };
-
-pub const SOFT_COMPACTION_DEBOUNCE_SECS: u64 = 20;
 
 static LAST_SOFT_COMPACTION: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
 
@@ -53,9 +51,35 @@ pub struct PrepareTurnParams<'a> {
     pub provider_kind: ProviderKind,
     pub llm_provider: Option<&'a dyn LlmProvider>,
     pub llm_settings: Option<&'a LlmSettings>,
+    pub cancel_token: Option<&'a CancellationToken>,
+    pub pipeline_tx: Option<&'a mpsc::Sender<VoxEvent>>,
+}
+
+/// Emits a degraded-critical-compaction pipeline event. A dead receiver only logs.
+fn emit_degraded_compaction(
+    pipeline_tx: Option<&mpsc::Sender<VoxEvent>>,
+    turn_id: u32,
+    note: &str,
+) {
+    if let Some(tx) = pipeline_tx {
+        if let Err(e) = tx.send(VoxEvent::Error(PipelineError {
+            turn_id,
+            message: format!("Critical compaction degraded: {}", note),
+            source: "CriticalCompaction".to_string(),
+            impact: PipelineImpact::Degraded,
+            actionability: Actionability::Actionable {
+                category: "compaction_failure".to_string(),
+                hint: "Context compaction failed; fell back to FIFO".to_string(),
+            },
+        })) {
+            log::warn!("[Harness] Failed to emit compaction degraded note: {}", e);
+        }
+    }
 }
 
 /// Prepares full generation request with waterfall retrieval and threshold maintenance.
+/// Returns the generation request and an optional transition filler for TTS. A degraded
+/// critical compaction emits its own pipeline event through `pipeline_tx`.
 pub async fn prepare_turn_context(
     params: PrepareTurnParams<'_>,
 ) -> Result<(GenerationRequest, Option<String>), MemoryError> {
@@ -106,7 +130,8 @@ pub async fn prepare_turn_context(
         (transition_speech, compaction_job)
     };
 
-    let mut diff_to_enqueue = HashMap::new();
+    let mut degradation_note: Option<String> = None;
+    let mut staged_compaction: Option<(String, Vec<(String, String)>)> = None;
     if let Some((history_slice, last_user_turn)) = compaction_job {
         if let Some(ref filler) = transition_speech {
             if let Some(tts_sender) = params.tts_tx {
@@ -138,27 +163,34 @@ pub async fn prepare_turn_context(
             params.llm_provider.or(provider_box.as_deref());
 
         if let Some(provider) = active_provider {
-            match run_compaction(provider, &history_slice, params.llm_settings, None).await {
+            match run_compaction(provider, &history_slice, params.llm_settings, params.cancel_token)
+                .await
+            {
                 Ok(result) => {
                     let mut lock = params.harness.lock();
                     let mut context_harness =
                         super::accountant::ContextHarness::new(params.context_window);
                     let sys_prompt = lock.system_prompt().clone();
-                    diff_to_enqueue = context_harness.apply_compaction_result(
-                        &mut lock.buffer,
-                        &sys_prompt,
-                        &result,
-                        last_user_turn,
-                    );
+                    let grouped =
+                        context_harness.apply_compaction_result(&mut lock.buffer, &sys_prompt, &result, last_user_turn);
+                    let flat_facts: Vec<(String, String)> = grouped
+                        .into_iter()
+                        .flat_map(|(kind, texts)| {
+                            texts.into_iter().map(move |text| (kind.clone(), text))
+                        })
+                        .collect();
+                    staged_compaction = Some((result.raw_json.clone(), flat_facts));
                 }
                 Err(e) => {
                     log::warn!(
                         "[Harness] Critical LLM compaction failed: {}. Falling back to FIFO maintenance.",
                         e
                     );
+                    degradation_note = Some(
+                        "Context compaction failed; fell back to FIFO".to_string(),
+                    );
                     let mut lock = params.harness.lock();
-                    let mut context_harness =
-                        super::accountant::ContextHarness::new(params.context_window);
+                    let mut context_harness = super::accountant::ContextHarness::new(params.context_window);
                     context_harness.sync_tokens_from_buffer(&lock.buffer);
                     lock.buffer.messages.push(last_user_turn);
                     context_harness.perform_fifo_maintenance(&mut lock.buffer);
@@ -202,21 +234,45 @@ pub async fn prepare_turn_context(
         }
     };
 
-    if !diff_to_enqueue.is_empty() && params.memory.pipeline_processing_enabled {
-        if let Some(conn) = params.conn {
-            let session_id_int = params.session_id.parse::<i64>().ok();
-            for (category, texts) in &diff_to_enqueue {
-                for text in texts {
-                    if let Err(e) = enqueue_fact(
-                        conn,
-                        session_id_int,
-                        0,
-                        category,
-                        text,
-                    )
-                    .await
-                    {
-                        log::warn!("[Harness] Failed to enqueue extracted personal fact: {}", e);
+    if let Some((raw_json, facts)) = staged_compaction {
+        if params.memory.pipeline_processing_enabled {
+            if let (Some(conn), Ok(session_id)) = (params.conn, params.session_id.parse::<i64>())
+            {
+                match resolve_uncompacted_range(conn, session_id).await {
+                    Ok((from_turn, to_turn)) => {
+                        match record_compaction_start(conn, session_id, "critical", from_turn, to_turn).await {
+                            Ok(run_id) => {
+                                if let Err(e) = commit_compaction_output(
+                                    conn, run_id, &raw_json, &facts, session_id,
+                                )
+                                .await
+                                {
+                                    log::warn!(
+                                        "[Harness] Critical compaction staging failed: {}",
+                                        e
+                                    );
+                                    degradation_note = Some(
+                                        "Context compaction staging failed; response unaffected"
+                                            .to_string(),
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                if !e.to_string().contains("UNIQUE constraint failed") {
+                                    log::warn!(
+                                        "[Harness] Critical compaction ledger write failed: {}",
+                                        e
+                                    );
+                                    degradation_note = Some(
+                                        "Context compaction ledger write failed; response unaffected"
+                                            .to_string(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("[Harness] Critical compaction range resolve failed: {}", e);
                     }
                 }
             }
@@ -235,6 +291,10 @@ pub async fn prepare_turn_context(
         output: OutputConstraint::Text,
         purpose: GenerationPurpose::Conversation,
     };
+
+    if let Some(note) = degradation_note.as_deref() {
+        emit_degraded_compaction(params.pipeline_tx, params.turn_id, note);
+    }
 
     Ok((request, transition_speech))
 }
@@ -257,6 +317,15 @@ pub fn trigger_background_compaction(
         .map(|s| s.interaction.pipeline_mode == PipelineMode::Modular)
         .unwrap_or(true);
     if !is_modular {
+        return;
+    }
+
+    let auto_compaction = state
+        .settings
+        .read()
+        .map(|s| s.history.auto_compaction)
+        .unwrap_or(false);
+    if !auto_compaction {
         return;
     }
 
@@ -293,7 +362,10 @@ pub fn trigger_background_compaction(
         let cached_provider = state.llm_provider.read().clone();
         let session_id = state.conversation_id.load(Ordering::Relaxed).to_string();
         let db = Arc::clone(&state.db);
-        log::debug!("[Harness] Preparing background compaction candidate for session_id={}", session_id);
+        log::debug!(
+            "[Harness] Preparing background compaction candidate for session_id={}",
+            session_id
+        );
 
         tauri::async_runtime::spawn(async move {
             if cancel_flag.is_cancelled() {
@@ -352,12 +424,16 @@ pub fn trigger_background_compaction(
 
                         tauri::async_runtime::spawn(async move {
                             if session_id_int > 0 {
+                                let (from_turn, to_turn) =
+                                    resolve_uncompacted_range(&db_inner, session_id_int)
+                                        .await
+                                        .unwrap_or((1, 0));
                                 match record_compaction_start(
                                     &db_inner,
                                     session_id_int,
                                     "soft",
-                                    1,
-                                    snapshot_len as u32,
+                                    from_turn,
+                                    to_turn,
                                 )
                                 .await
                                 {

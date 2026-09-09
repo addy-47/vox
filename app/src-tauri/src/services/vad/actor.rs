@@ -1,14 +1,13 @@
 use std::{
     mem::take,
-    panic::{AssertUnwindSafe, catch_unwind},
+    panic::{catch_unwind, AssertUnwindSafe},
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         mpsc, Arc,
     },
     thread::sleep,
-    time::Duration, 
+    time::Duration,
 };
-
 
 use anyhow::Result;
 use ringbuf::traits::Consumer;
@@ -202,7 +201,7 @@ fn process_vad_commands(
                     if state.window_speech_detected && start < end && (end - start) >= 256 {
                         state.window_buffer[start..end].to_vec()
                     } else if state.window_speech_detected {
-                       take(&mut state.window_buffer)
+                        take(&mut state.window_buffer)
                     } else {
                         Vec::new()
                     };

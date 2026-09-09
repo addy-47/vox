@@ -39,7 +39,7 @@ symphonia-core = "0.6.0"       # Symphonia core primitives
 # ─── 3. ML Inference & Language Processing ──────────────────────────────────
 llama-cpp-4 = { version = "0.2.61", default-features = false, features = ["openmp", "mtmd"] } # Local GGUF LLM inference
 llama-cpp-sys-4 = { version = "0.2.61", default-features = false }                             # Low-level llama.cpp C++ bindings
-ort = { version = "2.0.0-rc.12", features = ["download-binaries", "ndarray"] }                # ONNX Runtime bindings
+ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray"] }                # ONNX Runtime bindings (1.28; fixes ReshapeFusion SIGSEGV on MiniLM INT8)
 ndarray = "0.17.2"                                                                            # N-dimensional array processing for ONNX tensors
 chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "2fa6883", default-features = false } # Local voice cloning TTS
 query-sieve = { git = "https://github.com/addy-47/query-sieve-rs.git" }                       # ModernBERT intent classifier

@@ -3,9 +3,7 @@ use turso::Connection;
 
 use super::{
     stage1_dedup::{run_stage1_exact_dedup, Stage1Summary},
-    stage2_embed::{
-        run_stage2_cosine_dedup, run_stage2_cosine_dedup_with_embedder, Stage2Summary,
-    },
+    stage2_embed::{run_stage2_cosine_dedup, run_stage2_cosine_dedup_with_embedder, Stage2Summary},
 };
 use crate::persistence::queue::reconcile_crashed_queue_on_boot as persistence_reconcile;
 
