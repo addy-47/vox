@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::buffer::{ChatMessage, Role};
-use crate::services::memory::{ml::estimate_tokens, retrieval::RetrievedProfile};
+use crate::services::memory::ml::estimate_tokens;
 
 /// Formats a millisecond epoch timestamp as a human-readable relative time label.
 pub fn format_relative_timestamp(created_at_ms: i64) -> String {
@@ -44,64 +44,19 @@ pub fn format_relative_timestamp(created_at_ms: i64) -> String {
     }
 }
 
-/// Formats a RetrievedProfile into formatted user profile XML sub-blocks.
-pub fn format_retrieved_profile(profile: &RetrievedProfile) -> String {
-    if profile.is_empty() {
-        return String::new();
-    }
 
-    let mut sections = Vec::new();
-
-    let mut sql_lines = Vec::new();
-    for fact in &profile.sql_sections {
-        let time_str = format_relative_timestamp(fact.created_at);
-        sql_lines.push(format!(
-            "- ({}) [{}] {}",
-            time_str, fact.collection, fact.fact
-        ));
-    }
-    if !sql_lines.is_empty() {
-        sections.push(format!(
-            "[Directives & Narrative]\n{}",
-            sql_lines.join("\n")
-        ));
-    }
-
-    let mut vector_lines = Vec::new();
-    for seed in &profile.vector_seeds {
-        let time_str = format_relative_timestamp(seed.created_at);
-        vector_lines.push(format!(
-            "- ({}) [{}] {}",
-            time_str, seed.collection, seed.fact
-        ));
-    }
-    for edge in &profile.graph_children {
-        vector_lines.push(format!(
-            "  ↳ --[{}]--> [{}] {}",
-            edge.relation, edge.target_collection, edge.target_fact
-        ));
-    }
-    if !vector_lines.is_empty() {
-        sections.push(format!(
-            "[User Context & Knowledge]\n{}",
-            vector_lines.join("\n")
-        ));
-    }
-
-    sections.join("\n\n")
-}
-
-/// Assembles the complete system prompt from base prompt, identity facts, and dynamic profile.
+/// Assembles the complete system prompt from base prompt, personal memory markdown, and dynamic profile.
 pub fn assemble_system_prompt(
     base_system_prompt: &str,
-    identity_facts: &[String],
+    personal_memory: Option<&str>,
     dynamic_user_profile: Option<&str>,
 ) -> String {
     let mut sections = Vec::new();
-    if !identity_facts.is_empty() {
-        let identity_lines: Vec<String> =
-            identity_facts.iter().map(|f| format!("- {}", f)).collect();
-        sections.push(format!("[Identity]\n{}", identity_lines.join("\n")));
+    if let Some(mem) = personal_memory {
+        let trimmed = mem.trim();
+        if !trimmed.is_empty() {
+            sections.push(trimmed.to_string());
+        }
     }
 
     if let Some(dyn_profile) = dynamic_user_profile {
@@ -202,33 +157,31 @@ pub fn consolidate_system_message(
 mod tests {
 
     use super::*;
-    use crate::services::memory::retrieval::{GraphEdge, MemoryFact, RetrievedProfile, ScoredFact};
 
-    /// Tests assemble_system_prompt merges identity and dynamic profile with wrappers.
+    /// Tests assemble_system_prompt merges personal memory and dynamic profile with wrappers.
     #[test]
     fn test_assemble_system_prompt_merges() {
         let base = "You are Vox.";
-        let ids = vec!["User is Alice".to_string(), "Lives in Berlin".to_string()];
+        let mem = "User is Alice. Lives in Berlin.";
         let profile = Some("<user_profile>[User Context]\n- likes Rust\n</user_profile>");
-        let out = assemble_system_prompt(base, &ids, profile);
+        let out = assemble_system_prompt(base, Some(mem), profile);
         assert!(out.contains("You are Vox."));
-        assert!(out.contains("[Identity]"));
-        assert!(out.contains("Alice"));
+        assert!(out.contains("User is Alice"));
         assert!(out.contains("<user_profile>"));
         assert!(out.contains("likes Rust"));
         assert!(out.ends_with("</user_profile>"));
     }
 
-    /// Tests assemble returns base only when no identity/profile.
+    /// Tests assemble returns base only when no personal memory or profile.
     #[test]
     fn test_assemble_system_prompt_base_only() {
         let base = "Base prompt.";
-        assert_eq!(assemble_system_prompt(base, &[], None), "Base prompt.");
+        assert_eq!(assemble_system_prompt(base, None, None), "Base prompt.");
         assert_eq!(
-            assemble_system_prompt(base, &[], Some("   ")),
+            assemble_system_prompt(base, Some("   "), Some("   ")),
             "Base prompt."
         );
-        assert_eq!(assemble_system_prompt(base, &[], Some("")), "Base prompt.");
+        assert_eq!(assemble_system_prompt(base, Some(""), Some("")), "Base prompt.");
     }
 
     /// Tests assemble strips existing wrapper and unwraps inner.
@@ -236,7 +189,7 @@ mod tests {
     fn test_assemble_system_prompt_unwraps_inner() {
         let base = "Base.";
         let inner = "<user_profile>  inner content  </user_profile>";
-        let out = assemble_system_prompt(base, &[], Some(inner));
+        let out = assemble_system_prompt(base, None, Some(inner));
         assert!(out.contains("inner content"));
         assert_eq!(out.matches("<user_profile>").count(), 1);
     }
@@ -276,47 +229,6 @@ mod tests {
         assert!(idx_hist < idx_prof);
     }
 
-    /// Tests format_retrieved_profile returns empty for empty profile and formats sections.
-    #[test]
-    fn test_format_retrieved_profile_empty_and_sections() {
-        let empty = RetrievedProfile {
-            sql_sections: vec![],
-            vector_seeds: vec![],
-            graph_children: vec![],
-        };
-        assert_eq!(format_retrieved_profile(&empty), "");
-
-        let fact = MemoryFact {
-            id: "f1".to_string(),
-            fact_type: "fact".to_string(),
-            collection: "Profile".to_string(),
-            fact: "test fact".to_string(),
-            source: "User".to_string(),
-            status: "active".to_string(),
-            created_at: 0,
-        };
-        let seed = ScoredFact {
-            id: "f1".to_string(),
-            fact: "test fact".to_string(),
-            collection: "Profile".to_string(),
-            similarity: 0.9,
-            created_at: 0,
-        };
-        let profile = RetrievedProfile {
-            sql_sections: vec![fact],
-            vector_seeds: vec![seed],
-            graph_children: vec![GraphEdge {
-                relation: "SUPPORTS".to_string(),
-                target_collection: "Entities".to_string(),
-                target_fact: "edge fact".to_string(),
-                created_at: 0,
-            }],
-        };
-        let formatted = format_retrieved_profile(&profile);
-        assert!(formatted.contains("[Directives & Narrative]"));
-        assert!(formatted.contains("[User Context & Knowledge]"));
-        assert!(formatted.contains("↳ --[SUPPORTS]-->"));
-    }
 
     /// Tests relative timestamp humanization across minute, hour, day, and week intervals.
     #[test]

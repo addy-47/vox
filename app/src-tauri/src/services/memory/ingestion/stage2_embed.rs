@@ -1,267 +1,228 @@
-use anyhow::Result;
-use std::{
-    cmp::Ordering,
-    time::{Instant, SystemTime, UNIX_EPOCH},
-};
-use turso::Connection;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::RelationEdge;
+use anyhow::Result;
+use turso::Connection;
+use uuid::Uuid;
+
 use crate::{
-    persistence::{encode_f32_blob, mutations, queries},
+    persistence::{
+        deactivate_fact,
+        facts::{fetch_active_vectors_by_type, insert_fact, insert_vector, FactRecord},
+        queue::claim_pending_queue_batch,
+        record_queue_item_failure, update_queue_item_status, QueueItem,
+    },
     services::memory::{
-        ml::embedder::{ensure_embedder_loaded, generate_embedding},
-        MemoryCollection, QueueStatus, Relation, SOFT_VECTOR_DEDUP_THRESHOLD, STAGE2_BATCH_SIZE,
+        cosine_similarity, ensure_embedder_loaded, generate_embeddings_batch,
+        SOFT_VECTOR_DEDUP_THRESHOLD, STAGE2_BATCH_SIZE,
     },
 };
 
-/// Claimed item pending stage 2 vector embedding and soft deduplication.
-#[derive(Debug, Clone)]
-pub struct Stage2Item {
-    pub id: i64,
-    pub fact: String,
-    pub collection: String,
+/// Summary metrics returned after running a Stage 2 semantic cosine deduplication pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Stage2Summary {
+    pub processed: usize,
+    pub inserted: usize,
+    pub duplicates_deactivated: usize,
+    pub errors: usize,
 }
 
-/// Atomically selects and claims candidate deduped items from the queue.
-async fn claim_deduped_items(conn: &Connection, now: i64) -> Result<Vec<Stage2Item>> {
-    let mut rows = conn
-        .query(
-            "SELECT id, fact, collection FROM personal_memory_queue
-             WHERE status = 'deduped' ORDER BY created_at ASC LIMIT ?",
-            (STAGE2_BATCH_SIZE as i64,),
-        )
-        .await?;
-
-    let mut candidate_items = Vec::new();
-    while let Some(row) = rows.next().await? {
-        candidate_items.push(Stage2Item {
-            id: row.get::<i64>(0)?,
-            fact: row.get::<String>(1)?,
-            collection: row.get::<String>(2)?,
-        });
-    }
-
-    let mut items = Vec::new();
-    for item in candidate_items {
-        let updated = conn.execute(
-            "UPDATE personal_memory_queue SET status = ?, claimed_at = ? WHERE id = ? AND status = ?",
-            (QueueStatus::ProcessingEmbed.as_str(), now, item.id, QueueStatus::Deduped.as_str()),
-        )
-        .await?;
-
-        if updated > 0 {
-            items.push(item);
+/// Executes Stage 2 semantic deduplication using the default MiniLM ONNX embedder singleton
+/// with batched ONNX tensor inference offloaded to a background blocking thread.
+pub async fn run_stage2_cosine_dedup(conn: &Connection) -> Result<Stage2Summary> {
+    run_stage2_cosine_dedup_with_batch_embedder(conn, |texts| {
+        if let Err(e) = ensure_embedder_loaded(true) {
+            log::warn!("[Stage2Dedup] Failed to ensure embedder loaded: {}", e);
         }
-    }
-
-    Ok(items)
+        generate_embeddings_batch(texts)
+    })
+    .await
 }
 
-/// Generates embedding vector and resolves soft vector deduplication against active facts.
-async fn process_stage2_item(conn: &Connection, item: &Stage2Item) -> Result<bool> {
-    if item.collection == "Narrative" {
-        conn.execute(
-            "UPDATE personal_memory_queue SET status = ?, vector = NULL WHERE id = ?",
-            (QueueStatus::Embedded.as_str(), item.id),
-        )
-        .await?;
-        return Ok(true);
+/// Executes Stage 2 semantic deduplication with a custom single-item embedding function.
+pub async fn run_stage2_cosine_dedup_with_embedder<F>(
+    conn: &Connection,
+    embed_fn: F,
+) -> Result<Stage2Summary>
+where
+    F: Fn(&str) -> Result<Option<Vec<f32>>> + Send + Sync + 'static,
+{
+    run_stage2_cosine_dedup_with_batch_embedder(conn, move |texts| {
+        let mut results = Vec::with_capacity(texts.len());
+        for text in texts {
+            let vec = embed_fn(text)?
+                .ok_or_else(|| anyhow::anyhow!("Text embedder model is not loaded or available"))?;
+            results.push(vec);
+        }
+        Ok(Some(results))
+    })
+    .await
+}
+
+/// Executes Stage 2 semantic deduplication with a custom or injected batch embedding function.
+pub async fn run_stage2_cosine_dedup_with_batch_embedder<F>(
+    conn: &Connection,
+    embed_fn: F,
+) -> Result<Stage2Summary>
+where
+    F: Fn(&[&str]) -> Result<Option<Vec<Vec<f32>>>> + Send + Sync + 'static,
+{
+    let items = claim_pending_queue_batch(
+        conn,
+        "stage1_done",
+        "stage2_processing",
+        STAGE2_BATCH_SIZE,
+    )
+    .await?;
+
+    if items.is_empty() {
+        return Ok(Stage2Summary::default());
     }
 
-    let fact_str = item.fact.clone();
-    let embedding_res = tokio::task::spawn_blocking(move || generate_embedding(&fact_str)).await?;
-    match embedding_res {
-        Ok(Some(vec)) => {
-            let blob_bytes = encode_f32_blob(&vec);
+    let texts: Vec<String> = items.iter().map(|it| it.text.clone()).collect();
+    let embeddings_res = tokio::task::spawn_blocking(move || {
+        let str_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+        embed_fn(&str_refs)
+    })
+    .await?;
 
-            let soft_dups = queries::fetch_cross_collection_candidates(
-                conn,
-                &vec,
-                SOFT_VECTOR_DEDUP_THRESHOLD,
-                None,
-            )
-            .await
-            .map_err(|e| {
+    let embeddings = match embeddings_res {
+        Ok(Some(vecs)) if vecs.len() == items.len() => vecs,
+        Ok(Some(vecs)) => {
+            anyhow::bail!(
+                "Batch embedder returned mismatched vector count: expected {}, got {}",
+                items.len(),
+                vecs.len()
+            );
+        }
+        Ok(None) => {
+            anyhow::bail!("Text embedder model is not loaded or available");
+        }
+        Err(e) => {
+            anyhow::bail!("Batch embedding failed: {}", e);
+        }
+    };
+
+    let mut summary = Stage2Summary::default();
+
+    for (item, embedding) in items.into_iter().zip(embeddings.into_iter()) {
+        match process_stage2_item_with_embedding(conn, &item, &embedding).await {
+            Ok((inserted, deactivated)) => {
+                if let Err(e) = update_queue_item_status(conn, item.id, "completed", None).await {
+                    log::warn!(
+                        "[Memory::Ingestion::Stage2] Failed to mark item {} as completed: {}",
+                        item.id,
+                        e
+                    );
+                    summary.errors += 1;
+                } else {
+                    summary.processed += 1;
+                    summary.inserted += inserted;
+                    summary.duplicates_deactivated += deactivated;
+                }
+            }
+            Err(e) => {
                 log::warn!(
-                    "[MemoryPipeline::Stage2] Failed to fetch cross-collection candidates for item {}: {}",
+                    "[Memory::Ingestion::Stage2] Error processing item {}: {}",
                     item.id,
                     e
                 );
-                e
-            })?;
-
-            let best_match = soft_dups.iter().max_by(|a, b| {
-                let prio_a = MemoryCollection::parse(&a.2)
-                    .map(|c| c.priority())
-                    .unwrap_or(0);
-                let prio_b = MemoryCollection::parse(&b.2)
-                    .map(|c| c.priority())
-                    .unwrap_or(0);
-                prio_a
-                    .cmp(&prio_b)
-                    .then_with(|| a.3.partial_cmp(&b.3).unwrap_or(Ordering::Equal))
-            });
-
-            if let Some((match_id, match_fact, match_coll, sim)) = best_match {
-                let incoming_priority = MemoryCollection::parse(&item.collection)
-                    .map(|c| c.priority())
-                    .unwrap_or(0);
-                let existing_priority = MemoryCollection::parse(match_coll)
-                    .map(|c| c.priority())
-                    .unwrap_or(0);
-
-                if incoming_priority <= existing_priority {
-                    let rel = vec![RelationEdge {
-                        from_id: match_id.clone(),
-                        to_id: format!("item_{}", item.id),
-                        relation: Relation::Supersedes.as_str().to_string(),
-                        source: "Embedding".to_string(),
-                    }];
-                    let rel_json = serde_json::to_string(&rel).unwrap_or_else(|_| "[]".to_string());
-
-                    conn.execute(
-                        "UPDATE personal_memory_queue SET status = ?, vector = ?, relations_json = ? WHERE id = ?",
-                        (QueueStatus::Superseded.as_str(), blob_bytes, rel_json, item.id),
-                    )
-                    .await?;
-
-                    let log = super::DedupAuditLog {
-                        queue_item_id: item.id,
-                        item_fact: item.fact.clone(),
-                        item_collection: item.collection.clone(),
-                        stage: "stage2_soft_vector".to_string(),
-                        action: "superseded_lower_priority".to_string(),
-                        matched_fact_id: match_id.clone(),
-                        matched_fact_coll: match_coll.clone(),
-                        matched_fact: match_fact.clone(),
-                        score: *sim,
-                    };
-                    if let Err(e) = mutations::write_dedup_audit(conn, item.id, &log).await {
-                        log::warn!(
-                            "[MemoryPipeline::Stage2] Failed to write dedup audit: {}",
-                            e
-                        );
-                    }
-                } else {
-                    for (m_id, _, _, _) in &soft_dups {
-                        if !m_id.starts_with("item_") {
-                            if let Err(e) = conn
-                                .execute(
-                                    "UPDATE memory_facts SET status = 'superseded' WHERE id = ?",
-                                    (m_id.as_str(),),
-                                )
-                                .await
-                            {
-                                log::warn!("[MemoryPipeline::Stage2] Failed to supersede existing memory fact: {}", e);
-                            }
-                        }
-                    }
-                    conn.execute(
-                        "UPDATE personal_memory_queue SET status = ?, vector = ? WHERE id = ?",
-                        (QueueStatus::Embedded.as_str(), blob_bytes, item.id),
-                    )
-                    .await?;
-
-                    let log = super::DedupAuditLog {
-                        queue_item_id: item.id,
-                        item_fact: item.fact.clone(),
-                        item_collection: item.collection.clone(),
-                        stage: "stage2_soft_vector".to_string(),
-                        action: "superseded_existing".to_string(),
-                        matched_fact_id: match_id.clone(),
-                        matched_fact_coll: match_coll.clone(),
-                        matched_fact: match_fact.clone(),
-                        score: *sim,
-                    };
-                    if let Err(e) = mutations::write_dedup_audit(conn, item.id, &log).await {
-                        log::warn!(
-                            "[MemoryPipeline::Stage2] Failed to write dedup audit: {}",
-                            e
-                        );
-                    }
+                if let Err(rec_err) =
+                    record_queue_item_failure(conn, item.id, item.retry_count, &e.to_string()).await
+                {
+                    log::warn!(
+                        "[Memory::Ingestion::Stage2] Failed to record failure for item {}: {}",
+                        item.id,
+                        rec_err
+                    );
                 }
-            } else {
-                conn.execute(
-                    "UPDATE personal_memory_queue SET status = ?, vector = ? WHERE id = ?",
-                    (QueueStatus::Embedded.as_str(), blob_bytes, item.id),
-                )
-                .await?;
+                summary.errors += 1;
             }
-
-            Ok(true)
-        }
-        Ok(None) | Err(_) => {
-            log::warn!(
-                "[Stage2Embed] Failed to generate embedding for queue item {}",
-                item.id
-            );
-            mutations::mark_job_failed(conn, item.id, "Embedding generation failed").await;
-            Ok(false)
         }
     }
+
+    log::info!(
+        "[Memory::Ingestion::Stage2] Batch cycle completed: {} processed, {} inserted, {} deactivated, {} errors",
+        summary.processed,
+        summary.inserted,
+        summary.duplicates_deactivated,
+        summary.errors
+    );
+
+    Ok(summary)
 }
 
-/// Stage 2: Embedding & Soft Vector Deduplication Worker (Batch Size 16)
-pub async fn run_stage2_embed(conn: &Connection) -> Result<usize> {
-    run_stage2_embed_with_metrics(conn, "").await
-}
+/// Deduplicates against active vectors and commits a single fact and vector to storage.
+async fn process_stage2_item_with_embedding(
+    conn: &Connection,
+    item: &QueueItem,
+    embedding: &[f32],
+) -> Result<(usize, usize)> {
 
-/// Executes Stage 2 embedding with metrics recording.
-pub async fn run_stage2_embed_with_metrics(conn: &Connection, run_id: &str) -> Result<usize> {
-    let start_time = Instant::now();
+    let active_vectors = fetch_active_vectors_by_type(conn, &item.fact_type).await?;
+    let mut deactivated = 0;
+
+    for (existing_fact_id, vec) in active_vectors {
+        let similarity = cosine_similarity(embedding, &vec);
+        if similarity >= SOFT_VECTOR_DEDUP_THRESHOLD {
+            log::info!(
+                "[Memory::Ingestion::Stage2] Cosine duplicate found (sim={:.3}). Deactivating older fact {} for incoming item {}",
+                similarity,
+                existing_fact_id,
+                item.id
+            );
+            deactivate_fact(conn, &existing_fact_id).await?;
+            deactivated += 1;
+        }
+    }
+
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
+    let fact_id = format!("fact_{}_{}", now, Uuid::new_v4().simple());
 
-    let items = claim_deduped_items(conn, now).await?;
-    if items.is_empty() {
-        return Ok(0);
+    let project_id = resolve_project_id(conn, item.session_id).await?;
+
+    let fact = FactRecord {
+        id: fact_id.clone(),
+        session_id: item.session_id,
+        compaction_id: item.compaction_id,
+        fact_type: item.fact_type.clone(),
+        text: item.text.clone(),
+        status: "active".to_string(),
+        created_at: now,
+        updated_at: now,
+    };
+
+    insert_fact(conn, &fact).await?;
+    insert_vector(
+        conn,
+        &fact_id,
+        &item.fact_type,
+        "active",
+        project_id.as_deref(),
+        embedding,
+    )
+    .await?;
+
+    Ok((1, deactivated))
+}
+
+/// Queries the parent project ID for a given session ID if present.
+async fn resolve_project_id(conn: &Connection, session_id: Option<i64>) -> Result<Option<String>> {
+    let sid = match session_id {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+
+    let mut rows = conn
+        .query("SELECT project_id FROM sessions WHERE id = ?", (sid,))
+        .await?;
+
+    if let Some(row) = rows.next().await? {
+        let pid: Option<String> = row.get(0).ok();
+        Ok(pid)
+    } else {
+        Ok(None)
     }
-
-    let items_claimed = items.len();
-    log::info!(
-        "[MemoryPipeline::Stage2] Claimed {} deduped items for MiniLM embedding generation",
-        items_claimed
-    );
-    ensure_embedder_loaded(true)?;
-
-    let mut processed_count = 0;
-    let mut error_count = 0;
-    for item in items {
-        match process_stage2_item(conn, &item).await {
-            Ok(true) => processed_count += 1,
-            Ok(false) => {}
-            Err(e) => {
-                log::error!(
-                    "[MemoryPipeline::Stage2] Error embedding item {}: {}",
-                    item.id,
-                    e
-                );
-                error_count += 1;
-            }
-        }
-    }
-
-    let duration_ms = start_time.elapsed().as_millis();
-
-    if !run_id.is_empty() {
-        let metrics = super::PipelineStageMetrics {
-            run_id: run_id.to_string(),
-            stage_name: "stage2_embed".to_string(),
-            session_id: String::new(),
-            batch_seq: 0,
-            items_claimed,
-            error_count,
-            duration_ms,
-        };
-        if let Err(e) = mutations::record_stage_metrics(conn, &metrics).await {
-            log::warn!(
-                "[MemoryPipeline::Stage2] Failed to record stage metrics: {}",
-                e
-            );
-        }
-    }
-
-    Ok(processed_count)
 }

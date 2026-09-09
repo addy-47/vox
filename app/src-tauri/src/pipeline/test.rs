@@ -8,13 +8,16 @@ use tauri::{AppHandle, Runtime};
 
 use crate::{
     core::{
+        start_audio_engine,
         error::VoxIpcError,
         events::VoxEvent,
         settings::PipelineMode,
         state::{AppState, InteractionOwner, InteractionState},
+        engine::ensure_modular_workers_sync,
     },
-    pipeline::{transition, RoutingContext},
+    pipeline::{init_new_session_sync,transition, RoutingContext},
     services::stt::SttCommand,
+    utils::paths::{get,cache_dir},
 };
 
 /// Resamples audio samples linearly from source sample rate to 16kHz for STT.
@@ -95,10 +98,10 @@ fn resolve_clip_path(clip_id: &str) -> Result<PathBuf, VoxIpcError> {
     let candidate_dirs = [
         PathBuf::from("test-clips"),
         PathBuf::from("app/src-tauri/test-clips"),
-        crate::utils::paths::get().models.join("test_clips"),
-        crate::utils::paths::get().models.join("test-clips"),
-        crate::utils::paths::cache_dir().join("test_clips"),
-        crate::utils::paths::cache_dir().join("test-clips"),
+        get().models.join("test_clips"),
+        get().models.join("test-clips"),
+        cache_dir().join("test_clips"),
+        cache_dir().join("test-clips"),
     ];
 
     for dir in &candidate_dirs {
@@ -124,7 +127,7 @@ async fn ensure_test_pipeline_ready<R: Runtime>(
     state: &AppState,
     ctx: &RoutingContext,
 ) -> Result<(), VoxIpcError> {
-    if let Err(e) = crate::core::start_audio_engine(app, state).await {
+    if let Err(e) = start_audio_engine(app, state).await {
         return Err(VoxIpcError::Engine(e));
     }
 
@@ -135,10 +138,10 @@ async fn ensure_test_pipeline_ready<R: Runtime>(
             PipelineMode::Realtime => settings.persona.realtime_prompt.clone(),
         }
     };
-    crate::pipeline::init_new_session_sync(state, &prompt);
+    init_new_session_sync(state, &prompt);
 
     if ctx.pipeline_mode == PipelineMode::Modular {
-        if let Err(e) = crate::core::engine::ensure_modular_workers_sync(app, state) {
+        if let Err(e) = ensure_modular_workers_sync(app, state) {
             return Err(VoxIpcError::Engine(format!(
                 "Failed to arm modular workers: {}",
                 e

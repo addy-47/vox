@@ -1,42 +1,25 @@
-pub mod edge_classifier;
 pub mod embedder;
-pub mod nli;
-pub mod scope_classifier;
 pub mod tokenizer;
 
-pub use edge_classifier::{
-    classify_edge, ensure_edge_classifier_loaded, init_edge_classifier, is_edge_classifier_loaded,
-    EdgeClassifierEngine,
-};
 pub use embedder::{
-    cosine_similarity, embedding_dim, ensure_embedder_loaded, generate_embedding, init_embedder,
-    is_embedder_loaded, l2_normalize_in_place, unload_embedder, TextEmbedder,
-};
-pub use nli::{
-    classify_batch, ensure_nli_loaded, init_nli_engine, is_nli_loaded, relation_from_result,
-    unload_nli_engine, NliEngine, NliLabel, NliRelation, NliResult,
-};
-pub use scope_classifier::{
-    classify_scope, ensure_scope_classifier_loaded, init_scope_classifier,
-    is_scope_classifier_loaded, unload_scope_classifier, QueryScopeClassifier,
+    cosine_similarity, embedding_dim, ensure_embedder_loaded, generate_embedding,
+    generate_embeddings_batch, init_embedder, is_embedder_loaded, l2_normalize_in_place,
+    unload_embedder, TextEmbedder,
 };
 pub use tokenizer::estimate_tokens;
 
 use crate::services::translit::unload_transliteration_engine;
 
-/// Evicts the 3 memory pipeline worker ONNX models (MiniLM embedder, DeBERTa v3 NLI, ModernBERT Edge Classifier).
+/// Evicts the memory pipeline embedder ONNX model from process memory.
 pub fn unload_memory_pipeline_onnx_models() {
     embedder::unload_embedder();
-    nli::unload_nli_engine();
-    edge_classifier::unload_edge_classifier();
     trim_heap("MemorySubsystem::unload_memory_pipeline_onnx_models");
-    log::info!("[MemorySubsystem] Evicted 3 memory pipeline ONNX models from process memory.");
+    log::info!("[MemorySubsystem] Evicted memory pipeline ONNX model from process memory.");
 }
 
-/// Evicts all ONNX models (memory pipeline + query scope classifier + transliteration engine).
+/// Evicts all ONNX models (memory pipeline embedder + transliteration engine).
 pub fn unload_all_onnx_models() {
     unload_memory_pipeline_onnx_models();
-    scope_classifier::unload_scope_classifier();
     unload_transliteration_engine();
     trim_heap("MemorySubsystem::unload_all_onnx_models");
     log::info!("[MemorySubsystem] Evicted all ONNX models from process memory.");

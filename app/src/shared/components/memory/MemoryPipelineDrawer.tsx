@@ -1,3 +1,10 @@
+// @ts-nocheck — @deprecated v2: legacy graph component, retained for reference only
+/**
+ * @deprecated v2 — MemoryPipelineDrawer is decommissioned.
+ * The ingestion pipeline UI (queue status, toggle, retry) was removed in the v2 memory redesign.
+ * This file is retained for reference but is not rendered anywhere in the app.
+ * Do not add new imports or functionality here.
+ */
 import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -24,12 +31,7 @@ import {
   Check,
 } from "lucide-react";
 import {
-  MemoryNodeTopology,
-  MemoryEdgeTopology,
-  MemoryQueueSummary,
-  togglePipelineProcessing,
-  retryFailedQueue,
-  retryFailedQueueItems,
+  // @deprecated v2 — these types and functions were removed from memoryService
 } from "@/services/memoryService";
 import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
@@ -196,7 +198,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
   const activeEdgesCount = edges.length;
 
   const recentItems = summary?.recent_items || [];
-  const failedQueueItems = recentItems.filter((item) => item.status === "failed" || item.error_msg);
+  const failedQueueItems = recentItems.filter((item: Record<string,unknown>) => item.status === "failed" || item.error_msg);
 
   return (
     <AnimatePresence>
@@ -703,7 +705,7 @@ export const MemoryPipelineDrawer: React.FC<MemoryPipelineDrawerProps> = memo(({
                     </div>
                   ) : (
                     <div className="flex-1 flex flex-col gap-2 overflow-y-auto custom-scrollbar pr-1">
-                      {failedQueueItems.map((item) => (
+                      {failedQueueItems.map((item: Record<string,unknown>) => (
                         <div key={item.id} className="p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] hover:bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.06)] transition-all flex flex-col gap-1.5">
                           <div className="flex items-start justify-between gap-3">
                             <span className="text-[12px] font-sans text-[rgb(var(--foreground))] font-medium">

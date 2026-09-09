@@ -126,18 +126,6 @@ name = "voice_clone"
 [[example]]
 name = "generate_simulation_dataset_clips"
 
-[[example]]
-name = "eval_compaction"
-path = "evals/eval_compaction.rs"
-
-[[example]]
-name = "eval_memory_pipeline"
-path = "evals/eval_memory_pipeline.rs"
-
-[[example]]
-name = "eval_retrieval"
-path = "evals/eval_retrieval.rs"
-
 [[bench]]
 name = "stt_bench"
 harness = false

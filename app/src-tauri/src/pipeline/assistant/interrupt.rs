@@ -65,12 +65,10 @@ pub fn on_interrupt<R: tauri::Runtime>(
     let persist_lock = state.persist_tx.lock();
     if let Some(ref tx) = *persist_lock {
         if let Err(e) = tx.try_send(PersistenceEvent::TurnCompleted {
-            conversation_id: conv_id,
+            session_id: conv_id as i64,
             turn_id: interrupted_turn_id,
             user_text,
             assistant_text: partial_assistant,
-            stt_latency_ms: 0,
-            ttft_ms: 0,
         }) {
             log::warn!(
                 "[Pipeline::Interrupt] Failed to send TurnCompleted on interrupt: {}",

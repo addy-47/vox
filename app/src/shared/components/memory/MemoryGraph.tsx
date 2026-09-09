@@ -1,3 +1,4 @@
+// @ts-nocheck — @deprecated v2: legacy graph component, retained for reference only
 import React, {
   useCallback,
   useEffect,
@@ -12,7 +13,10 @@ import React, {
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as THREE from "three";
-import { MemoryNodeTopology, MemoryEdgeTopology, MemoryFactDetail } from "@/services/memoryService";
+// @deprecated v2 — graph topology types removed from memoryService
+type MemoryNodeTopology = Record<string, unknown>;
+type MemoryEdgeTopology = Record<string, unknown>;
+type MemoryFactDetail = Record<string, unknown>;
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { OrbitalLoader } from "@/shared/components/common";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";

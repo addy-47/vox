@@ -8,11 +8,12 @@ use std::{
 };
 
 use tokio::sync::Mutex;
+use turso::Connection;
 
 use crate::{
     core::{constants::TRANSCRIPT_HISTORY_LIMIT, events::VoxEvent, settings::VoxSettings},
     monitoring::{aggregator::TelemetryEvent, runtime_state::MonitoringState},
-    persistence::{MemoryWorkerEvent, PersistenceEvent},
+    persistence::PersistenceEvent,
     pipeline::assistant::accumulator::TurnAccumulator,
     services::{
         audio::{AudioStream, PlaybackEngine},
@@ -293,7 +294,6 @@ pub struct AppState {
     pub runtime_status: Arc<AtomicU32>,
     pub main_window_destroyed: Arc<AtomicBool>,
     pub persist_tx: parking_lot::Mutex<Option<crossbeam_channel::Sender<PersistenceEvent>>>,
-    pub memory_tx: parking_lot::Mutex<Option<crossbeam_channel::Sender<MemoryWorkerEvent>>>,
     pub dropped_persistence_events: Arc<AtomicU64>,
     pub monitoring: Arc<MonitoringState>,
     pub model_manager: Arc<ModelManager>,
@@ -305,6 +305,7 @@ pub struct AppState {
     pub llm_provider: Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>>>,
     pub event_tx: parking_lot::Mutex<Option<mpsc::Sender<VoxEvent>>>,
     pub pipeline_accumulator: Arc<parking_lot::Mutex<TurnAccumulator>>,
+    pub db: Arc<Connection>,
 }
 
 /// Telemetry handles and health atomics bundled for AppState and monitoring workers.
@@ -341,6 +342,7 @@ impl AppState {
         app_handle: &tauri::AppHandle<R>,
         log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
         telemetry: Arc<TelemetryState>,
+        db: Arc<Connection>,
     ) -> Self {
         let settings = VoxSettings::load();
         telemetry
@@ -367,7 +369,6 @@ impl AppState {
             runtime_status: Arc::new(AtomicU32::new(RuntimeStatus::Initializing as u32)),
             main_window_destroyed: Arc::new(AtomicBool::new(false)),
             persist_tx: parking_lot::Mutex::new(None),
-            memory_tx: parking_lot::Mutex::new(None),
             dropped_persistence_events: Arc::new(AtomicU64::new(0)),
             monitoring: Arc::new(MonitoringState::new()),
             model_manager,
@@ -379,6 +380,7 @@ impl AppState {
             llm_provider: Arc::new(parking_lot::RwLock::new(None)),
             event_tx: parking_lot::Mutex::new(None),
             pipeline_accumulator: Arc::new(parking_lot::Mutex::new(TurnAccumulator::new())),
+            db,
         }
     }
 }

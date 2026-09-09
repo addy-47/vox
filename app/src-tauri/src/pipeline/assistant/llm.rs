@@ -20,18 +20,14 @@ fn persist_assistant_turn(turn_id: u32, full_text: String, user_text: String, st
         .push_assistant_turn(full_text.clone());
 
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
-    let stt_latency_ms = state.telemetry.latest_stt_ms.load(Ordering::Relaxed);
-    let ttft_ms = state.telemetry.latest_ttft_ms.load(Ordering::Relaxed);
 
     let persist_lock = state.persist_tx.lock();
     if let Some(ref tx) = *persist_lock {
         if let Err(e) = tx.try_send(PersistenceEvent::TurnCompleted {
-            conversation_id: conv_id,
+            session_id: conv_id as i64,
             turn_id,
             user_text,
             assistant_text: full_text,
-            stt_latency_ms,
-            ttft_ms,
         }) {
             log::warn!(
                 "[Pipeline::Llm] Failed to send TurnCompleted to persistence: {}",

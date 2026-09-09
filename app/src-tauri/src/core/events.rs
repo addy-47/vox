@@ -3,7 +3,7 @@ use tauri::{AppHandle, Emitter, Runtime};
 
 // Re-export subsystem events for centralized SSOT registry discovery (2. use/imports)
 pub use crate::monitoring::aggregator::TelemetryEvent;
-pub use crate::persistence::{MemoryWorkerEvent, PersistenceEvent};
+pub use crate::persistence::{personal_memory::PersonalMemoryRecord, PersistenceEvent};
 use crate::{core::state::InteractionOwner, setup::model_manager::ModelSetupStatus};
 
 #[derive(Debug, Clone)]
@@ -148,8 +148,8 @@ pub enum IpcEvent {
     ShowToast(ToastPayload),
     NotificationCreated(NotificationRecord),
     NotificationUpdated(NotificationRecord),
-    NotificationDismissed { id: String },
-    NotificationsMarkedRead,
+    PersonalMemoryUpdated(PersonalMemoryRecord),
+    SessionsChanged,
 }
 
 impl IpcEvent {
@@ -168,8 +168,8 @@ impl IpcEvent {
             Self::ShowToast(_) => "show_toast",
             Self::NotificationCreated(_) => "notification_created",
             Self::NotificationUpdated(_) => "notification_updated",
-            Self::NotificationDismissed { .. } => "notification_dismissed",
-            Self::NotificationsMarkedRead => "notifications_marked_read",
+            Self::PersonalMemoryUpdated(_) => "personal_memory_updated",
+            Self::SessionsChanged => "sessions_changed",
         }
     }
 }
@@ -190,8 +190,8 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::ShowToast(payload) => app.emit(name, payload),
         IpcEvent::NotificationCreated(payload) => app.emit(name, payload),
         IpcEvent::NotificationUpdated(payload) => app.emit(name, payload),
-        IpcEvent::NotificationDismissed { id } => app.emit(name, serde_json::json!({ "id": id })),
-        IpcEvent::NotificationsMarkedRead => app.emit(name, ()),
+        IpcEvent::PersonalMemoryUpdated(payload) => app.emit(name, payload),
+        IpcEvent::SessionsChanged => app.emit(name, ()),
     }
 }
 
@@ -215,9 +215,7 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::ShowToast(payload) => app.emit_to(target, name, payload),
         IpcEvent::NotificationCreated(payload) => app.emit_to(target, name, payload),
         IpcEvent::NotificationUpdated(payload) => app.emit_to(target, name, payload),
-        IpcEvent::NotificationDismissed { id } => {
-            app.emit_to(target, name, serde_json::json!({ "id": id }))
-        }
-        IpcEvent::NotificationsMarkedRead => app.emit_to(target, name, ()),
+        IpcEvent::PersonalMemoryUpdated(payload) => app.emit_to(target, name, payload),
+        IpcEvent::SessionsChanged => app.emit_to(target, name, ()),
     }
 }

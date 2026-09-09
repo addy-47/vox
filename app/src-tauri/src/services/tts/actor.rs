@@ -8,12 +8,14 @@ use std::{
     thread::{Builder, JoinHandle},
 };
 
+use turso::Connection;
+
 use crate::{
     core::{
         events::{Actionability, PipelineError, PipelineImpact, VoxEvent},
         settings::{TtsProviderConfig, VoxSettings},
     },
-    persistence::{db::VoxDb, voices::get_voice},
+    persistence::voices::get_voice,
     services::{
         audio::PlaybackEngine,
         tts::{
@@ -21,7 +23,7 @@ use crate::{
             KokoroEngine, TtsEngine as SupertonicEngine, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR,
         },
     },
-    utils::paths::{db_path, model_dir},
+    utils::paths::model_dir,
 };
 
 /// Commands accepted by the dedicated TTS synthesis worker thread.
@@ -98,13 +100,15 @@ pub fn spawn_tts_worker(
                             turn_id,
                             panic_msg
                         );
-                        let _ = handles.event_tx.send(VoxEvent::Error(PipelineError {
+                        if let Err(e) = handles.event_tx.send(VoxEvent::Error(PipelineError {
                             turn_id,
                             message: format!("TTS synthesis panic: {}", panic_msg),
                             source: "TtsActor".to_string(),
                             impact: PipelineImpact::Degraded,
                             actionability: Actionability::None,
-                        }));
+                        })) {
+                            log::warn!("[TTS Worker] Failed to dispatch Error event: {}", e);
+                        }
                     }
                     Ok(Ok(())) => {}
                 }
@@ -124,13 +128,9 @@ pub fn spawn_tts_worker(
 }
 
 /// Resolves a voice UUID to a WAV file path for Chatterbox voice conditioning.
-pub async fn resolve_reference_audio(voice_id: Option<&str>) -> Option<String> {
+pub async fn resolve_reference_audio(conn: &Connection, voice_id: Option<&str>) -> Option<String> {
     let id = voice_id?;
-    let db_path = db_path();
-
-    let conn = VoxDb::open_readonly(&db_path).await.ok()?;
-
-    let entry = get_voice(&conn, id).await.ok()??;
+    let entry = get_voice(conn, id).await.ok()??;
 
     if let Some(ref dir) = entry.voice_dir {
         let path = Path::new(dir);
