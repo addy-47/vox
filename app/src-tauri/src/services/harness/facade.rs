@@ -163,16 +163,25 @@ pub async fn prepare_turn_context(
             params.llm_provider.or(provider_box.as_deref());
 
         if let Some(provider) = active_provider {
-            match run_compaction(provider, &history_slice, params.llm_settings, params.cancel_token)
-                .await
+            match run_compaction(
+                provider,
+                &history_slice,
+                params.llm_settings,
+                params.cancel_token,
+            )
+            .await
             {
                 Ok(result) => {
                     let mut lock = params.harness.lock();
                     let mut context_harness =
                         super::accountant::ContextHarness::new(params.context_window);
                     let sys_prompt = lock.system_prompt().clone();
-                    let grouped =
-                        context_harness.apply_compaction_result(&mut lock.buffer, &sys_prompt, &result, last_user_turn);
+                    let grouped = context_harness.apply_compaction_result(
+                        &mut lock.buffer,
+                        &sys_prompt,
+                        &result,
+                        last_user_turn,
+                    );
                     let flat_facts: Vec<(String, String)> = grouped
                         .into_iter()
                         .flat_map(|(kind, texts)| {
@@ -186,11 +195,11 @@ pub async fn prepare_turn_context(
                         "[Harness] Critical LLM compaction failed: {}. Falling back to FIFO maintenance.",
                         e
                     );
-                    degradation_note = Some(
-                        "Context compaction failed; fell back to FIFO".to_string(),
-                    );
+                    degradation_note =
+                        Some("Context compaction failed; fell back to FIFO".to_string());
                     let mut lock = params.harness.lock();
-                    let mut context_harness = super::accountant::ContextHarness::new(params.context_window);
+                    let mut context_harness =
+                        super::accountant::ContextHarness::new(params.context_window);
                     context_harness.sync_tokens_from_buffer(&lock.buffer);
                     lock.buffer.messages.push(last_user_turn);
                     context_harness.perform_fifo_maintenance(&mut lock.buffer);
@@ -236,11 +245,14 @@ pub async fn prepare_turn_context(
 
     if let Some((raw_json, facts)) = staged_compaction {
         if params.memory.pipeline_processing_enabled {
-            if let (Some(conn), Ok(session_id)) = (params.conn, params.session_id.parse::<i64>())
-            {
+            if let (Some(conn), Ok(session_id)) = (params.conn, params.session_id.parse::<i64>()) {
                 match resolve_uncompacted_range(conn, session_id).await {
                     Ok((from_turn, to_turn)) => {
-                        match record_compaction_start(conn, session_id, "critical", from_turn, to_turn).await {
+                        match record_compaction_start(
+                            conn, session_id, "critical", from_turn, to_turn,
+                        )
+                        .await
+                        {
                             Ok(run_id) => {
                                 if let Err(e) = commit_compaction_output(
                                     conn, run_id, &raw_json, &facts, session_id,

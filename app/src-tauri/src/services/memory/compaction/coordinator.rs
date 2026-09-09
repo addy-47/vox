@@ -56,8 +56,7 @@ impl CompactionCoordinator {
     ) -> Result<Option<CompactionExecutionSummary>> {
         if trigger_kind == "soft" {
             let current_state = state.pipeline.state();
-            if current_state != InteractionState::Ready
-                && current_state != InteractionState::Paused
+            if current_state != InteractionState::Ready && current_state != InteractionState::Paused
             {
                 log::info!(
                     "[CompactionCoordinator] Deferring compaction for session {}: pipeline state is {:?}",

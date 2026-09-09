@@ -18,7 +18,10 @@ pub mod sessions;
 pub mod voices;
 pub mod worker;
 
-pub use compactions::{commit_compaction_output, has_in_progress_compaction, record_compaction_start, resolve_uncompacted_range, CompactionRecord};
+pub use compactions::{
+    commit_compaction_output, has_in_progress_compaction, record_compaction_start,
+    resolve_uncompacted_range, CompactionRecord,
+};
 pub use facts::{
     deactivate_fact, deactivate_facts_batch, fetch_active_facts_by_type, fetch_all_active_facts,
     FactRecord,
@@ -26,7 +29,10 @@ pub use facts::{
 pub use notifications::{NewNotification, NotificationRecord};
 pub use personal_memory::PersonalMemoryRecord;
 pub use projects::ProjectRow;
-pub use queue::{enqueue_fact, has_unfinished_items, record_queue_item_failure, update_queue_item_status, QueueItem};
+pub use queue::{
+    enqueue_fact, has_unfinished_items, record_queue_item_failure, update_queue_item_status,
+    QueueItem,
+};
 pub use sessions::{fetch_session_project_id, SessionRow, TurnRow};
 
 /// Asynchronous pipeline events offloaded from the voice hot-path to the persistence worker.

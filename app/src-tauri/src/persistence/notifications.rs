@@ -117,7 +117,10 @@ pub async fn dismiss_notification(conn: &Connection, id: &str) -> Result<()> {
 /// Returns true when a notification with the given ID exists (any status).
 pub async fn notification_exists(conn: &Connection, id: &str) -> Result<bool> {
     let mut rows = conn
-        .query("SELECT id FROM notifications WHERE id = ?", (id.to_string(),))
+        .query(
+            "SELECT id FROM notifications WHERE id = ?",
+            (id.to_string(),),
+        )
         .await?;
     Ok(rows.next().await?.is_some())
 }

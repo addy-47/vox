@@ -86,8 +86,14 @@ pub async fn run_stage1_exact_dedup(conn: &Connection) -> Result<Stage1Summary> 
                     item.id,
                     e
                 );
-                if let Err(rec_err) =
-                    record_queue_item_failure(conn, item.id, item.retry_count, "pending", &e.to_string()).await
+                if let Err(rec_err) = record_queue_item_failure(
+                    conn,
+                    item.id,
+                    item.retry_count,
+                    "pending",
+                    &e.to_string(),
+                )
+                .await
                 {
                     log::warn!(
                         "[Memory::Ingestion::Stage1] Failed to record failure for item {}: {}",

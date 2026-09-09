@@ -106,7 +106,9 @@ pub async fn consolidate_personal_memory(
     )
     .await?;
 
-    let saved = save_consolidated_memory(conn, project_id, &updated_markdown, current_record.version).await?;
+    let saved =
+        save_consolidated_memory(conn, project_id, &updated_markdown, current_record.version)
+            .await?;
 
     let fact_ids: Vec<String> = active_facts.into_iter().map(|f| f.id).collect();
     mark_facts_consolidated(conn, &fact_ids).await?;

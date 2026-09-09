@@ -19,6 +19,7 @@ import {
 } from "@/services/memoryService";
 import { AmbientBackground } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
+import { TopRightCluster } from "@/shared/ui";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
 
@@ -312,8 +313,10 @@ export const Memory: React.FC = () => {
         </span>
       </div>
 
-      {/* ── Zoom pill — top right ── */}
-      <div className="absolute top-4 right-4 z-20 flex flex-col rounded-xl overflow-hidden border border-[rgba(255,255,255,0.07)] bg-[rgba(10,10,18,0.72)] backdrop-blur-md">
+      {/* ── Top-right: Help + Notifications + zoom ── */}
+      <div className="absolute top-4 right-4 z-30 flex items-start gap-2">
+        <TopRightCluster />
+        <div className="flex flex-col rounded-xl overflow-hidden border border-[rgba(255,255,255,0.07)] bg-[rgba(10,10,18,0.72)] backdrop-blur-md">
         <button
           onClick={handleZoomIn}
           title="Zoom in"
@@ -327,7 +330,8 @@ export const Memory: React.FC = () => {
           className="p-2.5 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-colors"
         >
           <Minus size={14} />
-        </button>
+          </button>
+        </div>
       </div>
 
       {/* ── SVG Canvas ── */}

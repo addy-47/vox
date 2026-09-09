@@ -243,10 +243,7 @@ pub async fn add_voice_from_recording(
 
 /// Delete a voice entry from the database and remove all associated files from disk.
 #[tauri::command]
-pub async fn delete_voice(
-    id: String,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), VoxIpcError> {
+pub async fn delete_voice(id: String, state: State<'_, Arc<AppState>>) -> Result<(), VoxIpcError> {
     let conn = &state.db;
     let entry = voices::get_voice(conn, &id)
         .await
