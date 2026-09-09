@@ -8,16 +8,16 @@ use tauri::{AppHandle, Runtime};
 
 use crate::{
     core::{
-        start_audio_engine,
+        engine::ensure_modular_workers_sync,
         error::VoxIpcError,
         events::VoxEvent,
         settings::PipelineMode,
+        start_audio_engine,
         state::{AppState, InteractionOwner, InteractionState},
-        engine::ensure_modular_workers_sync,
     },
-    pipeline::{init_new_session_sync,transition, RoutingContext},
+    pipeline::{init_new_session_sync, transition, RoutingContext},
     services::stt::SttCommand,
-    utils::paths::{get,cache_dir},
+    utils::paths::{cache_dir, get},
 };
 
 /// Resamples audio samples linearly from source sample rate to 16kHz for STT.

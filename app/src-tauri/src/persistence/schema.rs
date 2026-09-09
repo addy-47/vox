@@ -12,7 +12,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 
 const DROP_LEGACY_TABLES: &[&str] = &[
     "DROP TABLE IF EXISTS memory_relations;",
@@ -69,6 +69,7 @@ const V2_TABLE_STATEMENTS: &[&str] = &[
         finished_at INTEGER
     );",
     "CREATE INDEX IF NOT EXISTS idx_compactions_session_status ON session_compactions(session_id, status);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_compactions_one_in_progress ON session_compactions(session_id) WHERE status = 'in_progress';",
     "CREATE TABLE IF NOT EXISTS personal_memory (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
@@ -259,19 +260,13 @@ pub async fn rebuild_fixture_db(path: &Path) -> Result<()> {
     let wal_path = path.with_extension("db-wal");
     if wal_path.exists() {
         if let Err(e) = std::fs::remove_file(wal_path) {
-            log::warn!(
-                "[Persistence::Schema] Failed to remove WAL file: {}",
-                e
-            );
+            log::warn!("[Persistence::Schema] Failed to remove WAL file: {}", e);
         }
     }
     let shm_path = path.with_extension("db-shm");
     if shm_path.exists() {
         if let Err(e) = std::fs::remove_file(shm_path) {
-            log::warn!(
-                "[Persistence::Schema] Failed to remove SHM file: {}",
-                e
-            );
+            log::warn!("[Persistence::Schema] Failed to remove SHM file: {}", e);
         }
     }
 
@@ -318,7 +313,7 @@ mod tests {
             .expect("Row exists")
             .get(0)
             .expect("Version column");
-        assert_eq!(version, 2, "Schema version must be 2");
+        assert_eq!(version, 3, "Schema version must be 3");
 
         // Verify all 10 tables exist
         let expected_tables = [
@@ -423,6 +418,30 @@ mod tests {
             .get(0)
             .expect("Count col");
         assert_eq!(turn_count, 0, "Turns must cascade delete with session");
+
+        // Verify mutual exclusion: only one in_progress run per session
+        conn.execute(
+            "INSERT INTO sessions (id, project_id, title, is_pinned, created_at, updated_at) VALUES (2, 'default', 'Session 2', 0, ?, ?)",
+            (now, now),
+        )
+        .await
+        .expect("Insert session 2");
+        conn.execute(
+            "INSERT INTO session_compactions (session_id, trigger_kind, from_turn_id, to_turn_id, compaction_output, status, created_at) VALUES (2, 'manual', 1, 1, '', 'in_progress', ?)",
+            (now,),
+        )
+        .await
+        .expect("Insert first in_progress run");
+        let dup = conn
+            .execute(
+                "INSERT INTO session_compactions (session_id, trigger_kind, from_turn_id, to_turn_id, compaction_output, status, created_at) VALUES (2, 'manual', 1, 1, '', 'in_progress', ?)",
+                (now,),
+            )
+            .await;
+        assert!(
+            dup.is_err(),
+            "Second in_progress run for the same session must be rejected"
+        );
     }
 
     #[tokio::test]

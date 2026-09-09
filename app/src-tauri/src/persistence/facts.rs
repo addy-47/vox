@@ -72,17 +72,31 @@ pub async fn fetch_active_facts_by_type(
     Ok(facts)
 }
 
-/// Fetches all active facts across every type for graph/visualization queries.
-pub async fn fetch_all_active_facts(conn: &Connection) -> Result<Vec<FactRecord>> {
-    let mut rows = conn
-        .query(
+/// Fetches all active facts across every type, optionally scoped to one project via the session join. Facts orphaned by hard session deletes (NULL session_id) appear only in the unscoped global view.
+pub async fn fetch_all_active_facts(
+    conn: &Connection,
+    project_id: Option<&str>,
+) -> Result<Vec<FactRecord>> {
+    let mut rows = if let Some(pid) = project_id {
+        conn.query(
+            "SELECT f.id, f.session_id, f.compaction_id, f.type, f.text, f.status, f.created_at, f.updated_at
+             FROM memory_facts f
+             JOIN sessions s ON s.id = f.session_id
+             WHERE f.status = 'active' AND s.project_id = ?
+             ORDER BY f.created_at DESC",
+            (pid.to_string(),),
+        )
+        .await?
+    } else {
+        conn.query(
             "SELECT id, session_id, compaction_id, type, text, status, created_at, updated_at
              FROM memory_facts
              WHERE status = 'active'
              ORDER BY created_at DESC",
             (),
         )
-        .await?;
+        .await?
+    };
 
     let mut facts = Vec::new();
     while let Some(row) = rows.next().await? {

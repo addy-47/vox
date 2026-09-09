@@ -382,8 +382,19 @@ per-surface listeners.
 | Tier | Surface | Anchor | Motion |
 | :--- | :--- | :--- | :--- |
 | **Tier 0** | settings accordion cards | inline | expand / collapse |
-| **Tier 1** | popovers & micro-panels (Memory node tooltip, Home test-clip menu, Monitoring popover) | on hover / click | scale-fade, transient |
+| **Tier 1** | popovers & micro-panels (Memory node tooltip, Home test-clip menu, Monitoring popover) | bottom corner / hover / click | scale-fade, transient |
 | **Tier 2** | bottom drawers (History detail, Memory pipeline, Memory profiler) | bottom sheet | translate-Y, spring ease |
+| **Tier 3** | edge rails (Help, Notifications, Conversations) | top corner trigger | width-collapse / expand |
+
+### Overlay topology
+
+Vox uses one overlay grammar across the shipped interface:
+
+- **Top-corner triggers open edge rails.** Help and Notifications share one right-edge rail group; only one is open at a time. Conversations uses an independent left-edge rail on Home.
+- **Bottom-corner triggers open popovers.** Monitoring remains a bottom-left popover on desktop and a route on compact viewports.
+- **Central cards and nodes open bottom drawers.** The existing `Drawer` remains the single bottom-sheet primitive for these surfaces.
+- **Dismissal is centralized.** Escape closes the topmost surface first (FILO), and outside pointer-down closes the topmost dismissible surface. Surfaces do not install their own Escape or outside-click listeners.
+- **The memory profiler is a debug surface.** It is not part of the shipped overlay contract.
 
 ### Dismissal rules
 

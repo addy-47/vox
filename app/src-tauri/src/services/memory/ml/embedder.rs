@@ -129,7 +129,6 @@ pub fn ensure_embedder_loaded(memory_enabled: bool) -> Result<bool> {
     }
 }
 
-
 /// Generates dense vector embeddings for a batch of input texts in a single ONNX inference pass.
 pub fn generate_embeddings_batch(texts: &[&str]) -> Result<Option<Vec<Vec<f32>>>> {
     let lock = EMBEDDER.read();
@@ -148,7 +147,11 @@ pub fn generate_embeddings_batch(texts: &[&str]) -> Result<Option<Vec<Vec<f32>>>
         .encode_batch(texts.to_vec(), true)
         .map_err(|e| anyhow::anyhow!("Batch tokenization failed: {:?}", e))?;
 
-    let max_len = encodings.iter().map(|e| e.get_ids().len()).max().unwrap_or(0);
+    let max_len = encodings
+        .iter()
+        .map(|e| e.get_ids().len())
+        .max()
+        .unwrap_or(0);
     if max_len == 0 {
         return Ok(Some(vec![vec![0.0f32; embedder.dim]; batch_size]));
     }

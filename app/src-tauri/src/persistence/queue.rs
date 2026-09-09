@@ -43,7 +43,9 @@ pub async fn enqueue_fact(
     if let Some(row) = rows.next().await? {
         Ok(row.get(0)?)
     } else {
-        Err(anyhow::anyhow!("Failed to retrieve generated queue item id"))
+        Err(anyhow::anyhow!(
+            "Failed to retrieve generated queue item id"
+        ))
     }
 }
 
@@ -131,7 +133,12 @@ pub async fn update_queue_item_status(
             "UPDATE memory_ingestion_queue
              SET status = ?, retry_count = retry_count + 1, error_msg = ?, processed_at = ?
              WHERE id = ?",
-            (new_status.to_string(), error_msg.map(|s| s.to_string()), now, id),
+            (
+                new_status.to_string(),
+                error_msg.map(|s| s.to_string()),
+                now,
+                id,
+            ),
         )
         .await?;
     } else {
@@ -139,7 +146,12 @@ pub async fn update_queue_item_status(
             "UPDATE memory_ingestion_queue
              SET status = ?, error_msg = ?, processed_at = ?
              WHERE id = ?",
-            (new_status.to_string(), error_msg.map(|s| s.to_string()), now, id),
+            (
+                new_status.to_string(),
+                error_msg.map(|s| s.to_string()),
+                now,
+                id,
+            ),
         )
         .await?;
     }
@@ -147,11 +159,13 @@ pub async fn update_queue_item_status(
     Ok(())
 }
 
-/// Records a failure on a queue item, incrementing its retry count and setting status to 'failed' if retries reach 3.
+/// Records a failure on a queue item, incrementing its retry count, requeueing at the same
+/// stage's input (`retry_status`) until 3 failures, then setting status to 'failed'.
 pub async fn record_queue_item_failure(
     conn: &Connection,
     id: i64,
     retry_count: i64,
+    retry_status: &str,
     error_msg: &str,
 ) -> Result<()> {
     let now = SystemTime::now()
@@ -159,15 +173,36 @@ pub async fn record_queue_item_failure(
         .unwrap_or_default()
         .as_millis() as i64;
     let next_retry = retry_count + 1;
-    let new_status = if next_retry >= 3 { "failed" } else { "stage1_done" };
+    let new_status = if next_retry >= 3 {
+        "failed"
+    } else {
+        retry_status
+    };
     conn.execute(
         "UPDATE memory_ingestion_queue
          SET status = ?, retry_count = ?, error_msg = ?, processed_at = ?
          WHERE id = ?",
-        (new_status.to_string(), next_retry, Some(error_msg.to_string()), now, id),
+        (
+            new_status.to_string(),
+            next_retry,
+            Some(error_msg.to_string()),
+            now,
+            id,
+        ),
     )
     .await?;
     Ok(())
+}
+
+/// Returns true when any ingestion queue item is not yet finished (`completed`/`failed`).
+pub async fn has_unfinished_items(conn: &Connection) -> Result<bool> {
+    let mut rows = conn
+        .query(
+            "SELECT id FROM memory_ingestion_queue WHERE status NOT IN ('completed', 'failed') LIMIT 1",
+            (),
+        )
+        .await?;
+    Ok(rows.next().await?.is_some())
 }
 
 /// Reconciles items left in indeterminate processing states on boot.

@@ -38,7 +38,7 @@ async fn test_dictation_matrix() {
     let test_timeout = Duration::from_secs(90);
     tokio::time::timeout(test_timeout, async {
         vox_lib::utils::paths::init();
-        let (app, state) = common::harness::get_test_app_and_state();
+        let (app, state) = common::harness::get_test_app_and_state().await;
 
         // 1. Configure settings for Dictation PTT mode with Tray output
         {

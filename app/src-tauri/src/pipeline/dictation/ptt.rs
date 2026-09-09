@@ -10,10 +10,10 @@ use crate::{
         events::{Actionability, PipelineError, PipelineImpact},
         state::{AppState, InteractionState},
     },
-    pipeline::dictation::{error,transition_dictation},
+    pipeline::dictation::{error, transition_dictation},
     services::{
         stt::SttCommand,
-        vad::{VadCommand, VAD_VALIDATION_TIMEOUT_MS}
+        vad::{VadCommand, VAD_VALIDATION_TIMEOUT_MS},
     },
 };
 
@@ -52,10 +52,7 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
-            if let Err(e) = engine
-                .vad_tx
-                .send(VadCommand::StartWindowValidation)
-            {
+            if let Err(e) = engine.vad_tx.send(VadCommand::StartWindowValidation) {
                 log::warn!("[Dictation::PTT] Failed to start window validation: {}", e);
             }
         }
@@ -100,10 +97,8 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
             .send(VadCommand::StopWindowValidation { response_tx: tx })
             .is_ok()
         {
-            rx.recv_timeout(Duration::from_millis(
-                VAD_VALIDATION_TIMEOUT_MS,
-            ))
-            .ok()
+            rx.recv_timeout(Duration::from_millis(VAD_VALIDATION_TIMEOUT_MS))
+                .ok()
         } else {
             None
         }
@@ -158,13 +153,13 @@ pub fn on_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             let (resp_tx, _) = mpsc::channel();
-            if let Err(e) = engine
-                .vad_tx
-                .send(VadCommand::StopWindowValidation {
-                    response_tx: resp_tx,
-                })
-            {
-                log::warn!("[Dictation::PTT] Failed to send StopWindowValidation: {}", e);
+            if let Err(e) = engine.vad_tx.send(VadCommand::StopWindowValidation {
+                response_tx: resp_tx,
+            }) {
+                log::warn!(
+                    "[Dictation::PTT] Failed to send StopWindowValidation: {}",
+                    e
+                );
             }
         }
     }

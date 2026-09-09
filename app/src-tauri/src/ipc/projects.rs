@@ -62,5 +62,14 @@ pub async fn delete_project(
 ) -> Result<(), VoxIpcError> {
     db_delete_project(&state.db, &project_id)
         .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))
+        .map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("Cannot delete project") {
+                VoxIpcError::InvalidArgument(msg)
+            } else if msg.contains("not found") {
+                VoxIpcError::NotFound(msg)
+            } else {
+                VoxIpcError::Database(msg)
+            }
+        })
 }

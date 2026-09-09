@@ -44,7 +44,6 @@ pub fn format_relative_timestamp(created_at_ms: i64) -> String {
     }
 }
 
-
 /// Assembles the complete system prompt from base prompt, personal memory markdown, and dynamic profile.
 pub fn assemble_system_prompt(
     base_system_prompt: &str,
@@ -181,7 +180,10 @@ mod tests {
             assemble_system_prompt(base, Some("   "), Some("   ")),
             "Base prompt."
         );
-        assert_eq!(assemble_system_prompt(base, Some(""), Some("")), "Base prompt.");
+        assert_eq!(
+            assemble_system_prompt(base, Some(""), Some("")),
+            "Base prompt."
+        );
     }
 
     /// Tests assemble strips existing wrapper and unwraps inner.
@@ -228,7 +230,6 @@ mod tests {
         let idx_prof = msgs[0].content.find("<user_profile>").unwrap();
         assert!(idx_hist < idx_prof);
     }
-
 
     /// Tests relative timestamp humanization across minute, hour, day, and week intervals.
     #[test]

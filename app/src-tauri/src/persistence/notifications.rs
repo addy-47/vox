@@ -114,6 +114,46 @@ pub async fn dismiss_notification(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Returns true when a notification with the given ID exists (any status).
+pub async fn notification_exists(conn: &Connection, id: &str) -> Result<bool> {
+    let mut rows = conn
+        .query("SELECT id FROM notifications WHERE id = ?", (id.to_string(),))
+        .await?;
+    Ok(rows.next().await?.is_some())
+}
+
+/// Fetches a single notification by ID.
+pub async fn fetch_notification_by_id(
+    conn: &Connection,
+    id: &str,
+) -> Result<Option<NotificationRecord>> {
+    let mut rows = conn
+        .query(
+            "SELECT id, category, title, message, status, session_id, metadata, is_read, created_at
+             FROM notifications
+             WHERE id = ?",
+            (id.to_string(),),
+        )
+        .await?;
+
+    if let Some(row) = rows.next().await? {
+        let is_read_int: i64 = row.get(7).unwrap_or(0);
+        Ok(Some(NotificationRecord {
+            id: row.get(0)?,
+            category: row.get(1)?,
+            title: row.get(2)?,
+            message: row.get(3)?,
+            status: row.get(4)?,
+            session_id: row.get(5).ok(),
+            metadata: row.get(6).unwrap_or_default(),
+            is_read: is_read_int != 0,
+            created_at: row.get(8).unwrap_or(0),
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Finds an active (non-dismissed) notification for a specific session and category.
 pub async fn find_active_notification_by_session(
     conn: &Connection,

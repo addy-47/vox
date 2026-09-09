@@ -215,7 +215,6 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
         }
     }
 
-
     let prompt = {
         let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
         match ctx.pipeline_mode {
@@ -439,7 +438,6 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
         }
     }
 
-
     // Unconditionally yield owner to Dictation.
     state
         .owner
@@ -501,28 +499,13 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
         if let Ok(turns) =
             fetch_turns_for_compaction(conn, session_id, last_compacted, u32::MAX).await
         {
-                let uncompacted_count = turns.len() as u32;
-                if uncompacted_count > 0 {
-                    if auto_compaction {
-                        use tauri::Manager;
-                        let state_handle: tauri::State<'_, Arc<AppState>> = app_handle.state();
-                        let app_state: &Arc<AppState> = state_handle.inner();
-                        if let Err(e) = CompactionCoordinator::run_compaction_slice(
-                            &app_handle,
-                            app_state,
-                            session_id,
-                            "auto",
-                            None,
-                        )
-                        .await
-                        {
-                            log::warn!(
-                                "[Pipeline::Session] Auto-compaction failed for session {}: {}",
-                                session_id,
-                                e
-                            );
-                        }
-                    } else if let Err(e) = CompactionCoordinator::notify_uncompacted_session(
+            let uncompacted_count = turns.len() as u32;
+            if uncompacted_count > 0 {
+                if auto_compaction {
+                    use tauri::Manager;
+                    let state_handle: tauri::State<'_, Arc<AppState>> = app_handle.state();
+                    let app_state: &Arc<AppState> = state_handle.inner();
+                    if let Err(e) = CompactionCoordinator::notify_uncompacted_session(
                         &app_handle,
                         &db,
                         session_id,
@@ -535,7 +518,36 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
                             session_id, e
                         );
                     }
+                    if let Err(e) = CompactionCoordinator::run_compaction_slice(
+                        &app_handle,
+                        app_state,
+                        session_id,
+                        "auto",
+                        None,
+                    )
+                    .await
+                    {
+                        log::warn!(
+                            "[Pipeline::Session] Auto-compaction failed for session {}: {}",
+                            session_id,
+                            e
+                        );
+                    }
+                } else if let Err(e) = CompactionCoordinator::notify_uncompacted_session(
+                    &app_handle,
+                    &db,
+                    session_id,
+                    uncompacted_count,
+                )
+                .await
+                {
+                    log::warn!(
+                            "[Pipeline::Session] Failed to emit uncompacted notification for session {}: {}",
+                            session_id, e
+                        );
                 }
             }
+        }
+
     });
 }

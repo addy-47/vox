@@ -1,5 +1,4 @@
 use std::{
-    path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
@@ -12,18 +11,15 @@ use crossbeam_channel::{bounded, Receiver, Sender};
 use turso::Connection;
 
 use super::{
-    queue::reconcile_crashed_queue_on_boot, schema, sessions::cleanup_zero_turn_sessions,
+    queue::reconcile_crashed_queue_on_boot, sessions::cleanup_zero_turn_sessions,
     PersistenceEvent, PERSISTENCE_CHANNEL_CAPACITY, PERSISTENCE_RATE_INTERVAL,
     WORKER_EVENT_POLL_TIMEOUT,
 };
-use crate::{
-    core::error::PersistenceError,
-    persistence::db::{get_tokio_handle, VoxDb},
-};
+use crate::{core::error::PersistenceError, persistence::db::get_tokio_handle};
 
-/// Spawn the persistence worker on a dedicated OS thread.
+/// Spawns the persistence worker on a dedicated OS thread sharing the bootstrap connection.
 pub fn spawn_persistence_worker(
-    db_path: PathBuf,
+    db: Arc<Connection>,
     is_db_healthy: Arc<AtomicBool>,
     persistence_rate: Arc<AtomicU32>,
     is_private_mode: Arc<AtomicBool>,
@@ -35,29 +31,8 @@ pub fn spawn_persistence_worker(
         .spawn(move || {
             let rt_handle = get_tokio_handle();
 
-            let db = match rt_handle.block_on(VoxDb::open(&db_path)) {
-                Ok(d) => {
-                    is_db_healthy.store(true, Ordering::Relaxed);
-                    d
-                }
-                Err(e) => {
-                    is_db_healthy.store(false, Ordering::Relaxed);
-                    log::error!(
-                        "[Persistence::Worker] Failed to open DB at {:?}: {}",
-                        db_path,
-                        e
-                    );
-                    return;
-                }
-            };
-
-            if let Err(e) = rt_handle.block_on(schema::run_migrations(&db)) {
-                log::error!("[Persistence::Worker] Migration failed: {}", e);
-                return;
-            }
-
             run_startup_sweeps(&db, &rt_handle);
-            log::info!("[Persistence::Worker] Worker started. DB at {:?}", db_path);
+            log::info!("[Persistence::Worker] Worker started on shared connection");
 
             run_event_loop(
                 rx,
@@ -176,7 +151,10 @@ async fn process_event(conn: &Connection, event: PersistenceEvent) -> anyhow::Re
                 (session_id, timestamp_ms as i64, timestamp_ms as i64),
             )
             .await?;
-            log::debug!("[Persistence::Worker] SessionStarted: session_id={}", session_id);
+            log::debug!(
+                "[Persistence::Worker] SessionStarted: session_id={}",
+                session_id
+            );
         }
         PersistenceEvent::SessionEnded {
             session_id,
@@ -201,7 +179,10 @@ async fn process_event(conn: &Connection, event: PersistenceEvent) -> anyhow::Re
                     (timestamp_ms as i64, session_id),
                 )
                 .await?;
-                log::debug!("[Persistence::Worker] SessionEnded: session_id={}", session_id);
+                log::debug!(
+                    "[Persistence::Worker] SessionEnded: session_id={}",
+                    session_id
+                );
             }
         }
         PersistenceEvent::TurnCompleted {

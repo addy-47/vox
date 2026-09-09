@@ -33,7 +33,7 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
     let test_timeout = Duration::from_secs(60);
     tokio::time::timeout(test_timeout, async {
         vox_lib::utils::paths::init();
-        let (app, state) = common::harness::get_test_app_and_state();
+        let (app, state) = common::harness::get_test_app_and_state().await;
 
         let supertonic_model_dir = common::paths::get_supertonic_model_dir();
         assert!(
@@ -208,7 +208,7 @@ async fn test_tts_to_playback_short_utterance_flush() {
     let test_timeout = Duration::from_secs(30);
     tokio::time::timeout(test_timeout, async {
         vox_lib::utils::paths::init();
-        let (_app, state) = common::harness::get_test_app_and_state();
+        let (_app, state) = common::harness::get_test_app_and_state().await;
 
         // Setup mock playback engine with custom event capture
         let (_playback_engine, _consumer_arc) = common::harness::create_mock_playback_engine();

@@ -29,9 +29,7 @@ pub async fn get_notifications(
 
 /// Marks all unread notifications as read and broadcasts `notifications_marked_read`.
 #[tauri::command]
-pub async fn mark_notifications_read(
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), VoxIpcError> {
+pub async fn mark_notifications_read(state: State<'_, Arc<AppState>>) -> Result<(), VoxIpcError> {
     db_mark_all_read(&state.db)
         .await
         .map_err(|e| VoxIpcError::Database(format!("Mark all read failed: {}", e)))?;
@@ -60,9 +58,12 @@ pub async fn trigger_session_compaction(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
     // Check if an existing notification exists for this session
-    if let Ok(Some(mut notif)) =
-        notifications::find_active_notification_by_session(&state.db, session_id, "session_compaction")
-            .await
+    if let Ok(Some(mut notif)) = notifications::find_active_notification_by_session(
+        &state.db,
+        session_id,
+        "session_compaction",
+    )
+    .await
     {
         if let Err(e) = db_update_status(&state.db, &notif.id, "in_progress").await {
             log::warn!(

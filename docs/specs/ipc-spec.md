@@ -11,9 +11,9 @@
   4. Write **zero raw SQL queries**.
 
 ### 1.2 Serialization & Parameter Contracts
-- All command arguments use standard Tauri v2 `camelCase` deserialization in Rust signatures (e.g. `sessionId: i64`).
+- All command arguments use standard Tauri v2 `camelCase` deserialization: Rust signatures declare `snake_case` params (e.g. `session_id: i64`) and frontend invokes pass `camelCase` keys (e.g. `{ sessionId }`). Tauri maps between the two; sending the Rust `snake_case` spelling from the frontend misses the required key.
 - All return payloads are strongly-typed Rust structs serializing to camelCase JSON.
-- Handlers return `Result<T, VoxIpcError>` with explicit error categories (`Database`, `InvalidArgument`, `NotFound`, `Pipeline`).
+- Handlers return `Result<T, VoxIpcError>` with explicit error categories (`Database`, `InvalidArgument`, `NotFound`, `Pipeline`, `Conflict`). `delete_project` maps guard failures to `InvalidArgument`, missing rows to `NotFound`; only genuine storage failures surface as `Database`.
 
 ---
 
@@ -36,7 +36,7 @@ Manages workspace session grouping folders.
 
 #### `delete_project(projectId: String)`
 - **Purpose**: Permanently deletes an empty project.
-- **Behavior**: Checks if any sessions reference `projectId`. If session count > 0, returns `VoxIpcError::InvalidArgument("Cannot delete project containing sessions")`. Otherwise executes hard delete on Turso `projects`.
+- **Behavior**: Rejects the `'default'` project and any project with session count > 0 with `VoxIpcError::InvalidArgument`. Returns `VoxIpcError::NotFound` for unknown IDs. Otherwise executes hard delete on Turso `projects`.
 
 ---
 
@@ -57,7 +57,7 @@ Manages conversational sessions, turns, and session continuation.
 
 #### `get_sessions(projectId: Option<String>)`
 - **Purpose**: Returns sessions for a specific project or all active sessions.
-- **Behavior**: Queries `sessions WHERE deleted_at IS NULL` (optionally filtered by `project_id`), ordered `is_pinned DESC, updated_at DESC`. Returns monotonic IDs, titles, timestamps, and pin flags.
+- **Behavior**: Queries `sessions WHERE deleted_at IS NULL` (optionally filtered by `project_id`), ordered `is_pinned DESC, updated_at DESC`. Returns monotonic IDs, titles, timestamps, and pin flags, plus derived `turn_count` and `first_message` (first user turn text) powering rail ordering and the title→first-message→untitled fallback.
 
 #### `get_turns(sessionId: i64)`
 - **Purpose**: Retrieves all finalized dialog turns for a given session.
@@ -65,13 +65,13 @@ Manages conversational sessions, turns, and session continuation.
 
 #### `update_session(sessionId: i64, title: Option<String>, isPinned: Option<bool>, projectId: Option<String>)` — [NEW]
 - **Purpose**: Updates session metadata (rename, pin/unpin, move between projects).
-- **Behavior**: Updates specified fields on `sessions` in Turso. Broadcasts `IpcEvent::SessionsChanged`.
+- **Behavior**: Updates specified fields on `sessions` in Turso. A call with all fields `None` is a no-op returning success without emitting. Otherwise broadcasts `IpcEvent::SessionsChanged`.
 
-#### `delete_session(sessionId: i64, hard: bool)` — [UNIFIED]
+#### `delete_session(sessionId: i64, hard: Option<bool>)` — [UNIFIED]
 - **Purpose**: Deletes a session (supports soft trash delete and permanent hard delete).
 - **Behavior**: 
-  - If `hard == false` (soft delete): sets `deleted_at = now()` on the session. Preserves all child rows for trash recovery.
-  - If `hard == true` (permanent purge): executes `DELETE FROM sessions WHERE id = ?`. Cascades strictly to `turns` and `session_compactions` (`ON DELETE CASCADE`). Extracted facts in `memory_facts` remain intact with `session_id` set to `NULL`.
+  - If `hard == Some(true)` (permanent purge): executes `DELETE FROM sessions WHERE id = ?`. Cascades strictly to `turns` and `session_compactions` (`ON DELETE CASCADE`). Extracted facts in `memory_facts` remain intact with `session_id` set to `NULL`.
+  - Otherwise (soft delete, the default when `hard` is omitted or `false`): sets `deleted_at = now()` on the session. Preserves all child rows for trash recovery.
   - Broadcasts `IpcEvent::SessionsChanged`.
 
 #### `get_transcript_history()`
@@ -221,8 +221,8 @@ Every event emitted by the backend via `emit_ipc` or `emit_ipc_to` is mapped dir
 | `show_toast` | `ToastPayload { title, message, level, duration_ms? }` | Ephemeral toast popups for user feedback. |
 | `notification_created` | `NotificationRecord { id, category, title, message, status, ... }` | Emitted when a persistent actionable notification is created. |
 | `notification_updated` | `NotificationRecord { id, category, title, message, status, ... }` | Emitted when an active notification status changes (e.g. `'in_progress'` $\to$ `'completed'`). |
-| `personal_memory_updated`| `PersonalMemoryPayload { content, version, updated_at }` | **[NEW]** Emitted when Personal Memory is consolidated, edited, imported, or regenerated. |
-| `sessions_changed` | `SessionsChangedPayload { session_id?, action, title? }` | **[UNIFIED]** Signals frontend when sessions are updated (`"title_updated"`, `"created"`, `"deleted"`, `"pinned"`). Allows surgical in-place title patches or list invalidation. |
+| `personal_memory_updated`| `PersonalMemoryRecord { id, project_id, content, version, last_consolidated_at, updated_at }` | Emitted when Personal Memory is consolidated, edited, imported, or regenerated. |
+| `sessions_changed` | `void` | Signals frontend when sessions are updated (`create`, `continue`, `update`, `delete`). Frontend refetches the session list; no surgical title-patch payload is provided. |
 | `settings-updated` | `void` | Signals frontend that application settings were hot-reloaded. |
 | `toggle_tray` | `void` | Toggles tray drawer visibility. |
 

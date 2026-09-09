@@ -18,13 +18,16 @@ pub mod sessions;
 pub mod voices;
 pub mod worker;
 
-pub use compactions::{commit_compaction_output, record_compaction_start, CompactionRecord};
-pub use facts::{deactivate_fact, deactivate_facts_batch, fetch_active_facts_by_type, fetch_all_active_facts, FactRecord};
+pub use compactions::{commit_compaction_output, has_in_progress_compaction, record_compaction_start, resolve_uncompacted_range, CompactionRecord};
+pub use facts::{
+    deactivate_fact, deactivate_facts_batch, fetch_active_facts_by_type, fetch_all_active_facts,
+    FactRecord,
+};
 pub use notifications::{NewNotification, NotificationRecord};
 pub use personal_memory::PersonalMemoryRecord;
 pub use projects::ProjectRow;
-pub use queue::{enqueue_fact, record_queue_item_failure, update_queue_item_status, QueueItem};
-pub use sessions::{SessionRow, TurnRow};
+pub use queue::{enqueue_fact, has_unfinished_items, record_queue_item_failure, update_queue_item_status, QueueItem};
+pub use sessions::{fetch_session_project_id, SessionRow, TurnRow};
 
 /// Asynchronous pipeline events offloaded from the voice hot-path to the persistence worker.
 #[derive(Debug, Clone)]
@@ -73,24 +76,29 @@ pub fn decode_f32_blob(bytes: &[u8]) -> Vec<f32> {
 
 #[cfg(test)]
 mod tests {
+    use turso::Builder;
+
     use crate::persistence::{
         compactions::{
             commit_compaction_output, fetch_latest_compaction_run, record_compaction_start,
         },
         facts::{
-            deactivate_fact, fetch_active_facts_by_type, fetch_active_vectors_by_type,
-            insert_fact, insert_vector, FactRecord,
+            deactivate_fact, fetch_active_facts_by_type, fetch_active_vectors_by_type, insert_fact,
+            insert_vector, FactRecord,
         },
         personal_memory::{get_personal_memory, save_personal_memory, update_consolidated_memory},
-        projects::{create_project, delete_project, get_project_by_id, get_projects, rename_project},
-        queue::{claim_pending_queue_batch, reconcile_crashed_queue_on_boot, update_queue_item_status},
+        projects::{
+            create_project, delete_project, get_project_by_id, get_projects, rename_project,
+        },
+        queue::{
+            claim_pending_queue_batch, reconcile_crashed_queue_on_boot, update_queue_item_status,
+        },
         schema::run_migrations,
         sessions::{
             create_session, create_session_with_id, delete_session, fetch_session_by_id,
             fetch_sessions, fetch_turns, update_session_metadata,
         },
     };
-    use turso::Builder;
 
     async fn create_test_conn() -> turso::Connection {
         let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -134,7 +142,9 @@ mod tests {
         assert!(delete_project(&conn, "default").await.is_err());
 
         // Attach session to work project -> delete should fail
-        create_session_with_id(&conn, 1001, Some("work")).await.unwrap();
+        create_session_with_id(&conn, 1001, Some("work"))
+            .await
+            .unwrap();
         assert!(delete_project(&conn, "work").await.is_err());
 
         // Remove session, now delete succeeds
@@ -150,7 +160,10 @@ mod tests {
         let session_id = create_session(&conn, None).await.unwrap();
         assert!(session_id > 0);
 
-        let s = fetch_session_by_id(&conn, session_id).await.unwrap().unwrap();
+        let s = fetch_session_by_id(&conn, session_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(s.project_id, "default");
         assert_eq!(s.turn_count, 0);
         assert!(!s.is_pinned);
@@ -171,7 +184,10 @@ mod tests {
         assert_eq!(turns[1].turn_id, 2);
 
         // Fetch session again -> verify turn_count and first_message
-        let s_updated = fetch_session_by_id(&conn, session_id).await.unwrap().unwrap();
+        let s_updated = fetch_session_by_id(&conn, session_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(s_updated.turn_count, 2);
         assert_eq!(s_updated.first_message.as_deref(), Some("Hello"));
 
@@ -179,7 +195,10 @@ mod tests {
         update_session_metadata(&conn, session_id, Some("Greetings"), Some(true), None)
             .await
             .unwrap();
-        let s_meta = fetch_session_by_id(&conn, session_id).await.unwrap().unwrap();
+        let s_meta = fetch_session_by_id(&conn, session_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(s_meta.title.as_deref(), Some("Greetings"));
         assert!(s_meta.is_pinned);
 
@@ -190,7 +209,10 @@ mod tests {
 
         // Hard delete cascades
         delete_session(&conn, session_id, true).await.unwrap();
-        assert!(fetch_session_by_id(&conn, session_id).await.unwrap().is_none());
+        assert!(fetch_session_by_id(&conn, session_id)
+            .await
+            .unwrap()
+            .is_none());
         assert!(fetch_turns(&conn, session_id).await.unwrap().is_empty());
     }
 
@@ -203,21 +225,30 @@ mod tests {
         assert_eq!(mem.version, 1);
 
         // Save with valid version
-        let updated = save_personal_memory(&conn, None, "# Preferences\n- Rust", 1).await.unwrap();
+        let updated = save_personal_memory(&conn, None, "# Preferences\n- Rust", 1)
+            .await
+            .unwrap();
         assert_eq!(updated.version, 2);
         assert_eq!(updated.content, "# Preferences\n- Rust");
 
         // Save with stale version 1 -> must fail
         let conflict = save_personal_memory(&conn, None, "Stale content", 1).await;
-        assert!(conflict.is_err(), "Optimistic lock must reject stale version");
+        assert!(
+            conflict.is_err(),
+            "Optimistic lock must reject stale version"
+        );
 
         // Save with correct version 2 -> succeeds
-        let updated2 = save_personal_memory(&conn, None, "# Preferences\n- Rust\n- Tauri", 2).await.unwrap();
+        let updated2 = save_personal_memory(&conn, None, "# Preferences\n- Rust\n- Tauri", 2)
+            .await
+            .unwrap();
         assert_eq!(updated2.version, 3);
         assert!(updated2.content.contains("Tauri"));
 
         // Background consolidation update
-        let consolidated = update_consolidated_memory(&conn, None, "# Consolidated\n- All good").await.unwrap();
+        let consolidated = update_consolidated_memory(&conn, None, "# Consolidated\n- All good")
+            .await
+            .unwrap();
         assert_eq!(consolidated.version, 4);
         assert_eq!(consolidated.content, "# Consolidated\n- All good");
     }
@@ -227,31 +258,46 @@ mod tests {
         let conn = create_test_conn().await;
 
         let session_id = create_session(&conn, None).await.unwrap();
-        let run_id = record_compaction_start(&conn, session_id, "soft", 1, 5).await.unwrap();
+        let run_id = record_compaction_start(&conn, session_id, "soft", 1, 5)
+            .await
+            .unwrap();
         assert!(run_id > 0);
 
-        let latest = fetch_latest_compaction_run(&conn, session_id).await.unwrap().unwrap();
+        let latest = fetch_latest_compaction_run(&conn, session_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(latest.status, "in_progress");
 
         // Commit compaction output with extracted facts
         let facts = vec![
             ("personal".to_string(), "User likes clean code".to_string()),
-            ("workdone".to_string(), "Implemented v2 persistence".to_string()),
+            (
+                "workdone".to_string(),
+                "Implemented v2 persistence".to_string(),
+            ),
         ];
         commit_compaction_output(&conn, run_id, "{\"summary\":\"test\"}", &facts, session_id)
             .await
             .unwrap();
 
-        let finished = fetch_latest_compaction_run(&conn, session_id).await.unwrap().unwrap();
+        let finished = fetch_latest_compaction_run(&conn, session_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(finished.status, "completed");
 
         // Verify items arrived in queue
-        let claimed = claim_pending_queue_batch(&conn, "pending", "stage1_processing", 10).await.unwrap();
+        let claimed = claim_pending_queue_batch(&conn, "pending", "stage1_processing", 10)
+            .await
+            .unwrap();
         assert_eq!(claimed.len(), 2);
         assert_eq!(claimed[0].status, "stage1_processing");
 
         // Update queue item
-        update_queue_item_status(&conn, claimed[0].id, "completed", None).await.unwrap();
+        update_queue_item_status(&conn, claimed[0].id, "completed", None)
+            .await
+            .unwrap();
 
         // Simulate crash on claimed[1]
         let reconciled = reconcile_crashed_queue_on_boot(&conn).await.unwrap();
@@ -262,10 +308,15 @@ mod tests {
     async fn test_facts_and_vectors_lifecycle() {
         let conn = create_test_conn().await;
 
+        let session_id = create_session(&conn, None).await.unwrap();
+        let compaction_id = record_compaction_start(&conn, session_id, "soft", 0, 5)
+            .await
+            .unwrap();
+
         let fact = FactRecord {
             id: "fact_1001".to_string(),
-            session_id: None,
-            compaction_id: 1,
+            session_id: Some(session_id),
+            compaction_id,
             fact_type: "objective".to_string(),
             text: "Achieve sub-200ms voice pipeline".to_string(),
             status: "active".to_string(),
@@ -279,18 +330,28 @@ mod tests {
             .await
             .unwrap();
 
-        let active_facts = fetch_active_facts_by_type(&conn, "objective").await.unwrap();
+        let active_facts = fetch_active_facts_by_type(&conn, "objective")
+            .await
+            .unwrap();
         assert_eq!(active_facts.len(), 1);
         assert_eq!(active_facts[0].id, "fact_1001");
 
-        let active_vectors = fetch_active_vectors_by_type(&conn, "objective").await.unwrap();
+        let active_vectors = fetch_active_vectors_by_type(&conn, "objective")
+            .await
+            .unwrap();
         assert_eq!(active_vectors.len(), 1);
         assert_eq!(active_vectors[0].0, "fact_1001");
         assert_eq!(active_vectors[0].1.len(), 384);
 
         // Deactivate
         deactivate_fact(&conn, "fact_1001").await.unwrap();
-        assert!(fetch_active_facts_by_type(&conn, "objective").await.unwrap().is_empty());
-        assert!(fetch_active_vectors_by_type(&conn, "objective").await.unwrap().is_empty());
+        assert!(fetch_active_facts_by_type(&conn, "objective")
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(fetch_active_vectors_by_type(&conn, "objective")
+            .await
+            .unwrap()
+            .is_empty());
     }
 }
