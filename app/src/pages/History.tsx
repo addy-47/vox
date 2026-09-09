@@ -10,7 +10,8 @@ import {
   HistoryListView,
 } from "@/shared/components/history";
 import { useHistory } from "@/shared/hooks/useHistory";
-import { EmptyState, OrbitalLoader, ErrorBoundary, TopRightCluster } from "@/shared/components/common";
+import { EmptyState, OrbitalLoader, ErrorBoundary } from "@/shared/components/common";
+import { TopRightCluster } from "@/shared/ui";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import type { SessionRow } from "@/services/historyService";
 
@@ -142,7 +143,7 @@ export const History: React.FC = () => {
     >
       {/* ── Top-right: Help + Notifications ── */}
       <div className="absolute top-4 right-5 z-30">
-        <TopRightCluster deepLink="page:history" />
+        <TopRightCluster />
       </div>
 
       {/* Delete Error Notification Banner */}

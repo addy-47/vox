@@ -123,8 +123,14 @@ where
                     item.id,
                     e
                 );
-                if let Err(rec_err) =
-                    record_queue_item_failure(conn, item.id, item.retry_count, "stage1_done", &e.to_string()).await
+                if let Err(rec_err) = record_queue_item_failure(
+                    conn,
+                    item.id,
+                    item.retry_count,
+                    "stage1_done",
+                    &e.to_string(),
+                )
+                .await
                 {
                     log::warn!(
                         "[Memory::Ingestion::Stage2] Failed to record failure for item {}: {}",

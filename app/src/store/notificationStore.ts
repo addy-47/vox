@@ -14,9 +14,6 @@ interface NotificationStoreState {
   notifications: NotificationRecord[];
   compactingSessionIds: number[];
   loading: boolean;
-  isOpen: boolean;
-
-  setIsOpen: (open: boolean) => void;
   fetchNotifications: () => Promise<void>;
   markAllRead: () => Promise<void>;
   dismiss: (id: string) => Promise<void>;
@@ -28,9 +25,6 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
   notifications: [],
   compactingSessionIds: [],
   loading: false,
-  isOpen: false,
-
-  setIsOpen: (isOpen) => set({ isOpen }),
 
   fetchNotifications: async () => {
     try {
@@ -108,7 +102,6 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
     unlisteners.push(
       await listenNotificationUpdated((notif) => {
         set((state) => {
-          // If the notification was completed or dismissed, remove it from compactingSessionIds
           const isFinished = notif.status === "dismissed" || notif.category === "session_compaction_completed";
           const nextCompacting = isFinished && notif.session_id
             ? state.compactingSessionIds.filter((id) => id !== notif.session_id)
@@ -143,7 +136,6 @@ function logError(msg: string, e: unknown) {
   console.error(`[NotificationStore] ${msg}:`, e);
 }
 
-/** Badge weight: unread, actionable notifications only (receipts excluded). */
 export function selectBadgeCount(state: NotificationStoreState): number {
   return state.notifications.filter(countsTowardBadge).length;
 }
