@@ -213,19 +213,23 @@ Dedicated vector storage for semantic search and Stage 2 cosine deduplication. U
 ---
 
 ### 2.9 `notifications`
-Persistent, actionable desktop notification center.
+Persistent, actionable desktop notification center (governed by `notifications-spec.md`).
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| `id` | TEXT | PRIMARY KEY | Unique notification ID (`notif_{cat}_{id}`) |
-| `category` | TEXT | NOT NULL | `'session_compaction'`, `'system_error'`, `'model_download'` |
-| `title` | TEXT | NOT NULL | Card title |
-| `message` | TEXT | NOT NULL | Card description / instructions |
-| `status` | TEXT | NOT NULL DEFAULT 'pending' | `'pending'`, `'completed'`, `'dismissed'`, `'failed'` |
-| `session_id` | INTEGER | NULLABLE REFERENCES `sessions(id)` ON DELETE CASCADE | Associated session |
-| `metadata` | TEXT | NOT NULL DEFAULT '{}' | JSON payload for UI actions |
-| `is_read` | BOOLEAN | NOT NULL DEFAULT FALSE | Read receipt |
-| `created_at` | INTEGER | NOT NULL | Millisecond epoch |
+| `id` | TEXT | PRIMARY KEY | Unique notification ID (`notif_{cat}_{id}` or UUID) |
+| `group_key` | TEXT | NOT NULL | Correlation / grouping key for task idempotency and UI rollup |
+| `category` | TEXT | NOT NULL | Typed category (`'session_compaction'`, `'memory_consolidation'`, `'pipeline_error'`, etc.) |
+| `severity` | TEXT | NOT NULL DEFAULT 'info' | Visual severity: `'info'`, `'warning'`, `'critical'` |
+| `title` | TEXT | NOT NULL | Plain-language card title |
+| `message` | TEXT | NOT NULL | Plain-language description / instructions |
+| `status` | TEXT | NOT NULL DEFAULT 'unread' | Pure card attention state: `'unread'`, `'read'`, `'dismissed'` |
+| `session_id` | INTEGER | NULLABLE REFERENCES `sessions(id)` ON DELETE CASCADE | Associated session for deep navigation and task action |
+| `metadata` | TEXT | NOT NULL DEFAULT '{}' | JSON payload for UI actions and auxiliary job status |
+| `created_at` | INTEGER | NOT NULL | Millisecond epoch of creation |
+| `updated_at` | INTEGER | NOT NULL | Millisecond epoch of last update |
 
 *Indexes:*
-- `idx_notifications_status_cat`: `(status, category)`
+- `idx_notifications_status_created`: `(status, created_at DESC)`
+- `idx_notifications_group_status`: `(group_key, status)`
+

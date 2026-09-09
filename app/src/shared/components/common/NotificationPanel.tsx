@@ -271,7 +271,7 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
   );
 
   return (
-    <div className="flex flex-col gap-2 p-3">
+    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-2 p-3 pb-16">
       <div className="flex items-center justify-between px-1 pb-1">
         <div className="flex items-center gap-2">
           <Bell size={14} className="text-[rgb(var(--accent))]" />
@@ -333,6 +333,8 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
           />
         ))
       )}
+      {/* Bottom spacing cushion */}
+      <div className="h-8 shrink-0" aria-hidden="true" />
     </div>
   );
 });
