@@ -1,4 +1,9 @@
 use anyhow::{anyhow, Result};
+use std::{
+    fs::read_dir,
+    path::Path,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use serde::{Deserialize, Serialize};
 use turso::Connection;
 
@@ -118,6 +123,85 @@ pub async fn rename_voice(conn: &Connection, id: &str, name: &str) -> Result<()>
         .await?;
     if affected == 0 {
         return Err(anyhow!("Voice not found: {}", id));
+    }
+    Ok(())
+}
+
+pub async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => return Ok(()),
+    };
+    let packaged_voices_dir = home
+        .join(".vox")
+        .join("models")
+        .join("tts")
+        .join("chatterbox")
+        .join("voices");
+    if !packaged_voices_dir.exists() {
+        return Ok(());
+    }
+
+    let entries = read_dir(&packaged_voices_dir)?;
+
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(name_str) = path.file_name().and_then(|n| n.to_str()) {
+                seed_single_voice(conn, name_str, &path).await?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn seed_single_voice(conn: &Connection, name_str: &str, path: &Path) -> Result<()> {
+    let id = format!("chatterbox_voice_{}", name_str);
+    let mut rows = conn
+        .query("SELECT 1 FROM voices WHERE id = ?", (id.clone(),))
+        .await?;
+
+    let exists = rows.next().await?.is_some();
+    if !exists {
+        let name = match name_str {
+            "pain" => "Pain (Naruto)".to_string(),
+            "madara" => "Madara Uchiha".to_string(),
+            "shreya" => "Shreya Ghoshal".to_string(),
+            "hayami" => "Hayami Saori".to_string(),
+            "ellen" => "Ellen (Serious)".to_string(),
+            "juniper" => "Juniper (Professional)".to_string(),
+            "mark" => "Mark (Conversational)".to_string(),
+            "spuds" => "Spuds Oxley (Wise)".to_string(),
+            other => other.to_string(),
+        };
+
+        let wav_path = path.join("source.wav").to_string_lossy().into_owned();
+        let voice_dir = path.join("baked").to_string_lossy().into_owned();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO voices (id, name, source_kind, wav_path, voice_dir, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                id.clone(),
+                name.clone(),
+                "pre_baked".to_string(),
+                Some(wav_path),
+                Some(voice_dir),
+                now,
+            ),
+        )
+        .await?;
+        log::info!(
+            "[Persistence::Schema] Seeded packaged voice '{}' (id={})",
+            name,
+            id
+        );
     }
     Ok(())
 }

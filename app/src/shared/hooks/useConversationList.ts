@@ -4,10 +4,7 @@ import {
   sortSessionsNewestFirst,
   type SessionRow,
 } from "@/services/historyService";
-import {
-  onSessionTitleUpdated,
-  onSessionsChanged,
-} from "@/services/eventsService";
+import { onSessionsChanged } from "@/services/eventsService";
 import { SESSION_COPY } from "@/data/sessionCopy";
 
 function getErrorMessage(e: unknown): string {
@@ -52,16 +49,6 @@ export function useConversationList(listVersion: number) {
     });
 
     const unlisteners: (() => void)[] = [];
-    unlisteners.push(
-      onSessionTitleUpdated((payload) => {
-        if (!isMounted) return;
-        const title = payload.title.trim();
-        if (!title) return;
-        setSessions((prev) =>
-          prev.map((s) => (s.id === payload.session_id ? { ...s, title } : s))
-        );
-      })
-    );
     unlisteners.push(
       onSessionsChanged(() => {
         if (!isMounted) return;

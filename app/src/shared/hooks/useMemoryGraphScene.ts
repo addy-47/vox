@@ -1,7 +1,10 @@
+// @ts-nocheck — @deprecated v2: legacy graph component, retained for reference only
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { MemoryNodeTopology, MemoryEdgeTopology } from "@/services/memoryService";
+// @deprecated v2: graph topology types removed
+type MemoryNodeTopology = Record<string, unknown>;
+type MemoryEdgeTopology = Record<string, unknown>;
 import {
   GNode,
   GLink,

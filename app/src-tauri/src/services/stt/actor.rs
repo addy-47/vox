@@ -73,7 +73,12 @@ fn coalesce_partials(
                     audio: next_audio,
                     recycle_tx: _,
                 } => {
-                    let _ = recycle_tx.try_send(audio);
+                    if let Err(e) = recycle_tx.try_send(audio) {
+                        log::warn!(
+                            "[STT] Failed to recycle previous partial audio buffer: {}",
+                            e
+                        );
+                    }
                     turn_id = next_tid;
                     audio = next_audio;
                     skipped += 1;
@@ -280,7 +285,9 @@ fn drain_reset_stream(
             SttCommand::Partial {
                 audio, recycle_tx, ..
             } => {
-                let _ = recycle_tx.try_send(audio);
+                if let Err(e) = recycle_tx.try_send(audio) {
+                    log::warn!("[STT] Failed to recycle previous partial audio buffer: {}", e);
+                }
                 continue;
             }
             SttCommand::ResetStream => continue,
@@ -350,7 +357,12 @@ fn run_worker_loop(
                 recycle_tx,
             } => {
                 handle_partial_command(&ctx, turn_id, &audio, &mut state);
-                let _ = recycle_tx.try_send(audio);
+                if let Err(e) = recycle_tx.try_send(audio) {
+                    log::warn!(
+                        "[STT] Error recycling partial audio buffer on command completion: {}",
+                        e
+                    );
+                }
             }
             SttCommand::Final(tid, utterance) => {
                 handle_final_command(&ctx, tid, &utterance, &mut state);

@@ -12,8 +12,7 @@ use tauri::AppHandle;
 
 use crate::{
     core::state::AppState,
-    persistence::{compactions::fetch_uncompacted_sessions, db::VoxDb},
-    utils::paths::db_path,
+    persistence::compactions::fetch_uncompacted_sessions,
 };
 
 /// Runs a startup sweep across all past sessions to detect any sessions that ended with
@@ -22,10 +21,9 @@ pub async fn reconcile_uncompacted_sessions_on_boot(
     app: &AppHandle,
     state: &Arc<AppState>,
 ) -> Result<u32> {
-    let db_path = db_path();
-    let conn = VoxDb::open(&db_path).await?;
+    let conn = &state.db;
 
-    let uncompacted = fetch_uncompacted_sessions(&conn).await?;
+    let uncompacted = fetch_uncompacted_sessions(conn).await?;
     if uncompacted.is_empty() {
         log::info!("[BootReconciliation] No uncompacted sessions found on boot.");
         return Ok(0);
@@ -72,6 +70,7 @@ pub async fn reconcile_uncompacted_sessions_on_boot(
             });
         } else if let Err(e) = CompactionCoordinator::notify_uncompacted_session(
             app,
+            &state.db,
             item.session_id,
             uncompacted_turns,
         )

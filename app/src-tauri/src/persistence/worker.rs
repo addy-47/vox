@@ -9,10 +9,16 @@ use std::{
 };
 
 use crossbeam_channel::{bounded, Receiver, Sender};
+use turso::Connection;
 
-use crate::persistence::{
-    db::VoxDb, PersistenceEvent, schema, PERSISTENCE_CHANNEL_CAPACITY,
-    PERSISTENCE_RATE_INTERVAL, WORKER_EVENT_POLL_TIMEOUT,
+use super::{
+    queue::reconcile_crashed_queue_on_boot, schema, sessions::cleanup_zero_turn_sessions,
+    PersistenceEvent, PERSISTENCE_CHANNEL_CAPACITY, PERSISTENCE_RATE_INTERVAL,
+    WORKER_EVENT_POLL_TIMEOUT,
+};
+use crate::{
+    core::error::PersistenceError,
+    persistence::db::{get_tokio_handle, VoxDb},
 };
 
 /// Spawn the persistence worker on a dedicated OS thread.
@@ -27,7 +33,7 @@ pub fn spawn_persistence_worker(
     Builder::new()
         .name("vox-persistence".to_string())
         .spawn(move || {
-            let rt_handle = crate::persistence::db::get_tokio_handle();
+            let rt_handle = get_tokio_handle();
 
             let db = match rt_handle.block_on(VoxDb::open(&db_path)) {
                 Ok(d) => {
@@ -67,18 +73,17 @@ pub fn spawn_persistence_worker(
     tx
 }
 
-fn run_startup_sweeps(db: &turso::Connection, rt_handle: &tokio::runtime::Handle) {
-    if let Err(e) = rt_handle.block_on(crate::persistence::sessions::cleanup_zero_turn_sessions(db))
-    {
+fn run_startup_sweeps(db: &Connection, rt_handle: &tokio::runtime::Handle) {
+    if let Err(e) = rt_handle.block_on(cleanup_zero_turn_sessions(db)) {
         log::warn!(
             "[Persistence::Worker] Zero-turn startup cleanup failed (non-fatal): {}",
             e
         );
     }
 
-    if let Err(e) = rt_handle.block_on(cleanup_stuck_queue_items(db)) {
+    if let Err(e) = rt_handle.block_on(reconcile_crashed_queue_on_boot(db)) {
         log::warn!(
-            "[Persistence::Worker] Stuck queue items startup cleanup failed (non-fatal): {}",
+            "[Persistence::Worker] Queue reconciliation startup sweep failed (non-fatal): {}",
             e
         );
     }
@@ -86,7 +91,7 @@ fn run_startup_sweeps(db: &turso::Connection, rt_handle: &tokio::runtime::Handle
 
 fn run_event_loop(
     rx: Receiver<PersistenceEvent>,
-    db: &turso::Connection,
+    db: &Connection,
     rt_handle: &tokio::runtime::Handle,
     is_db_healthy: &Arc<AtomicBool>,
     persistence_rate: &Arc<AtomicU32>,
@@ -138,20 +143,20 @@ fn maybe_flush_rate(writes: &mut u32, last_tick: &mut Instant, rate_atomic: &Arc
 
 fn log_skipped_private_event(event: &PersistenceEvent) {
     match event {
-        PersistenceEvent::SessionStarted { id, .. } => {
+        PersistenceEvent::SessionStarted { session_id, .. } => {
             log::info!(
-                "[Persistence::Worker] Private Mode active: skipping session start (id={})",
-                id
+                "[Persistence::Worker] Private Mode active: skipping session start (session_id={})",
+                session_id
             );
         }
         PersistenceEvent::TurnCompleted {
-            conversation_id,
+            session_id,
             turn_id,
             ..
         } => {
             log::info!(
                 "[Persistence::Worker] Private Mode active: skipping turn record (session={}, turn={})",
-                conversation_id,
+                session_id,
                 turn_id
             );
         }
@@ -159,46 +164,53 @@ fn log_skipped_private_event(event: &PersistenceEvent) {
     }
 }
 
-async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> anyhow::Result<()> {
+async fn process_event(conn: &Connection, event: PersistenceEvent) -> anyhow::Result<()> {
     match event {
-        PersistenceEvent::SessionStarted { id, timestamp_ms } => {
+        PersistenceEvent::SessionStarted {
+            session_id,
+            timestamp_ms,
+        } => {
             conn.execute(
-                "INSERT OR IGNORE INTO sessions (id, started_at) VALUES (?, ?)",
-                (id as i64, timestamp_ms as i64),
+                "INSERT OR IGNORE INTO sessions (id, project_id, is_pinned, created_at, updated_at)
+                 VALUES (?, 'default', 0, ?, ?)",
+                (session_id, timestamp_ms as i64, timestamp_ms as i64),
             )
             .await?;
-            log::debug!("[Persistence::Worker] SessionStarted: id={}", id);
+            log::debug!("[Persistence::Worker] SessionStarted: session_id={}", session_id);
         }
-        PersistenceEvent::SessionEnded { id, timestamp_ms } => {
+        PersistenceEvent::SessionEnded {
+            session_id,
+            timestamp_ms,
+        } => {
+            // Delete zero-turn session if it produced no turns
             let deleted = conn
                 .execute(
-                    "DELETE FROM sessions WHERE id = ? AND turn_count = 0",
-                    (id as i64,),
+                    "DELETE FROM sessions
+                     WHERE id = ? AND (SELECT COUNT(*) FROM turns WHERE session_id = ?) = 0",
+                    (session_id, session_id),
                 )
                 .await?;
             if deleted > 0 {
                 log::info!(
-                    "[Persistence::Worker] Cleaned up zero-activity session id={}",
-                    id
+                    "[Persistence::Worker] Cleaned up zero-turn session_id={}",
+                    session_id
                 );
             } else {
                 conn.execute(
-                    "UPDATE sessions SET ended_at = ? WHERE id = ? AND turn_count > 0",
-                    (timestamp_ms as i64, id as i64),
+                    "UPDATE sessions SET updated_at = ? WHERE id = ?",
+                    (timestamp_ms as i64, session_id),
                 )
                 .await?;
-                log::debug!("[Persistence::Worker] SessionEnded: id={}", id);
+                log::debug!("[Persistence::Worker] SessionEnded: session_id={}", session_id);
             }
         }
         PersistenceEvent::TurnCompleted {
-            conversation_id,
+            session_id,
             turn_id,
             user_text,
             assistant_text,
-            stt_latency_ms,
-            ttft_ms,
         } => {
-            if conversation_id == 0 {
+            if session_id == 0 {
                 return Ok(());
             }
             let now = SystemTime::now()
@@ -207,31 +219,24 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
                 .as_millis() as i64;
 
             conn.execute("BEGIN IMMEDIATE;", ()).await?;
-            let res: Result<(), crate::core::error::PersistenceError> = async {
+            let res: Result<(), PersistenceError> = async {
                 conn.execute(
-                    "INSERT OR IGNORE INTO sessions (id, started_at) VALUES (?, ?)",
-                    (conversation_id as i64, conversation_id as i64),
+                    "INSERT OR IGNORE INTO sessions (id, project_id, is_pinned, created_at, updated_at)
+                     VALUES (?, 'default', 0, ?, ?)",
+                    (session_id, now, now),
                 )
                 .await?;
 
                 conn.execute(
-                    "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, stt_latency_ms, ttft_ms, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        conversation_id as i64,
-                        turn_id,
-                        user_text,
-                        assistant_text,
-                        stt_latency_ms as i64,
-                        ttft_ms as i64,
-                        now,
-                    ),
+                    "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, created_at)
+                     VALUES (?, ?, ?, ?, ?)",
+                    (session_id, turn_id as i64, user_text, assistant_text, now),
                 )
                 .await?;
 
                 conn.execute(
-                    "UPDATE sessions SET turn_count = turn_count + 1 WHERE id = ?",
-                    (conversation_id as i64,),
+                    "UPDATE sessions SET updated_at = ? WHERE id = ?",
+                    (now, session_id),
                 )
                 .await?;
 
@@ -252,47 +257,57 @@ async fn process_event(conn: &turso::Connection, event: PersistenceEvent) -> any
             }
 
             log::info!(
-                "[Persistence::Worker] TurnCompleted: session={}, turn={}, stt={:?}ms, ttft={:?}ms",
-                conversation_id,
-                turn_id,
-                stt_latency_ms,
-                ttft_ms
-            );
-        }
-        PersistenceEvent::TurnCancelled {
-            conversation_id,
-            turn_id,
-        } => {
-            if conversation_id == 0 {
-                return Ok(());
-            }
-            log::debug!(
-                "[Persistence::Worker] TurnCancelled: session={}, turn={}",
-                conversation_id,
+                "[Persistence::Worker] TurnCompleted: session={}, turn={}",
+                session_id,
                 turn_id
             );
+        }
+        PersistenceEvent::UpdateSessionMetadata {
+            session_id,
+            key,
+            value,
+        } => {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+
+            match key.as_str() {
+                "title" => {
+                    conn.execute(
+                        "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
+                        (value, now, session_id),
+                    )
+                    .await?;
+                }
+                "project_id" => {
+                    conn.execute(
+                        "UPDATE sessions SET project_id = ?, updated_at = ? WHERE id = ?",
+                        (value, now, session_id),
+                    )
+                    .await?;
+                }
+                "is_pinned" => {
+                    let pinned = value == "true" || value == "1";
+                    conn.execute(
+                        "UPDATE sessions SET is_pinned = ?, updated_at = ? WHERE id = ?",
+                        (if pinned { 1i64 } else { 0i64 }, now, session_id),
+                    )
+                    .await?;
+                }
+                other => {
+                    log::warn!(
+                        "[Persistence::Worker] Unrecognized session metadata key '{}' for session_id={}",
+                        other,
+                        session_id
+                    );
+                }
+            }
         }
         PersistenceEvent::Shutdown => {
             log::info!("[Persistence::Worker] Shutdown event received. Exiting");
             return Err(anyhow::anyhow!("SHUTDOWN"));
         }
-    }
-    Ok(())
-}
-
-/// Resets memory queue items stuck in 'processing' status to 'staged_pending'.
-async fn cleanup_stuck_queue_items(conn: &turso::Connection) -> anyhow::Result<()> {
-    let reset = conn
-        .execute(
-            "UPDATE personal_memory_queue SET status = 'staged_pending' WHERE status = 'processing'",
-            (),
-        )
-        .await?;
-    if reset > 0 {
-        log::info!(
-            "[Persistence::Worker] Startup cleanup: reset {} stuck memory queue item(s)",
-            reset
-        );
     }
     Ok(())
 }

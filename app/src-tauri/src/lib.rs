@@ -44,19 +44,19 @@ use crate::{
     ipc::{
         audio::list_audio_devices,
         history::{
-            commit_session_to_history, delete_session, get_sessions, get_transcript_history,
-            get_turns,
+            continue_session, create_session, delete_session, get_sessions, get_transcript_history,
+            get_turns, update_session,
         },
         memory::{
-            get_graph_version, get_memory_fact_detail, get_memory_graph_topology,
-            get_memory_queue_status, get_unresolved_conflicts, manage_memory_fact,
-            resolve_memory_conflict, retry_failed_queue_items, toggle_pipeline_processing,
+            consolidate_personal_memory, export_personal_memory, get_active_facts,
+            get_personal_memory, import_personal_memory, save_personal_memory,
         },
         monitoring::{get_profiler_snapshot, get_runtime_snapshot, record_memory_profile_event},
         notifications::{
             dismiss_notification, get_notifications, mark_notifications_read,
             trigger_session_compaction,
         },
+        projects::{create_project, delete_project, get_projects, rename_project},
         pipeline::{
             end_session, launch_engine, pause_session, ptt_cancel, ptt_start, ptt_stop,
             resume_session, start_session, stop_engine, test_clip, test_clip_cancel,
@@ -87,14 +87,15 @@ use crate::{
     },
     persistence::{
         db::TOKIO_HANDLE,
-        MemoryWorkerEvent, 
         PersistenceEvent,
-        memory_worker::spawn_memory_worker,
         worker::spawn_persistence_worker,
     },
     services::{
         dictation::init_dictation_hotkey_listener, harness::spawn_state_compaction_observer,
-        memory::compaction::reconcile_uncompacted_sessions_on_boot, stt::SttCommand,
+        memory::{
+            compaction::reconcile_uncompacted_sessions_on_boot, spawn_quiet_ingestion_observer,
+        },
+        stt::SttCommand,
         vad::VadCommand,
     },
     setup::manifest::{AppManifest, VoxManifest},
@@ -319,11 +320,22 @@ pub fn run() {
                 Arc::clone(&telemetry_state.is_private_mode),
             );
 
+            let rt_handle = persistence::db::get_tokio_handle();
+            let db_conn = match rt_handle.block_on(persistence::db::VoxDb::open(&paths::get().db)) {
+                Ok(conn) => conn,
+                Err(e) => {
+                    log::error!("[BOOTSTRAP] Failed to open main database: {}", e);
+                    panic!("Database initialization failed: {}", e);
+                }
+            };
+            let db = Arc::new(db_conn);
+
             // ── 1. App State ────────────────────────────────────────────────────────
             let mut app_state = AppState::new(
                 app.handle(),
                 Some(log_guard),
                 Arc::clone(&telemetry_state),
+                db,
             );
             app_state.persist_tx = parking_lot::Mutex::new(Some(persist_tx));
 
@@ -336,35 +348,6 @@ pub fn run() {
                 local_gpu_info.resolved_tier
             );
 
-            // ── 0.9 Memory Worker (Gated on Tier 1B+ and MemorySettings) ───────────
-            let memory_enabled = {
-                let s = app_state
-                    .settings
-                    .read()
-                    .unwrap_or_else(|p| {
-                        log::warn!("[BOOTSTRAP] Settings RwLock poisoned; recovering inner state.");
-                        p.into_inner()
-                    });
-                s.memory.pipeline_processing_enabled
-            };
-
-            if memory_enabled && local_gpu_info.has_gpu {
-                let memory_tx = spawn_memory_worker(
-                    paths::get().db.clone(),
-                    Arc::clone(&app_state.settings),
-                    app_state.memory.graph_version.clone(),
-                    app_state.pipeline.state_rx.clone(),
-                );
-                app_state.memory_tx = parking_lot::Mutex::new(Some(memory_tx));
-                log::info!("[BOOTSTRAP] Memory Worker spawned on background thread.");
-            } else {
-                log::info!(
-                    "[BOOTSTRAP] Memory Worker skipped (memory_enabled={}, has_gpu={}).",
-                    memory_enabled,
-                    local_gpu_info.has_gpu
-                );
-            }
-
             // ── 1.5 Monitoring Collector ──────────────────────────────────────────
             let state_arc = Arc::new(app_state);
             app.manage(state_arc.clone());
@@ -373,6 +356,7 @@ pub fn run() {
             spawn_system_monitor(app.handle().clone());
             spawn_telemetry_emitter(app.handle().clone());
             spawn_state_compaction_observer(Arc::clone(&state_arc));
+            spawn_quiet_ingestion_observer(Arc::clone(&state_arc));
 
             // ── 1.6 Dictation Global Hotkey Registration ──────────────────────────
             {
@@ -676,11 +660,26 @@ pub fn run() {
             ptt_start,
             ptt_stop,
             ptt_cancel,
-            get_transcript_history,
-            commit_session_to_history,
+            // Projects
+            get_projects,
+            create_project,
+            rename_project,
+            delete_project,
+            // History & Session Continuation
+            create_session,
+            continue_session,
             get_sessions,
             get_turns,
+            update_session,
             delete_session,
+            get_transcript_history,
+            // Personal Memory
+            get_personal_memory,
+            save_personal_memory,
+            consolidate_personal_memory,
+            export_personal_memory,
+            import_personal_memory,
+            get_active_facts,
             // Voices
             list_voices,
             add_voice_from_file,
@@ -703,16 +702,6 @@ pub fn run() {
             reveal_wizard,
             // Audio
             list_audio_devices,
-            // Memory Subsystem
-            get_graph_version,
-            get_memory_graph_topology,
-            get_memory_fact_detail,
-            manage_memory_fact,
-            get_unresolved_conflicts,
-            resolve_memory_conflict,
-            get_memory_queue_status,
-            toggle_pipeline_processing,
-            retry_failed_queue_items,
             // Notifications & Compaction
             get_notifications,
             mark_notifications_read,
@@ -741,16 +730,6 @@ pub fn run() {
                         }
                     }
 
-                    // Gracefully signal background memory worker to flush and shutdown
-                    {
-                        let mut memory_tx_lock = state.memory_tx.lock();
-                        if let Some(tx) = memory_tx_lock.take() {
-                            log::info!("[Vox] Sending Shutdown signal to memory worker...");
-                            if let Err(e) = tx.send(MemoryWorkerEvent::Shutdown) {
-                                log::trace!("[Vox] Memory worker already closed: {}", e);
-                            }
-                        }
-                    }
 
                     // Gracefully signal persistence worker to flush and shutdown
                     {

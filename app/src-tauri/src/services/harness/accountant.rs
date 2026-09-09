@@ -7,7 +7,7 @@ use super::{
     prompt_builder::{build_session_history_xml, consolidate_system_message},
 };
 use crate::services::memory::{
-    compaction::CompactionResult, ml::estimate_tokens, MemoryCollection,
+    compaction::CompactionResult, ml::estimate_tokens,
     CONTEXT_CRITICAL_THRESHOLD, CONTEXT_SOFT_THRESHOLD, RESERVED_GENERATION_TOKENS,
 };
 
@@ -239,10 +239,11 @@ impl ContextHarness {
             self.session_compaction_contexts.push(context_summary);
         }
 
-        let mut facts_9_col = result.personal_memory.clone();
-        facts_9_col.remove(MemoryCollection::Narrative.as_str());
-        facts_9_col.remove("Context");
-        self.latest_compaction_facts = facts_9_col;
+        let mut grouped: HashMap<String, Vec<String>> = HashMap::new();
+        for (k, v) in &result.facts {
+            grouped.entry(k.clone()).or_default().push(v.clone());
+        }
+        self.latest_compaction_facts = grouped.clone();
 
         let sys_tokens = estimate_tokens(&system_prompt.content);
         let user_tokens = estimate_tokens(&last_user_turn.content);
@@ -259,7 +260,7 @@ impl ContextHarness {
             self.session_compaction_contexts.len()
         );
 
-        result.diff_to_enqueue.clone()
+        grouped
     }
 
     /// Attempts to initiate an opportunistic background compaction when between soft and critical thresholds.

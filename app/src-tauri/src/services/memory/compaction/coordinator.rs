@@ -3,22 +3,24 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use tauri::AppHandle;
 use tokio_util::sync::CancellationToken;
+use turso::Connection;
 
 use crate::{
     core::{
         events::{emit_ipc, IpcEvent, NotificationRecord},
+        settings::LlmSettings,
         state::{AppState, InteractionState},
     },
     persistence::{
         compactions::{
-            commit_compaction_results, fetch_latest_compaction_run, fetch_turns_for_compaction,
+            commit_compaction_output, fetch_latest_compaction_run, fetch_turns_for_compaction,
             record_compaction_finish, record_compaction_start,
         },
-        db::VoxDb,
         notifications::{
             create_notification, find_active_notification_by_session, update_notification_status,
             NewNotification,
         },
+        TurnRow,
     },
     services::{
         harness::buffer::{ChatMessage, Role},
@@ -28,7 +30,7 @@ use crate::{
         },
         memory::compaction::runner::run_compaction,
     },
-    utils::paths::{db_path, get},
+    utils::paths::get,
 };
 
 /// Summary of a successfully executed compaction slice.
@@ -44,6 +46,7 @@ pub struct CompactionExecutionSummary {
 pub struct CompactionCoordinator;
 
 impl CompactionCoordinator {
+    /// Executes a compaction slice for a session, checking lock mutual exclusion and updating persistent state.
     pub async fn run_compaction_slice<R: tauri::Runtime>(
         app: &AppHandle<R>,
         state: &Arc<AppState>,
@@ -51,12 +54,14 @@ impl CompactionCoordinator {
         trigger_kind: &str,
         cancel_token: Option<&CancellationToken>,
     ) -> Result<Option<CompactionExecutionSummary>> {
-        if trigger_kind == "auto" {
+        if trigger_kind == "soft" || trigger_kind == "auto" {
             let current_state = state.pipeline.state();
-            if current_state != InteractionState::Idle && current_state != InteractionState::Paused
+            if current_state != InteractionState::Idle
+                && current_state != InteractionState::Ready
+                && current_state != InteractionState::Paused
             {
                 log::info!(
-                    "[CompactionCoordinator] Deferring auto-compaction for session {}: pipeline state is {:?}",
+                    "[CompactionCoordinator] Deferring compaction for session {}: pipeline state is {:?}",
                     session_id,
                     current_state
                 );
@@ -64,11 +69,9 @@ impl CompactionCoordinator {
             }
         }
 
-        let db_path = db_path();
-        let conn = VoxDb::open(&db_path).await?;
+        let conn = &state.db;
 
-        // 2. Prevent concurrent / duplicate compaction for the same session
-        if let Ok(Some(latest)) = fetch_latest_compaction_run(&conn, session_id).await {
+        if let Ok(Some(latest)) = fetch_latest_compaction_run(conn, session_id).await {
             if latest.status == "in_progress" {
                 log::info!(
                     "[CompactionCoordinator] Compaction already in progress for session {}",
@@ -78,12 +81,13 @@ impl CompactionCoordinator {
             }
         }
 
-        let last_compacted_turn = match fetch_latest_compaction_run(&conn, session_id).await {
+        let last_compacted_turn = match fetch_latest_compaction_run(conn, session_id).await {
             Ok(Some(run)) if run.status == "completed" => run.to_turn_id,
             _ => 0,
         };
 
-        let turns = fetch_turns_for_compaction(&conn, session_id, last_compacted_turn).await?;
+        let turns =
+            fetch_turns_for_compaction(conn, session_id, last_compacted_turn + 1, u32::MAX).await?;
         if turns.is_empty() {
             log::info!(
                 "[CompactionCoordinator] No turns pending compaction for session {}",
@@ -96,43 +100,19 @@ impl CompactionCoordinator {
         let to_turn_id = turns.last().map(|t| t.turn_id).unwrap_or(from_turn_id);
 
         let run_id =
-            record_compaction_start(&conn, session_id, trigger_kind, from_turn_id, to_turn_id)
+            record_compaction_start(conn, session_id, trigger_kind, from_turn_id, to_turn_id)
                 .await?;
 
-        let mut history_messages = Vec::with_capacity(turns.len() * 2);
-        for turn in &turns {
-            if !turn.user_text.trim().is_empty() {
-                history_messages.push(ChatMessage {
-                    role: Role::User,
-                    content: turn.user_text.clone(),
-                    timestamp_ms: 0,
-                });
-            }
-            if !turn.assistant_text.trim().is_empty() {
-                history_messages.push(ChatMessage {
-                    role: Role::Assistant,
-                    content: turn.assistant_text.clone(),
-                    timestamp_ms: 0,
-                });
-            }
-        }
+        let history_messages = build_history_messages(&turns);
+        let llm_settings = state.settings.read().map(|s| s.llm.clone()).unwrap_or_default();
 
-        let (llm_settings, pipeline_enabled) = {
-            let s = state.settings.read().map(|s| s.clone()).unwrap_or_default();
-            (s.llm.clone(), s.memory.pipeline_processing_enabled)
-        };
-
-        let provider_box: Option<Box<dyn LlmProvider>> = {
-            let models_dir = get().models.clone();
-            let llm_path = models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE);
-            create_llm_provider_from_llm_settings(&llm_settings, &llm_path).ok()
-        };
-
-        let active_provider = match provider_box {
+        let active_provider = match resolve_llm_provider(&llm_settings) {
             Some(p) => p,
             None => {
                 let err_msg = "Failed to initialize LLM provider for compaction";
-                let _ = record_compaction_finish(&conn, run_id, "failed", 0, Some(err_msg)).await;
+                if let Err(e) = record_compaction_finish(conn, run_id, "", "failed", Some(err_msg)).await {
+                    log::warn!("[CompactionCoordinator] Failed to record compaction finish: {}", e);
+                }
                 return Err(anyhow!(err_msg));
             }
         };
@@ -157,42 +137,29 @@ impl CompactionCoordinator {
             Err(e) => {
                 let err_str = e.to_string();
                 log::error!(
-                    "[CompactionCoordinator] Compaction execution failed for session {}: {}",
+                    "[CompactionCoordinator] Compaction failed for session {}: {}",
                     session_id,
                     err_str
                 );
-                let _ = record_compaction_finish(&conn, run_id, "failed", 0, Some(&err_str)).await;
-
-                if let Ok(Some(mut notif)) =
-                    find_active_notification_by_session(&conn, session_id, "session_compaction")
-                        .await
-                {
-                    let _ = update_notification_status(&conn, &notif.id, "failed").await;
-                    notif.status = "failed".to_string();
-                    let _ = emit_ipc(app, IpcEvent::NotificationUpdated(notif));
+                if let Err(record_err) = record_compaction_finish(conn, run_id, "", "failed", Some(&err_str)).await {
+                    log::warn!("[CompactionCoordinator] Failed to record compaction failure: {}", record_err);
                 }
-
+                update_session_notification_on_failure(app, conn, session_id).await;
                 return Err(e);
             }
         };
 
-        let facts_count = commit_compaction_results(
-            &conn,
+        let facts_count = compaction_res.facts.len() as u32;
+        commit_compaction_output(
+            conn,
             run_id,
-            &session_id.to_string(),
-            &compaction_res.context_summary,
-            compaction_res.personal_memory,
-            pipeline_enabled,
+            &compaction_res.raw_json,
+            &compaction_res.facts,
+            session_id,
         )
         .await?;
 
-        if let Ok(Some(mut notif)) =
-            find_active_notification_by_session(&conn, session_id, "session_compaction").await
-        {
-            let _ = update_notification_status(&conn, &notif.id, "completed").await;
-            notif.status = "completed".to_string();
-            let _ = emit_ipc(app, IpcEvent::NotificationUpdated(notif));
-        }
+        update_session_notification_on_success(app, conn, session_id).await;
 
         log::info!(
             "[CompactionCoordinator] Successfully compacted session {} (enqueued {} facts)",
@@ -212,14 +179,12 @@ impl CompactionCoordinator {
     /// Emits a new notification alerting the user that a session has uncompacted turns.
     pub async fn notify_uncompacted_session<R: tauri::Runtime>(
         app: &AppHandle<R>,
+        conn: &Connection,
         session_id: i64,
         uncompacted_turns: u32,
     ) -> Result<NotificationRecord> {
-        let db_path = db_path();
-        let conn = VoxDb::open(&db_path).await?;
-
         if let Some(existing) =
-            find_active_notification_by_session(&conn, session_id, "session_compaction").await?
+            find_active_notification_by_session(conn, session_id, "session_compaction").await?
         {
             return Ok(existing);
         }
@@ -237,7 +202,7 @@ impl CompactionCoordinator {
             metadata: format!("{{\"uncompacted_turns\": {}}}", uncompacted_turns),
         };
 
-        let record = create_notification(&conn, &notif).await?;
+        let record = create_notification(conn, &notif).await?;
         if let Err(e) = emit_ipc(app, IpcEvent::NotificationCreated(record.clone())) {
             log::warn!(
                 "[CompactionCoordinator] Failed to emit NotificationCreated: {}",
@@ -246,5 +211,72 @@ impl CompactionCoordinator {
         }
 
         Ok(record)
+    }
+}
+
+/// Helper building ChatMessage list from turns.
+fn build_history_messages(turns: &[TurnRow]) -> Vec<ChatMessage> {
+    let mut messages = Vec::with_capacity(turns.len() * 2);
+    for turn in turns {
+        if !turn.user_text.trim().is_empty() {
+            messages.push(ChatMessage {
+                role: Role::User,
+                content: turn.user_text.clone(),
+                timestamp_ms: 0,
+            });
+        }
+        if !turn.assistant_text.trim().is_empty() {
+            messages.push(ChatMessage {
+                role: Role::Assistant,
+                content: turn.assistant_text.clone(),
+                timestamp_ms: 0,
+            });
+        }
+    }
+    messages
+}
+
+/// Resolves the LLM provider for compaction from settings.
+fn resolve_llm_provider(settings: &LlmSettings) -> Option<Box<dyn LlmProvider>> {
+    let models_dir = get().models.clone();
+    let llm_path = models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE);
+    create_llm_provider_from_llm_settings(settings, &llm_path).ok()
+}
+
+/// Updates active notification on compaction failure.
+async fn update_session_notification_on_failure<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    conn: &Connection,
+    session_id: i64,
+) {
+    if let Ok(Some(mut notif)) =
+        find_active_notification_by_session(conn, session_id, "session_compaction").await
+    {
+        if let Err(e) = update_notification_status(conn, &notif.id, "failed").await {
+            log::warn!("[CompactionCoordinator] Failed to update notification status to failed: {}", e);
+        }
+        notif.status = "failed".to_string();
+        if let Err(e) = emit_ipc(app, IpcEvent::NotificationUpdated(notif)) {
+            log::warn!("[CompactionCoordinator] Failed to emit NotificationUpdated: {}", e);
+        }
+    }
+}
+
+/// Updates active notification on compaction success.
+async fn update_session_notification_on_success<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    conn: &Connection,
+    session_id: i64,
+) {
+    if let Ok(Some(mut notif)) =
+        find_active_notification_by_session(conn, session_id, "session_compaction").await
+    {
+        if let Err(e) = update_notification_status(conn, &notif.id, "completed").await {
+            log::warn!("[CompactionCoordinator] Failed to update notification status to completed: {}", e);
+        }
+        notif.status = "completed".to_string();
+        if let Err(e) = emit_ipc(app, IpcEvent::NotificationUpdated(notif)) {
+            log::warn!("[CompactionCoordinator] Failed to emit NotificationUpdated: {}", e);
+        }
     }
 }
