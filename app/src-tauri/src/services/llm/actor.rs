@@ -218,7 +218,9 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
                     Ok(Ok(())) => {
                         if cancel.is_cancelled() {
                             log::info!("[LLM Worker] Generation cancelled (turn {})", turn_id);
-                            let _ = event_tx.send(VoxEvent::Cancelled { turn_id });
+                            if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id }) {
+                                log::warn!("[LLM Worker] Failed to dispatch Cancelled: {}", e);
+                            }
                         } else if let Err(e) = event_tx.send(VoxEvent::LlmFinished { turn_id }) {
                             log::warn!("[LLM Worker] Failed to dispatch LlmFinished: {}", e);
                         }
@@ -230,7 +232,9 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
                                 turn_id,
                                 e
                             );
-                            let _ = event_tx.send(VoxEvent::Cancelled { turn_id });
+                            if let Err(send_err) = event_tx.send(VoxEvent::Cancelled { turn_id }) {
+                                log::warn!("[LLM Worker] Failed to dispatch Cancelled: {}", send_err);
+                            }
                         } else {
                             log::error!("[LLM Worker] Generation error (turn {}): {}", turn_id, e);
                             let err_str = e.to_string();
@@ -278,7 +282,9 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
                                 "[LLM Worker] Generation task cancelled during join (turn {})",
                                 turn_id
                             );
-                            let _ = event_tx.send(VoxEvent::Cancelled { turn_id });
+                            if let Err(e) = event_tx.send(VoxEvent::Cancelled { turn_id }) {
+                                log::warn!("[LLM Worker] Failed to dispatch Cancelled: {}", e);
+                            }
                         } else {
                             log::error!("[LLM Worker] Provider task join error: {}", join_err);
                             let is_panic = join_err.is_panic();
@@ -287,7 +293,7 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
                             } else {
                                 format!("LLM provider task join failed: {}", join_err)
                             };
-                            let _ = event_tx.send(VoxEvent::Error(PipelineError {
+                            if let Err(send_err) = event_tx.send(VoxEvent::Error(PipelineError {
                                 turn_id,
                                 message: msg,
                                 source: "LlmActor".to_string(),
@@ -300,7 +306,9 @@ pub fn spawn_llm_worker<R: tauri::Runtime + 'static>(
                                 } else {
                                     Actionability::None
                                 },
-                            }));
+                            })) {
+                                log::warn!("[LLM Worker] Failed to dispatch Error: {}", send_err);
+                            }
                         }
                     }
                 }

@@ -99,7 +99,7 @@ export function useHistory() {
     setError(null);
     try {
       const data = await getSessions();
-      setSessions(data.sort((a, b) => b.started_at - a.started_at));
+      setSessions(data.sort((a, b) => b.created_at - a.created_at));
     } catch (e: unknown) {
       console.error("Failed to fetch sessions:", e);
       setError(getErrorMessage(e, HISTORY_COPY.failedFallback));
@@ -439,7 +439,7 @@ export function useHistory() {
   // Time span formatted for the day e.g. "08:15 AM - 10:42 PM"
   const dayTimeSpan = useMemo(() => {
     if (currentDateSessions.length === 0) return null;
-    const timestamps = currentDateSessions.map((s) => s.started_at).sort((a, b) => a - b);
+    const timestamps = currentDateSessions.map((s) => s.created_at).sort((a, b) => a - b);
     const earliest = timestamps[0];
     const latest = timestamps[timestamps.length - 1];
     const fmt = (ms: number) =>

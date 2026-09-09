@@ -1,338 +1,205 @@
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, State};
 
-pub use crate::persistence::{
-    graph::{
-        MemoryConflictItem as MemoryConflict, MemoryEdgeTopology, MemoryFactDetail,
-        MemoryGraphPayload, MemoryGraphQueryFilter, MemoryNodeTopology,
-    },
-    MemoryQueueItem, MemoryQueueSummary,
-};
+pub use crate::persistence::personal_memory::PersonalMemoryRecord;
 use crate::{
-    core::{error::VoxIpcError, state::AppState},
-    persistence::{
-        db::VoxDb,
-        graph::{fetch_fact_detail, fetch_memory_conflicts, fetch_memory_graph},
-        memory_mutations::{
-            self, delete_memory_fact, reassign_memory_fact, resolve_fact_conflict,
-            supersede_user_fact, update_memory_fact,
-        },
-        memory_queries::fetch_memory_queue_status,
+    core::{
+        error::VoxIpcError,
+        events::{emit_ipc, IpcEvent},
+        state::AppState,
     },
-    services::memory::{ensure_embedder_loaded, generate_embedding},
-    utils::paths::get,
+    persistence::{
+        personal_memory::{
+            get_personal_memory as db_get_personal_memory,
+            save_personal_memory as db_save_personal_memory,
+        },
+        fetch_all_active_facts, FactRecord,
+    },
+    services::{
+        llm::{
+            actor::create_llm_provider_from_llm_settings, LlmProvider, QWEN_MODEL_DIR,
+            QWEN_MODEL_FILE,
+        },
+        memory::personal::consolidate_personal_memory as service_consolidate_personal_memory,
+    },
+    utils::paths,
 };
 
-// ── Graph Commands ─────────────────────────────────────────────────────────────
-
-/// Retrieve the current monotonic memory graph version.
+/// Retrieves the consolidated personal memory markdown document.
 #[tauri::command]
-pub async fn get_graph_version(state: State<'_, Arc<AppState>>) -> Result<u64, VoxIpcError> {
-    Ok(state.memory.graph_version.load(Ordering::SeqCst))
-}
-
-/// Retrieve the full memory graph topology filtered by collection or active status.
-#[tauri::command]
-pub async fn get_memory_graph_topology(
+pub async fn get_personal_memory(
+    project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
-    filter: Option<MemoryGraphQueryFilter>,
-) -> Result<MemoryGraphPayload, VoxIpcError> {
-    let db_path = get().db.clone();
-    let conn = VoxDb::open_readonly(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
-
-    let version = state.memory.graph_version.load(Ordering::SeqCst);
-
-    fetch_memory_graph(&conn, filter.as_ref(), version)
+) -> Result<PersonalMemoryRecord, VoxIpcError> {
+    db_get_personal_memory(&state.db, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
 
-/// Retrieve detailed information for a single memory fact by ID.
+/// Saves direct manual edits made to the personal memory document with optimistic concurrency control.
 #[tauri::command]
-pub async fn get_memory_fact_detail(fact_id: String) -> Result<MemoryFactDetail, VoxIpcError> {
-    let db_path = get().db.clone();
-    let conn = VoxDb::open_readonly(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
-
-    fetch_fact_detail(&conn, &fact_id)
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?
-        .ok_or_else(|| VoxIpcError::NotFound(format!("Memory fact not found: {}", fact_id)))
-}
-
-// ── Conflicts Commands ─────────────────────────────────────────────────────────
-
-/// Retrieve all unresolved memory fact conflicts from the graph.
-#[tauri::command]
-pub async fn get_unresolved_conflicts() -> Result<Vec<MemoryConflict>, VoxIpcError> {
-    let db_path = get().db.clone();
-    let conn = VoxDb::open_readonly(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
-
-    fetch_memory_conflicts(&conn)
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))
-}
-
-/// Resolve a memory conflict by marking the loser as superseded and linking the winner.
-#[tauri::command]
-pub async fn resolve_memory_conflict(
+pub async fn save_personal_memory(
+    app: AppHandle,
+    content: String,
+    expected_version: u64,
+    project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
-    winner_id: String,
-    loser_id: String,
+) -> Result<PersonalMemoryRecord, VoxIpcError> {
+    let record = db_save_personal_memory(
+        &state.db,
+        project_id.as_deref(),
+        &content,
+        expected_version as i64,
+    )
+    .await
+    .map_err(|e| {
+        let err_msg = e.to_string();
+        if err_msg.contains("conflict") {
+            VoxIpcError::Conflict(err_msg)
+        } else {
+            VoxIpcError::Database(err_msg)
+        }
+    })?;
+
+    // Update active working memory prompt budget if applicable
+    let (context_window, max_context_share) = {
+        let s = state.settings.read().unwrap_or_else(|p| p.into_inner());
+        (s.llm.context_window as usize, s.memory.max_context_share)
+    };
+    state
+        .conversation_manager
+        .lock()
+        .set_personal_memory(Some(record.content.clone()), context_window, max_context_share);
+
+    if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
+        log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
+    }
+
+    Ok(record)
+}
+
+/// Merges active personal facts or applies user directive comments to consolidate the personal memory document.
+#[tauri::command]
+pub async fn consolidate_personal_memory(
+    app: AppHandle,
+    comments: Option<Vec<String>>,
+    project_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<PersonalMemoryRecord, VoxIpcError> {
+    let llm_settings = state
+        .settings
+        .read()
+        .map(|s| s.llm.clone())
+        .unwrap_or_default();
+
+    let provider_opt = state.llm_provider.read().clone();
+    let provider: Arc<dyn LlmProvider> = match provider_opt {
+        Some(p) => p,
+        None => {
+            let models_dir = paths::get().models.clone();
+            let llm_path = models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE);
+            create_llm_provider_from_llm_settings(&llm_settings, &llm_path)
+                .map(Arc::from)
+                .map_err(|e| VoxIpcError::Engine(format!("Failed to initialize LLM provider: {e}")))?
+        }
+    };
+
+    let record = service_consolidate_personal_memory(
+        &state.db,
+        provider.as_ref(),
+        comments,
+        project_id.as_deref(),
+    )
+    .await
+    .map_err(|e| VoxIpcError::Engine(e.to_string()))?;
+
+    // Update active working memory prompt budget
+    let (context_window, max_context_share) = {
+        let s = state.settings.read().unwrap_or_else(|p| p.into_inner());
+        (s.llm.context_window as usize, s.memory.max_context_share)
+    };
+    state
+        .conversation_manager
+        .lock()
+        .set_personal_memory(Some(record.content.clone()), context_window, max_context_share);
+
+    if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
+        log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
+    }
+
+    Ok(record)
+}
+
+/// Exports the personal memory document to a local markdown file.
+#[tauri::command]
+pub async fn export_personal_memory(
+    target_path: String,
+    project_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    let db_path = get().db.clone();
-    let conn = VoxDb::open(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
-
-    resolve_fact_conflict(&conn, &winner_id, &loser_id)
+    let record = db_get_personal_memory(&state.db, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
-    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
+    tokio::fs::write(&target_path, record.content)
+        .await
+        .map_err(|e| VoxIpcError::Internal(format!("Failed to export personal memory: {e}")))?;
+
+    log::info!("[IPC::Memory] Exported personal memory to {}", target_path);
     Ok(())
 }
 
-// ── Fact Mutations Commands ───────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct ManageFactPayload {
-    pub action: String,
-    pub fact_id: String,
-    pub new_content: Option<String>,
-    pub new_collection: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(untagged)]
-pub enum ManageFactResult {
-    NewId(String),
-    Done,
-}
-
-/// Unified command for modifying, superseding, reassigning, and deleting memory facts.
+/// Imports and overwrites the personal memory document from an external markdown file.
 #[tauri::command]
-pub async fn manage_memory_fact(
+pub async fn import_personal_memory(
+    app: AppHandle,
+    source_path: String,
+    project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
-    payload: ManageFactPayload,
-) -> Result<ManageFactResult, VoxIpcError> {
-    match payload.action.to_lowercase().as_str() {
-        "edit_in_place" | "edit" => edit_fact_in_place_internal(&state, payload).await,
-        "supersede" | "user_edit" => supersede_fact_internal(&state, payload).await,
-        "reassign" => reassign_fact_internal(&state, payload).await,
-        "delete" | "soft_delete" => delete_fact_internal(&state, payload).await,
-        _ => Err(VoxIpcError::InvalidArgument(format!(
-            "Unknown manage_memory_fact action: {}",
-            payload.action
-        ))),
-    }
-}
-
-async fn edit_fact_in_place_internal(
-    state: &State<'_, Arc<AppState>>,
-    payload: ManageFactPayload,
-) -> Result<ManageFactResult, VoxIpcError> {
-    let new_content = payload.new_content.ok_or_else(|| {
-        VoxIpcError::InvalidArgument("new_content required for edit action".to_string())
-    })?;
-    let trimmed = new_content.trim();
-    if trimmed.is_empty() {
-        return Err(VoxIpcError::InvalidArgument(
-            "Fact content cannot be empty".to_string(),
-        ));
-    }
-
-    let memory_enabled = state
-        .settings
-        .read()
-        .map(|s| s.memory.pipeline_processing_enabled || s.memory.context_retrieval_enabled)
-        .unwrap_or(false);
-    if !memory_enabled {
-        return Err(VoxIpcError::InvalidState(
-            "Memory subsystem is disabled".to_string(),
-        ));
-    }
-
-    let db_path = get().db.clone();
-    let conn = VoxDb::open(&db_path)
+) -> Result<PersonalMemoryRecord, VoxIpcError> {
+    let content = tokio::fs::read_to_string(&source_path)
         .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
+        .map_err(|e| VoxIpcError::Internal(format!("Failed to read memory file {}: {}", source_path, e)))?;
 
-    let trimmed_clone = trimmed.to_string();
-    let embedding = tokio::task::spawn_blocking(move || {
-        ensure_embedder_loaded(true)
-            .map_err(|e| VoxIpcError::Engine(format!("Embedder loading failed: {}", e)))?;
-        generate_embedding(&trimmed_clone)
-            .map_err(|e| VoxIpcError::Engine(format!("Embedding generation failed: {}", e)))?
-            .ok_or_else(|| VoxIpcError::Engine("Failed to generate embedding vector".to_string()))
-    })
+    let current = db_get_personal_memory(&state.db, project_id.as_deref())
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+
+    let record = db_save_personal_memory(
+        &state.db,
+        project_id.as_deref(),
+        &content,
+        current.version,
+    )
     .await
-    .map_err(|e| VoxIpcError::Internal(format!("Task panicked: {}", e)))??;
+    .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
-    update_memory_fact(&conn, &payload.fact_id, trimmed, &embedding)
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let (context_window, max_context_share) = {
+        let s = state.settings.read().unwrap_or_else(|p| p.into_inner());
+        (s.llm.context_window as usize, s.memory.max_context_share)
+    };
+    state
+        .conversation_manager
+        .lock()
+        .set_personal_memory(Some(record.content.clone()), context_window, max_context_share);
 
-    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-    Ok(ManageFactResult::Done)
-}
-
-async fn supersede_fact_internal(
-    state: &State<'_, Arc<AppState>>,
-    payload: ManageFactPayload,
-) -> Result<ManageFactResult, VoxIpcError> {
-    let new_content = payload.new_content.ok_or_else(|| {
-        VoxIpcError::InvalidArgument("new_content required for supersede action".to_string())
-    })?;
-    let collection = payload
-        .new_collection
-        .unwrap_or_else(|| "Identity".to_string());
-    let trimmed = new_content.trim();
-    if trimmed.is_empty() {
-        return Err(VoxIpcError::InvalidArgument(
-            "Fact content cannot be empty".to_string(),
-        ));
+    if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
+        log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
     }
 
-    let memory_enabled = state
-        .settings
-        .read()
-        .map(|s| s.memory.pipeline_processing_enabled || s.memory.context_retrieval_enabled)
-        .unwrap_or(false);
-    if !memory_enabled {
-        return Err(VoxIpcError::InvalidState(
-            "Memory subsystem is disabled".to_string(),
-        ));
-    }
-
-    let db_path = get().db.clone();
-    let conn = VoxDb::open(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
-
-    let new_id = supersede_user_fact(&conn, &payload.fact_id, trimmed, &collection)
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-
-    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-    log::info!(
-        "[Memory] Successfully superseded fact {} -> new_id={}",
-        payload.fact_id,
-        new_id
-    );
-    Ok(ManageFactResult::NewId(new_id))
+    log::info!("[IPC::Memory] Imported personal memory from {}", source_path);
+    Ok(record)
 }
-
-async fn reassign_fact_internal(
-    state: &State<'_, Arc<AppState>>,
-    payload: ManageFactPayload,
-) -> Result<ManageFactResult, VoxIpcError> {
-    let new_collection = payload.new_collection.ok_or_else(|| {
-        VoxIpcError::InvalidArgument("new_collection required for reassign action".to_string())
-    })?;
-    let db_path = get().db.clone();
-    let conn = VoxDb::open(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
-
-    reassign_memory_fact(&conn, &payload.fact_id, &new_collection)
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-
-    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-    Ok(ManageFactResult::Done)
-}
-
-async fn delete_fact_internal(
-    state: &State<'_, Arc<AppState>>,
-    payload: ManageFactPayload,
-) -> Result<ManageFactResult, VoxIpcError> {
-    let db_path = get().db.clone();
-    let conn = VoxDb::open(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
-
-    delete_memory_fact(&conn, &payload.fact_id)
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-
-    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-    Ok(ManageFactResult::Done)
-}
-
-// ── Ingestion & Queue Commands ────────────────────────────────────────────────
-
-/// Retrieve queue status counts and the most recent 50 queue items.
+/// Returns all active memory facts for graph visualization, ordered newest first.
 #[tauri::command]
-pub async fn get_memory_queue_status() -> Result<MemoryQueueSummary, VoxIpcError> {
-    let db_path = get().db.clone();
-    let conn = VoxDb::open_readonly(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
-
-    fetch_memory_queue_status(&conn)
+pub async fn get_active_facts(
+    project_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<FactRecord>, VoxIpcError> {
+    let conn = Arc::clone(&state.db);
+    let _ = project_id; // reserved for future project-scoped filtering
+    fetch_all_active_facts(&conn)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
-}
-
-/// Pause or resume background processing for personal memory queue.
-#[tauri::command]
-pub async fn toggle_pipeline_processing(
-    state: State<'_, Arc<AppState>>,
-    enabled: Option<bool>,
-) -> Result<bool, VoxIpcError> {
-    let new_paused = match enabled {
-        Some(e) => !e,
-        None => !state.memory.user_paused_ingestion.load(Ordering::SeqCst),
-    };
-
-    state
-        .memory
-        .user_paused_ingestion
-        .store(new_paused, Ordering::SeqCst);
-
-    if let Ok(mut settings) = state.settings.write() {
-        settings.memory.pipeline_processing_enabled = !new_paused;
-        if let Err(e) = settings.save() {
-            log::warn!("[Memory::Ingestion] Failed to save settings: {}", e);
-        }
-    }
-
-    log::info!(
-        "[Memory] Pipeline processing state updated: enabled={}",
-        !new_paused
-    );
-    Ok(!new_paused)
-}
-
-/// Reset failed memory queue items to staged_pending for retry (all items if item_ids is None/empty).
-#[tauri::command]
-pub async fn retry_failed_queue_items(
-    state: State<'_, Arc<AppState>>,
-    item_ids: Option<Vec<i64>>,
-) -> Result<u32, VoxIpcError> {
-    if state.memory.user_paused_ingestion.load(Ordering::SeqCst) {
-        return Err(VoxIpcError::InvalidState(
-            "Memory pipeline processing is currently paused. Please enable processing before retrying.".to_string(),
-        ));
-    }
-
-    let db_path = get().db.clone();
-    let conn = VoxDb::open(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
-
-    let affected = memory_mutations::retry_failed_queue_items(&conn, item_ids)
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-
-    state.memory.graph_version.fetch_add(1, Ordering::SeqCst);
-    Ok(affected as u32)
 }

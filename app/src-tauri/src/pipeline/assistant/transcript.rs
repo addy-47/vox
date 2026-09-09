@@ -2,6 +2,8 @@ use std::sync::{atomic::Ordering, Arc};
 
 use tauri::AppHandle;
 
+use turso::Connection;
+
 use crate::{
     core::{
         events::{
@@ -11,7 +13,6 @@ use crate::{
         settings::{LlmActiveProvider, PipelineMode},
         state::{AppState, InteractionState},
     },
-    persistence::db::VoxDb,
     pipeline::{target_window, transition, RoutingContext},
     services::{
         harness::{prepare_turn_context, PrepareTurnParams},
@@ -19,7 +20,6 @@ use crate::{
         translit::transliterate_if_hi,
     },
     toast::show_toast,
-    utils::paths::db_path,
 };
 
 /// Resolves the provider classification based on the configured active LLM setting.
@@ -42,9 +42,9 @@ fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
     let cancel = state.pipeline.turn_token();
     let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
     let accumulator = Arc::clone(&state.pipeline_accumulator);
+    let db = Arc::clone(&state.db);
 
     let cached_provider = state.llm_provider.read().clone();
-    let memory_tx = parking_lot::Mutex::new(state.memory_tx.lock().clone());
     let (tts_tx, llm_tx, pipeline_tx) = match state.engine.try_lock() {
         Ok(guard) => guard
             .as_ref()
@@ -63,9 +63,8 @@ fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
     };
 
     tauri::async_runtime::spawn(async move {
-        let db_path = db_path();
-        let conn_opt = if settings.memory.context_retrieval_enabled {
-            VoxDb::open_readonly(&db_path).await.ok()
+        let conn_opt: Option<Arc<Connection>> = if settings.memory.context_retrieval_enabled {
+            Some(db)
         } else {
             None
         };
@@ -75,8 +74,7 @@ fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
         let res = prepare_turn_context(PrepareTurnParams {
             harness: &cm_arc,
             tts_tx: tts_tx.as_ref(),
-            memory_tx: Some(&memory_tx),
-            conn: conn_opt.as_ref(),
+            conn: conn_opt.as_deref(),
             query: &query,
             turn_id,
             session_id: &session_id,

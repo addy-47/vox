@@ -5,6 +5,7 @@ use crate::{
         llm::{QWEN_MODEL_DIR, QWEN_MODEL_FILE},
         stt::{MODEL_FILE_ASR_ENCODER, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
         vad::{MODEL_DIR_VAD, MODEL_FILE_VAD},
+        memory::{PRIMARY_EMBEDDING_MODEL_DIR, PRIMARY_EMBEDDING_MODEL_FILENAME},
     },
     utils::paths,
 };
@@ -64,16 +65,13 @@ pub fn check_setup_health() -> bool {
         return false;
     }
 
-    let memory_scope_ok = p
+    let embedder_ok = p
         .models
-        .join("classifier/modernbert_memory_scope/model_quantized.onnx")
+        .join(PRIMARY_EMBEDDING_MODEL_DIR)
+        .join(PRIMARY_EMBEDDING_MODEL_FILENAME)
         .exists();
-    let nli_ok = p
-        .models
-        .join("nli/nli-deberta-v3-base/model_quantized.onnx")
-        .exists();
-    if !memory_scope_ok || !nli_ok {
-        log::warn!("[Health] MemoryScope classifier or NLI model missing on disk");
+    if !embedder_ok {
+        log::warn!("[Health] Memory embedder model missing on disk");
     }
 
     log::info!("[Health] All core models verified in {:?}", p.models);

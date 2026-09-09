@@ -1,596 +1,547 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
+import { Target, Plus, Minus, Edit3, Download, Upload, Zap } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import {
-  Focus,
-  Eye,
-  EyeOff,
-  GitCompare,
-  Cpu,
-  RefreshCw,
-  Plus,
-  Minus,
-  MousePointerClick,
-  ChevronLeft,
-  ChevronRight,
-  Search,
-} from "lucide-react";
-import { MemoryGraph, MemoryGraphRef } from "@/shared/components/memory/MemoryGraph";
-import { SearchBar } from "@/shared/components/memory/SearchBar";
-import { MemoryLegendCard } from "@/shared/components/memory/MemoryLegendCard";
-import { MemoryNodeTooltip } from "@/shared/components/memory/MemoryNodeTooltip";
-import { MemoryPipelineDrawer } from "@/shared/components/memory/MemoryPipelineDrawer";
-import { AmbientBackground, ErrorBoundary, TopRightCluster } from "@/shared/components/common";
-import {
-  MemoryNodeTopology,
-  MemoryEdgeTopology,
-  MemoryQueueSummary,
-  MemoryFactDetail,
-  getMemoryGraphTopology,
-  getGraphVersion,
-  getMemoryQueueStatus,
-  getUnresolvedConflicts,
-  getMemoryFactDetail,
+  getPersonalMemory,
+  savePersonalMemory,
+  consolidatePersonalMemory,
+  exportPersonalMemory,
+  importPersonalMemory,
+  getActiveFacts,
+  type PersonalMemoryRecord,
+  type FactRecord,
 } from "@/services/memoryService";
+import { AmbientBackground } from "@/shared/components/common";
+import { Drawer } from "@/shared/ui/Drawer";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
 
-const EMPTY_CONFLICTS: { fact_a: MemoryNodeTopology; fact_b: MemoryNodeTopology }[] = [];
+// ─── Fact type colour palette ─────────────────────────────────────────────────
+const FACT_COLORS: Record<string, { hsl: string; glow: string; label: string }> = {
+  personal:  { hsl: "hsl(185 80% 55%)", glow: "hsla(185,80%,55%,0.45)", label: "Identity" },
+  objective: { hsl: "hsl(260 75% 65%)", glow: "hsla(260,75%,65%,0.45)", label: "Objective" },
+  workdone:  { hsl: "hsl(140 60% 55%)", glow: "hsla(140,60%,55%,0.45)", label: "Work done" },
+  blocker:   { hsl: "hsl(0   70% 60%)", glow: "hsla(0,70%,60%,0.45)",   label: "Blocker" },
+  next_step: { hsl: "hsl(25  80% 58%)", glow: "hsla(25,80%,58%,0.45)",  label: "Next step" },
+  pitfall:   { hsl: "hsl(45  85% 55%)", glow: "hsla(45,85%,55%,0.45)",  label: "Pitfall" },
+};
 
-export const Memory: React.FC = () => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<MemoryGraphRef>(null);
+const SPHERE_COLOR = { hsl: "hsl(42 90% 58%)", glow: "hsla(42,90%,58%,0.55)", label: "Personal Memory" };
 
-  const [dims, setDims] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
-  const [nodes, setNodes] = useState<MemoryNodeTopology[]>([]);
-  const [edges, setEdges] = useState<MemoryEdgeTopology[]>([]);
+// ─── Layout constants ─────────────────────────────────────────────────────────
+const RING1_RADIUS = 170;
+const RING2_RADIUS = 330;
+const FACT_NODE_R  = 11;
+const CLUSTER_FACT_R = 8;
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCollection, setSelectedCollection] = useState("all");
-  const [selectedRelation, setSelectedRelation] = useState("all");
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface NodePosition { x: number; y: number }
+interface TooltipState { fact: FactRecord; pos: NodePosition }
 
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectedFactDetail, setSelectedFactDetail] = useState<MemoryFactDetail | null>(null);
-  const [nodePos, setNodePos] = useState<{ x: number; y: number } | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function polarToXY(cx: number, cy: number, r: number, angleDeg: number): NodePosition {
+  const rad = (angleDeg - 90) * (Math.PI / 180);
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
 
-  const [selectMode, setSelectMode] = useState(false);
-  const [includeInactive, setIncludeInactive] = useState(false);
-  const [conflictsMode, setConflictsMode] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [mobileDockExpanded, setMobileDockExpanded] = useState(false);
-  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+function groupBySession(facts: FactRecord[]): Map<string, FactRecord[]> {
+  const map = new Map<string, FactRecord[]>();
+  for (const f of facts) {
+    const key = f.session_id !== null ? String(f.session_id) : "__unsessioned__";
+    const arr = map.get(key) ?? [];
+    arr.push(f);
+    map.set(key, arr);
+  }
+  return map;
+}
 
-  const [queueSummary, setQueueSummary] = useState<MemoryQueueSummary | null>(null);
-  const [conflicts, setConflicts] = useState<{ fact_a: MemoryNodeTopology; fact_b: MemoryNodeTopology }[]>([]);
-  const [error, setError] = useState<string | null>(null);
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
-  // Measure container dimensions
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setDims({
-          w: entry.contentRect.width,
-          h: entry.contentRect.height,
-        });
-      }
-    });
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, []);
+interface FactNodeProps {
+  fact: FactRecord;
+  x: number;
+  y: number;
+  r: number;
+  onHover: (fact: FactRecord, pos: NodePosition) => void;
+  onLeave: () => void;
+}
 
-  const lastVersionRef = useRef<number>(0);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [upToDateToast, setUpToDateToast] = useState(false);
-
-  // Fetch graph topology from backend IPC
-  const fetchTopology = useCallback(
-    async (force = false) => {
-      try {
-        const currentVer = await getGraphVersion();
-        if (!force && currentVer === lastVersionRef.current && currentVer > 0) {
-          return false;
-        }
-
-        const data = await getMemoryGraphTopology(includeInactive);
-        if (data) {
-          setNodes(data.nodes);
-          setEdges(data.edges);
-          lastVersionRef.current = currentVer;
-        }
-        setError(null);
-        return true;
-      } catch (e: any) {
-        console.error("Failed to load memory graph topology:", e);
-        setError(e.message || "Couldn't load your memories.");
-        return false;
-      }
-    },
-    [includeInactive]
-  );
-
-  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    };
-  }, []);
-
-  // Explicit user-triggered Graph Refresh with version check
-  const handleRefreshGraph = useCallback(async () => {
-    setIsRefreshing(true);
-    setUpToDateToast(false);
-    try {
-      const currentVer = await getGraphVersion();
-      if (currentVer > lastVersionRef.current) {
-        await fetchTopology(true);
-      } else {
-        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-        setUpToDateToast(true);
-        toastTimerRef.current = setTimeout(() => setUpToDateToast(false), 2500);
-      }
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [fetchTopology]);
-
-  // Fetch queue summary and conflicts status
-  const fetchAuxiliaryData = useCallback(async () => {
-    try {
-      const [qData, cData] = await Promise.all([
-        getMemoryQueueStatus(),
-        getUnresolvedConflicts(),
-      ]);
-      setQueueSummary(qData);
-      setConflicts(cData);
-    } catch (e) {
-      console.error("Auxiliary data load failed:", e);
-    }
-  }, []);
-
-  // Fetch auxiliary queue stats on mount
-  useEffect(() => {
-    fetchAuxiliaryData();
-  }, [fetchAuxiliaryData]);
-
-  // Fetch topology on mount and when includeInactive toggle changes
-  useEffect(() => {
-    fetchTopology(true);
-  }, [includeInactive, fetchTopology]);
-
-  const selectedNodeIdRef = useRef<string | null>(null);
-  selectedNodeIdRef.current = selectedNodeId;
-
-  // Lazy load full fact detail when a node is selected (toggles off if clicking selected node again)
-  const handleSelectNode = useCallback(
-    async (nodeId: string | null, pos?: { x: number; y: number }) => {
-      const isMobile = typeof window !== "undefined" ? window.innerWidth < 640 : false;
-      // On small layout, direct node tap only opens tooltip when selectMode is active (or clearing selection)
-      if (isMobile && nodeId && !selectMode) {
-        return;
-      }
-
-      if (nodeId && nodeId === selectedNodeIdRef.current) {
-        setSelectedNodeId(null);
-        setSelectedFactDetail(null);
-        setNodePos(null);
-        return;
-      }
-
-      setSelectedNodeId(nodeId);
-      if (!nodeId) {
-        setSelectedFactDetail(null);
-        setNodePos(null);
-        return;
-      }
-
-      if (pos) {
-        setNodePos(pos);
-      } else {
-        setNodePos({ x: window.innerWidth / 2 - 160, y: window.innerHeight / 2 - 180 });
-      }
-
-      setDetailLoading(true);
-      try {
-        const detail = await getMemoryFactDetail(nodeId);
-        setSelectedFactDetail(detail);
-      } catch (e) {
-        console.error("Failed to load memory fact detail:", e);
-        setSelectedFactDetail(null);
-      } finally {
-        setDetailLoading(false);
-      }
-    },
-    [selectMode]
-  );
-
-  const handleCloseTooltip = useCallback(() => {
-    handleSelectNode(null);
-  }, [handleSelectNode]);
-
-  const handleRefreshTopology = useCallback(() => {
-    fetchTopology(true);
-  }, [fetchTopology]);
-
-  const handleCloseDrawer = useCallback(() => {
-    setDrawerOpen(false);
-  }, []);
-
+const FactNode = React.memo(({ fact, x, y, r, onHover, onLeave }: FactNodeProps) => {
+  const col = FACT_COLORS[fact.fact_type] ?? FACT_COLORS.personal;
   return (
-    <div className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none">
-      {/* Reactive Ambient Background — rendered directly behind 3D WebGL Graph canvas */}
-      <AmbientBackground originX="50%" originY="50%" rippleSpeedMultiplier={1.5} />
+    <g
+      className="cursor-pointer"
+      onMouseEnter={() => onHover(fact, { x, y })}
+      onMouseLeave={onLeave}
+    >
+      <circle cx={x} cy={y} r={r + 5} fill={col.glow} />
+      <circle cx={x} cy={y} r={r} fill={col.hsl} />
+    </g>
+  );
+});
+FactNode.displayName = "FactNode";
 
-      {/* Main Full-Bleed WebGL GPU Graph Canvas directly on ambient background */}
-      <div ref={containerRef} className="absolute inset-0 z-0 bg-transparent">
-        {dims.w > 0 && (
-          <ErrorBoundary name="MemoryGraphCanvas">
-            <MemoryGraph
-              ref={graphRef}
-              nodes={nodes}
-              edges={edges}
-              width={dims.w}
-              height={dims.h}
-              searchQuery={searchQuery}
-              selectedCollection={selectedCollection}
-              selectedRelation={selectedRelation}
-              onSelectNode={handleSelectNode}
-              selectedFactId={selectedNodeId}
-              selectedFactDetail={selectedFactDetail}
-              conflictPairs={conflictsMode ? conflicts : EMPTY_CONFLICTS}
-            />
-          </ErrorBoundary>
-        )}
+interface LegendCardProps { className?: string }
+const LegendCard = React.memo(({ className }: LegendCardProps) => (
+  <div
+    className={cn(
+      "rounded-xl px-3 py-2.5 flex flex-col gap-1.5 text-[11px] font-mono select-none",
+      "bg-[rgba(10,10,18,0.72)] border border-[rgba(255,255,255,0.06)] backdrop-blur-md",
+      className
+    )}
+  >
+    {/* Central sphere entry */}
+    <div className="flex items-center gap-2">
+      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: SPHERE_COLOR.hsl, boxShadow: `0 0 6px ${SPHERE_COLOR.glow}` }} />
+      <span className="text-[rgb(var(--foreground-muted))]">{SPHERE_COLOR.label}</span>
+    </div>
+    {Object.entries(FACT_COLORS).map(([key, col]) => (
+      <div key={key} className="flex items-center gap-2">
+        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: col.hsl, boxShadow: `0 0 4px ${col.glow}` }} />
+        <span className="text-[rgb(var(--foreground-muted))]">{col.label}</span>
+      </div>
+    ))}
+  </div>
+));
+LegendCard.displayName = "LegendCard";
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+export const Memory: React.FC = () => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const [dims, setDims] = useState({ w: 0, h: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState<NodePosition>({ x: 0, y: 0 });
+  const isPanning = useRef(false);
+  const lastPan = useRef<NodePosition>({ x: 0, y: 0 });
+
+  const [personalMemory, setPersonalMemory] = useState<PersonalMemoryRecord | null>(null);
+  const [facts, setFacts] = useState<FactRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draftContent, setDraftContent] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+
+  // ── Measure container ──────────────────────────────────────────────────────
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      setDims({ w: width, h: height });
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  // ── Load data ──────────────────────────────────────────────────────────────
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [mem, allFacts] = await Promise.all([getPersonalMemory(), getActiveFacts()]);
+      setPersonalMemory(mem);
+      setFacts(allFacts);
+    } catch (e) {
+      console.error("[Memory] Failed to load:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  // ── Recenter ───────────────────────────────────────────────────────────────
+  const handleRecenter = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  // ── Zoom ───────────────────────────────────────────────────────────────────
+  const handleZoomIn  = useCallback(() => setZoom((z) => Math.min(z + 0.2, 3)), []);
+  const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z - 0.2, 0.3)), []);
+
+  // ── Pan (drag on SVG background) ──────────────────────────────────────────
+  const onPointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    if ((e.target as SVGElement).closest("g[data-node]")) return;
+    isPanning.current = true;
+    lastPan.current = { x: e.clientX, y: e.clientY };
+    (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId);
+  }, []);
+
+  const onPointerMove = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    if (!isPanning.current) return;
+    const dx = e.clientX - lastPan.current.x;
+    const dy = e.clientY - lastPan.current.y;
+    lastPan.current = { x: e.clientX, y: e.clientY };
+    setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+  }, []);
+
+  const onPointerUp = useCallback(() => { isPanning.current = false; }, []);
+
+  // ── Graph layout ───────────────────────────────────────────────────────────
+  const cx = dims.w / 2;
+  const cy = dims.h / 2;
+
+  const identityFacts  = useMemo(() => facts.filter((f) => f.fact_type === "personal"), [facts]);
+  const sessionedFacts = useMemo(() => facts.filter((f) => f.fact_type !== "personal"), [facts]);
+  const sessionClusters = useMemo(() => groupBySession(sessionedFacts), [sessionedFacts]);
+
+  // Ring 1 — identity facts evenly spaced
+  const ring1Nodes = useMemo(() => {
+    if (identityFacts.length === 0) return [];
+    return identityFacts.map((f, i) => {
+      const angle = (360 / identityFacts.length) * i;
+      return { fact: f, ...polarToXY(cx, cy, RING1_RADIUS, angle) };
+    });
+  }, [identityFacts, cx, cy]);
+
+  // Ring 2 — cluster anchors evenly spaced; facts within each cluster orbit a local center
+  const ring2Clusters = useMemo(() => {
+    const clusterKeys = Array.from(sessionClusters.keys());
+    return clusterKeys.map((key, ci) => {
+      const angle = (360 / clusterKeys.length) * ci;
+      const anchor = polarToXY(cx, cy, RING2_RADIUS, angle);
+      const clusterFacts = sessionClusters.get(key) ?? [];
+      const nodes = clusterFacts.map((f, fi) => {
+        const spread = Math.min(360 / clusterFacts.length, 72);
+        const localAngle = spread * fi;
+        const localR = clusterFacts.length > 1 ? 32 : 0;
+        const pos = localR > 0
+          ? polarToXY(anchor.x, anchor.y, localR, localAngle)
+          : anchor;
+        return { fact: f, x: pos.x, y: pos.y };
+      });
+      return { key, anchor, nodes };
+    });
+  }, [sessionClusters, cx, cy]);
+
+  // ── Drawer / editing ───────────────────────────────────────────────────────
+  const openDrawer = useCallback(() => {
+    setEditing(false);
+    setDrawerOpen(true);
+  }, []);
+
+  const handleEdit = useCallback(() => {
+    setDraftContent(personalMemory?.content ?? "");
+    setEditing(true);
+  }, [personalMemory]);
+
+  const handleSave = useCallback(async () => {
+    if (!personalMemory) return;
+    setSaving(true);
+    try {
+      const updated = await savePersonalMemory(draftContent, personalMemory.version);
+      setPersonalMemory(updated);
+      setEditing(false);
+    } catch (e) {
+      console.error("[Memory] Save failed:", e);
+    } finally {
+      setSaving(false);
+    }
+  }, [personalMemory, draftContent]);
+
+  const handleConsolidate = useCallback(async () => {
+    try {
+      const updated = await consolidatePersonalMemory();
+      setPersonalMemory(updated);
+      await refresh();
+    } catch (e) {
+      console.error("[Memory] Consolidate failed:", e);
+    }
+  }, [refresh]);
+
+  const handleExport = useCallback(async () => {
+    try {
+      await exportPersonalMemory("~/personal_memory.md");
+    } catch (e) {
+      console.error("[Memory] Export failed:", e);
+    }
+  }, []);
+
+  const handleImport = useCallback(async () => {
+    try {
+      const updated = await importPersonalMemory("~/personal_memory.md");
+      setPersonalMemory(updated);
+    } catch (e) {
+      console.error("[Memory] Import failed:", e);
+    }
+  }, []);
+
+  // ── Tooltip ────────────────────────────────────────────────────────────────
+  const handleNodeHover = useCallback((fact: FactRecord, pos: NodePosition) => {
+    setTooltip({ fact, pos });
+  }, []);
+
+  const handleNodeLeave = useCallback(() => {
+    setTooltip(null);
+  }, []);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  return (
+    <div
+      ref={containerRef}
+      className="relative flex-1 flex flex-col h-full w-full overflow-hidden bg-transparent select-none"
+    >
+      <AmbientBackground originX="50%" originY="50%" rippleSpeedMultiplier={1.2} />
+
+      {/* ── Legend — top left ── */}
+      <LegendCard className="absolute top-4 left-4 z-20" />
+
+      {/* ── Header — top center ── */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3">
+        <button
+          onClick={handleRecenter}
+          title={MEMORY_COPY.recenterView}
+          className="p-2 rounded-xl bg-[rgba(10,10,18,0.72)] border border-[rgba(255,255,255,0.07)] backdrop-blur-md text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.4)] transition-colors"
+        >
+          <Target size={15} />
+        </button>
+        <span className="text-[12px] font-display font-black tracking-[0.2em] uppercase text-[rgb(var(--accent))]">
+          MEMORY
+        </span>
       </div>
 
-      {/* Error & Up To Date Banners */}
-      <AnimatePresence>
-        {upToDateToast && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="absolute top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-none max-w-xs w-full px-4"
-          >
-            <div className="glass-card px-4 py-2 rounded-2xl border border-[rgba(var(--accent),0.3)] bg-[rgb(var(--card))]/90 backdrop-blur-2xl flex items-center justify-center gap-2 shadow-2xl">
-              <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))]" />
-              <span className="text-[11px] font-sans font-bold uppercase tracking-wider text-[rgb(var(--accent))]">
-                {MEMORY_COPY.upToDate}
-              </span>
-            </div>
-          </motion.div>
-        )}
-
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="absolute top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-auto max-w-md w-full px-4"
-          >
-            <div className="glass-card p-3.5 rounded-2xl border border-[rgb(var(--danger))]/30 bg-[rgb(var(--card))]/95 flex items-center justify-between gap-3 shadow-2xl">
-              <div className="flex items-center gap-2.5 overflow-hidden">
-                <div className="w-2.5 h-2.5 rounded-full bg-[rgb(var(--danger))] shrink-0" />
-                <p className="text-[11px] font-sans text-[rgb(var(--danger))] truncate">{error}</p>
-              </div>
-              <button
-                onClick={() => fetchTopology(true)}
-                className="px-3 py-1 rounded-xl text-[11px] font-sans font-bold uppercase tracking-wider bg-[rgba(var(--danger),0.18)] text-[rgb(var(--danger))] hover:bg-[rgba(var(--danger),0.28)] transition-colors shrink-0 cursor-pointer shadow-sm"
-              >
-                {MEMORY_COPY.retry}
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Desktop Legend Card (bottom-right corner aligned with EdgeNav, hidden on < 640px) ── */}
-      <div className="absolute bottom-4 right-6 z-30 pointer-events-auto hidden sm:block">
-        <MemoryLegendCard
-          selectedCollection={selectedCollection}
-          onSelectCollection={setSelectedCollection}
-          selectedRelation={selectedRelation}
-          onSelectRelation={setSelectedRelation}
-        />
-      </div>
-
-      {/* ── Desktop Search Bar (sm: >= 640px) ─────────────────────────────── */}
-      <div className="hidden sm:block">
-        <SearchBar
-          variant="full"
-          nodes={nodes}
-          onCommitSearch={setSearchQuery}
-          onSelectNode={handleSelectNode}
-        />
-      </div>
-
-      {/* ── Desktop Zoom Controls Dock (sm: >= 640px) ─────────────────────── */}
-      <div className="absolute top-4 right-6 z-20 pointer-events-auto hidden sm:flex items-center gap-1.5 p-1.5 rounded-2xl glass-card border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-2xl shadow-2xl">
+      {/* ── Zoom pill — top right ── */}
+      <div className="absolute top-4 right-4 z-20 flex flex-col rounded-xl overflow-hidden border border-[rgba(255,255,255,0.07)] bg-[rgba(10,10,18,0.72)] backdrop-blur-md">
         <button
-          onClick={() => graphRef.current?.zoomIn()}
-          aria-label={MEMORY_COPY.zoomIn}
-          className="w-8 h-8 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer relative group"
+          onClick={handleZoomIn}
+          title="Zoom in"
+          className="p-2.5 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-colors border-b border-[rgba(255,255,255,0.06)]"
         >
-          <Plus size={16} />
-          <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden group-hover:block px-2.5 py-1 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)] pointer-events-none">
-            {MEMORY_COPY.zoomIn}
-          </span>
+          <Plus size={14} />
         </button>
-
-        <div className="w-[1px] h-4 bg-[rgba(var(--border),0.2)]" />
-
         <button
-          onClick={() => graphRef.current?.zoomOut()}
-          aria-label={MEMORY_COPY.zoomOut}
-          className="w-8 h-8 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer relative group"
+          onClick={handleZoomOut}
+          title="Zoom out"
+          className="p-2.5 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.08)] transition-colors"
         >
-          <Minus size={16} />
-          <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden group-hover:block px-2.5 py-1 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)] pointer-events-none">
-            {MEMORY_COPY.zoomOut}
-          </span>
-        </button>
-
-        <div className="w-[1px] h-4 bg-[rgba(var(--border),0.2)]" />
-
-        <TopRightCluster deepLink="page:memory" className="pointer-events-auto" />
-      </div>
-
-      {/* ── Small / Mobile Layout Header & Horizontal Action Bar (< 640px) ── */}
-      <AnimatePresence mode="wait">
-        {isMobileSearchOpen ? (
-          /* Mobile Search Overlay: Smoothly Expands Across Top Header */
-          <motion.div
-            key="mobile-search-overlay"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
-            className="absolute top-4 left-4 right-4 z-40 pointer-events-auto sm:hidden"
-          >
-            <SearchBar
-              variant="full"
-              className="w-full"
-              nodes={nodes}
-              onCommitSearch={setSearchQuery}
-              onSelectNode={handleSelectNode}
-              onClose={() => {
-                setIsMobileSearchOpen(false);
-                setSearchQuery("");
-              }}
-              autoFocus
-            />
-          </motion.div>
-        ) : (
-          /* Mobile Header with Horizontal Dynamic Action Tray */
-          <motion.div
-            key="mobile-header-bar"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute top-4 left-4 right-4 z-20 pointer-events-none sm:hidden flex items-center justify-between gap-2"
-          >
-            {/* Top-Left Title */}
-            <div className="flex flex-col pointer-events-auto shrink-0">
-              <h1 className="text-[14px] font-display font-black uppercase tracking-[0.18em] text-[rgb(var(--foreground))]">
-                {MEMORY_COPY.memoryTitle}
-              </h1>
-              <span className="text-[10px] font-mono font-bold text-[rgb(var(--accent))] uppercase tracking-wider">
-                {MEMORY_COPY.memorySubtitle}
-              </span>
-            </div>
-
-            {/* Top-Right Horizontal Dynamic Action Tray */}
-            <div className="pointer-events-auto flex items-center gap-1 p-1 rounded-2xl glass-card border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-2xl shadow-2xl overflow-hidden max-w-[calc(100vw-150px)]">
-              <TopRightCluster deepLink="page:memory" className="pointer-events-auto" />
-              {/* Search Trigger */}
-              <button
-                onClick={() => setIsMobileSearchOpen(true)}
-                aria-label={MEMORY_COPY.searchMemories}
-                className="w-8 h-8 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer shrink-0"
-              >
-                <Search size={15} />
-              </button>
-
-              {/* Recenter */}
-              <button
-                onClick={() => graphRef.current?.recenter()}
-                aria-label={MEMORY_COPY.recenterView}
-                className="w-8 h-8 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer shrink-0"
-              >
-                <Focus size={15} />
-              </button>
-
-              {/* Select Mode */}
-              <button
-                onClick={() => {
-                  setSelectMode((prev) => {
-                    if (prev) {
-                      setSelectedNodeId(null);
-                      setSelectedFactDetail(null);
-                      setNodePos(null);
-                    }
-                    return !prev;
-                  });
-                }}
-                className={cn(
-                  "w-8 h-8 flex items-center justify-center rounded-xl transition-all cursor-pointer shrink-0",
-                  selectMode
-                    ? "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/25 border border-[rgb(var(--accent))]/50 shadow-[0_0_12px_rgba(var(--accent),0.35)]"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/10"
-                )}
-                aria-label={selectMode ? MEMORY_COPY.disableSelectMode : MEMORY_COPY.enableSelectMode}
-              >
-                <MousePointerClick size={15} />
-              </button>
-
-              {/* Dynamic Horizontal Expander */}
-              <AnimatePresence initial={false}>
-                {mobileDockExpanded && (
-                  <motion.div
-                    initial={{ width: 0, opacity: 0 }}
-                    animate={{ width: "auto", opacity: 1 }}
-                    exit={{ width: 0, opacity: 0 }}
-                    transition={{ duration: 0.18, ease: "easeOut" }}
-                    className="flex items-center gap-1 overflow-hidden"
-                  >
-                    <div className="w-[1px] h-4 bg-[rgba(var(--border),0.2)] shrink-0" />
-
-                    <button
-                      onClick={handleRefreshGraph}
-                      disabled={isRefreshing}
-                      className="w-8 h-8 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer disabled:opacity-40 shrink-0"
-                      aria-label={MEMORY_COPY.refreshMemories}
-                    >
-                      <RefreshCw size={15} className={cn(isRefreshing && "animate-spin")} />
-                    </button>
-
-                    <button
-                      onClick={() => setIncludeInactive((prev) => !prev)}
-                      className={cn(
-                        "w-8 h-8 flex items-center justify-center rounded-xl transition-all cursor-pointer shrink-0",
-                        includeInactive
-                          ? "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/40"
-                          : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/10"
-                      )}
-                      aria-label={includeInactive ? MEMORY_COPY.hideInactive : MEMORY_COPY.showInactive}
-                    >
-                      {includeInactive ? <Eye size={15} /> : <EyeOff size={15} />}
-                    </button>
-
-                    <button
-                      onClick={() => setConflictsMode((prev) => !prev)}
-                      className={cn(
-                        "w-8 h-8 flex items-center justify-center rounded-xl transition-all cursor-pointer relative shrink-0",
-                        conflictsMode
-                          ? "text-red-400 bg-red-500/20 border border-red-500/40"
-                          : "text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-[rgb(var(--foreground))]/10"
-                      )}
-                      aria-label={`${MEMORY_COPY.unresolvedConflicts} (${conflicts.length})`}
-                    >
-                      <GitCompare size={15} />
-                      {conflicts.length > 0 && (
-                        <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[9px] font-mono font-bold text-white shadow-xs">
-                          {conflicts.length}
-                        </span>
-                      )}
-                    </button>
-
-                    <button
-                      onClick={() => setDrawerOpen((v) => !v)}
-                      className="w-8 h-8 flex items-center justify-center rounded-xl transition-all cursor-pointer text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/40 hover:bg-[rgb(var(--accent))]/30 shadow-xs shrink-0"
-                      aria-label={MEMORY_COPY.ingestionQueue}
-                    >
-                      <Cpu size={15} />
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Chevron Button (Expands/Collapses horizontally) */}
-              <button
-                onClick={() => setMobileDockExpanded((v) => !v)}
-                aria-label={mobileDockExpanded ? "Collapse controls" : "Expand controls"}
-                className={cn(
-                  "w-8 h-8 flex items-center justify-center rounded-xl transition-all cursor-pointer text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 shrink-0",
-                  mobileDockExpanded && "bg-[rgb(var(--accent))]/15"
-                )}
-              >
-                {mobileDockExpanded ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Desktop Right Action Dock (sm: >= 640px) ─────────────────────────── */}
-      <div className="absolute top-1/2 -translate-y-1/2 right-6 z-20 pointer-events-auto hidden sm:flex flex-col gap-3 p-2 rounded-2xl glass-card border border-[rgba(var(--accent),0.12)] bg-[rgb(var(--card))]/85 backdrop-blur-2xl shadow-2xl">
-        <button
-          onClick={handleRefreshGraph}
-          disabled={isRefreshing}
-          className="w-10 h-10 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer relative group disabled:opacity-40"
-        >
-          <RefreshCw size={18} className={cn(isRefreshing && "animate-spin")} />
-          <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">
-            {MEMORY_COPY.refreshMemories}
-          </span>
-        </button>
-
-        <button
-          onClick={() => graphRef.current?.recenter()}
-          className="w-10 h-10 flex items-center justify-center rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/15 transition-all cursor-pointer relative group"
-        >
-          <Focus size={18} />
-          <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">
-            {MEMORY_COPY.recenterView}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setIncludeInactive((prev) => !prev)}
-          className={cn(
-            "w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer relative group",
-            includeInactive
-              ? "text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/40"
-              : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/10"
-          )}
-        >
-          {includeInactive ? <Eye size={18} /> : <EyeOff size={18} />}
-          <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">
-            {includeInactive ? MEMORY_COPY.hideInactive : MEMORY_COPY.showInactive}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setConflictsMode((prev) => !prev)}
-          className={cn(
-            "w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer relative group",
-            conflictsMode
-              ? "text-red-400 bg-red-500/20 border border-red-500/40"
-              : "text-[rgb(var(--foreground-muted))] hover:text-red-400 hover:bg-[rgb(var(--foreground))]/10"
-          )}
-        >
-          <GitCompare size={18} />
-          {conflicts.length > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[11px] font-mono font-bold text-white shadow-md">
-              {conflicts.length}
-            </span>
-          )}
-          <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">
-            {`${MEMORY_COPY.unresolvedConflicts} (${conflicts.length})`}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setDrawerOpen((v) => !v)}
-          className="w-10 h-10 flex items-center justify-center rounded-xl transition-all cursor-pointer relative group text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/20 border border-[rgb(var(--accent))]/40 hover:bg-[rgb(var(--accent))]/30 shadow-md"
-        >
-          <Cpu size={18} />
-          <span className="absolute right-full top-1/2 -translate-y-1/2 mr-3 hidden group-hover:block px-3 py-1.5 rounded-xl bg-[rgb(var(--card))] text-[rgb(var(--foreground))] text-[11px] font-sans whitespace-nowrap z-30 shadow-2xl border border-[rgba(var(--border),0.2)]">
-            {MEMORY_COPY.ingestionQueue}
-          </span>
+          <Minus size={14} />
         </button>
       </div>
 
-      {/* Node Detail Tooltip Popover */}
-      {selectedNodeId && (
-        <MemoryNodeTooltip
-          factDetail={selectedFactDetail}
-          isLoading={detailLoading}
-          pos={nodePos}
-          onClose={handleCloseTooltip}
-          onRefresh={handleRefreshTopology}
-        />
+      {/* ── SVG Canvas ── */}
+      {dims.w > 0 && (
+        <svg
+          ref={svgRef}
+          width={dims.w}
+          height={dims.h}
+          className="absolute inset-0 cursor-grab active:cursor-grabbing"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+        >
+          <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`} style={{ transformOrigin: `${cx}px ${cy}px` }}>
+            {/* Orbit rings */}
+            <circle cx={cx} cy={cy} r={RING1_RADIUS} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={1} strokeDasharray="4 6" />
+            <circle cx={cx} cy={cy} r={RING2_RADIUS} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth={1} strokeDasharray="4 8" />
+
+            {/* Ring 1 — connection lines */}
+            {ring1Nodes.map(({ fact, x, y }) => (
+              <line key={`l1-${fact.id}`} x1={cx} y1={cy} x2={x} y2={y} stroke="rgba(100,220,220,0.12)" strokeWidth={1} />
+            ))}
+
+            {/* Ring 2 — cluster lines from ring-2 anchor to facts */}
+            {ring2Clusters.map(({ anchor, nodes }) =>
+              nodes.map(({ fact, x, y }) => (
+                <line key={`l2-${fact.id}`} x1={anchor.x} y1={anchor.y} x2={x} y2={y} stroke="rgba(160,130,255,0.12)" strokeWidth={0.8} />
+              ))
+            )}
+
+            {/* Ring 2 anchor → center lines */}
+            {ring2Clusters.map(({ key, anchor }) => (
+              <line key={`la-${key}`} x1={cx} y1={cy} x2={anchor.x} y2={anchor.y} stroke="rgba(255,255,255,0.04)" strokeWidth={0.8} strokeDasharray="3 5" />
+            ))}
+
+            {/* Ring 1 — identity fact nodes */}
+            {ring1Nodes.map(({ fact, x, y }) => (
+              <FactNode
+                key={fact.id}
+                fact={fact}
+                x={x}
+                y={y}
+                r={FACT_NODE_R}
+                onHover={handleNodeHover}
+                onLeave={handleNodeLeave}
+              />
+            ))}
+
+            {/* Ring 2 — session cluster nodes */}
+            {ring2Clusters.map(({ nodes }) =>
+              nodes.map(({ fact, x, y }) => (
+                <FactNode
+                  key={fact.id}
+                  fact={fact}
+                  x={x}
+                  y={y}
+                  r={CLUSTER_FACT_R}
+                  onHover={handleNodeHover}
+                  onLeave={handleNodeLeave}
+                />
+              ))
+            )}
+
+            {/* Central sphere */}
+            <g
+              className="cursor-pointer"
+              onClick={openDrawer}
+            >
+              {/* Outer glow halo */}
+              <circle cx={cx} cy={cy} r={68} fill="hsla(42,90%,58%,0.08)" />
+              <circle cx={cx} cy={cy} r={56} fill="hsla(42,90%,58%,0.14)" />
+              {/* Core sphere */}
+              <radialGradient id="sphere-grad" cx="40%" cy="35%" r="65%">
+                <stop offset="0%"   stopColor="hsl(50,95%,78%)" />
+                <stop offset="55%"  stopColor="hsl(42,90%,58%)" />
+                <stop offset="100%" stopColor="hsl(32,75%,32%)" />
+              </radialGradient>
+              <circle cx={cx} cy={cy} r={44} fill="url(#sphere-grad)" />
+              {/* Specular highlight */}
+              <ellipse cx={cx - 12} cy={cy - 14} rx={10} ry={6} fill="rgba(255,255,255,0.25)" />
+            </g>
+          </g>
+        </svg>
       )}
 
-      {/* Ingestion Queue Slide-in Drawer */}
-      <MemoryPipelineDrawer
+      {/* ── Fact tooltip ── */}
+      {tooltip && (
+        <div
+          className="absolute z-30 pointer-events-none"
+          style={{
+            left: tooltip.pos.x * zoom + pan.x + 16,
+            top:  tooltip.pos.y * zoom + pan.y - 8,
+          }}
+        >
+          <div className="max-w-[220px] rounded-xl bg-[rgba(10,10,18,0.88)] border border-[rgba(255,255,255,0.1)] backdrop-blur-lg px-3 py-2.5 shadow-2xl">
+            <div className="flex items-center gap-1.5 mb-1">
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{
+                  background: FACT_COLORS[tooltip.fact.fact_type]?.hsl ?? "hsl(185 80% 55%)",
+                  boxShadow: `0 0 5px ${FACT_COLORS[tooltip.fact.fact_type]?.glow ?? ""}`,
+                }}
+              />
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
+                {FACT_COLORS[tooltip.fact.fact_type]?.label ?? tooltip.fact.fact_type}
+              </span>
+            </div>
+            <p className="text-[12px] text-[rgb(var(--foreground))] leading-relaxed m-0">
+              {tooltip.fact.text}
+            </p>
+            {tooltip.fact.session_id !== null && (
+              <p className="text-[10px] font-mono text-[rgb(var(--foreground-muted))] mt-1">
+                Session #{tooltip.fact.session_id}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Empty / loading indicator ── */}
+      {!loading && facts.length === 0 && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <p className="text-[13px] font-mono text-[rgb(var(--foreground-muted))] mt-40">
+            "No memory facts yet — start a conversation to build your memory graph."
+          </p>
+        </div>
+      )}
+
+      {/* ── Personal Memory Drawer ── */}
+      <Drawer
         open={drawerOpen}
-        onClose={handleCloseDrawer}
-        summary={queueSummary}
-        nodes={nodes}
-        edges={edges}
-        onRefresh={fetchAuxiliaryData}
-      />
+        onClose={() => { setDrawerOpen(false); setEditing(false); }}
+        position="global"
+        ariaLabel="Personal Memory"
+        bodyClassName="px-6 py-4 max-h-[55vh] overflow-y-auto"
+        title={
+          <span className="text-[13px] font-display font-black tracking-[0.16em] uppercase text-[rgb(var(--accent))]">
+            Personal Memory
+          </span>
+        }
+      >
+        {/* Action row */}
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          {!editing ? (
+            <button
+              onClick={handleEdit}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono bg-[rgba(var(--accent),0.1)] border border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.18)] transition-colors"
+            >
+              <Edit3 size={11} /> Edit
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono bg-[rgba(var(--accent),0.15)] border border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.25)] transition-colors disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+              <button
+                onClick={() => setEditing(false)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.08)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
+              >
+                Cancel
+              </button>
+            </>
+          )}
+          <button
+            onClick={handleConsolidate}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.08)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
+          >
+            <Zap size={11} /> Consolidate
+          </button>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.08)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
+          >
+            <Download size={11} /> Export
+          </button>
+          <button
+            onClick={handleImport}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.08)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors"
+          >
+            <Upload size={11} /> Import
+          </button>
+        </div>
+
+        {/* Content — edit or read */}
+        {editing ? (
+          <textarea
+            value={draftContent}
+            onChange={(e) => setDraftContent(e.target.value)}
+            className="w-full h-[200px] bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] rounded-xl px-3 py-2.5 text-[13px] font-mono text-[rgb(var(--foreground))] resize-none focus:outline-none focus:border-[rgba(var(--accent),0.4)]"
+            spellCheck={false}
+          />
+        ) : (
+          <div className="prose prose-invert prose-sm max-w-none text-[rgb(var(--foreground))]">
+            {personalMemory?.content ? (
+              <ReactMarkdown>{personalMemory.content}</ReactMarkdown>
+            ) : (
+              <p className="text-[rgb(var(--foreground-muted))] text-[13px] font-mono">
+                "No personal memory yet. Start a session to build your memory graph."
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Version footer */}
+        {personalMemory && (
+          <p className="mt-4 text-[10px] font-mono text-[rgb(var(--foreground-muted))] border-t border-[rgba(255,255,255,0.06)] pt-2">
+            v{personalMemory.version} · last updated {new Date(personalMemory.updated_at).toLocaleString()}
+          </p>
+        )}
+      </Drawer>
     </div>
   );
 };

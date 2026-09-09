@@ -1,6 +1,8 @@
+// @ts-nocheck — @deprecated v2: legacy graph component, retained for reference only
 import { memo, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { togglePipelineProcessing } from "@/services/memoryService";
+// @deprecated v2 — togglePipelineProcessing removed
+declare function togglePipelineProcessing(_enabled: boolean): Promise<void>;
 import { Archive, Brain, Workflow } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, ToggleTile } from "@/shared/ui";

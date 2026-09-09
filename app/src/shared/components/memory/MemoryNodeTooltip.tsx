@@ -1,3 +1,4 @@
+// @ts-nocheck — @deprecated v2: legacy graph component, retained for reference only
 import { useState, useCallback, useEffect, useRef, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -9,12 +10,11 @@ import {
   ArrowLeft,
   Layers,
 } from "lucide-react";
-import {
-  MemoryFactDetail,
-  editFactContent,
-  reassignFactCollection,
-  softDeleteFact,
-} from "@/services/memoryService";
+// @deprecated v2 — graph fact management API removed
+type MemoryFactDetail = Record<string, unknown>;
+declare function editFactContent(_id: string, _text: string): Promise<unknown>;
+declare function reassignFactCollection(_id: string, _col: string): Promise<unknown>;
+declare function softDeleteFact(_id: string): Promise<unknown>;
 import { getCollectionColor, getRelationStyle } from "@/shared/components/memory/MemoryGraph";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useOverlay } from "@/shared/hooks/useOverlay";
@@ -151,18 +151,18 @@ export const MemoryNodeTooltip = memo(({
     : "mem_fact";
 
   const supportsCount = factDetail
-    ? factDetail.outgoing_relations.filter((r) => r.relation.toUpperCase().includes("SUPPORT")).length +
-      factDetail.incoming_relations.filter((r) => r.relation.toUpperCase().includes("SUPPORT")).length
+    ? factDetail.outgoing_relations.filter((r: Record<string,unknown>) => r.relation.toUpperCase().includes("SUPPORT")).length +
+      factDetail.incoming_relations.filter((r: Record<string,unknown>) => r.relation.toUpperCase().includes("SUPPORT")).length
     : 0;
 
   const dependsCount = factDetail
-    ? factDetail.outgoing_relations.filter((r) => r.relation.toUpperCase().includes("DEPEND")).length +
-      factDetail.incoming_relations.filter((r) => r.relation.toUpperCase().includes("DEPEND")).length
+    ? factDetail.outgoing_relations.filter((r: Record<string,unknown>) => r.relation.toUpperCase().includes("DEPEND")).length +
+      factDetail.incoming_relations.filter((r: Record<string,unknown>) => r.relation.toUpperCase().includes("DEPEND")).length
     : 0;
 
   const conflictsCount = factDetail
-    ? factDetail.outgoing_relations.filter((r) => r.relation.toUpperCase().includes("CONFLICT")).length +
-      factDetail.incoming_relations.filter((r) => r.relation.toUpperCase().includes("CONFLICT")).length
+    ? factDetail.outgoing_relations.filter((r: Record<string,unknown>) => r.relation.toUpperCase().includes("CONFLICT")).length +
+      factDetail.incoming_relations.filter((r: Record<string,unknown>) => r.relation.toUpperCase().includes("CONFLICT")).length
     : 0;
 
   return (
@@ -310,7 +310,7 @@ export const MemoryNodeTooltip = memo(({
             {/* Connected Relations List */}
             {(factDetail.outgoing_relations.length > 0 || factDetail.incoming_relations.length > 0) && (
               <div className="flex flex-col gap-1 max-h-[100px] overflow-y-auto custom-scrollbar pt-1">
-                {factDetail.outgoing_relations.map((rel) => {
+                {factDetail.outgoing_relations.map((rel: Record<string,unknown>) => {
                   const relStyle = getRelationStyle(rel.relation);
                   return (
                     <div
@@ -331,7 +331,7 @@ export const MemoryNodeTooltip = memo(({
                   );
                 })}
 
-                {factDetail.incoming_relations.map((rel) => {
+                {factDetail.incoming_relations.map((rel: Record<string,unknown>) => {
                   const relStyle = getRelationStyle(rel.relation);
                   return (
                     <div

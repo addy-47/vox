@@ -4,6 +4,7 @@ pub mod memory;
 pub mod monitoring;
 pub mod notifications;
 pub mod pipeline;
+pub mod projects;
 pub mod settings;
 pub mod setup;
 pub mod tray;

@@ -290,7 +290,12 @@ pub fn get_test_app_and_state() -> (
     });
 
     vox_lib::utils::paths::init();
-    let state = Arc::new(vox_lib::core::state::AppState::new(&app, None, telemetry));
+    let rt_handle = vox_lib::persistence::db::get_tokio_handle();
+    let db_conn = rt_handle
+        .block_on(vox_lib::persistence::db::VoxDb::open(&vox_lib::utils::paths::db_path()))
+        .expect("Failed to open test database");
+    let db = Arc::new(db_conn);
+    let state = Arc::new(vox_lib::core::state::AppState::new(&app, None, telemetry, db));
     app.manage(state.clone());
     (app, state)
 }
@@ -330,8 +335,13 @@ pub fn get_test_app_state() -> vox_lib::core::state::AppState {
     });
 
     vox_lib::utils::paths::init();
+    let rt_handle = vox_lib::persistence::db::get_tokio_handle();
+    let db_conn = rt_handle
+        .block_on(vox_lib::persistence::db::VoxDb::open(&vox_lib::utils::paths::db_path()))
+        .expect("Failed to open test database");
+    let db = Arc::new(db_conn);
     let app = get_test_app_handle();
-    vox_lib::core::state::AppState::new(&app, None, telemetry)
+    vox_lib::core::state::AppState::new(&app, None, telemetry, db)
 }
 
 /// Attaches a mock VoxEngine with a specified VAD command sender to the managed AppState.

@@ -160,6 +160,12 @@ pub enum VoxIpcError {
 
     #[error("Network/Remote error: {0}")]
     Network(String),
+
+    #[error("Version conflict: {0}")]
+    Conflict(String),
+
+    #[error("Pipeline error: {0}")]
+    Pipeline(String),
 }
 
 impl From<String> for VoxIpcError {

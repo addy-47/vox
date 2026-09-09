@@ -93,7 +93,7 @@ export const HistoryListView = memo(
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_6px_rgb(var(--accent))]" />
                   <span className="text-[12px] font-mono text-[rgb(var(--foreground))] font-bold">
-                    {formatDateTime(session.started_at)}
+                    {formatDateTime(session.created_at)}
                   </span>
                 </div>
                 <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] font-medium">

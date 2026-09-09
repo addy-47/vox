@@ -2,26 +2,25 @@ import { invoke } from "@tauri-apps/api/core";
 import { SESSION_COPY } from "@/data/sessionCopy";
 
 /**
- * Mirror of `SessionRow` (ipc/history.rs:42). History.tsx declares an
- * identical local interface — import from here during migration.
- *
- * `title` / `last_activity` are forward-compatible session-continuation
- * fields: the backend adds them when title generation lands. They stay
- * optional so the current backend (first_message only) keeps working.
+ * Mirror of `SessionRow` (persistence/sessions.rs).
+ * v2 schema: replaces legacy `started_at`/`ended_at`/`last_activity` with
+ * `project_id`, `is_pinned`, `deleted_at`, and `updated_at`.
  */
 export interface SessionRow {
   id: number;
-  started_at: number;
-  ended_at: number | null;
+  project_id: string;
+  title: string | null;
+  is_pinned: boolean;
+  deleted_at: number | null;
+  created_at: number;
+  updated_at: number;
   turn_count: number;
   first_message: string | null;
-  title?: string | null;
-  last_activity?: number | null;
 }
 
 /**
- * Mirror of `TurnRow` (ipc/history.rs:51). History.tsx declares an
- * identical local interface — import from here during migration.
+ * Mirror of `TurnRow` (persistence/sessions.rs).
+ * v2 schema: removes latency columns (`stt_latency_ms`, `ttft_ms`).
  */
 export interface TurnRow {
   id: number;
@@ -29,75 +28,79 @@ export interface TurnRow {
   turn_id: number;
   user_text: string;
   assistant_text: string;
-  stt_latency_ms: number | null;
-  ttft_ms: number | null;
   created_at: number;
 }
 
-/** Ephemeral in-memory transcript history (tray buffer) (ipc/history.rs:8). */
+/** Result payload returned by `continue_session` (ipc/history.rs). */
+export interface ContinueSessionResult {
+  session: SessionRow;
+  turns: TurnRow[];
+}
+
+/** Optional fields for `update_session`. All are nullable to support partial updates. */
+export interface SessionUpdate {
+  title?: string | null;
+  isPinned?: boolean | null;
+  projectId?: string | null;
+}
+
+/** Ephemeral in-memory transcript history (tray buffer). */
 export function getTranscriptHistory(): Promise<string[]> {
   return invoke("get_transcript_history");
 }
 
-/** Commit a session's full text to the ephemeral history buffer (ipc/history.rs:17). */
-export function commitSessionToHistory(text: string): Promise<void> {
-  return invoke("commit_session_to_history", { text });
+/**
+ * Initializes a fresh conversation session on the backend, resetting working memory.
+ * Emits `SessionsChanged` on success.
+ */
+export function createSession(projectId?: string): Promise<SessionRow> {
+  return invoke("create_session", { projectId: projectId ?? null });
 }
 
-/** All persisted sessions, most recent first (ipc/history.rs:64). */
-export function getSessions(): Promise<SessionRow[]> {
-  return invoke("get_sessions");
+/**
+ * Restores a past session into working memory and returns its full context.
+ * Emits `SessionsChanged` on success.
+ */
+export function continueSession(sessionId: number): Promise<ContinueSessionResult> {
+  return invoke("continue_session", { sessionId });
 }
 
-/** All turns for a session, oldest first (ipc/history.rs:99, arg `session_id`). */
+/** Returns active sessions optionally filtered by project, pinned-first then newest. */
+export function getSessions(projectId?: string): Promise<SessionRow[]> {
+  return invoke("get_sessions", { projectId: projectId ?? null });
+}
+
+/** Returns all turns for a session, oldest first. */
 export function getTurns(sessionId: number): Promise<TurnRow[]> {
   return invoke("get_turns", { sessionId });
 }
 
-/** Delete a session and its turns (CASCADE) (ipc/history.rs:138). */
-export function deleteSession(id: number): Promise<void> {
-  return invoke("delete_session", { id });
-}
-
-function isMissingCommandError(e: unknown): boolean {
-  const msg = e instanceof Error ? e.message : String(e);
-  return msg.includes("not found") || msg.includes("Unknown command");
+/**
+ * Applies partial metadata updates to a session.
+ * Emits `SessionsChanged` on success.
+ */
+export function updateSession(sessionId: number, updates: SessionUpdate): Promise<void> {
+  return invoke("update_session", {
+    sessionId,
+    title: updates.title ?? null,
+    isPinned: updates.isPinned ?? null,
+    projectId: updates.projectId ?? null,
+  });
 }
 
 /**
- * Make `sessionId` the active session on the backend, then return its
- * persisted turns oldest-first. Falls back to a local-only restore
- * (turns without backend selection) while the backend `select_session`
- * command is not implemented yet — real backend errors are rethrown.
+ * Deletes a session. `hard = true` permanently purges with CASCADE; default is soft delete.
+ * Emits `SessionsChanged` on success.
  */
-export async function selectSession(sessionId: number): Promise<TurnRow[]> {
-  try {
-    await invoke("select_session", { sessionId });
-  } catch (e: unknown) {
-    if (!isMissingCommandError(e)) throw e;
-    console.warn("[history] select_session unavailable, restoring transcript locally");
-  }
-  return getTurns(sessionId);
+export function deleteSession(sessionId: number, hard = false): Promise<void> {
+  return invoke("delete_session", { sessionId, hard });
 }
 
-/**
- * Create a fresh empty session on the backend. Falls back to a local-only
- * reset while the backend `start_new_conversation` command is not
- * implemented yet — real backend errors are rethrown.
- */
-export async function startNewConversation(): Promise<void> {
-  try {
-    await invoke("start_new_conversation");
-  } catch (e: unknown) {
-    if (!isMissingCommandError(e)) throw e;
-    console.warn("[history] start_new_conversation unavailable, resetting locally");
-  }
-}
+// ─── Presentation Utilities ──────────────────────────────────────────────────
 
 /**
  * Display title for a session list entry: generated title once available,
- * first persisted user message as interim context, otherwise the neutral
- * untitled placeholder. Blank/whitespace titles never win.
+ * first persisted user message as interim context, otherwise neutral placeholder.
  */
 export function resolveSessionTitle(session: SessionRow): string {
   const generated = session.title?.trim();
@@ -107,17 +110,20 @@ export function resolveSessionTitle(session: SessionRow): string {
   return SESSION_COPY.untitledSession;
 }
 
-/** Last-activity timestamp driving newest-first ordering (spec §A.3). */
+/** Timestamp driving newest-first ordering: `updated_at` is bumped on every mutation. */
 export function sessionLastActivity(session: SessionRow): number {
-  return session.last_activity ?? session.started_at;
+  return session.updated_at;
 }
 
-/** Sort sessions newest-first by last activity without mutating the input. */
+/** Sorts sessions pinned-first then newest by `updated_at` without mutating the input. */
 export function sortSessionsNewestFirst(sessions: SessionRow[]): SessionRow[] {
-  return [...sessions].sort((a, b) => sessionLastActivity(b) - sessionLastActivity(a));
+  return [...sessions].sort((a, b) => {
+    if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
+    return sessionLastActivity(b) - sessionLastActivity(a);
+  });
 }
 
-/** Human recency for a session list entry ("5m ago", "Yesterday", date). */
+/** Human recency label for a session list entry ("5m ago", "Yesterday", date). */
 export function formatSessionRecency(timestampMs: number, nowMs: number = Date.now()): string {
   const diffMs = Math.max(0, nowMs - timestampMs);
   const minutes = Math.floor(diffMs / 60000);

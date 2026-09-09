@@ -448,7 +448,7 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
         TtsActiveProvider::ChatterboxRemote => settings.tts.chatterbox_remote.voice_id.as_deref(),
         _ => None,
     };
-    let reference_audio = resolve_reference_audio(voice_id).await;
+    let reference_audio = resolve_reference_audio(&state.db, voice_id).await;
 
     // Check if workers are already active under a short lock
     let (needs_llm, needs_tts, playback_engine, pipeline_tx) = {

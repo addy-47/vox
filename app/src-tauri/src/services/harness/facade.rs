@@ -5,13 +5,11 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use query_sieve::MemoryScope;
 use turso::Connection;
 
 use super::{
     buffer::{current_timestamp_ms, ConversationContext},
     manager::ConversationManager,
-    prompt_builder::format_retrieved_profile,
 };
 use crate::{
     core::{
@@ -20,7 +18,7 @@ use crate::{
         settings::{LlmSettings, MemorySettings, PipelineMode},
         state::{AppState, InteractionState},
     },
-    persistence::{db::VoxDb, MemoryWorkerEvent, mutations::enqueue_personal_facts},
+    persistence::{commit_compaction_output, enqueue_fact, record_compaction_start},
     services::{
         llm::{
             actor::create_llm_provider_from_llm_settings, ConversationInput, GenerationOptions,
@@ -29,8 +27,7 @@ use crate::{
         },
         memory::{
             compaction::run_compaction,
-            ml::{classify_scope, estimate_tokens, generate_embedding},
-            retrieval::{retrieve_turn_profile, RetrievedProfile},
+            ml::estimate_tokens,
             NARRATIVE_CHAIN_SOFT_CAP_SHARE,
         },
         translit::is_devanagari,
@@ -47,8 +44,6 @@ static LAST_SOFT_COMPACTION: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(||
 pub struct PrepareTurnParams<'a> {
     pub harness: &'a Arc<Mutex<ConversationManager>>,
     pub tts_tx: Option<&'a mpsc::Sender<TtsCommand>>,
-    pub memory_tx:
-        Option<&'a parking_lot::Mutex<Option<crossbeam_channel::Sender<MemoryWorkerEvent>>>>,
     pub conn: Option<&'a Connection>,
     pub query: &'a str,
     pub turn_id: u32,
@@ -66,35 +61,7 @@ pub async fn prepare_turn_context(
 ) -> Result<(GenerationRequest, Option<String>), MemoryError> {
     let query_trimmed = params.query.trim();
 
-    let mut retrieved_profile = RetrievedProfile::default();
-    if params.memory.context_retrieval_enabled && params.conn.is_some() && !query_trimmed.is_empty()
-    {
-        let scope = classify_scope(query_trimmed);
-        if scope != MemoryScope::ChitChat {
-            if let Ok(Some(embedding)) = generate_embedding(query_trimmed) {
-                if let Some(conn) = params.conn {
-                    if let Ok(profile) = retrieve_turn_profile(
-                        conn,
-                        &embedding,
-                        scope,
-                        params.memory,
-                        params.context_window,
-                    )
-                    .await
-                    {
-                        retrieved_profile = profile;
-                    }
-                }
-            }
-        }
-    }
-
-    let profile_rendered = format_retrieved_profile(&retrieved_profile);
-    let profile_opt = if profile_rendered.is_empty() {
-        None
-    } else {
-        Some(profile_rendered)
-    };
+    let profile_opt: Option<String> = None;
 
     let is_deva = is_devanagari(query_trimmed);
 
@@ -236,21 +203,22 @@ pub async fn prepare_turn_context(
     };
 
     if !diff_to_enqueue.is_empty() && params.memory.pipeline_processing_enabled {
-        let mem_sender = params.memory_tx.and_then(|m| m.lock().clone());
-        if let Some(tx) = mem_sender {
-            if let Err(e) = tx.try_send(MemoryWorkerEvent::PersonalFactsReady {
-                facts: diff_to_enqueue.clone(),
-                session_id: params.session_id.to_string(),
-            }) {
-                log::warn!(
-                    "[Harness] Failed to dispatch PersonalFactsReady to worker: {}",
-                    e
-                );
-            }
-        } else if let Some(conn) = params.conn {
-            let session_id = params.session_id.to_string();
-            if let Err(e) = enqueue_personal_facts(conn, diff_to_enqueue, &session_id, true).await {
-                log::warn!("[Harness] Failed to enqueue personal memory: {}", e);
+        if let Some(conn) = params.conn {
+            let session_id_int = params.session_id.parse::<i64>().ok();
+            for (category, texts) in &diff_to_enqueue {
+                for text in texts {
+                    if let Err(e) = enqueue_fact(
+                        conn,
+                        session_id_int,
+                        0,
+                        category,
+                        text,
+                    )
+                    .await
+                    {
+                        log::warn!("[Harness] Failed to enqueue extracted personal fact: {}", e);
+                    }
+                }
             }
         }
     }
@@ -324,6 +292,8 @@ pub fn trigger_background_compaction(
             settings.or_else(|| state.settings.read().ok().map(|s| s.llm.clone()));
         let cached_provider = state.llm_provider.read().clone();
         let session_id = state.conversation_id.load(Ordering::Relaxed).to_string();
+        let db = Arc::clone(&state.db);
+        log::debug!("[Harness] Preparing background compaction candidate for session_id={}", session_id);
 
         tauri::async_runtime::spawn(async move {
             if cancel_flag.is_cancelled() {
@@ -374,22 +344,51 @@ pub fn trigger_background_compaction(
                         log::info!(
                             "[Harness] Opportunistic background compaction committed successfully."
                         );
-                    }
 
-                    if !result.personal_memory.is_empty() {
-                        let db_path = paths::db_path();
-                        let active_session = session_id.clone();
-                        let facts = result.personal_memory;
+                        let db_inner = Arc::clone(&db);
+                        let session_id_int: i64 = session_id.parse().unwrap_or(0);
+                        let facts = result.facts.clone();
+                        let raw_json = result.raw_json.clone();
+
                         tauri::async_runtime::spawn(async move {
-                            if let Ok(conn) = VoxDb::open(&db_path).await {
-                                if let Err(e) =
-                                    enqueue_personal_facts(&conn, facts, &active_session, true)
-                                        .await
+                            if session_id_int > 0 {
+                                match record_compaction_start(
+                                    &db_inner,
+                                    session_id_int,
+                                    "soft",
+                                    1,
+                                    snapshot_len as u32,
+                                )
+                                .await
                                 {
-                                    log::warn!(
-                                        "[Harness] Soft compaction personal facts enqueue failed: {}",
-                                        e
-                                    );
+                                    Ok(run_id) => {
+                                        if let Err(e) = commit_compaction_output(
+                                            &db_inner,
+                                            run_id,
+                                            &raw_json,
+                                            &facts,
+                                            session_id_int,
+                                        )
+                                        .await
+                                        {
+                                            log::warn!(
+                                                "[Harness] Failed to commit soft compaction output: {}",
+                                                e
+                                            );
+                                        } else {
+                                            log::info!(
+                                                "[Harness] Staged {} soft compaction facts into queue for session {}",
+                                                facts.len(),
+                                                session_id_int
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::warn!(
+                                            "[Harness] Failed to record soft compaction start: {}",
+                                            e
+                                        );
+                                    }
                                 }
                             }
                         });
@@ -407,17 +406,30 @@ pub fn trigger_background_compaction(
 }
 
 /// Spawns a background observer task that watches for InteractionState transitions into {Ready, Paused}
-/// and triggers opportunistic soft compaction after the debounce window.
+/// and triggers opportunistic soft compaction after a sustained quiet debounce window.
 pub fn spawn_state_compaction_observer(state: Arc<AppState>) {
     tauri::async_runtime::spawn(async move {
         let mut state_rx = state.pipeline.state_rx.clone();
-        log::info!("[Memory::Compaction] Compaction observer spawned.");
+        log::info!("[Memory::Compaction] Debounced compaction observer spawned.");
 
-        while state_rx.changed().await.is_ok() {
-            let current_state = *state_rx.borrow_and_update();
-            if current_state == InteractionState::Ready || current_state == InteractionState::Paused
-            {
-                trigger_background_compaction(&state, None, None);
+        loop {
+            let current = *state_rx.borrow_and_update();
+            if current == InteractionState::Ready || current == InteractionState::Paused {
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(SOFT_COMPACTION_DEBOUNCE_SECS)) => {
+                        let latest = state.pipeline.state();
+                        if latest == InteractionState::Ready || latest == InteractionState::Paused {
+                            trigger_background_compaction(&state, None, None);
+                        }
+                    }
+                    res = state_rx.changed() => {
+                        if res.is_err() {
+                            break;
+                        }
+                    }
+                }
+            } else if state_rx.changed().await.is_err() {
+                break;
             }
         }
     });

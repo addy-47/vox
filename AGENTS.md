@@ -35,7 +35,6 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 | `app/src-tauri/src/`      | Purpose Rust source                                 | No test logic. No benchmarks.                                                                         |
 | `app/src-tauri/tests/`    | Integration tests                                   | Named `<feature>_test.rs`. Tests public API only.                                                     |
 | `app/src-tauri/benches/`  | Performance benchmarks                              | Named `<feature>_bench.rs`. `harness = false` + custom `fn main()`.                                   |
-| `app/src-tauri/examples/` | Utility CLI tools                                   | Standalone tools. No `#[test]`. No assertions.                                                        |
 | `.agents/rules/`          | Role-specific agent instruction files               | Read relevant file before acting in that role.                                                        |
 | `docs/plans/`             | Architecture specs and phase plans                  | Source of truth for specs. Do not contradict.                                                         |
 | `docs/features/`          | Implemented feature ledgers                         | Update after completing features.                                                                     |
@@ -67,15 +66,14 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 ### 4.1 Critical Architectural & Logical Invariants (Non-Negotiable Concepts)
 
 0. **Zero Backward Compatibility (ZBC):** Backward compatibility is not a requirement unless explicitly stated. Break, replace, or redesign existing interfaces when that produces the better architecture. Never introduce compatibility layers, legacy paths, or transitional abstractions proactively..
-1. **Single Source of Truth for State:** `InteractionState` (`Idle, Ready, Listening, Thinking, Speaking, Paused, Error`) and `DictationState` (`Idle, Recording, Transcribing, Error`) are the sole sources of truth. Synthetic lifecycle booleans (`is_engaged`, `is_recording`, `is_connected`, `is_speaking`, `is_sleeping` are strictly banned across Rust and TypeScript.
-2. **Registry-Owned Event Contracts:** `core/events.rs` is the SSOT for all cross-boundary events. Internal pipeline events belong to `VoxEvent`; IPC events belong to `IpcEvent` with strongly typed payloads. Raw string event literals are forbidden at emit and listen sites; frontend mirrors the registry via `IpcEventMap`.
-3. **Sacred Audio Hot Path:** Zero dynamic memory allocations, zero lock acquisitions (`Mutex`/`RwLock`), and zero blocking I/O on the CPAL audio thread and VAD inference loop. Ring buffers must be lock-free and pre-allocated.
-4. **Actor-Engine Separation & Thread Isolation:** CPU/GPU-heavy model inference (Whisper STT, ONNX VAD, Llama LLM, Chatterbox TTS) runs strictly on dedicated background OS threads (`std::thread`). Tokio runtime is reserved strictly for async I/O, IPC routing, and network WebSockets.
-5. **Strict Frontend Service Boundary:** React components and hooks must never directly call `@tauri-apps/api/core` (`invoke`) or `@tauri-apps/api/event` (`listen`). All backend interactions must route through strongly-typed singleton service modules in `src/services/`.
-6. **React 19 Context Memoization & Selector Discipline:** Provider values must be wrapped in `useMemo`. Zustand store state must be queried via fine-grained atomic selectors (`(s) => s.field`) rather than consuming entire store snapshots, preventing cascading render loops.
-7. **Centralized Monotonic Turn Lifecycle:** Monotonic turn IDs must be generated exclusively at turn boundaries via `PipelineAtomics::next_turn()`, which atomically advances the turn ID, renews the `CancellationToken`, and returns `(turn_id, token)` as a bundle. Turn IDs must never be reset to 0, fragmented across parallel actors, or fabricated with dummy values. Subsystems receive `(turn_id, token)` at the turn boundary — they never own or directly advance the underlying `AtomicU32`.
-8. **Single-Consumer Audio Stream Invariant:** Audio ring buffers and input channels must have exactly one consumer (`VadActor`). Never attach secondary or ad-hoc readers to production audio streams.
-9. **No Inline Crate Qualifiers (Strict Import Hoisting):** Inline `crate::` path qualifiers in function bodies, structs, or signatures are strictly prohibited. All imports must be cleanly grouped and hoisted at the top of the file according to `backend-style-guide.md §2.1`.
+1. **Registry-Owned Event Contracts:** `core/events.rs` is the SSOT for all cross-boundary events. Internal pipeline events belong to `VoxEvent`; IPC events belong to `IpcEvent` with strongly typed payloads. Raw string event literals are forbidden at emit and listen sites; frontend mirrors the registry via `IpcEventMap`.
+2. **Sacred Audio Hot Path:** Zero dynamic memory allocations, zero lock acquisitions (`Mutex`/`RwLock`), and zero blocking I/O on the CPAL audio thread and VAD inference loop. Ring buffers must be lock-free and pre-allocated.
+3. **Actor-Engine Separation & Thread Isolation:** CPU/GPU-heavy model inference (STT,  VAD, LLM, TTS etc.) runs strictly on dedicated background OS threads (`std::thread`). Tokio runtime is reserved strictly for async I/O, IPC routing, and network WebSockets.
+4. **Strict Frontend Service Boundary:** React components and hooks must never directly call `@tauri-apps/api/core` (`invoke`) or `@tauri-apps/api/event` (`listen`). All backend interactions must route through strongly-typed singleton service modules in `src/services/`.
+5. **React 19 Context Memoization & Selector Discipline:** Provider values must be wrapped in `useMemo`. Zustand store state must be queried via fine-grained atomic selectors (`(s) => s.field`) rather than consuming entire store snapshots, preventing cascading render loops.
+6. **Centralized Monotonic Turn Lifecycle:** Monotonic turn IDs must be generated exclusively at turn boundaries via `PipelineAtomics::next_turn()`, which atomically advances the turn ID, renews the `CancellationToken`, and returns `(turn_id, token)` as a bundle. Turn IDs must never be reset to 0, fragmented across parallel actors, or fabricated with dummy values. Subsystems receive `(turn_id, token)` at the turn boundary — they never own or directly advance the underlying `AtomicU32`.
+7. **Single-Consumer Audio Stream Invariant:** Audio ring buffers and input channels must have exactly one consumer (`VadActor`). Never attach secondary or ad-hoc readers to production audio streams.
+8. **No Inline Crate Qualifiers (Strict Import Hoisting):** Inline `crate::` path qualifiers in function bodies, structs, or signatures are strictly prohibited. All imports must be cleanly grouped and hoisted at the top of the file according to `backend-style-guide.md §2.1`.
 
 ### 4.2. HARD GATE: Code Modification Gate
 
@@ -86,23 +84,20 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 > - **WRITE TASK (Tests/Benches/Evals):** You MUST read `.agents/rules/testing-style-guide.md` AND `.agents/rules/test-engineer.md` BEFORE authoring tests or benchmarks.
 > - **READ-ONLY TASK (Auditing, answering questions, running tests/benchmarks, searching code):** DO NOT read code style files. Save context tokens.
 
----
 
-### 4.3 Agent Roles
+### 4.3 Specifications, Behavioral Contracts & Non-Drift Hook [MANDATORY]
 
-| Role                 | Rule File                               | Scope                                                            |
-| -------------------- | --------------------------------------- | ---------------------------------------------------------------- |
-| System Architect     | `.agents/rules/system-architect.md`     | Strategy, gates, plan approval                                   |
-| Backend Engineer     | `.agents/rules/backend-engineer.md`     | `app/src-tauri/src/` implementation                              |
-| Frontend Engineer    | `.agents/rules/frontend-engineer.md`    | `app/src/` implementation                                        |
-| QA Engineer          | `.agents/rules/qa-engineer.md`          | Test audit, benchmark validation                                 |
-| ML Research Engineer | `.agents/rules/ml-research-engineer.md` | ML model research, evaluation, and fine-tuning dataset curation  |
-| Test Engineer        | `.agents/rules/test-engineer.md`        | Test case design, benchmark validation, and performance analysis |
+> 🛑 **MANDATORY SPEC ALIGNMENT HOOK (NON-NEGOTIABLE):**
+> Every agent working on Vox must adhere strictly to the approved specifications.
+> 1. **Specification Divergence / Additions**: If an agent needs to implement, modify, or add behavior, commands, or schemas that diverge from or are not defined in the relevant spec, it MUST STOP and ask the user for approval. If approved, the agent MUST update the spec artifact FIRST before authoring or modifying code. Specifications must NEVER quietly drift from code.
+> 2. **Code Divergence / Legacy Code**: If existing code implements nuances or legacy behaviors not defined in the spec, the agent MUST confirm with the user first before either pruning the code or updating the spec to capture the behavior.
 
-
-### 4.4 Specs that outlines the behaviour and contracts of the pipeline
-
-1. [Target Event-Domain Architectural Specification (Ground Truth)](file:///home/addy/projects/apps/vox/docs/specs/event-domain-matrix.md) - this is the golden source of truth for the pipeline behaviour and contracts , if pipeline diverges any work must behalted and the user must be grilled for the correct behaviour.
+#### Active Specifications Ledger
+1. **[Event-Domain Architectural Specification (Ground Truth)](file:///home/addy/projects/apps/vox/docs/specs/event-domain-matrix.md)** — *Status: Approved SSOT*. Golden source of truth for pipeline behavior, state transitions, and 6-domain contracts.
+2. **[Database & Persistence Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/db-spec.md)** — *Status: Approved Target Spec*. Strict persistence boundary, native Turso engine invariants, and normalized v2 schema.
+3. **[Minimal Cognitive Memory & Session Continuation Spec (v2)](file:///home/addy/projects/apps/vox/docs/specs/memory-spec.md)** — *Status: Approved Target Spec*. 2-stage dedup, single evolving personal memory document, rolling working compaction, and deferred episodic tool retrieval.
+4. **[IPC Command & Event Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/ipc-spec.md)** — *Status: Proposed / Target Spec*. Grouped frontend-to-backend commands and backend-to-frontend IPC events.
+5. **[LLM Agent Harness & Dual-Stream Demuxer Spec (v2)](file:///home/addy/projects/apps/vox/docs/specs/harness-spec.md)** — *Status: DRAFT / Under Active Architectural Discussion*. Dynamic streaming tag demuxing, `InteractionState::Working`, and decoupled LLM actor.
 
 ---
 
@@ -110,11 +105,11 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 > 📖 **Full History: [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase11/recent_work.md)** | Phase 10 Archive: [phase10/recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase10/recent_work.md)
 
-- **Phase 11 Test Suite & Verification:** Seams 1–11, 15–17 green & mutate-verified; isolated test DB fixtures; `notifications_crud_test.rs` stabilized; 100% release test suite clean.
-- **Frontend IPC & UI Decomposition:** Aligned `sessionId` contract in `historyService`; eliminated dead code/events; modularized `Settings.tsx`, `RealtimeCard.tsx`, and `ModelsCard.tsx`.
-- **Memory Graph & 2D Error Handling:** Refactored `MemoryGraph.tsx` to 280 LOC with viewport-aware Three.js simulation; implemented orthogonal 2D error matrix and prompt budget containment.
-- **Import Standardization & Engine Polish:** Hoisted imports in `rustfmt.toml`; eradicated inline `crate::` qualifiers; eliminated swallowed errors across pipeline and memory workers.
-- **Single-Turn Verification & E2E Latency Optimization (2026-09-06):** Surgically trimmed intra-sentence silence in `clip_01_en_briefing.wav` to guarantee single-turn processing (`turn_id = 0`, 0 cancellations); benchmarked Local (Qwen 0.8B, 8.67s perceived latency) vs Cloud (NVIDIA NIM, 2.59s perceived latency, 70% reduction) on 4 CPU threads.
-- **Session Resume & Realtime Actor Fix (2026-09-07):** Recreated `sessionStore.ts`; resolved Tokio reactor panic on non-async OS threads in realtime providers via `tokio_handle.block_on`; fixed `resume_realtime` by invoking `rt_actor.stop()` prior to re-arming; routed `on_pause` and `on_resume` transitions to `InteractionOwner::Assistant` (`WINDOW_MAIN`), eliminating IPC state desynchronization where frontend missed `Ready` events.
-- **WAL Pragma & Manifest SSOT Model Resolution (2026-09-07):** Replaced `conn.execute` with `conn.query` for `PRAGMA journal_mode = WAL` in `db.rs` to fix row-expectation error; exposed Pause/Resume button across both Passive and PTT modes in `Home.tsx`; replaced hardcoded TTS pill provider strings in `InteractionCard.tsx` with dynamic `modelCatalog` manifest flag lookups (`is_remote`, `is_cloud`).
-- **NVIDIA Model Discovery & Latency Comparison (2026-09-07):** Created scripts in `tmp/` to list all available NVIDIA API models via the `/v1/models` endpoint, filter text-only models by keyword exclusion, and benchmark completion latency for each text model using the chat completions API.
+- **Integration & Seam Verification:** Seams 1–11, 15–17 green & mutate-verified; isolated test DB fixtures; single-turn latency optimized (NVIDIA NIM 2.59s vs Local Qwen 8.67s); 100% release test suite clean.
+- **Frontend IPC & UI Decomposition:** Replaced fragile IPC contracts with canonical session IDs; modularized `Settings.tsx`, `RealtimeCard.tsx`, and `ModelsCard.tsx`; stabilized Three.js memory graph.
+- **Minimal Memory & Pure-Rust Turso Persistence (Batches 1–5):** Rebuilt clean v2 DDL schema for 10 tables; purged 14 legacy graph/NLI files; implemented non-blocking persistence facade, 2-stage dedup engine (Jaccard + cosine), batched ONNX tensor embeddings, unified compaction coordinator, and session continuation.
+- **Architect Review Remediation & Clippy Zero-Tolerance:** Wired background quiet ingestion observer (30s) and quiet debounced soft compaction (20s); eliminated ad-hoc DB open calls across actors and IPC; resolved `MutexGuard` across await points in session continuation; verified zero warnings on `cargo clippy --all-targets`.
+- **Architect Review Items 7 &amp; 8 Closed:** Purged remaining `VoxDb::open`/`open_readonly` in `transcript.rs`, `error.rs`, `compaction/mod.rs` — replaced with `Arc::clone(&state.db)`; added `deactivate_facts_batch` to `persistence/facts.rs` and wired Stage 1 dedup to batch-deactivate duplicates in a single `BEGIN IMMEDIATE` transaction, eliminating N+1 write overhead. Clippy `-- -D warnings` clean.
+- **Batch 6 Frontend Service Layer Complete:** Updated `historyService.ts` (v2 `SessionRow`/`TurnRow` shape, `createSession`, `continueSession`, `getSessions`, `getTurns`, `deleteSession`, `getTranscriptHistory`); `memoryService.ts` (5 personal memory commands + new `getActiveFacts`/`FactRecord`); `eventsService.ts` (pruned dead `NotificationDismissed`, `NotificationsMarkedRead`, `SessionTitleUpdated` events; added `PersonalMemoryUpdated`, `SessionsChanged`); `notificationService.ts`, `projectsService.ts`. Fixed 71 → 0 TypeScript errors across 16 consuming files (`useHistory`, `VoiceSessionContext`, `TrayApp`, `notificationStore`, history components).
+- **Memory Page Full Redesign:** SVG-based spatial graph — central gold sphere (PersonalMemory, click → bottom drawer), Ring 1 identity facts (cyan), Ring 2 session clusters (5 fact types, distinct colors). Added `get_active_facts` IPC command + `fetch_all_active_facts` persistence query; spec updated per §4.3. Deprecated `MemoryPipelineDrawer` with `@deprecated` JSDoc + `@ts-nocheck`; 7 legacy graph components tombstoned without deletion. `pnpm tsc --noEmit` → 0 errors.
+

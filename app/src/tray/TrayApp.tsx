@@ -9,7 +9,7 @@ import { useStreamingRenderer } from "@/shared/hooks/useStreamingRenderer";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { hideTrayWindow, setWindowClickThrough } from "@/services/windowService";
 import { pttStart, pttStop } from "@/services/pipelineService";
-import { commitSessionToHistory, getTranscriptHistory } from "@/services/historyService";
+import { getTranscriptHistory } from "@/services/historyService";
 import { useSettings } from "@/shared/hooks/useSettings";
 import { ErrorBoundary } from "@/shared/components/common";
 import {
@@ -148,10 +148,8 @@ export const TrayApp: React.FC = () => {
   const handleClose = useCallback(() => {
     const textToCommit = stateRef.current.liveTargetText;
     if (textToCommit.trim()) {
-      commitSessionToHistory(textToCommit).then(() => {
-        getTranscriptHistory().then((h) => {
-          setHistory(h.slice(0, stateRef.current.historyLimit));
-        });
+      getTranscriptHistory().then((h) => {
+        setHistory(h.slice(0, stateRef.current.historyLimit));
       });
     }
     stateRef.current.callbacks.reset();

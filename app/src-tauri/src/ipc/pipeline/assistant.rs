@@ -5,6 +5,8 @@ use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
 use crate::core::{
+    start_audio_engine,
+    stop_audio_engine,
     error::VoxIpcError,
     events::VoxEvent,
     state::{AppState, InteractionOwner, InteractionState},
@@ -14,7 +16,7 @@ use crate::core::{
 #[tauri::command]
 pub async fn launch_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), VoxIpcError> {
     let state: State<'_, Arc<AppState>> = app.state();
-    crate::core::start_audio_engine(&app, &state)
+    start_audio_engine(&app, &state)
         .await
         .map_err(VoxIpcError::Engine)
 }
@@ -23,7 +25,7 @@ pub async fn launch_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), V
 #[tauri::command]
 pub async fn stop_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), VoxIpcError> {
     let state: State<'_, Arc<AppState>> = app.state();
-    crate::core::stop_audio_engine(&state)
+    stop_audio_engine(&state)
         .await
         .map_err(VoxIpcError::Engine)
 }
@@ -42,7 +44,7 @@ pub async fn start_session<R: tauri::Runtime>(
         )));
     }
 
-    crate::core::start_audio_engine(&app, &state)
+    start_audio_engine(&app, &state)
         .await
         .map_err(VoxIpcError::Engine)?;
 

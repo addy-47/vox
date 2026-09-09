@@ -1,20 +1,19 @@
-use turso::Connection;
-
 use super::{
     buffer::{current_timestamp_ms, ChatMessage, MessageBuffer, Role},
     prompt_builder::assemble_system_prompt,
 };
 use crate::{
-    core::constants::SYSTEM_PROMPT_MODULAR, persistence::queries::fetch_all_active_identity,
+    core::constants::SYSTEM_PROMPT_MODULAR,
+    persistence::sessions::TurnRow,
     services::memory::ml::estimate_tokens,
 };
 
-/// Orchestrates pure conversational turns and system prompt assembly.
+/// Orchestrates pure conversational turns, personal memory document injection, and system prompt assembly.
 pub struct ConversationManager {
     pub(crate) buffer: MessageBuffer,
     system_prompt: ChatMessage,
     base_system_prompt: String,
-    identity_facts: Vec<String>,
+    personal_memory: Option<String>,
     dynamic_user_profile: Option<String>,
 }
 
@@ -34,7 +33,7 @@ impl ConversationManager {
             buffer,
             system_prompt: default_sys_prompt,
             base_system_prompt,
-            identity_facts: Vec::new(),
+            personal_memory: None,
             dynamic_user_profile: None,
         }
     }
@@ -44,11 +43,11 @@ impl ConversationManager {
         self.buffer.messages()
     }
 
-    /// Assembles the complete system prompt from base prompt, identity facts, and dynamic profile.
+    /// Assembles the complete system prompt from base prompt, personal memory markdown, and dynamic profile.
     pub fn assemble_system_prompt(&self) -> String {
         assemble_system_prompt(
             &self.base_system_prompt,
-            &self.identity_facts,
+            self.personal_memory.as_deref(),
             self.dynamic_user_profile.as_deref(),
         )
     }
@@ -66,59 +65,103 @@ impl ConversationManager {
         }
     }
 
-    /// Sets active Identity facts and reassembles the system prompt, enforcing max personal context share.
-    pub fn set_identity_facts(
+    /// Sets the personal memory document, truncating to budget if it exceeds `context_window * max_context_share`.
+    pub fn set_personal_memory(
         &mut self,
-        identity_facts: Vec<String>,
+        content: Option<String>,
         context_window: usize,
         max_context_share: f32,
     ) {
         let budget = ((context_window as f32) * max_context_share) as usize;
-        let mut bounded_facts = Vec::new();
-        let mut total_tokens = 0;
-
-        // Bounded newest-first (facts are typically ordered chronological, reverse iterate to preserve freshest)
-        for fact in identity_facts.into_iter().rev() {
-            let tokens = estimate_tokens(&fact);
-            if total_tokens + tokens > budget && !bounded_facts.is_empty() {
+        if let Some(text) = content {
+            let tokens = estimate_tokens(&text);
+            if tokens > budget {
                 log::warn!(
-                    "[ConversationManager] Identity facts reached budget cap ({} / {} tokens). Older facts truncated.",
-                    total_tokens,
+                    "[ConversationManager] Personal memory exceeds budget ({} / {} tokens). Truncating.",
+                    tokens,
                     budget
                 );
-                break;
+                let max_chars = budget.saturating_mul(4);
+                let truncated = if text.len() > max_chars {
+                    text.chars().take(max_chars).collect::<String>()
+                } else {
+                    text
+                };
+                self.personal_memory = Some(truncated);
+            } else {
+                self.personal_memory = Some(text);
             }
-            total_tokens += tokens;
-            bounded_facts.push(fact);
+        } else {
+            self.personal_memory = None;
         }
-        bounded_facts.reverse();
 
-        self.identity_facts = bounded_facts;
         let assembled = self.assemble_system_prompt();
         self.system_prompt.content = assembled.clone();
         if !self.buffer.messages.is_empty() && self.buffer.messages[0].role == Role::System {
             self.buffer.messages[0].content = assembled;
         }
         self.buffer.kv_synced_index = 0;
-        log::info!(
-            "[ConversationManager] Successfully preloaded {} Identity facts into System Prompt ({} tokens, budget {}).",
-            self.identity_facts.len(),
-            total_tokens,
-            budget
-        );
     }
 
-    /// Preloads active Identity facts into the base system prompt block with token budgeting.
-    pub async fn load_identity_into_system_prompt(
+    /// Sets identity facts by formatting as markdown bullets into personal memory.
+    pub fn set_identity_facts(
         &mut self,
-        conn: &Connection,
+        identity_facts: Vec<String>,
         context_window: usize,
         max_context_share: f32,
-    ) -> anyhow::Result<()> {
-        let active_identities = fetch_all_active_identity(conn).await?;
-        let facts = active_identities.into_iter().map(|f| f.fact).collect();
-        self.set_identity_facts(facts, context_window, max_context_share);
-        Ok(())
+    ) {
+        if identity_facts.is_empty() {
+            self.set_personal_memory(None, context_window, max_context_share);
+        } else {
+            let formatted = identity_facts
+                .into_iter()
+                .map(|f| format!("- {}", f))
+                .collect::<Vec<_>>()
+                .join("\n");
+            self.set_personal_memory(Some(formatted), context_window, max_context_share);
+        }
+    }
+
+    /// Synchronously restores session continuation context into working memory without async I/O.
+    pub fn restore_session_continuation(
+        &mut self,
+        base_prompt: &str,
+        personal_memory: Option<String>,
+        latest_summary: Option<String>,
+        turns: Vec<TurnRow>,
+        context_window: usize,
+        max_context_share: f32,
+    ) {
+        self.base_system_prompt = base_prompt.to_string();
+        self.set_personal_memory(personal_memory, context_window, max_context_share);
+
+        let assembled = self.assemble_system_prompt();
+        let sys_msg = ChatMessage {
+            role: Role::System,
+            content: assembled.clone(),
+            timestamp_ms: current_timestamp_ms(),
+        };
+
+        self.system_prompt = sys_msg.clone();
+        self.buffer.reset(sys_msg);
+
+        if let Some(summary) = latest_summary {
+            if !summary.trim().is_empty() {
+                self.buffer.push_assistant_turn(format!(
+                    "<context_summary>\n{}\n</context_summary>",
+                    summary.trim()
+                ));
+            }
+        }
+
+        for turn in turns {
+            if !turn.user_text.trim().is_empty() {
+                self.buffer.push_user_turn(turn.user_text);
+            }
+            if !turn.assistant_text.trim().is_empty() {
+                self.buffer.push_assistant_turn(turn.assistant_text);
+            }
+        }
     }
 
     /// Resets conversational history and initializes a new session.
@@ -192,11 +235,11 @@ impl Default for ConversationManager {
 mod tests {
     use super::*;
 
-    /// Tests system prompt update while preserving identity facts structure.
+    /// Tests system prompt update while preserving personal memory structure.
     #[test]
-    fn test_update_system_prompt_with_identity() {
+    fn test_update_system_prompt_with_personal_memory() {
         let mut cm = ConversationManager::new();
-        cm.identity_facts = vec!["User lives in Seattle.".to_string()];
+        cm.personal_memory = Some("User lives in Seattle.".to_string());
         cm.update_system_prompt("You are Vox Assistant.");
 
         assert!(cm
@@ -206,7 +249,7 @@ mod tests {
         assert!(cm
             .system_prompt
             .content
-            .contains("<user_profile>\n[Identity]\n- User lives in Seattle.\n</user_profile>"));
+            .contains("<user_profile>\nUser lives in Seattle.\n</user_profile>"));
 
         cm.new_session("You are a helpful coding assistant.");
         assert!(cm
@@ -216,7 +259,7 @@ mod tests {
         assert!(cm
             .system_prompt
             .content
-            .contains("<user_profile>\n[Identity]\n- User lives in Seattle.\n</user_profile>"));
+            .contains("<user_profile>\nUser lives in Seattle.\n</user_profile>"));
         assert_eq!(cm.buffer.messages.len(), 1);
     }
 }

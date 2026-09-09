@@ -5,8 +5,16 @@ use std::{
 };
 
 use crate::{
-    core::state::{AppState, InteractionOwner, InteractionState},
+    core::{
+        state::{AppState, InteractionOwner, InteractionState},
+        settings::LlmActiveProvider,
+    },
     monitoring::{snapshot::RuntimeSnapshot, COLLECTOR_TICK_INTERVAL},
+    services::{
+        memory::is_embedder_loaded,
+        translit::is_transliteration_engine_loaded,
+    },
+    utils::check_cpu_governor,
 };
 
 /// Spawn the Monitoring Collector on a dedicated OS thread.
@@ -29,7 +37,7 @@ pub fn spawn_monitoring_collector(state: Arc<AppState>) {
             loop {
                 tick_count = tick_count.wrapping_add(1);
                 if tick_count.is_multiple_of(50) {
-                    if let Some(governor) = crate::utils::check_cpu_governor() {
+                    if let Some(governor) = check_cpu_governor() {
                         let is_optimal = governor == "performance";
                         *state.cpu_governor.lock() = governor;
                         state
@@ -77,15 +85,15 @@ fn get_llm_provider_kind(state: &AppState) -> String {
         Err(_) => return "embedded".to_string(),
     };
     match settings.llm.active {
-        crate::core::settings::LlmActiveProvider::Embedded => "embedded".to_string(),
-        crate::core::settings::LlmActiveProvider::Server => {
+        LlmActiveProvider::Embedded => "embedded".to_string(),
+        LlmActiveProvider::Server => {
             if let Some(ref name) = settings.llm.server.provider_name {
                 format!("server:{}", name.to_lowercase())
             } else {
                 "server".to_string()
             }
         }
-        crate::core::settings::LlmActiveProvider::Cloud => {
+        LlmActiveProvider::Cloud => {
             if let Some(ref name) = settings.llm.cloud.provider_name {
                 format!("cloud:{}", name.to_lowercase())
             } else {
@@ -209,12 +217,11 @@ fn collect_snapshot(
                     .unwrap_or(false)
             })
             .unwrap_or(false),
-        is_embedder_loaded: crate::services::memory::is_embedder_loaded(),
-        is_query_classifier_loaded: crate::services::memory::is_scope_classifier_loaded(),
-        is_intra_edge_classifier_loaded: crate::services::memory::is_nli_loaded(),
-        is_inter_edge_classifier_loaded: crate::services::memory::is_edge_classifier_loaded(),
-        is_translit_loaded: crate::services::translit::is_transliteration_engine_loaded(),
-
+        is_embedder_loaded: is_embedder_loaded(),
+        is_query_classifier_loaded: false,
+        is_intra_edge_classifier_loaded: false,
+        is_inter_edge_classifier_loaded: false,
+        is_translit_loaded: is_transliteration_engine_loaded(),
         cpu_governor: state.cpu_governor.lock().clone(),
         cpu_governor_optimal: state.cpu_governor_optimal.load(Ordering::Relaxed),
 

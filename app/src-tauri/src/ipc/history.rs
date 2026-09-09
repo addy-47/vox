@@ -1,17 +1,29 @@
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
-use tauri::State;
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, State};
 
-/// Re-exports of session row types for frontend IPC serialization.
 pub use crate::persistence::sessions::{SessionRow, TurnRow};
 use crate::{
-    core::{error::VoxIpcError, state::AppState},
-    persistence::{
-        db::VoxDb,
-        sessions::{delete_session as delete_session_row, fetch_sessions, fetch_turns},
+    core::{
+        constants::SYSTEM_PROMPT_MODULAR,
+        error::VoxIpcError,
+        events::{emit_ipc, IpcEvent},
+        state::AppState,
     },
-    utils::paths::get,
+    persistence::sessions::{
+        create_session as db_create_session, delete_session as delete_session_row,
+        fetch_session_by_id, fetch_sessions, fetch_turns, update_session_metadata,
+    },
+    pipeline::{init_new_session, resume_session},
 };
+
+/// Result payload for continuing an existing session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContinueSessionResult {
+    pub session: SessionRow,
+    pub turns: Vec<TurnRow>,
+}
 
 /// Retrieves the current in-memory transcript history (tray ephemeral buffer).
 #[tauri::command]
@@ -22,77 +34,125 @@ pub async fn get_transcript_history(
     Ok(history.iter().cloned().collect())
 }
 
-const MAX_HISTORY_TEXT_CHARS: usize = 10_000;
-
-/// Commits a completed session's full text to the ephemeral history buffer.
+/// Initializes a fresh conversational session, resetting working memory.
 #[tauri::command]
-pub async fn commit_session_to_history(
-    text: String,
+pub async fn create_session(
+    app: AppHandle,
+    project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
-) -> Result<(), VoxIpcError> {
-    let trimmed = text.trim();
-    if !trimmed.is_empty() {
-        let bounded_text: String = if trimmed.chars().count() > MAX_HISTORY_TEXT_CHARS {
-            trimmed.chars().take(MAX_HISTORY_TEXT_CHARS).collect()
-        } else {
-            trimmed.to_string()
-        };
+) -> Result<SessionRow, VoxIpcError> {
+    let session_id = db_create_session(&state.db, project_id.as_deref())
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
-        let limit = state
-            .settings
-            .read()
-            .map(|s| s.history.tray_history_limit as usize)
-            .unwrap_or_else(|p| {
-                log::warn!("[History] Settings RwLock poisoned; using inner state limit.");
-                p.into_inner().history.tray_history_limit as usize
-            });
+    init_new_session(&state, SYSTEM_PROMPT_MODULAR).await;
+    state.conversation_id.store(session_id as u64, Ordering::Relaxed);
 
-        let mut history = state.pipeline.transcript_history.lock();
-        if history.front() != Some(&bounded_text) {
-            history.push_front(bounded_text);
-            while history.len() > limit {
-                history.pop_back();
-            }
-        }
+    if let Err(e) = emit_ipc(&app, IpcEvent::SessionsChanged) {
+        log::warn!("[IPC::History] Failed to emit SessionsChanged: {}", e);
     }
-    Ok(())
+
+    let session = fetch_session_by_id(&state.db, session_id)
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+        .ok_or_else(|| VoxIpcError::NotFound(format!("Session {} not found", session_id)))?;
+
+    Ok(session)
 }
 
-/// Returns all sessions ordered by most recent first.
+/// Restores a past session into working memory and returns its metadata and turns.
 #[tauri::command]
-pub async fn get_sessions() -> Result<Vec<SessionRow>, VoxIpcError> {
-    let db_path = get().db.clone();
-    let conn = VoxDb::open_readonly(&db_path)
+pub async fn continue_session(
+    app: AppHandle,
+    session_id: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<ContinueSessionResult, VoxIpcError> {
+    resume_session(&state, SYSTEM_PROMPT_MODULAR, session_id)
         .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
+        .map_err(|e| VoxIpcError::Pipeline(e.to_string()))?;
 
-    fetch_sessions(&conn, 500)
+    state.conversation_id.store(session_id as u64, Ordering::Relaxed);
+
+    if let Err(e) = emit_ipc(&app, IpcEvent::SessionsChanged) {
+        log::warn!("[IPC::History] Failed to emit SessionsChanged: {}", e);
+    }
+
+    let session = fetch_session_by_id(&state.db, session_id)
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+        .ok_or_else(|| VoxIpcError::NotFound(format!("Session {} not found", session_id)))?;
+
+    let turns = fetch_turns(&state.db, session_id)
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+
+    Ok(ContinueSessionResult { session, turns })
+}
+
+/// Returns sessions optionally filtered by project, ordered by pinned first then newest.
+#[tauri::command]
+pub async fn get_sessions(
+    project_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<SessionRow>, VoxIpcError> {
+    fetch_sessions(&state.db, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
 
 /// Returns all turns for a given session, oldest first.
 #[tauri::command]
-pub async fn get_turns(session_id: i64) -> Result<Vec<TurnRow>, VoxIpcError> {
-    let db_path = get().db.clone();
-    let conn = VoxDb::open_readonly(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
-
-    fetch_turns(&conn, session_id)
+pub async fn get_turns(
+    session_id: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<TurnRow>, VoxIpcError> {
+    fetch_turns(&state.db, session_id)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
 
-/// Deletes a session and all its turns (CASCADE).
+/// Updates session metadata fields (title, is_pinned, and/or project_id).
 #[tauri::command]
-pub async fn delete_session(id: i64) -> Result<(), VoxIpcError> {
-    let db_path = get().db.clone();
-    let conn = VoxDb::open(&db_path)
-        .await
-        .map_err(|e| VoxIpcError::Database(format!("DB open failed: {}", e)))?;
+pub async fn update_session(
+    app: AppHandle,
+    session_id: i64,
+    title: Option<String>,
+    is_pinned: Option<bool>,
+    project_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
+    update_session_metadata(
+        &state.db,
+        session_id,
+        title.as_deref(),
+        is_pinned,
+        project_id.as_deref(),
+    )
+    .await
+    .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
-    delete_session_row(&conn, id)
+    if let Err(e) = emit_ipc(&app, IpcEvent::SessionsChanged) {
+        log::warn!("[IPC::History] Failed to emit SessionsChanged: {}", e);
+    }
+
+    Ok(())
+}
+
+/// Deletes a session. If hard is true, executes permanent purge; otherwise soft delete.
+#[tauri::command]
+pub async fn delete_session(
+    app: AppHandle,
+    session_id: i64,
+    hard: Option<bool>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
+    delete_session_row(&state.db, session_id, hard.unwrap_or(false))
         .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+
+    if let Err(e) = emit_ipc(&app, IpcEvent::SessionsChanged) {
+        log::warn!("[IPC::History] Failed to emit SessionsChanged: {}", e);
+    }
+
+    Ok(())
 }
