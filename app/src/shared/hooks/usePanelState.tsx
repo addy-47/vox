@@ -1,13 +1,23 @@
 import React, { createContext, useContext, useCallback, useMemo, useState, memo } from "react";
 
 export type PanelId = "help" | "notifications" | "sessions";
+export type PanelEdge = "left" | "right";
+
+export const PANEL_EDGE_MAP: Record<PanelId, PanelEdge> = {
+  sessions: "left",
+  help: "right",
+  notifications: "right",
+};
 
 interface PanelState {
   activePanel: PanelId | null;
+  leftPanel: PanelId | null;
+  rightPanel: PanelId | null;
   openPanel: (id: PanelId) => void;
   closePanel: (id: PanelId) => void;
   togglePanel: (id: PanelId) => void;
   closeRightGroup: () => void;
+  closeLeftGroup: () => void;
   isPanelOpen: (id: PanelId) => boolean;
 }
 
@@ -24,43 +34,79 @@ interface PanelStateProviderProps {
 }
 
 export const PanelStateProvider: React.FC<PanelStateProviderProps> = memo(({ children }) => {
-  const [activePanel, setActivePanel] = useState<PanelId | null>(null);
+  const [leftPanel, setLeftPanel] = useState<PanelId | null>(null);
+  const [rightPanel, setRightPanel] = useState<PanelId | null>(null);
 
   const openPanel = useCallback((id: PanelId) => {
-    setActivePanel((prev) => {
-      if (prev === id) return null;
-      if ((id === "help" || id === "notifications") && (prev === "help" || prev === "notifications")) {
-        return id;
-      }
-      return id;
-    });
+    const edge = PANEL_EDGE_MAP[id];
+    if (edge === "left") {
+      setLeftPanel(id);
+    } else {
+      setRightPanel(id);
+    }
   }, []);
 
   const closePanel = useCallback((id: PanelId) => {
-    setActivePanel((prev) => (prev === id ? null : prev));
+    const edge = PANEL_EDGE_MAP[id];
+    if (edge === "left") {
+      setLeftPanel((prev) => (prev === id ? null : prev));
+    } else {
+      setRightPanel((prev) => (prev === id ? null : prev));
+    }
   }, []);
 
   const togglePanel = useCallback((id: PanelId) => {
-    setActivePanel((prev) => {
-      if (prev === id) return null;
-      return id;
-    });
+    const edge = PANEL_EDGE_MAP[id];
+    if (edge === "left") {
+      setLeftPanel((prev) => (prev === id ? null : id));
+    } else {
+      setRightPanel((prev) => (prev === id ? null : id));
+    }
   }, []);
 
   const closeRightGroup = useCallback(() => {
-    setActivePanel((prev) =>
-      prev === "help" || prev === "notifications" ? null : prev
-    );
+    setRightPanel(null);
+  }, []);
+
+  const closeLeftGroup = useCallback(() => {
+    setLeftPanel(null);
   }, []);
 
   const isPanelOpen = useCallback(
-    (id: PanelId) => activePanel === id,
-    [activePanel]
+    (id: PanelId) => {
+      const edge = PANEL_EDGE_MAP[id];
+      return edge === "left" ? leftPanel === id : rightPanel === id;
+    },
+    [leftPanel, rightPanel]
   );
 
+  const activePanel = useMemo<PanelId | null>(() => {
+    return rightPanel ?? leftPanel;
+  }, [rightPanel, leftPanel]);
+
   const value = useMemo<PanelState>(
-    () => ({ activePanel, openPanel, closePanel, togglePanel, closeRightGroup, isPanelOpen }),
-    [activePanel, openPanel, closePanel, togglePanel, closeRightGroup, isPanelOpen]
+    () => ({
+      activePanel,
+      leftPanel,
+      rightPanel,
+      openPanel,
+      closePanel,
+      togglePanel,
+      closeRightGroup,
+      closeLeftGroup,
+      isPanelOpen,
+    }),
+    [
+      activePanel,
+      leftPanel,
+      rightPanel,
+      openPanel,
+      closePanel,
+      togglePanel,
+      closeRightGroup,
+      closeLeftGroup,
+      isPanelOpen,
+    ]
   );
 
   return (

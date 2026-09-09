@@ -116,7 +116,8 @@ export function sessionLastActivity(session: SessionRow): number {
 }
 
 /** Sorts sessions pinned-first then newest by `updated_at` without mutating the input. */
-export function sortSessionsNewestFirst(sessions: SessionRow[]): SessionRow[] {
+export function sortSessionsNewestFirst(sessions: SessionRow[] | null | undefined): SessionRow[] {
+  if (!Array.isArray(sessions)) return [];
   return [...sessions].sort((a, b) => {
     if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
     return sessionLastActivity(b) - sessionLastActivity(a);
