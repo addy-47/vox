@@ -114,23 +114,24 @@ Manages the single evolving Personal Memory markdown document.
 
 
 ### 2.4 Notifications Domain (`ipc/notifications.rs`)
-Manages actionable system notifications.
+Manages actionable system notifications and historical alerts (governed by `notifications-spec.md`).
 
 #### `get_notifications()`
-- **Purpose**: Returns all active notifications ordered newest first.
-- **Behavior**: Queries `notifications WHERE status IN ('pending', 'in_progress') ORDER BY created_at DESC`.
+- **Purpose**: Returns all active (non-dismissed) notifications ordered newest first.
+- **Behavior**: Queries `notifications WHERE status != 'dismissed' ORDER BY created_at DESC`. Returns full record with `group_key`, `category`, `severity`, `title`, `message`, `status` (`'unread'` or `'read'`), `session_id`, `metadata`, `created_at`, and `updated_at`.
 
-#### `mark_notifications_read()`
-- **Purpose**: Clears unread notification badges.
-- **Behavior**: Updates `notifications SET is_read = TRUE WHERE is_read = FALSE` in Turso.
+#### `mark_notifications_read(ids: Option<Vec<String>>)`
+- **Purpose**: Marks specified notifications, or all unread notifications if omitted or empty, as read.
+- **Behavior**: Updates target rows `SET status = 'read', updated_at = ? WHERE status = 'unread'`. Clears unread badge counts in frontend.
 
-#### `dismiss_notification(id: String)`
-- **Purpose**: Dismisses an actionable notification card from the drawer.
-- **Behavior**: Sets `status = 'dismissed'` in Turso for the target notification ID.
+#### `dismiss_notifications(ids: Option<Vec<String>>)`
+- **Purpose**: Dismisses specified notifications, or all active notifications if omitted or empty, from the drawer.
+- **Behavior**: Updates target rows `SET status = 'dismissed', updated_at = ? WHERE status != 'dismissed'`.
 
 #### `trigger_session_compaction(sessionId: i64)`
 - **Purpose**: Executes manual compaction from a session notification card action.
-- **Behavior**: Updates notification `status = 'in_progress'`, invokes `CompactionCoordinator::run_compaction_slice(sessionId, trigger_kind="manual")`, and updates notification to `'completed'` on success.
+- **Behavior**: Spawns compaction in the background (`CompactionCoordinator::run_compaction_slice(sessionId, trigger_kind="manual")`). Card status remains user-governed; transient compaction execution is signaled via task events or store state.
+
 
 ---
 
@@ -219,8 +220,8 @@ Every event emitted by the backend via `emit_ipc` or `emit_ipc_to` is mapped dir
 | `telemetry` | `TelemetryData { energy, vad_prob, low, mid, high }` | 60Hz audio frequency visualizer data. |
 | `system_stats` | `SystemStatsPayload { system_cpu, system_ram_pct, vox_cpu, vox_ram_mb, threads, ... }` | CPU/RAM resource usage metrics for profiler drawer. |
 | `show_toast` | `ToastPayload { title, message, level, duration_ms? }` | Ephemeral toast popups for user feedback. |
-| `notification_created` | `NotificationRecord { id, category, title, message, status, ... }` | Emitted when a persistent actionable notification is created. |
-| `notification_updated` | `NotificationRecord { id, category, title, message, status, ... }` | Emitted when an active notification status changes (e.g. `'in_progress'` $\to$ `'completed'`). |
+| `notification_created` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when a persistent actionable notification or alert is created. |
+| `notification_updated` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when an active notification status changes (e.g. marked read or updated). |
 | `personal_memory_updated`| `PersonalMemoryRecord { id, project_id, content, version, last_consolidated_at, updated_at }` | Emitted when Personal Memory is consolidated, edited, imported, or regenerated. |
 | `sessions_changed` | `void` | Signals frontend when sessions are updated (`create`, `continue`, `update`, `delete`). Frontend refetches the session list; no surgical title-patch payload is provided. |
 | `settings-updated` | `void` | Signals frontend that application settings were hot-reloaded. |

@@ -40,12 +40,21 @@ export function useSessionPanel(): UseSessionPanelReturn {
     setError(null);
     try {
       const [sessionData, projectData] = await Promise.all([
-        getSessions(),
-        getProjects(),
+        getSessions().catch((e) => {
+          console.warn("[SessionPanel] getSessions error:", e);
+          return [] as SessionRow[];
+        }),
+        getProjects().catch((e) => {
+          console.warn("[SessionPanel] getProjects error:", e);
+          return [] as ProjectRow[];
+        }),
       ]);
-      setSessions(sortSessionsNewestFirst(sessionData));
-      setProjects(projectData);
+      setSessions(sortSessionsNewestFirst(sessionData ?? []));
+      setProjects(Array.isArray(projectData) ? projectData : []);
     } catch (e: unknown) {
+      console.warn("[SessionPanel] refresh error:", e);
+      setSessions([]);
+      setProjects([]);
       if (e instanceof Error) setError(e.message);
       else setError(SESSION_COPY.sessionsFailed);
     } finally {
@@ -66,27 +75,30 @@ export function useSessionPanel(): UseSessionPanelReturn {
   }, [refresh]);
 
   const pinnedSessions = useMemo(
-    () => sessions.filter((s) => s.is_pinned),
+    () => (Array.isArray(sessions) ? sessions.filter((s) => Boolean(s?.is_pinned)) : []),
     [sessions]
   );
 
   const nonPinnedSessions = useMemo(
-    () => sessions.filter((s) => !s.is_pinned),
+    () => (Array.isArray(sessions) ? sessions.filter((s) => !s?.is_pinned) : []),
     [sessions]
   );
 
   const projectsWithSessions = useMemo((): ProjectGroup[] => {
+    if (!Array.isArray(projects)) return [];
     return projects.map((project) => ({
       project,
-      sessions: nonPinnedSessions.filter((s) => s.project_id === project.id),
-    })).filter((pg) => pg.sessions.length > 0);
+      sessions: nonPinnedSessions.filter((s) => s?.project_id === project?.id),
+    }));
   }, [projects, nonPinnedSessions]);
 
   const uncategorizedSessions = useMemo(
-    () => nonPinnedSessions.filter((s) => {
-      const hasProject = projects.some((p) => p.id === s.project_id);
-      return !hasProject || !s.project_id;
-    }),
+    () =>
+      nonPinnedSessions.filter((s) => {
+        if (!Array.isArray(projects) || projects.length === 0) return true;
+        const hasProject = projects.some((p) => p?.id === s?.project_id);
+        return !hasProject || !s?.project_id;
+      }),
     [nonPinnedSessions, projects]
   );
 

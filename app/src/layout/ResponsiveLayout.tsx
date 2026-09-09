@@ -1,8 +1,14 @@
-import React, { useRef, useState, useEffect, lazy, Suspense } from "react";
+import React, { useRef, useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { EdgeNav } from "./EdgeNav";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
+import { HELP_DRAWER_COPY } from "@/data/helpCopy";
+import { NOTIFICATION_COPY } from "@/data/notificationCopy";
+import { SESSION_COPY } from "@/data/sessionCopy";
 import { TitleBar } from "./TitleBar";
-import { AmbientBackground } from "@/shared/components/common";
+import { AmbientBackground, HelpPanel, NotificationPanel } from "@/shared/components/common";
+import { SessionPanel } from "@/shared/components/home";
+import { EdgePanel } from "@/shared/ui";
+import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Activity } from "lucide-react";
 import { useVoxFootprint } from "@/shared/hooks/useVoxFootprint";
@@ -25,6 +31,11 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const monitorBtnRef = useRef<HTMLButtonElement>(null);
   const { voxCpu, voxRam, isReady } = useVoxFootprint();
   const { openProfiler } = useProfilerDrawer();
+  const { isPanelOpen, closePanel } = usePanelStateContext();
+
+  const closeSessions = useCallback(() => closePanel("sessions"), [closePanel]);
+  const closeHelp = useCallback(() => closePanel("help"), [closePanel]);
+  const closeNotifications = useCallback(() => closePanel("notifications"), [closePanel]);
 
   // Ref to track compact state across renders during window resize
   const wasCompactRef = useRef(window.innerWidth < 1024);
@@ -210,6 +221,34 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
         {/* Bottom navigation (topmost in bottom layer) */}
         <EdgeNav />
+
+        {/* ── Left Edge Rail (Conversations) ── */}
+        <EdgePanel
+          side="left"
+          open={isPanelOpen("sessions")}
+          onClose={closeSessions}
+          title={SESSION_COPY.railTitle}
+        >
+          <SessionPanel onClose={closeSessions} />
+        </EdgePanel>
+
+        {/* ── Right Edge Rails (Help & Notifications) ── */}
+        <EdgePanel
+          side="right"
+          open={isPanelOpen("help")}
+          onClose={closeHelp}
+          title={HELP_DRAWER_COPY.headerTitle}
+        >
+          <HelpPanel onClose={closeHelp} />
+        </EdgePanel>
+        <EdgePanel
+          side="right"
+          open={isPanelOpen("notifications")}
+          onClose={closeNotifications}
+          title={NOTIFICATION_COPY.title}
+        >
+          <NotificationPanel onClose={closeNotifications} />
+        </EdgePanel>
       </div>
     </div>
   );

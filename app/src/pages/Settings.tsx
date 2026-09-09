@@ -143,6 +143,13 @@ export const Settings: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none p-0 lg:p-6 lg:pb-[72px]">
 
+      {/* ── Top-right: Help + Notifications (Desktop) ── */}
+      {!isCompact && (
+        <div className="absolute top-4 right-5 z-30">
+          <TopRightCluster />
+        </div>
+      )}
+
       {/* ── Desktop & Tablet Hexagon/Grid Layout (>= 1024px) ────────────────── */}
       {!isCompact ? (
         <div ref={containerRef} className="flex-1 w-full grid grid-cols-12 grid-rows-6 gap-4 items-stretch relative min-h-0">
