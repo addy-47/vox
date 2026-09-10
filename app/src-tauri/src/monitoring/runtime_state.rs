@@ -1,9 +1,43 @@
 use std::{
     collections::VecDeque,
-    sync::{Arc, RwLock},
+    sync::{
+        atomic::{AtomicBool, AtomicU32, AtomicU64},
+        Arc, RwLock,
+    },
 };
 
-use crate::monitoring::{snapshot::RuntimeSnapshot, MAX_SNAPSHOT_HISTORY};
+use crate::monitoring::{
+    aggregator::TelemetryEvent, snapshot::RuntimeSnapshot, MAX_SNAPSHOT_HISTORY,
+};
+
+/// Telemetry handles and health atomics bundled for AppState and monitoring workers.
+#[derive(Clone)]
+pub struct TelemetryState {
+    pub telemetry_tx: crossbeam_channel::Sender<TelemetryEvent>,
+    pub latest_energy: Arc<AtomicU32>,
+    pub latest_vad_prob: Arc<AtomicU32>,
+    pub latest_low: Arc<AtomicU32>,
+    pub latest_mid: Arc<AtomicU32>,
+    pub latest_high: Arc<AtomicU32>,
+    pub latest_playback_energy: Arc<AtomicU32>,
+    pub latest_playback_low: Arc<AtomicU32>,
+    pub latest_playback_mid: Arc<AtomicU32>,
+    pub latest_playback_high: Arc<AtomicU32>,
+    pub latest_sys_cpu: Arc<AtomicU32>,
+    pub latest_sys_ram: Arc<AtomicU32>,
+    pub latest_vox_cpu: Arc<AtomicU32>,
+    pub latest_vox_ram: Arc<AtomicU32>,
+    pub latest_stt_ms: Arc<AtomicU32>,
+    pub latest_ttft_ms: Arc<AtomicU32>,
+    pub latest_voice_latency_ms: Arc<AtomicU32>,
+    pub latest_threads: Arc<AtomicU32>,
+    pub latest_tts_rtf: Arc<AtomicU32>,
+    pub latest_playback_start_ms: Arc<AtomicU32>,
+    pub latest_persistence_rate: Arc<AtomicU32>,
+    pub is_db_healthy: Arc<AtomicBool>,
+    pub is_private_mode: Arc<AtomicBool>,
+    pub dropped_telemetry_events: Arc<AtomicU64>,
+}
 
 /// Shared thread-safe state for runtime monitoring.
 pub struct MonitoringState {
