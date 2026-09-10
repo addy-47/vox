@@ -6,7 +6,7 @@ use tauri::{AppHandle, State};
 pub use crate::persistence::sessions::{SessionRow, TurnRow};
 use crate::{
     core::{
-        constants::SYSTEM_PROMPT_MODULAR,
+        defaults::DEFAULT_SYSTEM_PROMPT_MODULAR,
         error::VoxIpcError,
         events::{emit_ipc, IpcEvent},
         state::AppState,
@@ -77,7 +77,7 @@ pub async fn create_session(
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
-    init_new_session(&state, SYSTEM_PROMPT_MODULAR).await;
+    init_new_session(&state, DEFAULT_SYSTEM_PROMPT_MODULAR).await;
     state
         .conversation_id
         .store(session_id as u64, Ordering::Relaxed);
@@ -101,7 +101,7 @@ pub async fn continue_session(
     session_id: i64,
     state: State<'_, Arc<AppState>>,
 ) -> Result<ContinueSessionResult, VoxIpcError> {
-    resume_session(&state, SYSTEM_PROMPT_MODULAR, session_id)
+    resume_session(&state, DEFAULT_SYSTEM_PROMPT_MODULAR, session_id)
         .await
         .map_err(|e| VoxIpcError::Pipeline(e.to_string()))?;
 

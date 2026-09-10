@@ -1,17 +1,97 @@
-//! Central non-blocking pipeline event router.
-
 use std::{
-    sync::{mpsc, Arc},
+    sync::{atomic::Ordering, mpsc, Arc},
     thread::{Builder, JoinHandle},
 };
 
 use tauri::{AppHandle, Manager};
 
-use super::{RoutingContext, ROUTER_THREAD_NAME};
+use super::ROUTER_THREAD_NAME;
 use crate::core::{
-    events::VoxEvent,
-    state::{AppState, InteractionOwner},
+    events::{emit_ipc_to, IpcEvent, StateChangedPayload, VoxEvent},
+    settings::{DictationInteractionMode, InteractionMode, PipelineMode},
+    state::{AppState, AppWindow, InteractionOwner, InteractionState},
 };
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RoutingContext {
+    pub pipeline_mode: PipelineMode,
+    pub interaction_mode: InteractionMode,
+    pub owner: InteractionOwner,
+}
+
+impl RoutingContext {
+    /// Snapshots the active routing context from settings and current owner with poison-safety.
+    pub fn from_app_state(state: &AppState) -> Self {
+        let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
+        let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+        let (pipeline_mode, interaction_mode) = match owner {
+            InteractionOwner::Dictation => {
+                let im = match settings.dictation.interaction_mode {
+                    DictationInteractionMode::Passive => InteractionMode::Passive,
+                    DictationInteractionMode::Ptt => InteractionMode::PTT,
+                };
+                (settings.interaction.pipeline_mode.clone(), im)
+            }
+            InteractionOwner::Assistant => (
+                settings.interaction.pipeline_mode.clone(),
+                settings.interaction.mode.clone(),
+            ),
+        };
+
+        Self {
+            pipeline_mode,
+            interaction_mode,
+            owner,
+        }
+    }
+}
+
+/// Resolves the designated Tauri webview window target for a given interaction owner.
+pub fn target_window(owner: InteractionOwner) -> AppWindow {
+    match owner {
+        InteractionOwner::Dictation => AppWindow::Tray,
+        InteractionOwner::Assistant => AppWindow::Main,
+    }
+}
+
+/// Transitions the pipeline turn state, updates atomic flags, and emits state_changed events.
+pub fn transition<R: tauri::Runtime>(
+    new_state: InteractionState,
+    ctx: &RoutingContext,
+    app: &AppHandle<R>,
+    state: &AppState,
+) {
+    if state.pipeline.state() == new_state {
+        return;
+    }
+
+    state.pipeline.set_state(new_state);
+    let target = target_window(ctx.owner);
+    let turn_id = state.pipeline.peek_turn_id();
+    let state_str = match new_state {
+        InteractionState::Idle => "Idle",
+        InteractionState::Ready => "Ready",
+        InteractionState::Listening => "Listening",
+        InteractionState::Thinking => "Thinking",
+        InteractionState::Speaking => "Speaking",
+        InteractionState::Paused => "Paused",
+        InteractionState::Error => "Error",
+        InteractionState::Sleeping => "Sleeping",
+    };
+    let payload = StateChangedPayload {
+        owner: ctx.owner,
+        state: state_str.to_string(),
+        turn_id,
+    };
+
+    if let Err(e) = emit_ipc_to(app, target, IpcEvent::StateChanged(payload)) {
+        log::warn!(
+            "[Pipeline] Failed to emit state_changed to {}: {}",
+            target,
+            e
+        );
+    }
+}
 
 /// Routes an incoming pipeline event to canonical handlers based on snapshot context.
 fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState, event: VoxEvent) {

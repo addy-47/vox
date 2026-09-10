@@ -1,6 +1,30 @@
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64},
+    Arc,
+};
 
 use crate::core::state::{AppState, InteractionState};
+
+/// Shared runtime state for the memory subsystem.
+pub struct MemoryAppState {
+    pub graph_version: Arc<AtomicU64>,
+    pub user_paused_ingestion: Arc<AtomicBool>,
+}
+
+impl Default for MemoryAppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MemoryAppState {
+    pub fn new() -> Self {
+        Self {
+            graph_version: Arc::new(AtomicU64::new(1)),
+            user_paused_ingestion: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
 
 pub mod compaction;
 pub mod ingestion;

@@ -368,7 +368,7 @@ pub fn attach_mock_engine_with_vad_to_state<R: tauri::Runtime>(
     let (telemetry_tx, _) = crossbeam_channel::unbounded();
     let (playback_engine, _) = create_mock_playback_engine();
 
-    let engine = vox_lib::core::state::VoxEngine {
+    let engine = vox_lib::core::engine::VoxEngine {
         audio_stream: vox_lib::services::audio::AudioStream::mock(),
         stt_tx,
         vad_tx,
@@ -427,7 +427,7 @@ pub fn attach_mock_engine_with_llm_tts_to_state<R: tauri::Runtime>(
     let (telemetry_tx, _) = crossbeam_channel::unbounded();
     let (playback_engine, _) = create_mock_playback_engine();
 
-    let engine = vox_lib::core::state::VoxEngine {
+    let engine = vox_lib::core::engine::VoxEngine {
         audio_stream: vox_lib::services::audio::AudioStream::mock(),
         stt_tx,
         vad_tx,
@@ -471,7 +471,7 @@ pub fn attach_lifecycle_mock_engine<R: tauri::Runtime>(
     let (llm_tx, _llm_rx) = mpsc::channel();
     let (tts_tx, _tts_rx) = mpsc::channel();
 
-    let engine = vox_lib::core::state::VoxEngine {
+    let engine = vox_lib::core::engine::VoxEngine {
         audio_stream: vox_lib::services::audio::AudioStream::mock(),
         stt_tx: stt_tx.clone(),
         vad_tx,
