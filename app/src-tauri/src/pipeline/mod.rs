@@ -11,12 +11,11 @@ use std::{
 
 use tauri::AppHandle;
 
-pub use crate::core::constants::{WINDOW_MAIN, WINDOW_TOAST, WINDOW_TRAY, WINDOW_WIZARD};
 use crate::{
     core::{
         events::{emit_ipc_to, IpcEvent, StateChangedPayload, VoxEvent},
         settings::{DictationInteractionMode, InteractionMode, PipelineMode},
-        state::{AppState, InteractionOwner, InteractionState},
+        state::{AppState, AppWindow, InteractionOwner, InteractionState},
     },
     persistence::{
         compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
@@ -66,10 +65,10 @@ impl RoutingContext {
 }
 
 /// Resolves the designated Tauri webview window target for a given interaction owner.
-pub fn target_window(owner: InteractionOwner) -> &'static str {
+pub fn target_window(owner: InteractionOwner) -> AppWindow {
     match owner {
-        InteractionOwner::Dictation => WINDOW_TRAY,
-        InteractionOwner::Assistant => WINDOW_MAIN,
+        InteractionOwner::Dictation => AppWindow::Tray,
+        InteractionOwner::Assistant => AppWindow::Main,
     }
 }
 
@@ -270,7 +269,7 @@ pub fn spawn_idle_monitor<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: Ar
                             };
                             if let Err(e) = emit_ipc_to(
                                 &app,
-                                WINDOW_MAIN,
+                                AppWindow::Main,
                                 IpcEvent::StateChanged(payload),
                             ) {
                                 log::warn!("[Pipeline] Failed to emit Sleeping state_changed: {}", e);

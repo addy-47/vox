@@ -16,7 +16,10 @@ use sherpa_onnx::{
 
 use super::{TtsProvider, TtsProviderKind};
 use crate::{
-    core::events::{Actionability, PipelineError, PipelineImpact, VoxEvent},
+    core::{
+        error::{Actionability, PipelineError, PipelineImpact},
+        events::VoxEvent,
+    },
     services::{
         audio::PlaybackEngine,
         translit::is_devanagari,

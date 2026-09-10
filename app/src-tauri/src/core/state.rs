@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 use turso::Connection;
 
 use crate::{
-    core::{constants::TRANSCRIPT_HISTORY_LIMIT, events::VoxEvent, settings::VoxSettings},
+    core::{events::VoxEvent, settings::VoxSettings},
     monitoring::{aggregator::TelemetryEvent, runtime_state::MonitoringState},
     persistence::PersistenceEvent,
     pipeline::assistant::accumulator::TurnAccumulator,
@@ -26,6 +26,37 @@ use crate::{
     },
     setup::{manifest::VoxManifest, model_manager::ModelManager},
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum AppWindow {
+    Main,
+    Tray,
+    Toast,
+    Wizard,
+}
+
+impl AppWindow {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Main => "main",
+            Self::Tray => "tray",
+            Self::Toast => "toast",
+            Self::Wizard => "wizard",
+        }
+    }
+}
+
+impl AsRef<str> for AppWindow {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl std::fmt::Display for AppWindow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum InteractionOwner {
@@ -136,9 +167,7 @@ impl PipelineAtomics {
         Self {
             cancel_flag: Arc::new(AtomicBool::new(false)),
             turn_id: Arc::new(AtomicU32::new(0)),
-            transcript_history: Arc::new(parking_lot::Mutex::new(VecDeque::with_capacity(
-                TRANSCRIPT_HISTORY_LIMIT,
-            ))),
+            transcript_history: Arc::new(parking_lot::Mutex::new(VecDeque::new())),
             playback_underruns: Arc::new(AtomicU64::new(0)),
             pending_synthesis_jobs: Arc::new(AtomicU32::new(0)),
             current_state_atomic: Arc::new(AtomicU32::new(InteractionState::Idle as u32)),

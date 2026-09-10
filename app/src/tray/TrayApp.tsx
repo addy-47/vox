@@ -88,14 +88,11 @@ export const TrayApp: React.FC = () => {
     syncVisibility();
   }, [visibilityState, reset]);
 
-  const historyLimit = settings?.history?.tray_history_limit || 5;
-
   const stateRef = useRef({
     visibilityState,
     interactionId,
     interactionState,
     history,
-    historyLimit,
     liveTargetText,
     callbacks: {
       startNewInteraction,
@@ -116,7 +113,6 @@ export const TrayApp: React.FC = () => {
       interactionId, 
       interactionState, 
       history,
-      historyLimit,
       liveTargetText,
       callbacks: {
         startNewInteraction,
@@ -130,7 +126,7 @@ export const TrayApp: React.FC = () => {
         reset
       }
     };
-  }, [visibilityState, interactionId, interactionState, history, historyLimit, 
+  }, [visibilityState, interactionId, interactionState, history, 
       liveTargetText, startNewInteraction, updatePartial, commitFinal, endSpeechSegment, show, startFade, cancelFade, hideImmediately, reset]);
 
   const copyToClipboard = async () => {
@@ -149,7 +145,7 @@ export const TrayApp: React.FC = () => {
     const textToCommit = stateRef.current.liveTargetText;
     if (textToCommit.trim()) {
       getTranscriptHistory().then((h) => {
-        setHistory(h.slice(0, stateRef.current.historyLimit));
+        setHistory(h);
       });
     }
     stateRef.current.callbacks.reset();
@@ -255,7 +251,7 @@ export const TrayApp: React.FC = () => {
 
     // Initial History Sync
     getTranscriptHistory().then((h: string[]) => {
-      if (active) setHistory(h.slice(0, stateRef.current.historyLimit));
+      if (active) setHistory(h);
     });
 
     return () => {

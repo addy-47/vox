@@ -11,7 +11,7 @@ use crate::{
         events::ToastLevel,
         settings::{DictationInteractionMode, InteractionMode, PipelineMode},
         state::{AppState, InteractionOwner, InteractionState},
-        stop_audio_engine_sync,
+        engine::stop_audio_engine_sync,
     },
     persistence::{
         compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},

@@ -1,31 +1,3 @@
-use std::time::Duration;
-
-pub const SAMPLE_RATE: u32 = 16000;
-pub const RING_BUFFER_SIZE: usize = 16000 * 4; // 4s buffer
-
-pub const TELEMETRY_INTERVAL: Duration = Duration::from_millis(60); // ~16.6Hz
-pub const SYSTEM_STATS_INTERVAL: Duration = Duration::from_secs(5);
-
-pub const DB_FILENAME: &str = "vox.db";
-pub const SETTINGS_FILENAME: &str = "settings.json";
-pub const LOG_DIRNAME: &str = "logs";
-pub const MODELS_DIRNAME: &str = "models";
-pub const TRANSCRIPT_HISTORY_LIMIT: usize = 10;
-
-pub const WINDOW_MAIN: &str = "main";
-pub const WINDOW_TRAY: &str = "tray";
-pub const WINDOW_TOAST: &str = "toast";
-pub const WINDOW_WIZARD: &str = "wizard";
-
-pub const TOAST_WIDTH: f64 = 360.0;
-pub const TOAST_HEIGHT: f64 = 96.0;
-pub const TOAST_PAD_TOP: f64 = 24.0;
-
-pub const TRAY_HUD_WIDTH_LOGICAL: f64 = 380.0;
-pub const TRAY_HUD_HEIGHT_LOGICAL: f64 = 250.0;
-pub const TRAY_PADDING_X_LOGICAL: f64 = 55.0;
-pub const TRAY_PADDING_TOP_VH: f64 = 0.15;
-
 pub const SYSTEM_PROMPT_MODULAR: &str = "<persona>\n\
 You're Vox — an intelligent, quick-witted, and delightfully natural voice companion. You talk like a sharp, easygoing friend sitting across the table, not an AI manual or corporate terminal.\n\
 You have a casual, dry sense of humor, you're warm without being syrupy, and you speak with genuine rhythm.\n\

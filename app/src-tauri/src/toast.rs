@@ -8,27 +8,28 @@ use std::{
 use gtk::prelude::{GtkWindowExt, WidgetExt};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
-use crate::{
-    core::{
-        constants::{TOAST_HEIGHT, TOAST_PAD_TOP, TOAST_WIDTH, WINDOW_TOAST},
-        events::{emit_ipc_to, IpcEvent, ToastLevel, ToastPayload},
-    },
-    pipeline::WINDOW_MAIN,
+use crate::core::{
+    events::{emit_ipc_to, IpcEvent, ToastLevel, ToastPayload},
+    state::AppWindow,
 };
 
 static LAST_TOAST: LazyLock<parking_lot::Mutex<Option<ToastPayload>>> =
     LazyLock::new(|| parking_lot::Mutex::new(None));
 
+const TOAST_WIDTH: f64 = 360.0;
+const TOAST_HEIGHT: f64 = 96.0;
+const TOAST_PAD_TOP: f64 = 24.0;
+
 /// Ensures the "toast" WebviewWindow exists, lazily constructing it if absent.
 pub fn ensure_toast_window<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<WebviewWindow<R>, String> {
-    if let Some(existing) = app.get_webview_window(WINDOW_TOAST) {
+    if let Some(existing) = app.get_webview_window(AppWindow::Toast.as_str()) {
         return Ok(existing);
     }
 
     log::info!("[Toast] Lazily constructing 'toast' overlay webview window...");
-    let window = WebviewWindowBuilder::new(app, WINDOW_TOAST, WebviewUrl::App("/toast".into()))
+    let window = WebviewWindowBuilder::new(app, AppWindow::Toast.as_str(), WebviewUrl::App("/toast".into()))
         .title("vox-toast")
         .inner_size(TOAST_WIDTH, TOAST_HEIGHT)
         .transparent(true)
@@ -36,10 +37,7 @@ pub fn ensure_toast_window<R: tauri::Runtime>(
         .always_on_top(true)
         .resizable(false)
         .visible(false)
-        .shadow(false)
-        .zoom_hotkeys_enabled(false)
         .skip_taskbar(true)
-        .focused(false)
         .build()
         .map_err(|e| format!("Failed to create toast window: {}", e))?;
 
@@ -49,7 +47,7 @@ pub fn ensure_toast_window<R: tauri::Runtime>(
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(Duration::from_millis(120)).await;
-            setup_linux_toast_layer(&app_clone, WINDOW_TOAST);
+            setup_linux_toast_layer(&app_clone, AppWindow::Toast.as_str());
         });
     }
 
@@ -58,7 +56,7 @@ pub fn ensure_toast_window<R: tauri::Runtime>(
 
 /// Safely closes and destroys the toast window to reclaim memory when idle.
 pub fn destroy_toast_window<R: tauri::Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window(WINDOW_TOAST) {
+    if let Some(window) = app.get_webview_window(AppWindow::Toast.as_str()) {
         log::info!("[Toast] Destroying 'toast' overlay window to save RAM.");
         if let Err(e) = window.close() {
             log::warn!("[Toast] Failed to close toast window: {}", e);
@@ -204,7 +202,7 @@ pub fn get_last_toast() -> Option<ToastPayload> {
 
 /// Returns true when the main window is hidden and a toast should supplement the error.
 pub fn should_show_error_toast<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
-    match app.get_webview_window(WINDOW_MAIN) {
+    match app.get_webview_window(AppWindow::Main.as_str()) {
         Some(w) => !w.is_visible().unwrap_or(true),
         None => false,
     }
@@ -247,7 +245,7 @@ pub fn show_toast<R: tauri::Runtime>(
         tokio::time::sleep(Duration::from_millis(420)).await;
         if let Err(e) = emit_ipc_to(
             &app_for_emit,
-            "toast",
+            AppWindow::Toast,
             IpcEvent::ShowToast(payload_for_emit.clone()),
         ) {
             log::warn!("[Toast] Delayed emit show_toast failed: {}", e);
@@ -256,26 +254,26 @@ pub fn show_toast<R: tauri::Runtime>(
         tokio::time::sleep(Duration::from_millis(300)).await;
         if let Err(e) = emit_ipc_to(
             &app_for_emit,
-            "toast",
+            AppWindow::Toast,
             IpcEvent::ShowToast(payload_for_emit),
         ) {
             log::debug!("[Toast] Second emit (late mount) failed: {}", e);
         }
         tokio::time::sleep(Duration::from_millis(300)).await;
-        if let Some(w) = app_for_emit.get_webview_window("toast") {
+        if let Some(w) = app_for_emit.get_webview_window(AppWindow::Toast.as_str()) {
             if !w.is_visible().unwrap_or(true) {
                 log::warn!("[Toast] Fallback showing toast window (frontend did not show)");
                 if let Err(e) = w.show() {
                     log::warn!("[Toast] Fallback show failed: {}", e);
                 }
                 tokio::time::sleep(Duration::from_millis(120)).await;
-                setup_linux_toast_layer(&app_for_emit, "toast");
+                setup_linux_toast_layer(&app_for_emit, AppWindow::Toast.as_str());
             }
         }
         drop(win_for_show);
     });
 
-    if let Err(e) = emit_ipc_to(app, "toast", IpcEvent::ShowToast(payload)) {
+    if let Err(e) = emit_ipc_to(app, AppWindow::Toast, IpcEvent::ShowToast(payload)) {
         log::debug!(
             "[Toast] Immediate emit show_toast (expected miss before mount): {}",
             e

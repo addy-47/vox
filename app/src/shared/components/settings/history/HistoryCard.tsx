@@ -2,7 +2,7 @@ import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { History, ShieldOff, FoldVertical } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { Card, RotaryKnob, ToggleTile } from "@/shared/ui";
+import { Card, ToggleTile } from "@/shared/ui";
 import { HISTORY_SETTINGS_COPY } from "@/data/settingsCopy";
 
 interface HistoryCardProps {
@@ -79,7 +79,7 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
           />
         </div>
 
-        {/* Lower Section: HUD Limit Rotary Knob & Database Status (Unified Glass Container) */}
+        {/* Lower Section: Database Status (Unified Glass Container) */}
         <div className="flex-1 flex items-center gap-4 justify-between p-3 rounded-xl border border-[rgba(var(--accent),0.06)] bg-[rgba(var(--foreground),0.02)]">
           <div className="flex flex-col gap-1 min-w-0 flex-1">
             <span className="text-[12px] font-black uppercase tracking-wider text-[rgb(var(--foreground))]">
@@ -88,21 +88,6 @@ export const HistoryCard = memo(({ layoutMode = "full-max" }: HistoryCardProps) 
             <span className="text-[11px] text-[rgb(var(--foreground-muted))]/60 leading-normal">
               {HISTORY_SETTINGS_COPY.engineDesc}
             </span>
-          </div>
-
-          {/* Rotary Knob for HUD History Limit */}
-          <div className="shrink-0 flex items-center justify-center pl-1">
-            <RotaryKnob
-              value={history.tray_history_limit ?? 5}
-              min={1}
-              max={15}
-              step={1}
-              defaultValue={5}
-              formatValue={(v) => `${v}`}
-              formatPreset={(v) => `${v}`}
-              onChange={(v) => updateDraft("history", "tray_history_limit", v)}
-              presetSteps={[3, 5, 10]}
-            />
           </div>
         </div>
       </div>
