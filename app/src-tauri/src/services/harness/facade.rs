@@ -10,13 +10,11 @@ use turso::Connection;
 use super::{
     buffer::{current_timestamp_ms, ConversationContext},
     manager::ConversationManager,
+    TRANSITION_MESSAGES_EN, TRANSITION_MESSAGES_HI,
 };
 use crate::{
     core::{
-        constants::{TRANSITION_MESSAGES_EN, TRANSITION_MESSAGES_HI},
-        error::{
-            Actionability, MemoryError, PipelineError, PipelineImpact,
-        },
+        error::{Actionability, MemoryError, PipelineError, PipelineImpact},
         events::VoxEvent,
         settings::{LlmSettings, MemorySettings, PipelineMode},
         state::{AppState, InteractionState},

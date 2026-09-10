@@ -1,31 +1,33 @@
-use std::{
-    collections::VecDeque,
-    sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-        mpsc, Arc, RwLock,
-    },
-    thread::JoinHandle,
+use std::sync::{
+    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+    mpsc, Arc, RwLock,
 };
 
 use tokio::sync::Mutex;
 use turso::Connection;
 
 use crate::{
-    core::{events::VoxEvent, settings::VoxSettings},
-    monitoring::{aggregator::TelemetryEvent, runtime_state::MonitoringState},
+    core::{
+        engine::VoxEngine,
+        events::VoxEvent,
+        settings::VoxSettings,
+    },
+    monitoring::runtime_state::{MonitoringState, TelemetryState},
     persistence::PersistenceEvent,
-    pipeline::assistant::accumulator::TurnAccumulator,
+    pipeline::{assistant::accumulator::TurnAccumulator, PipelineAtomics},
     services::{
-        audio::{AudioStream, PlaybackEngine},
         harness::ConversationManager,
-        llm::{LlmCommand, LlmProvider},
+        llm::LlmProvider,
+        memory::MemoryAppState,
         realtime::RealtimeActor,
-        stt::SttCommand,
-        tts::TtsCommand,
-        vad::VadCommand,
     },
     setup::{manifest::VoxManifest, model_manager::ModelManager},
 };
+
+pub use crate::core::engine::VoxEngine;
+pub use crate::monitoring::runtime_state::TelemetryState;
+pub use crate::pipeline::PipelineAtomics;
+pub use crate::services::memory::MemoryAppState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum AppWindow {
@@ -120,192 +122,6 @@ impl From<InteractionState> for u32 {
     }
 }
 
-pub struct VoxEngine {
-    pub audio_stream: AudioStream,
-    pub stt_tx: mpsc::Sender<SttCommand>,
-    pub vad_tx: mpsc::Sender<VadCommand>,
-    pub llm_tx: Option<mpsc::Sender<LlmCommand>>,
-    pub tts_tx: Option<mpsc::Sender<TtsCommand>>,
-    pub telemetry_tx: crossbeam_channel::Sender<TelemetryEvent>,
-    pub pipeline_tx: mpsc::Sender<VoxEvent>,
-    pub playback_engine: Arc<PlaybackEngine>,
-    pub stt_handle: Option<JoinHandle<()>>,
-    pub vad_handle: Option<JoinHandle<()>>,
-    pub llm_handle: Option<JoinHandle<()>>,
-    pub tts_handle: Option<JoinHandle<()>>,
-    pub orchestrator_handle: Option<JoinHandle<()>>,
-}
-
-pub struct PipelineAtomics {
-    pub cancel_flag: Arc<AtomicBool>,
-    pub turn_id: Arc<AtomicU32>,
-    pub transcript_history: Arc<parking_lot::Mutex<VecDeque<String>>>,
-    pub playback_underruns: Arc<AtomicU64>,
-    pub pending_synthesis_jobs: Arc<AtomicU32>,
-    pub current_state_atomic: Arc<AtomicU32>,
-    pub state_tx: tokio::sync::watch::Sender<InteractionState>,
-    pub state_rx: tokio::sync::watch::Receiver<InteractionState>,
-    pub dictation_state_atomic: Arc<AtomicU32>,
-    pub dictation_state_tx: tokio::sync::watch::Sender<InteractionState>,
-    pub dictation_state_rx: tokio::sync::watch::Receiver<InteractionState>,
-    pub ingestion_gate: Arc<AtomicBool>,
-    pub turn_token: Arc<parking_lot::Mutex<tokio_util::sync::CancellationToken>>,
-    pub engine_shutdown: Arc<AtomicBool>,
-}
-
-impl Default for PipelineAtomics {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl PipelineAtomics {
-    pub fn new() -> Self {
-        let (state_tx, state_rx) = tokio::sync::watch::channel(InteractionState::Idle);
-        let (dictation_state_tx, dictation_state_rx) =
-            tokio::sync::watch::channel(InteractionState::Idle);
-        Self {
-            cancel_flag: Arc::new(AtomicBool::new(false)),
-            turn_id: Arc::new(AtomicU32::new(0)),
-            transcript_history: Arc::new(parking_lot::Mutex::new(VecDeque::new())),
-            playback_underruns: Arc::new(AtomicU64::new(0)),
-            pending_synthesis_jobs: Arc::new(AtomicU32::new(0)),
-            current_state_atomic: Arc::new(AtomicU32::new(InteractionState::Idle as u32)),
-            state_tx,
-            state_rx,
-            dictation_state_atomic: Arc::new(AtomicU32::new(InteractionState::Idle as u32)),
-            dictation_state_tx,
-            dictation_state_rx,
-            ingestion_gate: Arc::new(AtomicBool::new(false)),
-            turn_token: Arc::new(parking_lot::Mutex::new(
-                tokio_util::sync::CancellationToken::new(),
-            )),
-            engine_shutdown: Arc::new(AtomicBool::new(false)),
-        }
-    }
-
-    /// Recomputes the lock-free audio ingestion gate based on dual-track states.
-    /// Invariant: Gate Is Open <=> (assistant in {Ready, Listening, Thinking, Speaking}) || (dictation in {Ready, Listening, Thinking})
-    pub fn update_ingestion_gate(&self) {
-        let a = InteractionState::from(self.current_state_atomic.load(Ordering::Relaxed));
-        let d = InteractionState::from(self.dictation_state_atomic.load(Ordering::Relaxed));
-        let open = matches!(
-            a,
-            InteractionState::Ready
-                | InteractionState::Listening
-                | InteractionState::Thinking
-                | InteractionState::Speaking
-        ) || matches!(
-            d,
-            InteractionState::Ready | InteractionState::Listening | InteractionState::Thinking
-        );
-        self.ingestion_gate.store(open, Ordering::Relaxed);
-    }
-
-    /// Returns the current interaction state derived from the canonical atomic state.
-    pub fn state(&self) -> InteractionState {
-        InteractionState::from(self.current_state_atomic.load(Ordering::SeqCst))
-    }
-
-    /// Updates internal interaction state atomics and notifies all observers.
-    pub fn set_state(&self, new_state: InteractionState) {
-        self.current_state_atomic
-            .store(new_state as u32, Ordering::SeqCst);
-        self.update_ingestion_gate();
-        if let Err(e) = self.state_tx.send(new_state) {
-            log::warn!(
-                "[Pipeline::State] Failed to broadcast state to observers: {}",
-                e
-            );
-        }
-    }
-
-    /// Subscribes to the broadcast interaction state channel for multi-consumer fanout.
-    pub fn subscribe_state(&self) -> tokio::sync::watch::Receiver<InteractionState> {
-        self.state_tx.subscribe()
-    }
-
-    /// Returns the current dictation state derived from the canonical atomic state.
-    pub fn dictation_state(&self) -> InteractionState {
-        InteractionState::from(self.dictation_state_atomic.load(Ordering::SeqCst))
-    }
-
-    /// Updates internal dictation state atomics and notifies all observers.
-    pub fn set_dictation_state(&self, new_state: InteractionState) {
-        self.dictation_state_atomic
-            .store(new_state as u32, Ordering::SeqCst);
-        self.update_ingestion_gate();
-        if let Err(e) = self.dictation_state_tx.send(new_state) {
-            log::warn!(
-                "[Pipeline::State] Failed to broadcast dictation state: {}",
-                e
-            );
-        }
-    }
-
-    /// Subscribes to the broadcast dictation state channel for multi-consumer fanout.
-    pub fn subscribe_dictation_state(&self) -> tokio::sync::watch::Receiver<InteractionState> {
-        self.dictation_state_tx.subscribe()
-    }
-
-    /// Returns a clone of the current turn's cancellation token.
-    pub fn turn_token(&self) -> tokio_util::sync::CancellationToken {
-        self.turn_token.lock().clone()
-    }
-
-    /// Cancels the active turn's token and returns a fresh cancellation token without allocating a new turn ID.
-    /// Use this for session-level re-arming (e.g. on resume or test clip cancellation).
-    pub fn rearm_turn_token(&self) -> tokio_util::sync::CancellationToken {
-        let mut guard = self.turn_token.lock();
-        guard.cancel();
-        let new_token = tokio_util::sync::CancellationToken::new();
-        *guard = new_token.clone();
-        new_token
-    }
-
-    /// Atomically allocates the next monotonic turn ID.
-    pub fn next_turn_id(&self) -> u32 {
-        self.turn_id.fetch_add(1, Ordering::Relaxed) + 1
-    }
-
-    /// Returns the current turn ID without incrementing.
-    pub fn peek_turn_id(&self) -> u32 {
-        self.turn_id.load(Ordering::Relaxed)
-    }
-
-    /// Atomically increments turn_id and rotates the per-turn cancellation token.
-    pub fn next_turn(&self) -> (u32, tokio_util::sync::CancellationToken) {
-        let id = self.next_turn_id();
-        let tok = self.rearm_turn_token();
-        (id, tok)
-    }
-
-    /// Cancels the current turn's cancellation token without allocating a new turn.
-    pub fn cancel_current_turn(&self) {
-        self.turn_token.lock().cancel();
-    }
-}
-
-pub struct MemoryAppState {
-    pub graph_version: Arc<AtomicU64>,
-    pub user_paused_ingestion: Arc<AtomicBool>,
-}
-
-impl Default for MemoryAppState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl MemoryAppState {
-    pub fn new() -> Self {
-        Self {
-            graph_version: Arc::new(AtomicU64::new(1)),
-            user_paused_ingestion: Arc::new(AtomicBool::new(false)),
-        }
-    }
-}
-
 pub struct AppState {
     pub engine: Mutex<Option<VoxEngine>>,
     pub realtime_engine: Mutex<Option<RealtimeActor>>,
@@ -335,35 +151,6 @@ pub struct AppState {
     pub event_tx: parking_lot::Mutex<Option<mpsc::Sender<VoxEvent>>>,
     pub pipeline_accumulator: Arc<parking_lot::Mutex<TurnAccumulator>>,
     pub db: Arc<Connection>,
-}
-
-/// Telemetry handles and health atomics bundled for AppState and monitoring workers.
-#[derive(Clone)]
-pub struct TelemetryState {
-    pub telemetry_tx: crossbeam_channel::Sender<TelemetryEvent>,
-    pub latest_energy: Arc<AtomicU32>,
-    pub latest_vad_prob: Arc<AtomicU32>,
-    pub latest_low: Arc<AtomicU32>,
-    pub latest_mid: Arc<AtomicU32>,
-    pub latest_high: Arc<AtomicU32>,
-    pub latest_playback_energy: Arc<AtomicU32>,
-    pub latest_playback_low: Arc<AtomicU32>,
-    pub latest_playback_mid: Arc<AtomicU32>,
-    pub latest_playback_high: Arc<AtomicU32>,
-    pub latest_sys_cpu: Arc<AtomicU32>,
-    pub latest_sys_ram: Arc<AtomicU32>,
-    pub latest_vox_cpu: Arc<AtomicU32>,
-    pub latest_vox_ram: Arc<AtomicU32>,
-    pub latest_stt_ms: Arc<AtomicU32>,
-    pub latest_ttft_ms: Arc<AtomicU32>,
-    pub latest_voice_latency_ms: Arc<AtomicU32>,
-    pub latest_threads: Arc<AtomicU32>,
-    pub latest_tts_rtf: Arc<AtomicU32>,
-    pub latest_playback_start_ms: Arc<AtomicU32>,
-    pub latest_persistence_rate: Arc<AtomicU32>,
-    pub is_db_healthy: Arc<AtomicBool>,
-    pub is_private_mode: Arc<AtomicBool>,
-    pub dropped_telemetry_events: Arc<AtomicU64>,
 }
 
 impl AppState {

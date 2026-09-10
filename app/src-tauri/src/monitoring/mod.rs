@@ -27,3 +27,5 @@ pub use profiler::{
     collect_profiler_snapshot, persist_memory_profile_event, MemoryProfileLogEvent,
     ProcessMemoryEntry, ProfilerSnapshot,
 };
+pub use runtime_state::{MonitoringState, TelemetryState};
+

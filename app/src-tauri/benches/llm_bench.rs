@@ -18,7 +18,7 @@ use common::{
     reporting::{generate_run_id, save_json_report, BenchmarkSystemInfo},
 };
 use vox_lib::{
-    core::constants::SYSTEM_PROMPT_MODULAR,
+    core::defaults::DEFAULT_SYSTEM_PROMPT_MODULAR,
     services::llm::{embedded::EmbeddedProvider, QWEN_MODEL_DIR, QWEN_MODEL_FILE},
 };
 
@@ -69,7 +69,7 @@ struct CliArgs {
     bench: bool,
 }
 
-const BENCH_SYSTEM_PROMPT: &str = SYSTEM_PROMPT_MODULAR;
+const BENCH_SYSTEM_PROMPT: &str = DEFAULT_SYSTEM_PROMPT_MODULAR;
 
 fn resolve_model_path(rel_dir: &str, filename: &str) -> PathBuf {
     let home = dirs::home_dir().expect("Unable to resolve user home directory");
