@@ -8,24 +8,22 @@ use turso::Connection;
 
 use crate::{
     core::{
-        engine::VoxEngine,
         events::VoxEvent,
-        settings::VoxSettings,
+        settings::{PipelineMode, VoxSettings},
     },
-    monitoring::runtime_state::{MonitoringState, TelemetryState},
+    monitoring::snapshots::MonitoringState,
     persistence::PersistenceEvent,
-    pipeline::{assistant::accumulator::TurnAccumulator, PipelineAtomics},
+    pipeline::assistant::accumulator::TurnAccumulator,
     services::{
         harness::ConversationManager,
         llm::LlmProvider,
-        memory::MemoryAppState,
         realtime::RealtimeActor,
     },
     setup::{manifest::VoxManifest, model_manager::ModelManager},
 };
 
 pub use crate::core::engine::VoxEngine;
-pub use crate::monitoring::runtime_state::TelemetryState;
+pub use crate::monitoring::telemetry::TelemetryState;
 pub use crate::pipeline::PipelineAtomics;
 pub use crate::services::memory::MemoryAppState;
 
@@ -197,6 +195,15 @@ impl AppState {
             event_tx: parking_lot::Mutex::new(None),
             pipeline_accumulator: Arc::new(parking_lot::Mutex::new(TurnAccumulator::new())),
             db,
+        }
+    }
+
+    /// Dynamically resolves the base system prompt according to active pipeline mode.
+    pub fn resolve_base_prompt(&self) -> String {
+        let settings = self.settings.read().unwrap_or_else(|p| p.into_inner());
+        match settings.interaction.pipeline_mode {
+            PipelineMode::Modular => settings.persona.modular_prompt.clone(),
+            PipelineMode::Realtime => settings.persona.realtime_prompt.clone(),
         }
     }
 }

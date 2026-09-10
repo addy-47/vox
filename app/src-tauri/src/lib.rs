@@ -43,7 +43,7 @@ use crate::{
     },
     ipc::{
         audio::list_audio_devices,
-        history::{
+        persistence::{
             continue_session, create_session, delete_session, get_sessions, get_transcript_history,
             get_turns, update_session,
         },
@@ -80,10 +80,11 @@ use crate::{
         },
     },
     monitoring::{
-        aggregator::{TelemetryAggregator, TelemetryAggregatorHandles},
-        collector::spawn_monitoring_collector,
-        system_monitor::spawn_system_monitor,
-        telemetry_emitter::spawn_telemetry_emitter,
+        snapshots::spawn_monitoring_collector,
+        telemetry::{
+            spawn_system_monitor, spawn_telemetry_emitter, TelemetryAggregator,
+            TelemetryAggregatorHandles,
+        },
     },
     persistence::{db::TOKIO_HANDLE, worker::spawn_persistence_worker, PersistenceEvent},
     services::{

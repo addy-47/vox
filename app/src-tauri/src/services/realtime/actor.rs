@@ -183,11 +183,6 @@ impl RealtimeActor {
         log::info!("[RealtimeActor] Realtime voice actor stopped.");
     }
 
-    /// Submits microphone audio PCM samples to the capture bridge for continuous streaming.
-    pub fn push_audio(&self, pcm: &[i16]) {
-        self.audio_bridge.send_pcm(pcm);
-    }
-
     /// Returns the active audio input channel sender.
     pub fn get_audio_sender(&self) -> Option<tokio::sync::mpsc::Sender<Vec<i16>>> {
         self.audio_bridge.get_sender()

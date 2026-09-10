@@ -102,25 +102,6 @@ impl ConversationManager {
         self.buffer.kv_synced_index = 0;
     }
 
-    /// Sets identity facts by formatting as markdown bullets into personal memory.
-    pub fn set_identity_facts(
-        &mut self,
-        identity_facts: Vec<String>,
-        context_window: usize,
-        max_context_share: f32,
-    ) {
-        if identity_facts.is_empty() {
-            self.set_personal_memory(None, context_window, max_context_share);
-        } else {
-            let formatted = identity_facts
-                .into_iter()
-                .map(|f| format!("- {}", f))
-                .collect::<Vec<_>>()
-                .join("\n");
-            self.set_personal_memory(Some(formatted), context_window, max_context_share);
-        }
-    }
-
     /// Synchronously restores session continuation context into working memory without async I/O.
     pub fn restore_session_continuation(
         &mut self,

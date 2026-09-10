@@ -139,25 +139,6 @@ pub fn refresh_tray_menu(app: &AppHandle<tauri::Wry>) {
     }
 }
 
-/// Configures the tray window with standard HUD settings: frameless, always-on-top, etc.
-pub fn setup_tray_window<R: tauri::Runtime>(window: &WebviewWindow<R>) {
-    if let Err(e) = window.set_decorations(false) {
-        log::debug!("[Tray] Failed to set window decorations: {}", e);
-    }
-    if let Err(e) = window.set_always_on_top(true) {
-        log::debug!("[Tray] Failed to set window always on top: {}", e);
-    }
-    if let Err(e) = window.set_shadow(false) {
-        log::debug!("[Tray] Failed to set window shadow: {}", e);
-    }
-    if let Err(e) = window.set_skip_taskbar(true) {
-        log::debug!("[Tray] Failed to set window skip taskbar: {}", e);
-    }
-    if let Err(e) = window.set_resizable(false) {
-        log::debug!("[Tray] Failed to set window resizable: {}", e);
-    }
-}
-
 /// Positions the tray window at the top-right of the screen.
 ///
 /// On Linux, this triggers the "virtual layer" setup for click-through support.

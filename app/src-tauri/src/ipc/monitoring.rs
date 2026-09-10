@@ -8,8 +8,8 @@ use crate::{
         state::{AppState, AppWindow},
     },
     monitoring::{
-        collect_profiler_snapshot, persist_memory_profile_event, snapshot::RuntimeSnapshot,
-        MemoryProfileLogEvent, ProfilerSnapshot,
+        collect_profiler_snapshot, persist_memory_profile_event, MemoryProfileLogEvent,
+        ProfilerSnapshot, RuntimeSnapshot,
     },
 };
 

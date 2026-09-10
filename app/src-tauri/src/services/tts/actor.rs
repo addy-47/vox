@@ -32,6 +32,8 @@ use crate::{
 pub enum TtsCommand {
     Generate { turn_id: u32, text: String },
     SetVoice(i32),
+    SetSpeed(f32),
+    SetQualitySteps(u32),
     Shutdown,
 }
 
@@ -58,12 +60,13 @@ pub fn spawn_tts_worker(
                 log::debug!("[TTS Worker] Processing TTS chunk: '{}'", text);
                 let text_clone = text.clone();
                 let cancel_flag = handles.cancel_flag.clone();
-                let playback = handles.playback.clone();
                 let event_tx = handles.event_tx.clone();
+                let playback = Arc::clone(&handles.playback);
                 let telemetry_rtf = handles.telemetry_rtf.clone();
+                let provider_ref = AssertUnwindSafe(&*provider);
 
                 let res = catch_unwind(AssertUnwindSafe(|| {
-                    provider.synthesize_chunk(
+                    provider_ref.synthesize_chunk(
                         &text_clone,
                         turn_id,
                         cancel_flag,
@@ -117,6 +120,14 @@ pub fn spawn_tts_worker(
             TtsCommand::SetVoice(voice) => {
                 log::info!("[TTS Worker] Setting active speaker voice to: {}", voice);
                 provider.set_voice(voice);
+            }
+            TtsCommand::SetSpeed(speed) => {
+                log::info!("[TTS Worker] Setting synthesis speed to: {}", speed);
+                provider.set_speed(speed);
+            }
+            TtsCommand::SetQualitySteps(steps) => {
+                log::info!("[TTS Worker] Setting synthesis quality steps to: {}", steps);
+                provider.set_quality_steps(steps);
             }
             TtsCommand::Shutdown => {
                 log::info!("[TTS Worker] Shutdown command received. Exiting loop.");

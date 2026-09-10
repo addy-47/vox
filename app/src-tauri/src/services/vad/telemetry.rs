@@ -6,7 +6,7 @@ use std::sync::{
 use crossbeam_channel::Sender;
 
 use super::utils::calculate_rms;
-use crate::{monitoring::aggregator::TelemetryEvent, utils::audio_filters::FilterBank};
+use crate::{monitoring::TelemetryEvent, utils::audio_filters::FilterBank};
 
 /// Calculates 3-band audio energy telemetry and dispatches to the monitoring channel.
 /// Returns the raw RMS energy value for downstream threshold gating.
