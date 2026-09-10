@@ -15,7 +15,7 @@ pub use session::{create_realtime_provider, purge_session_cache};
 
 use crate::core::settings::InteractionMode;
 pub use crate::core::{
-    events::{Actionability, PipelineError, PipelineImpact},
+    error::{Actionability, PipelineError, PipelineImpact},
     settings::RealtimeProviderKind,
 };
 

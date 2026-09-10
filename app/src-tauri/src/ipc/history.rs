@@ -16,6 +16,7 @@ use crate::{
         fetch_session_by_id, fetch_sessions, fetch_turns, update_session_metadata,
     },
     pipeline::{init_new_session, resume_session},
+    utils::paths,
 };
 
 /// Result payload for continuing an existing session.
@@ -25,13 +26,44 @@ pub struct ContinueSessionResult {
     pub turns: Vec<TurnRow>,
 }
 
-/// Retrieves the current in-memory transcript history (tray ephemeral buffer).
+/// Retrieves the cached dictation transcript history (tray ephemeral buffer).
 #[tauri::command]
 pub async fn get_transcript_history(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<String>, VoxIpcError> {
-    let history = state.pipeline.transcript_history.lock();
-    Ok(history.iter().cloned().collect())
+    let file_path = paths::cache_dir().join("dictation_history.jsonl");
+    if !file_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = match tokio::fs::read_to_string(&file_path).await {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("[Ipc::History] Failed to read dictation history cache: {}", e);
+            return Ok(Vec::new());
+        }
+    };
+
+    let history: Vec<String> = content
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                val.get("text")
+                    .and_then(|t| t.as_str())
+                    .map(ToString::to_string)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    *state.pipeline.transcript_history.lock() = history.iter().cloned().collect();
+
+    Ok(history)
 }
 
 /// Initializes a fresh conversational session, resetting working memory.

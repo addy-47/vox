@@ -13,10 +13,8 @@ use ringbuf::{traits::*, HeapCons};
 use super::{
     sink::PlaybackStreamContext, PlaybackEngineHandles, PlaybackTelemetryHandles,
     INGESTION_BUFFER_CAPACITY_SAMPLES, INGESTION_OVERFLOW_LOG_INTERVAL, PLAYBACK_CHANNELS,
-    PLAYBACK_SAMPLE_RATE,
+    PLAYBACK_SAMPLE_RATE, SAMPLE_RATE,
 };
-use crate::core::constants::SAMPLE_RATE;
-
 /// Manages the low-level CPAL hardware audio stream for microphone capture.
 pub struct AudioStream {
     _stream: Option<cpal::Stream>,

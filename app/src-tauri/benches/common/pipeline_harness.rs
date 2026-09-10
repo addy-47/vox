@@ -34,6 +34,8 @@ use vox_lib::{
     },
 };
 
+const BENCH_DB_FILENAME: &str = "bench.db";
+
 /// RAII guard to initialize VoxPaths with an isolated temporary root directory and benchmark fixture database.
 pub struct BenchPathsGuard {
     _dir: tempfile::TempDir,
@@ -55,7 +57,7 @@ impl BenchPathsGuard {
         ];
         for c in &candidates {
             if c.exists() {
-                let target_db = temp_path.join(vox_lib::core::constants::DB_FILENAME);
+                let target_db = temp_path.join(BENCH_DB_FILENAME);
                 let _ = std::fs::copy(c, &target_db);
                 break;
             }

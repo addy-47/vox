@@ -4,9 +4,8 @@ use tauri::State;
 
 use crate::{
     core::{
-        constants::{WINDOW_MAIN, WINDOW_TRAY, WINDOW_WIZARD},
         error::VoxIpcError,
-        state::AppState,
+        state::{AppState, AppWindow},
     },
     monitoring::{
         collect_profiler_snapshot, persist_memory_profile_event, snapshot::RuntimeSnapshot,
@@ -28,9 +27,9 @@ pub async fn get_profiler_snapshot<R: tauri::Runtime>(
 ) -> Result<ProfilerSnapshot, VoxIpcError> {
     use tauri::Manager;
 
-    let has_main = app.get_webview_window(WINDOW_MAIN).is_some();
-    let has_tray = app.get_webview_window(WINDOW_TRAY).is_some();
-    let has_wizard = app.get_webview_window(WINDOW_WIZARD).is_some();
+    let has_main = app.get_webview_window(AppWindow::Main.as_str()).is_some();
+    let has_tray = app.get_webview_window(AppWindow::Tray.as_str()).is_some();
+    let has_wizard = app.get_webview_window(AppWindow::Wizard.as_str()).is_some();
 
     tokio::task::spawn_blocking(move || collect_profiler_snapshot(has_main, has_tray, has_wizard))
         .await

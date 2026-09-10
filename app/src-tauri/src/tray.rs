@@ -11,24 +11,25 @@ use tauri::{
 };
 
 use crate::core::{
-    constants::{
-        TRAY_HUD_HEIGHT_LOGICAL, TRAY_HUD_WIDTH_LOGICAL, TRAY_PADDING_TOP_VH,
-        TRAY_PADDING_X_LOGICAL, WINDOW_TRAY,
-    },
     settings::DictationOutputMode,
-    state::AppState,
+    state::{AppState, AppWindow},
 };
+
+const TRAY_HUD_WIDTH_LOGICAL: f64 = 380.0;
+const TRAY_HUD_HEIGHT_LOGICAL: f64 = 250.0;
+const TRAY_PADDING_X_LOGICAL: f64 = 55.0;
+const TRAY_PADDING_TOP_VH: f64 = 0.15;
 
 /// Ensures the "tray" WebviewWindow exists, lazily constructing it if it was closed to save RAM.
 pub fn ensure_tray_window<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<WebviewWindow<R>, String> {
-    if let Some(existing) = app.get_webview_window(WINDOW_TRAY) {
+    if let Some(existing) = app.get_webview_window(AppWindow::Tray.as_str()) {
         return Ok(existing);
     }
 
     log::info!("[Tray] Lazily constructing 'tray' HUD webview window...");
-    let window = WebviewWindowBuilder::new(app, WINDOW_TRAY, WebviewUrl::App("/tray".into()))
+    let window = WebviewWindowBuilder::new(app, AppWindow::Tray.as_str(), WebviewUrl::App("/tray".into()))
         .title("vox-live")
         .inner_size(420.0, 250.0)
         .transparent(true)
@@ -36,13 +37,10 @@ pub fn ensure_tray_window<R: tauri::Runtime>(
         .always_on_top(true)
         .resizable(false)
         .visible(false)
-        .shadow(false)
-        .zoom_hotkeys_enabled(false)
         .skip_taskbar(true)
         .build()
-        .map_err(|e| format!("Failed to create tray window: {}", e))?;
+        .map_err(|e| format!("Failed to build tray window: {}", e))?;
 
-    setup_tray_window(&window);
     let win_clone = window.clone();
     tauri::async_runtime::spawn(async move {
         position_tray_window(&win_clone).await;
@@ -53,7 +51,7 @@ pub fn ensure_tray_window<R: tauri::Runtime>(
 
 /// Safely closes and destroys the tray window to reclaim memory when Tray mode is inactive.
 pub fn destroy_tray_window<R: tauri::Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window(WINDOW_TRAY) {
+    if let Some(window) = app.get_webview_window(AppWindow::Tray.as_str()) {
         log::info!("[Tray] Destroying 'tray' HUD webview window to save RAM.");
         if let Err(e) = window.close() {
             log::warn!("[Tray] Failed to close tray window: {}", e);
@@ -175,7 +173,7 @@ pub async fn position_tray_window<R: tauri::Runtime>(window: &WebviewWindow<R>) 
         let win_clone = window.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(Duration::from_millis(200)).await;
-            setup_linux_virtual_layer(win_clone.app_handle(), WINDOW_TRAY);
+            setup_linux_virtual_layer(win_clone.app_handle(), AppWindow::Tray.as_str());
         });
     }
 

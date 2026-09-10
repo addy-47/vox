@@ -64,7 +64,7 @@ export const SETTINGS_SCOPE_KEYS: Record<SettingsScope, readonly string[]> = {
   ],
   interaction: ["mode", "auto_sleep_timeout", "pipeline_mode"],
   dictation: ["enabled", "interaction_mode", "hotkey", "output_mode"],
-  history: ["private_mode", "tray_history_limit", "auto_compaction"],
+  history: ["private_mode", "auto_compaction"],
   memory: [
     "context_retrieval_enabled",
     "pipeline_processing_enabled",

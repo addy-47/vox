@@ -1,15 +1,20 @@
+use std::io::Write;
+
 use tauri::AppHandle;
 
 use crate::{
     core::{
         events::{emit_ipc_to, IpcEvent, ToastLevel, TranscriptPayload},
         settings::DictationOutputMode,
-        state::{AppState, InteractionOwner, InteractionState},
+        state::{AppState, AppWindow, InteractionOwner, InteractionState},
     },
-    pipeline::{dictation::transition_dictation, WINDOW_TRAY},
+    pipeline::dictation::transition_dictation,
     services::{dictation::output_router::route_transcript, translit::transliterate_if_hi},
     toast::show_toast,
+    utils::paths,
 };
+
+const DICTATION_HISTORY_FILENAME: &str = "dictation_history.jsonl";
 
 /// Routes finalized transcript directly to OS input simulation without invoking LLM or TTS.
 pub fn on_transcript_final<R: tauri::Runtime>(
@@ -51,6 +56,12 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         .unwrap_or(DictationOutputMode::Paste);
 
     *state.dictation_last_transcript.lock() = Some(processed_text.clone());
+    state
+        .pipeline
+        .transcript_history
+        .lock()
+        .push_back(processed_text.clone());
+    append_to_cache_history(&processed_text);
 
     let app_handle = app.clone();
     let text_clone = processed_text.clone();
@@ -67,7 +78,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
 
     if let Err(e) = emit_ipc_to(
         app,
-        WINDOW_TRAY,
+        AppWindow::Tray,
         IpcEvent::TranscriptFinal(TranscriptPayload {
             turn_id,
             text: processed_text,
@@ -78,5 +89,30 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             "[Dictation::Transcript] Failed to emit transcript_final: {}",
             e
         );
+    }
+}
+
+/// Appends a finalized dictation transcript record into the JSONL cache.
+fn append_to_cache_history(text: &str) {
+    let cache_dir = paths::cache_dir();
+    let file_path = cache_dir.join(DICTATION_HISTORY_FILENAME);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let entry = serde_json::json!({
+        "timestamp": now,
+        "text": text,
+    });
+
+    if let Ok(json_line) = serde_json::to_string(&entry) {
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&file_path)
+        {
+            let _ = writeln!(file, "{}", json_line);
+        }
     }
 }

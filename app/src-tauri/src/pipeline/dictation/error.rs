@@ -2,7 +2,8 @@ use tauri::AppHandle;
 
 use crate::{
     core::{
-        events::{PipelineError, PipelineImpact, ToastLevel},
+        error::{PipelineError, PipelineImpact},
+        events::ToastLevel,
         state::{AppState, InteractionState},
     },
     pipeline::dictation::transition_dictation,

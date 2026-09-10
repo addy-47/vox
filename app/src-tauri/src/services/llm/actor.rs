@@ -13,9 +13,9 @@ use super::{
 };
 use crate::{
     core::{
+        error::{Actionability,PipelineImpact,PipelineError},
         events::{
-            emit_ipc_to, Actionability, IpcEvent, LlmTokenPayload, PipelineError, PipelineImpact,
-            VoxEvent,
+            emit_ipc_to,  IpcEvent, LlmTokenPayload, VoxEvent,
         },
         settings::{LlmProviderConfig, LlmSettings, VoxSettings},
         state::InteractionOwner,

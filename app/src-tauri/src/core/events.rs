@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
-// Re-export subsystem events for centralized SSOT registry discovery (2. use/imports)
-pub use crate::monitoring::aggregator::TelemetryEvent;
-pub use crate::persistence::{personal_memory::PersonalMemoryRecord, PersistenceEvent};
-use crate::{core::state::InteractionOwner, setup::model_manager::ModelSetupStatus};
+use crate::{
+    core::error::PipelineError,
+    core::state::{AppWindow, InteractionOwner},
+    persistence::PersonalMemoryRecord,
+    setup::model_manager::ModelSetupStatus,
+};
 
 #[derive(Debug, Clone)]
 pub enum VoxEvent {
@@ -24,36 +26,6 @@ pub enum VoxEvent {
     Cancelled { turn_id: u32 },
     Error(PipelineError),
     Shutdown,
-}
-
-/// Unified error payload for pipeline subsystem errors.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PipelineError {
-    pub turn_id: u32,
-    pub message: String,
-    pub source: String,
-    pub impact: PipelineImpact,
-    pub actionability: Actionability,
-}
-
-/// Execution and state machine impact of an error on the pipeline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PipelineImpact {
-    /// Pipeline does not stop; turn completes with degraded fidelity. State transition: None.
-    Degraded,
-    /// Active turn fails cleanly; resets state directly to Ready without locking into Error.
-    TurnAborted,
-    /// Unrecoverable failure; transitions state to Error.
-    SessionHalted,
-}
-
-/// Degree of user transparency and actionability for an error.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Actionability {
-    /// Transient/internal glitch; ephemeral toast only.
-    None,
-    /// Requires or warrants user action; ephemeral toast AND persistent notification.
-    Actionable { category: String, hint: String },
 }
 
 /// Unified payload emitted on `state_changed` — SSOT for all pipeline + dictation state transitions.
@@ -195,27 +167,28 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
     }
 }
 
-/// Emits a canonical IPC event targeted to a specific webview window (e.g. "main" or "tray").
+/// Emits a canonical IPC event targeted to a specific webview window (e.g. AppWindow::Main or AppWindow::Tray).
 pub fn emit_ipc_to<R: Runtime>(
     app: &AppHandle<R>,
-    target: &str,
+    target: AppWindow,
     event: IpcEvent,
 ) -> Result<(), tauri::Error> {
     let name = event.name();
+    let target_str = target.as_str();
     match event {
-        IpcEvent::StateChanged(payload) => app.emit_to(target, name, payload),
-        IpcEvent::TranscriptPartial(payload) => app.emit_to(target, name, payload),
-        IpcEvent::TranscriptFinal(payload) => app.emit_to(target, name, payload),
-        IpcEvent::LlmToken(payload) => app.emit_to(target, name, payload),
-        IpcEvent::ModelProgress(payload) => app.emit_to(target, name, payload),
-        IpcEvent::Telemetry(payload) => app.emit_to(target, name, payload),
-        IpcEvent::SystemStats(payload) => app.emit_to(target, name, payload),
-        IpcEvent::SettingsUpdated => app.emit_to(target, name, ()),
-        IpcEvent::ToggleTray => app.emit_to(target, name, ()),
-        IpcEvent::ShowToast(payload) => app.emit_to(target, name, payload),
-        IpcEvent::NotificationCreated(payload) => app.emit_to(target, name, payload),
-        IpcEvent::NotificationUpdated(payload) => app.emit_to(target, name, payload),
-        IpcEvent::PersonalMemoryUpdated(payload) => app.emit_to(target, name, payload),
-        IpcEvent::SessionsChanged => app.emit_to(target, name, ()),
+        IpcEvent::StateChanged(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::TranscriptPartial(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::TranscriptFinal(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::LlmToken(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::ModelProgress(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::Telemetry(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::SystemStats(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::SettingsUpdated => app.emit_to(target_str, name, ()),
+        IpcEvent::ToggleTray => app.emit_to(target_str, name, ()),
+        IpcEvent::ShowToast(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::NotificationCreated(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::NotificationUpdated(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::PersonalMemoryUpdated(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::SessionsChanged => app.emit_to(target_str, name, ()),
     }
 }

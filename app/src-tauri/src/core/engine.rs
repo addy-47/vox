@@ -12,7 +12,6 @@ use tauri::AppHandle;
 
 use crate::{
     core::{
-        constants::RING_BUFFER_SIZE,
         events::{emit_ipc_to, IpcEvent, TranscriptPayload, VoxEvent},
         settings::{SttProviderConfig, TtsActiveProvider, VadBackendOption},
         state::{AppState, InteractionOwner, InteractionState, VoxEngine},
@@ -47,6 +46,8 @@ use crate::{
     setup::manifest::VoxManifest,
     utils::paths,
 };
+
+const RING_BUFFER_SIZE: usize = 16000 * 4; // 4s buffer
 
 /// Ensures the persistence background worker is active and holds a valid channel.
 fn ensure_persistence_worker(state: &AppState) {

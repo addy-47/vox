@@ -6,6 +6,7 @@ use std::sync::{
 
 use crate::core::events::VoxEvent;
 
+pub const SAMPLE_RATE: u32 = 16000;
 pub const CLONE_SAMPLE_RATE: u32 = 24_000;
 pub const PLAYBACK_SAMPLE_RATE: u32 = 48_000;
 pub const PLAYBACK_CHANNELS: u16 = 2;

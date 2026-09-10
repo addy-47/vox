@@ -5,9 +5,9 @@ use turso::Connection;
 
 use crate::{
     core::{
+        error::{Actionability, PipelineError, PipelineImpact},
         events::{
-            emit_ipc_to, Actionability, IpcEvent, PipelineError, PipelineImpact, ToastLevel,
-            TranscriptPayload, VoxEvent,
+            emit_ipc_to, IpcEvent, ToastLevel, TranscriptPayload, VoxEvent,
         },
         settings::{LlmActiveProvider, PipelineMode},
         state::{AppState, InteractionState},
