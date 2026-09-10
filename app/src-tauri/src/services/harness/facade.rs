@@ -14,8 +14,10 @@ use super::{
 use crate::{
     core::{
         constants::{TRANSITION_MESSAGES_EN, TRANSITION_MESSAGES_HI},
-        error::MemoryError,
-        events::{Actionability, PipelineError, PipelineImpact, VoxEvent},
+        error::{
+            Actionability, MemoryError, PipelineError, PipelineImpact,
+        },
+        events::VoxEvent,
         settings::{LlmSettings, MemorySettings, PipelineMode},
         state::{AppState, InteractionState},
     },

@@ -8,11 +8,10 @@ use tauri::{AppHandle, Runtime};
 
 use crate::{
     core::{
-        engine::ensure_modular_workers_sync,
+        engine::{ensure_modular_workers_sync, start_audio_engine},
         error::VoxIpcError,
         events::VoxEvent,
         settings::PipelineMode,
-        start_audio_engine,
         state::{AppState, InteractionOwner, InteractionState},
     },
     pipeline::{init_new_session_sync, transition, RoutingContext},

@@ -7,8 +7,6 @@ use std::{
 
 use parking_lot::RwLock;
 
-use crate::core::constants::*;
-
 /// Fully-resolved filesystem layout for the Vox application.
 #[derive(Clone)]
 pub struct VoxPaths {
@@ -23,6 +21,11 @@ pub struct VoxPaths {
 }
 
 static PATHS: RwLock<Option<VoxPaths>> = RwLock::new(None);
+
+const DB_FILENAME: &str = "vox.db";
+const SETTINGS_FILENAME: &str = "settings.json";
+const LOG_DIRNAME: &str = "logs";
+const MODELS_DIRNAME: &str = "models";
 
 /// Initialize the path singleton. Must be called ONCE at startup,
 /// before any call to `paths::get()`.

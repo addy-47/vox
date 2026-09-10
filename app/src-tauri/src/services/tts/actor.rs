@@ -12,7 +12,8 @@ use turso::Connection;
 
 use crate::{
     core::{
-        events::{Actionability, PipelineError, PipelineImpact, VoxEvent},
+        error::{Actionability, PipelineError, PipelineImpact},
+        events::VoxEvent,
         settings::{TtsProviderConfig, VoxSettings},
     },
     persistence::voices::get_voice,

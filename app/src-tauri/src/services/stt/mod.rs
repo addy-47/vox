@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize};
 pub use stitcher::stitch_transcripts;
 
 use crate::core::settings::SttProviderConfig;
-pub use crate::core::{constants::SAMPLE_RATE, error::SttError};
+pub use crate::{
+    core::error::SttError,
+    services::audio::SAMPLE_RATE,
+};
 
 pub const QWEN_ASR_MODEL_DIR: &str = "stt/qwen3-asr";
 pub const NEMOTRON_MODEL_DIR: &str = "stt/nemotron-3.5";

@@ -7,7 +7,8 @@ use tauri::AppHandle;
 
 use crate::{
     core::{
-        events::{emit_ipc, Actionability, IpcEvent, PipelineError, PipelineImpact, ToastLevel},
+        error::{Actionability,PipelineError,PipelineImpact},
+        events::{emit_ipc, IpcEvent, ToastLevel},
         state::{AppState, InteractionState},
     },
     persistence::notifications::{create_notification, NewNotification},

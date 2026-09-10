@@ -116,21 +116,45 @@ Manages the single evolving Personal Memory markdown document.
 ### 2.4 Notifications Domain (`ipc/notifications.rs`)
 Manages actionable system notifications and historical alerts (governed by `notifications-spec.md`).
 
+#### Parameter Types: `NotificationFilter`
+```rust
+pub struct NotificationFilter {
+    pub ids: Option<Vec<String>>,
+    pub group_key: Option<String>,
+    pub category: Option<String>,
+}
+```
+
 #### `get_notifications()`
 - **Purpose**: Returns all active (non-dismissed) notifications ordered newest first.
-- **Behavior**: Queries `notifications WHERE status != 'dismissed' ORDER BY created_at DESC`. Returns full record with `group_key`, `category`, `severity`, `title`, `message`, `status` (`'unread'` or `'read'`), `session_id`, `metadata`, `created_at`, and `updated_at`.
+- **Behavior**: Queries `notifications WHERE status != 'dismissed' ORDER BY created_at DESC`. Returns full records with `group_key`, `category`, `severity`, `title`, `message`, `status` (`'unread'` or `'read'`), `session_id`, `metadata`, `created_at`, and `updated_at`.
 
-#### `mark_notifications_read(ids: Option<Vec<String>>)`
-- **Purpose**: Marks specified notifications, or all unread notifications if omitted or empty, as read.
-- **Behavior**: Updates target rows `SET status = 'read', updated_at = ? WHERE status = 'unread'`. Clears unread badge counts in frontend.
+#### `mark_notifications_read(filter: Option<NotificationFilter>)`
+- **Purpose**: Marks matching unread notifications as read.
+- **Behavior**: Evaluates filter:
+  - If `ids` provided: updates target IDs.
+  - Else if `group_key` provided: updates all matching that correlation group.
+  - Else if `category` provided: updates all matching that category.
+  - Else (omitted or empty): updates all rows `WHERE status = 'unread'`.
+  Updates `SET status = 'read', updated_at = ? WHERE status = 'unread'`. Clears unread badge counts in frontend.
 
-#### `dismiss_notifications(ids: Option<Vec<String>>)`
-- **Purpose**: Dismisses specified notifications, or all active notifications if omitted or empty, from the drawer.
-- **Behavior**: Updates target rows `SET status = 'dismissed', updated_at = ? WHERE status != 'dismissed'`.
+#### `dismiss_notifications(filter: Option<NotificationFilter>)`
+- **Purpose**: Dismisses matching active notifications from the drawer.
+- **Behavior**: Evaluates filter:
+  - If `ids` provided: dismisses target IDs.
+  - Else if `group_key` provided: dismisses all matching that correlation group.
+  - Else if `category` provided: dismisses all matching that category.
+  - Else (omitted or empty): dismisses all rows `WHERE status != 'dismissed'`.
+  Updates `SET status = 'dismissed', updated_at = ?`.
 
-#### `trigger_session_compaction(sessionId: i64)`
-- **Purpose**: Executes manual compaction from a session notification card action.
-- **Behavior**: Spawns compaction in the background (`CompactionCoordinator::run_compaction_slice(sessionId, trigger_kind="manual")`). Card status remains user-governed; transient compaction execution is signaled via task events or store state.
+#### `execute_notification_action(id: String, action: Option<String>)`
+- **Purpose**: Polymorphic executor for actionable notification cards.
+- **Behavior**: Loads notification record by `id`. Inspects its `category`, `session_id`, and `metadata`. Dispatches execution to the corresponding backend subsystem:
+  - `session_compaction`: Dispatches `CompactionCoordinator::run_compaction_slice(sessionId, trigger_kind="manual")`.
+  - `memory_consolidation`: Dispatches `run_consolidation_once()`.
+  - `pipeline_error`: Dispatches error recovery / retry handler.
+  Returns `Ok(())` on successful task launch. Does not mutate the notification's card attention status (`unread`/`read`).
+
 
 
 ---

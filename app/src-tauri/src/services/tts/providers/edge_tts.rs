@@ -19,7 +19,10 @@ use tokio_tungstenite::{
 
 use super::{TtsProvider, TtsProviderKind};
 use crate::{
-    core::events::{Actionability, PipelineError, PipelineImpact, VoxEvent},
+    core::{
+        error::{Actionability, PipelineError, PipelineImpact},
+        events::VoxEvent,
+    },
     services::{
         audio::{decode::decode_bytes_to_24khz_mono, PlaybackEngine},
         tts::{

@@ -5,9 +5,8 @@ use tokio::task::JoinHandle;
 
 use crate::{
     core::{
-        events::{
-            emit_ipc_to, IpcEvent, LlmTokenPayload, PipelineError, TranscriptPayload, VoxEvent,
-        },
+        error::PipelineError,
+        events::{emit_ipc_to, IpcEvent, LlmTokenPayload, TranscriptPayload, VoxEvent},
         settings::InteractionMode,
         state::InteractionOwner,
     },

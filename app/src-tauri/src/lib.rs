@@ -205,6 +205,14 @@ pub fn run() {
             paths::init();
             paths::ensure_dirs().ok();
 
+            // Clear ephemeral dictation history cache on boot
+            let dictation_cache = paths::cache_dir().join("dictation_history.jsonl");
+            if dictation_cache.exists() {
+                if let Err(e) = std::fs::remove_file(&dictation_cache) {
+                    log::warn!("[Bootstrap] Failed to clear ephemeral dictation cache: {}", e);
+                }
+            }
+
             // ── 0.1 Logging (must be initialized immediately after paths) ───────────
             let log_guard = logging::init(paths::get().logs.clone());
 
