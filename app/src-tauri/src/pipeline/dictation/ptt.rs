@@ -7,7 +7,7 @@ use tauri::AppHandle;
 
 use crate::{
     core::{
-        events::{Actionability, PipelineError, PipelineImpact},
+        error::{Actionability, PipelineError, PipelineImpact},
         state::{AppState, InteractionState},
     },
     pipeline::dictation::{error, transition_dictation},

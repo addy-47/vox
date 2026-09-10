@@ -5,15 +5,12 @@ pub mod transcript;
 
 use tauri::AppHandle;
 
-use crate::{
-    core::{
-        events::{emit_ipc_to, IpcEvent, StateChangedPayload, VoxEvent},
-        state::{AppState, InteractionOwner, InteractionState},
-    },
-    pipeline::WINDOW_TRAY,
+use crate::core::{
+    events::{emit_ipc_to, IpcEvent, StateChangedPayload, VoxEvent},
+    state::{AppState, AppWindow, InteractionOwner, InteractionState},
 };
 
-/// Helper function to atomically transition dictation state and emit StateChanged to WINDOW_TRAY.
+/// Helper function to atomically transition dictation state and emit StateChanged to AppWindow::Tray.
 pub fn transition_dictation<R: tauri::Runtime>(
     new_state: InteractionState,
     app: &AppHandle<R>,
@@ -41,7 +38,7 @@ pub fn transition_dictation<R: tauri::Runtime>(
         state: state_str.to_string(),
         turn_id,
     };
-    if let Err(e) = emit_ipc_to(app, WINDOW_TRAY, IpcEvent::StateChanged(payload)) {
+    if let Err(e) = emit_ipc_to(app, AppWindow::Tray, IpcEvent::StateChanged(payload)) {
         log::warn!("[Dictation] Failed to emit state_changed: {}", e);
     }
 }

@@ -283,7 +283,6 @@ export interface DictationSettings {
 
 export interface HistorySettings {
   private_mode: boolean;
-  tray_history_limit: number;
   auto_compaction: boolean;
 }
 

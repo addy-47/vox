@@ -15,9 +15,8 @@ use crate::{
             LlmRemoteConfig, SettingReloadPolicy, SttActiveProvider, SttCloudConfig,
             SttProviderConfig, TtsActiveProvider, TtsProviderConfig, VoxSettings,
         },
-        start_audio_engine,
+        engine::{start_audio_engine, stop_audio_engine},
         state::{AppState, InteractionOwner, InteractionState},
-        stop_audio_engine,
     },
     ipc::pipeline::{launch_engine, stop_engine},
     pipeline::dictation::transition_dictation,
@@ -818,12 +817,6 @@ fn apply_history_mutation(
         "private_mode" => {
             settings.history.private_mode =
                 value.as_bool().ok_or("private_mode must be a boolean")?;
-        }
-        "tray_history_limit" => {
-            settings.history.tray_history_limit = value
-                .as_u64()
-                .ok_or("tray_history_limit must be a positive integer")?
-                as u32;
         }
         _ => return Ok(false),
     }

@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager};
 use crate::{
     core::{
         events::{emit_ipc_to, IpcEvent, TelemetryData},
-        state::{AppState, InteractionOwner, InteractionState},
+        state::{AppState, AppWindow, InteractionOwner, InteractionState},
     },
     monitoring::TELEMETRY_EMITTER_INTERVAL,
 };
@@ -69,10 +69,10 @@ fn get_current_audio_levels(state: &AppState) -> (f32, f32, f32, f32) {
     }
 }
 
-fn get_target_window(state: &AppState) -> &'static str {
+fn get_target_window(state: &AppState) -> AppWindow {
     let owner_enum: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
     match owner_enum {
-        InteractionOwner::Assistant => "main",
-        InteractionOwner::Dictation => "tray",
+        InteractionOwner::Assistant => AppWindow::Main,
+        InteractionOwner::Dictation => AppWindow::Tray,
     }
 }

@@ -1,6 +1,37 @@
 use std::{io::Error, path::PathBuf};
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+/// Unified error payload for pipeline subsystem errors.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PipelineError {
+    pub turn_id: u32,
+    pub message: String,
+    pub source: String,
+    pub impact: PipelineImpact,
+    pub actionability: Actionability,
+}
+
+/// Execution and state machine impact of an error on the pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PipelineImpact {
+    /// Pipeline does not stop; turn completes with degraded fidelity. State transition: None.
+    Degraded,
+    /// Active turn fails cleanly; resets state directly to Ready without locking into Error.
+    TurnAborted,
+    /// Unrecoverable failure; transitions state to Error.
+    SessionHalted,
+}
+
+/// Degree of user transparency and actionability for an error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Actionability {
+    /// Transient/internal glitch; ephemeral toast only.
+    None,
+    /// Requires or warrants user action; ephemeral toast AND persistent notification.
+    Actionable { category: String, hint: String },
+}
 
 /// Master unified error hierarchy for the Vox application.
 #[derive(Error, Debug)]

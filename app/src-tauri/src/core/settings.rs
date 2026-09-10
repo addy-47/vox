@@ -16,7 +16,7 @@ use crate::{
             DEFAULT_DICTATION_ENABLED, DEFAULT_DICTATION_HOTKEY, DEFAULT_GEMINI_REALTIME_LANG,
             DEFAULT_GEMINI_REALTIME_MODEL, DEFAULT_GEMINI_REALTIME_TEMP,
             DEFAULT_GEMINI_REALTIME_VOICE, DEFAULT_HISTORY_AUTO_COMPACTION,
-            DEFAULT_HISTORY_PRIVATE_MODE, DEFAULT_HISTORY_TRAY_LIMIT, DEFAULT_LLM_CLOUD_BASE_URL,
+            DEFAULT_HISTORY_PRIVATE_MODE, DEFAULT_LLM_CLOUD_BASE_URL,
             DEFAULT_LLM_CLOUD_MODEL, DEFAULT_LLM_CLOUD_PROVIDER_NAME,
             DEFAULT_LLM_COMPACTION_TEMPERATURE, DEFAULT_LLM_CONTEXT_WINDOW,
             DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_MODEL, DEFAULT_LLM_SERVER_BASE_URL,
@@ -761,7 +761,6 @@ impl Default for DictationSettings {
 #[serde(default)]
 pub struct HistorySettings {
     pub private_mode: bool,
-    pub tray_history_limit: u32,
     pub auto_compaction: bool,
 }
 
@@ -769,7 +768,6 @@ impl Default for HistorySettings {
     fn default() -> Self {
         Self {
             private_mode: DEFAULT_HISTORY_PRIVATE_MODE,
-            tray_history_limit: DEFAULT_HISTORY_TRAY_LIMIT,
             auto_compaction: DEFAULT_HISTORY_AUTO_COMPACTION,
         }
     }
