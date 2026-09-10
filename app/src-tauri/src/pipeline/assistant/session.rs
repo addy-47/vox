@@ -44,10 +44,7 @@ fn start_modular_session<R: tauri::Runtime + 'static>(
         InteractionMode::PTT => VadOperationalMode::WindowedValidation,
     };
 
-    let prompt = {
-        let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
-        settings.persona.modular_prompt.clone()
-    };
+    let prompt = state.resolve_base_prompt();
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
@@ -215,13 +212,7 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
         }
     }
 
-    let prompt = {
-        let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
-        match ctx.pipeline_mode {
-            PipelineMode::Modular => settings.persona.modular_prompt.clone(),
-            PipelineMode::Realtime => settings.persona.realtime_prompt.clone(),
-        }
-    };
+    let prompt = state.resolve_base_prompt();
 
     init_new_session_sync(state, &prompt);
 

@@ -27,8 +27,7 @@ use crate::{
             QWEN_MODEL_DIR, QWEN_MODEL_FILE,
         },
         memory::{
-            compaction::run_compaction, ml::estimate_tokens, NARRATIVE_CHAIN_SOFT_CAP_SHARE,
-            SOFT_COMPACTION_DEBOUNCE_SECS,
+            compaction::run_compaction, ml::estimate_tokens, SOFT_COMPACTION_DEBOUNCE_SECS,
         },
         translit::is_devanagari,
         tts::TtsCommand,
@@ -215,15 +214,7 @@ pub async fn prepare_turn_context(
     }
 
     let conv_ctx = {
-        let mut cm = params.harness.lock();
-        let mut context_harness = super::accountant::ContextHarness::new(params.context_window);
-        context_harness.sync_tokens_from_buffer(&cm.buffer);
-
-        let soft_cap = ((context_harness.accountant.max_context_tokens() as f32)
-            * NARRATIVE_CHAIN_SOFT_CAP_SHARE) as usize;
-        let session_history = context_harness.build_session_history_xml(soft_cap);
-        let sys_prompt = cm.system_prompt().clone();
-        context_harness.consolidate_system_message(&mut cm.buffer, &sys_prompt, &session_history);
+        let cm = params.harness.lock();
 
         let kv_idx = if params.provider_kind == ProviderKind::Embedded {
             cm.buffer.kv_synced_index

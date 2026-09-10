@@ -96,9 +96,9 @@ The system adopts the standard desktop notification architecture:
 ### 4. IPC Commands & Events (`ipc/notifications.rs`)
 
 - `get_notifications()`: Returns all rows `WHERE status != 'dismissed' ORDER BY created_at DESC`.
-- `mark_notifications_read(ids: Option<Vec<String>>)`: Marks specified rows (or all unread if `None`/empty) as `'read'`.
-- `dismiss_notifications(ids: Option<Vec<String>>)`: Marks specified rows (or all active if `None`/empty) as `'dismissed'`.
-- `trigger_session_compaction(sessionId: i64)`: Triggers background compaction slice. Does not touch notification card attention status (`unread`/`read`). Progress is tracked in frontend memory store / metadata.
+- `mark_notifications_read(filter: Option<NotificationFilter>)`: Marks matching unread notifications (by `ids`, `group_key`, `category`, or global all) as `'read'`.
+- `dismiss_notifications(filter: Option<NotificationFilter>)`: Dismisses matching active notifications (by `ids`, `group_key`, `category`, or global all) as `'dismissed'`.
+- `execute_notification_action(id: String, action: Option<String>)`: Polymorphic action executor. Dispatches to target subsystem (`session_compaction` $\to$ `run_compaction_slice`, `memory_consolidation` $\to$ `run_consolidation_once`, `pipeline_error` $\to$ retry/recovery). Replaces 1-off `trigger_session_compaction`.
 
 ### 5. Frontend Presentation & Rollup (`NotificationPanel.tsx`)
 
@@ -126,7 +126,7 @@ The system adopts the standard desktop notification architecture:
 1. Update `services/memory/scheduler.rs` to route through `notify()`.
 2. Update `services/memory/compaction/coordinator.rs` to route through `notify()`.
 3. Update `pipeline/assistant/error.rs` (`on_error`) to route through `notify()`.
-4. Update `ipc/notifications.rs` handlers (`get_notifications`, `mark_notifications_read`, `dismiss_notifications`).
+4. Update `ipc/notifications.rs` handlers (`get_notifications`, `mark_notifications_read`, `dismiss_notifications`, `execute_notification_action`).
 5. Ensure `cargo test` and `cargo nextest` pass release verification.
 
 ### Batch 3: Frontend Service, Store & UI Rollup

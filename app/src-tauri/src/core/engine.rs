@@ -16,7 +16,7 @@ use crate::{
         settings::{SttProviderConfig, TtsActiveProvider, VadBackendOption},
         state::{AppState, InteractionOwner, InteractionState},
     },
-    monitoring::aggregator::TelemetryEvent,
+    monitoring::TelemetryEvent,
     persistence::{db::get_tokio_handle, worker::spawn_persistence_worker, PersistenceEvent},
     pipeline::{router::spawn_router, target_window},
     services::{

@@ -25,7 +25,7 @@ use crate::{
         settings::{AudioOutputMode, InteractionMode},
         state::InteractionState,
     },
-    monitoring::aggregator::TelemetryEvent,
+    monitoring::TelemetryEvent,
     services::{stt::SttCommand, vad::VadCommand},
     utils::audio_filters::FilterBank,
 };

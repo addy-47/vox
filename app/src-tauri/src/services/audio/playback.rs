@@ -240,11 +240,6 @@ impl PlaybackEngine {
         });
     }
 
-    /// Returns true if an active CPAL audio hardware output stream is bound.
-    pub fn has_active_stream(&self) -> bool {
-        self.stream.is_some()
-    }
-
     /// Returns a clone of the pending synthesis jobs atomic counter.
     pub fn pending_synthesis_jobs(&self) -> Arc<AtomicU32> {
         Arc::clone(&self.pending_synthesis_jobs)

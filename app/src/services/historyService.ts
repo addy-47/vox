@@ -51,15 +51,14 @@ export function getTranscriptHistory(): Promise<string[]> {
 
 /**
  * Initializes a fresh conversation session on the backend, resetting working memory.
- * Emits `SessionsChanged` on success.
+ * Follows lazy persistence (persisted to database on first spoken turn).
  */
-export function createSession(projectId?: string): Promise<SessionRow> {
+export function createSession(projectId?: string): Promise<SessionRow | null> {
   return invoke("create_session", { projectId: projectId ?? null });
 }
 
 /**
  * Restores a past session into working memory and returns its full context.
- * Emits `SessionsChanged` on success.
  */
 export function continueSession(sessionId: number): Promise<ContinueSessionResult> {
   return invoke("continue_session", { sessionId });
