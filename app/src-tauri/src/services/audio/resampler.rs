@@ -85,40 +85,6 @@ impl AudioResampler {
 
         Ok(output_samples)
     }
-
-    /// Resamples an input slice of 32-bit floating point audio samples to target sampling rate.
-    pub fn process_f32(&mut self, input: &[f32]) -> Result<Vec<f32>> {
-        self.input_buf.extend_from_slice(input);
-
-        let mut output_samples = Vec::new();
-
-        while self.input_buf.len() >= self.nbr_frames_needed {
-            self.resampler_in_buf[0].clear();
-            self.resampler_in_buf[0].extend_from_slice(&self.input_buf[..self.nbr_frames_needed]);
-
-            let input_adapter =
-                SequentialSliceOfVecs::new(&self.resampler_in_buf, 1, self.nbr_frames_needed)
-                    .map_err(|e| anyhow!("Failed to create input adapter: {:?}", e))?;
-            let mut output_adapter = SequentialSliceOfVecs::new_mut(
-                &mut self.resampler_out_buf,
-                1,
-                self.inner.output_frames_max(),
-            )
-            .map_err(|e| anyhow!("Failed to create output adapter: {:?}", e))?;
-
-            let (_in_frames, out_frames) = self
-                .inner
-                .process_into_buffer(&input_adapter, &mut output_adapter, None)
-                .map_err(|e| anyhow!("Resampling processing failed: {:?}", e))?;
-
-            output_samples.extend_from_slice(&self.resampler_out_buf[0][..out_frames]);
-
-            self.input_buf.drain(..self.nbr_frames_needed);
-            self.nbr_frames_needed = self.inner.input_frames_next();
-        }
-
-        Ok(output_samples)
-    }
 }
 
 /// Upsample 24kHz mono PCM to 48kHz via cubic Hermite interpolation into a reusable buffer.

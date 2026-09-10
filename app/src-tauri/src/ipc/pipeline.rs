@@ -10,6 +10,7 @@ use crate::core::{
     events::VoxEvent,
     state::{AppState, InteractionOwner, InteractionState},
 };
+use crate::pipeline::test::{cancel_test_clip, execute_test_clip};
 
 /// Launches and initializes the 3-tier audio engine.
 #[tauri::command]
@@ -172,4 +173,23 @@ pub async fn ptt_cancel<R: tauri::Runtime>(
         .map_err(|e| VoxIpcError::Engine(format!("Failed to send PttCancel: {}", e)))?;
 
     Ok(())
+}
+
+/// Injects a pre-recorded audio clip directly into the active voice pipeline seam.
+#[tauri::command]
+pub async fn test_clip(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    clip_id: String,
+) -> Result<(), VoxIpcError> {
+    execute_test_clip(&app, &state, &clip_id).await
+}
+
+/// Cancels a running test clip turn and resets speech recognition / playback.
+#[tauri::command]
+pub async fn test_clip_cancel(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
+    cancel_test_clip(&app, &state).await
 }
