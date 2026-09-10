@@ -4,7 +4,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc, Arc,
     },
-    thread::Builder,
+    thread::{Builder, JoinHandle},
 };
 
 use ringbuf::traits::Split;
@@ -14,8 +14,9 @@ use crate::{
     core::{
         events::{emit_ipc_to, IpcEvent, TranscriptPayload, VoxEvent},
         settings::{SttProviderConfig, TtsActiveProvider, VadBackendOption},
-        state::{AppState, InteractionOwner, InteractionState, VoxEngine},
+        state::{AppState, InteractionOwner, InteractionState},
     },
+    monitoring::aggregator::TelemetryEvent,
     persistence::{db::get_tokio_handle, worker::spawn_persistence_worker, PersistenceEvent},
     pipeline::{router::spawn_router, target_window},
     services::{
@@ -25,7 +26,7 @@ use crate::{
         },
         llm::{
             actor::{cool_down_llm, warm_up_llm, LlmWarmUpHandles},
-            QWEN_MODEL_DIR, QWEN_MODEL_FILE,
+            LlmCommand, QWEN_MODEL_DIR, QWEN_MODEL_FILE,
         },
         memory::{trim_heap, unload_all_onnx_models},
         stt::{
@@ -34,7 +35,7 @@ use crate::{
         },
         tts::{
             actor::{cool_down_tts, warm_up_tts, TtsWarmUpHandles},
-            resolve_reference_audio, SUPERTONIC_MODEL_DIR,
+            resolve_reference_audio, SUPERTONIC_MODEL_DIR, TtsCommand,
         },
         vad::{
             actor::{spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles},
@@ -46,6 +47,23 @@ use crate::{
     setup::manifest::VoxManifest,
     utils::paths,
 };
+
+/// Native audio and worker thread runtime bundle for the modular voice engine.
+pub struct VoxEngine {
+    pub audio_stream: AudioStream,
+    pub stt_tx: mpsc::Sender<SttCommand>,
+    pub vad_tx: mpsc::Sender<VadCommand>,
+    pub llm_tx: Option<mpsc::Sender<LlmCommand>>,
+    pub tts_tx: Option<mpsc::Sender<TtsCommand>>,
+    pub telemetry_tx: crossbeam_channel::Sender<TelemetryEvent>,
+    pub pipeline_tx: mpsc::Sender<VoxEvent>,
+    pub playback_engine: Arc<PlaybackEngine>,
+    pub stt_handle: Option<JoinHandle<()>>,
+    pub vad_handle: Option<JoinHandle<()>>,
+    pub llm_handle: Option<JoinHandle<()>>,
+    pub tts_handle: Option<JoinHandle<()>>,
+    pub orchestrator_handle: Option<JoinHandle<()>>,
+}
 
 const RING_BUFFER_SIZE: usize = 16000 * 4; // 4s buffer
 

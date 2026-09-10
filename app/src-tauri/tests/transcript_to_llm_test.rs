@@ -293,7 +293,7 @@ async fn test_transcript_to_llm_matrix() {
                 TtsCommand::Generate { turn_id, text } => {
                     assert_eq!(turn_id, 46);
                     assert!(
-                        vox_lib::core::constants::TRANSITION_MESSAGES_EN.contains(&text.as_str()),
+                        vox_lib::services::harness::TRANSITION_MESSAGES_EN.contains(&text.as_str()),
                         "Filler text '{}' must be from TRANSITION_MESSAGES_EN",
                         text
                     );

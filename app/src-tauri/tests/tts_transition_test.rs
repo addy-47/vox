@@ -20,12 +20,12 @@ use std::{
 
 use ringbuf::traits::Consumer;
 use vox_lib::{
-    core::{
-        constants::TRANSITION_MESSAGES_EN, events::VoxEvent, settings::MemorySettings,
-        state::InteractionState,
-    },
+    core::{events::VoxEvent, settings::MemorySettings, state::InteractionState},
     services::{
-        harness::facade::{prepare_turn_context, PrepareTurnParams},
+        harness::{
+            facade::{prepare_turn_context, PrepareTurnParams},
+            TRANSITION_MESSAGES_EN,
+        },
         llm::ProviderKind,
         tts::{
             actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
