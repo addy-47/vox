@@ -1,5 +1,5 @@
 pub mod audio;
-pub mod history;
+pub mod persistence;
 pub mod memory;
 pub mod monitoring;
 pub mod notifications;

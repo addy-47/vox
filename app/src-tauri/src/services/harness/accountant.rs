@@ -2,10 +2,7 @@ use std::collections::HashMap;
 
 use tokio_util::sync::CancellationToken;
 
-use super::{
-    buffer::{current_timestamp_ms, ChatMessage, MessageBuffer, Role},
-    prompt_builder::{build_session_history_xml, consolidate_system_message},
-};
+use super::buffer::{current_timestamp_ms, ChatMessage, MessageBuffer, Role};
 use crate::services::memory::{
     compaction::CompactionResult, ml::estimate_tokens, CONTEXT_CRITICAL_THRESHOLD,
     CONTEXT_SOFT_THRESHOLD, RESERVED_GENERATION_TOKENS,
@@ -14,8 +11,6 @@ use crate::services::memory::{
 /// Manages context budgeting, sliding-window compaction, and background opportunistic compaction for Modular LLM.
 pub struct ContextHarness {
     pub accountant: TokenAccountant,
-    session_compaction_contexts: Vec<String>,
-    latest_compaction_facts: HashMap<String, Vec<String>>,
     opportunistic_active: bool,
     opportunistic_cancel: CancellationToken,
 }
@@ -130,31 +125,6 @@ impl TokenAccountant {
         );
     }
 
-    /// Constructs a chronological narrative context chain from session compactions up to token cap.
-    pub fn build_narrative_context_chain(
-        session_compaction_contexts: &[String],
-        soft_cap_tokens: usize,
-    ) -> String {
-        let mut selected: Vec<&str> = Vec::new();
-        let mut current_tokens = 0;
-
-        for ctx in session_compaction_contexts.iter().rev() {
-            let clean_ctx = ctx.trim();
-            if clean_ctx.is_empty() {
-                continue;
-            }
-            let ctx_tokens = estimate_tokens(clean_ctx);
-            if selected.is_empty() || (current_tokens + ctx_tokens <= soft_cap_tokens) {
-                selected.push(clean_ctx);
-                current_tokens += ctx_tokens;
-            } else {
-                break;
-            }
-        }
-
-        selected.reverse();
-        selected.join(" ")
-    }
 }
 
 impl ContextHarness {
@@ -162,8 +132,6 @@ impl ContextHarness {
     pub fn new(max_context_tokens: usize) -> Self {
         Self {
             accountant: TokenAccountant::new(max_context_tokens, 0),
-            session_compaction_contexts: Vec::new(),
-            latest_compaction_facts: HashMap::new(),
             opportunistic_active: false,
             opportunistic_cancel: CancellationToken::new(),
         }
@@ -180,8 +148,6 @@ impl ContextHarness {
 
     /// Resets session context compaction state.
     pub fn reset(&mut self) {
-        self.session_compaction_contexts.clear();
-        self.latest_compaction_facts.clear();
         self.cancel_opportunistic();
     }
 
@@ -193,32 +159,6 @@ impl ContextHarness {
     /// Returns true if memory utilization has crossed the critical threshold.
     pub fn needs_threshold_maintenance(&self) -> bool {
         self.accountant.needs_threshold_maintenance()
-    }
-
-    /// Formats recent compaction narrative chain and facts into XML session history.
-    pub fn build_session_history_xml(&self, soft_cap_tokens: usize) -> String {
-        let narrative_chain = TokenAccountant::build_narrative_context_chain(
-            &self.session_compaction_contexts,
-            soft_cap_tokens.max(50),
-        );
-        build_session_history_xml(&narrative_chain, &self.latest_compaction_facts)
-    }
-
-    /// Consolidates session history XML into the root System Message.
-    pub fn consolidate_system_message(
-        &mut self,
-        buffer: &mut MessageBuffer,
-        system_prompt: &ChatMessage,
-        session_history: &str,
-    ) {
-        let mut total_tokens = self.accountant.total_token_count();
-        consolidate_system_message(
-            &mut buffer.messages,
-            system_prompt,
-            session_history,
-            &mut total_tokens,
-        );
-        self.accountant.set_total_token_count(total_tokens);
     }
 
     /// FIFO Sliding Window Shift: Drops oldest (User, Assistant) pairs until below soft threshold.
@@ -234,16 +174,10 @@ impl ContextHarness {
         result: &CompactionResult,
         last_user_turn: ChatMessage,
     ) -> HashMap<String, Vec<String>> {
-        let context_summary = result.context_summary.trim().to_string();
-        if !context_summary.is_empty() {
-            self.session_compaction_contexts.push(context_summary);
-        }
-
         let mut grouped: HashMap<String, Vec<String>> = HashMap::new();
         for (k, v) in &result.facts {
             grouped.entry(k.clone()).or_default().push(v.clone());
         }
-        self.latest_compaction_facts = grouped.clone();
 
         let sys_tokens = estimate_tokens(&system_prompt.content);
         let user_tokens = estimate_tokens(&last_user_turn.content);
@@ -254,10 +188,9 @@ impl ContextHarness {
         buffer.kv_synced_index = 0;
 
         log::info!(
-            "[ContextHarness] Compaction complete. Context rebuilt with 2 items ({} tokens, utilization {:.1}%). Total session compactions: {}.",
+            "[ContextHarness] Compaction complete. Context rebuilt with 2 items ({} tokens, utilization {:.1}%).",
             self.accountant.total_token_count(),
             self.accountant.context_utilization() * 100.0,
-            self.session_compaction_contexts.len()
         );
 
         grouped
@@ -296,10 +229,6 @@ impl ContextHarness {
         snapshot_len: usize,
         summary_text: String,
     ) -> bool {
-        if !self.opportunistic_active {
-            log::info!("[ContextHarness] Commit rejected: Opportunistic compaction was inactive.");
-            return false;
-        }
         if self.opportunistic_cancel.is_cancelled() {
             self.opportunistic_active = false;
             log::info!("[ContextHarness] Commit rejected: Opportunistic compaction was cancelled.");
@@ -431,22 +360,6 @@ mod tests {
         acc.perform_fifo_maintenance(&mut buf);
         assert!(buf.messages.len() < before_len);
         assert_eq!(buf.kv_synced_index, 0);
-    }
-
-    /// Tests build_narrative_context_chain respects soft cap and skips empty.
-    #[test]
-    fn test_build_narrative_chain_respects_cap() {
-        let ctxs = vec![
-            "        ".to_string(),
-            "first context".to_string(),
-            "second context which is longer".to_string(),
-        ];
-        let chain = TokenAccountant::build_narrative_context_chain(&ctxs, 5);
-        assert!(chain.contains("second context"));
-        let chain2 = TokenAccountant::build_narrative_context_chain(&ctxs, 1000);
-        assert!(chain2.contains("first context"));
-        assert!(chain2.contains("second context"));
-        assert_eq!(TokenAccountant::build_narrative_context_chain(&[], 100), "");
     }
 
     /// Tests ContextHarness opportunistic trigger and cancel/commit race guards.

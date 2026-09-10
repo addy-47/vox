@@ -1,5 +1,9 @@
 use std::{
-    sync::{atomic::Ordering, Arc},
+    collections::VecDeque,
+    sync::{
+        atomic::Ordering,
+        Arc, RwLock,
+    },
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -9,10 +13,142 @@ use crate::{
         settings::LlmActiveProvider,
         state::{AppState, InteractionOwner, InteractionState},
     },
-    monitoring::{snapshot::RuntimeSnapshot, COLLECTOR_TICK_INTERVAL},
+    monitoring::{COLLECTOR_TICK_INTERVAL, MAX_SNAPSHOT_HISTORY},
     services::{memory::is_embedder_loaded, translit::is_transliteration_engine_loaded},
     utils::check_cpu_governor,
 };
+
+/// A normalized, read-only snapshot of the Vox engine runtime state.
+/// This is the primary source of truth for the frontend monitoring UI.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RuntimeSnapshot {
+    /// Current pipeline state (Idle, Ready, Listening, Thinking, Speaking, Paused, Error)
+    pub pipeline_state: String,
+    /// Ephemeral turn ID for the current interaction.
+    pub current_turn_id: u32,
+    /// Persistent conversation session ID. 0 if inactive (Tray mode).
+    pub conversation_id: u64,
+
+    /// System activity flags.
+    pub playback_active: bool,
+
+    /// System resource utilization.
+    pub system_cpu_usage: f32,
+    pub system_ram_mb: u32,
+    pub vox_cpu_usage: f32,
+    pub vox_ram_mb: u32,
+    pub total_ram_mb: u32,
+    pub cpu_cores: u32,
+
+    /// Real-time VAD characteristics.
+    pub vad_energy: f32,
+    pub vad_probability: f32,
+
+    /// Latency metrics for the last completed turn.
+    pub stt_latency_ms: Option<u32>,
+    pub ttft_ms: Option<u32>,
+    pub total_voice_latency_ms: Option<u32>,
+
+    /// Persistence health.
+    pub persistence_queue_depth: usize,
+    pub dropped_persistence_events: u64,
+
+    /// Playback health.
+    pub playback_buffer_samples: usize,
+    pub playback_underruns: u64,
+
+    /// Current interaction owner (Dictation, Assistant).
+    pub active_owner: String,
+
+    /// Extended Monitoring Metrics
+    pub active_threads: u32,
+    pub tts_rtf: Option<f32>,
+    pub playback_start_ms: Option<u32>,
+    pub persistence_writes_per_sec: f32,
+    pub is_db_healthy: bool,
+
+    // Tier Status (Model Residency)
+    pub is_llm_loaded: bool,
+    pub llm_provider_kind: String,
+    pub is_tts_loaded: bool,
+    pub is_stt_loaded: bool,
+    pub is_vad_loaded: bool,
+    pub is_embedder_loaded: bool,
+    pub is_query_classifier_loaded: bool,
+    pub is_intra_edge_classifier_loaded: bool,
+    pub is_inter_edge_classifier_loaded: bool,
+    pub is_translit_loaded: bool,
+
+    /// CPU frequency governor (Linux only, e.g. "powersave", "performance"). Empty string if unavailable.
+    pub cpu_governor: String,
+    /// Whether the CPU governor is optimal ("performance"). False if unknown/non-Linux.
+    pub cpu_governor_optimal: bool,
+
+    /// Optional per-WebView RAM breakdown in MB (Measured via sysinfo descendant enumeration)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub main_webview_ram_mb: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tray_webview_ram_mb: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wizard_webview_ram_mb: Option<u32>,
+
+    /// Unix timestamp of the snapshot in milliseconds.
+    pub timestamp_ms: u64,
+}
+
+/// Shared thread-safe state for runtime monitoring.
+pub struct MonitoringState {
+    history: Arc<RwLock<VecDeque<RuntimeSnapshot>>>,
+    latest: Arc<RwLock<Option<RuntimeSnapshot>>>,
+}
+
+impl Default for MonitoringState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MonitoringState {
+    /// Creates a new empty MonitoringState instance.
+    pub fn new() -> Self {
+        Self {
+            history: Arc::new(RwLock::new(VecDeque::with_capacity(MAX_SNAPSHOT_HISTORY))),
+            latest: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Adds a new snapshot to the history, evicting the oldest if capacity is exceeded.
+    pub fn push(&self, snapshot: RuntimeSnapshot) {
+        let mut latest = self.latest.write().unwrap_or_else(|e| e.into_inner());
+        *latest = Some(snapshot.clone());
+
+        let mut history = self.history.write().unwrap_or_else(|e| e.into_inner());
+        history.push_back(snapshot);
+        if history.len() > MAX_SNAPSHOT_HISTORY {
+            history.pop_front();
+        }
+    }
+
+    /// Gets the most recent snapshot if available.
+    pub fn get_latest(&self) -> Option<RuntimeSnapshot> {
+        let guard = self.latest.read().unwrap_or_else(|e| e.into_inner());
+        guard.clone()
+    }
+
+    /// Gets the full history of recorded snapshots.
+    pub fn get_history(&self) -> Vec<RuntimeSnapshot> {
+        let guard = self.history.read().unwrap_or_else(|e| e.into_inner());
+        guard.iter().cloned().collect()
+    }
+
+    /// Clears all recorded snapshot history and latest state.
+    pub fn clear(&self) {
+        let mut history = self.history.write().unwrap_or_else(|e| e.into_inner());
+        history.clear();
+        let mut latest = self.latest.write().unwrap_or_else(|e| e.into_inner());
+        *latest = None;
+    }
+}
 
 /// Spawn the Monitoring Collector on a dedicated OS thread.
 pub fn spawn_monitoring_collector(state: Arc<AppState>) {
@@ -51,6 +187,7 @@ pub fn spawn_monitoring_collector(state: Arc<AppState>) {
         .expect("[Monitoring::Collector] Failed to spawn monitoring collector thread");
 }
 
+/// Maps the pipeline state atomic to its frontend display string.
 fn map_pipeline_state_string(state_u32: u32) -> String {
     match InteractionState::from(state_u32) {
         InteractionState::Idle => "Idle".into(),
@@ -64,6 +201,7 @@ fn map_pipeline_state_string(state_u32: u32) -> String {
     }
 }
 
+/// Reads the current playback buffer length without blocking the audio path.
 fn get_playback_buffer_samples(state: &AppState) -> usize {
     if let Ok(lock) = state.engine.try_lock() {
         if let Some(engine) = lock.as_ref() {
@@ -76,6 +214,7 @@ fn get_playback_buffer_samples(state: &AppState) -> usize {
     }
 }
 
+/// Resolves the active LLM provider kind for snapshot display.
 fn get_llm_provider_kind(state: &AppState) -> String {
     let settings = match state.settings.read() {
         Ok(s) => s,
@@ -100,6 +239,7 @@ fn get_llm_provider_kind(state: &AppState) -> String {
     }
 }
 
+/// Builds a single runtime snapshot from the shared telemetry atomics and engine state.
 fn collect_snapshot(
     state: &AppState,
     threads: u32,

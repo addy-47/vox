@@ -6,16 +6,15 @@ use tauri::{AppHandle, State};
 pub use crate::persistence::sessions::{SessionRow, TurnRow};
 use crate::{
     core::{
-        defaults::DEFAULT_SYSTEM_PROMPT_MODULAR,
         error::VoxIpcError,
-        events::{emit_ipc, IpcEvent},
-        state::AppState,
+        events::{emit_ipc, IpcEvent, VoxEvent},
+        state::{AppState, InteractionState},
     },
     persistence::sessions::{
-        create_session as db_create_session, delete_session as delete_session_row,
-        fetch_session_by_id, fetch_sessions, fetch_turns, update_session_metadata,
+        delete_session as delete_session_row, fetch_session_by_id, fetch_session_continuation,
+        fetch_sessions, fetch_turns, update_session_metadata,
     },
-    pipeline::{init_new_session, resume_session},
+    pipeline::init_new_session,
     utils::paths,
 };
 
@@ -66,52 +65,71 @@ pub async fn get_transcript_history(
     Ok(history)
 }
 
-/// Initializes a fresh conversational session, resetting working memory.
+/// Initializes a fresh conversational session, cleanly tearing down any active
+/// audio pipeline, resetting working memory with Personal Memory, and resetting
+/// session identifiers. Follows lazy persistence (DB row created upon first spoken turn).
 #[tauri::command]
 pub async fn create_session(
-    app: AppHandle,
-    project_id: Option<String>,
+    _project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
-) -> Result<SessionRow, VoxIpcError> {
-    let session_id = db_create_session(&state.db, project_id.as_deref())
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-
-    init_new_session(&state, DEFAULT_SYSTEM_PROMPT_MODULAR).await;
-    state
-        .conversation_id
-        .store(session_id as u64, Ordering::Relaxed);
-
-    if let Err(e) = emit_ipc(&app, IpcEvent::SessionsChanged) {
-        log::warn!("[IPC::History] Failed to emit SessionsChanged: {}", e);
+) -> Result<Option<SessionRow>, VoxIpcError> {
+    // 1. If an assistant session is active, disengage pipeline cleanly
+    let current_state = state.pipeline.state();
+    if current_state != InteractionState::Idle {
+        let event_tx = state.event_tx.lock().clone();
+        if let Some(tx) = event_tx {
+            if let Err(e) = tx.send(VoxEvent::EndSession) {
+                log::warn!(
+                    "[IPC::History] Failed to send EndSession during create_session: {}",
+                    e
+                );
+            }
+        }
     }
 
-    let session = fetch_session_by_id(&state.db, session_id)
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?
-        .ok_or_else(|| VoxIpcError::NotFound(format!("Session {} not found", session_id)))?;
+    // 2. Clear conversation and turn tracking
+    state.conversation_id.store(0, Ordering::Relaxed);
+    state.pipeline_accumulator.lock().clear();
 
-    Ok(session)
+    // 3. Reset working memory with active persona prompt and personal memory
+    let prompt = state.resolve_base_prompt();
+    init_new_session(&state, &prompt).await;
+
+    log::info!("[IPC::History] Reset conversation state for fresh session");
+    Ok(None)
 }
 
 /// Restores a past session into working memory and returns its metadata and turns.
 #[tauri::command]
 pub async fn continue_session(
-    app: AppHandle,
     session_id: i64,
     state: State<'_, Arc<AppState>>,
 ) -> Result<ContinueSessionResult, VoxIpcError> {
-    resume_session(&state, DEFAULT_SYSTEM_PROMPT_MODULAR, session_id)
+    let continuation = fetch_session_continuation(&state.db, session_id)
         .await
-        .map_err(|e| VoxIpcError::Pipeline(e.to_string()))?;
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+
+    let prompt = state.resolve_base_prompt();
+    let (context_window, max_context_share) = {
+        let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
+        (
+            settings.llm.context_window as usize,
+            settings.memory.max_context_share,
+        )
+    };
+
+    state.conversation_manager.lock().restore_session_continuation(
+        &prompt,
+        continuation.personal_memory,
+        continuation.latest_summary,
+        continuation.turns,
+        context_window,
+        max_context_share,
+    );
 
     state
         .conversation_id
         .store(session_id as u64, Ordering::Relaxed);
-
-    if let Err(e) = emit_ipc(&app, IpcEvent::SessionsChanged) {
-        log::warn!("[IPC::History] Failed to emit SessionsChanged: {}", e);
-    }
 
     let session = fetch_session_by_id(&state.db, session_id)
         .await
@@ -121,6 +139,11 @@ pub async fn continue_session(
     let turns = fetch_turns(&state.db, session_id)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+
+    log::info!(
+        "[IPC::History] Restored continuation for session {} into working memory",
+        session_id
+    );
 
     Ok(ContinueSessionResult { session, turns })
 }

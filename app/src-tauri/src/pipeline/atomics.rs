@@ -153,9 +153,4 @@ impl PipelineAtomics {
         let tok = self.rearm_turn_token();
         (id, tok)
     }
-
-    /// Cancels the current turn's cancellation token without allocating a new turn.
-    pub fn cancel_current_turn(&self) {
-        self.turn_token.lock().cancel();
-    }
 }

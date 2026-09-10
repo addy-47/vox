@@ -4,6 +4,21 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use turso::Connection;
 
+use crate::utils::json::parse_unified_compaction_json;
+
+use super::{
+    compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
+    personal_memory::get_personal_memory,
+};
+
+/// Data payload required to seed conversation continuation in working memory.
+#[derive(Debug, Clone)]
+pub struct SessionContinuationData {
+    pub personal_memory: Option<String>,
+    pub latest_summary: Option<String>,
+    pub turns: Vec<TurnRow>,
+}
+
 /// Representation of a stored conversation session.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct SessionRow {
@@ -273,4 +288,40 @@ pub async fn cleanup_zero_turn_sessions(conn: &Connection) -> Result<u64> {
         )
         .await?;
     Ok(deleted)
+}
+
+/// Retrieves the continuation state for a given session: Personal Memory,
+/// the latest compaction context summary, and uncompacted recent turns.
+pub async fn fetch_session_continuation(
+    conn: &Connection,
+    session_id: i64,
+) -> Result<SessionContinuationData> {
+    let personal_memory = match get_personal_memory(conn, None).await {
+        Ok(rec) if !rec.content.trim().is_empty() => Some(rec.content),
+        _ => None,
+    };
+
+    let (latest_summary, last_compacted) =
+        match fetch_latest_compaction_run(conn, session_id).await? {
+            Some(run) if run.status == "completed" => {
+                let summary = parse_unified_compaction_json(&run.compaction_output).and_then(|p| {
+                    if !p.context_summary.trim().is_empty() {
+                        Some(p.context_summary.trim().to_string())
+                    } else {
+                        None
+                    }
+                });
+                (summary, run.to_turn_id)
+            }
+            _ => (None, 0),
+        };
+
+    let turns =
+        fetch_turns_for_compaction(conn, session_id, last_compacted + 1, u32::MAX).await?;
+
+    Ok(SessionContinuationData {
+        personal_memory,
+        latest_summary,
+        turns,
+    })
 }

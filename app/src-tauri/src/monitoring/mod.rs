@@ -15,17 +15,16 @@ pub const TELEMETRY_EMITTER_INTERVAL: Duration = Duration::from_millis(33);
 /// Maximum number of snapshots to retain in memory (~60 seconds at 10Hz).
 pub const MAX_SNAPSHOT_HISTORY: usize = 600;
 
-pub mod aggregator;
-pub mod collector;
 pub mod profiler;
-pub mod runtime_state;
-pub mod snapshot;
-pub mod system_monitor;
-pub mod telemetry_emitter;
+pub mod snapshots;
+pub mod telemetry;
 
 pub use profiler::{
     collect_profiler_snapshot, persist_memory_profile_event, MemoryProfileLogEvent,
     ProcessMemoryEntry, ProfilerSnapshot,
 };
-pub use runtime_state::{MonitoringState, TelemetryState};
-
+pub use snapshots::{spawn_monitoring_collector, MonitoringState, RuntimeSnapshot};
+pub use telemetry::{
+    spawn_system_monitor, spawn_telemetry_emitter, TelemetryAggregator,
+    TelemetryAggregatorHandles, TelemetryEvent, TelemetryState,
+};

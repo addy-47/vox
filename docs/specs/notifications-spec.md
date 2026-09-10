@@ -58,7 +58,18 @@ Notifications in Vox fall into two distinct conceptual classes:
     - Session tasks navigate to that session in History.
     - Memory alerts navigate to the Memory graph view.
     - Provider, auth, or hardware alerts navigate to the relevant Settings tab.
-13. **Bulk Actions**: The drawer must provide a global action to mark all unread notifications as read, and an action to dismiss cards.
+
+### 4.4 Unified Action Execution
+13. **Polymorphic Action Execution**: Actionable cards must execute their primary or secondary actions through a single unified action contract referencing the notification identifier. The user interface must not call bespoke, card-specific IPC commands (e.g., `trigger_session_compaction`). The backend dispatcher resolves the entity context (`session_id`, `category`, and payload metadata) and dispatches the task to the responsible domain subsystem.
+14. **Non-Destructive Task Initiation**: Initiating an action must not corrupt or prematurely clear the notification card's attention state (`unread` / `read`). The card remains visible until explicitly dismissed by the user or resolved by domain business logic.
+
+### 4.5 Flexible Filtered Dismissal & Read Receipts
+15. **Multilevel Scope Filters**: Dismissal and read operations must accept an optional scoped filter supporting four distinct targeting levels:
+    - **Single Card**: Targets a specific notification by its unique ID.
+    - **Group / Thread**: Targets all notifications sharing a specific correlation key (e.g., dismissing an entire rolled-up `(×4)` error stack).
+    - **Category**: Targets all notifications within a specific category (e.g., "Clear all errors").
+    - **Global Drawer**: When no filter criteria are specified, targets all active notifications in the drawer (e.g., "Mark all read" or "Clear all").
+
 
 ---
 

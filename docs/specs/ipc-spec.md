@@ -44,16 +44,17 @@ Manages workspace session grouping folders.
 Manages conversational sessions, turns, and session continuation.
 
 #### `create_session(projectId: Option<String>)` — [NEW]
-- **Purpose**: Initializes a fresh conversational session (triggered by user clicking "+ New Session").
-- **Behavior**: Creates a new row in Turso `sessions` with an untitled placeholder. Resets the in-memory working buffer (`ConversationManager`), loads the active `personal_memory` into the system prompt, sets `current_session_id`, and emits `IpcEvent::SessionsChanged`.
+- **Purpose**: Resets in-memory conversational state for a fresh session (triggered by user clicking "+ New Session").
+- **Behavior**: If an active voice session is running (`InteractionState != Idle`), disengages the audio pipeline cleanly. Resets in-memory working buffer (`ConversationManager`), loads the active `personal_memory` with dynamically resolved base prompt (`settings.persona.modular_prompt` or `realtime_prompt` based on active `pipeline_mode`), and clears `conversation_id`. Follows **lazy session persistence**: zero empty database rows are inserted upfront; Turso `sessions` row insertion is deferred until the first turn/speech actually occurs (handled by `PersistenceEvent::SessionStarted`). Does not emit echo events.
 
 #### `continue_session(sessionId: i64)` — [NEW]
 - **Purpose**: Restores a past session from the conversation list to continue conversation.
 - **Behavior**: 
-  1. Loads target session turns and the latest compaction summary from `session_compactions`.
-  2. Seeds `ConversationManager` with: Base System Prompt + Personal Memory + Latest Compaction Summary + Uncompacted Turns.
+  1. Loads target session turns and the latest compaction summary from `session_compactions` via `persistence::sessions::fetch_session_continuation`.
+  2. Seeds `ConversationManager` with: Dynamically Resolved Base System Prompt + Personal Memory + Latest Compaction Summary + Uncompacted Turns.
   3. Updates `current_session_id`.
   4. Returns the restored turns and metadata to the frontend.
+  5. Read-only restoration: does not emit `sessions_changed` echo events.
 
 #### `get_sessions(projectId: Option<String>)`
 - **Purpose**: Returns sessions for a specific project or all active sessions.
@@ -247,11 +248,12 @@ Every event emitted by the backend via `emit_ipc` or `emit_ipc_to` is mapped dir
 | `notification_created` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when a persistent actionable notification or alert is created. |
 | `notification_updated` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when an active notification status changes (e.g. marked read or updated). |
 | `personal_memory_updated`| `PersonalMemoryRecord { id, project_id, content, version, last_consolidated_at, updated_at }` | Emitted when Personal Memory is consolidated, edited, imported, or regenerated. |
-| `sessions_changed` | `void` | Signals frontend when sessions are updated (`create`, `continue`, `update`, `delete`). Frontend refetches the session list; no surgical title-patch payload is provided. |
+| `sessions_changed` | `void` | Signals frontend when sessions are updated asynchronously / out-of-band by the backend (e.g. background title generation or compaction cleanup). Frontend refetches the session list. |
 | `settings-updated` | `void` | Signals frontend that application settings were hot-reloaded. |
 | `toggle_tray` | `void` | Toggles tray drawer visibility. |
 
 ### Permanently Decommissioned IPC Events
-The following 2 backend-to-frontend echo events are permanently deleted:
+The following backend-to-frontend echo events are permanently deleted:
 1. `notification_dismissed` (decommissioned; frontend updates its local store upon successful `dismiss_notification` invoke promise).
 2. `notifications_marked_read` (decommissioned; frontend updates its local unread badges upon successful `mark_notifications_read` invoke promise).
+3. `sessions_changed` on `continue_session` and synchronous user-driven CRUD (decommissioned; frontend updates its state and triggers refetches upon awaiting the invoke promise without backend echo events).
