@@ -13,8 +13,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::services::realtime::{
     transport::{FrameAction, ProviderDriver},
-    Actionability, OutboundCommand, PipelineImpact, RealtimeProviderEvent, RealtimeSession,
-    WS_KEEPALIVE_INTERVAL,
+    OutboundCommand, PipelineImpact, RealtimeProviderEvent, RealtimeSession, WS_KEEPALIVE_INTERVAL,
 };
 
 pub(super) struct DeepgramSessionState {
@@ -251,23 +250,15 @@ fn dispatch_deepgram_server_message(
                     let is_auth = err_msg.contains("401")
                         || err_msg.contains("Unauthorized")
                         || err_msg.contains("API key");
-                    let (impact, actionability) = if is_auth {
-                        (
-                            PipelineImpact::SessionHalted,
-                            Actionability::Actionable {
-                                category: "auth_failure".to_string(),
-                                hint: "Deepgram API key is invalid or expired. Update in Settings."
-                                    .to_string(),
-                            },
-                        )
+                    let impact = if is_auth {
+                        PipelineImpact::SessionHalted
                     } else {
-                        (PipelineImpact::TurnAborted, Actionability::None)
+                        PipelineImpact::TurnAborted
                     };
                     if let Err(e) = provider_event_tx.try_send(RealtimeProviderEvent::Error {
                         turn_id: err_turn_id,
                         message: format!("Deepgram server error: {}", err_msg),
                         impact,
-                        actionability,
                     }) {
                         log::warn!(
                             "[DeepgramVoiceAgent] Failed to forward Error event: {:?}",

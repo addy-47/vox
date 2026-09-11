@@ -37,7 +37,7 @@ use crate::toast::setup_linux_toast_layer;
 use crate::tray::setup_linux_virtual_layer;
 use crate::{
     core::{
-        events::{ToastLevel, VoxEvent},
+        events::VoxEvent,
         settings::{DictationInteractionMode, DictationOutputMode},
         state::{AppState, InteractionState, RuntimeStatus, TelemetryState},
     },
@@ -49,8 +49,8 @@ use crate::{
         },
         monitoring::{get_profiler_snapshot, get_runtime_snapshot, record_memory_profile_event},
         notifications::{
-            dismiss_notification, get_notifications, mark_notifications_read,
-            trigger_session_compaction,
+            dismiss_notifications, execute_notification_action, get_notifications,
+            mark_notifications_read,
         },
         persistence::{
             continue_session, create_session, delete_session, get_sessions, get_transcript_history,
@@ -98,7 +98,7 @@ use crate::{
         vad::VadCommand,
     },
     setup::manifest::{AppManifest, VoxManifest},
-    toast::{get_last_toast, manage_toast_window, show_toast},
+    toast::{get_last_toast, manage_toast_window},
     tray::{build_main_tray_menu, ensure_tray_window, refresh_tray_menu, sync_live_menu_item},
     utils::{check_cpu_governor, hardware::detect_local_gpu, logging, paths},
     wizard::ensure_wizard_window,
@@ -475,37 +475,6 @@ pub fn run() {
                 log::info!("[BOOTSTRAP] Runtime Ready.");
             }
 
-            // ── 1.8.1 Toast test poll (dev — emits every 10s after boot) ─────────
-            {
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                    let mut tick: u32 = 0;
-                    loop {
-                        tokio::time::sleep(Duration::from_secs(600)).await;
-                        tick = tick.wrapping_add(1);
-                        let title = format!("Toast Test #{tick}");
-                        let message = match tick % 4 {
-                            0 => "Dictation Copied — transcript on clipboard.".to_string(),
-                            1 => "Dictation Pasted — transcript injected.".to_string(),
-                            2 => "Paste Blocked by OS — fallback to clipboard.".to_string(),
-                            _ => format!("Voice Error — simulated poll tick {tick}."),
-                        };
-                        let level = match tick % 4 {
-                            0 => ToastLevel::Success,
-                            1 => ToastLevel::Success,
-                            2 => ToastLevel::Warning,
-                            _ => ToastLevel::Error,
-                        };
-                        if let Err(e) = show_toast(&handle, &title, &message, level) {
-                            log::warn!("[Toast::Poll] Failed to emit test toast: {}", e);
-                        } else {
-                            log::info!("[Toast::Poll] Emitted test toast #{tick}: {}", title);
-                        }
-                    }
-                });
-            }
-
             // ── 2. Conditionally construct tray HUD on demand ─────────────────────────
             {
                 let (should_show_tray, setup_completed) = {
@@ -717,8 +686,8 @@ pub fn run() {
             // Notifications & Compaction
             get_notifications,
             mark_notifications_read,
-            dismiss_notification,
-            trigger_session_compaction,
+            dismiss_notifications,
+            execute_notification_action,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
