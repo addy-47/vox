@@ -32,6 +32,7 @@ pub fn on_speech_start<R: tauri::Runtime>(
 
     let active_turn_id = if current_state == InteractionState::Thinking
         || current_state == InteractionState::Speaking
+        || current_state == InteractionState::Working
     {
         on_interrupt(app, state, ctx)
     } else if current_state == InteractionState::Ready {

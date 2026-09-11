@@ -93,8 +93,6 @@ pub async fn create_session(
     state.conversation_id.store(0, Ordering::Relaxed);
     state.pipeline_accumulator.lock().clear();
 
-    state.harness.lock().take();
-
     log::info!("[IPC::History] Reset conversation state for fresh session");
     Ok(None)
 }

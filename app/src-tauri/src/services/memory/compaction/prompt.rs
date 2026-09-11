@@ -20,20 +20,16 @@ Extract explicit, durable, high-confidence declarative facts into the unified me
 
 <output_schema>
 {
-  "context_summary": "<rolling conversational summary string>",
-  "personal": ["<unstructured fact about user>"],
-  "objective": ["<unstructured goal/intent>"],
-  "workdone": ["<unstructured completed task/milestone>"],
-  "blocker": ["<unstructured error/blocker>"],
-  "next_step": ["<unstructured upcoming step>"],
-  "pitfall": ["<unstructured edge case/lesson learned>"]
+  "personal": ["<unstructured fact or preference about user>"],
+  "objective": ["<unstructured active operational goal or intent>"],
+  "workdone": ["<unstructured completed task or milestone>"],
+  "blocker": ["<unstructured error, blocker, or missing dependency>"],
+  "next_step": ["<unstructured planned follow-up or upcoming action>"],
+  "pitfall": ["<unstructured edge case, lesson learned, or architectural constraint>"]
 }
 </output_schema>
 
 <field_definitions>
-context_summary:
-A single, concise, chronological narrative summary describing the session's overall progression, key decisions, and conversational context so far.
-
 personal:
 Stable facts, preferences, habits, personal characteristics, or attributes about the user.
 
@@ -84,7 +80,9 @@ pub fn calculate_compaction_max_tokens(ctx_size: u32) -> u32 {
     raw.clamp(256, 16_384)
 }
 
-/// Builds the provider-neutral GenerationRequest for compaction.
+pub const DEFAULT_LLM_COMPACTION_TEMPERATURE: f32 = 0.2;
+
+/// Builds a complete `GenerationRequest` for memory compaction extraction from a slice of turns.
 pub fn build_compaction_request(
     history_messages: &[ChatMessage],
     settings: Option<&LlmSettings>,
@@ -114,7 +112,7 @@ pub fn build_compaction_request(
     let compaction_max_tokens = calculate_compaction_max_tokens(eff_ctx);
     let policy = GenerationPolicy::from_settings(effective_settings, Some(compaction_max_tokens));
 
-    policy.build_request(
+    let mut request = policy.build_request(
         GenerationPurpose::MemoryCompaction,
         ConversationInput {
             messages: vec![
@@ -130,5 +128,7 @@ pub fn build_compaction_request(
                 },
             ],
         },
-    )
+    );
+    request.options.temperature = Some(DEFAULT_LLM_COMPACTION_TEMPERATURE);
+    request
 }

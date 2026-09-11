@@ -380,12 +380,18 @@ fn main() {
         if !acc.assistant_response.is_empty() {
             acc.assistant_response.clone()
         } else {
-            let mgr = state.conversation_manager.lock();
-            mgr.get_messages()
-                .iter()
-                .rev()
-                .find(|m| m.role == vox_lib::services::harness::Role::Assistant)
-                .map(|m| m.content.clone())
+            state
+                .harness
+                .lock()
+                .as_ref()
+                .and_then(|h| {
+                    h.history
+                        .messages()
+                        .iter()
+                        .rev()
+                        .find(|m| m.role == vox_lib::services::harness::Role::Assistant)
+                        .map(|m| m.content.clone())
+                })
                 .unwrap_or_default()
         }
     };

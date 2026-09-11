@@ -125,7 +125,12 @@ async fn test_session_start_modular_sets_ready_and_identity() {
         }
 
         // 5. Assert identity facts seeded from DB into Working Memory system prompt
-        let assembled_prompt = state.conversation_manager.lock().assemble_system_prompt();
+        let assembled_prompt = state
+            .harness
+            .lock()
+            .as_ref()
+            .expect("HarnessSession must be mounted")
+            .assembled_system_prompt();
         assert!(
             assembled_prompt.contains("advanced systems engineer"),
             "Working memory system prompt must contain seeded identity fact: {}",

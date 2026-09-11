@@ -38,7 +38,7 @@ use crate::{
 pub struct CompactionExecutionSummary {
     pub session_id: i64,
     pub facts_enqueued: u32,
-    pub context_summary: String,
+    pub session_context: String,
     pub from_turn_id: u32,
     pub to_turn_id: u32,
 }
@@ -193,7 +193,7 @@ impl CompactionCoordinator {
         Ok(Some(CompactionExecutionSummary {
             session_id,
             facts_enqueued: facts_count,
-            context_summary: compaction_res.context_summary,
+            session_context: compaction_res.session_context,
             from_turn_id,
             to_turn_id,
         }))
