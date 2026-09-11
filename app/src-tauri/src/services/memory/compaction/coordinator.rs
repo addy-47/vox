@@ -7,7 +7,7 @@ use turso::Connection;
 
 use crate::{
     core::{
-        events::{emit_ipc, IpcEvent, NotificationRecord},
+        events::Severity,
         settings::LlmSettings,
         state::{AppState, InteractionState},
     },
@@ -16,10 +16,7 @@ use crate::{
             commit_compaction_output, fetch_latest_compaction_run, fetch_turns_for_compaction,
             record_compaction_finish, record_compaction_start,
         },
-        notifications::{
-            create_notification, find_active_notification_by_session, update_notification_status,
-            NewNotification,
-        },
+        notifications::dismiss_interactive_by_entity,
         TurnRow,
     },
     services::{
@@ -29,6 +26,7 @@ use crate::{
             QWEN_MODEL_FILE,
         },
         memory::compaction::runner::run_compaction,
+        notifications::{Action, ActionPayload, NotificationCategory, NotificationParams, notify},
     },
     utils::paths::get,
 };
@@ -167,7 +165,7 @@ impl CompactionCoordinator {
                         record_err
                     );
                 }
-                update_session_notification_on_failure(app, conn, session_id).await;
+                emit_session_compaction_failure_receipt(app, conn, session_id, &err_str).await;
                 return Err(e);
             }
         };
@@ -182,7 +180,7 @@ impl CompactionCoordinator {
         )
         .await?;
 
-        update_session_notification_on_success(app, conn, session_id).await;
+        emit_session_compaction_success_receipt(app, conn, session_id, facts_count).await;
 
         log::info!(
             "[CompactionCoordinator] Successfully compacted session {} (enqueued {} facts)",
@@ -205,35 +203,29 @@ impl CompactionCoordinator {
         conn: &Connection,
         session_id: i64,
         uncompacted_turns: u32,
-    ) -> Result<NotificationRecord> {
-        if let Some(existing) =
-            find_active_notification_by_session(conn, session_id, "session_compaction").await?
-        {
-            return Ok(existing);
-        }
+    ) -> Result<Option<String>> {
+        let group_key = format!("session_compaction:{}", session_id);
+        let title = format!("Session #{} Ready to Tidy", session_id);
+        let message = format!(
+            "Session ended with {} uncompacted turn(s). Compact to extract personal memory facts.",
+            uncompacted_turns
+        );
+        let metadata = format!("{{\"uncompacted_turns\": {}}}", uncompacted_turns);
 
-        let notif = NewNotification {
-            id: format!("notif_compaction_{}", session_id),
-            category: "session_compaction".to_string(),
-            title: format!("Session #{} Uncompacted", session_id),
-            message: format!(
-                "Session ended with {} uncompacted turn(s). Compact to extract personal memory facts.",
-                uncompacted_turns
-            ),
-            status: "pending".to_string(),
+        let params = NotificationParams {
+            group_key: Some(&group_key),
+            category: NotificationCategory::SessionCompaction,
+            severity: Severity::Info,
+            impact: None,
+            action: Action::Interactive(ActionPayload::CompactSession { session_id }),
+            title: &title,
+            message: &message,
             session_id: Some(session_id),
-            metadata: format!("{{\"uncompacted_turns\": {}}}", uncompacted_turns),
+            metadata: Some(&metadata),
+            duration_ms: None,
         };
 
-        let record = create_notification(conn, &notif).await?;
-        if let Err(e) = emit_ipc(app, IpcEvent::NotificationCreated(record.clone())) {
-            log::warn!(
-                "[CompactionCoordinator] Failed to emit NotificationCreated: {}",
-                e
-            );
-        }
-
-        Ok(record)
+        notify(app, conn, params).await
     }
 }
 
@@ -266,52 +258,79 @@ fn resolve_llm_provider(settings: &LlmSettings) -> Option<Box<dyn LlmProvider>> 
     create_llm_provider_from_llm_settings(settings, &llm_path).ok()
 }
 
-/// Updates active notification on compaction failure.
-async fn update_session_notification_on_failure<R: tauri::Runtime>(
+/// Emits passive receipt and dismisses interactive card on compaction success.
+async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
     app: &AppHandle<R>,
     conn: &Connection,
     session_id: i64,
+    facts_count: u32,
 ) {
-    if let Ok(Some(mut notif)) =
-        find_active_notification_by_session(conn, session_id, "session_compaction").await
-    {
-        if let Err(e) = update_notification_status(conn, &notif.id, "failed").await {
-            log::warn!(
-                "[CompactionCoordinator] Failed to update notification status to failed: {}",
-                e
-            );
-        }
-        notif.status = "failed".to_string();
-        if let Err(e) = emit_ipc(app, IpcEvent::NotificationUpdated(notif)) {
-            log::warn!(
-                "[CompactionCoordinator] Failed to emit NotificationUpdated: {}",
-                e
-            );
-        }
+    let group_key = format!("session_compaction:{}", session_id);
+    if let Err(e) = dismiss_interactive_by_entity(conn, &group_key).await {
+        log::warn!(
+            "[CompactionCoordinator] Failed to dismiss interactive notification for group {}: {}",
+            group_key,
+            e
+        );
+    }
+
+    let title = format!("Session #{} Tidied", session_id);
+    let message = format!(
+        "Successfully compacted session #{} and extracted {} memory facts.",
+        session_id, facts_count
+    );
+    let receipt_group = format!("compaction_receipt:{}", session_id);
+
+    let params = NotificationParams {
+        group_key: Some(&receipt_group),
+        category: NotificationCategory::SessionCompaction,
+        severity: Severity::Info,
+        impact: None,
+        action: Action::Receipt,
+        title: &title,
+        message: &message,
+        session_id: Some(session_id),
+        metadata: None,
+        duration_ms: None,
+    };
+
+    if let Err(e) = notify(app, conn, params).await {
+        log::warn!(
+            "[CompactionCoordinator] Failed to emit success receipt: {}",
+            e
+        );
     }
 }
 
-/// Updates active notification on compaction success.
-async fn update_session_notification_on_success<R: tauri::Runtime>(
+/// Emits passive warning receipt on compaction failure without mutating card attention status.
+async fn emit_session_compaction_failure_receipt<R: tauri::Runtime>(
     app: &AppHandle<R>,
     conn: &Connection,
     session_id: i64,
+    err_str: &str,
 ) {
-    if let Ok(Some(mut notif)) =
-        find_active_notification_by_session(conn, session_id, "session_compaction").await
-    {
-        if let Err(e) = update_notification_status(conn, &notif.id, "completed").await {
-            log::warn!(
-                "[CompactionCoordinator] Failed to update notification status to completed: {}",
-                e
-            );
-        }
-        notif.status = "completed".to_string();
-        if let Err(e) = emit_ipc(app, IpcEvent::NotificationUpdated(notif)) {
-            log::warn!(
-                "[CompactionCoordinator] Failed to emit NotificationUpdated: {}",
-                e
-            );
-        }
+    let title = format!("Session #{} Compaction Failed", session_id);
+    let message = format!("Failed to tidy session #{}: {}", session_id, err_str);
+    let receipt_group = format!("compaction_receipt:{}", session_id);
+
+    let params = NotificationParams {
+        group_key: Some(&receipt_group),
+        category: NotificationCategory::SessionCompaction,
+        severity: Severity::Warning,
+        impact: None,
+        action: Action::Receipt,
+        title: &title,
+        message: &message,
+        session_id: Some(session_id),
+        metadata: None,
+        duration_ms: None,
+    };
+
+    if let Err(e) = notify(app, conn, params).await {
+        log::warn!(
+            "[CompactionCoordinator] Failed to emit failure receipt: {}",
+            e
+        );
     }
 }
+

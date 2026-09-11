@@ -16,7 +16,7 @@ use sherpa_onnx::{
 use super::{SynthesisContext, TtsProvider, TtsProviderKind};
 use crate::{
     core::{
-        error::{Actionability, PipelineError, PipelineImpact},
+        error::{PipelineError, PipelineImpact},
         events::VoxEvent,
     },
     services::{
@@ -135,7 +135,6 @@ impl TtsProvider for KokoroEngine {
                 message: "Kokoro TTS does not support Hindi (Devanagari).".to_string(),
                 source: "Kokoro".to_string(),
                 impact: PipelineImpact::Degraded,
-                actionability: Actionability::None,
             })) {
                 log::warn!("[Kokoro] Failed to emit error event: {}", e);
             }

@@ -385,7 +385,7 @@ fn main() {
                 .lock()
                 .as_ref()
                 .and_then(|h| {
-                    h.history
+                    h.history()
                         .messages()
                         .iter()
                         .rev()

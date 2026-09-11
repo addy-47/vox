@@ -20,7 +20,7 @@ use tokio_tungstenite::{
 use super::{SynthesisContext, TtsProvider, TtsProviderKind};
 use crate::{
     core::{
-        error::{Actionability, PipelineError, PipelineImpact},
+        error::{PipelineError, PipelineImpact},
         events::VoxEvent,
     },
     services::{
@@ -123,7 +123,6 @@ async fn connect_edge_websocket(event_tx: &Sender<VoxEvent>, turn_id: u32) -> Op
                     message: format!("Edge TTS URL parse error: {}", e),
                     source: "EdgeTts".to_string(),
                     impact: PipelineImpact::Degraded,
-                    actionability: Actionability::None,
                 })) {
                     log::warn!("[EdgeTTS] Failed to emit error event: {}", send_err);
                 }
@@ -168,7 +167,6 @@ async fn connect_edge_websocket(event_tx: &Sender<VoxEvent>, turn_id: u32) -> Op
                         message: format!("Edge TTS WebSocket connect error (attempt 3/3): {:?}", e),
                         source: "EdgeTts".to_string(),
                         impact: PipelineImpact::Degraded,
-                        actionability: Actionability::None,
                     })) {
                         log::warn!("[EdgeTTS] Failed to emit error event: {}", send_err);
                     }
@@ -200,7 +198,6 @@ async fn send_ssml_request(
             message: format!("Edge TTS config send error: {}", e),
             source: "EdgeTts".to_string(),
             impact: PipelineImpact::Degraded,
-            actionability: Actionability::None,
         })) {
             log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
         }
@@ -227,7 +224,6 @@ async fn send_ssml_request(
             message: format!("Edge TTS SSML send error: {}", e),
             source: "EdgeTts".to_string(),
             impact: PipelineImpact::Degraded,
-            actionability: Actionability::None,
         })) {
             log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
         }
@@ -371,7 +367,6 @@ impl TtsProvider for EdgeTtsProvider {
                             message: format!("Edge TTS MP3 decode error: {}", e),
                             source: "EdgeTts".to_string(),
                             impact: PipelineImpact::Degraded,
-                            actionability: Actionability::None,
                         })) {
                             log::warn!("[EdgeTTS] Failed to send error event: {}", send_err);
                         }

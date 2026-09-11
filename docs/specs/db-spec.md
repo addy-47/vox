@@ -215,21 +215,23 @@ Dedicated vector storage for semantic search and Stage 2 cosine deduplication. U
 ### 2.9 `notifications`
 Persistent, actionable desktop notification center (governed by `notifications-spec.md`).
 
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `id` | TEXT | PRIMARY KEY | Unique notification ID (`notif_{cat}_{id}` or UUID) |
-| `group_key` | TEXT | NOT NULL | Correlation / grouping key for task idempotency and UI rollup |
-| `category` | TEXT | NOT NULL | Typed category (`'session_compaction'`, `'memory_consolidation'`, `'pipeline_error'`, etc.) |
-| `severity` | TEXT | NOT NULL DEFAULT 'info' | Visual severity: `'info'`, `'warning'`, `'critical'` |
-| `title` | TEXT | NOT NULL | Plain-language card title |
-| `message` | TEXT | NOT NULL | Plain-language description / instructions |
-| `status` | TEXT | NOT NULL DEFAULT 'unread' | Pure card attention state: `'unread'`, `'read'`, `'dismissed'` |
-| `session_id` | INTEGER | NULLABLE REFERENCES `sessions(id)` ON DELETE CASCADE | Associated session for deep navigation and task action |
-| `metadata` | TEXT | NOT NULL DEFAULT '{}' | JSON payload for UI actions and auxiliary job status |
-| `created_at` | INTEGER | NOT NULL | Millisecond epoch of creation |
-| `updated_at` | INTEGER | NOT NULL | Millisecond epoch of last update |
+| Field | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | Text | Primary Key | Globally unique notification identifier |
+| `group_key` | Text | Not Null | Correlation key for task idempotency and feed rollup |
+| `category` | Text | Not Null | Closed category (`session_compaction`, `pipeline`, etc.) |
+| `severity` | Text | Not Null | Visual severity (`info`, `warning`, `critical`) |
+| `action_type` | Text | Not Null | Interaction kind (`receipt` or `interactive`) |
+| `action_payload` | Text | Not Null, Default `'{}'` | JSON parameters for polymorphic action execution |
+| `title` | Text | Not Null | Plain-language user-facing title |
+| `message` | Text | Not Null | Plain-language user-facing description |
+| `status` | Text | Not Null, Default `'unread'` | Attention state (`unread`, `read`, `dismissed`) |
+| `session_id` | Integer | Nullable, Foreign Key | Optional associated conversation session |
+| `metadata` | Text | Not Null, Default `'{}'` | Read-only domain display context (e.g. turn counts) |
+| `created_at` | Integer | Not Null | Millisecond epoch timestamp of creation |
+| `updated_at` | Integer | Not Null | Millisecond epoch timestamp of last update |
 
 *Indexes:*
-- `idx_notifications_status_created`: `(status, created_at DESC)`
-- `idx_notifications_group_status`: `(group_key, status)`
-
+-   `idx_notifications_status_created` ON notifications(status, created_at DESC);
+-   `idx_notifications_group_status` ON notifications(group_key, status);
+-   `idx_notifications_session` ON notifications(session_id);

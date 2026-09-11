@@ -95,15 +95,25 @@ To keep domain boundaries pristine, responsibilities are partitioned strictly be
    - Contains strictly the data definition of `PipelineError` and domain error enums (`AudioError`, `SttError`, `TtsError`, etc.).
    - Contains **zero** notification logic, **zero** toast emission, and **zero** persistence queries.
 2. **`services/notifications/` (The Notification Service)**:
-   - Owns the universal `notify()` front door function.
+   - Owns the universal `notify()` front door function:
+     ```rust
+     pub async fn notify<R: tauri::Runtime>(
+         app: &AppHandle<R>,
+         db: &turso::Connection,
+         params: NotificationParams,
+     ) -> Result<Option<String>>
+     ```
    - Owns the 3D routing logic (`resolve_channel`).
-   - Owns the task idempotency check before writing to SQLite.
-   - Owns the polymorphic action execution dispatcher (`execute_notification_action`).
+   - Owns task idempotency and entity-scoping checks before writing to SQLite.
+   - Owns the polymorphic backend action execution dispatcher (`execute_notification_action`).
    - Manages communication with `WINDOW_TOAST` (HUD overlay) and `persistence/notifications.rs` (SQLite).
 3. **`pipeline/assistant/error.rs` (The Voice Turn Error Boundary)**:
    - Receives `PipelineError` on turn failures.
    - Drives audio engine state machine transitions based on `PipelineImpact`.
    - Delegates user alerting to the Notification Service via `notify()`.
+4. **Thread Placement Invariant**:
+   - Audio hot path workers (CPAL callback, VAD inference loop, dedicated OS threads) must **NEVER** call `notify()` or acquire database locks directly.
+   - OS workers emit internal pipeline events (`VoxEvent::Error(PipelineError)`). Alerting is delegated to `notify()` strictly within the pipeline router or async handlers where `AppHandle` and Tokio runtimes are available.
 
 ---
 
@@ -122,11 +132,13 @@ Represents retention in storage and expected user interaction:
 - **`Interactive`**: Actionable task or remediation card. Persisted to the SQLite drawer with a primary action button. Dual-emits to the HUD overlay when severity is Critical or turn-aborting.
 
 ### 4.3 Action Payload Contract (`action_payload`)
-The `action_payload` field contains strictly the executable parameters required by the polymorphic action executor when the user clicks the card's primary action:
-- **`CompactSession`**: Carries `session_id` (numeric identifier) to run compaction.
-- **`ConsolidateMemory`**: Carries no parameters; invokes the consolidation engine.
-- **`Navigate`**: Carries `target` route (e.g. `"settings/audio"`, `"settings/ai"`, `"history?session=12"`).
-- **`Retry`**: Carries `operation` name and target resource identifier.
+The `action_payload` field contains strictly the executable parameters required when the user clicks the card's primary action:
+- **Backend Dispatched Actions** (Executed via IPC command `execute_notification_action(id)`):
+  - **`CompactSession`**: Carries `session_id` (numeric identifier) to run compaction.
+  - **`ConsolidateMemory`**: Carries no parameters; invokes the consolidation engine.
+  - **`Retry`**: Carries `operation` name and target resource identifier.
+- **Frontend Handled Actions** (Executed client-side; zero backend IPC invocation):
+  - **`Navigate`**: Carries `target` route (e.g. `"settings/audio"`, `"settings/ai"`, `"history?session=12"`). Handled directly by the React client via router navigation (`navigate(payload.target)`).
 
 ### 4.4 Card Display Metadata Contract (`metadata`)
 The `metadata` field is strictly read-only domain display context. It is **not** a mutable job state machine.
@@ -230,10 +242,10 @@ When an error occurs during a voice turn, the runtime error boundary must execut
 - Session association lookup: `(session_id)`
 
 ### 7.2 Storage Invariants
-1. **Strictly Append-Oriented**: Every stored notification inserts a new row. There is no database-level unique constraint on `group_key`, ensuring audit history is preserved.
+1. **Receipt Auditing (Append-Only)**: Notifications with `Action::Receipt` (e.g. `Memory Consolidated`, `Compaction Finished`) are strictly append-oriented. Every event inserts a new database record under a stream-level `group_key` (e.g. `"memory_consolidation:daily"`). The frontend drawer visualizes these as a single rolled-up card with an occurrence counter `(×N)` and latest timestamp, preserving complete audit history without drawer spam.
 2. **Transient Exclusion**: Events with `Action::Transient` are never committed to SQLite.
-3. **Card Attention Isolation**: Card status is strictly user-governed (`unread`, `read`, `dismissed`). Background job execution progress is transient and must never overwrite card status.
-4. **Task Idempotency**: Before inserting an interactive task card with a `group_key`, the service checks for an active (non-dismissed) card with that key. If present, the existing card is retained without inserting a duplicate.
+3. **Card Attention Isolation**: Card status is strictly user-governed (`unread`, `read`, `dismissed`). Background job execution progress is transient and must never overwrite card status with job states (e.g. `'completed'`, `'failed'`).
+4. **Interactive Task Idempotency (Entity-Scoped In-Place Update)**: Notifications with `Action::Interactive` must use an entity-scoped `group_key` (e.g. `"session_compaction:12"`, `"hardware_disconnect:mic"`). This isolates separate sessions into distinct actionable cards in the UI. If an active (non-dismissed) card already exists for that entity, the service executes an in-place `UPDATE` (refreshing `metadata`, `message`, and `updated_at`) rather than creating duplicate actionable buttons for the same entity.
 
 ---
 
@@ -255,6 +267,10 @@ When an error occurs during a voice turn, the runtime error boundary must execut
 ### 8.3 Dual Channel (`ToastAndNotification`)
 - **Atomic Dispatch**: Emits simultaneously to the HUD overlay window and commits a persistent record to SQLite.
 
+### 8.4 HUD Overlay Exclusivity & Graceful Elevation Fallback
+- **Sole Overlay Surface**: Floating HUD alerts are exclusively delivered via Vox's internal transparent webview window (`AppWindow::Toast` in `toast.rs`). External third-party OS notification crates (`notify-rust`, `tauri-plugin-notification`, libnotify) are strictly excluded to avoid platform daemon hang risks and UI format breakage.
+- **Graceful Elevation Fallback**: If `AppWindow::Toast` construction fails or is blocked by display server compositor restrictions, the Notification Service automatically falls back to committing the record to the persistent SQLite drawer (`NotificationOnly`) so alerts are never swallowed.
+
 ---
 
 ## 9. IPC & Frontend Service Contracts
@@ -263,7 +279,7 @@ When an error occurs during a voice turn, the runtime error boundary must execut
 - **Fetch Active Notifications**: Returns all records whose status is not dismissed, ordered newest first.
 - **Mark Notifications Read**: Accepts an optional filter targeting specific IDs, an entire correlation group key, a category, or all unread notifications. Updates matching records to read status.
 - **Dismiss Notifications**: Accepts an optional filter targeting specific IDs, an entire correlation group key, a category, or all active notifications. Updates matching records to dismissed status.
-- **Execute Notification Action**: Polymorphic action executor accepting a notification ID. Resolves the action payload and dispatches the task to the responsible subsystem (e.g. invoking a compaction slice, running consolidation, or navigating routes). Does not mutate the card's attention status.
+- **Execute Notification Action**: Polymorphic action executor accepting a notification ID (`execute_notification_action(id)`). Resolves the action payload and dispatches strictly backend-executable tasks (`CompactSession`, `ConsolidateMemory`, `Retry`). Does not handle `Navigate` (which is executed client-side by the React router). Does not mutate the card's attention status.
 
 ### 9.2 Drawer Presentation & Rollup Contracts
 - **Feed Ordering**: Unified chronological stream ordered newest first.

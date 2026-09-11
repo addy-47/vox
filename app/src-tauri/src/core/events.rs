@@ -97,19 +97,38 @@ pub struct LlmTokenPayload {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ToastLevel {
-    Success,
-    Warning,
-    Error,
+#[serde(rename_all = "snake_case")]
+pub enum Severity {
     Info,
+    Warning,
+    Critical,
+}
+
+impl Severity {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Severity::Info => "info",
+            Severity::Warning => "warning",
+            Severity::Critical => "critical",
+        }
+    }
+}
+
+impl From<&str> for Severity {
+    fn from(s: &str) -> Self {
+        match s {
+            "warning" => Severity::Warning,
+            "critical" => Severity::Critical,
+            _ => Severity::Info,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToastPayload {
     pub title: String,
     pub message: String,
-    pub level: ToastLevel,
+    pub severity: Severity,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
 }
@@ -118,15 +137,19 @@ pub struct ToastPayload {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationRecord {
     pub id: String,
+    pub group_key: String,
     pub category: String,
+    pub severity: Severity,
+    pub action_type: String,
+    pub action_payload: String,
     pub title: String,
     pub message: String,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<i64>,
     pub metadata: String,
-    pub is_read: bool,
     pub created_at: i64,
+    pub updated_at: i64,
 }
 
 /// Strongly-typed universal Tauri IPC event enum.

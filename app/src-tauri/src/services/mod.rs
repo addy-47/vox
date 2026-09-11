@@ -4,6 +4,7 @@ pub mod harness;
 pub mod health;
 pub mod llm;
 pub mod memory;
+pub mod notifications;
 pub mod realtime;
 pub mod stt;
 pub mod translit;

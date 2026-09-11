@@ -86,25 +86,31 @@ export interface ModelProgressPayload {
   error: string | null;
 }
 
+/** Universal visual priority severity (core/events.rs: Severity). */
+export type Severity = "info" | "warning" | "critical";
+
 /** `show_toast` payload (core/events.rs: ToastPayload). */
-export type ToastLevel = "success" | "warning" | "error" | "info";
 export interface ToastPayload {
   title: string;
   message: string;
-  level: ToastLevel;
+  severity: Severity;
   duration_ms?: number;
 }
 
 export interface NotificationRecord {
   id: string;
+  group_key: string;
   category: string;
+  severity: Severity;
+  action_type: string;
+  action_payload: string;
   title: string;
   message: string;
   status: string;
   session_id?: number | null;
   metadata: string;
-  is_read: boolean;
   created_at: number;
+  updated_at: number;
 }
 
 

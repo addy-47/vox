@@ -7,7 +7,7 @@ use tauri::AppHandle;
 
 use crate::{
     core::{
-        error::{Actionability, PipelineError, PipelineImpact},
+        error::{PipelineError, PipelineImpact},
         state::{AppState, InteractionState},
     },
     pipeline::dictation::{error, transition_dictation},
@@ -28,11 +28,6 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
                     message: "Dictation is disabled in Settings.".to_string(),
                     source: "DictationPtt".to_string(),
                     impact: PipelineImpact::TurnAborted,
-                    actionability: Actionability::Actionable {
-                        category: "dictation_disabled".to_string(),
-                        hint: "Enable dictation in Settings to use the Push-To-Talk hotkey."
-                            .to_string(),
-                    },
                 },
                 app,
                 state,

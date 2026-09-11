@@ -138,14 +138,12 @@ impl RealtimeActor {
                         turn_id,
                         message,
                         impact,
-                        actionability,
                     } => {
                         if let Err(e) = loop_event_tx.send(VoxEvent::Error(PipelineError {
                             turn_id,
                             message,
                             source: "RealtimeActor".to_string(),
                             impact,
-                            actionability,
                         })) {
                             log::warn!("[RealtimeActor] Failed to forward Error: {:?}", e);
                         }

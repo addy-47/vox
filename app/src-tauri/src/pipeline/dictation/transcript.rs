@@ -4,13 +4,18 @@ use tauri::AppHandle;
 
 use crate::{
     core::{
-        events::{emit_ipc_to, IpcEvent, ToastLevel, TranscriptPayload},
+        error::PipelineImpact,
+        events::{emit_ipc_to, IpcEvent, Severity, TranscriptPayload},
         settings::DictationOutputMode,
         state::{AppState, AppWindow, InteractionOwner, InteractionState},
     },
     pipeline::dictation::transition_dictation,
-    services::{dictation::output_router::route_transcript, translit::transliterate_if_hi},
-    toast::show_toast,
+    services::{
+        self,
+        dictation::output_router::route_transcript,
+        notifications::{Action, NotificationCategory, NotificationParams},
+        translit::transliterate_if_hi,
+    },
     utils::paths,
 };
 
@@ -35,9 +40,26 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         if state.pipeline.dictation_state() != InteractionState::Listening {
             transition_dictation(InteractionState::Ready, app, state);
         }
-        if let Err(e) = show_toast(app, "Dictation", "No speech recognized", ToastLevel::Info) {
-            log::warn!("[Dictation::Transcript] Failed to show empty toast: {}", e);
-        }
+
+        let app_handle = app.clone();
+        let db = state.db.clone();
+        tauri::async_runtime::spawn(async move {
+            let params = NotificationParams {
+                category: NotificationCategory::Dictation,
+                severity: Severity::Info,
+                impact: Some(PipelineImpact::None),
+                action: Action::Transient,
+                title: "Dictation",
+                message: "Speech detected, but no words recognized.",
+                group_key: Some("dictation:empty_speech"),
+                session_id: None,
+                metadata: None,
+                duration_ms: None,
+            };
+            if let Err(e) = services::notifications::notify(&app_handle, &db, params).await {
+                log::warn!("[Dictation::Transcript] Failed to dispatch notification: {}", e);
+            }
+        });
         return;
     }
 

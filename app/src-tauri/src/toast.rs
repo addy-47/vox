@@ -9,7 +9,7 @@ use gtk::prelude::{GtkWindowExt, WidgetExt};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 use crate::core::{
-    events::{emit_ipc_to, IpcEvent, ToastLevel, ToastPayload},
+    events::{emit_ipc_to, IpcEvent, Severity, ToastPayload},
     state::AppWindow,
 };
 
@@ -204,21 +204,33 @@ pub fn get_last_toast() -> Option<ToastPayload> {
     LAST_TOAST.lock().clone()
 }
 
-/// Returns true when the main window is hidden and a toast should supplement the error.
+/// Returns true when the main window is hidden or unfocused and a toast should supplement the error.
 pub fn should_show_error_toast<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
     match app.get_webview_window(AppWindow::Main.as_str()) {
-        Some(w) => !w.is_visible().unwrap_or(true),
-        None => false,
+        Some(w) => {
+            let is_visible = w.is_visible().unwrap_or(true);
+            let is_focused = w.is_focused().unwrap_or(false);
+            !is_visible || !is_focused
+        }
+        None => true,
     }
 }
 
 /// Lazily ensures the toast window, positions it, and emits a `show_toast` event.
+/// Suppresses floating overlay window when the main app window is focused.
 pub fn show_toast<R: tauri::Runtime>(
     app: &AppHandle<R>,
     title: &str,
     message: &str,
-    level: ToastLevel,
+    severity: Severity,
 ) -> Result<(), String> {
+    if let Some(main_win) = app.get_webview_window(AppWindow::Main.as_str()) {
+        if main_win.is_visible().unwrap_or(false) && main_win.is_focused().unwrap_or(false) {
+            log::debug!("[Toast] Main window is focused; suppressing floating toast overlay");
+            return Ok(());
+        }
+    }
+
     let window_res = catch_unwind(AssertUnwindSafe(|| ensure_toast_window(app)));
 
     let _window = match window_res {
@@ -235,7 +247,7 @@ pub fn show_toast<R: tauri::Runtime>(
     let payload = ToastPayload {
         title: title_owned,
         message: message_owned,
-        level,
+        severity,
         duration_ms: None,
     };
 
