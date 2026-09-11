@@ -1,19 +1,15 @@
-use std::{
-    sync::atomic::Ordering,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::sync::atomic::Ordering;
 
 use tauri::AppHandle;
 
 use crate::{
     core::{
-        error::{Actionability, PipelineError, PipelineImpact},
-        events::{emit_ipc, IpcEvent, ToastLevel},
+        error::{PipelineError, PipelineImpact},
+        events::Severity,
         state::{AppState, InteractionState},
     },
-    persistence::notifications::{create_notification, NewNotification},
     pipeline::{transition, RoutingContext},
-    toast::{should_show_error_toast, show_toast},
+    services::notifications::{notify, Action, ActionPayload, NotificationCategory, NotificationParams},
 };
 
 /// Handles pipeline subsystem errors according to the 2D Error Classification Matrix.
@@ -24,17 +20,16 @@ pub fn on_error<R: tauri::Runtime + 'static>(
     ctx: &RoutingContext,
 ) {
     log::error!(
-        "[Pipeline::Error] Error on turn {} (source: {}, impact: {:?}, actionability: {:?}): {}",
+        "[Pipeline::Error] Error on turn {} (source: {}, impact: {:?}): {}",
         err.turn_id,
         err.source,
         err.impact,
-        err.actionability,
         err.message
     );
 
     match err.impact {
-        PipelineImpact::Degraded => {
-            // Degraded fidelity: Turn continues without stopping. No state transition, no token cancellation.
+        PipelineImpact::None | PipelineImpact::Degraded => {
+            // Degraded fidelity or None: Turn continues without stopping. No state transition, no token cancellation.
         }
         PipelineImpact::TurnAborted => {
             // Turn fails cleanly: Cancel turn token and synthesis jobs, return state machine directly to Ready.
@@ -66,58 +61,78 @@ pub fn on_error<R: tauri::Runtime + 'static>(
         }
     }
 
-    // Ephemeral Toast Surface
-    let toast_level = match err.impact {
-        PipelineImpact::Degraded => ToastLevel::Warning,
-        PipelineImpact::TurnAborted | PipelineImpact::SessionHalted => ToastLevel::Error,
+    // Classify error and delegate alerting strictly to the Notification Service
+    let category = if err.source.contains("Audio") || err.source.contains("Microphone") {
+        NotificationCategory::Hardware
+    } else if err.source.contains("Model") {
+        NotificationCategory::Models
+    } else {
+        NotificationCategory::Pipeline
     };
-    if should_show_error_toast(app) {
-        if let Err(e) = show_toast(app, "Voice Notice", &err.message, toast_level) {
-            log::warn!("[Pipeline::Error] Failed to show error toast: {}", e);
-        }
-    }
 
-    // Persistent Notification Surface (only when actionability is Actionable)
-    if let Actionability::Actionable { category, hint } = err.actionability {
-        let app_handle = app.clone();
-        let db = std::sync::Arc::clone(&state.db);
-        let notif_id = format!("err_{}_{}", err.turn_id, current_timestamp_ms());
-        let full_msg = format!("{}\nHint: {}", err.message, hint);
-        tauri::async_runtime::spawn(async move {
-            let new_notif = NewNotification {
-                id: notif_id,
-                category: category.to_string(),
-                title: format!("Action Required: {}", err.source),
-                message: full_msg,
-                status: "active".to_string(),
-                session_id: None,
-                metadata: String::new(),
-            };
-            match create_notification(&db, &new_notif).await {
-                Ok(record) => {
-                    if let Err(e) = emit_ipc(&app_handle, IpcEvent::NotificationCreated(record)) {
-                        log::warn!(
-                            "[ErrorNotification] Failed to emit NotificationCreated: {}",
-                            e
-                        );
-                    }
-                }
-                Err(e) => {
-                    log::warn!(
-                        "[ErrorNotification] Failed to create notification in db: {}",
-                        e
-                    );
-                }
+    let severity = match err.impact {
+        PipelineImpact::None | PipelineImpact::Degraded => Severity::Warning,
+        PipelineImpact::TurnAborted => Severity::Warning,
+        PipelineImpact::SessionHalted => Severity::Critical,
+    };
+
+    let action = match err.impact {
+        PipelineImpact::None | PipelineImpact::Degraded => Action::Transient,
+        PipelineImpact::TurnAborted => {
+            if err.message.contains("context") || err.message.contains("prompt too long") {
+                Action::Interactive(ActionPayload::Navigate {
+                    target: "settings/ai".to_string(),
+                })
+            } else {
+                Action::Transient
             }
-        });
-    }
-}
+        }
+        PipelineImpact::SessionHalted => {
+            if err.source.contains("Audio") {
+                Action::Interactive(ActionPayload::Navigate {
+                    target: "settings/audio".to_string(),
+                })
+            } else if err.source.contains("Model") {
+                Action::Interactive(ActionPayload::Navigate {
+                    target: "settings/models".to_string(),
+                })
+            } else {
+                Action::Interactive(ActionPayload::Navigate {
+                    target: "settings/ai".to_string(),
+                })
+            }
+        }
+    };
 
-fn current_timestamp_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
+    let app_handle = app.clone();
+    let db = std::sync::Arc::clone(&state.db);
+    let title = format!("Voice Notice: {}", err.source);
+    let message = err.message.clone();
+    let group_key = format!("pipeline_error:{}", err.source);
+    let impact = err.impact;
+
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = notify(
+            &app_handle,
+            &db,
+            NotificationParams {
+                group_key: Some(&group_key),
+                category,
+                severity,
+                impact: Some(impact),
+                action,
+                title: &title,
+                message: &message,
+                session_id: None,
+                metadata: None,
+                duration_ms: None,
+            },
+        )
+        .await
+        {
+            log::warn!("[Pipeline::Error] Failed to dispatch error notification: {}", e);
+        }
+    });
 }
 
 /// Handles turn cancellation by clearing accumulator state, resetting synthesis jobs, and returning to Ready.

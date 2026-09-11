@@ -17,8 +17,7 @@ use super::{
 use crate::{
     core::state::InteractionState,
     services::realtime::{
-        Actionability, OutboundCommand, PipelineImpact, RealtimeProviderEvent,
-        BRIDGE_CHANNEL_CAPACITY,
+        OutboundCommand, PipelineImpact, RealtimeProviderEvent, BRIDGE_CHANNEL_CAPACITY,
     },
 };
 
@@ -159,10 +158,6 @@ pub(crate) fn spawn_harness<D: ProviderDriver>(
                     message: "Realtime connection permanently lost after max reconnect attempts."
                         .to_string(),
                     impact: PipelineImpact::SessionHalted,
-                    actionability: Actionability::Actionable {
-                        category: "network_error".to_string(),
-                        hint: "Realtime WebSocket connection failed after multiple retries. Check your network or provider endpoint.".to_string(),
-                    },
                 }) {
                     log::warn!(
                         "[RealtimeHarness] Failed to emit terminal error event: {:?}",

@@ -4,39 +4,47 @@ import type { NotificationRecord } from "./eventsService";
 
 export type { NotificationRecord };
 
-/** Backend notification categories (persistence/notifications.rs). */
+/** Backend notification categories (persistence/notifications.rs & services/notifications/types.rs). */
 export type NotificationCategory =
   | "session_compaction"
-  | "model_ready"
-  | "model_failed"
-  | "memory_issue"
-  | "storage_health";
+  | "memory_consolidation"
+  | "pipeline"
+  | "dictation"
+  | "hardware"
+  | "models"
+  | "storage";
 
-const KNOWN_CATEGORIES: readonly string[] = [
+export const KNOWN_CATEGORIES: readonly NotificationCategory[] = [
   "session_compaction",
-  "model_ready",
-  "model_failed",
-  "memory_issue",
-  "storage_health",
+  "memory_consolidation",
+  "pipeline",
+  "dictation",
+  "hardware",
+  "models",
+  "storage",
 ];
 
-/** Normalize unknown future categories to the compaction presentation. */
+export interface NotificationFilter {
+  ids?: string[];
+  group_key?: string;
+  category?: string;
+}
+
+/** Normalize unknown future categories to the pipeline presentation. */
 export function toCategory(category: string): NotificationCategory {
   return (KNOWN_CATEGORIES as readonly string[]).includes(category)
     ? (category as NotificationCategory)
-    : "session_compaction";
+    : "pipeline";
 }
 
-/** Terminal receipts render dimmed with a status chip and no badge weight. */
+/** Terminal receipts render dimmed with an occurrence rollup and zero badge weight. */
 export function isReceipt(notif: NotificationRecord): boolean {
-  return notif.status === "completed" || notif.status === "failed";
+  return notif.action_type === "receipt";
 }
 
-/** Counts badge weight: unread, non-dismissed, non-receipt. */
+/** Counts badge weight: unread, interactive tasks only. */
 export function countsTowardBadge(notif: NotificationRecord): boolean {
-  if (notif.is_read) return false;
-  if (notif.status === "dismissed") return false;
-  return !isReceipt(notif);
+  return notif.status === "unread" && notif.action_type === "interactive";
 }
 
 /** Best-effort turn count from notification metadata JSON. */
@@ -53,24 +61,24 @@ export function metadataTurnCount(notif: NotificationRecord): number | null {
   return null;
 }
 
-/** Fetches all active (unread or read) notifications */
+/** Fetches all active (non-dismissed) notifications */
 export function getNotifications(): Promise<NotificationRecord[]> {
   return invoke("get_notifications");
 }
 
-/** Marks all notifications as read */
-export function markNotificationsRead(): Promise<void> {
-  return invoke("mark_notifications_read");
+/** Marks unread notifications matching the filter (or all unread) as read */
+export function markNotificationsRead(filter?: NotificationFilter): Promise<void> {
+  return invoke("mark_notifications_read", { filter });
 }
 
-/** Dismisses a specific notification */
-export function dismissNotification(id: string): Promise<void> {
-  return invoke("dismiss_notification", { id });
+/** Dismisses active notifications matching the filter (or all active) */
+export function dismissNotifications(filter?: NotificationFilter): Promise<void> {
+  return invoke("dismiss_notifications", { filter });
 }
 
-/** Triggers background compaction for a session */
-export function triggerSessionCompaction(sessionId: number): Promise<void> {
-  return invoke("trigger_session_compaction", { session_id: sessionId });
+/** Polymorphic backend action execution */
+export function executeNotificationAction(id: string, action?: string): Promise<void> {
+  return invoke("execute_notification_action", { id, action });
 }
 
 import {
