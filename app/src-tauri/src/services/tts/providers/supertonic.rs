@@ -2,8 +2,7 @@ use std::{
     collections::HashMap,
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
-        mpsc::Sender,
+        atomic::{AtomicI32, AtomicU32, Ordering},
         Arc,
     },
 };
@@ -15,19 +14,15 @@ use sherpa_onnx::{
     OfflineTtsSupertonicModelConfig,
 };
 
-use super::{TtsProvider, TtsProviderKind};
-use crate::{
-    core::events::VoxEvent,
-    services::{
-        audio::PlaybackEngine,
-        translit::is_devanagari,
-        tts::{
-            MAX_QUALITY_STEPS_SUPERTONIC, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED,
-            MODEL_FILE_TTS_SUPER_CONFIG, MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR,
-            MODEL_FILE_TTS_SUPER_INDEXER, MODEL_FILE_TTS_SUPER_TEXT_ENCODER,
-            MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR, MODEL_FILE_TTS_SUPER_VOCODER,
-            MODEL_FILE_TTS_SUPER_VOICE, SUPER_SAMPLE_RATE, TTS_SAMPLE_RATE,
-        },
+use super::{SynthesisContext, TtsProvider, TtsProviderKind};
+use crate::services::{
+    translit::is_devanagari,
+    tts::{
+        MAX_QUALITY_STEPS_SUPERTONIC, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED,
+        MODEL_FILE_TTS_SUPER_CONFIG, MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR,
+        MODEL_FILE_TTS_SUPER_INDEXER, MODEL_FILE_TTS_SUPER_TEXT_ENCODER,
+        MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR, MODEL_FILE_TTS_SUPER_VOCODER,
+        MODEL_FILE_TTS_SUPER_VOICE, SUPER_SAMPLE_RATE, TTS_SAMPLE_RATE,
     },
 };
 
@@ -206,16 +201,8 @@ impl TtsProvider for TtsEngine {
 
     /// Synthesizes text chunk, resamples stream to 24kHz in real-time, and dispatches chunk events.
     /// Synthesizes text chunk into 24kHz audio and feeds directly to PlaybackEngine.
-    fn synthesize_chunk(
-        &self,
-        text: &str,
-        turn_id: u32,
-        cancel: Arc<AtomicBool>,
-        playback: &Arc<PlaybackEngine>,
-        _event_tx: Sender<VoxEvent>,
-        telemetry_rtf: Option<&Arc<AtomicU32>>,
-    ) -> Result<()> {
-        if cancel.load(Ordering::Relaxed) {
+    fn synthesize_chunk(&self, text: &str, ctx: &SynthesisContext<'_>) -> Result<()> {
+        if ctx.cancel.load(Ordering::Relaxed) {
             return Ok(());
         }
 
@@ -224,11 +211,12 @@ impl TtsProvider for TtsEngine {
         let sid = self.voice.load(Ordering::Relaxed);
 
         log::info!(
-            "[Supertonic] Synthesizing turn {} ({}): '{}' sid={}",
-            turn_id,
+            "[Supertonic] Synthesizing turn {} ({}): '{}' sid={} (intent: {:?})",
+            ctx.turn_id,
             lang,
             text,
-            sid
+            sid,
+            ctx.intent
         );
 
         let start = std::time::Instant::now();
@@ -247,8 +235,9 @@ impl TtsProvider for TtsEngine {
             ..Default::default()
         };
 
-        let cancel_cb = cancel.clone();
-        let playback_cb = Arc::clone(playback);
+        let cancel_cb = ctx.cancel.clone();
+        let playback_cb = Arc::clone(ctx.playback);
+        let intent = ctx.intent;
         let mut lpf = BiquadFilter::new_lpf_11k();
 
         let tts_guard = self.tts.lock();
@@ -263,7 +252,7 @@ impl TtsProvider for TtsEngine {
                     return true;
                 }
                 let samples_24k = resample_44100_to_24000(raw_samples, &mut lpf);
-                playback_cb.ingest_chunk(&samples_24k);
+                playback_cb.ingest_chunk_with_intent(&samples_24k, intent);
                 true
             }),
         );
@@ -283,18 +272,18 @@ impl TtsProvider for TtsEngine {
             0.0
         };
 
-        if audio.is_none() && !cancel.load(Ordering::Relaxed) {
+        if audio.is_none() && !ctx.cancel.load(Ordering::Relaxed) {
             return Err(anyhow!("[Supertonic] Generation failed"));
         }
 
         log::info!(
             "[Supertonic] Synthesis complete (turn {}). {:.2}s audio, RTF: {:.3}",
-            turn_id,
+            ctx.turn_id,
             audio_duration,
             rtf
         );
 
-        if let Some(rtf_handle) = telemetry_rtf {
+        if let Some(rtf_handle) = ctx.telemetry_rtf {
             rtf_handle.store(rtf.to_bits(), Ordering::Relaxed);
         }
         Ok(())

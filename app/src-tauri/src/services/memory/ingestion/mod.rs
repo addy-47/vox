@@ -13,6 +13,12 @@ pub use stage2_embed::{
     run_stage2_cosine_dedup, run_stage2_cosine_dedup_with_embedder, Stage2Summary,
 };
 
+pub const JACCARD_EXACT_MATCH_THRESHOLD: f32 = 1.0;
+pub const SOFT_VECTOR_DEDUP_THRESHOLD: f32 = 0.95;
+
+pub const STAGE1_BATCH_CEILING: usize = 128;
+pub const STAGE2_BATCH_SIZE: usize = 16;
+
 /// Strongly-typed lifecycle state for items in `memory_ingestion_queue`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum QueueStatus {

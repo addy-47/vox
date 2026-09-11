@@ -18,7 +18,12 @@ pub fn create_realtime_provider(
         .read()
         .unwrap_or_else(|p| p.into_inner())
         .clone();
-    let assembled_prompt = state.conversation_manager.lock().assemble_system_prompt();
+    let assembled_prompt = state
+        .harness
+        .lock()
+        .as_ref()
+        .map(|h| h.prompt.assemble())
+        .unwrap_or_else(|| state.resolve_base_prompt());
 
     // Check cached session resumption token with 2-hour TTL
     let cache_path = cache_dir().join(SESSION_CACHE_FILENAME);

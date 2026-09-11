@@ -38,7 +38,8 @@ pub(crate) use ml::trim_heap;
 pub use ml::{
     embedder::{
         cosine_similarity, ensure_embedder_loaded, generate_embedding, generate_embeddings_batch,
-        init_embedder, is_embedder_loaded,
+        init_embedder, is_embedder_loaded, PRIMARY_EMBEDDING_MODEL_DIR,
+        PRIMARY_EMBEDDING_MODEL_FILENAME,
     },
     tokenizer::estimate_tokens,
     unload_all_onnx_models, unload_memory_pipeline_onnx_models,
@@ -47,25 +48,7 @@ pub use personal::{consolidate_personal_memory, export_personal_memory, import_p
 
 pub use crate::core::error::MemoryError;
 
-pub const RESERVED_GENERATION_TOKENS: usize = 512;
-pub const CONTEXT_CRITICAL_THRESHOLD: f32 = 0.85;
-pub const CONTEXT_SOFT_THRESHOLD: f32 = 0.65;
-pub const SOFT_COMPACTION_DEBOUNCE_SECS: u64 = 20;
 pub const QUIET_INGESTION_DEBOUNCE_SECS: u64 = 30;
-
-pub const JACCARD_EXACT_MATCH_THRESHOLD: f32 = 1.0;
-pub const SOFT_VECTOR_DEDUP_THRESHOLD: f32 = 0.95;
-
-pub const STAGE1_BATCH_CEILING: usize = 128;
-pub const STAGE2_BATCH_SIZE: usize = 16;
-
-pub const NARRATIVE_CHAIN_SOFT_CAP_SHARE: f32 = 0.05;
-pub const EMBEDDING_DIM: usize = 384;
-pub const PRIMARY_EMBEDDING_MODEL_DIR: &str = "minilm-l12-v2";
-pub const PRIMARY_EMBEDDING_MODEL_FILENAME: &str = "model_int8.onnx";
-pub const FALLBACK_EMBEDDING_MODEL_DIR: &str = "bge-m3";
-pub const FALLBACK_EMBEDDING_MODEL_FILENAME: &str = "model_quantized.onnx";
-pub const EMBEDDING_TOKENIZER_FILENAME: &str = "tokenizer.json";
 pub const COMPACTION_SENTINEL_TURN_ID: u32 = 999_999;
 
 /// Spawns a background observer task that watches for sustained 30-second quiet periods in {Ready, Paused}

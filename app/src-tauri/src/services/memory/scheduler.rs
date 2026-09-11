@@ -72,15 +72,11 @@ async fn run_consolidation_once<R: tauri::Runtime>(
 
     let record = consolidate_personal_memory(&state.db, provider.as_ref(), None, None).await?;
 
-    let (context_window, max_context_share) = {
-        let s = state.settings.read().unwrap_or_else(|p| p.into_inner());
-        (s.llm.context_window as usize, s.memory.max_context_share)
-    };
-    state.conversation_manager.lock().set_personal_memory(
-        Some(record.content.clone()),
-        context_window,
-        max_context_share,
-    );
+    if let Some(ref mut harness) = *state.harness.lock() {
+        harness
+            .prompt
+            .set_personal_memory(Some(record.content.clone()));
+    }
 
     if let Err(e) = emit_ipc(app, IpcEvent::PersonalMemoryUpdated(record)) {
         log::warn!(

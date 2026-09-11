@@ -43,10 +43,6 @@ use crate::{
     },
     ipc::{
         audio::list_audio_devices,
-        persistence::{
-            continue_session, create_session, delete_session, get_sessions, get_transcript_history,
-            get_turns, update_session,
-        },
         memory::{
             consolidate_personal_memory, export_personal_memory, get_active_facts,
             get_personal_memory, import_personal_memory, save_personal_memory,
@@ -55,6 +51,10 @@ use crate::{
         notifications::{
             dismiss_notification, get_notifications, mark_notifications_read,
             trigger_session_compaction,
+        },
+        persistence::{
+            continue_session, create_session, delete_session, get_sessions, get_transcript_history,
+            get_turns, update_session,
         },
         pipeline::{
             end_session, launch_engine, pause_session, ptt_cancel, ptt_start, ptt_stop,
@@ -89,7 +89,6 @@ use crate::{
     persistence::{db::TOKIO_HANDLE, worker::spawn_persistence_worker, PersistenceEvent},
     services::{
         dictation::init_dictation_hotkey_listener,
-        harness::spawn_state_compaction_observer,
         memory::{
             compaction::reconcile_uncompacted_sessions_on_boot,
             scheduler::{check_missed_consolidation_on_boot, spawn_consolidation_scheduler},
@@ -367,7 +366,6 @@ pub fn run() {
             spawn_monitoring_collector(Arc::clone(&state_arc));
             spawn_system_monitor(app.handle().clone());
             spawn_telemetry_emitter(app.handle().clone());
-            spawn_state_compaction_observer(Arc::clone(&state_arc));
             spawn_quiet_ingestion_observer(Arc::clone(&state_arc));
             spawn_consolidation_scheduler(app.handle().clone(), Arc::clone(&state_arc));
 

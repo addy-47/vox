@@ -12,7 +12,7 @@ mod common;
 
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering},
         mpsc, Arc,
     },
     time::Duration,
@@ -101,6 +101,7 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
             .send(TtsCommand::Generate {
                 turn_id,
                 text: "Hello! Welcome to Vox voice assistant.".to_string(),
+                intent: vox_lib::core::events::AudioIntent::TurnResponse,
             })
             .expect("Failed to send Generate to TTS worker");
 
@@ -112,7 +113,7 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
 
         while std::time::Instant::now() < deadline {
             match event_rx.recv_timeout(Duration::from_millis(50)) {
-                Ok(VoxEvent::PlaybackStarted { turn_id: tid }) => {
+                Ok(VoxEvent::PlaybackStarted { turn_id: tid, .. }) => {
                     assert_eq!(tid, turn_id, "PlaybackStarted turn_id must match");
                     started_received = true;
                     break;
@@ -172,7 +173,13 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
             interaction_mode: vox_lib::core::settings::InteractionMode::PTT,
             owner: vox_lib::core::state::InteractionOwner::Assistant,
         };
-        on_playback_started(turn_id, &app, &state, &ctx);
+        on_playback_started(
+            turn_id,
+            vox_lib::core::events::AudioIntent::TurnResponse,
+            &app,
+            &state,
+            &ctx,
+        );
         assert_eq!(
             state.pipeline.state(),
             InteractionState::Speaking,
@@ -231,6 +238,7 @@ async fn test_tts_to_playback_short_utterance_flush() {
             state_atomic: Arc::new(AtomicU32::new(0)),
             current_turn_id: Arc::clone(&current_turn_id),
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
+            playback_intent: Arc::new(AtomicU8::new(0)),
             event_tx,
         };
 
@@ -266,7 +274,7 @@ async fn test_tts_to_playback_short_utterance_flush() {
             "flush_pre_roll must immediately arm playback when unplayed samples exist"
         );
         match event_rx.try_recv() {
-            Ok(VoxEvent::PlaybackStarted { turn_id: tid }) => {
+            Ok(VoxEvent::PlaybackStarted { turn_id: tid, .. }) => {
                 assert_eq!(tid, turn_id);
             }
             other => panic!(

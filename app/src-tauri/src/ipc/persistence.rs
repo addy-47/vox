@@ -11,10 +11,9 @@ use crate::{
         state::{AppState, InteractionState},
     },
     persistence::sessions::{
-        delete_session as delete_session_row, fetch_session_by_id, fetch_session_continuation,
-        fetch_sessions, fetch_turns, update_session_metadata,
+        delete_session as delete_session_row, fetch_session_by_id, fetch_sessions, fetch_turns,
+        update_session_metadata,
     },
-    pipeline::init_new_session,
     utils::paths,
 };
 
@@ -38,7 +37,10 @@ pub async fn get_transcript_history(
     let content = match tokio::fs::read_to_string(&file_path).await {
         Ok(c) => c,
         Err(e) => {
-            log::warn!("[Ipc::History] Failed to read dictation history cache: {}", e);
+            log::warn!(
+                "[Ipc::History] Failed to read dictation history cache: {}",
+                e
+            );
             return Ok(Vec::new());
         }
     };
@@ -91,9 +93,7 @@ pub async fn create_session(
     state.conversation_id.store(0, Ordering::Relaxed);
     state.pipeline_accumulator.lock().clear();
 
-    // 3. Reset working memory with active persona prompt and personal memory
-    let prompt = state.resolve_base_prompt();
-    init_new_session(&state, &prompt).await;
+    state.harness.lock().take();
 
     log::info!("[IPC::History] Reset conversation state for fresh session");
     Ok(None)
@@ -105,28 +105,6 @@ pub async fn continue_session(
     session_id: i64,
     state: State<'_, Arc<AppState>>,
 ) -> Result<ContinueSessionResult, VoxIpcError> {
-    let continuation = fetch_session_continuation(&state.db, session_id)
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-
-    let prompt = state.resolve_base_prompt();
-    let (context_window, max_context_share) = {
-        let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
-        (
-            settings.llm.context_window as usize,
-            settings.memory.max_context_share,
-        )
-    };
-
-    state.conversation_manager.lock().restore_session_continuation(
-        &prompt,
-        continuation.personal_memory,
-        continuation.latest_summary,
-        continuation.turns,
-        context_window,
-        max_context_share,
-    );
-
     state
         .conversation_id
         .store(session_id as u64, Ordering::Relaxed);

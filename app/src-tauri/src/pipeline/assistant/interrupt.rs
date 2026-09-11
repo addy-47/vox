@@ -55,10 +55,11 @@ pub fn on_interrupt<R: tauri::Runtime>(
     };
 
     if !partial_assistant.trim().is_empty() {
-        state
-            .conversation_manager
-            .lock()
-            .push_assistant_turn(partial_assistant.clone());
+        if let Some(ref mut harness) = *state.harness.lock() {
+            harness
+                .history
+                .push_assistant_turn(partial_assistant.clone());
+        }
     }
 
     let conv_id = state.conversation_id.load(Ordering::Relaxed);

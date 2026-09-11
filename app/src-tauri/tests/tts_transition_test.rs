@@ -95,6 +95,7 @@ async fn test_tts_voice_switch_without_worker_restart() {
             .send(TtsCommand::Generate {
                 turn_id,
                 text: "First sentence in voice zero.".to_string(),
+                intent: vox_lib::core::events::AudioIntent::TurnResponse,
             })
             .expect("Failed to send first Generate command");
 
@@ -108,6 +109,7 @@ async fn test_tts_voice_switch_without_worker_restart() {
             .send(TtsCommand::Generate {
                 turn_id,
                 text: "Second sentence in voice two.".to_string(),
+                intent: vox_lib::core::events::AudioIntent::TurnResponse,
             })
             .expect("Failed to send second Generate command");
 
@@ -248,9 +250,14 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
             .expect("tts_rx must receive filler TtsCommand::Generate");
 
         match cmd {
-            TtsCommand::Generate { turn_id: tid, text } => {
+            TtsCommand::Generate { turn_id: tid, text, intent } => {
                 assert_eq!(tid, turn_id, "Filler turn_id must match current turn");
                 assert_eq!(text, filler_text, "Dispatched text must match filler text");
+                assert_eq!(
+                    intent,
+                    vox_lib::core::events::AudioIntent::InterimFiller,
+                    "Filler command must have InterimFiller intent"
+                );
             }
             other => panic!("Expected TtsCommand::Generate, got {:?}", other),
         }

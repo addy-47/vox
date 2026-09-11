@@ -1,10 +1,6 @@
 use std::{
     path::Path,
-    sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
-        mpsc::Sender,
-        Arc,
-    },
+    sync::atomic::{AtomicU32, Ordering},
     time::Instant,
 };
 
@@ -12,17 +8,10 @@ use anyhow::{anyhow, Result};
 use chatterbox_rs::{Engine, EngineOptions};
 use parking_lot::Mutex;
 
-use super::{TtsProvider, TtsProviderKind};
-use crate::{
-    core::events::VoxEvent,
-    services::{
-        audio::PlaybackEngine,
-        tts::{
-            MAX_QUALITY_STEPS_CHATTERBOX, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED,
-            MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3, TTS_CHUNK_SIZE,
-            TTS_SAMPLE_RATE,
-        },
-    },
+use super::{SynthesisContext, TtsProvider, TtsProviderKind};
+use crate::services::tts::{
+    MAX_QUALITY_STEPS_CHATTERBOX, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED,
+    MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3, TTS_CHUNK_SIZE, TTS_SAMPLE_RATE,
 };
 
 /// Speech synthesis engine wrapping the local Chatterbox GGUF model via chatterbox-rs.
@@ -165,18 +154,10 @@ impl TtsProvider for ChatterboxEngine {
     }
 
     /// Synthesizes input text chunk and feeds 24kHz audio directly to PlaybackEngine.
-    fn synthesize_chunk(
-        &self,
-        text: &str,
-        turn_id: u32,
-        cancel: Arc<AtomicBool>,
-        playback: &Arc<PlaybackEngine>,
-        _event_tx: Sender<VoxEvent>,
-        telemetry_rtf: Option<&Arc<AtomicU32>>,
-    ) -> Result<()> {
+    fn synthesize_chunk(&self, text: &str, ctx: &SynthesisContext<'_>) -> Result<()> {
         log::info!(
             "[Chatterbox] Starting synthesis for text (turn {}): '{}'",
-            turn_id,
+            ctx.turn_id,
             text
         );
 
@@ -190,7 +171,7 @@ impl TtsProvider for ChatterboxEngine {
             result.pcm
         };
 
-        if cancel.load(Ordering::Relaxed) {
+        if ctx.cancel.load(Ordering::Relaxed) {
             return Ok(());
         }
 
@@ -203,10 +184,10 @@ impl TtsProvider for ChatterboxEngine {
         };
 
         for chunk in output.chunks(TTS_CHUNK_SIZE) {
-            if cancel.load(Ordering::Relaxed) {
+            if ctx.cancel.load(Ordering::Relaxed) {
                 return Ok(());
             }
-            playback.ingest_chunk(chunk);
+            ctx.playback.ingest_chunk_with_intent(chunk, ctx.intent);
         }
 
         let audio_duration = output.len() as f32 / TTS_SAMPLE_RATE as f32;
@@ -218,13 +199,13 @@ impl TtsProvider for ChatterboxEngine {
 
         log::info!(
             "[Chatterbox] Synthesis complete (turn {}). {:.2}s audio, RTF: {:.3}, speed: {:.2}",
-            turn_id,
+            ctx.turn_id,
             audio_duration,
             rtf,
             speed,
         );
 
-        if let Some(rtf_handle) = telemetry_rtf {
+        if let Some(rtf_handle) = ctx.telemetry_rtf {
             rtf_handle.store(rtf.to_bits(), Ordering::Relaxed);
         }
 

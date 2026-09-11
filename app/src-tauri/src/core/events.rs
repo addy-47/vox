@@ -2,15 +2,28 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
 use crate::{
-    core::error::PipelineError,
-    core::state::{AppWindow, InteractionOwner},
+    core::{
+        error::PipelineError,
+        state::{AppWindow, InteractionOwner},
+    },
     persistence::PersonalMemoryRecord,
     setup::model_manager::ModelSetupStatus,
 };
 
+/// Audio synthesis intent category governing playback engine state transitions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioIntent {
+    InterimFiller,
+    TurnResponse,
+}
+
 #[derive(Debug, Clone)]
 pub enum VoxEvent {
-    SessionStart { owner: InteractionOwner },
+    SessionStart {
+        owner: InteractionOwner,
+        session_id: Option<i64>,
+    },
     PauseSession,
     ResumeSession,
     EndSession,
@@ -19,11 +32,24 @@ pub enum VoxEvent {
     PttCancel,
     SpeechStart,
     SpeechEnd,
-    TranscriptFinal { turn_id: u32, text: String },
-    LlmFinished { turn_id: u32 },
-    PlaybackStarted { turn_id: u32 },
-    PlaybackFinished { turn_id: u32 },
-    Cancelled { turn_id: u32 },
+    TranscriptFinal {
+        turn_id: u32,
+        text: String,
+    },
+    LlmFinished {
+        turn_id: u32,
+    },
+    PlaybackStarted {
+        turn_id: u32,
+        intent: AudioIntent,
+    },
+    PlaybackFinished {
+        turn_id: u32,
+        intent: AudioIntent,
+    },
+    Cancelled {
+        turn_id: u32,
+    },
     Error(PipelineError),
     Shutdown,
 }
@@ -122,6 +148,24 @@ pub enum IpcEvent {
     NotificationUpdated(NotificationRecord),
     PersonalMemoryUpdated(PersonalMemoryRecord),
     SessionsChanged,
+}
+
+impl From<u8> for AudioIntent {
+    fn from(val: u8) -> Self {
+        match val {
+            1 => Self::InterimFiller,
+            _ => Self::TurnResponse,
+        }
+    }
+}
+
+impl From<AudioIntent> for u8 {
+    fn from(intent: AudioIntent) -> Self {
+        match intent {
+            AudioIntent::TurnResponse => 0,
+            AudioIntent::InterimFiller => 1,
+        }
+    }
 }
 
 impl IpcEvent {

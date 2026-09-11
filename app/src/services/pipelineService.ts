@@ -56,8 +56,8 @@ export function launchEngine(): Promise<void> {
   return invoke("launch_engine");
 }
 
-export function startSession(): Promise<void> {
-  return invoke("start_session");
+export function startSession(sessionId?: number | null): Promise<void> {
+  return invoke("start_session", { sessionId: sessionId ?? null });
 }
 
 export function endSession(): Promise<void> {

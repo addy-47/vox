@@ -1,9 +1,8 @@
-//! Canonical LLM generation completed event handler.
-
 use std::sync::{atomic::Ordering, mpsc};
 
 use crate::{
     core::{
+        events::AudioIntent,
         settings::PipelineMode,
         state::{AppState, InteractionState},
     },
@@ -14,10 +13,9 @@ use crate::{
 
 /// Commits finalized assistant turn to conversation memory and dispatches persistence event.
 fn persist_assistant_turn(turn_id: u32, full_text: String, user_text: String, state: &AppState) {
-    state
-        .conversation_manager
-        .lock()
-        .push_assistant_turn(full_text.clone());
+    if let Some(ref mut harness) = *state.harness.lock() {
+        harness.history.push_assistant_turn(full_text.clone());
+    }
 
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
 
@@ -53,6 +51,7 @@ fn flush_modular_tts_remainder(
             if let Err(e) = tx.send(TtsCommand::Generate {
                 turn_id,
                 text: remainder_text,
+                intent: AudioIntent::TurnResponse,
             }) {
                 state
                     .pipeline

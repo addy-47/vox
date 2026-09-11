@@ -90,6 +90,7 @@ async fn test_session_start_modular_sets_ready_and_identity() {
         std::thread::spawn(move || {
             on_session_start(
                 InteractionOwner::Assistant,
+                None,
                 &app_clone,
                 &state_clone,
                 &ctx_clone,
@@ -153,6 +154,7 @@ async fn test_session_start_modular_sets_ready_and_identity() {
         std::thread::spawn(move || {
             on_session_start(
                 InteractionOwner::Assistant,
+                None,
                 &app_clone,
                 &state_clone,
                 &ctx_clone,

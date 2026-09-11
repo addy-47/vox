@@ -1,9 +1,6 @@
 use std::{
     collections::VecDeque,
-    sync::{
-        atomic::Ordering,
-        Arc, RwLock,
-    },
+    sync::{atomic::Ordering, Arc, RwLock},
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -198,6 +195,7 @@ fn map_pipeline_state_string(state_u32: u32) -> String {
         InteractionState::Paused => "Paused".into(),
         InteractionState::Error => "Error".into(),
         InteractionState::Sleeping => "Sleeping".into(),
+        InteractionState::Working => "Working".into(),
     }
 }
 

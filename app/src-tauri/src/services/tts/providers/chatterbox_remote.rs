@@ -2,16 +2,15 @@ use std::{
     io::Read,
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
-        mpsc::Sender,
         Arc,
     },
 };
 
 use anyhow::{anyhow, Result};
 
-use super::{TtsProvider, TtsProviderKind};
+use super::{SynthesisContext, TtsProvider, TtsProviderKind};
 use crate::{
-    core::events::VoxEvent,
+    core::events::AudioIntent,
     services::{
         audio::PlaybackEngine,
         tts::{
@@ -143,6 +142,7 @@ fn stream_pcm_response(
     mut response: reqwest::blocking::Response,
     speed: f32,
     turn_id: u32,
+    intent: AudioIntent,
     cancel: &Arc<AtomicBool>,
     playback: &Arc<PlaybackEngine>,
 ) -> Result<usize> {
@@ -191,7 +191,7 @@ fn stream_pcm_response(
                         chunk_samples
                     };
 
-                    playback.ingest_chunk(&stretched_chunk);
+                    playback.ingest_chunk_with_intent(&stretched_chunk, intent);
                 }
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
@@ -207,7 +207,7 @@ fn stream_pcm_response(
             raw_pcm_samples
         };
 
-        playback.ingest_chunk(&stretched_chunk);
+        playback.ingest_chunk_with_intent(&stretched_chunk, intent);
     }
 
     Ok(total_samples_received)
@@ -244,18 +244,10 @@ impl TtsProvider for ChatterboxRemoteProvider {
     }
 
     /// Synthesizes text via HTTP streaming to remote GPU server and feeds PlaybackEngine.
-    fn synthesize_chunk(
-        &self,
-        text: &str,
-        turn_id: u32,
-        cancel: Arc<AtomicBool>,
-        playback: &Arc<PlaybackEngine>,
-        _event_tx: Sender<VoxEvent>,
-        telemetry_rtf: Option<&Arc<AtomicU32>>,
-    ) -> Result<()> {
+    fn synthesize_chunk(&self, text: &str, ctx: &SynthesisContext<'_>) -> Result<()> {
         log::info!(
             "[ChatterboxRemote] Synthesizing turn {} via remote server: '{}'",
-            turn_id,
+            ctx.turn_id,
             text
         );
 
@@ -290,7 +282,14 @@ impl TtsProvider for ChatterboxRemoteProvider {
         }
 
         let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
-        let total_samples = stream_pcm_response(response, speed, turn_id, &cancel, playback)?;
+        let total_samples = stream_pcm_response(
+            response,
+            speed,
+            ctx.turn_id,
+            ctx.intent,
+            &ctx.cancel,
+            ctx.playback,
+        )?;
 
         let elapsed = start.elapsed().as_secs_f32();
         let audio_duration = total_samples as f32 / TTS_SAMPLE_RATE as f32;
@@ -302,12 +301,12 @@ impl TtsProvider for ChatterboxRemoteProvider {
 
         log::info!(
             "[ChatterboxRemote] Remote synthesis complete (turn {}). {:.2}s audio, RTF: {:.3}",
-            turn_id,
+            ctx.turn_id,
             audio_duration,
             rtf,
         );
 
-        if let Some(rtf_handle) = telemetry_rtf {
+        if let Some(rtf_handle) = ctx.telemetry_rtf {
             rtf_handle.store(rtf.to_bits(), Ordering::Relaxed);
         }
 

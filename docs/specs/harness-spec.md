@@ -1,135 +1,286 @@
-# LLM Agent Harness & Dual-Stream Demuxer Specification (Vox v2)
+# Architectural Specification: Plugin-Based LLM Agent Harness Runtime
 
-## 1. System Concept & Scope
-The **LLM Agent Harness** is the unified runtime bridge between the voice interaction pipeline, language model providers, and backend task execution.
-Its primary responsibilities are:
-1. **Context Assembly & Budget Accounting**: Managing sliding-window conversational history, context window utilization thresholds, and system prompt formatting (injecting `personal_memory`).
-2. **Dual-Stream Token Demuxing**: Splitting a single LLM generation stream into immediate user-facing voice/text vs. background orchestration instructions (e.g. titles, async agent tasks) without stalling voice latency or leaking orchestration tags to speech.
-3. **Approach B Autonomous Task Delegation**: Coordinating background agent jobs (e.g. CLI tool executions, critical compactions) with the central voice pipeline state machine via autonomous completion callbacks.
+> **Document Type:** System Architectural Specification  
+> **Target Subsystem:** `services/harness/` and `services/llm/actor.rs`  
+> **Status:** Final Proposed Architecture  
+> **Format Rule:** Pure architectural specification containing zero code snippets. All behaviors, state transitions, domain invariants, thresholds, and subsystem responsibilities are specified with rigorous technical precision for planning agents.
 
 ---
 
-## 2. Invariants & Preserved Logic
+## 1. Scope, Purpose & Clean-Slate Mandate
 
-### 2.1 Preserved Budget Accounting Thresholds
-From `services/harness/accountant.rs`:
-- `CONTEXT_CRITICAL_THRESHOLD = 0.85`: At $\ge 85\%$ context utilization, critical compaction is triggered.
-- `CONTEXT_SOFT_THRESHOLD = 0.65`: At $65\% \le \text{util} < 85\%$, opportunistic soft compaction is armed.
-- `RESERVED_GENERATION_TOKENS = 512`: Reserved output headroom subtracted from `context_window` to compute usable context budget.
+### 1.1 Scope Boundaries
+This specification defines the architectural overhaul of the Vox LLM Agent Harness. The scope is strictly bounded to:
+1. **Hardening Current Core Capabilities**: Conversation History Management, Prompt & Persona Assembly, Context Window Budgeting, and Rolling Working Memory Compaction.
+2. **Decoupling the LLM Actor**: Separating the low-level inference model into a pure token engine and elevating stream processing, clause chunking, TTS dispatch, and IPC token emissions into the Harness.
+3. **Establishing a Plugin-Based Session Chassis**: Structuring the harness runtime around modular, domain-configurable plugins with explicit lifecycle hooks.
+4. **Architectural Future-Proofing**: Providing designated integration slots for the Tagged Streaming Demuxer and On-Demand Episodic Tool Calling without implementing unapproved runtime features in this phase.
 
-### 2.2 Preserved Core Data Structures
-- `MessageBuffer`: In-memory FIFO queue of `ChatMessage` turns (`role`, `content`, `timestamp_ms`).
-- `TokenAccountant`: Exact token count tracking, synchronization against active buffer, and utilization calculation.
-
-### 2.3 Decommissioned Legacy Structures
-- **Decommissioned**: Legacy ModernBERT scope classifier (`classify_scope`) and waterfall profile injection (`retrieve_turn_profile`) are completely removed from `prepare_turn_context`.
-- **Replaced**: Context is assembled strictly from:
-  1. Base system prompt + active `personal_memory` markdown.
-  2. Session compaction context summary (if continuing or restored).
-  3. FIFO uncompacted conversational turns.
+### 1.2 The Clean-Slate Deletion Mandate
+There will be zero patching, wrapping, or legacy preservation of the existing harness implementation. The existing files in `services/harness/`—totaling over 1,600 lines of entangled procedural logic, duplicate proxy structs (`ContextHarness` vs. `TokenAccountant`, `ConversationManager` vs. `MessageBuffer`), dead Memory v1 XML formatting artifacts, and leaky facade dumping grounds—will be deleted entirely via clean removal. The new subsystem is authored completely fresh from this specification.
 
 ---
 
-## 3. Streaming Dual-Routing Demuxer (The Wire Engine)
+## 2. Core Architectural Philosophy: The Agent Chassis
 
-### 3.1 Tagged Demuxing Architecture
-To prevent orchestration logic from delaying speech playback or leaking into synthesized speech:
-- Prompt instructions format conversational speech inside `<response>...</response>`, followed by trailing orchestration tags:
-```xml
-<response>I am running the test suite in the background now.</response>
-<title>Test Suite Verification</title>
-<task type="cli_agent" id="task_101">cargo test -p vox_lib</task>
+### 2.1 The Foundational Axiom: Agent = Model + Harness
+Vox treats conversational intelligence as a two-tier system:
+1. **The Model Layer (`LlmActor`)**: A pure, stateless compute engine. It accepts a structured conversation payload and produces an asynchronous stream of raw tokens. It possesses zero knowledge of audio devices, text-to-speech actors, user interface windows, clause chunking heuristics, or conversational state machines.
+2. **The Harness Layer (`HarnessSession`)**: The conversational orchestrator and runtime environment. It manages dialog memory, enforces token budgets, injects personalization, drives multi-step cognitive loops, routes output tokens to audio synthesis, and dictates pipeline state transitions.
+
+### 2.2 Spatial & Temporal Composability
+Following the DeepSeek Harness and Cordis meta-framework principles:
+- **Spatial Composability (Swap Points)**: The harness is a chassis hosting swappable plugins. Operational domains mount only the plugins they require. The Modular Assistant domain mounts all conversational, budgeting, and compaction plugins. The Realtime Speech-to-Speech domain mounts only history logging and persona plugins, completely omitting local token budgeting and compaction because context is maintained remotely over WebSocket.
+- **Temporal Composability (Lifecycle Scoping)**: The harness runtime is strictly bound 1:1 to the active voice session (`session_start` to `session_end`). It does not exist as an unmanaged, ambient background singleton during idle states.
+
+---
+
+## 3. Session Lifecycle & Ownership Model
+
+### 3.1 1:1 Lifecycle Mapping (`session_start` to `session_end`)
+The lifecycle of the `HarnessSession` maps directly to user engagement:
+- **Session Initiation (`start_session` IPC / `VoxEvent::SessionStart`)**:
+  - The voice pipeline transitions out of the `Idle` state.
+  - The `HarnessSession` is instantiated and mounted.
+  - Base persona prompts and the latest Personal Memory document are retrieved from persistent storage and assembled into working memory.
+  - If continuing an existing session, uncompacted turns and the latest rolling summary are loaded from the database into the working history buffer.
+  - Domain-specific plugins are instantiated and registered to the session chassis.
+  - The bidirectional dialogue pipe to the `LlmActor` is established.
+- **Session Termination (`end_session` IPC / `VoxEvent::EndSession`)**:
+  - The voice pipeline transitions back to `Idle`.
+  - The active `HarnessSession` is unmounted and deconstructed.
+  - All pending one-shot timers, debounce watchers, and background tasks are immediately cancelled via session-scoped cancellation tokens.
+  - Uncommitted session metadata is flushed to the database.
+  - Zero harness background loops or mutex-protected memory structures persist in memory during the `Idle` state.
+
+### 3.2 In-Session Continuation vs. Idle Session Selection
+The command contracts strictly separate browsing sessions from mounting active runtimes:
+- **Browsing Past Sessions (`continue_session(sessionId: i64)`)**:
+  - Fetches and returns historical session metadata and turns for desktop UI rendering.
+  - The pipeline remains `Idle`.
+  - The `HarnessSession` is **not** booted or seeded in memory prematurely.
+- **Engaging the Assistant (`start_session(sessionId: Option<i64>)`)**:
+  - If `sessionId == Some(id)`: The user is engaging to continue a past conversation. The `HarnessSession` boots, queries Turso DB for continuation turns and the latest compaction summary for session `id`, and seeds working memory.
+  - If `sessionId == None`: The user is engaging for a fresh session. The `HarnessSession` boots with a fresh prompt (`session_id = 0`, lazy DB row created upon the first spoken turn).
+  - Clicking "+ New Session" (`create_session`) simply clears the active session selection in the UI; subsequent engagement sends `start_session(None)`.
+
+---
+
+## 4. Pipeline Topology & The Cognitive Stage
+
+### 4.1 Upstream Consumption Contract
+The voice pipeline router treats the Harness as the single cognitive front door:
+```
+[Audio In] ──► [VAD] ──► [STT] ──► [Harness (The Cognitive Stage)] ──► [TTS] ──► [Playback]
+                                            ▲ │
+                         Duplex Session Pipe│ │Token Stream
+                                            │ ▼
+                                      [LlmActor (Pure Model)]
 ```
 
-### 3.2 Streaming Demuxer Finite State Machine (FSM)
-The streaming token pump in `LlmActor` replaces raw token forwarding with a streaming character buffer running a 3-state machine:
+- When the Speech-to-Text stage finalizes user speech (`VoxEvent::TranscriptFinal`), the pipeline hands the turn query directly to the `HarnessSession`.
+- The pipeline does not act as a middleman between the Harness and the LLM. The Harness owns the direct dialogue pipe to the `LlmActor`.
+- The `HarnessSession` emits synthesized speech clauses directly into the Text-to-Speech stage via its internal stream routing plugin.
+- The `HarnessSession` is the sole authority that determines when the entire cognitive stage has concluded, emitting `VoxEvent::LlmFinished` only after all multi-step inference, compaction, or tool loops for the turn are complete.
 
-```
-                  ┌──────────────────────┐
-                  │   InResponseText     │ ──(Token streams to TTS & UI)
-                  └──────────────────────┘
-                             │
-                             ▼ (Encounter '<')
-                  ┌──────────────────────┐
-                  │    TagBuffering      │ ──(Buffer characters in memory)
-                  └──────────────────────┘
-                    │                  │
-   (Matches '</response>')    (Matches '<task ...>' / '<title>')
-                    │                  │
-                    ▼                  ▼
-          [Close TTS & Emit     ┌──────────────────────┐
-           VoxEvent::LlmFinished]│ InOrchestrationTag   │ ──(Route to Consumer)
-                                └──────────────────────┘
-```
-
-1. **`InResponseText`**:
-   - Streamed characters are pushed immediately to `TurnAccumulator`.
-   - Complete clauses stream directly to `TtsActor` (`TtsCommand::Generate`).
-   - Streamed text emits `IpcEvent::LlmToken` to the active frontend window.
-2. **`TagBuffering`**:
-   - The moment `<` is encountered, tokens are buffered in an internal lookahead scratch string instead of streaming to TTS.
-   - If the buffered text does not match any recognized tag prefix, the buffer flushes back to `InResponseText` and flows to TTS (handles literal `<` characters in prose safely).
-3. **`InOrchestrationTag`**:
-   - When `</response>` is matched:
-     - The accumulator remainder is flushed to TTS.
-     - **`VoxEvent::LlmFinished` is immediately emitted to the central Voice Router**.
-     - From this instant, the speech pipeline is completely detached from the LLM generation: audio plays out smoothly, and the turn prepares to return to `Ready`.
-   - Characters inside subsequent tags (e.g. `<title>`, `<task>`) are buffered exclusively into an orchestration payload struct and suppressed from TTS and frontend subtitle IPC.
+### 4.2 Duplex Dialogue Pipe (Harness $\leftrightarrow$ LLM Actor)
+Communication between the `HarnessSession` and the `LlmActor` occurs over a persistent, session-scoped bidirectional communication channel:
+- **Harness to LLM Actor**: Transmits generation requests, prompt payloads, sampling parameters, cancellation signals, and (in future phases) tool call execution results.
+- **LLM Actor to Harness**: Streams raw output tokens, model completion signals, and low-level engine errors.
+- **Lifecycle**: The channel is established at session mount and terminated at session unmount. Ad-hoc, per-turn provider construction and file-system model searches are strictly forbidden.
 
 ---
 
-## 4. Approach B: Autonomous Background Task Lifecycle
+## 5. Pipeline State Transitions & The `Working` State
 
-### 4.1 The Core Problem & Solution
-When the LLM yields a background task (e.g. CLI agent execution, or an inline critical compaction):
-- The assistant's initial response (*"I'm kicking off the test suite now"*) plays aloud.
-- Playback completes $\to$ pipeline transitions `Speaking` $\to$ `Ready`.
-- **Approach B Invariant**: The voice pipeline does NOT lock or freeze waiting for the background task. The microphone remains open and the user stays in control. The background task executes asynchronously on an isolated worker pool.
+### 5.1 The `Working` State Invariant
+A critical architectural flaw in previous designs was the assumption that a turn is always a direct linear sequence: `Thinking` $\to$ `Speaking` $\to$ `Ready`. 
 
-### 4.2 Pipeline Coordination via `VoxEvent::TaskCompleted`
-To bridge background task completion back into the voice pipeline without race conditions or speech collision:
+When cognitive maintenance (compaction) or agentic execution (tool calling) occurs, the assistant must speak an immediate interim phrase to acknowledge the user, but the turn is **not complete**. To prevent premature transitions to `Ready`, the pipeline introduces the `InteractionState::Working` state.
 
-1. **Event Registration in `VoxEvent`**:
-   We add a single canonical completion event to `VoxEvent`:
-   ```rust
-   pub enum VoxEvent {
-       // ... existing voice events ...
-       TaskCompleted {
-           task_id: String,
-           task_type: TaskType, // CliAgent, Compaction, Tool
-           result: TaskResult,  // Success(String), Failed(String)
-       },
-   }
-   ```
+### 5.2 Audio Intent Classification: Interim Filler vs. Turn Response
+Every audio synthesis request dispatched to the Text-to-Speech and Playback subsystems is explicitly tagged with an intent category:
+1. **`AudioIntent::InterimFiller`**: A short, transitional phrase spoken to eliminate dead air while background cognitive work executes (e.g., *"Give me a moment while I organize our conversation"*).
+2. **`AudioIntent::TurnResponse`**: The finalized conversational reply that answers the user's utterance.
 
-2. **Router State Transition & Collision Matrix**:
-   When `VoxEvent::TaskCompleted` arrives at the central FIFO Router, it evaluates the active `InteractionState`:
-
-| Active State at Router | Collision Behavior & Pipeline Action |
-|---|---|
-| **`Ready`** (User is silent) | **Autonomous Spoken Report**: Assistant autonomously initiates a speech turn.<br>1. Advances turn ID via `next_turn()`.<br>2. Transitions `Ready` $\to$ `Thinking`.<br>3. Prompts the LLM with the task result: *"Task [id] completed: [result]. Formulate a concise 1-sentence voice update for the user."*<br>4. Speaks result aloud (`Thinking` $\to$ `Speaking` $\to$ `Ready`). |
-| **`Listening`** (User is speaking) | **Defer & Enqueue**: The task result is appended to `ConversationManager` working buffer as a high-priority system observation message (`Role::System`).<br>It is NOT spoken aloud immediately to prevent talking over the user.<br>When the user finishes speaking, the upcoming LLM turn naturally incorporates the task result into its response. |
-| **`Thinking`** (Assistant is generating) | **Context Merge**: Appended to active generation context if turn has not finished; otherwise enqueued for the next turn. |
-| **`Speaking`** (Assistant is currently talking) | **Wait for Playback**: Held until `PlaybackFinished` transitions the state to `Ready`, then evaluated under the `Ready` rule. |
-| **`Paused` / `Sleeping`** | **Silent Persistence**: Persists task results to Turso DB and creates an actionable desktop notification (`NotificationCreated`), without waking audio hardware or speaking aloud. |
-
-### 4.3 Task Cancellation Invariant
-- If the user explicitly cancels or interrupts via barge-in (`PttCancel`, fresh `SpeechStart` while assistant is reporting), the voice turn aborts cleanly to `Ready`.
-- Background CLI tasks receive their own cancellable token. If the user explicitly commands *"Cancel the running test suite"*, the LLM emits `<task_cancel id="..."/>`, cancelling the background process.
+### 5.3 Playback Engine Gating Rules
+The audio playback engine enforces state transitions based on audio intent:
+- When playing an audio chunk tagged as `AudioIntent::InterimFiller`:
+  - The pipeline state remains in `InteractionState::Working`.
+  - The playback engine **does not** transition the state to `Speaking`.
+  - When the interim filler audio playback completes, the playback engine **does not** emit a completion event that triggers a transition to `Ready`. The pipeline remains locked in `InteractionState::Working`.
+- When playing an audio chunk tagged as `AudioIntent::TurnResponse`:
+  - The playback engine transitions the state from `Working` (or `Thinking`) to `InteractionState::Speaking`.
+  - When the final response audio finishes playing, the playback engine transitions the state to `InteractionState::Ready`.
 
 ---
 
-## 5. First-Turn Dynamic Session Title Generation
+## 6. Detailed Turn Execution & Compaction Mechanics
 
-1. **Prompt Injection on Turn 1**:
-   When `turn_id == 0` (or if `session.title IS NULL`), `prepare_turn_context` appends:
+### 6.1 Token Accounting & Utilization Metrics
+Context window utilization is calculated continuously across working memory:
+$$\text{Context Utilization} = \frac{\text{Tracked In-Memory Tokens}}{\text{Maximum Context Window Tokens} - \text{Reserved Generation Tokens}}$$
+- **Tracked In-Memory Tokens**: The sum of the system prompt, injected Personal Memory document, active rolling context summary, and uncompacted historical turns.
+- **Reserved Generation Tokens**: A dedicated budget allocation (default: 512 tokens for local models, 1024 for cloud) reserved strictly for the model's reply, preventing out-of-memory context clipping.
+- **System Prompt Share Cap**: The combined size of the base persona and Personal Memory markdown document must not exceed 20% of the total context window. Any excess Personal Memory is truncated with an informative warning.
+
+### 6.2 The Nominal Path (Context Utilization $< 85\%$)
+1. User speech concludes; pipeline enters `InteractionState::Thinking`.
+2. Finalized transcript arrives at `HarnessSession`.
+3. Context utilization is evaluated and found to be nominal ($< 85\%$).
+4. Harness formats the dialog payload and transmits it across the duplex pipe to the `LlmActor`.
+5. `LlmActor` streams raw tokens back to the Harness `StreamRoutingPlugin`.
+6. `StreamRoutingPlugin` accumulates tokens into grammatical clauses, dispatches synthesized audio chunks tagged as `AudioIntent::TurnResponse` to Text-to-Speech, and emits token updates to the UI window.
+7. Playback engine begins streaming audio and transitions pipeline to `InteractionState::Speaking`.
+8. Once all tokens are received and the clause chunker is flushed, the Harness emits `VoxEvent::LlmFinished`.
+9. Audio playback completes; playback engine transitions pipeline to `InteractionState::Ready`.
+10. The finalized turn is appended to the working history buffer and dispatched to persistent storage.
+
+### 6.3 The Critical Inline Compaction Path (Context Utilization $\ge 85\%$)
+When the context reaches or exceeds 85% usable capacity prior to generation, immediate cognitive maintenance is required:
+1. User speech concludes; pipeline enters `InteractionState::Thinking`.
+2. Finalized transcript arrives at `HarnessSession`.
+3. Context evaluation detects utilization $\ge 85\%$.
+4. **Immediate Working Transition & Interim Filler Dispatch**:
+   - The Harness instructs the pipeline to transition `Thinking` $\to$ `InteractionState::Working`.
+   - The Harness evaluates the active user query string via Unicode scalar value inspection (checking for characters within the Devanagari block `U+0900`..=`U+097F` via `services::translit::is_devanagari`). If Devanagari characters are detected, the filler phrase is drawn from the Hindi filler catalog; otherwise, it is drawn from the English filler catalog.
+   - The filler phrase is dispatched immediately to Text-to-Speech as `AudioIntent::InterimFiller`. The user hears immediate voice acknowledgement while dead air is eliminated.
+5. **Inline Summarization Execution**:
+   - The Harness temporarily extracts the latest user turn, isolating the uncompacted history slice.
+   - The Harness sends a structured compaction task across the duplex pipe to the `LlmActor` (with a 45-second timeout and up to 2 attempts).
+   - The model generates a structured JSON summary containing a rolling narrative overview and newly extracted categorical facts (`personal`, `objective`, `workdone`, `blocker`, `next_step`, `pitfall`).
+6. **Persistence Staging & Working Memory Pruning**:
+   - Extracted facts are staged into the database ingestion queue linked to a new compaction record.
+   - The working history buffer is pruned of older raw turns and rebuilt: `[System Prompt, Rolling Context Summary, Active User Turn]`.
+   - Context utilization drops safely below the 65% soft threshold.
+7. **Execution of the Actual User Query**:
+   - With memory now compacted, the Harness immediately constructs the generation request for the active user turn and dispatches it to the `LlmActor`.
+   - As tokens stream back, they are routed as `AudioIntent::TurnResponse`.
+   - The playback engine transitions `Working` $\to$ `InteractionState::Speaking` as the actual answer begins playing.
+   - On completion, `VoxEvent::LlmFinished` is emitted, playback completes, and the state transitions to `InteractionState::Ready`.
+
+### 6.4 Degraded FIFO Fallback Policy
+If the `LlmActor` is an embedded local model with a context window $\le 4096$ tokens, or if history holds three or fewer messages, or if inline compaction fails both retry attempts:
+1. Inline LLM compaction is skipped or aborted.
+2. The Harness executes a deterministic **FIFO Sliding Window Shift**: oldest historical User/Assistant turn pairs are dropped iteratively from index 1 until context utilization drops below 65%.
+3. The Harness emits a degraded pipeline error event indicating fallback to FIFO truncation.
+4. Turn execution proceeds immediately, guaranteeing that the user's voice response is never permanently blocked.
+
+### 6.5 The Reactive Opportunistic Soft Compaction Path ($65\% \le \text{Utilization} < 85\%$)
+To minimize the occurrence of critical in-turn compaction, background compaction runs opportunistically during idle intervals:
+- **Zero Idle Polling Invariant**: There is no continuous background polling loop spawned at session boot.
+- **Reactive Post-Turn Evaluation**:
+  - At the completion of every turn, context utilization is re-evaluated.
+  - If utilization is $< 65\%$, no background action is taken.
+  - If utilization is between $65\%$ and $85\%$, and `auto_compaction` is enabled, the Harness arms a **20-second quiet debounce timer**.
+- **Execution Conditions**:
+  - If the user speaks, an interruption occurs, or the pipeline leaves `Ready` or `Paused` before 20 seconds elapse, the timer is aborted immediately.
+  - If the pipeline remains continuously in `Ready` or `Paused` for the full 20 seconds, the Harness triggers background summarization across uncompacted history.
+  - On completion, the working buffer is updated with the rolling summary, and facts are staged to the database.
+
+---
+
+## 7. The Five-Plugin Component Taxonomy
+
+The `HarnessSession` chassis manages five distinct, decoupled plugins:
+
+```
+                                HARNESS SESSION CHASSIS
+  ┌─────────────────────────────────────────────────────────────────────────────────┐
+  │ 1. ConversationHistoryPlugin                                                    │
+  │    • In-memory message sequence (System, User, Assistant)                       │
+  │    • KV-cache prefix synchronization tracking                                   │
+  │    • Trailing user turn deduplication and interruption rollback                 │
+  ├─────────────────────────────────────────────────────────────────────────────────┤
+  │ 2. PromptBuilderPlugin                                                          │
+  │    • Pure text assembly: Persona Prompt + <user_profile> Markdown Document      │
+  │    • Personal memory token budget enforcement and deterministic truncation      │
+  │    • Complete pruning of legacy Memory v1 XML formatting logic                  │
+  ├─────────────────────────────────────────────────────────────────────────────────┤
+  │ 3. ContextBudgetPlugin                                                          │
+  │    • Real-time token consumption tracking (heuristics & model-specific counters) │
+  │    • Context utilization metric calculation against usable window budget         │
+  │    • Threshold state classification (Nominal, Soft Window, Critical)            │
+  │    • Deterministic FIFO Sliding Window shift execution                          │
+  ├─────────────────────────────────────────────────────────────────────────────────┤
+  │ 4. CompactionPlugin                                                             │
+  │    • Structured cognitive summarization execution via duplex model pipe         │
+  │    • Reactive 20-second debounced soft compaction watcher                       │
+  │    • Turso database ledger recording and fact queue staging                     │
+  ├─────────────────────────────────────────────────────────────────────────────────┤
+  │ 5. StreamRoutingPlugin                                                          │
+  │    • Egress consumption of raw tokens from LlmActor duplex pipe                 │
+  │    • Clause chunking accumulator and punctuation prosody boundary enforcement   │
+  │    • Text-to-Speech audio command dispatch (tagged with AudioIntent)            │
+  │    • Frontend subtitle streaming via IPC token events                           │
+  │    • Emission of VoxEvent::LlmFinished on full turn completion                  │
+  └─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 7.2 Strongly-Typed Prompt XML Tag Schema
+To eliminate ad-hoc string formatting, prompt tags are governed by a strictly typed enum rather than loose string literals:
+
+1. **`PromptTag::UserIdentity` (`<user_identity>...</user_identity>`)**:
+   - **Content**: The active Personal Memory markdown document retrieved from the database.
+   - **Placement**: Injected into the root System Prompt message, trailing the base persona instructions.
+   - **Budget Guard**: Bounded by the 20% system prompt share ceiling (`context_window * max_context_share`). Truncated deterministically if exceeded.
+2. **`PromptTag::SessionContext` (`<session_context>...</session_context>`)**:
+   - **Content**: The latest rolling compaction summary of earlier conversational history generated during compaction runs.
+   - **Placement**: Positioned immediately before uncompacted conversational turns, framing historical continuity.
+3. **`PromptTag::PastTurns` (`<past_turns>...</past_turns>`)**:
+   - **Content**: Restored uncompacted historical dialog turns upon session continuation.
+   - **Placement**: Encloses historical message turns preceding the active user query.
+4. **Implementation Invariant**: All prompt assembly logic must utilize the strongly typed tag enum for opening and closing delimiters, guaranteeing syntactic determinism and preventing raw string drift.
+
+---
+
+## 8. Domain Configurations
+
+Different interaction domains mount specific subsets of the plugin chassis, enforcing clean architectural boundaries:
+
+| Architectural Component | Modular Assistant (`PipelineMode::Modular`) | Realtime S2S (`PipelineMode::Realtime`) | Dictation (`InteractionState::Sleeping`) |
+| :--- | :---: | :---: | :---: |
+| **ConversationHistoryPlugin** | **Active**: Full FIFO dialog buffer | **Active**: History logging for UI rail | **None**: No conversational memory |
+| **PromptBuilderPlugin** | **Active**: Persona + Personal Memory | **Active**: Session persona initialization | **None**: No prompt construction |
+| **ContextBudgetPlugin** | **Active**: 65% soft / 85% critical checks | **None**: Context managed server-side | **None**: No token budgeting |
+| **CompactionPlugin** | **Active**: Inline & Opportunistic | **None**: Context managed server-side | **None**: No local compaction |
+| **StreamRoutingPlugin** | **Active**: Token clause chunking $\to$ TTS | **None**: Provider outputs PCM audio | **None**: STT transcript $\to$ OS typing |
+
+---
+
+## 9. Future-Proofing: Tool Calling & Advanced Filler Strategies
+
+While out of scope for implementation in this phase, the architecture formally accommodates future capabilities without interface breakage:
+
+### 9.1 The On-Demand Agentic Tool Calling Loop
+Future episodic memory retrieval and external CLI execution will operate strictly on-demand via the model's output stream:
+1. The user asks a question requiring deep memory search.
+2. The `LlmActor` generates an interim conversational tag followed by a tool request tag:
    ```
-   At the end of your response, output a concise 3-5 word title summarizing the session topic inside <title>...</title>.
+   <response>Searching through your project notes...</response>
+   <tool name="search_episodic_memory">authentication refactor</tool>
    ```
-2. **Harness Tag Consumer**:
-   - The streaming demuxer catches `<title>...</title>`.
-   - Validates non-empty string, trims whitespace, and caps length to 48 characters.
-   - Dispatches `PersistenceEvent::UpdateSessionMetadata { session_id, key: "title".into(), value: title.clone() }`.
-   - Emits `IpcEvent::SessionTitleUpdated { session_id, title }` directly to the frontend.
-3. **Failure Invariant**:
-   If the LLM fails to output `<title>`, the session remains with its untitled placeholder. No error is thrown and the voice response is unaffected.
+3. The `StreamRoutingPlugin` demuxes the stream:
+   - `<response>` tokens route immediately to Text-to-Speech as `AudioIntent::InterimFiller`.
+   - The pipeline enters `InteractionState::Working`.
+   - `<tool>` tokens are intercepted by the Harness.
+4. The Harness pauses inference, executes the vector query against the database, and captures the retrieved facts.
+5. The Harness appends the tool results as a context observation and transmits an augmented payload back across the duplex pipe to the `LlmActor`.
+6. The `LlmActor` generates the final conversational response, which streams through `StreamRoutingPlugin` to TTS as `AudioIntent::TurnResponse`.
+7. Audio plays; pipeline transitions `Working` $\to$ `Speaking` $\to$ `Ready`.
+
+### 9.2 Transition Filler Evolution Matrix
+The architecture identifies three progressive strategies for interim filler delivery:
+1. **Approach 1 (Baseline / Active Scope)**: Hardcoded localized phrases selected by the Harness and dispatched directly to TTS. Deterministic, zero extra inference overhead, immediate response.
+2. **Approach 2 (Tagged Streaming Demuxer — Future Exploration)**: A single LLM pass generates an immediate spoken filler tag while concurrently synthesizing compaction or tool payloads under separate tags. Requires benchmarking parsing latency and model tag compliance.
+3. **Approach 3 (Sequential Multi-Turn Fallback)**: If streaming tag demuxing fails on small local models, a multi-prompt while-loop is executed: Prompt 1 requests a concise 5-word filler $\to$ streamed to TTS $\to$ Prompt 2 executes compaction $\to$ Prompt 3 answers the user query.
+
+---
+
+## 10. Architectural Invariants
+
+1. **Zero Backward Compatibility (ZBC)**: No legacy wrappers or compatibility bridges will be retained. The old 13-parameter `prepare_turn_context` and dead v1 XML methods are deleted completely.
+2. **Sacred Audio Hot Path**: Zero memory allocations, zero locks (`Mutex`/`RwLock`), and zero disk or database operations are permitted on the CPAL audio callback or real-time VAD processing threads. All harness operations occur on Tokio tasks or dedicated background workers.
+3. **Lock Discipline Across Await Points**: A `Mutex` or `RwLock` guard protecting conversational state must **never** be held across an `.await` boundary, particularly during LLM inference or database transactions.
+4. **Decoupled Actor Invariant**: The `LlmActor` must never import or interact with audio channels, clause accumulators, or UI IPC emitters. It is strictly a token-generating worker.
+5. **Central Authority for Turn Completion**: `VoxEvent::LlmFinished` is emitted exclusively by the `StreamRoutingPlugin` upon complete conclusion of all turn activities.
