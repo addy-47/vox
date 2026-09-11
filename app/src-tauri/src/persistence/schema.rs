@@ -319,7 +319,7 @@ mod tests {
             .expect("Row exists")
             .get(0)
             .expect("Version column");
-        assert_eq!(version, 3, "Schema version must be 3");
+        assert_eq!(version, 4, "Schema version must be 4");
 
         // Verify all 10 tables exist
         let expected_tables = [
