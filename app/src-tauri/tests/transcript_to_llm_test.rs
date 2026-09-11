@@ -23,7 +23,7 @@ use vox_lib::{
     },
     pipeline::{assistant::transcript::on_transcript_final, RoutingContext},
     services::{
-        harness::Role,
+        harness::{HarnessSession, Role},
         llm::{
             GenerationPurpose, GenerationRequest, LlmCommand, LlmError, LlmProvider,
             LlmStreamEvent, ProviderCapabilities, ProviderKind,
@@ -105,9 +105,22 @@ async fn test_transcript_to_llm_matrix() {
             &state,
             stt_tx,
             vad_tx,
-            Some(llm_tx),
+            Some(llm_tx.clone()),
             Some(tts_tx),
         );
+
+        // Mount modular HarnessSession
+        {
+            let settings = state.settings.read().unwrap().clone();
+            let prompt = state.resolve_base_prompt();
+            *state.harness.lock() = Some(HarnessSession::new_modular(
+                Some(1),
+                prompt,
+                None,
+                &settings,
+                llm_tx,
+            ));
+        }
 
         let ctx = RoutingContext::from_app_state(&state);
 
@@ -265,13 +278,14 @@ async fn test_transcript_to_llm_matrix() {
 
             // Seed conversation buffer with enough messages to exceed critical threshold (>85% of 2048 = >1740 tokens)
             {
-                let mut cm = state.conversation_manager.lock();
+                let mut guard = state.harness.lock();
+                let harness = guard.as_mut().expect("HarnessSession must be mounted");
                 for i in 0..30 {
-                    cm.push_user_turn(format!(
+                    harness.history_mut().push_user_turn(format!(
                         "Turn {} user statement with sufficient length and detail to accumulate tokens in accountant memory buffer.",
                         i
                     ));
-                    cm.push_assistant_turn(format!(
+                    harness.history_mut().push_assistant_turn(format!(
                         "Turn {} assistant response describing system operations, memory compaction protocols, and pipeline states in detail.",
                         i
                     ));

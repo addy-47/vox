@@ -78,7 +78,7 @@
   - `PromptBuilderPlugin`: Assembles base persona with `<user_identity>` markdown document and enforces 20% budget share ceiling.
 - [x] `app/src-tauri/src/services/harness/plugins/mod.rs` [NEW]
   - Plugin module declarations and re-exports.
-- [ ] `app/src-tauri/src/services/harness/` (Clean-slate deletion of legacy files scheduled for Batch 5 assembly)
+- [x] `app/src-tauri/src/services/harness/` (Clean-slate deletion of legacy files)
   - Delete `accountant.rs`.
   - Delete `buffer.rs`.
   - Delete `facade.rs`.
@@ -90,11 +90,11 @@
 ## Batch 4: Context Budgeting, Compaction & Reactive Quiet Watcher
 *Depends on: Batch 1, Batch 2, Batch 3*
 
-- [ ] `app/src-tauri/src/services/harness/plugins/budget.rs` [NEW]
+- [x] `app/src-tauri/src/services/harness/plugins/budget.rs` [NEW]
   - `ContextBudgetPlugin`: Real-time token accountant, usable budget calculation `(max_tokens - reserved_generation)`, 65% soft / 85% critical threshold classification, FIFO sliding window shift.
-- [ ] `app/src-tauri/src/services/harness/plugins/compaction.rs` [NEW]
+- [x] `app/src-tauri/src/services/harness/plugins/compaction.rs` [NEW]
   - `CompactionPlugin`: Structured compaction execution via LLM duplex pipe (2 attempts, 45s timeout), fact extraction, Turso ledger staging, and reactive 20s debounced quiet watcher.
-- [ ] `app/src-tauri/src/lib.rs`
+- [x] `app/src-tauri/src/lib.rs`
   - Remove `spawn_state_compaction_observer` import and background task invocation.
 
 ---
@@ -102,27 +102,95 @@
 ## Batch 5: HarnessSession Chassis Assembly & 1:1 Lifecycle Integration
 *Depends on: Batches 1, 2, 3, 4*
 
-- [ ] `app/src-tauri/src/services/harness/session.rs` [NEW]
+- [x] `app/src-tauri/src/services/harness/session.rs` [NEW]
   - `HarnessSession`: Orchestrates plugins, duplex dialogue pipe, `prepare_turn`, and constructors `new_fresh`, `new_continuing`, `new_realtime`.
-- [ ] `app/src-tauri/src/services/harness/mod.rs`
+- [x] `app/src-tauri/src/services/harness/mod.rs`
   - Subsystem root, exports `HarnessSession`, `ChatMessage`, `Role`, `PromptTag`, filler constants.
-- [ ] `app/src-tauri/src/core/state.rs`
+- [x] `app/src-tauri/src/core/state.rs`
   - `AppState`: Replace `pub conversation_manager` with `pub harness: Arc<parking_lot::Mutex<Option<HarnessSession>>>`.
-- [ ] `app/src-tauri/src/ipc/pipeline.rs`
+- [x] `app/src-tauri/src/ipc/pipeline.rs`
   - `start_session`: Accept `session_id: Option<i64>` and route `VoxEvent::SessionStart { owner: Assistant, session_id }`.
-- [ ] `app/src-tauri/src/ipc/persistence.rs`
+- [x] `app/src-tauri/src/ipc/persistence.rs`
   - `continue_session`: Read metadata and turns for UI display only without modifying `HarnessSession`.
   - `create_session`: Clear UI selection and reset `conversation_id = 0` without modifying `HarnessSession`.
-- [ ] `app/src-tauri/src/ipc/memory.rs` & `services/memory/scheduler.rs`
+- [x] `app/src-tauri/src/ipc/memory.rs` & `services/memory/scheduler.rs`
   - Update `save_personal_memory`, `consolidate_personal_memory`, `import_personal_memory` to update active `state.harness` on the fly if mounted.
-- [ ] `app/src-tauri/src/pipeline/assistant/session.rs`
+- [x] `app/src-tauri/src/pipeline/assistant/session.rs`
   - `on_session_start`: Boot `HarnessSession` (`session_id: Option<i64>`), set up duplex pipe, assign to `state.harness`, transition to `Ready`.
   - `on_end`: Drop `state.harness.lock().take()`, cancel session-scoped tokens, transition to `Idle`.
-- [ ] `app/src-tauri/src/pipeline/assistant/transcript.rs`
+- [x] `app/src-tauri/src/pipeline/assistant/transcript.rs`
   - `on_transcript_final`: Route turn query to `HarnessSession::prepare_turn`; handle inline critical compaction and filler dispatch.
-- [ ] `app/src-tauri/src/pipeline/assistant/interrupt.rs`
+- [x] `app/src-tauri/src/pipeline/assistant/interrupt.rs`
   - `on_interrupt`: Extract partial turn from `state.harness`, push to history, dispatch persistence event.
-- [ ] `app/src-tauri/src/pipeline/assistant/llm.rs`
+- [x] `app/src-tauri/src/pipeline/assistant/llm.rs`
   - `on_llm_finished`: Handle pre-roll flush and audio playback completion guard.
-- [ ] `app/src-tauri/src/pipeline/lifecycle.rs`
+- [x] `app/src-tauri/src/pipeline/lifecycle.rs`
   - Prune obsolete sync helpers replaced by `HarnessSession`.
+
+---
+
+## Batch 6: Hardening, CompactionPlugin Ledger Staging, Watcher Wiring & Test Alignment
+*Depends on: Batches 1, 2, 3, 4, 5*
+
+- [x] `app/src-tauri/src/services/harness/plugins/compaction.rs`
+  - Encapsulate inline & soft compaction execution and Turso DB persistence (`record_compaction_start` + `commit_compaction_output`) inside `CompactionPlugin`.
+  - Wire `QuietCompactionWatcher` into `CompactionPlugin`, managing the 20s debounce timer.
+- [x] `app/src-tauri/src/services/harness/session.rs`
+  - Expose compaction lifecycle handles (`execute_inline_compaction`, `on_turn_completed`, `abort_watcher`) on `HarnessSession`.
+- [x] `app/src-tauri/src/pipeline/assistant/transcript.rs`
+  - Call explicit `transition(InteractionState::Working, ctx, app, state)` when inline compaction triggers.
+  - Delegate inline compaction and DB fact staging to `HarnessSession` / `CompactionPlugin`, slimming down `transcript.rs`.
+  - Resolve engine channels asynchronously via `state.engine.lock().await` inside spawned task instead of synchronous `try_lock()`.
+- [x] `app/src-tauri/src/pipeline/assistant/speech.rs`
+  - Add `InteractionState::Working` to barge-in check (`if current_state == Thinking || Speaking || Working => on_interrupt(...)`).
+  - Abort quiet compaction watcher on speech onset.
+- [x] `app/src-tauri/src/pipeline/assistant/ptt.rs`
+  - Add `InteractionState::Working` to barge-in check (`if current_state == Thinking || Speaking || Working => on_interrupt(...)`).
+- [x] `app/src-tauri/src/pipeline/assistant/playback.rs`
+  - Trigger `watcher.on_turn_completed(...)` when `on_playback_finished` transitions to `Ready`.
+- [x] `app/src-tauri/src/pipeline/assistant/interrupt.rs`
+  - Abort quiet compaction watcher on interrupt.
+  - Guard against consecutive `User` turns when `partial_assistant` is empty.
+- [x] `app/src-tauri/tests/session_lifecycle_test.rs`
+  - Migrate `conversation_manager` references to `state.harness.lock().as_ref().unwrap().prompt.assemble()`.
+- [x] `app/src-tauri/tests/tts_transition_test.rs`
+  - Migrate deleted `facade::prepare_turn_context` calls to `HarnessSession::prepare_turn` with `TurnPreparation::NeedsInlineCompaction`.
+- [x] `app/src-tauri/tests/transcript_to_llm_test.rs`
+  - Migrate `conversation_manager` references to `state.harness.lock().as_mut().unwrap().history`.
+- [x] Verification: `cargo clippy --all-targets -- -D warnings` and `pnpm build` pass with 0 errors.
+
+---
+
+## Batch 7: Two-Front-Door Encapsulation, Audit Remediation & Dead Code Pruning
+*Depends on: Batches 1, 2, 3, 4, 5, 6*
+
+- [ ] `app/src-tauri/src/services/harness/plugins/prompt.rs`
+  - Replace byte slice with `memory.floor_char_boundary(char_limit)` to prevent UTF-8 boundary panics.
+  - Prune unused setters (`set_base_system_prompt`, `set_max_context_tokens`, `set_max_context_share`).
+- [ ] `app/src-tauri/src/services/harness/plugins/compaction.rs`
+  - Consolidate `<session_context>` into root `Role::System` prompt to prevent consecutive system messages.
+  - Track `last_compacted_to_turn` to populate non-zero `from_turn_id`.
+  - Prune unused setter `set_auto_compaction_enabled`.
+- [ ] `app/src-tauri/src/services/harness/session.rs`
+  - Make all 6 plugin fields private (`history`, `prompt`, `budget`, `compaction`, `stream`, `watcher`).
+  - Implement `apply_quiet_compaction_summary(&mut self, summary: &str)` to drain and rebuild `self.history`.
+  - Implement `commit_turn`, `rollback_user_turn`, `assembled_system_prompt`, and `generation_options`.
+  - Prune unused methods (`set_session_id`, `abort_session`). Preserve `new_realtime`.
+- [ ] `app/src-tauri/src/services/harness/watcher.rs`
+  - Make watcher autonomous: listen to `state_rx` and `turn_token()`, aborting automatically on state change.
+  - In `execute_soft_compaction`, invoke `harness.apply_quiet_compaction_summary`.
+- [ ] `app/src-tauri/src/pipeline/assistant/transcript.rs`
+  - Offload `stream_plugin.route_stream` via `tokio::task::spawn_blocking`.
+  - Wire `harness.commit_turn` / `harness.rollback_user_turn` on stream termination.
+  - Trigger `harness.on_turn_completed` directly upon turn completion.
+  - Restore `options: harness.generation_options().clone()` in inline compaction branch.
+- [ ] `app/src-tauri/src/pipeline/assistant/{speech.rs, ptt.rs, interrupt.rs, playback.rs, llm.rs}`
+  - Remove all `state.harness.lock()` calls (aborting watcher, manual turn push/rollback, and redundant remainder flush).
+- [ ] `app/src-tauri/src/ipc/{persistence.rs, memory.rs}` & `services/memory/scheduler.rs`
+  - Remove all direct `state.harness.lock()` calls, establishing strict Two-Front-Door boundary (`session.rs` and `transcript.rs` only).
+- [ ] `app/src-tauri/src/services/memory/compaction/prompt.rs`
+  - Hardcode constant `DEFAULT_LLM_COMPACTION_TEMPERATURE = 0.2` in `build_compaction_request`.
+- [ ] Dead code pruning & script fix:
+  - Prune `with_timestamp`, `set_kv_synced_index`, `rollback_last_assistant_turn`, `set_max_context_tokens`, `subscribe_dictation_state`, `get_history`, `send_pcm`.
+  - Fix `find_dead_code.py:104` pointer dereference `*` line skip bug.
+- [ ] Verification: `cargo clippy --all-targets -- -D warnings`, `pnpm build`, 0 false positives on `find_dead_code.py`, and `git grep "state.harness"` matches only `session.rs` and `transcript.rs`.

@@ -128,11 +128,11 @@ async fn test_real_llm_to_tts_matrix() {
             turn_id,
             owner: vox_lib::core::state::InteractionOwner::Assistant,
             accumulator: Arc::clone(&accumulator),
-            tts_tx: Some(&tts_tx),
-            pending_synthesis_jobs: &pending_jobs,
-            cancel: &cancel_flag,
-            event_tx: &event_tx,
-            app: &app,
+            tts_tx: Some(tts_tx.clone()),
+            pending_synthesis_jobs: Arc::clone(&pending_jobs),
+            cancel: Arc::clone(&cancel_flag),
+            event_tx: event_tx.clone(),
+            app: app.clone(),
         };
         stream_plugin
             .route_stream(handles, response_rx)

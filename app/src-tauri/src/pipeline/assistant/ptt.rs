@@ -40,6 +40,7 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx
 
     let turn_id = if current_state == InteractionState::Thinking
         || current_state == InteractionState::Speaking
+        || current_state == InteractionState::Working
     {
         on_interrupt(app, state, ctx)
     } else {

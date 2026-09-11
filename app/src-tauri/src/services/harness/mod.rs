@@ -11,7 +11,7 @@ pub mod watcher;
 
 pub use plugins::{
     budget::{ContextBudgetPlugin, ContextStatus},
-    compaction::CompactionPlugin,
+    compaction::{CompactionParams, CompactionPlugin},
     history::ConversationHistoryPlugin,
     prompt::PromptBuilderPlugin,
     stream::{StreamRoutingHandles, StreamRoutingPlugin},
