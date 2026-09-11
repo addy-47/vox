@@ -34,11 +34,6 @@ impl ConversationHistoryPlugin {
         self.kv_synced_index
     }
 
-    /// Updates the index of messages synchronized with the model's KV-cache.
-    pub fn set_kv_synced_index(&mut self, idx: usize) {
-        self.kv_synced_index = idx.min(self.messages.len());
-    }
-
     /// Checks if the last message in working memory is a user turn with identical text.
     pub fn is_duplicate_user_turn(&self, text: &str) -> bool {
         self.messages
@@ -81,13 +76,13 @@ impl ConversationHistoryPlugin {
         );
     }
 
-    /// Rolls back the most recent assistant turn if interrupted before completion.
-    pub fn rollback_last_assistant_turn(&mut self) -> Option<ChatMessage> {
+    /// Rolls back the most recent user turn if interrupted before assistant generated any response.
+    pub fn rollback_last_user_turn(&mut self) -> Option<ChatMessage> {
         if let Some(last) = self.messages.last() {
-            if last.role == Role::Assistant {
+            if last.role == Role::User {
                 let popped = self.messages.pop();
                 self.kv_synced_index = self.messages.len();
-                log::info!("[Harness::History] Interrupted assistant turn rolled back");
+                log::info!("[Harness::History] Interrupted user turn rolled back");
                 return popped;
             }
         }

@@ -1,21 +1,21 @@
 use std::sync::{atomic::Ordering, Arc};
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::{
     core::{
-        events::{emit_ipc_to, AudioIntent, IpcEvent, TranscriptPayload},
+        events::{emit_ipc_to, AudioIntent, IpcEvent, ToastLevel, TranscriptPayload},
         settings::PipelineMode,
         state::{AppState, InteractionState},
     },
     pipeline::{target_window, transition, RoutingContext},
+    toast::show_toast,
     services::{
-        harness::{StreamRoutingHandles, StreamRoutingPlugin, TurnPreparation},
-        llm::{
-            actor::LlmCommand, ConversationInput, GenerationPurpose, GenerationRequest,
-            OutputConstraint,
+        harness::{
+            CompactionParams, CompactionPlugin, StreamRoutingHandles,
+            TurnPreparation,
         },
-        memory::compaction::runner::run_compaction,
+        llm::actor::LlmCommand,
         translit::transliterate_if_hi,
         tts::actor::TtsCommand,
     },
@@ -39,29 +39,30 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
     let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
     let accumulator = Arc::clone(&state.pipeline_accumulator);
     let app_clone = app.clone();
+    let ctx_clone = ctx.clone();
     let ctx_owner = ctx.owner;
 
-    let (tts_tx, llm_tx, pipeline_tx) = match state.engine.try_lock() {
-        Ok(guard) => guard
-            .as_ref()
-            .map(|e| {
-                (
-                    e.tts_tx.clone(),
-                    e.llm_tx.clone(),
-                    Some(e.pipeline_tx.clone()),
-                )
-            })
-            .unwrap_or((None, None, None)),
-        Err(_) => {
-            log::warn!("[Pipeline::Transcript] Engine lock contended; could not access channels");
-            (None, None, None)
-        }
-    };
-
+    let app_state_arc: tauri::State<'_, Arc<AppState>> = app.state();
+    let app_state = Arc::clone(app_state_arc.inner());
     let harness_arc = Arc::clone(&state.harness);
     let provider_arc = Arc::clone(&state.llm_provider);
+    let session_id = state.conversation_id.load(Ordering::Relaxed) as i64;
 
     tauri::async_runtime::spawn(async move {
+        let (tts_tx, llm_tx, pipeline_tx) = {
+            let guard = app_state.engine.lock().await;
+            guard
+                .as_ref()
+                .map(|e| {
+                    (
+                        e.tts_tx.clone(),
+                        e.llm_tx.clone(),
+                        Some(e.pipeline_tx.clone()),
+                    )
+                })
+                .unwrap_or((None, None, None))
+        };
+
         let prep = {
             let mut guard = harness_arc.lock();
             let Some(ref mut harness) = *guard else {
@@ -87,6 +88,7 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
                 log::info!(
                     "[Pipeline::Transcript] Context threshold >= 85%. Transitioning to Working."
                 );
+                transition(InteractionState::Working, &ctx_clone, &app_clone, &app_state);
 
                 if let Some(ref t_tx) = tts_tx {
                     pending_jobs.fetch_add(1, Ordering::Relaxed);
@@ -102,13 +104,27 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
                     }
                 }
 
+                let from_turn = {
+                    let guard = harness_arc.lock();
+                    guard.as_ref().map(|h| h.from_turn_id()).unwrap_or(0)
+                };
+
                 let provider_opt = provider_arc.read().clone();
                 if let Some(provider) = provider_opt {
-                    let compaction_res = run_compaction(
+                    let params = CompactionParams {
+                        session_id,
+                        trigger_kind: "inline",
+                        from_turn_id: from_turn,
+                        to_turn_id: turn_id,
+                        history_messages: &uncompacted_slice,
+                        llm_settings: Some(&settings.llm),
+                        cancel: Some(&cancel),
+                    };
+
+                    let compaction_res = CompactionPlugin::run_and_persist(
                         provider.as_ref(),
-                        &uncompacted_slice,
-                        Some(&settings.llm),
-                        Some(&cancel),
+                        &app_state.db,
+                        params,
                     )
                     .await;
 
@@ -116,13 +132,12 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
                     if let Some(ref mut harness) = *guard {
                         match compaction_res {
                             Ok(result) => {
-                                harness.apply_compaction_summary(&result.context_summary, &query);
+                                harness.apply_compaction_summary(&result.session_context, &query);
+                                harness.set_last_compacted_to_turn(turn_id);
                             }
                             Err(e) => {
                                 log::warn!("[Pipeline::Transcript] Compaction error ({}). Falling back to FIFO.", e);
-                                if let Some(ref budget) = harness.budget {
-                                    budget.execute_fifo_shift(&mut harness.history);
-                                }
+                                harness.fallback_fifo_shift();
                             }
                         }
                     }
@@ -132,15 +147,7 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
                 let Some(ref harness) = *guard else {
                     return;
                 };
-                let input = ConversationInput {
-                    messages: harness.history.messages().to_vec(),
-                };
-                GenerationRequest {
-                    input,
-                    options: Default::default(),
-                    output: OutputConstraint::Text,
-                    purpose: GenerationPurpose::Conversation,
-                }
+                harness.create_generation_request()
             }
         };
 
@@ -169,20 +176,55 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
             }
         }
 
-        if let Some(ref p_tx) = pipeline_tx {
-            let stream_plugin = StreamRoutingPlugin::new();
+        if let Some(p_tx) = pipeline_tx {
+            let stream_plugin_snapshot = {
+                let guard = harness_arc.lock();
+                guard.as_ref().map(|h| h.clone_stream_plugin())
+            };
+            let Some(stream_plugin) = stream_plugin_snapshot else {
+                return;
+            };
             let handles = StreamRoutingHandles {
                 turn_id,
                 owner: ctx_owner,
                 accumulator,
-                tts_tx: tts_tx.as_ref(),
-                pending_synthesis_jobs: &pending_jobs,
-                cancel: &cancel_flag,
+                tts_tx,
+                pending_synthesis_jobs: pending_jobs,
+                cancel: cancel_flag,
                 event_tx: p_tx,
-                app: &app_clone,
+                app: app_clone,
             };
-            if let Err(e) = stream_plugin.route_stream(handles, response_rx) {
-                log::warn!("[Pipeline::Transcript] Stream routing failed: {}", e);
+            let stream_result = tokio::task::spawn_blocking(move || {
+                stream_plugin.route_stream(handles, response_rx)
+            })
+            .await;
+
+            match stream_result {
+                Ok(Ok(full_text)) => {
+                    let mut guard = harness_arc.lock();
+                    if let Some(ref mut harness) = *guard {
+                        if !full_text.trim().is_empty() {
+                            harness.commit_turn(full_text);
+                        } else {
+                            harness.rollback_user_turn();
+                        }
+                        harness.on_turn_completed(app_state, Arc::clone(&harness_arc));
+                    }
+                }
+                Ok(Err(e)) => {
+                    log::warn!("[Pipeline::Transcript] Stream routing failed: {}", e);
+                    let mut guard = harness_arc.lock();
+                    if let Some(ref mut harness) = *guard {
+                        harness.rollback_user_turn();
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[Pipeline::Transcript] Stream routing task join error: {}", e);
+                    let mut guard = harness_arc.lock();
+                    if let Some(ref mut harness) = *guard {
+                        harness.rollback_user_turn();
+                    }
+                }
             }
         }
     });
@@ -197,12 +239,9 @@ pub fn on_transcript_final<R: tauri::Runtime>(
     ctx: &RoutingContext,
 ) {
     let current_state = state.pipeline.state();
-    if current_state != InteractionState::Listening
-        && current_state != InteractionState::Thinking
-        && current_state != InteractionState::Ready
-    {
+    if current_state != InteractionState::Thinking {
         log::debug!(
-            "[Pipeline::Transcript] Transcript dropped (state: {:?})",
+            "[Pipeline::Transcript] Transcript dropped: state is {:?}, expected Thinking",
             current_state
         );
         return;
@@ -214,7 +253,16 @@ pub fn on_transcript_final<R: tauri::Runtime>(
             "[Pipeline::Transcript] Dropping empty transcript for turn {}",
             turn_id
         );
+        state.pipeline_accumulator.lock().clear();
         transition(InteractionState::Ready, ctx, app, state);
+        if let Err(e) = show_toast(
+            app,
+            "Voice Assistant",
+            "No speech recognized",
+            ToastLevel::Info,
+        ) {
+            log::warn!("[Pipeline::Transcript] Failed to show info toast: {}", e);
+        }
         return;
     }
 

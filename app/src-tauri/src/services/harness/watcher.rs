@@ -1,13 +1,16 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{atomic::Ordering, Arc},
+    time::Duration,
+};
 
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use super::{plugins::budget::ContextStatus, session::HarnessSession};
-use crate::{
-    core::state::{AppState, InteractionState},
-    services::memory::compaction::runner::run_compaction,
+use super::{
+    plugins::compaction::{CompactionParams, CompactionPlugin},
+    session::HarnessSession,
 };
+use crate::core::state::{AppState, InteractionState};
 
 pub const QUIET_COMPACTION_DEBOUNCE_SECS: u64 = 20;
 
@@ -38,36 +41,16 @@ impl QuietCompactionWatcher {
     ) {
         self.abort();
 
-        let (should_arm, tracked_turns) = {
+        let tracked_turns = {
             let guard = harness_lock.lock();
             let Some(ref harness) = *guard else {
                 return;
             };
-
-            let Some(ref budget) = harness.budget else {
+            let Some(turns) = harness.check_quiet_compaction_eligibility() else {
                 return;
             };
-
-            let Some(ref compaction) = harness.compaction else {
-                return;
-            };
-
-            if !compaction.auto_compaction_enabled() {
-                return;
-            }
-
-            let tracked = budget.calculate_tracked_tokens(harness.history.messages());
-            let (_, status) = budget.evaluate_utilization(tracked);
-
-            (
-                status == ContextStatus::SoftWarning,
-                harness.history.messages().to_vec(),
-            )
+            turns
         };
-
-        if !should_arm || tracked_turns.len() < 4 {
-            return;
-        }
 
         log::info!(
             "[Harness::Watcher] Soft warning (65%-85%) detected. Arming {}s quiet debounce timer.",
@@ -81,28 +64,36 @@ impl QuietCompactionWatcher {
         let harness_clone = Arc::clone(&harness_lock);
 
         tauri::async_runtime::spawn(async move {
-            let debounce = Duration::from_secs(QUIET_COMPACTION_DEBOUNCE_SECS);
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(QUIET_COMPACTION_DEBOUNCE_SECS);
+            let mut debounce_timer = Box::pin(tokio::time::sleep_until(deadline));
             let mut state_rx = state_clone.pipeline.state_rx.clone();
 
-            tokio::select! {
-                _ = cancel.cancelled() => {
-                    log::info!("[Harness::Watcher] Debounce timer cancelled.");
-                }
-                _ = tokio::time::sleep(debounce) => {
-                    let current_state = state_clone.pipeline.state();
-                    if current_state != InteractionState::Ready && current_state != InteractionState::Paused {
-                        log::info!("[Harness::Watcher] Pipeline left Ready/Paused. Aborting quiet compaction.");
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => {
+                        log::info!("[Harness::Watcher] Debounce timer cancelled.");
                         return;
                     }
+                    _ = &mut debounce_timer => {
+                        let current_state = state_clone.pipeline.state();
+                        if current_state != InteractionState::Ready && current_state != InteractionState::Paused {
+                            log::info!("[Harness::Watcher] Pipeline left Ready/Paused. Aborting quiet compaction.");
+                            return;
+                        }
 
-                    log::info!("[Harness::Watcher] 20s quiet window expired. Triggering background soft compaction.");
-                    execute_soft_compaction(&state_clone, &harness_clone, &tracked_turns, &cancel).await;
-                }
-                res = state_rx.changed() => {
-                    if res.is_ok() {
-                        let current = *state_rx.borrow();
-                        if current != InteractionState::Ready && current != InteractionState::Paused {
-                            log::info!("[Harness::Watcher] Pipeline state changed to {:?}. Aborting quiet compaction.", current);
+                        log::info!("[Harness::Watcher] 20s quiet window expired. Triggering background soft compaction.");
+                        execute_soft_compaction(&state_clone, &harness_clone, &tracked_turns, &cancel).await;
+                        return;
+                    }
+                    res = state_rx.changed() => {
+                        if res.is_ok() {
+                            let current = *state_rx.borrow();
+                            if current != InteractionState::Ready && current != InteractionState::Paused {
+                                log::info!("[Harness::Watcher] Pipeline state changed to {:?}. Aborting quiet compaction.", current);
+                                return;
+                            }
+                        } else {
+                            return;
                         }
                     }
                 }
@@ -130,16 +121,52 @@ async fn execute_soft_compaction(
         .llm
         .clone();
 
-    let result = match run_compaction(
+    let session_id = state.conversation_id.load(Ordering::Relaxed) as i64;
+    let from_turn = {
+        let guard = harness_lock.lock();
+        guard.as_ref().map(|h| h.from_turn_id()).unwrap_or(0)
+    };
+    let to_turn = state.pipeline.peek_turn_id();
+
+    let params = CompactionParams {
+        session_id,
+        trigger_kind: "soft",
+        from_turn_id: from_turn,
+        to_turn_id: to_turn,
+        history_messages: history_slice,
+        llm_settings: Some(&settings),
+        cancel: Some(cancel),
+    };
+
+    let compactor_cancel = cancel.clone();
+    let mut state_rx = state.pipeline.state_rx.clone();
+    let monitor_handle = tauri::async_runtime::spawn(async move {
+        while state_rx.changed().await.is_ok() {
+            let current = *state_rx.borrow();
+            if current != InteractionState::Ready && current != InteractionState::Paused {
+                log::info!(
+                    "[Harness::Watcher] Pipeline transitioned to {:?} during soft compaction. Cancelling in-flight inference.",
+                    current
+                );
+                compactor_cancel.cancel();
+                break;
+            }
+        }
+    });
+
+    let result = match CompactionPlugin::run_and_persist(
         provider.as_ref(),
-        history_slice,
-        Some(&settings),
-        Some(cancel),
+        &state.db,
+        params,
     )
     .await
     {
-        Ok(r) => r,
+        Ok(r) => {
+            monitor_handle.abort();
+            r
+        }
         Err(e) => {
+            monitor_handle.abort();
             log::warn!(
                 "[Harness::Watcher] Background soft compaction failed: {}",
                 e
@@ -148,13 +175,12 @@ async fn execute_soft_compaction(
         }
     };
 
-    if !result.context_summary.trim().is_empty() {
+    if !result.session_context.trim().is_empty() {
         let mut guard = harness_lock.lock();
         if let Some(ref mut harness) = *guard {
-            if let Some(ref mut compaction) = harness.compaction {
-                compaction.set_rolling_summary(Some(result.context_summary));
-                log::info!("[Harness::Watcher] Background soft compaction completed and rolling summary stored.");
-            }
+            harness.apply_quiet_compaction_summary(&result.session_context);
+            harness.set_last_compacted_to_turn(to_turn);
+            log::info!("[Harness::Watcher] Background soft compaction completed, rolling summary stored, and history pruned.");
         }
     }
 }
