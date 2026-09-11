@@ -90,12 +90,12 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 > 2. **Code Divergence / Legacy Code**: If existing code implements nuances or legacy behaviors not defined in the spec, the agent MUST confirm with the user first before either pruning the code or updating the spec to capture the behavior.
 
 #### Active Specifications Ledger
-1. **[Event-Domain Architectural Specification (Ground Truth)](file:///home/addy/projects/apps/vox/docs/specs/event-domain-matrix.md)** — *Status: Approved SSOT*. Golden source of truth for pipeline behavior, state transitions, and 6-domain contracts.
+1. **[Event-Domain Architectural Specification (Ground Truth)](file:///home/addy/projects/apps/vox/docs/specs/events-spec.md)** — *Status: Approved SSOT*. Golden source of truth for pipeline behavior, state transitions, and 6-domain contracts.
 2. **[Database & Persistence Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/db-spec.md)** — *Status: Approved Target Spec*. Strict persistence boundary, native Turso engine invariants, and normalized v2 schema.
 3. **[Minimal Cognitive Memory & Session Continuation Spec (v2)](file:///home/addy/projects/apps/vox/docs/specs/memory-spec.md)** — *Status: Approved Target Spec*. 2-stage dedup, single evolving personal memory document, rolling working compaction, and deferred episodic tool retrieval.
-4. **[IPC Command & Event Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/ipc-spec.md)** — *Status: Proposed / Target Spec*. Grouped frontend-to-backend commands and backend-to-frontend IPC events.
-5. **[LLM Agent Harness & Dual-Stream Demuxer Spec (v2)](file:///home/addy/projects/apps/vox/docs/specs/harness-spec.md)** — *Status: DRAFT / Under Active Architectural Discussion*. Dynamic streaming tag demuxing, `InteractionState::Working`, and decoupled LLM actor.
-6. **[Notification Center Behavioral & Interface Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/notifications-spec.md)** — *Status: Approved Target Spec*. Append storage with correlation key, task idempotency, and frontend stream rollup.
+4. **[IPC Command & Event Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/ipc-spec.md)** — *Status: Approved / Target Spec*. Grouped frontend-to-backend commands and backend-to-frontend IPC events.
+5. **[LLM Agent Harness & Plugin Runtime Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/harness-spec.md)** — *Status: Approved Target Spec*. Plugin chassis, 1:1 session lifecycle (`start_session(Option<sessionId>)`), decoupled LLM actor with duplex dialogue pipe, `InteractionState::Working` with audio intent gating, and clean-slate deletion of legacy harness code.
+6. **[Notification Center Behavioral & Interface Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/notifications-spec.md)** — *Status: Proposed Target Spec*. Append storage with correlation key, task idempotency, and frontend stream rollup.
 
 ---
 
@@ -105,8 +105,10 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 
 - **Suite green:** Full release suite 93/93 (post `ort` rc.13 bump fixing ReshapeFusion SIGSEGVs); `clippy -D warnings` clean; Seams 1–11, 15–17 mutate-verified.
 - **Memory v2 complete:** 10-table Turso schema, 2-stage dedup, compaction coordinator + ledger, session continuation, IPC drift fixed, sleep-until consolidation scheduler (`manual|daily` only).
-- **Frontend in flight:** Service layer on v2 shapes (0 TS errors), memory graph redesign, Edge Panel batches 1–2 done (batch 3 pending); notification rework is a DRAFT plan awaiting 3 locked decisions.
-- **Edge panels & shell unified:** EdgePanel converted from popover to true full-vh docked side panels (flush edges, framer-motion slide, outside-click & escape dismissal, z-[45] overlapping corner controls, generous internal bottom spacing & cushions); usePanelState per-edge exclusivity (left sessions and right help/notifications open simultaneously); top-left menu button matched to top-right icon styles; TopRightCluster added to desktop Settings; SessionPanel redesigned with clean borderless IDE style (+ New Session, Pinned section, Projects with FolderPlus, and project accordions).
-- **Session panel persistent layout & null safety:** Guaranteed persistent IDE panel structure (+ New conversation, Pinned, Projects with FolderPlus accordions, and Conversations) regardless of empty or null states; replaced full-panel error screen with inline transient banner; hardened null/undefined handling in `historyService.ts` and `useSessionPanel.ts`.
-- **Test helper path refactor:** Decoupled `TempPathsGuard` in `tests/common/paths.rs` from `constants::DB_FILENAME`, using local `TEST_DB_FILENAME`.
+- **Edge panels & shell unified:** Full-vh docked side panels with framer-motion slide, persistent IDE layout, null safety, and top-right clusters across desktop pages.
+- **Session lifecycle & prompt resolution:** Centralized prompt resolution in `AppState`, lazy session persistence without echo events, and clean voice pipeline teardown on reset.
+- **Backend architecture & dead code cleanup:** Modularized `ipc/settings` and `pipeline/mod.rs`, wired dynamic TTS speed/quality-steps hot-reloading, fixed opportunistic compaction commit, and pruned dead code and legacy Memory v1 XML artifacts.
+- **Harness v2 architecture spec approved:** Re-architected `services/harness/` into plugin runtime chassis with 1:1 session lifecycle, `start_session(Option<sessionId>)`, duplex actor pipe, and `Working` state; aligned `events-spec.md` and `ipc-spec.md`.
+- **Harness v2 Batches 1 & 2 verified:** AudioIntent contracts & gating in `core/events.rs`, `InteractionState::Working=8`, LLM actor decoupled with `LlmResponse` duplex pipe, `StreamRoutingPlugin` & `SynthesisContext` bundled handles, zero warnings on `clippy -D warnings` and `pnpm build`.
+- **Harness v2 Chassis & Clean Deletion complete:** Legacy files deleted clean-slate (`accountant`, `buffer`, `facade`, `manager`, `prompt_builder`); 5-plugin runtime assembled (`history`, `prompt`, `budget`, `compaction`, `stream`) in `HarnessSession`; reactive 20s quiet watcher implemented; strict import hoisting enforced; `clippy --release --lib` and `pnpm build` clean.
 

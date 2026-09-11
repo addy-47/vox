@@ -6,6 +6,10 @@ use std::sync::{
 use tokio::sync::Mutex;
 use turso::Connection;
 
+pub use crate::{
+    core::engine::VoxEngine, monitoring::telemetry::TelemetryState, pipeline::PipelineAtomics,
+    services::memory::MemoryAppState,
+};
 use crate::{
     core::{
         events::VoxEvent,
@@ -14,18 +18,9 @@ use crate::{
     monitoring::snapshots::MonitoringState,
     persistence::PersistenceEvent,
     pipeline::assistant::accumulator::TurnAccumulator,
-    services::{
-        harness::ConversationManager,
-        llm::LlmProvider,
-        realtime::RealtimeActor,
-    },
+    services::{harness::HarnessSession, llm::LlmProvider, realtime::RealtimeActor},
     setup::{manifest::VoxManifest, model_manager::ModelManager},
 };
-
-pub use crate::core::engine::VoxEngine;
-pub use crate::monitoring::telemetry::TelemetryState;
-pub use crate::pipeline::PipelineAtomics;
-pub use crate::services::memory::MemoryAppState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum AppWindow {
@@ -97,6 +92,7 @@ pub enum InteractionState {
     Paused = 5,
     Error = 6,
     Sleeping = 7,
+    Working = 8,
 }
 
 impl From<u32> for InteractionState {
@@ -109,6 +105,7 @@ impl From<u32> for InteractionState {
             5 => InteractionState::Paused,
             6 => InteractionState::Error,
             7 => InteractionState::Sleeping,
+            8 => InteractionState::Working,
             _ => InteractionState::Idle,
         }
     }
@@ -144,7 +141,7 @@ pub struct AppState {
     pub cpu_governor: parking_lot::Mutex<String>,
     pub cpu_governor_optimal: Arc<AtomicBool>,
     pub setup_running: Arc<Mutex<bool>>,
-    pub conversation_manager: Arc<parking_lot::Mutex<ConversationManager>>,
+    pub harness: Arc<parking_lot::Mutex<Option<HarnessSession>>>,
     pub llm_provider: Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>>>,
     pub event_tx: parking_lot::Mutex<Option<mpsc::Sender<VoxEvent>>>,
     pub pipeline_accumulator: Arc<parking_lot::Mutex<TurnAccumulator>>,
@@ -190,7 +187,7 @@ impl AppState {
             cpu_governor: parking_lot::Mutex::new("ondemand".into()),
             cpu_governor_optimal: Arc::new(AtomicBool::new(true)),
             setup_running: Arc::new(Mutex::new(false)),
-            conversation_manager: Arc::new(parking_lot::Mutex::new(ConversationManager::new())),
+            harness: Arc::new(parking_lot::Mutex::new(None)),
             llm_provider: Arc::new(parking_lot::RwLock::new(None)),
             event_tx: parking_lot::Mutex::new(None),
             pipeline_accumulator: Arc::new(parking_lot::Mutex::new(TurnAccumulator::new())),

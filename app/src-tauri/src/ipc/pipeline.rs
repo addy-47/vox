@@ -4,13 +4,15 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Manager, State};
 
-use crate::core::{
-    engine::{start_audio_engine, stop_audio_engine},
-    error::VoxIpcError,
-    events::VoxEvent,
-    state::{AppState, InteractionOwner, InteractionState},
+use crate::{
+    core::{
+        engine::{start_audio_engine, stop_audio_engine},
+        error::VoxIpcError,
+        events::VoxEvent,
+        state::{AppState, InteractionOwner, InteractionState},
+    },
+    pipeline::test::{cancel_test_clip, execute_test_clip},
 };
-use crate::pipeline::test::{cancel_test_clip, execute_test_clip};
 
 /// Launches and initializes the 3-tier audio engine.
 #[tauri::command]
@@ -31,6 +33,7 @@ pub async fn stop_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), Vox
 /// Starts the voice assistant session by booting audio engine and routing SessionStart.
 #[tauri::command]
 pub async fn start_session<R: tauri::Runtime>(
+    session_id: Option<i64>,
     app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
@@ -55,6 +58,7 @@ pub async fn start_session<R: tauri::Runtime>(
     event_tx
         .send(VoxEvent::SessionStart {
             owner: InteractionOwner::Assistant,
+            session_id,
         })
         .map_err(|e| VoxIpcError::Engine(format!("Failed to send SessionStart: {}", e)))?;
 

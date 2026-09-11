@@ -1,49 +1,46 @@
 use std::sync::{atomic::Ordering, Arc};
 
 use tauri::AppHandle;
-use turso::Connection;
 
 use crate::{
     core::{
-        error::{Actionability, PipelineError, PipelineImpact},
-        events::{
-            emit_ipc_to, IpcEvent, ToastLevel, TranscriptPayload, VoxEvent,
-        },
-        settings::{LlmActiveProvider, PipelineMode},
+        events::{emit_ipc_to, AudioIntent, IpcEvent, TranscriptPayload},
+        settings::PipelineMode,
         state::{AppState, InteractionState},
     },
     pipeline::{target_window, transition, RoutingContext},
     services::{
-        harness::{prepare_turn_context, PrepareTurnParams},
-        llm::{actor::LlmCommand, ProviderKind},
+        harness::{StreamRoutingHandles, StreamRoutingPlugin, TurnPreparation},
+        llm::{
+            actor::LlmCommand, ConversationInput, GenerationPurpose, GenerationRequest,
+            OutputConstraint,
+        },
+        memory::compaction::runner::run_compaction,
         translit::transliterate_if_hi,
+        tts::actor::TtsCommand,
     },
-    toast::show_toast,
 };
 
-/// Resolves the provider classification based on the configured active LLM setting.
-fn determine_provider_kind(active: &LlmActiveProvider) -> ProviderKind {
-    match active {
-        LlmActiveProvider::Embedded => ProviderKind::Embedded,
-        LlmActiveProvider::Server | LlmActiveProvider::Cloud => ProviderKind::OpenAiCompat,
-    }
-}
-
 /// Spawns the background asynchronous task to prepare conversational context and trigger LLM generation.
-fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
+fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
+    turn_id: u32,
+    query: String,
+    app: &AppHandle<R>,
+    state: &AppState,
+    ctx: &RoutingContext,
+) {
     let settings = state
         .settings
         .read()
         .unwrap_or_else(|p| p.into_inner())
         .clone();
-    let cm_arc = Arc::clone(&state.conversation_manager);
-    let conv_id = state.conversation_id.load(Ordering::Relaxed);
     let cancel = state.pipeline.turn_token();
+    let cancel_flag = Arc::clone(&state.pipeline.cancel_flag);
     let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
     let accumulator = Arc::clone(&state.pipeline_accumulator);
-    let db = Arc::clone(&state.db);
+    let app_clone = app.clone();
+    let ctx_owner = ctx.owner;
 
-    let cached_provider = state.llm_provider.read().clone();
     let (tts_tx, llm_tx, pipeline_tx) = match state.engine.try_lock() {
         Ok(guard) => guard
             .as_ref()
@@ -61,54 +58,89 @@ fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
         }
     };
 
+    let harness_arc = Arc::clone(&state.harness);
+    let provider_arc = Arc::clone(&state.llm_provider);
+
     tauri::async_runtime::spawn(async move {
-        let conn_opt: Option<Arc<Connection>> = if settings.memory.context_retrieval_enabled {
-            Some(db)
-        } else {
-            None
+        let prep = {
+            let mut guard = harness_arc.lock();
+            let Some(ref mut harness) = *guard else {
+                log::error!("[Pipeline::Transcript] No active HarnessSession mounted");
+                return;
+            };
+            harness.prepare_turn(&query, turn_id)
         };
 
-        let provider_kind = determine_provider_kind(&settings.llm.active);
-        let session_id = conv_id.to_string();
-        let res = prepare_turn_context(PrepareTurnParams {
-            harness: &cm_arc,
-            tts_tx: tts_tx.as_ref(),
-            conn: conn_opt.as_deref(),
-            query: &query,
-            turn_id,
-            session_id: &session_id,
-            memory: &settings.memory,
-            context_window: settings.llm.context_window as usize,
-            provider_kind,
-            llm_provider: cached_provider.as_deref(),
-            llm_settings: Some(&settings.llm),
-            cancel_token: Some(&cancel),
-            pipeline_tx: pipeline_tx.as_ref(),
-        })
-        .await;
-
-        let (request, transition_speech) = match res {
-            Ok((req, filler)) => (req, filler),
-            Err(e) => {
-                log::error!(
-                    "[Pipeline::Transcript] Failed to prepare turn context: {}",
-                    e
+        let request = match prep {
+            TurnPreparation::DuplicateTurnIgnored => {
+                log::info!(
+                    "[Pipeline::Transcript] Duplicate turn ignored (turn {})",
+                    turn_id
                 );
-                if let Some(ref p_tx) = pipeline_tx {
-                    if let Err(send_err) = p_tx.send(VoxEvent::Error(PipelineError {
+                return;
+            }
+            TurnPreparation::Ready(req) => req,
+            TurnPreparation::NeedsInlineCompaction {
+                filler_phrase,
+                uncompacted_slice,
+            } => {
+                log::info!(
+                    "[Pipeline::Transcript] Context threshold >= 85%. Transitioning to Working."
+                );
+
+                if let Some(ref t_tx) = tts_tx {
+                    pending_jobs.fetch_add(1, Ordering::Relaxed);
+                    if let Err(e) = t_tx.send(TtsCommand::Generate {
                         turn_id,
-                        message: format!("Turn context preparation failed: {}", e),
-                        source: "CriticalCompaction".to_string(),
-                        impact: PipelineImpact::TurnAborted,
-                        actionability: Actionability::None,
-                    })) {
+                        text: filler_phrase.to_string(),
+                        intent: AudioIntent::InterimFiller,
+                    }) {
                         log::warn!(
-                            "[Pipeline::Transcript] Failed to emit CriticalCompaction error: {}",
-                            send_err
+                            "[Pipeline::Transcript] Failed to dispatch filler to TTS: {}",
+                            e
                         );
                     }
                 }
-                return;
+
+                let provider_opt = provider_arc.read().clone();
+                if let Some(provider) = provider_opt {
+                    let compaction_res = run_compaction(
+                        provider.as_ref(),
+                        &uncompacted_slice,
+                        Some(&settings.llm),
+                        Some(&cancel),
+                    )
+                    .await;
+
+                    let mut guard = harness_arc.lock();
+                    if let Some(ref mut harness) = *guard {
+                        match compaction_res {
+                            Ok(result) => {
+                                harness.apply_compaction_summary(&result.context_summary, &query);
+                            }
+                            Err(e) => {
+                                log::warn!("[Pipeline::Transcript] Compaction error ({}). Falling back to FIFO.", e);
+                                if let Some(ref budget) = harness.budget {
+                                    budget.execute_fifo_shift(&mut harness.history);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let guard = harness_arc.lock();
+                let Some(ref harness) = *guard else {
+                    return;
+                };
+                let input = ConversationInput {
+                    messages: harness.history.messages().to_vec(),
+                };
+                GenerationRequest {
+                    input,
+                    options: Default::default(),
+                    output: OutputConstraint::Text,
+                    purpose: GenerationPurpose::Conversation,
+                }
             }
         };
 
@@ -120,23 +152,37 @@ fn spawn_modular_llm_task(turn_id: u32, query: String, state: &AppState) {
             return;
         }
 
-        if transition_speech.is_some() {
-            pending_jobs.fetch_add(1, Ordering::Relaxed);
-        }
+        let (response_tx, response_rx) = std::sync::mpsc::channel();
 
         if let Some(ref tx) = llm_tx {
             if let Err(e) = tx.send(LlmCommand::Generate {
                 request: Box::new(request),
                 turn_id,
                 cancel,
-                accumulator,
-                tts_tx,
-                pending_synthesis_jobs: pending_jobs,
+                response_tx,
             }) {
                 log::warn!(
                     "[Pipeline::Transcript] Failed to send Generate to LLM: {}",
                     e
                 );
+                return;
+            }
+        }
+
+        if let Some(ref p_tx) = pipeline_tx {
+            let stream_plugin = StreamRoutingPlugin::new();
+            let handles = StreamRoutingHandles {
+                turn_id,
+                owner: ctx_owner,
+                accumulator,
+                tts_tx: tts_tx.as_ref(),
+                pending_synthesis_jobs: &pending_jobs,
+                cancel: &cancel_flag,
+                event_tx: p_tx,
+                app: &app_clone,
+            };
+            if let Err(e) = stream_plugin.route_stream(handles, response_rx) {
+                log::warn!("[Pipeline::Transcript] Stream routing failed: {}", e);
             }
         }
     });
@@ -151,78 +197,69 @@ pub fn on_transcript_final<R: tauri::Runtime>(
     ctx: &RoutingContext,
 ) {
     let current_state = state.pipeline.state();
-    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
+    if current_state != InteractionState::Listening
+        && current_state != InteractionState::Thinking
+        && current_state != InteractionState::Ready
+    {
         log::debug!(
-            "[Pipeline::Transcript] TranscriptFinal dropped in {:?} state",
+            "[Pipeline::Transcript] Transcript dropped (state: {:?})",
             current_state
         );
         return;
     }
 
-    if current_state != InteractionState::Thinking {
+    let trimmed = text.trim().to_string();
+    if trimmed.is_empty() {
         log::debug!(
-            "[Pipeline::Transcript] TranscriptFinal dropped: state is {:?}, expected Thinking",
-            current_state
+            "[Pipeline::Transcript] Dropping empty transcript for turn {}",
+            turn_id
         );
+        transition(InteractionState::Ready, ctx, app, state);
         return;
     }
 
     let transliterate_enabled = state
         .settings
         .read()
-        .unwrap_or_else(|p| p.into_inner())
-        .stt
-        .transliterate_enabled;
-    let processed_text = transliterate_if_hi(&text, true, transliterate_enabled);
-
-    if processed_text.trim().is_empty() {
-        state.pipeline_accumulator.lock().clear();
-        transition(InteractionState::Ready, ctx, app, state);
-
-        if let Err(e) = show_toast(
-            app,
-            "Voice Assistant",
-            "No speech recognized",
-            ToastLevel::Info,
-        ) {
-            log::warn!("[Pipeline::Transcript] Failed to show info toast: {}", e);
-        }
-        return;
-    }
+        .map(|s| s.stt.transliterate_enabled)
+        .unwrap_or(false);
+    let query = transliterate_if_hi(&trimmed, true, transliterate_enabled);
+    log::info!(
+        "[Pipeline::Transcript] Turn {}: User said: '{}'",
+        turn_id,
+        query
+    );
 
     state
         .pipeline_accumulator
         .lock()
-        .set_user_transcript(processed_text.clone());
+        .set_user_transcript(query.clone());
 
-    let target = target_window(ctx.owner);
+    let payload = TranscriptPayload {
+        turn_id,
+        text: query.clone(),
+        owner: Some(ctx.owner),
+    };
     if let Err(e) = emit_ipc_to(
         app,
-        target,
-        IpcEvent::TranscriptFinal(TranscriptPayload {
-            turn_id,
-            text: processed_text.clone(),
-            owner: Some(ctx.owner),
-        }),
+        target_window(ctx.owner),
+        IpcEvent::TranscriptFinal(payload),
     ) {
         log::warn!(
-            "[Pipeline::Transcript] Failed to emit transcript_final to {}: {}",
-            target,
+            "[Pipeline::Transcript] Failed to emit TranscriptFinal IPC: {}",
             e
         );
     }
 
-    if ctx.pipeline_mode == PipelineMode::Modular {
-        spawn_modular_llm_task(turn_id, processed_text, state);
-    } else if ctx.pipeline_mode == PipelineMode::Realtime {
-        state
-            .pipeline
-            .pending_synthesis_jobs
-            .store(1, Ordering::Relaxed);
-    }
+    transition(InteractionState::Thinking, ctx, app, state);
 
-    log::info!(
-        "[Pipeline::Transcript] TranscriptFinal processed (turn: {})",
-        turn_id
-    );
+    match ctx.pipeline_mode {
+        PipelineMode::Modular => spawn_modular_llm_task(turn_id, query, app, state, ctx),
+        PipelineMode::Realtime => {
+            log::info!(
+                "[Pipeline::Transcript] Turn {} transcript processed in Realtime mode",
+                turn_id
+            );
+        }
+    }
 }

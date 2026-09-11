@@ -13,7 +13,8 @@ export type InteractionState =
   | "Speaking"
   | "Paused"
   | "Error"
-  | "Sleeping";
+  | "Sleeping"
+  | "Working";
 
 /** Canonical Rust `InteractionOwner` enum (core/state.rs). */
 export type InteractionOwner = "Assistant" | "Dictation";

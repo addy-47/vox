@@ -13,7 +13,7 @@ use turso::Connection;
 use crate::{
     core::{
         error::{Actionability, PipelineError, PipelineImpact},
-        events::VoxEvent,
+        events::{AudioIntent, VoxEvent},
         settings::{TtsProviderConfig, VoxSettings},
     },
     persistence::voices::get_voice,
@@ -30,7 +30,11 @@ use crate::{
 /// Commands accepted by the dedicated TTS synthesis worker thread.
 #[derive(Debug)]
 pub enum TtsCommand {
-    Generate { turn_id: u32, text: String },
+    Generate {
+        turn_id: u32,
+        text: String,
+        intent: AudioIntent,
+    },
     SetVoice(i32),
     SetSpeed(f32),
     SetQualitySteps(u32),
@@ -56,24 +60,29 @@ pub fn spawn_tts_worker(
 
     while let Ok(cmd) = rx.recv() {
         match cmd {
-            TtsCommand::Generate { turn_id, text } => {
-                log::debug!("[TTS Worker] Processing TTS chunk: '{}'", text);
+            TtsCommand::Generate {
+                turn_id,
+                text,
+                intent,
+            } => {
+                log::debug!(
+                    "[TTS Worker] Processing TTS chunk: '{}' (intent: {:?})",
+                    text,
+                    intent
+                );
                 let text_clone = text.clone();
-                let cancel_flag = handles.cancel_flag.clone();
-                let event_tx = handles.event_tx.clone();
-                let playback = Arc::clone(&handles.playback);
-                let telemetry_rtf = handles.telemetry_rtf.clone();
                 let provider_ref = AssertUnwindSafe(&*provider);
+                let ctx = super::providers::SynthesisContext {
+                    turn_id,
+                    intent,
+                    cancel: handles.cancel_flag.clone(),
+                    playback: &handles.playback,
+                    event_tx: handles.event_tx.clone(),
+                    telemetry_rtf: handles.telemetry_rtf.as_ref(),
+                };
 
                 let res = catch_unwind(AssertUnwindSafe(|| {
-                    provider_ref.synthesize_chunk(
-                        &text_clone,
-                        turn_id,
-                        cancel_flag,
-                        &playback,
-                        event_tx,
-                        telemetry_rtf.as_ref(),
-                    )
+                    provider_ref.synthesize_chunk(&text_clone, &ctx)
                 }));
 
                 if let Some(ref jobs) = handles.pending_synthesis_jobs {

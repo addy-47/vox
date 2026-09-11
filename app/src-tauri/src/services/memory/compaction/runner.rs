@@ -7,7 +7,7 @@ use super::prompt::build_compaction_request;
 use crate::{
     core::settings::LlmSettings,
     services::{
-        harness::buffer::ChatMessage,
+        harness::ChatMessage,
         llm::{GenerationRequest, LlmProvider, LlmStreamEvent},
         memory::COMPACTION_SENTINEL_TURN_ID,
     },

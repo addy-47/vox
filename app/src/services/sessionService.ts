@@ -26,11 +26,11 @@ export interface SessionOrchestrationResult {
 }
 
 const VALID_STATES = new Set<InteractionState>([
-  "Idle", "Ready", "Listening", "Thinking", "Speaking", "Paused", "Error", "Sleeping",
+  "Idle", "Ready", "Listening", "Thinking", "Speaking", "Paused", "Error", "Sleeping", "Working",
 ]);
 
-export async function startSession(): Promise<void> {
-  await invoke("start_session");
+export async function startSession(sessionId?: number | null): Promise<void> {
+  await invoke("start_session", { sessionId: sessionId ?? null });
 }
 
 export async function endSession(): Promise<void> {

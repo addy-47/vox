@@ -17,8 +17,7 @@ use crate::{
         state::{AppState, AppWindow, InteractionOwner, InteractionState},
     },
     monitoring::{
-        SYSTEM_MONITOR_INTERVAL, TELEMETRY_AGGREGATOR_CHANNEL_CAPACITY,
-        TELEMETRY_EMITTER_INTERVAL,
+        SYSTEM_MONITOR_INTERVAL, TELEMETRY_AGGREGATOR_CHANNEL_CAPACITY, TELEMETRY_EMITTER_INTERVAL,
     },
 };
 

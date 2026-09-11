@@ -5,7 +5,7 @@
 use std::{
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8},
         mpsc, Arc,
     },
 };
@@ -167,6 +167,7 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         state_atomic: state.pipeline.current_state_atomic.clone(),
         current_turn_id: state.pipeline.turn_id.clone(),
         pending_synthesis_jobs: state.pipeline.pending_synthesis_jobs.clone(),
+        playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx: event_tx.clone(),
     };
     let playback_engine = Arc::new(PlaybackEngine::from_parts(
@@ -293,9 +294,8 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
     *state.engine.blocking_lock() = Some(engine);
 
     // Warm up modular LLM + TTS workers asynchronously
-    vox_lib::core::engine::ensure_modular_workers_sync(&app, &state)
+    vox_lib::core::engine::ensure_modular_workers_sync(&state)
         .expect("Failed to warm up modular workers");
-
     (
         app,
         state,

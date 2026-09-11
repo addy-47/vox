@@ -5,6 +5,7 @@ use std::{
 
 use tauri::{AppHandle, Manager, State};
 
+use super::mutation::apply_setting_mutation;
 use crate::{
     core::{
         engine::{start_audio_engine, stop_audio_engine},
@@ -25,8 +26,6 @@ use crate::{
     },
     tray::{destroy_tray_window, ensure_tray_window},
 };
-
-use super::mutation::apply_setting_mutation;
 
 /// Disk write is deferred by this duration after the last setting change.
 /// Prevents thrashing disk on rapid slider updates (dozens of changes/sec).
@@ -478,9 +477,15 @@ async fn dispatch_worker_command<R: tauri::Runtime>(
                         .or_else(|| value.as_str().and_then(|s| s.parse::<u32>().ok()));
                     if let Some(steps) = steps_opt {
                         if let Err(e) = tts_tx.send(TtsCommand::SetQualitySteps(steps)) {
-                            log::warn!("[Settings] Failed to send TtsCommand::SetQualitySteps: {}", e);
+                            log::warn!(
+                                "[Settings] Failed to send TtsCommand::SetQualitySteps: {}",
+                                e
+                            );
                         }
-                        log::debug!("[Settings] TtsCommand::SetQualitySteps({}) dispatched", steps);
+                        log::debug!(
+                            "[Settings] TtsCommand::SetQualitySteps({}) dispatched",
+                            steps
+                        );
                     }
                 }
             }

@@ -4,6 +4,7 @@ use anyhow::Result;
 use turso::Connection;
 use uuid::Uuid;
 
+use super::{SOFT_VECTOR_DEDUP_THRESHOLD, STAGE2_BATCH_SIZE};
 use crate::{
     persistence::{
         deactivate_fact,
@@ -12,10 +13,7 @@ use crate::{
         queue::claim_pending_queue_batch,
         record_queue_item_failure, update_queue_item_status, QueueItem,
     },
-    services::memory::{
-        cosine_similarity, ensure_embedder_loaded, generate_embeddings_batch,
-        SOFT_VECTOR_DEDUP_THRESHOLD, STAGE2_BATCH_SIZE,
-    },
+    services::memory::{cosine_similarity, ensure_embedder_loaded, generate_embeddings_batch},
 };
 
 /// Summary metrics returned after running a Stage 2 semantic cosine deduplication pass.

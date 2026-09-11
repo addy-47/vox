@@ -4,12 +4,11 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use turso::Connection;
 
-use crate::utils::json::parse_unified_compaction_json;
-
 use super::{
     compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
     personal_memory::get_personal_memory,
 };
+use crate::utils::json::parse_unified_compaction_json;
 
 /// Data payload required to seed conversation continuation in working memory.
 #[derive(Debug, Clone)]
@@ -316,8 +315,7 @@ pub async fn fetch_session_continuation(
             _ => (None, 0),
         };
 
-    let turns =
-        fetch_turns_for_compaction(conn, session_id, last_compacted + 1, u32::MAX).await?;
+    let turns = fetch_turns_for_compaction(conn, session_id, last_compacted + 1, u32::MAX).await?;
 
     Ok(SessionContinuationData {
         personal_memory,
