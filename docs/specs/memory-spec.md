@@ -22,7 +22,7 @@ A completed turn in the voice pipeline consists of:
 ### 2.2 In-Memory Buffer Structure
 - In-memory working buffer retains:
   1. `system_prompt`: Static system instructions + injected Personal Memory document.
-  2. `context_summary`: Rolling compaction summary of all turns compacted so far in the current session (extracted from `compaction_output`).
+  2. `session_context`: The entire structured output of the latest compaction pass (containing both Bucket 1: personal facts, and Bucket 2: working session state [objective, workdone, blocker, next_step, pitfall]).
   3. `messages`: FIFO sliding window of uncompacted recent `ChatMessage` turns (`[User, Assistant, ...]`).
 
 ---
@@ -39,22 +39,23 @@ To prevent orchestration logic from stalling speech synthesis or leaking into sp
   - Trailing orchestration tags (e.g. `<title>...</title>`, `<action>...</action>`) stream to their registered backend consumers off the voice hot path.
 - **First-Turn Session Titles**: On Turn 1 of a new session, the harness appends a prompt directive: *"At the end of your response, output a concise 3-5 word title in `<title>...</title>`."* The harness consumes this tag and dispatches `PersistenceEvent::UpdateSessionMetadata { session_id, key: "title", value }`.
 
-### 3.2 Compaction Output Contract
-Every compaction pass (Critical, Soft, or Manual) produces a single unified JSON output string:
+### 3.2 Compaction Output Contract (The Session Context)
+Every compaction pass (Critical, Soft, or Manual) produces a single unified JSON output containing two distinct buckets across 6 structured categories:
 ```json
 {
-  "context_summary": "<rolling conversational summary string>",
-  "personal": ["<unstructured fact about user>"],
-  "objective": ["<unstructured goal/intent>"],
-  "workdone": ["<unstructured completed task/milestone>"],
-  "blocker": ["<unstructured error/blocker>"],
-  "next_step": ["<unstructured upcoming step>"],
-  "pitfall": ["<unstructured edge case/lesson learned>"]
+  "personal": ["<unstructured fact or preference about user>"],
+  "objective": ["<unstructured active operational goal or intent>"],
+  "workdone": ["<unstructured completed task or milestone>"],
+  "blocker": ["<unstructured error, blocker, or missing dependency>"],
+  "next_step": ["<unstructured planned follow-up or upcoming action>"],
+  "pitfall": ["<unstructured edge case, lesson learned, or architectural constraint>"]
 }
 ```
-- **Provenance Retention**: The raw JSON output string is stored directly in `session_compactions(compaction_output)`.
-- **Buffer Pruning**: Compacted turns are pruned from the in-memory FIFO buffer.
-- **Staging**: Extracted facts are inserted into `memory_ingestion_queue` with `status = 'pending'` and linked to a real `compaction_id` on every trigger path, including critical inline compaction.
+- **Dual-Destination Architecture**:
+  1. **In-Memory Session Context (Working Memory Continuity)**: The **entire output** of this compaction (both Bucket 1: `personal` and Bucket 2: `objective`, `workdone`, `blocker`, `next_step`, `pitfall`) is what constitutes the `session_context`. The harness prunes all compacted raw turns from `ChatMessage` history and injects this entire structured compaction output into `<session_context>...</session_context>` inside the root system prompt for subsequent turns.
+  2. **Turso Database (Long-Term Episodic Ingestion & Provenance)**: The raw JSON output string is stored directly in `session_compactions(compaction_output)`. Extracted facts are inserted into `memory_ingestion_queue` with `status = 'pending'` and linked to the `compaction_id` for background consolidation into the durable Personal Memory document.
+- **Buffer Pruning**: Compacted raw turns are pruned completely from the in-memory FIFO buffer.
+- **Lenient Parse Fallback**: If the model returns non-empty text that fails JSON parsing on both attempts, the raw text is preserved directly inside `<session_context>` with zero staged DB facts rather than failing the turn or dropping context..
 
 ### 3.3 Compaction Triggers & Behavioral Rules
 

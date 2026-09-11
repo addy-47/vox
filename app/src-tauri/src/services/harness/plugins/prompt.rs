@@ -24,24 +24,9 @@ impl PromptBuilderPlugin {
         }
     }
 
-    /// Sets or updates the base persona system prompt.
-    pub fn set_base_system_prompt(&mut self, prompt: String) {
-        self.base_system_prompt = prompt;
-    }
-
     /// Sets or updates the active Personal Memory markdown document.
     pub fn set_personal_memory(&mut self, memory: Option<String>) {
         self.personal_memory = memory;
-    }
-
-    /// Updates the maximum context token ceiling.
-    pub fn set_max_context_tokens(&mut self, max_tokens: usize) {
-        self.max_context_tokens = max_tokens;
-    }
-
-    /// Updates the maximum context share allocated to personal memory.
-    pub fn set_max_context_share(&mut self, share: f32) {
-        self.max_context_share = share;
     }
 
     /// Assembles the finalized system prompt with grounded `<user_identity>` within budget ceiling.
@@ -55,9 +40,7 @@ impl PromptBuilderPlugin {
             return self.base_system_prompt.clone();
         }
 
-        let ceiling = ((self.max_context_tokens as f32) * self.max_context_share) as usize;
-        let base_tokens = estimate_tokens(&self.base_system_prompt);
-        let mem_budget = ceiling.saturating_sub(base_tokens);
+        let mem_budget = ((self.max_context_tokens as f32) * self.max_context_share) as usize;
 
         let bounded_memory = self.bound_personal_memory(trimmed_mem, mem_budget);
         let wrapped_identity = PromptTag::UserIdentity.wrap(&bounded_memory);
@@ -80,7 +63,8 @@ impl PromptBuilderPlugin {
 
         let char_limit = budget_tokens * 4;
         if memory.len() > char_limit {
-            memory[..char_limit].to_string()
+            let safe_idx = memory.floor_char_boundary(char_limit);
+            memory[..safe_idx].to_string()
         } else {
             memory.to_string()
         }

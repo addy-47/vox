@@ -63,12 +63,6 @@ pub async fn save_personal_memory(
         }
     })?;
 
-    if let Some(ref mut harness) = *state.harness.lock() {
-        harness
-            .prompt
-            .set_personal_memory(Some(record.content.clone()));
-    }
-
     if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
         log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
     }
@@ -112,12 +106,6 @@ pub async fn consolidate_personal_memory(
     )
     .await
     .map_err(|e| VoxIpcError::Engine(e.to_string()))?;
-
-    if let Some(ref mut harness) = *state.harness.lock() {
-        harness
-            .prompt
-            .set_personal_memory(Some(record.content.clone()));
-    }
 
     if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
         log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
@@ -165,12 +153,6 @@ pub async fn import_personal_memory(
         db_save_personal_memory(&state.db, project_id.as_deref(), &content, current.version)
             .await
             .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-
-    if let Some(ref mut harness) = *state.harness.lock() {
-        harness
-            .prompt
-            .set_personal_memory(Some(record.content.clone()));
-    }
 
     if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
         log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);

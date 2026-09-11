@@ -176,7 +176,7 @@ To minimize the occurrence of critical in-turn compaction, background compaction
 - **Execution Conditions**:
   - If the user speaks, an interruption occurs, or the pipeline leaves `Ready` or `Paused` before 20 seconds elapse, the timer is aborted immediately.
   - If the pipeline remains continuously in `Ready` or `Paused` for the full 20 seconds, the Harness triggers background summarization across uncompacted history.
-  - On completion, the working buffer is updated with the rolling summary, and facts are staged to the database.
+  - On completion, the working history buffer is pruned with the rolling summary (shedding older raw turns), and facts are staged to the database.
 
 ---
 
@@ -225,8 +225,8 @@ To eliminate ad-hoc string formatting, prompt tags are governed by a strictly ty
    - **Placement**: Injected into the root System Prompt message, trailing the base persona instructions.
    - **Budget Guard**: Bounded by the 20% system prompt share ceiling (`context_window * max_context_share`). Truncated deterministically if exceeded.
 2. **`PromptTag::SessionContext` (`<session_context>...</session_context>`)**:
-   - **Content**: The latest rolling compaction summary of earlier conversational history generated during compaction runs.
-   - **Placement**: Positioned immediately before uncompacted conversational turns, framing historical continuity.
+   - **Content**: The entire structured output of the latest compaction pass, containing both Bucket 1 (personal facts) and Bucket 2 (working session state: `objective`, `workdone`, `blocker`, `next_step`, `pitfall`).
+   - **Placement**: Injected into the root System Prompt message, framing historical continuity for subsequent turns.
 3. **`PromptTag::PastTurns` (`<past_turns>...</past_turns>`)**:
    - **Content**: Restored uncompacted historical dialog turns upon session continuation.
    - **Placement**: Encloses historical message turns preceding the active user query.
@@ -284,3 +284,5 @@ The architecture identifies three progressive strategies for interim filler deli
 3. **Lock Discipline Across Await Points**: A `Mutex` or `RwLock` guard protecting conversational state must **never** be held across an `.await` boundary, particularly during LLM inference or database transactions.
 4. **Decoupled Actor Invariant**: The `LlmActor` must never import or interact with audio channels, clause accumulators, or UI IPC emitters. It is strictly a token-generating worker.
 5. **Central Authority for Turn Completion**: `VoxEvent::LlmFinished` is emitted exclusively by the `StreamRoutingPlugin` upon complete conclusion of all turn activities.
+6. **Strict Two-Door Chassis Encapsulation**: `HarnessSession` is an opaque black-box orchestrator. Its internal plugins (`ConversationHistoryPlugin`, `PromptBuilderPlugin`, `ContextBudgetPlugin`, `CompactionPlugin`, `StreamRoutingPlugin`, `QuietCompactionWatcher`) are strictly private. External callers must never inspect, borrow, or mutate plugin fields directly. The harness boundary is strictly constrained to two touchpoints: (1) Session Lifecycle (`on_session_start` mount, `on_end` unmount), and (2) Cognitive Turn Execution (`prepare_turn`, token stream routing, turn finalization).
+7. **Autonomous Reactive Quiet Watcher & History Pruning**: The `QuietCompactionWatcher` is self-governing; it monitors pipeline state transitions via `state_rx` and `CancellationToken` directly, automatically aborting when the pipeline leaves `Ready`/`Paused` without imperative caller invocation. Upon successful completion of background soft compaction, working history must be pruned and replaced with the structured `<session_context>` containing the entire compaction output (both personal and working session buckets) to ensure token utilization drops while retaining complete session fidelity for subsequent turns.

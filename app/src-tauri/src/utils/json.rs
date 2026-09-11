@@ -153,6 +153,68 @@ pub struct UnifiedCompactionPayload {
     pub pitfall: Vec<String>,
 }
 
+impl UnifiedCompactionPayload {
+    /// Formats the entire structured compaction output into readable session context.
+    pub fn format_session_context(&self) -> String {
+        let mut out = String::new();
+        if !self.personal.is_empty() {
+            out.push_str("Personal:\n");
+            for item in &self.personal {
+                out.push_str(&format!("- {}\n", item));
+            }
+        }
+        if !self.objective.is_empty() {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str("Objectives:\n");
+            for item in &self.objective {
+                out.push_str(&format!("- {}\n", item));
+            }
+        }
+        if !self.workdone.is_empty() {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str("Completed Work:\n");
+            for item in &self.workdone {
+                out.push_str(&format!("- {}\n", item));
+            }
+        }
+        if !self.blocker.is_empty() {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str("Blockers:\n");
+            for item in &self.blocker {
+                out.push_str(&format!("- {}\n", item));
+            }
+        }
+        if !self.next_step.is_empty() {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str("Next Steps:\n");
+            for item in &self.next_step {
+                out.push_str(&format!("- {}\n", item));
+            }
+        }
+        if !self.pitfall.is_empty() {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str("Pitfalls & Constraints:\n");
+            for item in &self.pitfall {
+                out.push_str(&format!("- {}\n", item));
+            }
+        }
+        if out.is_empty() && !self.context_summary.is_empty() {
+            out.push_str(&self.context_summary);
+        }
+        out
+    }
+}
+
 pub fn parse_unified_compaction_json(content: &str) -> Option<UnifiedCompactionPayload> {
     let cleaned = clean_json_content(content);
     let parsed_val = serde_json::from_str::<serde_json::Value>(&cleaned).ok()?;

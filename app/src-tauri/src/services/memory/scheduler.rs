@@ -72,12 +72,6 @@ async fn run_consolidation_once<R: tauri::Runtime>(
 
     let record = consolidate_personal_memory(&state.db, provider.as_ref(), None, None).await?;
 
-    if let Some(ref mut harness) = *state.harness.lock() {
-        harness
-            .prompt
-            .set_personal_memory(Some(record.content.clone()));
-    }
-
     if let Err(e) = emit_ipc(app, IpcEvent::PersonalMemoryUpdated(record)) {
         log::warn!(
             "[Memory::Scheduler] Failed to emit PersonalMemoryUpdated: {}",

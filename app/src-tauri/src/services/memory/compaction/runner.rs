@@ -14,11 +14,11 @@ use crate::{
     utils::json::parse_unified_compaction_json,
 };
 
-/// Extracted facts and summary resulting from unified LLM conversation compaction.
+/// Extracted facts and complete session context resulting from unified LLM conversation compaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactionResult {
     pub raw_json: String,
-    pub context_summary: String,
+    pub session_context: String,
     pub facts: Vec<(String, String)>,
 }
 
@@ -155,8 +155,9 @@ pub async fn run_compaction(
     }
 
     let payload = parsed_payload.unwrap_or_default();
-    let final_summary = if !payload.context_summary.trim().is_empty() {
-        payload.context_summary
+    let formatted_context = payload.format_session_context();
+    let final_context = if !formatted_context.trim().is_empty() {
+        formatted_context
     } else {
         summary_content.clone()
     };
@@ -183,7 +184,7 @@ pub async fn run_compaction(
 
     Ok(CompactionResult {
         raw_json: summary_content,
-        context_summary: final_summary,
+        session_context: final_context,
         facts,
     })
 }

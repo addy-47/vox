@@ -54,14 +54,6 @@ pub fn on_interrupt<R: tauri::Runtime>(
         (acc.take_assistant_response(), acc.user_transcript())
     };
 
-    if !partial_assistant.trim().is_empty() {
-        if let Some(ref mut harness) = *state.harness.lock() {
-            harness
-                .history
-                .push_assistant_turn(partial_assistant.clone());
-        }
-    }
-
     let conv_id = state.conversation_id.load(Ordering::Relaxed);
     let persist_lock = state.persist_tx.lock();
     if let Some(ref tx) = *persist_lock {

@@ -1,5 +1,6 @@
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -8,17 +9,21 @@ use super::{
         compaction::CompactionPlugin,
         history::ConversationHistoryPlugin,
         prompt::PromptBuilderPlugin,
-        stream::StreamRoutingPlugin,
+        stream::{StreamRoutingHandles, StreamRoutingPlugin},
     },
+    watcher::QuietCompactionWatcher,
     ChatMessage, Role,
 };
 use crate::{
-    core::settings::{LlmProviderConfig, VoxSettings},
+    core::{
+        settings::{LlmProviderConfig, VoxSettings},
+        state::AppState,
+    },
     persistence::TurnRow,
     services::{
         llm::{
-            actor::LlmCommand, ConversationInput, GenerationPurpose, GenerationRequest,
-            OutputConstraint,
+            actor::LlmCommand, ConversationInput, GenerationOptions, GenerationPurpose,
+            GenerationRequest, OutputConstraint,
         },
         memory::estimate_tokens,
     },
@@ -47,11 +52,13 @@ pub struct HarnessSession {
     domain: PipelineDomain,
     cancel_token: CancellationToken,
     llm_tx: Option<mpsc::Sender<LlmCommand>>,
-    pub history: ConversationHistoryPlugin,
-    pub prompt: PromptBuilderPlugin,
-    pub budget: Option<ContextBudgetPlugin>,
-    pub compaction: Option<CompactionPlugin>,
-    pub stream: Option<StreamRoutingPlugin>,
+    history: ConversationHistoryPlugin,
+    prompt: PromptBuilderPlugin,
+    budget: Option<ContextBudgetPlugin>,
+    compaction: Option<CompactionPlugin>,
+    stream: StreamRoutingPlugin,
+    watcher: Option<QuietCompactionWatcher>,
+    generation_options: GenerationOptions,
 }
 
 impl HarnessSession {
@@ -78,6 +85,11 @@ impl HarnessSession {
         let budget_plugin = ContextBudgetPlugin::new(ctx_window, is_cloud);
         let compaction_plugin =
             CompactionPlugin::new(ctx_window, is_embedded, settings.history.auto_compaction);
+        let generation_options = GenerationOptions {
+            temperature: Some(settings.llm.temperature),
+            max_output_tokens: Some(settings.llm.max_output_tokens),
+            ..Default::default()
+        };
 
         Self {
             session_id,
@@ -88,7 +100,9 @@ impl HarnessSession {
             prompt: prompt_plugin,
             budget: Some(budget_plugin),
             compaction: Some(compaction_plugin),
-            stream: Some(StreamRoutingPlugin::new()),
+            stream: StreamRoutingPlugin::new(),
+            watcher: Some(QuietCompactionWatcher::new()),
+            generation_options,
         }
     }
 
@@ -105,7 +119,9 @@ impl HarnessSession {
             prompt: prompt_plugin,
             budget: None,
             compaction: None,
-            stream: None,
+            stream: StreamRoutingPlugin::new(),
+            watcher: None,
+            generation_options: GenerationOptions::default(),
         }
     }
 
@@ -117,16 +133,98 @@ impl HarnessSession {
         self.domain
     }
 
-    pub fn set_session_id(&mut self, session_id: Option<i64>) {
-        self.session_id = session_id;
-    }
-
     pub fn cancel_token(&self) -> &CancellationToken {
         &self.cancel_token
     }
 
-    pub fn abort_session(&self) {
-        self.cancel_token.cancel();
+    pub fn assembled_system_prompt(&self) -> String {
+        self.prompt.assemble()
+    }
+
+    pub fn generation_options(&self) -> &GenerationOptions {
+        &self.generation_options
+    }
+
+    pub fn from_turn_id(&self) -> u32 {
+        self.compaction
+            .as_ref()
+            .map(|c| c.from_turn_id())
+            .unwrap_or(0)
+    }
+
+    pub fn set_last_compacted_to_turn(&mut self, turn_id: u32) {
+        if let Some(ref mut compaction) = self.compaction {
+            compaction.set_last_compacted_to_turn(turn_id);
+        }
+    }
+
+    pub fn update_personal_memory(&mut self, personal_memory: Option<String>) {
+        self.prompt.set_personal_memory(personal_memory);
+    }
+
+    pub fn commit_turn(&mut self, assistant_text: String) {
+        self.history.push_assistant_turn(assistant_text);
+    }
+
+    pub fn rollback_user_turn(&mut self) {
+        self.history.rollback_last_user_turn();
+    }
+
+    pub fn fallback_fifo_shift(&mut self) {
+        if let Some(ref budget) = self.budget {
+            budget.execute_fifo_shift(&mut self.history);
+        }
+    }
+
+    pub fn create_generation_request(&self) -> GenerationRequest {
+        let input = ConversationInput {
+            messages: self.history.messages().to_vec(),
+        };
+        GenerationRequest {
+            input,
+            options: self.generation_options.clone(),
+            output: OutputConstraint::Text,
+            purpose: GenerationPurpose::Conversation,
+        }
+    }
+
+    pub fn check_quiet_compaction_eligibility(&self) -> Option<Vec<ChatMessage>> {
+        let budget = self.budget.as_ref()?;
+        let compaction = self.compaction.as_ref()?;
+        if !compaction.auto_compaction_enabled() {
+            return None;
+        }
+        let tracked = budget.calculate_tracked_tokens(self.history.messages());
+        let (_, status) = budget.evaluate_utilization(tracked);
+        if status == ContextStatus::SoftWarning && self.history.messages().len() >= 4 {
+            Some(self.history.messages().to_vec())
+        } else {
+            None
+        }
+    }
+
+    pub fn apply_quiet_compaction_summary(&mut self, session_context: &str) {
+        self.apply_session_context(session_context, "");
+    }
+
+    pub fn apply_quiet_session_context(&mut self, session_context: &str) {
+        self.apply_session_context(session_context, "");
+    }
+
+    pub fn on_turn_completed(
+        &mut self,
+        state: Arc<AppState>,
+        harness_lock: Arc<Mutex<Option<HarnessSession>>>,
+    ) {
+        if let Some(ref mut watcher) = self.watcher {
+            watcher.on_turn_completed(state, harness_lock);
+        }
+    }
+
+    pub fn abort_watcher(&mut self) {
+        if let Some(ref mut watcher) = self.watcher {
+            watcher.abort();
+        }
     }
 
     pub fn llm_tx(&self) -> Option<&mpsc::Sender<LlmCommand>> {
@@ -192,15 +290,15 @@ impl HarnessSession {
 
         TurnPreparation::Ready(GenerationRequest {
             input,
-            options: Default::default(),
+            options: self.generation_options.clone(),
             output: OutputConstraint::Text,
             purpose: GenerationPurpose::Conversation,
         })
     }
 
-    pub fn seed_continuation(&mut self, summary: Option<String>, turns: Vec<TurnRow>) {
+    pub fn seed_continuation(&mut self, session_context: Option<String>, turns: Vec<TurnRow>) {
         if let Some(ref mut compaction) = self.compaction {
-            compaction.set_rolling_summary(summary);
+            compaction.set_session_context(session_context);
         }
         for turn in turns {
             self.history.push_user_turn(turn.user_text);
@@ -208,9 +306,9 @@ impl HarnessSession {
         }
     }
 
-    pub fn apply_compaction_summary(&mut self, summary: &str, active_query: &str) {
+    pub fn apply_session_context(&mut self, session_context: &str, active_query: &str) {
         if let Some(ref mut compaction) = self.compaction {
-            compaction.set_rolling_summary(Some(summary.to_string()));
+            compaction.apply_session_context(session_context);
             let pruned_messages =
                 compaction.prune_history_with_summary(&self.prompt.assemble(), active_query);
             self.history.clear();
@@ -224,9 +322,33 @@ impl HarnessSession {
                 }
             }
             log::info!(
-                "[Harness::Session] History rebuilt with rolling summary. Total turns: {}",
+                "[Harness::Session] History rebuilt with session context. Total turns: {}",
                 self.history.messages().len()
             );
         }
+    }
+
+    pub fn apply_compaction_summary(&mut self, summary: &str, active_query: &str) {
+        self.apply_session_context(summary, active_query);
+    }
+
+    /// Returns a cloned `StreamRoutingPlugin` for use in spawn_blocking contexts.
+    pub(crate) fn clone_stream_plugin(&self) -> crate::services::harness::plugins::stream::StreamRoutingPlugin {
+        self.stream.clone()
+    }
+
+    /// Routes a streaming LLM response through the stream plugin.
+    pub fn route_stream<R: tauri::Runtime>(
+        &self,
+        handles: StreamRoutingHandles<R>,
+        response_rx: std::sync::mpsc::Receiver<crate::services::llm::actor::LlmResponse>,
+    ) -> Result<String, String> {
+        self.stream.route_stream(handles, response_rx)
+    }
+
+    /// Returns a mutable reference to the conversation history plugin.
+    /// Exposed for integration test seeding only — do not use in production pipeline code.
+    pub fn history_mut(&mut self) -> &mut ConversationHistoryPlugin {
+        &mut self.history
     }
 }

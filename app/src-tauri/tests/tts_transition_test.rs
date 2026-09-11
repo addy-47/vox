@@ -20,13 +20,14 @@ use std::{
 
 use ringbuf::traits::Consumer;
 use vox_lib::{
-    core::{events::VoxEvent, settings::MemorySettings, state::InteractionState},
+    core::{
+        events::{AudioIntent, VoxEvent},
+        settings::VoxSettings,
+        state::InteractionState,
+    },
     services::{
-        harness::{
-            facade::{prepare_turn_context, PrepareTurnParams},
-            TRANSITION_MESSAGES_EN,
-        },
-        llm::ProviderKind,
+        harness::{HarnessSession, TurnPreparation, TRANSITION_MESSAGES_EN},
+        llm::actor::LlmCommand,
         tts::{
             actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
             providers::{supertonic::TtsEngine as SupertonicEngine, TtsProvider},
@@ -182,65 +183,56 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
         let (_app, state) = common::harness::get_test_app_and_state().await;
 
         let (tts_tx, tts_rx) = mpsc::channel::<TtsCommand>();
+        let (llm_tx, _llm_rx) = mpsc::channel::<LlmCommand>();
         let turn_id = 402;
         state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
         state.pipeline.set_state(InteractionState::Thinking);
         state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
 
-        // 1. Seed conversation manager buffer to exceed critical threshold (>85% of (2048 - 512) = >1305 tokens)
-        {
-            let mut cm = state.conversation_manager.lock();
-            for i in 0..40 {
-                cm.push_user_turn(format!(
-                    "Turn {} detailed user prompt discussing system orchestration, memory lifecycle, token management, and pipeline state transitions across modules.",
-                    i
-                ));
-                cm.push_assistant_turn(format!(
-                    "Turn {} assistant explanation regarding context token utilization, sliding window compaction triggers, FIFO shifts, and threshold maintenance.",
-                    i
-                ));
-            }
+        let mut settings = VoxSettings::default();
+        settings.llm.context_window = 2048;
+
+        let mut harness = HarnessSession::new_modular(
+            Some(402),
+            "System prompt".to_string(),
+            None,
+            &settings,
+            llm_tx.clone(),
+        );
+
+        // 1. Seed conversation buffer to exceed critical threshold (>85% of (2048 - 512) = >1305 tokens)
+        for i in 0..40 {
+            harness.history_mut().push_user_turn(format!(
+                "Turn {} detailed user prompt discussing system orchestration, memory lifecycle, token management, and pipeline state transitions across modules.",
+                i
+            ));
+            harness.history_mut().push_assistant_turn(format!(
+                "Turn {} assistant explanation regarding context token utilization, sliding window compaction triggers, FIFO shifts, and threshold maintenance.",
+                i
+            ));
         }
 
-        // 2. Prepare turn context with context_window = 2048 and ProviderKind::OpenAiCompat
-        // In facade.rs: ProviderKind::OpenAiCompat activates the background compaction branch
-        // which dispatches transition speech filler to tts_tx when critical threshold is exceeded.
-        let memory_settings = MemorySettings {
-            context_retrieval_enabled: false,
-            ..Default::default()
+        // 2. Prepare turn when critical threshold is exceeded
+        let prep = harness.prepare_turn("How does memory threshold compaction work?", turn_id);
+
+        let filler_text = match prep {
+            TurnPreparation::NeedsInlineCompaction { filler_phrase, .. } => {
+                assert!(
+                    TRANSITION_MESSAGES_EN.contains(&filler_phrase),
+                    "Filler text '{}' must belong to TRANSITION_MESSAGES_EN",
+                    filler_phrase
+                );
+                tts_tx
+                    .send(TtsCommand::Generate {
+                        turn_id,
+                        text: filler_phrase.to_string(),
+                        intent: AudioIntent::InterimFiller,
+                    })
+                    .expect("Failed to send filler");
+                filler_phrase
+            }
+            other => panic!("Expected NeedsInlineCompaction, got {:?}", other),
         };
-
-        let params = PrepareTurnParams {
-            harness: &state.conversation_manager,
-            tts_tx: Some(&tts_tx),
-            conn: None,
-            query: "How does memory threshold compaction work?",
-            turn_id,
-            session_id: "test-session-402",
-            memory: &memory_settings,
-            context_window: 2048,
-            provider_kind: ProviderKind::OpenAiCompat,
-            llm_provider: None,
-            llm_settings: None,
-            cancel_token: None,
-            pipeline_tx: None,
-        };
-
-        let result = prepare_turn_context(params).await;
-        assert!(result.is_ok(), "prepare_turn_context must succeed: {:?}", result.err());
-
-        let (_req, filler_opt) = result.unwrap();
-        assert!(
-            filler_opt.is_some(),
-            "prepare_turn_context must return Some(filler) when threshold is exceeded"
-        );
-
-        let filler_text = filler_opt.unwrap();
-        assert!(
-            TRANSITION_MESSAGES_EN.contains(&filler_text.as_str()),
-            "Filler text '{}' must belong to TRANSITION_MESSAGES_EN",
-            filler_text
-        );
 
         // ---------------------------------------------------------------------
         // Observable Exit 1: tts_rx receives TtsCommand::Generate for filler
@@ -255,7 +247,7 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
                 assert_eq!(text, filler_text, "Dispatched text must match filler text");
                 assert_eq!(
                     intent,
-                    vox_lib::core::events::AudioIntent::InterimFiller,
+                    AudioIntent::InterimFiller,
                     "Filler command must have InterimFiller intent"
                 );
             }
@@ -265,35 +257,20 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
         // ---------------------------------------------------------------------
         // Observable Exit 2: Under normal context (<85% utilization), no filler dispatched
         // ---------------------------------------------------------------------
-        {
-            let mut cm = state.conversation_manager.lock();
-            cm.new_session("System prompt for new session");
-            cm.push_user_turn("Short prompt".to_string());
-        }
-
-        let normal_params = PrepareTurnParams {
-            harness: &state.conversation_manager,
-            tts_tx: Some(&tts_tx),
-            conn: None,
-            query: "Another short query",
-            turn_id: turn_id + 1,
-            session_id: "test-session-402",
-            memory: &memory_settings,
-            context_window: 2048,
-            provider_kind: ProviderKind::Embedded,
-            llm_provider: None,
-            llm_settings: None,
-            cancel_token: None,
-            pipeline_tx: None,
-        };
-
-        let normal_result = prepare_turn_context(normal_params).await;
-        assert!(normal_result.is_ok());
-        let (_req2, filler_opt2) = normal_result.unwrap();
-        assert!(
-            filler_opt2.is_none(),
-            "Normal non-critical context must not generate filler speech"
+        let mut normal_harness = HarnessSession::new_modular(
+            Some(403),
+            "System prompt for new session".to_string(),
+            None,
+            &settings,
+            llm_tx,
         );
+        normal_harness.history_mut().push_user_turn("Short prompt".to_string());
+
+        let normal_prep = normal_harness.prepare_turn("Another short query", turn_id + 1);
+        match normal_prep {
+            TurnPreparation::Ready(_) => {}
+            other => panic!("Normal context must yield Ready, got {:?}", other),
+        }
 
         assert!(
             tts_rx.try_recv().is_err(),

@@ -17,15 +17,15 @@ use crate::{
 };
 
 /// Bundled handles and shared state required to route streaming LLM responses.
-pub struct StreamRoutingHandles<'a, R: tauri::Runtime> {
+pub struct StreamRoutingHandles<R: tauri::Runtime> {
     pub turn_id: u32,
     pub owner: InteractionOwner,
     pub accumulator: Arc<Mutex<TurnAccumulator>>,
-    pub tts_tx: Option<&'a Sender<TtsCommand>>,
-    pub pending_synthesis_jobs: &'a Arc<AtomicU32>,
-    pub cancel: &'a Arc<AtomicBool>,
-    pub event_tx: &'a Sender<VoxEvent>,
-    pub app: &'a AppHandle<R>,
+    pub tts_tx: Option<Sender<TtsCommand>>,
+    pub pending_synthesis_jobs: Arc<AtomicU32>,
+    pub cancel: Arc<AtomicBool>,
+    pub event_tx: Sender<VoxEvent>,
+    pub app: AppHandle<R>,
 }
 
 /// Plugin managing egress token stream demuxing, TTS clause dispatch, and turn finalization.
@@ -48,7 +48,7 @@ impl StreamRoutingPlugin {
     /// emits IPC token events, flushes tail remainder, and emits `VoxEvent::LlmFinished`.
     pub fn route_stream<R: tauri::Runtime + 'static>(
         &self,
-        handles: StreamRoutingHandles<'_, R>,
+        handles: StreamRoutingHandles<R>,
         response_rx: Receiver<LlmResponse>,
     ) -> Result<String, String> {
         while let Ok(response) = response_rx.recv() {
@@ -101,7 +101,7 @@ impl StreamRoutingPlugin {
     fn handle_token<R: tauri::Runtime>(
         &self,
         token: String,
-        handles: &StreamRoutingHandles<'_, R>,
+        handles: &StreamRoutingHandles<R>,
     ) {
         self.emit_token_ipc(&token, handles);
         let clauses = handles.accumulator.lock().push_token(&token);
@@ -112,25 +112,25 @@ impl StreamRoutingPlugin {
     fn emit_token_ipc<R: tauri::Runtime>(
         &self,
         token: &str,
-        handles: &StreamRoutingHandles<'_, R>,
+        handles: &StreamRoutingHandles<R>,
     ) {
         let target = target_window(handles.owner);
         let payload = IpcEvent::LlmToken(LlmTokenPayload {
             turn_id: handles.turn_id,
             token: token.to_string(),
         });
-        if let Err(e) = emit_ipc_to(handles.app, target, payload) {
+        if let Err(e) = emit_ipc_to(&handles.app, target, payload) {
             log::trace!("[Harness::Stream] Failed to emit LlmToken IPC: {}", e);
         }
     }
 
     /// Dispatches extracted text clauses to the TTS synthesis worker with `AudioIntent::TurnResponse`.
-    fn dispatch_clauses(
+    fn dispatch_clauses<R: tauri::Runtime>(
         &self,
         clauses: Vec<String>,
-        handles: &StreamRoutingHandles<'_, impl tauri::Runtime>,
+        handles: &StreamRoutingHandles<R>,
     ) {
-        let Some(tx) = handles.tts_tx else {
+        let Some(ref tx) = handles.tts_tx else {
             return;
         };
 
@@ -153,12 +153,12 @@ impl StreamRoutingPlugin {
     }
 
     /// Flushes unpunctuated tail remainder to the TTS worker.
-    fn flush_remainder(&self, handles: &StreamRoutingHandles<'_, impl tauri::Runtime>) {
+    fn flush_remainder<R: tauri::Runtime>(&self, handles: &StreamRoutingHandles<R>) {
         let remainder = handles.accumulator.lock().flush_chunker();
         let Some(remainder_text) = remainder else {
             return;
         };
-        let Some(tx) = handles.tts_tx else {
+        let Some(ref tx) = handles.tts_tx else {
             return;
         };
 
@@ -182,7 +182,7 @@ impl StreamRoutingPlugin {
     }
 
     /// Emits `VoxEvent::Cancelled` if turn was aborted during stream.
-    fn emit_cancelled(&self, handles: &StreamRoutingHandles<'_, impl tauri::Runtime>) {
+    fn emit_cancelled<R: tauri::Runtime>(&self, handles: &StreamRoutingHandles<R>) {
         let event = VoxEvent::Cancelled {
             turn_id: handles.turn_id,
         };
@@ -192,7 +192,7 @@ impl StreamRoutingPlugin {
     }
 
     /// Emits `VoxEvent::LlmFinished` upon complete stream consumption.
-    fn emit_finished(&self, handles: &StreamRoutingHandles<'_, impl tauri::Runtime>) {
+    fn emit_finished<R: tauri::Runtime>(&self, handles: &StreamRoutingHandles<R>) {
         if handles.cancel.load(Ordering::Relaxed) {
             return;
         }
