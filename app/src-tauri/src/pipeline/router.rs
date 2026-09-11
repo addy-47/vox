@@ -77,6 +77,7 @@ pub fn transition<R: tauri::Runtime>(
         InteractionState::Paused => "Paused",
         InteractionState::Error => "Error",
         InteractionState::Sleeping => "Sleeping",
+        InteractionState::Working => "Working",
     };
     let payload = StateChangedPayload {
         owner: ctx.owner,
@@ -99,8 +100,8 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
 
     match event {
         // Session lifecycle — always routed to assistant track
-        VoxEvent::SessionStart { owner } => {
-            super::assistant::session::on_session_start(owner, app, state, &ctx);
+        VoxEvent::SessionStart { owner, session_id } => {
+            super::assistant::session::on_session_start(owner, session_id, app, state, &ctx);
         }
         VoxEvent::PauseSession => super::assistant::session::on_pause(app, state, &ctx),
         VoxEvent::ResumeSession => super::assistant::session::on_resume(app, state, &ctx),
@@ -129,11 +130,11 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
         VoxEvent::LlmFinished { turn_id } => {
             super::assistant::llm::on_llm_finished(turn_id, state, &ctx);
         }
-        VoxEvent::PlaybackStarted { turn_id } => {
-            super::assistant::playback::on_playback_started(turn_id, app, state, &ctx);
+        VoxEvent::PlaybackStarted { turn_id, intent } => {
+            super::assistant::playback::on_playback_started(turn_id, intent, app, state, &ctx);
         }
-        VoxEvent::PlaybackFinished { turn_id } => {
-            super::assistant::playback::on_playback_finished(turn_id, app, state, &ctx);
+        VoxEvent::PlaybackFinished { turn_id, intent } => {
+            super::assistant::playback::on_playback_finished(turn_id, intent, app, state, &ctx);
         }
         VoxEvent::Error(err) => {
             super::assistant::error::on_error(err, app, state, &ctx);

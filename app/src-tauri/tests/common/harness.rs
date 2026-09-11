@@ -4,7 +4,7 @@
 
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8},
         mpsc::{self, Receiver, Sender},
         Arc,
     },
@@ -66,6 +66,7 @@ pub fn create_mock_playback_engine_with_handles(
         state_atomic: Arc::new(AtomicU32::new(0)),
         current_turn_id,
         pending_synthesis_jobs,
+        playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx,
     };
 

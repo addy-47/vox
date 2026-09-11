@@ -1,8 +1,8 @@
 pub mod audio;
-pub mod persistence;
 pub mod memory;
 pub mod monitoring;
 pub mod notifications;
+pub mod persistence;
 pub mod pipeline;
 pub mod projects;
 pub mod settings;

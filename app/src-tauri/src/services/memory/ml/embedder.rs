@@ -5,14 +5,7 @@ use ndarray::Array2;
 use parking_lot::Mutex;
 use tokenizers::Tokenizer;
 
-use crate::{
-    services::memory::{
-        EMBEDDING_DIM, EMBEDDING_TOKENIZER_FILENAME, FALLBACK_EMBEDDING_MODEL_DIR,
-        FALLBACK_EMBEDDING_MODEL_FILENAME, PRIMARY_EMBEDDING_MODEL_DIR,
-        PRIMARY_EMBEDDING_MODEL_FILENAME,
-    },
-    utils::paths::try_get,
-};
+use crate::utils::paths::try_get;
 
 /// ONNX session container for running dense sentence text embeddings.
 pub struct TextEmbedder {
@@ -23,6 +16,13 @@ pub struct TextEmbedder {
 }
 
 static EMBEDDER: parking_lot::RwLock<Option<TextEmbedder>> = parking_lot::RwLock::new(None);
+
+pub const EMBEDDING_DIM: usize = 384;
+pub const PRIMARY_EMBEDDING_MODEL_DIR: &str = "minilm-l12-v2";
+pub const PRIMARY_EMBEDDING_MODEL_FILENAME: &str = "model_int8.onnx";
+pub const FALLBACK_EMBEDDING_MODEL_DIR: &str = "bge-m3";
+pub const FALLBACK_EMBEDDING_MODEL_FILENAME: &str = "model_quantized.onnx";
+pub const EMBEDDING_TOKENIZER_FILENAME: &str = "tokenizer.json";
 
 /// Initializes the text embedding model singleton.
 pub fn init_embedder(model_dir: &Path, is_primary: bool) -> Result<bool> {

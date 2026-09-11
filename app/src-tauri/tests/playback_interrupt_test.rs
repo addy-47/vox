@@ -78,9 +78,12 @@ async fn test_playback_gates_thinking_to_speaking_and_speaking_to_ready() {
             "PlaybackStarted must be emitted once pre-roll cushion (12,000 samples) is met",
         );
         match ev {
-            VoxEvent::PlaybackStarted { turn_id: tid } => {
+            VoxEvent::PlaybackStarted {
+                turn_id: tid,
+                intent,
+            } => {
                 assert_eq!(tid, turn_id, "Emitted turn_id must match active turn");
-                on_playback_started(tid, &app, &state, &ctx);
+                on_playback_started(tid, intent, &app, &state, &ctx);
             }
             other => panic!("Expected PlaybackStarted, got {:?}", other),
         }
@@ -106,16 +109,22 @@ async fn test_playback_gates_thinking_to_speaking_and_speaking_to_ready() {
         // Simulate sink drain check: pending_jobs == 0 and consumer is empty -> PlaybackFinished
         assert_eq!(pending_jobs.load(Ordering::Relaxed), 0);
         event_tx
-            .send(VoxEvent::PlaybackFinished { turn_id })
+            .send(VoxEvent::PlaybackFinished {
+                turn_id,
+                intent: vox_lib::core::events::AudioIntent::TurnResponse,
+            })
             .expect("Failed to emit PlaybackFinished");
 
         let finish_ev = event_rx
             .recv_timeout(Duration::from_millis(500))
             .expect("PlaybackFinished must be received");
         match finish_ev {
-            VoxEvent::PlaybackFinished { turn_id: tid } => {
+            VoxEvent::PlaybackFinished {
+                turn_id: tid,
+                intent,
+            } => {
                 assert_eq!(tid, turn_id);
-                on_playback_finished(tid, &app, &state, &ctx);
+                on_playback_finished(tid, intent, &app, &state, &ctx);
             }
             other => panic!("Expected PlaybackFinished, got {:?}", other),
         }
@@ -173,7 +182,7 @@ async fn test_short_utterance_requires_flush_to_arm() {
             .recv_timeout(Duration::from_millis(500))
             .expect("PlaybackStarted must fire immediately on flush_pre_roll for short utterance");
         match ev {
-            VoxEvent::PlaybackStarted { turn_id: tid } => {
+            VoxEvent::PlaybackStarted { turn_id: tid, .. } => {
                 assert_eq!(tid, turn_id);
             }
             other => panic!("Expected PlaybackStarted, got {:?}", other),
@@ -207,7 +216,13 @@ async fn test_playback_finished_deferred_while_pending() {
         };
 
         // 1. Attempt on_playback_finished while pending_jobs == 1
-        on_playback_finished(turn_id, &app, &state, &ctx);
+        on_playback_finished(
+            turn_id,
+            vox_lib::core::events::AudioIntent::TurnResponse,
+            &app,
+            &state,
+            &ctx,
+        );
 
         // Must NOT transition to Ready
         assert_eq!(
@@ -218,7 +233,13 @@ async fn test_playback_finished_deferred_while_pending() {
 
         // 2. Decrement pending_jobs to 0 and call on_playback_finished again
         pending_jobs.store(0, Ordering::Relaxed);
-        on_playback_finished(turn_id, &app, &state, &ctx);
+        on_playback_finished(
+            turn_id,
+            vox_lib::core::events::AudioIntent::TurnResponse,
+            &app,
+            &state,
+            &ctx,
+        );
 
         assert_eq!(
             state.pipeline.state(),

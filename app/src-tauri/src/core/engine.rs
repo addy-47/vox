@@ -1,7 +1,7 @@
 use std::{
     fs::read_to_string,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         mpsc, Arc,
     },
     thread::{Builder, JoinHandle},
@@ -35,7 +35,7 @@ use crate::{
         },
         tts::{
             actor::{cool_down_tts, warm_up_tts, TtsWarmUpHandles},
-            resolve_reference_audio, SUPERTONIC_MODEL_DIR, TtsCommand,
+            resolve_reference_audio, TtsCommand, SUPERTONIC_MODEL_DIR,
         },
         vad::{
             actor::{spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles},
@@ -183,6 +183,7 @@ fn create_playback_engine(
         current_turn_id: Arc::clone(&state.pipeline.turn_id),
         pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_synthesis_jobs),
         event_tx,
+        playback_intent: Arc::new(AtomicU8::new(0)),
     };
 
     let pe = PlaybackEngine::new(engine_handles, telemetry_handles)
@@ -444,10 +445,7 @@ pub fn stop_audio_engine_sync(state: &AppState) -> Result<(), String> {
 }
 
 /// Initializes and warms up the LLM and TTS actor threads asynchronously if not already loaded.
-pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
-    app: &AppHandle<R>,
-    state: &AppState,
-) -> Result<(), String> {
+pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
     let (llm_path, tts_path, settings) = {
         let s = state
             .settings
@@ -483,7 +481,6 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
     let mut new_llm_handle = None;
     if needs_llm {
         warm_up_llm(
-            app,
             LlmWarmUpHandles {
                 llm_tx: &mut new_llm_tx,
                 llm_handle: &mut new_llm_handle,
@@ -491,7 +488,6 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
             },
             &settings,
             &llm_path,
-            pipeline_tx.clone(),
         )?;
     }
 
@@ -532,10 +528,7 @@ pub async fn ensure_modular_workers<R: tauri::Runtime + 'static>(
 }
 
 /// Synchronous wrapper for ensure_modular_workers to be called safely on the Router OS thread.
-pub fn ensure_modular_workers_sync<R: tauri::Runtime + 'static>(
-    app: &AppHandle<R>,
-    state: &AppState,
-) -> Result<(), String> {
+pub fn ensure_modular_workers_sync(state: &AppState) -> Result<(), String> {
     let handle = get_tokio_handle();
-    handle.block_on(ensure_modular_workers(app, state))
+    handle.block_on(ensure_modular_workers(state))
 }

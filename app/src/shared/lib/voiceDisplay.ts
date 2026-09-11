@@ -25,6 +25,8 @@ export function toMood(state: InteractionState, isEngaged: boolean): AmbientMood
       return "Listening";
     case "Thinking":
       return "Thinking";
+    case "Working":
+      return "Thinking";
     case "Speaking":
       return "Speaking";
     case "Paused":
@@ -58,6 +60,8 @@ export function toStatusLabel(
       return "Listening";
     case "Thinking":
       return "Thinking";
+    case "Working":
+      return "Working";
     case "Speaking":
       return "Speaking";
     default:
@@ -76,5 +80,5 @@ export function isDotActive(
 ): boolean {
   if (!engaged || sleeping || state === "Idle" || state === "Paused" || state === "Error") return false;
   if (ptt === "RECORDING" || ptt === "PROCESSING") return true;
-  return state === "Listening" || state === "Thinking" || state === "Speaking";
+  return state === "Listening" || state === "Thinking" || state === "Working" || state === "Speaking";
 }

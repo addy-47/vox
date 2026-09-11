@@ -14,8 +14,8 @@ use crate::{
         settings::PipelineMode,
         state::{AppState, InteractionOwner, InteractionState},
     },
-    pipeline::{init_new_session_sync, transition, RoutingContext},
-    services::stt::SttCommand,
+    pipeline::{transition, RoutingContext},
+    services::{harness::HarnessSession, stt::SttCommand},
     utils::paths::{cache_dir, get},
 };
 
@@ -130,22 +130,34 @@ async fn ensure_test_pipeline_ready<R: Runtime>(
         return Err(VoxIpcError::Engine(e));
     }
 
-    let prompt = {
-        let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
-        match ctx.pipeline_mode {
-            PipelineMode::Modular => settings.persona.modular_prompt.clone(),
-            PipelineMode::Realtime => settings.persona.realtime_prompt.clone(),
-        }
+    let settings = state
+        .settings
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
+    let prompt = match ctx.pipeline_mode {
+        PipelineMode::Modular => settings.persona.modular_prompt.clone(),
+        PipelineMode::Realtime => settings.persona.realtime_prompt.clone(),
     };
-    init_new_session_sync(state, &prompt);
 
     if ctx.pipeline_mode == PipelineMode::Modular {
-        if let Err(e) = ensure_modular_workers_sync(app, state) {
+        if let Err(e) = ensure_modular_workers_sync(state) {
             return Err(VoxIpcError::Engine(format!(
                 "Failed to arm modular workers: {}",
                 e
             )));
         }
+        let llm_tx_opt = state
+            .engine
+            .try_lock()
+            .ok()
+            .and_then(|g| g.as_ref().and_then(|e| e.llm_tx.clone()));
+        if let Some(llm_tx) = llm_tx_opt {
+            let harness = HarnessSession::new_modular(None, prompt, None, &settings, llm_tx);
+            *state.harness.lock() = Some(harness);
+        }
+    } else {
+        *state.harness.lock() = Some(HarnessSession::new_realtime(None, prompt));
     }
 
     Ok(())

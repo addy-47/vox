@@ -164,6 +164,7 @@ fn main() -> Result<()> {
                 state_atomic: Arc::new(AtomicU32::new(0)),
                 current_turn_id,
                 pending_synthesis_jobs,
+                playback_intent: Arc::new(std::sync::atomic::AtomicU8::new(0)),
                 event_tx,
             };
 
@@ -175,14 +176,16 @@ fn main() -> Result<()> {
                 None,
             ));
 
-            tts_engine.synthesize_chunk(
-                &turn_item.user,
-                turn_item.turn as u32,
+            let ctx = vox_lib::services::tts::providers::SynthesisContext {
+                turn_id: turn_item.turn as u32,
+                intent: vox_lib::core::events::AudioIntent::TurnResponse,
                 cancel,
-                &playback,
-                tx,
-                None,
-            )?;
+                playback: &playback,
+                event_tx: tx,
+                telemetry_rtf: None,
+            };
+
+            tts_engine.synthesize_chunk(&turn_item.user, &ctx)?;
 
             let mut accumulated_samples = Vec::new();
             while let Some(sample) = consumer.try_pop() {

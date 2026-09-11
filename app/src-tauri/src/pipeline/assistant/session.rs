@@ -7,19 +7,21 @@ use tauri::{AppHandle, Manager};
 
 use crate::{
     core::{
-        engine::ensure_modular_workers_sync,
+        engine::{ensure_modular_workers_sync, stop_audio_engine_sync},
         events::ToastLevel,
         settings::{DictationInteractionMode, InteractionMode, PipelineMode},
         state::{AppState, InteractionOwner, InteractionState},
-        engine::stop_audio_engine_sync,
     },
     persistence::{
         compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
         db::get_tokio_handle,
+        personal_memory::get_personal_memory,
+        sessions::fetch_session_continuation,
         PersistenceEvent,
     },
-    pipeline::{init_new_session_sync, spawn_idle_monitor, transition, RoutingContext},
+    pipeline::{spawn_idle_monitor, transition, RoutingContext},
     services::{
+        harness::HarnessSession,
         llm::actor::LlmCommand,
         memory::compaction::coordinator::CompactionCoordinator,
         realtime::{
@@ -32,12 +34,8 @@ use crate::{
 };
 
 /// Configures and arms the modular speech-to-text, LLM, and TTS worker pipelines.
-fn start_modular_session<R: tauri::Runtime + 'static>(
-    app: &AppHandle<R>,
-    state: &AppState,
-    ctx: &RoutingContext,
-) -> Result<(), String> {
-    ensure_modular_workers_sync(app, state)?;
+fn start_modular_session(state: &AppState, ctx: &RoutingContext) -> Result<(), String> {
+    ensure_modular_workers_sync(state)?;
 
     let vad_mode = match ctx.interaction_mode {
         InteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
@@ -176,6 +174,7 @@ fn resume_realtime<R: tauri::Runtime + 'static>(
 /// Initializes voice session context, persists lifecycle start events, arms workers, and transitions to Ready.
 pub fn on_session_start<R: tauri::Runtime + 'static>(
     owner: InteractionOwner,
+    session_id: Option<i64>,
     app: &AppHandle<R>,
     state: &AppState,
     ctx: &RoutingContext,
@@ -196,7 +195,7 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    let conv_id = now;
+    let conv_id = session_id.map(|s| s as u64).unwrap_or(now);
     state.conversation_id.store(conv_id, Ordering::Relaxed);
 
     let persist_lock = state.persist_tx.lock();
@@ -212,15 +211,8 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
         }
     }
 
-    let prompt = state.resolve_base_prompt();
-
-    init_new_session_sync(state, &prompt);
-
-    let state_arc: tauri::State<'_, Arc<AppState>> = app.state();
-    spawn_idle_monitor(app.clone(), Arc::clone(state_arc.inner()));
-
     let start_res = match ctx.pipeline_mode {
-        PipelineMode::Modular => start_modular_session(app, state, ctx),
+        PipelineMode::Modular => start_modular_session(state, ctx),
         PipelineMode::Realtime => start_realtime_session(app, state, ctx),
     };
 
@@ -229,6 +221,67 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
         transition(InteractionState::Error, ctx, app, state);
         return;
     }
+
+    let settings = state
+        .settings
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
+    let prompt = state.resolve_base_prompt();
+
+    match ctx.pipeline_mode {
+        PipelineMode::Modular => {
+            let tokio_handle = get_tokio_handle();
+            let (personal_memory, summary, turns) = if let Some(sid) = session_id {
+                match tokio_handle.block_on(fetch_session_continuation(&state.db, sid)) {
+                    Ok(data) => (data.personal_memory, data.latest_summary, data.turns),
+                    Err(e) => {
+                        log::warn!("[Pipeline::Session] Failed to fetch continuation: {}", e);
+                        (None, None, Vec::new())
+                    }
+                }
+            } else {
+                let mem = tokio_handle
+                    .block_on(get_personal_memory(&state.db, None))
+                    .ok()
+                    .and_then(|r| {
+                        if r.content.trim().is_empty() {
+                            None
+                        } else {
+                            Some(r.content)
+                        }
+                    });
+                (mem, None, Vec::new())
+            };
+
+            let llm_tx_opt = state
+                .engine
+                .try_lock()
+                .ok()
+                .and_then(|g| g.as_ref().and_then(|e| e.llm_tx.clone()));
+            if let Some(llm_tx) = llm_tx_opt {
+                let mut harness = HarnessSession::new_modular(
+                    session_id,
+                    prompt,
+                    personal_memory,
+                    &settings,
+                    llm_tx,
+                );
+                if !turns.is_empty() || summary.is_some() {
+                    harness.seed_continuation(summary, turns);
+                }
+                *state.harness.lock() = Some(harness);
+            } else {
+                log::warn!("[Pipeline::Session] No LLM tx available for HarnessSession mount");
+            }
+        }
+        PipelineMode::Realtime => {
+            *state.harness.lock() = Some(HarnessSession::new_realtime(session_id, prompt));
+        }
+    }
+
+    let state_arc: tauri::State<'_, Arc<AppState>> = app.state();
+    spawn_idle_monitor(app.clone(), Arc::clone(state_arc.inner()));
 
     state.pipeline_accumulator.lock().clear();
     transition(InteractionState::Ready, ctx, app, state);
@@ -384,6 +437,7 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
     state.pipeline.turn_token().cancel();
     state.pipeline_accumulator.lock().clear();
+    state.harness.lock().take();
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {

@@ -1,5 +1,5 @@
 use std::sync::{
-    atomic::{AtomicBool, AtomicU32, AtomicU64},
+    atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8},
     mpsc::Sender,
     Arc,
 };
@@ -68,4 +68,5 @@ pub struct PlaybackEngineHandles {
     pub current_turn_id: Arc<AtomicU32>,
     pub pending_synthesis_jobs: Arc<AtomicU32>,
     pub event_tx: Sender<VoxEvent>,
+    pub playback_intent: Arc<AtomicU8>,
 }

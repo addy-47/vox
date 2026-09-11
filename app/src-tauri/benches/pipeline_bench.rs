@@ -189,7 +189,7 @@ fn main() {
         owner: InteractionOwner::Assistant,
     };
 
-    on_session_start(InteractionOwner::Assistant, &app, &state, &ctx);
+    on_session_start(InteractionOwner::Assistant, None, &app, &state, &ctx);
     state.pipeline.set_state(InteractionState::Ready);
     state.pipeline.update_ingestion_gate();
 
@@ -290,7 +290,7 @@ fn main() {
                         run_start.elapsed().as_secs_f64()
                     );
                 }
-                VoxEvent::PlaybackStarted { turn_id } => {
+                VoxEvent::PlaybackStarted { turn_id, .. } => {
                     if playback_start_time.is_none() {
                         playback_start_time = Some(Instant::now());
                         println!("  [AUDIO] PlaybackStarted (turn {}) at +{:.2}s (First audio byte reached speaker!)", turn_id, run_start.elapsed().as_secs_f64());
@@ -304,7 +304,7 @@ fn main() {
                         run_start.elapsed().as_secs_f64()
                     );
                 }
-                VoxEvent::PlaybackFinished { turn_id } => {
+                VoxEvent::PlaybackFinished { turn_id, .. } => {
                     println!(
                         "  [AUDIO] PlaybackFinished (turn {}) at +{:.2}s",
                         turn_id,

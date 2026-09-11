@@ -63,16 +63,11 @@ pub async fn save_personal_memory(
         }
     })?;
 
-    // Update active working memory prompt budget if applicable
-    let (context_window, max_context_share) = {
-        let s = state.settings.read().unwrap_or_else(|p| p.into_inner());
-        (s.llm.context_window as usize, s.memory.max_context_share)
-    };
-    state.conversation_manager.lock().set_personal_memory(
-        Some(record.content.clone()),
-        context_window,
-        max_context_share,
-    );
+    if let Some(ref mut harness) = *state.harness.lock() {
+        harness
+            .prompt
+            .set_personal_memory(Some(record.content.clone()));
+    }
 
     if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
         log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
@@ -118,16 +113,11 @@ pub async fn consolidate_personal_memory(
     .await
     .map_err(|e| VoxIpcError::Engine(e.to_string()))?;
 
-    // Update active working memory prompt budget
-    let (context_window, max_context_share) = {
-        let s = state.settings.read().unwrap_or_else(|p| p.into_inner());
-        (s.llm.context_window as usize, s.memory.max_context_share)
-    };
-    state.conversation_manager.lock().set_personal_memory(
-        Some(record.content.clone()),
-        context_window,
-        max_context_share,
-    );
+    if let Some(ref mut harness) = *state.harness.lock() {
+        harness
+            .prompt
+            .set_personal_memory(Some(record.content.clone()));
+    }
 
     if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
         log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
@@ -176,15 +166,11 @@ pub async fn import_personal_memory(
             .await
             .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
-    let (context_window, max_context_share) = {
-        let s = state.settings.read().unwrap_or_else(|p| p.into_inner());
-        (s.llm.context_window as usize, s.memory.max_context_share)
-    };
-    state.conversation_manager.lock().set_personal_memory(
-        Some(record.content.clone()),
-        context_window,
-        max_context_share,
-    );
+    if let Some(ref mut harness) = *state.harness.lock() {
+        harness
+            .prompt
+            .set_personal_memory(Some(record.content.clone()));
+    }
 
     if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
         log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);

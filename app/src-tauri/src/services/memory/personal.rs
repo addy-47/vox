@@ -19,7 +19,7 @@ use crate::{
         },
     },
     services::{
-        harness::buffer::{ChatMessage, Role},
+        harness::{ChatMessage, Role},
         llm::{
             ConversationInput, GenerationPolicy, GenerationPurpose, LlmProvider, LlmStreamEvent,
         },

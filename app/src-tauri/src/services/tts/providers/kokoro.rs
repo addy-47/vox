@@ -1,8 +1,7 @@
 use std::{
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
-        mpsc::Sender,
+        atomic::{AtomicI32, AtomicU32, Ordering},
         Arc,
     },
 };
@@ -14,14 +13,13 @@ use sherpa_onnx::{
     OfflineTtsModelConfig,
 };
 
-use super::{TtsProvider, TtsProviderKind};
+use super::{SynthesisContext, TtsProvider, TtsProviderKind};
 use crate::{
     core::{
         error::{Actionability, PipelineError, PipelineImpact},
         events::VoxEvent,
     },
     services::{
-        audio::PlaybackEngine,
         translit::is_devanagari,
         tts::{
             MAX_SPEED, MIN_SPEED, MODEL_DIRNAME_TTS_KOKORO_ESPEAK, MODEL_FILE_TTS_KOKORO_MODEL,
@@ -122,36 +120,24 @@ impl TtsProvider for KokoroEngine {
     }
 
     /// Synthesizes text chunk directly into 24kHz audio and feeds to PlaybackEngine.
-    fn synthesize_chunk(
-        &self,
-        text: &str,
-        turn_id: u32,
-        cancel: Arc<AtomicBool>,
-        playback: &Arc<PlaybackEngine>,
-        event_tx: Sender<VoxEvent>,
-        telemetry_rtf: Option<&Arc<AtomicU32>>,
-    ) -> Result<()> {
-        if cancel.load(Ordering::Relaxed) {
+    fn synthesize_chunk(&self, text: &str, ctx: &SynthesisContext<'_>) -> Result<()> {
+        if ctx.cancel.load(Ordering::Relaxed) {
             return Ok(());
         }
 
         if is_devanagari(text) {
             log::error!(
                 "[Kokoro] Devanagari script detected in turn {}: Kokoro does not support Hindi synthesis",
-                turn_id
+                ctx.turn_id
             );
-            if let Err(e) = event_tx.send(VoxEvent::Error(PipelineError {
-                turn_id,
+            if let Err(e) = ctx.event_tx.send(VoxEvent::Error(PipelineError {
+                turn_id: ctx.turn_id,
                 message: "Kokoro TTS does not support Hindi (Devanagari).".to_string(),
-                source: "tts_kokoro".to_string(),
+                source: "Kokoro".to_string(),
                 impact: PipelineImpact::Degraded,
-                actionability: Actionability::Actionable {
-                    category: "tts_unsupported_language".to_string(),
-                    hint: "Please switch TTS provider to Supertonic or Edge TTS in Settings."
-                        .to_string(),
-                },
+                actionability: Actionability::None,
             })) {
-                log::warn!("[Kokoro] Failed to emit Error event: {}", e);
+                log::warn!("[Kokoro] Failed to emit error event: {}", e);
             }
             return Ok(());
         }
@@ -160,7 +146,7 @@ impl TtsProvider for KokoroEngine {
 
         log::info!(
             "[Kokoro] Synthesizing turn {}: '{}' sid={}",
-            turn_id,
+            ctx.turn_id,
             text,
             sid
         );
@@ -175,8 +161,9 @@ impl TtsProvider for KokoroEngine {
             ..Default::default()
         };
 
-        let cancel_cb = cancel.clone();
-        let playback_cb = Arc::clone(playback);
+        let cancel_cb = ctx.cancel.clone();
+        let playback_cb = Arc::clone(ctx.playback);
+        let intent = ctx.intent;
 
         let tts_guard = self.tts.lock();
         let audio = tts_guard.generate_with_config(
@@ -189,7 +176,7 @@ impl TtsProvider for KokoroEngine {
                 if raw_samples.is_empty() {
                     return true;
                 }
-                playback_cb.ingest_chunk(raw_samples);
+                playback_cb.ingest_chunk_with_intent(raw_samples, intent);
                 true
             }),
         );
@@ -209,18 +196,18 @@ impl TtsProvider for KokoroEngine {
             0.0
         };
 
-        if audio.is_none() && !cancel.load(Ordering::Relaxed) {
+        if audio.is_none() && !ctx.cancel.load(Ordering::Relaxed) {
             return Err(anyhow!("[Kokoro] Generation failed"));
         }
 
         log::info!(
             "[Kokoro] Synthesis complete (turn {}). {:.2}s audio, RTF: {:.3}",
-            turn_id,
+            ctx.turn_id,
             audio_duration,
             rtf
         );
 
-        if let Some(rtf_handle) = telemetry_rtf {
+        if let Some(rtf_handle) = ctx.telemetry_rtf {
             rtf_handle.store(rtf.to_bits(), Ordering::Relaxed);
         }
         Ok(())
