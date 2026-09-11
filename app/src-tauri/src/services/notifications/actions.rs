@@ -34,16 +34,13 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
                 session_id
             );
 
-            // Auto-dismiss active interactive task card
-            dismiss_notification(&state.db, id).await?;
-            let mut updated_record = record.clone();
-            updated_record.status = "dismissed".to_string();
-            let _ = emit_ipc(app, IpcEvent::NotificationUpdated(updated_record));
-
-            // Launch compaction slice asynchronously
+            // Launch compaction slice asynchronously without prematurely dismissing the card
             let app_handle = app.clone();
             let app_state = Arc::clone(state);
             let db = state.db.clone();
+            let mut record_dismissed = record.clone();
+            record_dismissed.status = "dismissed".to_string();
+
             tauri::async_runtime::spawn(async move {
                 match CompactionCoordinator::run_compaction_slice(
                     &app_handle,
@@ -60,32 +57,16 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
                             session_id,
                             summary.facts_enqueued
                         );
-                        let _ = notify(
-                            &app_handle,
-                            &db,
-                            NotificationParams {
-                                group_key: Some(&format!("compaction:{}", session_id)),
-                                category: NotificationCategory::SessionCompaction,
-                                severity: Severity::Info,
-                                impact: None,
-                                action: Action::Receipt,
-                                title: &format!("Session #{} Tidied", session_id),
-                                message: &format!(
-                                    "Compaction completed. Extracted {} memory facts.",
-                                    summary.facts_enqueued
-                                ),
-                                session_id: Some(session_id),
-                                metadata: None,
-                                duration_ms: None,
-                            },
-                        )
-                        .await;
+                        // CompactionCoordinator already dismissed interactive card in DB and emitted receipt.
+                        // Notify frontend of the dismissed interactive card:
+                        let _ = emit_ipc(&app_handle, IpcEvent::NotificationUpdated(record_dismissed));
                     }
                     Ok(None) => {
                         log::info!(
                             "[Notifications::Action] Compaction deferred or no-op for session {}",
                             session_id
                         );
+                        // Invariant: Keep card active in state so user can retry when system is idle.
                     }
                     Err(e) => {
                         log::error!(
@@ -93,11 +74,12 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
                             session_id,
                             e
                         );
+                        // Invariant: Keep card active in state and notify user of the failure.
                         let _ = notify(
                             &app_handle,
                             &db,
                             NotificationParams {
-                                group_key: Some(&format!("compaction:{}", session_id)),
+                                group_key: Some(&format!("session_compaction:{}", session_id)),
                                 category: NotificationCategory::SessionCompaction,
                                 severity: Severity::Warning,
                                 impact: None,
@@ -117,40 +99,41 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
         ActionPayload::ConsolidateMemory => {
             log::info!("[Notifications::Action] Executing ConsolidateMemory");
 
-            // Auto-dismiss active interactive task card
-            dismiss_notification(&state.db, id).await?;
-            let mut updated_record = record.clone();
-            updated_record.status = "dismissed".to_string();
-            let _ = emit_ipc(app, IpcEvent::NotificationUpdated(updated_record));
-
-            // Launch consolidation asynchronously
+            // Launch consolidation asynchronously without prematurely dismissing the card
             let app_handle = app.clone();
             let app_state = Arc::clone(state);
             let db = state.db.clone();
+            let mut record_dismissed = record.clone();
+            record_dismissed.status = "dismissed".to_string();
+
             tauri::async_runtime::spawn(async move {
                 match crate::services::memory::scheduler::run_consolidation_once(&app_handle, &app_state).await {
                     Ok(()) => {
                         log::info!("[Notifications::Action] Consolidation completed successfully");
+                        // run_consolidation_once already dismissed interactive card in DB and emitted receipt.
+                        // Notify frontend of the dismissed interactive card:
+                        let _ = emit_ipc(&app_handle, IpcEvent::NotificationUpdated(record_dismissed));
+                    }
+                    Err(e) => {
+                        log::error!("[Notifications::Action] Consolidation failed: {}", e);
+                        // Invariant: Keep card active in state and notify user of the failure.
                         let _ = notify(
                             &app_handle,
                             &db,
                             NotificationParams {
                                 group_key: Some("memory_consolidation:daily"),
                                 category: NotificationCategory::MemoryConsolidation,
-                                severity: Severity::Info,
+                                severity: Severity::Warning,
                                 impact: None,
                                 action: Action::Receipt,
-                                title: "Memory Consolidated",
-                                message: "Daily profile updated.",
+                                title: "Memory Consolidation Failed",
+                                message: &format!("Consolidation failed: {}", e),
                                 session_id: None,
                                 metadata: None,
                                 duration_ms: None,
                             },
                         )
                         .await;
-                    }
-                    Err(e) => {
-                        log::error!("[Notifications::Action] Consolidation failed: {}", e);
                     }
                 }
             });

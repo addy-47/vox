@@ -157,13 +157,18 @@ pub async fn mark_notifications_read(
     let now = current_timestamp_ms();
     if let Some(f) = filter {
         if let Some(ref ids) = f.ids {
-            for id in ids {
-                conn.execute(
-                    "UPDATE notifications SET status = 'read', updated_at = ? WHERE id = ? AND status = 'unread'",
-                    (now, id.clone()),
-                )
-                .await?;
+            if ids.is_empty() {
+                return Ok(());
             }
+            let quoted_ids: Vec<String> = ids
+                .iter()
+                .map(|id| format!("'{}'", id.replace('\'', "''")))
+                .collect();
+            let sql = format!(
+                "UPDATE notifications SET status = 'read', updated_at = ? WHERE id IN ({}) AND status = 'unread'",
+                quoted_ids.join(",")
+            );
+            conn.execute(&sql, (now,)).await?;
             return Ok(());
         }
         if let Some(ref group_key) = f.group_key {
@@ -200,13 +205,18 @@ pub async fn dismiss_notifications(
     let now = current_timestamp_ms();
     if let Some(f) = filter {
         if let Some(ref ids) = f.ids {
-            for id in ids {
-                conn.execute(
-                    "UPDATE notifications SET status = 'dismissed', updated_at = ? WHERE id = ? AND status != 'dismissed'",
-                    (now, id.clone()),
-                )
-                .await?;
+            if ids.is_empty() {
+                return Ok(());
             }
+            let quoted_ids: Vec<String> = ids
+                .iter()
+                .map(|id| format!("'{}'", id.replace('\'', "''")))
+                .collect();
+            let sql = format!(
+                "UPDATE notifications SET status = 'dismissed', updated_at = ? WHERE id IN ({}) AND status != 'dismissed'",
+                quoted_ids.join(",")
+            );
+            conn.execute(&sql, (now,)).await?;
             return Ok(());
         }
         if let Some(ref group_key) = f.group_key {

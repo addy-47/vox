@@ -223,6 +223,7 @@ pub fn show_toast<R: tauri::Runtime>(
     title: &str,
     message: &str,
     severity: Severity,
+    duration_ms: Option<u64>,
 ) -> Result<(), String> {
     if let Some(main_win) = app.get_webview_window(AppWindow::Main.as_str()) {
         if main_win.is_visible().unwrap_or(false) && main_win.is_focused().unwrap_or(false) {
@@ -248,7 +249,7 @@ pub fn show_toast<R: tauri::Runtime>(
         title: title_owned,
         message: message_owned,
         severity,
-        duration_ms: None,
+        duration_ms,
     };
 
     *LAST_TOAST.lock() = Some(payload.clone());
