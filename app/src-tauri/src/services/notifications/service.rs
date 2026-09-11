@@ -25,7 +25,13 @@ pub async fn notify<R: tauri::Runtime>(
     let channel = resolve_channel(params.impact, params.severity, &params.action);
 
     if channel == DeliveryChannel::ToastOnly || channel == DeliveryChannel::ToastAndNotification {
-        let toast_ok = dispatch_toast(app, params.title, params.message, params.severity);
+        let toast_ok = dispatch_toast(
+            app,
+            params.title,
+            params.message,
+            params.severity,
+            params.duration_ms,
+        );
         if !toast_ok && channel == DeliveryChannel::ToastOnly {
             return elevate_toast_to_drawer(app, db, &params).await;
         }
@@ -45,8 +51,9 @@ fn dispatch_toast<R: tauri::Runtime>(
     title: &str,
     message: &str,
     severity: crate::core::events::Severity,
+    duration_ms: Option<u64>,
 ) -> bool {
-    if let Err(e) = crate::toast::show_toast(app, title, message, severity) {
+    if let Err(e) = crate::toast::show_toast(app, title, message, severity, duration_ms) {
         log::warn!("[Notifications] show_toast overlay dispatch failed: {}", e);
         false
     } else {

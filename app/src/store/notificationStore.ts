@@ -198,5 +198,7 @@ export function selectRolledUpNotifications(
     }
   }
 
-  return Array.from(groups.values());
+  return Array.from(groups.values()).sort(
+    (a, b) => b.latest.created_at - a.latest.created_at
+  );
 }
