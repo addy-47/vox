@@ -1,4 +1,4 @@
-use std::{sync::Arc, thread::scope};
+use std::sync::Arc;
 
 use tauri::AppHandle;
 
@@ -8,57 +8,8 @@ use crate::{
         events::{emit_ipc_to, IpcEvent, StateChangedPayload, VoxEvent},
         state::{AppState, AppWindow, InteractionOwner, InteractionState},
     },
-    persistence::{db::get_tokio_handle, personal_memory::get_personal_memory},
     services::{llm::actor::cool_down_llm, memory::trim_heap, tts::actor::cool_down_tts},
 };
-
-/// Resets conversational working memory and preloads personal memory.
-pub async fn init_new_session(state: &AppState, base_prompt: &str) {
-    state.conversation_manager.lock().new_session(base_prompt);
-    let (context_window, max_context_share) = {
-        let settings = state.settings.read().unwrap_or_else(|p| p.into_inner());
-        (
-            settings.llm.context_window as usize,
-            settings.memory.max_context_share,
-        )
-    };
-
-    if let Ok(rec) = get_personal_memory(&state.db, None).await {
-        if !rec.content.trim().is_empty() {
-            state.conversation_manager.lock().set_personal_memory(
-                Some(rec.content),
-                context_window,
-                max_context_share,
-            );
-        }
-    }
-}
-
-/// Synchronous wrapper for init_new_session executed via the global Tokio runtime handle.
-pub fn init_new_session_sync(state: &AppState, base_prompt: &str) {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
-            tokio::task::block_in_place(|| {
-                handle.block_on(init_new_session(state, base_prompt));
-            });
-            return;
-        }
-    }
-    let handle = get_tokio_handle();
-    if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread {
-        tokio::task::block_in_place(|| {
-            handle.block_on(init_new_session(state, base_prompt));
-        });
-    } else {
-        scope(|s| {
-            s.spawn(|| {
-                handle.block_on(init_new_session(state, base_prompt));
-            })
-            .join()
-            .expect("init_new_session worker panicked");
-        });
-    }
-}
 
 /// Spawns an idle observer for the assistant pipeline that auto-pauses after 7 minutes of Ready
 /// and reclaims model RAM after 5 minutes of sustained Paused state.

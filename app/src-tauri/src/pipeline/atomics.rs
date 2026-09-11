@@ -69,6 +69,7 @@ impl PipelineAtomics {
                 | InteractionState::Listening
                 | InteractionState::Thinking
                 | InteractionState::Speaking
+                | InteractionState::Working
         ) || matches!(
             d,
             InteractionState::Ready | InteractionState::Listening | InteractionState::Thinking

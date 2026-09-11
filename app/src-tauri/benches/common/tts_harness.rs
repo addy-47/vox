@@ -1,7 +1,7 @@
 use std::{
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering},
         mpsc, Arc,
     },
     time::{Duration, Instant},
@@ -87,6 +87,7 @@ pub fn benchmark_tts_provider(
         state_atomic,
         current_turn_id: Arc::clone(&current_turn_id),
         pending_synthesis_jobs: Arc::clone(&pending_jobs),
+        playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx: event_tx.clone(),
     };
 
@@ -154,6 +155,7 @@ pub fn benchmark_tts_provider(
         if let Err(e) = tx.send(TtsCommand::Generate {
             turn_id,
             text: prompt.text.clone(),
+            intent: vox_lib::core::events::AudioIntent::TurnResponse,
         }) {
             eprintln!(
                 "[TTS Bench] Failed to send Generate for {}: {}",

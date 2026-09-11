@@ -1,39 +1,142 @@
-pub mod accountant;
-pub mod buffer;
-pub mod facade;
-pub mod manager;
-pub mod prompt_builder;
-
-pub use accountant::{ContextHarness, TokenAccountant};
-pub use buffer::{current_timestamp_ms, ChatMessage, ConversationContext, MessageBuffer, Role};
-pub use facade::{
-    prepare_turn_context, spawn_state_compaction_observer, trigger_background_compaction,
-    PrepareTurnParams,
+use std::{
+    fmt,
+    time::{SystemTime, UNIX_EPOCH},
 };
-pub use manager::ConversationManager;
+
+use crate::services::translit::is_devanagari;
+
+pub mod plugins;
+pub mod session;
+pub mod watcher;
+
+pub use plugins::{
+    budget::{ContextBudgetPlugin, ContextStatus},
+    compaction::CompactionPlugin,
+    history::ConversationHistoryPlugin,
+    prompt::PromptBuilderPlugin,
+    stream::{StreamRoutingHandles, StreamRoutingPlugin},
+};
+pub use session::{HarnessSession, PipelineDomain, TurnPreparation};
+pub use watcher::QuietCompactionWatcher;
 
 pub const TRANSITION_MESSAGES_EN: &[&str] = &[
-    "Give me a moment while I organize our conversation.",
-    "One moment while I reorganize everything we've discussed.",
-    "Let me organize our conversation before we continue.",
-    "Just a second while I process our context.",
-    "Hold on briefly while I tidy up our session history.",
-    "Give me a sec to summarize what we've covered.",
-    "One moment while I refresh our discussion details.",
-    "Just a moment, organizing our conversation notes.",
-    "Let me quickly consolidate what we've talked about.",
-    "Hold on a moment while I restructure our context.",
+    "Give me a moment to gather my thoughts.",
+    "Let me think about that for a second.",
+    "One moment while I process that.",
+    "Thinking through this, just a second.",
+    "Just a second, reviewing what we have.",
+    "Let me check on that for you.",
+    "Organizing my notes, one moment.",
+    "Working on that right now.",
+    "Let me pull together the details.",
+    "Give me just a second here.",
 ];
 
 pub const TRANSITION_MESSAGES_HI: &[&str] = &[
-    "हमारी बातचीत को व्यवस्थित करने के लिए मुझे एक पल दें।",
-    "हमारा चर्चा किया गया विवरण व्यवस्थित करने तक एक क्षण प्रतीक्षा करें।",
-    "आगे बढ़ने से पहले मुझे अपनी बातचीत व्यवस्थित करने दें।",
-    "हमारे संदर्भ को संसाधित करने तक बस एक सेकंड रुकें।",
-    "हमारी सत्र जानकारी को साफ़ करने तक थोड़ी देर प्रतीक्षा करें।",
-    "हमने जो चर्चा की है उसका सारांश बनाने के लिए मुझे एक पल दें।",
-    "हमारी बातचीत के विवरण को ताज़ा करने तक एक क्षण रुकें।",
-    "बस एक पल, हमारी बातचीत के नोट्स व्यवस्थित कर रहा हूँ।",
-    "हमने जो बातें की हैं, मुझे उन्हें जल्दी से संक्षेप में लिखने दें।",
-    "संदर्भ को पुनर्गठित करने तक एक पल प्रतीक्षा करें।",
+    "एक पल रुकिए, मैं सोच रहा हूँ।",
+    "ज़रा सा समय दीजिए, मैं समझ रहा हूँ।",
+    "एक क्षण रुकिए, मैं इसकी समीक्षा कर रहा हूँ।",
+    "बस एक सेकंड, मैं देखता हूँ।",
+    "मैं इस पर विचार कर रहा हूँ, एक पल।",
+    "रुकिए, मैं इसकी जानकारी एकत्र कर रहा हूँ।",
+    "एक पल दीजिए, मैं सब व्यवस्थित कर रहा हूँ।",
+    "मैं अभी इस पर काम कर रहा हूँ।",
+    "ज़रा रुकिए, मैं विवरण निकालता हूँ।",
+    "बस एक सेकंड रुकिए।",
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    System,
+    User,
+    Assistant,
+}
+
+impl fmt::Display for Role {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::System => write!(f, "system"),
+            Self::User => write!(f, "user"),
+            Self::Assistant => write!(f, "assistant"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatMessage {
+    pub role: Role,
+    pub content: String,
+    pub timestamp_ms: u64,
+}
+
+impl ChatMessage {
+    pub fn new(role: Role, content: String) -> Self {
+        Self {
+            role,
+            content,
+            timestamp_ms: current_timestamp_ms(),
+        }
+    }
+
+    pub fn with_timestamp(role: Role, content: String, timestamp_ms: u64) -> Self {
+        Self {
+            role,
+            content,
+            timestamp_ms,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ConversationContext {
+    pub messages: Vec<ChatMessage>,
+    pub token_count: usize,
+    pub kv_cache_index: usize,
+}
+
+pub fn current_timestamp_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptTag {
+    UserIdentity,
+    SessionContext,
+    PastTurns,
+}
+
+impl PromptTag {
+    pub fn open_tag(&self) -> &'static str {
+        match self {
+            Self::UserIdentity => "<user_identity>",
+            Self::SessionContext => "<session_context>",
+            Self::PastTurns => "<past_turns>",
+        }
+    }
+
+    pub fn close_tag(&self) -> &'static str {
+        match self {
+            Self::UserIdentity => "</user_identity>",
+            Self::SessionContext => "</session_context>",
+            Self::PastTurns => "</past_turns>",
+        }
+    }
+
+    pub fn wrap(&self, content: &str) -> String {
+        format!("{}{}{}", self.open_tag(), content, self.close_tag())
+    }
+}
+
+pub fn select_filler_phrase(query: &str, turn_id: u32) -> &'static str {
+    let has_devanagari = is_devanagari(query);
+    let catalog = if has_devanagari {
+        TRANSITION_MESSAGES_HI
+    } else {
+        TRANSITION_MESSAGES_EN
+    };
+    let index = (turn_id as usize) % catalog.len();
+    catalog[index]
+}

@@ -3,12 +3,10 @@ use std::collections::HashSet;
 use anyhow::Result;
 use turso::Connection;
 
-use crate::{
-    persistence::{
-        deactivate_facts_batch, fetch_active_facts_by_type, queue::claim_pending_queue_batch,
-        record_queue_item_failure, update_queue_item_status, QueueItem,
-    },
-    services::memory::{JACCARD_EXACT_MATCH_THRESHOLD, STAGE1_BATCH_CEILING},
+use super::{JACCARD_EXACT_MATCH_THRESHOLD, STAGE1_BATCH_CEILING};
+use crate::persistence::{
+    deactivate_facts_batch, fetch_active_facts_by_type, queue::claim_pending_queue_batch,
+    record_queue_item_failure, update_queue_item_status, QueueItem,
 };
 
 /// Summary metrics returned after running a Stage 1 exact Jaccard deduplication pass.

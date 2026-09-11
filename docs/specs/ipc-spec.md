@@ -43,18 +43,19 @@ Manages workspace session grouping folders.
 ### 2.2 History & Sessions Domain (`ipc/history.rs`) — [ALIGNED]
 Manages conversational sessions, turns, and session continuation.
 
-#### `create_session(projectId: Option<String>)` — [NEW]
-- **Purpose**: Resets in-memory conversational state for a fresh session (triggered by user clicking "+ New Session").
-- **Behavior**: If an active voice session is running (`InteractionState != Idle`), disengages the audio pipeline cleanly. Resets in-memory working buffer (`ConversationManager`), loads the active `personal_memory` with dynamically resolved base prompt (`settings.persona.modular_prompt` or `realtime_prompt` based on active `pipeline_mode`), and clears `conversation_id`. Follows **lazy session persistence**: zero empty database rows are inserted upfront; Turso `sessions` row insertion is deferred until the first turn/speech actually occurs (handled by `PersistenceEvent::SessionStarted`). Does not emit echo events.
+#### `create_session(projectId: Option<String>)` — [ALIGNED]
+- **Purpose**: Prepares UI and backend state for a fresh session (triggered by user clicking "+ New Session").
+- **Behavior**: If an active voice session is running (`InteractionState != Idle`), disengages the audio pipeline cleanly (`VoxEvent::EndSession`). Clears `conversation_id` to 0. Follows **lazy session persistence**: zero empty database rows are created upfront; Turso `sessions` row insertion is deferred until the first spoken turn. While `Idle`, **zero harness instances exist in memory**. When the user subsequently engages, frontend passes `sessionId: null` to `start_session(None)`.
 
-#### `continue_session(sessionId: i64)` — [NEW]
-- **Purpose**: Restores a past session from the conversation list to continue conversation.
+#### `continue_session(sessionId: i64)` — [ALIGNED]
+- **Purpose**: Fetches historical session turns and metadata to display a past session in the conversation view.
 - **Behavior**: 
-  1. Loads target session turns and the latest compaction summary from `session_compactions` via `persistence::sessions::fetch_session_continuation`.
-  2. Seeds `ConversationManager` with: Dynamically Resolved Base System Prompt + Personal Memory + Latest Compaction Summary + Uncompacted Turns.
-  3. Updates `current_session_id`.
-  4. Returns the restored turns and metadata to the frontend.
-  5. Read-only restoration: does not emit `sessions_changed` echo events.
+  1. Queries session metadata and turns from Turso database via `persistence::sessions`.
+  2. If an active voice session is currently running, disengages it cleanly.
+  3. Sets `current_session_id = sessionId`.
+  4. Returns `{ session, turns }` to the frontend.
+  5. **Zero Idle Harness Footprint**: Does NOT instantiate or seed working memory while `Idle`. When the user subsequently clicks "Engage", the frontend passes `sessionId` to `start_session(Some(sessionId))`, which boots the `HarnessSession` and seeds continuation context.
+  6. Does not emit echo events.
 
 #### `get_sessions(projectId: Option<String>)`
 - **Purpose**: Returns sessions for a specific project or all active sessions.
@@ -167,9 +168,16 @@ Controls the voice interaction lifecycle and hardware devices.
 - **Purpose**: Initializes or completely shuts down the audio engine, VAD, and model workers.
 - **Behavior**: Bootstraps CPAL streams, model weights, and hotkey listeners, or cleanly joins threads and releases mic hardware.
 
-#### `start_session()`, `pause_session()`, `resume_session()`, `end_session()`
+#### `start_session(sessionId: Option<i64>)` — [ALIGNED]
+- **Purpose**: Transitions assistant from `Idle` to `Ready`, mounting the `HarnessSession`.
+- **Behavior**: 
+  - If `sessionId == Some(id)`: Mounts the `HarnessSession` continuing session `id`, loading continuation turns and the latest summary from Turso.
+  - If `sessionId == None`: Mounts a fresh `HarnessSession` (`session_id = 0`, lazy DB row created on first turn).
+  - Starts audio engine and dispatches `VoxEvent::SessionStart { owner: Assistant, session_id }` to `event_tx`.
+
+#### `pause_session()`, `resume_session()`, `end_session()`
 - **Purpose**: Transitions high-level assistant session states.
-- **Behavior**: Dispatches strongly-typed commands (`SessionStart`, `PauseSession`, `ResumeSession`, `EndSession`) to the central FIFO `event_tx` Router.
+- **Behavior**: Dispatches strongly-typed commands (`PauseSession`, `ResumeSession`, `EndSession`) to the central FIFO `event_tx` Router. `end_session` unmounts and drops `HarnessSession`.
 
 #### `ptt_start()`, `ptt_stop()`, `ptt_cancel()`
 - **Purpose**: Controls Push-To-Talk voice windows.

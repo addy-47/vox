@@ -23,7 +23,7 @@ use crate::{
         TurnRow,
     },
     services::{
-        harness::buffer::{ChatMessage, Role},
+        harness::{ChatMessage, Role},
         llm::{
             actor::create_llm_provider_from_llm_settings, LlmProvider, QWEN_MODEL_DIR,
             QWEN_MODEL_FILE,

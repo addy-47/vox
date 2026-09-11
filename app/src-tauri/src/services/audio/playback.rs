@@ -1,5 +1,5 @@
 use std::sync::{
-    atomic::{AtomicBool, AtomicU32, Ordering},
+    atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering},
     mpsc::Sender,
     Arc,
 };
@@ -15,7 +15,7 @@ use super::{
 };
 pub use super::{PlaybackEngineHandles, PlaybackTelemetryHandles};
 use crate::{
-    core::events::VoxEvent,
+    core::events::{AudioIntent, VoxEvent},
     services::realtime::{RealtimeAudioConfig, DEFAULT_OUTPUT_SAMPLE_RATE},
 };
 
@@ -28,7 +28,8 @@ pub struct PlaybackEngine {
     current_turn_id: Arc<AtomicU32>,
     turn_armed: Arc<AtomicBool>,
     pending_synthesis_jobs: Arc<AtomicU32>,
-    stream: Option<cpal::Stream>,
+    playback_intent: Arc<AtomicU8>,
+    _stream: Option<cpal::Stream>,
 }
 
 unsafe impl Send for PlaybackEngine {}
@@ -71,7 +72,8 @@ impl PlaybackEngine {
             current_turn_id: handles.current_turn_id,
             turn_armed,
             pending_synthesis_jobs: handles.pending_synthesis_jobs,
-            stream: Some(stream),
+            playback_intent: handles.playback_intent,
+            _stream: Some(stream),
         })
     }
 
@@ -94,8 +96,16 @@ impl PlaybackEngine {
             current_turn_id: handles.current_turn_id,
             turn_armed,
             pending_synthesis_jobs: handles.pending_synthesis_jobs,
-            stream,
+            playback_intent: handles.playback_intent,
+            _stream: stream,
         }
+    }
+
+    /// Ingest a 24kHz audio chunk with an explicit audio intent tag.
+    pub fn ingest_chunk_with_intent(&self, chunk_24khz: &[f32], intent: AudioIntent) {
+        self.playback_intent
+            .store(u8::from(intent), Ordering::Relaxed);
+        self.ingest_chunk_with_threshold(chunk_24khz, MODULAR_PREROLL_THRESHOLD_SAMPLES);
     }
 
     /// Ingest a 24kHz audio chunk from TTS, upsample 2x to 48kHz, and push to ring buffer using default pre-roll.
@@ -127,16 +137,18 @@ impl PlaybackEngine {
             if occupied >= preroll_threshold {
                 self.turn_armed.store(true, Ordering::Relaxed);
                 let tid = self.current_turn_id.load(Ordering::Relaxed);
-                if let Err(e) = self
-                    .event_tx
-                    .send(VoxEvent::PlaybackStarted { turn_id: tid })
-                {
+                let intent = AudioIntent::from(self.playback_intent.load(Ordering::Relaxed));
+                if let Err(e) = self.event_tx.send(VoxEvent::PlaybackStarted {
+                    turn_id: tid,
+                    intent,
+                }) {
                     log::warn!("[Audio::Playback] Failed to emit PlaybackStarted: {}", e);
                 } else {
                     log::info!(
-                        "[Audio::Playback] Preroll cushion satisfied ({} samples) — PlaybackStarted emitted (turn {})",
+                        "[Audio::Playback] Preroll cushion satisfied ({} samples) — PlaybackStarted emitted (turn {}, intent: {:?})",
                         occupied,
-                        tid
+                        tid,
+                        intent
                     );
                 }
             }
@@ -185,19 +197,21 @@ impl PlaybackEngine {
             if occupied > 0 {
                 self.turn_armed.store(true, Ordering::Relaxed);
                 let tid = self.current_turn_id.load(Ordering::Relaxed);
-                if let Err(e) = self
-                    .event_tx
-                    .send(VoxEvent::PlaybackStarted { turn_id: tid })
-                {
+                let intent = AudioIntent::from(self.playback_intent.load(Ordering::Relaxed));
+                if let Err(e) = self.event_tx.send(VoxEvent::PlaybackStarted {
+                    turn_id: tid,
+                    intent,
+                }) {
                     log::warn!(
                         "[Audio::Playback] Failed to emit PlaybackStarted on flush_pre_roll: {}",
                         e
                     );
                 } else {
                     log::info!(
-                        "[Audio::Playback] Pre-roll flushed ({} samples) — PlaybackStarted emitted (turn {})",
+                        "[Audio::Playback] Pre-roll flushed ({} samples) — PlaybackStarted emitted (turn {}, intent: {:?})",
                         occupied,
-                        tid
+                        tid,
+                        intent
                     );
                 }
             }

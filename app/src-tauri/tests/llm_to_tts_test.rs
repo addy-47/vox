@@ -70,15 +70,11 @@ async fn test_real_llm_to_tts_matrix() {
         state.pipeline.set_state(InteractionState::Thinking);
 
         // 3. Spawn real persistent LLM worker actor thread
-        let worker_app = app.clone();
-        let worker_event_tx = event_tx.clone();
         let worker_provider = Arc::clone(&provider);
         let worker_handle = std::thread::spawn(move || {
             vox_lib::services::llm::actor::spawn_llm_worker(
-                worker_app,
                 llm_rx,
                 worker_provider,
-                worker_event_tx,
             );
         });
 
@@ -114,18 +110,33 @@ async fn test_real_llm_to_tts_matrix() {
         };
 
         // ---------------------------------------------------------------------
-        // Entry Seam: Send real LlmCommand::Generate to worker
+        // Entry Seam: Send real LlmCommand::Generate to worker and route via StreamRoutingPlugin
         // ---------------------------------------------------------------------
+        let (response_tx, response_rx) = std::sync::mpsc::channel();
         llm_tx
             .send(LlmCommand::Generate {
                 request: Box::new(request),
                 turn_id,
                 cancel,
-                accumulator: Arc::clone(&accumulator),
-                tts_tx: Some(tts_tx.clone()),
-                pending_synthesis_jobs: Arc::clone(&pending_jobs),
+                response_tx,
             })
             .expect("Failed to send Generate to LLM worker");
+
+        let stream_plugin = vox_lib::services::harness::StreamRoutingPlugin::new();
+        let cancel_flag = Arc::clone(&state.pipeline.cancel_flag);
+        let handles = vox_lib::services::harness::StreamRoutingHandles {
+            turn_id,
+            owner: vox_lib::core::state::InteractionOwner::Assistant,
+            accumulator: Arc::clone(&accumulator),
+            tts_tx: Some(&tts_tx),
+            pending_synthesis_jobs: &pending_jobs,
+            cancel: &cancel_flag,
+            event_tx: &event_tx,
+            app: &app,
+        };
+        stream_plugin
+            .route_stream(handles, response_rx)
+            .expect("Stream routing failed");
 
         // ---------------------------------------------------------------------
         // Observable Exit 1: Real tokens streamed, chunked into clauses, and dispatched
@@ -163,8 +174,18 @@ async fn test_real_llm_to_tts_matrix() {
         // ---------------------------------------------------------------------
         let mut streaming_clauses = Vec::new();
         while let Ok(cmd) = tts_rx.try_recv() {
-            if let TtsCommand::Generate { turn_id: tid, text } = cmd {
+            if let TtsCommand::Generate {
+                turn_id: tid,
+                text,
+                intent,
+            } = cmd
+            {
                 assert_eq!(tid, turn_id, "TTS command turn_id must match turn under test");
+                assert_eq!(
+                    intent,
+                    vox_lib::core::events::AudioIntent::TurnResponse,
+                    "LLM streaming clauses must have TurnResponse intent"
+                );
                 streaming_clauses.push(text);
             }
         }
@@ -194,8 +215,18 @@ async fn test_real_llm_to_tts_matrix() {
         // ---------------------------------------------------------------------
         let mut all_clauses = streaming_clauses;
         while let Ok(cmd) = tts_rx.try_recv() {
-            if let TtsCommand::Generate { turn_id: tid, text } = cmd {
+            if let TtsCommand::Generate {
+                turn_id: tid,
+                text,
+                intent,
+            } = cmd
+            {
                 assert_eq!(tid, turn_id, "TTS command turn_id must match turn under test");
+                assert_eq!(
+                    intent,
+                    vox_lib::core::events::AudioIntent::TurnResponse,
+                    "Flushed tail remainder must have TurnResponse intent"
+                );
                 all_clauses.push(text);
             }
         }

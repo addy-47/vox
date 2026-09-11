@@ -29,17 +29,21 @@ pub fn ensure_toast_window<R: tauri::Runtime>(
     }
 
     log::info!("[Toast] Lazily constructing 'toast' overlay webview window...");
-    let window = WebviewWindowBuilder::new(app, AppWindow::Toast.as_str(), WebviewUrl::App("/toast".into()))
-        .title("vox-toast")
-        .inner_size(TOAST_WIDTH, TOAST_HEIGHT)
-        .transparent(true)
-        .decorations(false)
-        .always_on_top(true)
-        .resizable(false)
-        .visible(false)
-        .skip_taskbar(true)
-        .build()
-        .map_err(|e| format!("Failed to create toast window: {}", e))?;
+    let window = WebviewWindowBuilder::new(
+        app,
+        AppWindow::Toast.as_str(),
+        WebviewUrl::App("/toast".into()),
+    )
+    .title("vox-toast")
+    .inner_size(TOAST_WIDTH, TOAST_HEIGHT)
+    .transparent(true)
+    .decorations(false)
+    .always_on_top(true)
+    .resizable(false)
+    .visible(false)
+    .skip_taskbar(true)
+    .build()
+    .map_err(|e| format!("Failed to create toast window: {}", e))?;
 
     setup_toast_window(&window);
     #[cfg(target_os = "linux")]

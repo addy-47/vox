@@ -11,7 +11,10 @@ use super::{
     PLAYBACK_VOLUME_RAMP_STEP,
 };
 use crate::{
-    core::{events::VoxEvent, state::InteractionState},
+    core::{
+        events::{AudioIntent, VoxEvent},
+        state::InteractionState,
+    },
     utils::audio_filters::FilterBank,
 };
 
@@ -142,16 +145,18 @@ impl PlaybackStreamContext {
                 // Gate 2 (End): Genuinely done with all clauses in turn
                 self.turn_armed.store(false, Ordering::Relaxed);
                 let tid = self.handles.current_turn_id.load(Ordering::Relaxed);
-                if let Err(e) = self
-                    .handles
-                    .event_tx
-                    .send(VoxEvent::PlaybackFinished { turn_id: tid })
-                {
+                let intent =
+                    AudioIntent::from(self.handles.playback_intent.load(Ordering::Relaxed));
+                if let Err(e) = self.handles.event_tx.send(VoxEvent::PlaybackFinished {
+                    turn_id: tid,
+                    intent,
+                }) {
                     log::warn!("[Audio::Playback] Failed to emit PlaybackFinished: {}", e);
                 } else {
                     log::info!(
-                        "[Audio::Playback] Playback completed — PlaybackFinished emitted (turn {})",
-                        tid
+                        "[Audio::Playback] Playback completed — PlaybackFinished emitted (turn {}, intent: {:?})",
+                        tid,
+                        intent
                     );
                 }
             }

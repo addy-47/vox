@@ -133,7 +133,7 @@ async fn test_transcript_to_llm_matrix() {
                 LlmCommand::Generate {
                     request,
                     turn_id: received_turn,
-                    accumulator,
+                    response_tx,
                     ..
                 } => {
                     assert_eq!(received_turn, turn_id, "Turn ID must match");
@@ -159,10 +159,12 @@ async fn test_transcript_to_llm_matrix() {
 
                     // Verify user transcript in accumulator
                     assert_eq!(
-                        accumulator.lock().user_transcript(),
+                        state.pipeline_accumulator.lock().user_transcript(),
                         user_query,
                         "Accumulator must store user transcript"
                     );
+
+                    let _ = response_tx.send(vox_lib::services::llm::actor::LlmResponse::Finished);
                 }
                 other => panic!("Expected LlmCommand::Generate, got {:?}", other),
             }
@@ -290,8 +292,17 @@ async fn test_transcript_to_llm_matrix() {
             .expect("Expected filler TtsCommand::Generate on critical threshold maintenance");
 
             match filler_cmd {
-                TtsCommand::Generate { turn_id, text } => {
+                TtsCommand::Generate {
+                    turn_id,
+                    text,
+                    intent,
+                } => {
                     assert_eq!(turn_id, 46);
+                    assert_eq!(
+                        intent,
+                        vox_lib::core::events::AudioIntent::InterimFiller,
+                        "Filler must have InterimFiller intent"
+                    );
                     assert!(
                         vox_lib::services::harness::TRANSITION_MESSAGES_EN.contains(&text.as_str()),
                         "Filler text '{}' must be from TRANSITION_MESSAGES_EN",

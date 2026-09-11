@@ -17,14 +17,14 @@ use tokio_tungstenite::{
     tungstenite::{client::IntoClientRequest, Message},
 };
 
-use super::{TtsProvider, TtsProviderKind};
+use super::{SynthesisContext, TtsProvider, TtsProviderKind};
 use crate::{
     core::{
         error::{Actionability, PipelineError, PipelineImpact},
         events::VoxEvent,
     },
     services::{
-        audio::{decode::decode_bytes_to_24khz_mono, PlaybackEngine},
+        audio::decode::decode_bytes_to_24khz_mono,
         tts::{
             EDGE_TTS_DEFAULT_VOICE, EDGE_TTS_HOST, EDGE_TTS_ORIGIN, EDGE_TTS_PORT,
             EDGE_TTS_SEC_MS_GEC_VERSION, EDGE_TTS_USER_AGENT, EDGE_TTS_WIN_EPOCH,
@@ -280,15 +280,7 @@ async fn collect_mp3_payload(ws_stream: &mut EdgeWsStream, cancel: &Arc<AtomicBo
 
 impl TtsProvider for EdgeTtsProvider {
     /// Synthesizes text via Microsoft Edge ReadAloud cloud WebSocket and decodes output to 24kHz PCM.
-    fn synthesize_chunk(
-        &self,
-        text: &str,
-        turn_id: u32,
-        cancel: Arc<AtomicBool>,
-        playback: &Arc<PlaybackEngine>,
-        event_tx: Sender<VoxEvent>,
-        telemetry_rtf: Option<&Arc<AtomicU32>>,
-    ) -> anyhow::Result<()> {
+    fn synthesize_chunk(&self, text: &str, ctx: &SynthesisContext<'_>) -> anyhow::Result<()> {
         let text_clean = text.trim();
         log::debug!("[EdgeTTS] Entering synthesize_chunk: '{}'", text_clean);
         if text_clean.is_empty() {
@@ -315,6 +307,13 @@ impl TtsProvider for EdgeTtsProvider {
                 e
             );
         }
+
+        let turn_id = ctx.turn_id;
+        let event_tx = ctx.event_tx.clone();
+        let cancel = ctx.cancel.clone();
+        let playback = Arc::clone(ctx.playback);
+        let intent = ctx.intent;
+        let telemetry_rtf = ctx.telemetry_rtf.cloned();
 
         EDGE_TTS_RUNTIME.block_on(async move {
             let mut ws_stream = match connect_edge_websocket(&event_tx, turn_id).await {
@@ -357,7 +356,7 @@ impl TtsProvider for EdgeTtsProvider {
                                 );
                                 break;
                             }
-                            playback.ingest_chunk(chunk);
+                            playback.ingest_chunk_with_intent(chunk, intent);
                         }
 
                         if !cancel.load(Ordering::Relaxed) {

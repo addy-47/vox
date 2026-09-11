@@ -29,17 +29,21 @@ pub fn ensure_tray_window<R: tauri::Runtime>(
     }
 
     log::info!("[Tray] Lazily constructing 'tray' HUD webview window...");
-    let window = WebviewWindowBuilder::new(app, AppWindow::Tray.as_str(), WebviewUrl::App("/tray".into()))
-        .title("vox-live")
-        .inner_size(420.0, 250.0)
-        .transparent(true)
-        .decorations(false)
-        .always_on_top(true)
-        .resizable(false)
-        .visible(false)
-        .skip_taskbar(true)
-        .build()
-        .map_err(|e| format!("Failed to build tray window: {}", e))?;
+    let window = WebviewWindowBuilder::new(
+        app,
+        AppWindow::Tray.as_str(),
+        WebviewUrl::App("/tray".into()),
+    )
+    .title("vox-live")
+    .inner_size(420.0, 250.0)
+    .transparent(true)
+    .decorations(false)
+    .always_on_top(true)
+    .resizable(false)
+    .visible(false)
+    .skip_taskbar(true)
+    .build()
+    .map_err(|e| format!("Failed to build tray window: {}", e))?;
 
     let win_clone = window.clone();
     tauri::async_runtime::spawn(async move {

@@ -25,6 +25,6 @@ pub use profiler::{
 };
 pub use snapshots::{spawn_monitoring_collector, MonitoringState, RuntimeSnapshot};
 pub use telemetry::{
-    spawn_system_monitor, spawn_telemetry_emitter, TelemetryAggregator,
-    TelemetryAggregatorHandles, TelemetryEvent, TelemetryState,
+    spawn_system_monitor, spawn_telemetry_emitter, TelemetryAggregator, TelemetryAggregatorHandles,
+    TelemetryEvent, TelemetryState,
 };

@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::{
     core::settings::LlmSettings,
     services::{
-        harness::buffer::{ChatMessage, Role},
+        harness::{ChatMessage, Role},
         llm::{ConversationInput, GenerationPolicy, GenerationPurpose, GenerationRequest},
     },
 };
