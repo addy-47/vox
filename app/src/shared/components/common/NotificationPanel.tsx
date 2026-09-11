@@ -6,17 +6,25 @@ import {
   X,
   Loader2,
   Layers,
-  Download,
-  CloudOff,
   Brain,
+  Activity,
+  FileText,
+  Headphones,
+  Cpu,
   Database,
   AlertTriangle,
+  AlertCircle,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { NOTIFICATION_COPY } from "@/data/notificationCopy";
-import { useNotificationStore, selectBadgeCount } from "@/store/notificationStore";
+import {
+  useNotificationStore,
+  selectBadgeCount,
+  selectRolledUpNotifications,
+  type RolledUpNotification,
+} from "@/store/notificationStore";
 import {
   toCategory,
   isReceipt,
@@ -40,21 +48,29 @@ const CATEGORY_VISUALS: Record<NotificationCategory, CategoryVisual> = {
     icon: Layers,
     tile: "bg-[rgba(var(--violet),0.12)] text-[rgb(var(--violet))] border-[rgba(var(--violet),0.30)]",
   },
-  model_ready: {
-    icon: Download,
-    tile: "bg-[rgba(var(--success),0.12)] text-[rgb(var(--success))] border-[rgba(var(--success),0.30)]",
-  },
-  model_failed: {
-    icon: CloudOff,
-    tile: "bg-[rgba(var(--error),0.12)] text-[rgb(var(--error))] border-[rgba(var(--error),0.30)]",
-  },
-  memory_issue: {
+  memory_consolidation: {
     icon: Brain,
-    tile: "bg-[rgba(var(--warning),0.14)] text-[rgb(var(--warning))] border-[rgba(var(--warning),0.30)]",
+    tile: "bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.30)]",
   },
-  storage_health: {
+  pipeline: {
+    icon: Activity,
+    tile: "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] border-[rgba(var(--border),0.18)]",
+  },
+  dictation: {
+    icon: FileText,
+    tile: "bg-[rgba(var(--accent),0.10)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.25)]",
+  },
+  hardware: {
+    icon: Headphones,
+    tile: "bg-[rgba(var(--warning),0.12)] text-[rgb(var(--warning))] border-[rgba(var(--warning),0.30)]",
+  },
+  models: {
+    icon: Cpu,
+    tile: "bg-[rgba(var(--violet),0.12)] text-[rgb(var(--violet))] border-[rgba(var(--violet),0.30)]",
+  },
+  storage: {
     icon: Database,
-    tile: "bg-[rgba(var(--error),0.12)] text-[rgb(var(--error))] border-[rgba(var(--error),0.30)]",
+    tile: "bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] border-[rgba(var(--border),0.18)]",
   },
 };
 
@@ -73,58 +89,90 @@ function formatTurnMeta(turns: number | null): string | null {
 
 const NotificationItem = memo(
   ({
-    notif,
+    group,
     isWorking,
     onPrimary,
     onDismiss,
     onOpen,
   }: {
-    notif: NotificationRecord;
+    group: RolledUpNotification;
     isWorking: boolean;
     onPrimary: (notif: NotificationRecord) => void;
-    onDismiss: (id: string) => void;
+    onDismiss: (groupKey: string) => void;
     onOpen: (notif: NotificationRecord) => void;
   }) => {
+    const notif = group.latest;
     const category = toCategory(notif.category);
-    const visual = CATEGORY_VISUALS[category];
+    const visual = CATEGORY_VISUALS[category] ?? CATEGORY_VISUALS.pipeline;
     const Icon = visual.icon;
     const receipt = isReceipt(notif);
-    const failed = notif.status === "failed";
-    const unread = !notif.is_read && !receipt;
+    const unread = group.hasUnread && !receipt;
+    const isCritical = notif.severity === "critical";
+    const isWarning = notif.severity === "warning";
     const hasSession = notif.session_id !== null && notif.session_id !== undefined;
     const blurb =
-      NOTIFICATION_COPY.categoryBlurb[category] ?? NOTIFICATION_COPY.categoryBlurb.session_compaction;
+      NOTIFICATION_COPY.categoryBlurb[category] ?? NOTIFICATION_COPY.categoryBlurb.pipeline;
 
     const handlePrimary = useCallback(() => {
       onPrimary(notif);
     }, [onPrimary, notif]);
 
     const handleDismiss = useCallback(() => {
-      onDismiss(notif.id);
-    }, [onDismiss, notif.id]);
+      onDismiss(group.key);
+    }, [onDismiss, group.key]);
 
     const handleOpen = useCallback(() => {
       onOpen(notif);
     }, [onOpen, notif]);
 
     const turnMeta = formatTurnMeta(metadataTurnCount(notif));
-    const statusLabel =
-      notif.status === "in_progress"
-        ? NOTIFICATION_COPY.statusLabels.in_progress
-        : failed
-          ? NOTIFICATION_COPY.statusLabels.failed
-          : notif.status === "completed"
-            ? NOTIFICATION_COPY.statusLabels.completed
-            : null;
+
+    // Dynamic Action labels
+    let actionLabel: string = NOTIFICATION_COPY.view;
+    let workingLabel: string = NOTIFICATION_COPY.view;
+    let isInteractive = notif.action_type === "interactive";
+
+    if (isInteractive) {
+      let parsedAction: { action?: string; target?: string } = {};
+      try {
+        parsedAction = JSON.parse(notif.action_payload || "{}");
+      } catch {
+        // safe fallback
+      }
+
+      if (category === "session_compaction" || parsedAction.action === "compact_session") {
+        actionLabel = NOTIFICATION_COPY.tidyNow;
+        workingLabel = NOTIFICATION_COPY.tidying;
+      } else if (
+        category === "memory_consolidation" ||
+        parsedAction.action === "consolidate_memory"
+      ) {
+        actionLabel = NOTIFICATION_COPY.consolidate;
+        workingLabel = NOTIFICATION_COPY.consolidating;
+      } else if (parsedAction.action === "retry") {
+        actionLabel = NOTIFICATION_COPY.retry;
+        workingLabel = NOTIFICATION_COPY.retrying;
+      } else if (parsedAction.action === "navigate" || parsedAction.target) {
+        actionLabel = NOTIFICATION_COPY.openSettings;
+        workingLabel = NOTIFICATION_COPY.openSettings;
+      } else {
+        actionLabel = NOTIFICATION_COPY.tidyNow;
+        workingLabel = NOTIFICATION_COPY.tidying;
+      }
+    }
 
     return (
       <div
         className={cn(
           "group relative flex gap-2.5 p-3 rounded-xl border transition-all duration-200",
-          unread
-            ? "border-[rgba(var(--accent),0.25)] bg-[rgba(var(--card),0.75)] shadow-[0_4px_20px_rgba(var(--accent),0.06)]"
-            : "border-[rgba(var(--border),0.1)] bg-[rgba(var(--card),0.4)]",
-          receipt && "opacity-75"
+          isCritical
+            ? "border-[rgba(var(--error),0.35)] bg-[rgba(var(--error),0.05)] shadow-[0_4px_20px_rgba(var(--error),0.08)]"
+            : isWarning
+              ? "border-[rgba(var(--warning),0.30)] bg-[rgba(var(--warning),0.04)] shadow-[0_4px_20px_rgba(var(--warning),0.06)]"
+              : unread
+                ? "border-[rgba(var(--accent),0.25)] bg-[rgba(var(--card),0.75)] shadow-[0_4px_20px_rgba(var(--accent),0.06)]"
+                : "border-[rgba(var(--border),0.1)] bg-[rgba(var(--card),0.4)]",
+          receipt && "opacity-80"
         )}
       >
         <div className={cn("w-8 h-8 rounded-xl border flex items-center justify-center shrink-0", visual.tile)}>
@@ -135,7 +183,14 @@ const NotificationItem = memo(
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-1.5 min-w-0">
               {unread && <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shrink-0 animate-pulse" />}
-              <span className="text-[13px] font-semibold text-[rgb(var(--foreground))] truncate">{notif.title}</span>
+              <span className="text-[13px] font-semibold text-[rgb(var(--foreground))] truncate">
+                {notif.title}
+              </span>
+              {group.count > 1 && (
+                <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-[rgba(var(--foreground),0.08)] text-[rgb(var(--foreground-muted))] font-mono text-[10px] font-bold">
+                  (×{group.count})
+                </span>
+              )}
             </div>
             <Tooltip label={NOTIFICATION_COPY.dismiss} side="left">
               <button
@@ -164,26 +219,26 @@ const NotificationItem = memo(
           </div>
 
           {notif.message.trim() && (
-            <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed break-words">{notif.message}</p>
+            <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed break-words">
+              {notif.message}
+            </p>
           )}
 
           <div className="flex items-center gap-2 pt-1">
-            {statusLabel && (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border",
-                  failed
-                    ? "border-[rgba(var(--error),0.35)] text-[rgb(var(--error))]"
-                    : notif.status === "completed"
-                      ? "border-[rgba(var(--success),0.35)] text-[rgb(var(--success))]"
-                      : "border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))]"
-                )}
-              >
-                {failed && <AlertTriangle size={10} />}
-                {statusLabel}
+            {isCritical && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border border-[rgba(var(--error),0.35)] text-[rgb(var(--error))]">
+                <AlertCircle size={10} />
+                Critical
               </span>
             )}
-            {!receipt && category === "session_compaction" && (
+            {isWarning && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border border-[rgba(var(--warning),0.35)] text-[rgb(var(--warning))]">
+                <AlertTriangle size={10} />
+                Warning
+              </span>
+            )}
+
+            {isInteractive && (
               <button
                 type="button"
                 disabled={isWorking}
@@ -196,24 +251,10 @@ const NotificationItem = memo(
                 )}
               >
                 {isWorking && <Loader2 size={11} className="animate-spin" />}
-                <span>{isWorking ? NOTIFICATION_COPY.tidying : NOTIFICATION_COPY.tidyNow}</span>
+                <span>{isWorking ? workingLabel : actionLabel}</span>
               </button>
             )}
-            {!receipt && failed && (
-              <button
-                type="button"
-                disabled={isWorking}
-                onClick={handlePrimary}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer",
-                  "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:opacity-90 active:scale-95 shadow-sm",
-                  isWorking && "opacity-60 cursor-wait"
-                )}
-              >
-                {isWorking && <Loader2 size={11} className="animate-spin" />}
-                <span>{isWorking ? NOTIFICATION_COPY.retrying : NOTIFICATION_COPY.retry}</span>
-              </button>
-            )}
+
             {(hasSession || !receipt) && (
               <button
                 type="button"
@@ -238,21 +279,23 @@ NotificationItem.displayName = "NotificationItem";
  */
 export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
   const navigate = useNavigate();
-  const notifications = useNotificationStore((s) => s.notifications);
+  const rolledUpNotifications = useNotificationStore(selectRolledUpNotifications);
   const badgeCount = useNotificationStore(selectBadgeCount);
-  const compactingSessionIds = useNotificationStore((s) => s.compactingSessionIds);
+  const activeActionIds = useNotificationStore((s) => s.activeActionIds);
   const markAllRead = useNotificationStore((s) => s.markAllRead);
-  const dismiss = useNotificationStore((s) => s.dismiss);
-  const triggerCompaction = useNotificationStore((s) => s.triggerCompaction);
+  const dismissGroup = useNotificationStore((s) => s.dismissGroup);
+  const executeAction = useNotificationStore((s) => s.executeAction);
   const loading = useNotificationStore((s) => s.loading);
 
   const handlePrimary = useCallback(
     (notif: NotificationRecord) => {
-      if (notif.session_id !== null && notif.session_id !== undefined) {
-        triggerCompaction(notif.session_id).catch(() => {});
-      }
+      executeAction(notif, (target) => {
+        onClose();
+        const route = target.startsWith("/") ? target : `/${target}`;
+        navigate(route);
+      }).catch(() => {});
     },
-    [triggerCompaction]
+    [executeAction, onClose, navigate]
   );
 
   const handleOpen = useCallback(
@@ -261,7 +304,7 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
       const category = toCategory(notif.category);
       if (notif.session_id !== null && notif.session_id !== undefined) {
         navigate(`/history?sessionId=${notif.session_id}`);
-      } else if (category === "memory_issue") {
+      } else if (category === "memory_consolidation") {
         navigate("/memory");
       } else {
         navigate("/settings");
@@ -296,7 +339,7 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
         )}
       </div>
 
-      {loading && notifications.length === 0 ? (
+      {loading && rolledUpNotifications.length === 0 ? (
         <div className="flex flex-col gap-2" aria-hidden="true">
           {[0, 1, 2].map((i) => (
             <div
@@ -311,7 +354,7 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
             </div>
           ))}
         </div>
-      ) : notifications.length === 0 ? (
+      ) : rolledUpNotifications.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
           <div className="w-10 h-10 rounded-full border border-[rgba(var(--accent),0.2)] bg-[rgba(var(--accent),0.05)] flex items-center justify-center mb-2.5">
             <Bell size={18} className="text-[rgb(var(--accent))]/60" />
@@ -322,13 +365,13 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
           </p>
         </div>
       ) : (
-        notifications.map((notif) => (
+        rolledUpNotifications.map((group) => (
           <NotificationItem
-            key={notif.id}
-            notif={notif}
-            isWorking={notif.session_id ? compactingSessionIds.includes(notif.session_id) : false}
+            key={group.key}
+            group={group}
+            isWorking={activeActionIds.includes(group.latest.id)}
             onPrimary={handlePrimary}
-            onDismiss={dismiss}
+            onDismiss={dismissGroup}
             onOpen={handleOpen}
           />
         ))

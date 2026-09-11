@@ -346,6 +346,11 @@ impl HarnessSession {
         self.stream.route_stream(handles, response_rx)
     }
 
+    /// Returns a reference to the conversation history plugin.
+    pub fn history(&self) -> &ConversationHistoryPlugin {
+        &self.history
+    }
+
     /// Returns a mutable reference to the conversation history plugin.
     /// Exposed for integration test seeding only — do not use in production pipeline code.
     pub fn history_mut(&mut self) -> &mut ConversationHistoryPlugin {

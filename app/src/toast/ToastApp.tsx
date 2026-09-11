@@ -1,16 +1,15 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle2, AlertTriangle, AlertCircle, Info, X } from "lucide-react";
+import { AlertTriangle, AlertCircle, Info, X } from "lucide-react";
 import { onShowToast, type ToastPayload } from "@/services/eventsService";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { manageToastWindow, getLastToast } from "@/services/toastService";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-const LEVEL = {
-  success: { icon: CheckCircle2, color: "rgb(var(--accent))", bg: "rgba(var(--accent),0.10)", border: "rgba(var(--accent),0.16)" },
-  warning: { icon: AlertTriangle, color: "rgb(var(--warning))", bg: "rgba(var(--warning),0.12)", border: "rgba(var(--warning),0.18)" },
-  error: { icon: AlertCircle, color: "rgb(var(--error))", bg: "rgba(var(--error),0.10)", border: "rgba(var(--error),0.16)" },
+const SEVERITY_CONFIG = {
   info: { icon: Info, color: "rgb(var(--foreground-muted))", bg: "rgba(var(--foreground),0.06)", border: "rgba(var(--border),0.08)" },
+  warning: { icon: AlertTriangle, color: "rgb(var(--warning))", bg: "rgba(var(--warning),0.12)", border: "rgba(var(--warning),0.18)" },
+  critical: { icon: AlertCircle, color: "rgb(var(--error))", bg: "rgba(var(--error),0.10)", border: "rgba(var(--error),0.16)" },
 } as const;
 
 const DEFAULT_DURATION_MS = 3400;
@@ -94,7 +93,7 @@ export const ToastApp: React.FC = () => {
     };
   }, [show]);
 
-  const cfg = toast ? (LEVEL[toast.level as keyof typeof LEVEL] ?? LEVEL.info) : LEVEL.info;
+  const cfg = toast ? (SEVERITY_CONFIG[toast.severity] ?? SEVERITY_CONFIG.info) : SEVERITY_CONFIG.info;
   const Icon = cfg.icon;
 
   return (
@@ -102,7 +101,7 @@ export const ToastApp: React.FC = () => {
       <AnimatePresence>
         {visible && toast && (
           <motion.div
-            key={`${toast.title}-${toast.message}-${toast.level}`}
+            key={`${toast.title}-${toast.message}-${toast.severity}`}
             initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}

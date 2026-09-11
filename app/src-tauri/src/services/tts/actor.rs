@@ -12,7 +12,7 @@ use turso::Connection;
 
 use crate::{
     core::{
-        error::{Actionability, PipelineError, PipelineImpact},
+        error::{PipelineError, PipelineImpact},
         events::{AudioIntent, VoxEvent},
         settings::{TtsProviderConfig, VoxSettings},
     },
@@ -118,7 +118,6 @@ pub fn spawn_tts_worker(
                             message: format!("TTS synthesis panic: {}", panic_msg),
                             source: "TtsActor".to_string(),
                             impact: PipelineImpact::Degraded,
-                            actionability: Actionability::None,
                         })) {
                             log::warn!("[TTS Worker] Failed to dispatch Error event: {}", e);
                         }

@@ -18,9 +18,9 @@ use vox_lib::persistence::{
     },
     db::VoxDb,
     notifications::{
-        create_notification, dismiss_notification, fetch_active_notifications,
-        find_active_notification_by_session, mark_all_notifications_read,
-        update_notification_status, NewNotification,
+        create_notification, dismiss_interactive_by_entity, dismiss_notification,
+        fetch_active_notifications, find_active_interactive_by_group, mark_all_notifications_read,
+        update_interactive_notification, NewNotification, Severity,
     },
     schema::run_migrations,
     sessions::{create_session, create_session_with_id},
@@ -46,16 +46,21 @@ async fn test_notifications_crud_lifecycle() {
             .expect("Failed to fetch active");
         assert!(active.is_empty(), "Initial notifications should be empty");
 
-        // 2. Create notification
+        // 2. Create notification with Schema v4 fields
         let session_id = create_session(&conn, None)
             .await
             .expect("Failed to create session");
+        let group_key = format!("compaction:{}", session_id);
         let notif1 = NewNotification {
             id: "notif_1".to_string(),
-            category: "session_compaction".to_string(),
+            group_key: group_key.clone(),
+            category: "compaction".to_string(),
+            severity: Severity::Info,
+            action_type: "interactive".to_string(),
+            action_payload: format!("{{\"action\":\"compact\",\"sessionId\":{session_id}}}"),
             title: "Session Finished".to_string(),
             message: "Session #1 has 5 uncompacted turns".to_string(),
-            status: "pending".to_string(),
+            status: "unread".to_string(),
             session_id: Some(session_id),
             metadata: "{\"uncompacted_turns\": 5}".to_string(),
         };
@@ -63,15 +68,21 @@ async fn test_notifications_crud_lifecycle() {
             .await
             .expect("Failed to create notification 1");
         assert_eq!(rec1.id, "notif_1");
-        assert!(!rec1.is_read);
-        assert_eq!(rec1.status, "pending");
+        assert_eq!(rec1.group_key, group_key);
+        assert_eq!(rec1.status, "unread");
+        assert_eq!(rec1.severity, Severity::Info);
+        assert_eq!(rec1.action_type, "interactive");
 
         let notif2 = NewNotification {
             id: "notif_2".to_string(),
-            category: "system_alert".to_string(),
+            group_key: "device_change".to_string(),
+            category: "device".to_string(),
+            severity: Severity::Warning,
+            action_type: "dismiss".to_string(),
+            action_payload: "{}".to_string(),
             title: "Audio Device Changed".to_string(),
             message: "Switched to Headset".to_string(),
-            status: "pending".to_string(),
+            status: "unread".to_string(),
             session_id: None,
             metadata: "{}".to_string(),
         };
@@ -92,27 +103,48 @@ async fn test_notifications_crud_lifecycle() {
         let active = fetch_active_notifications(&conn)
             .await
             .expect("Failed to fetch active");
-        assert!(active.iter().all(|n| n.is_read));
+        assert!(active.iter().all(|n| n.status == "read"));
 
-        // 5. Update status
-        update_notification_status(&conn, "notif_1", "in_progress")
+        // 5. In-place interactive idempotency update
+        let active_task = find_active_interactive_by_group(&conn, &group_key)
             .await
-            .expect("Failed to update status");
-        let found = find_active_notification_by_session(&conn, session_id, "session_compaction")
-            .await
-            .expect("Failed to find by session");
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().status, "in_progress");
+            .expect("Failed to query active interactive task");
+        assert!(active_task.is_some());
+        assert_eq!(active_task.as_ref().unwrap().id, "notif_1");
 
-        // 6. Dismiss
+        update_interactive_notification(
+            &conn,
+            "notif_1",
+            "Session #1 has 8 uncompacted turns",
+            "{\"uncompacted_turns\": 8}",
+        )
+        .await
+        .expect("Failed to update interactive notification in place");
+
+        let updated_task = find_active_interactive_by_group(&conn, &group_key)
+            .await
+            .expect("Failed to query updated interactive task")
+            .expect("Interactive task missing");
+        assert_eq!(updated_task.message, "Session #1 has 8 uncompacted turns");
+        assert_eq!(updated_task.metadata, "{\"uncompacted_turns\": 8}");
+
+        // 6. Dismiss interactive by entity group key
+        dismiss_interactive_by_entity(&conn, &group_key)
+            .await
+            .expect("Failed to dismiss interactive by entity");
+        let active_after_entity_dismiss = find_active_interactive_by_group(&conn, &group_key)
+            .await
+            .expect("Failed to query after dismiss");
+        assert!(active_after_entity_dismiss.is_none());
+
+        // 7. Dismiss remaining notification by ID
         dismiss_notification(&conn, "notif_2")
             .await
-            .expect("Failed to dismiss");
-        let active = fetch_active_notifications(&conn)
+            .expect("Failed to dismiss notif_2");
+        let remaining = fetch_active_notifications(&conn)
             .await
             .expect("Failed to fetch active");
-        assert_eq!(active.len(), 1);
-        assert_eq!(active[0].id, "notif_1");
+        assert!(remaining.is_empty(), "All active notifications should be dismissed");
     })
     .await
     .expect("test_notifications_crud_lifecycle timed out");

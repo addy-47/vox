@@ -12,7 +12,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-const SCHEMA_VERSION: u32 = 3;
+const SCHEMA_VERSION: u32 = 4;
 
 const DROP_LEGACY_TABLES: &[&str] = &[
     "DROP TABLE IF EXISTS memory_relations;",
@@ -115,16 +115,22 @@ const V2_TABLE_STATEMENTS: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_vectors_filter ON memory_facts_vectors(status, type, project_id);",
     "CREATE TABLE IF NOT EXISTS notifications (
         id TEXT PRIMARY KEY,
+        group_key TEXT NOT NULL,
         category TEXT NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'info',
+        action_type TEXT NOT NULL,
+        action_payload TEXT NOT NULL DEFAULT '{}',
         title TEXT NOT NULL,
         message TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
+        status TEXT NOT NULL DEFAULT 'unread',
         session_id INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
         metadata TEXT NOT NULL DEFAULT '{}',
-        is_read INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
     );",
-    "CREATE INDEX IF NOT EXISTS idx_notifications_status_cat ON notifications(status, category);",
+    "CREATE INDEX IF NOT EXISTS idx_notifications_status_created ON notifications(status, created_at DESC);",
+    "CREATE INDEX IF NOT EXISTS idx_notifications_group_status ON notifications(group_key, status);",
+    "CREATE INDEX IF NOT EXISTS idx_notifications_session ON notifications(session_id);",
     "CREATE TABLE IF NOT EXISTS voices (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,

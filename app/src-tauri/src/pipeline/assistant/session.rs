@@ -8,7 +8,8 @@ use tauri::{AppHandle, Manager};
 use crate::{
     core::{
         engine::{ensure_modular_workers_sync, stop_audio_engine_sync},
-        events::ToastLevel,
+        error::PipelineImpact,
+        events::Severity,
         settings::{DictationInteractionMode, InteractionMode, PipelineMode},
         state::{AppState, InteractionOwner, InteractionState},
     },
@@ -21,16 +22,17 @@ use crate::{
     },
     pipeline::{spawn_idle_monitor, transition, RoutingContext},
     services::{
+        self,
         harness::HarnessSession,
         llm::actor::LlmCommand,
         memory::compaction::coordinator::CompactionCoordinator,
+        notifications::{Action, ActionPayload, NotificationCategory, NotificationParams},
         realtime::{
             session::{create_realtime_provider, purge_session_cache},
             RealtimeActor,
         },
         vad::{VadCommand, VadOperationalMode},
     },
-    toast::show_toast,
 };
 
 /// Configures and arms the modular speech-to-text, LLM, and TTS worker pipelines.
@@ -408,17 +410,36 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &
     if let Err(e) = resume_res {
         log::error!("[Pipeline::Session] Resumption failed: {}", e);
         transition(InteractionState::Error, &assistant_ctx, app, state);
-        let toast_msg = format!(
-            "Resumption failed: {}. Please end session and start a new session.",
+
+        let app_handle = app.clone();
+        let db = state.db.clone();
+        let error_msg = format!(
+            "Resumption failed: {}. Please check settings or start a new session.",
             e
         );
-        if let Err(toast_err) = show_toast(app, "Resumption failed", &toast_msg, ToastLevel::Error)
-        {
-            log::warn!(
-                "[Pipeline::Session] Failed to show resume failure toast: {}",
-                toast_err
-            );
-        }
+
+        tauri::async_runtime::spawn(async move {
+            let params = NotificationParams {
+                category: NotificationCategory::Pipeline,
+                severity: Severity::Critical,
+                impact: Some(PipelineImpact::SessionHalted),
+                action: Action::Interactive(ActionPayload::Navigate {
+                    target: "settings/ai".to_string(),
+                }),
+                title: "Resumption failed",
+                message: &error_msg,
+                group_key: Some("session:resume_failed"),
+                session_id: None,
+                metadata: None,
+                duration_ms: None,
+            };
+            if let Err(notify_err) = services::notifications::notify(&app_handle, &db, params).await {
+                log::warn!(
+                    "[Pipeline::Session] Failed to dispatch resume failure notification: {}",
+                    notify_err
+                );
+            }
+        });
         return;
     }
 

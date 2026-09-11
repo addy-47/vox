@@ -2,18 +2,14 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use tauri::AppHandle;
-use turso::Connection;
 
 use crate::{
     core::{
-        events::{emit_ipc, IpcEvent},
+        events::{emit_ipc, IpcEvent, Severity},
         state::{AppState, InteractionState},
     },
     persistence::{
-        notifications::{
-            create_notification, fetch_notification_by_id, notification_exists,
-            update_notification_status, NewNotification,
-        },
+        notifications::dismiss_interactive_by_entity,
         personal_memory::get_personal_memory,
     },
     services::{
@@ -22,12 +18,11 @@ use crate::{
             QWEN_MODEL_FILE,
         },
         memory::personal::consolidate_personal_memory,
+        notifications::{notify, Action, ActionPayload, NotificationCategory, NotificationParams},
     },
     utils::paths,
 };
 
-/// Notification category for personal-memory consolidation cards.
-pub const CONSOLIDATION_CATEGORY: &str = "personal_consolidation";
 const DAY_SECS: u64 = 86_400;
 
 /// Parses an "HH:MM" 24-hour time string into `(hour, minute)`.
@@ -55,7 +50,7 @@ fn resolve_provider(state: &Arc<AppState>) -> Option<Arc<dyn LlmProvider>> {
 }
 
 /// Runs one consolidation pass and mirrors the IPC post-steps (prompt refresh + event).
-async fn run_consolidation_once<R: tauri::Runtime>(
+pub async fn run_consolidation_once<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &Arc<AppState>,
 ) -> Result<()> {
@@ -79,78 +74,40 @@ async fn run_consolidation_once<R: tauri::Runtime>(
         );
     }
 
-    flip_missed_card_to_completed(app, &state.db).await;
+    // Dismiss active interactive missed card for consolidation
+    if let Err(e) = dismiss_interactive_by_entity(&state.db, "memory_consolidation:missed").await {
+        log::warn!(
+            "[Memory::Scheduler] Failed to dismiss interactive card on consolidation success: {}",
+            e
+        );
+    }
+
+    // Emit silent audit receipt
+    if let Err(e) = notify(
+        app,
+        &state.db,
+        NotificationParams {
+            group_key: Some("memory_consolidation:daily"),
+            category: NotificationCategory::MemoryConsolidation,
+            severity: Severity::Info,
+            impact: None,
+            action: Action::Receipt,
+            title: "Memory Consolidated",
+            message: "Daily profile updated.",
+            session_id: None,
+            metadata: None,
+            duration_ms: None,
+        },
+    )
+    .await
+    {
+        log::warn!(
+            "[Memory::Scheduler] Failed to emit consolidation receipt: {}",
+            e
+        );
+    }
+
     Ok(())
-}
-
-/// Creates a consolidation notification card unless one with the same ID already exists.
-async fn ensure_card<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    conn: &Connection,
-    id: &str,
-    title: &str,
-    message: &str,
-    status: &str,
-) {
-    let exists = notification_exists(conn, id).await.unwrap_or(true);
-    if exists {
-        return;
-    }
-    let notif = NewNotification {
-        id: id.to_string(),
-        category: CONSOLIDATION_CATEGORY.to_string(),
-        title: title.to_string(),
-        message: message.to_string(),
-        status: status.to_string(),
-        session_id: None,
-        metadata: "{}".to_string(),
-    };
-    match create_notification(conn, &notif).await {
-        Ok(record) => {
-            if let Err(e) = emit_ipc(app, IpcEvent::NotificationCreated(record)) {
-                log::warn!(
-                    "[Memory::Scheduler] Failed to emit NotificationCreated: {}",
-                    e
-                );
-            }
-        }
-        Err(e) => {
-            log::warn!(
-                "[Memory::Scheduler] Failed to create consolidation card: {}",
-                e
-            );
-        }
-    }
-}
-
-/// Flips a status card and emits the update, best-effort.
-async fn flip_card<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    conn: &Connection,
-    id: &str,
-    status: &str,
-) {
-    if update_notification_status(conn, id, status).await.is_err() {
-        return;
-    }
-    if let Ok(Some(mut record)) = fetch_notification_by_id(conn, id).await {
-        record.status = status.to_string();
-        if let Err(e) = emit_ipc(app, IpcEvent::NotificationUpdated(record)) {
-            log::warn!(
-                "[Memory::Scheduler] Failed to emit NotificationUpdated: {}",
-                e
-            );
-        }
-    }
-}
-
-/// Marks today's missed card completed after a later successful run (best-effort).
-async fn flip_missed_card_to_completed<R: tauri::Runtime>(app: &AppHandle<R>, conn: &Connection) {
-    let today = chrono::Local::now().format("%Y%m%d").to_string();
-    let missed_id = format!("notif_consolidation_missed_{}", today);
-    if notification_exists(conn, &missed_id).await.unwrap_or(false) {
-        flip_card(app, conn, &missed_id, "completed").await;
-    }
 }
 
 /// Quiescence/busy deferrals are transient: retried silently, never carded as failures.
@@ -200,16 +157,25 @@ pub async fn check_missed_consolidation_on_boot<R: tauri::Runtime>(
         return;
     }
 
-    let today = now.format("%Y%m%d").to_string();
-    ensure_card(
-        app,
-        &state.db,
-        &format!("notif_consolidation_missed_{}", today),
-        "Memory consolidation missed",
-        "The scheduled daily consolidation did not run. Tap Consolidate to run it now.",
-        "pending",
-    )
-    .await;
+    let params = NotificationParams {
+        group_key: Some("memory_consolidation:missed"),
+        category: NotificationCategory::MemoryConsolidation,
+        severity: Severity::Warning,
+        impact: None,
+        action: Action::Interactive(ActionPayload::ConsolidateMemory),
+        title: "Memory Consolidation Missed",
+        message: "The scheduled daily consolidation did not run. Tap Consolidate to run it now.",
+        session_id: None,
+        metadata: None,
+        duration_ms: None,
+    };
+
+    if let Err(e) = notify(app, &state.db, params).await {
+        log::warn!(
+            "[Memory::Scheduler] Failed to emit missed consolidation notification: {}",
+            e
+        );
+    }
 }
 
 /// Duration from now until the next local `hour:minute`. Falls back to 24h on DST gaps.
@@ -274,7 +240,6 @@ pub fn spawn_consolidation_scheduler<R: tauri::Runtime + 'static>(
                 break;
             }
 
-            let today = chrono::Local::now().format("%Y%m%d").to_string();
             match run_consolidation_once(&app, &state).await {
                 Ok(()) => {
                     log::info!("[Memory::Scheduler] Daily consolidation completed.");
@@ -286,18 +251,28 @@ pub fn spawn_consolidation_scheduler<R: tauri::Runtime + 'static>(
                 }
                 Err(e) => {
                     log::warn!("[Memory::Scheduler] Daily consolidation failed: {}", e);
-                    ensure_card(
-                        &app,
-                        &state.db,
-                        &format!("notif_consolidation_failed_{}", today),
-                        "Memory consolidation failed",
-                        &format!(
-                            "Scheduled daily consolidation failed: {}. Tap Consolidate to retry.",
-                            e
-                        ),
-                        "failed",
-                    )
-                    .await;
+                    let err_msg = format!(
+                        "Scheduled daily consolidation failed: {}. Tap Consolidate to retry.",
+                        e
+                    );
+                    let params = NotificationParams {
+                        group_key: Some("memory_consolidation:missed"),
+                        category: NotificationCategory::MemoryConsolidation,
+                        severity: Severity::Warning,
+                        impact: None,
+                        action: Action::Interactive(ActionPayload::ConsolidateMemory),
+                        title: "Memory Consolidation Failed",
+                        message: &err_msg,
+                        session_id: None,
+                        metadata: None,
+                        duration_ms: None,
+                    };
+                    if let Err(notif_err) = notify(&app, &state.db, params).await {
+                        log::warn!(
+                            "[Memory::Scheduler] Failed to emit consolidation failure notification: {}",
+                            notif_err
+                        );
+                    }
                 }
             }
         }

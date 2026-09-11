@@ -4,18 +4,20 @@ use tauri::{AppHandle, Manager};
 
 use crate::{
     core::{
-        events::{emit_ipc_to, AudioIntent, IpcEvent, ToastLevel, TranscriptPayload},
+        error::PipelineImpact,
+        events::{emit_ipc_to, AudioIntent, IpcEvent, Severity, TranscriptPayload},
         settings::PipelineMode,
         state::{AppState, InteractionState},
     },
     pipeline::{target_window, transition, RoutingContext},
-    toast::show_toast,
     services::{
+        self,
         harness::{
             CompactionParams, CompactionPlugin, StreamRoutingHandles,
             TurnPreparation,
         },
         llm::actor::LlmCommand,
+        notifications::{Action, NotificationCategory, NotificationParams},
         translit::transliterate_if_hi,
         tts::actor::TtsCommand,
     },
@@ -255,14 +257,26 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         );
         state.pipeline_accumulator.lock().clear();
         transition(InteractionState::Ready, ctx, app, state);
-        if let Err(e) = show_toast(
-            app,
-            "Voice Assistant",
-            "No speech recognized",
-            ToastLevel::Info,
-        ) {
-            log::warn!("[Pipeline::Transcript] Failed to show info toast: {}", e);
-        }
+
+        let app_handle = app.clone();
+        let db = state.db.clone();
+        tauri::async_runtime::spawn(async move {
+            let params = NotificationParams {
+                category: NotificationCategory::Pipeline,
+                severity: Severity::Info,
+                impact: Some(PipelineImpact::None),
+                action: Action::Transient,
+                title: "Voice Assistant",
+                message: "Speech detected, but no words recognized.",
+                group_key: Some("assistant:empty_speech"),
+                session_id: None,
+                metadata: None,
+                duration_ms: None,
+            };
+            if let Err(e) = services::notifications::notify(&app_handle, &db, params).await {
+                log::warn!("[Pipeline::Transcript] Failed to dispatch notification: {}", e);
+            }
+        });
         return;
     }
 

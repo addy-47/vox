@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     core::{
-        error::{Actionability, PipelineError, PipelineImpact},
+        error::{PipelineError, PipelineImpact},
         settings::{LlmProviderConfig, LlmSettings, VoxSettings},
     },
     services::harness::{ChatMessage, Role},
@@ -269,16 +269,6 @@ fn handle_generate(
                     message: msg,
                     source: "LlmActor".to_string(),
                     impact: PipelineImpact::TurnAborted,
-                    actionability: if is_panic {
-                        Actionability::Actionable {
-                            category: "llm_panic".to_string(),
-                            hint:
-                                "LLM worker recovered from internal panic. Please retry your turn."
-                                    .to_string(),
-                        }
-                    } else {
-                        Actionability::None
-                    },
                 };
                 if let Err(send_err) = response_tx.send(LlmResponse::Error(err)) {
                     log::warn!("[Llm::Worker] Failed to dispatch Error: {}", send_err);
@@ -288,34 +278,21 @@ fn handle_generate(
     }
 }
 
-/// Classifies error string into standard pipeline impact and actionability metadata.
+/// Classifies error string into standard pipeline impact.
 fn classify_llm_error(turn_id: u32, err_str: String) -> PipelineError {
-    let (impact, actionability) = if err_str.contains("context window")
+    let impact = if err_str.contains("context window")
         || err_str.contains("context length")
         || err_str.contains("prompt too long")
         || err_str.contains("NoKvCacheSlot")
     {
-        (
-            PipelineImpact::TurnAborted,
-            Actionability::Actionable {
-                category: "context_overflow".to_string(),
-                hint: "Prompt exceeded LLM context window. Increase context_window in Settings or run compaction.".to_string(),
-            },
-        )
+        PipelineImpact::TurnAborted
     } else if err_str.contains("401")
         || err_str.contains("Unauthorized")
         || err_str.contains("API key")
     {
-        (
-            PipelineImpact::SessionHalted,
-            Actionability::Actionable {
-                category: "auth_failure".to_string(),
-                hint: "LLM API Key is invalid or expired. Update credentials in Settings."
-                    .to_string(),
-            },
-        )
+        PipelineImpact::SessionHalted
     } else {
-        (PipelineImpact::TurnAborted, Actionability::None)
+        PipelineImpact::TurnAborted
     };
 
     PipelineError {
@@ -323,7 +300,6 @@ fn classify_llm_error(turn_id: u32, err_str: String) -> PipelineError {
         message: err_str,
         source: "LlmActor".to_string(),
         impact,
-        actionability,
     }
 }
 
