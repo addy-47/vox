@@ -1,14 +1,22 @@
-// @ts-nocheck — @deprecated v2: legacy graph component, retained for reference only
-import { Heart, User, Compass, BookOpen, Box, ShieldAlert, Archive } from "lucide-react";
-// @deprecated v2: MemoryNodeTopology removed from memoryService
+import {
+  User,
+  Target,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowRightCircle,
+  HelpCircle,
+} from "lucide-react";
+import { FactRecord } from "@/services/memoryService";
+
+export type MemoryCategory = "personal" | "objective" | "workdone" | "blocker" | "next_step" | "pitfall";
 
 export interface GNode {
   id: string;
   label: string;
   compactId: string;
-  collection: string;
+  collection: MemoryCategory;
   status: "active" | "inactive";
-  topologyNode: unknown; // @deprecated v2
+  factRecord: FactRecord;
   color: string;
   degree: number;
   x: number;
@@ -17,6 +25,7 @@ export interface GNode {
   vx: number;
   vy: number;
   vz: number;
+  isCore?: boolean;
 }
 
 export interface GLink {
@@ -30,25 +39,16 @@ export interface GLink {
   isDashed: boolean;
 }
 
-export interface CrossRelation {
-  targetCollection: string;
-  relation: string;
-  count: number;
-}
-
 export interface ClusterBadgeData {
   collection: string;
   graphX: number;
   graphY: number;
+  graphZ: number;
   screenX: number;
   screenY: number;
   factCount: number;
   color: string;
   desc: string;
-  activeFacts: number;
-  totalRelations: number;
-  avgConnections: number;
-  crossRelations: CrossRelation[];
 }
 
 export interface MemoryGraphRef {
@@ -58,92 +58,80 @@ export interface MemoryGraphRef {
 }
 
 export const DARK_COLLECTION_COLORS: Record<string, { main: string; glow: string; text: string; desc: string }> = {
-  Identity: {
-    main: "#38bdf8",
-    glow: "rgba(56, 189, 248, 0.4)",
-    text: "#38bdf8",
-    desc: "Core identity facts, user name, preferences, and foundational attributes.",
+  personal: {
+    main: "#00dbe9",
+    glow: "rgba(0, 219, 233, 0.45)",
+    text: "#00dbe9",
+    desc: "Identity facts, core values, user preferences, and foundational profile.",
   },
-  Profile: {
-    main: "#34d399",
-    glow: "rgba(52, 211, 153, 0.4)",
-    text: "#34d399",
-    desc: "Personal background, career history, contacts, and personal metadata.",
-  },
-  Directives: {
+  objective: {
     main: "#a78bfa",
-    glow: "rgba(167, 139, 250, 0.4)",
+    glow: "rgba(167, 139, 250, 0.45)",
     text: "#a78bfa",
-    desc: "Active operational rules, user instructions, system prompts, and priorities.",
+    desc: "Active operational goals, session intents, and target deliverables.",
   },
-  Narrative: {
-    main: "#f472b6",
-    glow: "rgba(244, 114, 182, 0.4)",
-    text: "#f472b6",
-    desc: "Temporal story facts, conversation context, historical events, and session logs.",
+  workdone: {
+    main: "#34d399",
+    glow: "rgba(52, 211, 153, 0.45)",
+    text: "#34d399",
+    desc: "Completed milestones, accomplishments, verified tasks, and progress.",
   },
-  Entities: {
-    main: "#facc15",
-    glow: "rgba(250, 204, 21, 0.4)",
-    text: "#facc15",
-    desc: "Projects, codebase modules, tools, software stack, and external references.",
-  },
-  Constraints: {
+  blocker: {
     main: "#f43f5e",
-    glow: "rgba(244, 63, 94, 0.4)",
+    glow: "rgba(244, 63, 94, 0.45)",
     text: "#f43f5e",
-    desc: "Hard system constraints, hardware limits, security bounds, and forbidden rules.",
+    desc: "Active blockers, missing dependencies, compilation/runtime errors.",
   },
-  Inactive: {
-    main: "#64748b",
-    glow: "rgba(100, 116, 139, 0.3)",
-    text: "#64748b",
-    desc: "Historical tombstones and superseded memory facts.",
+  next_step: {
+    main: "#f59e0b",
+    glow: "rgba(245, 158, 11, 0.45)",
+    text: "#f59e0b",
+    desc: "Immediate upcoming actions, planned follow-ups, and roadmap tasks.",
+  },
+  pitfall: {
+    main: "#facc15",
+    glow: "rgba(250, 204, 21, 0.45)",
+    text: "#facc15",
+    desc: "Edge cases, lessons learned, gotchas, and architectural traps.",
   },
 };
 
 export const LIGHT_COLLECTION_COLORS: Record<string, { main: string; glow: string; text: string; desc: string }> = {
-  Identity: {
-    main: "#0369a1",
-    glow: "rgba(3, 105, 161, 0.45)",
-    text: "#0369a1",
-    desc: "Core identity facts, user name, preferences, and foundational attributes.",
+  personal: {
+    main: "#0891b2",
+    glow: "rgba(8, 145, 178, 0.4)",
+    text: "#0891b2",
+    desc: "Identity facts, core values, user preferences, and foundational profile.",
   },
-  Profile: {
-    main: "#047857",
-    glow: "rgba(4, 120, 87, 0.45)",
-    text: "#047857",
-    desc: "Personal background, career history, contacts, and personal metadata.",
+  objective: {
+    main: "#7c3aed",
+    glow: "rgba(124, 58, 237, 0.4)",
+    text: "#7c3aed",
+    desc: "Active operational goals, session intents, and target deliverables.",
   },
-  Directives: {
-    main: "#6d28d9",
-    glow: "rgba(109, 40, 217, 0.45)",
-    text: "#6d28d9",
-    desc: "Active operational rules, user instructions, system prompts, and priorities.",
+  workdone: {
+    main: "#059669",
+    glow: "rgba(5, 150, 105, 0.4)",
+    text: "#059669",
+    desc: "Completed milestones, accomplishments, verified tasks, and progress.",
   },
-  Narrative: {
-    main: "#be185d",
-    glow: "rgba(190, 24, 93, 0.45)",
-    text: "#be185d",
-    desc: "Temporal story facts, conversation context, historical events, and session logs.",
+  blocker: {
+    main: "#e11d48",
+    glow: "rgba(225, 29, 72, 0.4)",
+    text: "#e11d48",
+    desc: "Active blockers, missing dependencies, compilation/runtime errors.",
   },
-  Entities: {
-    main: "#b45309",
-    glow: "rgba(180, 83, 9, 0.45)",
-    text: "#b45309",
-    desc: "Projects, codebase modules, tools, software stack, and external references.",
+  next_step: {
+    main: "#d97706",
+    glow: "rgba(217, 119, 6, 0.4)",
+    text: "#d97706",
+    desc: "Immediate upcoming actions, planned follow-ups, and roadmap tasks.",
   },
-  Constraints: {
-    main: "#be123c",
-    glow: "rgba(190, 18, 60, 0.45)",
-    text: "#be123c",
-    desc: "Hard system constraints, hardware limits, security bounds, and forbidden rules.",
-  },
-  Inactive: {
-    main: "#334155",
-    glow: "rgba(51, 65, 85, 0.35)",
-    text: "#334155",
-    desc: "Historical tombstones and superseded memory facts.",
+  pitfall: {
+    main: "#ca8a04",
+    glow: "rgba(202, 138, 4, 0.4)",
+    text: "#ca8a04",
+    desc: "Edge cases, lessons learned, gotchas, and architectural traps.",
   },
 };
 
@@ -151,37 +139,26 @@ export function getThemeCollectionColors(isLight: boolean) {
   return isLight ? LIGHT_COLLECTION_COLORS : DARK_COLLECTION_COLORS;
 }
 
-export function getCollectionColor(rawCollection: string, isSuperseded = false, isLight = false) {
-  const palette = getThemeCollectionColors(isLight);
-  if (isSuperseded) return palette.Inactive;
-  const norm = rawCollection.toLowerCase();
-  if (norm.includes("identity")) return palette.Identity;
-  if (norm.includes("profile")) return palette.Profile;
-  if (norm.includes("directive")) return palette.Directives;
-  if (norm.includes("narrative") || norm.includes("context")) return palette.Narrative;
-  if (norm.includes("entity") || norm.includes("entities") || norm.includes("project")) return palette.Entities;
-  if (norm.includes("constraint")) return palette.Constraints;
-  return palette.Identity;
+export function getCollectionColor(collection: string, _isInactive = false, isLight = false) {
+  const table = isLight ? LIGHT_COLLECTION_COLORS : DARK_COLLECTION_COLORS;
+  return table[collection] ?? table.objective;
 }
 
-export function getRelationStyle(rawRelation: string, isLight = false) {
-  const norm = rawRelation.toUpperCase();
-  if (norm.includes("SUPPORT")) return { color: isLight ? "#047857" : "#34d399", isDashed: false };
-  if (norm.includes("SUPERSEDE")) return { color: isLight ? "#0369a1" : "#38bdf8", isDashed: false };
-  if (norm.includes("SHAPE")) return { color: isLight ? "#6d28d9" : "#a78bfa", isDashed: false };
-  if (norm.includes("DEPEND")) return { color: isLight ? "#b45309" : "#facc15", isDashed: false };
-  if (norm.includes("CONFLICT") || norm.includes("RESTRICT")) return { color: isLight ? "#be123c" : "#ef4444", isDashed: true };
-  return { color: isLight ? "#475569" : "#64748b", isDashed: true };
-}
-
-export function getCollectionIcon(collectionName: string) {
-  const norm = collectionName.toLowerCase();
-  if (norm.includes("identity")) return Heart;
-  if (norm.includes("profile")) return User;
-  if (norm.includes("directive")) return Compass;
-  if (norm.includes("narrative")) return BookOpen;
-  if (norm.includes("entity") || norm.includes("entities")) return Box;
-  if (norm.includes("constraint")) return ShieldAlert;
-  if (norm.includes("inactive")) return Archive;
-  return User;
+export function getCollectionIcon(collection: string) {
+  switch (collection) {
+    case "personal":
+      return User;
+    case "objective":
+      return Target;
+    case "workdone":
+      return CheckCircle2;
+    case "blocker":
+      return AlertTriangle;
+    case "next_step":
+      return ArrowRightCircle;
+    case "pitfall":
+      return HelpCircle;
+    default:
+      return Target;
+  }
 }

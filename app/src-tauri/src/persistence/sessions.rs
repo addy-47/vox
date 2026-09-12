@@ -1,8 +1,11 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use turso::Connection;
+
+const MAX_CONCURRENT_RETRY_ATTEMPTS: usize = 6;
+const RETRY_BASE_DELAY_MS: u64 = 15;
 
 use super::{
     compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
@@ -74,41 +77,61 @@ pub async fn create_session_with_id(
     Ok(session_id)
 }
 
+fn is_transient_db_error(e: &anyhow::Error) -> bool {
+    let err = e.to_string().to_lowercase();
+    err.contains("concurrent use forbidden") || err.contains("busy") || err.contains("locked")
+}
+
 /// Returns all active (non-deleted) sessions, optionally filtered by project, ordered pinned-first then newest.
 pub async fn fetch_sessions(
+
     conn: &Connection,
     project_id: Option<&str>,
 ) -> Result<Vec<SessionRow>> {
-    let query = if let Some(proj) = project_id {
-        let mut rows = conn
-            .query(
-                "SELECT s.id, s.project_id, s.title, s.is_pinned, s.deleted_at, s.created_at, s.updated_at,
-                        (SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) as turn_count,
-                        (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message
-                 FROM sessions s
-                 WHERE s.deleted_at IS NULL AND s.project_id = ?
-                 ORDER BY s.is_pinned DESC, s.updated_at DESC",
-                (proj.to_string(),),
-            )
-            .await?;
-        collect_session_rows(&mut rows).await?
+    let mut attempt = 0;
+    loop {
+        match execute_fetch_sessions(conn, project_id).await {
+            Ok(sessions) => return Ok(sessions),
+            Err(e) if is_transient_db_error(&e) && attempt < MAX_CONCURRENT_RETRY_ATTEMPTS => {
+                attempt += 1;
+                tokio::time::sleep(Duration::from_millis(RETRY_BASE_DELAY_MS * attempt as u64)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+async fn execute_fetch_sessions(
+    conn: &Connection,
+    project_id: Option<&str>,
+) -> Result<Vec<SessionRow>> {
+    let mut rows = if let Some(proj) = project_id {
+        conn.query(
+            "SELECT s.id, s.project_id, s.title, s.is_pinned, s.deleted_at, s.created_at, s.updated_at,
+                    (SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) as turn_count,
+                    (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message
+             FROM sessions s
+             WHERE s.deleted_at IS NULL AND s.project_id = ?
+             ORDER BY s.is_pinned DESC, s.updated_at DESC",
+            (proj.to_string(),),
+        )
+        .await?
     } else {
-        let mut rows = conn
-            .query(
-                "SELECT s.id, s.project_id, s.title, s.is_pinned, s.deleted_at, s.created_at, s.updated_at,
-                        (SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) as turn_count,
-                        (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message
-                 FROM sessions s
-                 WHERE s.deleted_at IS NULL
-                 ORDER BY s.is_pinned DESC, s.updated_at DESC",
-                (),
-            )
-            .await?;
-        collect_session_rows(&mut rows).await?
+        conn.query(
+            "SELECT s.id, s.project_id, s.title, s.is_pinned, s.deleted_at, s.created_at, s.updated_at,
+                    (SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) as turn_count,
+                    (SELECT t.user_text FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_id ASC LIMIT 1) as first_message
+             FROM sessions s
+             WHERE s.deleted_at IS NULL
+             ORDER BY s.is_pinned DESC, s.updated_at DESC",
+            (),
+        )
+        .await?
     };
 
-    Ok(query)
+    collect_session_rows(&mut rows).await
 }
+
 
 /// Helper to parse rows into Vec<SessionRow>.
 async fn collect_session_rows(rows: &mut turso::Rows) -> Result<Vec<SessionRow>> {
@@ -151,6 +174,23 @@ pub async fn fetch_session_project_id(
 
 /// Returns a single session by its unique ID.
 pub async fn fetch_session_by_id(conn: &Connection, session_id: i64) -> Result<Option<SessionRow>> {
+    let mut attempt = 0;
+    loop {
+        match execute_fetch_session_by_id(conn, session_id).await {
+            Ok(session) => return Ok(session),
+            Err(e) if is_transient_db_error(&e) && attempt < MAX_CONCURRENT_RETRY_ATTEMPTS => {
+                attempt += 1;
+                tokio::time::sleep(Duration::from_millis(RETRY_BASE_DELAY_MS * attempt as u64)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+async fn execute_fetch_session_by_id(
+    conn: &Connection,
+    session_id: i64,
+) -> Result<Option<SessionRow>> {
     let mut rows = conn
         .query(
             "SELECT s.id, s.project_id, s.title, s.is_pinned, s.deleted_at, s.created_at, s.updated_at,
@@ -182,6 +222,20 @@ pub async fn fetch_session_by_id(conn: &Connection, session_id: i64) -> Result<O
 
 /// Returns all turns for a given session, ordered by turn_id ascending.
 pub async fn fetch_turns(conn: &Connection, session_id: i64) -> Result<Vec<TurnRow>> {
+    let mut attempt = 0;
+    loop {
+        match execute_fetch_turns(conn, session_id).await {
+            Ok(turns) => return Ok(turns),
+            Err(e) if is_transient_db_error(&e) && attempt < MAX_CONCURRENT_RETRY_ATTEMPTS => {
+                attempt += 1;
+                tokio::time::sleep(Duration::from_millis(RETRY_BASE_DELAY_MS * attempt as u64)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+async fn execute_fetch_turns(conn: &Connection, session_id: i64) -> Result<Vec<TurnRow>> {
     let mut rows = conn
         .query(
             "SELECT id, session_id, turn_id, user_text, assistant_text, created_at
