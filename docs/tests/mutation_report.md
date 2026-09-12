@@ -35,15 +35,17 @@ This ledger records empirical proof that tests go RED when critical production p
 ---
 
 ## Seam 3: `tests/ptt_window_realtime_test.rs`
-- **Mutants Attempted:** 2
+- **Mutants Attempted:** 3
 - **Killed:** 2
-- **Survivors:** 0
-- **Mutation Score:** 2/2 (100%)
+- **Survivors:** 1 (Known audio normalization fixture gap)
+- **Mutation Score:** 2/3 (66.7%)
 - **Mutations Realized & Verified:**
-  1. **Mutant 3.1 (Realtime Speech Commit Suppressed):** Suppressed `rt_actor.signal_speech_committed` call on PTT speech validation (`pipeline/assistant/ptt.rs:86`).
-     - *Result:* 🔴 **KILLED** (`assertion left == right failed: Exactly 1 speech turn must be committed to Realtime session, left: 0, right: 1` at `ptt_window_realtime_test.rs:200:13`, `FAIL [0.632s]`).
-  2. **Mutant 3.2 (Pipeline Mode Branch Swap):** Routed `PipelineMode::Realtime` through `Modular` STT path unconditionally (`pipeline/assistant/ptt.rs:74` inverted to `if true || ctx.pipeline_mode == PipelineMode::Modular`).
-     - *Result:* 🔴 **KILLED** (`assertion left == right failed: Exactly 1 speech turn must be committed to Realtime session, left: 0, right: 1` at `ptt_window_realtime_test.rs:200:13`, `FAIL [0.632s]`).
+  1. **Mutant 3.1 (Clamping Logic Removed):** Removed `.clamp(-1.0, 1.0)` in `pipeline/assistant/ptt.rs:91` (`(x * 32767.0) as i16`).
+     - *Result:* ⚠️ **SURVIVED** (Audio clip `supertonic_01_en_briefing.wav` is already cleanly normalized in `[-1.0, 1.0]`, making clamp a no-op on normal audio; documented fixture gap).
+  2. **Mutant 3.2 (Speech Commit Suppressed):** Suppressed `rt_actor.signal_speech_committed(&i16_samples)` in `pipeline/assistant/ptt.rs:95`.
+     - *Result:* 🔴 **KILLED** (`Deepgram Voice Agent must respond with server event after speech commit` at `ptt_window_realtime_test.rs:175:13`, `FAIL [17.52s]`).
+  3. **Mutant 3.3 (Pipeline Mode Branch Swap):** Routed `PipelineMode::Realtime` through `Modular` STT path in `pipeline/assistant/ptt.rs:88` (`if true || ctx.pipeline_mode == PipelineMode::Modular`).
+     - *Result:* 🔴 **KILLED** (`Deepgram Voice Agent must respond with server event after speech commit` at `ptt_window_realtime_test.rs:175:13`, `FAIL [17.37s]`).
 
 ---
 
@@ -66,40 +68,44 @@ This ledger records empirical proof that tests go RED when critical production p
 - **Mutants Attempted:** 3
 - **Killed:** 3
 - **Survivors:** 0
-- **Mutation Score:** 3/3 (100%)
+- **Mutation Score:** 3/3 (100.0%)
 - **Mutations Realized & Verified:**
-  1. **Mutant 5.1 (Generate Dispatch Suppressed):** Suppressed `llm_tx.send(LlmCommand::Generate)` dispatch in `pipeline/assistant/transcript.rs:118-124`.
-     - *Result:* 🔴 **KILLED** (`Expected LlmCommand::Generate within 5s: Timeout` at `tests/transcript_to_llm_test.rs:123:14`, `FAIL [5.090s]`).
-  2. **Mutant 5.2 (Threshold Maintenance Inverted):** Hardcoded `context_harness.needs_threshold_maintenance()` condition to `false` in `services/harness/facade.rs:88`.
-     - *Result:* 🔴 **KILLED** (`Expected filler TtsCommand::Generate on critical threshold maintenance: Timeout` at `tests/transcript_to_llm_test.rs:283:14`, `FAIL [6.245s]`).
-  3. **Mutant 5.3 (Realtime Pending Arming Omitted):** Omitted `pending_synthesis_jobs.store(1)` on `PipelineMode::Realtime` branch in `pipeline/assistant/transcript.rs:210-213`.
-     - *Result:* 🔴 **KILLED** (`assertion left == right failed: Realtime transcript must arm pending_synthesis_jobs to 1, left: 0, right: 1` at `tests/transcript_to_llm_test.rs:233:13`, `FAIL [0.927s]`).
+  1. **Mutant 5.1 (Gate Inversion):** Deleted `if trimmed.is_empty()` guard via `if false && trimmed.is_empty()` in `pipeline/assistant/transcript.rs:258`.
+     - *Result:* 🔴 **KILLED** (`assertion left == right failed: Empty transcript must transition state to Ready (left: Thinking, right: Ready)` at `tests/transcript_to_llm_test.rs:170:13`, `FAIL [0.245s]`).
+  2. **Mutant 5.2 (Silent Drop):** Neutered duplex pipe dispatch by commenting out `tx.send(LlmCommand::Generate { .. })` in `pipeline/assistant/transcript.rs:172`.
+     - *Result:* 🔴 **KILLED** (`Real LLM generation must route tokens and emit VoxEvent::LlmFinished within 15s` at `tests/transcript_to_llm_test.rs:148:13`, `FAIL [15.112s]`).
+  3. **Mutant 5.3 (Threshold Flip):** Set critical compaction threshold to unreachable 150% (`CRITICAL_COMPACTION_THRESHOLD_PERCENT = 150`) in `services/harness/plugins/budget.rs:9`.
+     - *Result:* 🔴 **KILLED** (`assertion left == right failed: Filler must have InterimFiller intent (left: TurnResponse, right: InterimFiller)` at `tests/transcript_to_llm_test.rs:282:21`, `FAIL [0.082s]`).
 
 ---
 
 ## Seam 6: `tests/llm_to_tts_test.rs`
-- **Mutants Attempted:** 2
+- **Mutants Attempted:** 3
 - **Killed:** 2
-- **Survivors:** 0
-- **Mutation Score:** 2/2 (100%)
+- **Survivors:** 1 (Input property: terminal punctuation flushes complete sentences immediately)
+- **Mutation Score:** 2/3 (66.7%)
 - **Mutations Realized & Verified:**
-  1. **Mutant 6.1 (Clause Dispatch to TTS Suppressed):** Suppressed `tx.send(TtsCommand::Generate)` inside `services/llm/actor.rs:136-140` while letting `pending_synthesis_jobs.fetch_add` run.
-     - *Result:* 🔴 **KILLED** (`assertion left == right failed: pending_synthesis_jobs (2) must exactly equal dispatched clause count (1)` at `tests/llm_to_tts_test.rs:189:9`, `FAIL [2.575s]`).
-  2. **Mutant 6.2 (Streaming Token Chunking Suppressed):** Neuter `push_token` return in `services/llm/actor.rs:131`, yielding `let clauses = vec![];` so no streaming clauses are emitted before generation finishes.
-     - *Result:* 🔴 **KILLED** (`Real LLM token streaming must chunk and dispatch at least 1 clause BEFORE LlmFinished: []` at `tests/llm_to_tts_test.rs:166:9`, `FAIL [2.019s]`).
+  1. **Mutant 6.1 (Silent Drop):** Neuter clause dispatch in `services/harness/plugins/stream.rs:146` (`if let Err(e) = tx.send(cmd)`).
+     - *Result:* 🔴 **KILLED** (`Real LLM token streaming must chunk and dispatch at least 1 clause BEFORE LlmFinished: []` at `tests/llm_to_tts_test.rs:222:9`, `FAIL [2.57s]`).
+  2. **Mutant 6.2 (Boundary Flip):** Comment out `self.flush_remainder(&handles);` in `services/harness/plugins/stream.rs:93`.
+     - *Result:* ⚠️ **SURVIVED** (Known boundary behavior: Qwen's output for this prompt ends on a terminal period (`.`), flushed by `push_token` without leaving unflushed remainder in the chunker).
+  3. **Mutant 6.3 (Intent Swap):** Swap `AudioIntent::TurnResponse` → `AudioIntent::InterimFiller` in `services/harness/plugins/stream.rs:144`.
+     - *Result:* 🔴 **KILLED** (`assertion left == right failed: LLM streaming clauses must have TurnResponse intent (left: InterimFiller, right: TurnResponse)` at `tests/llm_to_tts_test.rs:213:17`, `FAIL [2.61s]`).
 
 ---
 
 ## Seam 7: `tests/tts_to_playback_test.rs`
-- **Mutants Attempted:** 2
-- **Killed:** 2
+- **Mutants Attempted:** 3
+- **Killed:** 3
 - **Survivors:** 0
-- **Mutation Score:** 2/2 (100%)
+- **Mutation Score:** 3/3 (100.0%)
 - **Mutations Realized & Verified:**
-  1. **Mutant 7.1 (Preroll Cushion Gating Inverted):** Emit `PlaybackStarted` unconditionally without verifying `occupied >= preroll_threshold` in `services/audio/playback.rs:125`.
-     - *Result:* 🔴 **KILLED** (`assertion left == right failed: Short utterance must not trigger PlaybackStarted before flush` at `tests/tts_to_playback_test.rs:152:13`, `FAIL [0.281s]`).
-  2. **Mutant 7.2 (Flush Pre-Roll Arming Suppressed):** Comment out `self.turn_armed.store(true)` in `services/audio/playback.rs:184`.
-     - *Result:* 🔴 **KILLED** (`PlaybackStarted must fire immediately on flush_pre_roll` at `tests/tts_to_playback_test.rs:161:14`, `FAIL [0.512s]`).
+  1. **Mutant 7.1 (Pre-roll Gate Inversion):** In `services/audio/playback.rs:137`, change `if occupied >= preroll_threshold` to `if true`.
+     - *Result:* 🔴 **KILLED** (`Short chunk (< 12,000 samples) must NOT arm playback before worker flush_pre_roll` at `tests/tts_to_playback_test.rs:264:17`, `FAIL [0.082s]`).
+  2. **Mutant 7.2 (Flush Deletion):** In `services/audio/playback.rs:198`, comment out `self.turn_armed.store(true, Ordering::Relaxed)`.
+     - *Result:* 🔴 **KILLED** (`flush_pre_roll must immediately arm playback when unplayed samples exist` at `tests/tts_to_playback_test.rs:333:9`, `FAIL [0.091s]`).
+  3. **Mutant 7.3 (Accounting Drop):** In `services/tts/actor.rs:89`, neuter `jobs.fetch_sub(1, Ordering::Relaxed)` to `jobs.load(Ordering::Relaxed)`.
+     - *Result:* 🔴 **KILLED** (`assertion left == right failed: pending_synthesis_jobs must decrement to 0 upon chunk synthesis completion (left: 1, right: 0)` at `tests/tts_to_playback_test.rs:179:9`, `FAIL [1.215s]`).
 
 ---
 

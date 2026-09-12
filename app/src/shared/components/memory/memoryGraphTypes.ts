@@ -56,7 +56,10 @@ export interface MemoryGraphRef {
   zoomIn: () => void;
   zoomOut: () => void;
   focusCore: () => void;
+  flyToSession: (sessionId: string) => void;
+  flyToNode: (factId: string) => void;
 }
+
 
 
 export const DARK_COLLECTION_COLORS: Record<string, { main: string; glow: string; text: string; desc: string }> = {

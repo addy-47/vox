@@ -20,11 +20,16 @@ use std::{
 
 use ringbuf::traits::Consumer;
 use vox_lib::{
-    core::{events::VoxEvent, state::InteractionState},
-    pipeline::{assistant::playback::on_playback_started, RoutingContext},
+    core::{
+        events::{AudioIntent, VoxEvent},
+        state::InteractionState,
+    },
     services::tts::{
         actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
-        providers::{supertonic::TtsEngine as SupertonicEngine, TtsProvider},
+        providers::{
+            supertonic::TtsEngine as SupertonicEngine, SynthesisContext, TtsProvider,
+            TtsProviderKind,
+        },
     },
 };
 
@@ -32,6 +37,7 @@ use vox_lib::{
 async fn test_real_tts_to_playback_synthesis_and_preroll() {
     let test_timeout = Duration::from_secs(60);
     tokio::time::timeout(test_timeout, async {
+        let _guard = common::paths::TempPathsGuard::new();
         vox_lib::utils::paths::init();
         let (app, state) = common::harness::get_test_app_and_state().await;
 
@@ -81,6 +87,11 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
 
         state.pipeline.set_state(InteractionState::Thinking);
 
+        // Spawn central pipeline router pump to consume VoxEvent::PlaybackStarted and transition state
+        let router_app = app.clone();
+        let router_handle = vox_lib::pipeline::router::spawn_router(router_app, event_rx)
+            .expect("Failed to spawn router thread");
+
         let worker_handles = TtsWorkerHandles {
             playback: Arc::clone(&playback_engine),
             event_tx: event_tx.clone(),
@@ -101,32 +112,27 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
             .send(TtsCommand::Generate {
                 turn_id,
                 text: "Hello! Welcome to Vox voice assistant.".to_string(),
-                intent: vox_lib::core::events::AudioIntent::TurnResponse,
+                intent: AudioIntent::TurnResponse,
             })
             .expect("Failed to send Generate to TTS worker");
 
         // ---------------------------------------------------------------------
-        // Observable Exit 1: Real Supertonic synthesis produces samples and ingests to PlaybackEngine
+        // Observable Exit 1 & 3: Central router transitions Thinking -> Speaking upon PlaybackStarted
         // ---------------------------------------------------------------------
         let deadline = std::time::Instant::now() + Duration::from_secs(30);
-        let mut started_received = false;
+        let mut transitioned_to_speaking = false;
 
         while std::time::Instant::now() < deadline {
-            match event_rx.recv_timeout(Duration::from_millis(50)) {
-                Ok(VoxEvent::PlaybackStarted { turn_id: tid, .. }) => {
-                    assert_eq!(tid, turn_id, "PlaybackStarted turn_id must match");
-                    started_received = true;
-                    break;
-                }
-                Ok(_) => {}
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            if state.pipeline.state() == InteractionState::Speaking {
+                transitioned_to_speaking = true;
+                break;
             }
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
 
         assert!(
-            started_received,
-            "Real Supertonic synthesis must produce enough samples to trigger PlaybackStarted within 30s"
+            transitioned_to_speaking,
+            "Central pipeline router must receive VoxEvent::PlaybackStarted and transition state from Thinking to Speaking within 30s"
         );
 
         // ---------------------------------------------------------------------
@@ -136,10 +142,6 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
         assert!(
             occupied > 0,
             "Playback ring buffer must have occupied samples (got {})",
-            occupied
-        );
-        log::info!(
-            "[Test] Playback ring buffer currently has {} unplayed samples",
             occupied
         );
 
@@ -163,28 +165,6 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
             "Synthesized audio must not be pure silence (RMS: {:.5})",
             rms
         );
-        log::info!("[Test] Generated audio: {} samples, RMS: {:.4}", samples.len(), rms);
-
-        // ---------------------------------------------------------------------
-        // Observable Exit 3: State transition on PlaybackStarted
-        // ---------------------------------------------------------------------
-        let ctx = RoutingContext {
-            pipeline_mode: vox_lib::core::settings::PipelineMode::Modular,
-            interaction_mode: vox_lib::core::settings::InteractionMode::PTT,
-            owner: vox_lib::core::state::InteractionOwner::Assistant,
-        };
-        on_playback_started(
-            turn_id,
-            vox_lib::core::events::AudioIntent::TurnResponse,
-            &app,
-            &state,
-            &ctx,
-        );
-        assert_eq!(
-            state.pipeline.state(),
-            InteractionState::Speaking,
-            "on_playback_started must transition Thinking -> Speaking"
-        );
 
         // ---------------------------------------------------------------------
         // Observable Exit 4: Pending jobs decrements to 0 after chunk completion
@@ -202,9 +182,22 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
             "pending_synthesis_jobs must decrement to 0 upon chunk synthesis completion"
         );
 
-        // Teardown
+        // Teardown with bounded joins
         let _ = tts_tx.send(TtsCommand::Shutdown);
-        let _ = worker_handle.join();
+        let _ = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::task::spawn_blocking(move || worker_handle.join()),
+        )
+        .await
+        .expect("TTS worker thread join timed out");
+
+        let _ = event_tx.send(VoxEvent::Shutdown);
+        let _ = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::task::spawn_blocking(move || router_handle.join()),
+        )
+        .await
+        .expect("Router thread join timed out");
     })
     .await
     .expect("test_real_tts_to_playback_synthesis_and_preroll timed out");
@@ -214,17 +207,13 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
 async fn test_tts_to_playback_short_utterance_flush() {
     let test_timeout = Duration::from_secs(30);
     tokio::time::timeout(test_timeout, async {
+        let _guard = common::paths::TempPathsGuard::new();
         vox_lib::utils::paths::init();
         let (_app, state) = common::harness::get_test_app_and_state().await;
-
-        // Setup mock playback engine with custom event capture
-        let (_playback_engine, _consumer_arc) = common::harness::create_mock_playback_engine();
-        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
 
         let turn_id = 302;
         state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
 
-        // Recreate playback engine with bound event_tx for this turn
         let rb = ringbuf::HeapRb::<f32>::new(vox_lib::services::audio::PLAYBACK_BUFFER_SAMPLES);
         let (producer, _consumer) = ringbuf::traits::Split::split(rb);
         let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -232,6 +221,7 @@ async fn test_tts_to_playback_short_utterance_flush() {
         let turn_armed = Arc::new(AtomicBool::new(false));
         let current_turn_id = Arc::new(AtomicU32::new(turn_id));
         let pending_jobs = Arc::new(AtomicU32::new(1));
+        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
 
         let playback_handles = vox_lib::services::audio::playback::PlaybackEngineHandles {
             cancel_flag: Arc::clone(&cancel_flag),
@@ -239,49 +229,131 @@ async fn test_tts_to_playback_short_utterance_flush() {
             current_turn_id: Arc::clone(&current_turn_id),
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
             playback_intent: Arc::new(AtomicU8::new(0)),
-            event_tx,
+            event_tx: event_tx.clone(),
         };
 
-        let engine = vox_lib::services::audio::PlaybackEngine::from_parts(
+        let playback_engine = Arc::new(vox_lib::services::audio::PlaybackEngine::from_parts(
             producer,
             playback_handles,
             discard_request,
             Arc::clone(&turn_armed),
             None,
-        );
+        ));
 
-        // Ingest a chunk strictly LESS than MODULAR_PREROLL_THRESHOLD_SAMPLES (12,000)
-        // e.g., 2,000 samples at 24kHz (upsampled to 4,000 samples in playback buffer)
-        let short_chunk = vec![0.05f32; 2000];
-        engine.ingest_chunk(&short_chunk);
+        // Short utterance provider: synthesizes 2,000 samples (< 12,000 MODULAR_PREROLL_THRESHOLD_SAMPLES).
+        // Verifies that during ingestion the cushion is NOT armed prematurely, and only the worker loop's
+        // automatic flush_pre_roll() arms playback upon job completion.
+        struct ShortUtteranceProvider {
+            samples: Vec<f32>,
+            turn_armed: Arc<AtomicBool>,
+            pushed_flag: Arc<AtomicBool>,
+        }
 
-        // Assert that PlaybackStarted is NOT armed yet
+        impl TtsProvider for ShortUtteranceProvider {
+            fn synthesize_chunk(
+                &self,
+                _text: &str,
+                ctx: &SynthesisContext<'_>,
+            ) -> anyhow::Result<()> {
+                ctx.playback
+                    .ingest_chunk_with_intent(&self.samples, ctx.intent);
+
+                // Pre-roll Cushion Invariant:
+                // 2,000 samples @ 24kHz upsamples to 4,000 samples @ 48kHz.
+                // 4,000 < 12,000 threshold, so playback MUST NOT arm during ingest_chunk.
+                assert!(
+                    !self.turn_armed.load(Ordering::Relaxed),
+                    "Short chunk (< 12,000 samples) must NOT arm playback before worker flush_pre_roll"
+                );
+                self.pushed_flag.store(true, Ordering::Relaxed);
+                Ok(())
+            }
+
+            fn kind(&self) -> TtsProviderKind {
+                TtsProviderKind::Supertonic
+            }
+
+            fn health_check(&self) -> bool {
+                true
+            }
+        }
+
+        let pushed_flag = Arc::new(AtomicBool::new(false));
+        let provider = Box::new(ShortUtteranceProvider {
+            samples: vec![0.05f32; 2000],
+            turn_armed: Arc::clone(&turn_armed),
+            pushed_flag: Arc::clone(&pushed_flag),
+        }) as Box<dyn TtsProvider>;
+
+        let (tts_tx, tts_rx) = mpsc::channel::<TtsCommand>();
+        let worker_handles = TtsWorkerHandles {
+            playback: Arc::clone(&playback_engine),
+            event_tx: event_tx.clone(),
+            cancel_flag: Arc::clone(&cancel_flag),
+            pending_synthesis_jobs: Some(Arc::clone(&pending_jobs)),
+            telemetry_rtf: None,
+        };
+
+        // Spawn dedicated TTS worker thread
+        let worker_handle = std::thread::spawn(move || {
+            spawn_tts_worker(tts_rx, provider, worker_handles);
+        });
+
+        // Send short utterance generation request
+        tts_tx
+            .send(TtsCommand::Generate {
+                turn_id,
+                text: "OK.".to_string(),
+                intent: AudioIntent::TurnResponse,
+            })
+            .expect("Failed to send Generate to TTS worker");
+
+        // Wait until synthesis finishes (pending_jobs reaches 0)
+        let poll_deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < poll_deadline {
+            if pending_jobs.load(Ordering::Relaxed) == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        // Verify:
+        // 1. Audio was ingested
         assert!(
-            !turn_armed.load(Ordering::Relaxed),
-            "Playback must NOT arm before reaching 12,000 samples"
+            pushed_flag.load(Ordering::Relaxed),
+            "Synthesis chunk must have been ingested"
         );
-        assert!(
-            event_rx.try_recv().is_err(),
-            "PlaybackStarted event must NOT be emitted when buffer is below threshold"
+        // 2. Pending jobs was decremented by worker loop
+        assert_eq!(
+            pending_jobs.load(Ordering::Relaxed),
+            0,
+            "spawn_tts_worker must decrement pending_synthesis_jobs to 0"
         );
-
-        // Simulate end of generation flush (flush_pre_roll)
-        engine.flush_pre_roll();
-
-        // Assert that flush_pre_roll immediately armed playback
+        // 3. flush_pre_roll was automatically called by worker loop when remaining <= 1
         assert!(
             turn_armed.load(Ordering::Relaxed),
             "flush_pre_roll must immediately arm playback when unplayed samples exist"
         );
+
+        // 4. PlaybackStarted event was emitted upon flush
         match event_rx.try_recv() {
             Ok(VoxEvent::PlaybackStarted { turn_id: tid, .. }) => {
-                assert_eq!(tid, turn_id);
+                assert_eq!(tid, turn_id, "PlaybackStarted turn_id must match");
             }
             other => panic!(
-                "Expected PlaybackStarted after flush_pre_roll, got {:?}",
+                "Expected PlaybackStarted after worker-driven flush_pre_roll, got {:?}",
                 other
             ),
         }
+
+        // Teardown with bounded join
+        let _ = tts_tx.send(TtsCommand::Shutdown);
+        let _ = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::task::spawn_blocking(move || worker_handle.join()),
+        )
+        .await
+        .expect("TTS worker thread join timed out");
     })
     .await
     .expect("test_tts_to_playback_short_utterance_flush timed out");
