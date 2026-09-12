@@ -216,8 +216,9 @@ impl HarnessSession {
         state: Arc<AppState>,
         harness_lock: Arc<Mutex<Option<HarnessSession>>>,
     ) {
+        let tracked_turns = self.check_quiet_compaction_eligibility();
         if let Some(ref mut watcher) = self.watcher {
-            watcher.on_turn_completed(state, harness_lock);
+            watcher.on_turn_completed(state, harness_lock, tracked_turns);
         }
     }
 

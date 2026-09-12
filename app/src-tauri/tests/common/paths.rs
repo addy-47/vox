@@ -113,6 +113,16 @@ impl TempPathsGuard {
             let _ = std::fs::copy(&asset_db, &target_db);
         }
 
+        // Symlink models directory from ~/.vox/models if available to enable test fixtures
+        if let Some(home) = dirs::home_dir() {
+            let real_models = home.join(".vox").join("models");
+            if real_models.exists() {
+                let target_models = temp_path.join("models");
+                #[cfg(unix)]
+                let _ = std::os::unix::fs::symlink(&real_models, &target_models);
+            }
+        }
+
         let prev_vox_home = std::env::var("VOX_HOME").ok();
         std::env::set_var("VOX_HOME", &temp_path);
         vox_lib::utils::paths::init_with_root(temp_path);
@@ -137,4 +147,34 @@ impl Drop for TempPathsGuard {
             }
         }
     }
+}
+
+/// Resolves an API key from system environment variables or candidate `temp/.env` paths.
+pub fn load_api_key_from_env(key_name: &str) -> Option<String> {
+    if let Ok(k) = std::env::var(key_name) {
+        let trimmed = k.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    let candidates = [
+        PathBuf::from("temp/.env"),
+        PathBuf::from("../../temp/.env"),
+        PathBuf::from("../temp/.env"),
+        PathBuf::from("/home/addy/projects/apps/vox/temp/.env"),
+    ];
+    for p in &candidates {
+        if let Ok(content) = std::fs::read_to_string(p) {
+            let prefix = format!("{}=", key_name);
+            for line in content.lines() {
+                if let Some(rest) = line.strip_prefix(&prefix) {
+                    let val = rest.trim();
+                    if !val.is_empty() {
+                        return Some(val.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
 }

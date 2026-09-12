@@ -276,11 +276,11 @@ Helpers Written:
 
 ### Seam 3 — PTT Window Validation (Realtime): Press ──► VAD Window ──► Realtime Commit
 
-- **Status:** `[ ] Needs Rework (Mock Elimination / Real Provider Upgrade)`
+- **Status:** `[x] Solid (Verified Green & Validated)`
 - **File:** `tests/ptt_window_realtime_test.rs`
 - **Category:** Integration Test
-- **Subsystems:** `pipeline/assistant/ptt.rs`, `services/vad/actor.rs`, `services/realtime/actor.rs`, `services/realtime/providers/gemini/driver.rs`
-- **Prerequisites:** `GEMINI_API_KEY` in `temp/.env`, Earshot VAD weights in `~/.vox/models/`
+- **Subsystems:** `pipeline/assistant/ptt.rs`, `services/vad/actor.rs`, `services/realtime/actor.rs`, `services/realtime/providers/deepgram`
+- **Prerequisites:** `DEEPGRAM_API_KEY` in `temp/.env`, Earshot VAD weights in `~/.vox/models/`
 - **Execution:** `cargo nextest run --test ptt_window_realtime_test --release --nocapture --test-threads=1 -- --ignored`
 - **Metrics:** Sample clamping accuracy (`f32` $\to$ `i16` within $[-32768, 32767]$), speech commit payload dispatch, state transitions, ghost gate discard.
 
