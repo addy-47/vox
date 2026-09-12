@@ -20,7 +20,8 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
     state: &Arc<AppState>,
     id: &str,
 ) -> Result<()> {
-    let record = fetch_notification_by_id(&state.db, id)
+    let conn = state.db.connect()?;
+    let record = fetch_notification_by_id(&conn, id)
         .await?
         .ok_or_else(|| anyhow!("Notification not found: {}", id))?;
 
@@ -144,7 +145,7 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
                 operation,
                 resource_id
             );
-            dismiss_notification(&state.db, id).await?;
+            dismiss_notification(&conn, id).await?;
             let mut updated_record = record.clone();
             updated_record.status = "dismissed".to_string();
             let _ = emit_ipc(app, IpcEvent::NotificationUpdated(updated_record));

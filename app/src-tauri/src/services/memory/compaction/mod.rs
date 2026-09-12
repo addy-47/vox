@@ -18,9 +18,9 @@ pub async fn reconcile_uncompacted_sessions_on_boot(
     app: &AppHandle,
     state: &Arc<AppState>,
 ) -> Result<u32> {
-    let conn = &state.db;
+    let conn = state.db.connect()?;
 
-    let uncompacted = fetch_uncompacted_sessions(conn).await?;
+    let uncompacted = fetch_uncompacted_sessions(&conn).await?;
     if uncompacted.is_empty() {
         log::info!("[BootReconciliation] No uncompacted sessions found on boot.");
         return Ok(0);

@@ -67,8 +67,15 @@ pub fn spawn_quiet_ingestion_observer(state: Arc<AppState>) {
                         let latest = state.pipeline.state();
                         if latest == InteractionState::Ready || latest == InteractionState::Paused {
                             log::info!("[Memory::Ingestion] 30s sustained quiet state reached. Running ingestion deduplication cycle.");
-                            if let Err(e) = ingestion::run_ingestion_cycle(&db).await {
-                                log::warn!("[Memory::Ingestion] Background ingestion cycle error: {}", e);
+                            match db.connect() {
+                                Ok(conn) => {
+                                    if let Err(e) = ingestion::run_ingestion_cycle(&conn).await {
+                                        log::warn!("[Memory::Ingestion] Background ingestion cycle error: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    log::warn!("[Memory::Ingestion] Failed to vend connection for ingestion: {}", e);
+                                }
                             }
                         }
                     }

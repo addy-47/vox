@@ -32,9 +32,10 @@ async fn test_notifications_crud_lifecycle() {
         let dir = tempdir().expect("Failed to create tempdir");
         let db_path = dir.path().join("test_notifs_crud.db");
 
-        let conn = VoxDb::open(&db_path)
+        let db = VoxDb::open(&db_path)
             .await
             .expect("Failed to open database connection");
+        let conn = db.connect().expect("Failed to vend connection");
 
         run_migrations(&conn)
             .await
@@ -156,9 +157,10 @@ async fn test_compaction_ledger_queries_and_mutations() {
         let dir = tempdir().expect("Failed to create tempdir");
     let db_path = dir.path().join("test_compaction_ledger.db");
 
-    let conn = VoxDb::open(&db_path)
+    let db = VoxDb::open(&db_path)
         .await
         .expect("Failed to open database connection");
+    let conn = db.connect().expect("Failed to vend connection");
 
     run_migrations(&conn)
         .await

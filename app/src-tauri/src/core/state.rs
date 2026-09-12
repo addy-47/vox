@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use tokio::sync::Mutex;
-use turso::Connection;
+use crate::persistence::db::VoxDb;
 
 pub use crate::{
     core::engine::VoxEngine, monitoring::telemetry::TelemetryState, pipeline::PipelineAtomics,
@@ -145,7 +145,7 @@ pub struct AppState {
     pub llm_provider: Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>>>,
     pub event_tx: parking_lot::Mutex<Option<mpsc::Sender<VoxEvent>>>,
     pub pipeline_accumulator: Arc<parking_lot::Mutex<TurnAccumulator>>,
-    pub db: Arc<Connection>,
+    pub db: Arc<VoxDb>,
 }
 
 impl AppState {
@@ -153,7 +153,7 @@ impl AppState {
         app_handle: &tauri::AppHandle<R>,
         log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
         telemetry: Arc<TelemetryState>,
-        db: Arc<Connection>,
+        db: Arc<VoxDb>,
     ) -> Self {
         let settings = VoxSettings::load();
         telemetry
