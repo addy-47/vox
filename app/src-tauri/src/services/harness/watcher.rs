@@ -38,18 +38,12 @@ impl QuietCompactionWatcher {
         &mut self,
         state: Arc<AppState>,
         harness_lock: Arc<Mutex<Option<HarnessSession>>>,
+        tracked_turns: Option<Vec<crate::services::harness::ChatMessage>>,
     ) {
         self.abort();
 
-        let tracked_turns = {
-            let guard = harness_lock.lock();
-            let Some(ref harness) = *guard else {
-                return;
-            };
-            let Some(turns) = harness.check_quiet_compaction_eligibility() else {
-                return;
-            };
-            turns
+        let Some(tracked_turns) = tracked_turns else {
+            return;
         };
 
         log::info!(

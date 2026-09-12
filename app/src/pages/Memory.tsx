@@ -12,6 +12,7 @@ import {
   Upload,
   Zap,
   Sparkles,
+  GitBranch,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import {
@@ -26,13 +27,15 @@ import {
 } from "@/services/memoryService";
 import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
-import { TopRightCluster } from "@/shared/ui";
+import { EdgePanel, TopRightCluster } from "@/shared/ui";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
 import {
   MemoryGraph,
   MemoryGraphRef,
-  MemoryLegendCard,
+  MemoryLegendPopover,
+  MemorySessionRail,
   MemoryNodeTooltip,
   SearchBar,
   GraphControlDock,
@@ -56,8 +59,10 @@ export const Memory: React.FC = memo(() => {
   // Filtering & Selection
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCollection, setSelectedCollection] = useState("all");
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedFact, setSelectedFact] = useState<FactRecord | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const [sessionRailOpen, setSessionRailOpen] = useState(false);
 
   // Drawer & Edit mode state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -122,6 +127,27 @@ export const Memory: React.FC = memo(() => {
     } else {
       setTooltipPos(null);
     }
+  }, []);
+
+  const handleSelectSession = useCallback((sId: string | null) => {
+    setSelectedSessionId(sId);
+    if (sId) {
+      graphRef.current?.flyToSession(sId);
+    }
+  }, []);
+
+  const handleSelectFactFromRail = useCallback((fact: FactRecord) => {
+    setSelectedFact(fact);
+    setTooltipPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    graphRef.current?.flyToNode(fact.id);
+  }, []);
+
+  const handleToggleSessionRail = useCallback(() => {
+    setSessionRailOpen((prev) => !prev);
+  }, []);
+
+  const handleCloseSessionRail = useCallback(() => {
+    setSessionRailOpen(false);
   }, []);
 
   const handleCoreClick = useCallback(() => {
@@ -199,26 +225,45 @@ export const Memory: React.FC = memo(() => {
       {/* Sentient Liquid Space Ambient Background */}
       <AmbientBackground originX="50%" originY="50%" rippleSpeedMultiplier={1.0} />
 
-      {/* ── Top Left: Category Legend ── */}
+      {/* ── Top Left: Session Rail Trigger ── */}
       <div className="absolute top-4 left-4 z-30 pointer-events-auto">
-        <MemoryLegendCard
-          selectedCollection={selectedCollection}
-          onSelectCollection={setSelectedCollection}
-          counts={categoryCounts}
-        />
+        <Tooltip label={MEMORY_COPY.sessionTriggerTooltip} side="bottom">
+          <button
+            type="button"
+            onClick={handleToggleSessionRail}
+            className={cn(
+              "flex items-center gap-2 px-3.5 py-2 rounded-2xl glass-card border backdrop-blur-2xl text-[12px] font-mono transition-all cursor-pointer shadow-xl",
+              sessionRailOpen || selectedSessionId
+                ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))]"
+                : "border-[rgba(var(--border),0.14)] bg-[rgba(var(--card),0.85)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--border),0.25)]"
+            )}
+            aria-label={MEMORY_COPY.sessionTrigger}
+          >
+            <GitBranch size={14} className={cn(sessionRailOpen || selectedSessionId ? "text-[rgb(var(--accent))]" : "opacity-80")} />
+            <span className="font-semibold uppercase tracking-wider text-[11px]">
+              {MEMORY_COPY.sessionTrigger}
+            </span>
+            {selectedSessionId && (
+              <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-pulse" />
+            )}
+          </button>
+        </Tooltip>
       </div>
 
-      {/* ── Top Center: HUD Title & Metric ── */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center pointer-events-auto">
-        <div className="px-4 py-2 rounded-2xl bg-[rgba(var(--card),0.78)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl flex items-center gap-3 shadow-lg">
-          <span className="text-[12px] font-display font-black tracking-[0.22em] uppercase text-[rgb(var(--accent))]">
-            {MEMORY_COPY.memoryTitle}
-          </span>
-          <span className="w-1 h-1 rounded-full bg-[rgba(var(--border),0.25)]" />
-          <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-            {facts.length} {MEMORY_COPY.activeFactsCount}
-          </span>
-        </div>
+      {/* ── Top Center: Search Bar ── */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+        <SearchBar
+          facts={facts}
+          onCommitSearch={setSearchQuery}
+          onSelectNode={(factId) => {
+            const f = facts.find((fact) => fact.id === factId);
+            if (f) {
+              handleSelectNode(f, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+              graphRef.current?.flyToNode(f.id);
+            }
+          }}
+          dropdownPlacement="bottom"
+        />
       </div>
 
       {/* ── Top Right: System Status & Time ── */}
@@ -236,20 +281,31 @@ export const Memory: React.FC = memo(() => {
         refreshing={refreshing}
       />
 
-
-      {/* ── Bottom Floating Search Pill ── */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
-        <SearchBar
-          facts={facts}
-          onCommitSearch={setSearchQuery}
-          onSelectNode={(factId) => {
-            const f = facts.find((fact) => fact.id === factId);
-            if (f) {
-              handleSelectNode(f, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
-            }
-          }}
+      {/* ── Bottom Right: Category Legend Popover ── */}
+      <div className="absolute bottom-6 right-6 z-30 pointer-events-auto">
+        <MemoryLegendPopover
+          selectedCollection={selectedCollection}
+          onSelectCollection={setSelectedCollection}
+          counts={categoryCounts}
         />
       </div>
+
+      {/* ── Left Edge Rail: Memory Session History & Compactions ── */}
+      <EdgePanel
+        side="left"
+        open={sessionRailOpen}
+        onClose={handleCloseSessionRail}
+        title={MEMORY_COPY.sessionRailTitle}
+      >
+        <MemorySessionRail
+          facts={facts}
+          selectedSessionId={selectedSessionId}
+          selectedFactId={selectedFact?.id ?? null}
+          onSelectSession={handleSelectSession}
+          onSelectFact={handleSelectFactFromRail}
+          onClose={handleCloseSessionRail}
+        />
+      </EdgePanel>
 
       {/* ── 3D Dynamic WebGL Graph Canvas ── */}
       {dims.w > 0 && (
@@ -262,6 +318,7 @@ export const Memory: React.FC = memo(() => {
             searchQuery={searchQuery}
             selectedCollection={selectedCollection}
             selectedFactId={selectedFact?.id ?? null}
+            selectedSessionId={selectedSessionId}
             onSelectNode={handleSelectNode}
             onCoreClick={handleCoreClick}
           />

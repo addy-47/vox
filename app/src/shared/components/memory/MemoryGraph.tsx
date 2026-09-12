@@ -7,14 +7,12 @@ import React, {
   Component,
   ErrorInfo,
   ReactNode,
-  useState,
 } from "react";
 import * as THREE from "three";
 import { FactRecord } from "@/services/memoryService";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 import { useMemoryGraphScene } from "@/shared/hooks/useMemoryGraphScene";
-import { MemoryGraphClusterBadges } from "./MemoryGraphClusterBadges";
 import {
   GNode,
   GLink,
@@ -97,6 +95,7 @@ interface MemoryGraphProps {
   onSelectNode: (fact: FactRecord | null, pos?: { x: number; y: number }) => void;
   onCoreClick?: () => void;
   selectedFactId: string | null;
+  selectedSessionId?: string | null;
 }
 
 export const MemoryGraph = memo(
@@ -111,6 +110,7 @@ export const MemoryGraph = memo(
         onSelectNode,
         onCoreClick,
         selectedFactId,
+        selectedSessionId = null,
       },
       ref
     ) => {
@@ -120,11 +120,8 @@ export const MemoryGraph = memo(
       const mouseVecRef = useRef(new THREE.Vector2());
       const raycasterRef = useRef(new THREE.Raycaster());
       const tempVecRef = useRef(new THREE.Vector3());
-      const [expandedBadge, setExpandedBadge] = useState<string | null>(null);
 
       const {
-        isLightMode,
-        clusterBadges,
         gNodesRef,
         cameraRef,
         rendererRef,
@@ -132,6 +129,8 @@ export const MemoryGraph = memo(
         coreMeshRef,
         recenter,
         focusCore,
+        flyToSession,
+        flyToNode,
         zoomIn,
         zoomOut,
       } = useMemoryGraphScene({
@@ -142,6 +141,7 @@ export const MemoryGraph = memo(
         searchQuery,
         selectedCollection,
         selectedFactId,
+        selectedSessionId,
         onCoreClick,
       });
 
@@ -150,8 +150,9 @@ export const MemoryGraph = memo(
         zoomIn,
         zoomOut,
         focusCore,
+        flyToSession,
+        flyToNode,
       }));
-
 
       // Raycaster + Proximity Picking on Node or Core Click
       const handlePointerDown = useCallback(
@@ -231,13 +232,9 @@ export const MemoryGraph = memo(
             return;
           }
 
-          if (expandedBadge) {
-            setExpandedBadge(null);
-          }
-
           onSelectNode(null);
         },
-        [onSelectNode, onCoreClick, width, height, expandedBadge, rendererRef, cameraRef, instancedMeshRef, coreMeshRef, gNodesRef]
+        [onSelectNode, onCoreClick, width, height, rendererRef, cameraRef, instancedMeshRef, coreMeshRef, gNodesRef]
       );
 
       return (
@@ -246,15 +243,7 @@ export const MemoryGraph = memo(
             ref={canvasContainerRef}
             onPointerDown={handlePointerDown}
             className="relative w-full h-full cursor-grab active:cursor-grabbing select-none"
-          >
-            {/* Cluster Badges overlay */}
-            <MemoryGraphClusterBadges
-              clusterBadges={clusterBadges}
-              expandedBadge={expandedBadge}
-              onToggleBadge={setExpandedBadge}
-              isLightMode={isLightMode}
-            />
-          </div>
+          />
         </GraphErrorBoundary>
       );
     }

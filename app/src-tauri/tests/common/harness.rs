@@ -453,6 +453,44 @@ pub fn attach_mock_engine_with_llm_tts_to_state<R: tauri::Runtime>(
         .set_state(vox_lib::core::state::InteractionState::Ready);
 }
 
+/// Attaches a mock VoxEngine with VAD, STT, LLM, TTS, and pipeline event capture channels.
+pub fn attach_mock_engine_with_pipeline_tx_to_state<R: tauri::Runtime>(
+    _app: &AppHandle<R>,
+    state: &vox_lib::core::state::AppState,
+    stt_tx: mpsc::Sender<SttCommand>,
+    vad_tx: mpsc::Sender<VadCommand>,
+    llm_tx: Option<mpsc::Sender<vox_lib::services::llm::LlmCommand>>,
+    tts_tx: Option<mpsc::Sender<vox_lib::services::tts::TtsCommand>>,
+    pipeline_tx: mpsc::Sender<VoxEvent>,
+) {
+    let (telemetry_tx, _) = crossbeam_channel::unbounded();
+    let (playback_engine, _) = create_mock_playback_engine();
+
+    let engine = vox_lib::core::engine::VoxEngine {
+        audio_stream: vox_lib::services::audio::AudioStream::mock(),
+        stt_tx,
+        vad_tx,
+        llm_tx,
+        tts_tx,
+        telemetry_tx,
+        pipeline_tx,
+        playback_engine,
+        stt_handle: None,
+        vad_handle: None,
+        llm_handle: None,
+        tts_handle: None,
+        orchestrator_handle: None,
+    };
+    if let Ok(mut guard) = state.engine.try_lock() {
+        *guard = Some(engine);
+    } else {
+        *state.engine.blocking_lock() = Some(engine);
+    }
+    state
+        .pipeline
+        .set_state(vox_lib::core::state::InteractionState::Ready);
+}
+
 /// Attaches an engine with pre-populated dummy LLM and TTS channels so that
 /// `ensure_modular_workers_sync` sees `needs_llm == false` and `needs_tts == false`,
 /// allowing pure lifecycle testing without model weight I/O contention.
