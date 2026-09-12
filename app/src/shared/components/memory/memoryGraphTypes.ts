@@ -55,7 +55,9 @@ export interface MemoryGraphRef {
   recenter: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  focusCore: () => void;
 }
+
 
 export const DARK_COLLECTION_COLORS: Record<string, { main: string; glow: string; text: string; desc: string }> = {
   personal: {
@@ -135,14 +137,18 @@ export const LIGHT_COLLECTION_COLORS: Record<string, { main: string; glow: strin
   },
 };
 
+import { getActiveDynamicPalette } from "./dynamicGraphPalette";
+export * from "./dynamicGraphPalette";
+
 export function getThemeCollectionColors(isLight: boolean) {
-  return isLight ? LIGHT_COLLECTION_COLORS : DARK_COLLECTION_COLORS;
+  return getActiveDynamicPalette(isLight);
 }
 
 export function getCollectionColor(collection: string, _isInactive = false, isLight = false) {
-  const table = isLight ? LIGHT_COLLECTION_COLORS : DARK_COLLECTION_COLORS;
-  return table[collection] ?? table.objective;
+  const palette = getActiveDynamicPalette(isLight);
+  return palette[collection as MemoryCategory] ?? palette.objective;
 }
+
 
 export function getCollectionIcon(collection: string) {
   switch (collection) {

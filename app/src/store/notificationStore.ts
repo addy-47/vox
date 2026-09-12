@@ -165,14 +165,33 @@ function logError(msg: string, e: unknown) {
   console.error(`[NotificationStore] ${msg}:`, e);
 }
 
+let cachedBadgeCountNotificationsRef: NotificationRecord[] | null = null;
+let cachedBadgeCount = 0;
+
 export function selectBadgeCount(state: NotificationStoreState): number {
-  return state.notifications.filter(countsTowardBadge).length;
+  if (state.notifications === cachedBadgeCountNotificationsRef) {
+    return cachedBadgeCount;
+  }
+  cachedBadgeCountNotificationsRef = state.notifications;
+  cachedBadgeCount = state.notifications.filter(countsTowardBadge).length;
+  return cachedBadgeCount;
 }
 
-/** Group notifications by group_key preserving newest-first ordering and aggregating counts. */
+
+let cachedNotificationsRef: NotificationRecord[] | null = null;
+let cachedRolledUpResult: RolledUpNotification[] = [];
+
+/** Group notifications by group_key preserving newest-first ordering and aggregating counts.
+ * Cached by state.notifications reference to guarantee useSyncExternalStore referential equality.
+ */
 export function selectRolledUpNotifications(
   state: NotificationStoreState
 ): RolledUpNotification[] {
+  if (state.notifications === cachedNotificationsRef) {
+    return cachedRolledUpResult;
+  }
+  cachedNotificationsRef = state.notifications;
+
   const groups = new Map<string, RolledUpNotification>();
 
   for (const notif of state.notifications) {
@@ -198,7 +217,9 @@ export function selectRolledUpNotifications(
     }
   }
 
-  return Array.from(groups.values()).sort(
+  cachedRolledUpResult = Array.from(groups.values()).sort(
     (a, b) => b.latest.created_at - a.latest.created_at
   );
+  return cachedRolledUpResult;
 }
+

@@ -7,14 +7,10 @@ import React, {
   memo,
 } from "react";
 import {
-  Target,
-  Plus,
-  Minus,
   Edit3,
   Download,
   Upload,
   Zap,
-  RefreshCw,
   Sparkles,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -39,8 +35,10 @@ import {
   MemoryLegendCard,
   MemoryNodeTooltip,
   SearchBar,
+  GraphControlDock,
   MemoryCategory,
 } from "@/shared/components/memory";
+
 
 export const Memory: React.FC = memo(() => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -210,56 +208,34 @@ export const Memory: React.FC = memo(() => {
         />
       </div>
 
-      {/* ── Top Center: HUD Title & Overview Controls ── */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5">
-        <button
-          onClick={() => graphRef.current?.recenter()}
-          title={MEMORY_COPY.recenterView}
-          className="p-2.5 rounded-2xl bg-[rgba(10,14,24,0.78)] border border-[rgba(255,255,255,0.08)] backdrop-blur-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(0,219,233,0.4)] transition-all cursor-pointer shadow-lg"
-        >
-          <Target size={15} />
-        </button>
-
-        <div className="px-4 py-2 rounded-2xl bg-[rgba(10,14,24,0.78)] border border-[rgba(255,255,255,0.08)] backdrop-blur-xl flex items-center gap-3 shadow-lg">
+      {/* ── Top Center: HUD Title & Metric ── */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center pointer-events-auto">
+        <div className="px-4 py-2 rounded-2xl bg-[rgba(var(--card),0.78)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl flex items-center gap-3 shadow-lg">
           <span className="text-[12px] font-display font-black tracking-[0.22em] uppercase text-[rgb(var(--accent))]">
             {MEMORY_COPY.memoryTitle}
           </span>
-          <span className="w-1 h-1 rounded-full bg-[rgba(255,255,255,0.2)]" />
+          <span className="w-1 h-1 rounded-full bg-[rgba(var(--border),0.25)]" />
           <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
             {facts.length} {MEMORY_COPY.activeFactsCount}
           </span>
         </div>
-
-        <button
-          onClick={() => refresh()}
-          disabled={refreshing}
-          title={MEMORY_COPY.refresh}
-          className="p-2.5 rounded-2xl bg-[rgba(10,14,24,0.78)] border border-[rgba(255,255,255,0.08)] backdrop-blur-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(0,219,233,0.4)] transition-all cursor-pointer shadow-lg disabled:opacity-50"
-        >
-          <RefreshCw size={15} className={cn(refreshing && "animate-spin text-[rgb(var(--accent))]")} />
-        </button>
       </div>
 
-      {/* ── Top Right: System Cluster & Zoom Controls ── */}
-      <div className="absolute top-4 right-4 z-30 flex items-start gap-2.5">
+      {/* ── Top Right: System Status & Time ── */}
+      <div className="absolute top-4 right-4 z-30 pointer-events-auto">
         <TopRightCluster />
-        <div className="flex flex-col rounded-2xl overflow-hidden border border-[rgba(255,255,255,0.08)] bg-[rgba(10,14,24,0.78)] backdrop-blur-xl shadow-lg">
-          <button
-            onClick={() => graphRef.current?.zoomIn()}
-            title={MEMORY_COPY.zoomIn}
-            className="p-2.5 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(0,219,233,0.08)] transition-colors border-b border-[rgba(255,255,255,0.06)] cursor-pointer"
-          >
-            <Plus size={14} />
-          </button>
-          <button
-            onClick={() => graphRef.current?.zoomOut()}
-            title={MEMORY_COPY.zoomOut}
-            className="p-2.5 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(0,219,233,0.08)] transition-colors cursor-pointer"
-          >
-            <Minus size={14} />
-          </button>
-        </div>
       </div>
+
+      {/* ── Right Edge: Floating Graph Control Dock ── */}
+      <GraphControlDock
+        onRecenter={() => graphRef.current?.recenter()}
+        onZoomIn={() => graphRef.current?.zoomIn()}
+        onZoomOut={() => graphRef.current?.zoomOut()}
+        onRefresh={() => refresh(true)}
+        onFocusCore={() => graphRef.current?.focusCore()}
+        refreshing={refreshing}
+      />
+
 
       {/* ── Bottom Floating Search Pill ── */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
@@ -307,7 +283,7 @@ export const Memory: React.FC = memo(() => {
       {/* ── Empty State ── */}
       {!loading && facts.length === 0 && (
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <div className="rounded-3xl bg-[rgba(10,14,24,0.75)] border border-[rgba(255,255,255,0.08)] backdrop-blur-xl p-8 max-w-sm text-center">
+          <div className="rounded-3xl bg-[rgba(var(--card),0.85)] border border-[rgba(var(--border),0.12)] backdrop-blur-xl p-8 max-w-sm text-center shadow-2xl">
             <Sparkles size={28} className="mx-auto text-[rgb(var(--accent))] mb-3 opacity-80" />
             <h3 className="font-display text-[14px] font-bold text-[rgb(var(--foreground))] mb-1">
               {MEMORY_COPY.emptyFactsTitle}
@@ -335,7 +311,7 @@ export const Memory: React.FC = memo(() => {
               {MEMORY_COPY.personalMemory}
             </span>
             {personalMemory && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-[rgba(0,219,233,0.12)] border border-[rgba(0,219,233,0.25)] text-[rgb(var(--accent))] font-medium">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] font-medium">
                 {`v${personalMemory.version}`}
               </span>
             )}
@@ -349,13 +325,14 @@ export const Memory: React.FC = memo(() => {
         headerActions={
           <div className="flex items-center gap-2 flex-wrap">
             {exportMessage && (
-              <span className="text-[11px] font-mono text-[rgb(var(--accent))] px-2 py-1 rounded bg-[rgba(0,219,233,0.1)]">
+              <span className="text-[11px] font-mono text-[rgb(var(--accent))] px-2 py-1 rounded bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)]">
                 {exportMessage}
               </span>
             )}
 
             {!editing ? (
               <button
+                type="button"
                 onClick={handleStartEdit}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] transition-colors cursor-pointer"
               >
@@ -364,6 +341,7 @@ export const Memory: React.FC = memo(() => {
             ) : (
               <>
                 <button
+                  type="button"
                   onClick={handleSaveMemory}
                   disabled={saving}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.4)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] transition-colors disabled:opacity-50 cursor-pointer"
@@ -371,8 +349,9 @@ export const Memory: React.FC = memo(() => {
                   {saving ? MEMORY_COPY.saving : MEMORY_COPY.save}
                 </button>
                 <button
+                  type="button"
                   onClick={handleCancelEdit}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
                 >
                   {MEMORY_COPY.cancel}
                 </button>
@@ -380,24 +359,27 @@ export const Memory: React.FC = memo(() => {
             )}
 
             <button
+              type="button"
               onClick={handleConsolidateNow}
               disabled={consolidating}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors disabled:opacity-50 cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors disabled:opacity-50 cursor-pointer"
             >
               <Zap size={12} className={cn(consolidating && "animate-pulse text-[rgb(var(--accent))]")} />
               {consolidating ? MEMORY_COPY.consolidating : MEMORY_COPY.consolidate}
             </button>
 
             <button
+              type="button"
               onClick={handleExportDoc}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
             >
               <Download size={12} /> {MEMORY_COPY.export}
             </button>
 
             <button
+              type="button"
               onClick={handleImportDoc}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
             >
               <Upload size={12} /> {MEMORY_COPY.import}
             </button>
@@ -410,7 +392,7 @@ export const Memory: React.FC = memo(() => {
             <textarea
               value={draftContent}
               onChange={(e) => setDraftContent(e.target.value)}
-              className="w-full h-[360px] bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.1)] rounded-2xl p-4 text-[13px] font-mono text-[rgb(var(--foreground))] leading-relaxed resize-none focus:outline-none focus:border-[rgba(0,219,233,0.45)] transition-colors"
+              className="w-full h-[360px] bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.14)] rounded-2xl p-4 text-[13px] font-mono text-[rgb(var(--foreground))] leading-relaxed resize-none focus:outline-none focus:border-[rgba(var(--accent),0.45)] transition-colors"
               spellCheck={false}
             />
             <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
@@ -418,7 +400,7 @@ export const Memory: React.FC = memo(() => {
             </span>
           </div>
         ) : (
-          <div className="prose prose-invert prose-sm max-w-none text-[rgb(var(--foreground))] leading-relaxed select-text">
+          <div className="prose dark:prose-invert prose-sm max-w-none text-[rgb(var(--foreground))] leading-relaxed select-text">
             {personalMemory?.content ? (
               <ReactMarkdown>{personalMemory.content}</ReactMarkdown>
             ) : (
@@ -431,7 +413,7 @@ export const Memory: React.FC = memo(() => {
 
         {/* Document Provenance Metadata Footer */}
         {personalMemory && (
-          <div className="mt-8 pt-3 border-t border-[rgba(255,255,255,0.06)] flex items-center justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+          <div className="mt-8 pt-3 border-t border-[rgba(var(--border),0.10)] flex items-center justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
             <span>
               {MEMORY_COPY.version} {personalMemory.version}
             </span>
@@ -441,6 +423,7 @@ export const Memory: React.FC = memo(() => {
           </div>
         )}
       </Drawer>
+
     </div>
   );
 });
