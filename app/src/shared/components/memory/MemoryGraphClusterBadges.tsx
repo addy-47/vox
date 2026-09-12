@@ -104,10 +104,11 @@ export const MemoryGraphClusterBadges = memo(
                 className="fixed z-40 p-4 rounded-2xl cursor-default select-none text-[rgb(var(--foreground))] pointer-events-auto shadow-2xl backdrop-blur-2xl w-[280px]"
               >
                 <div className="flex flex-col gap-2.5 w-full">
-                  <div className="flex items-center justify-between border-b pb-2 border-[rgba(255,255,255,0.08)]">
+                  <div className="flex items-center justify-between border-b pb-2 border-[rgba(var(--border),0.12)]">
                     <div className="flex items-center gap-2">
                       <Target size={14} style={{ color: activeBadge.color }} />
                       <span className="text-[12px] font-mono font-bold uppercase tracking-wider">
+
                         {activeBadge.collection}
                       </span>
                     </div>
