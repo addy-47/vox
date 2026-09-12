@@ -107,12 +107,17 @@ pub async fn continue_session(
         .conversation_id
         .store(session_id as u64, Ordering::Relaxed);
 
-    let session = fetch_session_by_id(&state.db, session_id)
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+
+    let session = fetch_session_by_id(&conn, session_id)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?
         .ok_or_else(|| VoxIpcError::NotFound(format!("Session {} not found", session_id)))?;
 
-    let turns = fetch_turns(&state.db, session_id)
+    let turns = fetch_turns(&conn, session_id)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
@@ -130,7 +135,11 @@ pub async fn get_sessions(
     project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<SessionRow>, VoxIpcError> {
-    fetch_sessions(&state.db, project_id.as_deref())
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    fetch_sessions(&conn, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
@@ -141,7 +150,11 @@ pub async fn get_turns(
     session_id: i64,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<TurnRow>, VoxIpcError> {
-    fetch_turns(&state.db, session_id)
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    fetch_turns(&conn, session_id)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
@@ -159,8 +172,12 @@ pub async fn update_session(
     if title.is_none() && is_pinned.is_none() && project_id.is_none() {
         return Ok(());
     }
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
     update_session_metadata(
-        &state.db,
+        &conn,
         session_id,
         title.as_deref(),
         is_pinned,
@@ -184,7 +201,11 @@ pub async fn delete_session(
     hard: Option<bool>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    delete_session_row(&state.db, session_id, hard.unwrap_or(false))
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    delete_session_row(&conn, session_id, hard.unwrap_or(false))
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 

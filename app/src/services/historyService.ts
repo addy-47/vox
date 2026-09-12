@@ -64,14 +64,37 @@ export function continueSession(sessionId: number): Promise<ContinueSessionResul
   return invoke("continue_session", { sessionId });
 }
 
+const sessionsInFlight = new Map<string, Promise<SessionRow[]>>();
+
 /** Returns active sessions optionally filtered by project, pinned-first then newest. */
 export function getSessions(projectId?: string): Promise<SessionRow[]> {
-  return invoke("get_sessions", { projectId: projectId ?? null });
+  const key = projectId ?? "__all__";
+  const existing = sessionsInFlight.get(key);
+  if (existing) {
+    return existing;
+  }
+  const promise = invoke<SessionRow[]>("get_sessions", { projectId: projectId ?? null })
+    .finally(() => {
+      sessionsInFlight.delete(key);
+    });
+  sessionsInFlight.set(key, promise);
+  return promise;
 }
+
+const turnsInFlight = new Map<number, Promise<TurnRow[]>>();
 
 /** Returns all turns for a session, oldest first. */
 export function getTurns(sessionId: number): Promise<TurnRow[]> {
-  return invoke("get_turns", { sessionId });
+  const existing = turnsInFlight.get(sessionId);
+  if (existing) {
+    return existing;
+  }
+  const promise = invoke<TurnRow[]>("get_turns", { sessionId })
+    .finally(() => {
+      turnsInFlight.delete(sessionId);
+    });
+  turnsInFlight.set(sessionId, promise);
+  return promise;
 }
 
 /**

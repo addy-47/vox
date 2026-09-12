@@ -321,18 +321,25 @@ pub fn run() {
 
             // ── 0.7 Database & Persistence Worker ──────────────────────────────────
             let rt_handle = persistence::db::get_tokio_handle();
-            let db_conn = match rt_handle.block_on(persistence::db::VoxDb::open(&paths::get().db)) {
-                Ok(conn) => conn,
+            let vox_db = match rt_handle.block_on(persistence::db::VoxDb::open(&paths::get().db)) {
+                Ok(db) => db,
                 Err(e) => {
                     log::error!("[BOOTSTRAP] Failed to open main database: {}", e);
                     panic!("Database initialization failed: {}", e);
                 }
             };
-            if let Err(e) = rt_handle.block_on(persistence::schema::run_migrations(&db_conn)) {
+            let migration_conn = match vox_db.connect() {
+                Ok(conn) => conn,
+                Err(e) => {
+                    log::error!("[BOOTSTRAP] Failed to vend migration connection: {}", e);
+                    panic!("Database connection failed: {}", e);
+                }
+            };
+            if let Err(e) = rt_handle.block_on(persistence::schema::run_migrations(&migration_conn)) {
                 log::error!("[BOOTSTRAP] Database migration failed: {}", e);
                 panic!("Database migration failed: {}", e);
             }
-            let db = Arc::new(db_conn);
+            let db = Arc::new(vox_db);
 
             let persist_tx = spawn_persistence_worker(
                 Arc::clone(&db),

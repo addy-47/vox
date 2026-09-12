@@ -17,7 +17,11 @@ use crate::{
 pub async fn get_notifications(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<NotificationRecord>, VoxIpcError> {
-    db_fetch_active(&state.db)
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(format!("Fetch notifications failed: {}", e)))?;
+    db_fetch_active(&conn)
         .await
         .map_err(|e| VoxIpcError::Database(format!("Fetch notifications failed: {}", e)))
 }
@@ -28,7 +32,11 @@ pub async fn mark_notifications_read(
     filter: Option<NotificationFilter>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    db_mark_read(&state.db, filter.as_ref())
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(format!("Mark notifications read failed: {}", e)))?;
+    db_mark_read(&conn, filter.as_ref())
         .await
         .map_err(|e| VoxIpcError::Database(format!("Mark notifications read failed: {}", e)))?;
 
@@ -41,7 +49,11 @@ pub async fn dismiss_notifications(
     filter: Option<NotificationFilter>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    db_dismiss_notifications(&state.db, filter.as_ref())
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(format!("Dismiss notifications failed: {}", e)))?;
+    db_dismiss_notifications(&conn, filter.as_ref())
         .await
         .map_err(|e| VoxIpcError::Database(format!("Dismiss notifications failed: {}", e)))?;
 

@@ -154,9 +154,21 @@ async fn execute_soft_compaction(
         }
     });
 
+    let conn = match state.db.connect() {
+        Ok(c) => c,
+        Err(e) => {
+            monitor_handle.abort();
+            log::warn!(
+                "[Harness::Watcher] Failed to vend connection for soft compaction: {}",
+                e
+            );
+            return;
+        }
+    };
+
     let result = match CompactionPlugin::run_and_persist(
         provider.as_ref(),
-        &state.db,
+        &conn,
         params,
     )
     .await

@@ -234,17 +234,18 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
     match ctx.pipeline_mode {
         PipelineMode::Modular => {
             let tokio_handle = get_tokio_handle();
-            let (personal_memory, summary, turns) = if let Some(sid) = session_id {
-                match tokio_handle.block_on(fetch_session_continuation(&state.db, sid)) {
+            let conn = state.db.connect().ok();
+            let (personal_memory, summary, turns) = if let (Some(sid), Some(conn)) = (session_id, conn.as_ref()) {
+                match tokio_handle.block_on(fetch_session_continuation(conn, sid)) {
                     Ok(data) => (data.personal_memory, data.latest_summary, data.turns),
                     Err(e) => {
                         log::warn!("[Pipeline::Session] Failed to fetch continuation: {}", e);
                         (None, None, Vec::new())
                     }
                 }
-            } else {
+            } else if let Some(conn) = conn.as_ref() {
                 let mem = tokio_handle
-                    .block_on(get_personal_memory(&state.db, None))
+                    .block_on(get_personal_memory(conn, None))
                     .ok()
                     .and_then(|r| {
                         if r.content.trim().is_empty() {
@@ -254,6 +255,8 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
                         }
                     });
                 (mem, None, Vec::new())
+            } else {
+                (None, None, Vec::new())
             };
 
             let llm_tx_opt = state
@@ -556,14 +559,23 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
-        let conn = &db;
-        let last_compacted = match fetch_latest_compaction_run(conn, session_id).await {
+        let conn = match db.connect() {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!(
+                    "[Pipeline::Session] Failed to vend connection for post-session check: {}",
+                    e
+                );
+                return;
+            }
+        };
+        let last_compacted = match fetch_latest_compaction_run(&conn, session_id).await {
             Ok(Some(run)) if run.status == "completed" => run.to_turn_id,
             _ => 0,
         };
 
         if let Ok(turns) =
-            fetch_turns_for_compaction(conn, session_id, last_compacted, u32::MAX).await
+            fetch_turns_for_compaction(&conn, session_id, last_compacted, u32::MAX).await
         {
             let uncompacted_count = turns.len() as u32;
             if uncompacted_count > 0 {

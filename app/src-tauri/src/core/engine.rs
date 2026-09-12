@@ -463,7 +463,12 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
         TtsActiveProvider::ChatterboxRemote => settings.tts.chatterbox_remote.voice_id.as_deref(),
         _ => None,
     };
-    let reference_audio = resolve_reference_audio(&state.db, voice_id).await;
+    let conn = state.db.connect().ok();
+    let reference_audio = if let Some(ref c) = conn {
+        resolve_reference_audio(c, voice_id).await
+    } else {
+        None
+    };
 
     // Check if workers are already active under a short lock
     let (needs_llm, needs_tts, playback_engine, pipeline_tx) = {
