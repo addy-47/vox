@@ -173,3 +173,11 @@ For high-level workspace invariants and active guidelines, refer to [AGENTS.md](
 - **Notification System Review & Audit complete:** Formatted `NOTIFICATION_SYSTEM_REVIEW.md` in root; identified 1 unit test assertion regression (`schema.rs:322`), 1 premature dismissal bug on action launch (`actions.rs:38`), and duplicate receipt emissions across `actions.rs` and `coordinator.rs`.
 - **Notification Bugfixes & Hardening complete:** Fixed `schema.rs:322` assertion (3 -> 4, unit test green); eliminated premature card dismissal in `actions.rs` ensuring deferred/failed tasks stay recoverable; removed duplicate receipt emissions across `actions.rs` and `coordinator.rs`/`scheduler.rs`; batched `f.ids` updates in `persistence/notifications.rs` using single SQL `WHERE id IN (...)` queries; stabilized descending sort order in `selectRolledUpNotifications`; wired `duration_ms` to `show_toast`; verified with `cargo test`, `clippy -D warnings` (0 warnings), and `pnpm build` (0 errors).
 
+---
+
+## Past Work (2026-09-12)
+
+> Entries migrated from `AGENTS.md` Section 5 on 2026-09-12.
+
+- **Docs surgical update (2026-09-12):** Updated `docs/frontend.md`, `docs/backend.md`, and `docs/features/dictation.md` to eliminate stale references: removed `voice_error`/`VoiceErrorPayload` (deleted in Phase 11), updated `pipeline/dictation.rs` → `pipeline/dictation/{mod,ptt,speech,transcript,error}.rs`, added `InteractionState::Sleeping`/`Working` variants, updated `IpcEvent` registry (added `NotificationCreated`/`Updated`, `PersonalMemoryUpdated`, `SessionsChanged`), fixed `ToastPayload` to use `Severity` not `ToastLevel`, updated `ingestion_gate` documentation, reflected `session.rs` unconditional owner handover, updated memory v2 schema (10 tables), added `threads` fields to `SttEmbeddedConfig`/`TtsSettings`, updated `services/dictation/hotkey.rs` relocation, updated `MemoryPipelineDrawer` to deprecated status, removed dead `clearHistory` reference, updated edge panels (`EdgePanel`/`usePanelState`), and updated `interactionMode.ts` normalization. All three docs verified zero stale references via grep.
+

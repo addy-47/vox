@@ -1,19 +1,19 @@
 ---
 title: "Vox Dictation Subsystem"
 audience: "Internal — backend & frontend contributors"
-last_updated: 2026-09-01
+last_updated: 2026-09-10
 owners: "backend-engineer role"
 related_docs:
   - "docs/backend.md §3, §8 — Pipeline & events"
   - "docs/features/voice-flow.md §8 — Dictation domain"
-  - "docs/plans/phase10/pipeline_orchestration_spec.md §7.5 — Dictation domain SSOT"
+  - "docs/specs/integration-test-spec.md — Seam 4 post-refactor dictation truth"
   - "app/src-tauri/src/toast.rs — Toast window lifecycle & emit chain"
-  - "app/src-tauri/src/core/events.rs:105 — ToastPayload / IpcEvent::ShowToast"
+  - "app/src-tauri/src/core/events.rs:128 — ToastPayload / IpcEvent::ShowToast"
   - "app/src/toast/ToastApp.tsx — Toast presentation & show_toast handling"
   - "AUDIT_IPC.md §3.D/§8 — Toast IPC surface (86-command audit)"
 ---
 
-# 📄 `dictation.md` — Realtime Dictation Subsystem & Output Architecture (Phase 10)
+# 📄 `dictation.md` — Realtime Dictation Subsystem & Output Architecture
 
 ---
 
@@ -21,7 +21,7 @@ related_docs:
 
 **Realtime Dictation** is a system-level, high-throughput speech-to-text pipeline in Vox inspired by Wispr-flow. It delivers instant, zero-latency transcription directly into any application on the operating system without incurring LLM reasoning or TTS synthesis overhead.
 
-Dictation is **fully decoupled from the desktop Tray HUD and unified**: Passive and PTT share a single `pipeline/dictation.rs` handler (no split files). `services/dictation/` holds the reusable primitives (clipboard, input adapters, output_router, hotkey). The central router (`pipeline/router.rs:12`) fast-paths `owner==Dictation` events directly to `pipeline/dictation.rs::handle_event` before the assistant handler match:
+Dictation is **fully decoupled from the desktop Tray HUD and unified**: Passive and PTT share a modular handler package (`pipeline/dictation/{mod,ptt,speech,transcript,error}.rs`) instead of a single monolith. `services/dictation/` holds the reusable primitives (clipboard, input adapters, output_router, hotkey). The central router (`pipeline/router.rs:119-122`) fast-paths `owner==Dictation` events directly to `pipeline/dictation/mod.rs::handle_event` before the assistant handler match:
 - **Dictation Core**: The native audio capture, VAD gating, STT acoustic transcription, and Devanagari transliteration engine.
 - **Output Mediums**: The transcription capability routes to mutually exclusive output destinations, where the desktop Tray HUD is simply one visual presentation medium among others. Reusable primitives live in `services/dictation/` (`clipboard.rs`, `input.rs`, `output_router.rs`, `hotkey.rs`, `mod.rs`).
 
@@ -41,20 +41,22 @@ Dictation is **fully decoupled from the desktop Tray HUD and unified**: Passive 
 │                               ┌───────────────────────────────────┴─────────────────┐    │
 │                               ▼                                                     ▼    │
 │                        [Ptt Mode: Alt+Space]                                [Passive Mode]│
-└───────────────────────────────┬─────────────────────────────────────────────────────┬────┘
-                                │                                                     │
-                                ▼                                                     ▼
-                  ┌─────────────────────────── OUTPUT ROUTER ───────────────────────────┐
-                  │                                                                     │
-                  │   ┌─────────────────────┬──────────────────────┬────────────────┐   │
-                  │   ▼                     ▼                      ▼                │   │
-                  │ [Mode 1: Paste]       [Mode 2: Clipboard]    [Mode 3: Tray HUD] │   │
-                  │ Simulated Keystroke   OS Clipboard Only      Floating Desktop   │   │
-                  │ (Linux: Ctrl+V        (Silent copy without   Overlay Window     │   │
-                  │  macOS: Cmd+V          keystroke injection)  (Persistent turns) │   │
-                  │  Windows: Ctrl+V      350ms restoration)                        │   │
-                  └─────────────────────────────────────────────────────────────────────┘
+└───────────────────┬─────────────────────────────────────────────────────────────┬────┘
+                    │                                                     │
+                    ▼                                                     ▼
+      ┌─────────────────────────── OUTPUT ROUTER ───────────────────────────┐
+      │                                                                     │
+      │   ┌─────────────────────┬──────────────────────┬────────────────┐   │
+      │   ▼                     ▼                      ▼                │   │
+      │ [Mode 1: Paste]       [Mode 2: Clipboard]    [Mode 3: Tray] │   │
+      │ Simulated Keystroke   OS Clipboard Only      Floating Desktop │   │
+      │ (Linux: Ctrl+V        (Silent copy without   Overlay Window   │   │
+      │  macOS: Cmd+V          keystroke injection)  (Persistent turns)│   │
+      │  Windows: Ctrl+V      350ms restoration)                        │   │
+      └─────────────────────────────────────────────────────────────────────┘
 ```
+
+**Module decomposition**: The unified dictation handler is now `pipeline/dictation/mod.rs::handle_event` which dispatches to `ptt.rs`, `speech.rs`, `transcript.rs`, and `error.rs`. The `services/dictation/` crate holds `clipboard.rs`, `hotkey.rs` (OS integration home), `input.rs`, `output_router.rs`, and `mod.rs`.
 
 ---
 
@@ -62,14 +64,14 @@ Dictation is **fully decoupled from the desktop Tray HUD and unified**: Passive 
 
 Dictation configuration is governed by two independent, orthogonal settings axes:
 
-### Axis 1: Interaction Mode (`interaction_mode`)
+### Axis 1: Interaction Mode (`dictation.interaction_mode`)
 - **`Ptt` (Push-To-Talk, Default)**:
-  - Triggered via global system shortcut (default `Alt+Space`).
-  - **Zero Idle RAM Guarantee**: 0 ONNX models loaded on boot; the unified dictation handler (`pipeline/dictation.rs`) lazily initializes audio/STT pipeline on-demand when the hotkey is first pressed.
-  - Recording captures speech while held/toggled, and finishes on release.
+    - Triggered via global system shortcut (default `Alt+Space`).
+    - **Zero Idle RAM Guarantee**: 0 ONNX models loaded on boot; the unified dictation handler (`pipeline/dictation/mod.rs::handle_event`) lazily initializes audio/STT pipeline on-demand when the hotkey is first pressed.
+    - Recording captures speech while held/toggled, and finishes on release.
 - **`Passive` (Continuous Sense)**:
-  - Audio engine is pre-warmed on application boot.
-  - Continuously monitors microphone energy via 300ms VAD gate and dispatches transcripts automatically when speech boundaries conclude.
+    - Audio engine is pre-warmed on application boot.
+    - Continuously monitors microphone energy via 300ms VAD gate and dispatches transcripts automatically when speech boundaries conclude.
 
 ### Axis 2: Output Destination (`output_mode`)
 Every output mode is **mutually exclusive** — at any given moment, transcription output routes to exactly one destination:
@@ -92,7 +94,7 @@ Every output mode is **mutually exclusive** — at any given moment, transcripti
 
 ## 3. Fast-Path Pipeline Interception
 
-When dictation is active, the pipeline owner is `InteractionOwner::Dictation` (`core/state.rs:10`). The central router dispatches all `VoxEvent`s to `pipeline/dictation.rs::handle_event` (`pipeline/router.rs:10-14`). On `VoxEvent::TranscriptFinal`:
+When dictation is active, the pipeline owner is `InteractionOwner::Dictation` (`core/state.rs:57`). The central router dispatches all `VoxEvent`s to `pipeline/dictation/mod.rs::handle_event` (`pipeline/router.rs:119-122`). On `VoxEvent::TranscriptFinal`:
 
 ```rust
 // Dispatches to OS input router and resets state to Idle
@@ -108,7 +110,7 @@ tauri::async_runtime::spawn(async move {
 transition(InteractionState::Idle, &ctx, app, state);
 ```
 
-Dictation has no `start_session`/`end_session` — it rides on the audio engine lifecycle (`lib.rs:360-395` auto-launch for Passive, lazy `ensure_engine_running` for PTT) and the router ownership check. While `owner==Assistant`, global hotkey `Press` events are received but are a no-op (assistant has exclusive mic priority). `DictationState` (`Recording→Transcribing→Idle`) is emitted to the tray via `emit_dictation_state` (`pipeline/dictation.rs:9`) mapping `Transcribing` to tray string `"Thinking"` for UI reuse.
+Dictation has no `start_session`/`end_session` — it rides on the audio engine lifecycle (`lib.rs:360-395` auto-launch for Passive, lazy `ensure_engine_running` for PTT) and the router ownership check. `InteractionState` (`core/state.rs:86-96`) now includes `Sleeping = 7` and `Working = 8` variants; dictation uses `Idle`, `Ready`, `Listening`, `Thinking`, and `Error` states. The unified `transition_dictation()` function (`pipeline/dictation/mod.rs:14`) emits `StateChanged` to `AppWindow::Tray`.
 
 **Benefits**:
 - **0ms LLM Overhead**: No prompt templating, context construction, token generation, or quantization lag.
@@ -208,18 +210,18 @@ Frontend ToastApp.tsx  ──►  onShowToast (eventsService.ts:220)  →  show(
 ```
 
 * **Window lifecycle:** `ensure_toast_window` (`toast.rs:22`) builds `360×96`, `transparent:true`, `decorations:false`, `always_on_top:true`, `visible:false`, `skip_taskbar:true`. The window **stays hidden** until `ToastApp` has mounted and painted its first frame — this eliminates the WebKitGTK black flash. Backend emits immediately but also retries (420ms + 300ms) and finally falls back to `w.show()` (`toast.rs:254`) if the event was missed. `position_toast_window` (`toast.rs:94`) centers at top with `24px` inset; on Linux it installs a fullscreen transparent GTK virtual layer with a `cairo::Region` input shape so only the 360×96 rect is hit-testable (`setup_linux_toast_layer`, `toast.rs:113`).
-* **IPC contract — SSOT `core/events.rs:105`:** `ToastPayload { title: String, message: String, level: ToastLevel, duration_ms?: u64 }`, `ToastLevel { Success, Warning, Error, Info }` (`serde(rename_all="lowercase")`), `IpcEvent::ShowToast(ToastPayload)` → `name="show_toast"` (`events.rs:156`), `emit_ipc_to("toast", …)` targeted to the toast webview (not broadcast). Mirrored in `services/eventsService.ts:93` (`ToastPayload`, `ToastLevel`, `IpcEventMap["show_toast"]`, `onShowToast`). Every backend call goes through `toast::show_toast`; no raw string literals at emit sites.
+* **IPC contract — SSOT `core/events.rs:128-134`:** `ToastPayload { title: String, message: String, severity: Severity, duration_ms?: u64 }`, `Severity { Info, Warning, Critical }` (`core/events.rs:99-105`), `IpcEvent::ShowToast(ToastPayload)` → `name="show_toast"` (`core/events.rs:207`), `emit_ipc_to("toast", …)` targeted to the toast webview (not broadcast). Mirrored in `services/eventsService.ts:93` (`ToastPayload`, `Severity`, `IpcEventMap["show_toast"]`, `onShowToast`). Every backend call goes through `toast::show_toast`; no raw string literals at emit sites.
 * **Commands (`lib.rs:511` + `toast.rs:162`):** `show_toast_window` (sync, frontend fallback after `getCurrentWindow().show()`), `hide_toast_window` (`toast.rs:176`), `destroy_toast_window_cmd` (`toast.rs:188`, reclaims RAM after 280ms teardown), `get_last_toast` (`toast.rs:197`, returns `LAST_TOAST` clone for late-joining webviews). Frontend currently calls all 4 directly from `ToastApp.tsx:34,37,55,80` — flagged in `AUDIT_IPC.md:185` as `AGENTS.md:4.1#5` violation; recommended move into `services/windowService.ts` or new `services/toastService.ts`.
-* **`should_show_error_toast` (`toast.rs:202`):** Guard that supplements `VoiceError` with a toast only when the main window (`pipeline::WINDOW_MAIN`) is hidden or destroyed — checked in every `on_error` path (`pipeline/dictation.rs:262`, `pipeline/modular/passive.rs:516`, etc.). Prevents duplicate banners when the user is already looking at the main HUD.
+* **`should_show_error_toast` (`toast.rs:202`):** Guard that supplements errors with a toast only when the main window (`pipeline::WINDOW_MAIN`) is hidden or destroyed — checked in every `on_error` path (`pipeline/dictation/error.rs`, `pipeline/assistant/error.rs`). Prevents duplicate banners when the user is already looking at the main HUD. |
 
 ### 6.2 Dictation-Specific Toast Triggers
 
-| Trigger | Code Path | Title | Message | `level` | Condition |
+| Trigger | Code Path | Title | Message | Severity | Condition |
 |---|---|---|---|---|---|
 | Clipboard write succeeded | `output_router.rs:36` `dispatch_to_clipboard` | `Dictation Copied` | `text` (full transcript) | `Success` | `output_mode == Clipboard` |
 | Paste injected (`Ctrl+V`/`Cmd+V`) | `output_router.rs:61` `dispatch_to_paste` `Ok(())` | `Dictation Pasted` | `text` | `Success` | `output_mode == Paste`, `with_clipboard_safe` + `simulate_paste` succeeded |
 | Paste blocked by OS/compositor | `output_router.rs:76` `dispatch_to_paste` `Err` | `Paste Blocked by OS` | `Transcript saved to clipboard — paste manually with Ctrl+V.` | `Warning` | Wayland security block, macOS Accessibility denied, `enigo` failure — transcript **left** on clipboard |
-| Engine/hotkey/STT failure | `pipeline/dictation.rs:263` `on_error` | `Voice Error` | `message` (typed `DictationError`) | `Error` | Also emits `voice_error { source:"Dictation", owner:"Dictation" }` to `WINDOW_TRAY`; toast only if `should_show_error_toast` is true |
+| Engine/hotkey/STT failure | `pipeline/dictation/error.rs:on_error` | `Voice Error` | `message` (typed `DictationError`) | `Critical` | Dispatches `IpcEvent::ShowToast` via `should_show_error_toast` gate; no `voice_error` event (removed) |
 
 Notes:
 * `Tray` mode bypasses OS injection entirely (`output_router.rs:20` `DictationOutputMode::Tray => Ok(())`) — **no toast** is emitted; the Tray HUD itself is the presentation surface.
@@ -235,7 +237,7 @@ Notes:
 
 ### 6.4 Relationship to Other Pipelines & Dev Poll
 
-The same toast layer is reused outside dictation for modular pipeline errors (`pipeline/modular/passive.rs:517` `Voice Error`) and realtime failures. A dev-only poll in `lib.rs:350` emits a rotating test toast every 60s (titles `Dictation Copied` / `Dictation Pasted` / `Paste Blocked by OS` / `Voice Error` with `Success/Warning/Error` levels) to exercise the fallback chain; it does not affect the dictation contract.
+The same toast layer is reused outside dictation for modular pipeline errors (`pipeline/assistant/error.rs`) and realtime failures. A dev-only poll in `lib.rs:350` emits a rotating test toast every 60s (titles `Dictation Copied` / `Dictation Pasted` / `Paste Blocked by OS` / `Voice Error` with `Success/Warning/Critical` levels) to exercise the fallback chain; it does not affect the dictation contract.
 
 ---
 
@@ -255,18 +257,7 @@ If simulated paste fails or the user accidentally loses their pasted text:
 
 ## 8. Zero Swallowed Errors Policy
 
-All dictation errors are strictly typed in `DictationError` and propagated without swallowing:
-
-```rust
-pub enum DictationError {
-    ClipboardFailed { message: String },
-    InputSimulationFailed { message: String },
-    HotkeyRegistrationFailed { message: String },
-    EngineNotReady { message: String },
-}
-```
-
-Every failure logs detailed diagnostic context and surfaces an error event to the frontend (`dictation_error`).
+All dictation errors are strictly typed in `DictationError` and propagated without swallowing. Errors dispatch through `pipeline/dictation/error.rs::on_error` which uses `IpcEvent::ShowToast` with `Severity::Critical` and the `should_show_error_toast` gate. The `voice_error` IPC event was removed in the Phase 11 refactor.
 
 ---
 
@@ -275,19 +266,21 @@ Every failure logs detailed diagnostic context and surfaces an error event to th
 ### 9.1 Backend Data Structures
 ```rust
 pub struct DictationSettings {
-    pub enabled: bool,                            // Master switch
-    pub interaction_mode: DictationInteractionMode, // Passive | Ptt
-    pub hotkey: String,                            // "Alt+Space"
-    pub output_mode: DictationOutputMode,          // Paste | Clipboard | Tray
+    pub enabled: bool,
+    pub interaction_mode: DictationInteractionMode, // Passive | Ptt (snake_case)
+    pub hotkey: String,
+    pub output_mode: DictationOutputMode, // Paste | Clipboard | Tray
 }
 ```
+Note: `DictationInteractionMode` uses `#[serde(rename_all = "snake_case")]`, so the serialized form is `"passive"` or `"ptt"`. The frontend `settingsStore.ts` mirrors this with `interaction_mode: "passive" | "ptt"`. Dictation settings are mutated via `apply_dictation_mutation` in `ipc/settings/mutation.rs`; `enabled` and `interaction_mode` changes trigger `transition_dictation(Ready|Idle)` via `ipc/settings/core.rs`.
 
 ### 9.2 Frontend Settings Desk
 In `InteractionCard.tsx`, users toggle between **Assistant** and **Dictation**:
 - **Voice Typing Switch**: Toggle `dictation.enabled`.
-- **Trigger Mode**: Switch between `Push-To-Talk` and `Continuous`.
+- **Trigger Mode**: Switch between `Push-To-Talk` and `Continuous` (mapped to `DictationInteractionMode::Ptt` / `Passive`).
 - **Output Destination**: Segmented control for `Simulated Paste`, `Clipboard Only`, and `Floating Tray`.
 - **Activation Hotkey**: Interactive key combination badge with inline edit support.
+- **`interaction_mode` normalization**: `shared/lib/interactionMode.ts` exports `InteractionModeUpper = "PASSIVE" | "PTT"` for the assistant domain; dictation uses `DictationInteractionMode` directly.
 
 ---
 
@@ -342,10 +335,9 @@ enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 > **⚠️ CI Gap**: The macOS and Windows `enigo` builds have not been verified in CI.
 > Cross-compile checks (`cargo check --target x86_64-apple-darwin` and
 > `cargo check --target x86_64-pc-windows-msvc`) should be added to the pipeline.
-
-> See [`performance-memory-optimizations.md`](./performance-memory-optimizations.md) for the
-> full cross-platform heap trimming strategy (`trim_heap`) applied after model eviction.
+>
+> **Note on `voice_error`**: The `voice_error` IPC event and `VoiceErrorPayload` were removed in the Phase 11 refactor. Dictation errors now dispatch through `pipeline/dictation/error.rs::on_error` which uses `IpcEvent::ShowToast` with `Severity::Critical` and the `should_show_error_toast` gate.
 
 ---
 
-**Last Updated:** 2026-09-03 — router fast-path uses `pipeline/handlers/` event-driven handlers; `DictationState` tray mapping clarified.
+**Last Updated:** 2026-09-10 — module decomposition (`pipeline/dictation/{mod,ptt,speech,transcript,error}.rs`), `DictationState` collapsed into `InteractionState`, `voice_error` removed, `ToastPayload` uses `Severity`, `hotkey.rs` relocated to `services/dictation/`, `transition_dictation` in `pipeline/dictation/mod.rs`.
