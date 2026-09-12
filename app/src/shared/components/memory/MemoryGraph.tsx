@@ -131,6 +131,7 @@ export const MemoryGraph = memo(
         instancedMeshRef,
         coreMeshRef,
         recenter,
+        focusCore,
         zoomIn,
         zoomOut,
       } = useMemoryGraphScene({
@@ -148,7 +149,9 @@ export const MemoryGraph = memo(
         recenter,
         zoomIn,
         zoomOut,
+        focusCore,
       }));
+
 
       // Raycaster + Proximity Picking on Node or Core Click
       const handlePointerDown = useCallback(
