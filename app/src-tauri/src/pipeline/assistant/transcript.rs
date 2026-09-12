@@ -123,12 +123,17 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
                         cancel: Some(&cancel),
                     };
 
-                    let compaction_res = CompactionPlugin::run_and_persist(
-                        provider.as_ref(),
-                        &app_state.db,
-                        params,
-                    )
-                    .await;
+                    let compaction_res = match app_state.db.connect() {
+                        Ok(conn) => {
+                            CompactionPlugin::run_and_persist(
+                                provider.as_ref(),
+                                &conn,
+                                params,
+                            )
+                            .await
+                        }
+                        Err(e) => Err(anyhow::anyhow!("Failed to vend connection for compaction: {e}")),
+                    };
 
                     let mut guard = harness_arc.lock();
                     if let Some(ref mut harness) = *guard {

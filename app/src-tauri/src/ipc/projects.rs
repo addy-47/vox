@@ -13,7 +13,11 @@ use crate::{
 /// Returns all workspace projects ordered newest first.
 #[tauri::command]
 pub async fn get_projects(state: State<'_, Arc<AppState>>) -> Result<Vec<ProjectRow>, VoxIpcError> {
-    db_get_projects(&state.db)
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    db_get_projects(&conn)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
@@ -30,8 +34,12 @@ pub async fn create_project(
             "Project name cannot be empty".to_string(),
         ));
     }
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
     let id = uuid::Uuid::new_v4().to_string();
-    db_create_project(&state.db, &id, trimmed)
+    db_create_project(&conn, &id, trimmed)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
@@ -49,7 +57,11 @@ pub async fn rename_project(
             "Project name cannot be empty".to_string(),
         ));
     }
-    db_rename_project(&state.db, &project_id, trimmed)
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    db_rename_project(&conn, &project_id, trimmed)
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
@@ -60,7 +72,11 @@ pub async fn delete_project(
     state: State<'_, Arc<AppState>>,
     project_id: String,
 ) -> Result<(), VoxIpcError> {
-    db_delete_project(&state.db, &project_id)
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    db_delete_project(&conn, &project_id)
         .await
         .map_err(|e| {
             let msg = e.to_string();

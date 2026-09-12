@@ -1,6 +1,11 @@
-use std::{path::Path, sync::LazyLock};
 
-use turso::{Builder, Connection};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
+
+use turso::{Builder, Connection, Database};
 
 use crate::{core::error::PersistenceError, persistence::SQLITE_BUSY_TIMEOUT_MS};
 
@@ -23,31 +28,70 @@ pub fn get_tokio_handle() -> tokio::runtime::Handle {
     })
 }
 
-/// Async database connection wrapper for the Turso engine.
-pub struct VoxDb;
+/// Thread-safe database engine wrapper for Turso.
+///
+/// Holds the underlying `Database` engine handle (`Clone + Send + Sync`) which coordinates
+/// the shared page cache, WAL, and background checkpointing. Vends independent `Connection`
+/// execution contexts via `connect()`.
+#[derive(Clone)]
+pub struct VoxDb {
+    db: Arc<Database>,
+    path: PathBuf,
+}
 
 impl VoxDb {
-    /// Opens a connection to the local database file.
-    pub async fn open(path: &Path) -> Result<Connection, PersistenceError> {
-        let path_str = path.to_string_lossy();
+    /// Opens the local database engine and runs initial pragmas on a bootstrap connection.
+    pub async fn open(path: impl AsRef<Path>) -> Result<Self, PersistenceError> {
+        let path_buf = path.as_ref().to_path_buf();
+        let path_str = path_buf.to_string_lossy().to_string();
         let db = Builder::new_local(&path_str)
             .experimental_index_method(true)
             .build()
             .await?;
-        let conn = db.connect()?;
 
-        // PRAGMA journal_mode returns a row with the result (e.g. "wal"), so use query() instead of execute()
-        if let Err(e) = conn.query("PRAGMA journal_mode = WAL;", ()).await {
-            log::warn!("[Persistence::Db] Failed to set journal_mode WAL: {}", e);
+        // Single bootstrap connection to initialize PRAGMAs
+        let conn = db.connect()?;
+        if let Err(e) = conn.pragma_update("journal_mode", "'mvcc'").await {
+            log::warn!("[Persistence::Db] Failed to set journal_mode mvcc: {}", e);
         }
-        let timeout_pragma = format!("PRAGMA busy_timeout = {};", SQLITE_BUSY_TIMEOUT_MS);
-        if let Err(e) = conn.execute(&timeout_pragma, ()).await {
+        if let Err(e) = conn.busy_timeout(Duration::from_millis(SQLITE_BUSY_TIMEOUT_MS as u64)) {
             log::warn!("[Persistence::Db] Failed to set busy_timeout: {}", e);
         }
-        if let Err(e) = conn.execute("PRAGMA foreign_keys = ON;", ()).await {
+        if let Err(e) = conn.pragma_update("foreign_keys", "ON").await {
             log::warn!("[Persistence::Db] Failed to enable foreign_keys: {}", e);
         }
 
+        Ok(Self {
+            db: Arc::new(db),
+            path: path_buf,
+        })
+    }
+
+    /// Vends an independent connection execution context sharing the underlying page cache & WAL.
+    pub fn connect(&self) -> Result<Connection, PersistenceError> {
+        let conn = self.db.connect()?;
+        if let Err(e) = conn.busy_timeout(Duration::from_millis(SQLITE_BUSY_TIMEOUT_MS as u64)) {
+            log::warn!(
+                "[Persistence::Db] Failed to set busy_timeout on vended connection: {}",
+                e
+            );
+        }
         Ok(conn)
+    }
+
+    /// Access the underlying raw `Database` engine handle.
+    pub fn raw_database(&self) -> &Arc<Database> {
+        &self.db
+    }
+
+    /// Returns the database file path.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Checks if a Turso error is a retryable MVCC conflict or busy condition.
+    pub fn is_retryable(e: &turso::Error) -> bool {
+        matches!(e, turso::Error::Busy(_) | turso::Error::BusySnapshot(_))
+            || matches!(e, turso::Error::Error(msg) if msg.contains("conflict"))
     }
 }

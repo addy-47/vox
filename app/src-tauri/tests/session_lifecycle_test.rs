@@ -41,7 +41,8 @@ fn setup_lifecycle_channels(state: &AppState) -> crossbeam_channel::Receiver<Per
 
 /// Helper: Seeds active Identity facts in personal_memory to verify preloading during `on_session_start`.
 async fn seed_test_identity_facts(db_path: &std::path::Path) -> anyhow::Result<()> {
-    let conn = vox_lib::persistence::db::VoxDb::open(db_path).await?;
+    let db = vox_lib::persistence::db::VoxDb::open(db_path).await?;
+    let conn = db.connect()?;
     vox_lib::persistence::schema::run_migrations(&conn).await?;
 
     conn.execute(

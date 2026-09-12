@@ -65,7 +65,8 @@ pub async fn run_consolidation_once<R: tauri::Runtime>(
     let provider = resolve_provider(state)
         .ok_or_else(|| anyhow!("Failed to initialize LLM provider for consolidation"))?;
 
-    let record = consolidate_personal_memory(&state.db, provider.as_ref(), None, None).await?;
+    let conn = state.db.connect()?;
+    let record = consolidate_personal_memory(&conn, provider.as_ref(), None, None).await?;
 
     if let Err(e) = emit_ipc(app, IpcEvent::PersonalMemoryUpdated(record)) {
         log::warn!(
@@ -75,7 +76,7 @@ pub async fn run_consolidation_once<R: tauri::Runtime>(
     }
 
     // Dismiss active interactive missed card for consolidation
-    if let Err(e) = dismiss_interactive_by_entity(&state.db, "memory_consolidation:missed").await {
+    if let Err(e) = dismiss_interactive_by_entity(&conn, "memory_consolidation:missed").await {
         log::warn!(
             "[Memory::Scheduler] Failed to dismiss interactive card on consolidation success: {}",
             e
@@ -149,7 +150,11 @@ pub async fn check_missed_consolidation_on_boot<R: tauri::Runtime>(
         return;
     }
 
-    let last = get_personal_memory(&state.db, None)
+    let conn = match state.db.connect() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let last = get_personal_memory(&conn, None)
         .await
         .map(|r| r.last_consolidated_at)
         .unwrap_or(0);
