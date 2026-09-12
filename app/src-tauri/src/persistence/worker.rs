@@ -14,11 +14,14 @@ use super::{
     queue::reconcile_crashed_queue_on_boot, sessions::cleanup_zero_turn_sessions, PersistenceEvent,
     PERSISTENCE_CHANNEL_CAPACITY, PERSISTENCE_RATE_INTERVAL, WORKER_EVENT_POLL_TIMEOUT,
 };
-use crate::{core::error::PersistenceError, persistence::db::get_tokio_handle};
+use crate::{
+    core::error::PersistenceError,
+    persistence::db::{get_tokio_handle, VoxDb},
+};
 
-/// Spawns the persistence worker on a dedicated OS thread sharing the bootstrap connection.
+/// Spawns the persistence worker on a dedicated OS thread holding an isolated database connection.
 pub fn spawn_persistence_worker(
-    db: Arc<Connection>,
+    vox_db: Arc<VoxDb>,
     is_db_healthy: Arc<AtomicBool>,
     persistence_rate: Arc<AtomicU32>,
     is_private_mode: Arc<AtomicBool>,
@@ -29,13 +32,21 @@ pub fn spawn_persistence_worker(
         .name("vox-persistence".to_string())
         .spawn(move || {
             let rt_handle = get_tokio_handle();
+            let conn = match vox_db.connect() {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("[Persistence::Worker] Failed to vend worker connection: {}", e);
+                    is_db_healthy.store(false, Ordering::Relaxed);
+                    return;
+                }
+            };
 
-            run_startup_sweeps(&db, &rt_handle);
-            log::info!("[Persistence::Worker] Worker started on shared connection");
+            run_startup_sweeps(&conn, &rt_handle);
+            log::info!("[Persistence::Worker] Worker started on dedicated connection");
 
             run_event_loop(
                 rx,
-                &db,
+                &conn,
                 &rt_handle,
                 &is_db_healthy,
                 &persistence_rate,
@@ -198,41 +209,62 @@ async fn process_event(conn: &Connection, event: PersistenceEvent) -> anyhow::Re
                 .unwrap_or_default()
                 .as_millis() as i64;
 
-            conn.execute("BEGIN IMMEDIATE;", ()).await?;
-            let res: Result<(), PersistenceError> = async {
-                conn.execute(
-                    "INSERT OR IGNORE INTO sessions (id, project_id, is_pinned, created_at, updated_at)
-                     VALUES (?, 'default', 0, ?, ?)",
-                    (session_id, now, now),
-                )
-                .await?;
-
-                conn.execute(
-                    "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, created_at)
-                     VALUES (?, ?, ?, ?, ?)",
-                    (session_id, turn_id as i64, user_text, assistant_text, now),
-                )
-                .await?;
-
-                conn.execute(
-                    "UPDATE sessions SET updated_at = ? WHERE id = ?",
-                    (now, session_id),
-                )
-                .await?;
-
-                Ok(())
-            }
-            .await;
-
-            match res {
-                Ok(_) => {
-                    conn.execute("COMMIT;", ()).await?;
-                }
-                Err(e) => {
-                    if let Err(rb_err) = conn.execute("ROLLBACK;", ()).await {
-                        log::warn!("[Persistence::Worker] Rollback failed: {}", rb_err);
+            let mut attempts = 0;
+            loop {
+                attempts += 1;
+                match conn.execute("BEGIN CONCURRENT;", ()).await {
+                    Ok(_) => {}
+                    Err(ref e) if attempts < 3 && VoxDb::is_retryable(e) => {
+                        tokio::task::yield_now().await;
+                        continue;
                     }
-                    return Err(e.into());
+                    Err(e) => return Err(e.into()),
+                }
+
+                let res: Result<(), PersistenceError> = async {
+                    conn.execute(
+                        "INSERT OR IGNORE INTO sessions (id, project_id, is_pinned, created_at, updated_at)
+                         VALUES (?, 'default', 0, ?, ?)",
+                        (session_id, now, now),
+                    )
+                    .await?;
+
+                    conn.execute(
+                        "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, created_at)
+                         VALUES (?, ?, ?, ?, ?)",
+                        (session_id, turn_id as i64, user_text.as_str(), assistant_text.as_str(), now),
+                    )
+                    .await?;
+
+                    conn.execute(
+                        "UPDATE sessions SET updated_at = ? WHERE id = ?",
+                        (now, session_id),
+                    )
+                    .await?;
+
+                    Ok(())
+                }
+                .await;
+
+                match res {
+                    Ok(_) => {
+                        match conn.execute("COMMIT;", ()).await {
+                            Ok(_) => break,
+                            Err(ref e) if attempts < 3 && VoxDb::is_retryable(e) => {
+                                let _ = conn.execute("ROLLBACK;", ()).await;
+                                tokio::task::yield_now().await;
+                                continue;
+                            }
+                            Err(e) => {
+                                let _ = conn.execute("ROLLBACK;", ()).await;
+                                return Err(e.into());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let _ = conn.execute("ROLLBACK;", ()).await;
+                        return Err(e.into());
+                    }
                 }
             }
 

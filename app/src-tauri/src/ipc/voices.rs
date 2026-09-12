@@ -79,8 +79,11 @@ pub async fn list_voices(
         }
     }
 
-    let conn = &state.db;
-    voices::list_voices(conn)
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    voices::list_voices(&conn)
         .await
         .map(|entries| entries.into_iter().map(VoiceEntryDto::from).collect())
         .map_err(|e| VoxIpcError::Database(format!("Failed to list voices: {}", e)))
@@ -151,8 +154,11 @@ pub async fn add_voice_from_file(
         preview_wav: None,
     };
 
-    let conn = &state.db;
-    voices::insert_voice(conn, &entry)
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    voices::insert_voice(&conn, &entry)
         .await
         .map_err(|e| VoxIpcError::Database(format!("Failed to save voice: {}", e)))?;
 
@@ -228,8 +234,11 @@ pub async fn add_voice_from_recording(
         preview_wav: None,
     };
 
-    let conn = &state.db;
-    voices::insert_voice(conn, &entry)
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    voices::insert_voice(&conn, &entry)
         .await
         .map_err(|e| VoxIpcError::Database(format!("Failed to save voice: {}", e)))?;
 
@@ -244,13 +253,16 @@ pub async fn add_voice_from_recording(
 /// Delete a voice entry from the database and remove all associated files from disk.
 #[tauri::command]
 pub async fn delete_voice(id: String, state: State<'_, Arc<AppState>>) -> Result<(), VoxIpcError> {
-    let conn = &state.db;
-    let entry = voices::get_voice(conn, &id)
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let entry = voices::get_voice(&conn, &id)
         .await
         .map_err(|e| VoxIpcError::Database(format!("DB error: {}", e)))?
         .ok_or_else(|| VoxIpcError::NotFound(format!("Voice not found: {}", id)))?;
 
-    voices::delete_voice(conn, &id)
+    voices::delete_voice(&conn, &id)
         .await
         .map_err(|e| VoxIpcError::Database(format!("Failed to delete voice from DB: {}", e)))?;
 
@@ -276,8 +288,11 @@ pub async fn rename_voice(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
     let name = name.trim().to_string();
-    let conn = &state.db;
-    voices::rename_voice(conn, &id, &name)
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    voices::rename_voice(&conn, &id, &name)
         .await
         .map_err(|e| VoxIpcError::Database(format!("Failed to rename voice: {}", e)))?;
     log::info!("[Voices] Renamed voice {} to '{}'", id, name);

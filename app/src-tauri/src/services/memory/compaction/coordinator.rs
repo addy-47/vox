@@ -65,9 +65,9 @@ impl CompactionCoordinator {
             }
         }
 
-        let conn = &state.db;
+        let conn = state.db.connect()?;
 
-        if let Ok(Some(latest)) = fetch_latest_compaction_run(conn, session_id).await {
+        if let Ok(Some(latest)) = fetch_latest_compaction_run(&conn, session_id).await {
             if latest.status == "in_progress" {
                 log::info!(
                     "[CompactionCoordinator] Compaction already in progress for session {}",
@@ -77,13 +77,13 @@ impl CompactionCoordinator {
             }
         }
 
-        let last_compacted_turn = match fetch_latest_compaction_run(conn, session_id).await {
+        let last_compacted_turn = match fetch_latest_compaction_run(&conn, session_id).await {
             Ok(Some(run)) if run.status == "completed" => run.to_turn_id,
             _ => 0,
         };
 
         let turns =
-            fetch_turns_for_compaction(conn, session_id, last_compacted_turn + 1, u32::MAX).await?;
+            fetch_turns_for_compaction(&conn, session_id, last_compacted_turn + 1, u32::MAX).await?;
         if turns.is_empty() {
             log::info!(
                 "[CompactionCoordinator] No turns pending compaction for session {}",
@@ -96,7 +96,7 @@ impl CompactionCoordinator {
         let to_turn_id = turns.last().map(|t| t.turn_id).unwrap_or(from_turn_id);
 
         let run_id =
-            match record_compaction_start(conn, session_id, trigger_kind, from_turn_id, to_turn_id)
+            match record_compaction_start(&conn, session_id, trigger_kind, from_turn_id, to_turn_id)
                 .await
             {
                 Ok(id) => id,
@@ -122,7 +122,7 @@ impl CompactionCoordinator {
             None => {
                 let err_msg = "Failed to initialize LLM provider for compaction";
                 if let Err(e) =
-                    record_compaction_finish(conn, run_id, "", "failed", Some(err_msg)).await
+                    record_compaction_finish(&conn, run_id, "", "failed", Some(err_msg)).await
                 {
                     log::warn!(
                         "[CompactionCoordinator] Failed to record compaction finish: {}",
@@ -158,21 +158,21 @@ impl CompactionCoordinator {
                     err_str
                 );
                 if let Err(record_err) =
-                    record_compaction_finish(conn, run_id, "", "failed", Some(&err_str)).await
+                    record_compaction_finish(&conn, run_id, "", "failed", Some(&err_str)).await
                 {
                     log::warn!(
                         "[CompactionCoordinator] Failed to record compaction failure: {}",
                         record_err
                     );
                 }
-                emit_session_compaction_failure_receipt(app, conn, session_id, &err_str).await;
+                emit_session_compaction_failure_receipt(app, &state.db, session_id, &err_str).await;
                 return Err(e);
             }
         };
 
         let facts_count = compaction_res.facts.len() as u32;
         commit_compaction_output(
-            conn,
+            &conn,
             run_id,
             &compaction_res.raw_json,
             &compaction_res.facts,
@@ -180,7 +180,7 @@ impl CompactionCoordinator {
         )
         .await?;
 
-        emit_session_compaction_success_receipt(app, conn, session_id, facts_count).await;
+        emit_session_compaction_success_receipt(app, &state.db, &conn, session_id, facts_count).await;
 
         log::info!(
             "[CompactionCoordinator] Successfully compacted session {} (enqueued {} facts)",
@@ -200,7 +200,7 @@ impl CompactionCoordinator {
     /// Emits a new notification alerting the user that a session has uncompacted turns.
     pub async fn notify_uncompacted_session<R: tauri::Runtime>(
         app: &AppHandle<R>,
-        conn: &Connection,
+        db: &crate::persistence::db::VoxDb,
         session_id: i64,
         uncompacted_turns: u32,
     ) -> Result<Option<String>> {
@@ -225,7 +225,7 @@ impl CompactionCoordinator {
             duration_ms: None,
         };
 
-        notify(app, conn, params).await
+        notify(app, db, params).await
     }
 }
 
@@ -261,6 +261,7 @@ fn resolve_llm_provider(settings: &LlmSettings) -> Option<Box<dyn LlmProvider>> 
 /// Emits passive receipt and dismisses interactive card on compaction success.
 async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
     app: &AppHandle<R>,
+    db: &crate::persistence::db::VoxDb,
     conn: &Connection,
     session_id: i64,
     facts_count: u32,
@@ -294,7 +295,7 @@ async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
         duration_ms: None,
     };
 
-    if let Err(e) = notify(app, conn, params).await {
+    if let Err(e) = notify(app, db, params).await {
         log::warn!(
             "[CompactionCoordinator] Failed to emit success receipt: {}",
             e
@@ -305,7 +306,7 @@ async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
 /// Emits passive warning receipt on compaction failure without mutating card attention status.
 async fn emit_session_compaction_failure_receipt<R: tauri::Runtime>(
     app: &AppHandle<R>,
-    conn: &Connection,
+    db: &crate::persistence::db::VoxDb,
     session_id: i64,
     err_str: &str,
 ) {
@@ -326,7 +327,7 @@ async fn emit_session_compaction_failure_receipt<R: tauri::Runtime>(
         duration_ms: None,
     };
 
-    if let Err(e) = notify(app, conn, params).await {
+    if let Err(e) = notify(app, db, params).await {
         log::warn!(
             "[CompactionCoordinator] Failed to emit failure receipt: {}",
             e

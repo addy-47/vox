@@ -65,7 +65,7 @@ enigo = { version = "0.2", default-features = false }                    # Nativ
 zbus = { version = "4", default-features = false, features = ["tokio"] }    # D-Bus IPC for Wayland XDG Desktop Portal shortcuts
 
 # ─── 7. Database & Persistence ──────────────────────────────────────────────
-turso = { version = "0.7.2" } # Embedded libSQL/SQLite database engine
+turso = { version = "0.8.0-pre.11" } # Embedded libSQL/SQLite database engine
 
 # ─── 8. Observability & Logging ─────────────────────────────────────────────
 log = "0.4"                                                    # Facade for logging

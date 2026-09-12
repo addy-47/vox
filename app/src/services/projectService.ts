@@ -8,9 +8,18 @@ export interface ProjectRow {
   updated_at: number;
 }
 
+let projectsInFlight: Promise<ProjectRow[]> | null = null;
+
 /** Returns all workspace projects ordered by most recently updated first. */
 export function getProjects(): Promise<ProjectRow[]> {
-  return invoke("get_projects");
+  if (projectsInFlight) {
+    return projectsInFlight;
+  }
+  projectsInFlight = invoke<ProjectRow[]>("get_projects")
+    .finally(() => {
+      projectsInFlight = null;
+    });
+  return projectsInFlight;
 }
 
 /** Creates a new project category. Rejects with VoxIpcError if name is blank. */

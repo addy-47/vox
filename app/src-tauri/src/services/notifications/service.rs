@@ -5,9 +5,12 @@ use turso::Connection;
 
 use crate::{
     core::events::{emit_ipc, IpcEvent},
-    persistence::notifications::{
-        create_notification, find_active_interactive_by_group, update_interactive_notification,
-        NewNotification, NotificationRecord,
+    persistence::{
+        db::VoxDb,
+        notifications::{
+            create_notification, find_active_interactive_by_group, update_interactive_notification,
+            NewNotification, NotificationRecord,
+        },
     },
 };
 use super::{
@@ -19,7 +22,7 @@ use super::{
 /// Resolves the delivery channel via the deterministic 3D routing engine and dispatches accordingly.
 pub async fn notify<R: tauri::Runtime>(
     app: &AppHandle<R>,
-    db: &Connection,
+    db: &VoxDb,
     params: NotificationParams<'_>,
 ) -> anyhow::Result<Option<String>> {
     let channel = resolve_channel(params.impact, params.severity, &params.action);
@@ -33,14 +36,16 @@ pub async fn notify<R: tauri::Runtime>(
             params.duration_ms,
         );
         if !toast_ok && channel == DeliveryChannel::ToastOnly {
-            return elevate_toast_to_drawer(app, db, &params).await;
+            let conn = db.connect()?;
+            return elevate_toast_to_drawer(app, &conn, &params).await;
         }
     }
 
     if channel == DeliveryChannel::NotificationOnly
         || channel == DeliveryChannel::ToastAndNotification
     {
-        return dispatch_drawer(app, db, &params).await;
+        let conn = db.connect()?;
+        return dispatch_drawer(app, &conn, &params).await;
     }
 
     Ok(None)

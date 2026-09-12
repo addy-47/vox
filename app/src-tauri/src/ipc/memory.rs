@@ -33,7 +33,11 @@ pub async fn get_personal_memory(
     project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<PersonalMemoryRecord, VoxIpcError> {
-    db_get_personal_memory(&state.db, project_id.as_deref())
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    db_get_personal_memory(&conn, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
@@ -47,8 +51,12 @@ pub async fn save_personal_memory(
     project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<PersonalMemoryRecord, VoxIpcError> {
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
     let record = db_save_personal_memory(
-        &state.db,
+        &conn,
         project_id.as_deref(),
         &content,
         expected_version as i64,
@@ -98,8 +106,12 @@ pub async fn consolidate_personal_memory(
         }
     };
 
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
     let record = service_consolidate_personal_memory(
-        &state.db,
+        &conn,
         provider.as_ref(),
         comments,
         project_id.as_deref(),
@@ -121,7 +133,11 @@ pub async fn export_personal_memory(
     project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    let record = db_get_personal_memory(&state.db, project_id.as_deref())
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let record = db_get_personal_memory(&conn, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
@@ -145,12 +161,16 @@ pub async fn import_personal_memory(
         VoxIpcError::Internal(format!("Failed to read memory file {}: {}", source_path, e))
     })?;
 
-    let current = db_get_personal_memory(&state.db, project_id.as_deref())
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let current = db_get_personal_memory(&conn, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     let record =
-        db_save_personal_memory(&state.db, project_id.as_deref(), &content, current.version)
+        db_save_personal_memory(&conn, project_id.as_deref(), &content, current.version)
             .await
             .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
@@ -170,7 +190,10 @@ pub async fn get_active_facts(
     project_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<FactRecord>, VoxIpcError> {
-    let conn = Arc::clone(&state.db);
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
     fetch_all_active_facts(&conn, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
