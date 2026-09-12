@@ -10,6 +10,7 @@ interface SearchBarProps {
   onCommitSearch: (query: string) => void;
   onSelectNode: (factId: string | null) => void;
   className?: string;
+  dropdownPlacement?: "bottom" | "top";
 }
 
 export const SearchBar = memo<SearchBarProps>(({
@@ -17,6 +18,7 @@ export const SearchBar = memo<SearchBarProps>(({
   onCommitSearch,
   onSelectNode,
   className,
+  dropdownPlacement = "bottom",
 }) => {
   const [value, setValue] = useState("");
   const [focused, setFocused] = useState(false);
@@ -54,9 +56,11 @@ export const SearchBar = memo<SearchBarProps>(({
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
   }, [onCommitSearch]);
 
+  const isTopDropdown = dropdownPlacement === "top";
+
   return (
     <div className={cn("relative pointer-events-auto", className)}>
-      <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl glass-card border border-[rgba(255,255,255,0.08)] bg-[rgba(10,14,24,0.85)] backdrop-blur-2xl shadow-xl w-[320px] transition-all focus-within:border-[rgba(0,219,233,0.45)]">
+      <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl glass-card border border-[rgba(var(--border),0.14)] bg-[rgba(var(--card),0.85)] backdrop-blur-2xl shadow-xl w-[320px] transition-all focus-within:border-[rgba(var(--accent),0.5)]">
         <Search size={14} className="text-[rgb(var(--accent))] shrink-0 opacity-80" />
         <input
           type="text"
@@ -80,9 +84,15 @@ export const SearchBar = memo<SearchBarProps>(({
 
       {/* Quick Search Dropdown Preview */}
       {focused && results.length > 0 && (
-        <div className="absolute bottom-[calc(100%+8px)] left-0 w-[360px] rounded-2xl glass-card border border-[rgba(0,219,233,0.25)] bg-[rgba(10,14,24,0.96)] backdrop-blur-2xl shadow-2xl p-2 z-50 flex flex-col gap-1 overflow-hidden">
-          <div className="px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))] border-b border-[rgba(255,255,255,0.06)]">
-            Matching Memory Facts ({results.length})
+        <div
+          className={cn(
+            "absolute left-1/2 -translate-x-1/2 w-[380px] rounded-2xl glass-card border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--card),0.96)] backdrop-blur-2xl shadow-2xl p-2 z-50 flex flex-col gap-1 overflow-hidden",
+            isTopDropdown ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
+          )}
+        >
+          <div className="px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))] border-b border-[rgba(var(--border),0.10)] flex items-center justify-between">
+            <span>{MEMORY_COPY.matchingFacts}</span>
+            <span className="opacity-70 font-bold">{results.length}</span>
           </div>
           {results.map((fact) => {
             const col = getCollectionColor(fact.fact_type);
@@ -94,18 +104,18 @@ export const SearchBar = memo<SearchBarProps>(({
                   onSelectNode(fact.id);
                   onCommitSearch(value);
                 }}
-                className="flex flex-col text-left p-2 rounded-xl hover:bg-[rgba(255,255,255,0.05)] transition-colors cursor-pointer"
+                className="flex flex-col text-left p-2 rounded-xl hover:bg-[rgba(var(--foreground),0.05)] transition-colors cursor-pointer"
               >
                 <div className="flex items-center gap-1.5 mb-1">
                   <span
                     className="w-2 h-2 rounded-full shrink-0"
                     style={{ background: col.main }}
                   />
-                  <span className="text-[10px] font-mono uppercase text-[rgb(var(--foreground-muted))]">
+                  <span className="text-[10px] font-mono uppercase text-[rgb(var(--foreground-muted))] font-semibold">
                     {fact.fact_type}
                   </span>
                   {fact.session_id !== null && (
-                    <span className="text-[9px] font-mono opacity-50 ml-auto">
+                    <span className="text-[9px] font-mono text-[rgb(var(--foreground-muted))]/60 ml-auto">
                       #{fact.session_id}
                     </span>
                   )}
