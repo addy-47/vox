@@ -1,238 +1,262 @@
-# Turso Database Engine — What It Is, Features, and How Vox Uses It
+# Turso Database Engine — Technical Specification & Feature Reference
 
-## What Is Turso?
+## 1. Engine Overview
 
-Turso is a **modern embeddable database engine** — a clean-room Rust rewrite of SQLite built from scratch (formerly codenamed "Limbo"). It is maintained by Turso (chiselstrike) and represents the next generation of the libSQL project.
+**Turso** is an in-process, embeddable SQL database engine built as a clean-room Rust rewrite of SQLite (originally codenamed "Limbo"). Maintained by Turso (ChiselStrike), it combines SQLite file-format and SQL-dialect compatibility with a modern async-first, pure-Rust architecture designed for multi-threaded and distributed systems.
 
-| Layer | Turso Database (this engine) | libSQL |
-|-------|------------------------------|--------|
-| **Language** | Pure Rust (zero C deps) | SQLite C fork |
-| **Async I/O** | Native tokio async | Blocking C calls |
-| **Concurrent writes** | MVCC via `BEGIN CONCURRENT` | Single-writer lock |
-| **Vector search** | Native types + index | Same vector support |
-| **Production** | Beta | Production-ready |
-| **Future** | All new development | Maintenance mode |
-
-Vox uses the **`turso` crate v0.7.2** as its primary embedded persistence layer for local memory storage, graph relations, voice management, session tracking, and staging queues (tracking the upcoming `v0.8.0` MVCC stabilization milestone).
-
----
-
-## 1. Core Features
-
-### 1.1 Multi-Version Concurrency Control (MVCC)
-- **`BEGIN CONCURRENT`** — Turso-specific transaction mode for optimistic concurrent multi-threaded writes, unlike SQLite's single-writer lock.
-- **No disk lock contention** — readers and writers operate concurrently without blocking the audio hot-path or background compaction.
-
-### 1.2 Native Async I/O
-- Direct integration with `tokio` async runtime via `conn.query(...).await` and `conn.execute(...).await`.
-- Non-blocking ingestion for background queue processing, vector search, and compaction.
-
-### 1.3 Pure Rust & Zero C Dependencies
-- Compiles natively with `cargo` — no external C compiler toolchain required.
-- Memory safety via Rust's borrow checker eliminates entire classes of bugs common in C SQLite codebases.
-
-### 1.4 SQLite Compatibility
-- SQL dialect, file format, and SQLite C API compatibility (subset).
-- Supports standard SQL: `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `JOIN`, aggregation, subqueries.
-
-### 1.5 Postgres Frontend (Experimental)
-- Turso can speak the Postgres wire protocol for Postgres-compatible clients. Not currently used in Vox.
+| Dimension | Turso Database Engine (`turso` v0.8.0-pre.11) | libSQL (Legacy SQLite C fork) | Standard SQLite (C) |
+|---|---|---|---|
+| **Language & Toolchain** | Pure Rust (`cargo` build, zero C toolchain) | C (SQLite fork) + Rust bindings | Pure C |
+| **Async Architecture** | Native Tokio async I/O (`.await`) | Blocking C calls wrapped in thread pools | Blocking synchronous C calls |
+| **Concurrency Model** | Multi-Version Concurrency Control (MVCC) via `BEGIN CONCURRENT` | Single-writer WAL lock | Single-writer WAL / rollback journal |
+| **Vector Engine** | Native vector storage types (`F32_BLOB`, etc.) + distance functions | Custom vector extensions / DiskANN in C | None (requires SQLite extension) |
+| **Full-Text Search** | Built-in [Tantivy](https://github.com/quickwit-oss/tantivy) index via `USING fts` | FTS5 C extension | FTS5 C extension |
+| **Encryption at Rest** | AEGIS-256 local encryption | SQLCipher / custom codec | SQLite Encryption Extension (SEE, commercial) |
+| **Cloud Replication** | Native local-first sync (`turso --features sync`) | Native replication protocol | None native |
+| **Memory Management** | Rust borrow checker + optional `mimalloc` allocator | C `malloc` / `free` | C `sqlite3_malloc` |
 
 ---
 
-## 2. Storage & Indexing Features
+## 2. Core Architecture & Lifecycles
 
-### 2.1 Native Vector Search (Built-in — No Extensions Required)
+### 2.1 Engine Primitives: `Database` vs `Connection`
 
-**Vector Types:**
-| Type | SQL Alias | Storage | Precision |
-|------|-----------|---------|-----------|
-| `FLOAT64` | `F64_BLOB` | 8D + 1 bytes | IEEE 754 double |
-| `FLOAT32` | `F32_BLOB` | 4D bytes | IEEE 754 single |
-| `FLOAT16` | `F16_BLOB` | 2D + 1 bytes | Half precision |
-| `FLOATB16` | `FB16_BLOB` | 2D + 1 bytes | BFloat16 |
-| `FLOAT8` | `F8_BLOB` | D + 14 bytes | 8-bit quantized |
-| `FLOAT1BIT` | `F1BIT_BLOB` | ⌈D/8⌉ + 3 bytes | 1-bit binary |
+The engine establishes a strict separation between database management and execution contexts:
 
-**Vector Functions:**
-- `vector32(...)` / `vector64(...)` — Convert JSON array or binary to vector type
-- `vector_extract(...)` — Extract vector as text representation
-- `vector_distance_cos(a, b)` — Cosine distance (1 - cosine similarity)
-- `vector_distance_l2(a, b)` — Euclidean distance
-
-**Vector Index (DiskANN-based):**
-```sql
-CREATE INDEX idx_name ON table_name (libsql_vector_idx(column));
 ```
-- Approximate nearest neighbor (ANN) search via `vector_top_k(idx_name, q_vector, k)` table-valued function
-- Configurable: `metric` (cosine/l2), `max_neighbors`, `search_l`, `insert_l`
-- Partial vector indexes with `WHERE` filters supported
+                  ┌────────────────────────────────────────────────────────┐
+                  │                 turso::Database                        │
+                  │   - Thread-safe handle (Clone + Send + Sync)           │
+                  │   - Shared Page Cache & Buffer Pool                    │
+                  │   - Multi-Process WAL Coordinator (.tshm)              │
+                  │   - Global Extension & Symbol Registry                 │
+                  └──────────────────────────┬─────────────────────────────┘
+                                             │
+                                   .connect() │ produces independent contexts
+                                             │
+               ┌─────────────────────────────┼─────────────────────────────┐
+               ▼                             ▼                             ▼
+   ┌───────────────────────┐   ┌───────────────────────┐   ┌───────────────────────┐
+   │   turso::Connection   │   │   turso::Connection   │   │   turso::Connection   │
+   │  - Independent Gate   │   │  - Independent Gate   │   │  - Independent Gate   │
+   │  - Dangling Tx Guard  │   │  - Dangling Tx Guard  │   │  - Dangling Tx Guard  │
+   │  - Statement Cache    │   │  - Statement Cache    │   │  - Statement Cache    │
+   └───────────────────────┘   └───────────────────────┘   └───────────────────────┘
+```
 
-### 2.2 Full-Text Search (Tantivy-Powered)
-- Built-in FTS index powered by [tantivy](https://github.com/quickwit-oss/tantivy) with BM25 scoring. Not currently used in Vox.
+#### `turso::Database`
+- Created once via `turso::Builder::new_local(path).build().await?`.
+- Implements `Clone + Send + Sync`. Cloning creates a cheap `Arc` reference to the same underlying storage engine, buffer pool, and lock manager.
+- Acts as a **connection factory** via `db.connect() -> Result<Connection>`.
+- Coordinates write-ahead logging, background checkpointing, and page cache flush policies across all child connections.
 
-### 2.3 Multi-Process WAL
-- `experimental_multiprocess_wal(true)` — enables a `.tshm` sidecar for coordinating WAL access across multiple OS processes.
-
-### 2.4 Standard B-Tree Indexes
-- Full support for `CREATE INDEX`, `CREATE UNIQUE INDEX`, partial indexes, descending indexes.
+#### `turso::Connection`
+- Represents an independent SQL execution context.
+- Implements `Send + Sync`. Can be cloned, but clones share the internal `ConnectionOperationGate`.
+- **Concurrency Gate (`ConnectionOperationGate`)**:
+  - Uses an atomic state machine (`AtomicUsize`) to coordinate operations on the connection.
+  - Read queries (`conn.query()`) acquire **shared operation guards** (`acquire_shared()`), enabling multiple concurrent read streams on the same connection.
+  - Batches and explicit write transactions acquire an **exclusive operation guard** (`acquire_exclusive()`). Attempting to run concurrent exclusive operations on the same connection returns `Error::Misuse("connection is busy...")`.
+- **Dangling Transaction Safety (`AtomicDropBehavior`)**:
+  - If a transaction handle is dropped without calling `.commit()` or `.rollback()`, the connection tracks the dangling transaction and safely executes the configured drop action (`DropBehavior::Rollback` by default) on the next access.
+- **Statement Caching**: Supports prepared statement caching via `conn.prepare_cached(sql)`.
 
 ---
 
-## 3. Data Management Features
+## 3. Concurrency, Transactions & MVCC
 
-### 3.1 Change Data Capture (CDC)
-```sql
-PRAGMA unstable_capture_data_changes_conn('id');
-```
-- Records all INSERT, UPDATE, DELETE operations to the `turso_cdc` system table.
+### 3.1 Concurrency Modes
 
-### 3.2 Encryption at Rest (AEGIS-256)
+Turso supports four transaction behaviors defined by `turso::transaction::TransactionBehavior`:
+
+| Mode | SQL Command | Concurrency Characteristics | Use Case |
+|---|---|---|---|
+| `Deferred` | `BEGIN DEFERRED` | Transaction does not acquire locks until the database is first accessed. Default behavior. | General read-heavy or single-connection operations |
+| `Immediate` | `BEGIN IMMEDIATE` | Reserves write access immediately. Blocks other writers from beginning. | Predictable sequential writes |
+| `Exclusive` | `BEGIN EXCLUSIVE` | Prevents other connections from reading or writing while active. | Schema migrations, system reconfigurations |
+| `Concurrent` | `BEGIN CONCURRENT` | **MVCC mode**. Multiple writers proceed in parallel without table-level locks. | High-throughput concurrent multi-threaded writes |
+
+### 3.2 Multi-Version Concurrency Control (MVCC)
+
+When `PRAGMA journal_mode = 'mvcc'` is enabled:
+1. Multiple connections can begin write transactions concurrently using `conn.execute("BEGIN CONCURRENT", ())` or `conn.transaction_with_behavior(TransactionBehavior::Concurrent)`.
+2. Each connection operates against an optimistic snapshot of the database.
+3. Write conflicts are detected atomically at `COMMIT` time:
+   - If two concurrent transactions modify distinct rows/pages, both commit successfully.
+   - If two transactions modify overlapping rows/pages, the first to commit succeeds; the second receives a conflict error and must rollback and retry.
+
+#### Retry Protocol for MVCC Conflicts
 ```rust
-Builder::new_local("encrypted.db")
-    .experimental_encryption(true)
-    .with_encryption(EncryptionOpts {
-        cipher: "aegis256".to_string(),
-        hexkey: "<64-char-hex>".to_string(),
-    })
+fn is_retryable(e: &turso::Error) -> bool {
+    matches!(e, turso::Error::Busy(_) | turso::Error::BusySnapshot(_))
+        || matches!(e, turso::Error::Error(msg) if msg.contains("conflict"))
+}
 ```
-- Encrypted databases are opaque blobs — cannot be read by standard SQLite tools.
 
-### 3.3 Materialized Views
-- Incrementally maintained via `experimental_materialized_views(true)`.
-- Live query subscriptions for reactive applications.
+### 3.3 Phased Exponential Backoff (`busy_timeout`)
 
-### 3.4 Custom Types (STRICT Tables)
-- `CREATE TYPE` for user-defined types via `experimental_custom_types(true)`.
-
-### 3.5 Enhanced Vacuum
-- `experimental_vacuum(true)` for better space reclamation.
-
-### 3.6 Attach Database
-- `experimental_attach(true)` for `ATTACH DATABASE` support across multiple DB files.
-
-### 3.7 Aggregate Functions
-- Standard: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `GROUP_CONCAT`
-- Extension: `stddev()` — standard deviation aggregate
+Turso provides native busy timeout management via `conn.busy_timeout(duration: Duration)`. Unlike standard SQLite's linear sleep:
+- Sleeps in escalating phases (1ms, then 2ms, up to a 100ms cap per phase) until the total accumulated duration is reached.
+- Non-blocking to the Tokio async runtime when yields are scheduled.
 
 ---
 
-## 4. Cloud Sync (Optional `sync` Feature)
+## 4. Query, Statement & Batch APIs
 
-Bidirectional synchronization with Turso Cloud via the `sync` Cargo feature.
+### 4.1 Statement Preparation & Caching
+- `conn.query(sql, params).await -> Result<Rows>`: Executes query and returns asynchronous row stream.
+- `conn.execute(sql, params).await -> Result<u64>`: Executes modification and returns affected row count.
+- `conn.prepare(sql).await -> Result<Statement>`: Prepares a one-off statement.
+- `conn.prepare_cached(sql).await -> Result<Statement>`: Prepares and caches the compiled statement within the connection's LRU cache.
+
+### 4.2 Batch Execution Models
+
+| Method | Transactional | Rollback on Error | Returns | Description |
+|---|---|---|---|---|
+| `conn.execute_batch(sql)` | Non-atomic | No (persists until failure) | `Result<()>` | Raw multi-statement SQL string execution (useful for DDL schemas). |
+| `conn.batch(stmts)` | Non-atomic | No (completed statements persist) | `Result<Vec<BatchResult>>` | Parameterized batch. Execution halts at first error; returns `Error::BatchStatementFailed` with statement index. |
+| `conn.transactional_batch(stmts, behavior)` | **Atomic** | **Yes (automatic `ROLLBACK`)** | `Result<Vec<BatchResult>>` | All-or-nothing execution wrapped in `BEGIN <behavior> / COMMIT`. Rejects manual transaction controls inside statements. |
+
+### 4.3 Pragma Operations
+- `conn.pragma_update(name, value).await -> Result<Vec<Row>>`: Formats and executes `PRAGMA name = value`.
+- `conn.pragma_query(name, callback).await -> Result<()>`: Inspects pragma values through a typed row visitor closure.
+
+---
+
+## 5. Storage Engine, Data Types & Vector Search
+
+### 5.1 Native Vector Primitives (Zero External Extensions)
+
+Turso embeds vector types and distance functions directly into the SQL engine:
+
+#### Supported Vector Types
+| Type | SQL Dialect Alias | Storage Layout | Precision |
+|---|---|---|---|
+| `FLOAT64` | `F64_BLOB` | 8 bytes × dimensions + 1 byte header | 64-bit IEEE 754 double |
+| `FLOAT32` | `F32_BLOB` | 4 bytes × dimensions | 32-bit IEEE 754 single |
+| `FLOAT16` | `F16_BLOB` | 2 bytes × dimensions + 1 byte header | 16-bit half precision |
+| `FLOATB16` | `FB16_BLOB` | 2 bytes × dimensions + 1 byte header | 16-bit BFloat16 |
+| `FLOAT8` | `F8_BLOB` | 1 byte × dimensions + 14 bytes header | 8-bit quantized float |
+| `FLOAT1BIT` | `F1BIT_BLOB` | ⌈dimensions / 8⌉ bytes + 3 bytes header | 1-bit binary quantized |
+
+#### Vector SQL Functions
+- `vector32(blob_or_json)`: Casts JSON string array (e.g. `'[0.1, 0.2, ...]'`) or raw binary blob into an `F32_BLOB`.
+- `vector64(blob_or_json)`: Casts into an `F64_BLOB`.
+- `vector_extract(vector_col)`: Serializes vector column to human-readable JSON string.
+- `vector_distance_cos(a, b)`: Computes native cosine distance ($1.0 - \text{cosine\_similarity}$).
+- `vector_distance_l2(a, b)`: Computes native Euclidean $L_2$ distance.
+
+#### Exact Vector Retrieval Pattern
+```sql
+SELECT id, vector_distance_cos(embedding, vector32(?1)) AS distance
+FROM memory_facts_vectors
+WHERE status = 'active'
+ORDER BY distance ASC
+LIMIT 10;
+```
+
+---
+
+## 6. Full-Text Search (Tantivy Integration)
+
+Turso includes native BM25 full-text search powered by the [Tantivy](https://github.com/quickwit-oss/tantivy) search engine crate, enabled via the `fts` feature.
+
+### 6.1 Index Definition
+```sql
+CREATE TABLE documents (
+    id INTEGER PRIMARY KEY,
+    title TEXT,
+    content TEXT
+);
+
+CREATE INDEX idx_docs_fts ON documents USING fts (title, content);
+```
+
+### 6.2 Query Syntax
+```sql
+SELECT id, title
+FROM documents
+WHERE (title, content) MATCH 'performance AND indexing';
+```
+- Operates directly via the `MATCH` operator on indexed columns.
+- Uses Tantivy's BM25 term weighting and inverted index representation.
+- Automatically synchronizes with table row inserts, updates, and deletes.
+
+---
+
+## 7. Engine Configuration & Builder Flags
+
+Turso provides granular control over experimental engine modules via `turso::Builder`:
+
+```rust
+let db = turso::Builder::new_local("local.db")
+    .read_only(false)
+    .experimental_index_method(true)        // Enables USING syntax (FTS, custom indexers)
+    .experimental_encryption(true)          // Enables AEGIS-256 database encryption
+    .with_encryption(encryption_opts)       // Encryption key configuration
+    .experimental_materialized_views(true)  // Live incremental materialized views
+    .experimental_custom_types(true)        // STRICT table user-defined types
+    .experimental_generated_columns(true)   // Virtual & stored generated columns
+    .experimental_without_rowid(true)       // WITHOUT ROWID clustered indexes
+    .experimental_vacuum(true)              // Enhanced incremental vacuum engine
+    .experimental_attach(true)              // Cross-database ATTACH DATABASE support
+    .experimental_multiprocess_wal(true)    // Coordinates WAL across separate OS processes (.tshm)
+    .experimental_mvcc_passive_checkpoint(true) // Non-blocking checkpointing in MVCC mode
+    .build()
+    .await?;
+```
+
+### 7.1 Multi-Process WAL (`experimental_multiprocess_wal`)
+- Creates a `.tshm` shared-memory sidecar file alongside `.db` and `.db-wal`.
+- Coordinates WAL read marks and write transactions across multiple distinct OS processes without corrupting database state.
+
+### 7.2 Encryption at Rest (`experimental_encryption`)
+- Uses AEGIS-256 authenticated symmetric encryption.
+- Encrypts database pages at the VFS block boundary.
+- Database file header is randomized; unreadable by standard SQLite or hex analysis without key.
+
+### 7.3 Change Data Capture (CDC)
+```sql
+PRAGMA unstable_capture_data_changes_conn('session_token');
+```
+- When enabled on a connection, writes record operation type, table, row ID, and changes into the `turso_cdc` internal system catalog table for streaming consumers.
+
+---
+
+## 8. Cloud Replication & Sync (`sync` Feature)
+
+When compiled with `turso = { version = "0.8.0-pre.11", features = ["sync"] }`, Turso provides bidirectional synchronization with remote Turso Cloud instances:
 
 ```rust
 use turso::sync::Builder;
 
 let db = Builder::new_remote("local.db")
-    .with_remote_url("libsql://your-database.turso.io")
-    .with_auth_token("your-token")
+    .with_remote_url("libsql://my-org.turso.io")
+    .with_auth_token("authToken")
     .bootstrap_if_empty(true)
     .build()
     .await?;
 
-db.push().await?;  // Push local changes to cloud
-db.pull().await?;  // Pull remote changes
+// Bidirectional sync lifecycle
+db.pull().await?; // Fetch latest remote changesets
+db.push().await?; // Push locally committed changesets
 ```
 
-**Architecture**: Local-first — reads are always local and sub-millisecond. Writes are batched and pushed. Encryption via AES-256-GCM for data in transit.
+- **Architecture**: Local-first embedded replica. Local reads are sub-millisecond local file queries. Writes commit locally and synchronize asynchronously over HTTP/2.
 
 ---
 
-## 5. Engine Configuration & PRAGMA Options
+## 9. Error Taxonomy & Diagnostics
 
-```rust
-let db = Builder::new_local("path/to/db.db")
-    .experimental_index_method(true)        // Custom index methods (enabled)
-    .experimental_encryption(true)          // Encryption at rest
-    .experimental_materialized_views(true)  // Materialized views
-    .experimental_custom_types(true)        // Custom types for STRICT tables
-    .experimental_vacuum(true)              // Enhanced VACUUM
-    .experimental_attach(true)              // ATTACH DATABASE
-    .experimental_multiprocess_wal(true)    // Multi-process WAL
-    .build()
-    .await?;
-```
+The `turso::Error` enum exposes structured diagnostic classifications:
 
-| PRAGMA | Purpose |
-|--------|---------|
-| `journal_mode = WAL` | Write-Ahead Logging for concurrent reads |
-| `busy_timeout = 5000` | Busy wait timeout in ms |
-| `foreign_keys = ON` | Enforce foreign key constraints |
-| `unstable_capture_data_changes_conn` | Enable CDC |
-
----
-
-## 6. How Vox Currently Uses Turso
-
-### 6.1 What Vox Uses Today
-
-| Feature | Status | Location |
-|---------|--------|----------|
-| `Builder::new_local()` | ✅ Local database connection | `persistence/db.rs` |
-| `db.connect()` | ✅ Single connection per worker | `persistence/db.rs` |
-| `conn.query()` / `conn.execute()` | ✅ Primary query interface | All persistence/ipc files |
-| `experimental_index_method(true)` | ✅ Required for `F32_BLOB` vector columns | `persistence/db.rs` |
-| `PRAGMA journal_mode = WAL` | ✅ Concurrent read performance | `persistence/db.rs` |
-| `PRAGMA busy_timeout = 5000` | ✅ Busy wait timeout | `persistence/db.rs` |
-| `PRAGMA foreign_keys = ON` | ✅ Referential integrity | `persistence/db.rs` |
-| Manual `BEGIN/COMMIT/ROLLBACK` | ✅ For atomic multi-table writes | `persistence/repository.rs` |
-| `F32_BLOB(1024)` vector storage | ✅ BGE-M3 1024-dim embeddings | `persistence/schema.rs` |
-| **`vector_distance_cos()` pushdown** | ✅ Cosine similarity in SQL — eliminates Rust-side O(n) vector decode loops | `persistence/queries.rs` |
-| Schema migrations in Rust code | ✅ `run_migrations()` | `persistence/schema.rs` |
-
-### 6.2 What Vox Is NOT Using (Gaps)
-
-| Feature | Benefit | Priority | Why Deferred / Not Yet |
-|---------|---------|----------|----------------------|
-| **`BEGIN CONCURRENT`** (MVCC writes) | True concurrent multi-threaded writes instead of single-writer serialization | **HIGH** | Not yet adopted — requires confidence in MVCC correctness for the persistence worker |
-| **Vector Index** (`CREATE INDEX ... libsql_vector_idx`) | Approximate nearest neighbor search (DiskANN) — sub-millisecond instead of `O(n)` scan | **HIGH** | `libsql_vector_idx` module not registered in Turso v0.7.1 runtime. Current `vector_distance_cos()` SQL pushdown eliminates Rust O(n) decode loops. Vector index will be adopted when available. |
-| **Cloud Sync** (`sync` feature, `push/pull`) | Offline-first with cloud backup; database-per-user pattern | **MEDIUM** | Requires `turso --features sync` and Turso Cloud credentials — post-MVP |
-| **Encryption at rest** | AEGIS-256 local database encryption | **MEDIUM** | Requires key management strategy — post-MVP |
-| **Change Data Capture (CDC)** | Real-time change streaming for reactive UI | **MEDIUM** | Post-MVP for live memory view updates |
-| **Full-Text Search (tantivy)** | Native BM25 FTS instead of `LIKE '%query%'` | **LOW** | Not yet needed |
-| **Multi-process WAL** | Multiple processes sharing the same DB file | **LOW** | Vox is single-process |
-| **Materialized Views** | Pre-computed query results | **LOW** | Not yet needed |
-| **Encrypted Sync** | E2E encryption for cloud synced data | **LOW** | Depends on cloud sync adoption |
-
-### 6.3 Assessment Summary
-
-**Overall Utilization Score: ~35/100** — Up from ~25/100 after adopting `vector_distance_cos()` SQL pushdown in the memory pipeline.
-
-**What's been won:**
-- ✅ Native `vector_distance_cos()` SQL pushdown replaced manual Rust-side cosine similarity — eliminates `O(n)` vector decode loops from application memory (`queries.rs`).
-
-**Remaining high-ROI opportunities:**
-1. **`BEGIN CONCURRENT`** — Would unlock true concurrent writes, removing the single-writer bottleneck during peak memory pipeline processing.
-2. **Vector Index (DiskANN)** — Would reduce ANN search from `O(n)` scan to sub-milliseconds. Blocked on Turso v0.7.1 runtime not registering `libsql_vector_idx` module.
-3. **Cloud Sync** — Database-per-user architecture with offline-first backup and cross-device sync.
-4. **Encryption at rest** — AEGIS-256 for sensitive memory data (Identity, Preferences, Goals).
-
-**Important**: The deficit is in **utilization, not selection**. The `turso` crate is the correct engine choice — the gaps are features not yet turned on.
-
----
-
-## 7. Migration Path (Adopted & Planned)
-
-### Phase A ✅ (Adopted)
-1. ✅ **`vector_distance_cos()` in retrieval queries** — `queries.rs` uses SQL-level cosine distance for seed fetch, intra-collection, and inter-collection candidate search. Eliminates Rust-side `O(n)` decode loops.
-
-### Phase B (Next — After Gate 1)
-2. **`BEGIN CONCURRENT` for persistence worker** — Replace `BEGIN TRANSACTION` with `BEGIN CONCURRENT` in `repository.rs` for concurrent write throughput.
-3. **Vector Index** — When Turso runtime supports `libsql_vector_idx`, adopt `vector_top_k()` for ANN search.
-
-### Phase C (Post-MVP)
-4. **Encryption at rest** — Enable `experimental_encryption(true)` with derived key from device identity.
-5. **Cloud Sync** — Add `turso --features sync`, configure `Builder::new_remote()`, implement `push/pull` lifecycle.
-6. **CDC for reactive UI** — Stream changes to frontend via Tauri events for real-time memory view updates.
-
----
-
-## 8. References
-
-- **Turso Database GitHub**: https://github.com/tursodatabase/turso
-- **Turso Rust SDK Reference**: https://docs.turso.tech/sdk/rust/reference
-- **crates.io/turso**: https://crates.io/crates/turso
-- **Vox v6 Memory Spec**: `docs/plans/v6-memory-architecture-spec.md`
-- **Vox Memory Architecture**: `docs/features/memory-architecture.md`
-- **Current Implementation**: `app/src-tauri/src/persistence/`
+| Variant | Description | Actionable Handling |
+|---|---|---|
+| `Error::Busy(msg)` | Database or table locked by concurrent process | Retry with exponential backoff (`busy_timeout`) |
+| `Error::BusySnapshot(msg)` | MVCC snapshot conflict detected at commit time | Rollback current transaction and retry from start |
+| `Error::Misuse(msg)` | Connection misused (e.g. concurrent exclusive operations on single handle) | Allocate separate connection via `db.connect()` |
+| `Error::Constraint(msg)` | UNIQUE, NOT NULL, or FOREIGN KEY constraint violated | Inspect violated schema constraint |
+| `Error::Readonly(msg)` | Modification attempted on read-only database | Verify builder flags or file system permissions |
+| `Error::Corrupt(msg)` | Database file or WAL page integrity failure | Initiate backup recovery / integrity check |
+| `Error::BatchStatementFailed { index, error, results }` | One statement in a batch failed | Inspect failing statement index and preceding partial results |
+| `Error::BatchRollbackFailed { error, rollback_error }` | Transactional batch failed and rollback also encountered an error | Critical connection reset required |

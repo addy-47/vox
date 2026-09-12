@@ -14,21 +14,6 @@ pub type Result<T> = std::result::Result<T, PersistenceError>;
 
 const SCHEMA_VERSION: u32 = 4;
 
-const DROP_LEGACY_TABLES: &[&str] = &[
-    "DROP TABLE IF EXISTS memory_relations;",
-    "DROP TABLE IF EXISTS personal_memory_queue;",
-    "DROP TABLE IF EXISTS memory_pipeline_metrics;",
-    "DROP TABLE IF EXISTS memory_facts_vectors;",
-    "DROP TABLE IF EXISTS memory_facts;",
-    "DROP TABLE IF EXISTS memory_ingestion_queue;",
-    "DROP TABLE IF EXISTS session_compactions;",
-    "DROP TABLE IF EXISTS turns;",
-    "DROP TABLE IF EXISTS notifications;",
-    "DROP TABLE IF EXISTS personal_memory;",
-    "DROP TABLE IF EXISTS sessions;",
-    "DROP TABLE IF EXISTS projects;",
-];
-
 const V2_TABLE_STATEMENTS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
@@ -160,9 +145,6 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         );
 
         conn.execute("PRAGMA foreign_keys = OFF;", ()).await?;
-        for drop_stmt in DROP_LEGACY_TABLES {
-            conn.execute(drop_stmt, ()).await?;
-        }
         conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
 
         for stmt in V2_TABLE_STATEMENTS {
@@ -208,9 +190,6 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
 /// Drops all tables and forces a full recreation of the v2 schema.
 pub async fn recreate_schema(conn: &Connection) -> Result<()> {
     conn.execute("PRAGMA foreign_keys = OFF;", ()).await?;
-    for drop_stmt in DROP_LEGACY_TABLES {
-        conn.execute(drop_stmt, ()).await?;
-    }
     conn.execute("DROP TABLE IF EXISTS voices;", ()).await?;
     conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
     conn.execute("PRAGMA user_version = 0;", ()).await?;

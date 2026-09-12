@@ -1,7 +1,7 @@
 ---
 title: "Vox Backend Architecture"
 audience: "Internal — backend (Rust) contributors, system architects, agents"
-last_updated: 2026-08-31
+last_updated: 2026-09-10
 owners: "backend-engineer role"
 related_docs:
   - "docs/frontend.md — Frontend consumes the IPC event contract (§8)"
@@ -12,7 +12,7 @@ related_docs:
 
 # Vox — Backend Architecture
 
-> **A realtime, event-driven native audio processing system** built in Rust with C++ inference backends (ONNX Runtime, llama.cpp). Runs entirely on-device with sub-200ms perceived pipeline latency on 8GB RAM systems. Handler event-driven: a central non-blocking router (`vox-router`, `pipeline/router.rs`) dispatches each `VoxEvent` to a flat set of handler functions (`pipeline/assistant/*` + `pipeline/dictation.rs`) instead of a domain-partitioned or monolithic loop (see `docs/features/voice-flow.md`).
+> **A realtime, event-driven native audio processing system** built in Rust with C++ inference backends (ONNX Runtime, llama.cpp). Runs entirely on-device with sub-200ms perceived pipeline latency on 8GB RAM systems. Handler event-driven: a central non-blocking router (`vox-router`, `pipeline/router.rs`) dispatches each `VoxEvent` to a flat set of handler functions (`pipeline/assistant/*` + `pipeline/dictation/mod.rs`) instead of a domain-partitioned or monolithic loop (see `docs/features/voice-flow.md`).
 
 ---
 
@@ -22,7 +22,7 @@ related_docs:
 - **Scope:** the Rust 4-layer architecture, provider/trait system, threading model, lifecycle, and the Tauri IPC event contract.
 - **Convention:** claims use `path/file.rs` pointers; schemas are linked, not pasted.
 - **Non-goals:** not the frontend (→ `docs/frontend.md`), not model specs (→ `docs/models.md`). The IPC event list in §8 is the contract the frontend consumes.
-- **SSOT:** event payloads (§8), settings reload policies (§10), and hardware tiers (§2) are authoritative here. Orchestration topology is SSOT in `core/events.rs` (IPC contract), `pipeline/router.rs` (routing), and `pipeline/assistant/` (assistant handlers); `docs/features/voice-flow.md` is the handler-level companion reference.
+- **SSOT:** event payloads (§8), settings reload policies (§10), and hardware tiers (§2) are authoritative here. Orchestration topology is SSOT in `core/events.rs` (IPC contract), `pipeline/router.rs` (routing), and `pipeline/assistant/` + `pipeline/dictation/` (handlers); `docs/features/voice-flow.md` is the handler-level companion reference.
 
 ## 1. Architecture Stack
 
@@ -81,38 +81,38 @@ src/
 │   ├── defaults.rs         # Centralized default values for all 13 settings domains
 │   ├── engine.rs           # System engine lifecycle (start_audio_engine, stop_audio_engine, worker joining) — owns VoxEngine handle bag
 │   ├── error.rs            # Unified VoxError + domain-specific errors
-│   ├── events.rs           # SSOT event registry: VoxEvent (14 variants) + IpcEvent (10 variants) + payloads
+│   ├── events.rs           # SSOT event registry: VoxEvent (14 variants) + IpcEvent (14 variants) + payloads
 │   ├── settings.rs         # VoxSettings (13 domains: appearance, audio, vad, stt, llm, tts, realtime, interaction, dictation, history, memory, persona, system)
-│   └── state.rs            # SSOT state: InteractionState/DictationState/InteractionOwner + PipelineAtomics + AppState (no payloads)
+│   └── state.rs            # SSOT state: InteractionState (Idle/Ready/Listening/Thinking/Speaking/Paused/Error/Sleeping/Working) + InteractionOwner + PipelineAtomics + AppState
 ├── services/
-│   ├── audio/              # device (cpal AudioStream), playback (PlaybackEngine, Cubic Hermite 2× upsample), decode
+│   ├── audio/              # device (cpal AudioStream), playback (PlaybackEngine, Cubic Hermite 2× upsample), decode, sink, mod
 │   ├── vad/                # VadEngine trait + VadBackend (Earshot / TenVAD) + actor (3 operational modes) + utils + telemetry
 │   ├── stt/                # SttEngine trait + EmbeddedSttProvider (Nemotron-3.5 / Qwen3-ASR) + actor + stitcher
-│   ├── llm/                # LlmProvider trait (Embedded / RemoteTransport), actor, config, catalog, transport (chat_completions, responses, ollama, sse), probe, policy
+│   ├── llm/                # LlmProvider trait (Embedded / RemoteTransport), actor, config, catalog, transport (chat_completions, responses, ollama, sse), probe, policy, capability_probe
 │   ├── tts/                # TtsProvider trait (EdgeTTS / Supertonic3 / Chatterbox / ChatterboxRemote), actor (TtsClauseChunker), voice
 │   ├── realtime/           # RealtimeVoiceProvider + RealtimeSession traits, engine, audio_bridge, playback_bridge (Gemini Live, Deepgram)
-│   ├── memory/             # 4-pillar architecture: retrieval/ (scope, search), compaction/ (prompt, runner), ingestion/ (stages 1-4, runner, metrics), ml/ (embedder, nli, edge_classifier, scope_classifier, tokenizer)
-│   └── translit.rs         # Devanagari→Roman ONNX encoder-decoder (evictable singleton)
+│   ├── memory/             # v2 architecture: retrieval/, compaction/, ingestion/ (2-stage dedup), ml/ (embedder, nli, edge_classifier, scope_classifier, tokenizer), scheduler
+│   ├── dictation/          # Clipboard, hotkey (OS integration home), input, output_router, mod
 │   ├── harness/            # Conversation & context harness (buffer, accountant, prompt_builder, manager, facade, mod)
 │   └── pipeline/           # Central router, handler functions, and shared context
-│       ├── handlers/       # Assistant handler event-driven layer (flat, no domain dirs)
+│       ├── assistant/      # Handler event-driven layer (flat, no domain dirs)
 │       │   ├── speech.rs       # SpeechStart/SpeechEnd (passive gate + barge-in)
 │       │   ├── transcript.rs   # TranscriptFinal → harness → LLM dispatch
 │       │   ├── llm.rs          # LlmFinished → TTS remainder + persistence
 │       │   ├── playback.rs     # PlaybackStarted/Finished → Speaking/Ready
 │       │   ├── ptt.rs          # PttStart/Stop/Cancel (windowed VAD validation)
-│       │   ├── session.rs      # SessionStart/Pause/Resume/End + idle monitor
+│       │   ├── session.rs      # SessionStart/Pause/Resume/End + idle monitor; unconditional owner handover to Dictation
 │       │   ├── error.rs        # Error/Cancelled
 │       │   ├── interrupt.rs    # Barge-in helper (cancel + next_turn)
 │       │   └── accumulator.rs  # TurnAccumulator (TtsClauseChunker + buffers)
-│       ├── dictation.rs    # Unified passive/PTT OS-wide dictation handler
-│       ├── router.rs       # Central VoxEvent dispatcher thread (spawn_router, route_event)
+│       ├── dictation/      # Unified passive/PTT OS-wide dictation handler (mod, ptt, speech, transcript, error)
+│       ├── router.rs       # Central VoxEvent dispatcher thread (spawn_router, route_event; dual-track dispatch by owner)
 │       └── mod.rs          # RoutingContext, transition, target_window, init_new_session, spawn_idle_monitor
 ├── ipc/                    # Tauri command handlers
 │   ├── pipeline/           # assistant (start/end/pause/resume/ptt_* + engine), dictation (settings, recovery, clipboard copy), test_clip
-│   ├── settings/           # catalog, health (probe, validate_token_cap, hardware), mutation (update_setting, dispatch_worker_command)
-│   ├── memory/             # graph, conflicts, ingestion, mutations
-│   ├── audio.rs, history.rs, memory_profiler.rs, monitoring.rs, setup.rs, tray.rs, voices.rs
+│   ├── settings/           # catalog, health (probe, validate_token_cap, hardware), mutation (update_setting, dispatch_worker_command, transition_dictation)
+│   ├── memory/             # graph, conflicts, ingestion, mutations, personal_memory, projects, sessions
+│   ├── notifications.rs, audio.rs, history.rs, memory_profiler.rs, monitoring.rs, setup.rs, tray.rs, voices.rs, persistence.rs, projects.rs
 ├── persistence/            # VoxDb (Turso/libSQL), schema, queries, mutations, voices, worker, memory_worker, events
 ├── monitoring/             # aggregator (crossbeam bounded 4096), collector, system_monitor (/proc/stat), snapshot, runtime_state, telemetry_emitter
 ├── setup/                  # manifest (AppManifest/VoxManifest fetch+cache), model_manager, runtime_check, update_check
@@ -131,16 +131,16 @@ src/
 audio(cpal 16kHz f32 SPSC ring 4s) → VAD actor (256-sample frames) → VoxEvent::SpeechStart/SpeechEnd
         │
         ▼
-   Central Router (pipeline/router.rs — spawn_router, route_event)
+   Central Router (pipeline/router.rs — spawn_router, route_event; dual-track dispatch by owner)
         │  RoutingContext { owner, pipeline_mode, interaction_mode } snapshotted once per event
-        ├── owner==Dictation → pipeline/dictation.rs::handle_event → STT → transliterate_if_hi → output_router (Paste/Clipboard/Tray) — 0 LLM/TTS
+        ├── owner==Dictation → pipeline/dictation/mod.rs::handle_event → STT → transliterate_if_hi → output_router (Paste/Clipboard/Tray) — 0 LLM/TTS
         └── owner==Assistant (match event → handler fn on router thread):
             ├── SpeechStart/SpeechEnd → handlers/speech.rs (passive gate + barge-in → Listening/Thinking)
             ├── TranscriptFinal        → handlers/transcript.rs → harness::prepare_turn_context (retrieval) → LLM actor → TTS clause chunker → Playback
             ├── PttStart/Stop/Cancel  → handlers/ptt.rs → VAD window validation → STT or RealtimeActor
             ├── LlmFinished           → handlers/llm.rs (flush remainder, persistence)
             ├── PlaybackStarted/Finished → handlers/playback.rs (Speaking↔Ready)
-            └── SessionStart/Pause/Resume/End → handlers/session.rs (engine lifecycle + idle monitor)
+            └── SessionStart/Pause/Resume/End → handlers/session.rs (engine lifecycle + idle monitor; unconditional owner handover to Dictation on end)
         PipelineMode selects the downstream path inside the handler: Modular → local STT/LLM/TTS actors; Realtime → RealtimeActor WebSocket (Gemini Live / Deepgram)
 ```
 
@@ -154,7 +154,9 @@ audio(cpal 16kHz f32 SPSC ring 4s) → VAD actor (256-sample frames) → VoxEven
 | `Thinking` | Turn complete; dynamic memory retrieval or LLM inference active | `true` | Gated | STT→Dynamic Memory Retrieval→LLM reasoning active. |
 | `Speaking` | System audio playback actively streaming through speakers | `true` | Ducked (Speaker) or Active (Headset/PTT) | Playback engine draining. |
 | `Paused` | User explicitly paused session | `true` | Discarded | Audio muted, pipeline halted. |
-| `Error` | Recoverable or unrecoverable subsystem error | current | Discarded | Surfaced via `voice_error`. |
+| `Error` | Recoverable or unrecoverable subsystem error | current | Discarded | Surfaced via `state_changed` + `show_toast`. |
+| `Sleeping` | Auto-sleep; LLM+TTS evicted, VAD+STT stay resident | `true` | Gated | `cool_down_llm`/`cool_down_tts` active; `interaction.auto_sleep_timeout` (default 400s). |
+| `Working` | Background work active (compaction, memory ingestion) | `true` | Gated | `CompactionCoordinator` or `memory_worker` active. |
 
 States are defined in `core/state.rs:InteractionState` and mirrored in `services/eventsService.ts:InteractionState`. Ownership is binary: `InteractionOwner::Dictation (0)` vs `Assistant (1)` (`core/state.rs:10-28`).
 
@@ -194,7 +196,7 @@ Runtime selection via `VadBackendOption` in `core/settings.rs:VadSettings`; acto
 | **Qwen3-ASR-0.6B** (alternative) | ONNX INT8, sherpa-onnx 1.13.6 | ~1.91 GB | 0.515× (1.94× RT) | Rolling overlap window |
 | **Cloud** (`stt.cloud` — Google Chirp3 default) | HTTP | 0 MB local | network | `SttProviderConfig::Cloud` via `services/stt/providers/mod.rs` |
 
-Throttling: partials dynamically throttled with floor at 300ms (`STT_MIN_PARTIAL_THROTTLE_MS` in `services/stt/mod.rs`). Provider construction at `services/stt/providers/embedded.rs:ensure_loaded` (lazy). Baseline and comparison metrics documented in [`docs/benchmarks/stt_benchmark.md`](file:///home/addy/projects/apps/vox/docs/benchmarks/stt_benchmark.md).
+Throttling: partials dynamically throttled with floor at 300ms (`STT_MIN_PARTIAL_THROTTLE_MS` in `services/stt/mod.rs`). Provider construction at `services/stt/providers/embedded.rs:ensure_loaded` (lazy). `SttEmbeddedConfig` includes `threads` (default `DEFAULT_STT_THREADS=4`, 1–64 bounds). Baseline and comparison metrics documented in [`docs/benchmarks/stt_benchmark.md`](file:///home/addy/projects/apps/vox/docs/benchmarks/stt_benchmark.md).
 
 ### 4.3 LLM — Language Model
 
@@ -230,7 +232,7 @@ Selection is `LlmActiveProvider::{Embedded, Server, Cloud}` (`core/settings.rs:3
 | **Chatterbox** (local clone) | GGML, chatterbox-rs | 340M Q4 | ~1.1 GB | 24kHz native | Voice cloning from 5s reference |
 | **Chatterbox Remote** | reqwest blocking HTTP | 340M | 0 MB (local) | 24kHz | Offloads to remote CUDA GPU |
 
-Selection is `TtsActiveProvider::{EdgeTts,Supertonic,Kokoro,Chatterbox,ChatterboxRemote}` (`core/settings.rs:479`). Quality steps and speed are `WorkerCommand` hot-reloadable.
+Selection is `TtsActiveProvider::{EdgeTts,Supertonic,Kokoro,Chatterbox,ChatterboxRemote}` (`core/settings.rs:479`). Quality steps, speed, and `threads` (default `DEFAULT_TTS_THREADS=2`) are `WorkerCommand` hot-reloadable.
 
 ### 4.5 Realtime S2S — Speech-to-Speech
 
@@ -247,26 +249,27 @@ All realtime providers follow `RealtimeVoiceProvider` + `RealtimeSession` traits
 
 ## 5. Memory Subsystem
 
-> **Status: Active Development** — See `docs/features/memory-architecture.md` for the complete architecture.
+> **Status: Active Development** — See `docs/specs/memory-spec.md` for the complete v2 specification.
 
-Vox implements a **cognitive memory subsystem** that operates asynchronously via a background worker (`persistence/memory_worker.rs`), decoupled from the live voice pipeline. The architecture is organized into 6 collections across 2 structural classes: special-state (`Identity`, `Directives`, `Narrative`) and semantic-graph (`Profile`, `Entities`, `Constraints`) (`services/memory/mod.rs:52`, `CollectionType`/`Relation`/`QueueStatus` strictly typed).
+Vox implements a **cognitive memory subsystem** (v2) that operates asynchronously via a background worker (`persistence/memory_worker.rs`), decoupled from the live voice pipeline. The architecture uses a **2-stage dedup** engine (Stage 1 exact Jaccard similarity ≥1.0, Stage 2 semantic cosine ≥0.95) with Winner-Takes-All deactivation. Personal memory is stored in a single evolving document with rolling working compaction.
 
 A pre-retrieval **MemoryScope classifier** (ModernBERT INT8 ONNX, 4-class) routes each user query to the appropriate memory collection before embedding generation and vector search. This prunes irrelevant collections early, saving ~30ms of embedding inference and ~10–50ms of vector DB search per chit-chat turn.
 
-The ingestion pipeline runs as a 4-stage async queue: **Dedup(128) → Embed(16) → Eval(16, concurrent NLI+Edge) → Commit(32)** (`services/memory/ingestion/{stage1_dedup.rs, stage2_embed.rs, stage3_eval.rs, stage4_commit.rs}`). All 3 pipeline ONNX models (Embedder, NLI Engine, Edge Classifier) use an **evictable singleton pattern** (`parking_lot::RwLock<Option<T>>`). They are lazy-loaded only when `personal_memory_queue` has pending items during 30s idle sweeps, and evicted immediately on voice engagement (`Idle→!Idle`), disengage, or batch completion.
+The ingestion pipeline runs as a batched ONNX inference system with background thread offload: **Dedup → Embed → Eval (NLI + Edge) → Commit**. All 3 pipeline ONNX models (Embedder, NLI Engine, Edge Classifier) use an **evictable singleton pattern** (`parking_lot::RwLock<Option<T>>`). They are lazy-loaded only when `personal_memory_queue` has pending items during 30s idle sweeps, and evicted immediately on voice engagement (`Idle→!Idle`), disengage, or batch completion.
 
-Key files: `services/memory/` (11 modules), `persistence/memory_worker.rs`, `persistence/mutations.rs`, `persistence/queries.rs`. See [`docs/features/memory-architecture.md`](features/memory-architecture.md) for the current v7 architecture reference.
+Key files: `services/memory/` (retrieval, compaction, ingestion, ml modules), `persistence/memory_worker.rs`, `persistence/` (v2 schema: `projects`, `sessions`, `compactions`, `personal_memory`, `queue`, `facts`, `notifications`). See [`docs/specs/memory-spec.md`](specs/memory-spec.md) for the current v2 architecture reference.
 
 ---
 
 ## 6. Persistence Layer
 
 - **Database**: Turso/libSQL (`turso` crate), WAL mode, `busy_timeout = 5000ms`
-- **Tables**: `sessions`, `turns`, `voice_library`, `memory_facts`, `memory_facts_vectors`, `memory_relations`, `personal_memory_queue`, `memory_pipeline_metrics`, `voice_*`
+- **Tables** (v2 schema, 10 tables): `projects`, `sessions`, `turns`, `voice_library`, `memory_facts`, `memory_facts_vectors`, `memory_relations`, `personal_memory`, `compactions`, `notifications`
 - **Workers**: Dedicated OS thread for session persistence (`persistence/worker.rs`), dedicated OS thread for background memory ingestion (`persistence/memory_worker.rs`)
 - **Events**: `SessionStarted`, `SessionEnded`, `TurnCompleted`, `TurnCancelled`, `Shutdown`
 - **Private mode**: Atomic `is_private_mode` check before each write (`AppState::is_private_mode`)
 - **Channels**: `crossbeam_channel::bounded` for persistence events with drop counters (`dropped_persistence_events`)
+- **Compaction**: `CompactionCoordinator` with strict `Idle`/`Paused` state guard; `session_compactions` ledger; 2-stage dedup (exact Jaccard + semantic cosine)
 
 ---
 
@@ -296,6 +299,7 @@ Remaining: audio (Tier 1, Max priority), VAD (Tier 2, high priority)
 | Memory worker | Default | OS thread |
 | Realtime WS send/recv | — | tokio tasks |
 | IPC handlers | — | tokio tasks |
+| Dictation hotkey listener | — | OS integration (`services/dictation/hotkey.rs`) |
 
 ### Why OS Threads for Inference
 
@@ -305,33 +309,35 @@ Remaining: audio (Tier 1, Max priority), VAD (Tier 2, high priority)
 
 ## 8. Event System
 
-### Internal VoxEvent (mpsc channel, `core/events.rs:11-45`)
+### Internal VoxEvent (mpsc channel, `core/events.rs:22-55`)
 
 ```
-Lifecycle:  SessionStart { owner }, PauseSession, ResumeSession, EndSession
+Lifecycle:  SessionStart { owner, session_id? }, PauseSession, ResumeSession, EndSession
 PTT:        PttStart, PttStop, PttCancel
 VAD:        SpeechStart, SpeechEnd
 STT:        TranscriptFinal { turn_id, text }
 LLM:        LlmFinished { turn_id }
-Playback:   PlaybackStarted { turn_id }, PlaybackFinished { turn_id }
-Flow:       Cancelled { turn_id }, Error { turn_id, message, source }
-Control:    Shutdown
+Playback:   PlaybackStarted { turn_id, intent }, PlaybackFinished { turn_id, intent }
+Flow:       Cancelled { turn_id }, Error(PipelineError), Shutdown
 ```
 
 ### Tauri IPC Events (frontend-bound, via `app.emit` / `app.emit_to`, SSOT `core/events.rs:IpcEvent`)
 
 | Event | Payload | Source | Description |
 |-------|---------|--------|-------------|
-| `state_changed` | `StateChangedPayload { owner, state, turn_id }` | `pipeline/mod::transition` | Pipeline turn state (7 variants) to `target_window(owner)` |
-| `transcript_partial` | `TranscriptPayload { turn_id, text, owner }` | STT actor | Streaming partial transcript with monotonic turn ID |
+| `state_changed` | `StateChangedPayload { owner, state, turn_id }` | `pipeline/mod::transition` | Pipeline turn state (9 variants: Idle/Ready/Listening/Thinking/Speaking/Paused/Error/Sleeping/Working) to `target_window(owner)` |
+| `transcript_partial` | `TranscriptPayload { turn_id, text, owner? }` | STT actor | Streaming partial transcript with monotonic turn ID |
 | `transcript_final` | `TranscriptPayload` | STT actor | Final transcript with monotonic turn ID |
 | `llm_token` | `LlmTokenPayload { turn_id, token }` | LLM actor | Streaming LLM token |
-| `voice_error` | `VoiceErrorPayload { message, source, owner? }` | any domain | Error message (replaces legacy `pipeline_error`) |
-| `model_progress` | `ModelSetupStatus` | `setup/model_manager` | Wizard + download progress (replaces legacy `model_setup_status`/`model_setup_complete`) |
-| `telemetry` | `TelemetryData { energy, vad_prob, low, mid, high }` | aggregator / `telemetry_emitter` | Full telemetry tick including mic energy (`energy`) for Orb waveform (replaces legacy `audio_energy`) |
+| `model_progress` | `ModelSetupStatus` | `setup/model_manager` | Wizard + download progress |
+| `telemetry` | `TelemetryData { energy, vad_prob, low, mid, high }` | aggregator / `telemetry_emitter` | Full telemetry tick including mic energy (`energy`) for Orb waveform |
 | `system_stats` | `SystemStatsPayload` | `monitoring/system_monitor` | System CPU/RAM and Vox process stats |
 | `settings-updated` | — | `ipc/settings/mutation` | Settings hot-reload |
 | `toggle_tray` | — | `ipc/tray.rs` | Tray HUD toggle |
+| `show_toast` | `ToastPayload { title, message, severity, duration_ms? }` | `toast::show_toast` | Toast overlay window (severity: Info/Warning/Critical) |
+| `notification_created` / `notification_updated` | `NotificationRecord` | `ipc/notifications.rs` | Notification center events |
+| `personal_memory_updated` | `PersonalMemoryRecord` | `ipc/memory.rs` | Personal memory mutation |
+| `sessions_changed` | — | `ipc/memory.rs` | Session list change notification |
 
 Full consumer map is in `docs/frontend.md:§9` and typed wrappers in `services/eventsService.ts:164-280`.
 
@@ -342,15 +348,16 @@ Full consumer map is in `docs/frontend.md:§9` and typed wrappers in `services/e
 | Mechanism | Usage | Location |
 |-----------|-------|----------|
 | SPSC lock-free ring buffer | Audio transport (64k samples / 4s) | `services/audio/device.rs`, `core/constants.rs:RING_BUFFER_SIZE` |
-| `Arc<AtomicBool>` / `AtomicU32` / `AtomicU64` | Cancellation, playback, engagement, turn_id, state, sleep, health flags | `PipelineAtomics`, `AppState` |
+| `Arc<AtomicBool>` / `AtomicU32` / `AtomicU64` | Cancellation, playback, engagement, turn_id, state, sleep, health flags, **ingestion_gate** | `PipelineAtomics`, `AppState` |
 | `tokio::sync::watch::Sender<InteractionState>` + `Arc<AtomicU32>` mirror | Turn state (broadcast) | `PipelineAtomics::state_tx` + `current_state_atomic` |
-| `Arc<AtomicU32>` (state as u32) + `DictationState` mirror | Lock-free state read on audio hot path | `PipelineAtomics::current_state_atomic` + `dictation_state_atomic` |
+| `Arc<AtomicU32>` (state as u32) + `dictation_state_atomic` | Lock-free state read on audio hot path | `PipelineAtomics::current_state_atomic` + `dictation_state_atomic` |
 | `std::sync::mpsc::channel` | Inter-thread VoxEvent + STT/LLM/TTS commands | All workers, `VoxEngine::{stt,llm,tts,pipeline}_tx` |
 | `crossbeam_channel::bounded(4096)` | High-throughput telemetry + persistence events | `monitoring/aggregator.rs`, `persistence/worker.rs` |
 | `parking_lot::RwLock<VoxSettings>` | Read-heavy settings | `AppState::settings` |
 | `parking_lot::RwLock<Option<T>>` | Evictable ONNX model singletons | `translit.rs`, `query_classifier.rs`, `embedder.rs`, `intra_edge_classifier.rs`, `inter_edge_classifier.rs` |
 | `tokio::sync::Mutex<Option<VoxEngine>>` + `Mutex<Option<RealtimeActor>>` | Engine lifecycle (async IPC) | `AppState::{engine,realtime_engine}` |
 | `parking_lot::Mutex<Option<CheckMenuItem>>` | Tray menu handle | `AppState::hud_menu_item` |
+| `Arc<AtomicBool>` (`ingestion_gate`) | Lock-free audio ingestion gate: open iff assistant or dictation in {Ready, Listening, Thinking} | `PipelineAtomics::ingestion_gate` |
 
 > **Note:** All sync mutexes use `parking_lot` (not `std::sync::Mutex`) for lower overhead, no poisoning, and better performance under contention. The switch was made in v0.8.6 to eliminate lock-poisoning risks in the audio pipeline. Canonical lock order is `state.engine` before `state.realtime_engine` (AGENTS.md §5.2).
 
@@ -369,10 +376,10 @@ VoxSettings → 13 domains (appearance, audio, vad, stt, llm, tts, realtime, int
 | Policy | Effect | Examples |
 |--------|--------|---------|
 | `Hot` | Apply immediately (no restart) | UI theme, private mode, prompts, `vad.threshold`, `stt.transliterate_enabled`, `llm.temperature`, `interaction.auto_sleep_timeout`, `system.telemetry_enabled` |
-| `WorkerCommand` | Send via channel | `tts.quality_steps`, `tts.speed` |
+| `WorkerCommand` | Send via channel | `tts.quality_steps`, `tts.speed`, `tts.threads` |
 | `Restart` | Full pipeline restart (`stop_engine` → `start_engine`) | Model changes, provider switches, engine config, `vad.backend`, `tts.active`, `stt.active` |
 
-Every agent domain has a `ProviderConfig` tagged enum (`LlmProviderConfig`, `TtsProviderConfig`, `SttProviderConfig`, `RealtimeProviderKind`) for provider selection at worker construction time. Dispatch is via `ipc/settings/mutation.rs:dispatch_worker_command`.
+Every agent domain has a `ProviderConfig` tagged enum (`LlmProviderConfig`, `TtsProviderConfig`, `SttProviderConfig`, `RealtimeProviderKind`) for provider selection at worker construction time. Dispatch is via `ipc/settings/mutation.rs:dispatch_worker_command`. Dictation settings (`dictation.enabled`, `dictation.interaction_mode`, `dictation.hotkey`, `dictation.output_mode`) are handled by `apply_dictation_mutation` in `ipc/settings/mutation.rs`; `enabled` and `interaction_mode` changes trigger `transition_dictation(Ready|Idle)` via `ipc/settings/core.rs`.
 
 ---
 
@@ -390,11 +397,12 @@ Any ──(realtime mode)──────────→ WS (no local LLM/STT/
 - **Cold state**: 0 ONNX models loaded on boot (~50 MB base RAM) when dictation disabled. `is_dictation_enabled` false → 0 webviews beyond main, 0 engines until `engage()` (`lib.rs:360-395`).
 - **PTT dictation warm**: `Alt+Space` first press lazily calls `ensure_engine_running` + `start_audio_engine`; VAD resident, STT lazy; stays warm for subsequent presses.
 - **Passive dictation warm**: `start_audio_engine` at boot (`lib.rs:381-385`), VAD resident immediately, STT warms on first speech.
-- **Main-window engaged warm**: `start_session` per domain (`modular::passive::start_session`, etc.) sets `owner=Assistant`, `state → Ready`, warms LLM+TTS via `ensure_modular_workers`.
+- **Main-window engaged warm**: `start_session` per domain (`modular::passive::start_session`, etc.) sets `owner=Assistant`, `state → Ready`, warms LLM+TTS via `ensure_modular_workers`. On `EndSession`, unconditionally yields owner to `Dictation` (`pipeline/assistant/session.rs`) and syncs VAD operational mode (`ContinuousSegmentation` vs `WindowedValidation`).
 - **Memory Pipeline Eviction**: Pipeline ONNX models (Embedder, NLI, Edge Classifier) lazy-load during 30s idle sweeps **only if pending queue items exist** (`memory_worker.rs`), and evict back to 0 MB RAM on voice engagement, disengage, or batch completion.
 - **Auto-sleep**: Driven by `interaction.auto_sleep_timeout` (default 400s in `core/defaults.rs:51`). Router runs tiered offload via `cool_down_llm`/`cool_down_tts` while `state == Ready`; VAD and STT stay resident.
 - **Realtime S2S**: Audio capture + VAD routing without loading STT or LLM/TTS weights (0 MB local models); bridged via `services/realtime/{audio_bridge,playback_bridge}`.
 - **Shutdown**: `lib.rs:529-560` on `RunEvent::Exit` — sends `VoxEvent::Shutdown` + `SttCommand::Shutdown` + `VadCommand::Shutdown` + memory/persistence `Shutdown`, then joins 150ms.
+- **Ingestion gate**: `PipelineAtomics::ingestion_gate` (lock-free `AtomicBool`) is open iff assistant or dictation is in `{Ready, Listening, Thinking}`. CPAL audio is dropped before the ring buffer when the gate is closed (`Option C` 2-layer defense: Layer 1 CPAL boundary drop + Layer 2 VAD loop buffer purge).
 
 ---
 
@@ -407,4 +415,4 @@ Any ──(realtime mode)──────────→ WS (no local LLM/STT/
 
 ---
 
-**Last Updated:** 2026-09-03 — pipeline handler event-driven (§3), `TtsActiveProvider::Kokoro` (§4.4), `watch` state (§9), `VoxEvent` registry (§8).
+**Last Updated:** 2026-09-10 — dictation module decomposition (§3), InteractionState Sleeping/Working (§3), IpcEvent v2 (§8), ToastPayload/Severity (§8), ingestion_gate (§9), session.rs owner handover (§3, §11), memory v2 (§5), threads (§4.2, §4.4).
