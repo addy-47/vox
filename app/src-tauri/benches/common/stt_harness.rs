@@ -296,6 +296,11 @@ pub fn benchmark_streaming_provider(
             similarity,
             hypothesis: final_transcript,
             ground_truth: clip.expected_text.clone(),
+            stt_latency_ms: final_post_speech_latency.as_secs_f64() * 1000.0,
+            llm_latency_ms: 0.0,
+            tts_latency_ms: 0.0,
+            llm_response: String::new(),
+            llm_response_words: 0,
         });
 
         // Drain leftover events

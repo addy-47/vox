@@ -115,3 +115,30 @@ pub fn wait_for_buffer_drain(producer: &impl Observer, timeout_secs: u64) {
         std::thread::sleep(Duration::from_millis(5));
     }
 }
+
+/// Decodes a golden clip from `tests/assets/`, streams it into `producer` in
+/// `VAD_CHUNK_SIZE` chunks, and blocks until the actor loop drains the ring.
+/// Single home for the decode/stream/drain trio previously duplicated across
+/// dictation, passive and PTT tests.
+pub fn stream_test_clip(filename: &str, producer: &mut impl Producer<Item = f32>) {
+    let path = super::paths::get_asset_path(filename);
+    let audio = decode_wav_to_mono_16k(&path)
+        .unwrap_or_else(|e| panic!("Failed to decode {}: {}", filename, e));
+    stream_audio_to_ring_buffer(&audio, producer);
+    wait_for_buffer_drain(producer, 5);
+}
+
+/// Streams the first `max_samples` of a golden clip (for cancel-path tests
+/// that must not feed a full utterance) and waits for the drain.
+pub fn stream_test_clip_prefix(
+    filename: &str,
+    max_samples: usize,
+    producer: &mut impl Producer<Item = f32>,
+) {
+    let path = super::paths::get_asset_path(filename);
+    let audio = decode_wav_to_mono_16k(&path)
+        .unwrap_or_else(|e| panic!("Failed to decode {}: {}", filename, e));
+    let len = audio.len().min(max_samples);
+    stream_audio_to_ring_buffer(&audio[..len], producer);
+    wait_for_buffer_drain(producer, 5);
+}

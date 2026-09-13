@@ -272,6 +272,11 @@ pub fn benchmark_tts_provider(
                 wav_path
             ),
             ground_truth: prompt.text.clone(),
+            stt_latency_ms: 0.0,
+            llm_latency_ms: 0.0,
+            tts_latency_ms: elapsed_ms,
+            llm_response: String::new(),
+            llm_response_words: 0,
         };
         clip_results.push(cr.clone());
         tts_clip_results.push(TtsClipResult {

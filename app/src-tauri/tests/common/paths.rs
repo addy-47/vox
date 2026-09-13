@@ -95,6 +95,38 @@ pub fn get_gemma_model_path() -> PathBuf {
     models_dir.join(GEMMA_MODEL_DIR).join(GEMMA_MODEL_FILE)
 }
 
+/// Resolves a dataset file under `sandbox/datasets/` from any test working
+/// directory (crate root or `app/src-tauri/`). Single home for the candidate
+/// path arrays previously duplicated in every memory test loader.
+pub fn find_dataset_file(relative: &str) -> PathBuf {
+    let candidates = [
+        PathBuf::from("sandbox/datasets").join(relative),
+        PathBuf::from("../../sandbox/datasets").join(relative),
+        PathBuf::from("../sandbox/datasets").join(relative),
+    ];
+    candidates
+        .into_iter()
+        .find(|p| p.exists())
+        .unwrap_or_else(|| {
+            panic!(
+                "Dataset file '{}' not found. Run from workspace root or app/src-tauri.",
+                relative
+            )
+        })
+}
+
+/// Reads and parses a JSON dataset file under `sandbox/datasets/`.
+pub fn load_json_dataset<T>(relative: &str) -> T
+where
+    T: serde::de::DeserializeOwned,
+{
+    let path = find_dataset_file(relative);
+    let content = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("Failed to read dataset {}: {}", path.display(), e));
+    serde_json::from_str(&content)
+        .unwrap_or_else(|e| panic!("Failed to parse dataset {}: {}", path.display(), e))
+}
+
 /// RAII guard to initialize VoxPaths with a temporary root directory and isolated test database.
 pub struct TempPathsGuard {
     _dir: tempfile::TempDir,

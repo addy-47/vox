@@ -46,13 +46,18 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx
     } else {
         let (new_turn_id, _) = state.pipeline.next_turn();
         state.pipeline_accumulator.lock().clear();
-        state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
         if let Ok(guard) = state.engine.try_lock() {
             if let Some(ref engine) = *guard {
                 engine.playback_engine.cancel();
             }
         }
+
+        // Clear AFTER playback.cancel(): the production playback engine shares
+        // pipeline.cancel_flag (engine.rs), and cancel() sets it — clearing first
+        // would poison the turn and STT would reject the PTT Final as stale.
+        // Mirrors on_speech_start / on_interrupt ordering.
+        state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
         transition(InteractionState::Listening, ctx, app, state);
         new_turn_id

@@ -10,7 +10,7 @@
 
 mod common;
 
-use std::{path::PathBuf, time::Duration};
+use std::time::Duration;
 
 use common::{harness::get_test_app_and_state, paths::TempPathsGuard};
 use serde::Deserialize;
@@ -56,35 +56,11 @@ struct LlmFactsDataset {
 }
 
 fn load_dedup_pairs() -> Vec<DedupPair> {
-    let candidates = [
-        "sandbox/datasets/dedup_500_pairs.json",
-        "../../sandbox/datasets/dedup_500_pairs.json",
-        "../sandbox/datasets/dedup_500_pairs.json",
-    ];
-    let path = candidates
-        .iter()
-        .map(PathBuf::from)
-        .find(|p| p.exists())
-        .expect("dedup_500_pairs.json must exist in candidate paths");
-    let content = std::fs::read_to_string(&path).expect("Failed to read dedup_500_pairs.json");
-    serde_json::from_str(&content).expect("Failed to parse dedup_500_pairs.json")
+    common::paths::load_json_dataset("dedup_500_pairs.json")
 }
 
 fn load_llm_facts(limit: usize) -> Vec<DatasetFact> {
-    let candidates = [
-        "sandbox/datasets/pure_llm_facts_dataset.json",
-        "../../sandbox/datasets/pure_llm_facts_dataset.json",
-        "../sandbox/datasets/pure_llm_facts_dataset.json",
-    ];
-    let path = candidates
-        .iter()
-        .map(PathBuf::from)
-        .find(|p| p.exists())
-        .expect("pure_llm_facts_dataset.json must exist in candidate paths");
-    let content =
-        std::fs::read_to_string(&path).expect("Failed to read pure_llm_facts_dataset.json");
-    let dataset: LlmFactsDataset =
-        serde_json::from_str(&content).expect("Failed to parse pure_llm_facts_dataset.json");
+    let dataset: LlmFactsDataset = common::paths::load_json_dataset("pure_llm_facts_dataset.json");
     dataset.facts.into_iter().take(limit).collect()
 }
 
