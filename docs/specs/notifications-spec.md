@@ -65,7 +65,7 @@ flowchart TD
 - **Values**:
   - `Transient`: Ephemeral real-time feedback for active outside-app interaction. Never written to SQLite; zero persistent drawer clutter. Auto-dismisses after 3s.
   - `Receipt`: Passive historical record. Written to SQLite drawer; contains no actionable user button. Never triggers a floating HUD popup over external apps.
-  - `Interactive(ActionPayload)`: Actionable task or remediation requiring a button or deep link (e.g. `"Tidy Now"`, `"Consolidate"`, `"Open Settings"`).
+  - `Interactive(ActionPayload)`: Actionable task or remediation requiring an action icon button or deep link (e.g. `"Compact"`, `"Consolidate"`, `"Open Settings"`).
 
 ---
 
@@ -140,13 +140,15 @@ The `action_payload` field contains strictly the executable parameters required 
 - **Frontend Handled Actions** (Executed client-side; zero backend IPC invocation):
   - **`Navigate`**: Carries `target` route (e.g. `"settings/audio"`, `"settings/ai"`, `"history?session=12"`). Handled directly by the React client via router navigation (`navigate(payload.target)`).
 
-### 4.4 Card Display Metadata Contract (`metadata`)
-The `metadata` field is strictly read-only domain display context. It is **not** a mutable job state machine.
-- **Allowed Contents**: Supplementary information needed by the UI to render rich card subtitles and badges.
-  - Session cards: `{"uncompacted_turns": 14}` (renders turn count pill).
-  - Hardware cards: `{"device_name": "USB Audio Interface"}` (renders affected device).
-  - Model cards: `{"model_id": "qwen2.5-0.5b"}` (renders missing model name).
-- **Forbidden Contents**: Background execution states (e.g. `"in_progress"`, `"completed"`, progress percentages) must **never** be stored in `metadata`. Progress during execution is transient and managed exclusively in active frontend component state.
+### 4.4 Card Display Metadata & Task Resolution Contract (`metadata`)
+The `metadata` field is a JSON object containing read-only display context and the orthogonal task resolution lifecycle state:
+- **Lifecycle Attributes**:
+  - `resolution`: Task outcome state (`"pending" | "resolved" | "failed"`). Defaults to `"pending"` on interactive cards; `"resolved"` on receipts.
+- **Display Attributes**:
+  - Session cards: `{"uncompacted_turns": 14, "resolution": "pending"}` (renders turn count pill; drives compaction icon).
+  - Hardware cards: `{"device_name": "USB Audio Interface", "resolution": "pending"}` (renders affected device).
+  - Model cards: `{"model_id": "qwen2.5-0.5b", "resolution": "pending"}` (renders missing model name).
+- **Execution Invariant**: High-frequency execution progress (spinners, percentages) is transient and managed in frontend state. Upon task completion or failure, the backend updates `metadata.resolution` in-place (`"resolved"` or `"failed"`).
 
 ### 4.5 Closed Categories
 Categories are strictly constrained to seven domain scopes:
@@ -189,7 +191,7 @@ Upstream callers never specify the delivery channel. The Notification Service re
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `None` | `Info` | `Transient` | **`ToastOnly`** | HUD overlay for 3s. Zero DB write. | `dictation_pasted` snippet; empty STT notice. |
 | `None` | `Info` | `Receipt` | **`NotificationOnly`** | Silent drawer card. Zero HUD popup. | Session #12 compaction done; consolidation finished. |
-| `None` | `Info` | `Interactive` | **`NotificationOnly`** | In-app task card with action button. | Session #12 uncompacted with `[Tidy Now]`. |
+| `None` | `Info` | `Interactive` | **`NotificationOnly`** | In-app task card with action icon button. | Session #12 uncompacted with action icon. |
 | `None` | `Warning` | `Receipt` | **`NotificationOnly`** | Silent warning card in drawer. | Consolidation deferred (system busy). |
 | `None` | `Warning` | `Interactive` | **`NotificationOnly`** | In-app remediation card. | Daily consolidation missed with `[Consolidate]`. |
 | `Degraded` | `Warning` | `Transient` | **`ToastOnly`** | Ephemeral HUD warning. Turn continues. | Dropped audio buffer frame; degraded TTS fallback. |
@@ -242,10 +244,12 @@ When an error occurs during a voice turn, the runtime error boundary must execut
 - Session association lookup: `(session_id)`
 
 ### 7.2 Storage Invariants
-1. **Receipt Auditing (Append-Only)**: Notifications with `Action::Receipt` (e.g. `Memory Consolidated`, `Compaction Finished`) are strictly append-oriented. Every event inserts a new database record under a stream-level `group_key` (e.g. `"memory_consolidation:daily"`). The frontend drawer visualizes these as a single rolled-up card with an occurrence counter `(×N)` and latest timestamp, preserving complete audit history without drawer spam.
+1. **Receipt Auditing (Append-Only)**: Notifications with `Action::Receipt` (e.g. `Memory Consolidated`) are strictly append-oriented. Every event inserts a new database record under a stream-level `group_key` (e.g. `"memory_consolidation:daily"`). The frontend drawer visualizes these as a single rolled-up card with an occurrence counter `(×N)` and latest timestamp, preserving complete audit history without drawer spam.
 2. **Transient Exclusion**: Events with `Action::Transient` are never committed to SQLite.
 3. **Card Attention Isolation**: Card status is strictly user-governed (`unread`, `read`, `dismissed`). Background job execution progress is transient and must never overwrite card status with job states (e.g. `'completed'`, `'failed'`).
 4. **Interactive Task Idempotency (Entity-Scoped In-Place Update)**: Notifications with `Action::Interactive` must use an entity-scoped `group_key` (e.g. `"session_compaction:12"`, `"hardware_disconnect:mic"`). This isolates separate sessions into distinct actionable cards in the UI. If an active (non-dismissed) card already exists for that entity, the service executes an in-place `UPDATE` (refreshing `metadata`, `message`, and `updated_at`) rather than creating duplicate actionable buttons for the same entity.
+5. **In-Place Task Resolution (Zero Ghost Receipts)**: When a background remediation action (`CompactSession`, `ConsolidateMemory`, `Retry`) completes or fails, the backend updates the existing interactive notification row in-place (`metadata.resolution = 'resolved' | 'failed'`, updated `message`) and emits `NotificationUpdated`. It must **NOT** create a separate receipt notification or delete the card.
+6. **User Dismissal Sovereignty on Boot**: During startup sweeps (such as `reconcile_uncompacted_sessions_on_boot`), if an interactive notification for `group_key` already exists in SQLite (even if `status = 'dismissed'`), the system must **never** resurrect it or insert a duplicate row. The user's dismissal decision is permanent and sovereign.
 
 ---
 
@@ -277,15 +281,19 @@ When an error occurs during a voice turn, the runtime error boundary must execut
 
 ### 9.1 Application Interface Endpoints
 - **Fetch Active Notifications**: Returns all records whose status is not dismissed, ordered newest first.
-- **Mark Notifications Read**: Accepts an optional filter targeting specific IDs, an entire correlation group key, a category, or all unread notifications. Updates matching records to read status.
-- **Dismiss Notifications**: Accepts an optional filter targeting specific IDs, an entire correlation group key, a category, or all active notifications. Updates matching records to dismissed status.
-- **Execute Notification Action**: Polymorphic action executor accepting a notification ID (`execute_notification_action(id)`). Resolves the action payload and dispatches strictly backend-executable tasks (`CompactSession`, `ConsolidateMemory`, `Retry`). Does not handle `Navigate` (which is executed client-side by the React router). Does not mutate the card's attention status.
+- **Mark Notifications Read**: Accepts an optional filter targeting specific IDs, an entire correlation group key, a category, an `action_type`, or all unread notifications. Updates matching records to read status.
+- **Dismiss Notifications**: Accepts an optional filter targeting specific IDs, an entire correlation group key, a category, an `action_type`, or all active notifications. Updates matching records to dismissed status.
+- **Execute Notification Action**: Polymorphic action executor accepting a notification ID (`execute_notification_action(id)`). Resolves the action payload and dispatches backend-executable tasks (`CompactSession`, `ConsolidateMemory`, `Retry`). Does not handle `Navigate` (which is executed client-side by the React router). Does not mutate the card's attention status. Updates `metadata.resolution` in-place on completion.
 
 ### 9.2 Drawer Presentation & Rollup Contracts
-- **Feed Ordering**: Unified chronological stream ordered newest first.
-- **Group Rollup Algorithm**: Multiple non-dismissed notifications sharing the same correlation group key are visually rolled up into a single representative card showing the latest title, latest message, latest timestamp, and an occurrence badge `(×N)`.
-- **Action Execution State**: When a user clicks an action button, the card displays an inline loading spinner in the active interface view. The notification record itself remains intact. Upon completion, the task card is dismissed or resolved.
-
+- **Two-Tab Drawer (`Tasks` vs `Updates`)**:
+  - **`Tasks` Tab**: Shows actionable interactive cards requiring user remediation (`action_type == 'interactive'` and `metadata.resolution != 'resolved'`).
+  - **`Updates` Tab**: Shows passive historical receipts and resolved tasks (`action_type == 'receipt'` or `metadata.resolution == 'resolved'`), rolled up with `(×N)` counters.
+- **Auto-Mark as Read**: Opening/mounting the drawer automatically marks unread notifications as read and clears the unread badge counter.
+- **Scoped Dismiss All**: A single `[Dismiss All]` header action is strictly scoped to the active tab (`filter: { action_type: activeTab }`).
+- **Icon Action Buttons**: Action buttons are minimal, sleek icon buttons (e.g. `Sparkles` for compaction, `Database` for consolidation, `RotateCcw` for retry) with hover tooltips indicating the action. No loud text buttons (e.g. no `[Tidy Now]`).
+- **Action Execution State**: When a user clicks an action button, the icon displays an inline loading spinner (`Loader2`). Upon backend resolution, the button resolves into a checkmark (`Check`).
+- **Uncompacted Session Visual Cues**: Sessions with uncompacted turns show an accent highlight dot/glow in the session rail and detail drawer with a compact icon action.
 
 ---
 
@@ -303,8 +311,8 @@ When an error occurs during a voice turn, the runtime error boundary must execut
 | **Pipeline Auth** | `on_error` | `Pipeline` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/ai"))` | Title: `"Voice Notice: LLM"`<br/>Msg: `"API key invalid or expired."` |
 | **Hardware** | `on_error` | `Hardware` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/audio"))` | Title: `"Voice Notice: Audio"`<br/>Msg: `"Microphone device disconnected."` |
 | **Models** | `on_error` | `Models` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/models"))` | Title: `"Voice Notice: Models"`<br/>Msg: `"Local weights not found on disk."` |
-| **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Info` | `Interactive(CompactSession(id))` | Title: `"Session #X Ready to Tidy"`<br/>Msg: `"X uncompacted turns."` |
-| **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Info` | `Receipt` | Title: `"Session #X Tidied"`<br/>Msg: `"Extracted X memory facts."` |
+| **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Info` | `Interactive(CompactSession(id))` | Title: `"Session #X Ready to Compact"`<br/>Msg: `"X uncompacted turns."` |
+| **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Info` | `Receipt` | Title: `"Session #X Compacted"`<br/>Msg: `"Extracted X memory facts."` |
 | **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Warning` | `Receipt` | Title: `"Session #X Compaction Failed"`<br/>Msg: Error description |
 | **Scheduler** | `scheduler.rs` | `MemoryConsolidation`| `None` | `Warning` | `Interactive(ConsolidateMemory)` | Title: `"Memory Consolidation Missed"`<br/>Msg: `"Scheduled daily run missed."` |
 | **Scheduler** | `scheduler.rs` | `MemoryConsolidation`| `None` | `Info` | `Receipt` | Title: `"Memory Consolidated"`<br/>Msg: `"Daily profile updated."` |

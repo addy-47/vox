@@ -199,7 +199,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
       {
         id: "classifier",
         label: "Smart Sorting",
-        subLabel: getSubLabel("classifier", "Keeps memories tidy and relevant"),
+        subLabel: getSubLabel("classifier", "Keeps memories organized and relevant"),
         icon: <Filter />,
         required: true,
         groups: manifest.model_groups.filter((g) => g.category === "classifier"),

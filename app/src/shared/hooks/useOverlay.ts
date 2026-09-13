@@ -16,6 +16,8 @@ interface UseOverlayOptions {
    * that render their own backdrop, leave false — the backdrop handles it.
    */
   dismissOnOutside?: boolean;
+  /** Optional custom predicate to determine if a pointerdown should dismiss this overlay. */
+  shouldDismissOnPointerDown?: (target: Node) => boolean;
 }
 
 /**
@@ -23,13 +25,21 @@ interface UseOverlayOptions {
  * Escape and (optionally) outside-click dismissal are handled centrally by
  * the stack — per-surface listeners should be removed in favor of this hook.
  */
-export function useOverlay({ onClose, active = true, ref, dismissOnOutside = false }: UseOverlayOptions): void {
+export function useOverlay({
+  onClose,
+  active = true,
+  ref,
+  dismissOnOutside = false,
+  shouldDismissOnPointerDown,
+}: UseOverlayOptions): void {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const refRef = useRef(ref);
   refRef.current = ref;
   const dismissRef = useRef(dismissOnOutside);
   dismissRef.current = dismissOnOutside;
+  const shouldDismissRef = useRef(shouldDismissOnPointerDown);
+  shouldDismissRef.current = shouldDismissOnPointerDown;
 
   useEffect(() => {
     if (!active) return;
@@ -37,6 +47,7 @@ export function useOverlay({ onClose, active = true, ref, dismissOnOutside = fal
       onClose: () => onCloseRef.current(),
       getEl: () => refRef.current?.current ?? null,
       dismissOnOutside: dismissRef.current,
+      shouldDismissOnPointerDown: shouldDismissRef.current,
     });
   }, [active]);
 }

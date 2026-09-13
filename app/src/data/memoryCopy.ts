@@ -60,4 +60,6 @@ export const MEMORY_COPY = {
   topologyLegend: "Topology Legend",
   showAllCategories: "Show All Categories",
   focusPersonalCore: "Focus Personal Core",
+  selectModeActive: "Selection Mode Active (Click nodes to inspect)",
+  selectModeInactive: "Enable Node Selection Mode",
 };

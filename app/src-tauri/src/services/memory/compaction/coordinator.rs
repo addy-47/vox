@@ -7,7 +7,7 @@ use turso::Connection;
 
 use crate::{
     core::{
-        events::Severity,
+        events::{emit_ipc, IpcEvent, Severity},
         settings::LlmSettings,
         state::{AppState, InteractionState},
     },
@@ -16,7 +16,7 @@ use crate::{
             commit_compaction_output, fetch_latest_compaction_run, fetch_turns_for_compaction,
             record_compaction_finish, record_compaction_start,
         },
-        notifications::dismiss_interactive_by_entity,
+        notifications::{find_notification_by_group, resolve_notification_in_place},
         TurnRow,
     },
     services::{
@@ -205,12 +205,15 @@ impl CompactionCoordinator {
         uncompacted_turns: u32,
     ) -> Result<Option<String>> {
         let group_key = format!("session_compaction:{}", session_id);
-        let title = format!("Session #{} Ready to Tidy", session_id);
+        let title = format!("Session #{} Ready to Compact", session_id);
         let message = format!(
             "Session ended with {} uncompacted turn(s). Compact to extract personal memory facts.",
             uncompacted_turns
         );
-        let metadata = format!("{{\"uncompacted_turns\": {}}}", uncompacted_turns);
+        let metadata = format!(
+            "{{\"uncompacted_turns\": {}, \"resolution\": \"pending\"}}",
+            uncompacted_turns
+        );
 
         let params = NotificationParams {
             group_key: Some(&group_key),
@@ -258,7 +261,7 @@ fn resolve_llm_provider(settings: &LlmSettings) -> Option<Box<dyn LlmProvider>> 
     create_llm_provider_from_llm_settings(settings, &llm_path).ok()
 }
 
-/// Emits passive receipt and dismisses interactive card on compaction success.
+/// Resolves interactive card in-place on compaction success, or emits passive receipt if none exists.
 async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
     app: &AppHandle<R>,
     db: &crate::persistence::db::VoxDb,
@@ -267,19 +270,21 @@ async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
     facts_count: u32,
 ) {
     let group_key = format!("session_compaction:{}", session_id);
-    if let Err(e) = dismiss_interactive_by_entity(conn, &group_key).await {
-        log::warn!(
-            "[CompactionCoordinator] Failed to dismiss interactive notification for group {}: {}",
-            group_key,
-            e
-        );
-    }
-
-    let title = format!("Session #{} Tidied", session_id);
     let message = format!(
         "Successfully compacted session #{} and extracted {} memory facts.",
         session_id, facts_count
     );
+
+    // If an interactive card exists, update it in-place to resolved
+    if let Ok(Some(existing)) = find_notification_by_group(conn, &group_key).await {
+        if let Ok(Some(updated)) = resolve_notification_in_place(conn, &existing.id, "resolved", Some(&message)).await {
+            let _ = emit_ipc(app, IpcEvent::NotificationUpdated(updated));
+            return;
+        }
+    }
+
+    // Otherwise (background run with no pending card), append passive receipt:
+    let title = format!("Session #{} Compacted", session_id);
     let receipt_group = format!("compaction_receipt:{}", session_id);
 
     let params = NotificationParams {
@@ -303,15 +308,26 @@ async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
     }
 }
 
-/// Emits passive warning receipt on compaction failure without mutating card attention status.
+/// Resolves interactive card in-place on compaction failure, or emits passive warning receipt if none exists.
 async fn emit_session_compaction_failure_receipt<R: tauri::Runtime>(
     app: &AppHandle<R>,
     db: &crate::persistence::db::VoxDb,
     session_id: i64,
     err_str: &str,
 ) {
+    let group_key = format!("session_compaction:{}", session_id);
+    let message = format!("Failed to compact session #{}: {}", session_id, err_str);
+
+    if let Ok(conn) = db.connect() {
+        if let Ok(Some(existing)) = find_notification_by_group(&conn, &group_key).await {
+            if let Ok(Some(updated)) = resolve_notification_in_place(&conn, &existing.id, "failed", Some(&message)).await {
+                let _ = emit_ipc(app, IpcEvent::NotificationUpdated(updated));
+                return;
+            }
+        }
+    }
+
     let title = format!("Session #{} Compaction Failed", session_id);
-    let message = format!("Failed to tidy session #{}: {}", session_id, err_str);
     let receipt_group = format!("compaction_receipt:{}", session_id);
 
     let params = NotificationParams {

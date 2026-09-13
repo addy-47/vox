@@ -10,7 +10,13 @@ pub use prompt::{build_compaction_request, COMPACTION_SYSTEM_PROMPT};
 pub use runner::{run_compaction, CompactionResult};
 use tauri::AppHandle;
 
-use crate::{core::state::AppState, persistence::compactions::fetch_uncompacted_sessions};
+use crate::{
+    core::state::AppState,
+    persistence::{
+        compactions::fetch_uncompacted_sessions,
+        notifications::{find_notification_by_group, update_interactive_notification},
+    },
+};
 
 /// Runs a startup sweep across all past sessions to detect any sessions that ended with
 /// uncompacted turns (e.g. from an OS crash, hard reboot, or sudden termination).
@@ -65,19 +71,49 @@ pub async fn reconcile_uncompacted_sessions_on_boot(
                     );
                 }
             });
-        } else if let Err(e) = CompactionCoordinator::notify_uncompacted_session(
-            app,
-            &state.db,
-            item.session_id,
-            uncompacted_turns,
-        )
-        .await
-        {
-            log::warn!(
-                "[BootReconciliation] Failed to emit notification for session {}: {}",
+        } else {
+            let group_key = format!("session_compaction:{}", item.session_id);
+            if let Ok(Some(existing)) = find_notification_by_group(&conn, &group_key).await {
+                // Invariant: User dismissal is sovereign. Never resurrect or spawn duplicate rows.
+                if existing.status == "dismissed" {
+                    log::debug!(
+                        "[BootReconciliation] Skipping dismissed notification for session {}",
+                        item.session_id
+                    );
+                    continue;
+                }
+                if existing.metadata.contains("\"resolution\":\"resolved\"") {
+                    log::debug!(
+                        "[BootReconciliation] Skipping resolved notification for session {}",
+                        item.session_id
+                    );
+                    continue;
+                }
+
+                // If active card exists, update uncompacted turn count in-place
+                let new_msg = format!(
+                    "Session ended with {} uncompacted turn(s). Compact to extract personal memory facts.",
+                    uncompacted_turns
+                );
+                let new_meta = format!(
+                    "{{\"uncompacted_turns\": {}, \"resolution\": \"pending\"}}",
+                    uncompacted_turns
+                );
+                let _ = update_interactive_notification(&conn, &existing.id, &new_msg, &new_meta).await;
+            } else if let Err(e) = CompactionCoordinator::notify_uncompacted_session(
+                app,
+                &state.db,
                 item.session_id,
-                e
-            );
+                uncompacted_turns,
+            )
+            .await
+            {
+                log::warn!(
+                    "[BootReconciliation] Failed to emit notification for session {}: {}",
+                    item.session_id,
+                    e
+                );
+            }
         }
     }
 
