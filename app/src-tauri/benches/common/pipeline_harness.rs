@@ -178,18 +178,20 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         None,
     ));
 
-    // 2. VAD Input RingBuffer & Actor
+    // 2. VAD Input RingBuffer & Actor (production defaults, not bench-local magic numbers)
     let input_rb = HeapRb::<f32>::new(65536);
     let (in_prod, in_cons) = input_rb.split();
     let in_prod_arc = Arc::new(parking_lot::Mutex::new(in_prod));
 
-    let vad_engine = EarshotVadEngine::new(0.4).expect("Failed to initialize Earshot VAD");
+    let vad_engine = EarshotVadEngine::new(vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD)
+        .expect("Failed to initialize Earshot VAD");
     let vad_backend = VadBackend::Earshot(vad_engine);
     let (vad_cmd_tx, vad_cmd_rx) = mpsc::channel::<VadCommand>();
 
-    // 3. STT Worker (Nemotron)
-    let home = dirs::home_dir().expect("Home dir needed");
-    let nemotron_dir = home.join(".vox/models/stt/nemotron-3.5");
+    // 3. STT Worker (Nemotron, resolved through the bench VOX_HOME so overrides are honored)
+    let nemotron_dir = vox_lib::utils::paths::get()
+        .models
+        .join(vox_lib::services::stt::NEMOTRON_MODEL_DIR);
     let stt_provider = Box::new(
         EmbeddedSttProvider::new(&nemotron_dir, "nvidia_nemotron", 4)
             .expect("Failed to load Nemotron provider"),
@@ -209,10 +211,10 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         .expect("Failed to spawn STT worker");
 
     let vad_config = VadActorConfig {
-        initial_threshold: 0.4,
-        initial_noise_gate: 0.005,
+        initial_threshold: vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD,
+        initial_noise_gate: vox_lib::core::defaults::DEFAULT_VAD_PTT_NOISE_GATE,
         initial_silence_duration_ms: settings.vad.silence_duration_ms,
-        initial_speech_onset_ms: 32,
+        initial_speech_onset_ms: vox_lib::core::defaults::DEFAULT_VAD_SPEECH_ONSET_MS,
         initial_mode: InteractionMode::Passive,
         initial_audio_mode: AudioOutputMode::Headset,
     };
@@ -240,14 +242,19 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
     let (bench_tx, bench_rx) = mpsc::channel::<VoxEvent>();
     let bench_tx_tee = bench_tx.clone();
 
-    // Forward events from actors to BOTH the router pump (driving state) and bench_tx (measuring latency)
+    // Forward events from actors to BOTH the router pump (driving state) and bench_tx (measuring latency).
+    // Tee threads exit cleanly on Shutdown instead of leaking until process exit (§7.2).
     let router_tx_clone = router_tx.clone();
     std::thread::Builder::new()
         .name("bench-event-tee".to_string())
         .spawn(move || {
             while let Ok(ev) = event_rx.recv() {
+                let is_shutdown = matches!(ev, VoxEvent::Shutdown);
                 let _ = bench_tx_tee.send(ev.clone());
                 let _ = router_tx_clone.send(ev);
+                if is_shutdown {
+                    break;
+                }
             }
         })
         .expect("Failed to spawn bench-event-tee");
@@ -266,8 +273,12 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
             .name("bench-pipeline-tee".to_string())
             .spawn(move || {
                 while let Ok(ev) = tee_rx.recv() {
+                    let is_shutdown = matches!(ev, VoxEvent::Shutdown);
                     let _ = bench_tx_clone.send(ev.clone());
                     let _ = router_tx_clone2.send(ev);
+                    if is_shutdown {
+                        break;
+                    }
                 }
             })
             .expect("Failed to spawn bench-pipeline-tee");

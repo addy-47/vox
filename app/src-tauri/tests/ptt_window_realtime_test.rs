@@ -132,12 +132,7 @@ async fn test_ptt_realtime_matrix() {
                 "State must be Listening after ptt_start"
             );
 
-            let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
-            let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
-                .expect("Failed to decode supertonic_01_en_briefing.wav");
-
-            common::audio::stream_audio_to_ring_buffer(&audio, &mut producer);
-            common::audio::wait_for_buffer_drain(&producer, 5);
+            common::audio::stream_test_clip(common::ASSET_SUPERTONIC_01_EN_FILENAME, &mut producer);
 
             ptt_stop(&app, &state)
                 .await

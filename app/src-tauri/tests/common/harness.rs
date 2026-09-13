@@ -18,10 +18,12 @@ use vox_lib::{
     core::events::VoxEvent,
     services::{
         audio::PlaybackEngine,
+        llm::actor::LlmCommand,
         stt::{
             actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
             EmbeddedSttProvider, SttProvider,
         },
+        tts::actor::TtsCommand,
         vad::{
             actor::{spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles},
             earshot_vad::EarshotVadEngine,
@@ -297,6 +299,184 @@ pub fn assert_channel_empty_after<T: std::fmt::Debug>(
     }
 }
 
+/// Constructs the default test `TelemetryState` with fresh atomics and a
+/// dropped telemetry channel. Single home for the block previously duplicated
+/// across `get_test_app_and_state` / `get_test_app_state`.
+pub fn make_test_telemetry() -> Arc<vox_lib::core::state::TelemetryState> {
+    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
+
+    let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();
+    Arc::new(vox_lib::core::state::TelemetryState {
+        telemetry_tx,
+        latest_energy: Arc::new(AtomicU32::new(0)),
+        latest_vad_prob: Arc::new(AtomicU32::new(0)),
+        latest_low: Arc::new(AtomicU32::new(0)),
+        latest_mid: Arc::new(AtomicU32::new(0)),
+        latest_high: Arc::new(AtomicU32::new(0)),
+        latest_playback_energy: Arc::new(AtomicU32::new(0)),
+        latest_playback_low: Arc::new(AtomicU32::new(0)),
+        latest_playback_mid: Arc::new(AtomicU32::new(0)),
+        latest_playback_high: Arc::new(AtomicU32::new(0)),
+        latest_sys_cpu: Arc::new(AtomicU32::new(0)),
+        latest_sys_ram: Arc::new(AtomicU32::new(0)),
+        latest_vox_cpu: Arc::new(AtomicU32::new(0)),
+        latest_vox_ram: Arc::new(AtomicU32::new(0)),
+        latest_stt_ms: Arc::new(AtomicU32::new(0)),
+        latest_ttft_ms: Arc::new(AtomicU32::new(0)),
+        latest_voice_latency_ms: Arc::new(AtomicU32::new(0)),
+        latest_threads: Arc::new(AtomicU32::new(0)),
+        latest_tts_rtf: Arc::new(AtomicU32::new(0)),
+        latest_playback_start_ms: Arc::new(AtomicU32::new(0)),
+        latest_persistence_rate: Arc::new(AtomicU32::new(0)),
+        is_db_healthy: Arc::new(AtomicBool::new(true)),
+        is_private_mode: Arc::new(AtomicBool::new(false)),
+        dropped_telemetry_events: Arc::new(AtomicU64::new(0)),
+    })
+}
+
+/// Bundled channels for pipeline seam tests (STT/VAD/LLM/TTS/pipeline).
+/// Single home for the 4–5 line tuple previously duplicated across
+/// `transcript_to_llm`, `llm_to_tts`, `tts_to_playback` and `tts_transition`.
+/// Destructure at the call site to keep existing variable names:
+/// `let PipelineTestChannels { stt_tx, vad_tx, tts_tx, tts_rx, llm_tx, pipeline_tx, pipeline_rx, .. } = setup_pipeline_channels();`
+pub struct PipelineTestChannels {
+    pub stt_tx: Sender<SttCommand>,
+    pub vad_tx: Sender<VadCommand>,
+    pub llm_tx: Sender<LlmCommand>,
+    pub llm_rx: Receiver<LlmCommand>,
+    pub tts_tx: Sender<TtsCommand>,
+    pub tts_rx: Receiver<TtsCommand>,
+    pub pipeline_tx: Sender<VoxEvent>,
+    pub pipeline_rx: Receiver<VoxEvent>,
+}
+
+/// Creates a fresh set of pipeline test channels.
+pub fn setup_pipeline_channels() -> PipelineTestChannels {
+    let (stt_tx, _stt_rx) = mpsc::channel();
+    let (vad_tx, _vad_rx) = mpsc::channel();
+    let (tts_tx, tts_rx) = mpsc::channel::<TtsCommand>();
+    let (llm_tx, llm_rx) = mpsc::channel::<LlmCommand>();
+    let (pipeline_tx, pipeline_rx) = mpsc::channel::<VoxEvent>();
+    PipelineTestChannels {
+        stt_tx,
+        vad_tx,
+        llm_tx,
+        llm_rx,
+        tts_tx,
+        tts_rx,
+        pipeline_tx,
+        pipeline_rx,
+    }
+}
+
+/// Isolated app-state setup: fresh `TempPathsGuard` + `paths::init` + test
+/// `AppHandle`/`AppState`. The guard is returned first so it stays alive for
+/// the whole test scope: `let (_guard, app, state) = setup_isolated_app_state().await;`
+pub async fn setup_isolated_app_state() -> (
+    super::paths::TempPathsGuard,
+    AppHandle<tauri::test::MockRuntime>,
+    Arc<vox_lib::core::state::AppState>,
+) {
+    let guard = super::paths::TempPathsGuard::new();
+    let (app, state) = get_test_app_and_state().await;
+    (guard, app, state)
+}
+
+/// Synchronous variant for plain `#[test]` functions.
+pub fn setup_isolated_app_state_sync() -> (
+    super::paths::TempPathsGuard,
+    AppHandle<tauri::test::MockRuntime>,
+    Arc<vox_lib::core::state::AppState>,
+) {
+    let guard = super::paths::TempPathsGuard::new();
+    let (app, state) = get_test_app_and_state_sync();
+    (guard, app, state)
+}
+
+/// Polls `dictation_state()` until it equals `expected` or `timeout` elapses.
+/// Returns true on match. Replaces bare `sleep Nms → assert state` with a
+/// deadline poll so slow CI routers still converge instead of flaking.
+pub async fn wait_for_dictation_state(
+    state: &vox_lib::core::state::AppState,
+    expected: vox_lib::core::state::InteractionState,
+    timeout: Duration,
+) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if state.pipeline.dictation_state() == expected {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    state.pipeline.dictation_state() == expected
+}
+
+/// Suppression invariant: polls `get_state` for the whole `watch` window and
+/// panics the moment it deviates from `expected`. Stronger than a single
+/// `sleep → assert still X`, which only samples the endpoint and misses
+/// transient premature transitions.
+pub async fn assert_pipeline_state_stable<F>(
+    get_state: F,
+    expected: vox_lib::core::state::InteractionState,
+    watch: Duration,
+    label: &str,
+) where
+    F: Fn() -> vox_lib::core::state::InteractionState,
+{
+    let deadline = Instant::now() + watch;
+    while Instant::now() < deadline {
+        let current = get_state();
+        if current != expected {
+            panic!(
+                "[{}] Suppression invariant violated: expected stable {:?}, saw {:?} inside watch window",
+                label, expected, current
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// Synchronous variant for plain `#[test]` functions.
+pub fn assert_pipeline_state_stable_sync<F>(
+    get_state: F,
+    expected: vox_lib::core::state::InteractionState,
+    watch: Duration,
+    label: &str,
+) where
+    F: Fn() -> vox_lib::core::state::InteractionState,
+{
+    let deadline = Instant::now() + watch;
+    while Instant::now() < deadline {
+        let current = get_state();
+        if current != expected {
+            panic!(
+                "[{}] Suppression invariant violated: expected stable {:?}, saw {:?} inside watch window",
+                label, expected, current
+            );
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Negative-assertion helper for flags: watches `flag` for the whole `watch`
+/// window, failing fast if it is ever set. Replaces `sleep 200ms → assert !flag`.
+pub async fn assert_flag_remains_false(
+    flag: &std::sync::atomic::AtomicBool,
+    watch: Duration,
+    label: &str,
+) {
+    let deadline = Instant::now() + watch;
+    while Instant::now() < deadline {
+        if flag.load(std::sync::atomic::Ordering::SeqCst) {
+            panic!(
+                "[{}] Negative assertion failed: flag was set inside watch window",
+                label
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 /// Synchronous wrapper around `get_test_app_and_state` for plain `#[test]` functions.
 /// Builds a throwaway current-thread runtime for setup only; test bodies stay runtime-free.
 pub fn get_test_app_and_state_sync() -> (
@@ -315,39 +495,10 @@ pub async fn get_test_app_and_state() -> (
     AppHandle<tauri::test::MockRuntime>,
     Arc<vox_lib::core::state::AppState>,
 ) {
-    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
-
     use tauri::Manager;
-    use vox_lib::core::state::TelemetryState;
 
     let app = get_test_app_handle();
-    let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();
-    let telemetry = Arc::new(TelemetryState {
-        telemetry_tx,
-        latest_energy: Arc::new(AtomicU32::new(0)),
-        latest_vad_prob: Arc::new(AtomicU32::new(0)),
-        latest_low: Arc::new(AtomicU32::new(0)),
-        latest_mid: Arc::new(AtomicU32::new(0)),
-        latest_high: Arc::new(AtomicU32::new(0)),
-        latest_playback_energy: Arc::new(AtomicU32::new(0)),
-        latest_playback_low: Arc::new(AtomicU32::new(0)),
-        latest_playback_mid: Arc::new(AtomicU32::new(0)),
-        latest_playback_high: Arc::new(AtomicU32::new(0)),
-        latest_sys_cpu: Arc::new(AtomicU32::new(0)),
-        latest_sys_ram: Arc::new(AtomicU32::new(0)),
-        latest_vox_cpu: Arc::new(AtomicU32::new(0)),
-        latest_vox_ram: Arc::new(AtomicU32::new(0)),
-        latest_stt_ms: Arc::new(AtomicU32::new(0)),
-        latest_ttft_ms: Arc::new(AtomicU32::new(0)),
-        latest_voice_latency_ms: Arc::new(AtomicU32::new(0)),
-        latest_threads: Arc::new(AtomicU32::new(0)),
-        latest_tts_rtf: Arc::new(AtomicU32::new(0)),
-        latest_playback_start_ms: Arc::new(AtomicU32::new(0)),
-        latest_persistence_rate: Arc::new(AtomicU32::new(0)),
-        is_db_healthy: Arc::new(AtomicBool::new(true)),
-        is_private_mode: Arc::new(AtomicBool::new(false)),
-        dropped_telemetry_events: Arc::new(AtomicU64::new(0)),
-    });
+    let telemetry = make_test_telemetry();
 
     vox_lib::utils::paths::init();
     let db_conn = vox_lib::persistence::db::VoxDb::open(&vox_lib::utils::paths::db_path())
@@ -363,37 +514,7 @@ pub async fn get_test_app_and_state() -> (
 
 /// Constructs an AppState instance tailored for testing environments.
 pub async fn get_test_app_state() -> vox_lib::core::state::AppState {
-    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
-
-    use vox_lib::core::state::TelemetryState;
-
-    let (telemetry_tx, _telemetry_rx) = crossbeam_channel::unbounded();
-    let telemetry = Arc::new(TelemetryState {
-        telemetry_tx,
-        latest_energy: Arc::new(AtomicU32::new(0)),
-        latest_vad_prob: Arc::new(AtomicU32::new(0)),
-        latest_low: Arc::new(AtomicU32::new(0)),
-        latest_mid: Arc::new(AtomicU32::new(0)),
-        latest_high: Arc::new(AtomicU32::new(0)),
-        latest_playback_energy: Arc::new(AtomicU32::new(0)),
-        latest_playback_low: Arc::new(AtomicU32::new(0)),
-        latest_playback_mid: Arc::new(AtomicU32::new(0)),
-        latest_playback_high: Arc::new(AtomicU32::new(0)),
-        latest_sys_cpu: Arc::new(AtomicU32::new(0)),
-        latest_sys_ram: Arc::new(AtomicU32::new(0)),
-        latest_vox_cpu: Arc::new(AtomicU32::new(0)),
-        latest_vox_ram: Arc::new(AtomicU32::new(0)),
-        latest_stt_ms: Arc::new(AtomicU32::new(0)),
-        latest_ttft_ms: Arc::new(AtomicU32::new(0)),
-        latest_voice_latency_ms: Arc::new(AtomicU32::new(0)),
-        latest_threads: Arc::new(AtomicU32::new(0)),
-        latest_tts_rtf: Arc::new(AtomicU32::new(0)),
-        latest_playback_start_ms: Arc::new(AtomicU32::new(0)),
-        latest_persistence_rate: Arc::new(AtomicU32::new(0)),
-        is_db_healthy: Arc::new(AtomicBool::new(true)),
-        is_private_mode: Arc::new(AtomicBool::new(false)),
-        dropped_telemetry_events: Arc::new(AtomicU64::new(0)),
-    });
+    let telemetry = make_test_telemetry();
 
     vox_lib::utils::paths::init();
     let db_conn = vox_lib::persistence::db::VoxDb::open(&vox_lib::utils::paths::db_path())

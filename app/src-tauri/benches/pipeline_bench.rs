@@ -5,7 +5,8 @@
 //! Component    : pipeline::assistant, services::vad, services::stt, services::llm, services::tts, services::audio
 //! Prerequisites: Local model weights in ~/.vox/models/ (Nemotron, Qwen GGUF, Kokoro / Supertonic)
 //! Execution    : cargo test --bench pipeline_bench --release -- [FLAGS]
-//! Metrics      : $T_{vad}$, $T_{stt}$, $T_{ttft}$, $T_{tts}$, $T_{e2e}$, Audio Duration (s), Pipeline RTF
+//! Metrics      : $T_{stt}$, $T_{llm}$, $T_{tts}$, $T_{e2e}$, STT similarity gate (≥ --threshold),
+//!                Audio Duration (s), Pipeline RTF
 //! Artifacts    : benches/results/pipeline_bench/<run_id>/report.json + wav/*.wav + latest.json
 //! ============================================================================
 
@@ -25,6 +26,7 @@ use common::{
         generate_run_id, get_process_memory_mb, save_benchmark_report, BenchmarkReport,
         BenchmarkSystemInfo, ClipBenchmarkResult, EngineBenchmarkRun,
     },
+    scoring::{ground_truth_for_clip, lang_for_clip, levenshtein_similarity},
     utils::{downsample_48k_to_24k, drain_consumer, write_wav_f32},
 };
 use ringbuf::traits::{Observer, Producer};
@@ -68,6 +70,10 @@ struct CliArgs {
     /// Audio clip to benchmark (defaults to clip_01_en_briefing.wav)
     #[arg(long, default_value = "clip_01_en_briefing.wav")]
     clip: String,
+
+    /// Minimum STT similarity (Levenshtein, 0.0–1.0) for the quality gate (§4: ≥ 0.90)
+    #[arg(long, default_value_t = 0.90)]
+    threshold: f64,
 
     /// Output directory for benchmark artifacts
     #[arg(long)]
@@ -201,6 +207,7 @@ fn main() {
     let mut speech_start_time = None;
     let mut speech_end_time = None;
     let mut transcript_final_time = None;
+    let mut llm_finished_time = None;
     let mut playback_start_time = None;
     let mut captured_transcript = String::new();
     let mut captured_audio = Vec::new();
@@ -210,6 +217,10 @@ fn main() {
     let audio_feed = audio_samples.clone();
     let app_feed = app.clone();
     let state_feed = state.clone();
+    // PTT stop timestamp (feeder → main) so post-speech latencies in PTT mode
+    // measure from the release instant — there is no VAD SpeechEnd in PTT mode.
+    let ptt_stop_time = Arc::new(parking_lot::Mutex::new(None::<Instant>));
+    let ptt_stop_time_feed = Arc::clone(&ptt_stop_time);
     let feed_handle = std::thread::spawn(move || {
         if is_ptt {
             let _ = vox_lib::pipeline::assistant::ptt::ptt_start(&app_feed, &state_feed);
@@ -233,6 +244,7 @@ fn main() {
                 .block_on(async move {
                     let _ = vox_lib::pipeline::assistant::ptt::ptt_stop(&app_c, &state_c).await;
                 });
+            *ptt_stop_time_feed.lock() = Some(Instant::now());
         } else {
             // Trailing silence to trigger VAD SpeechEnd: 1.5s = 94 chunks of 256 samples @ 16ms
             let silence = vec![0.0f32; chunk_size];
@@ -297,6 +309,9 @@ fn main() {
                     }
                 }
                 VoxEvent::LlmFinished { turn_id } => {
+                    if llm_finished_time.is_none() {
+                        llm_finished_time = Some(Instant::now());
+                    }
                     llm_finished = true;
                     println!(
                         "  [LLM] LlmFinished (turn {}) at +{:.2}s",
@@ -345,24 +360,74 @@ fn main() {
         }
     }
 
-    let _ = feed_handle.join();
+    let _ = feed_handle.join().expect("Audio feeder thread panicked");
+
+    // Graceful teardown: let the router and workers observe Shutdown so tee
+    // threads and the router pump exit cleanly instead of being killed (§7.2).
+    if let Some(tx) = state.event_tx.lock().clone() {
+        let _ = tx.send(VoxEvent::Shutdown);
+    }
+    std::thread::sleep(Duration::from_millis(500));
 
     let total_elapsed = run_start.elapsed().as_secs_f64();
     let audio_24k = downsample_48k_to_24k(&captured_audio);
     let synth_duration_s = audio_24k.len() as f32 / 24000.0;
 
-    let e2e_response_time_ms = if let (Some(se), Some(ps)) = (speech_end_time, playback_start_time)
-    {
+    let e2e_response_time_ms = if is_ptt {
+        // No VAD SpeechEnd in PTT mode: measure from the release (PttStop) instant.
+        let stop = ptt_stop_time.lock().clone();
+        if let (Some(st), Some(ps)) = (stop, playback_start_time) {
+            ps.duration_since(st).as_secs_f64() * 1000.0
+        } else {
+            total_elapsed * 1000.0
+        }
+    } else if let (Some(se), Some(ps)) = (speech_end_time, playback_start_time) {
         ps.duration_since(se).as_secs_f64() * 1000.0
     } else {
         total_elapsed * 1000.0
     };
 
-    let stt_latency_ms = if let (Some(se), Some(tf)) = (speech_end_time, transcript_final_time) {
+    let stt_latency_ms = if is_ptt {
+        let stop = ptt_stop_time.lock().clone();
+        if let (Some(st), Some(tf)) = (stop, transcript_final_time) {
+            tf.duration_since(st).as_secs_f64() * 1000.0
+        } else {
+            0.0
+        }
+    } else if let (Some(se), Some(tf)) = (speech_end_time, transcript_final_time) {
         tf.duration_since(se).as_secs_f64() * 1000.0
     } else {
         0.0
     };
+
+    // Per-stage latencies (§4: record T_stt/T_llm/T_tts, not only E2E — a passing
+    // E2E with a regressed stage is a hidden performance bug).
+    let llm_latency_ms = if let (Some(tf), Some(lf)) = (transcript_final_time, llm_finished_time) {
+        lf.duration_since(tf).as_secs_f64() * 1000.0
+    } else {
+        0.0
+    };
+    let tts_latency_ms = if let (Some(lf), Some(ps)) = (llm_finished_time, playback_start_time) {
+        ps.duration_since(lf).as_secs_f64() * 1000.0
+    } else {
+        0.0
+    };
+
+    // Ground-truth verification (§4: normalized Levenshtein similarity ≥ threshold,
+    // never a hardcoded 1.0 or a keyword-presence check).
+    let ground_truth = ground_truth_for_clip(&args.clip).unwrap_or_else(|| {
+        eprintln!(
+            "WARNING: no labelled ground truth for clip '{}'; similarity gated at 0.0",
+            args.clip
+        );
+        ""
+    });
+    let similarity = if captured_transcript.trim().is_empty() || ground_truth.is_empty() {
+        0.0
+    } else {
+        levenshtein_similarity(&captured_transcript, ground_truth)
+    };
+    let lang = lang_for_clip(&args.clip).to_string();
 
     let base_out = args
         .output_dir
@@ -411,29 +476,56 @@ fn main() {
         "  Output Synthesized Audio: {:.2} s (24 kHz)",
         synth_duration_s
     );
-    println!("  STT Post-Speech Latency : {:.1} ms", stt_latency_ms);
     println!(
-        "  Perceived E2E Latency   : {:.1} ms (SpeechEnd -> PlaybackStarted)",
-        e2e_response_time_ms
+        "  STT Post-Speech Latency : {:.1} ms{}",
+        stt_latency_ms,
+        if is_ptt {
+            " (PttStop -> TranscriptFinal)"
+        } else {
+            " (SpeechEnd -> TranscriptFinal)"
+        }
+    );
+    println!(
+        "  LLM Generation Latency  : {:.1} ms (TranscriptFinal -> LlmFinished)",
+        llm_latency_ms
+    );
+    println!("  TTS Synthesis Latency   : {:.1} ms (LlmFinished -> PlaybackStarted; 0.0 means first audio streamed before LLM completion)", tts_latency_ms);
+    println!(
+        "  Perceived E2E Latency   : {:.1} ms ({})",
+        e2e_response_time_ms,
+        if is_ptt {
+            "PttStop -> PlaybackStarted"
+        } else {
+            "SpeechEnd -> PlaybackStarted"
+        }
     );
     println!("  Total Pipeline Elapsed  : {:.2} s", total_elapsed);
+    println!(
+        "  STT Similarity ({})     : {:.4} (gate ≥ {:.2})",
+        lang, similarity, args.threshold
+    );
     println!("  Memory RSS              : ~{} MB", mem_after);
 
     let result = ClipBenchmarkResult {
         filename: args.clip.clone(),
-        lang: "EN".to_string(),
+        lang,
         duration_s,
         total_stream_time_ms: total_elapsed * 1000.0,
         final_post_speech_latency_ms: e2e_response_time_ms,
         rtf: total_elapsed / (duration_s as f64),
         throughput_spl_s: audio_24k.len() as f64 / total_elapsed,
         partials_emitted: 0,
-        similarity: 1.0,
+        similarity,
         hypothesis: format!(
-            "STT=\"{}\" | E2E={:.1}ms | SynthAudio={:.2}s | WAV={:?}",
-            captured_transcript, e2e_response_time_ms, synth_duration_s, wav_path
+            "STT=\"{}\" | STT={:.1}ms LLM={:.1}ms TTS={:.1}ms E2E={:.1}ms | SynthAudio={:.2}s | WAV={:?}",
+            captured_transcript, stt_latency_ms, llm_latency_ms, tts_latency_ms, e2e_response_time_ms, synth_duration_s, wav_path
         ),
-        ground_truth: "Canonical input clip briefing".to_string(),
+        ground_truth: ground_truth.to_string(),
+        stt_latency_ms,
+        llm_latency_ms,
+        tts_latency_ms,
+        llm_response_words: captured_llm_response.split_whitespace().count(),
+        llm_response: captured_llm_response.clone(),
     };
 
     let report = BenchmarkReport {
@@ -454,7 +546,7 @@ fn main() {
             avg_post_speech_latency_ms: e2e_response_time_ms,
             avg_rtf: total_elapsed / (duration_s as f64),
             overall_throughput_spl_s: audio_24k.len() as f64 / total_elapsed,
-            avg_similarity: 1.0,
+            avg_similarity: similarity,
             clips: vec![result],
         }],
     };
@@ -466,4 +558,27 @@ fn main() {
             base_out.join("latest.json")
         );
     }
+
+    // Quality gate (§4): the report above is always saved as evidence, but a
+    // bench whose transcript fails the similarity gate proves nothing about the
+    // pipeline — exit non-zero so CI cannot mistake it for a valid measurement.
+    if captured_transcript.trim().is_empty() {
+        eprintln!("QUALITY GATE FAILED: empty STT transcript — pipeline produced no speech output");
+        std::process::exit(1);
+    }
+    if similarity < args.threshold {
+        eprintln!(
+            "QUALITY GATE FAILED: STT similarity {:.4} < {:.2} for clip '{}'",
+            similarity, args.threshold, args.clip
+        );
+        std::process::exit(1);
+    }
+    if captured_audio.is_empty() {
+        eprintln!("QUALITY GATE FAILED: no synthesized audio captured from playback tap");
+        std::process::exit(1);
+    }
+    println!(
+        "QUALITY GATE PASSED: similarity {:.4} ≥ {:.2}, {:.2}s of synthesized audio",
+        similarity, args.threshold, synth_duration_s
+    );
 }
