@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::core::{error::PipelineImpact, events::Severity};
 use super::Action;
+use crate::core::{error::PipelineImpact, events::Severity};
 
 /// Resolved destination surface for a notification event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

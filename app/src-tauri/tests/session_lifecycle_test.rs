@@ -81,8 +81,8 @@ async fn test_session_start_modular_sets_ready_and_identity() {
 
         // Spawn central production router
         let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
-        let router_handle = spawn_router(app.clone(), event_rx)
-            .expect("Failed to spawn router thread");
+        let router_handle =
+            spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
 
         // Production Entry Seam: Send SessionStart over event_tx into spawn_router
         event_tx
@@ -281,17 +281,19 @@ async fn test_session_continuation_seeds_harness() {
         );
 
         // Verify HarnessSession mounted and continuation turns hydrated
-        let guard = state.harness.lock();
-        let harness = guard.as_ref().expect("HarnessSession must be mounted");
-        assert_eq!(harness.session_id(), Some(existing_sid));
+        {
+            let guard = state.harness.lock();
+            let harness = guard.as_ref().expect("HarnessSession must be mounted");
+            assert_eq!(harness.session_id(), Some(existing_sid));
 
-        let messages = harness.history().messages();
-        assert!(
-            messages
-                .iter()
-                .any(|m| m.content.contains("Prior query on neural architecture")),
-            "Seeded database turn must be hydrated into working memory history"
-        );
+            let messages = harness.history().messages();
+            assert!(
+                messages
+                    .iter()
+                    .any(|m| m.content.contains("Prior query on neural architecture")),
+                "Seeded database turn must be hydrated into working memory history"
+            );
+        }
 
         // Teardown router
         let _ = event_tx.send(VoxEvent::Shutdown);
@@ -336,8 +338,8 @@ async fn test_session_pause_resume_transitions() {
         assert!(!token_before_pause.is_cancelled());
 
         let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
-        let router_handle = spawn_router(app.clone(), event_rx)
-            .expect("Failed to spawn router thread");
+        let router_handle =
+            spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
 
         // Production Entry Seam: Send PauseSession to router
         event_tx
@@ -454,8 +456,8 @@ async fn test_session_resume_from_sleeping_and_error() {
             attach_lifecycle_mock_engine(&app, &state, vad_cmd_tx);
 
         let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
-        let router_handle = spawn_router(app.clone(), event_rx)
-            .expect("Failed to spawn router thread");
+        let router_handle =
+            spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
 
         // Case A: Resume from Sleeping
         state.pipeline.set_state(InteractionState::Sleeping);
@@ -564,8 +566,8 @@ async fn test_session_end_dictation_gate_keeps_engine() {
                 .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
 
             let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
-            let router_handle = spawn_router(app.clone(), event_rx)
-                .expect("Failed to spawn router thread");
+            let router_handle =
+                spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
 
             // Dispatch EndSession through router
             event_tx
@@ -641,8 +643,8 @@ async fn test_session_end_dictation_gate_keeps_engine() {
                 .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
 
             let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
-            let router_handle = spawn_router(app.clone(), event_rx)
-                .expect("Failed to spawn router thread");
+            let router_handle =
+                spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
 
             // Dispatch EndSession through router
             event_tx
@@ -702,7 +704,10 @@ async fn test_session_end_purges_and_unmounts_harness() {
         let cache_file = cache_dir.join(vox_lib::services::realtime::SESSION_CACHE_FILENAME);
         std::fs::write(&cache_file, b"{\"handle\":\"test-resumption-handle\"}")
             .expect("Failed to write test cache file");
-        assert!(cache_file.exists(), "Cache file must exist before EndSession");
+        assert!(
+            cache_file.exists(),
+            "Cache file must exist before EndSession"
+        );
 
         // Start in Ready with a known conversation ID and mounted HarnessSession
         let conv_id = 99887766u64;
@@ -736,8 +741,8 @@ async fn test_session_end_purges_and_unmounts_harness() {
             .is_empty());
 
         let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
-        let router_handle = spawn_router(app.clone(), event_rx)
-            .expect("Failed to spawn router thread");
+        let router_handle =
+            spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
 
         // Dispatch EndSession via router
         event_tx

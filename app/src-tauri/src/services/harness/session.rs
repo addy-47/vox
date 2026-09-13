@@ -334,7 +334,9 @@ impl HarnessSession {
     }
 
     /// Returns a cloned `StreamRoutingPlugin` for use in spawn_blocking contexts.
-    pub(crate) fn clone_stream_plugin(&self) -> crate::services::harness::plugins::stream::StreamRoutingPlugin {
+    pub(crate) fn clone_stream_plugin(
+        &self,
+    ) -> crate::services::harness::plugins::stream::StreamRoutingPlugin {
         self.stream.clone()
     }
 

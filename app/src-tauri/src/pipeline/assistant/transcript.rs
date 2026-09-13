@@ -12,10 +12,7 @@ use crate::{
     pipeline::{target_window, transition, RoutingContext},
     services::{
         self,
-        harness::{
-            CompactionParams, CompactionPlugin, StreamRoutingHandles,
-            TurnPreparation,
-        },
+        harness::{CompactionParams, CompactionPlugin, StreamRoutingHandles, TurnPreparation},
         llm::actor::LlmCommand,
         notifications::{Action, NotificationCategory, NotificationParams},
         translit::transliterate_if_hi,
@@ -90,7 +87,12 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
                 log::info!(
                     "[Pipeline::Transcript] Context threshold >= 85%. Transitioning to Working."
                 );
-                transition(InteractionState::Working, &ctx_clone, &app_clone, &app_state);
+                transition(
+                    InteractionState::Working,
+                    &ctx_clone,
+                    &app_clone,
+                    &app_state,
+                );
 
                 if let Some(ref t_tx) = tts_tx {
                     pending_jobs.fetch_add(1, Ordering::Relaxed);
@@ -125,14 +127,12 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
 
                     let compaction_res = match app_state.db.connect() {
                         Ok(conn) => {
-                            CompactionPlugin::run_and_persist(
-                                provider.as_ref(),
-                                &conn,
-                                params,
-                            )
-                            .await
+                            CompactionPlugin::run_and_persist(provider.as_ref(), &conn, params)
+                                .await
                         }
-                        Err(e) => Err(anyhow::anyhow!("Failed to vend connection for compaction: {e}")),
+                        Err(e) => Err(anyhow::anyhow!(
+                            "Failed to vend connection for compaction: {e}"
+                        )),
                     };
 
                     let mut guard = harness_arc.lock();
@@ -226,7 +226,10 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
                     }
                 }
                 Err(e) => {
-                    log::warn!("[Pipeline::Transcript] Stream routing task join error: {}", e);
+                    log::warn!(
+                        "[Pipeline::Transcript] Stream routing task join error: {}",
+                        e
+                    );
                     let mut guard = harness_arc.lock();
                     if let Some(ref mut harness) = *guard {
                         harness.rollback_user_turn();
@@ -279,7 +282,10 @@ pub fn on_transcript_final<R: tauri::Runtime>(
                 duration_ms: None,
             };
             if let Err(e) = services::notifications::notify(&app_handle, &db, params).await {
-                log::warn!("[Pipeline::Transcript] Failed to dispatch notification: {}", e);
+                log::warn!(
+                    "[Pipeline::Transcript] Failed to dispatch notification: {}",
+                    e
+                );
             }
         });
         return;

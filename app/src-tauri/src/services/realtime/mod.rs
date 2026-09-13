@@ -12,6 +12,10 @@ use std::{
 pub use actor::RealtimeActor;
 use anyhow::Result;
 pub use session::{create_realtime_provider, purge_session_cache};
+pub use transport::{
+    connection::spawn_harness, FrameAction, HarnessConfig, HarnessHandles, HarnessInit,
+    ProviderDriver, ReconnectFn, WsReader, WsWriter,
+};
 
 use crate::core::settings::InteractionMode;
 pub use crate::core::{

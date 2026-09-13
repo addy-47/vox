@@ -73,8 +73,17 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
                         );
                         if let Ok(conn) = db.connect() {
                             let msg = format!("Failed to compact session #{}: {}", session_id, e);
-                            if let Ok(Some(updated)) = resolve_notification_in_place(&conn, &notif_id, "failed", Some(&msg)).await {
-                                if let Err(e) = emit_ipc(&app_handle, IpcEvent::NotificationUpdated(updated)) {
+                            if let Ok(Some(updated)) = resolve_notification_in_place(
+                                &conn,
+                                &notif_id,
+                                "failed",
+                                Some(&msg),
+                            )
+                            .await
+                            {
+                                if let Err(e) =
+                                    emit_ipc(&app_handle, IpcEvent::NotificationUpdated(updated))
+                                {
                                     log::error!(
                                         "[Notifications::Action] Failed to emit notification update: {}",
                                         e
@@ -94,13 +103,27 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
             let db = state.db.clone();
 
             tauri::async_runtime::spawn(async move {
-                match crate::services::memory::scheduler::run_consolidation_once(&app_handle, &app_state).await {
+                match crate::services::memory::scheduler::run_consolidation_once(
+                    &app_handle,
+                    &app_state,
+                )
+                .await
+                {
                     Ok(()) => {
                         log::info!("[Notifications::Action] Consolidation completed successfully");
                         if let Ok(conn) = db.connect() {
                             let msg = "Memory consolidated: daily profile updated.";
-                            if let Ok(Some(updated)) = resolve_notification_in_place(&conn, &notif_id, "resolved", Some(msg)).await {
-                                if let Err(e) = emit_ipc(&app_handle, IpcEvent::NotificationUpdated(updated)) {
+                            if let Ok(Some(updated)) = resolve_notification_in_place(
+                                &conn,
+                                &notif_id,
+                                "resolved",
+                                Some(msg),
+                            )
+                            .await
+                            {
+                                if let Err(e) =
+                                    emit_ipc(&app_handle, IpcEvent::NotificationUpdated(updated))
+                                {
                                     log::error!(
                                         "[Notifications::Action] Failed to emit notification update: {}",
                                         e
@@ -113,8 +136,17 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
                         log::error!("[Notifications::Action] Consolidation failed: {}", e);
                         if let Ok(conn) = db.connect() {
                             let msg = format!("Consolidation failed: {}", e);
-                            if let Ok(Some(updated)) = resolve_notification_in_place(&conn, &notif_id, "failed", Some(&msg)).await {
-                                if let Err(e) = emit_ipc(&app_handle, IpcEvent::NotificationUpdated(updated)) {
+                            if let Ok(Some(updated)) = resolve_notification_in_place(
+                                &conn,
+                                &notif_id,
+                                "failed",
+                                Some(&msg),
+                            )
+                            .await
+                            {
+                                if let Err(e) =
+                                    emit_ipc(&app_handle, IpcEvent::NotificationUpdated(updated))
+                                {
                                     log::error!(
                                         "[Notifications::Action] Failed to emit notification update: {}",
                                         e
@@ -126,14 +158,19 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
                 }
             });
         }
-        ActionPayload::Retry { operation, resource_id } => {
+        ActionPayload::Retry {
+            operation,
+            resource_id,
+        } => {
             log::info!(
                 "[Notifications::Action] Retrying operation '{}' (resource: {:?})",
                 operation,
                 resource_id
             );
             let msg = format!("Retried operation: {}", operation);
-            if let Ok(Some(updated)) = resolve_notification_in_place(&conn, id, "resolved", Some(&msg)).await {
+            if let Ok(Some(updated)) =
+                resolve_notification_in_place(&conn, id, "resolved", Some(&msg)).await
+            {
                 if let Err(e) = emit_ipc(app, IpcEvent::NotificationUpdated(updated)) {
                     log::error!(
                         "[Notifications::Action] Failed to emit notification update: {}",

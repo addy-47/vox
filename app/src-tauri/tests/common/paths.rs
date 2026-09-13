@@ -134,6 +134,12 @@ impl TempPathsGuard {
             prev_vox_home,
         }
     }
+
+    /// Returns the path to the temporary directory managed by this guard.
+    /// Use this to write test fixture files (e.g. export/import roundtrip paths).
+    pub fn temp_dir(&self) -> std::path::PathBuf {
+        self._dir.path().to_path_buf()
+    }
 }
 
 impl Drop for TempPathsGuard {

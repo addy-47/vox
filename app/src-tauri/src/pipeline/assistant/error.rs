@@ -9,7 +9,9 @@ use crate::{
         state::{AppState, InteractionState},
     },
     pipeline::{transition, RoutingContext},
-    services::notifications::{notify, Action, ActionPayload, NotificationCategory, NotificationParams},
+    services::notifications::{
+        notify, Action, ActionPayload, NotificationCategory, NotificationParams,
+    },
 };
 
 /// Handles pipeline subsystem errors according to the 2D Error Classification Matrix.
@@ -130,7 +132,10 @@ pub fn on_error<R: tauri::Runtime + 'static>(
         )
         .await
         {
-            log::warn!("[Pipeline::Error] Failed to dispatch error notification: {}", e);
+            log::warn!(
+                "[Pipeline::Error] Failed to dispatch error notification: {}",
+                e
+            );
         }
     });
 }

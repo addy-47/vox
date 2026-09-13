@@ -6,8 +6,8 @@ use crate::{
     core::{error::VoxIpcError, state::AppState},
     persistence::notifications::{
         dismiss_notifications as db_dismiss_notifications,
-        fetch_active_notifications as db_fetch_active,
-        mark_notifications_read as db_mark_read, NotificationFilter, NotificationRecord,
+        fetch_active_notifications as db_fetch_active, mark_notifications_read as db_mark_read,
+        NotificationFilter, NotificationRecord,
     },
     services::notifications::execute_notification_action as svc_execute_action,
 };
@@ -72,4 +72,3 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
         .await
         .map_err(|e| VoxIpcError::Internal(format!("Execute notification action failed: {}", e)))
 }
-

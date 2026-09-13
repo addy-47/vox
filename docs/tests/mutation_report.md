@@ -168,6 +168,53 @@ This ledger records empirical proof that tests go RED when critical production p
 
 ---
 
+## Seam 12: `tests/memory_compaction_test.rs`
+- **Mutants Attempted:** 3
+- **Killed:** 3
+- **Survivors:** 0
+- **Mutation Score:** 3/3 (100.0%)
+- **Mutations Realized & Verified:**
+  1. **Mutant 12.1 (Ingestion Queue Staging Deletion):** Commented out `insert_ingestion_queue_batch` in `persistence/compactions.rs:163`.
+     - *Result:* 🔴 **KILLED** (`assertion left == right failed: Ingestion queue must hold exactly 2 facts across both runs (left: 0, right: 2)` at `tests/memory_compaction_test.rs:205:5`, `FAIL [0.18s]`).
+  2. **Mutant 12.2 (Partial Unique Index Inversion):** Commented out `Ok(None)` on `latest.status == "in_progress"` in `services/memory/compaction/coordinator.rs:94-96`.
+     - *Result:* 🔴 **KILLED** (`assertion failed: slice_res.unwrap().is_none(): Coordinator must return Ok(None) while compaction is in progress` at `tests/memory_compaction_test.rs:238:5`, `FAIL [0.11s]`).
+  3. **Mutant 12.3 (Preemptive FIFO Threshold Inversion):** Changed `message_count >= MIN_MESSAGES_FOR_COMPACTION` to `>= 1` in `services/harness/plugins/compaction.rs:43`.
+     - *Result:* 🔴 **KILLED** (`assertion failed: !plugin.can_perform_inline_compaction(3)` at `tests/memory_compaction_test.rs:250:5`, `FAIL [0.04s]`).
+
+---
+
+## Seam 13: `tests/memory_ingestion_test.rs`
+- **Mutants Attempted:** 3
+- **Killed:** 3
+- **Survivors:** 0
+- **Mutation Score:** 3/3 (100.0%)
+- **Mutations Realized & Verified:**
+  1. **Mutant 13.1 (Winner-Takes-All Inversion):** Commented out `deactivate_facts_batch(conn, &duplicate_ids).await?;` and returned `Ok(0)` in `services/memory/ingestion/stage1_dedup.rs:135`.
+     - *Result:* 🔴 **KILLED** (`assertion left == right failed: Must deactivate older matching fact (left: 0, right: 1)` at `tests/memory_ingestion_test.rs:78:9`, `FAIL [0.13s]`).
+  2. **Mutant 13.2 (Cosine Dedup Threshold Drift):** Changed `SOFT_VECTOR_DEDUP_THRESHOLD` from `0.95` to `1.05` in `services/memory/ingestion/mod.rs:17`.
+     - *Result:* 🔴 **KILLED** (`assertion left == right failed: Must deactivate older semantic duplicate (>0.95 cosine) (left: 0, right: 1)` at `tests/memory_ingestion_test.rs:182:9`, `FAIL [0.86s]`).
+  3. **Mutant 13.3 (Poison Pill Threshold Deletion):** Changed `retry_count >= 3` to `1 = 0` (false) in `persistence/queue.rs:221` in `reconcile_crashed_queue_on_boot` SQL query.
+     - *Result:* 🔴 **KILLED** (`assertion left == right failed: Must reconcile all 3 crashed items (left: 2, right: 3)` at `tests/memory_ingestion_test.rs:347:9`, `FAIL [0.19s]`).
+
+---
+
+## Seam 14: `tests/personal_memory_test.rs`
+- **Mutants Attempted:** 4
+- **Killed:** 4
+- **Survivors:** 0
+- **Mutation Score:** 4/4 (100.0%)
+- **Mutations Realized & Verified:**
+  1. **Mutant 14.1 (Optimistic Concurrency Inversion):** Deleted `AND version = ?` from `UPDATE personal_memory` SQL queries in `persistence/personal_memory.rs:118, 126`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/personal_memory_test.rs:311:9: Stale expected_version must be rejected`, `FAIL [0.15s]`).
+  2. **Mutant 14.2 (Quiescence Gate Deletion):** Commented out `verify_ingestion_quiescence(conn).await?;` in `services/memory/personal.rs:77`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/personal_memory_test.rs:376:9: Consolidation must be blocked when compaction is in progress`, `FAIL [0.12s]`).
+  3. **Mutant 14.3 (Fact Consolidation Status Omission):** Commented out `mark_facts_consolidated(conn, &fact_ids).await?;` in `services/memory/personal.rs:114`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/personal_memory_test.rs:254:9: assertion left == right failed: Zero active personal facts must remain after consolidation (left: 100, right: 0)`, `FAIL [21.82s]`).
+  4. **Mutant 14.4 (Continuation Turn Watermark Off-By-One):** Changed `last_compacted + 1` to `last_compacted` in `persistence/sessions.rs:372` in `fetch_session_continuation`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/personal_memory_test.rs:592:9: assertion left == right failed: Continuation turns must strictly contain uncompacted turns (turns 6..10), got 6 (left: 6, right: 5)`, `FAIL [0.14s]`).
+
+---
+
 ## Seam 15: `tests/settings_persistence_test.rs`
 - **Mutants Attempted:** 2
 - **Killed:** 2
@@ -204,3 +251,49 @@ This ledger records empirical proof that tests go RED when critical production p
      - *Result:* 🔴 **KILLED** (`panicked at tests/model_manager_test.rs:209:5: ModelManager::do_extract must fail on Zip-Slip path traversal`, `FAIL [0.014s]`).
   2. **Mutant 17.2 (Marker Deletion Suppressed in delete_model_file):** Commented out `std::fs::remove_file(&verified_path)` in `setup/manager_ops.rs:119`.
      - *Result:* 🔴 **KILLED** (`panicked at tests/model_manager_test.rs:334:5: .verified marker must be removed by delete_model_file`, `FAIL [0.010s]`).
+
+---
+
+## Seam 18: `tests/notifications_crud_test.rs`
+- **Mutants Attempted:** 3
+- **Killed:** 3
+- **Survivors:** 0
+- **Mutation Score:** 3/3 (100.0%)
+- **Mutations Realized & Verified:**
+  1. **Mutant 18.1 (Zero-DB Invariant Violation / Routing Inversion):** Changed `Action::Transient => DeliveryChannel::ToastOnly` to `DeliveryChannel::NotificationOnly` in `services/notifications/router.rs:26`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/notifications_crud_test.rs:298:9: assertion left == right failed: (left: NotificationOnly, right: ToastOnly)`, `FAIL [0.14s]`).
+  2. **Mutant 18.2 (Group-Key Rollup Bypass / Duplicate Row Creation):** Commented out `try_update_interactive_in_place` in `services/notifications/service.rs:111-115`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/notifications_crud_test.rs:441:9: assertion left == right failed: Group-key rollup must return the existing notification ID`, `FAIL [0.14s]`).
+  3. **Mutant 18.3 (In-Place Resolution Omission):** Commented out `resolve_notification_in_place` in `services/notifications/actions.rs:136`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/notifications_crud_test.rs:520:9: Action execution must mark resolution as 'resolved' in metadata, got: {"resolution": "pending"}`, `FAIL [0.15s]`).
+
+---
+
+## Seam 19: `tests/realtime_transport_test.rs`
+- **Mutants Attempted:** 3
+- **Killed:** 3
+- **Survivors:** 0
+- **Mutation Score:** 3/3 (100.0%)
+- **Mutations Realized & Verified:**
+  1. **Mutant 19.1 (Paused State Reconnect Suppression Deletion):** Removed state check suppressing reconnect when `InteractionState::Paused` in `services/realtime/transport/connection.rs`.
+     - *Result:* 🔴 **KILLED** (Failed assertion in `test_paused_state_suppresses_reconnect`).
+  2. **Mutant 19.2 (Max Reconnect Limit Inversion):** Bypassed `attempt >= max_attempts` check in `services/realtime/transport/connection.rs`.
+     - *Result:* 🔴 **KILLED** (Failed assertion in `test_terminal_reconnect_failure_and_halt`).
+  3. **Mutant 19.3 (Cache TTL Expiration Bypass):** Commented out timestamp expiration comparison in `services/realtime/session_cache.rs`.
+     - *Result:* 🔴 **KILLED** (Failed assertion in `test_session_cache_ttl_and_purge`).
+
+---
+
+## Seam 20: `tests/database_persistence_boundary_test.rs`
+- **Mutants Attempted:** 3
+- **Killed:** 3
+- **Survivors:** 0
+- **Mutation Score:** 3/3 (100.0%)
+- **Mutations Realized & Verified:**
+  1. **Mutant 20.1 (Foreign Keys Inversion):** Set `PRAGMA foreign_keys = OFF;` in `persistence/schema.rs:149`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/database_persistence_boundary_test.rs: Turns must be deleted on session delete (CASCADE)`).
+  2. **Mutant 20.2 (Partial Index WHERE Clause Deletion):** Deleted `WHERE status = 'in_progress'` from `idx_compactions_one_in_progress` in `persistence/schema.rs:57`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/database_persistence_boundary_test.rs: New in_progress compaction must succeed after previous one completed: UNIQUE constraint failed`).
+  3. **Mutant 20.3 (Vector Float Little-Endian Swap):** Replaced `to_le_bytes()` with `to_be_bytes()` in `persistence/mod.rs:65`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/database_persistence_boundary_test.rs: Float bit-fidelity mismatch at dimension 1: original 0.012345356, decoded 0.0000000000111577934`).
+
