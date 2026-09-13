@@ -20,6 +20,7 @@ import {
   getCollectionColor,
   getCollectionIcon,
 } from "./memoryGraphTypes";
+import { cn } from "@/shared/lib/utils";
 
 export type { GNode, GLink, MemoryGraphRef };
 export { getCollectionColor, getCollectionIcon };
@@ -96,6 +97,7 @@ interface MemoryGraphProps {
   onCoreClick?: () => void;
   selectedFactId: string | null;
   selectedSessionId?: string | null;
+  selectModeEnabled?: boolean;
 }
 
 export const MemoryGraph = memo(
@@ -111,6 +113,7 @@ export const MemoryGraph = memo(
         onCoreClick,
         selectedFactId,
         selectedSessionId = null,
+        selectModeEnabled = false,
       },
       ref
     ) => {
@@ -182,13 +185,18 @@ export const MemoryGraph = memo(
           const raycaster = raycasterRef.current;
           raycaster.setFromCamera(mouse, camera);
 
-          // 1. Raycast against Central Core
+          // 1. Raycast against Central Core (Always accessible regardless of select mode)
           if (coreMesh && onCoreClick) {
             const coreIntersects = raycaster.intersectObject(coreMesh);
             if (coreIntersects.length > 0) {
               onCoreClick();
               return;
             }
+          }
+
+          // If Select Mode is not active, skip node picking so orbiting/panning is 100% misclick-free
+          if (!selectModeEnabled) {
+            return;
           }
 
           // 2. Raycast Direct Hit on InstancedMesh Nodes
@@ -234,7 +242,7 @@ export const MemoryGraph = memo(
 
           onSelectNode(null);
         },
-        [onSelectNode, onCoreClick, width, height, rendererRef, cameraRef, instancedMeshRef, coreMeshRef, gNodesRef]
+        [onSelectNode, onCoreClick, width, height, rendererRef, cameraRef, instancedMeshRef, coreMeshRef, gNodesRef, selectModeEnabled]
       );
 
       return (
@@ -242,7 +250,12 @@ export const MemoryGraph = memo(
           <div
             ref={canvasContainerRef}
             onPointerDown={handlePointerDown}
-            className="relative w-full h-full cursor-grab active:cursor-grabbing select-none"
+            className={cn(
+              "relative w-full h-full select-none transition-cursor",
+              selectModeEnabled
+                ? "cursor-crosshair active:cursor-crosshair"
+                : "cursor-grab active:cursor-grabbing"
+            )}
           />
         </GraphErrorBoundary>
       );

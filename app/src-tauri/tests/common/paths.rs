@@ -109,7 +109,9 @@ impl TempPathsGuard {
         // Seed test database from tests/assets/test_vox.db if available
         let asset_db = get_asset_path(TEST_DB_FILENAME);
         if asset_db.exists() {
-            let target_db = temp_path.join(TEST_DB_FILENAME);
+            let target_test_db = temp_path.join(TEST_DB_FILENAME);
+            let _ = std::fs::copy(&asset_db, &target_test_db);
+            let target_db = temp_path.join(vox_lib::utils::paths::DB_FILENAME);
             let _ = std::fs::copy(&asset_db, &target_db);
         }
 

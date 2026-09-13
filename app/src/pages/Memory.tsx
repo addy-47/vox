@@ -12,7 +12,7 @@ import {
   Upload,
   Zap,
   Sparkles,
-  GitBranch,
+  PanelLeft,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import {
@@ -63,6 +63,7 @@ export const Memory: React.FC = memo(() => {
   const [selectedFact, setSelectedFact] = useState<FactRecord | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [sessionRailOpen, setSessionRailOpen] = useState(false);
+  const [selectModeEnabled, setSelectModeEnabled] = useState(false);
 
   // Drawer & Edit mode state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -225,27 +226,23 @@ export const Memory: React.FC = memo(() => {
       {/* Sentient Liquid Space Ambient Background */}
       <AmbientBackground originX="50%" originY="50%" rippleSpeedMultiplier={1.0} />
 
-      {/* ── Top Left: Session Rail Trigger ── */}
-      <div className="absolute top-4 left-4 z-30 pointer-events-auto">
+      {/* ── Top-left: Conversation rail toggle ── */}
+      <div className="absolute top-4 left-5 z-30 flex items-center pointer-events-none">
         <Tooltip label={MEMORY_COPY.sessionTriggerTooltip} side="bottom">
           <button
             type="button"
             onClick={handleToggleSessionRail}
-            className={cn(
-              "flex items-center gap-2 px-3.5 py-2 rounded-2xl glass-card border backdrop-blur-2xl text-[12px] font-mono transition-all cursor-pointer shadow-xl",
-              sessionRailOpen || selectedSessionId
-                ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))]"
-                : "border-[rgba(var(--border),0.14)] bg-[rgba(var(--card),0.85)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--border),0.25)]"
-            )}
             aria-label={MEMORY_COPY.sessionTrigger}
-          >
-            <GitBranch size={14} className={cn(sessionRailOpen || selectedSessionId ? "text-[rgb(var(--accent))]" : "opacity-80")} />
-            <span className="font-semibold uppercase tracking-wider text-[11px]">
-              {MEMORY_COPY.sessionTrigger}
-            </span>
-            {selectedSessionId && (
-              <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] animate-pulse" />
+            aria-expanded={sessionRailOpen}
+            data-edge-trigger="left"
+            className={cn(
+              "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer pointer-events-auto shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+              sessionRailOpen || selectedSessionId
+                ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
+                : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
             )}
+          >
+            <PanelLeft size={14} strokeWidth={1.75} />
           </button>
         </Tooltip>
       </div>
@@ -279,6 +276,8 @@ export const Memory: React.FC = memo(() => {
         onRefresh={() => refresh(true)}
         onFocusCore={() => graphRef.current?.focusCore()}
         refreshing={refreshing}
+        selectModeEnabled={selectModeEnabled}
+        onToggleSelectMode={() => setSelectModeEnabled((prev) => !prev)}
       />
 
       {/* ── Bottom Right: Category Legend Popover ── */}
@@ -321,6 +320,7 @@ export const Memory: React.FC = memo(() => {
             selectedSessionId={selectedSessionId}
             onSelectNode={handleSelectNode}
             onCoreClick={handleCoreClick}
+            selectModeEnabled={selectModeEnabled}
           />
         </ErrorBoundary>
       )}

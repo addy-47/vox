@@ -87,7 +87,7 @@ Every compaction pass (Critical, Soft, or Manual) produces a single unified JSON
 - **Notification Record**: A persistent notification (`category: "session_compaction"`) is always created in Turso DB and emitted via IPC — including when the backend compacts automatically, so every boundary run has a visible receipt that flips to `'completed'`/`'failed'`.
 - **Execution Routing**:
   - If `settings.history.auto_compaction == true`: The backend automatically executes the background compaction slice against the pre-created notification. On completion, notification status transitions to `'completed'` (or `'failed'` with the error).
-  - If `settings.history.auto_compaction == false`: The notification waits for user action via `[Compact Now]` button in the notification drawer.
+  - If `settings.history.auto_compaction == false`: The notification waits for user action via the Compact action button in the notification drawer or session rail.
 - **Mutual Exclusion**: Exactly one compaction run may execute per session at any time, enforced by a partial unique index (`one in_progress run per session_id`); concurrent duplicate runs are rejected at insert time, not just by pre-check.
 
 ---
@@ -105,7 +105,12 @@ A per-item failure requeues the item at the same stage's input (`pending` after 
 On application boot, crash reconciliation resets any `Stage1Processing` or `Stage2Processing` items back to `Pending` or `Stage1Done`.
 
 ### 4.3 Deduplication Workflow & Batching Logic
-Deduplication runs in background cycles when the system is quiet:
+Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_ingestion_observer`):
+- **Setting Gate**: Gated strictly by `settings.memory.pipeline_processing_enabled == true`. When disabled, the background observer suppresses all deduplication cycles.
+- **Quiet State Contract**: The observer watches the pipeline state and triggers only after a sustained 30-second quiet debounce window (`QUIET_INGESTION_DEBOUNCE_SECS = 30`).
+  - **Quiet States (Eligible)**: `InteractionState::Idle`, `InteractionState::Ready`, `InteractionState::Paused`, `InteractionState::Sleeping`.
+  - **Active States (Ineligible / Abort)**: `Listening`, `Thinking`, `Speaking`, `Working`, `Error`. Transitioning into any active state immediately aborts or resets the debounce window to protect the audio/inference path.
+- **Quiescence Pre-Check**: Before executing Stage 1 and Stage 2 deduplication, the observer queries `has_unfinished_items(conn)`. If `memory_ingestion_queue` contains 0 pending or processing items, the cycle returns cleanly without log spam or compute allocation.
 
 1. **Stage 1 — Exact Match Dedup (`STAGE1_BATCH_CEILING = 128`)**:
    - Atomically claims up to 128 `pending` items (`UPDATE ... WHERE status = 'pending' RETURNING ...`).

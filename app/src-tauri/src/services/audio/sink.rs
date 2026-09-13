@@ -19,24 +19,24 @@ use crate::{
 };
 
 /// Context state held exclusively by the real-time CPAL output stream callback.
-pub(crate) struct PlaybackStreamContext {
-    pub(crate) consumer: HeapCons<f32>,
-    pub(crate) handles: PlaybackEngineHandles,
-    pub(crate) discard_request: Arc<AtomicBool>,
-    pub(crate) turn_armed: Arc<AtomicBool>,
-    pub(crate) playback_energy: Arc<AtomicU32>,
-    pub(crate) playback_low: Arc<AtomicU32>,
-    pub(crate) playback_mid: Arc<AtomicU32>,
-    pub(crate) playback_high: Arc<AtomicU32>,
-    pub(crate) playback_underruns: Arc<AtomicU64>,
-    pub(crate) last_sample: f32,
-    pub(crate) current_volume: f32,
-    pub(crate) filter_bank: FilterBank,
+pub struct PlaybackStreamContext {
+    pub consumer: HeapCons<f32>,
+    pub handles: PlaybackEngineHandles,
+    pub discard_request: Arc<AtomicBool>,
+    pub turn_armed: Arc<AtomicBool>,
+    pub playback_energy: Arc<AtomicU32>,
+    pub playback_low: Arc<AtomicU32>,
+    pub playback_mid: Arc<AtomicU32>,
+    pub playback_high: Arc<AtomicU32>,
+    pub playback_underruns: Arc<AtomicU64>,
+    pub last_sample: f32,
+    pub current_volume: f32,
+    pub filter_bank: FilterBank,
 }
 
 impl PlaybackStreamContext {
     /// Creates a new output stream callback context.
-    pub(crate) fn new(
+    pub fn new(
         consumer: HeapCons<f32>,
         handles: PlaybackEngineHandles,
         discard_request: Arc<AtomicBool>,
@@ -60,7 +60,7 @@ impl PlaybackStreamContext {
     }
 
     /// Handles buffer drain, cancellation, discard requests, and audio output generation.
-    pub(crate) fn process_output_buffer(&mut self, output: &mut [f32]) {
+    pub fn process_output_buffer(&mut self, output: &mut [f32]) {
         if self.discard_request.load(Ordering::Relaxed) {
             self.consumer.skip(self.consumer.occupied_len());
             self.discard_request.store(false, Ordering::Relaxed);

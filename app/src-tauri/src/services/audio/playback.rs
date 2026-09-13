@@ -266,6 +266,11 @@ impl PlaybackEngine {
         log::info!("[Audio::Playback] Cancelled — buffer signal sent");
     }
 
+    /// Returns true if playback has been cancelled.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel_flag.load(Ordering::Relaxed)
+    }
+
     /// Returns the number of unplayed audio samples remaining in the buffer.
     pub fn buffer_len(&self) -> usize {
         self.producer.lock().0.occupied_len()

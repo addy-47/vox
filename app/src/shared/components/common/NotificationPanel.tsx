@@ -1,10 +1,13 @@
-import { memo, useCallback } from "react";
+import { useState, useEffect, memo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Bell,
   Check,
   X,
   Loader2,
+  Sparkles,
+  RotateCcw,
+  Settings,
   Layers,
   Brain,
   Activity,
@@ -22,13 +25,15 @@ import { NOTIFICATION_COPY } from "@/data/notificationCopy";
 import {
   useNotificationStore,
   selectBadgeCount,
-  selectRolledUpNotifications,
+  selectTasksRolledUp,
+  selectUpdatesRolledUp,
   type RolledUpNotification,
 } from "@/store/notificationStore";
 import {
   toCategory,
   isReceipt,
   metadataTurnCount,
+  metadataResolution,
   type NotificationRecord,
   type NotificationCategory,
 } from "@/services/notificationService";
@@ -126,11 +131,11 @@ const NotificationItem = memo(
     }, [onOpen, notif]);
 
     const turnMeta = formatTurnMeta(metadataTurnCount(notif));
+    const resolution = metadataResolution(notif);
+    const isInteractive = notif.action_type === "interactive";
 
-    // Dynamic Action labels
-    let actionLabel: string = NOTIFICATION_COPY.view;
-    let workingLabel: string = NOTIFICATION_COPY.view;
-    let isInteractive = notif.action_type === "interactive";
+    let ActionIcon: LucideIcon = Sparkles;
+    let actionTooltip: string = NOTIFICATION_COPY.compactTooltip;
 
     if (isInteractive) {
       let parsedAction: { action?: string; target?: string } = {};
@@ -141,23 +146,20 @@ const NotificationItem = memo(
       }
 
       if (category === "session_compaction" || parsedAction.action === "compact_session") {
-        actionLabel = NOTIFICATION_COPY.tidyNow;
-        workingLabel = NOTIFICATION_COPY.tidying;
+        ActionIcon = Sparkles;
+        actionTooltip = NOTIFICATION_COPY.compactTooltip;
       } else if (
         category === "memory_consolidation" ||
         parsedAction.action === "consolidate_memory"
       ) {
-        actionLabel = NOTIFICATION_COPY.consolidate;
-        workingLabel = NOTIFICATION_COPY.consolidating;
+        ActionIcon = Brain;
+        actionTooltip = NOTIFICATION_COPY.consolidateTooltip;
       } else if (parsedAction.action === "retry") {
-        actionLabel = NOTIFICATION_COPY.retry;
-        workingLabel = NOTIFICATION_COPY.retrying;
+        ActionIcon = RotateCcw;
+        actionTooltip = NOTIFICATION_COPY.retryTooltip;
       } else if (parsedAction.action === "navigate" || parsedAction.target) {
-        actionLabel = NOTIFICATION_COPY.openSettings;
-        workingLabel = NOTIFICATION_COPY.openSettings;
-      } else {
-        actionLabel = NOTIFICATION_COPY.tidyNow;
-        workingLabel = NOTIFICATION_COPY.tidying;
+        ActionIcon = Settings;
+        actionTooltip = NOTIFICATION_COPY.settingsTooltip;
       }
     }
 
@@ -238,22 +240,34 @@ const NotificationItem = memo(
               </span>
             )}
 
-            {isInteractive && (
-              <button
-                type="button"
-                disabled={isWorking}
-                onClick={handlePrimary}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer",
-                  isWorking
-                    ? "bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] cursor-wait"
-                    : "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:opacity-90 active:scale-95 shadow-sm"
-                )}
-              >
-                {isWorking && <Loader2 size={11} className="animate-spin" />}
-                <span>{isWorking ? workingLabel : actionLabel}</span>
-              </button>
-            )}
+            {resolution === "resolved" ? (
+              <Tooltip label={NOTIFICATION_COPY.resolvedTooltip} side="top">
+                <span className="flex items-center justify-center w-7 h-7 rounded-lg border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--accent),0.08)] text-[rgb(var(--accent))]">
+                  <Check size={13} />
+                </span>
+              </Tooltip>
+            ) : isInteractive ? (
+              <Tooltip label={actionTooltip} side="top">
+                <button
+                  type="button"
+                  disabled={isWorking}
+                  onClick={handlePrimary}
+                  aria-label={actionTooltip}
+                  className={cn(
+                    "flex items-center justify-center w-7 h-7 rounded-lg border transition-all cursor-pointer",
+                    isWorking
+                      ? "border-[rgba(var(--accent),0.4)] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] cursor-wait"
+                      : "border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.10)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.20)] hover:border-[rgba(var(--accent),0.5)] active:scale-95 shadow-sm"
+                  )}
+                >
+                  {isWorking ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <ActionIcon size={13} />
+                  )}
+                </button>
+              </Tooltip>
+            ) : null}
 
             {(hasSession || !receipt) && (
               <button
@@ -273,19 +287,32 @@ const NotificationItem = memo(
 NotificationItem.displayName = "NotificationItem";
 
 /**
- * Notification list rendered inside EdgePanel. Pure list — fetch + listener
- * lifecycle runs once at app level (App.tsx). Dismissal and Escape are
- * handled by the EdgePanel overlay registration.
+ * Notification list rendered inside EdgePanel with Tasks and Updates tabs.
+ * Automatically marks unread notifications as read upon opening.
  */
 export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
   const navigate = useNavigate();
-  const rolledUpNotifications = useNotificationStore(selectRolledUpNotifications);
+  const [activeTab, setActiveTab] = useState<"tasks" | "updates">("tasks");
+  const tasks = useNotificationStore(selectTasksRolledUp);
+  const updates = useNotificationStore(selectUpdatesRolledUp);
   const badgeCount = useNotificationStore(selectBadgeCount);
   const activeActionIds = useNotificationStore((s) => s.activeActionIds);
   const markAllRead = useNotificationStore((s) => s.markAllRead);
   const dismissGroup = useNotificationStore((s) => s.dismissGroup);
+  const dismissTab = useNotificationStore((s) => s.dismissTab);
   const executeAction = useNotificationStore((s) => s.executeAction);
   const loading = useNotificationStore((s) => s.loading);
+
+  // Auto-mark notifications as read when opening the drawer
+  useEffect(() => {
+    markAllRead().catch(() => {});
+  }, [markAllRead]);
+
+  const displayedItems = activeTab === "tasks" ? tasks : updates;
+
+  const handleDismissAll = useCallback(() => {
+    dismissTab(activeTab).catch(() => {});
+  }, [dismissTab, activeTab]);
 
   const handlePrimary = useCallback(
     (notif: NotificationRecord) => {
@@ -314,7 +341,8 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
   );
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-2 p-3 pb-16">
+    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-2.5 p-3 pb-16">
+      {/* Header */}
       <div className="flex items-center justify-between px-1 pb-1">
         <div className="flex items-center gap-2">
           <Bell size={14} className="text-[rgb(var(--accent))]" />
@@ -327,19 +355,61 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
             </span>
           )}
         </div>
-        {badgeCount > 0 && (
-          <button
-            type="button"
-            onClick={() => markAllRead().catch(() => {})}
-            className="flex items-center gap-1 text-[11px] font-semibold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors cursor-pointer"
-          >
-            <Check size={11} />
-            <span>{NOTIFICATION_COPY.markAllRead}</span>
-          </button>
+
+        {displayedItems.length > 0 && (
+          <Tooltip label={NOTIFICATION_COPY.dismissAllTooltip} side="left">
+            <button
+              type="button"
+              onClick={handleDismissAll}
+              className="flex items-center gap-1 text-[11px] font-semibold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+            >
+              <X size={12} />
+              <span>{NOTIFICATION_COPY.dismissAll}</span>
+            </button>
+          </Tooltip>
         )}
       </div>
 
-      {loading && rolledUpNotifications.length === 0 ? (
+      {/* Tabs */}
+      <div className="flex items-center gap-1 p-1 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.1)]">
+        <button
+          type="button"
+          onClick={() => setActiveTab("tasks")}
+          className={cn(
+            "flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[12px] font-semibold transition-all cursor-pointer",
+            activeTab === "tasks"
+              ? "bg-[rgba(var(--card),0.9)] text-[rgb(var(--foreground))] shadow-xs border border-[rgba(var(--border),0.15)]"
+              : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+          )}
+        >
+          <span>{NOTIFICATION_COPY.tasksTab}</span>
+          {tasks.length > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] font-mono text-[10px] font-bold">
+              {tasks.length}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("updates")}
+          className={cn(
+            "flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[12px] font-semibold transition-all cursor-pointer",
+            activeTab === "updates"
+              ? "bg-[rgba(var(--card),0.9)] text-[rgb(var(--foreground))] shadow-xs border border-[rgba(var(--border),0.15)]"
+              : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+          )}
+        >
+          <span>{NOTIFICATION_COPY.updatesTab}</span>
+          {updates.length > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-[rgba(var(--foreground),0.08)] text-[rgb(var(--foreground-muted))] font-mono text-[10px] font-bold">
+              {updates.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Content list */}
+      {loading && displayedItems.length === 0 ? (
         <div className="flex flex-col gap-2" aria-hidden="true">
           {[0, 1, 2].map((i) => (
             <div
@@ -354,18 +424,20 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
             </div>
           ))}
         </div>
-      ) : rolledUpNotifications.length === 0 ? (
+      ) : displayedItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
           <div className="w-10 h-10 rounded-full border border-[rgba(var(--accent),0.2)] bg-[rgba(var(--accent),0.05)] flex items-center justify-center mb-2.5">
             <Bell size={18} className="text-[rgb(var(--accent))]/60" />
           </div>
-          <span className="text-[13px] font-semibold text-[rgb(var(--foreground))]">{NOTIFICATION_COPY.emptyTitle}</span>
+          <span className="text-[13px] font-semibold text-[rgb(var(--foreground))]">
+            {activeTab === "tasks" ? NOTIFICATION_COPY.tasksEmptyTitle : NOTIFICATION_COPY.updatesEmptyTitle}
+          </span>
           <p className="text-[11px] text-[rgb(var(--foreground-muted))]/70 max-w-[220px] mt-1 leading-relaxed">
-            {NOTIFICATION_COPY.emptySubtitle}
+            {activeTab === "tasks" ? NOTIFICATION_COPY.tasksEmptySubtitle : NOTIFICATION_COPY.updatesEmptySubtitle}
           </p>
         </div>
       ) : (
-        rolledUpNotifications.map((group) => (
+        displayedItems.map((group) => (
           <NotificationItem
             key={group.key}
             group={group}

@@ -55,4 +55,7 @@ export const HISTORY_COPY = {
   clockMonth: "MONTH",
   clockSessions: "SESSIONS",
   clockSpan: "SPAN",
+  compactSession: "Compact session",
+  compactingSession: "Compacting...",
+  uncompactedTurnsTooltip: "Uncompacted turns",
 };

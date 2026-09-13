@@ -179,7 +179,7 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
     session_id: Option<i64>,
     app: &AppHandle<R>,
     state: &AppState,
-    ctx: &RoutingContext,
+    _ctx: &RoutingContext,
 ) {
     let current_state = state.pipeline.state();
     if current_state != InteractionState::Idle {
@@ -192,6 +192,8 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
 
     state.owner.store(owner as u32, Ordering::Relaxed);
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
+
+    let session_ctx = RoutingContext::from_app_state(state);
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -213,14 +215,14 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
         }
     }
 
-    let start_res = match ctx.pipeline_mode {
-        PipelineMode::Modular => start_modular_session(state, ctx),
-        PipelineMode::Realtime => start_realtime_session(app, state, ctx),
+    let start_res = match session_ctx.pipeline_mode {
+        PipelineMode::Modular => start_modular_session(state, &session_ctx),
+        PipelineMode::Realtime => start_realtime_session(app, state, &session_ctx),
     };
 
     if let Err(e) = start_res {
         log::error!("[Pipeline::Session] Session start failed: {}", e);
-        transition(InteractionState::Error, ctx, app, state);
+        transition(InteractionState::Error, &session_ctx, app, state);
         return;
     }
 
@@ -231,7 +233,7 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
         .clone();
     let prompt = state.resolve_base_prompt();
 
-    match ctx.pipeline_mode {
+    match session_ctx.pipeline_mode {
         PipelineMode::Modular => {
             let tokio_handle = get_tokio_handle();
             let conn = state.db.connect().ok();
@@ -289,11 +291,11 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
     spawn_idle_monitor(app.clone(), Arc::clone(state_arc.inner()));
 
     state.pipeline_accumulator.lock().clear();
-    transition(InteractionState::Ready, ctx, app, state);
+    transition(InteractionState::Ready, &session_ctx, app, state);
     log::info!(
         "[Pipeline::Session] Session started (ID: {}, mode: {:?})",
         conv_id,
-        ctx.pipeline_mode
+        session_ctx.pipeline_mode
     );
 }
 
@@ -365,7 +367,7 @@ pub fn on_pause<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &R
 }
 
 /// Resumes a paused, sleeping, or error-state voice session, re-arming VAD and provider pipelines.
-pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {
+pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, _ctx: &RoutingContext) {
     let current_state = state.pipeline.state();
     if current_state != InteractionState::Paused
         && current_state != InteractionState::Sleeping
@@ -384,10 +386,7 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
     state.pipeline.rearm_turn_token();
 
-    let assistant_ctx = RoutingContext {
-        owner: InteractionOwner::Assistant,
-        ..ctx.clone()
-    };
+    let assistant_ctx = RoutingContext::from_app_state(state);
 
     let resume_res = match assistant_ctx.pipeline_mode {
         PipelineMode::Modular => {

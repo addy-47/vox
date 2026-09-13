@@ -110,28 +110,32 @@ This ledger records empirical proof that tests go RED when critical production p
 ---
 
 ## Seam 8: `tests/tts_transition_test.rs`
-- **Mutants Attempted:** 2
-- **Killed:** 2
+- **Mutants Attempted:** 3
+- **Killed:** 3
 - **Survivors:** 0
-- **Mutation Score:** 2/2 (100%)
+- **Mutation Score:** 3/3 (100.0%)
 - **Mutations Realized & Verified:**
-  1. **Mutant 8.1 (Voice Switch Neuter):** Comment out dynamic voice swap application in `services/tts/actor.rs:242` on `TtsCommand::SetVoice`.
-     - *Result:* 🔴 **KILLED** (`assertion left == right failed: Voice model must be updated, left: "default", right: "female_alt"` at `tests/tts_transition_test.rs:112:9`, `FAIL [1.204s]`).
-  2. **Mutant 8.2 (Compaction Filler Dispatch Suppressed):** Invert compaction filler dispatch in `services/harness/facade.rs:120`.
-     - *Result:* 🔴 **KILLED** (`Expected filler TtsCommand::Generate on compaction threshold: Timeout` at `tests/tts_transition_test.rs:188:14`, `FAIL [5.120s]`).
+  1. **Mutant 8.1 (Voice Switch Deletion):** In `services/tts/actor.rs:130` in `spawn_tts_worker`, comment out `provider.set_voice(voice)`.
+     - *Result:* 🔴 **KILLED** (`assertion left == right failed: TTS provider active voice must be updated to 2 via IPC mutation (left: 0, right: 2)` at `tests/tts_transition_test.rs:206:9`, `FAIL [1.21s]`).
+  2. **Mutant 8.2 (Intent Corruption):** In `pipeline/assistant/transcript.rs:100`, change compaction filler intent from `AudioIntent::InterimFiller` to `AudioIntent::TurnResponse`.
+     - *Result:* 🔴 **KILLED** (`assertion left == right failed: Filler command must have InterimFiller intent (left: TurnResponse, right: InterimFiller)` at `tests/tts_transition_test.rs:347:17`, `FAIL [0.12s]`).
+  3. **Mutant 8.3 (Threshold Inversion):** In `services/harness/plugins/budget.rs:61`, invert `percent >= CRITICAL_COMPACTION_THRESHOLD_PERCENT` to `<`.
+     - *Result:* 🔴 **KILLED** (`tts_rx must receive filler TtsCommand::Generate from real router dispatch` timeout at `tests/tts_transition_test.rs:339:35`, `FAIL [5.12s]`).
 
 ---
 
 ## Seam 9: `tests/playback_interrupt_test.rs`
-- **Mutants Attempted:** 2
-- **Killed:** 2
+- **Mutants Attempted:** 3
+- **Killed:** 3
 - **Survivors:** 0
-- **Mutation Score:** 2/2 (100%)
+- **Mutation Score:** 3/3 (100.0%)
 - **Mutations Realized & Verified:**
-  1. **Mutant 9.1 (VAD Speaker Ducking Suppression Inverted):** Hardcoded `should_suppress_audio` to return `false` unconditionally in `services/vad/actor.rs:237`.
-     - *Result:* 🔴 **KILLED** (`[VAD ducking suppression during Speaker Speaking] Negative assertion failed: expected empty channel, but found item: SpeechStart` at `tests/common/harness.rs:242:9`, `FAIL [1.135s]`).
-  2. **Mutant 9.2 (Pending Jobs Guard Dropped in Playback Finished):** Deleted `if pending_jobs > 0 { return; }` guard in `pipeline/assistant/playback.rs:52`.
-     - *Result:* 🔴 **KILLED** (`assertion left == right failed: on_playback_finished must be deferred while pending_synthesis_jobs > 0, left: Ready, right: Speaking` at `tests/playback_interrupt_test.rs:199:9`, `FAIL [0.068s]`).
+  1. **Mutant 9.1 (Pending Deferral Bypass):** In `pipeline/assistant/playback.rs:76-83`, comment out `if pending_jobs > 0 { return; }` in `on_playback_finished`.
+     - *Result:* 🔴 **KILLED** (`assertion left == right failed: on_playback_finished must be deferred by router while pending_synthesis_jobs > 0 (left: Ready, right: Speaking)` at `tests/playback_interrupt_test.rs:250:9`, `FAIL [0.08s]`).
+  2. **Mutant 9.2 (Ducking Inversion):** In `services/vad/actor.rs:246-259`, force `should_suppress_audio` to return `false` unconditionally.
+     - *Result:* 🔴 **KILLED** (`[VAD ducking suppression during Speaker Speaking] Negative assertion failed: expected empty channel, but found item: SpeechStart` at `tests/common/harness.rs:290:9`, `FAIL [1.14s]`).
+  3. **Mutant 9.3 (Barge-in Pending Reset Deletion):** In `pipeline/assistant/interrupt.rs:31`, comment out `state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed)` in `on_interrupt`.
+     - *Result:* 🔴 **KILLED** (`assertion left == right failed: pending_synthesis_jobs must be reset to 0 upon barge-in (left: 2, right: 0)` at `tests/playback_interrupt_test.rs:556:9`, `FAIL [0.07s]`).
 
 ---
 
@@ -148,15 +152,19 @@ This ledger records empirical proof that tests go RED when critical production p
 ---
 
 ## Seam 11: `tests/session_lifecycle_test.rs`
-- **Mutants Attempted:** 2
-- **Killed:** 2
+- **Mutants Attempted:** 4
+- **Killed:** 4
 - **Survivors:** 0
-- **Mutation Score:** 2/2 (100%)
+- **Mutation Score:** 4/4 (100.0%)
 - **Mutations Realized & Verified:**
-  1. **Mutant 11.1 (Idle-Guard Inverted on Session Start):** Inverted `if current_state != InteractionState::Idle { return; }` to `if false` in `pipeline/assistant/session.rs:151` (causing duplicate start calls to re-initialize).
-     - *Result:* 🔴 **KILLED** (`assertion left == right failed: Second on_session_start while Ready must be a no-op guard, left: 2, right: 1` at `tests/session_lifecycle_test.rs:72:9`, `FAIL [0.107s]`).
-  2. **Mutant 11.2 (Engine Stop Condition Inverted on Session End):** Inverted `if state.pipeline.dictation_state() == InteractionState::Idle` to `!= InteractionState::Idle` in `pipeline/assistant/session.rs:435`.
-     - *Result:* 🔴 **KILLED** (`panicked at CPAL engine must remain active when dictation is Ready` at `tests/session_lifecycle_test.rs:248:9`, `FAIL [0.232s]`).
+  1. **Mutant 11.1 (Persistence Dispatch Deletion):** Commented out `tx.try_send(PersistenceEvent::SessionStarted { ... })` in `pipeline/assistant/session.rs:205`.
+     - *Result:* 🔴 **KILLED** (`Turso SQLite must contain inserted session row from persistence worker` at `tests/session_lifecycle_test.rs:134:9`, `FAIL [0.26s]`).
+  2. **Mutant 11.2 (Harness Unmount Deletion):** Commented out `state.harness.lock().take();` in `pipeline/assistant/session.rs:463` on session end.
+     - *Result:* 🔴 **KILLED** (`assertion failed: state.harness.lock().is_none(): HarnessSession must be unmounted (None) on session end` at `tests/session_lifecycle_test.rs:759:9`, `FAIL [0.08s]`).
+  3. **Mutant 11.3 (Dictation CPAL Gate Inversion):** Inverted `state.pipeline.dictation_state() == InteractionState::Idle` to `if true` in `pipeline/assistant/session.rs:517`.
+     - *Result:* 🔴 **KILLED** (`assertion failed: state.engine.lock().is_some(): CPAL engine must remain active when dictation is Ready` at `tests/session_lifecycle_test.rs:592:13`, `FAIL [0.09s]`).
+  4. **Mutant 11.4 (Continuation Branch Deletion):** Replaced `if let (Some(sid), Some(conn)) = (session_id, conn.as_ref())` with `if false` in `pipeline/assistant/session.rs:240`.
+     - *Result:* 🔴 **KILLED** (`assertion failed: Seeded database turn must be hydrated into working memory history` at `tests/session_lifecycle_test.rs:289:9`, `FAIL [0.24s]`).
 
 ---
 

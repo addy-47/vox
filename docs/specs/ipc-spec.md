@@ -124,12 +124,13 @@ pub struct NotificationFilter {
     pub ids: Option<Vec<String>>,
     pub group_key: Option<String>,
     pub category: Option<String>,
+    pub action_type: Option<String>,
 }
 ```
 
 #### `get_notifications()`
 - **Purpose**: Returns all active (non-dismissed) notifications ordered newest first.
-- **Behavior**: Queries `notifications WHERE status != 'dismissed' ORDER BY created_at DESC`. Returns full records with `group_key`, `category`, `severity`, `title`, `message`, `status` (`'unread'` or `'read'`), `session_id`, `metadata`, `created_at`, and `updated_at`.
+- **Behavior**: Queries `notifications WHERE status != 'dismissed' ORDER BY created_at DESC`. Returns full records with `group_key`, `category`, `severity`, `action_type`, `action_payload`, `title`, `message`, `status` (`'unread'` or `'read'`), `session_id`, `metadata`, `created_at`, and `updated_at`.
 
 #### `mark_notifications_read(filter: Option<NotificationFilter>)`
 - **Purpose**: Marks matching unread notifications as read.
@@ -137,6 +138,7 @@ pub struct NotificationFilter {
   - If `ids` provided: updates target IDs.
   - Else if `group_key` provided: updates all matching that correlation group.
   - Else if `category` provided: updates all matching that category.
+  - Else if `action_type` provided: updates all matching that interaction type (`'interactive'` or `'receipt'`).
   - Else (omitted or empty): updates all rows `WHERE status = 'unread'`.
   Updates `SET status = 'read', updated_at = ? WHERE status = 'unread'`. Clears unread badge counts in frontend.
 
@@ -146,16 +148,17 @@ pub struct NotificationFilter {
   - If `ids` provided: dismisses target IDs.
   - Else if `group_key` provided: dismisses all matching that correlation group.
   - Else if `category` provided: dismisses all matching that category.
+  - Else if `action_type` provided: dismisses all matching that interaction type (`'interactive'` or `'receipt'`), enabling tab-scoped dismissal.
   - Else (omitted or empty): dismisses all rows `WHERE status != 'dismissed'`.
   Updates `SET status = 'dismissed', updated_at = ?`.
 
 #### `execute_notification_action(id: String, action: Option<String>)`
 - **Purpose**: Polymorphic executor for actionable notification cards.
 - **Behavior**: Loads notification record by `id`. Inspects its `category`, `session_id`, and `metadata`. Dispatches execution to the corresponding backend subsystem:
-  - `session_compaction`: Dispatches `CompactionCoordinator::run_compaction_slice(sessionId, trigger_kind="manual")`.
-  - `memory_consolidation`: Dispatches `run_consolidation_once()`.
+  - `session_compaction`: Dispatches `CompactionCoordinator::run_compaction_slice(sessionId, trigger_kind="manual")`. On completion, updates the notification in-place (`metadata.resolution = "resolved"`, updated `message`) and emits `NotificationUpdated`.
+  - `memory_consolidation`: Dispatches `run_consolidation_once()`. On completion, updates the notification in-place (`metadata.resolution = "resolved"`, updated `message`) and emits `NotificationUpdated`.
   - `pipeline_error`: Dispatches error recovery / retry handler.
-  Returns `Ok(())` on successful task launch. Does not mutate the notification's card attention status (`unread`/`read`).
+  Returns `Ok(())` on successful task launch. Does not mutate the notification's attention status (`unread`/`read`), but resolves task status in-place.
 
 
 
