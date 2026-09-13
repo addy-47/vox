@@ -514,8 +514,8 @@ async fn test_barge_in_cancels_and_advances_turn() {
         }
 
         // Spawn central production router
-        let router_handle = spawn_router(app.clone(), event_rx)
-            .expect("Failed to spawn router thread");
+        let router_handle =
+            spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
 
         // 2. Real Production Entry Seam: PttStart arrives while in Speaking
         event_tx

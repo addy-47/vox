@@ -58,7 +58,8 @@ impl QuietCompactionWatcher {
         let harness_clone = Arc::clone(&harness_lock);
 
         tauri::async_runtime::spawn(async move {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(QUIET_COMPACTION_DEBOUNCE_SECS);
+            let deadline =
+                tokio::time::Instant::now() + Duration::from_secs(QUIET_COMPACTION_DEBOUNCE_SECS);
             let mut debounce_timer = Box::pin(tokio::time::sleep_until(deadline));
             let mut state_rx = state_clone.pipeline.state_rx.clone();
 
@@ -160,13 +161,7 @@ async fn execute_soft_compaction(
         }
     };
 
-    let result = match CompactionPlugin::run_and_persist(
-        provider.as_ref(),
-        &conn,
-        params,
-    )
-    .await
-    {
+    let result = match CompactionPlugin::run_and_persist(provider.as_ref(), &conn, params).await {
         Ok(r) => {
             monitor_handle.abort();
             r

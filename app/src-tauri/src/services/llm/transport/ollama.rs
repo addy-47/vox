@@ -77,10 +77,11 @@ pub fn build_request_body(
 /// Resolves the canonical Ollama chat endpoint URL.
 pub fn resolve_url(base_url: &str) -> String {
     let trimmed = base_url.trim_end_matches('/');
-    if trimmed.ends_with("/api/chat") {
-        trimmed.to_string()
+    let base = trimmed.strip_suffix("/v1").unwrap_or(trimmed);
+    if base.ends_with("/api/chat") {
+        base.to_string()
     } else {
-        format!("{}/api/chat", trimmed)
+        format!("{}/api/chat", base)
     }
 }
 

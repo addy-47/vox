@@ -29,7 +29,7 @@ struct ConnectionContext {
 }
 
 /// Spawns the shared duplex WebSocket reconnect harness for a realtime provider session.
-pub(crate) fn spawn_harness<D: ProviderDriver>(
+pub fn spawn_harness<D: ProviderDriver>(
     driver: Arc<D>,
     config: HarnessConfig,
     init: HarnessInit,
@@ -69,16 +69,16 @@ pub(crate) fn spawn_harness<D: ProviderDriver>(
         tokio_handle,
     } = init;
 
-    tokio_handle.spawn(async move {
-        let (first_reconnect_tx, mut reconnect_rx) = tokio::sync::oneshot::channel::<()>();
-        let ctx = ConnectionContext {
-            event_tx: provider_event_tx.clone(),
-            state_rx: state_rx.clone(),
-            reconnect_notifier: first_reconnect_tx,
-        };
-        let (mut write_handle, mut recv_handle) =
-            spawn_connection_tasks(ws_write, ws_read, ws_sender.clone(), &driver, ctx);
+    let (first_reconnect_tx, mut reconnect_rx) = tokio::sync::oneshot::channel::<()>();
+    let ctx = ConnectionContext {
+        event_tx: provider_event_tx.clone(),
+        state_rx: state_rx.clone(),
+        reconnect_notifier: first_reconnect_tx,
+    };
+    let (mut write_handle, mut recv_handle) =
+        spawn_connection_tasks(ws_write, ws_read, ws_sender.clone(), &driver, ctx);
 
+    tokio_handle.spawn(async move {
         'reconnect: loop {
             tokio::select! {
                 _ = &mut shutdown_rx => {
@@ -88,7 +88,14 @@ pub(crate) fn spawn_harness<D: ProviderDriver>(
                     recv_handle.abort();
                     break 'reconnect;
                 }
-                _ = &mut reconnect_rx => {
+                res = &mut reconnect_rx => {
+                    if res.is_err() {
+                        log::info!("[RealtimeHarness] Connection task ended without requesting reconnect.");
+                        *ws_sender.lock() = None;
+                        write_handle.abort();
+                        recv_handle.abort();
+                        break 'reconnect;
+                    }
                     log::warn!("[RealtimeHarness] Connection dropped. Entering reconnect cycle.");
                     *ws_sender.lock() = None;
                     write_handle.abort();

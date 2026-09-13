@@ -81,7 +81,10 @@ pub fn create_headless_playback_with_sink(
     state_atomic: Arc<AtomicU32>,
     current_turn_id: Arc<AtomicU32>,
     pending_synthesis_jobs: Arc<AtomicU32>,
-) -> (Arc<PlaybackEngine>, vox_lib::services::audio::sink::PlaybackStreamContext) {
+) -> (
+    Arc<PlaybackEngine>,
+    vox_lib::services::audio::sink::PlaybackStreamContext,
+) {
     let rb = HeapRb::<f32>::new(vox_lib::services::audio::PLAYBACK_BUFFER_SAMPLES);
     let (producer, consumer) = rb.split();
     let cancel_flag = Arc::new(AtomicBool::new(false));

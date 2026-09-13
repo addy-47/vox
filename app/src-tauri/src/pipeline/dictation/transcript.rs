@@ -57,7 +57,10 @@ pub fn on_transcript_final<R: tauri::Runtime>(
                 duration_ms: None,
             };
             if let Err(e) = services::notifications::notify(&app_handle, &db, params).await {
-                log::warn!("[Dictation::Transcript] Failed to dispatch notification: {}", e);
+                log::warn!(
+                    "[Dictation::Transcript] Failed to dispatch notification: {}",
+                    e
+                );
             }
         });
         return;

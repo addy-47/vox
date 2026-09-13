@@ -237,25 +237,30 @@ pub fn parse_unified_compaction_json(content: &str) -> Option<UnifiedCompactionP
                     payload.context_summary = parts.join("\n");
                 }
             }
-            "personal" | "identity" | "profile" => {
+            "personal" | "identity" | "profile" | "preferences" | "user_preferences"
+            | "attributes" => {
                 extract_strings(v, &mut payload.personal);
             }
-            "objective" | "directives" | "goals" | "tasks" => {
+            "objective" | "directives" | "goals" | "tasks" | "intentions" => {
                 extract_strings(v, &mut payload.objective);
             }
-            "workdone" | "work_done" | "completed" | "progress" => {
+            "workdone" | "work_done" | "completed" | "progress" | "actions" | "user_actions"
+            | "activities" => {
                 extract_strings(v, &mut payload.workdone);
             }
-            "blocker" | "blockers" | "constraints" | "issues" => {
+            "blocker" | "blockers" | "constraints" | "issues" | "errors" => {
                 extract_strings(v, &mut payload.blocker);
             }
-            "next_step" | "next_steps" | "nextstep" => {
+            "next_step" | "next_steps" | "nextstep" | "upcoming" | "time_references" => {
                 extract_strings(v, &mut payload.next_step);
             }
-            "pitfall" | "pitfalls" | "lessons" => {
+            "pitfall" | "pitfalls" | "lessons" | "risks" => {
                 extract_strings(v, &mut payload.pitfall);
             }
-            _ => {}
+            _ => {
+                // If the key is unfamiliar, extract into personal memory as fallback
+                extract_strings(v, &mut payload.personal);
+            }
         }
     }
 

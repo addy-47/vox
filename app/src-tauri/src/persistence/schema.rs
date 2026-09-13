@@ -130,11 +130,13 @@ const V2_TABLE_STATEMENTS: &[&str] = &[
 
 /// Runs schema migrations, dropping obsolete legacy tables and initializing v2 schema.
 pub async fn run_migrations(conn: &Connection) -> Result<()> {
-    let mut rows = conn.query("PRAGMA user_version;", ()).await?;
-    let current_version: u32 = if let Some(row) = rows.next().await? {
-        row.get(0).unwrap_or(0)
-    } else {
-        0
+    let current_version: u32 = {
+        let mut rows = conn.query("PRAGMA user_version;", ()).await?;
+        if let Some(row) = rows.next().await? {
+            row.get(0).unwrap_or(0)
+        } else {
+            0
+        }
     };
 
     if current_version < SCHEMA_VERSION {
@@ -143,7 +145,6 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             current_version,
             SCHEMA_VERSION
         );
-
         conn.execute("PRAGMA foreign_keys = OFF;", ()).await?;
         conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
 
@@ -179,7 +180,7 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
 
     if let Err(e) = seed_packaged_voices(conn).await {
         log::warn!(
-            "[Persistence::Schema] Failed to seed packaged voices (non-fatal): {}",
+            "[Persistence::Schema] Failed to seed packaged voices: {}",
             e
         );
     }

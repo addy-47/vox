@@ -4,10 +4,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::{
     core::{
-        error::DictationError,
-        events::Severity,
-        settings::DictationOutputMode,
-        state::AppState,
+        error::DictationError, events::Severity, settings::DictationOutputMode, state::AppState,
     },
     services::{
         dictation::{clipboard, input::create_input_adapter},
@@ -110,7 +107,10 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
                 )
                 .await
                 {
-                    log::warn!("[Dictation::Router] Failed to emit paste-blocked toast: {}", e);
+                    log::warn!(
+                        "[Dictation::Router] Failed to emit paste-blocked toast: {}",
+                        e
+                    );
                 }
             }
             Ok(())

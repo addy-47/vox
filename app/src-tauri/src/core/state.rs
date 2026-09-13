@@ -4,7 +4,6 @@ use std::sync::{
 };
 
 use tokio::sync::Mutex;
-use crate::persistence::db::VoxDb;
 
 pub use crate::{
     core::engine::VoxEngine, monitoring::telemetry::TelemetryState, pipeline::PipelineAtomics,
@@ -16,7 +15,7 @@ use crate::{
         settings::{PipelineMode, VoxSettings},
     },
     monitoring::snapshots::MonitoringState,
-    persistence::PersistenceEvent,
+    persistence::{db::VoxDb, PersistenceEvent},
     pipeline::assistant::accumulator::TurnAccumulator,
     services::{harness::HarnessSession, llm::LlmProvider, realtime::RealtimeActor},
     setup::{manifest::VoxManifest, model_manager::ModelManager},

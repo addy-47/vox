@@ -3,6 +3,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use turso::Connection;
 
+use super::{
+    router::{resolve_channel, DeliveryChannel},
+    types::{Action, NotificationParams},
+};
 use crate::{
     core::events::{emit_ipc, IpcEvent},
     persistence::{
@@ -12,10 +16,6 @@ use crate::{
             NewNotification, NotificationRecord,
         },
     },
-};
-use super::{
-    router::{resolve_channel, DeliveryChannel},
-    types::{Action, NotificationParams},
 };
 
 /// Universal front door for all user alerting across the Vox application.
@@ -71,7 +71,11 @@ async fn elevate_toast_to_drawer<R: tauri::Runtime>(
     db: &Connection,
     params: &NotificationParams<'_>,
 ) -> anyhow::Result<Option<String>> {
-    let id = format!("notif_{}_{}", params.category.as_str(), current_timestamp_ms());
+    let id = format!(
+        "notif_{}_{}",
+        params.category.as_str(),
+        current_timestamp_ms()
+    );
     let group_key = params
         .group_key
         .map(|s| s.to_string())
@@ -109,7 +113,9 @@ async fn dispatch_drawer<R: tauri::Runtime>(
         .unwrap_or_else(|| format!("{}:general", params.category.as_str()));
 
     if matches!(params.action, Action::Interactive(_)) {
-        if let Some(updated_id) = try_update_interactive_in_place(app, db, params, &group_key).await? {
+        if let Some(updated_id) =
+            try_update_interactive_in_place(app, db, params, &group_key).await?
+        {
             return Ok(Some(updated_id));
         }
     }
@@ -155,7 +161,11 @@ async fn insert_new_drawer_notification<R: tauri::Runtime>(
     params: &NotificationParams<'_>,
     group_key: String,
 ) -> anyhow::Result<Option<String>> {
-    let id = format!("notif_{}_{}", params.category.as_str(), current_timestamp_ms());
+    let id = format!(
+        "notif_{}_{}",
+        params.category.as_str(),
+        current_timestamp_ms()
+    );
     let (action_type, action_payload) = match &params.action {
         Action::Interactive(payload) => (
             "interactive".to_string(),
@@ -189,4 +199,3 @@ fn current_timestamp_ms() -> i64 {
         .unwrap_or_default()
         .as_millis() as i64
 }
-

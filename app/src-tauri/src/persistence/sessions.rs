@@ -84,7 +84,6 @@ fn is_transient_db_error(e: &anyhow::Error) -> bool {
 
 /// Returns all active (non-deleted) sessions, optionally filtered by project, ordered pinned-first then newest.
 pub async fn fetch_sessions(
-
     conn: &Connection,
     project_id: Option<&str>,
 ) -> Result<Vec<SessionRow>> {
@@ -94,7 +93,8 @@ pub async fn fetch_sessions(
             Ok(sessions) => return Ok(sessions),
             Err(e) if is_transient_db_error(&e) && attempt < MAX_CONCURRENT_RETRY_ATTEMPTS => {
                 attempt += 1;
-                tokio::time::sleep(Duration::from_millis(RETRY_BASE_DELAY_MS * attempt as u64)).await;
+                tokio::time::sleep(Duration::from_millis(RETRY_BASE_DELAY_MS * attempt as u64))
+                    .await;
             }
             Err(e) => return Err(e),
         }
@@ -131,7 +131,6 @@ async fn execute_fetch_sessions(
 
     collect_session_rows(&mut rows).await
 }
-
 
 /// Helper to parse rows into Vec<SessionRow>.
 async fn collect_session_rows(rows: &mut turso::Rows) -> Result<Vec<SessionRow>> {
@@ -180,7 +179,8 @@ pub async fn fetch_session_by_id(conn: &Connection, session_id: i64) -> Result<O
             Ok(session) => return Ok(session),
             Err(e) if is_transient_db_error(&e) && attempt < MAX_CONCURRENT_RETRY_ATTEMPTS => {
                 attempt += 1;
-                tokio::time::sleep(Duration::from_millis(RETRY_BASE_DELAY_MS * attempt as u64)).await;
+                tokio::time::sleep(Duration::from_millis(RETRY_BASE_DELAY_MS * attempt as u64))
+                    .await;
             }
             Err(e) => return Err(e),
         }
@@ -228,7 +228,8 @@ pub async fn fetch_turns(conn: &Connection, session_id: i64) -> Result<Vec<TurnR
             Ok(turns) => return Ok(turns),
             Err(e) if is_transient_db_error(&e) && attempt < MAX_CONCURRENT_RETRY_ATTEMPTS => {
                 attempt += 1;
-                tokio::time::sleep(Duration::from_millis(RETRY_BASE_DELAY_MS * attempt as u64)).await;
+                tokio::time::sleep(Duration::from_millis(RETRY_BASE_DELAY_MS * attempt as u64))
+                    .await;
             }
             Err(e) => return Err(e),
         }
