@@ -3,6 +3,7 @@ import {
   type NotificationRecord,
   type NotificationFilter,
   countsTowardBadge,
+  metadataResolution,
   getNotifications,
   markNotificationsRead,
   dismissNotifications,
@@ -25,7 +26,9 @@ interface NotificationStoreState {
   fetchNotifications: () => Promise<void>;
   markAllRead: (filter?: NotificationFilter) => Promise<void>;
   dismissGroup: (groupKey: string) => Promise<void>;
+  dismissTab: (tab: "tasks" | "updates") => Promise<void>;
   executeAction: (notif: NotificationRecord, onNavigate?: (target: string) => void) => Promise<void>;
+  executeCompactionForSession: (sessionId: number, onNavigate?: (target: string) => void) => Promise<void>;
   initListeners: () => Promise<() => void>;
 }
 
@@ -83,6 +86,37 @@ export const useNotificationStore = create<NotificationStoreState>((set, get) =>
       }));
     } catch (e) {
       logError(`Failed to dismiss notifications for group ${groupKey}`, e);
+    }
+  },
+
+  dismissTab: async (tab: "tasks" | "updates") => {
+    try {
+      await dismissNotifications({
+        action_type: tab === "tasks" ? "interactive" : "receipt",
+      });
+      set((state) => ({
+        notifications: state.notifications.filter((n) => {
+          if (tab === "tasks") {
+            return !(n.action_type === "interactive" && metadataResolution(n) !== "resolved");
+          }
+          return !(n.action_type === "receipt" || metadataResolution(n) === "resolved");
+        }),
+      }));
+    } catch (e) {
+      logError(`Failed to dismiss tab ${tab}`, e);
+    }
+  },
+
+  executeCompactionForSession: async (sessionId: number, onNavigate?: (target: string) => void) => {
+    const notif = get().notifications.find(
+      (n) =>
+        n.category === "session_compaction" &&
+        n.session_id === sessionId &&
+        n.status !== "dismissed" &&
+        metadataResolution(n) !== "resolved"
+    );
+    if (notif) {
+      await get().executeAction(notif, onNavigate);
     }
   },
 
@@ -221,5 +255,57 @@ export function selectRolledUpNotifications(
     (a, b) => b.latest.created_at - a.latest.created_at
   );
   return cachedRolledUpResult;
+}
+
+let cachedTasksRef: NotificationRecord[] | null = null;
+let cachedTasksResult: RolledUpNotification[] = [];
+
+export function selectTasksRolledUp(
+  state: NotificationStoreState
+): RolledUpNotification[] {
+  const all = selectRolledUpNotifications(state);
+  if (state.notifications === cachedTasksRef) {
+    return cachedTasksResult;
+  }
+  cachedTasksRef = state.notifications;
+  cachedTasksResult = all.filter(
+    (g) => g.latest.action_type === "interactive" && metadataResolution(g.latest) !== "resolved"
+  );
+  return cachedTasksResult;
+}
+
+let cachedUpdatesRef: NotificationRecord[] | null = null;
+let cachedUpdatesResult: RolledUpNotification[] = [];
+
+export function selectUpdatesRolledUp(
+  state: NotificationStoreState
+): RolledUpNotification[] {
+  const all = selectRolledUpNotifications(state);
+  if (state.notifications === cachedUpdatesRef) {
+    return cachedUpdatesResult;
+  }
+  cachedUpdatesRef = state.notifications;
+  cachedUpdatesResult = all.filter(
+    (g) => g.latest.action_type === "receipt" || metadataResolution(g.latest) === "resolved"
+  );
+  return cachedUpdatesResult;
+}
+
+export function selectUncompactedSessionIds(
+  state: NotificationStoreState
+): Set<number> {
+  const ids = new Set<number>();
+  for (const n of state.notifications) {
+    if (
+      n.category === "session_compaction" &&
+      n.session_id !== null &&
+      n.session_id !== undefined &&
+      n.status !== "dismissed" &&
+      metadataResolution(n) !== "resolved"
+    ) {
+      ids.add(n.session_id);
+    }
+  }
+  return ids;
 }
 

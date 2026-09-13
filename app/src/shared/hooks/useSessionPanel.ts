@@ -18,6 +18,7 @@ interface ProjectGroup {
 interface UseSessionPanelReturn {
   pinnedSessions: SessionRow[];
   projects: ProjectGroup[];
+  allProjects: ProjectRow[];
   uncategorizedSessions: SessionRow[];
   loading: boolean;
   error: string | null;
@@ -26,6 +27,10 @@ interface UseSessionPanelReturn {
   createNewProject: (name: string) => Promise<void>;
   togglePin: (sessionId: number) => Promise<void>;
   selectSession: (sessionId: number) => Promise<void>;
+  renameSession: (sessionId: number, newTitle: string) => Promise<void>;
+  moveSessionToProject: (sessionId: number, projectId: string | null) => Promise<void>;
+  deleteSession: (sessionId: number) => Promise<void>;
+  reorderProjects: (orderedIds: string[]) => void;
 }
 
 export function useSessionPanel(): UseSessionPanelReturn {
@@ -33,6 +38,14 @@ export function useSessionPanel(): UseSessionPanelReturn {
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [projectOrder, setProjectOrder] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("vox_projects_order");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const { selectSession, startNewConversation } = useVoiceSession();
 
@@ -84,13 +97,26 @@ export function useSessionPanel(): UseSessionPanelReturn {
     [sessions]
   );
 
-  const projectsWithSessions = useMemo((): ProjectGroup[] => {
+  // Sort projects according to projectOrder
+  const sortedProjects = useMemo(() => {
     if (!Array.isArray(projects)) return [];
-    return projects.map((project) => ({
+    if (projectOrder.length === 0) return projects;
+    return [...projects].sort((a, b) => {
+      const idxA = projectOrder.indexOf(a.id);
+      const idxB = projectOrder.indexOf(b.id);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return b.updated_at - a.updated_at;
+    });
+  }, [projects, projectOrder]);
+
+  const projectsWithSessions = useMemo((): ProjectGroup[] => {
+    return sortedProjects.map((project) => ({
       project,
       sessions: nonPinnedSessions.filter((s) => s?.project_id === project?.id),
     }));
-  }, [projects, nonPinnedSessions]);
+  }, [sortedProjects, nonPinnedSessions]);
 
   const uncategorizedSessions = useMemo(
     () =>
@@ -131,6 +157,40 @@ export function useSessionPanel(): UseSessionPanelReturn {
     }
   }, [sessions]);
 
+  const renameSessionHandle = useCallback(async (sessionId: number, newTitle: string) => {
+    try {
+      await updateSession(sessionId, { title: newTitle });
+    } catch (e) {
+      console.error("[SessionPanel] Failed to rename session:", e);
+    }
+  }, []);
+
+  const moveSessionToProjectHandle = useCallback(async (sessionId: number, projectId: string | null) => {
+    try {
+      await updateSession(sessionId, { projectId });
+    } catch (e) {
+      console.error("[SessionPanel] Failed to move session:", e);
+    }
+  }, []);
+
+  const deleteSessionHandle = useCallback(async (sessionId: number) => {
+    try {
+      const { deleteSession } = await import("@/services/historyService");
+      await deleteSession(sessionId, false);
+    } catch (e) {
+      console.error("[SessionPanel] Failed to delete session:", e);
+    }
+  }, []);
+
+  const reorderProjectsHandle = useCallback((orderedIds: string[]) => {
+    setProjectOrder(orderedIds);
+    try {
+      localStorage.setItem("vox_projects_order", JSON.stringify(orderedIds));
+    } catch (e) {
+      console.warn("[SessionPanel] Failed to save project order:", e);
+    }
+  }, []);
+
   const selectSessionHandle = useCallback(async (sessionId: number) => {
     try {
       await selectSession(sessionId);
@@ -142,6 +202,7 @@ export function useSessionPanel(): UseSessionPanelReturn {
   return {
     pinnedSessions,
     projects: projectsWithSessions,
+    allProjects: sortedProjects,
     uncategorizedSessions,
     loading,
     error,
@@ -150,5 +211,9 @@ export function useSessionPanel(): UseSessionPanelReturn {
     createNewProject,
     togglePin,
     selectSession: selectSessionHandle,
+    renameSession: renameSessionHandle,
+    moveSessionToProject: moveSessionToProjectHandle,
+    deleteSession: deleteSessionHandle,
+    reorderProjects: reorderProjectsHandle,
   };
 }

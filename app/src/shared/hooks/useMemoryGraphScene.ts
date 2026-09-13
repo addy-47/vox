@@ -64,6 +64,8 @@ export function useMemoryGraphScene({
   const instancedRingRef = useRef<THREE.InstancedMesh | null>(null);
   const lineSegmentsRef = useRef<THREE.LineSegments | null>(null);
   const coreMeshRef = useRef<THREE.Mesh | null>(null);
+  const coreWireMeshRef = useRef<THREE.Mesh | null>(null);
+  const coreNucleusMeshRef = useRef<THREE.Mesh | null>(null);
   const coreInnerRingRef = useRef<THREE.Mesh | null>(null);
   const coreOuterRingRef = useRef<THREE.Mesh | null>(null);
 
@@ -108,9 +110,24 @@ export function useMemoryGraphScene({
       const palette = getActiveDynamicPalette(isLight);
 
       if (coreMeshRef.current) {
-        const mat = coreMeshRef.current.material as THREE.MeshBasicMaterial;
+        const mat = coreMeshRef.current.material as THREE.ShaderMaterial;
+        if (mat.uniforms) {
+          mat.uniforms.color1.value.set(isLight ? "#0284c7" : "#00f0ff");
+          mat.uniforms.color2.value.set(isLight ? "#9333ea" : "#c084fc");
+          mat.uniforms.opacity.value = isLight ? 0.85 : 0.75;
+        }
+      }
+      if (coreWireMeshRef.current) {
+        const mat = coreWireMeshRef.current.material as THREE.MeshBasicMaterial;
         mat.color.copy(palette.personal.threeColor);
-        mat.opacity = isLight ? 0.95 : 0.90;
+        mat.opacity = isLight ? 0.22 : 0.35;
+        mat.blending = isLight ? THREE.NormalBlending : THREE.AdditiveBlending;
+        mat.needsUpdate = true;
+      }
+      if (coreNucleusMeshRef.current) {
+        const mat = coreNucleusMeshRef.current.material as THREE.MeshBasicMaterial;
+        mat.color.copy(palette.personal.threeColor);
+        mat.opacity = isLight ? 0.90 : 0.80;
         mat.needsUpdate = true;
       }
       if (coreInnerRingRef.current) {
@@ -313,6 +330,13 @@ export function useMemoryGraphScene({
           srcY = anchor.y;
           srcZ = anchor.z;
         }
+      } else if (link.sourceIndex >= 0 && link.sourceIndex < gNodes.length) {
+        const srcNode = gNodes[link.sourceIndex];
+        if (srcNode) {
+          srcX = srcNode.x;
+          srcY = srcNode.y;
+          srcZ = srcNode.z;
+        }
       }
 
       posArray[writePtr + 0] = srcX;
@@ -441,7 +465,7 @@ export function useMemoryGraphScene({
         });
       });
 
-      // 3. Hierarchical Chronological Time-Tree Branching
+      // 3. 360-Degree Organic Dendritic Tree Canopy
       // Sort sessions chronologically by earliest fact creation
       const sortedSessionKeys = Array.from(sessionMap.keys()).sort((a, b) => {
         const factsA = sessionMap.get(a)!;
@@ -455,42 +479,25 @@ export function useMemoryGraphScene({
       const dynamicPalette = getActiveDynamicPalette(isLight);
       const coreAccentHex = dynamicPalette.personal.main;
 
-      // Group sessions into Primary Temporal Limbs (e.g. Months/Quarters)
-      const numTrunks = Math.min(Math.max(Math.ceil(nSessions / 8), 3), 7);
-      const sessionsPerTrunk = Math.ceil(nSessions / numTrunks);
-
       sortedSessionKeys.forEach((sKey, sIdx) => {
         const clusterFacts = sessionMap.get(sKey)!;
         const nCluster = clusterFacts.length;
         const sessionTime = clusterFacts[0]?.created_at || sIdx;
 
-        // Determine which primary temporal trunk this session belongs to
-        const trunkIndex = Math.min(Math.floor(sIdx / sessionsPerTrunk), numTrunks - 1);
-        const indexInTrunk = sIdx % sessionsPerTrunk;
-        const trunkProgress = indexInTrunk / Math.max(sessionsPerTrunk - 1, 1);
+        // Spherical distribution of session canopy in full 360 degrees
+        // Golden ratio spiral for organic distribution around the sphere
+        const phiWeight = (1 + Math.sqrt(5)) / 2;
+        const azimuth = (2 * Math.PI * sIdx) / phiWeight;
+        // Mild elevation span: arcs from -0.65 rad (-37 deg) to +0.65 rad (+37 deg)
+        const elevation = Math.asin(-0.65 + (1.30 * (sIdx + 0.5)) / Math.max(nSessions, 1));
 
-        // Base azimuth angle for primary trunk (spread evenly around 360 degrees)
-        const trunkBaseAngle = (trunkIndex / numTrunks) * Math.PI * 2;
-        // Natural gentle organic elevation tilt
-        const trunkPitch = (trunkIndex % 2 === 0 ? 1 : -1) * (0.18 + 0.12 * Math.sin(trunkIndex));
+        // Natural variation in branch length (R = 1050 to 1350)
+        const rSession = 1100 + 160 * Math.sin(sIdx * 1.8) + 80 * Math.cos(sIdx * 3.1);
 
-        // Trunk Fork waypoint (R = 580)
-        const rFork = 580;
-        const forkX = rFork * Math.cos(trunkBaseAngle) * Math.cos(trunkPitch);
-        const forkY = rFork * Math.sin(trunkPitch) * 0.8;
-        const forkZ = rFork * Math.sin(trunkBaseAngle) * Math.cos(trunkPitch);
-        const forkPoint = new THREE.Vector3(forkX, forkY, forkZ);
-
-        // Secondary Branch fanout angle (sessions within the same limb cluster together)
-        const fanSpread = 0.55; // Radians
-        const sessionAngle = trunkBaseAngle + (trunkProgress - 0.5) * fanSpread;
-        const sessionPitch = trunkPitch + ((sIdx % 3) - 1) * 0.18;
-
-        // Session Anchor nexus position (R = 1150 - 1350)
-        const rSession = 1150 + (sIdx % 4) * 65;
-        const trunkX = rSession * Math.cos(sessionAngle) * Math.cos(sessionPitch);
-        const trunkY = rSession * Math.sin(sessionPitch) * 0.85;
-        const trunkZ = rSession * Math.sin(sessionAngle) * Math.cos(sessionPitch);
+        const cosEl = Math.cos(elevation);
+        const trunkX = rSession * cosEl * Math.cos(azimuth);
+        const trunkY = rSession * Math.sin(elevation) * 0.85;
+        const trunkZ = rSession * cosEl * Math.sin(azimuth);
         const sessionAnchor = new THREE.Vector3(trunkX, trunkY, trunkZ);
 
         const dominantCat = (clusterFacts[0]?.fact_type as MemoryCategory) || "objective";
@@ -506,70 +513,73 @@ export function useMemoryGraphScene({
           timestamp: sessionTime,
         });
 
-        // ── Smooth Bezier Neural Umbilical Conduits ──
-        // Level 1: Core (0, 0, 0) -> Trunk Fork
-        const numCoreSegs = 3;
-        let prevP = new THREE.Vector3(0, 0, 0);
-        for (let seg = 1; seg <= numCoreSegs; seg++) {
-          const t = seg / numCoreSegs;
-          const pt = new THREE.Vector3().lerpVectors(new THREE.Vector3(0, 0, 0), forkPoint, t);
-          conduits.push({
-            p0: prevP.clone(),
-            p1: pt.clone(),
-            col0: coreAccentHex,
-            col1: coreAccentHex,
-            sessionId: sKey,
-          });
-          prevP = pt;
-        }
+        // ── Organic Curved Cubic Bézier Trunk from Core to Session Anchor ──
+        // P0 = (0, 0, 0), P3 = sessionAnchor
+        // Control Points P1 & P2 with organic lateral/vertical curl
+        const dir = sessionAnchor.clone().normalize();
+        const worldUp = Math.abs(dir.y) < 0.85 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+        const lateral = new THREE.Vector3().crossVectors(dir, worldUp).normalize();
+        const normal = new THREE.Vector3().crossVectors(dir, lateral).normalize();
 
-        // Level 2: Trunk Fork -> Session Anchor
-        const numBranchSegs = 4;
-        const branchMid = new THREE.Vector3().lerpVectors(forkPoint, sessionAnchor, 0.5);
-        branchMid.y += (sIdx % 2 === 0 ? 35 : -35); // Organic curvature
+        // Deterministic organic curvature per branch
+        const curlSign = sIdx % 2 === 0 ? 1 : -1;
+        const curlMag1 = (60 + (sIdx % 5) * 20) * curlSign;
+        const curlMag2 = -(40 + (sIdx % 4) * 25) * curlSign;
 
-        prevP = forkPoint.clone();
-        for (let seg = 1; seg <= numBranchSegs; seg++) {
-          const t = seg / numBranchSegs;
-          // Quadratic bezier interpolation
+        const p0 = new THREE.Vector3(0, 0, 0);
+        const p1 = dir.clone().multiplyScalar(rSession * 0.35)
+          .addScaledVector(lateral, curlMag1)
+          .addScaledVector(normal, curlMag2 * 0.5);
+        const p2 = dir.clone().multiplyScalar(rSession * 0.70)
+          .addScaledVector(lateral, curlMag2)
+          .addScaledVector(normal, curlMag1 * 0.5);
+        const p3 = sessionAnchor.clone();
+
+        const numTrunkSegments = 7;
+        let prevPoint = p0.clone();
+        for (let seg = 1; seg <= numTrunkSegments; seg++) {
+          const t = seg / numTrunkSegments;
+          const u = 1 - t;
+          // Cubic Bezier interpolation
           const pt = new THREE.Vector3()
-            .copy(forkPoint).multiplyScalar((1 - t) * (1 - t))
-            .addScaledVector(branchMid, 2 * (1 - t) * t)
-            .addScaledVector(sessionAnchor, t * t);
+            .copy(p0).multiplyScalar(u * u * u)
+            .addScaledVector(p1, 3 * u * u * t)
+            .addScaledVector(p2, 3 * u * t * t)
+            .addScaledVector(p3, t * t * t);
 
           conduits.push({
-            p0: prevP.clone(),
+            p0: prevPoint.clone(),
             p1: pt.clone(),
-            col0: coreAccentHex,
+            col0: t < 0.5 ? coreAccentHex : clusterPalette.main,
             col1: clusterPalette.main,
             sessionId: sKey,
           });
-          prevP = pt;
+          prevPoint = pt;
         }
 
-        // ── Level 3: Dendritic Foliage (Facts branching from Session Anchor) ──
-        const trunkVec = sessionAnchor.clone().normalize();
-        const upVec = Math.abs(trunkVec.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-        const rightVec = new THREE.Vector3().crossVectors(trunkVec, upVec).normalize();
-        const perpVec = new THREE.Vector3().crossVectors(trunkVec, rightVec).normalize();
+        // ── Dendritic Tree Foliage (Facts branching organically from Session Anchor) ──
+        const clusterNodeIndices: number[] = [];
 
         clusterFacts.forEach((fact, fIdx) => {
           const cat = (fact.fact_type as MemoryCategory) || "objective";
           const palette = getCollectionColor(cat, false, isLight);
 
-          // Conical arbor spreading from session anchor
-          const coneAngle = 0.16 + 0.50 * Math.sqrt((fIdx + 1) / nCluster);
-          const coneRot = fIdx * 2.39996;
-          const branchDist = 65 + 240 * Math.pow((fIdx + 1) / nCluster, 0.65);
+          // Foliage phyllotaxis around session anchor
+          const phiFoliage = (1 + Math.sqrt(5)) / 2;
+          const rotAngle = (2 * Math.PI * fIdx) / phiFoliage;
+          const divergence = 0.18 + 0.52 * Math.sqrt((fIdx + 1) / nCluster);
+          const branchDist = 55 + 230 * Math.pow((fIdx + 1) / nCluster, 0.62);
 
-          const radialOff = Math.sin(coneAngle) * branchDist;
-          const axialOff = Math.cos(coneAngle) * branchDist;
+          const rOff = Math.sin(divergence) * branchDist;
+          const aOff = Math.cos(divergence) * branchDist;
 
-          const posX = trunkX + axialOff * trunkVec.x + radialOff * (Math.cos(coneRot) * rightVec.x + Math.sin(coneRot) * perpVec.x);
-          const posY = trunkY + axialOff * trunkVec.y + radialOff * (Math.cos(coneRot) * rightVec.y + Math.sin(coneRot) * perpVec.y);
-          const posZ = trunkZ + axialOff * trunkVec.z + radialOff * (Math.cos(coneRot) * rightVec.z + Math.sin(coneRot) * perpVec.z);
+          const posX = trunkX + aOff * dir.x + rOff * (Math.cos(rotAngle) * lateral.x + Math.sin(rotAngle) * normal.x);
+          const posY = trunkY + aOff * dir.y + rOff * (Math.cos(rotAngle) * lateral.y + Math.sin(rotAngle) * normal.y);
+          const posZ = trunkZ + aOff * dir.z + rOff * (Math.cos(rotAngle) * lateral.z + Math.sin(rotAngle) * normal.z);
 
           const nodeIdx = gNodes.length;
+          clusterNodeIndices.push(nodeIdx);
+
           gNodes.push({
             id: fact.id,
             label: fact.text,
@@ -587,11 +597,22 @@ export function useMemoryGraphScene({
             vz: 0,
           });
 
+          // Connect inner facts directly to session anchor; connect outer facts hierarchically to preceding nodes
+          // to form true dendritic branches/twigs
+          let linkSourceIndex = -2; // -2 means session anchor
+          let linkFromId = sKey;
+
+          if (fIdx >= 8 && clusterNodeIndices.length > 4) {
+            const parentClusterIdx = fIdx % 6;
+            linkSourceIndex = clusterNodeIndices[parentClusterIdx];
+            linkFromId = clusterFacts[parentClusterIdx].id;
+          }
+
           gLinks.push({
             id: `link_branch_${fact.id}`,
-            sourceIndex: -2,
+            sourceIndex: linkSourceIndex,
             targetIndex: nodeIdx,
-            fromId: sKey,
+            fromId: linkFromId,
             toId: fact.id,
             relation: cat.toUpperCase(),
             color: palette.main,
@@ -741,16 +762,72 @@ export function useMemoryGraphScene({
     corePointLight.position.set(0, 0, 0);
     scene.add(corePointLight);
 
-    // 6. Sentient Personal Memory Core (Volumetric Sphere + Dual Orbital Rings)
+    // 6. Sentient Personal Memory Core: Hollow Gradient Crystal Sphere + Geodesic Wireframe + Inner Nucleus
     const coreGeo = new THREE.SphereGeometry(74, 48, 48);
-    const coreMat = new THREE.MeshBasicMaterial({
-      color: initialPalette.personal.threeColor,
+    const coreVertexShader = `
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+    const coreFragmentShader = `
+      uniform vec3 color1;
+      uniform vec3 color2;
+      uniform float opacity;
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      void main() {
+        vec3 viewDir = normalize(-vPosition);
+        float fresnel = pow(1.0 - max(dot(viewDir, vNormal), 0.0), 2.2);
+        float gradient = clamp(vNormal.y * 0.5 + 0.5, 0.0, 1.0);
+        vec3 col = mix(color1, color2, gradient);
+        float alpha = clamp(0.12 + fresnel * 0.78, 0.0, 1.0) * opacity;
+        gl_FragColor = vec4(col * (1.0 + fresnel * 0.4), alpha);
+      }
+    `;
+    const coreMat = new THREE.ShaderMaterial({
+      vertexShader: coreVertexShader,
+      fragmentShader: coreFragmentShader,
+      uniforms: {
+        color1: { value: new THREE.Color(isLightModeRef.current ? "#0284c7" : "#00f0ff") },
+        color2: { value: new THREE.Color(isLightModeRef.current ? "#9333ea" : "#c084fc") },
+        opacity: { value: isLightModeRef.current ? 0.85 : 0.75 },
+      },
       transparent: true,
-      opacity: isLightModeRef.current ? 0.95 : 0.90,
+      side: THREE.FrontSide,
+      blending: THREE.NormalBlending,
+      depthWrite: false,
     });
     const coreMesh = new THREE.Mesh(coreGeo, coreMat);
     scene.add(coreMesh);
     coreMeshRef.current = coreMesh;
+
+    // Outer Geodesic Wireframe
+    const coreWireGeo = new THREE.IcosahedronGeometry(76, 3);
+    const coreWireMat = new THREE.MeshBasicMaterial({
+      color: initialPalette.personal.threeColor,
+      wireframe: true,
+      transparent: true,
+      opacity: isLightModeRef.current ? 0.22 : 0.35,
+      blending: isLightModeRef.current ? THREE.NormalBlending : THREE.AdditiveBlending,
+    });
+    const coreWireMesh = new THREE.Mesh(coreWireGeo, coreWireMat);
+    scene.add(coreWireMesh);
+    coreWireMeshRef.current = coreWireMesh;
+
+    // Inner Luminous Nucleus
+    const coreNucleusGeo = new THREE.SphereGeometry(24, 32, 32);
+    const coreNucleusMat = new THREE.MeshBasicMaterial({
+      color: initialPalette.personal.threeColor,
+      transparent: true,
+      opacity: isLightModeRef.current ? 0.90 : 0.80,
+    });
+    const coreNucleusMesh = new THREE.Mesh(coreNucleusGeo, coreNucleusMat);
+    scene.add(coreNucleusMesh);
+    coreNucleusMeshRef.current = coreNucleusMesh;
 
     // Concentric Orbital Celestial Rings
     const innerRingGeo = new THREE.RingGeometry(88, 92, 64);
@@ -839,6 +916,14 @@ export function useMemoryGraphScene({
         const pulse = 1 + 0.035 * Math.sin(time * 2.2);
         coreMeshRef.current.scale.set(pulse, pulse, pulse);
       }
+      if (coreWireMeshRef.current) {
+        coreWireMeshRef.current.rotation.y = time * 0.12;
+        coreWireMeshRef.current.rotation.x = time * 0.08;
+      }
+      if (coreNucleusMeshRef.current) {
+        const nucPulse = 1 + 0.06 * Math.sin(time * 3.0);
+        coreNucleusMeshRef.current.scale.set(nucPulse, nucPulse, nucPulse);
+      }
 
       // Smooth harmonic counter-rotating rings
       if (coreInnerRingRef.current) {
@@ -892,6 +977,10 @@ export function useMemoryGraphScene({
       lineMat.dispose();
       coreGeo.dispose();
       coreMat.dispose();
+      coreWireGeo.dispose();
+      coreWireMat.dispose();
+      coreNucleusGeo.dispose();
+      coreNucleusMat.dispose();
       innerRingGeo.dispose();
       innerRingMat.dispose();
       outerRingGeo.dispose();

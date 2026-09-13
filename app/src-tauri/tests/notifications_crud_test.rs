@@ -19,8 +19,10 @@ use vox_lib::persistence::{
     db::VoxDb,
     notifications::{
         create_notification, dismiss_interactive_by_entity, dismiss_notification,
-        fetch_active_notifications, find_active_interactive_by_group, mark_all_notifications_read,
-        update_interactive_notification, NewNotification, Severity,
+        dismiss_notifications, fetch_active_notifications, find_active_interactive_by_group,
+        find_notification_by_group, mark_all_notifications_read, mark_notifications_read,
+        resolve_notification_in_place, NewNotification, NotificationFilter, Severity,
+        update_interactive_notification,
     },
     schema::run_migrations,
     sessions::{create_session, create_session_with_id},
@@ -265,4 +267,112 @@ async fn test_compaction_ledger_queries_and_mutations() {
     })
     .await
     .expect("test_compaction_ledger_queries_and_mutations timed out");
+}
+
+#[tokio::test]
+async fn test_notifications_inplace_resolution_and_tab_filtering() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_notifs_inplace.db");
+        let db = VoxDb::open(&db_path)
+            .await
+            .expect("Failed to open db");
+        let conn = db.connect().expect("Failed to connect");
+        run_migrations(&conn).await.expect("Failed migrations");
+
+        // Create 1 interactive task card and 1 passive receipt card
+        let task = NewNotification {
+            id: "task_1".to_string(),
+            group_key: "session_compaction:42".to_string(),
+            category: "session_compaction".to_string(),
+            severity: Severity::Info,
+            action_type: "interactive".to_string(),
+            action_payload: "{\"action\":\"compact\"}".to_string(),
+            title: "Session #42 Ready to Compact".to_string(),
+            message: "5 uncompacted turns".to_string(),
+            status: "unread".to_string(),
+            session_id: Some(42),
+            metadata: "{\"uncompacted_turns\": 5, \"resolution\": \"pending\"}".to_string(),
+        };
+        create_notification(&conn, &task).await.expect("Failed creating task");
+
+        let receipt = NewNotification {
+            id: "receipt_1".to_string(),
+            group_key: "memory_consolidation:daily".to_string(),
+            category: "memory_consolidation".to_string(),
+            severity: Severity::Info,
+            action_type: "receipt".to_string(),
+            action_payload: "{}".to_string(),
+            title: "Memory Consolidated".to_string(),
+            message: "Daily profile updated".to_string(),
+            status: "unread".to_string(),
+            session_id: None,
+            metadata: "{}".to_string(),
+        };
+        create_notification(&conn, &receipt).await.expect("Failed creating receipt");
+
+        // Verify find_notification_by_group works
+        let found = find_notification_by_group(&conn, "session_compaction:42")
+            .await
+            .expect("Query failed")
+            .expect("Should find task");
+        assert_eq!(found.id, "task_1");
+
+        // Test in-place resolution (zero ghost receipts)
+        let resolved = resolve_notification_in_place(
+            &conn,
+            "task_1",
+            "resolved",
+            Some("Session #42 compacted: extracted 3 facts."),
+        )
+        .await
+        .expect("Resolution failed")
+        .expect("Record should exist");
+
+        assert_eq!(resolved.message, "Session #42 compacted: extracted 3 facts.");
+        assert!(resolved.metadata.contains("\"resolution\":\"resolved\""));
+        assert_eq!(resolved.status, "unread"); // Invariant: Attention status untouched by background task!
+
+        // Test tab-scoped mark as read (interactive only)
+        mark_notifications_read(
+            &conn,
+            Some(&NotificationFilter {
+                action_type: Some("interactive".to_string()),
+                ..Default::default()
+            }),
+        )
+        .await
+        .expect("Failed mark read");
+
+        let active = fetch_active_notifications(&conn).await.expect("Fetch failed");
+        let task_rec = active.iter().find(|n| n.id == "task_1").unwrap();
+        let receipt_rec = active.iter().find(|n| n.id == "receipt_1").unwrap();
+        assert_eq!(task_rec.status, "read");
+        assert_eq!(receipt_rec.status, "unread"); // Receipt untouched!
+
+        // Test tab-scoped dismiss (receipt only)
+        dismiss_notifications(
+            &conn,
+            Some(&NotificationFilter {
+                action_type: Some("receipt".to_string()),
+                ..Default::default()
+            }),
+        )
+        .await
+        .expect("Failed dismiss");
+
+        let remaining = fetch_active_notifications(&conn).await.expect("Fetch failed");
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, "task_1"); // Task still active in Tasks/Updates!
+
+        // User dismissal sovereignty: task is dismissed
+        dismiss_notification(&conn, "task_1").await.expect("Failed dismiss task");
+        let found_dismissed = find_notification_by_group(&conn, "session_compaction:42")
+            .await
+            .expect("Query failed")
+            .expect("Should find task even if dismissed");
+        assert_eq!(found_dismissed.status, "dismissed");
+    })
+    .await
+    .expect("test_notifications_inplace_resolution_and_tab_filtering timed out");
 }
