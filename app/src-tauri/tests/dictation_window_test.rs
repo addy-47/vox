@@ -106,33 +106,48 @@ async fn test_dictation_matrix() {
             transition_dictation(InteractionState::Ready, &app, &state);
             state.pipeline.update_ingestion_gate();
 
-            // Trigger PttStart via router
+            // Trigger PttStart via router and poll for Listening (deadline, not fixed sleep)
             event_tx
                 .send(VoxEvent::PttStart)
                 .expect("Failed to send PttStart");
 
-            // Allow router pump to transition state
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            assert_eq!(
-                state.pipeline.dictation_state(),
-                InteractionState::Listening,
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Listening,
+                    Duration::from_secs(5),
+                )
+                .await,
                 "Dictation state must transition to Listening on PttStart"
             );
 
             // Stream single-utterance EN clip while PTT held
-            let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
-            let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
-                .expect("Failed to decode supertonic_01_en_briefing.wav");
-            common::audio::stream_audio_to_ring_buffer(&audio, &mut producer);
-            common::audio::wait_for_buffer_drain(&producer, 5);
+            common::audio::stream_test_clip(
+                common::ASSET_SUPERTONIC_01_EN_FILENAME,
+                &mut producer,
+            );
 
             // Release PTT via router
             event_tx
                 .send(VoxEvent::PttStop)
                 .expect("Failed to send PttStop");
 
-            // Allow router pump to invoke on_ptt_stop and transition to Thinking
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            // Poll for Thinking (or Ready if STT finished rapidly) with deadline
+            {
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                loop {
+                    let current_state = state.pipeline.dictation_state();
+                    if current_state == InteractionState::Thinking
+                        || current_state == InteractionState::Ready
+                    {
+                        break;
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            }
             let current_state = state.pipeline.dictation_state();
             assert!(
                 current_state == InteractionState::Thinking || current_state == InteractionState::Ready,
@@ -167,8 +182,16 @@ async fn test_dictation_matrix() {
                 })
                 .expect("Failed to send TranscriptFinal to router");
 
-            // Allow router pump to complete routing
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            // Poll for routing completion (Ready) with deadline
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Ready,
+                    Duration::from_secs(5),
+                )
+                .await,
+                "Router pump must complete routing"
+            );
 
             // Invariant 1: dictation_last_transcript contains processed text
             let last_tx = state.dictation_last_transcript.lock().clone();
@@ -205,10 +228,13 @@ async fn test_dictation_matrix() {
             event_tx
                 .send(VoxEvent::PttStart)
                 .expect("Failed to send PttStart");
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            assert_eq!(
-                state.pipeline.dictation_state(),
-                InteractionState::Listening,
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Listening,
+                    Duration::from_secs(5),
+                )
+                .await,
                 "Must enter Listening on PttStart"
             );
 
@@ -219,12 +245,15 @@ async fn test_dictation_matrix() {
             event_tx
                 .send(VoxEvent::PttStop)
                 .expect("Failed to send PttStop");
-            tokio::time::sleep(Duration::from_millis(150)).await;
 
-            // Ghost gate: state reverts to Ready, no STT Final dispatched
-            assert_eq!(
-                state.pipeline.dictation_state(),
-                InteractionState::Ready,
+            // Ghost gate: poll for revert to Ready (no STT Final dispatched)
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Ready,
+                    Duration::from_secs(5),
+                )
+                .await,
                 "Ghost gate: dictation state must revert to Ready on silence hold"
             );
 
@@ -247,23 +276,35 @@ async fn test_dictation_matrix() {
             event_tx
                 .send(VoxEvent::PttStart)
                 .expect("Failed to send PttStart");
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            assert_eq!(state.pipeline.dictation_state(), InteractionState::Listening);
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Listening,
+                    Duration::from_secs(5),
+                )
+                .await,
+                "Must enter Listening on PttStart"
+            );
 
-            // Stream audio while listening
-            let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
-            let audio = common::audio::decode_wav_to_mono_16k(&clip_path).unwrap();
-            common::audio::stream_audio_to_ring_buffer(&audio[..audio.len().min(4000)], &mut producer);
+            // Stream audio while listening (prefix only: cancel path must not need a full utterance)
+            common::audio::stream_test_clip_prefix(
+                common::ASSET_SUPERTONIC_01_EN_FILENAME,
+                4000,
+                &mut producer,
+            );
 
             // Cancel PTT via event_tx (tray cancellation path)
             event_tx
                 .send(VoxEvent::PttCancel)
                 .expect("Failed to send PttCancel");
-            tokio::time::sleep(Duration::from_millis(100)).await;
 
-            assert_eq!(
-                state.pipeline.dictation_state(),
-                InteractionState::Ready,
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Ready,
+                    Duration::from_secs(5),
+                )
+                .await,
                 "PttCancel must revert dictation state to Ready"
             );
 
@@ -283,25 +324,31 @@ async fn test_dictation_matrix() {
                 .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
             transition_dictation(InteractionState::Ready, &app, &state);
 
-            // Trigger passive speech start
+            // Trigger passive speech start and poll for Listening
             event_tx
                 .send(VoxEvent::SpeechStart)
                 .expect("Failed to send SpeechStart");
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            assert_eq!(
-                state.pipeline.dictation_state(),
-                InteractionState::Listening,
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Listening,
+                    Duration::from_secs(5),
+                )
+                .await,
                 "Passive SpeechStart must transition dictation state to Listening"
             );
 
-            // Trigger passive speech end
+            // Trigger passive speech end and poll for Thinking
             event_tx
                 .send(VoxEvent::SpeechEnd)
                 .expect("Failed to send SpeechEnd");
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            assert_eq!(
-                state.pipeline.dictation_state(),
-                InteractionState::Thinking,
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Thinking,
+                    Duration::from_secs(5),
+                )
+                .await,
                 "Passive SpeechEnd must transition dictation state to Thinking"
             );
 
@@ -314,11 +361,14 @@ async fn test_dictation_matrix() {
                     text: test_text.clone(),
                 })
                 .expect("Failed to send TranscriptFinal");
-            tokio::time::sleep(Duration::from_millis(100)).await;
 
-            assert_eq!(
-                state.pipeline.dictation_state(),
-                InteractionState::Ready,
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Ready,
+                    Duration::from_secs(5),
+                )
+                .await,
                 "Passive dictation must return to Ready after transcript"
             );
             assert_eq!(
@@ -346,10 +396,12 @@ async fn test_dictation_matrix() {
                 "Ingestion gate must be closed when both assistant and dictation are Idle"
             );
 
-            // Stream audio while gate is closed
-            let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
-            let audio = common::audio::decode_wav_to_mono_16k(&clip_path).unwrap();
-            common::audio::stream_audio_to_ring_buffer(&audio[..audio.len().min(4000)], &mut producer);
+            // Stream audio while gate is closed (prefix only)
+            common::audio::stream_test_clip_prefix(
+                common::ASSET_SUPERTONIC_01_EN_FILENAME,
+                4000,
+                &mut producer,
+            );
 
             // Wait for VAD actor loop head to purge buffers
             tokio::time::sleep(Duration::from_millis(150)).await;
@@ -363,20 +415,31 @@ async fn test_dictation_matrix() {
             );
 
             // Now initiate a clean PttStart -> PttStop with no new speech
+            // and poll for the ghost-gate revert to Ready (proves stale audio was purged)
             event_tx
                 .send(VoxEvent::PttStart)
                 .expect("Failed to send PttStart");
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Listening,
+                    Duration::from_secs(5),
+                )
+                .await,
+                "Must enter Listening on PttStart"
+            );
 
             event_tx
                 .send(VoxEvent::PttStop)
                 .expect("Failed to send PttStop");
-            tokio::time::sleep(Duration::from_millis(150)).await;
 
-            // Must revert to Ready via ghost gate, proving stale audio was purged
-            assert_eq!(
-                state.pipeline.dictation_state(),
-                InteractionState::Ready,
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Ready,
+                    Duration::from_secs(5),
+                )
+                .await,
                 "Gate purge: stale audio must not trigger STT; ghost gate must return Ready"
             );
 
@@ -397,14 +460,16 @@ async fn test_dictation_matrix() {
             event_tx
                 .send(VoxEvent::PttStart)
                 .expect("Failed to send PttStart");
-            tokio::time::sleep(Duration::from_millis(100)).await;
 
-            // Must NOT enter Listening
-            assert_eq!(
-                state.pipeline.dictation_state(),
+            // Must NOT enter Listening: poll briefly, then assert still Idle
+            // (suppression path — absence of transition is the invariant)
+            common::harness::assert_pipeline_state_stable(
+                || state.pipeline.dictation_state(),
                 InteractionState::Idle,
-                "PttStart when Idle must remain Idle"
-            );
+                Duration::from_millis(500),
+                "Idle PttStart must remain Idle",
+            )
+            .await;
 
             common::harness::assert_channel_empty_after(
                 &pipeline_event_rx,
@@ -421,9 +486,9 @@ async fn test_dictation_matrix() {
         vad_shutdown.store(true, Ordering::Relaxed);
         stt_shutdown.store(true, Ordering::Relaxed);
 
-        let _ = router_join.join();
-        let _ = vad_join.join();
-        let _ = stt_join.join();
+        let _ = router_join.join().expect("Router thread panicked");
+        let _ = vad_join.join().expect("VAD actor thread panicked");
+        let _ = stt_join.join().expect("STT worker thread panicked");
     })
     .await
     .expect("test_dictation_matrix timed out");

@@ -73,11 +73,16 @@ async fn test_transcript_to_llm_matrix() {
         *state.llm_provider.write() = Some(provider.clone());
 
         // 3. Channels for capturing STT, VAD, LLM, TTS filler, and pipeline events
-        let (stt_tx, _stt_rx) = mpsc::channel();
-        let (vad_tx, _vad_rx) = mpsc::channel();
-        let (tts_tx, tts_rx) = mpsc::channel::<TtsCommand>();
-        let (llm_tx, llm_rx) = mpsc::channel::<LlmCommand>();
-        let (pipeline_tx, pipeline_rx) = mpsc::channel::<VoxEvent>();
+        let common::harness::PipelineTestChannels {
+            stt_tx,
+            vad_tx,
+            tts_tx,
+            tts_rx,
+            llm_tx,
+            llm_rx,
+            pipeline_tx,
+            pipeline_rx,
+        } = common::harness::setup_pipeline_channels();
 
         common::harness::attach_mock_engine_with_pipeline_tx_to_state(
             &app,
@@ -174,10 +179,10 @@ async fn test_transcript_to_llm_matrix() {
             );
 
             // Negative assertion: no pipeline events emitted
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            assert!(
-                pipeline_rx.try_recv().is_err(),
-                "Empty transcript must not generate LLM events"
+            common::harness::assert_channel_empty_after(
+                &pipeline_rx,
+                Duration::from_millis(500),
+                "Empty transcript must not generate LLM events",
             );
         }
 
@@ -194,10 +199,10 @@ async fn test_transcript_to_llm_matrix() {
                 "Transcript received in Listening state must not alter pipeline state"
             );
 
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            assert!(
-                pipeline_rx.try_recv().is_err(),
-                "Transcript received in non-Thinking state must be dropped with zero events"
+            common::harness::assert_channel_empty_after(
+                &pipeline_rx,
+                Duration::from_millis(300),
+                "Transcript received in non-Thinking state must be dropped with zero events",
             );
         }
 
@@ -225,10 +230,10 @@ async fn test_transcript_to_llm_matrix() {
             );
 
             // Negative assertion: modular LLM receives zero requests
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            assert!(
-                pipeline_rx.try_recv().is_err(),
-                "Realtime mode must not dispatch to modular LLM pipeline"
+            common::harness::assert_channel_empty_after(
+                &pipeline_rx,
+                Duration::from_millis(500),
+                "Realtime mode must not dispatch to modular LLM pipeline",
             );
         }
 

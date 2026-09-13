@@ -64,6 +64,21 @@ pub struct ClipBenchmarkResult {
     pub similarity: f64,
     pub hypothesis: String,
     pub ground_truth: String,
+    /// Per-stage latencies in ms (§4: record T_stt/T_llm/T_tts, not only E2E).
+    /// `#[serde(default)]` keeps old reports without these fields parseable.
+    #[serde(default)]
+    pub stt_latency_ms: f64,
+    #[serde(default)]
+    pub llm_latency_ms: f64,
+    #[serde(default)]
+    pub tts_latency_ms: f64,
+    /// Full assistant response text (stt_harness/tts_harness predate this; default keeps them compiling).
+    #[serde(default)]
+    pub llm_response: String,
+    /// Response length in whitespace-separated words (verbosity observability:
+    /// flags model rambling that inflates synth-audio duration without failing anything).
+    #[serde(default)]
+    pub llm_response_words: usize,
 }
 
 /// Aggregate summary for an engine execution run.

@@ -61,8 +61,7 @@ async fn seed_test_identity_facts(db_path: &std::path::Path) -> anyhow::Result<(
 async fn test_session_start_modular_sets_ready_and_identity() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
-        let _paths_guard = common::paths::TempPathsGuard::new();
-        let (app, state) = common::harness::get_test_app_and_state().await;
+        let (_paths_guard, app, state) = common::harness::setup_isolated_app_state().await;
 
         let db_path = vox_lib::utils::paths::db_path();
         seed_test_identity_facts(&db_path)
@@ -198,8 +197,8 @@ async fn test_session_start_modular_sets_ready_and_identity() {
 async fn test_session_continuation_seeds_harness() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
-        let _paths_guard = common::paths::TempPathsGuard::new();
-        let (app, state) = common::harness::get_test_app_and_state().await;
+        let (_paths_guard, app, state) =
+            common::harness::setup_isolated_app_state().await;
 
         vox_lib::persistence::schema::run_migrations(&state.db.connect().unwrap())
             .await
@@ -315,8 +314,7 @@ async fn test_session_continuation_seeds_harness() {
 async fn test_session_pause_resume_transitions() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
-        let _paths_guard = common::paths::TempPathsGuard::new();
-        let (app, state) = common::harness::get_test_app_and_state().await;
+        let (_paths_guard, app, state) = common::harness::setup_isolated_app_state().await;
 
         let (vad_cmd_tx, vad_cmd_rx) = mpsc::channel::<VadCommand>();
         let (_stt_tx, _pipeline_rx, _pipeline_tx) =
@@ -448,8 +446,7 @@ async fn test_session_pause_resume_transitions() {
 async fn test_session_resume_from_sleeping_and_error() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
-        let _paths_guard = common::paths::TempPathsGuard::new();
-        let (app, state) = common::harness::get_test_app_and_state().await;
+        let (_paths_guard, app, state) = common::harness::setup_isolated_app_state().await;
 
         let (vad_cmd_tx, _vad_cmd_rx) = mpsc::channel::<VadCommand>();
         let (_stt_tx, _pipeline_rx, _pipeline_tx) =
@@ -689,8 +686,7 @@ async fn test_session_end_dictation_gate_keeps_engine() {
 async fn test_session_end_purges_and_unmounts_harness() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
-        let _paths_guard = common::paths::TempPathsGuard::new();
-        let (app, state) = common::harness::get_test_app_and_state().await;
+        let (_paths_guard, app, state) = common::harness::setup_isolated_app_state().await;
 
         let (vad_cmd_tx, _vad_cmd_rx) = mpsc::channel::<VadCommand>();
         let (_stt_tx, _pipeline_rx, _pipeline_tx) =

@@ -71,10 +71,14 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
             );
 
         // 3. Configure state and worker handles
-        let (stt_tx, _) = mpsc::channel();
-        let (vad_tx, _) = mpsc::channel();
-        let (tts_tx, tts_rx) = mpsc::channel::<TtsCommand>();
-        let (llm_tx, _) = mpsc::channel();
+        let common::harness::PipelineTestChannels {
+            stt_tx,
+            vad_tx,
+            tts_tx,
+            tts_rx,
+            llm_tx,
+            ..
+        } = common::harness::setup_pipeline_channels();
 
         common::harness::attach_mock_engine_with_llm_tts_to_state(
             &app,
@@ -243,6 +247,10 @@ async fn test_tts_to_playback_short_utterance_flush() {
         // Short utterance provider: synthesizes 2,000 samples (< 12,000 MODULAR_PREROLL_THRESHOLD_SAMPLES).
         // Verifies that during ingestion the cushion is NOT armed prematurely, and only the worker loop's
         // automatic flush_pre_roll() arms playback upon job completion.
+        // NOTE (false-green audit): this stub provider is intentional, not mock orchestration.
+        // The entry seam is the real `spawn_tts_worker` and assertions read production worker
+        // outputs (`pending_synthesis_jobs`, `turn_armed`, `PlaybackStarted`). The real-model
+        // counterpart is subtest 1 above (Supertonic ONNX → RMS > 0 → 12k pre-roll arming).
         struct ShortUtteranceProvider {
             samples: Vec<f32>,
             turn_armed: Arc<AtomicBool>,

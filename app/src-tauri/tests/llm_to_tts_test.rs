@@ -72,11 +72,16 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
         *state.llm_provider.write() = Some(provider.clone());
 
         // 3. Channels for capturing STT, VAD, LLM, TTS clauses, and pipeline events
-        let (stt_tx, _) = mpsc::channel();
-        let (vad_tx, _) = mpsc::channel();
-        let (tts_tx, tts_rx) = mpsc::channel::<TtsCommand>();
-        let (llm_tx, llm_rx) = mpsc::channel::<LlmCommand>();
-        let (pipeline_tx, pipeline_rx) = mpsc::channel::<VoxEvent>();
+        let common::harness::PipelineTestChannels {
+            stt_tx,
+            vad_tx,
+            tts_tx,
+            tts_rx,
+            llm_tx,
+            llm_rx,
+            pipeline_tx,
+            pipeline_rx,
+        } = common::harness::setup_pipeline_channels();
 
         common::harness::attach_mock_engine_with_pipeline_tx_to_state(
             &app,

@@ -4,9 +4,10 @@
 //! Category     : Integration Test (Seam 10)
 //! Component    : services/tts/actor.rs (TtsClauseChunker) +
 //!                pipeline/assistant/accumulator.rs (TurnAccumulator)
+//! Prerequisites: None (pure logic, no models or services)
 //! Execution    : cargo nextest run --test chunking_determinism_test --release --nocapture --test-threads=1
-//! Invariants   : Invariance across token fragmentation, emergency 20-word cap
-//!                determinism, comma prosody gating stability, clean buffer flush.
+//! Metrics      : Determinism across token fragmentations, emergency 20-word cap,
+//!                comma prosody gating stability, clean buffer flush
 //! ============================================================================
 
 use vox_lib::{
