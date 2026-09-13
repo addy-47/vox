@@ -28,6 +28,7 @@ pub struct NotificationFilter {
     pub ids: Option<Vec<String>>,
     pub group_key: Option<String>,
     pub category: Option<String>,
+    pub action_type: Option<String>,
 }
 
 /// Creates a new notification in the database and returns the persisted record.
@@ -187,6 +188,14 @@ pub async fn mark_notifications_read(
             .await?;
             return Ok(());
         }
+        if let Some(ref action_type) = f.action_type {
+            conn.execute(
+                "UPDATE notifications SET status = 'read', updated_at = ? WHERE action_type = ? AND status = 'unread'",
+                (now, action_type.clone()),
+            )
+            .await?;
+            return Ok(());
+        }
     }
 
     conn.execute(
@@ -235,6 +244,14 @@ pub async fn dismiss_notifications(
             .await?;
             return Ok(());
         }
+        if let Some(ref action_type) = f.action_type {
+            conn.execute(
+                "UPDATE notifications SET status = 'dismissed', updated_at = ? WHERE action_type = ? AND status != 'dismissed'",
+                (now, action_type.clone()),
+            )
+            .await?;
+            return Ok(());
+        }
     }
 
     conn.execute(
@@ -264,9 +281,64 @@ pub async fn dismiss_notification(conn: &Connection, id: &str) -> Result<()> {
             ids: Some(vec![id.to_string()]),
             group_key: None,
             category: None,
+            action_type: None,
         }),
     )
     .await
+}
+
+/// Returns any notification record matching group_key (regardless of status).
+pub async fn find_notification_by_group(
+    conn: &Connection,
+    group_key: &str,
+) -> Result<Option<NotificationRecord>> {
+    let mut rows = conn
+        .query(
+            "SELECT id, group_key, category, severity, action_type, action_payload, \
+                    title, message, status, session_id, metadata, created_at, updated_at \
+             FROM notifications WHERE group_key = ? LIMIT 1",
+            (group_key.to_string(),),
+        )
+        .await?;
+
+    if let Some(row) = rows.next().await? {
+        Ok(Some(map_notification_row(&row)?))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Updates an existing notification's resolution state and message in-place.
+pub async fn resolve_notification_in_place(
+    conn: &Connection,
+    id: &str,
+    resolution: &str,
+    message: Option<&str>,
+) -> Result<Option<NotificationRecord>> {
+    let now = current_timestamp_ms();
+    let existing = fetch_notification_by_id(conn, id).await?;
+    let Some(mut record) = existing else {
+        return Ok(None);
+    };
+
+    let mut meta_json: serde_json::Value = serde_json::from_str(&record.metadata)
+        .unwrap_or_else(|_| serde_json::json!({}));
+    meta_json["resolution"] = serde_json::Value::String(resolution.to_string());
+    let new_metadata = meta_json.to_string();
+
+    let new_message = message.unwrap_or(&record.message).to_string();
+
+    conn.execute(
+        "UPDATE notifications SET metadata = ?, message = ?, updated_at = ? WHERE id = ?",
+        (new_metadata.clone(), new_message.clone(), now, id.to_string()),
+    )
+    .await?;
+
+    record.metadata = new_metadata;
+    record.message = new_message;
+    record.updated_at = now;
+
+    Ok(Some(record))
 }
 
 /// Convenience function to mark all unread notifications as read.

@@ -22,7 +22,7 @@ pub struct VoxPaths {
 
 static PATHS: RwLock<Option<VoxPaths>> = RwLock::new(None);
 
-const DB_FILENAME: &str = "vox.db";
+pub const DB_FILENAME: &str = "vox.db";
 const SETTINGS_FILENAME: &str = "settings.json";
 const LOG_DIRNAME: &str = "logs";
 const MODELS_DIRNAME: &str = "models";

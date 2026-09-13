@@ -22,6 +22,8 @@ interface OverlayEntry {
   getEl: () => HTMLElement | null;
   /** If true, a pointerdown outside `getEl()` dismisses this overlay. */
   dismissOnOutside: boolean;
+  /** Optional custom predicate to determine if a pointerdown should dismiss this overlay. */
+  shouldDismissOnPointerDown?: (target: Node) => boolean;
 }
 
 const stack: OverlayEntry[] = [];
@@ -36,12 +38,14 @@ export function registerOverlay(opts: {
   onClose: () => void;
   getEl?: () => HTMLElement | null;
   dismissOnOutside?: boolean;
+  shouldDismissOnPointerDown?: (target: Node) => boolean;
 }): () => void {
   const entry: OverlayEntry = {
     id: ++seq,
     onClose: opts.onClose,
     getEl: opts.getEl ?? (() => null),
     dismissOnOutside: opts.dismissOnOutside ?? false,
+    shouldDismissOnPointerDown: opts.shouldDismissOnPointerDown,
   };
   stack.push(entry);
 
@@ -84,9 +88,17 @@ function onPointerDown(e: PointerEvent) {
   if (stack.length === 0) return;
   const top = stack[stack.length - 1];
   if (!top.dismissOnOutside) return;
-  const el = top.getEl();
-  if (el && e.target instanceof Node && !el.contains(e.target)) {
-    top.onClose();
+  if (!(e.target instanceof Node)) return;
+
+  if (top.shouldDismissOnPointerDown) {
+    if (top.shouldDismissOnPointerDown(e.target)) {
+      top.onClose();
+    }
+  } else {
+    const el = top.getEl();
+    if (el && !el.contains(e.target)) {
+      top.onClose();
+    }
   }
 }
 

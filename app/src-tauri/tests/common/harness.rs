@@ -75,6 +75,49 @@ pub fn create_mock_playback_engine_with_handles(
     (Arc::new(engine), Arc::new(Mutex::new(consumer)))
 }
 
+/// Creates a headless playback engine and real sink context with caller-provided event channel and atomics.
+pub fn create_headless_playback_with_sink(
+    event_tx: mpsc::Sender<VoxEvent>,
+    state_atomic: Arc<AtomicU32>,
+    current_turn_id: Arc<AtomicU32>,
+    pending_synthesis_jobs: Arc<AtomicU32>,
+) -> (Arc<PlaybackEngine>, vox_lib::services::audio::sink::PlaybackStreamContext) {
+    let rb = HeapRb::<f32>::new(vox_lib::services::audio::PLAYBACK_BUFFER_SAMPLES);
+    let (producer, consumer) = rb.split();
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let discard_request = Arc::new(AtomicBool::new(false));
+    let turn_armed = Arc::new(AtomicBool::new(false));
+
+    let handles = vox_lib::services::audio::playback::PlaybackEngineHandles {
+        cancel_flag,
+        state_atomic,
+        current_turn_id,
+        pending_synthesis_jobs,
+        playback_intent: Arc::new(AtomicU8::new(0)),
+        event_tx,
+    };
+
+    let telemetry = vox_lib::services::audio::PlaybackTelemetryHandles {
+        energy: Arc::new(AtomicU32::new(0)),
+        low: Arc::new(AtomicU32::new(0)),
+        mid: Arc::new(AtomicU32::new(0)),
+        high: Arc::new(AtomicU32::new(0)),
+        underruns: Arc::new(AtomicU64::new(0)),
+    };
+
+    let sink = vox_lib::services::audio::sink::PlaybackStreamContext::new(
+        consumer,
+        handles.clone(),
+        Arc::clone(&discard_request),
+        Arc::clone(&turn_armed),
+        &telemetry,
+    );
+
+    let engine = PlaybackEngine::from_parts(producer, handles, discard_request, turn_armed, None);
+
+    (Arc::new(engine), sink)
+}
+
 /// Creates a mock AppHandle for integration testing without desktop event loops.
 pub fn get_test_app_handle() -> AppHandle<tauri::test::MockRuntime> {
     tauri::test::mock_app().handle().clone()

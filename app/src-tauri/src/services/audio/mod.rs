@@ -40,7 +40,7 @@ pub mod decode;
 pub mod device;
 pub mod playback;
 pub mod resampler;
-pub(crate) mod sink;
+pub mod sink;
 
 pub use decode::{
     decode_bytes_to_24khz_mono, decode_to_24khz_mono, truncate_to, write_wav_f32,

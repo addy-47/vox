@@ -1,4 +1,4 @@
-import React, { memo, useRef } from "react";
+import React, { memo, useRef, useCallback } from "react";
 import { X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
@@ -19,11 +19,29 @@ const EdgePanelInner = memo(
   ({ side, open, onClose, title, headerActions, className, children }: EdgePanelProps) => {
     const panelRef = useRef<HTMLElement>(null);
 
-    // Escape key or clicking outside dismisses the panel
+    // Escape key or clicking outside dismisses the panel, but preserves opposing edge panels
+    const shouldDismissOnPointerDown = useCallback((target: Node) => {
+      const el = panelRef.current;
+      if (!el || !(target instanceof Element)) return false;
+      if (el.contains(target)) return false;
+
+      // Clicking inside any edge panel (e.g. opposing side) must NOT dismiss this panel
+      if (target.closest("[data-edge-panel]")) {
+        return false;
+      }
+      // Clicking on an edge trigger button must NOT dismiss this panel
+      if (target.closest("[data-edge-trigger]")) {
+        return false;
+      }
+
+      return true;
+    }, []);
+
     useOverlay({
       onClose,
       ref: panelRef,
       dismissOnOutside: true,
+      shouldDismissOnPointerDown,
       active: open,
     });
 
@@ -36,6 +54,7 @@ const EdgePanelInner = memo(
             ref={panelRef}
             role="dialog"
             aria-label={title}
+            data-edge-panel={side}
             initial={{ x: isLeft ? "-100%" : "100%" }}
             animate={{ x: 0 }}
             exit={{ x: isLeft ? "-100%" : "100%" }}

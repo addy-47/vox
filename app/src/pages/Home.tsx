@@ -136,6 +136,7 @@ export const Home = memo(() => {
             onClick={() => togglePanel("sessions")}
             aria-label={SESSION_COPY.openRailAriaLabel}
             aria-expanded={sessionsOpen}
+            data-edge-trigger="left"
             className={cn(
               "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer pointer-events-auto shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
               sessionsOpen

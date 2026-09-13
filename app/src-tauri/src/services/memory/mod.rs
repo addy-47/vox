@@ -51,8 +51,18 @@ pub use crate::core::error::MemoryError;
 pub const QUIET_INGESTION_DEBOUNCE_SECS: u64 = 30;
 pub const COMPACTION_SENTINEL_TURN_ID: u32 = 999_999;
 
-/// Spawns a background observer task that watches for sustained 30-second quiet periods in {Ready, Paused}
-/// and executes an ingestion deduplication cycle on the database.
+fn is_quiet_state(state: InteractionState) -> bool {
+    matches!(
+        state,
+        InteractionState::Idle
+            | InteractionState::Ready
+            | InteractionState::Paused
+            | InteractionState::Sleeping
+    )
+}
+
+/// Spawns a background observer task that watches for sustained 30-second quiet periods in {Idle, Ready, Paused, Sleeping}
+/// and executes an ingestion deduplication cycle on the database when pending items exist and pipeline processing is enabled.
 pub fn spawn_quiet_ingestion_observer(state: Arc<AppState>) {
     tauri::async_runtime::spawn(async move {
         let mut state_rx = state.pipeline.state_rx.clone();
@@ -61,16 +71,38 @@ pub fn spawn_quiet_ingestion_observer(state: Arc<AppState>) {
 
         loop {
             let current = *state_rx.borrow_and_update();
-            if current == InteractionState::Ready || current == InteractionState::Paused {
+            let is_enabled = state
+                .settings
+                .read()
+                .map(|s| s.memory.pipeline_processing_enabled)
+                .unwrap_or(true);
+
+            if is_enabled && is_quiet_state(current) {
                 tokio::select! {
                     _ = tokio::time::sleep(std::time::Duration::from_secs(QUIET_INGESTION_DEBOUNCE_SECS)) => {
                         let latest = state.pipeline.state();
-                        if latest == InteractionState::Ready || latest == InteractionState::Paused {
-                            log::info!("[Memory::Ingestion] 30s sustained quiet state reached. Running ingestion deduplication cycle.");
+                        let still_enabled = state
+                            .settings
+                            .read()
+                            .map(|s| s.memory.pipeline_processing_enabled)
+                            .unwrap_or(true);
+
+                        if still_enabled && is_quiet_state(latest) {
                             match db.connect() {
                                 Ok(conn) => {
-                                    if let Err(e) = ingestion::run_ingestion_cycle(&conn).await {
-                                        log::warn!("[Memory::Ingestion] Background ingestion cycle error: {}", e);
+                                    match crate::persistence::has_unfinished_items(&conn).await {
+                                        Ok(true) => {
+                                            log::info!("[Memory::Ingestion] 30s sustained quiet state reached. Running ingestion deduplication cycle.");
+                                            if let Err(e) = ingestion::run_ingestion_cycle(&conn).await {
+                                                log::warn!("[Memory::Ingestion] Background ingestion cycle error: {}", e);
+                                            }
+                                        }
+                                        Ok(false) => {
+                                            // Queue is quiescent; no deduplication needed.
+                                        }
+                                        Err(e) => {
+                                            log::warn!("[Memory::Ingestion] Failed to check queue status: {}", e);
+                                        }
                                     }
                                 }
                                 Err(e) => {
@@ -85,9 +117,17 @@ pub fn spawn_quiet_ingestion_observer(state: Arc<AppState>) {
                         }
                     }
                 }
-            } else if state_rx.changed().await.is_err() {
-                break;
+            } else {
+                tokio::select! {
+                    res = state_rx.changed() => {
+                        if res.is_err() {
+                            break;
+                        }
+                    }
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {}
+                }
             }
         }
     });
 }
+

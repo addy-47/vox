@@ -2,12 +2,14 @@
 //! playback_interrupt_test.rs — Playback Lifecycle + VAD Suppression + Barge-in
 //! ============================================================================
 //! Category     : Integration Test (Seam 9)
-//! Component    : services/audio/playback.rs + pipeline/assistant/playback.rs +
-//!                pipeline/assistant/interrupt.rs + services/vad/actor.rs
+//! Component    : services/audio/playback.rs + services/audio/sink.rs +
+//!                pipeline/assistant/playback.rs + pipeline/assistant/interrupt.rs +
+//!                pipeline/router.rs + services/vad/actor.rs
 //! Prerequisites: Local Earshot VAD + test assets in tests/assets/
 //! Execution    : cargo nextest run --test playback_interrupt_test --release --nocapture --test-threads=1
-//! Metrics      : Pre-roll cushion gating, flush_pre_roll arming, pending job
-//!                deferral, VAD speaker ducking suppression, barge-in turn advancement
+//! Metrics      : Pre-roll cushion gating, real sink drain callback PlaybackFinished
+//!                emission, pending job deferral, VAD speaker ducking suppression,
+//!                barge-in 6-step atomic lifecycle
 //! ============================================================================
 
 mod common;
@@ -20,29 +22,24 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ringbuf::traits::{Consumer, Observer};
+use ringbuf::traits::Observer;
 use vox_lib::{
     core::{
-        events::VoxEvent,
-        settings::{AudioOutputMode, InteractionMode, PipelineMode},
+        events::{AudioIntent, VoxEvent},
+        settings::{AudioOutputMode, InteractionMode},
         state::{InteractionOwner, InteractionState},
     },
-    pipeline::{
-        assistant::{
-            interrupt::on_interrupt,
-            playback::{on_playback_finished, on_playback_started},
-        },
-        RoutingContext,
-    },
+    pipeline::router::spawn_router,
     services::vad::{actor::VadActorConfig, VadCommand},
 };
 
 /// Subtest 1: Ingest >= 12,000 samples while in Thinking -> triggers PlaybackStarted -> Speaking.
-/// Drain buffer with pending_jobs == 0 -> triggers PlaybackFinished -> Ready.
+/// Drain buffer with pending_jobs == 0 through real sink callback -> triggers PlaybackFinished -> Ready.
 #[tokio::test]
 async fn test_playback_gates_thinking_to_speaking_and_speaking_to_ready() {
     let test_timeout = Duration::from_secs(15);
     tokio::time::timeout(test_timeout, async {
+        let _guard = common::paths::TempPathsGuard::new();
         vox_lib::utils::paths::init();
         let (app, state) = common::harness::get_test_app_and_state().await;
 
@@ -55,85 +52,83 @@ async fn test_playback_gates_thinking_to_speaking_and_speaking_to_ready() {
         let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
         pending_jobs.store(0, Ordering::Relaxed);
 
-        let (playback_engine, consumer_arc) =
-            common::harness::create_mock_playback_engine_with_handles(
+        let (playback_engine, mut sink_ctx) =
+            common::harness::create_headless_playback_with_sink(
                 event_tx.clone(),
+                Arc::clone(&state.pipeline.current_state_atomic),
                 current_turn_id,
                 Arc::clone(&pending_jobs),
             );
 
-        let ctx = RoutingContext {
-            pipeline_mode: PipelineMode::Modular,
-            interaction_mode: InteractionMode::Passive,
-            owner: InteractionOwner::Assistant,
-        };
+        // Spawn central production router pump
+        let router_handle = spawn_router(app.clone(), event_rx)
+            .expect("Failed to spawn router thread");
 
         // 1. Ingest 6,000 samples (24kHz upsamples 2x to 12,000 48kHz samples in playback buffer)
         // MODULAR_PREROLL_THRESHOLD_SAMPLES is 12,000.
         let chunk_24k = vec![0.1f32; 6000];
         playback_engine.ingest_chunk(&chunk_24k);
 
-        // Assert PlaybackStarted was emitted
-        let ev = event_rx.recv_timeout(Duration::from_millis(500)).expect(
-            "PlaybackStarted must be emitted once pre-roll cushion (12,000 samples) is met",
-        );
-        match ev {
-            VoxEvent::PlaybackStarted {
-                turn_id: tid,
-                intent,
-            } => {
-                assert_eq!(tid, turn_id, "Emitted turn_id must match active turn");
-                on_playback_started(tid, intent, &app, &state, &ctx);
+        // Observable Exit 1: PlaybackStarted was emitted autonomously by PlaybackEngine,
+        // and central router processed it to transition Thinking -> Speaking.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if state.pipeline.state() == InteractionState::Speaking {
+                break;
             }
-            other => panic!("Expected PlaybackStarted, got {:?}", other),
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
-
         assert_eq!(
             state.pipeline.state(),
             InteractionState::Speaking,
-            "Router on_playback_started must transition Thinking -> Speaking"
+            "Central router must transition Thinking -> Speaking upon PlaybackStarted"
         );
 
-        // 2. Drain consumer buffer
-        {
-            let mut cons = consumer_arc.lock();
-            let len = cons.occupied_len();
-            let drained = cons.skip(len);
-            assert!(
-                drained >= 12000,
-                "Buffer must contain at least 12000 samples"
-            );
-            assert!(cons.is_empty(), "Consumer must be drained completely");
+        // 2. Audio Output Drain via Real Sink Callback
+        // CPAL repeatedly calls process_output_buffer until consumer is drained.
+        let mut out = [0.0f32; 1024];
+        let mut total_drained = 0;
+        while !sink_ctx.consumer.is_empty() {
+            let before = sink_ctx.consumer.occupied_len();
+            sink_ctx.process_output_buffer(&mut out);
+            let after = sink_ctx.consumer.occupied_len();
+            total_drained += before.saturating_sub(after);
         }
+        assert!(
+            total_drained >= 12000,
+            "Real sink callback must drain at least 12,000 samples (got {})",
+            total_drained
+        );
+        assert!(sink_ctx.consumer.is_empty(), "Consumer must be drained completely");
 
-        // Simulate sink drain check: pending_jobs == 0 and consumer is empty -> PlaybackFinished
-        assert_eq!(pending_jobs.load(Ordering::Relaxed), 0);
-        event_tx
-            .send(VoxEvent::PlaybackFinished {
-                turn_id,
-                intent: vox_lib::core::events::AudioIntent::TurnResponse,
-            })
-            .expect("Failed to emit PlaybackFinished");
+        // Autonomous sink completion:
+        // Calling process_output_buffer with empty consumer and pending_jobs == 0
+        // autonomously sets turn_armed = false and emits PlaybackFinished to event_tx!
+        sink_ctx.process_output_buffer(&mut out);
 
-        let finish_ev = event_rx
-            .recv_timeout(Duration::from_millis(500))
-            .expect("PlaybackFinished must be received");
-        match finish_ev {
-            VoxEvent::PlaybackFinished {
-                turn_id: tid,
-                intent,
-            } => {
-                assert_eq!(tid, turn_id);
-                on_playback_finished(tid, intent, &app, &state, &ctx);
+        // Observable Exit 2: Central router receives PlaybackFinished from sink callback
+        // and transitions Speaking -> Ready.
+        let finish_deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < finish_deadline {
+            if state.pipeline.state() == InteractionState::Ready {
+                break;
             }
-            other => panic!("Expected PlaybackFinished, got {:?}", other),
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
-
         assert_eq!(
             state.pipeline.state(),
             InteractionState::Ready,
-            "Router on_playback_finished must transition Speaking -> Ready when pending_jobs == 0"
+            "Central router must transition Speaking -> Ready upon autonomous PlaybackFinished from sink callback"
         );
+
+        // Teardown with bounded joins
+        let _ = event_tx.send(VoxEvent::Shutdown);
+        let _ = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::task::spawn_blocking(move || router_handle.join()),
+        )
+        .await
+        .expect("Router thread join timed out");
     })
     .await
     .expect("test_playback_gates_thinking_to_speaking_and_speaking_to_ready timed out");
@@ -145,6 +140,7 @@ async fn test_playback_gates_thinking_to_speaking_and_speaking_to_ready() {
 async fn test_short_utterance_requires_flush_to_arm() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
+        let _guard = common::paths::TempPathsGuard::new();
         vox_lib::utils::paths::init();
         let (_app, state) = common::harness::get_test_app_and_state().await;
 
@@ -199,6 +195,7 @@ async fn test_short_utterance_requires_flush_to_arm() {
 async fn test_playback_finished_deferred_while_pending() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
+        let _guard = common::paths::TempPathsGuard::new();
         vox_lib::utils::paths::init();
         let (app, state) = common::harness::get_test_app_and_state().await;
 
@@ -209,43 +206,84 @@ async fn test_playback_finished_deferred_while_pending() {
         let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
         pending_jobs.store(1, Ordering::Relaxed);
 
-        let ctx = RoutingContext {
-            pipeline_mode: PipelineMode::Modular,
-            interaction_mode: InteractionMode::Passive,
-            owner: InteractionOwner::Assistant,
-        };
+        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
+        let current_turn_id = Arc::new(AtomicU32::new(turn_id));
 
-        // 1. Attempt on_playback_finished while pending_jobs == 1
-        on_playback_finished(
-            turn_id,
-            vox_lib::core::events::AudioIntent::TurnResponse,
-            &app,
-            &state,
-            &ctx,
+        let (_playback_engine, mut sink_ctx) =
+            common::harness::create_headless_playback_with_sink(
+                event_tx.clone(),
+                Arc::clone(&state.pipeline.current_state_atomic),
+                current_turn_id,
+                Arc::clone(&pending_jobs),
+            );
+
+        let router_handle = spawn_router(app.clone(), event_rx)
+            .expect("Failed to spawn router thread");
+
+        // 1. Real sink callback deferral:
+        // When buffer is empty and pending_jobs > 0, sink records underrun and suppresses PlaybackFinished.
+        let mut out = [0.0f32; 1024];
+        sink_ctx.process_output_buffer(&mut out);
+        assert_eq!(
+            sink_ctx.playback_underruns.load(Ordering::Relaxed),
+            1,
+            "Sink callback must record underrun when buffer is empty but jobs are pending"
         );
-
-        // Must NOT transition to Ready
+        tokio::time::sleep(Duration::from_millis(50)).await;
         assert_eq!(
             state.pipeline.state(),
             InteractionState::Speaking,
-            "on_playback_finished must be deferred while pending_synthesis_jobs > 0"
+            "Pipeline must remain Speaking: sink callback does not emit PlaybackFinished while jobs are pending"
         );
 
-        // 2. Decrement pending_jobs to 0 and call on_playback_finished again
-        pending_jobs.store(0, Ordering::Relaxed);
-        on_playback_finished(
-            turn_id,
-            vox_lib::core::events::AudioIntent::TurnResponse,
-            &app,
-            &state,
-            &ctx,
+        // 2. Router handler deferral (Mutant 9.1 verification):
+        // Even if a PlaybackFinished event arrives at router while pending_jobs == 1,
+        // router must defer and remain in Speaking.
+        event_tx
+            .send(VoxEvent::PlaybackFinished {
+                turn_id,
+                intent: AudioIntent::TurnResponse,
+            })
+            .expect("Failed to send PlaybackFinished");
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            state.pipeline.state(),
+            InteractionState::Speaking,
+            "on_playback_finished must be deferred by router while pending_synthesis_jobs > 0"
         );
+
+        // 3. Decrement pending_jobs to 0 and send PlaybackFinished again
+        pending_jobs.store(0, Ordering::Relaxed);
+        event_tx
+            .send(VoxEvent::PlaybackFinished {
+                turn_id,
+                intent: AudioIntent::TurnResponse,
+            })
+            .expect("Failed to send PlaybackFinished");
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if state.pipeline.state() == InteractionState::Ready {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
 
         assert_eq!(
             state.pipeline.state(),
             InteractionState::Ready,
             "on_playback_finished must transition to Ready once pending_synthesis_jobs == 0"
         );
+
+        // Teardown with bounded joins
+        let _ = event_tx.send(VoxEvent::Shutdown);
+        let _ = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::task::spawn_blocking(move || router_handle.join()),
+        )
+        .await
+        .expect("Router thread join timed out");
     })
     .await
     .expect("test_playback_finished_deferred_while_pending timed out");
@@ -256,6 +294,7 @@ async fn test_playback_finished_deferred_while_pending() {
 /// through the VAD actor must be completely suppressed (no SpeechStart emitted).
 #[test]
 fn test_vad_ducking_suppresses_during_speaker_playback() {
+    let _guard = common::paths::TempPathsGuard::new();
     vox_lib::utils::paths::init();
     let (_app, state) = common::harness::get_test_app_and_state_sync();
 
@@ -300,16 +339,23 @@ fn test_vad_ducking_suppresses_during_speaker_playback() {
         "VAD ducking suppression during Speaker Speaking",
     );
 
-    // Teardown VAD actor
+    // Teardown VAD actor with bounded thread join
     engine_shutdown.store(true, Ordering::Relaxed);
     let _ = vad_cmd_tx.send(VadCommand::Shutdown);
-    let _ = vad_join.join();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = vad_join.join();
+        let _ = tx.send(());
+    });
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("VAD actor thread join timed out");
 }
 
 /// Subtest 5: VAD suppression resumes after playback (Speaker in Ready),
 /// and Headset mode never suppresses speech even while Speaking.
 #[test]
 fn test_vad_ducking_resumes_after_playback_and_headset_never_suppresses() {
+    let _guard = common::paths::TempPathsGuard::new();
     vox_lib::utils::paths::init();
     let (_app, state) = common::harness::get_test_app_and_state_sync();
 
@@ -385,22 +431,32 @@ fn test_vad_ducking_resumes_after_playback_and_headset_never_suppresses() {
         "Headset mode must NEVER suppress speech, even during Speaking state"
     );
 
-    // Teardown
+    // Teardown with bounded thread join
     engine_shutdown.store(true, Ordering::Relaxed);
     let _ = vad_cmd_tx.send(VadCommand::Shutdown);
-    let _ = vad_join.join();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = vad_join.join();
+        let _ = tx.send(());
+    });
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("VAD actor thread join timed out");
 }
 
 /// Subtest 6: Barge-in interrupt lifecycle.
 /// Seed Speaking state during Turn 1 with pending synthesis and unplayed audio.
-/// Calling on_interrupt (or ptt_start) cancels the turn, clears accumulator,
+/// PttStart arriving at the router cancels the turn, clears accumulator,
 /// cancels playback, rotates to Turn 2, and transitions state to Listening.
 #[tokio::test]
 async fn test_barge_in_cancels_and_advances_turn() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
+        let _guard = common::paths::TempPathsGuard::new();
         vox_lib::utils::paths::init();
         let (app, state) = common::harness::get_test_app_and_state().await;
+        state
+            .owner
+            .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
 
         // 1. Seed Turn 1 in Speaking state
         let turn_1_id = 1;
@@ -426,10 +482,10 @@ async fn test_barge_in_cancels_and_advances_turn() {
         }
 
         // Attach mock playback engine with 5,000 unplayed samples
-        let (event_tx, _event_rx) = mpsc::channel::<VoxEvent>();
+        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
         let (playback_engine, _consumer_arc) =
             common::harness::create_mock_playback_engine_with_handles(
-                event_tx,
+                event_tx.clone(),
                 Arc::new(AtomicU32::new(turn_1_id)),
                 Arc::clone(&state.pipeline.pending_synthesis_jobs),
             );
@@ -448,27 +504,40 @@ async fn test_barge_in_cancels_and_advances_turn() {
             }
         }
 
-        // 2. Trigger interrupt via on_interrupt
-        let ctx = RoutingContext {
-            pipeline_mode: PipelineMode::Modular,
-            interaction_mode: InteractionMode::PTT,
-            owner: InteractionOwner::Assistant,
-        };
+        // Set state to Speaking (attach_mock_engine sets state to Ready)
+        state.pipeline.set_state(InteractionState::Speaking);
 
-        let new_turn_id = on_interrupt(&app, &state, &ctx);
+        // Configure Assistant interaction mode to PTT
+        {
+            let mut settings = state.settings.write().unwrap();
+            settings.interaction.mode = InteractionMode::PTT;
+        }
 
-        // 3. Verify Barge-In Invariants:
-        // - Turn ID strictly advanced
+        // Spawn central production router
+        let router_handle = spawn_router(app.clone(), event_rx)
+            .expect("Failed to spawn router thread");
+
+        // 2. Real Production Entry Seam: PttStart arrives while in Speaking
+        event_tx
+            .send(VoxEvent::PttStart)
+            .expect("Failed to send PttStart");
+
+        // 3. Wait for router to process interrupt and transition to Listening
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if state.pipeline.state() == InteractionState::Listening {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        // 4. Verify Barge-In Invariants:
+        let new_turn_id = state.pipeline.peek_turn_id();
         assert!(
             new_turn_id > turn_1_id,
             "Interrupt must generate new turn_id > old_turn_id (got {} vs {})",
             new_turn_id,
             turn_1_id
-        );
-        assert_eq!(
-            state.pipeline.peek_turn_id(),
-            new_turn_id,
-            "State turn_id must match returned new_turn_id"
         );
 
         // - Old Turn 1 token must be cancelled
@@ -503,9 +572,11 @@ async fn test_barge_in_cancels_and_advances_turn() {
             );
         }
 
-        // - Playback engine must be cancelled
-        // Calling cancel() sets cancel_flag and discard_request
-        playback_engine.cancel(); // ensure mock is cancelled
+        // - Playback engine must be cancelled by on_interrupt
+        assert!(
+            playback_engine.is_cancelled(),
+            "Playback engine must be cancelled on interrupt"
+        );
 
         // - Pipeline state transitions to Listening
         assert_eq!(
@@ -513,6 +584,15 @@ async fn test_barge_in_cancels_and_advances_turn() {
             InteractionState::Listening,
             "Interrupt must transition state to Listening for subsequent user speech"
         );
+
+        // Teardown with bounded joins
+        let _ = event_tx.send(VoxEvent::Shutdown);
+        let _ = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::task::spawn_blocking(move || router_handle.join()),
+        )
+        .await
+        .expect("Router thread join timed out");
     })
     .await
     .expect("test_barge_in_cancels_and_advances_turn timed out");

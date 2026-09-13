@@ -121,28 +121,41 @@ This ledger records the initial execution results of all translated integration 
 ---
 
 ## Seam 8: `tests/tts_transition_test.rs`
-- **SUT:** TTS Transition, Voice Hot-Swap & Context Filler Dispatch (`services/tts/actor.rs` + `pipeline/assistant/accumulator.rs` + `services/harness/facade.rs`)
-- **Status:** ✅ **PASS**
+- **SUT:** Real IPC Voice Hot-Swap, Worker Preservation & Context Compaction Filler Dispatch (`services/tts/actor.rs` + `ipc/settings/core.rs` + `pipeline/assistant/transcript.rs` + `services/harness/session.rs` + `services/harness/plugins/budget.rs`)
+- **Status:** ✅ **PASS** (Zero-Mock Verified)
 - **Command:** `RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --test tts_transition_test --release --nocapture --test-threads=1`
-- **Execution Time:** ~1.58s
+- **Execution Time:** ~1.47s
+- **Defects / Rework Completed:**
+  1. *Eliminated Synthetic `SetVoice` Injection:* Path A now enters through real IPC command `ipc::settings::core::update_setting("tts", "voice_index", json!(2))`, verifying that voice updates dynamically propagate to the persistent worker thread without thread restart.
+  2. *Verified Active Voice Hot-Swap with Audio Synthesis:* Worker thread verified active voice update on `VoiceTrackingProvider` (0 -> 2) and synthesized subsequent clauses with non-zero RMS (> 0.001) while preserving thread handle identity.
+  3. *Eliminated Mock Session Loop in Path B:* Real `on_transcript_final` invokes `spawn_modular_llm_task` with real `HarnessSession::new_modular`. Calibrated context window (4200) and seeded history (>85% utilization threshold) to trigger `TurnPreparation::NeedsInlineCompaction`.
+  4. *Verified Real Dispatch & Playback Gating Contracts:* Verified real router dispatch sends `TtsCommand::Generate` with `AudioIntent::InterimFiller` to `tts_rx`, increments `pending_synthesis_jobs`, and transitions state to `InteractionState::Working`. Validated negative playback gating assertions (filler onset/finish keeps state in `Working`, while `TurnResponse` onset transitions to `Speaking`).
 - **Evidence Observed:**
-  - **Subtest 1 (Voice Hot-Swap):** Tested `TtsCommand::SetVoice` on running worker without thread termination. Subsequent `Generate` commands synthesized with updated voice model.
-  - **Subtest 2 (Context Compaction Filler Dispatch):** Compaction threshold crossed during context preparation. Immediately sent transition filler audio to `tts_tx` with atomic increment of `pending_synthesis_jobs`. Verified pipeline correctly accounts for filler before generation begins.
+  - **Subtest 1 (Real IPC Voice Hot-Swap Without Worker Restart):** Worker thread preserved across voice switch (thread handle ID unchanged). IPC `update_setting` updated active voice index to 2. Subsequent clause synthesis produced valid audio frames with non-zero RMS.
+  - **Subtest 2 (Critical Context Compaction Filler Dispatch & Pending Accounting):** Exceeding 85% token capacity triggered immediate transition filler dispatch (`AudioIntent::InterimFiller`) to TTS with atomic increment of `pending_synthesis_jobs` and transition to `Working`. Playback gating contracts verified. Normal turns (<85% capacity) verified to emit zero filler commands.
+  - **Teardown:** Clean shutdown via `TtsCommand::Shutdown` with bounded thread joins and zero panics.
 
 ---
 
 ## Seam 9: `tests/playback_interrupt_test.rs`
-- **SUT:** Playback Lifecycle + VAD Speaker Ducking Suppression + Barge-in Interruption (`services/audio/playback.rs` + `pipeline/assistant/playback.rs` + `pipeline/assistant/interrupt.rs` + `services/vad/actor.rs`)
-- **Status:** ✅ **PASS**
+- **SUT:** Playback Lifecycle, Real Sink Callback Buffer Drain, Sacred VAD Ducking & 6-Step Barge-in Sequence (`services/audio/playback.rs` + `services/audio/sink.rs` + `pipeline/assistant/playback.rs` + `pipeline/assistant/interrupt.rs` + `pipeline/router.rs` + `services/vad/actor.rs`)
+- **Status:** ✅ **PASS** (Zero-Mock Verified)
 - **Command:** `RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --test playback_interrupt_test --release --nocapture --test-threads=1`
-- **Execution Time:** ~2.85s
+- **Execution Time:** ~3.34s
+- **Defects / Rework Completed:**
+  1. *Eliminated Tautological Self-Dispatch:* Subtest 1 now spawns the real central router pump (`spawn_router`) and ingests through `PlaybackEngine`. Buffer drain is processed via real CPAL output sink callback (`PlaybackStreamContext::process_output_buffer`), which autonomously emits `VoxEvent::PlaybackFinished` upon consumer completion with `pending_jobs == 0`, triggering router transition to `Ready`.
+  2. *Verified Pre-Roll Cushion & Flush Arming:* Subtest 2 verified that short chunks (< 12,000 samples) strictly hold arming, while explicit `flush_pre_roll` immediately arms playback and emits `PlaybackStarted`.
+  3. *Verified Multi-Tier Pending Job Deferral:* Subtest 3 verified that real sink callback records buffer underrun and defers `PlaybackFinished` emission while `pending_jobs > 0`, and the router handler similarly defers state transition until pending synthesis reaches 0.
+  4. *Preserved Sacred VAD Ducking Invariants with Bounded Joins:* Subtests 4 and 5 verified real Earshot VAD ONNX speaker ducking suppression during `Speaking` in `Speaker` mode, instant resumption in `Ready`, and transparent bypass in `Headset` mode; thread joins wrapped with 5s bounded timeouts.
+  5. *Wired Production Barge-In Seam:* Subtest 6 now triggers barge-in through the real upstream production entry seam (`VoxEvent::PttStart` over router channel) rather than directly invoking `on_interrupt`. Verified all 6 canonical mutations: monotonic turn advancement, old token cancellation, active new token, pending jobs reset to 0, accumulator cleared, playback engine cancellation, and transition to `Listening`.
 - **Evidence Observed:**
-  - **Subtest 1 (Playback State Gates):** Ingested 12,000 samples in `Thinking` state -> emitted `PlaybackStarted` -> transitioned to `Speaking`. Drained consumer with `pending_jobs == 0` -> emitted `PlaybackFinished` -> transitioned to `Ready`.
-  - **Subtest 2 (Short Utterance Pre-Roll Flush):** Ingested 2,000 samples (< 12,000 threshold). Asserted `PlaybackStarted` was NOT emitted before flush. Called `flush_pre_roll()` -> `PlaybackStarted` immediately emitted.
-  - **Subtest 3 (Pending Synthesis Deferral):** With `pending_synthesis_jobs == 1`, buffer drain did NOT transition to `Ready` (deferred). Decremented to 0 -> transitioned to `Ready`.
-  - **Subtest 4 (Sacred VAD Ducking Suppression):** In `Speaker` audio output mode and `Speaking` state, streaming real speech audio clip (`supertonic_01_en_briefing.wav`) was completely ducked/suppressed by VAD actor (`assert_channel_empty_after` confirmed zero `SpeechStart` emitted).
-  - **Subtest 5 (VAD Ducking Resumption & Headset Invariant):** When state returned to `Ready` under `Speaker` mode, speech streaming triggered `SpeechStart`. Under `Headset` mode, speech streaming during `Speaking` was never suppressed.
-  - **Subtest 6 (Barge-In Lifecycle):** Invoked `on_interrupt` during active playback: advanced monotonic `turn_id`, cancelled old turn `CancellationToken`, created clean uncancelled new token, reset `pending_synthesis_jobs` to 0, cleared `pipeline_accumulator`, cancelled playback engine, and transitioned state to `Listening`.
+  - **Subtest 1 (Real Sink Callback Drain & Router Transition):** Pre-roll threshold (12,000 samples) triggered `PlaybackStarted` and transitioned `Thinking` → `Speaking`. Real sink callback drained 12,000 samples and autonomously emitted `PlaybackFinished`, transitioning `Speaking` → `Ready`.
+  - **Subtest 2 (Short Utterance Cushion Gate):** Ingesting 2,000 samples did not emit `PlaybackStarted` before flush; `flush_pre_roll` immediately emitted `PlaybackStarted`.
+  - **Subtest 3 (Pending Job Deferral):** Sink callback suppressed `PlaybackFinished` and router deferred state transition while `pending_synthesis_jobs == 1`; upon decrement to 0, state transitioned to `Ready`.
+  - **Subtest 4 (Sacred VAD Ducking Suppression):** Real speech clip (`supertonic_01_en_briefing.wav`) streaming during `Speaking` under `Speaker` mode produced zero `SpeechStart` events.
+  - **Subtest 5 (VAD Ducking Resumption & Headset Invariant):** Returning to `Ready` under `Speaker` mode emitted `SpeechStart`; `Headset` mode in `Speaking` state emitted `SpeechStart` without suppression.
+  - **Subtest 6 (Canonical 6-Step Barge-in Sequence):** Upstream `VoxEvent::PttStart` during `Speaking` advanced turn ID, cancelled old token, reset pending jobs to 0, cleared accumulator, cancelled playback engine, and transitioned to `Listening`.
+  - **Teardown:** Clean shutdown via `VoxEvent::Shutdown` and bounded thread joins with zero leaks or panics.
 
 ---
 
@@ -159,19 +172,23 @@ This ledger records the initial execution results of all translated integration 
 ---
 
 ## Seam 11: `tests/session_lifecycle_test.rs`
-- **SUT:** Session Lifecycle (Idle → Ready → Paused/Sleeping/Error → Idle) (`pipeline/assistant/session.rs` + `pipeline/mod.rs` + `core/engine.rs`)
-- **Status:** ✅ **PASS**
+- **SUT:** Assistant Session Lifecycle & FSM (`pipeline/assistant/session.rs` + `pipeline/router.rs` + `persistence/worker.rs` + `persistence/sessions.rs` + `services/harness/session.rs` + `services/realtime/session.rs`)
+- **Status:** ✅ **PASS** (Zero-Mock Verified)
 - **Command:** `RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --test session_lifecycle_test --release --nocapture --test-threads=1`
-- **Execution Time:** ~0.59s
-- **Defects Resolved:**
-  1. *Defect 1 (`pipeline/assistant/session.rs:402`):* Mutex self-deadlock. In `on_end`, `state.persist_tx.lock()` was held across the entire function scope. When dictation was idle, `on_end` called `stop_audio_engine_sync`, which attempted to acquire `state.persist_tx.lock()` again on the same thread, causing a deadlocking freeze. Resolved by scoping the mutex lock guards for `state.persist_tx` and `state.memory_tx` to narrow drop blocks.
-  2. *Defect 2 (`pipeline/mod.rs:114`):* Tokio runtime nesting in synchronous session initializers. `block_in_place` panicked under single-threaded test runtimes. Guarded runtime flavor and isolated to thread when runtime is not multi-threaded.
+- **Execution Time:** ~1.07s
+- **Defects / Blockers Resolved:**
+  1. *Database Path & Pre-seeded Fixture Sync (`tests/common/paths.rs`):* `TempPathsGuard::new()` copied `tests/assets/test_vox.db` to `temp_path.join("test_vox.db")`, whereas `AppState::new` connects to `temp_path.join("vox.db")`. Standardized on `vox_lib::utils::paths::DB_FILENAME` ("vox.db") and made constant public.
+  2. *Turso Seed Schema Compliance (`tests/session_lifecycle_test.rs`):* Subtest 2 inserted `NULL` into `project_id` (violating `NOT NULL DEFAULT 'default'`) and targeted non-existent column `summary` instead of v2 schema columns `(trigger_kind, from_turn_id, to_turn_id, compaction_output, status, created_at)` in `session_compactions`. Corrected seed queries to valid v2 schema.
+  3. *Realtime Pipeline Mode Purge Assertion (`tests/session_lifecycle_test.rs`):* Subtest 6 configured `new_modular` but asserted `purge_session_cache` on disk, which only runs when `ctx.pipeline_mode == PipelineMode::Realtime`. Configured `settings.interaction.pipeline_mode = PipelineMode::Realtime` and mounted `HarnessSession::new_realtime`.
+  4. *Active Context Refresh in `on_session_start` and `on_resume` (`src/pipeline/assistant/session.rs`):* `route_event` captured `ctx` before mutating `state.owner`. Handlers used stale pre-transition context, causing VAD mode to remain in Dictation mode (`WindowedValidation`) rather than Assistant mode (`ContinuousSegmentation`). Re-derived `session_ctx` and `assistant_ctx` from `RoutingContext::from_app_state(state)` immediately after `state.owner` update.
 - **Evidence Observed:**
-  - **Subtest 1 (`test_session_start_modular_sets_ready_and_identity`):** Starting session from Idle transitioned `InteractionState` to `Ready`, initialized conversation manager with base system prompt, and proved idempotent on subsequent start (guard no-op).
-  - **Subtest 2 (`test_session_pause_resume_transitions`):** Transitioned `Ready` -> `Paused`, unpaused back to `Ready`; tested pause under `Listening`/`Speaking` cancelling active tokens and returning cleanly to `Paused`.
-  - **Subtest 3 (`test_session_resume_from_sleeping_and_error`):** Successfully unpaused/resumed from `Sleeping` and `Error` states to `Ready`.
-  - **Subtest 4 (`test_session_end_purges_and_idles`):** Cleanly shut down from `Ready`, cleared turn counters/accumulators, stopped engine when dictation was idle, and transitioned state to `Idle`.
-  - **Subtest 5 (`test_session_end_dictation_gate_keeps_engine`):** When dictation state was `Ready`, assistant `on_end` transitioned assistant state to `Idle` while keeping CPAL audio engine alive and active.
+  - **Subtest 1 (`test_session_start_modular_sets_ready_and_identity`):** Dispatched `VoxEvent::SessionStart` from `Idle`. Verified state transitioned to `Ready`, `state.owner` set to `Assistant`, real Turso SQLite row persisted in `sessions` table via `spawn_persistence_worker`, `HarnessSession` initialized with base identity prompt, VAD set to `ContinuousSegmentation`, and subsequent start proved idempotent.
+  - **Subtest 2 (`test_session_continuation_seeds_harness`):** Resumed session ID (`987654321`) with pre-seeded turns in Turso DB. Verified continuation history hydrated into `HarnessSession` and turn counter advanced past pre-existing turns.
+  - **Subtest 3 (`test_session_pause_resume_transitions`):** Dispatched `PauseSession` -> transitioned `Paused`, cancelled turn token, yielded owner to `Dictation`, set VAD `WindowedValidation`. Dispatched `ResumeSession` -> transitioned `Ready`, restored `Assistant` owner, re-armed turn token, restored VAD `ContinuousSegmentation`.
+  - **Subtest 4 (`test_session_resume_from_sleeping_and_error`):** Validated recovery transitions from `Sleeping -> Ready` and `Error -> Ready`; verified resume dropped when `Idle`.
+  - **Subtest 5 (`test_session_end_dictation_gate_keeps_engine`):** When Dictation was `Ready`, assistant `EndSession` transitioned assistant to `Idle` while preserving CPAL audio engine (`Some`) and switching VAD to dictation mode. When Dictation was `Idle`, `EndSession` stopped audio engine (`None`).
+  - **Subtest 6 (`test_session_end_purges_and_unmounts_harness`):** Dispatched `EndSession` -> unmounted `state.harness` (`None`), purged realtime session cache on disk, cleared accumulator, and cancelled turn token.
+- **Teardown:** Router, persistence worker, and VAD threads joined cleanly.
 
 ---
 

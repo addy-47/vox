@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Target, Plus, Minus, RefreshCw, Sparkles } from "lucide-react";
+import { Target, Plus, Minus, RefreshCw, Sparkles, MousePointerClick } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
@@ -11,6 +11,8 @@ interface GraphControlDockProps {
   onRefresh: () => void;
   onFocusCore: () => void;
   refreshing?: boolean;
+  selectModeEnabled?: boolean;
+  onToggleSelectMode?: () => void;
 }
 
 export const GraphControlDock = memo(
@@ -21,6 +23,8 @@ export const GraphControlDock = memo(
     onRefresh,
     onFocusCore,
     refreshing = false,
+    selectModeEnabled = false,
+    onToggleSelectMode,
   }: GraphControlDockProps) => {
     return (
       <aside
@@ -40,16 +44,39 @@ export const GraphControlDock = memo(
         </Tooltip>
 
         {/* Focus Personal Memory Core */}
-        <Tooltip label={MEMORY_COPY.personalMemory} side="left">
+        <Tooltip label={MEMORY_COPY.focusPersonalCore} side="left">
           <button
             type="button"
             onClick={onFocusCore}
-            aria-label="Focus Personal Core"
+            aria-label={MEMORY_COPY.focusPersonalCore}
             className="p-2.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] active:scale-95 transition-all cursor-pointer"
           >
             <Sparkles size={16} />
           </button>
         </Tooltip>
+
+        {/* Toggle Node Selection Mode */}
+        {onToggleSelectMode && (
+          <Tooltip
+            label={selectModeEnabled ? MEMORY_COPY.selectModeActive : MEMORY_COPY.selectModeInactive}
+            side="left"
+          >
+            <button
+              type="button"
+              onClick={onToggleSelectMode}
+              aria-label={selectModeEnabled ? MEMORY_COPY.selectModeActive : MEMORY_COPY.selectModeInactive}
+              aria-pressed={selectModeEnabled}
+              className={cn(
+                "p-2.5 rounded-xl transition-all cursor-pointer active:scale-95",
+                selectModeEnabled
+                  ? "bg-[rgba(var(--accent),0.2)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.45)] shadow-[0_0_12px_rgba(var(--accent),0.3)]"
+                  : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)]"
+              )}
+            >
+              <MousePointerClick size={16} />
+            </button>
+          </Tooltip>
+        )}
 
         {/* Subtle Divider */}
         <div className="w-5 h-[1px] bg-[rgba(var(--border),0.12)] my-0.5" />

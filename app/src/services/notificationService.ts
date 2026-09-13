@@ -28,6 +28,7 @@ export interface NotificationFilter {
   ids?: string[];
   group_key?: string;
   category?: string;
+  action_type?: string;
 }
 
 /** Normalize unknown future categories to the pipeline presentation. */
@@ -45,6 +46,20 @@ export function isReceipt(notif: NotificationRecord): boolean {
 /** Counts badge weight: unread, interactive tasks only. */
 export function countsTowardBadge(notif: NotificationRecord): boolean {
   return notif.status === "unread" && notif.action_type === "interactive";
+}
+
+/** Resolves task resolution state from metadata ("pending" | "resolved" | "failed"). */
+export function metadataResolution(notif: NotificationRecord): "pending" | "resolved" | "failed" {
+  try {
+    const parsed: unknown = JSON.parse(notif.metadata || "{}");
+    if (parsed && typeof parsed === "object" && "resolution" in parsed) {
+      const r = (parsed as { resolution: unknown }).resolution;
+      if (r === "resolved" || r === "failed" || r === "pending") return r;
+    }
+  } catch {
+    // malformed metadata fallback
+  }
+  return notif.action_type === "receipt" ? "resolved" : "pending";
 }
 
 /** Best-effort turn count from notification metadata JSON. */

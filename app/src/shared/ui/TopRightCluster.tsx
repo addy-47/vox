@@ -24,6 +24,7 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
           <button
             onClick={() => togglePanel("notifications")}
             aria-expanded={isNotifsOpen}
+            data-edge-trigger="right"
             className={cn(
               "relative inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
               isNotifsOpen
@@ -44,6 +45,7 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
           <button
             onClick={() => togglePanel("help")}
             aria-expanded={isHelpOpen}
+            data-edge-trigger="right"
             className={cn(
               "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
               isHelpOpen
