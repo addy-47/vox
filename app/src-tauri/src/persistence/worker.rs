@@ -35,7 +35,10 @@ pub fn spawn_persistence_worker(
             let conn = match vox_db.connect() {
                 Ok(c) => c,
                 Err(e) => {
-                    log::error!("[Persistence::Worker] Failed to vend worker connection: {}", e);
+                    log::error!(
+                        "[Persistence::Worker] Failed to vend worker connection: {}",
+                        e
+                    );
                     is_db_healthy.store(false, Ordering::Relaxed);
                     return;
                 }
@@ -247,20 +250,18 @@ async fn process_event(conn: &Connection, event: PersistenceEvent) -> anyhow::Re
                 .await;
 
                 match res {
-                    Ok(_) => {
-                        match conn.execute("COMMIT;", ()).await {
-                            Ok(_) => break,
-                            Err(ref e) if attempts < 3 && VoxDb::is_retryable(e) => {
-                                let _ = conn.execute("ROLLBACK;", ()).await;
-                                tokio::task::yield_now().await;
-                                continue;
-                            }
-                            Err(e) => {
-                                let _ = conn.execute("ROLLBACK;", ()).await;
-                                return Err(e.into());
-                            }
+                    Ok(_) => match conn.execute("COMMIT;", ()).await {
+                        Ok(_) => break,
+                        Err(ref e) if attempts < 3 && VoxDb::is_retryable(e) => {
+                            let _ = conn.execute("ROLLBACK;", ()).await;
+                            tokio::task::yield_now().await;
+                            continue;
                         }
-                    }
+                        Err(e) => {
+                            let _ = conn.execute("ROLLBACK;", ()).await;
+                            return Err(e.into());
+                        }
+                    },
                     Err(e) => {
                         let _ = conn.execute("ROLLBACK;", ()).await;
                         return Err(e.into());

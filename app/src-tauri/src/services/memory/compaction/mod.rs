@@ -99,7 +99,8 @@ pub async fn reconcile_uncompacted_sessions_on_boot(
                     "{{\"uncompacted_turns\": {}, \"resolution\": \"pending\"}}",
                     uncompacted_turns
                 );
-                let _ = update_interactive_notification(&conn, &existing.id, &new_msg, &new_meta).await;
+                let _ =
+                    update_interactive_notification(&conn, &existing.id, &new_msg, &new_meta).await;
             } else if let Err(e) = CompactionCoordinator::notify_uncompacted_session(
                 app,
                 &state.db,

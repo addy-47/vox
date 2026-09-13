@@ -130,4 +130,3 @@ pub fn spawn_quiet_ingestion_observer(state: Arc<AppState>) {
         }
     });
 }
-

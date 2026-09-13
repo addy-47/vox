@@ -112,7 +112,12 @@ pub async fn update_interactive_notification(
     let now = current_timestamp_ms();
     conn.execute(
         "UPDATE notifications SET message = ?, metadata = ?, updated_at = ? WHERE id = ?",
-        (message.to_string(), metadata.to_string(), now, id.to_string()),
+        (
+            message.to_string(),
+            metadata.to_string(),
+            now,
+            id.to_string(),
+        ),
     )
     .await?;
     Ok(())
@@ -321,8 +326,8 @@ pub async fn resolve_notification_in_place(
         return Ok(None);
     };
 
-    let mut meta_json: serde_json::Value = serde_json::from_str(&record.metadata)
-        .unwrap_or_else(|_| serde_json::json!({}));
+    let mut meta_json: serde_json::Value =
+        serde_json::from_str(&record.metadata).unwrap_or_else(|_| serde_json::json!({}));
     meta_json["resolution"] = serde_json::Value::String(resolution.to_string());
     let new_metadata = meta_json.to_string();
 
@@ -330,7 +335,12 @@ pub async fn resolve_notification_in_place(
 
     conn.execute(
         "UPDATE notifications SET metadata = ?, message = ?, updated_at = ? WHERE id = ?",
-        (new_metadata.clone(), new_message.clone(), now, id.to_string()),
+        (
+            new_metadata.clone(),
+            new_message.clone(),
+            now,
+            id.to_string(),
+        ),
     )
     .await?;
 
