@@ -209,16 +209,15 @@ async fn test_playback_finished_deferred_while_pending() {
         let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
         let current_turn_id = Arc::new(AtomicU32::new(turn_id));
 
-        let (_playback_engine, mut sink_ctx) =
-            common::harness::create_headless_playback_with_sink(
-                event_tx.clone(),
-                Arc::clone(&state.pipeline.current_state_atomic),
-                current_turn_id,
-                Arc::clone(&pending_jobs),
-            );
+        let (_playback_engine, mut sink_ctx) = common::harness::create_headless_playback_with_sink(
+            event_tx.clone(),
+            Arc::clone(&state.pipeline.current_state_atomic),
+            current_turn_id,
+            Arc::clone(&pending_jobs),
+        );
 
-        let router_handle = spawn_router(app.clone(), event_rx)
-            .expect("Failed to spawn router thread");
+        let router_handle =
+            spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
 
         // 1. Real sink callback deferral:
         // When buffer is empty and pending_jobs > 0, sink records underrun and suppresses PlaybackFinished.
@@ -229,12 +228,15 @@ async fn test_playback_finished_deferred_while_pending() {
             1,
             "Sink callback must record underrun when buffer is empty but jobs are pending"
         );
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        assert_eq!(
-            state.pipeline.state(),
+        // Suppression invariant: Speaking must hold for the whole watch window
+        // (a single sleep→sample would miss a transient premature transition).
+        common::harness::assert_pipeline_state_stable(
+            || state.pipeline.state(),
             InteractionState::Speaking,
-            "Pipeline must remain Speaking: sink callback does not emit PlaybackFinished while jobs are pending"
-        );
+            Duration::from_millis(300),
+            "Sink callback must not emit PlaybackFinished while jobs are pending",
+        )
+        .await;
 
         // 2. Router handler deferral (Mutant 9.1 verification):
         // Even if a PlaybackFinished event arrives at router while pending_jobs == 1,
@@ -246,12 +248,14 @@ async fn test_playback_finished_deferred_while_pending() {
             })
             .expect("Failed to send PlaybackFinished");
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(
-            state.pipeline.state(),
+        // Router must defer while pending_jobs == 1: watch for stability, not a single sample.
+        common::harness::assert_pipeline_state_stable(
+            || state.pipeline.state(),
             InteractionState::Speaking,
-            "on_playback_finished must be deferred by router while pending_synthesis_jobs > 0"
-        );
+            Duration::from_millis(300),
+            "on_playback_finished must be deferred by router while pending_synthesis_jobs > 0",
+        )
+        .await;
 
         // 3. Decrement pending_jobs to 0 and send PlaybackFinished again
         pending_jobs.store(0, Ordering::Relaxed);
@@ -325,12 +329,7 @@ fn test_vad_ducking_suppresses_during_speaker_playback() {
     state.pipeline.set_state(InteractionState::Speaking);
 
     // Stream real speech clip (supertonic_01_en_briefing.wav)
-    let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
-    let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
-        .expect("Failed to decode supertonic_01_en_briefing.wav");
-
-    common::audio::stream_audio_to_ring_buffer(&audio, &mut producer);
-    common::audio::wait_for_buffer_drain(&producer, 5);
+    common::audio::stream_test_clip(common::ASSET_SUPERTONIC_01_EN_FILENAME, &mut producer);
 
     // Assert that NO SpeechStart event was emitted during playback (suppressed)
     common::harness::assert_channel_empty_after(
@@ -382,14 +381,9 @@ fn test_vad_ducking_resumes_after_playback_and_headset_never_suppresses() {
         engine_shutdown.clone(),
     );
 
-    let clip_path = common::paths::get_asset_path(common::ASSET_SUPERTONIC_01_EN_FILENAME);
-    let audio = common::audio::decode_wav_to_mono_16k(&clip_path)
-        .expect("Failed to decode supertonic_01_en_briefing.wav");
-
     // Case 1: Speaker mode, but state transitions to Ready (playback finished)
     state.pipeline.set_state(InteractionState::Ready);
-    common::audio::stream_audio_to_ring_buffer(&audio, &mut producer);
-    common::audio::wait_for_buffer_drain(&producer, 5);
+    common::audio::stream_test_clip(common::ASSET_SUPERTONIC_01_EN_FILENAME, &mut producer);
 
     // SpeechStart must fire
     let mut saw_speech_start = false;
@@ -413,10 +407,11 @@ fn test_vad_ducking_resumes_after_playback_and_headset_never_suppresses() {
         .send(VadCommand::UpdateAudioMode(AudioOutputMode::Headset))
         .expect("Failed to update audio mode to Headset");
     state.pipeline.set_state(InteractionState::Speaking);
-    std::thread::sleep(Duration::from_millis(50)); // let command apply
+    // Scheduling allowance for the VAD actor loop to dequeue UpdateAudioMode.
+    // Correctness is proven by the deadline polls below, not by this sleep.
+    std::thread::sleep(Duration::from_millis(50));
 
-    common::audio::stream_audio_to_ring_buffer(&audio, &mut producer);
-    common::audio::wait_for_buffer_drain(&producer, 5);
+    common::audio::stream_test_clip(common::ASSET_SUPERTONIC_01_EN_FILENAME, &mut producer);
 
     let mut saw_headset_speech_start = false;
     let deadline2 = Instant::now() + Duration::from_secs(5);

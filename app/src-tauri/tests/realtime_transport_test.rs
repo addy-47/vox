@@ -112,6 +112,28 @@ async fn connect_to_ws(addr: SocketAddr) -> (WsWriter, WsReader) {
     ws_stream.split()
 }
 
+/// Single home for the `HarnessInit` block previously duplicated across all
+/// four subtests (identical shape, only the channel handles differ).
+#[allow(clippy::too_many_arguments)]
+fn make_harness_init(
+    ws_write: WsWriter,
+    ws_read: WsReader,
+    reconnect_fn: ReconnectFn,
+    provider_event_tx: mpsc::Sender<RealtimeProviderEvent>,
+    state_rx: tokio::sync::watch::Receiver<InteractionState>,
+    turn_id_ref: Arc<AtomicU32>,
+) -> HarnessInit {
+    HarnessInit {
+        ws_write,
+        ws_read,
+        reconnect_fn,
+        provider_event_tx,
+        state_rx,
+        turn_id_ref,
+        tokio_handle: tokio::runtime::Handle::current(),
+    }
+}
+
 // ============================================================================
 // Subtest 1: Duplex Wire Framing & Outbound Command Encoding
 // ============================================================================
@@ -168,15 +190,14 @@ async fn test_duplex_wire_framing_and_outbound_encoding() {
             reconnect_factor_secs: 0,
         };
 
-        let init = HarnessInit {
+        let init = make_harness_init(
             ws_write,
             ws_read,
             reconnect_fn,
-            provider_event_tx: event_tx,
+            event_tx,
             state_rx,
             turn_id_ref,
-            tokio_handle: tokio::runtime::Handle::current(),
-        };
+        );
 
         let handles = spawn_harness(driver, config, init);
 
@@ -270,15 +291,14 @@ async fn test_reconnect_backoff_and_recovery() {
             reconnect_factor_secs: 0,
         };
 
-        let init = HarnessInit {
+        let init = make_harness_init(
             ws_write,
             ws_read,
             reconnect_fn,
-            provider_event_tx: event_tx,
+            event_tx,
             state_rx,
             turn_id_ref,
-            tokio_handle: tokio::runtime::Handle::current(),
-        };
+        );
 
         let handles = spawn_harness(driver, config, init);
 
@@ -347,15 +367,14 @@ async fn test_terminal_reconnect_failure_and_halt() {
             reconnect_factor_secs: 0,
         };
 
-        let init = HarnessInit {
+        let init = make_harness_init(
             ws_write,
             ws_read,
             reconnect_fn,
-            provider_event_tx: event_tx,
+            event_tx,
             state_rx,
             turn_id_ref,
-            tokio_handle: tokio::runtime::Handle::current(),
-        };
+        );
 
         let handles = spawn_harness(driver, config, init);
 
@@ -442,15 +461,14 @@ async fn test_paused_state_suppresses_reconnect() {
             reconnect_factor_secs: 0,
         };
 
-        let init = HarnessInit {
+        let init = make_harness_init(
             ws_write,
             ws_read,
             reconnect_fn,
-            provider_event_tx: event_tx,
+            event_tx,
             state_rx,
             turn_id_ref,
-            tokio_handle: tokio::runtime::Handle::current(),
-        };
+        );
 
         let _handles = spawn_harness(driver, config, init);
 
@@ -459,15 +477,18 @@ async fn test_paused_state_suppresses_reconnect() {
 
         server_task.await.unwrap();
 
-        // Wait briefly to allow socket closure to process
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // Suppression invariant: watch a full 500ms window (not a single 200ms
+        // sample) so a late reconnect can never slip past the assertion.
+        // The flag persists once set, so the helper fails fast on any firing.
+        common::harness::assert_flag_remains_false(
+            &reconnect_called,
+            Duration::from_millis(500),
+            "Paused-state reconnect suppression",
+        )
+        .await;
 
-        assert!(
-            !reconnect_called.load(Ordering::SeqCst),
-            "Reconnect callback must NOT be invoked when disconnected during Paused state"
-        );
-
-        // Also verify no terminal error was emitted
+        // Also verify no terminal error was emitted (channel retains events,
+        // so an endpoint check after the watch window is exhaustive)
         assert!(
             event_rx.try_recv().is_err(),
             "No error events should be emitted during silent paused disconnect"

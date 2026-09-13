@@ -33,7 +33,6 @@ use vox_lib::{
     },
     services::{
         harness::{HarnessSession, TurnPreparation, TRANSITION_MESSAGES_EN},
-        llm::actor::LlmCommand,
         tts::{
             actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
             providers::{
@@ -126,10 +125,14 @@ async fn test_tts_voice_switch_without_worker_restart() {
             );
 
         // 3. Configure worker handles and attach engine to AppState
-        let (stt_tx, _) = mpsc::channel();
-        let (vad_tx, _) = mpsc::channel();
-        let (tts_tx, tts_rx) = mpsc::channel::<TtsCommand>();
-        let (llm_tx, _) = mpsc::channel();
+        let common::harness::PipelineTestChannels {
+            stt_tx,
+            vad_tx,
+            tts_tx,
+            tts_rx,
+            llm_tx,
+            ..
+        } = common::harness::setup_pipeline_channels();
 
         common::harness::attach_mock_engine_with_llm_tts_to_state(
             &app,
@@ -264,10 +267,14 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
         let _guard = common::paths::TempPathsGuard::new();
         let (app, state) = common::harness::get_test_app_and_state().await;
 
-        let (stt_tx, _) = mpsc::channel();
-        let (vad_tx, _) = mpsc::channel();
-        let (tts_tx, tts_rx) = mpsc::channel::<TtsCommand>();
-        let (llm_tx, _llm_rx) = mpsc::channel::<LlmCommand>();
+        let common::harness::PipelineTestChannels {
+            stt_tx,
+            vad_tx,
+            tts_tx,
+            tts_rx,
+            llm_tx,
+            ..
+        } = common::harness::setup_pipeline_channels();
 
         let turn_id = 402;
         state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);

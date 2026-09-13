@@ -13,7 +13,6 @@ mod common;
 
 use std::{collections::HashMap, time::Duration};
 
-use common::{harness::get_test_app_and_state, paths::TempPathsGuard};
 use vox_lib::{
     core::{error::PipelineImpact, events::Severity},
     persistence::{
@@ -43,8 +42,7 @@ use vox_lib::{
 #[tokio::test]
 async fn test_notifications_persistence_crud_and_in_place_resolution() {
     tokio::time::timeout(Duration::from_secs(15), async {
-        let _guard = TempPathsGuard::new();
-        let (_app, state) = get_test_app_and_state().await;
+        let (_guard, _app, state) = common::harness::setup_isolated_app_state().await;
         let conn = state.db.connect().expect("Failed to connect to test db");
 
         // 1. Initially empty
@@ -202,8 +200,7 @@ async fn test_notifications_persistence_crud_and_in_place_resolution() {
 #[tokio::test]
 async fn test_compaction_ledger_queries_and_cascades() {
     tokio::time::timeout(Duration::from_secs(15), async {
-        let _guard = TempPathsGuard::new();
-        let (_app, state) = get_test_app_and_state().await;
+        let (_guard, _app, state) = common::harness::setup_isolated_app_state().await;
         let conn = state.db.connect().expect("Failed to connect to test db");
 
         let session_id = 18201i64;
@@ -303,8 +300,7 @@ async fn test_compaction_ledger_queries_and_cascades() {
 #[tokio::test]
 async fn test_notifications_3d_routing_and_zero_db_invariant() {
     tokio::time::timeout(Duration::from_secs(15), async {
-        let _guard = TempPathsGuard::new();
-        let (app, state) = get_test_app_and_state().await;
+        let (_guard, app, state) = common::harness::setup_isolated_app_state().await;
         let conn = state.db.connect().expect("Failed to connect to test db");
 
         // 1. Truth Table Tests for resolve_channel
@@ -416,8 +412,8 @@ async fn test_notifications_3d_routing_and_zero_db_invariant() {
 #[tokio::test]
 async fn test_notifications_group_key_rollup_and_deduplication() {
     tokio::time::timeout(Duration::from_secs(15), async {
-        let _guard = TempPathsGuard::new();
-        let (app, state) = get_test_app_and_state().await;
+        let (_guard, app, state) =
+            common::harness::setup_isolated_app_state().await;
         let conn = state.db.connect().expect("Failed to connect to test db");
 
         let group_key = "session_compaction:18401";
@@ -502,8 +498,7 @@ async fn test_notifications_group_key_rollup_and_deduplication() {
 #[tokio::test]
 async fn test_notification_action_execution_engine() {
     tokio::time::timeout(Duration::from_secs(15), async {
-        let _guard = TempPathsGuard::new();
-        let (app, state) = get_test_app_and_state().await;
+        let (_guard, app, state) = common::harness::setup_isolated_app_state().await;
         let conn = state.db.connect().expect("Failed to connect to test db");
 
         // 1. Ingest an interactive retry task card

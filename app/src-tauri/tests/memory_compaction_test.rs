@@ -11,10 +11,7 @@
 
 mod common;
 
-use std::{
-    path::PathBuf,
-    time::{Instant, SystemTime, UNIX_EPOCH},
-};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use common::{harness::get_test_app_and_state, paths::TempPathsGuard};
 use serde::Deserialize;
@@ -49,19 +46,8 @@ struct DatasetTurn {
 }
 
 fn load_dataset(max_turns: usize) -> Vec<DatasetTurn> {
-    let paths = [
-        "sandbox/datasets/100-turns/dataset_session-2.json",
-        "../../sandbox/datasets/100-turns/dataset_session-2.json",
-        "../sandbox/datasets/100-turns/dataset_session-2.json",
-    ];
-    let file = paths
-        .iter()
-        .map(PathBuf::from)
-        .find(|p| p.exists())
-        .expect("Dataset file dataset_session-2.json must exist in candidate paths");
-    let content = std::fs::read_to_string(&file).expect("Failed to read dataset file");
     let mut turns: Vec<DatasetTurn> =
-        serde_json::from_str(&content).expect("Failed to parse dataset JSON");
+        common::paths::load_json_dataset("100-turns/dataset_session-2.json");
     turns.truncate(max_turns);
     turns
 }
