@@ -38,13 +38,19 @@ async fn test_ptt_realtime_matrix() {
     let test_timeout = Duration::from_secs(60);
     tokio::time::timeout(test_timeout, async {
         let _guard = common::paths::TempPathsGuard::new();
-        let _ = env_logger::builder().is_test(true).filter_level(log::LevelFilter::Debug).try_init();
+        let _ = env_logger::builder()
+            .is_test(true)
+            .filter_level(log::LevelFilter::Debug)
+            .try_init();
         let _ = rustls::crypto::ring::default_provider().install_default();
         vox_lib::utils::paths::init();
 
         let api_key = common::paths::load_api_key_from_env("DEEPGRAM_API_KEY")
             .expect("DEEPGRAM_API_KEY must be provided in environment or temp/.env");
-        assert!(!api_key.trim().is_empty(), "DEEPGRAM_API_KEY cannot be empty");
+        assert!(
+            !api_key.trim().is_empty(),
+            "DEEPGRAM_API_KEY cannot be empty"
+        );
 
         let (app, state) = common::harness::get_test_app_and_state().await;
 

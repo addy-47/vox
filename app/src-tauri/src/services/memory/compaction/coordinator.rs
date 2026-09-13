@@ -26,7 +26,7 @@ use crate::{
             QWEN_MODEL_FILE,
         },
         memory::compaction::runner::run_compaction,
-        notifications::{Action, ActionPayload, NotificationCategory, NotificationParams, notify},
+        notifications::{notify, Action, ActionPayload, NotificationCategory, NotificationParams},
     },
     utils::paths::get,
 };
@@ -83,7 +83,8 @@ impl CompactionCoordinator {
         };
 
         let turns =
-            fetch_turns_for_compaction(&conn, session_id, last_compacted_turn + 1, u32::MAX).await?;
+            fetch_turns_for_compaction(&conn, session_id, last_compacted_turn + 1, u32::MAX)
+                .await?;
         if turns.is_empty() {
             log::info!(
                 "[CompactionCoordinator] No turns pending compaction for session {}",
@@ -95,20 +96,25 @@ impl CompactionCoordinator {
         let from_turn_id = turns.first().map(|t| t.turn_id).unwrap_or(1);
         let to_turn_id = turns.last().map(|t| t.turn_id).unwrap_or(from_turn_id);
 
-        let run_id =
-            match record_compaction_start(&conn, session_id, trigger_kind, from_turn_id, to_turn_id)
-                .await
-            {
-                Ok(id) => id,
-                Err(e) if e.to_string().contains("UNIQUE constraint failed") => {
-                    log::info!(
-                        "[CompactionCoordinator] Duplicate compaction run rejected for session {}",
-                        session_id
-                    );
-                    return Ok(None);
-                }
-                Err(e) => return Err(e),
-            };
+        let run_id = match record_compaction_start(
+            &conn,
+            session_id,
+            trigger_kind,
+            from_turn_id,
+            to_turn_id,
+        )
+        .await
+        {
+            Ok(id) => id,
+            Err(e) if e.to_string().contains("UNIQUE constraint failed") => {
+                log::info!(
+                    "[CompactionCoordinator] Duplicate compaction run rejected for session {}",
+                    session_id
+                );
+                return Ok(None);
+            }
+            Err(e) => return Err(e),
+        };
 
         let history_messages = build_history_messages(&turns);
         let llm_settings = state
@@ -180,7 +186,8 @@ impl CompactionCoordinator {
         )
         .await?;
 
-        emit_session_compaction_success_receipt(app, &state.db, &conn, session_id, facts_count).await;
+        emit_session_compaction_success_receipt(app, &state.db, &conn, session_id, facts_count)
+            .await;
 
         log::info!(
             "[CompactionCoordinator] Successfully compacted session {} (enqueued {} facts)",
@@ -277,7 +284,9 @@ async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
 
     // If an interactive card exists, update it in-place to resolved
     if let Ok(Some(existing)) = find_notification_by_group(conn, &group_key).await {
-        if let Ok(Some(updated)) = resolve_notification_in_place(conn, &existing.id, "resolved", Some(&message)).await {
+        if let Ok(Some(updated)) =
+            resolve_notification_in_place(conn, &existing.id, "resolved", Some(&message)).await
+        {
             let _ = emit_ipc(app, IpcEvent::NotificationUpdated(updated));
             return;
         }
@@ -320,7 +329,9 @@ async fn emit_session_compaction_failure_receipt<R: tauri::Runtime>(
 
     if let Ok(conn) = db.connect() {
         if let Ok(Some(existing)) = find_notification_by_group(&conn, &group_key).await {
-            if let Ok(Some(updated)) = resolve_notification_in_place(&conn, &existing.id, "failed", Some(&message)).await {
+            if let Ok(Some(updated)) =
+                resolve_notification_in_place(&conn, &existing.id, "failed", Some(&message)).await
+            {
                 let _ = emit_ipc(app, IpcEvent::NotificationUpdated(updated));
                 return;
             }
@@ -350,4 +361,3 @@ async fn emit_session_compaction_failure_receipt<R: tauri::Runtime>(
         );
     }
 }
-

@@ -98,22 +98,14 @@ impl StreamRoutingPlugin {
     }
 
     /// Emits IPC token event, pushes token to clause chunker, and dispatches clauses to TTS.
-    fn handle_token<R: tauri::Runtime>(
-        &self,
-        token: String,
-        handles: &StreamRoutingHandles<R>,
-    ) {
+    fn handle_token<R: tauri::Runtime>(&self, token: String, handles: &StreamRoutingHandles<R>) {
         self.emit_token_ipc(&token, handles);
         let clauses = handles.accumulator.lock().push_token(&token);
         self.dispatch_clauses(clauses, handles);
     }
 
     /// Emits a single token to the frontend IPC rail.
-    fn emit_token_ipc<R: tauri::Runtime>(
-        &self,
-        token: &str,
-        handles: &StreamRoutingHandles<R>,
-    ) {
+    fn emit_token_ipc<R: tauri::Runtime>(&self, token: &str, handles: &StreamRoutingHandles<R>) {
         let target = target_window(handles.owner);
         let payload = IpcEvent::LlmToken(LlmTokenPayload {
             turn_id: handles.turn_id,

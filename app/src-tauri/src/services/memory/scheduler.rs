@@ -9,8 +9,7 @@ use crate::{
         state::{AppState, InteractionState},
     },
     persistence::{
-        notifications::dismiss_interactive_by_entity,
-        personal_memory::get_personal_memory,
+        notifications::dismiss_interactive_by_entity, personal_memory::get_personal_memory,
     },
     services::{
         llm::{

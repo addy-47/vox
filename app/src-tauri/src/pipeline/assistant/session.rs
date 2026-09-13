@@ -237,29 +237,30 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
         PipelineMode::Modular => {
             let tokio_handle = get_tokio_handle();
             let conn = state.db.connect().ok();
-            let (personal_memory, summary, turns) = if let (Some(sid), Some(conn)) = (session_id, conn.as_ref()) {
-                match tokio_handle.block_on(fetch_session_continuation(conn, sid)) {
-                    Ok(data) => (data.personal_memory, data.latest_summary, data.turns),
-                    Err(e) => {
-                        log::warn!("[Pipeline::Session] Failed to fetch continuation: {}", e);
-                        (None, None, Vec::new())
-                    }
-                }
-            } else if let Some(conn) = conn.as_ref() {
-                let mem = tokio_handle
-                    .block_on(get_personal_memory(conn, None))
-                    .ok()
-                    .and_then(|r| {
-                        if r.content.trim().is_empty() {
-                            None
-                        } else {
-                            Some(r.content)
+            let (personal_memory, summary, turns) =
+                if let (Some(sid), Some(conn)) = (session_id, conn.as_ref()) {
+                    match tokio_handle.block_on(fetch_session_continuation(conn, sid)) {
+                        Ok(data) => (data.personal_memory, data.latest_summary, data.turns),
+                        Err(e) => {
+                            log::warn!("[Pipeline::Session] Failed to fetch continuation: {}", e);
+                            (None, None, Vec::new())
                         }
-                    });
-                (mem, None, Vec::new())
-            } else {
-                (None, None, Vec::new())
-            };
+                    }
+                } else if let Some(conn) = conn.as_ref() {
+                    let mem = tokio_handle
+                        .block_on(get_personal_memory(conn, None))
+                        .ok()
+                        .and_then(|r| {
+                            if r.content.trim().is_empty() {
+                                None
+                            } else {
+                                Some(r.content)
+                            }
+                        });
+                    (mem, None, Vec::new())
+                } else {
+                    (None, None, Vec::new())
+                };
 
             let llm_tx_opt = state
                 .engine
@@ -435,7 +436,8 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, _ctx: 
                 metadata: None,
                 duration_ms: None,
             };
-            if let Err(notify_err) = services::notifications::notify(&app_handle, &db, params).await {
+            if let Err(notify_err) = services::notifications::notify(&app_handle, &db, params).await
+            {
                 log::warn!(
                     "[Pipeline::Session] Failed to dispatch resume failure notification: {}",
                     notify_err
