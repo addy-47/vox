@@ -148,6 +148,7 @@ When the context reaches or exceeds 85% usable capacity prior to generation, imm
 5. **Inline Summarization Execution**:
    - The Harness temporarily extracts the latest user turn, isolating the uncompacted history slice.
    - The Harness sends a structured compaction task across the duplex pipe to the `LlmActor` (with a 45-second timeout and up to 2 attempts).
+   - Universal compaction contract (provider-agnostic): every compaction/extraction request carries strict JSON-schema enforcement against the canonical 6-bucket schema wherever the backend supports it (with negotiated fallback to JSON-object then prompt-only on `unsupported_parameter` rejections), and LLM reasoning is always disabled (voice-native default; user-driven opt-in reserved for a future agentic phase).
    - The model generates a structured JSON summary containing a rolling narrative overview and newly extracted categorical facts (`personal`, `objective`, `workdone`, `blocker`, `next_step`, `pitfall`).
 6. **Persistence Staging & Working Memory Pruning**:
    - Extracted facts are staged into the database ingestion queue linked to a new compaction record.

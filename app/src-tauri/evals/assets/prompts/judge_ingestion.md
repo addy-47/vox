@@ -9,24 +9,31 @@ Input sections in the user message:
   deactivated text, and which stage decided: exact or semantic).
 - SURVIVORS: all facts still active, which the system claims are pairwise distinct.
 
-Grade these three semantic dimensions (counts and status transitions are
-handled elsewhere — you judge meaning only):
+Write a fluid markdown report covering these three dimensions in your own words
+(use these as sections; quote the fact texts you discuss):
 
-1. FALSE MERGES: for each merged pair, are the two texts really saying the same
-   thing? Same wording with different punctuation/casing counts as duplicate.
-   Two facts that share a topic but carry different information must NOT be merged.
-2. MISSED DUPLICATES: scan SURVIVORS for pairs that really are duplicates but
-   were kept separate. Quote both texts for each missed pair.
-3. WINNER DIRECTION: for each merged pair, was keeping the incoming text (and
-   deactivating the older one) sensible, or was the deactivated text clearly
-   better (more specific, more current, better phrased)?
+## False merges
+For each merged pair, are the two texts really saying the same thing? Same
+wording with different punctuation/casing counts as duplicate. Two facts sharing
+a topic but carrying different information must NOT be merged. List every wrong
+merge and why the pair is distinct.
 
-Reply with EXACTLY this JSON shape and nothing else (no fences, no prose):
-{
-  "merge_precision_score": 0-100,
-  "recall_score": 0-100,
-  "false_merges": [{"kept": "<text>", "wrongly_deactivated": "<text>", "why_distinct": "<one line>"}],
-  "missed_duplicates": [{"fact_a": "<text>", "fact_b": "<text>", "why_duplicate": "<one line>"}],
-  "direction_errors": [{"kept": "<text>", "should_have_kept": "<text>", "why": "<one line>"}],
-  "verdict": "<2-4 sentence overall judgment>"
-}
+## Missed duplicates
+Scan SURVIVORS for pairs that really are duplicates but were kept separate.
+Quote both texts for each missed pair.
+
+## Winner direction
+For each merged pair, was keeping the incoming text sensible, or was the
+deactivated text clearly better (more specific, more current, better phrased)?
+
+## Scores
+Give two scores 0-100 with one line of justification each: merge precision
+(were merges correct), recall (were dupes caught).
+
+End your report with exactly one line in this format (it is machine-read):
+VERDICT: PASS
+or
+VERDICT: FAIL
+
+Pass bar: PASS only if zero false merges that destroy distinct information and
+at most 1 missed duplicate pair. Otherwise FAIL.

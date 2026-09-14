@@ -6,7 +6,7 @@ use std::{
 
 use super::{
     ConversationInput, EmbeddedProvider, GenerationOptions, GenerationPurpose, GenerationRequest,
-    LlmProvider, OutputConstraint, RemoteTransport,
+    LlmProvider, OutputConstraint, ReasoningMode, RemoteTransport,
 };
 use crate::{
     core::{
@@ -34,6 +34,7 @@ pub struct GenerationDefaults {
     pub temperature: f32,
     pub max_output_tokens: u32,
     pub output: OutputConstraint,
+    pub reasoning: ReasoningMode,
 }
 
 /// Generation policy engine translating user/system settings into generation requests.
@@ -69,17 +70,20 @@ impl GenerationPolicy {
     /// Constructs policy from current `LlmSettings` and optional explicit compaction token ceiling.
     pub fn from_settings(settings: &LlmSettings, compaction_max_tokens: Option<u32>) -> Self {
         let compaction_tokens = compaction_max_tokens.unwrap_or(settings.max_output_tokens);
+        let reasoning = ReasoningMode::from_enabled(settings.reasoning_enabled);
 
         Self {
             conversation: GenerationDefaults {
                 temperature: settings.temperature,
                 max_output_tokens: settings.max_output_tokens,
                 output: OutputConstraint::Text,
+                reasoning,
             },
             compaction: GenerationDefaults {
                 temperature: settings.compaction_temperature,
                 max_output_tokens: compaction_tokens,
                 output: OutputConstraint::JsonObject,
+                reasoning,
             },
         }
     }
@@ -102,6 +106,7 @@ impl GenerationPolicy {
             options: GenerationOptions {
                 temperature: Some(defaults.temperature),
                 max_output_tokens: Some(defaults.max_output_tokens),
+                reasoning: defaults.reasoning,
                 ..Default::default()
             },
             output: defaults.output.clone(),

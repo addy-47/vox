@@ -213,6 +213,10 @@ fn apply_llm_mutation(
             }
             settings.llm.max_output_tokens = val;
         }
+        "reasoning_enabled" => {
+            settings.llm.reasoning_enabled =
+                value.as_bool().ok_or("reasoning_enabled must be a boolean")?;
+        }
         "context_window" => {
             let val = value
                 .as_u64()

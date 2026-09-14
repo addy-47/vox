@@ -113,6 +113,9 @@ async fn run(args: Args) -> Result<()> {
 
     // --- Ladder handoff: copy rung-1 DB, never mutate it in place -----------
     std::fs::create_dir_all(&run_dir)?;
+    db::checkpoint_source_db(&args.db_in)
+        .await
+        .context("Failed to checkpoint ladder DB before copy")?;
     std::fs::copy(&args.db_in, &db_path)
         .with_context(|| format!("Failed to copy ladder DB from {}", args.db_in.display()))?;
     let (_db, conn) = db::open_existing_eval_db(&db_path).await?;
@@ -123,11 +126,23 @@ async fn run(args: Args) -> Result<()> {
         "Ladder DB has zero pending queue items — rung 1 produced nothing to ingest"
     );
 
-    // --- ONE end-to-end dedup pass (same stages, same order as production) --
+    // --- Drain both stages to quiescence (production processes one batch
+    // per worker tick and loops; the eval drives the same loop explicitly) --
     let s1_started = Instant::now();
-    let s1 = run_stage1_exact_dedup(&conn)
-        .await
-        .context("Stage 1 exact dedup failed")?;
+    let mut s1_rounds = 0u32;
+    let (mut s1_processed, mut s1_deactivated, mut s1_errors) = (0usize, 0usize, 0usize);
+    loop {
+        let s1 = run_stage1_exact_dedup(&conn)
+            .await
+            .context("Stage 1 exact dedup failed")?;
+        s1_rounds += 1;
+        s1_processed += s1.processed;
+        s1_deactivated += s1.duplicates_deactivated;
+        s1_errors += s1.errors;
+        if s1.processed == 0 || s1_rounds >= 10 {
+            break;
+        }
+    }
     let s1_s = s1_started.elapsed().as_secs_f64();
     let inactive_after_s1: std::collections::HashSet<String> = snapshot_facts(&conn)
         .await?
@@ -137,11 +152,25 @@ async fn run(args: Args) -> Result<()> {
         .collect();
 
     let s2_started = Instant::now();
-    let s2 = run_stage2_cosine_dedup(&conn)
-        .await
-        .context("Stage 2 cosine dedup failed")?;
+    let mut s2_rounds = 0u32;
+    let (mut s2_processed, mut s2_inserted, mut s2_deactivated, mut s2_errors) =
+        (0usize, 0usize, 0usize, 0usize);
+    loop {
+        let s2 = run_stage2_cosine_dedup(&conn)
+            .await
+            .context("Stage 2 cosine dedup failed")?;
+        s2_rounds += 1;
+        s2_processed += s2.processed;
+        s2_inserted += s2.inserted;
+        s2_deactivated += s2.duplicates_deactivated;
+        s2_errors += s2.errors;
+        if s2.processed == 0 || s2_rounds >= 10 {
+            break;
+        }
+    }
     let s2_s = s2_started.elapsed().as_secs_f64();
     unload_embedder();
+    println!("[rung2] drained: stage1 rounds={s1_rounds} stage2 rounds={s2_rounds}");
 
     // --- Deterministic baseline asserts -------------------------------------
     anyhow::ensure!(
@@ -190,11 +219,12 @@ async fn run(args: Args) -> Result<()> {
             tokio::time::timeout(
                 Duration::from_secs(600),
                 judge::run_judge(
+                    "",
                     &api_key,
                     &args.judge_model,
                     &system_prompt,
                     &user_content,
-                    4000,
+                    6000,
                 ),
             )
             .await
@@ -213,8 +243,8 @@ async fn run(args: Args) -> Result<()> {
             "pending_before": pending_before,
         },
         "stages": {
-            "stage1": {"processed": s1.processed, "duplicates_deactivated": s1.duplicates_deactivated, "errors": s1.errors, "latency_s": s1_s},
-            "stage2": {"processed": s2.processed, "inserted": s2.inserted, "duplicates_deactivated": s2.duplicates_deactivated, "errors": s2.errors, "latency_s": s2_s},
+            "stage1": {"rounds": s1_rounds, "processed": s1_processed, "duplicates_deactivated": s1_deactivated, "errors": s1_errors, "latency_s": s1_s},
+            "stage2": {"rounds": s2_rounds, "processed": s2_processed, "inserted": s2_inserted, "duplicates_deactivated": s2_deactivated, "errors": s2_errors, "latency_s": s2_s},
         },
         "outcome": {
             "queue_drained": true,
@@ -224,14 +254,18 @@ async fn run(args: Args) -> Result<()> {
             "semantic_merges": semantic_merges.len(),
         },
         "judge": judge_out.as_ref().map(|j| serde_json::json!({
-            "verdict": j.verdict,
+            "verdict": j.verdict.as_str(),
             "latency_s": j.latency_s,
-            "raw_response": j.raw_content,
+            "report_markdown": j.report_markdown,
         })),
         "ladder_handoff_db": db_path.to_string_lossy(),
         "total_latency_s": total_s,
     });
     let written = report::write_report(eval_name, &run_id, payload)?;
+    if let Some(j) = judge_out.as_ref() {
+        let _ = std::fs::write(written.join("judge_report.md"), &j.report_markdown);
+        println!("Judge verdict: {}", j.verdict.as_str());
+    }
     println!("Rung 2 complete: {pending_before} queued -> {} active / {} inactive ({} exact + {} semantic merges).", active.len(), inactive.len(), exact_merges.len(), semantic_merges.len());
     println!("Report: {}", written.join("report.json").display());
     println!("Ladder DB for rung 3: {}", db_path.display());

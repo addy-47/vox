@@ -46,6 +46,26 @@ pub enum GenerationPurpose {
     StructuredExtraction,
 }
 
+/// Reasoning effort switch for generation requests. Voice-native default is off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningMode {
+    Enabled,
+    #[default]
+    Disabled,
+}
+
+impl ReasoningMode {
+    /// Maps a boolean reasoning opt-in flag to a provider-neutral reasoning mode.
+    pub fn from_enabled(enabled: bool) -> Self {
+        if enabled {
+            Self::Enabled
+        } else {
+            Self::Disabled
+        }
+    }
+}
+
 /// Provider-neutral generation sampling and output length options.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct GenerationOptions {
@@ -55,6 +75,7 @@ pub struct GenerationOptions {
     pub max_output_tokens: Option<u32>,
     pub stop: Vec<String>,
     pub seed: Option<u64>,
+    pub reasoning: ReasoningMode,
 }
 
 /// Explicit constraint on LLM output format.
