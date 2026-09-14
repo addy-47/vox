@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::{config::ConnectionConfig, sse::SseDecoder};
 use crate::services::{
     harness::Role,
-    llm::{GenerationRequest, LlmError, OutputConstraint},
+    llm::{GenerationRequest, LlmError, OutputConstraint, ReasoningMode},
 };
 
 #[derive(Serialize)]
@@ -51,6 +51,9 @@ pub fn build_request_body(
     }
     if let Some(temp) = request.options.temperature {
         body.insert("temperature".to_string(), serde_json::json!(temp));
+    }
+    if request.options.reasoning == ReasoningMode::Disabled {
+        log::warn!("[ResponsesTransport] Reasoning disable requested but the Responses API has no off-switch; sending without reasoning parameters.");
     }
     if let Some(top_p) = request.options.top_p {
         body.insert("top_p".to_string(), serde_json::json!(top_p));

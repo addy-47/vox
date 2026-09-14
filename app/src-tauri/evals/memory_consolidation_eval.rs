@@ -80,6 +80,9 @@ async fn run(args: Args) -> Result<()> {
 
     // --- Ladder handoff: copy rung-2 DB --------------------------------------
     std::fs::create_dir_all(&run_dir)?;
+    db::checkpoint_source_db(&args.db_in)
+        .await
+        .context("Failed to checkpoint ladder DB before copy")?;
     std::fs::copy(&args.db_in, &db_path)
         .with_context(|| format!("Failed to copy ladder DB from {}", args.db_in.display()))?;
     let (_db, conn) = db::open_existing_eval_db(&db_path).await?;
@@ -105,7 +108,13 @@ async fn run(args: Args) -> Result<()> {
     let doc_before = get_personal_memory(&conn, None).await?;
 
     // --- ONE executor run through the production function --------------------
-    let settings = settings_cfg::server_llm_settings(&args.server_url, &args.server_model, 32768);
+    let settings = settings_cfg::server_llm_settings(
+        &args.server_url,
+        &args.server_model,
+        32768,
+        None,
+        Some("ollama".to_string()),
+    );
     let provider = create_llm_provider_from_llm_settings(
         &settings_cfg::llm_settings_of(&settings),
         std::path::Path::new(""),
@@ -154,11 +163,12 @@ async fn run(args: Args) -> Result<()> {
             tokio::time::timeout(
                 Duration::from_secs(600),
                 judge::run_judge(
+                    "",
                     &api_key,
                     &args.judge_model,
                     &system_prompt,
                     &user_content,
-                    4000,
+                    6000,
                 ),
             )
             .await
@@ -185,14 +195,18 @@ async fn run(args: Args) -> Result<()> {
         },
         "document": record.content,
         "judge": judge_out.as_ref().map(|j| serde_json::json!({
-            "verdict": j.verdict,
+            "verdict": j.verdict.as_str(),
             "latency_s": j.latency_s,
-            "raw_response": j.raw_content,
+            "report_markdown": j.report_markdown,
         })),
         "ladder_handoff_db": db_path.to_string_lossy(),
         "total_latency_s": total_s,
     });
     let written = report::write_report(eval_name, &run_id, payload)?;
+    if let Some(j) = judge_out.as_ref() {
+        let _ = std::fs::write(written.join("judge_report.md"), &j.report_markdown);
+        println!("Judge verdict: {}", j.verdict.as_str());
+    }
     println!(
         "Rung 3 complete: {} personal facts consolidated into {}-char document.",
         candidate_ids.len(),
