@@ -10,7 +10,7 @@ use crate::{
     },
     services::{
         health::{self, ProviderConfigPayload},
-        llm::probe::{self, ModelProbeResult},
+        llm::catalog::{self, ModelProbeResult},
     },
     setup::remote_server,
 };
@@ -33,7 +33,7 @@ pub async fn list_llm_models(
     state: State<'_, Arc<AppState>>,
     provider: Option<LlmProviderConfig>,
 ) -> Result<Vec<LlmModelInfo>, VoxIpcError> {
-    probe::list_models(&state, provider)
+    catalog::list_models(&state, provider)
         .await
         .map_err(VoxIpcError::Engine)
 }
@@ -46,7 +46,7 @@ pub async fn probe_model_capabilities(
     model_id: Option<String>,
     target_cap: Option<u32>,
 ) -> Result<ModelProbeResult, VoxIpcError> {
-    probe::probe_capabilities(&state, provider, model_id, target_cap)
+    catalog::probe_capabilities(&state, provider, model_id, target_cap)
         .await
         .map_err(VoxIpcError::Engine)
 }

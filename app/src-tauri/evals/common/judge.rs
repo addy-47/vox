@@ -25,12 +25,8 @@ pub struct JudgeOutput {
 
 /// Loads a judge prompt template from evals assets.
 pub fn load_prompt(name: &str) -> Result<String> {
-    let path = format!(
-        "{}/evals/assets/prompts/{name}",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    std::fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read judge prompt at {path}"))
+    let path = format!("{}/evals/assets/prompts/{name}", env!("CARGO_MANIFEST_DIR"));
+    std::fs::read_to_string(&path).with_context(|| format!("Failed to read judge prompt at {path}"))
 }
 
 /// Calls the Nvidia-hosted judge model once (temperature 0) and parses the
@@ -64,7 +60,10 @@ pub async fn run_judge(
     let status = resp.status();
     let body: Value = resp.json().await.context("Judge response was not JSON")?;
     if !status.is_success() {
-        anyhow::bail!("Judge HTTP {status}: {}", body.to_string().chars().take(500).collect::<String>());
+        anyhow::bail!(
+            "Judge HTTP {status}: {}",
+            body.to_string().chars().take(500).collect::<String>()
+        );
     }
     let content = body
         .pointer("/choices/0/message/content")
@@ -74,13 +73,12 @@ pub async fn run_judge(
     let latency_s = started.elapsed().as_secs_f64();
 
     let de_fenced = strip_code_fences(&content);
-    let verdict: Value =
-        serde_json::from_str(de_fenced).with_context(|| {
-            format!(
-                "Judge output was not JSON. Raw (first 500 chars): {}",
-                content.chars().take(500).collect::<String>()
-            )
-        })?;
+    let verdict: Value = serde_json::from_str(de_fenced).with_context(|| {
+        format!(
+            "Judge output was not JSON. Raw (first 500 chars): {}",
+            content.chars().take(500).collect::<String>()
+        )
+    })?;
     Ok(JudgeOutput {
         verdict,
         raw_content: content,
@@ -90,6 +88,9 @@ pub async fn run_judge(
 
 fn strip_code_fences(s: &str) -> &str {
     let t = s.trim();
-    let t = t.strip_prefix("```json").or_else(|| t.strip_prefix("```")).unwrap_or(t);
+    let t = t
+        .strip_prefix("```json")
+        .or_else(|| t.strip_prefix("```"))
+        .unwrap_or(t);
     t.strip_suffix("```").unwrap_or(t).trim()
 }

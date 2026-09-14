@@ -486,9 +486,9 @@ async fn test_dictation_matrix() {
         vad_shutdown.store(true, Ordering::Relaxed);
         stt_shutdown.store(true, Ordering::Relaxed);
 
-        let _ = router_join.join().expect("Router thread panicked");
-        let _ = vad_join.join().expect("VAD actor thread panicked");
-        let _ = stt_join.join().expect("STT worker thread panicked");
+        router_join.join().expect("Router thread panicked");
+        vad_join.join().expect("VAD actor thread panicked");
+        stt_join.join().expect("STT worker thread panicked");
     })
     .await
     .expect("test_dictation_matrix timed out");

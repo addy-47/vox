@@ -1,7 +1,10 @@
 use crate::{
-    core::settings::{
-        LlmActiveProvider, LlmProviderConfig, LlmRemoteConfig, SttActiveProvider, SttCloudConfig,
-        SttProviderConfig, TtsActiveProvider, TtsProviderConfig, VoxSettings,
+    core::{
+        defaults::MIN_LLM_CONTEXT_WINDOW,
+        settings::{
+            LlmActiveProvider, LlmProviderConfig, LlmRemoteConfig, SttActiveProvider,
+            SttCloudConfig, SttProviderConfig, TtsActiveProvider, TtsProviderConfig, VoxSettings,
+        },
     },
     services::memory::scheduler::parse_consolidation_time,
 };
@@ -214,15 +217,11 @@ fn apply_llm_mutation(
             let val = value
                 .as_u64()
                 .ok_or("context_window must be a positive integer")? as u32;
-            if matches!(
-                settings.llm.active,
-                LlmActiveProvider::Server | LlmActiveProvider::Cloud
-            ) && val < 8192
-            {
-                return Err(
-                    "Cloud/Server LLM providers require a minimum context size of 8192 tokens"
-                        .to_string(),
-                );
+            if val < MIN_LLM_CONTEXT_WINDOW {
+                return Err(format!(
+                    "Context window cannot be less than {} tokens",
+                    MIN_LLM_CONTEXT_WINDOW
+                ));
             }
             settings.llm.context_window = val;
         }

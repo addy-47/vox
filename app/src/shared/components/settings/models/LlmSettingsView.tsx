@@ -44,7 +44,33 @@ export const LlmSettingsView = memo(({
 
   // Determine creativity / temperature (default: 0.7)
   const currentTemp = llmSettings?.temperature ?? 0.7;
-  const currentContext = llmSettings?.context_window ?? 2048;
+  const currentContext = Math.max(8192, llmSettings?.context_window ?? 8192);
+
+  // Active capabilities and dynamic bounds
+  const MIN_CONTEXT_WINDOW = 8192;
+  const capabilitiesCache = useSettingsStore((s) => s.capabilitiesCache);
+  const activeModel = useMemo(() => {
+    if (llmSettings?.active === "embedded") return llmSettings?.embedded?.model;
+    if (llmSettings?.active === "server") return llmSettings?.server?.model;
+    if (llmSettings?.active === "cloud") return llmSettings?.cloud?.model;
+    return undefined;
+  }, [llmSettings?.active, llmSettings?.embedded?.model, llmSettings?.server?.model, llmSettings?.cloud?.model]);
+
+  const activeCapabilities = useMemo(() => {
+    if (!activeModel) return undefined;
+    return (
+      capabilitiesCache?.[`open_ai_compat:${activeModel}`] ||
+      capabilitiesCache?.[`server:${activeModel}`] ||
+      capabilitiesCache?.[`cloud:${activeModel}`] ||
+      capabilitiesCache?.[`embedded:${activeModel}`] ||
+      capabilitiesCache?.[activeModel]
+    );
+  }, [activeModel, capabilitiesCache]);
+
+  const maxContextCeiling = activeCapabilities?.context_window || 131072;
+  const contextPresets = useMemo(() => {
+    return [8192, 16384, 32768].filter((size) => size <= maxContextCeiling);
+  }, [maxContextCeiling]);
 
   if (!llmSettings) return null;
 
@@ -239,7 +265,7 @@ export const LlmSettingsView = memo(({
 
             {!isRemoteLlm ? (
               <div className="shrink-0 grid grid-cols-2 gap-1.5 w-[116px] sm:w-[136px]">
-                {[2048, 4096, 8192].map((size) => {
+                {contextPresets.map((size) => {
                   const isSelected = currentContext === size;
                   return (
                     <button
@@ -260,7 +286,7 @@ export const LlmSettingsView = memo(({
                 <div
                   className={cn(
                     "rounded-lg border flex items-center justify-center transition-all overflow-hidden",
-                    ![2048, 4096, 8192].includes(currentContext)
+                    !contextPresets.includes(currentContext)
                       ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
                       : "border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] focus-within:border-[rgba(var(--accent),0.35)]"
                   )}
@@ -268,12 +294,12 @@ export const LlmSettingsView = memo(({
                   <input
                     type="text"
                     inputMode="numeric"
-                    value={![2048, 4096, 8192].includes(currentContext) ? `${currentContext}` : ""}
+                    value={!contextPresets.includes(currentContext) ? `${currentContext}` : ""}
                     onChange={(e) => {
                       const clean = e.target.value.replace(/[^0-9]/g, "");
                       if (!clean) return;
                       const num = parseInt(clean, 10);
-                      if (!isNaN(num) && num >= 512 && num <= 131072) {
+                      if (!isNaN(num) && num >= MIN_CONTEXT_WINDOW && num <= maxContextCeiling) {
                         updateDraft("llm", "context_window", num);
                       }
                     }}
@@ -284,7 +310,7 @@ export const LlmSettingsView = memo(({
               </div>
             ) : (
               <span className="text-[10px] sm:text-[11px] font-bold text-emerald-400 flex items-center gap-1 shrink-0">
-                <Check size={13} /> {LLM_SETTINGS_COPY.compute.remoteManaged}
+                <Check size={13} /> {activeCapabilities?.context_window ? `${activeCapabilities.context_window >= 1024 ? `${activeCapabilities.context_window / 1024}k` : activeCapabilities.context_window} tok max` : LLM_SETTINGS_COPY.compute.remoteManaged}
               </span>
             )}
           </div>

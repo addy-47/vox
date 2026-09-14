@@ -40,22 +40,31 @@ To prevent orchestration logic from stalling speech synthesis or leaking into sp
 - **First-Turn Session Titles**: On Turn 1 of a new session, the harness appends a prompt directive: *"At the end of your response, output a concise 3-5 word title in `<title>...</title>`."* The harness consumes this tag and dispatches `PersistenceEvent::UpdateSessionMetadata { session_id, key: "title", value }`.
 
 ### 3.2 Compaction Output Contract (The Session Context)
-Every compaction pass (Critical, Soft, or Manual) produces a single unified JSON output containing two distinct buckets across 6 structured categories:
+Every compaction pass (Critical, Soft, or Manual) produces a single unified JSON output containing two distinct buckets across 6 generic human/conversational memory categories:
 ```json
 {
-  "personal": ["<unstructured fact or preference about user>"],
-  "objective": ["<unstructured active operational goal or intent>"],
-  "workdone": ["<unstructured completed task or milestone>"],
-  "blocker": ["<unstructured error, blocker, or missing dependency>"],
-  "next_step": ["<unstructured planned follow-up or upcoming action>"],
-  "pitfall": ["<unstructured edge case, lesson learned, or architectural constraint>"]
+  "personal": ["<durable user traits, preferences, identity, lifestyle, or habits>"],
+  "objective": ["<active goals, ongoing endeavors, projects, or topics the user is focusing on>"],
+  "workdone": ["<accomplished tasks, completed actions, reached decisions, or historical milestones>"],
+  "blocker": ["<current obstacles, open questions, roadblocks, or frustrations>"],
+  "next_step": ["<planned future actions, commitments, scheduled tasks, or intentions>"],
+  "pitfall": ["<expressed dislikes, things to avoid, lessons learned, or negative experiences>"]
 }
 ```
 - **Dual-Destination Architecture**:
   1. **In-Memory Session Context (Working Memory Continuity)**: The **entire output** of this compaction (both Bucket 1: `personal` and Bucket 2: `objective`, `workdone`, `blocker`, `next_step`, `pitfall`) is what constitutes the `session_context`. The harness prunes all compacted raw turns from `ChatMessage` history and injects this entire structured compaction output into `<session_context>...</session_context>` inside the root system prompt for subsequent turns.
   2. **Turso Database (Long-Term Episodic Ingestion & Provenance)**: The raw JSON output string is stored directly in `session_compactions(compaction_output)`. Extracted facts are inserted into `memory_ingestion_queue` with `status = 'pending'` and linked to the `compaction_id` for background consolidation into the durable Personal Memory document.
-- **Buffer Pruning**: Compacted raw turns are pruned completely from the in-memory FIFO buffer.
-- **Lenient Parse Fallback**: If the model returns non-empty text that fails JSON parsing on both attempts, the raw text is preserved directly inside `<session_context>` with zero staged DB facts rather than failing the turn or dropping context..
+- **Compaction Input Isolation Contract**:
+  - The compaction LLM operates strictly as an isolated summarizer. It NEVER receives the conversational session's system prompt, TTS instructions, or personal memory profile blob.
+  - The compaction input consists strictly of:
+    1. Internal Compaction System Prompt: Instructs concise, dense, third-person extraction into the 6 generic categories and summary, ignoring conversational chit-chat.
+    2. User Message containing:
+       - `<prior_summary>`: The prior session context string from the last compaction run, if any.
+       - `<dialogue>`: The uncompacted conversation slice wrapped as `<turn speaker="user">` and `<turn speaker="assistant">` elements (stripping any `Role::System` messages).
+       - `<schema>` and `<instructions>`.
+- **Output Token Budget**: Determined strictly in code as `min(slice, probed_max_output_tokens)` where `slice = (context_window as f32 * 0.15) as u32`. If the 15% slice exceeds what the provider physically supports (`probed_max_output_tokens`), it clamps strictly to the provider ceiling; otherwise it uses the 15% slice. Zero arbitrary magic numbers.
+- **Buffer Pruning**: Compacted raw turns are pruned completely from the in-memory FIFO buffer upon successful compaction.
+- **Lenient Parse Fallback**: If the model returns non-empty text that fails JSON parsing, the raw text is preserved directly inside `<session_context>` with zero staged DB facts rather than dropping context.
 
 ### 3.3 Compaction Triggers & Behavioral Rules
 
@@ -63,12 +72,15 @@ Every compaction pass (Critical, Soft, or Manual) produces a single unified JSON
 - **Trigger**: Fired synchronously in `prepare_turn_context` prior to LLM generation when context utilization reaches or exceeds 85% of `context_window`.
 - **Speech Transition Filler**: An organic transition phrase is randomly selected based on language (English: `TRANSITION_MESSAGES_EN`, Hindi: `TRANSITION_MESSAGES_HI`) and dispatched immediately to `TtsActor` for playback to prevent dead air while compaction executes.
 - **Ledger & Staging**: The critical path records a `session_compactions` run (`trigger_kind = 'critical'`, from/to resolved as min/max uncompacted turn at slice time) and stages extracted facts via the same atomic commit as every other trigger, so critical-path facts enter deduplication with full provenance.
-- **Preemptive FIFO**: No compaction is attempted when the provider is `Embedded` with `context_window <= 4096` or the buffer holds 3 or fewer messages; raw FIFO truncation applies directly in those cases.
-- **Execution & Timeout**: Dispatches compaction request with a 45-second timeout per attempt and 2 attempts total, bound to the turn's `CancellationToken`. User speech onset (`InteractionState::Listening`) aborts compaction immediately.
-- **Lenient Parse Fallback**: If the model returns non-empty text that fails JSON parsing on both attempts, the raw text is kept as `context_summary` with zero staged facts rather than failing the turn.
-- **Failure Policy**: If all attempts fail:
-  1. Falls back to raw FIFO truncation: pops oldest turns until utilization $< 85\%$ to ensure voice response is never blocked.
+- **Eligibility Gate**: Requires `message_count >= MIN_MESSAGES_FOR_COMPACTION` (4 messages). No provider or model size bypasses compaction; preemptive FIFO is completely eliminated.
+- **Single Attempt & Fast FIFO Fallback**: Dispatches a single compaction attempt with a 45-second timeout (`MAX_COMPACTION_ATTEMPTS = 1`), bound to the turn's `CancellationToken`. User speech onset (`InteractionState::Listening`) aborts compaction immediately.
+- **Failure Policy**: If the attempt times out, fails generation, or returns empty text:
+  1. Immediately falls back to raw FIFO truncation: pops oldest turn pair so utilization drops and voice response is never blocked.
   2. Emits `VoxEvent::Error(PipelineError)` with `impact: PipelineImpact::Degraded` and `actionability: Actionability::Actionable { category: "compaction_failure", hint: "Context compaction failed; fell back to FIFO" }`.
+  3. Does NOT retry repeatedly or halt the user. The next turn will re-evaluate compaction cleanly if context remains critical.
+
+#### Global Minimum Context Window Invariant
+- Vox enforces a strict minimum context window of 8,192 tokens across all providers (Embedded, Server, Cloud) via `MIN_LLM_CONTEXT_WINDOW = 8192`. Context window configurations below 8,192 tokens are invalid and rejected at IPC mutation and deserialization.
 
 #### B. Opportunistic Soft Compaction (`CONTEXT_SOFT_THRESHOLD = 0.65`)
 - **Trigger Condition**: Context utilization is between $65\%$ and $85\%$ (`0.65 <= util < 0.85`).

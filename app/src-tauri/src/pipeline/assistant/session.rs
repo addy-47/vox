@@ -233,35 +233,35 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
         .clone();
     let prompt = state.resolve_base_prompt();
 
+    let tokio_handle = get_tokio_handle();
+    let conn = state.db.connect().ok();
+    let (personal_memory, summary, turns) =
+        if let (Some(sid), Some(conn)) = (session_id, conn.as_ref()) {
+            match tokio_handle.block_on(fetch_session_continuation(conn, sid)) {
+                Ok(data) => (data.personal_memory, data.latest_summary, data.turns),
+                Err(e) => {
+                    log::warn!("[Pipeline::Session] Failed to fetch continuation: {}", e);
+                    (None, None, Vec::new())
+                }
+            }
+        } else if let Some(conn) = conn.as_ref() {
+            let mem = tokio_handle
+                .block_on(get_personal_memory(conn, None))
+                .ok()
+                .and_then(|r| {
+                    if r.content.trim().is_empty() {
+                        None
+                    } else {
+                        Some(r.content)
+                    }
+                });
+            (mem, None, Vec::new())
+        } else {
+            (None, None, Vec::new())
+        };
+
     match session_ctx.pipeline_mode {
         PipelineMode::Modular => {
-            let tokio_handle = get_tokio_handle();
-            let conn = state.db.connect().ok();
-            let (personal_memory, summary, turns) =
-                if let (Some(sid), Some(conn)) = (session_id, conn.as_ref()) {
-                    match tokio_handle.block_on(fetch_session_continuation(conn, sid)) {
-                        Ok(data) => (data.personal_memory, data.latest_summary, data.turns),
-                        Err(e) => {
-                            log::warn!("[Pipeline::Session] Failed to fetch continuation: {}", e);
-                            (None, None, Vec::new())
-                        }
-                    }
-                } else if let Some(conn) = conn.as_ref() {
-                    let mem = tokio_handle
-                        .block_on(get_personal_memory(conn, None))
-                        .ok()
-                        .and_then(|r| {
-                            if r.content.trim().is_empty() {
-                                None
-                            } else {
-                                Some(r.content)
-                            }
-                        });
-                    (mem, None, Vec::new())
-                } else {
-                    (None, None, Vec::new())
-                };
-
             let llm_tx_opt = state
                 .engine
                 .try_lock()
@@ -284,7 +284,12 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
             }
         }
         PipelineMode::Realtime => {
-            *state.harness.lock() = Some(HarnessSession::new_realtime(session_id, prompt));
+            let mut harness =
+                HarnessSession::new_realtime(session_id, prompt, personal_memory, &settings);
+            if !turns.is_empty() || summary.is_some() {
+                harness.seed_continuation(summary, turns);
+            }
+            *state.harness.lock() = Some(harness);
         }
     }
 

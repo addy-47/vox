@@ -12,16 +12,17 @@ use crate::{
 pub mod actor;
 pub mod catalog;
 pub mod embedded;
-pub mod probe;
 pub mod transport;
 
 pub use actor::{
     cool_down_llm, create_llm_provider, spawn_llm_worker, warm_up_llm, GenerationDefaults,
     GenerationPolicy, LlmCommand,
 };
-pub use catalog::{list_presets, lookup_preset, ProviderPresetMeta, PROVIDER_CATALOG};
+pub use catalog::{
+    list_models, list_presets, lookup_preset, probe_capabilities, provider_catalog,
+    CapabilityProbeEngine, CapabilityProvenance, ModelProbeResult, ModelSpec, ProviderPresetMeta,
+};
 pub use embedded::{EmbeddedProvider, LlmWorker, ModelFamily};
-pub use probe::{CapabilityProbeEngine, ModelProbeResult};
 pub use transport::{
     AuthScheme, CapabilitySource, ConnectionConfig, RemoteTransport, TokenLimitField, TransportType,
 };
@@ -31,18 +32,10 @@ pub const QWEN_MODEL_FILE: &str = "qwen-3.5-0.8b-q4_k_m.gguf";
 pub const GEMMA_MODEL_DIR: &str = "llm/gemma4";
 pub const GEMMA_MODEL_FILE: &str = "gemma-4-e2b-q4_k_m.gguf";
 
-pub const DEFAULT_MAX_CONTEXT_TOKENS: usize = 2048;
 pub const DEFAULT_BATCH_CHUNK_SIZE: usize = 512;
 pub const DEFAULT_MAX_GENERATION_SAFETY_TOKENS: usize = 512;
-pub const DEFAULT_PROBE_TIMEOUT_SECS: u64 = 12;
-pub const DEFAULT_VALIDATION_TIMEOUT_SECS: u64 = 6;
 pub const DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS: u64 = 5;
 pub const DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS: u64 = 180;
-pub const DEFAULT_STREAM_CHUNK_TIMEOUT_MS: u64 = 150;
-pub const DEFAULT_CANCEL_POLL_INTERVAL_MS: u64 = 50;
-pub const DEFAULT_PROBE_MAX_TOKENS: u32 = 40;
-pub const DEFAULT_TOOL_PROBE_MAX_TOKENS: u32 = 80;
-pub const DEFAULT_PROBE_TEMPERATURE: f32 = 0.1;
 
 /// Purpose of generation, allowing default policy selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -204,10 +197,6 @@ pub trait LlmProvider: Send + Sync {
     fn list_models<'a>(&'a self) -> BoxFuture<'a, Result<Vec<LlmModelInfo>, LlmError>>;
 
     fn kind(&self) -> ProviderKind;
-
-    fn max_context_tokens(&self) -> usize {
-        DEFAULT_MAX_CONTEXT_TOKENS
-    }
 }
 
 /// Large Language Model engine contract for lower-level FFI.
