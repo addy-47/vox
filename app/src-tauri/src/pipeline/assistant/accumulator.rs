@@ -8,6 +8,7 @@ pub struct TurnAccumulator {
     pub chunker: TtsClauseChunker,
     pub assistant_response: String,
     pub user_transcript: String,
+    next_clause_seq: u32,
 }
 
 impl Default for TurnAccumulator {
@@ -23,6 +24,7 @@ impl TurnAccumulator {
             chunker: TtsClauseChunker::new(),
             assistant_response: String::new(),
             user_transcript: String::new(),
+            next_clause_seq: 0,
         }
     }
 
@@ -31,6 +33,7 @@ impl TurnAccumulator {
         self.chunker.clear();
         self.assistant_response.clear();
         self.user_transcript.clear();
+        self.next_clause_seq = 0;
     }
 
     /// Appends incoming token to assistant response and extracts speakable clauses.
@@ -42,6 +45,13 @@ impl TurnAccumulator {
     /// Flushes any remaining unpunctuated text from the clause chunker.
     pub fn flush_chunker(&mut self) -> Option<String> {
         self.chunker.flush()
+    }
+
+    /// Claims a contiguous block of TTS clause sequence ids for dispatched clauses.
+    pub fn claim_clause_ids(&mut self, count: usize) -> u32 {
+        let first = self.next_clause_seq;
+        self.next_clause_seq += count as u32;
+        first
     }
 
     /// Sets the recognized user transcript.

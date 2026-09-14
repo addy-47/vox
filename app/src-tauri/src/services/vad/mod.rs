@@ -14,6 +14,8 @@ use crate::core::settings::{AudioOutputMode, InteractionMode};
 
 pub const MODEL_DIR_VAD: &str = "vad";
 pub const MODEL_FILE_VAD: &str = "ten_vad.onnx";
+/// Input sample rate (Hz) of audio frames evaluated by the VAD actor.
+pub const VAD_INPUT_SAMPLE_RATE: u32 = 16000;
 pub const VAD_CHUNK_SIZE: usize = 256;
 pub const VAD_PRE_ROLL_CAPACITY: usize = 8000;
 pub const VAD_SPEECH_START_FRAMES: usize = 2;

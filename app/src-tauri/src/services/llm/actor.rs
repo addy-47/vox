@@ -191,6 +191,19 @@ fn handle_generate(
     cancel: tokio_util::sync::CancellationToken,
     response_tx: mpsc::Sender<LlmResponse>,
 ) {
+    let input_chars: usize = request.input.messages.iter().map(|m| m.content.len()).sum();
+    log::info!(
+        "[Llm::Worker] Generate received (turn {}, purpose {:?}, messages {}, input_chars {}, temp {:?}, top_p {:?}, top_k {:?}, max_tokens {:?}, seed {:?})",
+        turn_id,
+        request.purpose,
+        request.input.messages.len(),
+        input_chars,
+        request.options.temperature,
+        request.options.top_p,
+        request.options.top_k,
+        request.options.max_output_tokens,
+        request.options.seed
+    );
     let (stream_tx, stream_rx) = mpsc::channel::<super::LlmStreamEvent>();
     let provider_clone = Arc::clone(provider);
     let cancel_clone = cancel.clone();

@@ -12,13 +12,41 @@ use crate::{
     pipeline::{target_window, transition, RoutingContext},
     services::{
         self,
-        harness::{CompactionParams, CompactionPlugin, StreamRoutingHandles, TurnPreparation},
-        llm::actor::LlmCommand,
+        harness::{
+            CompactionParams, CompactionPlugin, Role, StreamRoutingHandles, TurnPreparation,
+        },
+        llm::{actor::LlmCommand, GenerationRequest},
         notifications::{Action, NotificationCategory, NotificationParams},
         translit::transliterate_if_hi,
         tts::actor::TtsCommand,
     },
 };
+
+/// Logs a compact summary of the assembled LLM generation request for turn tracing.
+fn log_generation_request(turn_id: u32, request: &GenerationRequest) {
+    let mut system_chars = 0usize;
+    let mut user_chars = 0usize;
+    let mut assistant_chars = 0usize;
+    for msg in &request.input.messages {
+        match msg.role {
+            Role::System => system_chars += msg.content.len(),
+            Role::User => user_chars += msg.content.len(),
+            Role::Assistant => assistant_chars += msg.content.len(),
+        }
+    }
+    log::info!(
+        "[Pipeline::Transcript] LLM request assembled (turn {}, purpose {:?}, messages {}, system_chars {}, user_chars {}, assistant_chars {}, temp {:?}, max_tokens {:?}, seed {:?})",
+        turn_id,
+        request.purpose,
+        request.input.messages.len(),
+        system_chars,
+        user_chars,
+        assistant_chars,
+        request.options.temperature,
+        request.options.max_output_tokens,
+        request.options.seed
+    );
+}
 
 /// Spawns the background asynchronous task to prepare conversational context and trigger LLM generation.
 fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
@@ -79,7 +107,10 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
                 );
                 return;
             }
-            TurnPreparation::Ready(req) => req,
+            TurnPreparation::Ready(req) => {
+                log_generation_request(turn_id, &req);
+                req
+            }
             TurnPreparation::NeedsInlineCompaction {
                 filler_phrase,
                 uncompacted_slice,
@@ -104,6 +135,12 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
                         log::warn!(
                             "[Pipeline::Transcript] Failed to dispatch filler to TTS: {}",
                             e
+                        );
+                    } else {
+                        log::info!(
+                            "[Pipeline::Transcript] Interim filler dispatched to TTS (turn {}, chars {})",
+                            turn_id,
+                            filler_phrase.len()
                         );
                     }
                 }
@@ -181,6 +218,10 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
                 );
                 return;
             }
+            log::info!(
+                "[Pipeline::Transcript] LLM Generate dispatched (turn {})",
+                turn_id
+            );
         }
 
         if let Some(p_tx) = pipeline_tx {
@@ -208,12 +249,22 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
 
             match stream_result {
                 Ok(Ok(full_text)) => {
+                    let response_chars = full_text.chars().count();
+                    let response_words = full_text.split_whitespace().count();
                     let mut guard = harness_arc.lock();
                     if let Some(ref mut harness) = *guard {
                         if !full_text.trim().is_empty() {
                             harness.commit_turn(full_text);
+                            log::info!(
+                                "[Pipeline::Transcript] Turn committed (turn {}, response_chars {}, response_words {})",
+                                turn_id, response_chars, response_words
+                            );
                         } else {
                             harness.rollback_user_turn();
+                            log::info!(
+                                "[Pipeline::Transcript] Empty response rolled back (turn {})",
+                                turn_id
+                            );
                         }
                         harness.on_turn_completed(app_state, Arc::clone(&harness_arc));
                     }

@@ -17,7 +17,8 @@ use super::{
     telemetry::process_and_emit_telemetry,
     utils::{f32_to_i16_pcm, PreRollBuffer},
     VadBackend, VadEngine as _, VadOperationalMode, VAD_ACTOR_IDLE_SLEEP_MS, VAD_CHUNK_SIZE,
-    VAD_MIN_UTTERANCE_SAMPLES, VAD_PARTIAL_INTERVAL_SAMPLES, VAD_PRE_ROLL_CAPACITY,
+    VAD_INPUT_SAMPLE_RATE, VAD_MIN_UTTERANCE_SAMPLES, VAD_PARTIAL_INTERVAL_SAMPLES,
+    VAD_PRE_ROLL_CAPACITY,
 };
 use crate::{
     core::{
@@ -130,6 +131,7 @@ fn process_vad_commands(
     vad_rx: &mpsc::Receiver<VadCommand>,
     vad: &mut VadBackend,
     state: &mut VadActorState,
+    handles: &VadActorHandles,
 ) -> bool {
     while let Ok(cmd) = vad_rx.try_recv() {
         match cmd {
@@ -175,7 +177,11 @@ fn process_vad_commands(
                 state.operational_mode = op;
             }
             VadCommand::StartWindowValidation => {
-                log::debug!("[VAD Actor] Starting windowed speech validation");
+                let turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
+                log::info!(
+                    "[VAD Actor] Windowed validation started (turn {})",
+                    turn_id
+                );
                 state.window_active = true;
                 state.window_buffer.clear();
                 state.pre_roll_buffer.copy_into(&mut state.window_buffer);
@@ -186,13 +192,6 @@ fn process_vad_commands(
                 state.window_last_speech_sample = 0;
             }
             VadCommand::StopWindowValidation { response_tx } => {
-                log::debug!(
-                    "[VAD Actor] Stopping windowed validation (detected={}, start={}, end={}, buffer_len={})",
-                    state.window_speech_detected,
-                    state.window_first_speech_sample,
-                    state.window_last_speech_sample,
-                    state.window_buffer.len()
-                );
                 state.window_active = false;
                 let raw_len = state.window_buffer.len();
                 let start = state.window_first_speech_sample.min(raw_len);
@@ -205,6 +204,18 @@ fn process_vad_commands(
                     } else {
                         Vec::new()
                     };
+                let trimmed_len = trimmed_audio.len();
+                let turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
+                log::info!(
+                    "[VAD Actor] Windowed validation stopped (turn {}, detected={}, start={}, end={}, raw_samples {}, trimmed_samples {}, {:.2}s)",
+                    turn_id,
+                    state.window_speech_detected,
+                    state.window_first_speech_sample,
+                    state.window_last_speech_sample,
+                    raw_len,
+                    trimmed_len,
+                    trimmed_len as f32 / VAD_INPUT_SAMPLE_RATE as f32
+                );
                 state.window_buffer.clear();
                 let result = VadValidationResult {
                     is_speech_detected: state.window_speech_detected,
@@ -326,10 +337,15 @@ fn handle_speech_start(
 fn handle_speech_end(
     vad: &mut VadBackend,
     state: &mut VadActorState,
+    handles: &VadActorHandles,
     stt_tx: &mpsc::Sender<SttCommand>,
     vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
 ) {
     state.in_speech = false;
+    // Authoritative turn reload: the pipeline router allocates the turn on SpeechStart,
+    // after this detector stamped its local copy at onset. Reload the shared atomic so
+    // the Final carries the pipeline-owned turn (matches PTT, playback, and LLM turns).
+    state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
     log::info!("[VAD Actor] Speech End (turn: {})", state.current_turn_id);
 
     if let Some(tx) = vox_event_tx {
@@ -401,7 +417,7 @@ fn process_continuous_segmentation(
 
         if state.in_speech {
             if state.inactive_frames >= state.speech_end_frames {
-                handle_speech_end(vad, state, stt_tx, vox_event_tx);
+                handle_speech_end(vad, state, handles, stt_tx, vox_event_tx);
                 state.pre_roll_buffer.push(chunk);
             } else {
                 accumulate_speech_frames(chunk, state, stt_tx);
@@ -490,7 +506,7 @@ where
                 return Ok(());
             }
 
-            if process_vad_commands(&channels.vad_rx, &mut vad, &mut state) {
+            if process_vad_commands(&channels.vad_rx, &mut vad, &mut state, &handles) {
                 return Ok(());
             }
 

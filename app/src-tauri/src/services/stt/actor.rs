@@ -11,7 +11,7 @@ use super::{
     SttProvider, STT_DEFAULT_INFERENCE_DURATION_MS, STT_MIN_PARTIAL_THROTTLE_MS,
     STT_PARTIAL_ERROR_PENALTY_MS, STT_WORKER_RECV_TIMEOUT_MS, STT_WORKER_THREAD_PRIORITY,
 };
-use crate::core::events::VoxEvent;
+use crate::{core::events::VoxEvent, services::audio::SAMPLE_RATE};
 
 pub enum SttCommand {
     StreamChunk {
@@ -232,7 +232,17 @@ fn handle_final_command(
     utterance: &[f32],
     state: &mut WorkerState,
 ) {
-    if ctx.cancel_flag.load(Ordering::Relaxed) || tid < state.current_active_turn {
+    let cancelled = ctx.cancel_flag.load(Ordering::Relaxed);
+    log::info!(
+        "[STT] Final received (turn {}, samples {}, {:.2}s, cancelled {}, active_turn {})",
+        tid,
+        utterance.len(),
+        utterance.len() as f32 / SAMPLE_RATE as f32,
+        cancelled,
+        state.current_active_turn
+    );
+    if cancelled || tid < state.current_active_turn {
+        log::info!("[STT] Final rejected as stale/cancelled (turn {})", tid);
         state.last_transcript.clear();
         if let Err(e) = ctx.provider.reset_state() {
             log::warn!("[STT] Error resetting state on stale final: {:?}", e);
@@ -260,6 +270,13 @@ fn handle_final_command(
     if let Err(e) = ctx.provider.reset_state() {
         log::warn!("[STT] Error resetting provider state post-final: {:?}", e);
     }
+
+    log::info!(
+        "[STT] Final transcribed (turn {}, chars {}, words {})",
+        tid,
+        transcript.chars().count(),
+        transcript.split_whitespace().count()
+    );
 
     emit_final_events(ctx, tid, transcript);
 

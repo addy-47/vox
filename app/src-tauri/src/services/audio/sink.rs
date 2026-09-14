@@ -32,6 +32,7 @@ pub struct PlaybackStreamContext {
     pub last_sample: f32,
     pub current_volume: f32,
     pub filter_bank: FilterBank,
+    pub played_samples: u64,
 }
 
 impl PlaybackStreamContext {
@@ -56,6 +57,7 @@ impl PlaybackStreamContext {
             last_sample: 0.0,
             current_volume: PLAYBACK_DEFAULT_VOLUME,
             filter_bank: FilterBank::new(PLAYBACK_SAMPLE_RATE as f32),
+            played_samples: 0,
         }
     }
 
@@ -65,6 +67,7 @@ impl PlaybackStreamContext {
             self.consumer.skip(self.consumer.occupied_len());
             self.discard_request.store(false, Ordering::Relaxed);
             self.turn_armed.store(false, Ordering::Relaxed);
+            self.played_samples = 0;
             self.reset_telemetry_state();
         }
 
@@ -78,6 +81,7 @@ impl PlaybackStreamContext {
             if self.handles.cancel_flag.load(Ordering::Relaxed) {
                 self.consumer.skip(self.consumer.occupied_len());
                 self.turn_armed.store(false, Ordering::Relaxed);
+                self.played_samples = 0;
             }
             self.reset_telemetry_state();
             output.fill(0.0);
@@ -101,12 +105,14 @@ impl PlaybackStreamContext {
         let mut sum_low_sq = 0.0;
         let mut sum_mid_sq = 0.0;
         let mut sum_high_sq = 0.0;
+        let mut popped = 0u64;
 
         for frame in 0..frames {
             let sample_opt = self.consumer.try_pop();
             let (sample, target_volume) = match sample_opt {
                 Some(s) => {
                     self.last_sample = s;
+                    popped += 1;
                     (s, PLAYBACK_DEFAULT_VOLUME)
                 }
                 None => (self.last_sample, 0.0),
@@ -133,6 +139,7 @@ impl PlaybackStreamContext {
         }
 
         self.update_energy_metrics(frames, sum_sq, sum_low_sq, sum_mid_sq, sum_high_sq);
+        self.played_samples += popped;
 
         if self.consumer.is_empty() {
             let pending_jobs = self.handles.pending_synthesis_jobs.load(Ordering::Relaxed);
@@ -154,10 +161,13 @@ impl PlaybackStreamContext {
                     log::warn!("[Audio::Playback] Failed to emit PlaybackFinished: {}", e);
                 } else {
                     log::info!(
-                        "[Audio::Playback] Playback completed — PlaybackFinished emitted (turn {}, intent: {:?})",
+                        "[Audio::Playback] Playback completed — PlaybackFinished emitted (turn {}, intent {:?}, played_samples {}, {:.2}s)",
                         tid,
-                        intent
+                        intent,
+                        self.played_samples,
+                        self.played_samples as f32 / PLAYBACK_SAMPLE_RATE as f32
                     );
+                    self.played_samples = 0;
                 }
             }
 
