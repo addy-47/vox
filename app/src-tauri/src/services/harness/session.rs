@@ -22,8 +22,9 @@ use crate::{
     persistence::TurnRow,
     services::{
         llm::{
-            actor::LlmCommand, ConversationInput, GenerationOptions, GenerationPurpose,
-            GenerationRequest, OutputConstraint,
+            actor::{LlmCommand, LlmResponse},
+            ConversationInput, GenerationOptions, GenerationPurpose, GenerationRequest,
+            OutputConstraint,
         },
         memory::estimate_tokens,
     },
@@ -82,7 +83,8 @@ impl HarnessSession {
         let assembled_prompt = prompt_plugin.assemble();
 
         let history_plugin = ConversationHistoryPlugin::with_system_prompt(assembled_prompt);
-        let budget_plugin = ContextBudgetPlugin::new(ctx_window, is_cloud);
+        let budget_plugin =
+            ContextBudgetPlugin::new(ctx_window, settings.llm.max_output_tokens as usize);
         let compaction_plugin =
             CompactionPlugin::new(ctx_window, is_embedded, settings.history.auto_compaction);
         let generation_options = GenerationOptions {
@@ -106,9 +108,20 @@ impl HarnessSession {
         }
     }
 
-    pub fn new_realtime(session_id: Option<i64>, base_prompt: String) -> Self {
-        let history_plugin = ConversationHistoryPlugin::with_system_prompt(base_prompt.clone());
-        let prompt_plugin = PromptBuilderPlugin::new(base_prompt, 4096, 0.20);
+    pub fn new_realtime(
+        session_id: Option<i64>,
+        base_prompt: String,
+        personal_memory: Option<String>,
+        settings: &VoxSettings,
+    ) -> Self {
+        let ctx_window = settings.llm.context_window as usize;
+        let max_share = settings.memory.max_context_share;
+
+        let mut prompt_plugin = PromptBuilderPlugin::new(base_prompt, ctx_window, max_share);
+        prompt_plugin.set_personal_memory(personal_memory);
+        let assembled_prompt = prompt_plugin.assemble();
+
+        let history_plugin = ConversationHistoryPlugin::with_system_prompt(assembled_prompt);
 
         Self {
             session_id,
@@ -334,9 +347,7 @@ impl HarnessSession {
     }
 
     /// Returns a cloned `StreamRoutingPlugin` for use in spawn_blocking contexts.
-    pub(crate) fn clone_stream_plugin(
-        &self,
-    ) -> crate::services::harness::plugins::stream::StreamRoutingPlugin {
+    pub(crate) fn clone_stream_plugin(&self) -> StreamRoutingPlugin {
         self.stream.clone()
     }
 
@@ -344,7 +355,7 @@ impl HarnessSession {
     pub fn route_stream<R: tauri::Runtime>(
         &self,
         handles: StreamRoutingHandles<R>,
-        response_rx: std::sync::mpsc::Receiver<crate::services::llm::actor::LlmResponse>,
+        response_rx: mpsc::Receiver<LlmResponse>,
     ) -> Result<String, String> {
         self.stream.route_stream(handles, response_rx)
     }

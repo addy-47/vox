@@ -18,7 +18,7 @@ use common::{
     reporting::{generate_run_id, save_json_report, BenchmarkSystemInfo},
 };
 use vox_lib::{
-    core::defaults::DEFAULT_SYSTEM_PROMPT_MODULAR,
+    core::defaults::{DEFAULT_LLM_CONTEXT_WINDOW, DEFAULT_SYSTEM_PROMPT_MODULAR},
     services::llm::{embedded::EmbeddedProvider, QWEN_MODEL_DIR, QWEN_MODEL_FILE},
 };
 
@@ -113,7 +113,7 @@ fn main() {
             std::process::exit(1);
         }
 
-        let provider = match EmbeddedProvider::new(&qwen_path, 2048, 4) {
+        let provider = match EmbeddedProvider::new(&qwen_path, DEFAULT_LLM_CONTEXT_WINDOW, 4) {
             Ok(p) => Arc::new(p),
             Err(e) => {
                 eprintln!("[ERROR] Failed to load EmbeddedProvider: {:?}", e);

@@ -15,7 +15,6 @@ use crate::{
 };
 
 pub const MIN_MESSAGES_FOR_COMPACTION: usize = 4;
-pub const EMBEDDED_MODEL_MIN_CONTEXT_WINDOW: usize = 4096;
 
 /// Bundled parameters for executing and persisting compaction passes.
 pub struct CompactionParams<'a> {
@@ -49,6 +48,14 @@ impl CompactionPlugin {
         }
     }
 
+    pub fn context_window(&self) -> usize {
+        self.context_window
+    }
+
+    pub fn is_embedded(&self) -> bool {
+        self.is_embedded
+    }
+
     pub fn session_context(&self) -> Option<&str> {
         self.session_context.as_deref()
     }
@@ -70,9 +77,6 @@ impl CompactionPlugin {
     }
 
     pub fn can_perform_inline_compaction(&self, message_count: usize) -> bool {
-        if self.is_embedded && self.context_window <= EMBEDDED_MODEL_MIN_CONTEXT_WINDOW {
-            return false;
-        }
         message_count >= MIN_MESSAGES_FOR_COMPACTION
     }
 

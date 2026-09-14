@@ -55,7 +55,7 @@ async fn test_transcript_to_llm_matrix() {
             settings.interaction.pipeline_mode = PipelineMode::Modular;
             settings.audio.output_mode = AudioOutputMode::Headset;
             settings.llm.active = LlmActiveProvider::Embedded;
-            settings.llm.context_window = 4200;
+            settings.llm.context_window = 8192;
             settings.llm.max_output_tokens = 512;
             settings.llm.temperature = 0.7;
             settings.history.auto_compaction = true;
@@ -244,11 +244,11 @@ async fn test_transcript_to_llm_matrix() {
             // Drain any prior TTS commands from previous turns (e.g. Subtest 1 responses)
             while tts_rx.try_recv().is_ok() {}
 
-            // Seed conversation buffer with enough messages to exceed critical threshold (>85% of usable 3688 = >3135 tokens)
+            // Seed conversation buffer with enough messages to exceed critical threshold (>85% of usable 7680 = >6528 tokens; 105 turns ≈ 7035 tokens)
             {
                 let mut guard = state.harness.lock();
                 let harness = guard.as_mut().expect("HarnessSession must be mounted");
-                for i in 0..50 {
+                for i in 0..105 {
                     harness.history_mut().push_user_turn(format!(
                         "Turn {} user statement with sufficient length and detail to accumulate tokens in accountant memory buffer. We are discussing neural networks, integration testing, and long context tracking across conversational agents.",
                         i

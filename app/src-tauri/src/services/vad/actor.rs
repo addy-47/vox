@@ -178,10 +178,7 @@ fn process_vad_commands(
             }
             VadCommand::StartWindowValidation => {
                 let turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
-                log::info!(
-                    "[VAD Actor] Windowed validation started (turn {})",
-                    turn_id
-                );
+                log::info!("[VAD Actor] Windowed validation started (turn {})", turn_id);
                 state.window_active = true;
                 state.window_buffer.clear();
                 state.pre_roll_buffer.copy_into(&mut state.window_buffer);

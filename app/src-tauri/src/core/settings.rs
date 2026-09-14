@@ -29,7 +29,7 @@ use crate::{
         DEFAULT_TELEMETRY_LOG_LEVEL, DEFAULT_TTS_QUALITY_STEPS, DEFAULT_TTS_SPEED,
         DEFAULT_TTS_THREADS, DEFAULT_TTS_VOICE_INDEX, DEFAULT_UI_ACCENT_SEED, DEFAULT_UI_THEME,
         DEFAULT_VAD_PTT_NOISE_GATE, DEFAULT_VAD_SILENCE_DURATION_MS, DEFAULT_VAD_SPEECH_ONSET_MS,
-        DEFAULT_VAD_THRESHOLD,
+        DEFAULT_VAD_THRESHOLD, MIN_LLM_CONTEXT_WINDOW,
     },
     utils::paths,
 };
@@ -97,6 +97,8 @@ pub struct ModelCapabilities {
     pub supports_latin: bool,
     pub supports_devanagari: bool,
     pub context_window: Option<u32>,
+    pub max_output_tokens: Option<u32>,
+    pub provenance: Option<String>,
     pub tps: Option<f32>,
     pub ttft_ms: Option<u32>,
     pub server_has_gpu: bool,
@@ -502,7 +504,7 @@ impl LlmSettings {
     }
 
     pub fn effective_ctx_size(&self) -> u32 {
-        self.context_window
+        self.context_window.max(MIN_LLM_CONTEXT_WINDOW)
     }
 
     pub fn to_provider_config(&self) -> LlmProviderConfig {
