@@ -126,10 +126,15 @@ impl StreamRoutingPlugin {
             return;
         };
 
-        for clause in clauses {
-            handles
+        let first_clause_id = handles.accumulator.lock().claim_clause_ids(clauses.len());
+        for (index, clause) in clauses.into_iter().enumerate() {
+            let clause_id = first_clause_id + index as u32;
+            let clause_chars = clause.chars().count();
+            let clause_words = clause.split_whitespace().count();
+            let queued = handles
                 .pending_synthesis_jobs
-                .fetch_add(1, Ordering::Relaxed);
+                .fetch_add(1, Ordering::Relaxed)
+                + 1;
             let cmd = TtsCommand::Generate {
                 turn_id: handles.turn_id,
                 text: clause,
@@ -140,6 +145,16 @@ impl StreamRoutingPlugin {
                     .pending_synthesis_jobs
                     .fetch_sub(1, Ordering::Relaxed);
                 log::warn!("[Harness::Stream] Failed to dispatch clause to TTS: {}", e);
+            } else {
+                log::info!(
+                    "[Harness::Stream] Clause dispatched (turn {}, clause {}, chars {}, words {}, intent {:?}, pending_jobs {})",
+                    handles.turn_id,
+                    clause_id,
+                    clause_chars,
+                    clause_words,
+                    AudioIntent::TurnResponse,
+                    queued
+                );
             }
         }
     }
@@ -154,9 +169,13 @@ impl StreamRoutingPlugin {
             return;
         };
 
+        let remainder_chars = remainder_text.chars().count();
+        let remainder_words = remainder_text.split_whitespace().count();
+        let clause_id = handles.accumulator.lock().claim_clause_ids(1);
         handles
             .pending_synthesis_jobs
             .fetch_add(1, Ordering::Relaxed);
+        let queued = handles.pending_synthesis_jobs.load(Ordering::Relaxed);
         let cmd = TtsCommand::Generate {
             turn_id: handles.turn_id,
             text: remainder_text,
@@ -169,6 +188,16 @@ impl StreamRoutingPlugin {
             log::warn!(
                 "[Harness::Stream] Failed to dispatch remainder to TTS: {}",
                 e
+            );
+        } else {
+            log::info!(
+                "[Harness::Stream] Remainder flushed (turn {}, clause {}, chars {}, words {}, intent {:?}, pending_jobs {})",
+                handles.turn_id,
+                clause_id,
+                remainder_chars,
+                remainder_words,
+                AudioIntent::TurnResponse,
+                queued
             );
         }
     }
@@ -188,6 +217,18 @@ impl StreamRoutingPlugin {
         if handles.cancel.load(Ordering::Relaxed) {
             return;
         }
+
+        let (response_chars, response_words) = {
+            let acc = handles.accumulator.lock();
+            (
+                acc.assistant_response.chars().count(),
+                acc.assistant_response.split_whitespace().count(),
+            )
+        };
+        log::info!(
+            "[Harness::Stream] Stream finished (turn {}, response_chars {}, response_words {})",
+            handles.turn_id, response_chars, response_words
+        );
 
         let event = VoxEvent::LlmFinished {
             turn_id: handles.turn_id,

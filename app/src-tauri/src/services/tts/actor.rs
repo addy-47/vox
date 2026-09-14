@@ -58,6 +58,7 @@ pub fn spawn_tts_worker(
 ) {
     log::info!("[TTS Worker] Persistent loop started.");
 
+    let mut job_seq = 0u64;
     while let Ok(cmd) = rx.recv() {
         match cmd {
             TtsCommand::Generate {
@@ -65,10 +66,26 @@ pub fn spawn_tts_worker(
                 text,
                 intent,
             } => {
+                job_seq += 1;
+                let pending = handles
+                    .pending_synthesis_jobs
+                    .as_ref()
+                    .map(|jobs| jobs.load(Ordering::Relaxed))
+                    .unwrap_or(0);
+                log::info!(
+                    "[TTS Worker] Job started (job {}, turn {}, intent {:?}, chars {}, words {}, pending_jobs {})",
+                    job_seq,
+                    turn_id,
+                    intent,
+                    text.chars().count(),
+                    text.split_whitespace().count(),
+                    pending
+                );
                 log::debug!(
-                    "[TTS Worker] Processing TTS chunk: '{}' (intent: {:?})",
-                    text,
-                    intent
+                    "[TTS Worker] Job text (job {}, turn {}): '{}'",
+                    job_seq,
+                    turn_id,
+                    text
                 );
                 let text_clone = text.clone();
                 let provider_ref = AssertUnwindSafe(&*provider);
@@ -85,12 +102,20 @@ pub fn spawn_tts_worker(
                     provider_ref.synthesize_chunk(&text_clone, &ctx)
                 }));
 
+                let mut remaining_jobs = 0u32;
+                let mut flushed_pre_roll = false;
                 if let Some(ref jobs) = handles.pending_synthesis_jobs {
-                    let remaining = jobs.fetch_sub(1, Ordering::Relaxed);
-                    if remaining <= 1 {
+                    let previous = jobs.fetch_sub(1, Ordering::Relaxed);
+                    remaining_jobs = previous.saturating_sub(1);
+                    if previous <= 1 {
                         handles.playback.flush_pre_roll();
+                        flushed_pre_roll = true;
                     }
                 }
+                log::info!(
+                    "[TTS Worker] Job finished (job {}, turn {}, remaining_jobs {}, flushed_pre_roll {})",
+                    job_seq, turn_id, remaining_jobs, flushed_pre_roll
+                );
 
                 match res {
                     Ok(Err(e)) => {

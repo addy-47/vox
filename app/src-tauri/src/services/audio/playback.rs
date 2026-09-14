@@ -153,6 +153,14 @@ impl PlaybackEngine {
                 }
             }
         }
+
+        log::debug!(
+            "[Audio::Playback] Ingested chunk (turn {}, intent {:?}, chunk_samples {}, occupied {})",
+            self.current_turn_id.load(Ordering::Relaxed),
+            AudioIntent::from(self.playback_intent.load(Ordering::Relaxed)),
+            scratch.len(),
+            prod.occupied_len()
+        );
     }
 
     /// Ingest a raw PCM i16 chunk with arbitrary sample rate, normalize, resample to 24kHz if needed, and push with realtime pre-roll cushion.
@@ -263,7 +271,10 @@ impl PlaybackEngine {
     pub fn cancel(&self) {
         self.cancel_flag.store(true, Ordering::Relaxed);
         self.discard_request.store(true, Ordering::Relaxed);
-        log::info!("[Audio::Playback] Cancelled — buffer signal sent");
+        log::info!(
+            "[Audio::Playback] Cancelled (turn {}) — buffer signal sent",
+            self.current_turn_id.load(Ordering::Relaxed)
+        );
     }
 
     /// Returns true if playback has been cancelled.

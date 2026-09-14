@@ -400,8 +400,6 @@ impl LlmEngine for LlmWorker {
         let limits = GenerationLimits::new(total_input_tokens, self.ctx_size, max_output_tokens);
         let mut emitter = StreamingEmitter::new(&self.family, tx);
 
-        log::info!("[LLM] >>> Generating (turn: {})...", turn_id);
-
         let max_new_batch = match max_output_tokens {
             Some(toks) => (toks as usize).min(self.ctx_size as usize),
             None => DEFAULT_MAX_GENERATION_SAFETY_TOKENS,
@@ -412,6 +410,19 @@ impl LlmEngine for LlmWorker {
         let top_p = options.top_p.unwrap_or(0.8);
         let top_k = options.top_k.unwrap_or(20) as i32;
         let seed = options.seed.unwrap_or(42) as u32;
+
+        log::info!(
+            "[LLM] Generating (turn {}, family {:?}, input_tokens {}, ctx {}, temp {}, top_p {}, top_k {}, max_tokens {:?}, seed {})",
+            turn_id,
+            self.family,
+            total_input_tokens,
+            self.ctx_size,
+            temp,
+            top_p,
+            top_k,
+            options.max_output_tokens,
+            seed
+        );
 
         let mut sampler = if self.family == ModelFamily::Qwen {
             Some(LlamaSampler::chain_simple([
