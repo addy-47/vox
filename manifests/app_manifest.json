@@ -1,9 +1,11 @@
 {
-  "latest_version": "0.8.8",
+  "latest_version": "0.8.7",
   "release_notes": [
-    "Redesigned Vox UI to resemble the vision.",
-    "OpenAI-Compatible Remote LLM Support, fully provider agnostic and custom API endpoints alongside embedded local inference.",
-    "Phase 9: V3 Human-Centric Cognitive Memory Subsystem with strict local ONNX NLI, 10-collection personal memory graph, and two-tier budget-capped retrieval."
+    "Domain-Partitioned Event-Driven Pipeline: Single-writer vox-router architecture across 6 interaction domains (Modular Passive/PTT, Realtime S2S, Dictation) with instant barge-in and warm audio pausing.",
+    "Sentient Cognitive Memory v2: 3D Fibonacci tree canopy with Fresnel core in Three.js, 2-stage deduplication (Jaccard + all-MiniLM-L6-v2 ONNX cosine), and rolling working compaction.",
+    "Dynamic Model Capability Catalog: Dynamic catalog supporting 4,500+ models with live TTFT/TPS probing, system-wide 8,192-token context floor, and unified cloud/local provider hub.",
+    "Realtime Duplex Voice Engine: Native bi-directional WebSocket streaming for Gemini Live and Deepgram Voice Agent alongside the on-device modular pipeline.",
+    "Native Turso SQLite MVCC Engine: Multi-version concurrency control with isolated connection pooling and transactional memory persistence."
   ],
   "linux": {
     "package": "vox",
