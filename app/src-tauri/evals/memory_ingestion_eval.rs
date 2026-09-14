@@ -19,11 +19,14 @@
 #[path = "common/mod.rs"]
 mod common;
 
-use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use common::{db, judge, report};
 use vox_lib::{
     persistence::queue::has_unfinished_items,
     services::memory::{
@@ -32,10 +35,11 @@ use vox_lib::{
     },
 };
 
-use common::{db, judge, report};
-
 #[derive(Parser, Debug)]
-#[command(name = "memory_ingestion_eval", about = "Memory ladder rung 2: ingestion dedup eval")]
+#[command(
+    name = "memory_ingestion_eval",
+    about = "Memory ladder rung 2: ingestion dedup eval"
+)]
 struct Args {
     /// Rung-1 ladder DB file (copied, never mutated in place).
     #[arg(long)]
@@ -60,7 +64,10 @@ async fn snapshot_facts(conn: &turso::Connection) -> Result<Vec<FactView>> {
     // Dev-tool read: the persistence API exposes active-only fetchers, but the
     // eval must also see deactivated facts to grade merges.
     let mut rows = conn
-        .query("SELECT id, type, text, status FROM memory_facts ORDER BY id;", ())
+        .query(
+            "SELECT id, type, text, status FROM memory_facts ORDER BY id;",
+            (),
+        )
         .await?;
     let mut out = Vec::new();
     while let Some(row) = rows.next().await? {
@@ -106,9 +113,8 @@ async fn run(args: Args) -> Result<()> {
 
     // --- Ladder handoff: copy rung-1 DB, never mutate it in place -----------
     std::fs::create_dir_all(&run_dir)?;
-    std::fs::copy(&args.db_in, &db_path).with_context(|| {
-        format!("Failed to copy ladder DB from {}", args.db_in.display())
-    })?;
+    std::fs::copy(&args.db_in, &db_path)
+        .with_context(|| format!("Failed to copy ladder DB from {}", args.db_in.display()))?;
     let (_db, conn) = db::open_existing_eval_db(&db_path).await?;
 
     let pending_before = pending_count(&conn).await?;
@@ -145,7 +151,10 @@ async fn run(args: Args) -> Result<()> {
     let all_facts = snapshot_facts(&conn).await?;
     anyhow::ensure!(!all_facts.is_empty(), "Zero facts in DB after ingestion");
     let active: Vec<&FactView> = all_facts.iter().filter(|f| f.status == "active").collect();
-    let inactive: Vec<&FactView> = all_facts.iter().filter(|f| f.status == "inactive").collect();
+    let inactive: Vec<&FactView> = all_facts
+        .iter()
+        .filter(|f| f.status == "inactive")
+        .collect();
     anyhow::ensure!(!active.is_empty(), "Zero active facts after ingestion");
 
     // Attribute each merge to its deciding stage by snapshot diff.
@@ -176,12 +185,17 @@ async fn run(args: Args) -> Result<()> {
                 .collect::<Vec<_>>(),
         )?;
         let survivors_json = serde_json::to_string_pretty(&active)?;
-        let user_content =
-            format!("MERGED_PAIRS:\n{merged_json}\n\nSURVIVORS:\n{survivors_json}");
+        let user_content = format!("MERGED_PAIRS:\n{merged_json}\n\nSURVIVORS:\n{survivors_json}");
         Some(
             tokio::time::timeout(
                 Duration::from_secs(600),
-                judge::run_judge(&api_key, &args.judge_model, &system_prompt, &user_content, 4000),
+                judge::run_judge(
+                    &api_key,
+                    &args.judge_model,
+                    &system_prompt,
+                    &user_content,
+                    4000,
+                ),
             )
             .await
             .context("Judge call timed out")?

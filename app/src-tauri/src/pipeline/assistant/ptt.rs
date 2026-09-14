@@ -41,7 +41,10 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx
 
     log::info!(
         "[Pipeline::Ptt] PttStart accepted (state {:?}, mode {:?}/{:?}, owner {:?})",
-        current_state, ctx.pipeline_mode, ctx.interaction_mode, ctx.owner
+        current_state,
+        ctx.pipeline_mode,
+        ctx.interaction_mode,
+        ctx.owner
     );
 
     let turn_id = if current_state == InteractionState::Thinking

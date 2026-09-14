@@ -22,21 +22,20 @@
 #[path = "common/mod.rs"]
 mod common;
 
-use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use common::{db, judge, report, settings_cfg, turns};
 use tokio_util::sync::CancellationToken;
 use vox_lib::services::{
-    harness::{
-        CompactionParams, CompactionPlugin, HarnessSession, TurnPreparation,
-    },
+    harness::{CompactionParams, CompactionPlugin, HarnessSession, TurnPreparation},
     llm::{actor::create_llm_provider_from_llm_settings, LlmCommand},
     memory::ml::tokenizer::estimate_tokens,
 };
-
-use common::{db, judge, report, settings_cfg, turns};
 
 /// Fixed base prompt for the eval session (same role as production's persona
 /// prompt: a system message counted by the budget plugin, then replaced by
@@ -45,7 +44,10 @@ const EVAL_BASE_PROMPT: &str =
     "You are a concise voice assistant. Reply in exactly two short sentences.";
 
 #[derive(Parser, Debug)]
-#[command(name = "memory_compaction_eval", about = "Memory ladder rung 1: critical compaction eval")]
+#[command(
+    name = "memory_compaction_eval",
+    about = "Memory ladder rung 1: critical compaction eval"
+)]
 struct Args {
     /// Context window; trip math is percentage-based, so a smaller window lets
     /// one 100-turn session genuinely cross the 85% critical line.
@@ -88,7 +90,7 @@ async fn run(args: Args) -> Result<()> {
     let fixture = turns::load_session_turns()?;
     anyhow::ensure!(!fixture.is_empty(), "Turn fixture is empty");
     let (_db, conn) = db::open_fresh_eval_db(&db_path).await?;
-    let (session_id, turn_rows) = db::seed_session_with_turns(&conn, &fixture).await?;
+    let (session_id, _turn_rows) = db::seed_session_with_turns(&conn, &fixture).await?;
 
     // --- Build production session objects ----------------------------------
     let settings = settings_cfg::server_llm_settings(
@@ -119,7 +121,9 @@ async fn run(args: Args) -> Result<()> {
     let mut compact_slice = Vec::new();
     for t in &fixture {
         match harness.prepare_turn(&t.user, t.turn) {
-            TurnPreparation::NeedsInlineCompaction { uncompacted_slice, .. } => {
+            TurnPreparation::NeedsInlineCompaction {
+                uncompacted_slice, ..
+            } => {
                 tripped_turn = Some(t.turn);
                 fed_turns = t.turn;
                 compact_slice = uncompacted_slice;
@@ -130,7 +134,10 @@ async fn run(args: Args) -> Result<()> {
                 fed_turns = t.turn;
             }
             TurnPreparation::DuplicateTurnIgnored => {
-                anyhow::bail!("Fixture turn {} was dropped as duplicate — fixture error", t.turn);
+                anyhow::bail!(
+                    "Fixture turn {} was dropped as duplicate — fixture error",
+                    t.turn
+                );
             }
         }
     }
@@ -169,6 +176,12 @@ async fn run(args: Args) -> Result<()> {
     .context("Compaction executor call timed out")?
     .context("Compaction executor run failed")?;
     let llm_latency_s = llm_started.elapsed().as_secs_f64();
+    eprintln!(
+        "[rung1] trip at turn {tripped_turn} ({fed_turns} fed, {} slice msgs, ~{slice_tokens} tokens); executor {llm_latency_s:.1}s, raw {} chars, {} facts",
+        compact_slice.len(),
+        result.raw_json.len(),
+        result.facts.len(),
+    );
 
     // --- Deterministic baseline asserts (pass/fail, not the eval) -----------
     let latest = vox_lib::persistence::compactions::fetch_latest_compaction_run(&conn, session_id)
@@ -190,7 +203,44 @@ async fn run(args: Args) -> Result<()> {
     while let Some(row) = staged_rows.next().await? {
         staged.push((row.get(0)?, row.get(1)?, row.get(2)?));
     }
-    anyhow::ensure!(!staged.is_empty(), "Zero facts staged — nothing to judge");
+    anyhow::ensure!(!staged.is_empty(), {
+        // Classify the zero-facts outcome instead of guessing: valid-but-empty
+        // JSON vs lenient parse fallback (raw text kept, zero staged facts).
+        // Persist the full raw output + a failure report so the finding is
+        // auditable without re-running the executor.
+        let parsed = vox_lib::utils::json::parse_unified_compaction_json(&result.raw_json);
+        let classification = if parsed.is_some() {
+            "valid JSON with empty categories"
+        } else {
+            "LENIENT PARSE FALLBACK (non-empty text, JSON parse failed both attempts)"
+        };
+        let _ = std::fs::create_dir_all(&run_dir);
+        let _ = std::fs::write(run_dir.join("raw_compaction.json"), &result.raw_json);
+        let failure = serde_json::json!({
+            "eval": "rung1_critical_compaction",
+            "status": "FAILED",
+            "classification": classification,
+            "trip": {"fed_turns": fed_turns, "tripped_at_turn": tripped_turn, "slice_messages": compact_slice.len(), "slice_tokens_estimate": slice_tokens},
+            "executor": {"latency_s": llm_latency_s, "raw_chars": result.raw_json.len(), "facts_extracted": result.facts.len(), "ledger_run_id": latest.id, "ledger_status": latest.status},
+            "ladder_handoff_db": db_path.to_string_lossy(),
+        });
+        let _ = std::fs::write(
+            run_dir.join("report.json"),
+            serde_json::to_string_pretty(&failure).unwrap_or_default(),
+        );
+        let _ = std::fs::write(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("evals/results")
+                .join(eval_name)
+                .join("latest.json"),
+            serde_json::to_string_pretty(&failure).unwrap_or_default(),
+        );
+        let preview: String = result.raw_json.chars().take(1500).collect();
+        format!(
+            "Zero facts staged — nothing to judge. Classification: {classification}. Full raw saved to {}/raw_compaction.json. Raw preview:\n{preview}",
+            run_dir.display()
+        )
+    });
     anyhow::ensure!(
         staged.iter().all(|(_, _, s)| s == "pending"),
         "Staged queue items are not all 'pending'"
@@ -200,7 +250,10 @@ async fn run(args: Args) -> Result<()> {
     let mut facts_by_cat: std::collections::BTreeMap<&str, Vec<&str>> =
         std::collections::BTreeMap::new();
     for (cat, text) in &result.facts {
-        facts_by_cat.entry(cat.as_str()).or_default().push(text.as_str());
+        facts_by_cat
+            .entry(cat.as_str())
+            .or_default()
+            .push(text.as_str());
     }
     let judge_out = if args.no_judge {
         None
@@ -215,12 +268,17 @@ async fn run(args: Args) -> Result<()> {
                 .collect::<Vec<_>>(),
         )?;
         let facts_json = serde_json::to_string_pretty(&facts_by_cat)?;
-        let user_content =
-            format!("TURNS:\n{turns_json}\n\nFACTS_BY_CATEGORY:\n{facts_json}");
+        let user_content = format!("TURNS:\n{turns_json}\n\nFACTS_BY_CATEGORY:\n{facts_json}");
         Some(
             tokio::time::timeout(
                 Duration::from_secs(600),
-                judge::run_judge(&api_key, &args.judge_model, &system_prompt, &user_content, 4000),
+                judge::run_judge(
+                    &api_key,
+                    &args.judge_model,
+                    &system_prompt,
+                    &user_content,
+                    4000,
+                ),
             )
             .await
             .context("Judge call timed out")?
@@ -264,7 +322,10 @@ async fn run(args: Args) -> Result<()> {
         "total_latency_s": total_s,
     });
     let written = report::write_report(eval_name, &run_id, payload)?;
-    println!("Rung 1 complete: {fed_turns} turns fed, trip at turn {tripped_turn}, {} facts staged.", result.facts.len());
+    println!(
+        "Rung 1 complete: {fed_turns} turns fed, trip at turn {tripped_turn}, {} facts staged.",
+        result.facts.len()
+    );
     println!("Report: {}", written.join("report.json").display());
     println!("Ladder DB for rung 2: {}", db_path.display());
     Ok(())

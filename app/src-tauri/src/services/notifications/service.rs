@@ -5,7 +5,7 @@ use turso::Connection;
 
 use super::{
     router::{resolve_channel, DeliveryChannel},
-    types::{Action, NotificationParams},
+    Action, NotificationParams,
 };
 use crate::{
     core::events::{emit_ipc, IpcEvent},

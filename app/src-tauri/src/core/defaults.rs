@@ -23,7 +23,8 @@ pub const DEFAULT_STT_CLOUD_LANGUAGE: &str = "en-US";
 pub const DEFAULT_STT_CLOUD_REGION: &str = "global";
 
 pub const DEFAULT_LLM_MODEL: &str = "qwen_3_5_0_8b";
-pub const DEFAULT_LLM_CONTEXT_WINDOW: u32 = 2048;
+pub const MIN_LLM_CONTEXT_WINDOW: u32 = 8192;
+pub const DEFAULT_LLM_CONTEXT_WINDOW: u32 = 8192;
 pub const DEFAULT_LLM_THREADS: u32 = 4;
 pub const DEFAULT_LLM_TEMPERATURE: f32 = 0.7;
 pub const DEFAULT_LLM_COMPACTION_TEMPERATURE: f32 = 0.5;

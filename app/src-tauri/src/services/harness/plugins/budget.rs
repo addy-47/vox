@@ -3,8 +3,6 @@ use crate::services::{
     memory::ml::tokenizer::estimate_tokens,
 };
 
-pub const DEFAULT_RESERVED_GENERATION_LOCAL: usize = 512;
-pub const DEFAULT_RESERVED_GENERATION_CLOUD: usize = 1024;
 pub const SOFT_COMPACTION_THRESHOLD_PERCENT: usize = 65;
 pub const CRITICAL_COMPACTION_THRESHOLD_PERCENT: usize = 85;
 
@@ -23,13 +21,7 @@ pub struct ContextBudgetPlugin {
 }
 
 impl ContextBudgetPlugin {
-    pub fn new(max_context_tokens: usize, is_cloud: bool) -> Self {
-        let reserved_generation_tokens = if is_cloud {
-            DEFAULT_RESERVED_GENERATION_CLOUD
-        } else {
-            DEFAULT_RESERVED_GENERATION_LOCAL
-        };
-
+    pub fn new(max_context_tokens: usize, reserved_generation_tokens: usize) -> Self {
         Self {
             max_context_tokens,
             reserved_generation_tokens,
@@ -38,6 +30,14 @@ impl ContextBudgetPlugin {
 
     pub fn set_max_context_tokens(&mut self, max_tokens: usize) {
         self.max_context_tokens = max_tokens;
+    }
+
+    pub fn set_reserved_generation_tokens(&mut self, reserved_tokens: usize) {
+        self.reserved_generation_tokens = reserved_tokens;
+    }
+
+    pub fn reserved_generation_tokens(&self) -> usize {
+        self.reserved_generation_tokens
     }
 
     pub fn usable_budget(&self) -> usize {

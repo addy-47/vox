@@ -321,12 +321,14 @@ fn test_compaction_plugin_preemptive_fifo_and_context_injection() {
     assert!(!plugin.can_perform_inline_compaction(3));
     assert!(plugin.can_perform_inline_compaction(4));
 
-    // 2. Invariant: Embedded models with <= 4096 context window suppress inline compaction
-    let embedded_small = CompactionPlugin::new(4096, true, true);
-    assert!(!embedded_small.can_perform_inline_compaction(10));
+    // 2. Invariant: Embedded models at standard context window (>=8192) perform inline compaction
+    let embedded_model = CompactionPlugin::new(8192, true, true);
+    assert!(!embedded_model.can_perform_inline_compaction(3));
+    assert!(embedded_model.can_perform_inline_compaction(4));
 
-    let embedded_large = CompactionPlugin::new(8192, true, true);
-    assert!(embedded_large.can_perform_inline_compaction(10));
+    let remote_model = CompactionPlugin::new(8192, false, true);
+    assert!(!remote_model.can_perform_inline_compaction(3));
+    assert!(remote_model.can_perform_inline_compaction(4));
 
     // 3. Invariant: prune_history_with_summary injects <session_context> and prunes to [System, User]
     let mut active_plugin = CompactionPlugin::new(8192, false, true);

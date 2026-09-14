@@ -225,7 +225,10 @@ fn main() {
     let feed_handle = std::thread::spawn(move || {
         if is_ptt {
             let _ = vox_lib::pipeline::assistant::ptt::ptt_start(&app_feed, &state_feed);
-            println!("  [FEED] PTT window opened; streaming {} input samples", audio_feed.len());
+            println!(
+                "  [FEED] PTT window opened; streaming {} input samples",
+                audio_feed.len()
+            );
         }
 
         // Stream audio chunks in real-time pace (16ms frames @ 16kHz = 256 samples)
@@ -371,7 +374,7 @@ fn main() {
         }
     }
 
-    let _ = feed_handle.join().expect("Audio feeder thread panicked");
+    feed_handle.join().expect("Audio feeder thread panicked");
 
     // Graceful teardown: let the router and workers observe Shutdown so tee
     // threads and the router pump exit cleanly instead of being killed (§7.2).
@@ -386,7 +389,7 @@ fn main() {
 
     let e2e_response_time_ms = if is_ptt {
         // No VAD SpeechEnd in PTT mode: measure from the release (PttStop) instant.
-        let stop = ptt_stop_time.lock().clone();
+        let stop = *ptt_stop_time.lock();
         if let (Some(st), Some(ps)) = (stop, playback_start_time) {
             ps.duration_since(st).as_secs_f64() * 1000.0
         } else {
@@ -399,7 +402,7 @@ fn main() {
     };
 
     let stt_latency_ms = if is_ptt {
-        let stop = ptt_stop_time.lock().clone();
+        let stop = *ptt_stop_time.lock();
         if let (Some(st), Some(tf)) = (stop, transcript_final_time) {
             tf.duration_since(st).as_secs_f64() * 1000.0
         } else {

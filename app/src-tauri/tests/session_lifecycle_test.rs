@@ -721,6 +721,8 @@ async fn test_session_end_purges_and_unmounts_harness() {
         let harness = vox_lib::services::harness::HarnessSession::new_realtime(
             Some(conv_id as i64),
             "System prompt".to_string(),
+            None,
+            &state.settings.read().unwrap(),
         );
         *state.harness.lock() = Some(harness);
         assert!(state.harness.lock().is_some());

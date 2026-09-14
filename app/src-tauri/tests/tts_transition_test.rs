@@ -291,10 +291,10 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
         state.pipeline.set_state(InteractionState::Thinking);
         state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
 
-        // Calibrate context window to 4200 (>= EMBEDDED_MODEL_MIN_CONTEXT_WINDOW = 4096)
+        // Calibrate context window to 8192 (>= MIN_LLM_CONTEXT_WINDOW = 8192)
         {
             let mut settings = state.settings.write().unwrap();
-            settings.llm.context_window = 4200;
+            settings.llm.context_window = 8192;
         }
 
         let settings = state.settings.read().unwrap().clone();
@@ -306,8 +306,8 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
             llm_tx.clone(),
         );
 
-        // 1. Seed conversation buffer to exceed critical threshold (>85% of usable 3688 = >3135 tokens)
-        for i in 0..50 {
+        // 1. Seed conversation buffer to exceed critical threshold (>85% of usable 7680 = >6528 tokens; 105 turns ≈ 7035 tokens)
+        for i in 0..105 {
             harness.history_mut().push_user_turn(format!(
                 "Turn {} user statement with sufficient length and detail to accumulate tokens in accountant memory buffer. We are discussing neural networks, integration testing, and long context tracking across conversational agents.",
                 i

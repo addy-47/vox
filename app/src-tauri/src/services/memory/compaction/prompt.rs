@@ -10,95 +10,102 @@ use crate::{
 
 /// Prompt instructions instructing the LLM to extract durable facts into the unified memory schema.
 pub const COMPACTION_SYSTEM_PROMPT: &str = r#"<role>
-You are a structured memory extraction engine for an intelligent assistant.
-Your task is to analyze conversation turns and extract complete, self-contained declarative facts while preserving full semantic context.
+You are a session state and memory extraction engine for an AI assistant.
+Analyze the dialogue to extract:
+1. "personal": Durable facts, traits, and preferences about the user.
+2. "objective", "workdone", "blocker", "next_step", "pitfall": The assistant's operational state for this thread.
+The entire JSON output is injected into working memory (<session_context>) so the assistant retains full context after turns are pruned.
 </role>
 
-<objective>
-Extract explicit, durable, high-confidence declarative facts into the unified memory schema defined below.
-</objective>
-
-<output_schema>
+<schema>
 {
-  "personal": ["<unstructured fact or preference about user>"],
-  "objective": ["<unstructured active operational goal or intent>"],
-  "workdone": ["<unstructured completed task or milestone>"],
-  "blocker": ["<unstructured error, blocker, or missing dependency>"],
-  "next_step": ["<unstructured planned follow-up or upcoming action>"],
-  "pitfall": ["<unstructured edge case, lesson learned, or architectural constraint>"]
+  "personal": ["<durable user facts, traits, or preferences>"],
+  "objective": ["<overarching goal, topic, or problem the assistant is addressing>"],
+  "workdone": ["<concrete progress, deliverables, decisions, or answers completed>"],
+  "blocker": ["<missing information, pending decisions, or hurdles blocking progress>"],
+  "next_step": ["<immediate planned actions or agreed follow-ups for upcoming turns>"],
+  "pitfall": ["<mistakes made, user corrections, dead-ends, or approaches to avoid>"]
 }
-</output_schema>
+</schema>
 
-<field_definitions>
-personal:
-Stable facts, preferences, habits, personal characteristics, or attributes about the user.
+<category_definitions>
+- personal: Facts about the user (identity, preferences, habits, traits, background).
+- objective: The mission, question, or goal assigned to the assistant for this session.
+- workdone: What the assistant has already investigated, completed, produced, or answered.
+- blocker: What is currently unresolved, missing, or waiting on clarification before progress can resume.
+- next_step: Concrete actions or next turns planned to advance the objective.
+- pitfall: What failed, user corrections received, or constraints/methods explicitly ruled out.
+</category_definitions>
 
-objective:
-Active operational goals, intentions, assigned work, or project scope statements.
+<rules>
+- Concise, self-contained declarative statements only. No conversational filler ("The user said...", "In this chat...").
+- "personal" describes the user; the other 5 categories describe the assistant's operational task state.
+- Completely ignore small-talk, greetings, and pleasantries. Output an empty list [] for categories with no substantive content.
+- If <prior_summary> is present, update the state incrementally; do not repeat unchanged facts.
+- Output ONLY the raw JSON object adhering to <schema>. No markdown formatting, backticks, or commentary.
+</rules>"#;
 
-workdone:
-Completed tasks, milestones reached, code changes authored, or verified solutions.
-
-blocker:
-Technical issues, unresolved errors, missing dependencies, or blocked execution paths.
-
-next_step:
-Concrete planned follow-ups, upcoming actions, or pending tasks.
-
-pitfall:
-Edge cases discovered, lessons learned, antipatterns, or architectural constraints to respect.
-</field_definitions>
-
-<extraction_principles>
-1. COMPLETE DECLARATIVE SENTENCES ONLY:
-   - Every extracted statement MUST be a complete, self-contained declarative sentence.
-   - NEVER extract single-word labels, bare entity names, or incomplete fragments.
-
-2. CONTEXT & PRECISION PRESERVATION:
-   - Preserve all crucial details: numbers, file paths, tool names, exact error messages, and parameters.
-   - Keep each extracted statement atomic: state exactly one durable fact per sentence.
-</extraction_principles>
-
-<output_requirements>
-- Output exactly ONE JSON object strictly adhering to <output_schema>.
-- context_summary is a single string. All other keys are JSON arrays of complete declarative sentence strings.
-- Do not output markdown codeblock formatting or surrounding commentary outside the JSON object.
-</output_requirements>"#;
-
-/// Calculates dynamic max compaction output tokens based on context window size.
-pub fn calculate_compaction_max_tokens(ctx_size: u32) -> u32 {
-    let ctx = ctx_size as f32;
-    let ratio = if ctx <= 8192.0 {
-        let t = ((ctx - 2048.0) / (8192.0 - 2048.0)).clamp(0.0, 1.0);
-        0.30 - t * (0.30 - 0.15)
-    } else {
-        let t = ((ctx - 8192.0) / (1_000_000.0 - 8192.0)).clamp(0.0, 1.0);
-        0.15 - t * (0.15 - 0.10)
-    };
-
-    let raw = (ctx * ratio) as u32;
-    raw.clamp(256, 16_384)
-}
-
+pub const COMPACTION_OUTPUT_RATIO: f32 = 0.15;
+pub const COMPACTION_MIN_OUTPUT_TOKENS: u32 = 256;
+pub const COMPACTION_MAX_OUTPUT_TOKENS: u32 = 16_384;
 pub const DEFAULT_LLM_COMPACTION_TEMPERATURE: f32 = 0.2;
+
+/// Calculates dynamic max compaction output tokens based on context window and probed ceiling.
+/// Formula: min(slice, probed_max_output) where slice = (ctx_size * 0.15).
+pub fn calculate_compaction_max_tokens(ctx_size: u32, probed_max_output: Option<u32>) -> u32 {
+    let slice = (ctx_size as f32 * COMPACTION_OUTPUT_RATIO) as u32;
+    let clamped_slice = slice.clamp(COMPACTION_MIN_OUTPUT_TOKENS, COMPACTION_MAX_OUTPUT_TOKENS);
+    if let Some(ceiling) = probed_max_output {
+        clamped_slice.min(ceiling).max(COMPACTION_MIN_OUTPUT_TOKENS)
+    } else {
+        clamped_slice
+    }
+}
 
 /// Builds a complete `GenerationRequest` for memory compaction extraction from a slice of turns.
 pub fn build_compaction_request(
     history_messages: &[ChatMessage],
     settings: Option<&LlmSettings>,
 ) -> GenerationRequest {
+    let prior_summary = history_messages
+        .iter()
+        .find(|m| m.role == Role::System)
+        .and_then(|m| crate::services::harness::PromptTag::SessionContext.extract(&m.content));
+
+    let prior_summary_block = match prior_summary {
+        Some(s) if !s.trim().is_empty() => {
+            format!("<prior_summary>\n{}\n</prior_summary>\n\n", s.trim())
+        }
+        _ => String::new(),
+    };
+
     let mut history_text = String::new();
     for msg in history_messages {
-        history_text.push_str(&format!("{}: {}\n\n", msg.role, msg.content));
+        if msg.role == Role::System {
+            continue;
+        }
+        let speaker = match msg.role {
+            Role::User => "user",
+            Role::Assistant => "assistant",
+            Role::System => continue,
+        };
+        history_text.push_str(&format!(
+            r#"<turn speaker="{}">{}</turn>
+"#,
+            speaker,
+            msg.content.trim()
+        ));
     }
 
     let user_content = format!(
-        "<conversation_history>\n{}\n</conversation_history>\n\n\
+        "{}\
+         <dialogue>\n{}</dialogue>\n\n\
          <task>\n\
-         Analyze the <conversation_history> above and extract all stated facts into the unified schema from <output_schema>.\n\
-         Output ONLY the JSON object starting with {{ and ending with }}.\n\
+         Analyze the <dialogue> turns above in light of <prior_summary> if present.\n\
+         Extract the user's profile facts into \"personal\", and the assistant's operational session state across \"objective\", \"workdone\", \"blocker\", \"next_step\", and \"pitfall\".\n\
+         Output ONLY the raw JSON object starting with {{ and ending with }}.\n\
          </task>",
-        history_text
+        prior_summary_block, history_text
     );
 
     let now_ms = SystemTime::now()
@@ -109,7 +116,10 @@ pub fn build_compaction_request(
     let default_settings = LlmSettings::default();
     let effective_settings = settings.unwrap_or(&default_settings);
     let eff_ctx = effective_settings.effective_ctx_size();
-    let compaction_max_tokens = calculate_compaction_max_tokens(eff_ctx);
+    let model = effective_settings.active_model();
+    let probed_max_output =
+        crate::services::llm::catalog::get_baseline_spec(model).and_then(|s| s.max_output_tokens);
+    let compaction_max_tokens = calculate_compaction_max_tokens(eff_ctx, probed_max_output);
     let policy = GenerationPolicy::from_settings(effective_settings, Some(compaction_max_tokens));
 
     let mut request = policy.build_request(
@@ -130,5 +140,19 @@ pub fn build_compaction_request(
         },
     );
     request.options.temperature = Some(DEFAULT_LLM_COMPACTION_TEMPERATURE);
+
+    if let (Some(sys), Some(usr)) = (
+        request.input.messages.first(),
+        request.input.messages.get(1),
+    ) {
+        log::info!(
+            "[CompactionLLM::Input] (chars: {}, max_tokens: {:?})\n--- SYSTEM PROMPT ---\n{}\n--- USER PROMPT ---\n{}",
+            sys.content.len() + usr.content.len(),
+            request.options.max_output_tokens,
+            sys.content,
+            usr.content
+        );
+    }
+
     request
 }

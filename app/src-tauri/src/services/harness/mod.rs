@@ -128,6 +128,14 @@ impl PromptTag {
     pub fn wrap(&self, content: &str) -> String {
         format!("{}{}{}", self.open_tag(), content, self.close_tag())
     }
+
+    pub fn extract<'a>(&self, text: &'a str) -> Option<&'a str> {
+        let open = self.open_tag();
+        let close = self.close_tag();
+        let start = text.find(open)? + open.len();
+        let end = text[start..].find(close)? + start;
+        Some(&text[start..end])
+    }
 }
 
 pub fn select_filler_phrase(query: &str, turn_id: u32) -> &'static str {

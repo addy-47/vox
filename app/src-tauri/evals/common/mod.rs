@@ -8,6 +8,10 @@
 //! Metrics      : N/A
 //! ============================================================================
 
+//! Shared across all three memory eval bins; each bin uses a subset, so
+//! per-bin dead-code lints are disabled for this subtree.
+#![allow(dead_code)]
+
 pub mod db;
 pub mod judge;
 pub mod report;
