@@ -12,6 +12,7 @@ use crate::{
     },
     pipeline::{assistant::interrupt::on_interrupt, transition, RoutingContext},
     services::{
+        audio::SAMPLE_RATE,
         stt::actor::SttCommand,
         vad::{VadCommand, VAD_VALIDATION_TIMEOUT_MS},
     },
@@ -37,6 +38,11 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx
         log::warn!("[Pipeline::Ptt] PttStart dropped: already Listening");
         return;
     }
+
+    log::info!(
+        "[Pipeline::Ptt] PttStart accepted (state {:?}, mode {:?}/{:?}, owner {:?})",
+        current_state, ctx.pipeline_mode, ctx.interaction_mode, ctx.owner
+    );
 
     let turn_id = if current_state == InteractionState::Thinking
         || current_state == InteractionState::Speaking
@@ -83,6 +89,13 @@ fn dispatch_ptt_speech_audio<R: tauri::Runtime>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
+    log::info!(
+        "[Pipeline::Ptt] Dispatching validated PTT audio (turn {}, samples {}, {:.2}s, mode {:?})",
+        turn_id,
+        audio.len(),
+        audio.len() as f32 / SAMPLE_RATE as f32,
+        ctx.pipeline_mode
+    );
     transition(InteractionState::Thinking, ctx, app, state);
 
     if ctx.pipeline_mode == PipelineMode::Modular {
@@ -160,9 +173,15 @@ pub fn on_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx:
         return;
     }
 
+    let validated_samples = audio.len();
     dispatch_ptt_speech_audio(turn_id, audio, &stt_tx, app, state, ctx);
 
-    log::info!("[Pipeline::Ptt] PTT stop processed (turn: {})", turn_id);
+    log::info!(
+        "[Pipeline::Ptt] PTT stop processed (turn {}, validated_samples {}, {:.2}s)",
+        turn_id,
+        validated_samples,
+        validated_samples as f32 / SAMPLE_RATE as f32
+    );
 }
 
 /// Cancels an in-progress Push-To-Talk recording without speech dispatch and restores Ready state.

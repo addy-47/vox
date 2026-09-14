@@ -64,8 +64,18 @@ pub fn on_llm_finished(turn_id: u32, state: &AppState, ctx: &RoutingContext) {
         (acc.take_assistant_response(), acc.user_transcript())
     };
     if !full_text.trim().is_empty() {
+        log::info!(
+            "[Pipeline::Llm] LlmFinished processed (turn {}, response_chars {}, response_words {}): '{}'",
+            turn_id,
+            full_text.chars().count(),
+            full_text.split_whitespace().count(),
+            full_text
+        );
         persist_assistant_turn(turn_id, full_text, user_text, state);
+    } else {
+        log::info!(
+            "[Pipeline::Llm] LlmFinished processed (turn {}): empty response",
+            turn_id
+        );
     }
-
-    log::info!("[Pipeline::Llm] LlmFinished processed (turn: {})", turn_id);
 }
