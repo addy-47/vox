@@ -26,10 +26,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22'
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
           version: '9'
 
@@ -48,12 +48,10 @@ jobs:
           CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
           CFLAGS: "-mmacosx-version-min=11.0"
           CXXFLAGS: "-mmacosx-version-min=11.0 -D_LIBCPP_DISABLE_AVAILABILITY"
-          SDKROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
         run: |
           cd app
+          export SDKROOT="$(xcrun --show-sdk-path)"
           pnpm tauri build
-
-
 
       - name: Extract Versions and Build Info
         id: build_info
@@ -68,7 +66,7 @@ jobs:
 
       - name: Upload to GitHub Release
         if: ${{ !contains(github.ref_name, '-') }}
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ env.DMG_PATH }}
