@@ -164,6 +164,7 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
         "llm"
             if key == "temperature"
                 || key == "compaction_temperature"
+                || key == "reasoning_enabled"
                 || key == "max_output_tokens" =>
         {
             SettingReloadPolicy::Hot
@@ -473,6 +474,8 @@ pub struct LlmSettings {
     pub max_output_tokens: u32,
     pub context_window: u32,
     pub threads: u32,
+    /// Voice-native default is off; reserved for future user-driven agentic opt-in.
+    pub reasoning_enabled: bool,
     pub embedded: LlmEmbeddedConfig,
     pub server: LlmRemoteConfig,
     pub cloud: LlmRemoteConfig,
@@ -487,6 +490,7 @@ impl Default for LlmSettings {
             max_output_tokens: DEFAULT_LLM_MAX_OUTPUT_TOKENS,
             context_window: DEFAULT_LLM_CONTEXT_WINDOW,
             threads: DEFAULT_LLM_THREADS,
+            reasoning_enabled: false,
             embedded: LlmEmbeddedConfig::default(),
             server: LlmRemoteConfig::server_default(),
             cloud: LlmRemoteConfig::cloud_default(),

@@ -90,6 +90,9 @@ impl HarnessSession {
         let generation_options = GenerationOptions {
             temperature: Some(settings.llm.temperature),
             max_output_tokens: Some(settings.llm.max_output_tokens),
+            reasoning: crate::services::llm::ReasoningMode::from_enabled(
+                settings.llm.reasoning_enabled,
+            ),
             ..Default::default()
         };
 

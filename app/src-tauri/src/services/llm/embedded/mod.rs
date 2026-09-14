@@ -18,7 +18,7 @@ use crate::{
         harness::ConversationContext,
         llm::{
             GenerationRequest, LlmEngine, LlmError, LlmProvider, LlmStreamEvent,
-            ProviderCapabilities, ProviderKind, Support,
+            OutputConstraint, ProviderCapabilities, ProviderKind, Support,
         },
     },
 };
@@ -97,6 +97,11 @@ impl LlmProvider for EmbeddedProvider {
         tx: &'a mpsc::Sender<LlmStreamEvent>,
     ) -> BoxFuture<'a, Result<(), LlmError>> {
         Box::pin(async move {
+            if !matches!(request.output, OutputConstraint::Text)
+                && self.capabilities.json_schema == Support::Unsupported
+            {
+                log::warn!("[EmbeddedProvider] Structured-output constraint requested but GBNF grammar enforcement is not implemented; falling back to prompt-only JSON.");
+            }
             let conv_ctx = ConversationContext {
                 messages: request.input.messages,
                 token_count: 0,

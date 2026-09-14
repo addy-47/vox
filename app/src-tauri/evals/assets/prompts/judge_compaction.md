@@ -8,30 +8,38 @@ Input sections in the user message:
 - TURNS: the full conversation, numbered.
 - FACTS_BY_CATEGORY: the extracted facts, grouped by bucket.
 
-Grade these four semantic dimensions (deterministic checks like row counts are
-handled elsewhere — you judge meaning only):
+Write a markdown report covering these four dimensions (use these as sections).
+Grounding rule: grade ONLY the facts listed under FACTS_BY_CATEGORY — quote them
+verbatim when you discuss them. Never invent, rephrase-into-existence, or grade
+facts that are not in that list. Keep the whole report under ~1200 words so you
+reach the verdict.
 
-1. COVERAGE: did every important, durable detail from the turns survive
-   somewhere in the facts? Trivia from a single jokey exchange may be dropped;
-   preferences, decisions, goals, errors, plans, and lessons must not be.
-2. BUCKET CORRECTNESS: is each fact in the right bucket? A fact about the user
-   (preference, habit, personal context) belongs in personal; a goal in
-   objective; a finished thing in workdone; an error or missing thing in
-   blocker; a planned follow-up in next_step; a lesson or constraint in pitfall.
-3. BOUNDARY LEAKAGE: flag any fact that belongs in a different bucket than the
-   one it sits in, and say where it should go.
-4. HALLUCINATION: flag any fact not grounded in the turns. Paraphrase is fine;
-   invented specifics (names, numbers, preferences never stated) are not.
+## Coverage
+Did every important, durable detail from the turns survive somewhere in the
+facts? Trivia from a single jokey exchange may be dropped; preferences,
+decisions, goals, errors, plans, and lessons must not be. List anything
+important that went missing.
 
-Reply with EXACTLY this JSON shape and nothing else (no fences, no prose):
-{
-  "coverage_score": 0-100,
-  "bucket_score": 0-100,
-  "groundedness_score": 0-100,
-  "missed_details": ["<important turn detail with no corresponding fact>"],
-  "leaked_items": [{"fact": "<fact text>", "current_bucket": "<b>", "should_be": "<b>"}],
-  "hallucinated": ["<fact text with no grounding in the turns>"],
-  "misbucketed": [{"fact": "<fact text>", "current_bucket": "<b>", "should_be": "<b>"}],
-  "per_category_notes": {"personal": "<one line>", "objective": "<one line>", "workdone": "<one line>", "blocker": "<one line>", "next_step": "<one line>", "pitfall": "<one line>"},
-  "verdict": "<2-4 sentence overall judgment>"
-}
+## Bucket correctness
+Is each fact in the right bucket? Personal = facts about the user (identity,
+preferences, habits). Objective/workdone/blocker/next_step/pitfall = the
+assistant's operational task state. Call out every misplaced fact.
+
+## Boundary leakage
+Facts sitting in a bucket they don't belong in — say where each one should go.
+
+## Hallucinations
+Any fact not grounded in the turns. Paraphrase is fine; invented specifics
+(names, numbers, preferences never stated) are not. Quote each one.
+
+## Scores
+Give three scores 0-100 with one line of justification each: coverage,
+bucket accuracy, groundedness.
+
+End your report with exactly one line in this format (it is machine-read):
+VERDICT: PASS
+or
+VERDICT: FAIL
+
+Pass bar: PASS only if no important detail is missing, at most 2 misbucketed
+facts, and zero hallucinated specifics. Otherwise FAIL.

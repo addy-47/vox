@@ -188,6 +188,7 @@ export interface LlmSettings {
   max_output_tokens: number;
   context_window: number;
   threads: number;
+  reasoning_enabled: boolean;
   embedded: LlmEmbeddedConfig;
   server: LlmRemoteConfig;
   cloud: LlmRemoteConfig;

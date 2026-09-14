@@ -29,3 +29,16 @@ pub fn load_session_turns() -> Result<Vec<DatasetTurn>> {
         .with_context(|| format!("Failed to read turn fixture at {path}"))?;
     serde_json::from_str(&raw).context("Failed to parse turn fixture JSON")
 }
+
+/// Loads the 300-turn session used as the trip feed: at the 8192 floor the
+/// 85% line needs ~6700 tracked tokens, which the 100-turn fixture cannot
+/// reach. Turns are fed in order until the genuine trip; leftovers are omitted.
+pub fn load_trip_turns() -> Result<Vec<DatasetTurn>> {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/evals/datasets/dataset_session_2.json"
+    );
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read trip fixture at {path}"))?;
+    serde_json::from_str(&raw).context("Failed to parse trip fixture JSON")
+}
