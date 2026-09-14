@@ -50,7 +50,9 @@ pub fn write_report(
     std::fs::create_dir_all(&run_dir)
         .with_context(|| format!("Failed to create {}", run_dir.display()))?;
 
-    let meta = payload.as_object_mut().context("Report payload must be an object")?;
+    let meta = payload
+        .as_object_mut()
+        .context("Report payload must be an object")?;
     meta.insert("run_id".to_string(), json!(run_id));
     meta.insert(
         "timestamp_utc".to_string(),
@@ -61,7 +63,10 @@ pub fn write_report(
     let report_path = run_dir.join("report.json");
     std::fs::write(&report_path, serde_json::to_string_pretty(&payload)?)
         .with_context(|| format!("Failed to write {}", report_path.display()))?;
-    std::fs::write(base.join("latest.json"), serde_json::to_string_pretty(&payload)?)
-        .context("Failed to write latest.json")?;
+    std::fs::write(
+        base.join("latest.json"),
+        serde_json::to_string_pretty(&payload)?,
+    )
+    .context("Failed to write latest.json")?;
     Ok(run_dir)
 }

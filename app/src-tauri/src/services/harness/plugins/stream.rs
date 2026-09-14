@@ -227,7 +227,9 @@ impl StreamRoutingPlugin {
         };
         log::info!(
             "[Harness::Stream] Stream finished (turn {}, response_chars {}, response_words {})",
-            handles.turn_id, response_chars, response_words
+            handles.turn_id,
+            response_chars,
+            response_words
         );
 
         let event = VoxEvent::LlmFinished {

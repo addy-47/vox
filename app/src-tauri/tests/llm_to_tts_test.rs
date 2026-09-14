@@ -55,18 +55,18 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
             settings.interaction.pipeline_mode = PipelineMode::Modular;
             settings.audio.output_mode = AudioOutputMode::Headset;
             settings.llm.active = LlmActiveProvider::Embedded;
-            settings.llm.context_window = 2048;
-            settings.llm.max_output_tokens = 60;
-            settings.llm.temperature = 0.1;
+            settings.llm.context_window = 8192;
+            settings.llm.max_output_tokens = 300;
+            settings.llm.temperature = 0.7;
             settings.memory.context_retrieval_enabled = false;
         }
         state
             .owner
             .store(InteractionOwner::Assistant as u32, Ordering::Relaxed);
 
-        // 2. Instantiate real local EmbeddedProvider (ctx_size=2048, n_threads=4)
+        // 2. Instantiate real local EmbeddedProvider (ctx_size=8192, n_threads=4)
         let provider = Arc::new(
-            EmbeddedProvider::new(&qwen_model_path, 2048, 4)
+            EmbeddedProvider::new(&qwen_model_path, 8192, 4)
                 .expect("Failed to load local Qwen GGUF model via EmbeddedProvider"),
         );
         *state.llm_provider.write() = Some(provider.clone());

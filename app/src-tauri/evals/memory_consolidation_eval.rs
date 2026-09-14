@@ -17,15 +17,17 @@
 #[path = "common/mod.rs"]
 mod common;
 
-use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use common::{db, judge, report, settings_cfg};
 use vox_lib::{
     persistence::{
-        facts::fetch_active_facts_by_type,
-        personal_memory::get_personal_memory,
+        facts::fetch_active_facts_by_type, personal_memory::get_personal_memory,
         queue::has_unfinished_items,
     },
     services::{
@@ -34,10 +36,11 @@ use vox_lib::{
     },
 };
 
-use common::{db, judge, report, settings_cfg};
-
 #[derive(Parser, Debug)]
-#[command(name = "memory_consolidation_eval", about = "Memory ladder rung 3: consolidation eval")]
+#[command(
+    name = "memory_consolidation_eval",
+    about = "Memory ladder rung 3: consolidation eval"
+)]
 struct Args {
     /// Rung-2 ladder DB file (copied, never mutated in place).
     #[arg(long)]
@@ -77,9 +80,8 @@ async fn run(args: Args) -> Result<()> {
 
     // --- Ladder handoff: copy rung-2 DB --------------------------------------
     std::fs::create_dir_all(&run_dir)?;
-    std::fs::copy(&args.db_in, &db_path).with_context(|| {
-        format!("Failed to copy ladder DB from {}", args.db_in.display())
-    })?;
+    std::fs::copy(&args.db_in, &db_path)
+        .with_context(|| format!("Failed to copy ladder DB from {}", args.db_in.display()))?;
     let (_db, conn) = db::open_existing_eval_db(&db_path).await?;
 
     // --- Quiescence gate must hold before consolidation may run --------------
@@ -120,7 +122,10 @@ async fn run(args: Args) -> Result<()> {
     let llm_latency_s = llm_started.elapsed().as_secs_f64();
 
     // --- Deterministic baseline asserts --------------------------------------
-    anyhow::ensure!(!record.content.trim().is_empty(), "Consolidated document is empty");
+    anyhow::ensure!(
+        !record.content.trim().is_empty(),
+        "Consolidated document is empty"
+    );
     let mut rows = conn
         .query(
             "SELECT COUNT(*) FROM memory_facts WHERE type = 'personal' AND status = 'active';",
@@ -148,7 +153,13 @@ async fn run(args: Args) -> Result<()> {
         Some(
             tokio::time::timeout(
                 Duration::from_secs(600),
-                judge::run_judge(&api_key, &args.judge_model, &system_prompt, &user_content, 4000),
+                judge::run_judge(
+                    &api_key,
+                    &args.judge_model,
+                    &system_prompt,
+                    &user_content,
+                    4000,
+                ),
             )
             .await
             .context("Judge call timed out")?
@@ -182,7 +193,11 @@ async fn run(args: Args) -> Result<()> {
         "total_latency_s": total_s,
     });
     let written = report::write_report(eval_name, &run_id, payload)?;
-    println!("Rung 3 complete: {} personal facts consolidated into {}-char document.", candidate_ids.len(), record.content.len());
+    println!(
+        "Rung 3 complete: {} personal facts consolidated into {}-char document.",
+        candidate_ids.len(),
+        record.content.len()
+    );
     println!("Report: {}", written.join("report.json").display());
     Ok(())
 }

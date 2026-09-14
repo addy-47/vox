@@ -7,35 +7,41 @@ use std::{
 
 use futures_util::StreamExt;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 
+use super::{
+    presets::lookup_preset,
+    sync::get_baseline_spec,
+    types::{CapabilityProvenance, ModelProbeResult},
+};
 use crate::{
     core::{
         settings::{LlmModelInfo, LlmProviderConfig, ModelCapabilities},
         state::AppState,
     },
     services::llm::{
-        lookup_preset,
         transport::{
-            inject_auth_headers, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType,
+            chat_completions, inject_auth_headers, ollama, responses, sse::SseDecoder,
+            CapabilitySource, ConnectionConfig, TokenLimitField, TransportType,
         },
         EmbeddedProvider, LlmProvider, RemoteTransport, QWEN_MODEL_DIR,
     },
     utils::paths,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ModelProbeResult {
-    pub capabilities: ModelCapabilities,
-    pub validated_cap: Option<u32>,
-    pub cached_map: HashMap<String, ModelCapabilities>,
-}
+pub const DEFAULT_PROBE_TIMEOUT_SECS: u64 = 12;
+pub const DEFAULT_VALIDATION_TIMEOUT_SECS: u64 = 8;
+pub const DEFAULT_PROBE_MAX_TOKENS: u32 = 40;
+pub const DEFAULT_TOOL_PROBE_MAX_TOKENS: u32 = 80;
+pub const DEFAULT_PROBE_TEMPERATURE: f32 = 0.1;
 
 #[derive(Default, Debug)]
 struct EndpointMeta {
     supports_tools: bool,
     context_window: Option<u32>,
+    max_output_tokens: Option<u32>,
+    provenance: CapabilityProvenance,
     server_has_gpu: bool,
     is_gpu_accelerated: bool,
     vram_bytes: Option<u64>,
@@ -163,7 +169,7 @@ pub async fn probe_capabilities(
     tokio::spawn(async move {
         if let Err(e) = tokio::fs::create_dir_all(&cache_dir).await {
             log::warn!(
-                "[Settings::Health] Failed to create cache directory {:?}: {}",
+                "[Catalog::Probe] Failed to create cache dir {:?}: {}",
                 cache_dir,
                 e
             );
@@ -171,9 +177,7 @@ pub async fn probe_capabilities(
         if let Ok(json) = serde_json::to_string_pretty(&map_clone) {
             let tmp = cache_file.with_extension("tmp");
             if tokio::fs::write(&tmp, json).await.is_ok() {
-                if let Err(e) = tokio::fs::rename(&tmp, &cache_file).await {
-                    log::warn!("[Settings::Health] Failed to rename temp cache file: {}", e);
-                }
+                let _ = tokio::fs::rename(&tmp, &cache_file).await;
             }
         }
     });
@@ -189,13 +193,6 @@ pub async fn probe_capabilities(
 pub struct CapabilityProbeEngine;
 
 impl CapabilityProbeEngine {
-    /// Executes capability probing for the specified provider configuration.
-    pub async fn probe(
-        config: &LlmProviderConfig,
-    ) -> Result<ModelCapabilities, Box<dyn Error + Send + Sync>> {
-        Self::probe_capabilities(config, None).await
-    }
-
     /// Probes model capabilities for a specific model override or active configuration.
     pub async fn probe_capabilities(
         config: &LlmProviderConfig,
@@ -225,7 +222,7 @@ impl CapabilityProbeEngine {
                     provider_name.as_deref(),
                 );
                 let client = Client::builder()
-                    .timeout(Duration::from_secs(super::DEFAULT_PROBE_TIMEOUT_SECS))
+                    .timeout(Duration::from_secs(DEFAULT_PROBE_TIMEOUT_SECS))
                     .build()?;
 
                 Self::probe_remote_endpoint(&client, &conn_cfg, now).await
@@ -245,7 +242,9 @@ impl CapabilityProbeEngine {
             supports_tools: true,
             supports_latin: true,
             supports_devanagari: true,
-            context_window: ctx_window,
+            context_window: ctx_window.or(Some(8192)),
+            max_output_tokens: Some(2048),
+            provenance: Some(CapabilityProvenance::ProbedServer.as_str().to_string()),
             tps: None,
             ttft_ms: None,
             server_has_gpu: false,
@@ -254,18 +253,19 @@ impl CapabilityProbeEngine {
             vram_bytes: None,
             parameter_size: None,
             quantization: None,
-            family: None,
+            family: Some("qwen2.5".to_string()),
             tested_at_epoch: now,
         }
     }
 
-    /// Probes remote endpoint using empirical observation and authoritative native endpoints.
+    /// Probes remote endpoint using empirical observation, baseline catalog, and native APIs.
     pub async fn probe_remote_endpoint(
         client: &Client,
         config: &ConnectionConfig,
         now: u64,
     ) -> Result<ModelCapabilities, Box<dyn Error + Send + Sync>> {
         let preset_meta = config.provider_preset.as_deref().and_then(lookup_preset);
+        let baseline_spec = get_baseline_spec(&config.model);
 
         let (supports_latin, supports_devanagari, tps, ttft_ms) =
             Self::empirical_streaming_probe(client, config).await;
@@ -274,8 +274,17 @@ impl CapabilityProbeEngine {
 
         let mut meta = EndpointMeta {
             supports_tools: tool_probe_success,
+            provenance: CapabilityProvenance::Unknown,
             ..Default::default()
         };
+
+        // Seed from baseline catalog if available
+        if let Some(ref base) = baseline_spec {
+            meta.context_window = base.context_window;
+            meta.max_output_tokens = base.max_output_tokens;
+            meta.family = base.family.clone();
+            meta.provenance = base.provenance;
+        }
 
         match config.capability_source {
             CapabilitySource::OllamaNative => {
@@ -285,9 +294,17 @@ impl CapabilityProbeEngine {
                 if let Some(meta_preset) = preset_meta {
                     if meta.context_window.is_none() {
                         meta.context_window = meta_preset.published_context_window;
+                        if meta.provenance == CapabilityProvenance::Unknown {
+                            meta.provenance = CapabilityProvenance::CatalogBaseline;
+                        }
                     }
                 }
             }
+        }
+
+        // If empirical probe streamed successfully, upgrade provenance
+        if tps.is_some() && meta.provenance != CapabilityProvenance::Unknown {
+            meta.provenance = CapabilityProvenance::ProbedServer;
         }
 
         let is_gpu = meta.is_gpu_accelerated || meta.server_has_gpu;
@@ -309,6 +326,8 @@ impl CapabilityProbeEngine {
             supports_latin,
             supports_devanagari,
             context_window: meta.context_window,
+            max_output_tokens: meta.max_output_tokens,
+            provenance: Some(meta.provenance.as_str().to_string()),
             tps,
             ttft_ms,
             server_has_gpu: meta.server_has_gpu,
@@ -328,7 +347,6 @@ impl CapabilityProbeEngine {
         meta: &mut EndpointMeta,
     ) {
         let base_url = config.base_url.trim_end_matches('/');
-
         let show_url = format!("{}/api/show", base_url);
         let show_payload = json!({ "name": config.model });
         let mut builder = client.post(&show_url).json(&show_payload);
@@ -347,6 +365,7 @@ impl CapabilityProbeEngine {
                             if k.ends_with(".context_length") {
                                 if let Some(len) = v.as_u64() {
                                     meta.context_window = Some(len as u32);
+                                    meta.provenance = CapabilityProvenance::ProbedServer;
                                     break;
                                 }
                             }
@@ -378,7 +397,6 @@ impl CapabilityProbeEngine {
                                 meta.vram_bytes = Some(vram);
                             }
                         }
-                        break;
                     }
                 }
             }
@@ -394,7 +412,7 @@ impl CapabilityProbeEngine {
 
         let (url, payload) = if is_ollama_native {
             (
-                super::transport::ollama::resolve_url(&config.base_url),
+                ollama::resolve_url(&config.base_url),
                 json!({
                     "model": config.model,
                     "messages": [
@@ -402,34 +420,34 @@ impl CapabilityProbeEngine {
                     ],
                     "stream": true,
                     "options": {
-                        "temperature": super::DEFAULT_PROBE_TEMPERATURE,
-                        "num_predict": super::DEFAULT_PROBE_MAX_TOKENS
+                        "temperature": DEFAULT_PROBE_TEMPERATURE,
+                        "num_predict": DEFAULT_PROBE_MAX_TOKENS
                     }
                 }),
             )
         } else if config.transport == TransportType::Responses {
             (
-                super::transport::responses::resolve_url(&config.base_url),
+                responses::resolve_url(&config.base_url),
                 json!({
                     "model": config.model,
                     "input": [
                         {"role": "user", "content": "Respond strictly with: Hello नमस्ते"}
                     ],
-                    "temperature": super::DEFAULT_PROBE_TEMPERATURE,
-                    "max_output_tokens": super::DEFAULT_PROBE_MAX_TOKENS,
+                    "temperature": DEFAULT_PROBE_TEMPERATURE,
+                    "max_output_tokens": DEFAULT_PROBE_MAX_TOKENS,
                     "stream": true
                 }),
             )
         } else {
             (
-                super::transport::chat_completions::resolve_url(&config.base_url),
+                chat_completions::resolve_url(&config.base_url),
                 json!({
                     "model": config.model,
                     "messages": [
                         {"role": "user", "content": "Respond strictly with: Hello नमस्ते"}
                     ],
-                    "temperature": super::DEFAULT_PROBE_TEMPERATURE,
-                    "max_tokens": super::DEFAULT_PROBE_MAX_TOKENS,
+                    "temperature": DEFAULT_PROBE_TEMPERATURE,
+                    "max_tokens": DEFAULT_PROBE_MAX_TOKENS,
                     "stream": true
                 }),
             )
@@ -448,7 +466,7 @@ impl CapabilityProbeEngine {
             _ => return (false, false, None, None),
         };
 
-        let mut decoder = super::transport::sse::SseDecoder::new();
+        let mut decoder = SseDecoder::new();
         let mut stream = response.bytes_stream();
 
         while let Some(item) = stream.next().await {
@@ -458,122 +476,77 @@ impl CapabilityProbeEngine {
                     if line == "[DONE]" {
                         break;
                     }
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
-                        let token_opt = if is_ollama_native {
-                            val.get("message")
-                                .and_then(|m| m.get("content"))
-                                .and_then(|s| s.as_str())
-                        } else if config.transport == TransportType::Responses {
-                            val.get("delta").and_then(|s| s.as_str())
-                        } else {
-                            val.get("choices")
-                                .and_then(|c| c.get(0))
-                                .and_then(|c| c.get("delta"))
-                                .and_then(|d| d.get("content"))
-                                .and_then(|s| s.as_str())
-                        };
+                    if let Ok(chunk) = serde_json::from_str::<serde_json::Value>(&line) {
+                        let token_opt = chunk
+                            .get("choices")
+                            .and_then(|c| c.get(0))
+                            .and_then(|c0| c0.get("delta"))
+                            .and_then(|d| d.get("content"))
+                            .and_then(|s| s.as_str())
+                            .or_else(|| {
+                                chunk
+                                    .get("message")
+                                    .and_then(|m| m.get("content"))
+                                    .and_then(|s| s.as_str())
+                            });
 
-                        if let Some(tok) = token_opt {
-                            if !tok.is_empty() {
-                                if first_token_time.is_none() {
-                                    first_token_time = Some(t_start.elapsed());
-                                }
-                                token_count += 1;
-                                accumulated_text.push_str(tok);
+                        if let Some(t) = token_opt {
+                            if first_token_time.is_none() {
+                                first_token_time = Some(t_start.elapsed().as_millis() as u32);
                             }
+                            token_count += 1;
+                            accumulated_text.push_str(t);
                         }
                     }
                 }
             }
         }
 
-        let ttft_ms = first_token_time.map(|d| d.as_millis() as u32);
-        let tps = if let Some(ttft) = first_token_time {
-            let total_dur = t_start.elapsed();
-            if total_dur > ttft && token_count > 1 {
-                let gen_secs = (total_dur - ttft).as_secs_f32();
-                if gen_secs > 0.0 {
-                    Some((token_count - 1) as f32 / gen_secs)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
+        let elapsed = t_start.elapsed().as_secs_f32();
+        let tps = if elapsed > 0.0 && token_count > 0 {
+            Some(token_count as f32 / elapsed)
         } else {
             None
         };
 
-        let has_latin = accumulated_text.chars().any(|c| c.is_ascii_alphabetic());
-        let has_devanagari = accumulated_text
+        let supports_latin = accumulated_text.chars().any(|c| c.is_ascii_alphabetic());
+        let supports_devanagari = accumulated_text
             .chars()
             .any(|c| ('\u{0900}'..='\u{097F}').contains(&c));
 
-        (
-            has_latin || !accumulated_text.is_empty(),
-            has_devanagari,
-            tps,
-            ttft_ms,
-        )
+        (supports_latin, supports_devanagari, tps, first_token_time)
     }
 
     async fn empirical_tool_probe(client: &Client, config: &ConnectionConfig) -> bool {
-        let is_ollama_native = config.capability_source == CapabilitySource::OllamaNative
-            && config.token_limit_field == TokenLimitField::NumPredict;
+        if config.capability_source == CapabilitySource::OllamaNative {
+            return false;
+        }
 
-        let (url, payload) = if is_ollama_native {
-            (
-                super::transport::ollama::resolve_url(&config.base_url),
-                json!({
-                    "model": config.model,
-                    "messages": [
-                        {"role": "user", "content": "What is the weather in Tokyo?"}
-                    ],
-                    "tools": [{
-                        "type": "function",
-                        "function": {
-                            "name": "get_weather",
-                            "description": "Get current weather for location",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "location": {"type": "string"}
-                                },
-                                "required": ["location"]
-                            }
-                        }
-                    }],
-                    "stream": false
-                }),
-            )
-        } else {
-            (
-                super::transport::chat_completions::resolve_url(&config.base_url),
-                json!({
-                    "model": config.model,
-                    "messages": [
-                        {"role": "user", "content": "What is the weather in Tokyo?"}
-                    ],
-                    "tools": [{
-                        "type": "function",
-                        "function": {
-                            "name": "get_weather",
-                            "description": "Get current weather for location",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "location": {"type": "string"}
-                                },
-                                "required": ["location"]
-                            }
-                        }
-                    }],
-                    "tool_choice": "auto",
-                    "max_tokens": super::DEFAULT_TOOL_PROBE_MAX_TOKENS,
-                    "temperature": super::DEFAULT_PROBE_TEMPERATURE
-                }),
-            )
-        };
+        let url = chat_completions::resolve_url(&config.base_url);
+        let tool_schema = json!({
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get current weather in a city",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "city": { "type": "string" }
+                    },
+                    "required": ["city"]
+                }
+            }
+        });
+
+        let payload = json!({
+            "model": config.model,
+            "messages": [
+                { "role": "user", "content": "What is the weather in Tokyo?" }
+            ],
+            "tools": [tool_schema],
+            "max_tokens": DEFAULT_TOOL_PROBE_MAX_TOKENS,
+            "temperature": DEFAULT_PROBE_TEMPERATURE
+        });
 
         let mut builder = client.post(&url).json(&payload);
         builder = inject_auth_headers(builder, &config.auth);
@@ -582,28 +555,8 @@ impl CapabilityProbeEngine {
             let status = resp.status();
             if status.is_success() {
                 if let Ok(body) = resp.text().await {
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
-                        if let Some(choices) = val.get("choices").and_then(|c| c.as_array()) {
-                            if let Some(first) = choices.first() {
-                                if first
-                                    .get("message")
-                                    .and_then(|m| m.get("tool_calls"))
-                                    .is_some()
-                                {
-                                    return true;
-                                }
-                            }
-                        }
-                        if let Some(msg) = val.get("message") {
-                            if msg.get("tool_calls").is_some() {
-                                return true;
-                            }
-                        }
-                    }
                     return body.contains("\"tool_calls\"") || body.contains("\"function_call\"");
                 }
-            } else if status.as_u16() == 400 {
-                return false;
             }
         }
         false
@@ -632,11 +585,11 @@ impl CapabilityProbeEngine {
             provider_name.as_deref(),
         );
         let client = Client::builder()
-            .timeout(Duration::from_secs(super::DEFAULT_VALIDATION_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(DEFAULT_VALIDATION_TIMEOUT_SECS))
             .build()
             .map_err(|e| e.to_string())?;
 
-        let url = super::transport::chat_completions::resolve_url(&conn_cfg.base_url);
+        let url = chat_completions::resolve_url(&conn_cfg.base_url);
         let payload = json!({
             "model": conn_cfg.model,
             "messages": [{"role": "user", "content": "."}],

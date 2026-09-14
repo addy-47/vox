@@ -14,6 +14,9 @@ use crate::{
     utils::json::parse_unified_compaction_json,
 };
 
+pub const COMPACTION_TIMEOUT_SECS: u64 = 45;
+pub const MAX_COMPACTION_ATTEMPTS: usize = 1;
+
 /// Extracted facts and complete session context resulting from unified LLM conversation compaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactionResult {
@@ -43,7 +46,8 @@ async fn execute_compaction_attempt(
 
     let mut summary_content = String::new();
 
-    let gen_res = tokio::time::timeout(Duration::from_secs(45), gen_future).await;
+    let gen_res =
+        tokio::time::timeout(Duration::from_secs(COMPACTION_TIMEOUT_SECS), gen_future).await;
     drop(tx);
 
     match gen_res {
@@ -84,7 +88,10 @@ async fn execute_compaction_attempt(
                     join_err
                 );
             }
-            log::warn!("[MemoryCompaction] Compaction attempt timed out after 45s");
+            log::warn!(
+                "[MemoryCompaction] Compaction attempt timed out after {}s",
+                COMPACTION_TIMEOUT_SECS
+            );
         }
     }
 
@@ -114,9 +121,8 @@ pub async fn run_compaction(
     let mut summary_content = String::new();
     let mut parsed_payload = None;
     let mut attempts = 0;
-    let max_attempts = 2;
 
-    while attempts < max_attempts {
+    while attempts < MAX_COMPACTION_ATTEMPTS {
         if effective_cancel.is_cancelled() {
             return Err(anyhow!("Compaction cancelled by user activity."));
         }
@@ -125,7 +131,7 @@ pub async fn run_compaction(
         log::info!(
             "[MemoryCompaction] Compaction attempt {}/{}...",
             attempts,
-            max_attempts
+            MAX_COMPACTION_ATTEMPTS
         );
 
         if let Ok(content) = execute_compaction_attempt(provider, &request, effective_cancel).await
@@ -143,7 +149,7 @@ pub async fn run_compaction(
                     log::warn!(
                         "[MemoryCompaction] Compaction JSON parsing failed on attempt {}/{}.",
                         attempts,
-                        max_attempts
+                        MAX_COMPACTION_ATTEMPTS
                     );
                 }
             }

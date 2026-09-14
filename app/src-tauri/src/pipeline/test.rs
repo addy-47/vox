@@ -157,7 +157,7 @@ async fn ensure_test_pipeline_ready<R: Runtime>(
             *state.harness.lock() = Some(harness);
         }
     } else {
-        *state.harness.lock() = Some(HarnessSession::new_realtime(None, prompt));
+        *state.harness.lock() = Some(HarnessSession::new_realtime(None, prompt, None, &settings));
     }
 
     Ok(())

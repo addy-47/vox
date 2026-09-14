@@ -26,7 +26,6 @@ use crate::{
 /// In-process embedded LLM provider backed by `llama.cpp`.
 pub struct EmbeddedProvider {
     model_path: PathBuf,
-    ctx_size: u32,
     engine: Arc<LlmWorker>,
     capabilities: ProviderCapabilities,
 }
@@ -50,7 +49,6 @@ impl EmbeddedProvider {
 
         Ok(Self {
             model_path: model_path.to_path_buf(),
-            ctx_size,
             engine: Arc::new(engine),
             capabilities,
         })
@@ -137,9 +135,5 @@ impl LlmProvider for EmbeddedProvider {
 
     fn kind(&self) -> ProviderKind {
         ProviderKind::Embedded
-    }
-
-    fn max_context_tokens(&self) -> usize {
-        self.ctx_size as usize
     }
 }
