@@ -126,6 +126,18 @@ name = "voice_clone"
 [[example]]
 name = "generate_simulation_dataset_clips"
 
+[[bin]]
+name = "memory_compaction_eval"
+path = "evals/memory_compaction_eval.rs"
+
+[[bin]]
+name = "memory_ingestion_eval"
+path = "evals/memory_ingestion_eval.rs"
+
+[[bin]]
+name = "memory_consolidation_eval"
+path = "evals/memory_consolidation_eval.rs"
+
 [[bench]]
 name = "stt_bench"
 harness = false

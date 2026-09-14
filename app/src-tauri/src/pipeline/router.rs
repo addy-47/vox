@@ -61,11 +61,21 @@ pub fn transition<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
 ) {
-    if state.pipeline.state() == new_state {
+    let previous = state.pipeline.state();
+    if previous == new_state {
         return;
     }
 
     state.pipeline.set_state(new_state);
+    log::info!(
+        "[Pipeline] State {:?} -> {:?} (owner {:?}, mode {:?}/{:?}, turn {})",
+        previous,
+        new_state,
+        ctx.owner,
+        ctx.pipeline_mode,
+        ctx.interaction_mode,
+        state.pipeline.peek_turn_id()
+    );
     let target = target_window(ctx.owner);
     let turn_id = state.pipeline.peek_turn_id();
     let state_str = match new_state {
@@ -97,6 +107,7 @@ pub fn transition<R: tauri::Runtime>(
 /// Routes an incoming pipeline event to canonical handlers based on snapshot context.
 fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState, event: VoxEvent) {
     let ctx = RoutingContext::from_app_state(state);
+    log::debug!("[Router] Routing {:?}", event);
 
     match event {
         // Session lifecycle — always routed to assistant track
