@@ -23,10 +23,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22'
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
           version: '9'
 
@@ -44,7 +44,9 @@ jobs:
             clang \
             dpkg-dev \
             apt-utils \
-            libasound2-dev
+            libasound2-dev \
+            libssl-dev \
+            pkg-config
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -90,7 +92,7 @@ jobs:
       - name: Create GitHub Release
         id: create_release
         if: ${{ !contains(github.ref_name, '-') }}
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ env.DEB_PATH }}
@@ -132,10 +134,10 @@ jobs:
           cp ${{ env.DEB_PATH }} gh-pages-repo/apt/pool/main/
           
           # 3. Copy utility scripts and GPG public key to the web root
-          cp scripts/release/install.sh gh-pages-repo/
-          cp scripts/release/add-apt-repo.sh gh-pages-repo/
-          cp scripts/release/detect-os.sh gh-pages-repo/
-          cp scripts/release/verify-installation.sh gh-pages-repo/
+          cp .github/scripts/install.sh gh-pages-repo/
+          cp .github/scripts/add-apt-repo.sh gh-pages-repo/
+          cp .github/scripts/detect-os.sh gh-pages-repo/
+          cp .github/scripts/verify-installation.sh gh-pages-repo/
           # Export public GPG key from the imported private key for APT repo verification
           gpg --batch --yes --output public.gpg --armor --export
           cp public.gpg gh-pages-repo/
@@ -145,7 +147,7 @@ jobs:
           
           # 5. Run APT Indexer and GPG Sign
           export APT_GPG_PASSPHRASE
-          chmod +x scripts/release/generate-repo.sh
+          chmod +x .github/scripts/generate-repo.sh
           # Re-import key into this execution context's gpg ring
           echo "${{ secrets.APT_GPG_PRIVATE_KEY }}" | gpg --batch --import
           
