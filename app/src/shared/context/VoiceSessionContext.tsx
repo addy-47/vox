@@ -59,7 +59,7 @@ export interface VoiceSessionContextValue {
   togglePtt: () => Promise<void>;
   handleTestClip: (clipId: string) => Promise<void>;
   selectSession: (sessionId: number) => Promise<void>;
-  startNewConversation: () => Promise<void>;
+  startNewConversation: (projectId?: string) => Promise<void>;
   dismissRestoreError: () => void;
   setTestMode: (mode: boolean) => void;
   handleEngage: () => Promise<void>;
@@ -311,7 +311,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
   }, []);
 
-  const startNewConversation = useCallback(async () => {
+  const startNewConversation = useCallback(async (projectId?: string) => {
     if (storeApi().isRestoring) return;
     const api = storeApi();
     api.setTranscript("");
@@ -321,7 +321,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     api.setActiveSessionId(null);
     api.setRestoreError(null);
     try {
-      await createSessionIpc();
+      await createSessionIpc(projectId);
     } catch (err: unknown) {
       storeApi().setRestoreError(err instanceof Error ? err.message : SESSION_COPY.restoreFailedFallback);
     }

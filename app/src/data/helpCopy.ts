@@ -1,750 +1,419 @@
-import type { LucideIcon } from "lucide-react";
 import {
-  Power,
-  Pause,
   Mic,
-  PanelLeft,
-  Bell,
-  FlaskConical,
-  AlertTriangle,
-  History,
-  CalendarDays,
-  CalendarRange,
-  Trash2,
-  RotateCcw,
   Search,
-  Focus,
-  RefreshCw,
-  Eye,
-  GitCompare,
+  SlidersHorizontal,
+  Orbit,
+  Trash2,
+  FileText,
+  Play,
+  Sparkles,
+  Download,
   Cpu,
-  Plus,
-  Minus,
-  Skull,
-  Gauge,
+  Bot,
+  Brain,
+  Palette,
+  ShieldOff,
+  Volume2,
+  VolumeX,
+  Keyboard,
+  CheckCircle2,
+  Key,
+  RotateCcw,
 } from "lucide-react";
+import type { HelpControlItem } from "@/shared/components/help/HelpControlCard";
 
 export type HelpTier = "1A" | "1B" | "2A" | "2B" | "3";
 
-export type HelpGroup = "page" | "settings" | "wizard" | "faq";
+export interface PageHelpGuide {
+  title: string;
+  badge: string;
+  subtitle: string;
+  sections: Array<{
+    heading: string;
+    description?: string;
+    controls?: HelpControlItem[];
+    tips?: string[];
+  }>;
+}
 
-export interface HelpShortcut {
-  keys: string;
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. HOME PAGE GUIDE
+// ─────────────────────────────────────────────────────────────────────────────
+export const HOME_PAGE_HELP: PageHelpGuide = {
+  title: "Home Voice Stage",
+  badge: "/",
+  subtitle: "Talk to Vox naturally, control audio listening modes, and switch conversations.",
+  sections: [
+    {
+      heading: "How to Talk",
+      description: "Choose whichever way feels most comfortable to talk with Vox.",
+      controls: [
+        {
+          icon: Mic,
+          name: "Push-to-Talk",
+          badge: "Hold to Talk",
+          action: "Hold Spacebar (or click and hold the microphone button).",
+          outcome: "Vox only listens while you hold the key. Release when you're done speaking to send immediately.",
+          shortcut: "Space",
+          tip: "Best for noisy environments or open offices.",
+        },
+        {
+          icon: Volume2,
+          name: "Voice Activation (Hands-Free)",
+          badge: "Auto Listen",
+          action: "Simply start talking naturally.",
+          outcome: "Vox automatically detects your voice, transcribes what you say, and responds when you pause.",
+          tip: "Turn this on in Settings > Interaction if you prefer hands-free talking.",
+        },
+        {
+          icon: VolumeX,
+          name: "Interrupt / Barge-in",
+          badge: "Instant Stop",
+          action: "Speak while Vox is talking.",
+          outcome: "Vox immediately stops speaking and starts listening to your new question.",
+        },
+        {
+          icon: VolumeX,
+          name: "Mute Microphone",
+          badge: "Mic Off",
+          action: "Click the mute button in the bottom dock.",
+          outcome: "Pauses all listening so nothing you say is heard or transcribed.",
+          shortcut: "M",
+        },
+      ],
+      tips: [
+        "You can press Escape anytime to close open side panels.",
+        "Drag the left edge or click the top-left icon to view all your chat sessions.",
+      ],
+    },
+  ],
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. HISTORY PAGE GUIDE
+// ─────────────────────────────────────────────────────────────────────────────
+export const HISTORY_PAGE_HELP: PageHelpGuide = {
+  title: "Conversation History",
+  badge: "/history",
+  subtitle: "Browse, replay, and search all your past voice conversations.",
+  sections: [
+    {
+      heading: "Browsing Past Chats",
+      description: "Explore previous conversations by date or search for specific topics.",
+      controls: [
+        {
+          icon: Orbit,
+          name: "3D Orbit Wheel",
+          badge: "Timeline",
+          action: "Drag along the circle or press arrow keys to travel back in time.",
+          outcome: "Each node represents a conversation. Larger circles mean longer, deeper discussions.",
+          shortcut: "[ or ]",
+        },
+        {
+          icon: FileText,
+          name: "List View",
+          badge: "Quick Search",
+          action: "Click the list icon at the top to see a clean, sorted table of all past chats.",
+          outcome: "Easily scan dates, message counts, and conversation lengths.",
+        },
+        {
+          icon: Search,
+          name: "Search Conversations",
+          badge: "Find Text",
+          action: "Type any keyword into the search bar.",
+          outcome: "Instantly finds chats where that word or topic was discussed.",
+        },
+        {
+          icon: Play,
+          name: "Replay Voice Audio",
+          badge: "Audio Replay",
+          action: "Click any conversation to open its transcript.",
+          outcome: "Read what was said and replay the voice audio for any turn.",
+        },
+        {
+          icon: Trash2,
+          name: "Delete a Chat",
+          badge: "Clean Up",
+          action: "Click the trash icon on any conversation.",
+          outcome: "Permanently removes the conversation and its audio files.",
+        },
+      ],
+      tips: [
+        "Want private chats? Turn on Incognito Mode in Settings to chat without saving history.",
+      ],
+    },
+  ],
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. MEMORY PAGE GUIDE
+// ─────────────────────────────────────────────────────────────────────────────
+export const MEMORY_PAGE_HELP: PageHelpGuide = {
+  title: "Memory & What Vox Knows",
+  badge: "/memory",
+  subtitle: "See what Vox has learned about you and your preferences across chats.",
+  sections: [
+    {
+      heading: "How Memory Works",
+      description: "Vox automatically saves helpful facts from your conversations so you never have to repeat yourself.",
+      controls: [
+        {
+          icon: Sparkles,
+          name: "Your Profile (Center Crystal)",
+          badge: "Profile",
+          action: "Click the glowing crystal in the center of the screen.",
+          outcome: "View and edit your personal profile facts (your name, preferences, work, and habits).",
+        },
+        {
+          icon: Brain,
+          name: "Memory Nodes (Floating Leaves)",
+          badge: "Key Facts",
+          action: "Click any floating node around the canopy.",
+          outcome: "See the specific fact Vox remembered, when it was learned, and which conversation it came from.",
+        },
+        {
+          icon: Download,
+          name: "Backup Memory",
+          badge: "Export",
+          action: "Click Export in the memory drawer.",
+          outcome: "Downloads a private backup file of all your memories to your computer.",
+        },
+      ],
+      tips: [
+        "All memories are stored privately on your computer.",
+        "Vox automatically merges duplicate memories in the background to keep things neat.",
+      ],
+    },
+  ],
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. SETTINGS PAGE GUIDE (DIVIDED PER CARD)
+// ─────────────────────────────────────────────────────────────────────────────
+export type SettingsCardId = "models" | "interaction" | "persona" | "memory" | "history" | "appearance";
+
+export interface SettingsCardHelp {
+  id: SettingsCardId;
   label: string;
+  badge: string;
+  icon: any;
+  overview: string;
+  controls: HelpControlItem[];
+  tips?: string[];
 }
 
-/** One interactive control on the page: icon + name + one-line effect. */
-export interface HelpControl {
-  icon: LucideIcon;
-  name: string;
-  body: string;
-}
-
-export interface HelpSection {
-  heading: string;
-  paragraphs?: readonly string[];
-  bullets?: readonly string[];
-  controls?: readonly HelpControl[];
-  shortcuts?: readonly HelpShortcut[];
-  tip?: { title: string; body: string };
-}
-
-export interface HelpTip {
-  tier: HelpTier;
+export const SETTINGS_PAGE_HELP: {
   title: string;
-  body: string;
-}
-
-export interface HelpArticle {
-  id: string;
-  group: HelpGroup;
-  title: string;
-  pinnedFrom?: string;
-  visibleOnTiers?: readonly HelpTier[];
-  tips?: readonly HelpTip[];
-  sections: readonly HelpSection[];
-}
-
-export const HELP_TOC_GROUPS: readonly { id: HelpGroup; label: string }[] = [
-  { id: "page", label: "Pages" },
-  { id: "settings", label: "Settings" },
-  { id: "wizard", label: "First-time setup" },
-  { id: "faq", label: "Quick answers" },
-];
-
-export const HELP_ARTICLES: readonly HelpArticle[] = [
-  {
-    id: "page:home",
-    group: "page",
-    title: "Home",
-    pinnedFrom: "Home",
-    sections: [
-      {
-        heading: "Session controls",
-        controls: [
-          {
-            icon: Power,
-            name: "Power button",
-            body: "Starts a voice session. Press again (X) to end it — ending clears the visible transcript.",
-          },
-          {
-            icon: Pause,
-            name: "Pause / resume",
-            body: "Freezes a session without ending it. Shown instead of the mic in continuous listening mode.",
-          },
-          {
-            icon: Mic,
-            name: "Hold to talk",
-            body: "Push-to-talk mode only: hold while speaking, release to send. Leaving the button cancels the take.",
-          },
-          {
-            icon: PanelLeft,
-            name: "Conversations rail",
-            body: "Top-left. Reopens a past conversation so you can continue where you left off, or starts a fresh one.",
-          },
-        ],
-      },
-      {
-        heading: "Status and alerts",
-        controls: [
-          {
-            icon: Bell,
-            name: "Notifications",
-            body: "Top-right. Session reminders and background updates, newest first. A dot means something needs you.",
-          },
-          {
-            icon: FlaskConical,
-            name: "Test clips",
-            body: "Desktop only, while idle. Replays a recorded voice clip through the pipeline to check quality.",
-          },
-          {
-            icon: AlertTriangle,
-            name: "Error banner",
-            body: "Reconnect retries the session, Configure jumps to Settings, Dismiss hides it.",
-          },
-        ],
-      },
-      {
-        heading: "Reading the orb",
-        bullets: [
-          "Calm glow: idle or sleeping.",
-          "Bright pulse: actively listening to you.",
-          "Swirling center: thinking and preparing a response.",
-          "Expanding ripples: speaking back to you.",
-        ],
-      },
-      {
-        heading: "Keyboard",
-        shortcuts: [
-          { keys: "Space", label: "Hold to talk (push-to-talk mode, outside text fields)" },
-          { keys: "← / →", label: "Switch pages" },
-          { keys: "Shift + ?", label: "Open or close this guide" },
-          { keys: "Esc", label: "Close the topmost panel" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "page:history",
-    group: "page",
-    title: "History",
-    pinnedFrom: "History",
-    sections: [
-      {
-        heading: "Browsing sessions",
-        controls: [
-          {
-            icon: History,
-            name: "Session orbit",
-            body: "Every past conversation is a node. Pick one to open its full transcript in the bottom sheet.",
-          },
-          {
-            icon: CalendarDays,
-            name: "Day view",
-            body: "Sessions grouped by day on the orbit. Your words read left, Vox's replies right.",
-          },
-          {
-            icon: CalendarRange,
-            name: "Month view",
-            body: "Zoomed-out overview. Tap a day to drill back into it.",
-          },
-          {
-            icon: Trash2,
-            name: "Delete session",
-            body: "Two taps to confirm. Deleting removes the session and all its turns for good.",
-          },
-          {
-            icon: RotateCcw,
-            name: "Retry",
-            body: "Reloads a transcript that failed to open. Your sessions are never lost by a failed load.",
-          },
-        ],
-      },
-      {
-        heading: "Reading a session",
-        bullets: [
-          "Long transcripts page in 20 turns at a time — use the loader button at the bottom for older turns.",
-          "The header shows when the session happened and how many turns it holds.",
-        ],
-      },
-      {
-        heading: "Privacy",
-        paragraphs: [
-          "Private Mode in Settings stops new turns from being recorded. It never deletes anything already saved — remove those with the delete control above.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "page:memory",
-    group: "page",
-    title: "Memory",
-    pinnedFrom: "Memory",
-    sections: [
-      {
-        heading: "Graph controls",
-        controls: [
-          {
-            icon: Search,
-            name: "Search memories",
-            body: "Finds a fact node by keyword and jumps the graph to it.",
-          },
-          {
-            icon: Plus,
-            name: "Zoom in",
-            body: "Moves the camera closer to the selected area of the graph.",
-          },
-          {
-            icon: Minus,
-            name: "Zoom out",
-            body: "Pulls the camera back for the full-graph overview.",
-          },
-          {
-            icon: Focus,
-            name: "Recenter",
-            body: "Snaps the view back to the center of the graph.",
-          },
-          {
-            icon: RefreshCw,
-            name: "Refresh",
-            body: "Reloads facts and edges from the database.",
-          },
-          {
-            icon: Eye,
-            name: "Show inactive",
-            body: "Toggles retired facts. Off by default so only live knowledge shows.",
-          },
-          {
-            icon: GitCompare,
-            name: "Conflicts",
-            body: "Contradicting facts waiting on review. The badge counts how many are open.",
-          },
-          {
-            icon: Cpu,
-            name: "Ingestion queue",
-            body: "Opens the pipeline drawer: facts waiting to be checked, embedded, and linked.",
-          },
-        ],
-      },
-      {
-        heading: "Reading the graph",
-        bullets: [
-          "Each node is one fact or entity. Lines show how they connect.",
-          "Drag to rotate, scroll to zoom, click a node to inspect it.",
-          "Colors mark collections; the legend explains them.",
-        ],
-        tip: {
-          title: "Tiers that support memory",
-          body: "Memory is only fully active on tiers 1B and above. On tier 1A the graph stays empty because the embedded model cannot extract facts locally.",
+  badge: string;
+  subtitle: string;
+  cards: SettingsCardHelp[];
+} = {
+  title: "Settings & Options",
+  badge: "/settings",
+  subtitle: "Choose how Vox thinks, speaks, listens, and looks.",
+  cards: [
+    {
+      id: "models",
+      label: "AI & Voice",
+      badge: "Thinking & Speech",
+      icon: Cpu,
+      overview: "Choose the AI brain you want Vox to think with, and pick the voice you want Vox to speak with.",
+      controls: [
+        {
+          icon: Brain,
+          name: "AI Thinking Model",
+          badge: "The Brain",
+          action: "Select which AI model handles your conversations.",
+          outcome: "Pick local models (runs 100% offline on your machine) or connect to cloud models like Gemini, Claude, or OpenAI.",
         },
-      },
-    ],
-  },
-  {
-    id: "page:monitoring",
-    group: "page",
-    title: "Monitoring",
-    pinnedFrom: "Monitoring",
-    sections: [
-      {
-        heading: "What you can see here",
-        paragraphs: [
-          "Monitoring is a live read-out of CPU, memory, model load, and pipeline state.",
-        ],
-      },
-      {
-        heading: "Controls",
-        controls: [
-          {
-            icon: Skull,
-            name: "Unload / reload engines",
-            body: "Frees all model memory in one tap, or loads everything back. Use it before a heavy session on small machines.",
-          },
-          {
-            icon: Gauge,
-            name: "Metric cards",
-            body: "Pipeline state, model latency, queue depth, and RAM headroom. Read-only — nothing here changes Vox.",
-          },
-        ],
-      },
-      {
-        heading: "Where it lives",
-        bullets: [
-          "Wide screens: a popover from the pulse button at the bottom-left.",
-          "Narrow screens: its own page in the bottom nav.",
-        ],
-      },
-      {
-        heading: "If something looks wrong",
-        bullets: [
-          "High memory use on tier 1A is expected during long sessions.",
-          "A stuck 'Thinking' state for over a minute usually means the LLM is reloading — wait it out or open Profiler to confirm.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "settings:overview",
-    group: "settings",
-    title: "Settings overview",
-    pinnedFrom: "Settings",
-    sections: [
-      {
-        heading: "The radial hub",
-        paragraphs: [
-          "Settings is laid out as a wheel. The center is a status core, and each spoke is a domain of configuration. Tap a spoke to open that card; tap the center to open or close everything at once.",
-        ],
-      },
-      {
-        heading: "The six domains",
-        bullets: [
-          "Persona — who Vox sounds like and what it is told to do.",
-          "Models — the engines that hear, think, and speak.",
-          "History — what is saved and what is private.",
-          "Memory — what is remembered and how it is recalled.",
-          "Appearance — colors, theme, and ambient mood.",
-          "Interaction — how Vox wakes up and what cloud keys it uses.",
-        ],
-      },
-      {
-        heading: "Saving changes",
-        bullets: [
-          "Most options save automatically the moment you change them.",
-          "Changes that need a model reload show a Restart bar with a tick to apply.",
-          "Restore Defaults at the top-right resets every domain at once.",
-        ],
-        tip: {
-          title: "Cloud API keys",
-          body: "If you pick a cloud provider without entering an API key, the Save button stays disabled until the key is filled in.",
+        {
+          icon: Volume2,
+          name: "Voice & Speech",
+          badge: "Speaking Voice",
+          action: "Choose the voice Vox speaks with.",
+          outcome: "Select from realistic natural voices, adjust talking speed, or clone your own voice from a short audio clip.",
         },
-      },
-    ],
-  },
-  {
-    id: "settings:persona",
-    group: "settings",
-    title: "Persona",
-    pinnedFrom: "Persona",
-    sections: [
-      {
-        heading: "What this controls",
-        paragraphs: [
-          "Persona is the instruction prompt Vox reads before answering. You can write different prompts for the modular pipeline and the realtime duplex provider.",
-        ],
-      },
-      {
-        heading: "Modular vs Realtime",
-        bullets: [
-          "Modular is used when the pipeline is split into STT, LLM, and TTS stages.",
-          "Realtime is used when a single cloud duplex model (like Gemini Live) does all three in one pass.",
-        ],
-      },
-      {
-        heading: "Template variables",
-        paragraphs: [
-          "The modular prompt supports <lang> and <script> placeholders. They are replaced at runtime with the language Vox detected from your speech.",
-        ],
-        tip: {
-          title: "Keep it short",
-          body: "Long prompts consume context window and slow the LLM. Two or three sentences of clear style guidance usually beats a full character sheet.",
+        {
+          icon: Mic,
+          name: "Speech Recognition",
+          badge: "Hearing",
+          action: "Select how Vox transcribes your voice.",
+          outcome: "Fast, accurate speech-to-text models that turn your spoken words into text in real time.",
         },
-      },
-    ],
-  },
-  {
-    id: "settings:models",
-    group: "settings",
-    title: "Models",
-    pinnedFrom: "Models",
-    sections: [
-      {
-        heading: "Three engines, one screen",
-        paragraphs: [
-          "Models is where you pick the engines that listen (STT), think (LLM), and speak (TTS). The card switches layout depending on whether you are on the modular pipeline or a realtime duplex provider.",
-        ],
-      },
-      {
-        heading: "Choosing a provider",
-        bullets: [
-          "Embedded — runs entirely on this device. No network, no key, slower on weak hardware.",
-          "Server — talks to a self-hosted engine you point it at (Ollama, custom HTTP).",
-          "Cloud — talks to a hosted provider. Fastest, but needs an API key.",
-        ],
-      },
-      {
-        heading: "Restart-required changes",
-        paragraphs: [
-          "Switching engines, the LLM context window, or thread count triggers a model reload. Use the Apply & Reload bar at the bottom of the card to confirm.",
-        ],
-        tip: {
-          title: "Downloaded vs not",
-          body: "Embedded models only appear if the weights are on disk. If your model is missing, use the Download action on the card to fetch it before changing the selection.",
+        {
+          icon: RotateCcw,
+          name: "Apply & Reload",
+          badge: "Bottom Dock",
+          action: "Click Apply & Reload after switching offline models.",
+          outcome: "Restarts the AI engine smoothly with your newly chosen models.",
         },
-      },
-    ],
-    tips: [
-      {
-        tier: "1A",
-        title: "Tier 1A — embedded only",
-        body: "On tier 1A only embedded providers are usable. Cloud and server providers are visible but stay disabled because the host hardware cannot guarantee sub-200ms response.",
-      },
-    ],
-  },
-  {
-    id: "settings:history",
-    group: "settings",
-    title: "History",
-    pinnedFrom: "History",
-    sections: [
-      {
-        heading: "What lives here",
-        paragraphs: [
-          "History settings control whether new sessions are saved and how many past turns stay in the tray window's quick-recent list.",
-        ],
-      },
-      {
-        heading: "The two options",
-        bullets: [
-          "Private Mode — when on, new turns are not written to the history database.",
-          "Tray History Limit — how many recent sessions appear in the floating tray's quick menu.",
-        ],
-      },
-      {
-        heading: "Compaction",
-        paragraphs: [
-          "When auto-compaction is on, old sessions are summarized and pruned in the background to keep the database lean. Compaction only runs while Vox is idle or paused.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "settings:memory",
-    group: "settings",
-    title: "Memory",
-    pinnedFrom: "Memory",
-    sections: [
-      {
-        heading: "Two switches",
-        paragraphs: [
-          "Retrieval injects stored facts into every new turn. Processing extracts new facts from your sessions and adds them to the graph.",
-        ],
-      },
-      {
-        heading: "The dials",
-        bullets: [
-          "Recall Fact Limit — how many long-term facts enter each turn.",
-          "Relevance Cutoff — minimum similarity score for a fact to be considered.",
-          "Knowledge Graph Hops — how many relationship steps the retriever can follow.",
-          "Context Budget — maximum share of the LLM window given to memory.",
-          "Conversation Window — how long a topic stays chained as active context.",
-        ],
-      },
-      {
-        heading: "When to turn things off",
-        bullets: [
-          "Turn Retrieval off if Vox keeps pulling in irrelevant old facts.",
-          "Turn Processing off if you want a session to be a clean one-off conversation.",
-        ],
-        tip: {
-          title: "Tier 1A caveat",
-          body: "On tier 1A Processing is always off because the embedded model cannot extract facts locally. Retrieval is available but the graph stays empty.",
+      ],
+      tips: [
+        "Cloud models give the fastest and smartest answers, while local models run completely private and offline.",
+      ],
+    },
+    {
+      id: "interaction",
+      label: "Talking & Mic",
+      badge: "Microphone & Keys",
+      icon: SlidersHorizontal,
+      overview: "Set up how you speak to Vox, configure microphone devices, and set up system-wide dictation.",
+      controls: [
+        {
+          icon: Mic,
+          name: "Push-to-Talk vs Voice Activation",
+          badge: "Trigger Mode",
+          action: "Choose how Vox knows when you're speaking.",
+          outcome: "Push-to-Talk listens only while holding a key. Voice Activation listens continuously and replies when you pause.",
         },
-      },
-    ],
-    tips: [
-      {
-        tier: "1A",
-        title: "Tier 1A",
-        body: "Memory is read-only on tier 1A. The graph cannot grow because no extraction engine is loaded.",
-      },
-    ],
-  },
-  {
-    id: "settings:appearance",
-    group: "settings",
-    title: "Appearance",
-    pinnedFrom: "Appearance",
-    sections: [
-      {
-        heading: "Theme and accent",
-        paragraphs: [
-          "Switch between the dark ambient surface and the light glass theme. The accent color tints the orb, focus rings, and active states throughout the app.",
-        ],
-      },
-      {
-        heading: "Picking a seed",
-        bullets: [
-          "The accent is generated from a seed, not picked from a swatch. Try a few — each one reshapes the personality of the UI.",
-          "Your selection is saved instantly. No reload needed.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "settings:interaction",
-    group: "settings",
-    title: "Interaction",
-    pinnedFrom: "Interaction",
-    sections: [
-      {
-        heading: "Pipeline mode",
-        paragraphs: [
-          "Modular splits hearing, thinking, and speaking into separate stages you can mix and match. Realtime sends audio to a single duplex cloud model that does all three in one pass.",
-        ],
-      },
-      {
-        heading: "Activation mode",
-        bullets: [
-          "Continuous — Vox is always listening and only responds when addressed.",
-          "Push-to-Talk — you hold a hotkey while speaking; nothing is heard otherwise.",
-        ],
-      },
-      {
-        heading: "Cloud keys",
-        paragraphs: [
-          "When you select a cloud provider on any of the engines, its API key is collected here. The key is stored locally and only sent to the matching provider.",
-        ],
-        tip: {
-          title: "Switching modes",
-          body: "Switching between Modular and Realtime is not auto-saved — confirm the change with the tick in the card footer to apply.",
+        {
+          icon: Keyboard,
+          name: "System Dictation",
+          badge: "Type Anywhere",
+          action: "Set a global keyboard shortcut for dictation.",
+          outcome: "Press the shortcut anywhere on your computer (browser, code editor, notes) to speak and have your words typed automatically.",
         },
-      },
-    ],
-  },
-  {
-    id: "wizard:welcome",
-    group: "wizard",
-    title: "Welcome",
-    pinnedFrom: "Wizard · Welcome",
-    sections: [
-      {
-        heading: "What this is",
-        paragraphs: [
-          "The first-time setup walks you through hardware checks, model downloads, and a live voice test. It only runs once.",
-        ],
-      },
-      {
-        heading: "What you will do",
-        bullets: [
-          "Confirm your hardware and microphone.",
-          "Pick the models you want Vox to use.",
-          "Run a five-second voice test to make sure everything is wired up.",
-        ],
-      },
-      {
-        heading: "Skipping it",
-        paragraphs: [
-          "You can leave at any time and come back via Settings, but the app will not work fully until at least the audio test has passed.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "wizard:system",
-    group: "wizard",
-    title: "System check",
-    pinnedFrom: "Wizard · System check",
-    sections: [
-      {
-        heading: "What we are checking",
-        bullets: [
-          "Available RAM and CPU cores.",
-          "Microphone permissions.",
-          "Disk space for downloaded model weights.",
-        ],
-      },
-      {
-        heading: "If a check fails",
-        paragraphs: [
-          "Each red row shows what to fix. Most issues are microphone permissions or a disk almost full of other things.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "wizard:model",
-    group: "wizard",
-    title: "Model setup",
-    pinnedFrom: "Wizard · Model setup",
-    sections: [
-      {
-        heading: "Choosing a starting set",
-        paragraphs: [
-          "A minimal set that fits your hardware is preselected. You can swap any engine later from Settings.",
-        ],
-      },
-      {
-        heading: "Downloads",
-        bullets: [
-          "Each download shows a progress bar and the on-disk size.",
-          "You can keep talking to the rest of the wizard while a model downloads in the background.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "wizard:audio",
-    group: "wizard",
-    title: "Audio setup",
-    pinnedFrom: "Wizard · Audio setup",
-    sections: [
-      {
-        heading: "Pick your input",
-        paragraphs: [
-          "Choose the microphone you want Vox to listen through. The selected device is remembered for future sessions.",
-        ],
-      },
-      {
-        heading: "Levels",
-        bullets: [
-          "Speak normally and watch the meter — it should peak near the middle.",
-          "If it sits at the bottom, raise the system input volume.",
-          "If it pegs at the top, lower the input or move back from the mic.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "wizard:test",
-    group: "wizard",
-    title: "Live test",
-    pinnedFrom: "Wizard · Live test",
-    sections: [
-      {
-        heading: "A five-second sanity check",
-        paragraphs: [
-          "Say a short sentence. Vox will transcribe it, run it through the LLM, and speak a reply. If you can hear a reply, the full pipeline is working.",
-        ],
-      },
-      {
-        heading: "If something fails",
-        bullets: [
-          "No transcription: your microphone input is too quiet or the STT model is still loading.",
-          "No reply: the LLM is still loading or your context window is full.",
-          "Stuttering reply: realtime CPU is saturated — close other heavy apps.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "faq:shortcuts",
-    group: "faq",
-    title: "Keyboard shortcuts",
-    pinnedFrom: "Shortcuts",
-    sections: [
-      {
-        heading: "Global",
-        shortcuts: [
-          { keys: "Shift + /", label: "Open this help drawer" },
-          { keys: "Esc", label: "Close the topmost overlay" },
-        ],
-      },
-      {
-        heading: "Settings",
-        shortcuts: [
-          { keys: "Esc", label: "Close the topmost settings card" },
-        ],
-      },
-      {
-        heading: "Voice typing",
-        paragraphs: [
-          "The voice-typing hotkey is configured under Settings → Interaction. It is a global hotkey that works even when Vox is not focused.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "faq:tiers",
-    group: "faq",
-    title: "About tiers",
-    pinnedFrom: "Tiers",
-    sections: [
-      {
-        heading: "What a tier is",
-        paragraphs: [
-          "A tier is a summary of what your hardware can comfortably run. Vox picks the right balance of local vs cloud engines for you based on it.",
-        ],
-      },
-      {
-        heading: "The five tiers",
-        bullets: [
-          "1A — 8 GB RAM, no GPU. Embedded engines only, no memory graph.",
-          "1B — 8 GB+ with a dedicated GPU. Full local pipeline plus memory.",
-          "2A — Remote LLM, local audio. Speech and voice stay on device, thinking happens on your self-hosted server.",
-          "2B — Cloud LLM, local audio. Best of both — local latency, hosted reasoning.",
-          "3 — Realtime duplex. A single cloud model handles hearing, thinking, and speaking in one stream.",
-        ],
-      },
-    ],
-  },
-  {
-    id: "faq:privacy",
-    group: "faq",
-    title: "Privacy and data",
-    pinnedFrom: "Privacy",
-    sections: [
-      {
-        heading: "What stays on this device",
-        bullets: [
-          "All embedded model inference runs locally.",
-          "Session history is stored in a local database.",
-          "Memory graph data stays in your local app data folder.",
-        ],
-      },
-      {
-        heading: "What leaves the device",
-        paragraphs: [
-          "Only what you explicitly route to a server or cloud provider. Toggling an engine to Server or Cloud in Settings is the moment audio or text starts leaving the machine.",
-        ],
-      },
-      {
-        heading: "Clearing your data",
-        bullets: [
-          "Private Mode in Settings → History stops new turns from being recorded.",
-          "Restore Defaults does not delete history — use the History page's clear action for that.",
-          "Uninstalling the app removes the local database.",
-        ],
-      },
-    ],
-  },
-];
-
-export const HELP_DRAWER_COPY = {
-  drawerAria: "Help & guide",
-  closeHelp: "Close help",
-  closeButton: "Close",
-  emptyClose: "Close",
-  triggerLabel: "Help & guide",
-  headerTitle: "Help & guide",
-  headerSubtitle: "Walkthroughs, settings reference, and quick answers",
-  tocHeading: "Contents",
-  allGuidesHeading: "All guides",
-  searchPlaceholder: "Search the guide",
-  pinnedCrumbPrefix: "Pinned to",
-  pinnedCrumbClear: "Clear pin",
-  tierBadgePrefix: "Your tier",
-  emptyStateTitle: "No article matches that context",
-  emptyStateBody: "The page you opened help from does not have a guide yet. Browse the contents on the left or use the shortcuts below.",
-  scrollTop: "Back to top",
-  shortcutsHeading: "Shortcuts",
+        {
+          icon: Key,
+          name: "Cloud API Keys",
+          badge: "API Credentials",
+          action: "Enter your API keys for cloud AI providers.",
+          outcome: "Keys are saved securely on your device so Vox can connect directly to your chosen provider.",
+        },
+        {
+          icon: Volume2,
+          name: "Microphone & Speaker",
+          badge: "Audio Devices",
+          action: "Select your preferred microphone and speakers.",
+          outcome: "Ensures Vox hears you through the right microphone and plays speech through your desired output.",
+        },
+      ],
+      tips: [
+        "If you work in a noisy room, Push-to-Talk prevents background chatter from accidentally triggering responses.",
+      ],
+    },
+    {
+      id: "persona",
+      label: "Personality",
+      badge: "Instructions & Tone",
+      icon: Bot,
+      overview: "Shape how Vox talks to you: friendly, brief, technical, or conversational.",
+      controls: [
+        {
+          icon: Bot,
+          name: "Custom Instructions",
+          badge: "Prompt Editor",
+          action: "Type instructions telling Vox who to be and how to answer.",
+          outcome: "Give Vox a specific role, tell it what projects you're working on, or set rules like 'always give concise answers'.",
+        },
+        {
+          icon: Sparkles,
+          name: "Tone Presets",
+          badge: "Style Changers",
+          action: "Click preset styles like Concise, Technical, or Casual.",
+          outcome: "Instantly sets Vox's conversation style without needing to write custom prompt text.",
+        },
+        {
+          icon: CheckCircle2,
+          name: "Automatic Saving",
+          badge: "Instant Sync",
+          action: "Type any changes in the prompt box.",
+          outcome: "Saves automatically. Your new instructions take effect on your very next conversation turn.",
+        },
+      ],
+    },
+    {
+      id: "memory",
+      label: "Memory Settings",
+      badge: "Recall & Context",
+      icon: Brain,
+      overview: "Control how much past context Vox remembers and uses when answering your questions.",
+      controls: [
+        {
+          icon: Brain,
+          name: "Memory Recall Depth",
+          badge: "How Much",
+          action: "Choose how many relevant past memories are retrieved per turn.",
+          outcome: "Higher values give Vox more background context from past chats; lower values keep answers focused on the immediate topic.",
+        },
+        {
+          icon: SlidersHorizontal,
+          name: "Similarity Cutoff",
+          badge: "Relevance",
+          action: "Adjust how closely a past memory must match your current topic to be recalled.",
+          outcome: "Higher settings recall only exact matches; lower settings allow broader connections.",
+        },
+        {
+          icon: RotateCcw,
+          name: "Session Chaining Window",
+          badge: "Continuing Chats",
+          action: "Set how many hours recent chat context stays warm.",
+          outcome: "When you return to a conversation within this window, Vox picks up right where you left off.",
+        },
+      ],
+      tips: [
+        "Default memory settings work great for almost everyone. Adjust these only if you want deeper or lighter recall.",
+      ],
+    },
+    {
+      id: "history",
+      label: "Privacy & History",
+      badge: "Storage & Incognito",
+      icon: ShieldOff,
+      overview: "Manage your conversation privacy and choose whether chats are saved to disk.",
+      controls: [
+        {
+          icon: ShieldOff,
+          name: "Incognito Mode",
+          badge: "Private Browsing",
+          action: "Turn on Incognito Mode.",
+          outcome: "Vox answers your questions normally, but deletes all audio, transcripts, and memories when you exit. Nothing is saved to disk.",
+        },
+        {
+          icon: FileText,
+          name: "Compact Dialogue View",
+          badge: "Display Option",
+          action: "Toggle collapsible conversation turns.",
+          outcome: "Keeps long chat histories tidy by collapsing long messages into compact cards.",
+        },
+        {
+          icon: Trash2,
+          name: "Delete Conversations",
+          badge: "Clean Up",
+          action: "Delete chats from the History page.",
+          outcome: "Permanently removes chosen conversations to free up space and keep your list clean.",
+        },
+      ],
+    },
+    {
+      id: "appearance",
+      label: "Look & Feel",
+      badge: "Theme & Colors",
+      icon: Palette,
+      overview: "Customize Vox's visual theme and choose your favorite ambient accent color.",
+      controls: [
+        {
+          icon: Palette,
+          name: "Dark & Light Mode",
+          badge: "Theme Mode",
+          action: "Switch between Dark Obsidian and Light Glass themes.",
+          outcome: "Dark mode gives a high-contrast deep space look; Light mode gives a clean, frosted glass aesthetic.",
+        },
+        {
+          icon: Sparkles,
+          name: "Accent Color Seed",
+          badge: "Custom Color",
+          action: "Pick any color from the color wheel.",
+          outcome: "Instantly updates glowing lights, borders, buttons, and animations across the entire app.",
+        },
+        {
+          icon: RotateCcw,
+          name: "Restore Defaults",
+          badge: "Reset",
+          action: "Click Restore Defaults at the bottom of Settings.",
+          outcome: "Resets all colors, themes, and layouts back to the original Vox Cyan (#00dbe9).",
+        },
+      ],
+    },
+  ],
 };

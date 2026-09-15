@@ -1,10 +1,7 @@
 import React, { memo, useMemo } from "react";
 import { VoxOrb, PipelineField, StatusCapsule, TestClipsPopover, RestorePulse } from "@/shared/components/home";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
-import { SESSION_COPY } from "@/data/sessionCopy";
 import { ErrorBoundary } from "@/shared/components/common";
-import { TopRightCluster, Tooltip } from "@/shared/ui";
-import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import {
   GOVERNOR_LABELS,
   HOME_CONTROLS_COPY,
@@ -12,7 +9,7 @@ import {
   DIALOGUE_COPY,
 } from "@/data/homeCopy";
 
-import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle, RotateCcw, PanelLeft } from "lucide-react";
+import { Power, Mic, FlaskConical, Play, Pause, X, AlertCircle, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useOverlay } from "@/shared/hooks/useOverlay";
 import { AnimatePresence, motion } from "framer-motion";
@@ -100,9 +97,6 @@ export const Home = memo(() => {
     active: testMode && !isEngaged,
   });
 
-  const { isPanelOpen, togglePanel } = usePanelStateContext();
-  const sessionsOpen = isPanelOpen("sessions");
-
   const statusLabel = toStatusLabel(
     interactionState,
     isEngaged,
@@ -124,30 +118,6 @@ export const Home = memo(() => {
       {/* Sentient Field Background Energy */}
       <PipelineField state={interactionState} />
 
-      {/* ── Top-right: Help + Notifications ── */}
-      <div className="absolute top-4 right-5 z-30">
-        <TopRightCluster />
-      </div>
-
-      {/* ── Top-left: Conversation rail toggle ── */}
-      <div className="absolute top-4 left-5 z-30 flex items-center pointer-events-none">
-        <Tooltip label={SESSION_COPY.railTitle} side="bottom">
-          <button
-            onClick={() => togglePanel("sessions")}
-            aria-label={SESSION_COPY.openRailAriaLabel}
-            aria-expanded={sessionsOpen}
-            data-edge-trigger="left"
-            className={cn(
-              "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer pointer-events-auto shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
-              sessionsOpen
-                ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
-                : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
-            )}
-          >
-            <PanelLeft size={14} strokeWidth={1.75} />
-          </button>
-        </Tooltip>
-      </div>
 
 
 

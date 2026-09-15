@@ -24,12 +24,15 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
           <button
             onClick={() => togglePanel("notifications")}
             aria-expanded={isNotifsOpen}
+            disabled={isHelpOpen}
             data-edge-trigger="right"
             className={cn(
-              "relative inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+              "relative inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
               isNotifsOpen
-                ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
-                : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
+                ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)] cursor-pointer"
+                : isHelpOpen
+                ? "border-[rgba(var(--border),0.08)] bg-[rgba(var(--card),0.25)] text-[rgb(var(--foreground-muted))]/60 opacity-70 cursor-not-allowed pointer-events-none"
+                : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)] cursor-pointer"
             )}
             aria-label={NOTIFICATION_COPY.bellAriaLabel}
           >
@@ -45,12 +48,15 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
           <button
             onClick={() => togglePanel("help")}
             aria-expanded={isHelpOpen}
+            disabled={isNotifsOpen}
             data-edge-trigger="right"
             className={cn(
-              "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+              "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
               isHelpOpen
-                ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
-                : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
+                ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)] cursor-pointer"
+                : isNotifsOpen
+                ? "border-[rgba(var(--border),0.08)] bg-[rgba(var(--card),0.25)] text-[rgb(var(--foreground-muted))]/60 opacity-70 cursor-not-allowed pointer-events-none"
+                : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)] cursor-pointer"
             )}
             aria-label="Help & guide"
           >

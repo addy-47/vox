@@ -144,8 +144,8 @@ export function useMemoryGraphScene({
       }
       if (lineSegmentsRef.current) {
         const lineMat = lineSegmentsRef.current.material as THREE.LineBasicMaterial;
-        lineMat.blending = isLight ? THREE.NormalBlending : THREE.AdditiveBlending;
-        lineMat.opacity = isLight ? 0.65 : 0.42;
+        lineMat.blending = THREE.NormalBlending;
+        lineMat.opacity = isLight ? 0.55 : 0.28;
         lineMat.needsUpdate = true;
       }
       if (instancedMeshRef.current) {
@@ -219,11 +219,13 @@ export function useMemoryGraphScene({
         colHex = isLight ? "#cbd5e1" : "#1e293b";
       } else if (isSessionSelected) {
         // Highlighted session nodes
-        radius = isSelected ? 12 : node.collection === "personal" ? 6.0 : 5.0;
+        const isAnchor = node.id.startsWith("anchor_");
+        radius = isSelected ? 12 : isAnchor ? 7.2 : node.collection === "personal" ? 6.0 : 5.0;
         colHex = palette.main;
       } else {
         // Normal state
-        radius = isSelected ? 12 : node.collection === "personal" ? 5.5 : 3.8;
+        const isAnchor = node.id.startsWith("anchor_");
+        radius = isSelected ? 12 : isAnchor ? 6.2 : node.collection === "personal" ? 5.5 : 3.8;
         colHex = palette.main;
       }
 
@@ -346,25 +348,34 @@ export function useMemoryGraphScene({
       posArray[writePtr + 4] = tgt.y;
       posArray[writePtr + 5] = tgt.z;
 
-      const isHighlight = selSessionId !== null && link.fromId === selSessionId;
-      const isDimmed = selSessionId !== null && link.fromId !== selSessionId && link.relation !== "CORE_IDENTITY";
+      const isHighlight = selSessionId !== null && (link.fromId === selSessionId || link.toId === selSessionId);
+      const isDimmed = selSessionId !== null && !isHighlight && link.relation !== "CORE_IDENTITY";
 
       colorHelper.set(link.color);
 
       if (isDimmed) {
-        const dimHex = isLight ? "#94a3b8" : "#1e293b";
+        const dimHex = isLight ? "#94a3b8" : "#334155";
         colorHelper.set(dimHex);
-        colArray[writePtr + 0] = colorHelper.r * 0.3;
-        colArray[writePtr + 1] = colorHelper.g * 0.3;
-        colArray[writePtr + 2] = colorHelper.b * 0.3;
-        colArray[writePtr + 3] = colorHelper.r * 0.3;
-        colArray[writePtr + 4] = colorHelper.g * 0.3;
-        colArray[writePtr + 5] = colorHelper.b * 0.3;
+        const dimFactor = isLight ? 0.45 : 0.22;
+        colArray[writePtr + 0] = colorHelper.r * dimFactor;
+        colArray[writePtr + 1] = colorHelper.g * dimFactor;
+        colArray[writePtr + 2] = colorHelper.b * dimFactor;
+        colArray[writePtr + 3] = colorHelper.r * dimFactor;
+        colArray[writePtr + 4] = colorHelper.g * dimFactor;
+        colArray[writePtr + 5] = colorHelper.b * dimFactor;
       } else {
-        const fade = isHighlight ? 0.75 : 0.45;
-        colArray[writePtr + 0] = colorHelper.r * fade;
-        colArray[writePtr + 1] = colorHelper.g * fade;
-        colArray[writePtr + 2] = colorHelper.b * fade;
+        // Never multiply by 0.45 in light mode (which causes muddy black clumps at convergence points).
+        // Keep true vibrant chromatic colors with gentle soft gradient.
+        const startColor = colorHelper.clone();
+        if (isLight) {
+          startColor.lerp(new THREE.Color(0xf8fafc), 0.12);
+        } else {
+          startColor.multiplyScalar(0.88);
+        }
+
+        colArray[writePtr + 0] = startColor.r;
+        colArray[writePtr + 1] = startColor.g;
+        colArray[writePtr + 2] = startColor.b;
         colArray[writePtr + 3] = colorHelper.r;
         colArray[writePtr + 4] = colorHelper.g;
         colArray[writePtr + 5] = colorHelper.b;
@@ -557,18 +568,40 @@ export function useMemoryGraphScene({
           prevPoint = pt;
         }
 
-        // ── Dendritic Tree Foliage (Facts branching organically from Session Anchor) ──
+        // ── Session Anchor Hub Node (Nexus where trunk meets cluster canopy) ──
+        const anchorNodeIdx = gNodes.length;
+        gNodes.push({
+          id: `anchor_${sKey}`,
+          label: `Session ${sKey}`,
+          compactId: `S-${sKey.slice(-4)}`,
+          collection: dominantCat,
+          status: "active",
+          factRecord: clusterFacts[0],
+          color: clusterPalette.main,
+          degree: nCluster,
+          x: trunkX,
+          y: trunkY,
+          z: trunkZ,
+          vx: 0,
+          vy: 0,
+          vz: 0,
+        });
+
+        // ── Dendritic Tree Foliage (Facts branching organically in natural tiers) ──
         const clusterNodeIndices: number[] = [];
 
         clusterFacts.forEach((fact, fIdx) => {
           const cat = (fact.fact_type as MemoryCategory) || "objective";
           const palette = getCollectionColor(cat, false, isLight);
 
-          // Foliage phyllotaxis around session anchor
+          // Foliage phyllotaxis around session anchor with healthy organic separation
           const phiFoliage = (1 + Math.sqrt(5)) / 2;
           const rotAngle = (2 * Math.PI * fIdx) / phiFoliage;
-          const divergence = 0.18 + 0.52 * Math.sqrt((fIdx + 1) / nCluster);
-          const branchDist = 55 + 230 * Math.pow((fIdx + 1) / nCluster, 0.62);
+          const progress = (fIdx + 1) / Math.max(nCluster, 1);
+          // Healthy divergence so facts fan gracefully without pinching at the stem
+          const divergence = 0.28 + 0.58 * Math.sqrt(progress);
+          // Dynamic branch distances from 80 to 320 units
+          const branchDist = 80 + 260 * Math.pow(progress, 0.58);
 
           const rOff = Math.sin(divergence) * branchDist;
           const aOff = Math.cos(divergence) * branchDist;
@@ -597,15 +630,19 @@ export function useMemoryGraphScene({
             vz: 0,
           });
 
-          // Connect inner facts directly to session anchor; connect outer facts hierarchically to preceding nodes
-          // to form true dendritic branches/twigs
-          let linkSourceIndex = -2; // -2 means session anchor
-          let linkFromId = sKey;
+          // Hierarchical dendritic branching:
+          // Facts 0..2 connect directly to anchor node (3 primary boughs).
+          // Facts 3..N connect to an earlier tier node using Math.floor((fIdx - 1) / 2.2),
+          // maintaining branching factor <= 2-3 to completely prevent dense convergence smudges!
+          let linkSourceIndex = anchorNodeIdx;
+          let linkFromId = `anchor_${sKey}`;
 
-          if (fIdx >= 8 && clusterNodeIndices.length > 4) {
-            const parentClusterIdx = fIdx % 6;
-            linkSourceIndex = clusterNodeIndices[parentClusterIdx];
-            linkFromId = clusterFacts[parentClusterIdx].id;
+          if (fIdx >= 3 && clusterNodeIndices.length > 2) {
+            const parentTierIdx = Math.floor((fIdx - 1) / 2.2);
+            if (parentTierIdx < clusterNodeIndices.length - 1) {
+              linkSourceIndex = clusterNodeIndices[parentTierIdx];
+              linkFromId = clusterFacts[parentTierIdx].id;
+            }
           }
 
           gLinks.push({
@@ -889,8 +926,8 @@ export function useMemoryGraphScene({
     const lineMat = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: isLightModeRef.current ? 0.65 : 0.42,
-      blending: isLightModeRef.current ? THREE.NormalBlending : THREE.AdditiveBlending,
+      opacity: isLightModeRef.current ? 0.55 : 0.28,
+      blending: THREE.NormalBlending,
       depthWrite: false,
     });
     const lineSegments = new THREE.LineSegments(lineGeo, lineMat);
@@ -903,13 +940,25 @@ export function useMemoryGraphScene({
       rebuildTopology(factsRef.current, isLightModeRef.current);
     }
 
-    // 10. Continuous 60 FPS Animation Loop
+    // 10. Dynamic FPS Animation Loop (60 FPS during camera motion / flyTo, 30 FPS when idle)
     const tempTargetVec = new THREE.Vector3();
     const tempCamVec = new THREE.Vector3();
+    let lastRenderTimestamp = 0;
 
-    const render = () => {
+    const render = (timestamp: number) => {
       animFrameRef.current = requestAnimationFrame(render);
-      const time = performance.now() * 0.001;
+
+      // Skip render when tab/window is hidden
+      if (document.hidden) return;
+
+      // Dynamic frame pacing: 60 FPS (16ms) during interaction / flyTo; 30 FPS (32ms) when resting
+      const orbitState = (controls as unknown as { state?: number }).state;
+      const isMoving = Boolean(flyToTargetRef.current) || (orbitState !== undefined && orbitState !== -1);
+      const minInterval = isMoving ? 16 : 32;
+      if (timestamp - lastRenderTimestamp < minInterval) return;
+      lastRenderTimestamp = timestamp;
+
+      const time = timestamp * 0.001;
 
       // Sentient breathing core
       if (coreMeshRef.current) {

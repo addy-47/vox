@@ -1,22 +1,20 @@
 import React, { useRef, useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { EdgeNav } from "./EdgeNav";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
-import { HELP_DRAWER_COPY } from "@/data/helpCopy";
-import { NOTIFICATION_COPY } from "@/data/notificationCopy";
-import { SESSION_COPY } from "@/data/sessionCopy";
 import { TitleBar } from "./TitleBar";
 import { AmbientBackground, HelpPanel, NotificationPanel } from "@/shared/components/common";
-import { SessionPanel } from "@/shared/components/home";
-import { EdgePanel } from "@/shared/ui";
+import { SessionPanel, ActiveSessionHeader } from "@/shared/components/home";
+import { EdgePanel, TopRightCluster } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Activity } from "lucide-react";
+import { Activity, PanelLeft } from "lucide-react";
 import { useVoxFootprint } from "@/shared/hooks/useVoxFootprint";
 import { cn } from "@/shared/lib/utils";
 import { ModelStatusOverlay } from "@/shared/components/settings/ModelStatusOverlay";
 import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
+import { SESSION_COPY } from "@/data/sessionCopy";
 
 const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.Monitoring })));
 
@@ -31,11 +29,13 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const monitorBtnRef = useRef<HTMLButtonElement>(null);
   const { voxCpu, voxRam, isReady } = useVoxFootprint();
   const { openProfiler } = useProfilerDrawer();
-  const { isPanelOpen, closePanel } = usePanelStateContext();
+  const { isPanelOpen, closePanel, togglePanel } = usePanelStateContext();
 
   const closeSessions = useCallback(() => closePanel("sessions"), [closePanel]);
   const closeHelp = useCallback(() => closePanel("help"), [closePanel]);
   const closeNotifications = useCallback(() => closePanel("notifications"), [closePanel]);
+
+  const sessionsOpen = isPanelOpen("sessions");
 
   // Ref to track compact state across renders during window resize
   const wasCompactRef = useRef(window.innerWidth < 1024);
@@ -148,7 +148,6 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         <main
           style={{
             position: "relative",
-            zIndex: 30,
             flex: 1,
             height: "100%",
             overflow: "hidden",
@@ -160,6 +159,51 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             {children || <Outlet />}
           </div>
         </main>
+
+        {/* ── Session toggle (top-left) — z-[60] so always above EdgePanel z-[35] ── */}
+        <div className="absolute top-4 left-5 z-[60] pointer-events-none flex items-center gap-2.5">
+          <Tooltip label={SESSION_COPY.railTitle} side="bottom">
+            <button
+              onClick={() => togglePanel("sessions")}
+              aria-label={SESSION_COPY.openRailAriaLabel}
+              aria-expanded={sessionsOpen}
+              data-edge-trigger="left"
+              className={cn(
+                "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer pointer-events-auto shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+                sessionsOpen
+                  ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
+                  : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
+              )}
+            >
+              <PanelLeft size={14} strokeWidth={1.75} />
+            </button>
+          </Tooltip>
+
+          {/* Active Session & Project Header Breadcrumb (shown on Home when panel is closed) */}
+          <ActiveSessionHeader
+            panelOpen={sessionsOpen}
+            isHome={location.pathname === "/"}
+            onOpenPanel={() => togglePanel("sessions")}
+          />
+        </div>
+
+        {/* ── Help + Notifications cluster (top-right) — z-[60] so always above EdgePanel z-[35] ── */}
+        <div className="absolute top-0 right-0 z-[60] pointer-events-none">
+          {/* Feathering haze: dissolves panel content around trigger buttons with zero GPU blur overhead */}
+          <div
+            aria-hidden="true"
+            className="absolute top-0 right-0 w-44 h-28 pointer-events-none"
+            style={{
+              background:
+                "radial-gradient(ellipse 100% 90% at 100% 0%, rgb(var(--card)) 20%, rgba(var(--card), 0.75) 50%, transparent 80%)",
+            }}
+          />
+          {/* Buttons sit above the haze */}
+          <div className="relative pt-4 pr-5 pointer-events-auto">
+            <TopRightCluster />
+          </div>
+        </div>
+
 
         {/* ── Engine Monitor Area — bottom-left ───────────────────────────── */}
         <div className="hidden lg:flex fixed bottom-4 left-4 z-40 items-center gap-2.5 pointer-events-none">
@@ -210,8 +254,22 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
         {/* ── Status Info & Default Reset Controls Area — bottom-right ── */}
         {isSettings && (
-          <div className="hidden lg:flex fixed bottom-4 right-4 z-40 pointer-events-none items-center gap-2 lg:gap-3 px-3 lg:px-4 py-2.5 bg-transparent border-transparent shadow-none max-w-[calc(50vw-180px)]">
-            <div className="pointer-events-auto flex items-center gap-2 lg:gap-3">
+          <div className="hidden lg:flex fixed bottom-4 right-4 z-40 pointer-events-none items-center gap-2 lg:gap-3 max-w-[calc(50vw-180px)]">
+            {/* Feathering blur haze & soft gradient starting 15-20px above the overlay edge and extending upwards */}
+            <div
+              aria-hidden="true"
+              className="absolute -inset-x-8 -bottom-4 -top-10 pointer-events-none backdrop-blur-xl"
+              style={{
+                background:
+                  "radial-gradient(ellipse 110% 120% at 90% 90%, rgb(var(--card)) 45%, rgba(var(--card), 0.75) 65%, transparent 100%)",
+                maskImage:
+                  "radial-gradient(ellipse 110% 120% at 90% 90%, black 50%, rgba(0, 0, 0, 0.4) 75%, transparent 100%)",
+                WebkitMaskImage:
+                  "radial-gradient(ellipse 110% 120% at 90% 90%, black 50%, rgba(0, 0, 0, 0.4) 75%, transparent 100%)",
+              }}
+            />
+
+            <div className="relative pointer-events-auto flex items-center gap-2 lg:gap-3 px-3 lg:px-4 py-2.5 bg-transparent border-transparent shadow-none">
               <ModelStatusOverlay />
               <div className="w-px h-4 bg-[rgba(var(--accent),0.15)] shrink-0" />
               <RestoreDefaultsButton />
@@ -227,7 +285,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           side="left"
           open={isPanelOpen("sessions")}
           onClose={closeSessions}
-          title={SESSION_COPY.railTitle}
+          minimalHeader
         >
           <SessionPanel onClose={closeSessions} />
         </EdgePanel>
@@ -237,7 +295,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           side="right"
           open={isPanelOpen("help")}
           onClose={closeHelp}
-          title={HELP_DRAWER_COPY.headerTitle}
+          minimalHeader
         >
           <HelpPanel onClose={closeHelp} />
         </EdgePanel>
@@ -245,7 +303,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           side="right"
           open={isPanelOpen("notifications")}
           onClose={closeNotifications}
-          title={NOTIFICATION_COPY.title}
+          minimalHeader
         >
           <NotificationPanel onClose={closeNotifications} />
         </EdgePanel>
