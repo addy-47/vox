@@ -40,70 +40,74 @@ export function colorToHex(col: THREE.Color): string {
 }
 
 /**
- * Resolves the active dynamic graph palette derived directly from the primary accent (--accent)
- * and semantic CSS variables, ensuring the central core always matches primary accent and
- * all hues automatically adjust for light or dark mode.
+ * Generates a vibrant, harmonic color by applying an angular hue shift to the base accent hue.
+ * In light mode, lightness is tuned for rich contrast against pale backgrounds (0.38 - 0.46).
+ * In dark mode, lightness is tuned for luminous luminescence against dark backgrounds (0.62 - 0.70).
+ */
+function createHarmonicColor(
+  baseH: number,
+  hOffset: number,
+  isLight: boolean,
+  sOverride?: number,
+  lOverride?: number
+): THREE.Color {
+  const h = ((baseH + hOffset) % 1.0 + 1.0) % 1.0;
+  const s = sOverride ?? (isLight ? 0.88 : 0.94);
+  const l = lOverride ?? (isLight ? 0.42 : 0.65);
+  const col = new THREE.Color();
+  col.setHSL(h, s, l);
+  return col;
+}
+
+/**
+ * Resolves the active dynamic graph palette derived directly from the primary accent (--accent).
+ * All 6 memory categories revolve harmoniously around the user's chosen accent hue, ensuring
+ * that changing the accent dynamically updates the entire graph and all UI legends.
  */
 export function getActiveDynamicPalette(isLight: boolean): DynamicGraphPalette {
   // Primary accent is ground truth for center / personal
   const accentColor = getCSSVariableColor("--accent", isLight ? "#0e7490" : "#00dbe9");
-  const violetColor = getCSSVariableColor("--violet", isLight ? "#6d28d9" : "#a78bfa");
-  const successColor = getCSSVariableColor("--success", isLight ? "#047857" : "#34d399");
-  const dangerColor = getCSSVariableColor("--danger", isLight ? "#be123c" : "#f43f5e");
-  const warnSoftColor = getCSSVariableColor("--warn-soft", isLight ? "#d97706" : "#f59e0b");
-  const warningColor = getCSSVariableColor("--warning", isLight ? "#ca8a04" : "#facc15");
 
-  const accentHex = colorToHex(accentColor);
-  const violetHex = colorToHex(violetColor);
-  const successHex = colorToHex(successColor);
-  const dangerHex = colorToHex(dangerColor);
-  const warnSoftHex = colorToHex(warnSoftColor);
-  const warningHex = colorToHex(warningColor);
+  // Extract base accent HSL
+  const hsl = { h: 0, s: 0, l: 0 };
+  accentColor.getHSL(hsl);
+
+  // If accent is near monochrome (e.g. grayscale), use pleasant default base hue
+  const baseH = hsl.s < 0.1 ? 0.55 : hsl.h;
+
+  // Deriving 6 harmonious categories dynamically from accent hue:
+  // 1. personal: Exact primary accent (Ground Truth identity core)
+  // 2. objective: +32deg analogous shift (Harmonious violet/indigo/blue depending on accent)
+  // 3. workdone: +122deg triadic harmony (Vibrant fresh mint/emerald/green)
+  // 4. blocker: +180deg complementary opposite (Bold contrast crimson/coral/rose)
+  // 5. next_step: +245deg harmonic direction (Luminous amber/gold/orange)
+  // 6. pitfall: +310deg analogous warm balance (Warm amber-coral/canary)
+  const personalColor = accentColor;
+  const objectiveColor = createHarmonicColor(baseH, 0.09, isLight, isLight ? 0.88 : 0.94, isLight ? 0.44 : 0.52);
+  const workdoneColor = createHarmonicColor(baseH, 0.34, isLight, isLight ? 0.86 : 0.92, isLight ? 0.39 : 0.48);
+  const blockerColor = createHarmonicColor(baseH, 0.50, isLight, isLight ? 0.92 : 0.96, isLight ? 0.45 : 0.52);
+  const nextStepColor = createHarmonicColor(baseH, 0.68, isLight, isLight ? 0.90 : 0.95, isLight ? 0.42 : 0.50);
+  const pitfallColor = createHarmonicColor(baseH, 0.86, isLight, isLight ? 0.92 : 0.96, isLight ? 0.46 : 0.52);
 
   const glowAlpha = isLight ? 0.35 : 0.45;
 
+  const toEntry = (col: THREE.Color, desc: string): PaletteEntry => {
+    const hex = colorToHex(col);
+    return {
+      main: hex,
+      glow: `rgba(${Math.round(col.r * 255)}, ${Math.round(col.g * 255)}, ${Math.round(col.b * 255)}, ${glowAlpha})`,
+      text: hex,
+      desc,
+      threeColor: col,
+    };
+  };
+
   return {
-    personal: {
-      main: accentHex,
-      glow: `rgba(${Math.round(accentColor.r * 255)}, ${Math.round(accentColor.g * 255)}, ${Math.round(accentColor.b * 255)}, ${glowAlpha})`,
-      text: accentHex,
-      desc: "Identity facts, core values, user preferences, and foundational profile.",
-      threeColor: accentColor,
-    },
-    objective: {
-      main: violetHex,
-      glow: `rgba(${Math.round(violetColor.r * 255)}, ${Math.round(violetColor.g * 255)}, ${Math.round(violetColor.b * 255)}, ${glowAlpha})`,
-      text: violetHex,
-      desc: "Active operational goals, session intents, and target deliverables.",
-      threeColor: violetColor,
-    },
-    workdone: {
-      main: successHex,
-      glow: `rgba(${Math.round(successColor.r * 255)}, ${Math.round(successColor.g * 255)}, ${Math.round(successColor.b * 255)}, ${glowAlpha})`,
-      text: successHex,
-      desc: "Completed milestones, accomplishments, verified tasks, and progress.",
-      threeColor: successColor,
-    },
-    blocker: {
-      main: dangerHex,
-      glow: `rgba(${Math.round(dangerColor.r * 255)}, ${Math.round(dangerColor.g * 255)}, ${Math.round(dangerColor.b * 255)}, ${glowAlpha})`,
-      text: dangerHex,
-      desc: "Active blockers, missing dependencies, compilation/runtime errors.",
-      threeColor: dangerColor,
-    },
-    next_step: {
-      main: warnSoftHex,
-      glow: `rgba(${Math.round(warnSoftColor.r * 255)}, ${Math.round(warnSoftColor.g * 255)}, ${Math.round(warnSoftColor.b * 255)}, ${glowAlpha})`,
-      text: warnSoftHex,
-      desc: "Immediate upcoming actions, planned follow-ups, and roadmap tasks.",
-      threeColor: warnSoftColor,
-    },
-    pitfall: {
-      main: warningHex,
-      glow: `rgba(${Math.round(warningColor.r * 255)}, ${Math.round(warningColor.g * 255)}, ${Math.round(warningColor.b * 255)}, ${glowAlpha})`,
-      text: warningHex,
-      desc: "Edge cases, lessons learned, gotchas, and architectural traps.",
-      threeColor: warningColor,
-    },
+    personal: toEntry(personalColor, "Identity facts, core values, user preferences, and foundational profile."),
+    objective: toEntry(objectiveColor, "Active operational goals, session intents, and target deliverables."),
+    workdone: toEntry(workdoneColor, "Completed milestones, accomplishments, verified tasks, and progress."),
+    blocker: toEntry(blockerColor, "Active blockers, missing dependencies, compilation/runtime errors."),
+    next_step: toEntry(nextStepColor, "Immediate upcoming actions, planned follow-ups, and roadmap tasks."),
+    pitfall: toEntry(pitfallColor, "Edge cases, lessons learned, gotchas, and architectural traps."),
   };
 }

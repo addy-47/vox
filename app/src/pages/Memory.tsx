@@ -12,7 +12,6 @@ import {
   Upload,
   Zap,
   Sparkles,
-  PanelLeft,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import {
@@ -27,14 +26,14 @@ import {
 } from "@/services/memoryService";
 import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
-import { EdgePanel, TopRightCluster } from "@/shared/ui";
-import { Tooltip } from "@/shared/ui/Tooltip";
+import { EdgePanel } from "@/shared/ui";
+import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
 import {
   MemoryGraph,
   MemoryGraphRef,
-  MemoryLegendPopover,
+  MemoryLegendOverlay,
   MemorySessionRail,
   MemoryNodeTooltip,
   SearchBar,
@@ -62,8 +61,23 @@ export const Memory: React.FC = memo(() => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedFact, setSelectedFact] = useState<FactRecord | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
-  const [sessionRailOpen, setSessionRailOpen] = useState(false);
+  const { isPanelOpen, closePanel } = usePanelStateContext();
+  const sessionRailOpen = isPanelOpen("sessions");
+  const setSessionRailOpen = (v: boolean) => {
+    if (!v) closePanel("sessions");
+  };
   const [selectModeEnabled, setSelectModeEnabled] = useState(false);
+  const [isLightMode, setIsLightMode] = useState(false);
+
+  useEffect(() => {
+    const checkTheme = () => {
+      setIsLightMode(document.documentElement.getAttribute("data-theme") === "light");
+    };
+    checkTheme();
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
 
   // Drawer & Edit mode state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -143,9 +157,6 @@ export const Memory: React.FC = memo(() => {
     graphRef.current?.flyToNode(fact.id);
   }, []);
 
-  const handleToggleSessionRail = useCallback(() => {
-    setSessionRailOpen((prev) => !prev);
-  }, []);
 
   const handleCloseSessionRail = useCallback(() => {
     setSessionRailOpen(false);
@@ -226,26 +237,6 @@ export const Memory: React.FC = memo(() => {
       {/* Sentient Liquid Space Ambient Background */}
       <AmbientBackground originX="50%" originY="50%" rippleSpeedMultiplier={1.0} />
 
-      {/* ── Top-left: Conversation rail toggle ── */}
-      <div className="absolute top-4 left-5 z-30 flex items-center pointer-events-none">
-        <Tooltip label={MEMORY_COPY.sessionTriggerTooltip} side="bottom">
-          <button
-            type="button"
-            onClick={handleToggleSessionRail}
-            aria-label={MEMORY_COPY.sessionTrigger}
-            aria-expanded={sessionRailOpen}
-            data-edge-trigger="left"
-            className={cn(
-              "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer pointer-events-auto shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
-              sessionRailOpen || selectedSessionId
-                ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
-                : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
-            )}
-          >
-            <PanelLeft size={14} strokeWidth={1.75} />
-          </button>
-        </Tooltip>
-      </div>
 
       {/* ── Top Center: Search Bar ── */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
@@ -263,10 +254,6 @@ export const Memory: React.FC = memo(() => {
         />
       </div>
 
-      {/* ── Top Right: System Status & Time ── */}
-      <div className="absolute top-4 right-4 z-30 pointer-events-auto">
-        <TopRightCluster />
-      </div>
 
       {/* ── Right Edge: Floating Graph Control Dock ── */}
       <GraphControlDock
@@ -280,12 +267,13 @@ export const Memory: React.FC = memo(() => {
         onToggleSelectMode={() => setSelectModeEnabled((prev) => !prev)}
       />
 
-      {/* ── Bottom Right: Category Legend Popover ── */}
-      <div className="absolute bottom-6 right-6 z-30 pointer-events-auto">
-        <MemoryLegendPopover
+      {/* ── Bottom Right: Category Legend Overlay (3x2 Ambient Grid) ── */}
+      <div className="absolute bottom-4 right-6 z-30 pointer-events-auto">
+        <MemoryLegendOverlay
           selectedCollection={selectedCollection}
           onSelectCollection={setSelectedCollection}
           counts={categoryCounts}
+          isLightMode={isLightMode}
         />
       </div>
 

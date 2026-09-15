@@ -1,6 +1,7 @@
 export * from "./MemoryGraph";
 export * from "./MemoryLegendCard";
 export * from "./MemoryLegendPopover";
+export * from "./MemoryLegendOverlay";
 export * from "./MemorySessionRail";
 export * from "./MemoryNodeTooltip";
 export * from "./SearchBar";

@@ -11,3 +11,4 @@ export * from "./Tooltip";
 export * from "./VoiceCarousel";
 export * from "./EdgePanel";
 export * from "./TopRightCluster";
+export * from "./SessionContextMenu";

@@ -77,9 +77,28 @@ export const GraphControlDock = memo(
             </button>
           </Tooltip>
         )}
-
+        {/* Refresh Facts */}
+        <Tooltip label={MEMORY_COPY.refresh} side="left">
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            aria-label={MEMORY_COPY.refresh}
+            className={cn(
+              "p-2.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] active:scale-95 transition-all cursor-pointer disabled:opacity-50",
+              refreshing && "cursor-wait"
+            )}
+          >
+            <RefreshCw
+              size={16}
+              className={cn(refreshing && "animate-spin text-[rgb(var(--accent))]")}
+            />
+          </button>
+        </Tooltip>
+    
         {/* Subtle Divider */}
         <div className="w-5 h-[1px] bg-[rgba(var(--border),0.12)] my-0.5" />
+
 
         {/* Zoom In */}
         <Tooltip label={MEMORY_COPY.zoomIn} side="left">
@@ -102,28 +121,6 @@ export const GraphControlDock = memo(
             className="p-2.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] active:scale-95 transition-all cursor-pointer"
           >
             <Minus size={16} />
-          </button>
-        </Tooltip>
-
-        {/* Subtle Divider */}
-        <div className="w-5 h-[1px] bg-[rgba(var(--border),0.12)] my-0.5" />
-
-        {/* Refresh Facts */}
-        <Tooltip label={MEMORY_COPY.refresh} side="left">
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={refreshing}
-            aria-label={MEMORY_COPY.refresh}
-            className={cn(
-              "p-2.5 rounded-xl text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] active:scale-95 transition-all cursor-pointer disabled:opacity-50",
-              refreshing && "cursor-wait"
-            )}
-          >
-            <RefreshCw
-              size={16}
-              className={cn(refreshing && "animate-spin text-[rgb(var(--accent))]")}
-            />
           </button>
         </Tooltip>
 

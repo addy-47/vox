@@ -55,6 +55,9 @@ export interface SessionStoreState {
   setRestoreSignal: (signal: number) => void;
   bumpSessionListVersion: () => void;
   resetSessionState: () => void;
+  /** Breadcrumb shown in layout when panel is closed: { sessionTitle, projectName } */
+  activeSessionLabel: { sessionTitle: string | null; projectName: string | null };
+  setActiveSessionLabel: (label: { sessionTitle: string | null; projectName: string | null }) => void;
 }
 
 const INITIAL_STATE = {
@@ -75,6 +78,7 @@ const INITIAL_STATE = {
   restoreError: null,
   restoreSignal: 0,
   sessionListVersion: 0,
+  activeSessionLabel: { sessionTitle: null, projectName: null },
 };
 
 export const useSessionStore = create<SessionStoreState>((set) => ({
@@ -109,6 +113,7 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
   setRestoreError: (restoreError) => set({ restoreError }),
   setRestoreSignal: (restoreSignal) => set({ restoreSignal }),
   bumpSessionListVersion: () => set((state) => ({ sessionListVersion: state.sessionListVersion + 1 })),
+  setActiveSessionLabel: (activeSessionLabel) => set({ activeSessionLabel }),
   resetSessionState: () =>
     set({
       interactionState: "Idle",
