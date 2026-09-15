@@ -11,7 +11,6 @@ import {
 } from "@/shared/components/history";
 import { useHistory } from "@/shared/hooks/useHistory";
 import { EmptyState, OrbitalLoader, ErrorBoundary } from "@/shared/components/common";
-import { TopRightCluster } from "@/shared/ui";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import type { SessionRow } from "@/services/historyService";
 
@@ -141,11 +140,6 @@ export const History: React.FC = () => {
       onClick={handleStageClick}
       className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none"
     >
-      {/* ── Top-right: Help + Notifications ── */}
-      <div className="absolute top-4 right-5 z-30">
-        <TopRightCluster />
-      </div>
-
       {/* Delete Error Notification Banner */}
       <AnimatePresence>
         {deleteError && (

@@ -291,9 +291,16 @@ export function selectUpdatesRolledUp(
   return cachedUpdatesResult;
 }
 
+let cachedUncompactedNotificationsRef: NotificationRecord[] | null = null;
+let cachedUncompactedIdsResult = new Set<number>();
+
 export function selectUncompactedSessionIds(
   state: NotificationStoreState
 ): Set<number> {
+  if (state.notifications === cachedUncompactedNotificationsRef) {
+    return cachedUncompactedIdsResult;
+  }
+  cachedUncompactedNotificationsRef = state.notifications;
   const ids = new Set<number>();
   for (const n of state.notifications) {
     if (
@@ -306,6 +313,7 @@ export function selectUncompactedSessionIds(
       ids.add(n.session_id);
     }
   }
-  return ids;
+  cachedUncompactedIdsResult = ids;
+  return cachedUncompactedIdsResult;
 }
 

@@ -21,7 +21,7 @@ export const RestorePulse: React.FC<{ signal: number }> = memo(({ signal }) => {
     if (signal <= 0) return;
     setVisible(true);
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setVisible(false), 1400);
+    timerRef.current = setTimeout(() => setVisible(false), 2600);
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
@@ -31,16 +31,19 @@ export const RestorePulse: React.FC<{ signal: number }> = memo(({ signal }) => {
   }, [signal]);
 
   return (
-    <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center overflow-hidden">
+    <div
+      className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center overflow-hidden"
+      style={{ transform: "translateY(-36px)" }}
+    >
       <AnimatePresence>
         {visible && (
           <motion.div
             key={signal}
-            initial={{ opacity: 0.7, scale: 1.6 }}
-            animate={{ opacity: 0, scale: 0.55 }}
+            initial={{ opacity: 0.42, scale: 1.65 }}
+            animate={{ opacity: 0, scale: 0.5 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-            className="w-[min(60vw,52vh)] h-[min(60vw,52vh)] max-w-[540px] max-h-[540px] rounded-full border-2 border-[rgb(var(--accent))]"
+            transition={{ duration: 2.4, ease: [0.16, 1, 0.3, 1] }}
+            className="w-[min(60vw,52vh)] h-[min(60vw,52vh)] max-w-[540px] max-h-[540px] rounded-full border border-[rgba(var(--accent),0.28)] blur-[1px] shadow-[0_0_24px_rgba(var(--accent),0.16),inset_0_0_16px_rgba(var(--accent),0.1)]"
           />
         )}
       </AnimatePresence>
