@@ -200,26 +200,48 @@ fn test_settings_json_roundtrip_persistence() {
         "dictation.output_mode should be recognized"
     );
 
-    // Memory
+    // Working Memory
     assert!(
         apply_setting_mutation(
             &mut settings,
-            "memory",
-            "context_retrieval_enabled",
-            &serde_json::json!(false)
+            "working_memory",
+            "private_mode",
+            &serde_json::json!(true)
         )
-        .expect("memory.context_retrieval_enabled mutation failed"),
-        "memory.context_retrieval_enabled should be recognized"
+        .expect("working_memory.private_mode mutation failed"),
+        "working_memory.private_mode should be recognized"
     );
     assert!(
         apply_setting_mutation(
             &mut settings,
-            "memory",
+            "working_memory",
+            "max_context_share",
+            &serde_json::json!(0.4)
+        )
+        .expect("working_memory.max_context_share mutation failed"),
+        "working_memory.max_context_share should be recognized"
+    );
+
+    // Personal Memory
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "personal_memory",
+            "context_retrieval_enabled",
+            &serde_json::json!(false)
+        )
+        .expect("personal_memory.context_retrieval_enabled mutation failed"),
+        "personal_memory.context_retrieval_enabled should be recognized"
+    );
+    assert!(
+        apply_setting_mutation(
+            &mut settings,
+            "personal_memory",
             "top_k_facts",
             &serde_json::json!(15)
         )
-        .expect("memory.top_k_facts mutation failed"),
-        "memory.top_k_facts should be recognized"
+        .expect("personal_memory.top_k_facts mutation failed"),
+        "personal_memory.top_k_facts should be recognized"
     );
 
     // 3. Persist mutated settings to disk via SUT: VoxSettings::save
@@ -278,8 +300,10 @@ fn test_settings_json_roundtrip_persistence() {
     assert_eq!(reloaded.interaction.pipeline_mode, PipelineMode::Realtime);
     assert!(reloaded.dictation.enabled);
     assert_eq!(reloaded.dictation.output_mode, DictationOutputMode::Tray);
-    assert!(!reloaded.memory.context_retrieval_enabled);
-    assert_eq!(reloaded.memory.top_k_facts, 15);
+    assert!(reloaded.working_memory.private_mode);
+    assert!((reloaded.working_memory.max_context_share - 0.4).abs() < 1e-5);
+    assert!(!reloaded.personal_memory.context_retrieval_enabled);
+    assert_eq!(reloaded.personal_memory.top_k_facts, 15);
 
     assert!(
         Instant::now() < deadline,
@@ -312,8 +336,12 @@ fn test_settings_malformed_fallback_to_default() {
     assert_eq!(recovered.llm.active, defaults.llm.active);
     assert_eq!(recovered.tts.voice_index, defaults.tts.voice_index);
     assert_eq!(
-        recovered.memory.context_retrieval_enabled,
-        defaults.memory.context_retrieval_enabled
+        recovered.working_memory.private_mode,
+        defaults.working_memory.private_mode
+    );
+    assert_eq!(
+        recovered.personal_memory.context_retrieval_enabled,
+        defaults.personal_memory.context_retrieval_enabled
     );
 
     // 2. Assert the corrupt file was backed up to settings.corrupt.<ts>.json

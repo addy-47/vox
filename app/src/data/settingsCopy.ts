@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import { Archive, CircleUserRound, History, Orbit, Palette, SlidersHorizontal } from "lucide-react";
 
-export type SettingsDomainId = "persona" | "models" | "history" | "memory" | "appearance" | "interaction";
+export type SettingsDomainId = "persona" | "models" | "working_memory" | "personal_memory" | "appearance" | "interaction";
 
 export interface SettingsDomain {
   id: SettingsDomainId;
@@ -14,9 +14,9 @@ export interface SettingsDomain {
 export const SETTINGS_DOMAINS: SettingsDomain[] = [
   { id: "persona", label: "Persona", sublabel: "Prompts & identity", icon: CircleUserRound, angle: -90 },
   { id: "models", label: "Models", sublabel: "Voice & thinking models", icon: Orbit, angle: -30 },
-  { id: "history", label: "History", sublabel: "Session history & limits", icon: History, angle: 30 },
+  { id: "working_memory", label: "Working", sublabel: "Context, turns & compaction", icon: History, angle: 30 },
   { id: "appearance", label: "Appearance", sublabel: "Visual theme & colors", icon: Palette, angle: 90 },
-  { id: "memory", label: "Memory", sublabel: "What Vox remembers", icon: Archive, angle: 150 },
+  { id: "personal_memory", label: "Personal", sublabel: "Knowledge, facts & consolidation", icon: Archive, angle: 150 },
   { id: "interaction", label: "Interaction", sublabel: "Activation & cloud key", icon: SlidersHorizontal, angle: -150 },
 ];
 
@@ -29,8 +29,8 @@ export type SettingsScope =
   | "tts"
   | "interaction"
   | "dictation"
-  | "history"
-  | "memory"
+  | "working_memory"
+  | "personal_memory"
   | "persona"
   | "realtime"
   | "system";
@@ -64,15 +64,14 @@ export const SETTINGS_SCOPE_KEYS: Record<SettingsScope, readonly string[]> = {
   ],
   interaction: ["mode", "auto_sleep_timeout", "pipeline_mode"],
   dictation: ["enabled", "interaction_mode", "hotkey", "output_mode"],
-  history: ["private_mode", "auto_compaction"],
-  memory: [
+  working_memory: ["private_mode", "auto_compaction", "max_context_share"],
+  personal_memory: [
     "context_retrieval_enabled",
     "pipeline_processing_enabled",
-    "max_context_share",
-    "context_chaining_window_hours",
     "top_k_facts",
-    "max_hops",
     "semantic_similarity_cutoff",
+    "consolidation_cadence",
+    "consolidation_time",
   ],
   persona: ["modular_prompt", "realtime_prompt"],
   realtime: [
@@ -100,14 +99,14 @@ export const DOMAIN_DIRTY_KEYS: Record<SettingsDomainId, readonly DomainDirtyKey
     { scope: "llm", keys: SETTINGS_SCOPE_KEYS.llm },
     { scope: "realtime", keys: SETTINGS_SCOPE_KEYS.realtime },
   ],
-  history: [
-    { scope: "history" },
+  working_memory: [
+    { scope: "working_memory" },
   ],
   persona: [
     { scope: "persona" },
   ],
-  memory: [
-    { scope: "memory" },
+  personal_memory: [
+    { scope: "personal_memory" },
   ],
   appearance: [
     { scope: "appearance" },
@@ -325,8 +324,8 @@ export const INTERACTION_CONFIG_DESK_COPY = {
   },
 };
 
-export const MEMORY_CONFIG_DESK_COPY = {
-  cardTitle: "Memory Stack",
+export const PERSONAL_MEMORY_CONFIG_DESK_COPY = {
+  cardTitle: "Personal Memory",
   recallToggle: {
     title: "Retrieval",
     activeLabel: "Recall Active",
@@ -342,15 +341,21 @@ export const MEMORY_CONFIG_DESK_COPY = {
     inactiveSublabel: "Queue Staged Only",
   },
   tabs: {
+    consolidation: "Consolidation",
     depth: "Depth",
     cutoff: "Cutoff",
-    graph: "Graph",
-    budget: "Budget",
-    window: "Window",
+  },
+  consolidation: {
+    title: "Consolidation Schedule",
+    description: "Frequency and execution time for synthesizing episodic turns into your permanent personal memory document.",
+    cadenceLabel: "Cadence",
+    manualLabel: "Manual",
+    dailyLabel: "Daily",
+    timeLabel: "Time (24h)",
   },
   depth: {
     title: "Recall Fact Limit",
-    description: "Maximum number of long-term facts and memories injected into context for each conversation turn.",
+    description: "Maximum number of long-term facts injected into context for each conversation turn.",
     unit: "facts",
   },
   cutoff: {
@@ -358,19 +363,10 @@ export const MEMORY_CONFIG_DESK_COPY = {
     description: "Minimum semantic similarity score required for a past fact to be recalled and sent to the model.",
     knobLabel: "Cutoff Floor",
   },
-  graph: {
-    title: "Knowledge Graph Hops",
-    description: "Maximum relationship connections explored across entity nodes to discover linked memories.",
-  },
-  budget: {
-    title: "Context Budget",
-    description: "Maximum percentage of LLM prompt window allocated to memory facts and user profile context.",
-  },
-  window: {
-    title: "Conversation Window",
-    description: "Duration over which past dialogue turns are chained together as continuous active context.",
-  },
 };
+
+// Direct alias for backward-compatibility during component refactor
+export const MEMORY_CONFIG_DESK_COPY = PERSONAL_MEMORY_CONFIG_DESK_COPY;
 
 export const TTS_VOICE_MANAGER_COPY = {
   tabs: {
@@ -560,9 +556,10 @@ export const APPEARANCE_COPY = {
   lightMode: "Light Mode",
 } as const;
 
-export const HISTORY_SETTINGS_COPY = {
+export const WORKING_MEMORY_SETTINGS_COPY = {
+  cardTitle: "Working Memory",
   engineTitle: "Session History Engine",
-  engineDesc: "Turso SQLite storage active. Conversations are recorded with zero arbitrary retention limits.",
+  engineBadge: "Turso Engine",
   privateModeTitle: "Session Storage",
   privateModeActive: "Incognito Active",
   privateModeInactive: "Logging Active",
@@ -573,7 +570,14 @@ export const HISTORY_SETTINGS_COPY = {
   autoCompactionInactive: "Manual Review",
   autoCompactionActiveSub: "Summarizes on idle",
   autoCompactionInactiveSub: "Prompt on uncompacted",
+  budgetTitle: "Context Share Budget",
+  budgetDesc: "Percentage of LLM context window reserved for personal profile and working dialogue history.",
+  budgetAllocation: "Allocated Context",
+  budgetRemaining: "Free Horizon",
 };
+
+// Direct alias for backward-compatibility during component refactor
+export const HISTORY_SETTINGS_COPY = WORKING_MEMORY_SETTINGS_COPY;
 
 export const VAD_SETTINGS_COPY = {
   tabs: {

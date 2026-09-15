@@ -12,8 +12,8 @@ import { SETTINGS_COPY } from "@/data/settingsCopy";
 const loadPersona = () => import("@/shared/components/settings/persona/PersonaCard").then(m => ({ default: m.PersonaCard }));
 const loadModels = () => import("@/shared/components/settings/models/ModelsCard").then(m => ({ default: m.ModelsCard }));
 const loadRealtime = () => import("@/shared/components/settings/realtime/RealtimeCard").then(m => ({ default: m.RealtimeCard }));
-const loadHistory = () => import("@/shared/components/settings/history/HistoryCard").then(m => ({ default: m.HistoryCard }));
-const loadMemory = () => import("@/shared/components/settings/memory/MemoryCard").then(m => ({ default: m.MemoryCard }));
+const loadWorkingMemory = () => import("@/shared/components/settings/working_memory/WorkingMemoryCard").then(m => ({ default: m.WorkingMemoryCard }));
+const loadPersonalMemory = () => import("@/shared/components/settings/personal_memory/PersonalMemoryCard").then(m => ({ default: m.PersonalMemoryCard }));
 const loadAppearance = () => import("@/shared/components/settings/appearance/AppearanceCard").then(m => ({ default: m.AppearanceCard }));
 const loadInteraction = () => import("@/shared/components/settings/interaction/InteractionCard").then(m => ({ default: m.InteractionCard }));
 
@@ -21,8 +21,8 @@ const loadInteraction = () => import("@/shared/components/settings/interaction/I
 const PersonaCard = lazy(loadPersona);
 const ModelsCard = lazy(loadModels);
 const RealtimeCard = lazy(loadRealtime);
-const HistoryCard = lazy(loadHistory);
-const MemoryCard = lazy(loadMemory);
+const WorkingMemoryCard = lazy(loadWorkingMemory);
+const PersonalMemoryCard = lazy(loadPersonalMemory);
 const AppearanceCard = lazy(loadAppearance);
 const InteractionCard = lazy(loadInteraction);
 
@@ -38,10 +38,10 @@ const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMo
             return <PersonaCard layoutMode={layoutMode} />;
           case "models":
             return isRealtime ? <RealtimeCard layoutMode={layoutMode} /> : <ModelsCard layoutMode={layoutMode} />;
-          case "history":
-            return <HistoryCard layoutMode={layoutMode} />;
-          case "memory":
-            return <MemoryCard layoutMode={layoutMode} />;
+          case "working_memory":
+            return <WorkingMemoryCard layoutMode={layoutMode} />;
+          case "personal_memory":
+            return <PersonalMemoryCard layoutMode={layoutMode} />;
           case "appearance":
             return <AppearanceCard layoutMode={layoutMode} />;
           case "interaction":
@@ -182,9 +182,9 @@ export const Settings: React.FC = () => {
             </SettingsCardWrapper>
           </div>
 
-          {/* Middle-Left Slot (Col 1-4, Row 4-6) -> 8:00 (Memory Card) */}
+          {/* Middle-Left Slot (Col 1-4, Row 4-6) -> 8:00 (Personal Memory Card) */}
           <div className="col-start-1 col-span-4 row-start-4 row-span-3 flex items-start justify-end p-2 relative">
-            <SettingsCardWrapper domain={DOMAINS[4]} isActive={activeDomains.includes("memory")} layoutMode={layoutMode}>
+            <SettingsCardWrapper domain={DOMAINS[4]} isActive={activeDomains.includes("personal_memory")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[4].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>
@@ -215,9 +215,9 @@ export const Settings: React.FC = () => {
             </div>
           </div>
 
-          {/* Middle-Right Slot (Col 9-12, Row 4-6) -> 4:00 (History Card) */}
+          {/* Middle-Right Slot (Col 9-12, Row 4-6) -> 4:00 (Working Memory Card) */}
           <div className="col-start-9 col-span-4 row-start-4 row-span-3 flex items-start justify-start p-2 relative">
-            <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("history")} layoutMode={layoutMode}>
+            <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("working_memory")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[2].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>

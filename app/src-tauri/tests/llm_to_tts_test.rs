@@ -58,7 +58,7 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
             settings.llm.context_window = 8192;
             settings.llm.max_output_tokens = 300;
             settings.llm.temperature = 0.7;
-            settings.memory.context_retrieval_enabled = false;
+            settings.personal_memory.context_retrieval_enabled = false;
         }
         state
             .owner

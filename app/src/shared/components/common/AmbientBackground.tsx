@@ -15,6 +15,8 @@ interface AmbientBackgroundProps {
   rippleSpeedMultiplier?: number;
   /** Shape geometry of ripples — 'circle' for orb views, 'orbit' for 3D tilted chamber */
   rippleShape?: RippleShape;
+  /** When true, freezes the rAF loop and CSS animations to preserve GPU budget */
+  paused?: boolean;
 }
 
 interface MoodConfig {
@@ -78,6 +80,7 @@ export const AmbientBackground = React.memo(({
   originY = "50%",
   rippleSpeedMultiplier = 1.0,
   rippleShape = "circle",
+  paused = false,
 }: AmbientBackgroundProps) => {
   useMemoryTrace("AmbientBackground (rAF Dynamic Glow)");
 
@@ -105,6 +108,13 @@ export const AmbientBackground = React.memo(({
   const blobRefs = React.useRef<(HTMLDivElement | null)[]>([]);
 
   React.useEffect(() => {
+    if (paused) {
+      if (rippleRef.current) {
+        rippleRef.current.style.animationPlayState = "paused";
+      }
+      return;
+    }
+
     let animId: number | null = null;
     let smoothedEnergy = 0;
     let isRunning = false;
@@ -199,7 +209,7 @@ export const AmbientBackground = React.memo(({
       clearInterval(checkInterval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [cfg, glowOpacityMultiplier, rippleOpacityMultiplier, telemetryRef]);
+  }, [cfg, glowOpacityMultiplier, rippleOpacityMultiplier, telemetryRef, paused]);
 
   const rpAnimName = (mood === "active" || (mood as string) === "listening") ? "ripple-in" : "ripple-out";
 
@@ -232,9 +242,10 @@ export const AmbientBackground = React.memo(({
             height: blob.size,
             background: `radial-gradient(circle, rgba(var(--accent), ${cfg.blobOpacity * blobOpacityMultiplier}) 0%, transparent 68%)`,
             animation: `${blob.animName} ${cfg.blobSpeed}s ease-in-out infinite`,
+            animationPlayState: paused ? "paused" : "running",
             animationDelay: `${blob.delay}s`,
             borderRadius: blob.borderRadius,
-            willChange: "transform",
+            willChange: paused ? "auto" : "transform",
           }}
         />
       ))}

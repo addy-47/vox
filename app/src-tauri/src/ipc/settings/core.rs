@@ -250,7 +250,7 @@ async fn handle_setting_side_effects<R: tauri::Runtime>(
     key: &str,
     value: &serde_json::Value,
 ) {
-    if domain == "history" && key == "private_mode" {
+    if domain == "working_memory" && key == "private_mode" {
         let is_private = value.as_bool().unwrap_or(false);
         state
             .telemetry

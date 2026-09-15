@@ -187,9 +187,7 @@ pub fn build_compaction_request(
 
 /// Selects the strict schema constraint, falling back to JSON-object when the
 /// catalog baseline explicitly reports no structured-output support.
-fn compaction_output_constraint(
-    model: &str,
-) -> crate::services::llm::OutputConstraint {
+fn compaction_output_constraint(model: &str) -> crate::services::llm::OutputConstraint {
     let supported = crate::services::llm::catalog::get_baseline_spec(model)
         .map(|s| s.supports_structured)
         .unwrap_or(true);

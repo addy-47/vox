@@ -555,7 +555,7 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
     let auto_compaction = state
         .settings
         .read()
-        .map(|s| s.history.auto_compaction)
+        .map(|s| s.working_memory.auto_compaction)
         .unwrap_or(false);
 
     let app_handle = app.clone();

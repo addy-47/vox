@@ -17,8 +17,8 @@ use crate::{
     services::{
         harness::ConversationContext,
         llm::{
-            GenerationRequest, LlmEngine, LlmError, LlmProvider, LlmStreamEvent,
-            OutputConstraint, ProviderCapabilities, ProviderKind, Support,
+            GenerationRequest, LlmEngine, LlmError, LlmProvider, LlmStreamEvent, OutputConstraint,
+            ProviderCapabilities, ProviderKind, Support,
         },
     },
 };

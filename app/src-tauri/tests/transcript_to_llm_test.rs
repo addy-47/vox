@@ -58,8 +58,8 @@ async fn test_transcript_to_llm_matrix() {
             settings.llm.context_window = 8192;
             settings.llm.max_output_tokens = 512;
             settings.llm.temperature = 0.7;
-            settings.history.auto_compaction = true;
-            settings.memory.context_retrieval_enabled = false;
+            settings.working_memory.auto_compaction = true;
+            settings.personal_memory.context_retrieval_enabled = false;
         }
         state
             .owner

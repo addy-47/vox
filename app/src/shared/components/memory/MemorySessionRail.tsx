@@ -20,7 +20,7 @@ import { FactRecord } from "@/services/memoryService";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
 import {
-  getCollectionColor,
+  getActiveDynamicPalette,
   getCollectionIcon,
   type MemoryCategory,
 } from "./memoryGraphTypes";
@@ -48,6 +48,8 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
   const [filterQuery, setFilterQuery] = useState("");
   const [activeDrillSession, setActiveDrillSession] = useState<SessionRow | null>(null);
   const [expandedCompactions, setExpandedCompactions] = useState<Set<number>>(new Set());
+
+  const palette = useMemo(() => getActiveDynamicPalette(isLightMode), [isLightMode]);
 
   // Load sessions once
   useEffect(() => {
@@ -238,7 +240,7 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
                       <div className="p-2 border-t border-[rgba(var(--border),0.08)] bg-[rgba(var(--background),0.25)] space-y-1.5">
                         {group.facts.map((fact) => {
                           const isFactSelected = selectedFactId === fact.id;
-                          const col = getCollectionColor(fact.fact_type, false, isLightMode);
+                          const col = palette[fact.fact_type as MemoryCategory] ?? palette.objective;
                           const Icon = getCollectionIcon(fact.fact_type);
                           const catLabel = MEMORY_COPY.categories[fact.fact_type as MemoryCategory] || fact.fact_type;
 

@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, lazy, Suspense } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Sparkles,
@@ -7,12 +7,20 @@ import {
   SlidersHorizontal,
   Activity,
 } from "lucide-react";
-import {
-  HomeHelpContent,
-  HistoryHelpContent,
-  MemoryHelpContent,
-  SettingsHelpContent,
-} from "@/shared/components/help";
+import { ErrorBoundary } from "./ErrorBoundary";
+
+const HomeHelpContent = lazy(() =>
+  import("@/shared/components/help/HomeHelpContent").then((m) => ({ default: m.HomeHelpContent }))
+);
+const HistoryHelpContent = lazy(() =>
+  import("@/shared/components/help/HistoryHelpContent").then((m) => ({ default: m.HistoryHelpContent }))
+);
+const MemoryHelpContent = lazy(() =>
+  import("@/shared/components/help/MemoryHelpContent").then((m) => ({ default: m.MemoryHelpContent }))
+);
+const SettingsHelpContent = lazy(() =>
+  import("@/shared/components/help/SettingsHelpContent").then((m) => ({ default: m.SettingsHelpContent }))
+);
 
 export interface HelpPanelProps {
   onClose?: () => void;
@@ -56,10 +64,9 @@ export const HelpPanel = memo(({ onClose: _onClose }: HelpPanelProps) => {
         icon: Activity,
       };
     }
-    // Default to Home
     return {
       id: "home",
-      title: "Home Guide",
+      title: "Workspace Guide",
       routeBadge: "/",
       icon: Sparkles,
     };
@@ -86,10 +93,14 @@ export const HelpPanel = memo(({ onClose: _onClose }: HelpPanelProps) => {
 
       {/* ── Scrollable Exclusive Page Content ── */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar px-4 pt-4 pb-28">
-        {pageMeta.id === "history" && <HistoryHelpContent />}
-        {pageMeta.id === "memory" && <MemoryHelpContent />}
-        {pageMeta.id === "settings" && <SettingsHelpContent />}
-        {(pageMeta.id === "home" || pageMeta.id === "monitoring") && <HomeHelpContent />}
+        <ErrorBoundary name={`HelpGuide:${pageMeta.id}`}>
+          <Suspense fallback={<div className="p-4 text-[12px] font-mono text-[rgb(var(--foreground-muted))]/60">Loading guide...</div>}>
+            {pageMeta.id === "history" && <HistoryHelpContent />}
+            {pageMeta.id === "memory" && <MemoryHelpContent />}
+            {pageMeta.id === "settings" && <SettingsHelpContent />}
+            {(pageMeta.id === "home" || pageMeta.id === "monitoring") && <HomeHelpContent />}
+          </Suspense>
+        </ErrorBoundary>
       </div>
     </div>
   );
