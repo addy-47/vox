@@ -282,9 +282,10 @@ export interface DictationSettings {
   output_mode: "paste" | "clipboard" | "tray";
 }
 
-export interface HistorySettings {
+export interface WorkingMemorySettings {
   private_mode: boolean;
   auto_compaction: boolean;
+  max_context_share: number;
 }
 
 export interface AppearanceSettings {
@@ -292,14 +293,13 @@ export interface AppearanceSettings {
   accent_seed: string;
 }
 
-export interface MemorySettings {
+export interface PersonalMemorySettings {
   context_retrieval_enabled: boolean;
   pipeline_processing_enabled: boolean;
-  max_context_share: number;
-  context_chaining_window_hours: number;
   top_k_facts: number;
-  max_hops: number;
   semantic_similarity_cutoff: number;
+  consolidation_cadence: string;
+  consolidation_time: string;
 }
 
 export interface PersonaSettings {
@@ -322,9 +322,9 @@ export interface VoxSettings {
   realtime: RealtimeSettings;
   interaction: InteractionSettings;
   dictation: DictationSettings;
-  history: HistorySettings;
+  working_memory: WorkingMemorySettings;
   appearance: AppearanceSettings;
-  memory: MemorySettings;
+  personal_memory: PersonalMemorySettings;
   persona: PersonaSettings;
   system: SystemSettings;
 }
@@ -648,9 +648,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       "realtime",
       "interaction",
       "dictation",
-      "history",
+      "working_memory",
       "appearance",
-      "memory",
+      "personal_memory",
       "persona",
       "system",
     ];

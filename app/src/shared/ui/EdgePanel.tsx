@@ -86,10 +86,9 @@ const EdgePanelInner = memo(
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: isLeft ? "-100%" : "100%" }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            style={maskStyles}
             className={cn(
-              "absolute top-0 bottom-0 z-[35] flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-r border-l border-[rgba(var(--border),0.06)]",
-              isLeft ? "left-0" : "right-0",
+              "absolute top-0 bottom-0 z-[35] flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.06)]",
+              isLeft ? "left-0 border-r" : "right-0 border-l",
               "w-[330px] max-w-[92vw]",
               className
             )}
@@ -133,8 +132,8 @@ const EdgePanelInner = memo(
               </div>
             )}
 
-            {/* Content Body — extends down smoothly behind bottom edge nav */}
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            {/* Content Body — extends down smoothly with vertical fade mask for scrolling contents */}
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden" style={maskStyles}>
               {children}
             </div>
           </motion.aside>

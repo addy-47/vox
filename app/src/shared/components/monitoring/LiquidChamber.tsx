@@ -121,6 +121,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
     const render = (now: number) => {
       if (!running || !ctx) return;
       if (document.hidden) {
+        running = false;
         rafId = 0;
         return;
       }
@@ -329,9 +330,12 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
         running = false;
         if (rafId) cancelAnimationFrame(rafId);
         rafId = 0;
-      } else if (!running) {
+      } else {
         running = true;
-        rafId = requestAnimationFrame(render);
+        if (!rafId) {
+          lastFrameTime = performance.now();
+          rafId = requestAnimationFrame(render);
+        }
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
@@ -431,7 +435,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
               : "none",
           }}
           className={cn(
-            "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-all duration-300",
+            "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-colors duration-300",
             isLightMode
               ? "bg-[rgba(var(--card),0.55)] hover:bg-[rgba(var(--card),0.75)]"
               : "bg-[rgba(var(--card),0.80)] hover:bg-[rgba(var(--card),0.95)]"
@@ -462,7 +466,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
               : "none",
           }}
           className={cn(
-            "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-all duration-300",
+            "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-colors duration-300",
             isLightMode
               ? "bg-[rgba(var(--card),0.55)] hover:bg-[rgba(var(--card),0.75)]"
               : "bg-[rgba(var(--card),0.80)] hover:bg-[rgba(var(--card),0.95)]"
@@ -495,7 +499,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
               : "none",
           }}
           className={cn(
-            "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-all duration-300",
+            "px-3 py-2 rounded-2xl border backdrop-blur-md flex flex-col items-center text-center shadow-md transition-colors duration-300",
             isLightMode
               ? "bg-[rgba(var(--card),0.55)] hover:bg-[rgba(var(--card),0.75)]"
               : "bg-[rgba(var(--card),0.80)] hover:bg-[rgba(var(--card),0.95)]"

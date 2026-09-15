@@ -166,10 +166,10 @@ const NotificationItem = memo(
     const resolution = metadataResolution(notif);
     const isInteractive = notif.action_type === "interactive";
 
-    let ActionIcon: LucideIcon = Sparkles;
-    let actionTooltip: string = NOTIFICATION_COPY.compactTooltip;
-
-    if (isInteractive) {
+    const { ActionIcon, actionTooltip } = useMemo(() => {
+      if (!isInteractive) {
+        return { ActionIcon: Sparkles, actionTooltip: NOTIFICATION_COPY.compactTooltip };
+      }
       let parsedAction: { action?: string; target?: string } = {};
       try {
         parsedAction = JSON.parse(notif.action_payload || "{}");
@@ -178,22 +178,22 @@ const NotificationItem = memo(
       }
 
       if (category === "session_compaction" || parsedAction.action === "compact_session") {
-        ActionIcon = Sparkles;
-        actionTooltip = NOTIFICATION_COPY.compactTooltip;
-      } else if (
+        return { ActionIcon: Sparkles, actionTooltip: NOTIFICATION_COPY.compactTooltip };
+      }
+      if (
         category === "memory_consolidation" ||
         parsedAction.action === "consolidate_memory"
       ) {
-        ActionIcon = Brain;
-        actionTooltip = NOTIFICATION_COPY.consolidateTooltip;
-      } else if (parsedAction.action === "retry") {
-        ActionIcon = RotateCcw;
-        actionTooltip = NOTIFICATION_COPY.retryTooltip;
-      } else if (parsedAction.action === "navigate" || parsedAction.target) {
-        ActionIcon = Settings;
-        actionTooltip = NOTIFICATION_COPY.settingsTooltip;
+        return { ActionIcon: Brain, actionTooltip: NOTIFICATION_COPY.consolidateTooltip };
       }
-    }
+      if (parsedAction.action === "retry") {
+        return { ActionIcon: RotateCcw, actionTooltip: NOTIFICATION_COPY.retryTooltip };
+      }
+      if (parsedAction.action === "navigate" || parsedAction.target) {
+        return { ActionIcon: Settings, actionTooltip: NOTIFICATION_COPY.settingsTooltip };
+      }
+      return { ActionIcon: Sparkles, actionTooltip: NOTIFICATION_COPY.compactTooltip };
+    }, [isInteractive, category, notif.action_payload]);
 
     return (
       <motion.div
@@ -202,7 +202,7 @@ const NotificationItem = memo(
         animate="visible"
         exit="exit"
         className={cn(
-          "group relative flex gap-3 p-3.5 rounded-xl border transition-all duration-200 cursor-pointer",
+          "group relative flex gap-3 p-3.5 rounded-xl border transition-colors duration-200 cursor-pointer",
           isCritical
             ? "border-[rgba(var(--error),0.35)] bg-[rgba(var(--error),0.05)] shadow-[0_4px_20px_rgba(var(--error),0.08)]"
             : isWarning
@@ -236,7 +236,7 @@ const NotificationItem = memo(
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); handleDismiss(); }}
-                className="p-1 rounded-lg text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-all cursor-pointer shrink-0"
+                className="p-1 rounded-lg text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer shrink-0"
                 aria-label={NOTIFICATION_COPY.dismiss}
               >
                 <X size={13} />
@@ -292,7 +292,7 @@ const NotificationItem = memo(
                   onClick={(e) => { e.stopPropagation(); handlePrimary(); }}
                   aria-label={actionTooltip}
                   className={cn(
-                    "flex items-center justify-center w-7 h-7 rounded-lg border transition-all cursor-pointer",
+                    "flex items-center justify-center w-7 h-7 rounded-lg border transition-colors cursor-pointer",
                     isWorking
                       ? "border-[rgba(var(--accent),0.4)] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] cursor-wait"
                       : "border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.10)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.20)] hover:border-[rgba(var(--accent),0.5)] active:scale-95 shadow-sm"
@@ -325,7 +325,7 @@ const NotificationItem = memo(
 );
 NotificationItem.displayName = "NotificationItem";
 
-function TimeGroupHeader({ group }: { group: keyof typeof TIME_GROUP_LABELS }) {
+const TimeGroupHeader = memo(function TimeGroupHeader({ group }: { group: keyof typeof TIME_GROUP_LABELS }) {
   const Icon = TIME_GROUP_ICONS[group];
   return (
     <div className="flex items-center gap-2 px-1 py-2">
@@ -336,7 +336,8 @@ function TimeGroupHeader({ group }: { group: keyof typeof TIME_GROUP_LABELS }) {
       <div className="flex-1 h-px bg-[rgba(var(--border),0.08)]" />
     </div>
   );
-}
+});
+TimeGroupHeader.displayName = "TimeGroupHeader";
 
 /**
  * Notification list rendered inside EdgePanel with Tasks and Updates tabs.
@@ -451,10 +452,8 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
           )}
           {/* Active underline */}
           {activeTab === "tasks" && (
-            <motion.span
-              layoutId="notif-tab-underline"
+            <span
               className="absolute bottom-0 left-0 right-0 h-[2px] rounded-full bg-[rgb(var(--accent))]"
-              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
             />
           )}
         </button>
@@ -484,10 +483,8 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
             </span>
           )}
           {activeTab === "updates" && (
-            <motion.span
-              layoutId="notif-tab-underline"
+            <span
               className="absolute bottom-0 left-0 right-0 h-[2px] rounded-full bg-[rgb(var(--accent))]"
-              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
             />
           )}
         </button>
@@ -549,7 +546,7 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
           </p>
         </div>
       ) : (
-        <div key={activeTab} className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           {sections.map(({ group, items }) => (
             <div key={group} className="flex flex-col gap-1.5">
               <TimeGroupHeader group={group} />
@@ -569,8 +566,6 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
           ))}
         </div>
       )}
-      {/* Bottom spacing cushion */}
-      <div className="h-8 shrink-0" aria-hidden="true" />
     </div>
   );
 });

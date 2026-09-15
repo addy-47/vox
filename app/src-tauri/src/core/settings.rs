@@ -13,23 +13,24 @@ use crate::{
         DEFAULT_DEEPGRAM_MODEL, DEFAULT_DEEPGRAM_TEMP, DEFAULT_DEEPGRAM_VOICE,
         DEFAULT_DICTATION_ENABLED, DEFAULT_DICTATION_HOTKEY, DEFAULT_GEMINI_REALTIME_LANG,
         DEFAULT_GEMINI_REALTIME_MODEL, DEFAULT_GEMINI_REALTIME_TEMP, DEFAULT_GEMINI_REALTIME_VOICE,
-        DEFAULT_HISTORY_AUTO_COMPACTION, DEFAULT_HISTORY_PRIVATE_MODE, DEFAULT_LLM_CLOUD_BASE_URL,
-        DEFAULT_LLM_CLOUD_MODEL, DEFAULT_LLM_CLOUD_PROVIDER_NAME,
+        DEFAULT_LLM_CLOUD_BASE_URL, DEFAULT_LLM_CLOUD_MODEL, DEFAULT_LLM_CLOUD_PROVIDER_NAME,
         DEFAULT_LLM_COMPACTION_TEMPERATURE, DEFAULT_LLM_CONTEXT_WINDOW,
         DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_MODEL, DEFAULT_LLM_SERVER_BASE_URL,
         DEFAULT_LLM_SERVER_MODEL, DEFAULT_LLM_SERVER_PROVIDER_NAME, DEFAULT_LLM_TEMPERATURE,
-        DEFAULT_LLM_THREADS, DEFAULT_MEMORY_CONSOLIDATION_CADENCE,
-        DEFAULT_MEMORY_CONSOLIDATION_TIME, DEFAULT_MEMORY_CONTEXT_CHAINING_HOURS,
-        DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED, DEFAULT_MEMORY_MAX_HOPS,
-        DEFAULT_MEMORY_MAX_PERSONAL_SHARE, DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED,
-        DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF, DEFAULT_MEMORY_TOP_K_FACTS,
+        DEFAULT_LLM_THREADS, DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_CADENCE,
+        DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_TIME,
+        DEFAULT_PERSONAL_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
+        DEFAULT_PERSONAL_MEMORY_PIPELINE_PROCESSING_ENABLED,
+        DEFAULT_PERSONAL_MEMORY_SEMANTIC_SIMILARITY_CUTOFF, DEFAULT_PERSONAL_MEMORY_TOP_K_FACTS,
         DEFAULT_STT_CLOUD_LANGUAGE, DEFAULT_STT_CLOUD_MODEL, DEFAULT_STT_CLOUD_PROVIDER,
         DEFAULT_STT_CLOUD_REGION, DEFAULT_STT_PARTIAL_THROTTLE_MS, DEFAULT_STT_THREADS,
         DEFAULT_SYSTEM_PROMPT_MODULAR, DEFAULT_SYSTEM_PROMPT_REALTIME, DEFAULT_TELEMETRY_ENABLED,
         DEFAULT_TELEMETRY_LOG_LEVEL, DEFAULT_TTS_QUALITY_STEPS, DEFAULT_TTS_SPEED,
         DEFAULT_TTS_THREADS, DEFAULT_TTS_VOICE_INDEX, DEFAULT_UI_ACCENT_SEED, DEFAULT_UI_THEME,
         DEFAULT_VAD_PTT_NOISE_GATE, DEFAULT_VAD_SILENCE_DURATION_MS, DEFAULT_VAD_SPEECH_ONSET_MS,
-        DEFAULT_VAD_THRESHOLD, MIN_LLM_CONTEXT_WINDOW,
+        DEFAULT_VAD_THRESHOLD, DEFAULT_WORKING_MEMORY_AUTO_COMPACTION,
+        DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE, DEFAULT_WORKING_MEMORY_PRIVATE_MODE,
+        MIN_LLM_CONTEXT_WINDOW,
     },
     utils::paths,
 };
@@ -760,48 +761,44 @@ impl Default for DictationSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
-pub struct HistorySettings {
+pub struct WorkingMemorySettings {
     pub private_mode: bool,
     pub auto_compaction: bool,
+    pub max_context_share: f32,
 }
 
-impl Default for HistorySettings {
+impl Default for WorkingMemorySettings {
     fn default() -> Self {
         Self {
-            private_mode: DEFAULT_HISTORY_PRIVATE_MODE,
-            auto_compaction: DEFAULT_HISTORY_AUTO_COMPACTION,
+            private_mode: DEFAULT_WORKING_MEMORY_PRIVATE_MODE,
+            auto_compaction: DEFAULT_WORKING_MEMORY_AUTO_COMPACTION,
+            max_context_share: DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE,
         }
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
-pub struct MemorySettings {
+pub struct PersonalMemorySettings {
     pub context_retrieval_enabled: bool,
     pub pipeline_processing_enabled: bool,
-    pub max_context_share: f32,
-    pub context_chaining_window_hours: u32,
     pub top_k_facts: u32,
-    pub max_hops: u32,
     pub semantic_similarity_cutoff: f32,
     pub consolidation_cadence: String,
     pub consolidation_time: String,
 }
 
-impl Default for MemorySettings {
+impl Default for PersonalMemorySettings {
     fn default() -> Self {
         Self {
-            context_retrieval_enabled: DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
-            pipeline_processing_enabled: DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED,
-            max_context_share: DEFAULT_MEMORY_MAX_PERSONAL_SHARE,
-            context_chaining_window_hours: DEFAULT_MEMORY_CONTEXT_CHAINING_HOURS,
-            top_k_facts: DEFAULT_MEMORY_TOP_K_FACTS,
-            max_hops: DEFAULT_MEMORY_MAX_HOPS,
-            semantic_similarity_cutoff: DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF,
-            consolidation_cadence: DEFAULT_MEMORY_CONSOLIDATION_CADENCE.to_string(),
-            consolidation_time: DEFAULT_MEMORY_CONSOLIDATION_TIME.to_string(),
+            context_retrieval_enabled: DEFAULT_PERSONAL_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
+            pipeline_processing_enabled: DEFAULT_PERSONAL_MEMORY_PIPELINE_PROCESSING_ENABLED,
+            top_k_facts: DEFAULT_PERSONAL_MEMORY_TOP_K_FACTS,
+            semantic_similarity_cutoff: DEFAULT_PERSONAL_MEMORY_SEMANTIC_SIMILARITY_CUTOFF,
+            consolidation_cadence: DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_CADENCE.to_string(),
+            consolidation_time: DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_TIME.to_string(),
         }
     }
 }
@@ -951,9 +948,9 @@ pub struct VoxSettings {
     pub realtime: RealtimeSettings,
     pub interaction: InteractionSettings,
     pub dictation: DictationSettings,
-    pub history: HistorySettings,
+    pub working_memory: WorkingMemorySettings,
     pub appearance: AppearanceSettings,
-    pub memory: MemorySettings,
+    pub personal_memory: PersonalMemorySettings,
     pub persona: PersonaSettings,
     pub system: SystemSettings,
 }
@@ -1023,10 +1020,10 @@ impl VoxSettings {
                         settings.dictation = v;
                     }
                     if let Some(v) = obj
-                        .get("history")
+                        .get("working_memory")
                         .and_then(|v| serde_json::from_value(v.clone()).ok())
                     {
-                        settings.history = v;
+                        settings.working_memory = v;
                     }
                     if let Some(v) = obj
                         .get("appearance")
@@ -1035,10 +1032,10 @@ impl VoxSettings {
                         settings.appearance = v;
                     }
                     if let Some(v) = obj
-                        .get("memory")
+                        .get("personal_memory")
                         .and_then(|v| serde_json::from_value(v.clone()).ok())
                     {
-                        settings.memory = v;
+                        settings.personal_memory = v;
                     }
                     if let Some(v) = obj
                         .get("persona")

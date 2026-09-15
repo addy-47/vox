@@ -76,7 +76,7 @@ impl HarnessSession {
         );
         let is_embedded = !is_cloud;
         let ctx_window = settings.llm.context_window as usize;
-        let max_share = settings.memory.max_context_share;
+        let max_share = settings.working_memory.max_context_share;
 
         let mut prompt_plugin = PromptBuilderPlugin::new(base_prompt, ctx_window, max_share);
         prompt_plugin.set_personal_memory(personal_memory);
@@ -85,8 +85,11 @@ impl HarnessSession {
         let history_plugin = ConversationHistoryPlugin::with_system_prompt(assembled_prompt);
         let budget_plugin =
             ContextBudgetPlugin::new(ctx_window, settings.llm.max_output_tokens as usize);
-        let compaction_plugin =
-            CompactionPlugin::new(ctx_window, is_embedded, settings.history.auto_compaction);
+        let compaction_plugin = CompactionPlugin::new(
+            ctx_window,
+            is_embedded,
+            settings.working_memory.auto_compaction,
+        );
         let generation_options = GenerationOptions {
             temperature: Some(settings.llm.temperature),
             max_output_tokens: Some(settings.llm.max_output_tokens),
@@ -118,7 +121,7 @@ impl HarnessSession {
         settings: &VoxSettings,
     ) -> Self {
         let ctx_window = settings.llm.context_window as usize;
-        let max_share = settings.memory.max_context_share;
+        let max_share = settings.working_memory.max_context_share;
 
         let mut prompt_plugin = PromptBuilderPlugin::new(base_prompt, ctx_window, max_share);
         prompt_plugin.set_personal_memory(personal_memory);

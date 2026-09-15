@@ -1,11 +1,10 @@
 import { useState, memo } from "react";
-import { motion } from "framer-motion";
 import { Sparkles, Mic, Brain, Volume2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
 type Mood = "Idle" | "Listening" | "Thinking" | "Speaking";
 
-const MOOD_DATA: Record<Mood, { label: string; icon: any; color: string; desc: string }> = {
+const MOOD_DATA: Record<Mood, { label: string; icon: typeof Sparkles; color: string; desc: string }> = {
   Idle: {
     label: "Idle",
     icon: Sparkles,
@@ -37,29 +36,24 @@ export const HelpOrbVisualizer = memo(() => {
   const data = MOOD_DATA[activeMood];
 
   return (
-    <div className="rounded-2xl border border-[rgba(var(--border),0.12)] bg-[rgba(var(--card),0.7)] p-4 flex flex-col gap-3 backdrop-blur-md">
+    <div className="flex flex-col gap-2.5 py-1">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <span className="text-[12px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-2">
+        <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
           Visual Orb Moods
         </span>
-        <span className="text-[11px] text-[rgb(var(--foreground-muted))]">
-          Click a state to preview
+        <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60">
+          Click state to preview
         </span>
       </div>
 
       {/* Canvas Area - Light/Dark Theme Respecting */}
       <div className="relative w-full h-36 rounded-xl bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.1)] overflow-hidden flex items-center justify-center">
         {/* Ambient background glow */}
-        <motion.div
-          animate={{
-            backgroundColor: data.color,
-            opacity: [0.15, 0.28, 0.15],
-            scale: [0.95, 1.05, 0.95],
-          }}
-          transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute w-24 h-24 rounded-full blur-2xl pointer-events-none"
+        <div
+          className="absolute w-24 h-24 rounded-full blur-2xl pointer-events-none transition-colors duration-500 opacity-25 animate-pulse"
+          style={{ backgroundColor: data.color }}
         />
 
         {/* Animated Vector Shapes */}
@@ -76,7 +70,7 @@ export const HelpOrbVisualizer = memo(() => {
           {activeMood === "Idle" && (
             <g>
               <circle cx="80" cy="80" r="28" fill="url(#orbCoreGlow)" />
-              <motion.circle
+              <circle
                 cx="80"
                 cy="80"
                 r="34"
@@ -84,8 +78,7 @@ export const HelpOrbVisualizer = memo(() => {
                 strokeWidth="1.2"
                 strokeOpacity="0.5"
                 fill="none"
-                animate={{ scale: [1, 1.08, 1], opacity: [0.3, 0.7, 0.3] }}
-                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                className="animate-pulse"
                 style={{ transformOrigin: "80px 80px" }}
               />
             </g>
@@ -93,25 +86,15 @@ export const HelpOrbVisualizer = memo(() => {
 
           {activeMood === "Listening" && (
             <g>
-              <motion.circle
+              <circle
                 cx="80"
                 cy="80"
-                r="22"
+                r="26"
                 stroke={data.color}
                 strokeWidth="1.5"
                 fill="none"
-                animate={{ r: [22, 54], opacity: [0.85, 0] }}
-                transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
-              />
-              <motion.circle
-                cx="80"
-                cy="80"
-                r="22"
-                stroke={data.color}
-                strokeWidth="1.5"
-                fill="none"
-                animate={{ r: [22, 54], opacity: [0.85, 0] }}
-                transition={{ duration: 1.8, delay: 0.6, repeat: Infinity, ease: "easeOut" }}
+                className="animate-ping opacity-60"
+                style={{ transformOrigin: "80px 80px" }}
               />
               <circle cx="80" cy="80" r="24" fill="url(#orbCoreGlow)" />
             </g>
@@ -119,24 +102,23 @@ export const HelpOrbVisualizer = memo(() => {
 
           {activeMood === "Thinking" && (
             <g>
-              <motion.g
-                animate={{ rotate: 360 }}
-                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                style={{ transformOrigin: "80px 80px" }}
+              <g
+                className="animate-spin origin-center"
+                style={{ transformOrigin: "80px 80px", animationDuration: "5s" }}
               >
                 <circle cx="80" cy="42" r="3" fill={data.color} />
                 <circle cx="118" cy="80" r="2.5" fill={data.color} opacity="0.7" />
                 <circle cx="80" cy="118" r="3" fill={data.color} opacity="0.8" />
                 <circle cx="42" cy="80" r="2" fill={data.color} opacity="0.6" />
                 <circle cx="80" cy="80" r="38" stroke={data.color} strokeWidth="1" strokeDasharray="4 6" fill="none" opacity="0.4" />
-              </motion.g>
+              </g>
               <circle cx="80" cy="80" r="24" fill="url(#orbCoreGlow)" />
             </g>
           )}
 
           {activeMood === "Speaking" && (
             <g>
-              <motion.circle
+              <circle
                 cx="80"
                 cy="80"
                 r="32"
@@ -144,9 +126,8 @@ export const HelpOrbVisualizer = memo(() => {
                 strokeWidth="1.8"
                 strokeDasharray="14 7"
                 fill="none"
-                animate={{ rotate: -360, scale: [0.95, 1.06, 0.95] }}
-                transition={{ rotate: { duration: 6, repeat: Infinity, ease: "linear" }, scale: { duration: 1.2, repeat: Infinity, ease: "easeInOut" } }}
-                style={{ transformOrigin: "80px 80px" }}
+                className="animate-spin origin-center"
+                style={{ transformOrigin: "80px 80px", animationDuration: "6s", animationDirection: "reverse" }}
               />
               <circle cx="80" cy="80" r="24" fill="url(#orbCoreGlow)" />
             </g>
@@ -154,7 +135,7 @@ export const HelpOrbVisualizer = memo(() => {
         </svg>
 
         {/* Floating status pill */}
-        <div className="absolute bottom-2 px-3 py-0.5 rounded-full bg-[rgba(var(--card),0.9)] border border-[rgba(var(--border),0.15)] shadow-sm backdrop-blur-md flex items-center gap-1.5">
+        <div className="absolute bottom-2 px-3 py-0.5 rounded-full bg-[rgba(var(--card),0.95)] border border-[rgba(var(--border),0.15)] shadow-sm flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: data.color }} />
           <span className="text-[10.5px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
             {activeMood}
@@ -163,7 +144,7 @@ export const HelpOrbVisualizer = memo(() => {
       </div>
 
       {/* State Switcher Tabs */}
-      <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.1)]">
+      <div className="flex flex-wrap gap-1.5 pt-0.5">
         {(["Idle", "Listening", "Thinking", "Speaking"] as Mood[]).map((m) => {
           const item = MOOD_DATA[m];
           const Icon = item.icon;
@@ -172,15 +153,16 @@ export const HelpOrbVisualizer = memo(() => {
           return (
             <button
               key={m}
+              type="button"
               onClick={() => setActiveMood(m)}
               className={cn(
-                "flex flex-col items-center justify-center gap-1 py-1.5 px-1 rounded-lg text-[10.5px] font-medium transition-all cursor-pointer",
+                "flex items-center gap-1.5 py-1 px-2.5 rounded-lg text-[11.5px] font-medium transition-colors cursor-pointer border",
                 isSelected
-                  ? "bg-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground))] shadow-xs border border-[rgba(var(--accent),0.3)]"
-                  : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)]"
+                  ? "bg-[rgba(var(--accent),0.10)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.3)] font-semibold shadow-xs"
+                  : "border-[rgba(var(--border),0.12)] bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--border),0.25)]"
               )}
             >
-              <Icon size={13} style={{ color: isSelected ? item.color : undefined }} />
+              <Icon size={12} style={{ color: isSelected ? item.color : undefined }} className={isSelected ? "" : "opacity-60"} />
               <span>{item.label}</span>
             </button>
           );
@@ -188,7 +170,7 @@ export const HelpOrbVisualizer = memo(() => {
       </div>
 
       {/* Explanatory description */}
-      <p className="text-[12px] leading-relaxed text-[rgb(var(--foreground-muted))] text-center">
+      <p className="text-[12px] leading-relaxed text-[rgb(var(--foreground-muted))]">
         {data.desc}
       </p>
     </div>

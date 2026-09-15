@@ -26,8 +26,11 @@ import { type ProjectRow } from "@/services/projectService";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { SessionContextMenu } from "@/shared/ui/SessionContextMenu";
-import { useNotificationStore, selectUncompactedSessionIds } from "@/store/notificationStore";
-import { metadataResolution } from "@/services/notificationService";
+import {
+  useNotificationStore,
+  selectUncompactedSessionIds,
+  selectActiveCompactionSessionIds,
+} from "@/store/notificationStore";
 import { useSessionStore } from "@/store/sessionStore";
 
 interface SessionPanelProps {
@@ -87,17 +90,7 @@ const SessionRowItem = memo(
 
     const isCompacting = useNotificationStore(
       useCallback(
-        (s) => {
-          if (s.activeActionIds.length === 0) return false;
-          const notif = s.notifications.find(
-            (n) =>
-              n.category === "session_compaction" &&
-              n.session_id === session.id &&
-              n.status !== "dismissed" &&
-              metadataResolution(n) !== "resolved"
-          );
-          return notif ? s.activeActionIds.includes(notif.id) : false;
-        },
+        (s) => selectActiveCompactionSessionIds(s).has(session.id),
         [session.id]
       )
     );
@@ -406,10 +399,10 @@ const ProjectRowItem = memo(
             "border-[rgba(var(--accent),0.6)] bg-[rgba(var(--accent),0.12)] shadow-md"
         )}
         whileDrag={{
-          scale: 1.025,
+          scale: 1.01,
           cursor: "grabbing",
         }}
-        transition={{ type: "spring", stiffness: 450, damping: 32 }}
+        transition={{ type: "spring", stiffness: 300, damping: 35 }}
       >
         {/* Project Header Row: Flat folder, title, hover + to add session */}
         <div
@@ -655,18 +648,13 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
     if (e.dataTransfer.types.includes("text/session-id")) {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
-      setDragOverProjectId(targetProjectId);
+      setDragOverProjectId((prev) => (prev === targetProjectId ? prev : targetProjectId));
     }
   }, []);
 
-  const handleSessionDragLeave = useCallback(
-    (targetProjectId: string) => {
-      if (dragOverProjectId === targetProjectId) {
-        setDragOverProjectId(null);
-      }
-    },
-    [dragOverProjectId]
-  );
+  const handleSessionDragLeave = useCallback((targetProjectId: string) => {
+    setDragOverProjectId((prev) => (prev === targetProjectId ? null : prev));
+  }, []);
 
   const handleSessionDrop = useCallback(
     (e: React.DragEvent, targetProjectId: string) => {

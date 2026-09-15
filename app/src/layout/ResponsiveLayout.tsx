@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useCallback, lazy, Suspense } from 
 import { EdgeNav } from "./EdgeNav";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { TitleBar } from "./TitleBar";
-import { AmbientBackground, HelpPanel, NotificationPanel } from "@/shared/components/common";
+import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary } from "@/shared/components/common";
 import { SessionPanel, ActiveSessionHeader } from "@/shared/components/home";
 import { EdgePanel, TopRightCluster } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
@@ -39,30 +39,42 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
   // Ref to track compact state across renders during window resize
   const wasCompactRef = useRef(window.innerWidth < 1024);
+  const pathnameRef = useRef(location.pathname);
+  pathnameRef.current = location.pathname;
+  const monitorOpenRef = useRef(monitorOpen);
+  monitorOpenRef.current = monitorOpen;
 
   // Bidirectional viewport transition: compact (EdgeNav route) ↔ full-max (corner popover)
   useEffect(() => {
+    let rAfId: number | null = null;
     const handleResize = () => {
-      const isCompact = window.innerWidth < 1024;
-      if (wasCompactRef.current && !isCompact) {
-        // Compact → Full-max: switch from route page to popover
-        if (location.pathname === "/monitoring") {
-          navigate("/", { replace: true });
-          setMonitorOpen(true);
+      if (rAfId !== null) return;
+      rAfId = requestAnimationFrame(() => {
+        rAfId = null;
+        const isCompact = window.innerWidth < 1024;
+        if (wasCompactRef.current && !isCompact) {
+          // Compact → Full-max: switch from route page to popover
+          if (pathnameRef.current === "/monitoring") {
+            navigate("/", { replace: true });
+            setMonitorOpen(true);
+          }
+        } else if (!wasCompactRef.current && isCompact) {
+          // Full-max → Compact: switch from popover to route page
+          if (monitorOpenRef.current) {
+            setMonitorOpen(false);
+            navigate("/monitoring");
+          }
         }
-      } else if (!wasCompactRef.current && isCompact) {
-        // Full-max → Compact: switch from popover to route page
-        if (monitorOpen) {
-          setMonitorOpen(false);
-          navigate("/monitoring");
-        }
-      }
-      wasCompactRef.current = isCompact;
+        wasCompactRef.current = isCompact;
+      });
     };
 
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [location.pathname, monitorOpen, navigate]);
+    window.addEventListener("resize", handleResize, { passive: true });
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      if (rAfId !== null) cancelAnimationFrame(rAfId);
+    };
+  }, [navigate]);
 
   // ── Arrow Keys Page Navigation ─────────────────────────────────────────────
   useEffect(() => {
@@ -243,22 +255,24 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         </div>
 
         {/* Monitoring Popover */}
-        <Suspense fallback={null}>
-          <Monitoring
-            popover
-            open={monitorOpen}
-            onClose={() => setMonitorOpen(false)}
-            anchorRef={monitorBtnRef}
-          />
-        </Suspense>
+        <ErrorBoundary name="MonitoringPopover">
+          <Suspense fallback={null}>
+            <Monitoring
+              popover
+              open={monitorOpen}
+              onClose={() => setMonitorOpen(false)}
+              anchorRef={monitorBtnRef}
+            />
+          </Suspense>
+        </ErrorBoundary>
 
         {/* ── Status Info & Default Reset Controls Area — bottom-right ── */}
         {isSettings && (
           <div className="hidden lg:flex fixed bottom-4 right-4 z-40 pointer-events-none items-center gap-2 lg:gap-3 max-w-[calc(50vw-180px)]">
-            {/* Feathering blur haze & soft gradient starting 15-20px above the overlay edge and extending upwards */}
+            {/* Feathering soft gradient starting 15-20px above the overlay edge and extending upwards */}
             <div
               aria-hidden="true"
-              className="absolute -inset-x-8 -bottom-4 -top-10 pointer-events-none backdrop-blur-xl"
+              className="absolute -inset-x-8 -bottom-4 -top-10 pointer-events-none"
               style={{
                 background:
                   "radial-gradient(ellipse 110% 120% at 90% 90%, rgb(var(--card)) 45%, rgba(var(--card), 0.75) 65%, transparent 100%)",
@@ -287,7 +301,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           onClose={closeSessions}
           minimalHeader
         >
-          <SessionPanel onClose={closeSessions} />
+          <ErrorBoundary name="SessionPanel">
+            <SessionPanel onClose={closeSessions} />
+          </ErrorBoundary>
         </EdgePanel>
 
         {/* ── Right Edge Rails (Help & Notifications) ── */}
@@ -297,7 +313,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           onClose={closeHelp}
           minimalHeader
         >
-          <HelpPanel onClose={closeHelp} />
+          <ErrorBoundary name="HelpPanel">
+            <HelpPanel onClose={closeHelp} />
+          </ErrorBoundary>
         </EdgePanel>
         <EdgePanel
           side="right"
@@ -305,7 +323,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           onClose={closeNotifications}
           minimalHeader
         >
-          <NotificationPanel onClose={closeNotifications} />
+          <ErrorBoundary name="NotificationPanel">
+            <NotificationPanel onClose={closeNotifications} />
+          </ErrorBoundary>
         </EdgePanel>
       </div>
     </div>
