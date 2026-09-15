@@ -1,46 +1,36 @@
-// @ts-nocheck — @deprecated v2: legacy graph component, retained for reference only
 import { memo, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-// @deprecated v2 — togglePipelineProcessing removed
-declare function togglePipelineProcessing(_enabled: boolean): Promise<void>;
 import { Archive, Brain, Workflow } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Card, ToggleTile } from "@/shared/ui";
-import { MemoryConfigDesk } from "./MemoryConfigDesk";
-import { MEMORY_CONFIG_DESK_COPY } from "@/data/settingsCopy";
+import { PersonalMemoryConfigDesk } from "./PersonalMemoryConfigDesk";
+import { PERSONAL_MEMORY_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 
-interface MemoryCardProps {
+interface PersonalMemoryCardProps {
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
-export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) => {
-  const memory = useSettingsStore((s) => s.draftSettings?.memory);
+export const PersonalMemoryCard = memo(({ layoutMode = "full-max" }: PersonalMemoryCardProps) => {
+  const personalMemory = useSettingsStore((s) => s.draftSettings?.personal_memory);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
-  const commitChanges = useSettingsStore((s) => s.commitChanges);
 
   const isSmall = layoutMode === "small";
   const isMin = layoutMode === "full-min";
 
-  const contextRetrievalEnabled = memory?.context_retrieval_enabled ?? true;
-  const pipelineProcessingEnabled = memory?.pipeline_processing_enabled ?? true;
+  const contextRetrievalEnabled = personalMemory?.context_retrieval_enabled ?? true;
+  const pipelineProcessingEnabled = personalMemory?.pipeline_processing_enabled ?? true;
 
   const handleToggleRetrieval = useCallback(() => {
-    updateDraft("memory", "context_retrieval_enabled", !contextRetrievalEnabled);
+    updateDraft("personal_memory", "context_retrieval_enabled", !contextRetrievalEnabled);
   }, [contextRetrievalEnabled, updateDraft]);
 
-  const handleTogglePipeline = useCallback(async () => {
-    try {
-      const nextState = await togglePipelineProcessing(!pipelineProcessingEnabled);
-      updateDraft("memory", "pipeline_processing_enabled", nextState);
-      await commitChanges();
-    } catch (e) {
-      console.error("[MemoryCard] Toggle pipeline processing error:", e);
-    }
-  }, [pipelineProcessingEnabled, updateDraft, commitChanges]);
+  const handleTogglePipeline = useCallback(() => {
+    updateDraft("personal_memory", "pipeline_processing_enabled", !pipelineProcessingEnabled);
+  }, [pipelineProcessingEnabled, updateDraft]);
 
-  if (!memory) return null;
+  if (!personalMemory) return null;
 
-  const copy = MEMORY_CONFIG_DESK_COPY;
+  const copy = PERSONAL_MEMORY_CONFIG_DESK_COPY;
 
   return (
     <Card
@@ -99,18 +89,18 @@ export const MemoryCard = memo(({ layoutMode = "full-max" }: MemoryCardProps) =>
           />
         </div>
 
-        {/* Layer 2: Dedicated Memory Config Desk with 5 Subtabs */}
+        {/* Layer 2: Dedicated Personal Memory Config Desk with 3 Subtabs */}
         <div
           className={cn(
             "flex-1 w-full flex flex-col min-h-0 rounded-xl p-2.5 sm:p-3 relative border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] justify-between",
             isSmall ? "h-auto" : "h-full"
           )}
         >
-          <MemoryConfigDesk layoutMode={layoutMode} />
+          <PersonalMemoryConfigDesk layoutMode={layoutMode} />
         </div>
       </div>
     </Card>
   );
 });
 
-MemoryCard.displayName = "MemoryCard";
+PersonalMemoryCard.displayName = "PersonalMemoryCard";

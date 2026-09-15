@@ -74,7 +74,7 @@ pub fn spawn_quiet_ingestion_observer(state: Arc<AppState>) {
             let is_enabled = state
                 .settings
                 .read()
-                .map(|s| s.memory.pipeline_processing_enabled)
+                .map(|s| s.personal_memory.pipeline_processing_enabled)
                 .unwrap_or(true);
 
             if is_enabled && is_quiet_state(current) {
@@ -84,7 +84,7 @@ pub fn spawn_quiet_ingestion_observer(state: Arc<AppState>) {
                         let still_enabled = state
                             .settings
                             .read()
-                            .map(|s| s.memory.pipeline_processing_enabled)
+                            .map(|s| s.personal_memory.pipeline_processing_enabled)
                             .unwrap_or(true);
 
                         if still_enabled && is_quiet_state(latest) {

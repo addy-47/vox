@@ -40,7 +40,7 @@ pub async fn reconcile_uncompacted_sessions_on_boot(
     let auto_compaction = state
         .settings
         .read()
-        .map(|s| s.history.auto_compaction)
+        .map(|s| s.working_memory.auto_compaction)
         .unwrap_or(false);
 
     let count = uncompacted.len() as u32;

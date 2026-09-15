@@ -88,17 +88,31 @@ export const Memory: React.FC = memo(() => {
   const [exportMessage, setExportMessage] = useState<string | null>(null);
 
   // ── Measure Container ──────────────────────────────────────────────────────
+  const hasMountedRef = useRef(false);
+  if (dims.w > 0) {
+    hasMountedRef.current = true;
+  }
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    let rAfId: number | null = null;
     const obs = new ResizeObserver((entries) => {
       if (entries.length > 0) {
         const { width, height } = entries[0].contentRect;
-        setDims({ w: width, h: height });
+        if (width > 0 && height > 0) {
+          if (rAfId !== null) cancelAnimationFrame(rAfId);
+          rAfId = requestAnimationFrame(() => {
+            setDims({ w: width, h: height });
+          });
+        }
       }
     });
     obs.observe(el);
-    return () => obs.disconnect();
+    return () => {
+      obs.disconnect();
+      if (rAfId !== null) cancelAnimationFrame(rAfId);
+    };
   }, []);
 
   // ── Load Memory Data ───────────────────────────────────────────────────────
@@ -229,27 +243,40 @@ export const Memory: React.FC = memo(() => {
     }
   }, []);
 
+  const handleRecenter = useCallback(() => graphRef.current?.recenter(), []);
+  const handleZoomIn = useCallback(() => graphRef.current?.zoomIn(), []);
+  const handleZoomOut = useCallback(() => graphRef.current?.zoomOut(), []);
+  const handleRefreshDock = useCallback(() => refresh(true), [refresh]);
+  const handleFocusCore = useCallback(() => graphRef.current?.focusCore(), []);
+  const handleToggleSelectMode = useCallback(() => setSelectModeEnabled((prev) => !prev), []);
+  const handleSelectSearchNode = useCallback(
+    (factId: string | null) => {
+      if (!factId) return;
+      const f = facts.find((fact) => fact.id === factId);
+      if (f) {
+        handleSelectNode(f, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+        graphRef.current?.flyToNode(f.id);
+      }
+    },
+    [facts, handleSelectNode]
+  );
+
   return (
     <div
       ref={containerRef}
       className="relative flex-1 flex flex-col h-full w-full overflow-hidden bg-transparent select-none"
     >
       {/* Sentient Liquid Space Ambient Background */}
-      <AmbientBackground originX="50%" originY="50%" rippleSpeedMultiplier={1.0} />
+      <AmbientBackground originX="50%" originY="50%" rippleSpeedMultiplier={1.0} paused />
 
 
       {/* ── Top Center: Search Bar ── */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
         <SearchBar
           facts={facts}
+          isLightMode={isLightMode}
           onCommitSearch={setSearchQuery}
-          onSelectNode={(factId) => {
-            const f = facts.find((fact) => fact.id === factId);
-            if (f) {
-              handleSelectNode(f, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
-              graphRef.current?.flyToNode(f.id);
-            }
-          }}
+          onSelectNode={handleSelectSearchNode}
           dropdownPlacement="bottom"
         />
       </div>
@@ -257,14 +284,14 @@ export const Memory: React.FC = memo(() => {
 
       {/* ── Right Edge: Floating Graph Control Dock ── */}
       <GraphControlDock
-        onRecenter={() => graphRef.current?.recenter()}
-        onZoomIn={() => graphRef.current?.zoomIn()}
-        onZoomOut={() => graphRef.current?.zoomOut()}
-        onRefresh={() => refresh(true)}
-        onFocusCore={() => graphRef.current?.focusCore()}
+        onRecenter={handleRecenter}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onRefresh={handleRefreshDock}
+        onFocusCore={handleFocusCore}
         refreshing={refreshing}
         selectModeEnabled={selectModeEnabled}
-        onToggleSelectMode={() => setSelectModeEnabled((prev) => !prev)}
+        onToggleSelectMode={handleToggleSelectMode}
       />
 
       {/* ── Bottom Right: Category Legend Overlay (3x2 Ambient Grid) ── */}
@@ -284,24 +311,26 @@ export const Memory: React.FC = memo(() => {
         onClose={handleCloseSessionRail}
         title={MEMORY_COPY.sessionRailTitle}
       >
-        <MemorySessionRail
-          facts={facts}
-          selectedSessionId={selectedSessionId}
-          selectedFactId={selectedFact?.id ?? null}
-          onSelectSession={handleSelectSession}
-          onSelectFact={handleSelectFactFromRail}
-          onClose={handleCloseSessionRail}
-        />
+        <ErrorBoundary name="MemorySessionRail">
+          <MemorySessionRail
+            facts={facts}
+            selectedSessionId={selectedSessionId}
+            selectedFactId={selectedFact?.id ?? null}
+            onSelectSession={handleSelectSession}
+            onSelectFact={handleSelectFactFromRail}
+            onClose={handleCloseSessionRail}
+          />
+        </ErrorBoundary>
       </EdgePanel>
 
       {/* ── 3D Dynamic WebGL Graph Canvas ── */}
-      {dims.w > 0 && (
+      {(hasMountedRef.current || dims.w > 0) && (
         <ErrorBoundary name="Memory3DGraph">
           <MemoryGraph
             ref={graphRef}
             facts={facts}
-            width={dims.w}
-            height={dims.h}
+            width={Math.max(dims.w, 1)}
+            height={Math.max(dims.h, 1)}
             searchQuery={searchQuery}
             selectedCollection={selectedCollection}
             selectedFactId={selectedFact?.id ?? null}
@@ -432,41 +461,43 @@ export const Memory: React.FC = memo(() => {
         }
         bodyClassName="px-8 py-5 max-h-[60vh] overflow-y-auto"
       >
-        {editing ? (
-          <div className="flex flex-col gap-2">
-            <textarea
-              value={draftContent}
-              onChange={(e) => setDraftContent(e.target.value)}
-              className="w-full h-[360px] bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.14)] rounded-2xl p-4 text-[13px] font-mono text-[rgb(var(--foreground))] leading-relaxed resize-none focus:outline-none focus:border-[rgba(var(--accent),0.45)] transition-colors"
-              spellCheck={false}
-            />
-            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-              Tip: Supports GitHub Flavored Markdown headers, lists, and code blocks.
-            </span>
-          </div>
-        ) : (
-          <div className="prose dark:prose-invert prose-sm max-w-none text-[rgb(var(--foreground))] leading-relaxed select-text">
-            {personalMemory?.content ? (
-              <ReactMarkdown>{personalMemory.content}</ReactMarkdown>
-            ) : (
-              <p className="text-[rgb(var(--foreground-muted))] text-[13px] font-mono py-8 text-center">
-                {MEMORY_COPY.noPersonalMemory}
-              </p>
-            )}
-          </div>
-        )}
+        <ErrorBoundary name="MemoryDrawerContent">
+          {editing ? (
+            <div className="flex flex-col gap-2">
+              <textarea
+                value={draftContent}
+                onChange={(e) => setDraftContent(e.target.value)}
+                className="w-full h-[360px] bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.14)] rounded-2xl p-4 text-[13px] font-mono text-[rgb(var(--foreground))] leading-relaxed resize-none focus:outline-none focus:border-[rgba(var(--accent),0.45)] transition-colors"
+                spellCheck={false}
+              />
+              <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+                Tip: Supports GitHub Flavored Markdown headers, lists, and code blocks.
+              </span>
+            </div>
+          ) : (
+            <div className="prose dark:prose-invert prose-sm max-w-none text-[rgb(var(--foreground))] leading-relaxed select-text">
+              {personalMemory?.content ? (
+                <ReactMarkdown>{personalMemory.content}</ReactMarkdown>
+              ) : (
+                <p className="text-[rgb(var(--foreground-muted))] text-[13px] font-mono py-8 text-center">
+                  {MEMORY_COPY.noPersonalMemory}
+                </p>
+              )}
+            </div>
+          )}
 
-        {/* Document Provenance Metadata Footer */}
-        {personalMemory && (
-          <div className="mt-8 pt-3 border-t border-[rgba(var(--border),0.10)] flex items-center justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-            <span>
-              {MEMORY_COPY.version} {personalMemory.version}
-            </span>
-            <span>
-              {MEMORY_COPY.lastUpdated}: {new Date(personalMemory.updated_at).toLocaleString()}
-            </span>
-          </div>
-        )}
+          {/* Document Provenance Metadata Footer */}
+          {personalMemory && (
+            <div className="mt-8 pt-3 border-t border-[rgba(var(--border),0.10)] flex items-center justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+              <span>
+                {MEMORY_COPY.version} {personalMemory.version}
+              </span>
+              <span>
+                {MEMORY_COPY.lastUpdated}: {new Date(personalMemory.updated_at).toLocaleString()}
+              </span>
+            </div>
+          )}
+        </ErrorBoundary>
       </Drawer>
 
     </div>

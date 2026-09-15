@@ -125,8 +125,8 @@ pub async fn check_missed_consolidation_on_boot<R: tauri::Runtime>(
         .read()
         .map(|s| {
             (
-                s.memory.consolidation_cadence.clone(),
-                s.memory.consolidation_time.clone(),
+                s.personal_memory.consolidation_cadence.clone(),
+                s.personal_memory.consolidation_time.clone(),
             )
         })
         .unwrap_or_else(|_| ("manual".to_string(), "02:00".to_string()));
@@ -211,8 +211,8 @@ pub fn spawn_consolidation_scheduler<R: tauri::Runtime + 'static>(
         loop {
             let (cadence, time_str) = match state.settings.read() {
                 Ok(s) => (
-                    s.memory.consolidation_cadence.clone(),
-                    s.memory.consolidation_time.clone(),
+                    s.personal_memory.consolidation_cadence.clone(),
+                    s.personal_memory.consolidation_time.clone(),
                 ),
                 Err(_) => {
                     log::warn!("[Memory::Scheduler] Settings lock poisoned; scheduler stopping.");
@@ -237,7 +237,7 @@ pub fn spawn_consolidation_scheduler<R: tauri::Runtime + 'static>(
             let still_daily = state
                 .settings
                 .read()
-                .map(|s| s.memory.consolidation_cadence.clone())
+                .map(|s| s.personal_memory.consolidation_cadence.clone())
                 .unwrap_or_default()
                 == "daily";
             if !still_daily {

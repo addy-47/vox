@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -36,7 +36,7 @@ export const MemoryLegendOverlay = memo<MemoryLegendOverlayProps>(({
   isLightMode = false,
 }) => {
   const isFiltered = selectedCollection !== "all";
-  const palette = getActiveDynamicPalette(isLightMode);
+  const palette = useMemo(() => getActiveDynamicPalette(isLightMode), [isLightMode]);
 
   return (
     <div

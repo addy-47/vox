@@ -99,7 +99,8 @@ pub async fn run_judge(
                 let status = resp.status();
                 let body: Value = resp.json().await.context("Judge response was not JSON")?;
                 if !status.is_success()
-                    && (status.as_u16() == 429 || status.is_server_error()) && attempt < 3
+                    && (status.as_u16() == 429 || status.is_server_error())
+                    && attempt < 3
                 {
                     eprintln!("[judge] attempt {attempt} HTTP {status}; retrying...");
                     tokio::time::sleep(std::time::Duration::from_secs(10 * attempt as u64)).await;

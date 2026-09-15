@@ -176,7 +176,9 @@ fn degrade_request_on_unsupported(request: &mut GenerationRequest, msg_lower: &s
     if request.options.reasoning == ReasoningMode::Disabled
         && (msg_lower.contains("reasoning") || msg_lower.contains("think"))
     {
-        log::warn!("[RemoteTransport] Provider rejected reasoning controls; retrying without them.");
+        log::warn!(
+            "[RemoteTransport] Provider rejected reasoning controls; retrying without them."
+        );
         request.options.reasoning = ReasoningMode::Enabled;
         return true;
     }
@@ -215,15 +217,16 @@ impl super::LlmProvider for RemoteTransport {
             let mut request = request;
 
             for _ in 0..3 {
-                let res = self.dispatch_stream(&cfg, &request, turn_id, cancel, tx).await;
+                let res = self
+                    .dispatch_stream(&cfg, &request, turn_id, cancel, tx)
+                    .await;
                 match res {
                     Err(LlmError::Provider { status, message }) if status == 400 => {
                         let msg_lower = message.to_lowercase();
                         if degrade_request_on_unsupported(&mut request, &msg_lower) {
                             continue;
                         }
-                        if is_token_field_rejection(&msg_lower) && self.flip_token_field(&mut cfg)
-                        {
+                        if is_token_field_rejection(&msg_lower) && self.flip_token_field(&mut cfg) {
                             continue;
                         }
                         return Err(LlmError::Provider { status, message });

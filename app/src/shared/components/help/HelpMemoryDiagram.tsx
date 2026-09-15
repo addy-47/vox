@@ -1,22 +1,20 @@
 import { memo } from "react";
-import { motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
 
 export const HelpMemoryDiagram = memo(() => {
   return (
-    <div className="rounded-2xl border border-[rgba(var(--border),0.12)] bg-[rgba(var(--card),0.7)] p-4 flex flex-col gap-3 backdrop-blur-md">
+    <div className="flex flex-col gap-2 py-1">
       <div className="flex items-center justify-between">
-        <span className="text-[12px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-2">
+        <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
           How Vox Remembers
         </span>
-        <span className="text-[11px] text-[rgb(var(--foreground-muted))]">
+        <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60">
           Private on your device
         </span>
       </div>
 
       {/* SVG Diagram */}
-      <div className="relative w-full h-36 rounded-xl bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.1)] overflow-hidden flex items-center justify-center p-2">
+      <div className="relative w-full h-32 flex items-center justify-center py-1">
         <svg viewBox="0 0 240 130" className="w-56 h-32">
           {/* Connecting lines */}
           <line x1="120" y1="65" x2="55" y2="35" stroke="rgba(56, 189, 248, 0.35)" strokeWidth="1.2" strokeDasharray="3 3" />
@@ -25,9 +23,8 @@ export const HelpMemoryDiagram = memo(() => {
           <line x1="120" y1="65" x2="185" y2="95" stroke="rgba(251, 191, 36, 0.35)" strokeWidth="1.2" strokeDasharray="3 3" />
 
           {/* Central Crystal Core */}
-          <motion.g
-            animate={{ scale: [1, 1.05, 1] }}
-            transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+          <g
+            className="animate-pulse origin-center"
             style={{ transformOrigin: "120px 65px" }}
           >
             <polygon
@@ -39,7 +36,7 @@ export const HelpMemoryDiagram = memo(() => {
             <text x="120" y="68" textAnchor="middle" fill="currentColor" className="text-[rgb(var(--foreground))]" fontSize="8" fontWeight="bold" fontFamily="monospace">
               YOU
             </text>
-          </motion.g>
+          </g>
 
           {/* Fact Node 1: Work */}
           <g transform="translate(55, 35)">
@@ -65,12 +62,6 @@ export const HelpMemoryDiagram = memo(() => {
             <text x="0" y="3" textAnchor="middle" fill="#facc15" fontSize="7.5" fontWeight="bold">NOTES</text>
           </g>
         </svg>
-
-        {/* Dynamic pill */}
-        <div className="absolute bottom-2 px-3 py-0.5 rounded-full bg-[rgba(var(--card),0.9)] border border-[rgba(var(--border),0.15)] shadow-xs backdrop-blur-md flex items-center gap-1.5 text-[11px] text-[rgb(var(--foreground-muted))]">
-          <Sparkles size={11} className="text-[rgb(var(--accent))]" />
-          <span>Conversations → Useful Facts → Tailored Answers</span>
-        </div>
       </div>
     </div>
   );

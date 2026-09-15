@@ -1,10 +1,12 @@
-import { useState, useMemo, memo } from "react";
+import { useState, useMemo, memo, lazy, Suspense } from "react";
 import { SETTINGS_PAGE_HELP, type SettingsCardId } from "@/data/helpCopy";
 import { HelpControlCard } from "./HelpControlCard";
-import { HelpPipelineDiagram } from "./HelpPipelineDiagram";
-import { HelpInteractionDiagram } from "./HelpInteractionDiagram";
-import { HelpMemoryKnobsDiagram } from "./HelpMemoryKnobsDiagram";
 import { cn } from "@/shared/lib/utils";
+import { ErrorBoundary } from "@/shared/components/common";
+
+const HelpPipelineDiagram = lazy(() => import("./HelpPipelineDiagram").then((m) => ({ default: m.HelpPipelineDiagram })));
+const HelpInteractionDiagram = lazy(() => import("./HelpInteractionDiagram").then((m) => ({ default: m.HelpInteractionDiagram })));
+const HelpMemoryKnobsDiagram = lazy(() => import("./HelpMemoryKnobsDiagram").then((m) => ({ default: m.HelpMemoryKnobsDiagram })));
 
 interface SettingsHelpContentProps {
   initialCardId?: SettingsCardId;
@@ -17,19 +19,21 @@ export const SettingsHelpContent = memo(({ initialCardId = "models" }: SettingsH
     return SETTINGS_PAGE_HELP.cards.find((c) => c.id === selectedCardId) ?? SETTINGS_PAGE_HELP.cards[0];
   }, [selectedCardId]);
 
+  const CardIcon = activeCard.icon;
+
   return (
-    <div className="flex flex-col gap-5 select-none font-sans">
+    <div className="flex flex-col gap-4 select-none font-sans">
       {/* ── Subtitle intro ── */}
       <p className="text-[13px] leading-relaxed text-[rgb(var(--foreground-muted))]">
         {SETTINGS_PAGE_HELP.subtitle}
       </p>
 
-      {/* ── Settings Category Tabs ── */}
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--accent))]">
-          Settings Categories
+      {/* ── Settings Category Tabs (Responsive, full labels) ── */}
+      <div className="flex flex-col gap-1.5 pt-0.5">
+        <span className="text-[10.5px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70">
+          Categories
         </span>
-        <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.1)]">
+        <div className="flex flex-wrap gap-1.5">
           {SETTINGS_PAGE_HELP.cards.map((card) => {
             const Icon = card.icon;
             const isSelected = card.id === selectedCardId;
@@ -37,73 +41,94 @@ export const SettingsHelpContent = memo(({ initialCardId = "models" }: SettingsH
             return (
               <button
                 key={card.id}
+                type="button"
                 onClick={() => setSelectedCardId(card.id)}
                 className={cn(
-                  "flex items-center gap-2 py-2 px-2.5 rounded-lg text-[11.5px] font-medium transition-all cursor-pointer truncate",
+                  "flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg text-[12px] font-medium transition-colors cursor-pointer border",
                   isSelected
-                    ? "bg-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground))] shadow-xs border border-[rgba(var(--accent),0.3)]"
-                    : "text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.04)]"
+                    ? "bg-[rgba(var(--accent),0.10)] text-[rgb(var(--accent))] border-[rgba(var(--accent),0.3)] font-semibold shadow-xs"
+                    : "border-[rgba(var(--border),0.12)] bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--border),0.25)]"
                 )}
               >
-                <Icon size={14} className={cn("shrink-0", isSelected ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]")} />
-                <span className="truncate">{card.label}</span>
+                <Icon size={13} className={isSelected ? "text-[rgb(var(--accent))]" : "opacity-60"} />
+                <span>{card.label}</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* ── Active Category Overview ── */}
-      <div className="rounded-2xl border border-[rgba(var(--border),0.12)] bg-[rgba(var(--card),0.75)] p-4 flex flex-col gap-2.5 backdrop-blur-md">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-lg border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] flex items-center justify-center shrink-0">
-              <activeCard.icon size={16} />
-            </span>
-            <span className="font-display text-[14px] font-bold tracking-wide text-[rgb(var(--foreground))]">
+      {/* ── Accent-tinted Section Divider (separating Category selector from Active Section) ── */}
+      <div className="h-px bg-gradient-to-r from-[rgba(var(--accent),0.45)] via-[rgba(var(--accent),0.2)] to-transparent my-0.5" />
+
+      {/* ── Main Section Container (Subtle minimal border providing structure) ── */}
+      <div className="rounded-xl border border-[rgba(var(--border),0.14)] bg-[rgba(var(--foreground),0.015)] p-3.5 flex flex-col gap-3.5">
+        {/* ── Active Category Overview ── */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-baseline justify-between gap-2 flex-wrap">
+            <h3 className="font-display text-[15px] font-bold text-[rgb(var(--foreground))] tracking-tight flex items-center gap-2">
+              <CardIcon size={16} className="text-[rgb(var(--accent))]" />
               {activeCard.label}
+            </h3>
+            <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60">
+              {activeCard.badge}
             </span>
           </div>
-          <span className="px-2 py-0.5 rounded-md bg-[rgba(var(--accent),0.1)] border border-[rgba(var(--accent),0.2)] text-[10.5px] font-mono text-[rgb(var(--accent))] uppercase tracking-wider shrink-0">
-            {activeCard.badge}
-          </span>
+          <p className="text-[12.5px] leading-relaxed text-[rgb(var(--foreground-muted))] mt-0.5">
+            {activeCard.overview}
+          </p>
         </div>
 
-        <p className="text-[12.5px] leading-relaxed text-[rgb(var(--foreground))]/85">
-          {activeCard.overview}
-        </p>
+        {/* ── Visual Diagrams for Key Categories (Lazy Loaded with internal grey divider) ── */}
+        {(selectedCardId === "models" || selectedCardId === "interaction" || selectedCardId === "memory") && (
+          <>
+            <div className="h-px bg-[rgba(var(--border),0.10)]" />
+            <ErrorBoundary name={`SettingsDiagram:${selectedCardId}`}>
+              <Suspense fallback={null}>
+                {selectedCardId === "models" && <HelpPipelineDiagram />}
+                {selectedCardId === "interaction" && <HelpInteractionDiagram />}
+                {selectedCardId === "memory" && <HelpMemoryKnobsDiagram />}
+              </Suspense>
+            </ErrorBoundary>
+          </>
+        )}
+
+        {/* ── Internal Grey Divider before Controls ── */}
+        <div className="h-px bg-[rgba(var(--border),0.10)]" />
+
+        {/* ── Controls List (Connected by vertical spine) ── */}
+        <div className="flex flex-col gap-1.5">
+          <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
+            Controls & Options
+          </h4>
+
+          <div className="flex flex-col pt-4">
+            {activeCard.controls.map((item, idx) => (
+              <HelpControlCard
+                key={item.name}
+                item={item}
+                variant="minimal"
+                isLast={idx === activeCard.controls.length - 1}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* ── Internal Grey Divider before Tips ── */}
+        {activeCard.tips && activeCard.tips.length > 0 && (
+          <>
+            <div className="h-px bg-[rgba(var(--border),0.10)]" />
+            <div className="border-l-2 border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.04)] pl-3.5 pr-3 py-2 rounded-r-xl flex flex-col gap-1 text-[12px] text-[rgb(var(--foreground-muted))] border-y border-r border-[rgba(var(--border),0.08)]">
+              {activeCard.tips.map((tip) => (
+                <p key={tip} className="leading-relaxed">
+                  💡 {tip}
+                </p>
+              ))}
+            </div>
+          </>
+        )}
       </div>
-
-      {/* ── Visual Diagrams for Key Categories ── */}
-      {selectedCardId === "models" && <HelpPipelineDiagram />}
-      {selectedCardId === "interaction" && <HelpInteractionDiagram />}
-      {selectedCardId === "memory" && <HelpMemoryKnobsDiagram />}
-
-      {/* ── Controls List ── */}
-      <div className="flex flex-col gap-2.5">
-        <h3 className="text-[11.5px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
-          What You Can Change
-        </h3>
-
-        <div className="flex flex-col gap-2">
-          {activeCard.controls.map((item) => (
-            <HelpControlCard key={item.name} item={item} />
-          ))}
-        </div>
-      </div>
-
-      {/* ── Helpful Tips ── */}
-      {activeCard.tips && activeCard.tips.length > 0 && (
-        <div className="p-3 rounded-xl border border-[rgba(var(--border),0.1)] bg-[rgba(var(--foreground),0.02)] flex flex-col gap-1.5 text-[12px] text-[rgb(var(--foreground-muted))]">
-          {activeCard.tips.map((tip, idx) => (
-            <p key={idx} className="flex items-start gap-2">
-              <span className="text-[rgb(var(--accent))]">💡</span>
-              <span>{tip}</span>
-            </p>
-          ))}
-        </div>
-      )}
     </div>
   );
 });

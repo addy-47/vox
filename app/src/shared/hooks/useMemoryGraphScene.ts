@@ -6,7 +6,6 @@ import {
   GNode,
   GLink,
   MemoryCategory,
-  getCollectionColor,
   getActiveDynamicPalette,
 } from "@/shared/components/memory/memoryGraphTypes";
 
@@ -41,6 +40,12 @@ interface ConduitSegment {
   sessionId: string;
 }
 
+// Reusable scratch colors to eliminate per-frame/per-link allocations
+const SCRATCH_COLOR_1 = new THREE.Color();
+const SCRATCH_COLOR_2 = new THREE.Color();
+const SCRATCH_START_COLOR = new THREE.Color();
+const LIGHT_BG_COLOR = new THREE.Color(0xf8fafc);
+
 export function useMemoryGraphScene({
   canvasContainerRef,
   facts,
@@ -68,6 +73,7 @@ export function useMemoryGraphScene({
   const coreNucleusMeshRef = useRef<THREE.Mesh | null>(null);
   const coreInnerRingRef = useRef<THREE.Mesh | null>(null);
   const coreOuterRingRef = useRef<THREE.Mesh | null>(null);
+  const wakeLoopRef = useRef<() => void>(() => {});
 
   // Graph Data Refs
   const gNodesRef = useRef<GNode[]>([]);
@@ -159,7 +165,7 @@ export function useMemoryGraphScene({
     const observer = new MutationObserver(updateTheme);
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["data-theme", "style", "class"],
+      attributeFilter: ["data-theme"],
     });
     return () => observer.disconnect();
   }, []);
@@ -193,6 +199,15 @@ export function useMemoryGraphScene({
     const sq = searchQueryRef.current.trim().toLowerCase();
     const hasSearch = sq.length > 0;
     const isLight = isLightModeRef.current;
+    const dynamicPalette = getActiveDynamicPalette(isLight);
+    const categoryColorMap: Record<string, string> = {
+      personal: dynamicPalette.personal.main,
+      objective: dynamicPalette.objective.main,
+      workdone: dynamicPalette.workdone.main,
+      blocker: dynamicPalette.blocker.main,
+      next_step: dynamicPalette.next_step.main,
+      pitfall: dynamicPalette.pitfall.main,
+    };
 
     gNodes.forEach((node, i) => {
       const visible = isNodeVisible(node);
@@ -202,14 +217,14 @@ export function useMemoryGraphScene({
       const isSessionSelected = selSessionId !== null && nodeSessionId === selSessionId;
       const isOtherSession = selSessionId !== null && nodeSessionId !== selSessionId && node.collection !== "personal";
 
-      const palette = getCollectionColor(node.collection, false, isLight);
+      const colHexMain = categoryColorMap[node.collection] ?? dynamicPalette.objective.main;
 
       let radius: number;
       let colHex: string;
 
       if (!visible) {
         radius = 0.001;
-        colHex = palette.main;
+        colHex = colHexMain;
       } else if (hasSearch && !matchesSearch) {
         radius = 1.2;
         colHex = isLight ? "#94a3b8" : "#283344";
@@ -221,12 +236,12 @@ export function useMemoryGraphScene({
         // Highlighted session nodes
         const isAnchor = node.id.startsWith("anchor_");
         radius = isSelected ? 12 : isAnchor ? 7.2 : node.collection === "personal" ? 6.0 : 5.0;
-        colHex = palette.main;
+        colHex = colHexMain;
       } else {
         // Normal state
         const isAnchor = node.id.startsWith("anchor_");
         radius = isSelected ? 12 : isAnchor ? 6.2 : node.collection === "personal" ? 5.5 : 3.8;
-        colHex = palette.main;
+        colHex = colHexMain;
       }
 
       // Position Node
@@ -272,11 +287,21 @@ export function useMemoryGraphScene({
     const isLight = isLightModeRef.current;
 
     const totalLines = conduits.length + gLinks.length;
-    const posArray = new Float32Array(totalLines * 6);
-    const colArray = new Float32Array(totalLines * 6);
+    const requiredFloats = totalLines * 6;
+    const geo = lineSegments.geometry as THREE.BufferGeometry;
+    let posAttr = geo.getAttribute("position") as THREE.BufferAttribute;
+    let colAttr = geo.getAttribute("color") as THREE.BufferAttribute;
 
-    const colorHelper = new THREE.Color();
-    const colorHelper2 = new THREE.Color();
+    // Only reallocate if line capacity genuinely exceeds preallocated limit (40,000 lines = 240,000 floats)
+    if (!posAttr || posAttr.array.length < requiredFloats) {
+      posAttr = new THREE.BufferAttribute(new Float32Array(Math.max(requiredFloats, 240000)), 3);
+      colAttr = new THREE.BufferAttribute(new Float32Array(Math.max(requiredFloats, 240000)), 3);
+      geo.setAttribute("position", posAttr);
+      geo.setAttribute("color", colAttr);
+    }
+
+    const posArray = posAttr.array as Float32Array;
+    const colArray = colAttr.array as Float32Array;
     let writePtr = 0;
 
     // 1. Write Umbilical Conduits
@@ -291,28 +316,34 @@ export function useMemoryGraphScene({
       const isHighlight = selSessionId !== null && cond.sessionId === selSessionId;
       const isDimmed = selSessionId !== null && cond.sessionId !== selSessionId;
 
-      colorHelper.set(cond.col0);
-      colorHelper2.set(cond.col1);
+      SCRATCH_COLOR_1.set(cond.col0);
+      SCRATCH_COLOR_2.set(cond.col1);
 
       if (isDimmed) {
         const dimHex = isLight ? "#cbd5e1" : "#1e293b";
-        colorHelper.set(dimHex);
-        colorHelper2.set(dimHex);
+        SCRATCH_COLOR_1.set(dimHex);
+        SCRATCH_COLOR_2.set(dimHex);
       } else if (isHighlight) {
         // Extra vibrant for active branch
-        colorHelper.multiplyScalar(1.2);
-        colorHelper2.multiplyScalar(1.2);
+        SCRATCH_COLOR_1.multiplyScalar(1.2);
+        SCRATCH_COLOR_2.multiplyScalar(1.2);
       }
 
-      colArray[writePtr + 0] = colorHelper.r;
-      colArray[writePtr + 1] = colorHelper.g;
-      colArray[writePtr + 2] = colorHelper.b;
-      colArray[writePtr + 3] = colorHelper2.r;
-      colArray[writePtr + 4] = colorHelper2.g;
-      colArray[writePtr + 5] = colorHelper2.b;
+      colArray[writePtr + 0] = SCRATCH_COLOR_1.r;
+      colArray[writePtr + 1] = SCRATCH_COLOR_1.g;
+      colArray[writePtr + 2] = SCRATCH_COLOR_1.b;
+      colArray[writePtr + 3] = SCRATCH_COLOR_2.r;
+      colArray[writePtr + 4] = SCRATCH_COLOR_2.g;
+      colArray[writePtr + 5] = SCRATCH_COLOR_2.b;
 
       writePtr += 6;
     });
+
+    // Build O(1) session anchor lookup map (M-F12)
+    const anchorMap = new Map<string, SessionAnchor>();
+    for (let i = 0; i < sessionAnchors.length; i++) {
+      anchorMap.set(sessionAnchors[i].sId, sessionAnchors[i]);
+    }
 
     // 2. Write Graph Links
     gLinks.forEach((link) => {
@@ -325,8 +356,7 @@ export function useMemoryGraphScene({
         srcY = 0;
         srcZ = 0;
       } else if (link.sourceIndex === -2) {
-        const sKey = link.fromId;
-        const anchor = sessionAnchors.find((a) => a.sId === sKey);
+        const anchor = anchorMap.get(link.fromId);
         if (anchor) {
           srcX = anchor.x;
           srcY = anchor.y;
@@ -351,45 +381,42 @@ export function useMemoryGraphScene({
       const isHighlight = selSessionId !== null && (link.fromId === selSessionId || link.toId === selSessionId);
       const isDimmed = selSessionId !== null && !isHighlight && link.relation !== "CORE_IDENTITY";
 
-      colorHelper.set(link.color);
+      SCRATCH_COLOR_1.set(link.color);
 
       if (isDimmed) {
         const dimHex = isLight ? "#94a3b8" : "#334155";
-        colorHelper.set(dimHex);
+        SCRATCH_COLOR_1.set(dimHex);
         const dimFactor = isLight ? 0.45 : 0.22;
-        colArray[writePtr + 0] = colorHelper.r * dimFactor;
-        colArray[writePtr + 1] = colorHelper.g * dimFactor;
-        colArray[writePtr + 2] = colorHelper.b * dimFactor;
-        colArray[writePtr + 3] = colorHelper.r * dimFactor;
-        colArray[writePtr + 4] = colorHelper.g * dimFactor;
-        colArray[writePtr + 5] = colorHelper.b * dimFactor;
+        colArray[writePtr + 0] = SCRATCH_COLOR_1.r * dimFactor;
+        colArray[writePtr + 1] = SCRATCH_COLOR_1.g * dimFactor;
+        colArray[writePtr + 2] = SCRATCH_COLOR_1.b * dimFactor;
+        colArray[writePtr + 3] = SCRATCH_COLOR_1.r * dimFactor;
+        colArray[writePtr + 4] = SCRATCH_COLOR_1.g * dimFactor;
+        colArray[writePtr + 5] = SCRATCH_COLOR_1.b * dimFactor;
       } else {
         // Never multiply by 0.45 in light mode (which causes muddy black clumps at convergence points).
         // Keep true vibrant chromatic colors with gentle soft gradient.
-        const startColor = colorHelper.clone();
+        SCRATCH_START_COLOR.copy(SCRATCH_COLOR_1);
         if (isLight) {
-          startColor.lerp(new THREE.Color(0xf8fafc), 0.12);
+          SCRATCH_START_COLOR.lerp(LIGHT_BG_COLOR, 0.12);
         } else {
-          startColor.multiplyScalar(0.88);
+          SCRATCH_START_COLOR.multiplyScalar(0.88);
         }
 
-        colArray[writePtr + 0] = startColor.r;
-        colArray[writePtr + 1] = startColor.g;
-        colArray[writePtr + 2] = startColor.b;
-        colArray[writePtr + 3] = colorHelper.r;
-        colArray[writePtr + 4] = colorHelper.g;
-        colArray[writePtr + 5] = colorHelper.b;
+        colArray[writePtr + 0] = SCRATCH_START_COLOR.r;
+        colArray[writePtr + 1] = SCRATCH_START_COLOR.g;
+        colArray[writePtr + 2] = SCRATCH_START_COLOR.b;
+        colArray[writePtr + 3] = SCRATCH_COLOR_1.r;
+        colArray[writePtr + 4] = SCRATCH_COLOR_1.g;
+        colArray[writePtr + 5] = SCRATCH_COLOR_1.b;
       }
 
       writePtr += 6;
     });
 
-    const lineGeo = lineSegments.geometry;
-    lineGeo.setAttribute("position", new THREE.BufferAttribute(posArray.subarray(0, writePtr), 3));
-    lineGeo.setAttribute("color", new THREE.BufferAttribute(colArray.subarray(0, writePtr), 3));
-    lineGeo.setDrawRange(0, writePtr / 3);
-    lineGeo.attributes.position.needsUpdate = true;
-    lineGeo.attributes.color.needsUpdate = true;
+    posAttr.needsUpdate = true;
+    colAttr.needsUpdate = true;
+    geo.setDrawRange(0, writePtr / 3);
   }, []);
 
   // ── Dynamic Chronological Time-Tree Algorithm ──────────────────────────────
@@ -436,6 +463,8 @@ export function useMemoryGraphScene({
       const rIdentity = 340;
       const nIdent = identityFacts.length;
       const phiWeight = (1 + Math.sqrt(5)) / 2;
+      const dynamicPalette = getActiveDynamicPalette(isLight);
+      const coreAccentHex = dynamicPalette.personal.main;
 
       identityFacts.forEach((fact, i) => {
         const theta = (2 * Math.PI * i) / phiWeight;
@@ -445,7 +474,7 @@ export function useMemoryGraphScene({
         const y = (rIdentity * 0.72) * Math.sin(phi) * Math.sin(theta);
         const z = (rIdentity * 0.88) * Math.cos(phi);
 
-        const colPalette = getCollectionColor("personal", false, isLight);
+        const colPalette = dynamicPalette.personal;
 
         gNodes.push({
           id: fact.id,
@@ -481,14 +510,12 @@ export function useMemoryGraphScene({
       const sortedSessionKeys = Array.from(sessionMap.keys()).sort((a, b) => {
         const factsA = sessionMap.get(a)!;
         const factsB = sessionMap.get(b)!;
-        const minA = Math.min(...factsA.map((f) => f.created_at || 0));
-        const minB = Math.min(...factsB.map((f) => f.created_at || 0));
+        const minA = factsA.reduce((min, f) => Math.min(min, f.created_at || 0), Infinity);
+        const minB = factsB.reduce((min, f) => Math.min(min, f.created_at || 0), Infinity);
         return minA - minB;
       });
 
       const nSessions = sortedSessionKeys.length;
-      const dynamicPalette = getActiveDynamicPalette(isLight);
-      const coreAccentHex = dynamicPalette.personal.main;
 
       sortedSessionKeys.forEach((sKey, sIdx) => {
         const clusterFacts = sessionMap.get(sKey)!;
@@ -512,7 +539,7 @@ export function useMemoryGraphScene({
         const sessionAnchor = new THREE.Vector3(trunkX, trunkY, trunkZ);
 
         const dominantCat = (clusterFacts[0]?.fact_type as MemoryCategory) || "objective";
-        const clusterPalette = getCollectionColor(dominantCat, false, isLight);
+        const clusterPalette = dynamicPalette[dominantCat] ?? dynamicPalette.objective;
 
         sessionAnchors.push({
           sId: sKey,
@@ -592,7 +619,7 @@ export function useMemoryGraphScene({
 
         clusterFacts.forEach((fact, fIdx) => {
           const cat = (fact.fact_type as MemoryCategory) || "objective";
-          const palette = getCollectionColor(cat, false, isLight);
+          const palette = dynamicPalette[cat] ?? dynamicPalette.objective;
 
           // Foliage phyllotaxis around session anchor with healthy organic separation
           const phiFoliage = (1 + Math.sqrt(5)) / 2;
@@ -673,6 +700,7 @@ export function useMemoryGraphScene({
   useEffect(() => {
     updateWebGLBuffers();
     updateLineHighlighting();
+    wakeLoopRef.current();
   }, [searchQuery, selectedCollection, selectedFactId, selectedSessionId, updateLineHighlighting, updateWebGLBuffers]);
 
   // Topology Update Effect: triggers whenever facts array or light mode changes
@@ -692,15 +720,18 @@ export function useMemoryGraphScene({
       y: node.y,
       z: node.z + 350,
     };
+    wakeLoopRef.current();
   }, [selectedFactId]);
 
   // Navigation helpers
   const recenter = useCallback(() => {
     flyToTargetRef.current = { x: 0, y: 0, z: 3100 };
+    wakeLoopRef.current();
   }, []);
 
   const focusCore = useCallback(() => {
     flyToTargetRef.current = { x: 0, y: 0, z: 750 };
+    wakeLoopRef.current();
   }, []);
 
   const flyToSession = useCallback((sessionId: string) => {
@@ -713,6 +744,7 @@ export function useMemoryGraphScene({
       y: anchor.y,
       z: anchor.z + 450,
     };
+    wakeLoopRef.current();
   }, []);
 
   const flyToNode = useCallback((factId: string) => {
@@ -725,6 +757,7 @@ export function useMemoryGraphScene({
       y: node.y,
       z: node.z + 320,
     };
+    wakeLoopRef.current();
   }, []);
 
   const zoomIn = useCallback(() => {
@@ -736,6 +769,7 @@ export function useMemoryGraphScene({
       if (dist > 300) {
         cam.position.addScaledVector(dir, Math.min(450, dist - 250));
         controlsRef.current.update();
+        wakeLoopRef.current();
       }
     }
   }, []);
@@ -747,8 +781,9 @@ export function useMemoryGraphScene({
       const dir = new THREE.Vector3().subVectors(cam.position, target).normalize();
       const dist = cam.position.distanceTo(target);
       if (dist < 16000) {
-        cam.position.addScaledVector(dir, 450);
+        cam.position.addScaledVector(dir, Math.min(450, 16500 - dist));
         controlsRef.current.update();
+        wakeLoopRef.current();
       }
     }
   }, []);
@@ -773,7 +808,7 @@ export function useMemoryGraphScene({
     // 3. Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(initialWidth, initialHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setClearColor(0x000000, 0);
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
@@ -944,16 +979,56 @@ export function useMemoryGraphScene({
     const tempTargetVec = new THREE.Vector3();
     const tempCamVec = new THREE.Vector3();
     let lastRenderTimestamp = 0;
+    let lastActivityTimestamp = performance.now();
+    let isSuspended = false;
+
+    const wakeLoop = () => {
+      lastActivityTimestamp = performance.now();
+      if (isSuspended) {
+        isSuspended = false;
+        if (animFrameRef.current === null) {
+          animFrameRef.current = requestAnimationFrame(render);
+        }
+      }
+    };
+    wakeLoopRef.current = wakeLoop;
+
+    const onControlsChange = () => {
+      lastActivityTimestamp = performance.now();
+      wakeLoop();
+    };
+    controls.addEventListener("change", onControlsChange);
+
+    const domEl = renderer.domElement;
+    domEl.addEventListener("pointermove", wakeLoop, { passive: true });
+    domEl.addEventListener("pointerdown", wakeLoop, { passive: true });
+    domEl.addEventListener("wheel", wakeLoop, { passive: true });
+    domEl.addEventListener("touchstart", wakeLoop, { passive: true });
 
     const render = (timestamp: number) => {
-      animFrameRef.current = requestAnimationFrame(render);
+      if (isSuspended) return;
 
       // Skip render when tab/window is hidden
-      if (document.hidden) return;
+      if (document.hidden) {
+        animFrameRef.current = requestAnimationFrame(render);
+        return;
+      }
+
+      // Check if actively moving via flyTo lerp or recent control change
+      const isMoving = Boolean(flyToTargetRef.current) || (timestamp - lastActivityTimestamp < 300);
+
+      // Suspend render loop after 4 seconds of inactivity
+      if (!isMoving && (timestamp - lastActivityTimestamp > 4000)) {
+        isSuspended = true;
+        animFrameRef.current = null;
+        controls.update();
+        renderer.render(scene, camera);
+        return;
+      }
+
+      animFrameRef.current = requestAnimationFrame(render);
 
       // Dynamic frame pacing: 60 FPS (16ms) during interaction / flyTo; 30 FPS (32ms) when resting
-      const orbitState = (controls as unknown as { state?: number }).state;
-      const isMoving = Boolean(flyToTargetRef.current) || (orbitState !== undefined && orbitState !== -1);
       const minInterval = isMoving ? 16 : 32;
       if (timestamp - lastRenderTimestamp < minInterval) return;
       lastRenderTimestamp = timestamp;
@@ -1008,6 +1083,12 @@ export function useMemoryGraphScene({
 
     // Teardown
     return () => {
+      wakeLoopRef.current = () => {};
+      controls.removeEventListener("change", onControlsChange);
+      domEl.removeEventListener("pointermove", wakeLoop);
+      domEl.removeEventListener("pointerdown", wakeLoop);
+      domEl.removeEventListener("wheel", wakeLoop);
+      domEl.removeEventListener("touchstart", wakeLoop);
       if (animFrameRef.current !== null) {
         cancelAnimationFrame(animFrameRef.current);
         animFrameRef.current = null;
@@ -1018,6 +1099,8 @@ export function useMemoryGraphScene({
       if (renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
+      instancedMesh.dispose();
+      instancedRing.dispose();
       sphereGeo.dispose();
       nodeMat.dispose();
       ringGeo.dispose();

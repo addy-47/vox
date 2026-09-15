@@ -1,22 +1,20 @@
 import { memo } from "react";
-import { motion } from "framer-motion";
-import { Orbit } from "lucide-react";
 
 export const HelpHistoryDiagram = memo(() => {
   return (
-    <div className="rounded-2xl border border-[rgba(var(--border),0.12)] bg-[rgba(var(--card),0.7)] p-4 flex flex-col gap-3 backdrop-blur-md">
+    <div className="flex flex-col gap-2.5 py-1">
       <div className="flex items-center justify-between">
-        <span className="text-[12px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-2">
+        <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[rgb(var(--foreground-muted))] flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))]" />
           Timeline Orbit Navigation
         </span>
-        <span className="text-[11px] text-[rgb(var(--foreground-muted))]">
+        <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60">
           Drag or press [ and ]
         </span>
       </div>
 
       {/* SVG Canvas */}
-      <div className="relative w-full h-36 rounded-xl bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.1)] overflow-hidden flex items-center justify-center">
+      <div className="relative w-full h-32 rounded-xl overflow-hidden flex items-center justify-center">
         <svg viewBox="0 0 200 130" className="w-44 h-32">
           {/* Orbital timeline track */}
           <ellipse
@@ -37,10 +35,9 @@ export const HelpHistoryDiagram = memo(() => {
           </text>
 
           {/* Rotating Sessions on Orbit */}
-          <motion.g
-            animate={{ rotate: 360 }}
-            transition={{ duration: 24, repeat: Infinity, ease: "linear" }}
-            style={{ transformOrigin: "100px 65px" }}
+          <g
+            className="animate-spin origin-center"
+            style={{ transformOrigin: "100px 65px", animationDuration: "24s" }}
           >
             {/* Session Node 1 */}
             <g transform="translate(165, 54)">
@@ -57,14 +54,8 @@ export const HelpHistoryDiagram = memo(() => {
               <circle r="8" fill="rgba(167, 139, 250, 0.25)" stroke="#a78bfa" strokeWidth="1.5" />
               <circle r="3.5" fill="#a78bfa" />
             </g>
-          </motion.g>
+          </g>
         </svg>
-
-        {/* Orbit scrubbing pill */}
-        <div className="absolute bottom-2 px-3 py-1 rounded-full bg-[rgba(var(--card),0.9)] border border-[rgba(var(--border),0.15)] shadow-xs backdrop-blur-md flex items-center gap-1.5 text-[11px] text-[rgb(var(--foreground))]">
-          <Orbit size={12} className="text-[rgb(var(--accent))]" />
-          <span>Click any circle to reopen that conversation</span>
-        </div>
       </div>
     </div>
   );

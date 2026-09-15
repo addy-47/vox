@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback, memo } from "react";
 import { Search, X } from "lucide-react";
 import { FactRecord } from "@/services/memoryService";
-import { getCollectionColor } from "./memoryGraphTypes";
+import { getActiveDynamicPalette, MemoryCategory } from "./memoryGraphTypes";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 
@@ -11,6 +11,7 @@ interface SearchBarProps {
   onSelectNode: (factId: string | null) => void;
   className?: string;
   dropdownPlacement?: "bottom" | "top";
+  isLightMode?: boolean;
 }
 
 export const SearchBar = memo<SearchBarProps>(({
@@ -19,10 +20,13 @@ export const SearchBar = memo<SearchBarProps>(({
   onSelectNode,
   className,
   dropdownPlacement = "bottom",
+  isLightMode = false,
 }) => {
   const [value, setValue] = useState("");
   const [focused, setFocused] = useState(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const palette = useMemo(() => getActiveDynamicPalette(isLightMode), [isLightMode]);
 
   useEffect(() => {
     return () => {
@@ -95,7 +99,7 @@ export const SearchBar = memo<SearchBarProps>(({
             <span className="opacity-70 font-bold">{results.length}</span>
           </div>
           {results.map((fact) => {
-            const col = getCollectionColor(fact.fact_type);
+            const col = palette[fact.fact_type as MemoryCategory] ?? palette.objective;
             return (
               <button
                 key={fact.id}

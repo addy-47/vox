@@ -59,7 +59,12 @@ pub async fn checkpoint_source_db(path: &std::path::Path) -> Result<()> {
         .query("PRAGMA wal_checkpoint(TRUNCATE);", ())
         .await
         .context("wal_checkpoint failed")?;
-    while rows.next().await.context("wal_checkpoint row failed")?.is_some() {}
+    while rows
+        .next()
+        .await
+        .context("wal_checkpoint row failed")?
+        .is_some()
+    {}
     drop(conn);
     drop(db);
     Ok(())
