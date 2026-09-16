@@ -44,8 +44,8 @@ use crate::{
     ipc::{
         audio::list_audio_devices,
         memory::{
-            consolidate_personal_memory, export_personal_memory, get_active_facts,
-            get_personal_memory, import_personal_memory, save_personal_memory,
+            consolidate_personal_memory, get_active_facts, get_personal_memory,
+            save_personal_memory,
         },
         monitoring::{get_profiler_snapshot, get_runtime_snapshot, record_memory_profile_event},
         notifications::{
@@ -665,8 +665,6 @@ pub fn run() {
             get_personal_memory,
             save_personal_memory,
             consolidate_personal_memory,
-            export_personal_memory,
-            import_personal_memory,
             get_active_facts,
             // Voices
             list_voices,

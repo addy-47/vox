@@ -44,7 +44,7 @@ pub use ml::{
     tokenizer::estimate_tokens,
     unload_all_onnx_models, unload_memory_pipeline_onnx_models,
 };
-pub use personal::{consolidate_personal_memory, export_personal_memory, import_personal_memory};
+pub use personal::consolidate_personal_memory;
 
 pub use crate::core::error::MemoryError;
 

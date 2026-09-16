@@ -21,35 +21,24 @@ import {
   toStatusLabel,
   isDotActive,
 } from "@/shared/hooks/useHomePage";
-import ReactMarkdown from "react-markdown";
-
-const MarkdownComponents = {
-  h1: ({node, ...props}: any) => <h1 className="text-[13px] font-bold mt-1 mb-0.5" {...props} />,
-  h2: ({node, ...props}: any) => <h2 className="text-[13px] font-bold mt-1 mb-0.5" {...props} />,
-  h3: ({node, ...props}: any) => <h3 className="text-[12px] font-bold mt-1 mb-0.5" {...props} />,
-  p: ({node, ...props}: any) => <p className="mb-1 last:mb-0 inline-block w-full" {...props} />,
-  ul: ({node, ...props}: any) => <ul className="list-disc list-inside mb-1 pl-1" {...props} />,
-  ol: ({node, ...props}: any) => <ol className="list-decimal list-inside mb-1 pl-1" {...props} />,
-  li: ({node, ...props}: any) => <li className="ml-0" {...props} />,
-  code: ({node, ...props}: any) => <code className="bg-[rgba(var(--foreground),0.06)] px-1 rounded font-mono text-[12px]" {...props} />,
-};
+import { Markdown } from "@/shared/ui/Markdown";
 
 const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; id: number } }) => (
   <React.Fragment>
     {turn.user && (
-      <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--foreground-muted))] font-normal text-[13px] leading-relaxed prose prose-invert select-text p-3 rounded-2xl bg-[rgb(var(--card))]/80 border border-[rgba(var(--border),0.12)]">
+      <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--foreground-muted))] font-normal text-[13px] leading-relaxed select-text p-3 rounded-2xl bg-[rgb(var(--card))]/80 border border-[rgba(var(--border),0.12)]">
         <span className="text-[11px] tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-1 font-bold">
           {DIALOGUE_COPY.userBadge}
         </span>
-        <ReactMarkdown components={MarkdownComponents}>{turn.user}</ReactMarkdown>
+        <Markdown content={turn.user} variant="bubble" />
       </div>
     )}
     {turn.assistant && (
-      <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed prose prose-invert select-text p-3 rounded-2xl bg-[rgb(var(--card))]/90 border border-[rgba(var(--accent),0.2)]">
+      <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed select-text p-3 rounded-2xl bg-[rgb(var(--card))]/90 border border-[rgba(var(--accent),0.2)]">
         <span className="text-[11px] tracking-widest text-[rgb(var(--accent))]/80 uppercase block mb-1 font-bold">
           {DIALOGUE_COPY.assistantBadge}
         </span>
-        <ReactMarkdown components={MarkdownComponents}>{turn.assistant}</ReactMarkdown>
+        <Markdown content={turn.assistant} variant="bubble" />
       </div>
     )}
   </React.Fragment>

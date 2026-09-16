@@ -100,14 +100,6 @@ Manages the single evolving Personal Memory markdown document.
   - If `comments` None: verifies ingestion queue is quiet, fetches all `status = 'active'` personal facts, merges them via LLM, marks facts `'consolidated'`, and updates the document.
   - Broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
-#### `export_personal_memory(targetPath: String, projectId: Option<String>)` — [NEW]
-- **Purpose**: Exports the current Personal Memory document to a local markdown file.
-- **Behavior**: Reads document from Turso `personal_memory` and writes to specified file path on host disk.
-
-#### `import_personal_memory(sourcePath: String, projectId: Option<String>)` — [NEW]
-- **Purpose**: Overwrites or initializes the Personal Memory document from an external markdown file.
-- **Behavior**: Reads markdown file from host disk, validates content, updates `personal_memory`, increments version counter, and broadcasts `IpcEvent::PersonalMemoryUpdated`.
-
 #### `get_active_facts(projectId: Option<String>)` — [NEW]
 - **Purpose**: Returns all `status = 'active'` facts from `memory_facts` for memory graph visualization.
 - **Behavior**: Queries all active fact rows (all `fact_type` values: `personal`, `objective`, `workdone`, `blocker`, `next_step`, `pitfall`), optionally scoped by `project_id` via the session join. Returns `Vec<FactRecord>` ordered by `created_at DESC`. Read-only; no working memory mutation.
@@ -258,7 +250,7 @@ Every event emitted by the backend via `emit_ipc` or `emit_ipc_to` is mapped dir
 | `show_toast` | `ToastPayload { title, message, level, duration_ms? }` | Ephemeral toast popups for user feedback. |
 | `notification_created` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when a persistent actionable notification or alert is created. |
 | `notification_updated` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when an active notification status changes (e.g. marked read or updated). |
-| `personal_memory_updated`| `PersonalMemoryRecord { id, project_id, content, version, last_consolidated_at, updated_at }` | Emitted when Personal Memory is consolidated, edited, imported, or regenerated. |
+| `personal_memory_updated`| `PersonalMemoryRecord { id, project_id, content, version, last_consolidated_at, updated_at }` | Emitted when Personal Memory is consolidated, edited, or regenerated. |
 | `sessions_changed` | `void` | Signals frontend when sessions are updated asynchronously / out-of-band by the backend (e.g. background title generation or compaction cleanup). Frontend refetches the session list. |
 | `settings-updated` | `void` | Signals frontend that application settings were hot-reloaded. |
 | `toggle_tray` | `void` | Toggles tray drawer visibility. |

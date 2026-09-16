@@ -50,6 +50,10 @@
    _Single test:_ `cargo nextest run --test <test_file> --release --nocapture --test-threads=1`
    > ⏱️ **Full Suite Baseline Run Time:** ~45.5s test execution (~45s wall-clock with compilation cache hit; ~2m30s cold compile + run) across all 105 tests in 21 binaries (across Seams 1–20).
 4. **External API Keys (`#[ignore]`):** Cloud provider tests (Nvidia, Gemini Live, Deepgram, OpenAI, ElevenLabs) must be marked `#[ignore]` and run manually only with explicit user approval: `cargo nextest -- --ignored`.
+5. **Local Turso Database CLI (`tursodb`):** For inspecting or querying the local Turso SQLite database (`~/.vox/vox.db`), use the native `tursodb` CLI tool:
+   ```bash
+   tursodb ~/.vox/vox.db "SELECT name FROM sqlite_master WHERE type='table';"
+   ```
 
 ---
 
@@ -102,5 +106,9 @@
 - **Frontend Adversarial Perf Review, Settings Refactor, UI Hardening & 9-Bug Fix Sprint (2026-09-15):** Full adversarial perf review (Memory/Help/Edge/Monitoring); Memory/Settings architecture refactored to `working_memory`/`personal_memory`; universal Help desk editorial system; session rail scope locked to Home only; `usePanelState` wide-viewport single-panel enforcement; EdgePanel X button dynamic side; SearchBar underline style + responsive width; `updateLineHighlighting` graph-line search/collection filter; test button + legend raised to `z-[55]`; `pnpm build` clean throughout.
 - **Panel Exclusivity Threshold & Memory Polish (2026-09-15):** Fixed panel exclusivity in `usePanelState` (<1280px strictly enforces single-panel page-wide exclusivity with resize listener); restored Memory `SearchBar` as an always-visible underline search input dynamically sized with safe trigger margins; converted `MemorySessionRail` filter input to underline styling; resolved light-mode theme variables in `MemoryNodeTooltip`; `pnpm build` validated.
 - **History CalendarPicker, Clock Arc Polish & Bottom Dock Stacking Fix (2026-09-16):** Built interactive `CalendarPicker` for date/range filtering with session dots in `HistoryListView`; corrected selected cell text visibility for light theme; adjusted `CentralClockNode` window arc thickness and time span safe-zone padding; eliminated stacking context trap by removing `contain: layout style` from `<main>` and mounting Home Test button and Memory Legend Overlay via `createPortal(..., document.body)` so they sit unmasked at `z-[55]` above `BottomDockFeather` (`z-[38]`).
+- **Shared Accent-Driven Markdown UI & Personal Memory Formatting (2026-09-16):** Created shared `<Markdown />` UI component with Liquid Space accent tokens, loose-heading auto-normalization, and multi-variant support (`document`, `bubble`, `preview`); unified markdown rendering across 5 files (`Memory`, `Home`, `ActiveTranscript`, `DetailPanel`, `PersonaCard`); formatted `personal_memory` markdown in `vox.db` and added `tursodb` CLI invariant 3.5; decommissioned backend file import/export in favor of client-side copy; surfaced live unconsolidated identity fact counts on Consolidate trigger.
+- **Personal Memory Dossier Sheet Architecture (2026-09-16):** Rebuilt Personal Memory drawer layout with Option A centered Dossier Sheet design (`max-w-3xl`, `glass-card`, `backdrop-blur-xl`, integrated header with version and updated timestamps, compact heading hierarchy for `document` variant).
+- **Personal Memory Two-Column Staging & Computational Synthesis (2026-09-16):** Implemented full-width 50%/50% responsive 2-column grid layout (collapsing to 2-row on mobile/tablet) pairing canonical read-only DB dossier with interactive Staging Slate (`PersonalMemoryStagingCard`); unified skeleton card into a single cohesive card with in-place Import and Edit header buttons; built fixed-viewport height with independent inner scrolling; integrated `PixelSynthesisCanvas` rendering organic multi-wave dot matrix during LLM consolidation and canonical saves; replaced gimmicky flow beam with smooth left-card pixel assimilation and softened editor-to-skeleton transition.
+
 
 

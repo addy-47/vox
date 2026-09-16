@@ -52,10 +52,21 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
     draftSettings?.interaction?.pipeline_mode === "realtime" &&
     ((draftSettings?.realtime?.active === "gemini_live" && !(draftSettings?.realtime?.gemini_live?.api_key || (draftSettings?.realtime as any)?.gemini?.api_key)?.trim()) ||
      (draftSettings?.realtime?.active === "deepgram_voice_agent" && !(draftSettings?.realtime?.deepgram_voice_agent?.api_key || (draftSettings?.realtime as any)?.deepgram?.api_key)?.trim()));
-  const isMissingCloudKey = isCloudLlmMissingKey || isCloudSttMissingKey || isRealtimeMissingKey;
+
+  const isDomainMissingCloudKey = useMemo(() => {
+    if (domain.id === "models") {
+      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+      return isRealtime ? isRealtimeMissingKey : (isCloudLlmMissingKey || isCloudSttMissingKey);
+    }
+    if (domain.id === "interaction") {
+      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+      return isRealtime ? isRealtimeMissingKey : false;
+    }
+    return false;
+  }, [domain.id, draftSettings?.interaction?.pipeline_mode, isRealtimeMissingKey, isCloudLlmMissingKey, isCloudSttMissingKey]);
 
   const handleSave = () => {
-    if (isMissingCloudKey) return;
+    if (isDomainMissingCloudKey) return;
     commitChanges();
   };
 
@@ -87,7 +98,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
             {(layoutMode === "full-max" || layoutMode === "full-min") && (
               <AnimatePresence>
                 {/* Mode A: Explicit Restart Required Bar (ONLY for Type 3 Restart or Missing Cloud Key) */}
-                {hasChanges && (requiresRestart || isMissingCloudKey) && (
+                {hasChanges && (requiresRestart || isDomainMissingCloudKey) && (
                   <motion.div
                     key="restart-footer"
                     initial={{ opacity: 0, height: 0 }}
@@ -96,7 +107,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                     transition={{ duration: 0.2 }}
                     className="w-full p-3 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
                   >
-                    {isMissingCloudKey ? (
+                    {isDomainMissingCloudKey ? (
                       <>
                         <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
                           <AlertCircle size={14} /> {SETTINGS_COPY.apiKeyRequired}

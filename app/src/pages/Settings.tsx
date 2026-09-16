@@ -328,7 +328,7 @@ export const Settings: React.FC = () => {
 
           <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[95px] space-y-5 sm:space-y-6 animate-fade-in pr-0.5">
             {[...DOMAINS].sort((a, b) => {
-              const order = ["interaction", "models", "appearance", "memory", "history", "persona"];
+              const order = ["interaction", "models", "appearance", "working_memory", "personal_memory", "persona"];
               return order.indexOf(a.id) - order.indexOf(b.id);
             }).map((domain) => (
               <div key={domain.id} className="w-full glass-card rounded-2xl p-4 sm:p-5">

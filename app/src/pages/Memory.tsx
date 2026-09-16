@@ -8,27 +8,24 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  Edit3,
-  Download,
-  Upload,
+  Copy,
+  Check,
   Zap,
   Sparkles,
   PanelLeft,
+  FileText,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
 import {
   getPersonalMemory,
   savePersonalMemory,
   consolidatePersonalMemory,
-  exportPersonalMemory,
-  importPersonalMemory,
   getActiveFacts,
   type PersonalMemoryRecord,
   type FactRecord,
 } from "@/services/memoryService";
 import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
-import { EdgePanel, Tooltip } from "@/shared/ui";
+import { EdgePanel, Tooltip, Markdown } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
@@ -41,8 +38,10 @@ import {
   SearchBar,
   GraphControlDock,
   MemoryCategory,
+  PersonalMemoryStagingCard,
+  type StagingMode,
+  PixelSynthesisCanvas,
 } from "@/shared/components/memory";
-
 
 export const Memory: React.FC = memo(() => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -81,13 +80,14 @@ export const Memory: React.FC = memo(() => {
     return () => observer.disconnect();
   }, []);
 
-  // Drawer & Edit mode state
+  // Drawer & Staging mode state
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [draftContent, setDraftContent] = useState("");
+  const [stagingMode, setStagingMode] = useState<StagingMode>("idle");
   const [saving, setSaving] = useState(false);
   const [consolidating, setConsolidating] = useState(false);
-  const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [isCommitting, setIsCommitting] = useState(false);
+  const [leftFlash, setLeftFlash] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // ── Measure Container ──────────────────────────────────────────────────────
   const hasMountedRef = useRef(false);
@@ -150,6 +150,11 @@ export const Memory: React.FC = memo(() => {
     return counts;
   }, [facts]);
 
+  // Unconsolidated personal identity facts count
+  const unconsolidatedIdentityCount = useMemo(() => {
+    return facts.filter((f) => f.fact_type === "personal").length;
+  }, [facts]);
+
   // ── Node & Core Click Handlers ─────────────────────────────────────────────
   const handleSelectNode = useCallback((fact: FactRecord | null, pos?: { x: number; y: number }) => {
     setSelectedFact(fact);
@@ -179,71 +184,73 @@ export const Memory: React.FC = memo(() => {
   }, []);
 
   const handleCoreClick = useCallback(() => {
-    setEditing(false);
+    setStagingMode("idle");
     setDrawerOpen(true);
   }, []);
 
   // ── Drawer Handlers ────────────────────────────────────────────────────────
-  const handleStartEdit = useCallback(() => {
-    setDraftContent(personalMemory?.content ?? "");
-    setEditing(true);
-  }, [personalMemory]);
-
-  const handleCancelEdit = useCallback(() => {
-    setEditing(false);
-  }, []);
-
-  const handleSaveMemory = useCallback(async () => {
-    if (!personalMemory) return;
-    setSaving(true);
-    try {
-      const updated = await savePersonalMemory(draftContent, personalMemory.version);
-      setPersonalMemory(updated);
-      setEditing(false);
-    } catch (e) {
-      console.error("[Memory] Save failed:", e);
-    } finally {
-      setSaving(false);
-    }
-  }, [personalMemory, draftContent]);
+  const handleSaveStaging = useCallback(
+    async (content: string) => {
+      if (!personalMemory) return;
+      setSaving(true);
+      try {
+        const updated = await savePersonalMemory(content, personalMemory.version);
+        setPersonalMemory(updated);
+        // Activate left card pixel reconstruction layer & right card committed indicator
+        setIsCommitting(true);
+        setLeftFlash(true);
+        // Fade right card editor back to skeleton gently at 500ms
+        setTimeout(() => {
+          setStagingMode("idle");
+        }, 500);
+        // Conclude pixel assimilation on left card at 1200ms
+        setTimeout(() => {
+          setIsCommitting(false);
+          setLeftFlash(false);
+        }, 1200);
+      } catch (e) {
+        console.error("[Memory] Save failed:", e);
+        setIsCommitting(false);
+        setLeftFlash(false);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [personalMemory]
+  );
 
   const handleConsolidateNow = useCallback(async () => {
     setConsolidating(true);
+    setStagingMode("consolidating");
     try {
       const updated = await consolidatePersonalMemory();
       setPersonalMemory(updated);
       await refresh(true);
+      // Seamlessly settle with left card pixel synthesis
+      setIsCommitting(true);
+      setLeftFlash(true);
+      setTimeout(() => {
+        setStagingMode("idle");
+      }, 500);
+      setTimeout(() => {
+        setIsCommitting(false);
+        setLeftFlash(false);
+      }, 1200);
     } catch (e) {
       console.error("[Memory] Consolidate failed:", e);
+      setStagingMode("idle");
     } finally {
       setConsolidating(false);
     }
   }, [refresh]);
 
-  const handleExportDoc = useCallback(async () => {
-    try {
-      await exportPersonalMemory("~/personal_memory.md");
-      setExportMessage("Exported to ~/personal_memory.md");
-      setTimeout(() => setExportMessage(null), 3500);
-    } catch (e) {
-      console.error("[Memory] Export failed:", e);
-      setExportMessage("Export failed.");
-      setTimeout(() => setExportMessage(null), 3500);
-    }
-  }, []);
-
-  const handleImportDoc = useCallback(async () => {
-    try {
-      const updated = await importPersonalMemory("~/personal_memory.md");
-      setPersonalMemory(updated);
-      setExportMessage("Imported successfully.");
-      setTimeout(() => setExportMessage(null), 3500);
-    } catch (e) {
-      console.error("[Memory] Import failed:", e);
-      setExportMessage("Import failed.");
-      setTimeout(() => setExportMessage(null), 3500);
-    }
-  }, []);
+  const handleCopyDoc = useCallback(() => {
+    if (!personalMemory?.content) return;
+    navigator.clipboard.writeText(personalMemory.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [personalMemory?.content]);
 
   const handleRecenter = useCallback(() => graphRef.current?.recenter(), []);
   const handleZoomIn = useCallback(() => graphRef.current?.zoomIn(), []);
@@ -397,7 +404,7 @@ export const Memory: React.FC = memo(() => {
         open={drawerOpen}
         onClose={() => {
           setDrawerOpen(false);
-          setEditing(false);
+          setStagingMode("idle");
         }}
         position="global"
         ariaLabel={MEMORY_COPY.personalMemory}
@@ -407,11 +414,6 @@ export const Memory: React.FC = memo(() => {
             <span className="text-[13px] font-display font-black tracking-[0.16em] uppercase text-[rgb(var(--accent))]">
               {MEMORY_COPY.personalMemory}
             </span>
-            {personalMemory && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))] font-medium">
-                {`v${personalMemory.version}`}
-              </span>
-            )}
           </div>
         }
         subtitle={
@@ -421,105 +423,146 @@ export const Memory: React.FC = memo(() => {
         }
         headerActions={
           <div className="flex items-center gap-2 flex-wrap">
-            {exportMessage && (
-              <span className="text-[11px] font-mono text-[rgb(var(--accent))] px-2 py-1 rounded bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)]">
-                {exportMessage}
-              </span>
-            )}
-
-            {!editing ? (
-              <button
-                type="button"
-                onClick={handleStartEdit}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] transition-colors cursor-pointer"
-              >
-                <Edit3 size={12} /> {MEMORY_COPY.edit}
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={handleSaveMemory}
-                  disabled={saving}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.4)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] transition-colors disabled:opacity-50 cursor-pointer"
-                >
-                  {saving ? MEMORY_COPY.saving : MEMORY_COPY.save}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCancelEdit}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
-                >
-                  {MEMORY_COPY.cancel}
-                </button>
-              </>
-            )}
-
             <button
               type="button"
               onClick={handleConsolidateNow}
-              disabled={consolidating}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors disabled:opacity-50 cursor-pointer"
+              disabled={consolidating || stagingMode === "consolidating"}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all disabled:opacity-50 cursor-pointer shadow-sm",
+                stagingMode === "consolidating" || consolidating
+                  ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.5)] text-[rgb(var(--accent))]"
+                  : unconsolidatedIdentityCount > 0
+                  ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)]"
+                  : "bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+              )}
             >
-              <Zap size={12} className={cn(consolidating && "animate-pulse text-[rgb(var(--accent))]")} />
-              {consolidating ? MEMORY_COPY.consolidating : MEMORY_COPY.consolidate}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleExportDoc}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
-            >
-              <Download size={12} /> {MEMORY_COPY.export}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleImportDoc}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
-            >
-              <Upload size={12} /> {MEMORY_COPY.import}
+              <Zap
+                size={12}
+                className={cn((consolidating || stagingMode === "consolidating") && "animate-pulse text-[rgb(var(--accent))]")}
+              />
+              <span>
+                {consolidating || stagingMode === "consolidating"
+                  ? MEMORY_COPY.consolidating
+                  : MEMORY_COPY.consolidate}
+              </span>
+              {unconsolidatedIdentityCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-medium text-[rgb(var(--accent))]]">
+                  {unconsolidatedIdentityCount}
+                </span>
+              )}
             </button>
           </div>
         }
-        bodyClassName="px-8 py-5 max-h-[60vh] overflow-y-auto"
+        bodyClassName="px-4 sm:px-6 py-4 overflow-y-auto lg:overflow-hidden h-full flex flex-col min-h-0"
       >
         <ErrorBoundary name="MemoryDrawerContent">
-          {editing ? (
-            <div className="flex flex-col gap-2">
-              <textarea
-                value={draftContent}
-                onChange={(e) => setDraftContent(e.target.value)}
-                className="w-full h-[360px] bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.14)] rounded-2xl p-4 text-[13px] font-mono text-[rgb(var(--foreground))] leading-relaxed resize-none focus:outline-none focus:border-[rgba(var(--accent),0.45)] transition-colors"
-                spellCheck={false}
-              />
-              <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-                Tip: Supports GitHub Flavored Markdown headers, lists, and code blocks.
-              </span>
-            </div>
-          ) : (
-            <div className="prose dark:prose-invert prose-sm max-w-none text-[rgb(var(--foreground))] leading-relaxed select-text">
-              {personalMemory?.content ? (
-                <ReactMarkdown>{personalMemory.content}</ReactMarkdown>
-              ) : (
-                <p className="text-[rgb(var(--foreground-muted))] text-[13px] font-mono py-8 text-center">
-                  {MEMORY_COPY.noPersonalMemory}
-                </p>
-              )}
-            </div>
-          )}
+          <div className="w-full h-full flex-1 min-h-0">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 h-full min-h-0 w-full items-stretch">
+              {/* Left Column: Canonical Persistent Memory (DB Ground Truth) */}
+              <div
+                className={cn(
+                  "w-full h-full min-h-0 flex flex-col glass-card rounded-2xl border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--card),0.65)] backdrop-blur-xl p-5 sm:p-6 transition-all duration-500 overflow-hidden",
+                  leftFlash
+                    ? "ring-2 ring-[rgb(var(--accent))] shadow-[0_0_35px_rgba(var(--accent),0.35)] scale-[1.008]"
+                    : "shadow-2xl"
+                )}
+              >
+                {/* Dossier Header Bar */}
+                <div className="flex items-center justify-between gap-4 border-b border-[rgba(var(--border),0.12)] pb-3.5 min-h-[44px] shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] flex items-center justify-center text-[rgb(var(--accent))] shadow-sm">
+                      <FileText size={16} />
+                    </div>
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[13px] font-semibold tracking-wide text-[rgb(var(--foreground))]">
+                          {MEMORY_COPY.personalMemory}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
+                        {personalMemory
+                          ? `${MEMORY_COPY.lastUpdated} ${new Date(personalMemory.updated_at).toLocaleDateString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}`
+                          : MEMORY_COPY.identityLayer}
+                      </span>
+                    </div>
+                  </div>
 
-          {/* Document Provenance Metadata Footer */}
-          {personalMemory && (
-            <div className="mt-8 pt-3 border-t border-[rgba(var(--border),0.10)] flex items-center justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-              <span>
-                {MEMORY_COPY.version} {personalMemory.version}
-              </span>
-              <span>
-                {MEMORY_COPY.lastUpdated}: {new Date(personalMemory.updated_at).toLocaleString()}
-              </span>
+                  <div className="flex items-center gap-2">
+                    {personalMemory && (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-medium tracking-wide bg-[rgba(var(--accent),0.10)] border border-[rgba(var(--accent),0.22)] text-[rgb(var(--accent))]">
+                        {MEMORY_COPY.version} {personalMemory.version}
+                      </span>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleCopyDoc}
+                      disabled={!personalMemory?.content}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
+                      title="Copy personal memory markdown to clipboard"
+                    >
+                      {copied ? <Check size={12} className="text-[rgb(var(--accent))]" /> : <Copy size={12} />}
+                      {copied ? MEMORY_COPY.copied : MEMORY_COPY.copy}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Dossier Document Content with Inner Scrolling */}
+                <div className="relative flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 pt-3 leading-relaxed max-w-none">
+                  {/* Computational Pixel Reconstruction Overlay */}
+                  <div
+                    className={cn(
+                      "absolute inset-0 z-20 rounded-xl overflow-hidden bg-[rgba(var(--card),0.92)] backdrop-blur-md transition-all duration-500 pointer-events-none flex flex-col justify-between p-6",
+                      leftFlash
+                        ? "opacity-100 scale-100"
+                        : "opacity-0 scale-[0.98] pointer-events-none select-none invisible"
+                    )}
+                  >
+                    <div className="absolute inset-0 z-0">
+                      <PixelSynthesisCanvas active={leftFlash} />
+                    </div>
+                    <div className="relative z-10 flex items-center justify-between">
+                      <span className="text-[11px] font-mono text-[rgb(var(--accent))] animate-pulse font-medium">
+                        Rebuilding Personal Memory
+                      </span>
+                    </div>
+                    <div className="relative z-10 text-right text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+                      Updating Version
+                    </div>
+                  </div>
+
+                  {personalMemory?.content ? (
+                    <Markdown
+                      content={personalMemory.content}
+                      variant="document"
+                      autoHeadings
+                    />
+                  ) : (
+                    <p className="text-[rgb(var(--foreground-muted))] text-[13px] font-mono py-12 text-center">
+                      {MEMORY_COPY.noPersonalMemory}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Dynamic Workspace / Staging Slate */}
+              <PersonalMemoryStagingCard
+                canonicalContent={personalMemory?.content ?? ""}
+                mode={stagingMode}
+                onModeChange={setStagingMode}
+                onSave={handleSaveStaging}
+                unconsolidatedCount={unconsolidatedIdentityCount}
+                isSaving={saving}
+                isCommitting={isCommitting}
+              />
             </div>
-          )}
+          </div>
         </ErrorBoundary>
       </Drawer>
 

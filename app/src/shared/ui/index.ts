@@ -13,3 +13,5 @@ export * from "./EdgePanel";
 export * from "./BottomDockFeather";
 export * from "./TopRightCluster";
 export * from "./SessionContextMenu";
+export * from "./Markdown";
+
