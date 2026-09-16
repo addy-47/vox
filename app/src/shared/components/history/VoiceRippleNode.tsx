@@ -2,7 +2,7 @@ import React, { useMemo, memo } from "react";
 import { Trash2, Check, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
-import { type SessionRow } from "@/services/historyService";
+import { resolveSessionTitle, type SessionRow } from "@/services/historyService";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { formatClockTime, ORBIT_CARD_WIDTH } from "./orbitMath";
 
@@ -31,11 +31,11 @@ export const VoiceRippleNode = memo(
     onCancelDelete,
   }: VoiceRippleNodeProps) => {
     const previewText = useMemo(() => {
-      const msg = session.first_message || HISTORY_COPY.noTranscript;
-      const words = msg.trim().split(/\s+/);
-      if (words.length <= 7) return msg;
+      const title = resolveSessionTitle(session);
+      const words = title.trim().split(/\s+/);
+      if (words.length <= 7) return title;
       return words.slice(0, 7).join(" ") + "...";
-    }, [session.first_message]);
+    }, [session]);
 
     // Duration label removed in v2 — sessions no longer carry an ended_at timestamp.
     // Session length is not tracked at the persistence layer.

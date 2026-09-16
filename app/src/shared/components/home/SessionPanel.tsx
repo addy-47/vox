@@ -534,10 +534,9 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
     return map;
   }, [allProjects]);
 
-  // Combine all sessions for full reverse-chronological history view
+  // Combine all non-pinned sessions for full reverse-chronological history view (pinned shown separately above, never duplicated)
   const allChronologicalSessions = useMemo(() => {
     const list: SessionRow[] = [
-      ...pinnedSessions,
       ...uncategorizedSessions,
       ...projects.flatMap((p) => p.sessions),
     ];
@@ -553,7 +552,7 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
     return deduped.sort(
       (a, b) => sessionLastActivity(b) - sessionLastActivity(a)
     );
-  }, [pinnedSessions, uncategorizedSessions, projects]);
+  }, [uncategorizedSessions, projects]);
 
   const handleSelect = useCallback(
     (id: number) => {

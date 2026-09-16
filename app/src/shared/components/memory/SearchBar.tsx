@@ -24,6 +24,7 @@ export const SearchBar = memo<SearchBarProps>(({
 }) => {
   const [value, setValue] = useState("");
   const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const palette = useMemo(() => getActiveDynamicPalette(isLightMode), [isLightMode]);
@@ -63,36 +64,40 @@ export const SearchBar = memo<SearchBarProps>(({
   const isTopDropdown = dropdownPlacement === "top";
 
   return (
-    <div className={cn("relative pointer-events-auto", className)}>
-      <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl glass-card border border-[rgba(var(--border),0.14)] bg-[rgba(var(--card),0.85)] backdrop-blur-2xl shadow-xl w-[320px] transition-all focus-within:border-[rgba(var(--accent),0.5)]">
-        <Search size={14} className="text-[rgb(var(--accent))] shrink-0 opacity-80" />
+    <div className={cn("relative pointer-events-auto flex flex-col items-center w-full", className)}>
+      {/* ── Underline Search Input: Clean, responsive, zero pill or bulky borders ── */}
+      <div className="flex items-center gap-2 py-1 border-b border-[rgba(var(--foreground),0.18)] focus-within:border-[rgba(var(--accent),0.8)] transition-colors duration-200 w-full">
+        <Search size={13} className="text-[rgb(var(--accent))] shrink-0 opacity-70" />
         <input
+          ref={inputRef}
           type="text"
           value={value}
           onChange={handleChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setTimeout(() => setFocused(false), 200)}
           placeholder={MEMORY_COPY.searchPlaceholder}
-          className="w-full bg-transparent text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))] focus:outline-none"
+          className="flex-1 min-w-0 bg-transparent text-[12px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
         />
         {value && (
           <button
             type="button"
             onClick={handleClear}
-            className="p-0.5 rounded text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer"
+            className="p-0.5 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer shrink-0 transition-colors"
+            aria-label="Clear search"
           >
-            <X size={13} />
+            <X size={12} />
           </button>
         )}
       </div>
 
-      {/* Quick Search Dropdown Preview */}
+      {/* Quick Search Dropdown */}
       {focused && results.length > 0 && (
         <div
           className={cn(
-            "absolute left-1/2 -translate-x-1/2 w-[380px] rounded-2xl glass-card border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--card),0.96)] backdrop-blur-2xl shadow-2xl p-2 z-50 flex flex-col gap-1 overflow-hidden",
+            "absolute left-1/2 -translate-x-1/2 rounded-2xl glass-card border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--card),0.96)] backdrop-blur-2xl shadow-2xl p-2 z-50 flex flex-col gap-1 overflow-hidden",
             isTopDropdown ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
           )}
+          style={{ width: "min(360px, calc(100vw - 32px))" }}
         >
           <div className="px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))] border-b border-[rgba(var(--border),0.10)] flex items-center justify-between">
             <span>{MEMORY_COPY.matchingFacts}</span>
@@ -111,10 +116,7 @@ export const SearchBar = memo<SearchBarProps>(({
                 className="flex flex-col text-left p-2 rounded-xl hover:bg-[rgba(var(--foreground),0.05)] transition-colors cursor-pointer"
               >
                 <div className="flex items-center gap-1.5 mb-1">
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{ background: col.main }}
-                  />
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: col.main }} />
                   <span className="text-[10px] font-mono uppercase text-[rgb(var(--foreground-muted))] font-semibold">
                     {fact.fact_type}
                   </span>

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useCallback, useMemo, useState, memo } from "react";
+import React, { createContext, useContext, useCallback, useMemo, useState, useEffect, memo } from "react";
 
 export type PanelId = "help" | "notifications" | "sessions";
 export type PanelEdge = "left" | "right";
@@ -37,14 +37,54 @@ export const PanelStateProvider: React.FC<PanelStateProviderProps> = memo(({ chi
   const [leftPanel, setLeftPanel] = useState<PanelId | null>(null);
   const [rightPanel, setRightPanel] = useState<PanelId | null>(null);
 
+  /**
+   * Panel Exclusivity Threshold:
+   * On viewports < 1280px (mobile, tablet, and compact/standard desktop windows),
+   * only ONE panel edge may be open across the entire page. Opening or toggling
+   * any panel closes the opposite edge.
+   * On extra-wide viewports (≥ 1280px), left and right rails may coexist.
+   */
+  const THRESHOLD_DUAL_PANEL_WIDTH = 1280;
+
+  const isNarrowViewport = useCallback(() => {
+    return typeof window !== "undefined" && window.innerWidth < THRESHOLD_DUAL_PANEL_WIDTH;
+  }, []);
+
+  // Enforce exclusivity on resize
+  useEffect(() => {
+    let rAfId: number | null = null;
+    const handleResize = () => {
+      if (rAfId !== null) return;
+      rAfId = requestAnimationFrame(() => {
+        rAfId = null;
+        if (typeof window !== "undefined" && window.innerWidth < THRESHOLD_DUAL_PANEL_WIDTH) {
+          setLeftPanel((currentLeft) => {
+            if (currentLeft !== null) {
+              // If left panel is open on small layout, right panel cannot coexist
+              setRightPanel(null);
+            }
+            return currentLeft;
+          });
+        }
+      });
+    };
+    window.addEventListener("resize", handleResize, { passive: true });
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      if (rAfId !== null) cancelAnimationFrame(rAfId);
+    };
+  }, []);
+
   const openPanel = useCallback((id: PanelId) => {
     const edge = PANEL_EDGE_MAP[id];
     if (edge === "left") {
       setLeftPanel(id);
+      if (isNarrowViewport()) setRightPanel(null);
     } else {
       setRightPanel(id);
+      if (isNarrowViewport()) setLeftPanel(null);
     }
-  }, []);
+  }, [isNarrowViewport]);
 
   const closePanel = useCallback((id: PanelId) => {
     const edge = PANEL_EDGE_MAP[id];
@@ -57,12 +97,21 @@ export const PanelStateProvider: React.FC<PanelStateProviderProps> = memo(({ chi
 
   const togglePanel = useCallback((id: PanelId) => {
     const edge = PANEL_EDGE_MAP[id];
+    const isNarrow = isNarrowViewport();
     if (edge === "left") {
-      setLeftPanel((prev) => (prev === id ? null : id));
+      setLeftPanel((prev) => {
+        const next = prev === id ? null : id;
+        if (next !== null && isNarrow) setRightPanel(null);
+        return next;
+      });
     } else {
-      setRightPanel((prev) => (prev === id ? null : id));
+      setRightPanel((prev) => {
+        const next = prev === id ? null : id;
+        if (next !== null && isNarrow) setLeftPanel(null);
+        return next;
+      });
     }
-  }, []);
+  }, [isNarrowViewport]);
 
   const closeRightGroup = useCallback(() => {
     setRightPanel(null);

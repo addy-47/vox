@@ -26,6 +26,7 @@ export interface GNode {
   vy: number;
   vz: number;
   isCore?: boolean;
+  sessionId?: string | null;
 }
 
 export interface GLink {

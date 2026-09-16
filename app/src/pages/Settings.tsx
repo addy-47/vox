@@ -3,7 +3,6 @@ import { RotateCcw, Check, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
-import { TopRightCluster } from "@/shared/ui";
 import { AnimatePresence, motion } from "framer-motion";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
@@ -143,12 +142,6 @@ export const Settings: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none p-0 lg:p-6 lg:pb-[72px]">
 
-      {/* ── Top-right: Help + Notifications (Desktop) ── */}
-      {!isCompact && (
-        <div className="absolute top-4 right-5 z-30">
-          <TopRightCluster />
-        </div>
-      )}
 
       {/* ── Desktop & Tablet Hexagon/Grid Layout (>= 1024px) ────────────────── */}
       {!isCompact ? (
@@ -303,9 +296,6 @@ export const Settings: React.FC = () => {
                   </Tooltip>
                 </>
               )}
-
-              {/* Help & Notifications */}
-              <TopRightCluster className="pointer-events-auto" />
 
               {/* Restore Defaults with confirm state */}
               <Tooltip

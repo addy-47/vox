@@ -6,12 +6,14 @@ import React, {
   useMemo,
   memo,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Edit3,
   Download,
   Upload,
   Zap,
   Sparkles,
+  PanelLeft,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import {
@@ -26,7 +28,7 @@ import {
 } from "@/services/memoryService";
 import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
-import { EdgePanel } from "@/shared/ui";
+import { EdgePanel, Tooltip } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
@@ -61,7 +63,7 @@ export const Memory: React.FC = memo(() => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedFact, setSelectedFact] = useState<FactRecord | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
-  const { isPanelOpen, closePanel } = usePanelStateContext();
+  const { isPanelOpen, closePanel, togglePanel } = usePanelStateContext();
   const sessionRailOpen = isPanelOpen("sessions");
   const setSessionRailOpen = (v: boolean) => {
     if (!v) closePanel("sessions");
@@ -270,16 +272,38 @@ export const Memory: React.FC = memo(() => {
       <AmbientBackground originX="50%" originY="50%" rippleSpeedMultiplier={1.0} paused />
 
 
-      {/* ── Top Center: Search Bar ── */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+      {/* ── Top Bar Search: Dynamic width with generous gap to triggers on both sides ── */}
+      <div className="absolute top-4 left-24 right-32 z-30 pointer-events-auto flex justify-center">
         <SearchBar
           facts={facts}
           isLightMode={isLightMode}
           onCommitSearch={setSearchQuery}
           onSelectNode={handleSelectSearchNode}
           dropdownPlacement="bottom"
+          className="w-full max-w-[280px]"
         />
       </div>
+
+      {/* ── Top Left: Session Rail Trigger — mirrors Home trigger, self-contained in Memory ── */}
+      <div className="absolute top-4 left-5 z-[60] pointer-events-auto">
+        <Tooltip label="Session history" side="bottom">
+          <button
+            onClick={() => togglePanel("sessions")}
+            aria-label="Open session rail"
+            aria-expanded={sessionRailOpen}
+            data-edge-trigger="left"
+            className={cn(
+              "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+              sessionRailOpen
+                ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
+                : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
+            )}
+          >
+            <PanelLeft size={14} strokeWidth={1.75} />
+          </button>
+        </Tooltip>
+      </div>
+
 
 
       {/* ── Right Edge: Floating Graph Control Dock ── */}
@@ -294,23 +318,22 @@ export const Memory: React.FC = memo(() => {
         onToggleSelectMode={handleToggleSelectMode}
       />
 
-      {/* ── Bottom Right: Category Legend Overlay (3x2 Ambient Grid) ── */}
-      <div className="absolute bottom-4 right-6 z-30 pointer-events-auto">
-        <MemoryLegendOverlay
-          selectedCollection={selectedCollection}
-          onSelectCollection={setSelectedCollection}
-          counts={categoryCounts}
-          isLightMode={isLightMode}
-        />
-      </div>
+      {/* ── Bottom Right: Category Legend Overlay (3x2 Ambient Grid) — portal to document.body so above global EdgeNav feather (z-[38]) and all dock layers ── */}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed bottom-4 right-6 z-[55] pointer-events-auto">
+            <MemoryLegendOverlay
+              selectedCollection={selectedCollection}
+              onSelectCollection={setSelectedCollection}
+              counts={categoryCounts}
+              isLightMode={isLightMode}
+            />
+          </div>,
+          document.body
+        )}
 
-      {/* ── Left Edge Rail: Memory Session History & Compactions ── */}
-      <EdgePanel
-        side="left"
-        open={sessionRailOpen}
-        onClose={handleCloseSessionRail}
-        title={MEMORY_COPY.sessionRailTitle}
-      >
+      {/* ── Left Edge Rail: Memory Session History & Compactions — minimal header like SessionPanel ── */}
+      <EdgePanel side="left" open={sessionRailOpen} onClose={handleCloseSessionRail} minimalHeader>
         <ErrorBoundary name="MemorySessionRail">
           <MemorySessionRail
             facts={facts}

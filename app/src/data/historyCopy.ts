@@ -58,4 +58,13 @@ export const HISTORY_COPY = {
   compactSession: "Compact session",
   compactingSession: "Compacting...",
   uncompactedTurnsTooltip: "Uncompacted turns",
+  searchPlaceholder: "Search conversation history...",
+  noMatchingSessions: "No matching sessions found",
+  clearSearch: "Clear search",
+  allSessionsCount: "All sessions",
+  filterAll: "All Dates",
+  filterToday: "Today",
+  filterPastWeek: "Past 7 Days",
+  filterPastMonth: "Past 30 Days",
+  filterLabel: "Filter by date",
 };

@@ -95,9 +95,11 @@ const EdgePanelInner = memo(
           >
             {/* Header: Minimal anchor row or classic titled bar */}
             {minimalHeader ? (
-              <div className="flex items-center px-5 pt-4 pb-2 h-14 shrink-0">
+              /* When panel is LEFT: close button on the RIGHT so it doesn't collide with the trigger.
+                 When panel is RIGHT: close button on the LEFT (standard convention). */
+              <div className={`flex items-center px-5 pt-4 pb-2 h-14 shrink-0 ${isLeft ? "flex-row-reverse" : ""}`}>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <Tooltip label="Close" side="bottom">
+                  <Tooltip label="Close" side={isLeft ? "left" : "right"}>
                     <button
                       onClick={onClose}
                       className="flex items-center justify-center w-8 h-8 rounded-lg text-[rgb(var(--foreground-muted))]/70 hover:bg-[rgba(var(--foreground),0.06)] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
