@@ -191,7 +191,7 @@ async fn test_personal_memory_consolidation_live_server() {
             "[Seam14/Live] Consolidating 100 facts via remote {REMOTE_OLLAMA_MODEL}..."
         );
         let start = Instant::now();
-        let consolidated = consolidate_personal_memory(&conn, &provider, None, None)
+        let consolidated = consolidate_personal_memory(&conn, &provider, None, None, None)
             .await
             .expect("consolidate_personal_memory must succeed against remote Ollama server");
 
@@ -348,7 +348,8 @@ async fn test_consolidation_quiescence_precondition_gating() {
             "Setup: in_progress compaction must be recorded"
         );
 
-        let compaction_blocked = consolidate_personal_memory(&conn, &provider, None, None).await;
+        let compaction_blocked =
+            consolidate_personal_memory(&conn, &provider, None, None, None).await;
         assert!(
             compaction_blocked.is_err(),
             "Consolidation must be blocked when compaction is in progress"
@@ -386,7 +387,7 @@ async fn test_consolidation_quiescence_precondition_gating() {
         .unwrap();
         assert!(q_id > 0);
 
-        let queue_blocked = consolidate_personal_memory(&conn, &provider, None, None).await;
+        let queue_blocked = consolidate_personal_memory(&conn, &provider, None, None, None).await;
         assert!(
             queue_blocked.is_err(),
             "Consolidation must be blocked when items are pending in ingestion queue"
@@ -407,7 +408,7 @@ async fn test_consolidation_quiescence_precondition_gating() {
         .unwrap();
 
         // --- Gate Arm 3: Quiescent & No Active Facts -> clean no-op Ok ---
-        let quiescent_res = consolidate_personal_memory(&conn, &provider, None, None).await;
+        let quiescent_res = consolidate_personal_memory(&conn, &provider, None, None, None).await;
         assert!(
             quiescent_res.is_ok(),
             "Consolidation must succeed (no-op) when pipeline is quiescent and no active facts exist"

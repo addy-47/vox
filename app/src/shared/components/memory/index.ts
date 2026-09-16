@@ -8,5 +8,4 @@ export * from "./dynamicGraphPalette";
 export * from "./memoryGraphTypes";
 export * from "./PixelSynthesisCanvas";
 export * from "./PersonalMemoryStagingCard";
-
-
+export * from "./PersonalMemoryCommentPopover";

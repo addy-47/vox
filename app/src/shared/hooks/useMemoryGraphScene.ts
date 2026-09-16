@@ -20,6 +20,8 @@ interface UseMemoryGraphSceneOptions {
   selectedSessionId?: string | null;
   onCoreClick?: () => void;
   clearCacheOnUnmount?: boolean;
+  /** When true, suspend the rAF render loop immediately (drawer open over graph) */
+  paused?: boolean;
 }
 
 interface SessionAnchor {
@@ -55,6 +57,7 @@ export function useMemoryGraphScene({
   selectedCollection,
   selectedFactId,
   selectedSessionId = null,
+  paused = false,
 }: UseMemoryGraphSceneOptions) {
   const [isLightMode, setIsLightMode] = useState(false);
 
@@ -108,6 +111,20 @@ export function useMemoryGraphScene({
 
   const isLightModeRef = useRef(isLightMode);
   isLightModeRef.current = isLightMode;
+
+
+  // ── External pause/resume: suspends or resumes the rAF render loop ──────────
+  useEffect(() => {
+    if (paused) {
+      if (animFrameRef.current !== null) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+    } else {
+      // Wake loop only if the scene has been initialized (wakeLoopRef is non-noop)
+      wakeLoopRef.current();
+    }
+  }, [paused]);
 
   // Detect dark / light mode and dynamic accent changes
   useEffect(() => {

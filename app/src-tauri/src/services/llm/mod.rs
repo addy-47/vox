@@ -76,6 +76,7 @@ pub struct GenerationOptions {
     pub stop: Vec<String>,
     pub seed: Option<u64>,
     pub reasoning: ReasoningMode,
+    pub context_window: Option<u32>,
 }
 
 /// Explicit constraint on LLM output format.

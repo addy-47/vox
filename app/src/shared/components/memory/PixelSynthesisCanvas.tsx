@@ -58,7 +58,7 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
     const DOT_BASE_RADIUS = 1.25;
 
     const render = (now: number) => {
-      const t = (now - startTime) * 0.0015; // Animation time in seconds
+      const t = (now - startTime) * 0.00085; // Slower, calmer wave rhythm
 
       ctx.clearRect(0, 0, width, height);
 
@@ -82,39 +82,26 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
           const ny = y / height;
 
           // Multi-frequency organic wave interference
-          // Simulates cellular automata / quantum dot excitation
-          const w1 = Math.sin(nx * 8.5 + t * 2.2);
-          const w2 = Math.cos(ny * 7.0 - t * 1.7);
-          const w3 = Math.sin((nx + ny) * 9.0 + t * 3.1);
+          const w1 = Math.sin(nx * 6.0 + t * 1.5);
+          const w2 = Math.cos(ny * 5.0 - t * 1.2);
+          const w3 = Math.sin((nx + ny) * 5.5 + t * 1.8);
           const distFromCenter = Math.sqrt((nx - 0.5) ** 2 + (ny - 0.5) ** 2);
-          const radialRipple = Math.sin(distFromCenter * 14.0 - t * 2.5);
+          const radialRipple = Math.sin(distFromCenter * 10.0 - t * 1.6);
 
-          // Discrete pseudo-random hash for localized pixel flickering
-          const cellSeed = Math.sin(c * 12.9898 + r * 78.233) * 43758.5453;
-          const flicker = Math.sin(cellSeed + t * 4.0) * 0.2;
-
-          // Composite intensity factor [-1..1] mapped to [0..1]
-          let intensity = (w1 * 0.35 + w2 * 0.25 + w3 * 0.2 + radialRipple * 0.2 + flicker + 1) / 2;
+          // Smooth composite intensity without random jitter/flicker
+          let intensity = (w1 * 0.35 + w2 * 0.3 + w3 * 0.2 + radialRipple * 0.15 + 1) / 2;
           intensity = Math.max(0, Math.min(1, intensity));
 
-          // Sharpen active clusters so dots pop distinctly rather than a uniform haze
-          const alpha = Math.pow(intensity, 2.5);
+          // Soft organic curve
+          const alpha = Math.pow(intensity, 2.2);
 
-          if (alpha > 0.03) {
-            const radius = DOT_BASE_RADIUS + alpha * 1.25;
+          if (alpha > 0.04) {
+            const radius = DOT_BASE_RADIUS + alpha * 1.1;
 
             ctx.beginPath();
             ctx.arc(x, y, radius, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(${accentRgb}, ${alpha * 0.85})`;
+            ctx.fillStyle = `rgba(${accentRgb}, ${alpha * 0.8})`;
             ctx.fill();
-
-            // High-intensity core spark
-            if (alpha > 0.65) {
-              ctx.beginPath();
-              ctx.arc(x, y, radius * 0.5, 0, Math.PI * 2);
-              ctx.fillStyle = `rgba(255, 255, 255, ${(alpha - 0.65) * 2.0})`;
-              ctx.fill();
-            }
           }
         }
       }

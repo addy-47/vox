@@ -57,6 +57,9 @@ pub fn build_request_body(
     if let Some(seed) = request.options.seed {
         options.insert("seed".to_string(), serde_json::json!(seed));
     }
+    if let Some(ctx) = request.options.context_window {
+        options.insert("num_ctx".to_string(), serde_json::json!(ctx));
+    }
 
     let mut body = serde_json::Map::new();
     body.insert("model".to_string(), serde_json::json!(config.model));
