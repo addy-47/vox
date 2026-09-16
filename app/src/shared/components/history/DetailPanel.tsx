@@ -1,11 +1,11 @@
 import { memo, useState, useEffect, useCallback } from "react";
 import { Ghost, AlertCircle, RotateCcw, Sparkles, Loader2 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
 import { formatDateTime, type SessionRow, type TurnRow } from "@/services/historyService";
 import { EmptyState, OrbitalLoader } from "@/shared/components/common";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { Drawer } from "@/shared/ui/Drawer";
 import { Tooltip } from "@/shared/ui/Tooltip";
+import { Markdown } from "@/shared/ui/Markdown";
 import { useNotificationStore } from "@/store/notificationStore";
 import { metadataResolution } from "@/services/notificationService";
 
@@ -29,9 +29,6 @@ export interface DetailPanelProps {
 const INITIAL_VISIBLE_TURNS = 20;
 
 const TurnBubble = memo(({ turn }: { turn: TurnRow }) => {
-  const isSimpleUserText = !/[*_#`\[\]]/.test(turn.user_text);
-  const isSimpleAssistantText = !/[*_#`\[\]]/.test(turn.assistant_text);
-
   return (
     <div className="space-y-4 [contain:content]">
       {/* User bubble */}
@@ -39,12 +36,8 @@ const TurnBubble = memo(({ turn }: { turn: TurnRow }) => {
         <span className="text-[11px] font-sans font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-1 mr-2">
           {HISTORY_COPY.userLabel}
         </span>
-        <div className="glass-card rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words prose prose-invert select-text">
-          {isSimpleUserText ? (
-            <p className="m-0 whitespace-pre-wrap">{turn.user_text}</p>
-          ) : (
-            <ReactMarkdown>{turn.user_text}</ReactMarkdown>
-          )}
+        <div className="glass-card rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words select-text">
+          <Markdown content={turn.user_text} variant="bubble" />
         </div>
       </div>
 
@@ -53,12 +46,8 @@ const TurnBubble = memo(({ turn }: { turn: TurnRow }) => {
         <span className="text-[11px] font-sans font-bold text-[rgb(var(--accent))] uppercase tracking-widest mb-1 ml-2">
           {HISTORY_COPY.voxLabel}
         </span>
-        <div className="glass-card rounded-2xl rounded-tl-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words prose prose-invert select-text border border-[rgba(var(--accent),0.15)]">
-          {isSimpleAssistantText ? (
-            <p className="m-0 whitespace-pre-wrap">{turn.assistant_text}</p>
-          ) : (
-            <ReactMarkdown>{turn.assistant_text}</ReactMarkdown>
-          )}
+        <div className="glass-card rounded-2xl rounded-tl-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words select-text border border-[rgba(var(--accent),0.15)]">
+          <Markdown content={turn.assistant_text} variant="bubble" />
           <div className="flex gap-3 mt-2 border-t border-[rgba(var(--accent),0.1)] pt-1.5 shrink-0 text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
             <span className="ml-auto text-[rgb(var(--foreground-muted))] font-medium">
               {formatTime(turn.created_at)}

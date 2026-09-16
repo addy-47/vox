@@ -154,8 +154,8 @@ Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_
 - Pre-structured for future project scoping via `project_id NULLABLE`.
 
 ### 5.2 User Interaction Modes
-1. **View, Export & Import**: User views markdown in the UI, exports to disk, or imports an external file to overwrite or initialize.
-2. **Direct Manual Edit**: User directly edits markdown text and saves changes.
+1. **View & Copy**: User views formatted markdown in the UI and can copy the raw markdown text directly to their clipboard. (No backend file export logic needed).
+2. **Direct Manual Edit**: User directly edits markdown text in the UI and saves changes. (Importing external markdown is performed directly by editing and pasting content into the editor).
 3. **Comment-Driven Regeneration**: User leaves directive comments. The backend triggers an LLM pass taking `[Current Document] + [User Comments]` to regenerate the document.
 
 ### 5.3 Background Consolidation Pipeline
@@ -182,7 +182,7 @@ Configurable in `settings.memory.consolidation_cadence` (`"manual"` default, `"d
 - **Missed & Failed Runs**: A run due while the app was down emits a persistent `personal_consolidation` notification card (`pending`, tap-to-run) instead of running silently. A failed run flips its card to `failed` with the error; successes complete silently.
 
 ### 5.5 Project Scope (Current)
-Memory is global: the merge folds all `status = 'active'` personal facts into the single document regardless of `project_id` (which is reserved scaffolding for future project-specific memory). Import replaces only the document text and leaves waiting facts active by design.
+Memory is global: the merge folds all `status = 'active'` personal facts into the single document regardless of `project_id` (which is reserved scaffolding for future project-specific memory). Direct manual edits replace only the document text and leave waiting facts active by design.
 
 ---
 

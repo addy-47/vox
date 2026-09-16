@@ -6,5 +6,7 @@ export * from "./SearchBar";
 export * from "./GraphControlDock";
 export * from "./dynamicGraphPalette";
 export * from "./memoryGraphTypes";
+export * from "./PixelSynthesisCanvas";
+export * from "./PersonalMemoryStagingCard";
 
 

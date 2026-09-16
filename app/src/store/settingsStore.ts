@@ -342,7 +342,12 @@ interface SettingsState {
   loadSettings: () => Promise<void>;
   loadModelCatalog: () => Promise<void>;
   loadCapabilitiesCache: () => Promise<void>;
-  updateDraft: (domain: keyof VoxSettings, key: string, value: any) => void;
+  updateDraft: (
+    domain: keyof VoxSettings,
+    key: string,
+    value: any,
+    explicitDomainId?: SettingsDomainId
+  ) => void;
   commitChanges: () => Promise<void>;
   discardChanges: () => void;
   isDomainDirty: (domainId: string) => boolean;
@@ -451,7 +456,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }, 1800);
   },
 
-  updateDraft: (domain: keyof VoxSettings, key: string, value: any) => {
+  updateDraft: (
+    domain: keyof VoxSettings,
+    key: string,
+    value: any,
+    explicitDomainId?: SettingsDomainId
+  ) => {
     const { settings, draftSettings } = get();
     if (!draftSettings || !settings) return;
 
@@ -473,7 +483,23 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         clearTimeout(appearanceDebounceTimer);
       }
       appearanceDebounceTimer = setTimeout(() => {
-        updateSetting("appearance", key, value).catch(console.error);
+        updateSetting("appearance", key, value)
+          .then(() => {
+            const curSettings = get().settings;
+            if (curSettings) {
+              set({
+                settings: {
+                  ...curSettings,
+                  appearance: {
+                    ...curSettings.appearance,
+                    [key]: value,
+                  },
+                },
+              });
+            }
+            get().triggerAutoSaveToast("appearance");
+          })
+          .catch(console.error);
         appearanceDebounceTimer = null;
       }, 200);
 
@@ -482,9 +508,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
 
     set({ draftSettings: newDraft });
-    const hasChanges = ["models", "history", "persona", "memory", "interaction"].some((d) =>
-      get().isDomainDirty(d)
-    );
+    const hasChanges = [
+      "models",
+      "persona",
+      "working_memory",
+      "personal_memory",
+      "appearance",
+      "interaction",
+    ].some((d) => get().isDomainDirty(d));
     set({ hasChanges });
 
     // Check if the modified key requires a heavy restart
@@ -503,10 +534,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     if (!requiresRestart) {
       // Determine mapped SettingsDomainId for the toast
-      const domainMap: Record<string, string> = {
+      const domainMap: Record<string, SettingsDomainId> = {
         persona: "persona",
-        memory: "memory",
-        history: "history",
+        working_memory: "working_memory",
+        personal_memory: "personal_memory",
         appearance: "appearance",
         interaction: "interaction",
         dictation: "interaction",
@@ -518,7 +549,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         tts: "models",
         system: "models",
       };
-      const targetDomainId = domainMap[domain as string] || "models";
+      const targetDomainId = explicitDomainId || domainMap[domain as string] || "models";
 
       // Hot or WorkerCommand: Automatically commit with 600ms debounce and flash "Saved" toast on that specific card
       if (settingsAutoSaveTimer) {
@@ -622,9 +653,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const savedScope = settings[scope] as any;
       if (savedScope) {
         if (rule.keys) {
-          rule.keys.forEach((k) => updateDraft(scope, k, savedScope[k]));
+          rule.keys.forEach((k) => updateDraft(scope, k, savedScope[k], domainId as SettingsDomainId));
         } else {
-          Object.keys(savedScope).forEach((k) => updateDraft(scope, k, savedScope[k]));
+          Object.keys(savedScope).forEach((k) => updateDraft(scope, k, savedScope[k], domainId as SettingsDomainId));
         }
       }
     }

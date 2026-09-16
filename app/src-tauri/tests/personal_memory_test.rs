@@ -27,9 +27,7 @@ use vox_lib::{
     },
     services::{
         llm::{ConnectionConfig, RemoteTransport},
-        memory::personal::{
-            consolidate_personal_memory, export_personal_memory, import_personal_memory,
-        },
+        memory::personal::consolidate_personal_memory,
     },
 };
 
@@ -420,18 +418,17 @@ async fn test_consolidation_quiescence_precondition_gating() {
 }
 
 // ============================================================================
-// Subtest 4: Document Portability (Export and Import Roundtrip)
+// Subtest 4: Document Direct Edit Persistence
 // ============================================================================
-/// Entry Seams C: `export_personal_memory` / `import_personal_memory`
+/// Entry Seams C: `save_personal_memory` / `get_personal_memory`
 ///
 /// Verifies:
-///   - `export_personal_memory` writes byte-for-byte exact database contents to disk.
-///   - `import_personal_memory` replaces database content with disk file and increments version.
-///   - Roundtrip re-export preserves modified file contents identically.
+///   - Direct manual edits save cleanly and increment version.
+///   - Database reflects updated content accurately.
 #[tokio::test]
-async fn test_export_and_import_roundtrip() {
+async fn test_manual_edit_persistence() {
     tokio::time::timeout(Duration::from_secs(15), async {
-        let guard = TempPathsGuard::new();
+        let _guard = TempPathsGuard::new();
         let (_app, state) = get_test_app_and_state().await;
         let conn = state
             .db
@@ -441,7 +438,7 @@ async fn test_export_and_import_roundtrip() {
         let dataset_facts = load_dataset_facts("personal", 4);
         assert!(
             dataset_facts.len() >= 4,
-            "Need at least 4 dataset facts for portability test"
+            "Need at least 4 dataset facts for manual edit test"
         );
 
         let initial_doc = format!(
@@ -456,43 +453,27 @@ async fn test_export_and_import_roundtrip() {
         assert_eq!(saved.version, 2);
         assert_eq!(saved.content, initial_doc);
 
-        // 2. Export document to disk via guard.temp_dir()
-        let export_file = guard.temp_dir().join("exported_personal_memory.md");
-        export_personal_memory(&conn, &export_file, None)
-            .await
-            .unwrap();
-        assert!(export_file.exists(), "Export file must be created on disk");
-
-        // 3. Verify byte-for-byte fidelity on disk
-        let read_back = std::fs::read_to_string(&export_file).unwrap();
-        assert_eq!(
-            read_back, initial_doc,
-            "Disk file content must match database document exactly"
-        );
-
-        // 4. Overwrite disk file with new content and import back
-        let imported_doc = format!(
+        // 2. Overwrite document directly (simulating user pasting/importing external content)
+        let updated_doc = format!(
             "# Personal Profile Updated\n\n- {}\n- {}\n- {}\n",
             dataset_facts[0].text, dataset_facts[2].text, dataset_facts[3].text
         );
-        std::fs::write(&export_file, &imported_doc).unwrap();
-
-        let imported = import_personal_memory(&conn, &export_file, None)
+        let updated = save_personal_memory(&conn, None, &updated_doc, 2)
             .await
             .unwrap();
         assert_eq!(
-            imported.version, 3,
-            "Import must increment personal memory version"
+            updated.version, 3,
+            "Manual edit must increment personal memory version"
         );
-        assert_eq!(imported.content, imported_doc);
+        assert_eq!(updated.content, updated_doc);
 
-        // 5. Verify database reflects the imported content
+        // 3. Verify database reflects the updated content
         let current = get_personal_memory(&conn, None).await.unwrap();
         assert_eq!(current.version, 3);
-        assert_eq!(current.content, imported_doc);
+        assert_eq!(current.content, updated_doc);
     })
     .await
-    .expect("test_export_and_import_roundtrip timed out");
+    .expect("test_manual_edit_persistence timed out");
 }
 
 // ============================================================================

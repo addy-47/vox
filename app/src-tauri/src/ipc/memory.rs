@@ -126,63 +126,7 @@ pub async fn consolidate_personal_memory(
     Ok(record)
 }
 
-/// Exports the personal memory document to a local markdown file.
-#[tauri::command]
-pub async fn export_personal_memory(
-    target_path: String,
-    project_id: Option<String>,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), VoxIpcError> {
-    let conn = state
-        .db
-        .connect()
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let record = db_get_personal_memory(&conn, project_id.as_deref())
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
-    tokio::fs::write(&target_path, record.content)
-        .await
-        .map_err(|e| VoxIpcError::Internal(format!("Failed to export personal memory: {e}")))?;
-
-    log::info!("[IPC::Memory] Exported personal memory to {}", target_path);
-    Ok(())
-}
-
-/// Imports and overwrites the personal memory document from an external markdown file.
-#[tauri::command]
-pub async fn import_personal_memory(
-    app: AppHandle,
-    source_path: String,
-    project_id: Option<String>,
-    state: State<'_, Arc<AppState>>,
-) -> Result<PersonalMemoryRecord, VoxIpcError> {
-    let content = tokio::fs::read_to_string(&source_path).await.map_err(|e| {
-        VoxIpcError::Internal(format!("Failed to read memory file {}: {}", source_path, e))
-    })?;
-
-    let conn = state
-        .db
-        .connect()
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let current = db_get_personal_memory(&conn, project_id.as_deref())
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-
-    let record = db_save_personal_memory(&conn, project_id.as_deref(), &content, current.version)
-        .await
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-
-    if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
-        log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
-    }
-
-    log::info!(
-        "[IPC::Memory] Imported personal memory from {}",
-        source_path
-    );
-    Ok(record)
-}
 /// Returns active memory facts for graph visualization, optionally scoped to one project, ordered newest first.
 #[tauri::command]
 pub async fn get_active_facts(

@@ -100,21 +100,21 @@ export const DOMAIN_DIRTY_KEYS: Record<SettingsDomainId, readonly DomainDirtyKey
     { scope: "realtime", keys: SETTINGS_SCOPE_KEYS.realtime },
   ],
   working_memory: [
-    { scope: "working_memory" },
+    { scope: "working_memory", keys: SETTINGS_SCOPE_KEYS.working_memory },
   ],
   persona: [
-    { scope: "persona" },
+    { scope: "persona", keys: SETTINGS_SCOPE_KEYS.persona },
   ],
   personal_memory: [
-    { scope: "personal_memory" },
+    { scope: "personal_memory", keys: SETTINGS_SCOPE_KEYS.personal_memory },
   ],
   appearance: [
-    { scope: "appearance" },
+    { scope: "appearance", keys: SETTINGS_SCOPE_KEYS.appearance },
   ],
   interaction: [
-    { scope: "interaction" },
-    { scope: "dictation" },
-    { scope: "realtime" },
+    { scope: "interaction", keys: SETTINGS_SCOPE_KEYS.interaction },
+    { scope: "dictation", keys: SETTINGS_SCOPE_KEYS.dictation },
+    { scope: "realtime", keys: SETTINGS_SCOPE_KEYS.realtime },
   ],
 };
 
@@ -327,41 +327,41 @@ export const INTERACTION_CONFIG_DESK_COPY = {
 export const PERSONAL_MEMORY_CONFIG_DESK_COPY = {
   cardTitle: "Personal Memory",
   recallToggle: {
-    title: "Retrieval",
-    activeLabel: "Recall Active",
-    inactiveLabel: "Recall Paused",
-    activeSublabel: "Context Injected",
-    inactiveSublabel: "Turn Bypassed",
+    title: "Memory Recall",
+    activeLabel: "Recall On",
+    inactiveLabel: "Recall Off",
+    activeSublabel: "Uses past memories in chat",
+    inactiveSublabel: "Does not use past memories",
   },
   pipelineToggle: {
-    title: "Processing",
-    activeLabel: "Pipeline Active",
-    inactiveLabel: "Pipeline Paused",
-    activeSublabel: "Background Ingestion",
-    inactiveSublabel: "Queue Staged Only",
+    title: "Memory Learning",
+    activeLabel: "Learning On",
+    inactiveLabel: "Learning Off",
+    activeSublabel: "Saves new facts from chat",
+    inactiveSublabel: "Pauses saving new facts",
   },
   tabs: {
-    consolidation: "Consolidation",
-    depth: "Depth",
-    cutoff: "Cutoff",
+    consolidation: "Schedule",
+    depth: "Limit",
+    cutoff: "Relevance",
   },
   consolidation: {
-    title: "Consolidation Schedule",
-    description: "Frequency and execution time for synthesizing episodic turns into your permanent personal memory document.",
-    cadenceLabel: "Cadence",
+    title: "Update Schedule",
+    description: "How often Vox updates your personal memory notes with new facts learned from conversations.",
+    cadenceLabel: "Schedule",
     manualLabel: "Manual",
     dailyLabel: "Daily",
     timeLabel: "Time (24h)",
   },
   depth: {
-    title: "Recall Fact Limit",
-    description: "Maximum number of long-term facts injected into context for each conversation turn.",
-    unit: "facts",
+    title: "Memory Limit",
+    description: "Maximum number of relevant memories Vox brings into each conversation.",
+    unit: "memories",
   },
   cutoff: {
-    title: "Relevance Cutoff",
-    description: "Minimum semantic similarity score required for a past fact to be recalled and sent to the model.",
-    knobLabel: "Cutoff Floor",
+    title: "Relevance Threshold",
+    description: "How closely a memory must match your current conversation to be remembered.",
+    knobLabel: "Threshold",
   },
 };
 

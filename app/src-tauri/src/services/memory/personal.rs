@@ -1,5 +1,4 @@
 use std::{
-    path::Path,
     sync::mpsc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -35,7 +34,7 @@ Your task is to integrate newly discovered personal facts about the user into th
 <rules>
 1. Preserve all existing accurate information while cleanly integrating new facts.
 2. Remove contradictions and supersede outdated facts with newer information.
-3. Organize into clear Markdown headings .
+3. Organize into clear Markdown headings using ## for major sections and bullet points for lists.
 4. Output ONLY the raw markdown text of the document. Do not wrap in markdown code blocks or add introductory text.
 </rules>"#;
 
@@ -122,39 +121,7 @@ pub async fn consolidate_personal_memory(
     Ok(saved)
 }
 
-/// Exports the personal memory markdown document to disk.
-pub async fn export_personal_memory(
-    conn: &Connection,
-    target_path: &Path,
-    project_id: Option<&str>,
-) -> Result<()> {
-    let record = get_personal_memory(conn, project_id).await?;
-    std::fs::write(target_path, record.content).map_err(|e| {
-        anyhow!(
-            "Failed to export personal memory to {:?}: {}",
-            target_path,
-            e
-        )
-    })?;
-    Ok(())
-}
 
-/// Imports an external markdown document to replace the active personal memory.
-pub async fn import_personal_memory(
-    conn: &Connection,
-    source_path: &Path,
-    project_id: Option<&str>,
-) -> Result<PersonalMemoryRecord> {
-    let imported_text = std::fs::read_to_string(source_path).map_err(|e| {
-        anyhow!(
-            "Failed to read personal memory from {:?}: {}",
-            source_path,
-            e
-        )
-    })?;
-    let current = get_personal_memory(conn, project_id).await?;
-    save_personal_memory(conn, project_id, &imported_text, current.version).await
-}
 
 /// Regenerates the document based on directive comments from the user.
 async fn regenerate_with_comments(

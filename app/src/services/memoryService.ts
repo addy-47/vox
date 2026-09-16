@@ -53,27 +53,7 @@ export function consolidatePersonalMemory(
   });
 }
 
-/** Exports the personal memory document to a local markdown file at `targetPath`. */
-export function exportPersonalMemory(targetPath: string, projectId?: string): Promise<void> {
-  return invoke("export_personal_memory", {
-    targetPath,
-    projectId: projectId ?? null,
-  });
-}
 
-/**
- * Imports and overwrites the personal memory document from an external markdown file.
- * Emits `PersonalMemoryUpdated` on success.
- */
-export function importPersonalMemory(
-  sourcePath: string,
-  projectId?: string,
-): Promise<PersonalMemoryRecord> {
-  return invoke("import_personal_memory", {
-    sourcePath,
-    projectId: projectId ?? null,
-  });
-}
 /**
  * Mirror of `FactRecord` (persistence/facts.rs).
  * Represents a single active memory fact extracted from a session.
