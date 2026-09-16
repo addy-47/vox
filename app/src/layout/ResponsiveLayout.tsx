@@ -41,9 +41,11 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   // Ref to track compact state across renders during window resize
   const wasCompactRef = useRef(window.innerWidth < 1024);
   const pathnameRef = useRef(location.pathname);
-  pathnameRef.current = location.pathname;
   const monitorOpenRef = useRef(monitorOpen);
-  monitorOpenRef.current = monitorOpen;
+
+  // Sync refs via effects — never write to refs in the render body (concurrent-mode safe)
+  useEffect(() => { pathnameRef.current = location.pathname; }, [location.pathname]);
+  useEffect(() => { monitorOpenRef.current = monitorOpen; }, [monitorOpen]);
 
   // Bidirectional viewport transition: compact (EdgeNav route) ↔ full-max (corner popover)
   useEffect(() => {

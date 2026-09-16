@@ -14,6 +14,8 @@ import {
   Sparkles,
   PanelLeft,
   FileText,
+  MessageSquare,
+  Hand,
 } from "lucide-react";
 import {
   getPersonalMemory,
@@ -40,8 +42,13 @@ import {
   MemoryCategory,
   PersonalMemoryStagingCard,
   type StagingMode,
+  type MemoryComment,
+  PersonalMemoryCommentPopover,
+  type SelectionAnchor,
   PixelSynthesisCanvas,
 } from "@/shared/components/memory";
+import { useMemoryStore } from "@/store/memoryStore";
+import Lenis from "lenis";
 
 export const Memory: React.FC = memo(() => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -82,12 +89,27 @@ export const Memory: React.FC = memo(() => {
 
   // Drawer & Staging mode state
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerBodyReady, setDrawerBodyReady] = useState(false);
   const [stagingMode, setStagingMode] = useState<StagingMode>("idle");
   const [saving, setSaving] = useState(false);
   const [consolidating, setConsolidating] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
   const [leftFlash, setLeftFlash] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [selectionAnchor, setSelectionAnchor] = useState<SelectionAnchor | null>(null);
+  const [isComposingComment, setIsComposingComment] = useState(false);
+  const isComposingCommentRef = useRef(false);
+  isComposingCommentRef.current = isComposingComment;
+  const dossierContainerRef = useRef<HTMLDivElement>(null);
+
+  // Comments persisted in Zustand store (survive page navigation)
+  const comments = useMemoryStore((s) => s.pendingComments);
+  const reopenToComments = useMemoryStore((s) => s.reopenToComments);
+  const storeAddComment = useMemoryStore((s) => s.addComment);
+  const storeUpdateComment = useMemoryStore((s) => s.updateComment);
+  const storeDeleteComment = useMemoryStore((s) => s.deleteComment);
+  const storeClearComments = useMemoryStore((s) => s.clearComments);
+  const storeSetReopenToComments = useMemoryStore((s) => s.setReopenToComments);
 
   // ── Measure Container ──────────────────────────────────────────────────────
   const hasMountedRef = useRef(false);
@@ -140,6 +162,53 @@ export const Memory: React.FC = memo(() => {
     refresh();
   }, [refresh]);
 
+  // ── Deferred drawer body: prevents synchronous markdown build on frame 1 ──
+  useEffect(() => {
+    if (!drawerOpen) {
+      setDrawerBodyReady(false);
+      return;
+    }
+    let cancelled = false;
+    const id1 = requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (!cancelled) setDrawerBodyReady(true);
+      })
+    );
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id1);
+    };
+  }, [drawerOpen]);
+
+  // ── Auto-reopen to comment section if comments were pending when drawer was closed ──
+  useEffect(() => {
+    if (drawerOpen && reopenToComments && comments.length > 0) {
+      setStagingMode("comment");
+      storeSetReopenToComments(false);
+    }
+    return undefined;
+  }, [drawerOpen, reopenToComments, comments.length, storeSetReopenToComments]);
+
+  // ── Scoped Lenis smooth scrolling for personal memory dossier ──
+  useEffect(() => {
+    if (!drawerOpen || !drawerBodyReady) return undefined;
+    const el = dossierContainerRef.current;
+    if (!el) return undefined;
+
+    const lenis = new Lenis({
+      wrapper: el,
+      content: el,
+      eventsTarget: el,
+      smoothWheel: true,
+      autoRaf: true,
+      duration: 0.8,
+    });
+
+    return () => {
+      lenis.destroy();
+    };
+  }, [drawerOpen, drawerBodyReady]);
+
   // Counts per category for the Legend
   const categoryCounts = useMemo(() => {
     const counts: Partial<Record<MemoryCategory, number>> = {};
@@ -184,6 +253,9 @@ export const Memory: React.FC = memo(() => {
   }, []);
 
   const handleCoreClick = useCallback(() => {
+    // Dismiss floating tooltip before opening drawer to release its overlay Escape listener
+    setSelectedFact(null);
+    setTooltipPos(null);
     setStagingMode("idle");
     setDrawerOpen(true);
   }, []);
@@ -220,29 +292,25 @@ export const Memory: React.FC = memo(() => {
   );
 
   const handleConsolidateNow = useCallback(async () => {
+    if (consolidating || unconsolidatedIdentityCount === 0) return;
     setConsolidating(true);
-    setStagingMode("consolidating");
+    setLeftFlash(true);
     try {
       const updated = await consolidatePersonalMemory();
       setPersonalMemory(updated);
       await refresh(true);
-      // Seamlessly settle with left card pixel synthesis
       setIsCommitting(true);
-      setLeftFlash(true);
-      setTimeout(() => {
-        setStagingMode("idle");
-      }, 500);
       setTimeout(() => {
         setIsCommitting(false);
         setLeftFlash(false);
-      }, 1200);
+      }, 700);
     } catch (e) {
       console.error("[Memory] Consolidate failed:", e);
-      setStagingMode("idle");
+      setLeftFlash(false);
     } finally {
       setConsolidating(false);
     }
-  }, [refresh]);
+  }, [consolidating, unconsolidatedIdentityCount, refresh]);
 
   const handleCopyDoc = useCallback(() => {
     if (!personalMemory?.content) return;
@@ -251,6 +319,148 @@ export const Memory: React.FC = memo(() => {
       setTimeout(() => setCopied(false), 2000);
     });
   }, [personalMemory?.content]);
+
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      // Do NOT clear or collapse anchor if the user is currently typing/composing in the popover
+      if (isComposingCommentRef.current) {
+        return;
+      }
+
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) {
+        setSelectionAnchor(null);
+        return;
+      }
+      const container = dossierContainerRef.current;
+      if (!container) return;
+
+      const anchorNode = sel.anchorNode;
+      if (!anchorNode || !container.contains(anchorNode)) {
+        setSelectionAnchor(null);
+        return;
+      }
+
+      const text = sel.toString().trim();
+      if (!text || text.length < 2) {
+        setSelectionAnchor(null);
+        return;
+      }
+
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+
+      if (rect.width === 0 || rect.height === 0) {
+        setSelectionAnchor(null);
+        return;
+      }
+
+      // Compute client rects for multi-line highlight persistence
+      const clientRects = Array.from(range.getClientRects());
+      const selectionRects = clientRects.map((cr) => ({
+        top: cr.top - containerRect.top + container.scrollTop,
+        left: cr.left - containerRect.left,
+        width: cr.width,
+        height: cr.height,
+      }));
+
+      // Fast line number lookup
+      const fullContent = personalMemory?.content || "";
+      const snippetIdx = fullContent.indexOf(text);
+      let lineNumber = 1;
+      if (snippetIdx !== -1) {
+        lineNumber = fullContent.slice(0, snippetIdx).split("\n").length;
+      } else {
+        const firstWord = text.split(/\s+/)[0];
+        const wordIdx = fullContent.indexOf(firstWord);
+        if (wordIdx !== -1) {
+          lineNumber = fullContent.slice(0, wordIdx).split("\n").length;
+        }
+      }
+
+      setSelectionAnchor({
+        line: lineNumber,
+        quotedText: text.length > 80 ? `${text.slice(0, 77)}…` : text,
+        top: rect.top - containerRect.top + container.scrollTop,
+        bottom: rect.bottom - containerRect.top + container.scrollTop,
+        left: rect.left - containerRect.left,
+        right: rect.right - containerRect.left,
+        rects: selectionRects,
+      });
+    };
+
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => document.removeEventListener("selectionchange", handleSelectionChange);
+  }, [personalMemory?.content, drawerOpen]);
+
+  const handleAddComment = useCallback(
+    (newComment: { line: number; quotedText: string; text: string; top: number }) => {
+      const commentItem: MemoryComment = {
+        id: `comment_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        line: newComment.line,
+        quotedText: newComment.quotedText,
+        text: newComment.text,
+        top: newComment.top,
+        createdAt: Date.now(),
+      };
+      storeAddComment(commentItem);
+      setSelectionAnchor(null);
+      setIsComposingComment(false);
+      window.getSelection()?.removeAllRanges();
+      setStagingMode("comment");
+    },
+    [storeAddComment]
+  );
+
+  const handleCancelComment = useCallback(() => {
+    setSelectionAnchor(null);
+    setIsComposingComment(false);
+    window.getSelection()?.removeAllRanges();
+  }, []);
+
+  const handleDeleteComment = useCallback((id: string) => {
+    storeDeleteComment(id);
+  }, [storeDeleteComment]);
+
+  const handleUpdateComment = useCallback((id: string, text: string) => {
+    storeUpdateComment(id, text);
+  }, [storeUpdateComment]);
+
+  const handleClearComments = useCallback(() => {
+    storeClearComments();
+  }, [storeClearComments]);
+
+  const handleRegenerateWithComments = useCallback(
+    async (commentsToApply: MemoryComment[]) => {
+      if (!commentsToApply.length) return;
+      setSaving(true);
+      setLeftFlash(true);
+      try {
+        const formattedComments = commentsToApply.map(
+          (c) => `Line ${c.line} ("${c.quotedText}"): ${c.text}`
+        );
+        const updated = await consolidatePersonalMemory(formattedComments);
+        setPersonalMemory(updated);
+        storeClearComments();
+        setIsCommitting(true);
+        setTimeout(() => {
+          setStagingMode("idle");
+        }, 400);
+        setTimeout(() => {
+          setIsCommitting(false);
+          setLeftFlash(false);
+        }, 700);
+        await refresh(true);
+      } catch (e) {
+        console.error("[Memory] Regenerate with comments failed:", e);
+        setLeftFlash(false);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [refresh]
+  );
 
   const handleRecenter = useCallback(() => graphRef.current?.recenter(), []);
   const handleZoomIn = useCallback(() => graphRef.current?.zoomIn(), []);
@@ -269,6 +479,11 @@ export const Memory: React.FC = memo(() => {
     },
     [facts, handleSelectNode]
   );
+
+  const handleTooltipClose = useCallback(() => {
+    setSelectedFact(null);
+    setTooltipPos(null);
+  }, []);
 
   return (
     <div
@@ -325,8 +540,8 @@ export const Memory: React.FC = memo(() => {
         onToggleSelectMode={handleToggleSelectMode}
       />
 
-      {/* ── Bottom Right: Category Legend Overlay (3x2 Ambient Grid) — portal to document.body so above global EdgeNav feather (z-[38]) and all dock layers ── */}
-      {typeof document !== "undefined" &&
+      {/* ── Bottom Right: Category Legend Overlay — hidden when drawer is open to prevent z-bleed ── */}
+      {!drawerOpen && typeof document !== "undefined" &&
         createPortal(
           <div className="fixed bottom-4 right-6 z-[55] pointer-events-auto">
             <MemoryLegendOverlay
@@ -368,19 +583,17 @@ export const Memory: React.FC = memo(() => {
             onSelectNode={handleSelectNode}
             onCoreClick={handleCoreClick}
             selectModeEnabled={selectModeEnabled}
+            paused={drawerOpen}
           />
         </ErrorBoundary>
       )}
 
       {/* ── Floating Fact Detail Tooltip ── */}
-      {selectedFact && tooltipPos && (
+      {selectedFact && tooltipPos && !drawerOpen && (
         <MemoryNodeTooltip
           factDetail={selectedFact}
           pos={tooltipPos}
-          onClose={() => {
-            setSelectedFact(null);
-            setTooltipPos(null);
-          }}
+          onClose={handleTooltipClose}
         />
       )}
 
@@ -399,10 +612,24 @@ export const Memory: React.FC = memo(() => {
         </div>
       )}
 
+      {/* ── Memory Page Footnote Hint ── */}
+      {!drawerOpen && !loading && (
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-none">
+          <div className="flex items-center gap-1.5 text-[11px] font-mono text-[rgb(var(--foreground-muted))] opacity-60">
+            <Hand size={12} className="text-[rgb(var(--accent))]" />
+            <span>{MEMORY_COPY.memoryHint}</span>
+          </div>
+        </div>
+      )}
+
       {/* ── Bottom-Sheet Personal Memory Drawer ── */}
       <Drawer
         open={drawerOpen}
         onClose={() => {
+          // Remember to reopen to comment section next time if comments are pending
+          if (comments.length > 0) {
+            storeSetReopenToComments(true);
+          }
           setDrawerOpen(false);
           setStagingMode("idle");
         }}
@@ -426,27 +653,27 @@ export const Memory: React.FC = memo(() => {
             <button
               type="button"
               onClick={handleConsolidateNow}
-              disabled={consolidating || stagingMode === "consolidating"}
+              disabled={consolidating || unconsolidatedIdentityCount === 0}
               className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all disabled:opacity-50 cursor-pointer shadow-sm",
-                stagingMode === "consolidating" || consolidating
+                "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm",
+                consolidating
                   ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.5)] text-[rgb(var(--accent))]"
                   : unconsolidatedIdentityCount > 0
-                  ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)]"
-                  : "bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))]"
+                  ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] cursor-pointer"
+                  : "bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]/40"
               )}
             >
               <Zap
                 size={12}
-                className={cn((consolidating || stagingMode === "consolidating") && "animate-pulse text-[rgb(var(--accent))]")}
+                className={cn(consolidating && "animate-pulse text-[rgb(var(--accent))]")}
               />
               <span>
-                {consolidating || stagingMode === "consolidating"
+                {consolidating
                   ? MEMORY_COPY.consolidating
                   : MEMORY_COPY.consolidate}
               </span>
               {unconsolidatedIdentityCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-medium text-[rgb(var(--accent))]]">
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-medium text-[rgb(var(--accent))]">
                   {unconsolidatedIdentityCount}
                 </span>
               )}
@@ -461,7 +688,7 @@ export const Memory: React.FC = memo(() => {
               {/* Left Column: Canonical Persistent Memory (DB Ground Truth) */}
               <div
                 className={cn(
-                  "w-full h-full min-h-0 flex flex-col glass-card rounded-2xl border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--card),0.65)] backdrop-blur-xl p-5 sm:p-6 transition-all duration-500 overflow-hidden",
+                  "w-full h-full min-h-0 flex flex-col glass-card rounded-2xl border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--card),0.65)] backdrop-blur-sm p-5 sm:p-6 transition-all duration-500 overflow-hidden",
                   leftFlash
                     ? "ring-2 ring-[rgb(var(--accent))] shadow-[0_0_35px_rgba(var(--accent),0.35)] scale-[1.008]"
                     : "shadow-2xl"
@@ -514,39 +741,77 @@ export const Memory: React.FC = memo(() => {
                 </div>
 
                 {/* Dossier Document Content with Inner Scrolling */}
-                <div className="relative flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 pt-3 leading-relaxed max-w-none">
+                <div
+                  ref={dossierContainerRef}
+                  className="relative flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 pt-3 leading-relaxed max-w-none select-text"
+                >
+                  {/* Inline text selection comment popover */}
+                  <PersonalMemoryCommentPopover
+                    anchor={selectionAnchor}
+                    onAddComment={handleAddComment}
+                    onCancel={handleCancelComment}
+                    onOpenChange={setIsComposingComment}
+                  />
+
+                  {/* Persistent text highlight overlay while commenting */}
+                  {selectionAnchor?.rects?.map((r, i) => (
+                    <div
+                      key={`sel_rect_${i}`}
+                      className="absolute pointer-events-none rounded-[2px] bg-[rgba(var(--accent),0.28)] transition-opacity duration-150 z-10"
+                      style={{
+                        top: `${r.top}px`,
+                        left: `${r.left}px`,
+                        width: `${r.width}px`,
+                        height: `${r.height}px`,
+                      }}
+                    />
+                  ))}
+
+                  {/* Persistent Comment Icons on Right Margin for all saved comments (Image 3 layout) */}
+                  {comments.map((c) => (
+                    <div
+                      key={c.id}
+                      className="absolute right-1 z-30 pointer-events-auto transition-transform hover:scale-110"
+                      style={{ top: `${Math.max(4, c.top)}px` }}
+                    >
+                      <Tooltip label={`Line ${c.line}: ${c.text}`} side="left">
+                        <button
+                          type="button"
+                          onClick={() => setStagingMode("comment")}
+                          className="w-5 h-5 rounded-md bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.45)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.15)] shadow-md flex items-center justify-center cursor-pointer transition-colors"
+                        >
+                          <MessageSquare size={11} />
+                        </button>
+                      </Tooltip>
+                    </div>
+                  ))}
+
                   {/* Computational Pixel Reconstruction Overlay */}
                   <div
                     className={cn(
-                      "absolute inset-0 z-20 rounded-xl overflow-hidden bg-[rgba(var(--card),0.92)] backdrop-blur-md transition-all duration-500 pointer-events-none flex flex-col justify-between p-6",
-                      leftFlash
-                        ? "opacity-100 scale-100"
-                        : "opacity-0 scale-[0.98] pointer-events-none select-none invisible"
+                      "absolute inset-0 z-20 rounded-xl overflow-hidden bg-[rgba(var(--card),0.85)] backdrop-blur-md transition-opacity duration-500 pointer-events-none",
+                      leftFlash ? "opacity-100" : "opacity-0 invisible"
                     )}
                   >
-                    <div className="absolute inset-0 z-0">
-                      <PixelSynthesisCanvas active={leftFlash} />
-                    </div>
-                    <div className="relative z-10 flex items-center justify-between">
-                      <span className="text-[11px] font-mono text-[rgb(var(--accent))] animate-pulse font-medium">
-                        Rebuilding Personal Memory
-                      </span>
-                    </div>
-                    <div className="relative z-10 text-right text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-                      Updating Version
-                    </div>
+                    <PixelSynthesisCanvas active={leftFlash} />
                   </div>
 
-                  {personalMemory?.content ? (
-                    <Markdown
-                      content={personalMemory.content}
-                      variant="document"
-                      autoHeadings
-                    />
+                  {drawerBodyReady ? (
+                    personalMemory?.content ? (
+                      <Markdown
+                        content={personalMemory.content}
+                        variant="document"
+                        autoHeadings
+                      />
+                    ) : (
+                      <p className="text-[rgb(var(--foreground-muted))] text-[13px] font-mono py-12 text-center">
+                        {MEMORY_COPY.noPersonalMemory}
+                      </p>
+                    )
                   ) : (
-                    <p className="text-[rgb(var(--foreground-muted))] text-[13px] font-mono py-12 text-center">
-                      {MEMORY_COPY.noPersonalMemory}
-                    </p>
+                    <div className="py-12 flex justify-center">
+                      <div className="w-6 h-6 rounded-full border-2 border-[rgba(var(--accent),0.4)] border-t-[rgb(var(--accent))] animate-spin" />
+                    </div>
                   )}
                 </div>
               </div>
@@ -557,8 +822,14 @@ export const Memory: React.FC = memo(() => {
                 mode={stagingMode}
                 onModeChange={setStagingMode}
                 onSave={handleSaveStaging}
+                onRegenerateWithComments={handleRegenerateWithComments}
+                comments={comments}
+                onDeleteComment={handleDeleteComment}
+                onUpdateComment={handleUpdateComment}
+                onClearComments={handleClearComments}
                 unconsolidatedCount={unconsolidatedIdentityCount}
                 isSaving={saving}
+                isConsolidating={consolidating}
                 isCommitting={isCommitting}
               />
             </div>

@@ -98,6 +98,8 @@ interface MemoryGraphProps {
   selectedFactId: string | null;
   selectedSessionId?: string | null;
   selectModeEnabled?: boolean;
+  /** Suspend the rAF render loop (e.g. when drawer is open over the graph) */
+  paused?: boolean;
 }
 
 export const MemoryGraph = memo(
@@ -114,6 +116,7 @@ export const MemoryGraph = memo(
         selectedFactId,
         selectedSessionId = null,
         selectModeEnabled = false,
+        paused = false,
       },
       ref
     ) => {
@@ -146,6 +149,7 @@ export const MemoryGraph = memo(
         selectedFactId,
         selectedSessionId,
         onCoreClick,
+        paused,
       });
 
       useImperativeHandle(ref, () => ({

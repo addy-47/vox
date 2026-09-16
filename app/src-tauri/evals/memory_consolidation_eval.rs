@@ -123,7 +123,7 @@ async fn run(args: Args) -> Result<()> {
     let llm_started = Instant::now();
     let record = tokio::time::timeout(
         Duration::from_secs(600),
-        consolidate_personal_memory(&conn, provider.as_ref(), None, None),
+        consolidate_personal_memory(&conn, provider.as_ref(), None, None, None),
     )
     .await
     .context("Consolidation executor call timed out")?

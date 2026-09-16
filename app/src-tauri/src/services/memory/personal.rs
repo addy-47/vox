@@ -21,6 +21,7 @@ use crate::{
         harness::{ChatMessage, Role},
         llm::{
             ConversationInput, GenerationPolicy, GenerationPurpose, LlmProvider, LlmStreamEvent,
+            OutputConstraint, ReasoningMode,
         },
         memory::COMPACTION_SENTINEL_TURN_ID,
     },
@@ -40,13 +41,14 @@ Your task is to integrate newly discovered personal facts about the user into th
 
 const COMMENT_REGENERATION_SYSTEM_PROMPT: &str = r#"<role>
 You are a personal memory editing engine for an AI assistant.
-Your task is to update and reorganize the user's Personal Memory markdown document according to user directive comments.
+Your task is to update and reorganize the user's Personal Memory markdown document according to user comments anchored to specific lines.
 </role>
 
 <rules>
-1. Faithfully apply the user's requested modifications, additions, and removals.
-2. Ensure the resulting document remains clean, well-structured, and concise Markdown.
-3. Output ONLY the raw markdown text of the document. Do not wrap in markdown code blocks or add introductory text.
+1. Faithfully apply each comment to its referenced line, quote, or section.
+2. Preserve all existing text, facts, and headings that are not targeted by comments.
+3. Organize into clean Markdown headings using ## for major sections and bullet points for lists.
+4. Output ONLY the raw markdown text. Start directly with the first heading or bullet. Never enclose the response in markdown code blocks or triple backticks.
 </rules>"#;
 
 /// Consolidates accumulated personal facts or applies user directive comments into the personal memory document.
@@ -55,7 +57,11 @@ pub async fn consolidate_personal_memory(
     llm_provider: &dyn LlmProvider,
     comments: Option<Vec<String>>,
     project_id: Option<&str>,
+    settings: Option<&LlmSettings>,
 ) -> Result<PersonalMemoryRecord> {
+    let fallback_settings = LlmSettings::default();
+    let effective_settings = settings.unwrap_or(&fallback_settings);
+
     let current_record = get_personal_memory(conn, project_id).await?;
 
     if let Some(user_comments) = comments {
@@ -69,6 +75,7 @@ pub async fn consolidate_personal_memory(
             &current_record,
             &user_comments,
             project_id,
+            effective_settings,
         )
         .await;
     }
@@ -102,6 +109,7 @@ pub async fn consolidate_personal_memory(
         llm_provider,
         PERSONAL_CONSOLIDATION_SYSTEM_PROMPT,
         &user_content,
+        effective_settings,
     )
     .await?;
 
@@ -121,8 +129,6 @@ pub async fn consolidate_personal_memory(
     Ok(saved)
 }
 
-
-
 /// Regenerates the document based on directive comments from the user.
 async fn regenerate_with_comments(
     conn: &Connection,
@@ -130,19 +136,33 @@ async fn regenerate_with_comments(
     current_record: &PersonalMemoryRecord,
     comments: &[String],
     project_id: Option<&str>,
+    settings: &LlmSettings,
 ) -> Result<PersonalMemoryRecord> {
+    let comments_list = comments
+        .iter()
+        .map(|c| {
+            if c.starts_with("- ") {
+                c.to_string()
+            } else {
+                format!("- {}", c)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
     let user_content = format!(
         "<current_personal_memory>\n{}\n</current_personal_memory>\n\n\
          <user_directive_comments>\n{}\n</user_directive_comments>\n\n\
-         Please update the document following the directives and output the updated Markdown.",
+         Please update the document following the comments and output the updated Markdown.",
         current_record.content,
-        comments.join("\n- ")
+        comments_list
     );
 
     let updated_markdown = execute_personal_llm_pass(
         llm_provider,
         COMMENT_REGENERATION_SYSTEM_PROMPT,
         &user_content,
+        settings,
     )
     .await?;
 
@@ -171,14 +191,15 @@ async fn execute_personal_llm_pass(
     provider: &dyn LlmProvider,
     system_prompt: &str,
     user_content: &str,
+    settings: &LlmSettings,
 ) -> Result<String> {
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
 
-    let policy = GenerationPolicy::from_settings(&LlmSettings::default(), Some(4096));
-    let request = policy.build_request(
+    let policy = GenerationPolicy::from_settings(settings, Some(4096));
+    let mut request = policy.build_request(
         GenerationPurpose::MemoryCompaction,
         ConversationInput {
             messages: vec![
@@ -195,6 +216,12 @@ async fn execute_personal_llm_pass(
             ],
         },
     );
+
+    request.output = OutputConstraint::Text;
+    request.options.reasoning = ReasoningMode::Enabled;
+    request.options.max_output_tokens = Some(4096);
+    request.options.temperature = Some(settings.compaction_temperature);
+    request.options.context_window = Some(settings.context_window);
 
     let cancel = CancellationToken::new();
     let (tx, rx) = mpsc::channel();

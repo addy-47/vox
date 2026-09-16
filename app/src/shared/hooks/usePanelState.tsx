@@ -58,10 +58,11 @@ export const PanelStateProvider: React.FC<PanelStateProviderProps> = memo(({ chi
       rAfId = requestAnimationFrame(() => {
         rAfId = null;
         if (typeof window !== "undefined" && window.innerWidth < THRESHOLD_DUAL_PANEL_WIDTH) {
+          // Read current left panel value synchronously, then set outside updater
           setLeftPanel((currentLeft) => {
             if (currentLeft !== null) {
-              // If left panel is open on small layout, right panel cannot coexist
-              setRightPanel(null);
+              // Schedule right panel clear outside updater to keep it pure
+              setTimeout(() => setRightPanel(null), 0);
             }
             return currentLeft;
           });
@@ -99,17 +100,11 @@ export const PanelStateProvider: React.FC<PanelStateProviderProps> = memo(({ chi
     const edge = PANEL_EDGE_MAP[id];
     const isNarrow = isNarrowViewport();
     if (edge === "left") {
-      setLeftPanel((prev) => {
-        const next = prev === id ? null : id;
-        if (next !== null && isNarrow) setRightPanel(null);
-        return next;
-      });
+      setLeftPanel((prev) => (prev === id ? null : id));
+      if (isNarrow) setRightPanel(null);
     } else {
-      setRightPanel((prev) => {
-        const next = prev === id ? null : id;
-        if (next !== null && isNarrow) setLeftPanel(null);
-        return next;
-      });
+      setRightPanel((prev) => (prev === id ? null : id));
+      if (isNarrow) setLeftPanel(null);
     }
   }, [isNarrowViewport]);
 

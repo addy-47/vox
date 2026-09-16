@@ -115,6 +115,7 @@ pub async fn consolidate_personal_memory(
         provider.as_ref(),
         comments,
         project_id.as_deref(),
+        Some(&llm_settings),
     )
     .await
     .map_err(|e| VoxIpcError::Engine(e.to_string()))?;
