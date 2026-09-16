@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { SlidersHorizontal, House, Activity, History, Network } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { BottomDockFeather } from "@/shared/ui";
 
 const navItems = [
   { icon: House, label: "Home", path: "/" },
@@ -14,14 +15,9 @@ const navItems = [
 export const EdgeNav: React.FC = () => {
   return (
     <>
-      {/* Soft glass/fade mask backdrop behind floating nav for small-screen layouts */}
-      <div
-        className="lg:hidden fixed bottom-0 left-0 right-0 h-[110px] pointer-events-none z-20 bg-gradient-to-b from-transparent via-[rgb(var(--background))]/60 to-[rgb(var(--background))]/95 backdrop-blur-[16px]"
-        style={{
-          WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 35%, black 100%)",
-          maskImage: "linear-gradient(to bottom, transparent 0%, black 35%, black 100%)",
-        }}
-      />
+      {/* Standard bottom-dock feather: dissolves scrolled content (incl. open panels) behind the floating nav.
+          z-[38] sits above EdgePanels (z-35) and page drawers (z-30) but below layout docks (z-40) and the nav itself (z-60). */}
+      <BottomDockFeather className="fixed bottom-0 left-0 right-0 h-[110px] z-[38]" />
 
       <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] pointer-events-auto flex items-center gap-2 px-3 py-1.5 h-[56px] glass-card border border-[rgba(var(--accent),0.15)] rounded-full shadow-2xl">
         {navItems.map((item) => (

@@ -153,26 +153,26 @@ export function useHistory() {
     [dimensions.width, dimensions.height]
   );
 
-  // Windows
-  const dayWindows = useMemo(
-    () => chunkSessionsIntoWindows(currentDateSessions, capacity),
-    [currentDateSessions, capacity]
+  // Session-quota based full orbit windows: distributes sessions across full 360 ring
+  const sessionWindows = useMemo(
+    () => chunkSessionsIntoWindows(sessions, capacity),
+    [sessions, capacity]
   );
   const monthWindows = useMemo(
     () => chunkDaysIntoWindows(currentMonthGroup?.days ?? [], capacity),
     [currentMonthGroup, capacity]
   );
 
-  const effectiveDayWindowIndex = Math.min(
+  const effectiveSessionWindowIndex = Math.min(
     dayWindowIndex,
-    Math.max(0, dayWindows.length - 1)
+    Math.max(0, sessionWindows.length - 1)
   );
   const effectiveMonthWindowIndex = Math.min(
     monthWindowIndex,
     Math.max(0, monthWindows.length - 1)
   );
 
-  const currentWindow = dayWindows[effectiveDayWindowIndex];
+  const currentWindow = sessionWindows[effectiveSessionWindowIndex];
   const currentWindowSessions = currentWindow?.sessions ?? [];
   const currentMonthWindow = monthWindows[effectiveMonthWindowIndex];
 
@@ -334,23 +334,17 @@ export function useHistory() {
 
   const handlePrevDate = useCallback(() => {
     setSelectedSession(null);
-    if (effectiveDayWindowIndex > 0) {
-      setDayWindowIndex(effectiveDayWindowIndex - 1);
-    } else {
-      setDayWindowIndex(0);
-      setDateIndex((idx) => Math.max(0, idx - 1));
+    if (effectiveSessionWindowIndex > 0) {
+      setDayWindowIndex(effectiveSessionWindowIndex - 1);
     }
-  }, [effectiveDayWindowIndex]);
+  }, [effectiveSessionWindowIndex]);
 
   const handleNextDate = useCallback(() => {
     setSelectedSession(null);
-    if (effectiveDayWindowIndex < dayWindows.length - 1) {
-      setDayWindowIndex(effectiveDayWindowIndex + 1);
-    } else {
-      setDayWindowIndex(0);
-      setDateIndex((idx) => Math.min(totalDates - 1, idx + 1));
+    if (effectiveSessionWindowIndex < sessionWindows.length - 1) {
+      setDayWindowIndex(effectiveSessionWindowIndex + 1);
     }
-  }, [effectiveDayWindowIndex, dayWindows.length, totalDates]);
+  }, [effectiveSessionWindowIndex, sessionWindows.length]);
 
   const handleGoToday = useCallback(() => {
     setSelectedSession(null);
@@ -423,8 +417,8 @@ export function useHistory() {
     effectiveView === "month" ? HISTORY_COPY.monthHint : HISTORY_COPY.clickHint;
 
   const dayTurnsCount = useMemo(
-    () => currentDateSessions.reduce((sum, s) => sum + s.turn_count, 0),
-    [currentDateSessions]
+    () => currentWindowSessions.reduce((sum, s) => sum + s.turn_count, 0),
+    [currentWindowSessions]
   );
 
   const monthTurnsCount = useMemo(
@@ -436,10 +430,10 @@ export function useHistory() {
     [currentMonthGroup]
   );
 
-  // Time span formatted for the day e.g. "08:15 AM - 10:42 PM"
+  // Time span formatted for the window e.g. "08:15 AM - 10:42 PM"
   const dayTimeSpan = useMemo(() => {
-    if (currentDateSessions.length === 0) return null;
-    const timestamps = currentDateSessions.map((s) => s.created_at).sort((a, b) => a - b);
+    if (currentWindowSessions.length === 0) return null;
+    const timestamps = currentWindowSessions.map((s) => s.created_at).sort((a, b) => a - b);
     const earliest = timestamps[0];
     const latest = timestamps[timestamps.length - 1];
     const fmt = (ms: number) =>
@@ -449,7 +443,7 @@ export function useHistory() {
         hour12: true,
       });
     return earliest === latest ? fmt(earliest) : `${fmt(earliest)} – ${fmt(latest)}`;
-  }, [currentDateSessions]);
+  }, [currentWindowSessions]);
 
   return {
     sessions,
@@ -472,9 +466,9 @@ export function useHistory() {
     currentMonthWindow,
     sessionById,
     ringRadius,
-    dayWindowIndex: effectiveDayWindowIndex,
+    dayWindowIndex: effectiveSessionWindowIndex,
     monthWindowIndex: effectiveMonthWindowIndex,
-    dayWindows,
+    dayWindows: sessionWindows,
     monthWindows,
     totalDates,
     totalMonths,

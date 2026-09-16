@@ -81,7 +81,10 @@ export function useMemoryGraphScene({
   const sessionAnchorsRef = useRef<SessionAnchor[]>([]);
   const conduitsRef = useRef<ConduitSegment[]>([]);
   const animFrameRef = useRef<number | null>(null);
-  const flyToTargetRef = useRef<{ x: number; y: number; z: number } | null>(null);
+  const flyToTargetRef = useRef<{
+    cam: { x: number; y: number; z: number };
+    target: { x: number; y: number; z: number };
+  } | null>(null);
 
   // Scratch Math Objects
   const dummyObjRef = useRef(new THREE.Object3D());
@@ -213,7 +216,7 @@ export function useMemoryGraphScene({
       const visible = isNodeVisible(node);
       const matchesSearch = !hasSearch || isNodeMatchingSearch(node);
       const isSelected = selFactId === node.id;
-      const nodeSessionId = node.factRecord.session_id !== null ? String(node.factRecord.session_id) : null;
+      const nodeSessionId = node.sessionId ?? (node.factRecord.session_id !== null ? String(node.factRecord.session_id) : null);
       const isSessionSelected = selSessionId !== null && nodeSessionId === selSessionId;
       const isOtherSession = selSessionId !== null && nodeSessionId !== selSessionId && node.collection !== "personal";
 
@@ -229,13 +232,14 @@ export function useMemoryGraphScene({
         radius = 1.2;
         colHex = isLight ? "#94a3b8" : "#283344";
       } else if (isOtherSession) {
-        // Gracefully dimmed non-selected session facts
-        radius = 2.4;
+        // Dimmed non-selected session facts: smaller radius and muted tone
+        const isAnchor = node.id.startsWith("anchor_");
+        radius = isAnchor ? 2.2 : 1.6;
         colHex = isLight ? "#cbd5e1" : "#1e293b";
       } else if (isSessionSelected) {
-        // Highlighted session nodes
+        // Vividly highlighted session nodes
         const isAnchor = node.id.startsWith("anchor_");
-        radius = isSelected ? 12 : isAnchor ? 7.2 : node.collection === "personal" ? 6.0 : 5.0;
+        radius = isSelected ? 13 : isAnchor ? 8.0 : node.collection === "personal" ? 6.5 : 5.4;
         colHex = colHexMain;
       } else {
         // Normal state
@@ -284,6 +288,10 @@ export function useMemoryGraphScene({
     if (!lineSegments || (conduits.length === 0 && gLinks.length === 0)) return;
 
     const selSessionId = selectedSessionIdRef.current;
+    const selCollection = selectedCollectionRef.current;
+    const sq = searchQueryRef.current.trim().toLowerCase();
+    const hasSearch = sq.length > 0;
+    const hasCollectionFilter = selCollection !== "all";
     const isLight = isLightModeRef.current;
 
     const totalLines = conduits.length + gLinks.length;
@@ -304,8 +312,36 @@ export function useMemoryGraphScene({
     const colArray = colAttr.array as Float32Array;
     let writePtr = 0;
 
+    // Build O(1) session anchor lookup map
+    const anchorMap = new Map<string, SessionAnchor>();
+    for (let i = 0; i < sessionAnchors.length; i++) {
+      anchorMap.set(sessionAnchors[i].sId, sessionAnchors[i]);
+    }
+
+    /**
+     * Determines if a node passes the current active filters.
+     * A node is "live" if:
+     *  1. Its collection matches the selected collection (or all is selected)
+     *  2. It matches the search query (or no search is active)
+     * Personal / core identity nodes are always live so CORE_IDENTITY links remain.
+     */
+    const isNodeLive = (node: GNode): boolean => {
+      if (node.collection === "personal") return true; // core identity always visible
+      if (hasCollectionFilter && node.collection !== selCollection) return false;
+      if (hasSearch) {
+        const matchesText = node.factRecord?.text?.toLowerCase().includes(sq) ?? false;
+        const matchesCat = node.collection.toLowerCase().includes(sq);
+        if (!matchesText && !matchesCat) return false;
+      }
+      return true;
+    };
+
     // 1. Write Umbilical Conduits
+    // Conduits connect session anchors to the core — skip if collection-filtered away
     conduits.forEach((cond) => {
+      // If a collection filter is active, only show conduits for the selected session's anchor
+      if (hasCollectionFilter && selSessionId === null) return;
+
       posArray[writePtr + 0] = cond.p0.x;
       posArray[writePtr + 1] = cond.p0.y;
       posArray[writePtr + 2] = cond.p0.z;
@@ -339,16 +375,26 @@ export function useMemoryGraphScene({
       writePtr += 6;
     });
 
-    // Build O(1) session anchor lookup map (M-F12)
-    const anchorMap = new Map<string, SessionAnchor>();
-    for (let i = 0; i < sessionAnchors.length; i++) {
-      anchorMap.set(sessionAnchors[i].sId, sessionAnchors[i]);
-    }
-
-    // 2. Write Graph Links
+    // 2. Write Graph Links — skip if either endpoint is filtered out
     gLinks.forEach((link) => {
       const tgt = gNodes[link.targetIndex];
       if (!tgt) return;
+
+      // Skip CORE_IDENTITY links only when a collection filter makes them irrelevant
+      // (they connect personal nodes to the core — always draw unless search hides target)
+      if (link.relation !== "CORE_IDENTITY") {
+        // Check target node passes filters
+        if (!isNodeLive(tgt)) return;
+
+        // Check source node passes filters (if it's a real node, not the core or an anchor)
+        if (link.sourceIndex >= 0 && link.sourceIndex < gNodes.length) {
+          const srcNode = gNodes[link.sourceIndex];
+          if (srcNode && !isNodeLive(srcNode)) return;
+        }
+      } else if (hasSearch) {
+        // For CORE_IDENTITY links, still hide if target doesn't match search
+        if (!isNodeLive(tgt)) return;
+      }
 
       let srcX = 0, srcY = 0, srcZ = 0;
       if (link.sourceIndex === -1) {
@@ -378,23 +424,36 @@ export function useMemoryGraphScene({
       posArray[writePtr + 4] = tgt.y;
       posArray[writePtr + 5] = tgt.z;
 
-      const isHighlight = selSessionId !== null && (link.fromId === selSessionId || link.toId === selSessionId);
-      const isDimmed = selSessionId !== null && !isHighlight && link.relation !== "CORE_IDENTITY";
+      const tgtSessionId = tgt.sessionId ?? (tgt.factRecord?.session_id !== null ? String(tgt.factRecord.session_id) : null);
+      const isSessionBranch = selSessionId !== null && (
+        tgtSessionId === selSessionId ||
+        link.fromId === `anchor_${selSessionId}` ||
+        link.toId === `anchor_${selSessionId}`
+      );
+      const isDimmed = selSessionId !== null && !isSessionBranch && link.relation !== "CORE_IDENTITY";
 
       SCRATCH_COLOR_1.set(link.color);
 
       if (isDimmed) {
-        const dimHex = isLight ? "#94a3b8" : "#334155";
+        const dimHex = isLight ? "#cbd5e1" : "#1e293b";
         SCRATCH_COLOR_1.set(dimHex);
-        const dimFactor = isLight ? 0.45 : 0.22;
+        const dimFactor = isLight ? 0.35 : 0.15;
         colArray[writePtr + 0] = SCRATCH_COLOR_1.r * dimFactor;
         colArray[writePtr + 1] = SCRATCH_COLOR_1.g * dimFactor;
         colArray[writePtr + 2] = SCRATCH_COLOR_1.b * dimFactor;
         colArray[writePtr + 3] = SCRATCH_COLOR_1.r * dimFactor;
         colArray[writePtr + 4] = SCRATCH_COLOR_1.g * dimFactor;
         colArray[writePtr + 5] = SCRATCH_COLOR_1.b * dimFactor;
+      } else if (isSessionBranch) {
+        // Boost selected branch link vibrancy
+        SCRATCH_START_COLOR.copy(SCRATCH_COLOR_1).multiplyScalar(1.25);
+        colArray[writePtr + 0] = SCRATCH_START_COLOR.r;
+        colArray[writePtr + 1] = SCRATCH_START_COLOR.g;
+        colArray[writePtr + 2] = SCRATCH_START_COLOR.b;
+        colArray[writePtr + 3] = SCRATCH_COLOR_1.r;
+        colArray[writePtr + 4] = SCRATCH_COLOR_1.g;
+        colArray[writePtr + 5] = SCRATCH_COLOR_1.b;
       } else {
-        // Never multiply by 0.45 in light mode (which causes muddy black clumps at convergence points).
         // Keep true vibrant chromatic colors with gentle soft gradient.
         SCRATCH_START_COLOR.copy(SCRATCH_COLOR_1);
         if (isLight) {
@@ -595,7 +654,6 @@ export function useMemoryGraphScene({
           prevPoint = pt;
         }
 
-        // ── Session Anchor Hub Node (Nexus where trunk meets cluster canopy) ──
         const anchorNodeIdx = gNodes.length;
         gNodes.push({
           id: `anchor_${sKey}`,
@@ -604,6 +662,7 @@ export function useMemoryGraphScene({
           collection: dominantCat,
           status: "active",
           factRecord: clusterFacts[0],
+          sessionId: sKey,
           color: clusterPalette.main,
           degree: nCluster,
           x: trunkX,
@@ -647,6 +706,7 @@ export function useMemoryGraphScene({
             collection: cat,
             status: "active",
             factRecord: fact,
+            sessionId: sKey,
             color: palette.main,
             degree: 1,
             x: posX,
@@ -716,21 +776,26 @@ export function useMemoryGraphScene({
     if (!node) return;
 
     flyToTargetRef.current = {
-      x: node.x,
-      y: node.y,
-      z: node.z + 350,
+      cam: { x: node.x, y: node.y, z: node.z + 350 },
+      target: { x: node.x, y: node.y, z: node.z },
     };
     wakeLoopRef.current();
   }, [selectedFactId]);
 
   // Navigation helpers
   const recenter = useCallback(() => {
-    flyToTargetRef.current = { x: 0, y: 0, z: 3100 };
+    flyToTargetRef.current = {
+      cam: { x: 0, y: 0, z: 3100 },
+      target: { x: 0, y: 0, z: 0 },
+    };
     wakeLoopRef.current();
   }, []);
 
   const focusCore = useCallback(() => {
-    flyToTargetRef.current = { x: 0, y: 0, z: 750 };
+    flyToTargetRef.current = {
+      cam: { x: 0, y: 0, z: 750 },
+      target: { x: 0, y: 0, z: 0 },
+    };
     wakeLoopRef.current();
   }, []);
 
@@ -740,9 +805,8 @@ export function useMemoryGraphScene({
     if (!anchor) return;
 
     flyToTargetRef.current = {
-      x: anchor.x,
-      y: anchor.y,
-      z: anchor.z + 450,
+      cam: { x: anchor.x, y: anchor.y, z: anchor.z + 450 },
+      target: { x: anchor.x, y: anchor.y, z: anchor.z },
     };
     wakeLoopRef.current();
   }, []);
@@ -753,9 +817,8 @@ export function useMemoryGraphScene({
     if (!node) return;
 
     flyToTargetRef.current = {
-      x: node.x,
-      y: node.y,
-      z: node.z + 320,
+      cam: { x: node.x, y: node.y, z: node.z + 320 },
+      target: { x: node.x, y: node.y, z: node.z },
     };
     wakeLoopRef.current();
   }, []);
@@ -1060,12 +1123,12 @@ export function useMemoryGraphScene({
 
       // Smooth Camera Fly-To Lerp
       if (flyToTargetRef.current && cameraRef.current && controlsRef.current) {
-        const target = flyToTargetRef.current;
+        const flyTarget = flyToTargetRef.current;
         const cam = cameraRef.current;
         const ctrl = controlsRef.current;
 
-        tempTargetVec.set(target.x * 0.4, target.y * 0.4, target.z * 0.4);
-        tempCamVec.set(target.x, target.y, target.z);
+        tempTargetVec.set(flyTarget.target.x, flyTarget.target.y, flyTarget.target.z);
+        tempCamVec.set(flyTarget.cam.x, flyTarget.cam.y, flyTarget.cam.z);
 
         ctrl.target.lerp(tempTargetVec, 0.08);
         cam.position.lerp(tempCamVec, 0.08);

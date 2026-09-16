@@ -1,7 +1,10 @@
 import React, { memo, useMemo } from "react";
-import { VoxOrb, PipelineField, StatusCapsule, TestClipsPopover, RestorePulse } from "@/shared/components/home";
+import { createPortal } from "react-dom";
+import { VoxOrb, PipelineField, StatusCapsule, TestClipsPopover, RestorePulse, SessionPanel } from "@/shared/components/home";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
 import { ErrorBoundary } from "@/shared/components/common";
+import { EdgePanel } from "@/shared/ui";
+import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import {
   GOVERNOR_LABELS,
   HOME_CONTROLS_COPY,
@@ -88,6 +91,9 @@ export const Home = memo(() => {
     handlePttCancel,
     handleTestClip,
   } = useHomePage();
+
+  const { isPanelOpen, closePanel } = usePanelStateContext();
+  const closeSessions = () => closePanel("sessions");
 
   // Test-clip menu participates in the global overlay stack (Escape / outside-click).
   useOverlay({
@@ -339,45 +345,58 @@ export const Home = memo(() => {
         </div>
       </div>
 
-      {/* ── Test Mode — bottom-right, hidden when engaged ──────────────── */}
-      <AnimatePresence>
-        {!isEngaged && (
-          <motion.div
-            key="test-mode-container"
-            initial={{ opacity: 0, scale: 0.85, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.85, y: 10 }}
-            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="hidden md:block fixed bottom-4 right-4 z-50"
-          >
-            <button
-              ref={testButtonRef}
-              onClick={() => setTestMode(!testMode)}
-              className={cn(
-                "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 cursor-pointer glass-card",
-                testMode
-                  ? "bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/60"
-                  : "bg-transparent border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
+      {/* ── Test Mode — bottom-right, hidden when engaged ──────────────────── */}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <AnimatePresence>
+              {!isEngaged && (
+                <motion.div
+                  key="test-mode-container"
+                  initial={{ opacity: 0, scale: 0.85, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.85, y: 10 }}
+                  transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                  className="hidden md:block fixed bottom-4 right-4 z-[55]"
+                >
+                  <button
+                    ref={testButtonRef}
+                    onClick={() => setTestMode(!testMode)}
+                    className={cn(
+                      "relative flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 hover:scale-105 cursor-pointer glass-card",
+                      testMode
+                        ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/60"
+                        : "bg-transparent border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
+                    )}
+                    aria-label={HOME_CONTROLS_COPY.testMode.ariaLabel}
+                  >
+                    <FlaskConical size={22} strokeWidth={2} />
+                  </button>
+                </motion.div>
               )}
-              aria-label={HOME_CONTROLS_COPY.testMode.ariaLabel}
-            >
-              <FlaskConical size={22} />
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </AnimatePresence>
 
-      {/* ── Test Mode Panel ──────────────── */}
-      <AnimatePresence>
-        {testMode && !isEngaged && (
-          <TestClipsPopover
-            panelRef={testPanelRef}
-            onSelectClip={handleTestClip}
-            onClose={() => setTestMode(false)}
-            testingClip={testingClip}
-          />
+            {/* ── Test Mode Panel ──────────────── */}
+            <AnimatePresence>
+              {testMode && !isEngaged && (
+                <TestClipsPopover
+                  panelRef={testPanelRef}
+                  onSelectClip={handleTestClip}
+                  onClose={() => setTestMode(false)}
+                  testingClip={testingClip}
+                />
+              )}
+            </AnimatePresence>
+          </>,
+          document.body
         )}
-      </AnimatePresence>
+
+      {/* ── Left Edge Rail (Conversations) — Home only; Memory has its own MemorySessionRail ── */}
+      <EdgePanel side="left" open={isPanelOpen("sessions")} onClose={closeSessions} minimalHeader>
+        <ErrorBoundary name="SessionPanel">
+          <SessionPanel onClose={closeSessions} />
+        </ErrorBoundary>
+      </EdgePanel>
     </div>
   );
 });

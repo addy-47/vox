@@ -3,8 +3,8 @@ import { EdgeNav } from "./EdgeNav";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { TitleBar } from "./TitleBar";
 import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary } from "@/shared/components/common";
-import { SessionPanel, ActiveSessionHeader } from "@/shared/components/home";
-import { EdgePanel, TopRightCluster } from "@/shared/ui";
+import { ActiveSessionHeader } from "@/shared/components/home";
+import { EdgePanel, TopRightCluster, BottomDockFeather } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Activity, PanelLeft } from "lucide-react";
@@ -15,6 +15,7 @@ import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefau
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { SESSION_COPY } from "@/data/sessionCopy";
+import { useHistoryFilterStore } from "@/store/historyFilterStore";
 
 const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.Monitoring })));
 
@@ -30,8 +31,8 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const { voxCpu, voxRam, isReady } = useVoxFootprint();
   const { openProfiler } = useProfilerDrawer();
   const { isPanelOpen, closePanel, togglePanel } = usePanelStateContext();
+  const historyDisplayMode = useHistoryFilterStore((s) => s.displayMode);
 
-  const closeSessions = useCallback(() => closePanel("sessions"), [closePanel]);
   const closeHelp = useCallback(() => closePanel("help"), [closePanel]);
   const closeNotifications = useCallback(() => closePanel("notifications"), [closePanel]);
 
@@ -120,6 +121,8 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   }, [location.pathname, navigate]);
 
   const isSettings = location.pathname === "/settings";
+  const isHome = location.pathname === "/";
+  const isMonitoring = location.pathname === "/monitoring";
   // Ambient origin — standardized across all views (Home, History, Settings, Memory) to calc(50% - 36px)
   const ambientOriginY = "calc(50% - 36px)";
 
@@ -153,7 +156,11 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         {/* Ambient Background — visible on every page */}
         <AmbientBackground
           originY={ambientOriginY}
-          rippleShape={location.pathname === "/history" ? "orbit" : "circle"}
+          rippleShape={
+            location.pathname === "/history" && historyDisplayMode === "orbit"
+              ? "orbit"
+              : "circle"
+          }
         />
 
         {/* Page content */}
@@ -164,7 +171,6 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
             height: "100%",
             overflow: "hidden",
             width: "100%",
-            contain: "layout style",
           }}
         >
           <div className="h-full w-full overflow-hidden flex flex-col">
@@ -172,60 +178,67 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           </div>
         </main>
 
-        {/* ── Session toggle (top-left) — z-[60] so always above EdgePanel z-[35] ── */}
-        <div className="absolute top-4 left-5 z-[60] pointer-events-none flex items-center gap-2.5">
-          <Tooltip label={SESSION_COPY.railTitle} side="bottom">
-            <button
-              onClick={() => togglePanel("sessions")}
-              aria-label={SESSION_COPY.openRailAriaLabel}
-              aria-expanded={sessionsOpen}
-              data-edge-trigger="left"
-              className={cn(
-                "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer pointer-events-auto shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
-                sessionsOpen
-                  ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
-                  : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
-              )}
-            >
-              <PanelLeft size={14} strokeWidth={1.75} />
-            </button>
-          </Tooltip>
+        {/* ── Session toggle (top-left) — Home only; z-[60] so always above EdgePanel z-[35] ── */}
+        {isHome && (
+          <div className="absolute top-4 left-5 z-[60] pointer-events-none flex items-center gap-2.5">
+            <Tooltip label={SESSION_COPY.railTitle} side="bottom">
+              <button
+                onClick={() => togglePanel("sessions")}
+                aria-label={SESSION_COPY.openRailAriaLabel}
+                aria-expanded={sessionsOpen}
+                data-edge-trigger="left"
+                className={cn(
+                  "inline-flex items-center justify-center w-8 h-8 rounded-xl border transition-all cursor-pointer pointer-events-auto shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
+                  sessionsOpen
+                    ? "border-[rgba(var(--accent),0.5)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
+                    : "border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)]"
+                )}
+              >
+                <PanelLeft size={14} strokeWidth={1.75} />
+              </button>
+            </Tooltip>
 
-          {/* Active Session & Project Header Breadcrumb (shown on Home when panel is closed) */}
-          <ActiveSessionHeader
-            panelOpen={sessionsOpen}
-            isHome={location.pathname === "/"}
-            onOpenPanel={() => togglePanel("sessions")}
-          />
-        </div>
-
-        {/* ── Help + Notifications cluster (top-right) — z-[60] so always above EdgePanel z-[35] ── */}
-        <div className="absolute top-0 right-0 z-[60] pointer-events-none">
-          {/* Feathering haze: dissolves panel content around trigger buttons with zero GPU blur overhead */}
-          <div
-            aria-hidden="true"
-            className="absolute top-0 right-0 w-44 h-28 pointer-events-none"
-            style={{
-              background:
-                "radial-gradient(ellipse 100% 90% at 100% 0%, rgb(var(--card)) 20%, rgba(var(--card), 0.75) 50%, transparent 80%)",
-            }}
-          />
-          {/* Buttons sit above the haze */}
-          <div className="relative pt-4 pr-5 pointer-events-auto">
-            <TopRightCluster />
+            {/* Active Session & Project Header Breadcrumb (shown on Home when panel is closed) */}
+            <ActiveSessionHeader
+              panelOpen={sessionsOpen}
+              isHome={true}
+              onOpenPanel={() => togglePanel("sessions")}
+            />
           </div>
-        </div>
+        )}
+
+        {/* ── Help + Notifications cluster (top-right) — hidden on /monitoring; z-[60] so always above EdgePanel z-[35] ── */}
+        {!isMonitoring && (
+          <div className="absolute top-0 right-0 z-[60] pointer-events-none">
+            {/* Feathering haze: dissolves panel content around trigger buttons with zero GPU blur overhead */}
+            <div
+              aria-hidden="true"
+              className="absolute top-0 right-0 w-44 h-28 pointer-events-none"
+              style={{
+                background:
+                  "radial-gradient(ellipse 100% 90% at 100% 0%, rgb(var(--card)) 20%, rgba(var(--card), 0.75) 50%, transparent 80%)",
+              }}
+            />
+            {/* Buttons sit above the haze */}
+            <div className="relative pt-4 pr-5 pointer-events-auto">
+              <TopRightCluster />
+            </div>
+          </div>
+        )}
 
 
         {/* ── Engine Monitor Area — bottom-left ───────────────────────────── */}
         <div className="hidden lg:flex fixed bottom-4 left-4 z-40 items-center gap-2.5 pointer-events-none">
-          <div className="pointer-events-auto flex items-center gap-2.5">
+          {/* Standard bottom-dock feather: dissolves scrolled content above the monitor button */}
+          <BottomDockFeather className="absolute -inset-x-6 bottom-[calc(100%-2px)] h-10" />
+          {/* relative: keeps the positioned feather painted underneath the controls */}
+          <div className="relative pointer-events-auto flex items-center gap-2.5">
             {/* Monitor toggle button */}
             <button
               ref={monitorBtnRef}
               onClick={() => setMonitorOpen((v) => !v)}
               className={cn(
-                "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 hover:scale-105 cursor-pointer glass-card",
+                "relative flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 hover:scale-105 cursor-pointer glass-card",
                 monitorOpen
                   ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border-[rgb(var(--accent))]/60"
                   : "bg-transparent border-[rgb(var(--accent))]/25 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10"
@@ -269,19 +282,8 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         {/* ── Status Info & Default Reset Controls Area — bottom-right ── */}
         {isSettings && (
           <div className="hidden lg:flex fixed bottom-4 right-4 z-40 pointer-events-none items-center gap-2 lg:gap-3 max-w-[calc(50vw-180px)]">
-            {/* Feathering soft gradient starting 15-20px above the overlay edge and extending upwards */}
-            <div
-              aria-hidden="true"
-              className="absolute -inset-x-8 -bottom-4 -top-10 pointer-events-none"
-              style={{
-                background:
-                  "radial-gradient(ellipse 110% 120% at 90% 90%, rgb(var(--card)) 45%, rgba(var(--card), 0.75) 65%, transparent 100%)",
-                maskImage:
-                  "radial-gradient(ellipse 110% 120% at 90% 90%, black 50%, rgba(0, 0, 0, 0.4) 75%, transparent 100%)",
-                WebkitMaskImage:
-                  "radial-gradient(ellipse 110% 120% at 90% 90%, black 50%, rgba(0, 0, 0, 0.4) 75%, transparent 100%)",
-              }}
-            />
+            {/* Standard bottom-dock feather: dissolves scrolled content behind the dock */}
+            <BottomDockFeather className="absolute -inset-x-8 -bottom-4 -top-10" />
 
             <div className="relative pointer-events-auto flex items-center gap-2 lg:gap-3 px-3 lg:px-4 py-2.5 bg-transparent border-transparent shadow-none">
               <ModelStatusOverlay />
@@ -293,18 +295,6 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
 
         {/* Bottom navigation (topmost in bottom layer) */}
         <EdgeNav />
-
-        {/* ── Left Edge Rail (Conversations) ── */}
-        <EdgePanel
-          side="left"
-          open={isPanelOpen("sessions")}
-          onClose={closeSessions}
-          minimalHeader
-        >
-          <ErrorBoundary name="SessionPanel">
-            <SessionPanel onClose={closeSessions} />
-          </ErrorBoundary>
-        </EdgePanel>
 
         {/* ── Right Edge Rails (Help & Notifications) ── */}
         <EdgePanel

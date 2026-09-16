@@ -12,9 +12,11 @@ import {
 import { useHistory } from "@/shared/hooks/useHistory";
 import { EmptyState, OrbitalLoader, ErrorBoundary } from "@/shared/components/common";
 import { HISTORY_COPY } from "@/data/historyCopy";
+import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import type { SessionRow } from "@/services/historyService";
 
 export const History: React.FC = () => {
+  const setDisplayMode = useHistoryFilterStore((s) => s.setDisplayMode);
   const {
     sessions,
     showLoading,
@@ -29,7 +31,6 @@ export const History: React.FC = () => {
     confirmDeleteId,
     view,
     currentGroup,
-    currentDateSessions,
     currentMonthGroup,
     currentWindow,
     currentWindowSessions,
@@ -40,9 +41,7 @@ export const History: React.FC = () => {
     monthWindowIndex,
     dayWindows,
     monthWindows,
-    totalDates,
     totalMonths,
-    dateIndex,
     monthIndex,
     isOrbitViewport,
     effectiveView,
@@ -73,6 +72,10 @@ export const History: React.FC = () => {
     formatMonthHeroLabel,
     formatMonthYearLabel,
   } = useHistory();
+
+  React.useEffect(() => {
+    setDisplayMode(isOrbitViewport ? "orbit" : "list");
+  }, [isOrbitViewport, setDisplayMode]);
 
   // Unified toggle selection: click a session to open its detail; re-click the
   // same session (or Escape / backdrop / close) to dismiss it.
@@ -270,36 +273,30 @@ export const History: React.FC = () => {
                 variant="day"
                 view={view}
                 onViewChange={handleViewChange}
-                primaryLabel={formatDayHeroLabel(currentGroup.dayKey)}
+                primaryLabel={currentWindow?.dateSpanLabel || formatDayHeroLabel(currentGroup.dayKey)}
                 secondaryLabel={formatDayYearLabel(currentGroup.dayKey)}
                 dayHeroParts={formatDayHeroParts(currentGroup.dayKey)}
-                weekdayLabel={formatWeekdayLabel(currentGroup.dayKey)}
+                dateSpanLabel={currentWindow?.dateSpanLabel}
+                weekdayLabel={currentWindow?.dateSpanLabel ? "RECENT SESSIONS" : formatWeekdayLabel(currentGroup.dayKey)}
                 metaLabel={dayMetaLabel}
-                sessionsCount={currentDateSessions.length}
+                sessionsCount={currentWindowSessions.length}
                 memoriesCount={dayTurnsCount}
                 timeSpanLabel={dayTimeSpan || currentWindow?.label}
                 windowLabel={currentWindow?.label}
                 windowProgress={dayWindowProgress}
-                canPrev={dayWindowIndex > 0 || dateIndex > 0}
-                canNext={
-                  dayWindowIndex < dayWindows.length - 1 ||
-                  dateIndex < totalDates - 1
-                }
+                canPrev={dayWindowIndex > 0}
+                canNext={dayWindowIndex < dayWindows.length - 1}
                 onPrev={handlePrevDate}
                 onNext={handleNextDate}
               />
             </div>
           ) : (
-            // ── Mobile Responsive Fallback List ──
+            // ── Mobile Responsive Fallback List: Full scrollable session history ──
             <HistoryListView
-              dayLabel={currentGroup.dayLabel}
-              sessions={currentDateSessions}
+              dayLabel={currentWindow?.dateSpanLabel ? `Sessions (${currentWindow.dateSpanLabel})` : "All Sessions"}
+              sessions={sessions}
               selectedSession={selectedSession}
               confirmDeleteId={confirmDeleteId}
-              canPrevDate={dateIndex > 0}
-              canNextDate={dateIndex < totalDates - 1}
-              onPrevDate={handlePrevDate}
-              onNextDate={handleNextDate}
               onSelect={handleSelectSession}
               onDelete={handleDelete}
               onCancelDelete={handleCancelDelete}

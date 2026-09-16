@@ -2,7 +2,7 @@
 
 ---
 
-## 0. MANDATORY RULE: AGENTS.md Sync Hook
+## 1.. MANDATORY RULE: AGENTS.md Sync Hook
 
 > 🛑 **MANDATORY POST-TASK HOOK (NON-NEGOTIABLE) — TWO STEPS, IN ORDER:**
 >
@@ -17,14 +17,6 @@
 > 3. Keep the deep link at the top of Section 5: `📖 Full History: [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/<current_phase>/recent_work.md)`.
 >
 > **This is the complete hook. Nothing else is mandatory on every task.**
-
----
-
-## 1. Project Context
-
-Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Constraint: 8GB RAM, CPU-first inference, sub-200ms perceived pipeline latency.
-
-**Crate structure:** Single Rust library crate `vox_lib` at `app/src-tauri/`. `main.rs` is 1 line. `lib.rs` is module declarations + Tauri assembly only. All logic lives in modules.
 
 ---
 
@@ -107,13 +99,8 @@ Vox is a **realtime voice AI desktop app** (Tauri v2 / Rust / TypeScript). Const
 - **Universal Compaction Contract & Cognitive Ladder:** Shipped strict 6-bucket JsonSchema SSOT with reasoning disabled across Ollama and remote transports; validated Rungs 1 and 2 (ingestion deduplication PASS); 2-stage dedup (Jaccard + MiniLM ONNX cosine) and transactional staging verified.
 - **Cognitive Topology & 3D Memory Tree Canopy:** Rebuilt WebGL memory visualization with hollow gradient crystal core, dynamic harmonic chromas derived from primary accent, 3-level dendritic arborization, and dynamic FPS pacing (30 FPS idle / 60 FPS active / 0 FPS background).
 - **Session Rail & Edge Panel Architecture:** Completely redesigned EdgePanel with dual vertical gradient masks, Antigravity IDE-style rail with quick project conversation creation, tactile visual lift on drag (`scale(1.025)`, `z-50`, accent glow), and real-time live FLIP accordion reordering with drag-end settlement.
-- **Notification & Help Panel Modernization:** Streamlined NotificationPanel with animated underline tabs and seed dataset; restructured HelpPanel into route-exclusive guides with jargon-free copy and theme-safe interactive micro-diagrams.
-- **Memory 3D Graph Dark Mode Color Fix & Ambient 3x2 Legend Overlay:** Replaced `THREE.AdditiveBlending` on neural conduit lines with `THREE.NormalBlending` and calibrated dark mode category lightness ($L=0.48-0.54$) to completely eliminate additive whiteout fuzz; removed the popover capsule button and implemented an ambient, borderless 3x2 text grid overlay (`MemoryLegendOverlay`) in the bottom-right corner matching `ModelStatusOverlay`'s design; verified with `pnpm build` (0 errors) and `cargo check` (0 errors).
-- **Frontend Adversarial Perf Review — Help/Edge/Memory (2026-09-15):** Ran create-sprints review (37 files, 3 parallel passes + sweep); report at `FRONTEND_PERF_REVIEW.md`. Top defects: per-node `getComputedStyle` palette regen + per-keystroke line-buffer realloc/GPU orphans in `useMemoryGraphScene`, un-gated infinite framer loops + stacked `backdrop-blur` in Help/Edge, DPR-2 + MSAA over dual canvases on Memory, and a `LiquidChamber` rAF stall after backgrounding. Read-only; no code changed.
-- **Settings Bottom-Right Dock Feathering & EdgePanel Blur Mask (2026-09-15):** Added an ambient, borderless hardware-accelerated radial feathering blur haze (`backdrop-blur-xl` + card gradient mask) extending 15-20px above `ModelStatusOverlay` and `RestoreDefaultsButton` at `z-40`, dissolving any scrolling panel text passing underneath without text clash; increased `HelpPanel` and `NotificationPanel` bottom scroll clearance to `pb-28`/`pb-24` with smoothed 32px bottom mask gradient in `EdgePanel`; `pnpm build` clean.
-- **Memory & History Settings Architecture Refactor (ZBC) (2026-09-15):** Fully migrated backend and frontend from `history`/`memory` to `working_memory` and `personal_memory`; pruned dead `max_hops` and `context_chaining_window_hours`; moved context share budget (`max_context_share`) to `WorkingMemoryCard`; built `PersonalMemoryCard` and `PersonalMemoryConfigDesk` with `consolidation` schedule, `depth`, and `cutoff` controls; verified with `pnpm build` (0 errors) and `cargo clippy --all-targets -- -D warnings` (0 errors).
-- **Frontend Performance & Adversarial Architecture Hardening (2026-09-15):** Implemented all review fixes across Memory, Help, Edge, and Monitoring: hoisted color palettes eliminating 200+ per-render CSS style recalcs; in-place line buffers with draw range limits; DPR capped at 1.5 with 4s idle rAF suspension; converted Help desk diagrams to static SVGs and pure CSS animations unstacking composite blurs; route-level dynamic lazy loading for Help panels; static EdgePanel gradient masks; rAF-throttled Tooltip & layout resize listeners; O(1) active compaction lookup in SessionPanel; fixed LiquidChamber visibilitychange rAF freeze on tab backgrounding; verified with `pnpm build` (0 errors).
-- **Comprehensive UI Error Boundaries Hardening (2026-09-15):** Wrapped all dynamic lazy-loaded route guides in HelpPanel, lazy diagrams in SettingsHelpContent, interactive SVG simulators in Home/History/Memory Help contents, Monitoring popover, Edge panels (SessionPanel, HelpPanel, NotificationPanel, MemorySessionRail), and Memory personal drawer markdown view in designated ErrorBoundary containers to isolate runtime failures; verified with `pnpm build` (0 errors).
-- **Working Memory Card Layout & Radial Nodes Refinement (2026-09-15):** Restored symmetric `340px` card height matching `PersonalMemoryCard`; eliminated congested appearance by reorganizing `WorkingMemoryCard` into a 3-tier structure (Header, Toggle tiles, and Context Share Budget Desk with title, live badge, relaxed description, visual allocation track, and 4-column preset row); removed superfluous bottom badges (`Turso SQLite Local` & `Zero retention limits`); enhanced radial nodes with refined label spacing and micro-lift hover; verified with `pnpm build` (0 errors) and `cargo check` (0 errors).
-- **Universal Help Desk Editorial & Typographic System (2026-09-15):** Rolled out minimal structural styling across all Help panels (Settings, Home, History, Memory); eliminated nested cards and heavy pills; applied single subtle minimal border containers, accent-tinted primary dividers, grey-scaled internal sub-section dividers, unconstrained responsive diagram canvases preventing text clipping, and vertical connecting spines on controls; verified with `pnpm build` (0 errors).
+- **Frontend Adversarial Perf Review, Settings Refactor, UI Hardening & 9-Bug Fix Sprint (2026-09-15):** Full adversarial perf review (Memory/Help/Edge/Monitoring); Memory/Settings architecture refactored to `working_memory`/`personal_memory`; universal Help desk editorial system; session rail scope locked to Home only; `usePanelState` wide-viewport single-panel enforcement; EdgePanel X button dynamic side; SearchBar underline style + responsive width; `updateLineHighlighting` graph-line search/collection filter; test button + legend raised to `z-[55]`; `pnpm build` clean throughout.
+- **Panel Exclusivity Threshold & Memory Polish (2026-09-15):** Fixed panel exclusivity in `usePanelState` (<1280px strictly enforces single-panel page-wide exclusivity with resize listener); restored Memory `SearchBar` as an always-visible underline search input dynamically sized with safe trigger margins; converted `MemorySessionRail` filter input to underline styling; resolved light-mode theme variables in `MemoryNodeTooltip`; `pnpm build` validated.
+- **History CalendarPicker, Clock Arc Polish & Bottom Dock Stacking Fix (2026-09-16):** Built interactive `CalendarPicker` for date/range filtering with session dots in `HistoryListView`; corrected selected cell text visibility for light theme; adjusted `CentralClockNode` window arc thickness and time span safe-zone padding; eliminated stacking context trap by removing `contain: layout style` from `<main>` and mounting Home Test button and Memory Legend Overlay via `createPortal(..., document.body)` so they sit unmasked at `z-[55]` above `BottomDockFeather` (`z-[38]`).
+
 

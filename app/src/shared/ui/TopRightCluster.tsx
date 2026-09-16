@@ -20,6 +20,7 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
 
     return (
       <div className={cn("flex items-center gap-1.5", className)}>
+
         <Tooltip label={NOTIFICATION_COPY.title} side="bottom">
           <button
             onClick={() => togglePanel("notifications")}
