@@ -429,6 +429,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
                   ? [
                       { id: "sensitivity", label: VAD_SETTINGS_COPY.tabs.sensitivity, Icon: AudioWaveform },
                       { id: "silence", label: VAD_SETTINGS_COPY.tabs.silence, Icon: Hourglass },
+                      { id: "speechOnset", label: VAD_SETTINGS_COPY.tabs.speechOnset, Icon: Zap },
                       { id: "noiseGate", label: VAD_SETTINGS_COPY.tabs.noiseGate, Icon: SlidersHorizontal },
                     ]
                   : activePipelineTab === "stt"

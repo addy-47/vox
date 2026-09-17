@@ -149,10 +149,19 @@ fn process_vad_commands(
             VadCommand::UpdateSilenceDuration(ms) => {
                 log::info!("[VAD Actor] Updating silence duration to {} ms", ms);
                 state.speech_end_frames = (ms as usize / 16).max(1);
+                if let Err(e) = vad.update_silence_duration(ms) {
+                    log::error!(
+                        "[VAD Actor] Failed to update backend silence duration: {}",
+                        e
+                    );
+                }
             }
             VadCommand::UpdateSpeechOnset(ms) => {
                 log::info!("[VAD Actor] Updating speech onset to {} ms", ms);
                 state.speech_start_frames = (ms as usize / 16).max(1);
+                if let Err(e) = vad.update_speech_onset(ms) {
+                    log::error!("[VAD Actor] Failed to update backend speech onset: {}", e);
+                }
             }
             VadCommand::UpdateMode(m) => {
                 log::info!("[VAD Actor] Updating interaction mode to {:?}", m);
@@ -396,16 +405,22 @@ fn process_continuous_segmentation(
     vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
 ) {
     let is_speech = vad.predict(chunk) && vad.is_above_noise_gate(raw_energy, state.noise_gate);
+    let (speech_start_threshold, speech_end_threshold) = if vad.is_onnx() {
+        (1, 1)
+    } else {
+        (state.speech_start_frames, state.speech_end_frames)
+    };
 
     if is_speech {
         state.active_frames += 1;
         state.inactive_frames = 0;
 
-        if !state.in_speech && state.active_frames >= state.speech_start_frames {
+        if !state.in_speech && state.active_frames >= speech_start_threshold {
             handle_speech_start(state, handles, stt_tx, vox_event_tx);
         }
 
         if state.in_speech {
+            state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
             accumulate_speech_frames(chunk, state, stt_tx);
         }
     } else {
@@ -413,10 +428,11 @@ fn process_continuous_segmentation(
         state.active_frames = 0;
 
         if state.in_speech {
-            if state.inactive_frames >= state.speech_end_frames {
+            if state.inactive_frames >= speech_end_threshold {
                 handle_speech_end(vad, state, handles, stt_tx, vox_event_tx);
                 state.pre_roll_buffer.push(chunk);
             } else {
+                state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
                 accumulate_speech_frames(chunk, state, stt_tx);
             }
         } else {

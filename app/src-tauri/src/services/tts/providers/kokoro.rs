@@ -1,9 +1,6 @@
 use std::{
     path::Path,
-    sync::{
-        atomic::{AtomicI32, AtomicU32, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicI32, AtomicU32, Ordering},
 };
 
 use anyhow::{anyhow, Result};
@@ -160,31 +157,36 @@ impl TtsProvider for KokoroEngine {
             ..Default::default()
         };
 
-        let cancel_cb = ctx.cancel.clone();
-        let playback_cb = Arc::clone(ctx.playback);
         let intent = ctx.intent;
 
         let tts_guard = self.tts.lock();
-        let audio = tts_guard.generate_with_config(
-            text,
-            &gen_config,
-            Some(move |raw_samples: &[f32], _progress| -> bool {
-                if cancel_cb.load(Ordering::Relaxed) {
-                    return false;
-                }
-                if raw_samples.is_empty() {
-                    return true;
-                }
-                playback_cb.ingest_chunk_with_intent(raw_samples, intent);
-                true
-            }),
-        );
+        let audio =
+            tts_guard.generate_with_config::<fn(&[f32], f32) -> bool>(text, &gen_config, None);
         drop(tts_guard);
+
+        if ctx.cancel.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+
+        let (samples, sample_rate) = match audio {
+            Some(ref audio_data) => (audio_data.samples(), audio_data.sample_rate() as usize),
+            None => {
+                if !ctx.cancel.load(Ordering::Relaxed) {
+                    return Err(anyhow!("[Kokoro] Generation failed"));
+                }
+                return Ok(());
+            }
+        };
+
+        let processed = trim_and_fade_samples(samples, sample_rate);
+        if !processed.is_empty() && !ctx.cancel.load(Ordering::Relaxed) {
+            ctx.playback.ingest_chunk_with_intent(&processed, intent);
+        }
 
         let elapsed = start.elapsed().as_secs_f32();
 
-        let audio_duration = if let Some(ref audio_data) = audio {
-            audio_data.samples().len() as f32 / audio_data.sample_rate() as f32
+        let audio_duration = if sample_rate > 0 {
+            processed.len() as f32 / sample_rate as f32
         } else {
             0.0
         };
@@ -194,10 +196,6 @@ impl TtsProvider for KokoroEngine {
         } else {
             0.0
         };
-
-        if audio.is_none() && !ctx.cancel.load(Ordering::Relaxed) {
-            return Err(anyhow!("[Kokoro] Generation failed"));
-        }
 
         log::info!(
             "[Kokoro] Synthesis complete (turn {}). {:.2}s audio, RTF: {:.3}",
@@ -211,4 +209,61 @@ impl TtsProvider for KokoroEngine {
         }
         Ok(())
     }
+}
+
+/// Trims vocoder silence below -45 dBFS (amplitude ~0.0056) with attack/release padding,
+/// and applies a 10ms equal-power crossfade envelope at boundaries to prevent clicks.
+pub fn trim_and_fade_samples(samples: &[f32], sample_rate: usize) -> Vec<f32> {
+    if samples.is_empty() {
+        return Vec::new();
+    }
+
+    const SILENCE_THRESHOLD: f32 = 0.0056; // -45 dBFS
+    let attack_margin = (sample_rate as f32 * 0.015) as usize; // 15ms
+    let release_margin = (sample_rate as f32 * 0.040) as usize; // 40ms
+    let fade_len = (sample_rate as f32 * 0.010) as usize; // 10ms
+
+    // Find first sample above threshold
+    let start_idx = samples
+        .iter()
+        .position(|&s| s.abs() >= SILENCE_THRESHOLD)
+        .unwrap_or(0)
+        .saturating_sub(attack_margin);
+
+    // Find last sample above threshold
+    let end_idx = samples
+        .iter()
+        .rposition(|&s| s.abs() >= SILENCE_THRESHOLD)
+        .map(|idx| (idx + release_margin).min(samples.len()))
+        .unwrap_or(samples.len());
+
+    if start_idx >= end_idx {
+        return Vec::new();
+    }
+
+    let mut trimmed = samples[start_idx..end_idx].to_vec();
+    let n = trimmed.len();
+
+    // Apply 10ms equal-power fade-in (sin)
+    let actual_fade_in = fade_len.min(n / 2);
+    if actual_fade_in > 0 {
+        for (i, sample) in trimmed[..actual_fade_in].iter_mut().enumerate() {
+            let t = i as f32 / actual_fade_in as f32;
+            let gain = (t * std::f32::consts::FRAC_PI_2).sin();
+            *sample *= gain;
+        }
+    }
+
+    // Apply 10ms equal-power fade-out (cos)
+    let actual_fade_out = fade_len.min(n / 2);
+    if actual_fade_out > 0 {
+        let fade_start = n - actual_fade_out;
+        for (j, sample) in trimmed[fade_start..].iter_mut().enumerate() {
+            let t = j as f32 / actual_fade_out as f32;
+            let gain = (t * std::f32::consts::FRAC_PI_2).cos();
+            *sample *= gain;
+        }
+    }
+
+    trimmed
 }

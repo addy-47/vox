@@ -154,8 +154,7 @@ async fn regenerate_with_comments(
         "<current_personal_memory>\n{}\n</current_personal_memory>\n\n\
          <user_directive_comments>\n{}\n</user_directive_comments>\n\n\
          Please update the document following the comments and output the updated Markdown.",
-        current_record.content,
-        comments_list
+        current_record.content, comments_list
     );
 
     let updated_markdown = execute_personal_llm_pass(

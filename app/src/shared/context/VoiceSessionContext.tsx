@@ -89,7 +89,17 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const restoreSignal = useSessionStore((s) => s.restoreSignal);
   const sessionListVersion = useSessionStore((s) => s.sessionListVersion);
 
-  const { transcript, assistantText } = useTranscriptStream();
+  const handleTurnComplete = useCallback((turn: DialogueTurn) => {
+    const api = storeApi();
+    const current = api.dialogueHistory;
+    if (!current.some((t) => t.id === turn.id)) {
+      api.setDialogueHistory([...current, turn]);
+      api.setTurnIdCounter(Math.max(api.turnIdCounter, turn.id));
+    }
+  }, []);
+
+  const { transcript, assistantText, commitTurn, clearTranscript } =
+    useTranscriptStream(handleTurnComplete);
 
   const isEngaged = interactionState !== "Idle";
   const isSleeping = interactionState === "Sleeping";
@@ -104,13 +114,22 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
           : "IDLE"
       : "IDLE";
 
-  const handleStateChanged = useCallback((payload: StateChangedPayload) => {
-    storeApi().setInteractionState(payload.state as InteractionState);
-    const next = payload.state as InteractionState;
-    if (next === "Ready" || next === "Idle") {
-      storeApi().setTestingClip(null);
-    }
-  }, []);
+  const handleStateChanged = useCallback(
+    (payload: StateChangedPayload) => {
+      storeApi().setInteractionState(payload.state as InteractionState);
+      const next = payload.state as InteractionState;
+      if (next === "Ready") {
+        commitTurn();
+        storeApi().setTestingClip(null);
+      } else if (next === "Idle") {
+        clearTranscript();
+        storeApi().setTestingClip(null);
+        storeApi().setTranscript("");
+        storeApi().setAssistantText("");
+      }
+    },
+    [commitTurn, clearTranscript],
+  );
 
   const handlePartial = useCallback(() => {}, []);
   const handleFinal = useCallback(() => {}, []);
@@ -173,6 +192,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   useSessionHydration(handleHydrated);
 
   const engage = useCallback(async () => {
+    clearTranscript();
     const api = storeApi();
     api.setIsLaunching(true);
     api.setSessionError(null);
@@ -192,9 +212,10 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     } finally {
       storeApi().setIsLaunching(false);
     }
-  }, []);
+  }, [clearTranscript]);
 
   const disengage = useCallback(async () => {
+    clearTranscript();
     const api = storeApi();
     api.setIsLaunching(true);
     api.setTranscript("");
@@ -210,7 +231,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     } finally {
       storeApi().setIsLaunching(false);
     }
-  }, []);
+  }, [clearTranscript]);
 
   const pause = useCallback(async () => {
     const current = storeApi().interactionState;
@@ -273,6 +294,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const handleTestClip = useCallback(
     async (clipId: string) => {
       if (isEngaged) return;
+      clearTranscript();
       const api = storeApi();
       api.setTestingClip(clipId);
       api.setTestMode(false);
@@ -284,12 +306,13 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
         storeApi().setTestingClip(null);
       }
     },
-    [isEngaged],
+    [isEngaged, clearTranscript],
   );
 
   const selectSession = useCallback(async (sessionId: number) => {
     const s = storeApi();
     if (sessionId === s.activeSessionId || s.isRestoring) return;
+    clearTranscript();
     storeApi().setIsRestoring(true);
     try {
       const result = await continueSessionIpc(sessionId);
@@ -309,10 +332,11 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     } finally {
       storeApi().setIsRestoring(false);
     }
-  }, []);
+  }, [clearTranscript]);
 
   const startNewConversation = useCallback(async (projectId?: string) => {
     if (storeApi().isRestoring) return;
+    clearTranscript();
     const api = storeApi();
     api.setTranscript("");
     api.setAssistantText("");
@@ -326,7 +350,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       storeApi().setRestoreError(err instanceof Error ? err.message : SESSION_COPY.restoreFailedFallback);
     }
     storeApi().bumpSessionListVersion();
-  }, []);
+  }, [clearTranscript]);
 
   const dismissRestoreError = useCallback(() => {
     storeApi().setRestoreError(null);

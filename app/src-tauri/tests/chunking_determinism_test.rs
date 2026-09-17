@@ -167,13 +167,14 @@ fn test_chunking_determinism_emergency_cap() {
         }
     }
 
-    // Both must yield exactly 2 chunks:
-    // Chunk 0: 20 words (emergency split)
-    // Chunk 1: 10 words (flushed remainder)
+    // Both must yield exactly 3 chunks under the 3-tier adaptive schedule:
+    // Chunk 0: 8 words (tier 0 emergency split at w_target = 8)
+    // Chunk 1: 15 words (tier 1 emergency split at w_target = 15)
+    // Chunk 2: 7 words (flushed remainder)
     assert_eq!(
         chunks_a.len(),
-        2,
-        "30-word unpunctuated input must produce exactly 2 chunks (got {})",
+        3,
+        "30-word unpunctuated input must produce exactly 3 chunks under 3-tier schedule (got {})",
         chunks_a.len()
     );
     assert_eq!(
@@ -183,14 +184,19 @@ fn test_chunking_determinism_emergency_cap() {
 
     let chunk_0_word_count = chunks_a[0].split_whitespace().count();
     let chunk_1_word_count = chunks_a[1].split_whitespace().count();
+    let chunk_2_word_count = chunks_a[2].split_whitespace().count();
 
     assert_eq!(
-        chunk_0_word_count, 20,
-        "First chunk must have exactly 20 words from emergency cap"
+        chunk_0_word_count, 8,
+        "First chunk must have exactly 8 words from tier 0 emergency cap"
     );
     assert_eq!(
-        chunk_1_word_count, 10,
-        "Second chunk must have remaining 10 words"
+        chunk_1_word_count, 15,
+        "Second chunk must have exactly 15 words from tier 1 emergency cap"
+    );
+    assert_eq!(
+        chunk_2_word_count, 7,
+        "Third chunk must have remaining 7 words"
     );
 }
 

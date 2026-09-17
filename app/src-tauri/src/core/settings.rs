@@ -27,10 +27,10 @@ use crate::{
         DEFAULT_SYSTEM_PROMPT_MODULAR, DEFAULT_SYSTEM_PROMPT_REALTIME, DEFAULT_TELEMETRY_ENABLED,
         DEFAULT_TELEMETRY_LOG_LEVEL, DEFAULT_TTS_QUALITY_STEPS, DEFAULT_TTS_SPEED,
         DEFAULT_TTS_THREADS, DEFAULT_TTS_VOICE_INDEX, DEFAULT_UI_ACCENT_SEED, DEFAULT_UI_THEME,
-        DEFAULT_VAD_PTT_NOISE_GATE, DEFAULT_VAD_SILENCE_DURATION_MS, DEFAULT_VAD_SPEECH_ONSET_MS,
-        DEFAULT_VAD_THRESHOLD, DEFAULT_WORKING_MEMORY_AUTO_COMPACTION,
-        DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE, DEFAULT_WORKING_MEMORY_PRIVATE_MODE,
-        MIN_LLM_CONTEXT_WINDOW,
+        DEFAULT_VAD_MAX_SPEECH_DURATION_S, DEFAULT_VAD_PTT_NOISE_GATE,
+        DEFAULT_VAD_SILENCE_DURATION_MS, DEFAULT_VAD_SPEECH_ONSET_MS, DEFAULT_VAD_THRESHOLD,
+        DEFAULT_WORKING_MEMORY_AUTO_COMPACTION, DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE,
+        DEFAULT_WORKING_MEMORY_PRIVATE_MODE, MIN_LLM_CONTEXT_WINDOW,
     },
     utils::paths,
 };
@@ -47,9 +47,11 @@ pub enum AudioOutputMode {
 pub enum VadBackendOption {
     /// Earshot — pure Rust, no ONNX dependency, embedded neural weights.
     Earshot,
-    /// TenVAD — ONNX-based standard VAD engine. Default engine for Vox.
-    #[default]
+    /// TenVAD — ONNX-based standard VAD engine.
     TenVad,
+    /// SileroVad — MIT-licensed ONNX VAD engine with superior noise immunity.
+    #[default]
+    SileroVad,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
@@ -88,6 +90,12 @@ pub enum PipelineMode {
 pub struct VoiceProfile {
     pub id: i32,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gender: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -174,7 +182,8 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
             if key == "threshold"
                 || key == "ptt_noise_gate"
                 || key == "silence_duration_ms"
-                || key == "speech_onset_ms" =>
+                || key == "speech_onset_ms"
+                || key == "max_speech_duration_s" =>
         {
             SettingReloadPolicy::WorkerCommand
         }
@@ -231,6 +240,7 @@ pub struct VadSettings {
     pub vad_backend: VadBackendOption,
     pub silence_duration_ms: u32,
     pub speech_onset_ms: u32,
+    pub max_speech_duration_s: u32,
 }
 
 impl Default for VadSettings {
@@ -238,9 +248,10 @@ impl Default for VadSettings {
         Self {
             threshold: DEFAULT_VAD_THRESHOLD,
             ptt_noise_gate: DEFAULT_VAD_PTT_NOISE_GATE,
-            vad_backend: VadBackendOption::TenVad,
+            vad_backend: VadBackendOption::SileroVad,
             silence_duration_ms: DEFAULT_VAD_SILENCE_DURATION_MS,
             speech_onset_ms: DEFAULT_VAD_SPEECH_ONSET_MS,
+            max_speech_duration_s: DEFAULT_VAD_MAX_SPEECH_DURATION_S,
         }
     }
 }

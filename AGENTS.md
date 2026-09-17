@@ -43,11 +43,12 @@
 
 1. **Sequential Execution:** Run performance-sensitive tasks (benchmarks, evals, test suites) strictly one at a time to prevent CPU, memory, and I/O contention.
 2. **Release / Optimized Mode:** Always run performance measurements and benchmarks under release mode (`--release`). Debug builds produce invalid metrics.
-3. **Isolated Test Runner (`cargo-nextest`):** Always use `cargo-nextest run` with explicit thread pool allocation and single-thread isolation:
+3. **Isolated Test Runner (`cargo-nextest`):** Always use `cargo-nextest run` with explicit thread pool allocation and single-thread isolation. Nextest defaults to fail-fast (cancels the suite on first failure). Use `--no-fail-fast` to execute the full suite without aborting on failure:
    ```bash
-   RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1
+   RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1 --no-fail-fast
    ```
-   _Single test:_ `cargo nextest run --test <test_file> --release --nocapture --test-threads=1`
+   _Isolate single test:_ `cargo nextest run -E 'test(<test_fn_name>)' --release --nocapture --test-threads=1`
+   _Isolate test file:_ `cargo nextest run --test <test_file> --release --nocapture --test-threads=1`
    > ⏱️ **Full Suite Baseline Run Time:** ~45.5s test execution (~45s wall-clock with compilation cache hit; ~2m30s cold compile + run) across all 105 tests in 21 binaries (across Seams 1–20).
 4. **External API Keys (`#[ignore]`):** Cloud provider tests (Nvidia, Gemini Live, Deepgram, OpenAI, ElevenLabs) must be marked `#[ignore]` and run manually only with explicit user approval: `cargo nextest -- --ignored`.
 5. **Local Turso Database CLI (`tursodb`):** For inspecting or querying the local Turso SQLite database (`~/.vox/vox.db`), use the native `tursodb` CLI tool:
@@ -114,6 +115,7 @@
 - **Personal Memory Unified Single-Focus Synthesis & Consolidate Gating (2026-09-16):** Gated Consolidate trigger to disabled when `unconsolidatedCount === 0`; removed duplicate synthesis canvas, floating pills, and modal ticker from `PersonalMemoryStagingCard` in favor of single-focus dimmed staging (`opacity-40 pointer-events-none`); unified all 4 flows (Consolidate, Comments Regenerate, Edit, Import) to host synthesis solely on the left dossier card; calmed `PixelSynthesisCanvas` wave speed by 43% and eliminated harsh flicker/white sparks; validated with `pnpm build` (7.95s).
 - **Memory Drawer Lag Adversarial Review, 4-Sprint Subagent Audit (2026-09-16):** Ran parallel review sprints A–D (25 files: drawer open path, drawer children, graph scene, EdgePanel/feather/layout) via subagents; root-caused drawer-open lag to same-commit dossier markdown build + framer slide over unpaused WebGL + 3× stacked `backdrop-blur(20px)` + unpaused ambient; flagged 🔴 impure updater in `usePanelState`, staging draft clobber, cutoff decimal strip, ref-write-during-render; full report with replacements in `REVIEW_MEMORY_DRAWER_LAG.md`.
 - **Memory Drawer Lag Fixes, Correctness Hardening, Comment Persistence & Scoped Lenis (2026-09-16):** Audited `REVIEW_MEMORY_DRAWER_LAG.md`; fixed impure updaters in `usePanelState` resize/togglePanel, staging draft clobber via `prevModeRef`, and `ResponsiveLayout` render-phase ref writes; wired WebGL render-loop suspension on `drawerOpen` (`paused` prop) and 2-frame deferred body parsing to eliminate frame 1 freeze; halved card GPU cost via `backdrop-blur-sm`; persisted inline comments across navigation and drawer close via Zustand `useMemoryStore` with auto-reopen to comment slate; wired Enter-to-save (Shift+Enter newline) and cancel discard-all; added scoped Lenis momentum scrolling to dossier card; added Memory page footnote hint; validated with `pnpm build` (10.40s).
+- **Voice Pipeline Intelligence, VAD Modernization, Adaptive Prosody, Dictation Hotkey & Turn UX Sprint (2026-09-16):** Resolved conversational LLM robotic staccato with rewritten modular system prompt, `<user_identity>` tag alignment, and 8k context window; integrated Silero VAD v5 ONNX (`silero_vad.onnx`) as default; deployed 3-tier streaming chunker with punctuation precedence over emergency cap and -45 dBFS silence trimming with equal-power crossfade; aligned Kokoro 11-speaker voice profile metadata; fixed passive dictation `cancel_flag` reset; overhauled PTT hotkey recorder with live modifier capture and instant IPC; wired multi-turn dialogue history commit on Ready and bubble clearing on Idle; validated clean across `cargo clippy --all-targets` (0 warnings), `pnpm build` (8.36s), and isolated Nextest release suite (107/107 passed in 44.97s).
 
 
 

@@ -223,6 +223,8 @@ export const DICTATION_COPY = {
   voiceTypingInactive: "System Muted",
   outputTitle: "Output",
   rebindHint: "Click to rebind activation shortcut",
+  savedFeedback: "Saved!",
+  hotkeyTip: "Hold modifiers (Ctrl, Alt, Shift) then press your key",
 };
 
 export const CATEGORY_SWITCH_COPY = {
@@ -583,6 +585,7 @@ export const VAD_SETTINGS_COPY = {
   tabs: {
     sensitivity: "Sensitivity",
     silence: "Silence Cutoff",
+    speechOnset: "Speech Onset",
     noiseGate: "Noise Gate",
   },
   sensitivity: {
@@ -594,6 +597,11 @@ export const VAD_SETTINGS_COPY = {
     title: "Silence Cutoff",
     description:
       "Pause duration before speech turn finishes and initiates response reasoning. Snappy for quick orders; patient for contemplation.",
+  },
+  speechOnset: {
+    title: "Speech Onset Duration",
+    description:
+      "Minimum continuous speech duration required before starting an active turn. Rejects transient clicks and coughs.",
   },
   noiseGate: {
     title: "Noise Gate Floor",
