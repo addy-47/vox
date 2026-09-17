@@ -332,6 +332,7 @@ pub fn cool_down_tts(tts_tx: &mut Option<mpsc::Sender<TtsCommand>>) {
 #[derive(Debug, Default, Clone)]
 pub struct TtsClauseChunker {
     buffer: String,
+    chunk_index: usize,
 }
 
 impl TtsClauseChunker {
@@ -339,6 +340,7 @@ impl TtsClauseChunker {
     pub fn new() -> Self {
         Self {
             buffer: String::new(),
+            chunk_index: 0,
         }
     }
 
@@ -355,6 +357,7 @@ impl TtsClauseChunker {
         if trimmed.is_empty() {
             None
         } else {
+            self.chunk_index += 1;
             Some(trimmed)
         }
     }
@@ -362,6 +365,7 @@ impl TtsClauseChunker {
     /// Clears the internal chunker buffer unconditionally on cancellation or interruption.
     pub fn clear(&mut self) {
         self.buffer.clear();
+        self.chunk_index = 0;
     }
 
     /// Returns a slice view of the current unconsumed buffer text.
@@ -374,24 +378,19 @@ impl TtsClauseChunker {
         self.buffer.trim().is_empty()
     }
 
-    /// Scans buffer text and locates valid clause or sentence split byte positions.
-    fn find_split_point(&self) -> Option<(usize, usize)> {
-        let chars: Vec<(usize, char)> = self.buffer.char_indices().collect();
-
-        // Check for 25-word emergency boundary to prevent buffer bloat
-        let words: Vec<&str> = self.buffer.split_whitespace().collect();
-        if words.len() >= 25 {
-            let target_word_count = 20;
-            let mut count = 0;
-            for (pos, c) in &chars {
-                if c.is_whitespace() {
-                    count += 1;
-                    if count >= target_word_count {
-                        return Some((*pos, c.len_utf8()));
-                    }
-                }
-            }
+    /// Returns the current adaptive (w_min, w_target, w_max) word count thresholds based on chunk index.
+    fn current_word_thresholds(&self) -> (usize, usize, usize) {
+        match self.chunk_index {
+            0 => (5, 8, 12),
+            1 => (10, 15, 20),
+            _ => (16, 24, 32),
         }
+    }
+
+    /// Scans buffer text and locates valid clause or sentence split byte positions.
+    fn find_split_point(&mut self) -> Option<(usize, usize)> {
+        let (w_min, w_target, w_max) = self.current_word_thresholds();
+        let chars: Vec<(usize, char)> = self.buffer.char_indices().collect();
 
         for i in 0..chars.len() {
             let (pos, c) = chars[i];
@@ -403,10 +402,9 @@ impl TtsClauseChunker {
 
             // Sub-clause boundaries: comma, semicolon, colon, em-dash
             if c == ',' || c == ';' || c == ':' || c == '—' || c == '–' {
-                // Natural flow & prosody pacing: only split if sub-clause has >= 5 words
                 let text_before = &self.buffer[..pos];
                 let word_count = text_before.split_whitespace().count();
-                if word_count >= 5 {
+                if word_count >= w_min {
                     return Some((pos, c.len_utf8()));
                 }
                 continue;
@@ -440,7 +438,28 @@ impl TtsClauseChunker {
                     continue;
                 }
 
-                return Some((pos, c.len_utf8()));
+                let word_count = text_before.split_whitespace().count();
+                if word_count >= w_min {
+                    return Some((pos, c.len_utf8()));
+                } else if i + 1 < chars.len() && chars[i + 1].1.is_whitespace() {
+                    // Prosody morphing: premature period with < w_min words (e.g. "Hai Addy.")
+                    // Rewrite '.' to ',' so StyleTTS2 maintains rising pitch contour and bundles forward.
+                    self.buffer.replace_range(pos..pos + 1, ",");
+                }
+            }
+        }
+
+        // Emergency boundary fallback: only when no punctuation split point exists and buffer exceeds w_max words
+        let words: Vec<&str> = self.buffer.split_whitespace().collect();
+        if words.len() >= w_max {
+            let mut count = 0;
+            for (pos, c) in &chars {
+                if c.is_whitespace() {
+                    count += 1;
+                    if count >= w_target {
+                        return Some((*pos, c.len_utf8()));
+                    }
+                }
             }
         }
 
@@ -459,6 +478,7 @@ impl TtsClauseChunker {
 
                 if !chunk.is_empty() {
                     chunks.push(chunk);
+                    self.chunk_index += 1;
                 }
             } else {
                 break;
@@ -501,14 +521,19 @@ fn is_abbreviation(word: &str) -> bool {
 mod tests {
     use super::*;
 
-    /// Tests strong terminators (? ! newline) always split regardless of word count.
+    /// Tests strong terminators (? ! newline) split when clause meets boundary criteria.
     #[test]
     fn test_chunker_strong_terminators_split() {
         let mut c = TtsClauseChunker::new();
-        let chunks = c.push_str("Hello world? Next clause here.");
+        let chunks = c.push_str(
+            "Hello world? This is a complete follow up sentence with more than ten words here.",
+        );
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0], "Hello world?");
-        assert_eq!(chunks[1], "Next clause here.");
+        assert_eq!(
+            chunks[1],
+            "This is a complete follow up sentence with more than ten words here."
+        );
         assert!(c.is_empty());
     }
 
@@ -533,6 +558,15 @@ mod tests {
         assert_eq!(chunks2, vec!["This is a longer sentence,"]);
     }
 
+    /// Tests prosody morphing converts premature periods (< 5 words) into commas to preserve rising intonation.
+    #[test]
+    fn test_chunker_prosody_morphing() {
+        let mut c = TtsClauseChunker::new();
+        let chunks = c.push_str("Hai Addy. I'm Vox. I help you do things today.");
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], "Hai Addy, I'm Vox, I help you do things today.");
+    }
+
     /// Tests period does not split on decimal like 3.14
     #[test]
     fn test_chunker_period_decimal_guard() {
@@ -540,8 +574,8 @@ mod tests {
         let chunks = c.push_str("Value is 3.14 and continues");
         assert!(chunks.is_empty(), "decimal period must not split");
         let mut c2 = TtsClauseChunker::new();
-        let chunks2 = c2.push_str("Value is 3.14. Next sentence");
-        assert_eq!(chunks2, vec!["Value is 3.14."]);
+        let chunks2 = c2.push_str("Value is 3.14 with enough words. Next sentence");
+        assert_eq!(chunks2, vec!["Value is 3.14 with enough words."]);
     }
 
     /// Tests period does not split after known abbreviation.
@@ -551,11 +585,11 @@ mod tests {
         let chunks = c.push_str("Hello Dr. Smith is here");
         assert!(chunks.is_empty(), "abbreviation period must not split");
         let mut c2 = TtsClauseChunker::new();
-        let chunks2 = c2.push_str("Hello Dr. Smith is here. Next one");
-        assert_eq!(chunks2, vec!["Hello Dr. Smith is here."]);
+        let chunks2 = c2.push_str("Hello Dr. Smith is here with us today. Next one");
+        assert_eq!(chunks2, vec!["Hello Dr. Smith is here with us today."]);
     }
 
-    /// Tests emergency 25-word cap forces split at 20 words.
+    /// Tests emergency word cap forces split at target words.
     #[test]
     fn test_chunker_emergency_word_cap() {
         let long = (0..30)
@@ -565,7 +599,7 @@ mod tests {
         let mut c = TtsClauseChunker::new();
         let chunks = c.push_str(&long);
         assert!(!chunks.is_empty(), "bloat guard must emit chunk");
-        assert_eq!(chunks[0].split_whitespace().count(), 20);
+        assert_eq!(chunks[0].split_whitespace().count(), 8);
     }
 
     /// Tests flush returns trimmed remainder and clears buffer.
@@ -604,9 +638,13 @@ mod tests {
     fn test_chunker_multiple_clauses() {
         let mut c = TtsClauseChunker::new();
         let chunks =
-            c.push_str("First sentence! Second? Third, with many words before comma, and tail.");
-        assert!(chunks.len() >= 2);
+            c.push_str("First sentence! Second? Third sentence is now significantly longer so that it easily satisfies the steady state minimum threshold of sixteen words.");
+        assert_eq!(chunks.len(), 3);
         assert_eq!(chunks[0], "First sentence!");
         assert_eq!(chunks[1], "Second?");
+        assert_eq!(
+            chunks[2],
+            "Third sentence is now significantly longer so that it easily satisfies the steady state minimum threshold of sixteen words."
+        );
     }
 }

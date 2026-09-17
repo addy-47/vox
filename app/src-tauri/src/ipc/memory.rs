@@ -127,7 +127,6 @@ pub async fn consolidate_personal_memory(
     Ok(record)
 }
 
-
 /// Returns active memory facts for graph visualization, optionally scoped to one project, ordered newest first.
 #[tauri::command]
 pub async fn get_active_facts(

@@ -141,9 +141,10 @@ export interface AudioSettings {
 export interface VadSettings {
   threshold: number;
   ptt_noise_gate: number;
-  vad_backend: "earshot" | "ten_vad";
+  vad_backend: "earshot" | "ten_vad" | "silero_vad";
   silence_duration_ms?: number;
   speech_onset_ms?: number;
+  max_speech_duration_s?: number;
 }
 
 export interface SttEmbeddedConfig {

@@ -23,6 +23,30 @@
       "files": []
     },
     {
+      "id": "silero_vad",
+      "name": "silero-vad",
+      "category": "vad",
+      "subcategory": "vad",
+      "description": "High-precision voice activity detector. 100% MIT licensed with superior noise immunity against keyboard clicks and background sound.",
+      "parameters": "ONNX INT8",
+      "ram_usage": "~2 MB",
+      "tradeoffs": "Standard Vox VAD, superior noise immunity, zero commercial restrictions",
+      "version": "5.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
+      "files": [
+        {
+          "id": "silero_vad_onnx",
+          "path": "vad/silero_vad.onnx",
+          "size": 643854,
+          "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+          "required": true
+        }
+      ],
+      "required": true
+    },
+    {
       "id": "ten_vad",
       "name": "ten-vad",
       "category": "vad",

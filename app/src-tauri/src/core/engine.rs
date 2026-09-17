@@ -40,8 +40,9 @@ use crate::{
         vad::{
             actor::{spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles},
             earshot_vad::EarshotVadEngine,
+            silero_onnx::SileroVadEngine,
             ten_onnx::VadEngine as TenVadEngine,
-            VadBackend, VadCommand, MODEL_DIR_VAD, MODEL_FILE_VAD,
+            VadBackend, VadCommand, MODEL_DIR_VAD, MODEL_FILE_VAD, MODEL_FILE_VAD_SILERO,
         },
     },
     setup::manifest::VoxManifest,
@@ -127,13 +128,23 @@ fn create_stt_instance(state: &AppState) -> Result<Box<dyn SttProvider>, String>
 
 /// Resolves and instantiates the active VAD backend engine.
 async fn create_vad_instance(state: &AppState) -> Result<VadBackend, String> {
-    let (vad_backend, threshold) = {
+    let (vad_backend, threshold, silence_duration_ms, speech_onset_ms, max_speech_duration_s) = {
         let s = state
             .settings
             .read()
             .map_err(|e| format!("[Core::Engine] Settings lock poisoned: {}", e))?;
-        (s.vad.vad_backend.clone(), s.vad.threshold)
+        (
+            s.vad.vad_backend.clone(),
+            s.vad.threshold,
+            s.vad.silence_duration_ms,
+            s.vad.speech_onset_ms,
+            s.vad.max_speech_duration_s,
+        )
     };
+
+    let min_silence_duration = silence_duration_ms as f32 / 1000.0;
+    let min_speech_duration = speech_onset_ms as f32 / 1000.0;
+    let max_speech_duration = max_speech_duration_s as f32;
 
     match vad_backend {
         VadBackendOption::Earshot => {
@@ -141,6 +152,38 @@ async fn create_vad_instance(state: &AppState) -> Result<VadBackend, String> {
             EarshotVadEngine::new(threshold)
                 .map(VadBackend::Earshot)
                 .map_err(|e| format!("[Core::Engine] Earshot VAD init failed: {}", e))
+        }
+        VadBackendOption::SileroVad => {
+            let vad_path = paths::get()
+                .models
+                .join(MODEL_DIR_VAD)
+                .join(MODEL_FILE_VAD_SILERO);
+            if !vad_path.exists() {
+                log::warn!(
+                    "[Core::Engine] Silero VAD model missing at {:?}. Falling back to Earshot.",
+                    vad_path
+                );
+                return EarshotVadEngine::new(threshold)
+                    .map(VadBackend::Earshot)
+                    .map_err(|e| format!("[Core::Engine] Earshot VAD fallback failed: {}", e));
+            }
+            log::info!(
+                "[Core::Engine] Initializing Silero ONNX VAD from {:?} (threshold={}, min_silence={}s, min_speech={}s, max_speech={}s)",
+                vad_path,
+                threshold,
+                min_silence_duration,
+                min_speech_duration,
+                max_speech_duration
+            );
+            SileroVadEngine::new(
+                &vad_path,
+                threshold,
+                min_silence_duration,
+                min_speech_duration,
+                max_speech_duration,
+            )
+            .map(VadBackend::Silero)
+            .map_err(|e| format!("[Core::Engine] Silero VAD init failed: {}", e))
         }
         VadBackendOption::TenVad => {
             let vad_path = paths::get().models.join(MODEL_DIR_VAD).join(MODEL_FILE_VAD);
@@ -154,12 +197,22 @@ async fn create_vad_instance(state: &AppState) -> Result<VadBackend, String> {
                     .map_err(|e| format!("[Core::Engine] Earshot VAD fallback failed: {}", e));
             }
             log::info!(
-                "[Core::Engine] Initializing Ten ONNX VAD from {:?}",
-                vad_path
+                "[Core::Engine] Initializing Ten ONNX VAD from {:?} (threshold={}, min_silence={}s, min_speech={}s, max_speech={}s)",
+                vad_path,
+                threshold,
+                min_silence_duration,
+                min_speech_duration,
+                max_speech_duration
             );
-            TenVadEngine::new(&vad_path, threshold)
-                .map(VadBackend::Ten)
-                .map_err(|e| format!("[Core::Engine] Ten VAD init failed: {}", e))
+            TenVadEngine::new(
+                &vad_path,
+                threshold,
+                min_silence_duration,
+                min_speech_duration,
+                max_speech_duration,
+            )
+            .map(VadBackend::Ten)
+            .map_err(|e| format!("[Core::Engine] Ten VAD init failed: {}", e))
         }
     }
 }

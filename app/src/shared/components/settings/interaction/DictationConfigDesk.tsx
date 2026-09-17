@@ -1,9 +1,10 @@
 import { memo, useState, useEffect, useCallback } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import { Clipboard, Layers, Send, Check, X } from "lucide-react";
+import { Clipboard, Layers, Send, Check, X, CheckCircle2 } from "lucide-react";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { cn } from "@/shared/lib/utils";
 import { DICTATION_COPY } from "@/data/settingsCopy";
+import { updateSetting } from "@/services/settingsService";
 
 interface DictationConfigDeskProps {
   layoutMode?: "full-max" | "full-min" | "small";
@@ -29,6 +30,7 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
 
   const [isEditingHotkey, setIsEditingHotkey] = useState(false);
   const [tempHotkey, setTempHotkey] = useState(dictation.hotkey || "Alt+Space");
+  const [savedToast, setSavedToast] = useState(false);
 
   const outputMode = dictation.output_mode || "paste";
 
@@ -36,9 +38,17 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
     setTempHotkey(dictation.hotkey || "Alt+Space");
   }, [dictation.hotkey]);
 
-  const handleHotkeySave = useCallback(() => {
-    if (tempHotkey.trim()) {
-      updateDraft("dictation", "hotkey", tempHotkey.trim());
+  const handleHotkeySave = useCallback(async () => {
+    const cleanKey = tempHotkey.replace(/\.\.\.$/, "").trim();
+    if (cleanKey && cleanKey !== "...") {
+      updateDraft("dictation", "hotkey", cleanKey);
+      try {
+        await updateSetting("dictation", "hotkey", cleanKey);
+        setSavedToast(true);
+        setTimeout(() => setSavedToast(false), 2200);
+      } catch (err) {
+        console.error("Failed to persist dictation hotkey via IPC:", err);
+      }
     }
     setIsEditingHotkey(false);
   }, [tempHotkey, updateDraft]);
@@ -62,14 +72,15 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
         return;
       }
 
-      const keys: string[] = [];
-      if (e.ctrlKey) keys.push("Ctrl");
-      if (e.altKey) keys.push("Alt");
-      if (e.shiftKey) keys.push("Shift");
-      if (e.metaKey) keys.push("Super");
+      const modifiers: string[] = [];
+      if (e.ctrlKey) modifiers.push("Ctrl");
+      if (e.altKey) modifiers.push("Alt");
+      if (e.shiftKey) modifiers.push("Shift");
+      if (e.metaKey) modifiers.push("Super");
 
-      // Ignore bare modifier presses
+      // Show live modifier combination while holding modifier keys
       if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) {
+        setTempHotkey(modifiers.length > 0 ? `${modifiers.join("+")}+...` : "...");
         return;
       }
 
@@ -77,12 +88,13 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
       if (keyName === " ") keyName = "Space";
       else if (keyName.length === 1) keyName = keyName.toUpperCase();
 
-      if (!keys.includes(keyName)) {
-        keys.push(keyName);
+      const combo = [...modifiers];
+      if (!combo.includes(keyName)) {
+        combo.push(keyName);
       }
 
-      if (keys.length > 0) {
-        setTempHotkey(keys.join("+"));
+      if (combo.length > 0) {
+        setTempHotkey(combo.join("+"));
       }
     },
     [handleHotkeyCancel, handleHotkeySave]
@@ -244,38 +256,51 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
             layoutMode === "small" ? "self-end pt-1" : "h-full"
           )}>
             <div className="flex flex-col items-end justify-center gap-1">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]/60 select-none">
-                {DICTATION_COPY.hotkeyTitle}
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-[rgb(var(--foreground-muted))]/60 select-none">
+                  {DICTATION_COPY.hotkeyTitle}
+                </span>
+                {savedToast && (
+                  <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold animate-fade-in">
+                    <CheckCircle2 size={11} strokeWidth={2.5} />
+                    <span>{DICTATION_COPY.savedFeedback}</span>
+                  </div>
+                )}
+              </div>
               {isEditingHotkey ? (
-                <div className="flex items-center gap-1.5 animate-fade-in">
-                  <input
-                    type="text"
-                    value={tempHotkey}
-                    onKeyDown={handleKeyDownRecorder}
-                    readOnly
-                    placeholder={DICTATION_COPY.recordingPrompt}
-                    className="w-24 sm:w-28 text-center text-[11px] sm:text-[12px] font-mono font-bold px-1.5 sm:px-2 py-0.5 rounded-md bg-[rgba(var(--background),0.9)] border border-[rgb(var(--accent))] text-[rgb(var(--accent))] focus:outline-none cursor-pointer"
-                    autoFocus
-                  />
-                  <Tooltip label={DICTATION_COPY.saveLabel}>
-                    <button
-                      type="button"
-                      onClick={handleHotkeySave}
-                      className="p-1 rounded-md bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:opacity-90 active:scale-95 transition-all cursor-pointer flex items-center justify-center"
-                    >
-                      <Check size={12} strokeWidth={2.5} />
-                    </button>
-                  </Tooltip>
-                  <Tooltip label={DICTATION_COPY.cancelLabel}>
-                    <button
-                      type="button"
-                      onClick={handleHotkeyCancel}
-                      className="p-1 rounded-md bg-[rgba(var(--foreground),0.06)] border border-[rgba(var(--border),0.15)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] active:scale-95 transition-all cursor-pointer flex items-center justify-center"
-                    >
-                      <X size={12} strokeWidth={2} />
-                    </button>
-                  </Tooltip>
+                <div className="flex flex-col items-end gap-1 animate-fade-in">
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={tempHotkey}
+                      onKeyDown={handleKeyDownRecorder}
+                      readOnly
+                      placeholder={DICTATION_COPY.recordingPrompt}
+                      className="w-28 sm:w-32 text-center text-[11px] sm:text-[12px] font-mono font-bold px-2 py-1 rounded-md bg-[rgba(var(--background),0.9)] border border-[rgb(var(--accent))] text-[rgb(var(--accent))] focus:outline-none cursor-pointer shadow-inner"
+                      autoFocus
+                    />
+                    <Tooltip label={DICTATION_COPY.saveLabel}>
+                      <button
+                        type="button"
+                        onClick={handleHotkeySave}
+                        className="p-1.5 rounded-md bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:opacity-90 active:scale-95 transition-all cursor-pointer flex items-center justify-center shadow-sm"
+                      >
+                        <Check size={12} strokeWidth={2.5} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label={DICTATION_COPY.cancelLabel}>
+                      <button
+                        type="button"
+                        onClick={handleHotkeyCancel}
+                        className="p-1.5 rounded-md bg-[rgba(var(--foreground),0.06)] border border-[rgba(var(--border),0.15)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] active:scale-95 transition-all cursor-pointer flex items-center justify-center"
+                      >
+                        <X size={12} strokeWidth={2} />
+                      </button>
+                    </Tooltip>
+                  </div>
+                  <span className="text-[9.5px] text-[rgb(var(--foreground-muted))]/70 font-medium">
+                    {DICTATION_COPY.hotkeyTip}
+                  </span>
                 </div>
               ) : (
                 <Tooltip label={DICTATION_COPY.rebindHint}>

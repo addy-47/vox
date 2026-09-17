@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
-use sherpa_onnx::{TenVadModelConfig, VadModelConfig, VoiceActivityDetector};
+use sherpa_onnx::{SileroVadModelConfig, VadModelConfig, VoiceActivityDetector};
 
 use super::VadEngine as VadEngineTrait;
 
-/// Voice Activity Detection engine wrapping TenVAD ONNX model via Sherpa-ONNX.
-pub struct VadEngine {
+/// Voice Activity Detection engine wrapping Silero VAD ONNX model via Sherpa-ONNX.
+pub struct SileroVadEngine {
     detector: VoiceActivityDetector,
     model_path: PathBuf,
     threshold: f32,
@@ -15,8 +15,8 @@ pub struct VadEngine {
     max_speech_duration: f32,
 }
 
-impl VadEngine {
-    /// Loads TenVAD ONNX model and initializes the voice activity detector.
+impl SileroVadEngine {
+    /// Loads Silero VAD ONNX model and initializes the voice activity detector.
     pub fn new(
         model_path: &Path,
         threshold: f32,
@@ -34,7 +34,7 @@ impl VadEngine {
         )?;
 
         log::info!(
-            "[VAD] TenVAD Engine loaded successfully (threshold={}, min_silence={}s, min_speech={}s, max_speech={}s).",
+            "[VAD] Silero VAD Engine loaded successfully (threshold={}, min_silence={}s, min_speech={}s, max_speech={}s).",
             threshold,
             min_silence_duration,
             min_speech_duration,
@@ -59,7 +59,7 @@ impl VadEngine {
         max_speech_duration: f32,
     ) -> Result<VoiceActivityDetector> {
         log::info!(
-            "[VAD] >>> Initializing Sherpa-ONNX TenVAD Engine (threshold={}, min_silence={}s, min_speech={}s, max_speech={}s)...",
+            "[VAD] >>> Initializing Sherpa-ONNX Silero VAD Engine (threshold={}, min_silence={}s, min_speech={}s, max_speech={}s)...",
             threshold,
             min_silence_duration,
             min_speech_duration,
@@ -67,15 +67,15 @@ impl VadEngine {
         );
 
         let config = VadModelConfig {
-            silero_vad: Default::default(),
-            ten_vad: TenVadModelConfig {
+            silero_vad: SileroVadModelConfig {
                 model: Some(model_path.to_string_lossy().into()),
                 threshold,
                 min_silence_duration,
                 min_speech_duration,
-                window_size: 256,
+                window_size: 512,
                 max_speech_duration,
             },
+            ten_vad: Default::default(),
             sample_rate: 16000,
             num_threads: 1,
             debug: false,
@@ -84,7 +84,7 @@ impl VadEngine {
 
         VoiceActivityDetector::create(&config, 60.0).ok_or_else(|| {
             anyhow!(
-                "Failed to create Sherpa VoiceActivityDetector. Check model path: {:?}",
+                "Failed to create Sherpa VoiceActivityDetector for Silero VAD. Check model path: {:?}",
                 model_path
             )
         })
@@ -125,7 +125,7 @@ impl VadEngine {
         )
     }
 
-    /// Alias for update_threshold matching existing caller convention.
+    /// Alias for update_threshold matching TenVAD interface.
     pub fn update_detector(&mut self, threshold: f32) -> Result<()> {
         self.update_threshold(threshold)
     }
@@ -154,7 +154,7 @@ impl VadEngine {
     }
 }
 
-impl VadEngineTrait for VadEngine {
+impl VadEngineTrait for SileroVadEngine {
     /// Evaluates if the current audio buffer chunk contains speech.
     fn predict(&mut self, chunk: &[f32]) -> bool {
         self.detector.accept_waveform(chunk);

@@ -5,6 +5,7 @@ pub use utils::PreRollBuffer;
 
 pub mod actor;
 pub mod earshot_vad;
+pub mod silero_onnx;
 pub mod telemetry;
 pub mod ten_onnx;
 pub mod utils;
@@ -14,6 +15,7 @@ use crate::core::settings::{AudioOutputMode, InteractionMode};
 
 pub const MODEL_DIR_VAD: &str = "vad";
 pub const MODEL_FILE_VAD: &str = "ten_vad.onnx";
+pub const MODEL_FILE_VAD_SILERO: &str = "silero_vad.onnx";
 /// Input sample rate (Hz) of audio frames evaluated by the VAD actor.
 pub const VAD_INPUT_SAMPLE_RATE: u32 = 16000;
 pub const VAD_CHUNK_SIZE: usize = 256;
@@ -64,6 +66,7 @@ pub enum VadOperationalMode {
 
 /// Unified dispatch enum for supported Voice Activity Detection backends.
 pub enum VadBackend {
+    Silero(silero_onnx::SileroVadEngine),
     Ten(ten_onnx::VadEngine),
     Earshot(earshot_vad::EarshotVadEngine),
 }
@@ -78,6 +81,7 @@ impl VadEngine for VadBackend {
     /// Dispatches chunk speech activity evaluation to the selected backend.
     fn predict(&mut self, chunk: &[f32]) -> bool {
         match self {
+            VadBackend::Silero(e) => e.predict(chunk),
             VadBackend::Ten(e) => e.predict(chunk),
             VadBackend::Earshot(e) => e.predict(chunk),
         }
@@ -89,7 +93,7 @@ impl VadBackend {
     pub fn noise_gate_multiplier(&self) -> f32 {
         match self {
             VadBackend::Earshot(_) => EARSHOT_NOISE_GATE_MULTIPLIER,
-            VadBackend::Ten(_) => 1.0,
+            VadBackend::Silero(_) | VadBackend::Ten(_) => 1.0,
         }
     }
 
@@ -101,6 +105,7 @@ impl VadBackend {
     /// Hot-updates the voice detection activation threshold.
     pub fn update_threshold(&mut self, threshold: f32) -> anyhow::Result<()> {
         match self {
+            VadBackend::Silero(e) => e.update_detector(threshold),
             VadBackend::Ten(e) => e.update_detector(threshold),
             VadBackend::Earshot(e) => {
                 e.update_threshold(threshold);
@@ -109,9 +114,35 @@ impl VadBackend {
         }
     }
 
+    /// Hot-updates minimum silence cutoff duration in milliseconds.
+    pub fn update_silence_duration(&mut self, ms: u32) -> anyhow::Result<()> {
+        let dur_s = ms as f32 / 1000.0;
+        match self {
+            VadBackend::Silero(e) => e.update_silence_duration(dur_s),
+            VadBackend::Ten(e) => e.update_silence_duration(dur_s),
+            VadBackend::Earshot(_) => Ok(()),
+        }
+    }
+
+    /// Hot-updates minimum speech onset duration in milliseconds.
+    pub fn update_speech_onset(&mut self, ms: u32) -> anyhow::Result<()> {
+        let dur_s = ms as f32 / 1000.0;
+        match self {
+            VadBackend::Silero(e) => e.update_speech_onset(dur_s),
+            VadBackend::Ten(e) => e.update_speech_onset(dur_s),
+            VadBackend::Earshot(_) => Ok(()),
+        }
+    }
+
+    /// Returns true if this backend is an ONNX neural detector with internal temporal hysteresis.
+    pub fn is_onnx(&self) -> bool {
+        matches!(self, VadBackend::Silero(_) | VadBackend::Ten(_))
+    }
+
     /// Flushes internal detector state across utterance boundaries.
     pub fn flush(&mut self) {
         match self {
+            VadBackend::Silero(e) => e.flush(),
             VadBackend::Ten(e) => e.flush(),
             VadBackend::Earshot(e) => e.flush(),
         }
