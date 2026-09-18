@@ -58,7 +58,8 @@ use crate::{
         },
         pipeline::{
             end_session, launch_engine, pause_session, ptt_cancel, ptt_start, ptt_stop,
-            resume_session, start_session, stop_engine, test_clip, test_clip_cancel,
+            resume_session, set_mic_muted, set_playback_muted, set_session_private_mode,
+            start_session, stop_engine, submit_text_input,
         },
         projects::{create_project, delete_project, get_projects, rename_project},
         settings::{
@@ -636,8 +637,10 @@ pub fn run() {
             end_session,
             pause_session,
             resume_session,
-            test_clip,
-            test_clip_cancel,
+            submit_text_input,
+            set_playback_muted,
+            set_mic_muted,
+            set_session_private_mode,
             hide_tray_window,
             set_window_click_through,
             show_main_window,

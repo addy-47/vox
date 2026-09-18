@@ -408,14 +408,14 @@ pub fn get_voice_profiles() -> Vec<VoiceProfile> {
     vec![
         VoiceProfile {
             id: 0,
-            name: "Bella".to_string(),
+            name: "Alloy".to_string(),
             gender: Some("Female".to_string()),
             accent: Some("American".to_string()),
             language: Some("en-US".to_string()),
         },
         VoiceProfile {
             id: 1,
-            name: "Sarah".to_string(),
+            name: "Bella".to_string(),
             gender: Some("Female".to_string()),
             accent: Some("American".to_string()),
             language: Some("en-US".to_string()),
@@ -429,14 +429,14 @@ pub fn get_voice_profiles() -> Vec<VoiceProfile> {
         },
         VoiceProfile {
             id: 3,
-            name: "Sky".to_string(),
+            name: "Sarah".to_string(),
             gender: Some("Female".to_string()),
             accent: Some("American".to_string()),
             language: Some("en-US".to_string()),
         },
         VoiceProfile {
             id: 4,
-            name: "Alloy".to_string(),
+            name: "Sky".to_string(),
             gender: Some("Female".to_string()),
             accent: Some("American".to_string()),
             language: Some("en-US".to_string()),
@@ -478,10 +478,10 @@ pub fn get_voice_profiles() -> Vec<VoiceProfile> {
         },
         VoiceProfile {
             id: 10,
-            name: "Lewis".to_string(),
-            gender: Some("Male".to_string()),
-            accent: Some("British".to_string()),
-            language: Some("en-GB".to_string()),
+            name: "Heart".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
         },
     ]
 }

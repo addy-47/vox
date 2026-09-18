@@ -3,7 +3,6 @@ pub mod atomics;
 pub mod dictation;
 pub mod lifecycle;
 pub mod router;
-pub mod test;
 
 use std::time::Duration;
 

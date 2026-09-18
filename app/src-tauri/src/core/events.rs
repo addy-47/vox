@@ -36,6 +36,9 @@ pub enum VoxEvent {
         turn_id: u32,
         text: String,
     },
+    TextInput {
+        text: String,
+    },
     LlmFinished {
         turn_id: u32,
     },

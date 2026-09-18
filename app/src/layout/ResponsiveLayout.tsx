@@ -16,6 +16,7 @@ import { Tooltip } from "@/shared/ui/Tooltip";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
+import { useSessionStore } from "@/store/sessionStore";
 
 const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.Monitoring })));
 
@@ -32,6 +33,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const { openProfiler } = useProfilerDrawer();
   const { isPanelOpen, closePanel, togglePanel } = usePanelStateContext();
   const historyDisplayMode = useHistoryFilterStore((s) => s.displayMode);
+  const interactionState = useSessionStore((s) => s.interactionState);
 
   const closeHelp = useCallback(() => closePanel("help"), [closePanel]);
   const closeNotifications = useCallback(() => closePanel("notifications"), [closePanel]);
@@ -158,6 +160,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         {/* Ambient Background — visible on every page */}
         <AmbientBackground
           originY={ambientOriginY}
+          paused={interactionState === "Speaking"}
           rippleShape={
             location.pathname === "/history" && historyDisplayMode === "orbit"
               ? "orbit"

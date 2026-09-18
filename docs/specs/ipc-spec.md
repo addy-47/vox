@@ -178,9 +178,21 @@ Controls the voice interaction lifecycle and hardware devices.
 - **Purpose**: Controls Push-To-Talk voice windows.
 - **Behavior**: Dispatches `PttStart`, `PttStop`, or `PttCancel` to `event_tx` for window validation and barge-in evaluation.
 
-#### `test_clip(path: String, isPrivateMode: bool)` & `test_clip_cancel()`
-- **Purpose**: Runs synthetic developer test audio through the active pipeline.
-- **Behavior**: Feeds WAV PCM frames into the pipeline without requiring physical microphone speech.
+#### `submit_text_input(query: String)`
+- **Purpose**: Submits a typed user query directly into the active conversational pipeline, bypassing audio input, VAD, and STT.
+- **Behavior**: Dispatches `VoxEvent::TextInput { text }` to the central `event_tx` Router. If the pipeline is `Paused`, the router auto-resumes (`ResumeSession` shared FX: `cancel_flag=false`, renewed turn token, `owner=Assistant`, VAD re-arm) and then processes the query as a `Ready`-state turn, so typed input is never silently dropped. `Idle`/`Sleeping` still drop. If the pipeline is in `Thinking`, `Speaking`, or `Working`, it invokes `on_interrupt()` to halt previous playback and vend a new turn before dispatching to LLM generation. TTS is synthesized and played back normally through the standard lifecycle.
+
+#### `set_playback_muted(muted: bool)`
+- **Purpose**: Toggles speaker audio output muting at the CPAL output sink layer.
+- **Behavior**: Atomically updates `state.pipeline.is_playback_muted`. When true, CPAL hardware output buffer is filled with silence (`0.0`) while synthesis frame consumption and pipeline event timing proceed normally.
+
+#### `set_mic_muted(muted: bool)`
+- **Purpose**: Toggles microphone audio input gating at the CPAL input ingestion layer.
+- **Behavior**: Atomically updates `state.pipeline.is_mic_muted` and recomputes `ingestion_gate`. When true, microphone audio frames are dropped before VAD.
+
+#### `set_session_private_mode(enabled: bool)`
+- **Purpose**: Toggles ephemeral temporary session mode (incognito / private mode) in memory without modifying `settings.json`.
+- **Behavior**: Atomically updates `state.telemetry.is_private_mode`. While enabled, the persistence worker drops disk write events for turns and sessions, leaving conversations strictly in memory.
 
 #### `list_audio_devices()`
 - **Purpose**: Enumerates available host input microphones.

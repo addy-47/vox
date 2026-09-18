@@ -54,6 +54,11 @@ pub const MODEL_FILE_TTS_KOKORO_MODEL: &str = "model.onnx";
 pub const MODEL_FILE_TTS_KOKORO_VOICES: &str = "voices.bin";
 pub const MODEL_FILE_TTS_KOKORO_TOKENS: &str = "tokens.txt";
 pub const MODEL_DIRNAME_TTS_KOKORO_ESPEAK: &str = "espeak-ng-data";
+pub const MODEL_FILE_TTS_KOKORO_LEXICON_US: &str = "lexicon-us-en.txt";
+/// Inter-phrase silence scale matching the sherpa-onnx crate default (0.2).
+pub const KOKORO_SILENCE_SCALE: f32 = 0.2;
+/// Stride of one voice row in voices.bin (511 frames x 256 dims x f32), from model metadata style_dim.
+pub const KOKORO_VOICE_ROW_BYTES: u64 = 523264;
 
 pub const CHATTERBOX_MODEL_DIR: &str = "tts/chatterbox";
 pub const MODEL_DIRNAME_CHATTERBOX: &str = "chatterbox";

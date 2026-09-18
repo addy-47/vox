@@ -137,6 +137,7 @@ fn create_playback_engine(
         pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_synthesis_jobs),
         event_tx,
         playback_intent: Arc::new(AtomicU8::new(0)),
+        is_playback_muted: Arc::clone(&state.pipeline.is_playback_muted),
     };
 
     let pe = PlaybackEngine::new(engine_handles, telemetry_handles)

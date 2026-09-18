@@ -27,13 +27,14 @@ const SHELL_R = 2.30;
 /** Number of silk-sheet disc layers. */
 const NUM_SHEETS = 7;
 
-/** Target scale per interaction state (subtle pop-up on speaking, focused intake on listening). */
+/** Target scale per interaction state (pop-up on speaking, focused intake on listening). */
 const TARGET_SCALE: Record<string, number> = {
   Idle:      1.0,
   Ready:     1.0,
-  Listening: 0.95,
+  Listening: 0.90,
   Thinking:  1.0,
-  Speaking:  1.06,
+  Working:   1.0,
+  Speaking:  1.14,
   Paused:    1.0,
   Sleeping:  0.98,
   Error:     1.0,
@@ -45,7 +46,8 @@ const BASE_AMP: Record<string, number> = {
   Ready:     0.08,
   Listening: 0.16,
   Thinking:  0.26,
-  Speaking:  0.16,
+  Working:   0.26,
+  Speaking:  0.28,
   Paused:    0.02,
   Sleeping:  0.02,
   Error:     0.02,
@@ -530,37 +532,36 @@ export const VoxOrb = React.memo(({
       rawHigh = rawEnergy * 0.3;
     }
 
-    // 2. Smoothed multi-band audio envelopes (gentle attack, graceful slow decay followers)
+    // 2. Smoothed multi-band audio envelopes (dt-normalized attack/decay followers)
+    const rate = (lambda: number) => 1 - Math.exp(-dtSec * lambda);
     // Low band (vocal pitch, deep vowel core): slow, warm attack and decay
     const prevLow = ctx.smoothedLow ?? 0;
-    const lowRate = rawLow > prevLow ? 0.14 : 0.035;
+    const lowRate = rawLow > prevLow ? rate(9) : rate(2);
     ctx.smoothedLow = prevLow + (Math.min(rawLow, 1.0) - prevLow) * lowRate;
 
     // Mid band (formants, articulation, clarity): balanced tracking
     const prevMid = ctx.smoothedMid ?? 0;
-    const midRate = rawMid > prevMid ? 0.16 : 0.04;
+    const midRate = rawMid > prevMid ? rate(9.5) : rate(2.4);
     ctx.smoothedMid = prevMid + (Math.min(rawMid, 1.0) - prevMid) * midRate;
 
     // High band (sibilance, consonants, crispness): responsive but smooth
     const prevHigh = ctx.smoothedHigh ?? 0;
-    const highRate = rawHigh > prevHigh ? 0.20 : 0.05;
+    const highRate = rawHigh > prevHigh ? rate(11) : rate(3);
     ctx.smoothedHigh = prevHigh + (Math.min(rawHigh, 1.0) - prevHigh) * highRate;
 
     // Overall energy envelope
     const targetEnergy = Math.min(rawEnergy, 1.0);
     const prevEnergy = ctx.smoothedEnergy ?? 0;
-    const energyRate = targetEnergy > prevEnergy ? 0.18 : 0.04;
+    const energyRate = targetEnergy > prevEnergy ? rate(10) : rate(2.5);
     ctx.smoothedEnergy = prevEnergy + (targetEnergy - prevEnergy) * energyRate;
     const audioEnergy = ctx.smoothedEnergy;
 
-    // 3. Subtle State Scale Transition:
-    // When state changes to speaking, expands subtly (~1.06x projection pop-up)
-    // When state changes to listening, contracts subtly (~0.95x attentive intake)
-    // When finished, smoothly returns to 1.00x normal.
+    // 3. State Scale Transition (slow breathe out/in; quicker glide back to calm
+    // so pause/interrupt settles smoothly instead of snapping or crawling).
     const targetScale = TARGET_SCALE[state] ?? 1.0;
     const currentScale = ctx.curScale ?? 1.0;
-    const scaleRate = state === 'Speaking' ? 0.07 : 0.05;
-    ctx.curScale = currentScale + (targetScale - currentScale) * scaleRate;
+    const scaleLambda = state === 'Speaking' || state === 'Listening' ? 2.2 : 4.0;
+    ctx.curScale = currentScale + (targetScale - currentScale) * rate(scaleLambda);
     ctx.group.scale.set(ctx.curScale, ctx.curScale, ctx.curScale);
 
     // 4. Smoothly transition base offset value on state changes (eliminates instant state-jump visual pops)
@@ -569,13 +570,13 @@ export const VoxOrb = React.memo(({
     if (ctx.curBaseVal === undefined) {
       ctx.curBaseVal = baseVal;
     }
-    ctx.curBaseVal += (baseVal - ctx.curBaseVal) * 0.06;
+    ctx.curBaseVal += (baseVal - ctx.curBaseVal) * rate(4);
 
     // 5. Calculate internal vertex deformation amplitude (u_amplitude) from smoothed audio energy
     // Silk deepens fluidly and holds its shape during speech, without rhythmic bouncing.
     const targetAmp = ctx.curBaseVal + audioEnergy * 0.38;
     const curAmp = ctx.sharedUni.u_amplitude.value;
-    const ampRate = targetAmp > curAmp ? 0.20 : 0.06;
+    const ampRate = targetAmp > curAmp ? rate(11) : rate(3.5);
     ctx.sharedUni.u_amplitude.value += (targetAmp - curAmp) * ampRate;
 
     // 6. Internal noise/texture boiling (accelerate time drift based on voice activity & mid frequencies)
@@ -587,7 +588,7 @@ export const VoxOrb = React.memo(({
     ctx.sharedUni.u_lows.value = ctx.smoothedLow;
     ctx.sharedUni.u_mids.value = ctx.smoothedMid;
     ctx.sharedUni.u_highs.value = ctx.smoothedHigh;
-    ctx.sharedUni.u_sleeping.value += (Number(sleeping) - ctx.sharedUni.u_sleeping.value) * 0.08;
+    ctx.sharedUni.u_sleeping.value += (Number(sleeping) - ctx.sharedUni.u_sleeping.value) * rate(5.5);
 
     const themeAccent = themeRef.current.accent;
     const themeGlow = themeRef.current.glow;
@@ -609,8 +610,8 @@ export const VoxOrb = React.memo(({
     }
 
     // Response morph rate
-    ctx.curGlow.lerp(ctx.tgtGlow, 0.08);
-    ctx.curAccent.lerp(ctx.tgtAccent, 0.08);
+    ctx.curGlow.lerp(ctx.tgtGlow, rate(5.5));
+    ctx.curAccent.lerp(ctx.tgtAccent, rate(5.5));
 
     ctx.sharedUni.u_colorGlow.value.copy(ctx.curGlow);
     ctx.sharedUni.u_colorAccent.value.copy(ctx.curAccent);

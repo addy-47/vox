@@ -35,8 +35,6 @@ export function useHomePage() {
 
   const telemetryRef = useTelemetry();
   const dialogueScrollRef = useRef<HTMLDivElement>(null);
-  const testButtonRef = useRef<HTMLButtonElement>(null);
-  const testPanelRef = useRef<HTMLDivElement>(null);
 
   const {
     interactionState,
@@ -50,9 +48,10 @@ export function useHomePage() {
     transcript,
     assistantText,
     cpuWarning,
-    testMode,
-    setTestMode,
-    testingClip,
+    isTemporarySession,
+    isTextModeOpen,
+    isPlaybackMuted,
+    isMicMuted,
     dialogueHistory,
     isLaunching,
     isThinking,
@@ -66,8 +65,23 @@ export function useHomePage() {
     handlePttStart,
     handlePttStop,
     handlePttCancel,
-    handleTestClip,
+    submitText,
+    toggleTemporarySession,
+    setTextModeOpen,
+    togglePlaybackMute,
+    toggleMicMute,
   } = session;
+
+  // Auto-scroll the dialogue rail to newest content while the user stays
+  // pinned near the bottom; never yanks away a manual scroll-back.
+  useEffect(() => {
+    const el = dialogueScrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 120) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [dialogueHistory, transcript, assistantText]);
 
   return {
     interactionState,
@@ -81,9 +95,10 @@ export function useHomePage() {
     transcript,
     assistantText,
     cpuWarning,
-    testMode,
-    setTestMode,
-    testingClip,
+    isTemporarySession,
+    isTextModeOpen,
+    isPlaybackMuted,
+    isMicMuted,
     dialogueHistory,
     isLaunching,
     isThinking,
@@ -97,13 +112,15 @@ export function useHomePage() {
     handlePttStart,
     handlePttStop,
     handlePttCancel,
-    handleTestClip,
+    submitText,
+    toggleTemporarySession,
+    setTextModeOpen,
+    togglePlaybackMute,
+    toggleMicMute,
     historyOpen,
     setHistoryOpen,
     telemetryRef,
     dialogueScrollRef,
     isMobileScreen,
-    testButtonRef,
-    testPanelRef,
   };
 }

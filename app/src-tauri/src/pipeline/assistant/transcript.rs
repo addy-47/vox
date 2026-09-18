@@ -84,7 +84,7 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
                 );
                 let mut guard = harness_arc.lock();
                 if let Some(ref mut harness) = *guard {
-                    harness.on_turn_completed(app_state, Arc::clone(&harness_arc));
+                    harness.on_turn_completed(Arc::clone(&app_state), Arc::clone(&harness_arc));
                 }
             }
             TurnOutcome::DuplicateIgnored { turn_id } => {
@@ -107,7 +107,7 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
     });
 }
 
-/// Handles finalized speech transcript, validating non-empty text and routing to LLM or idle recovery.
+/// Handles finalized speech transcript or direct text input, validating non-empty text and routing to LLM.
 pub fn on_transcript_final<R: tauri::Runtime>(
     turn_id: u32,
     text: String,
