@@ -295,6 +295,7 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
         {
             let mut settings = state.settings.write().unwrap();
             settings.llm.context_window = 8192;
+            settings.working_memory.auto_compaction = true; // required: default is false, compaction won't trigger without this
         }
 
         let settings = state.settings.read().unwrap().clone();

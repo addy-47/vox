@@ -202,79 +202,73 @@ const NotificationItem = memo(
         animate="visible"
         exit="exit"
         className={cn(
-          "group relative flex gap-3 p-3.5 rounded-xl border transition-colors duration-200 cursor-pointer",
-          isCritical
-            ? "border-[rgba(var(--error),0.35)] bg-[rgba(var(--error),0.05)] shadow-[0_4px_20px_rgba(var(--error),0.08)]"
-            : isWarning
-              ? "border-[rgba(var(--warning),0.30)] bg-[rgba(var(--warning),0.04)] shadow-[0_4px_20px_rgba(var(--warning),0.06)]"
-              : unread
-                ? "border-[rgba(var(--accent),0.25)] bg-[rgba(var(--card),0.75)] shadow-[0_4px_20px_rgba(var(--accent),0.06)] hover:border-[rgba(var(--accent),0.40)] hover:bg-[rgba(var(--card),0.85)]"
-                : "border-[rgba(var(--border),0.1)] bg-[rgba(var(--card),0.4)] hover:border-[rgba(var(--border),0.18)] hover:bg-[rgba(var(--card),0.55)]",
+          "group relative flex gap-3 px-3 py-3 rounded-xl border transition-colors duration-200",
+          unread
+            ? "border-[rgba(var(--accent),0.25)] bg-[rgba(var(--card),0.75)] hover:border-[rgba(var(--accent),0.40)] hover:bg-[rgba(var(--card),0.9)]"
+            : "border-[rgba(var(--border),0.1)] bg-[rgba(var(--card),0.4)] hover:border-[rgba(var(--border),0.18)] hover:bg-[rgba(var(--card),0.55)]",
           receipt && "opacity-70 hover:opacity-90"
         )}
       >
-        <div className={cn("w-9 h-9 rounded-xl border flex items-center justify-center shrink-0", visual.tile)}>
-          <Icon size={16} strokeWidth={1.75} />
-        </div>
+        <Tooltip label={blurb} side="top">
+          <span className={cn("w-9 h-9 rounded-lg border flex items-center justify-center shrink-0", visual.tile)}>
+            <Icon size={16} strokeWidth={1.75} />
+          </span>
+        </Tooltip>
 
-        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+        <div className="flex-1 min-w-0 flex flex-col gap-1">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-1.5 min-w-0">
               {unread && (
-                <span className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] shrink-0 shadow-[0_0_6px_rgba(var(--accent),0.5)]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[rgb(var(--accent))] shrink-0" />
               )}
-              <span className="text-[13.5px] font-semibold text-[rgb(var(--foreground))] truncate">
+              <span className="text-[13px] font-semibold text-[rgb(var(--foreground))] truncate">
                 {notif.title}
               </span>
               {group.count > 1 && (
-                <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-[rgba(var(--foreground),0.08)] text-[rgb(var(--foreground-muted))] font-mono text-[10px] font-bold">
-                  (×{group.count})
+                <span className="shrink-0 font-mono tabular-nums text-[11px] text-[rgb(var(--foreground-muted))]/70">
+                  ×{group.count}
                 </span>
               )}
             </div>
-            <Tooltip label={NOTIFICATION_COPY.dismiss} side="left">
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); handleDismiss(); }}
-                className="p-1 rounded-lg text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer shrink-0"
-                aria-label={NOTIFICATION_COPY.dismiss}
-              >
-                <X size={13} />
-              </button>
-            </Tooltip>
-          </div>
-
-          <div className="flex items-center gap-1.5 text-[11px] text-[rgb(var(--foreground-muted))]">
-            <span>{formatSessionRecency(notif.created_at)}</span>
-            <span aria-hidden="true">·</span>
-            <span className="font-mono tabular-nums">{formatClockTime(notif.created_at)}</span>
-            {turnMeta && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span>{turnMeta}</span>
-              </>
-            )}
-            <span aria-hidden="true">·</span>
-            <span className="truncate">{blurb}</span>
+            <div className="flex items-center gap-0.5 shrink-0">
+              <span className="font-mono tabular-nums text-[11px] text-[rgb(var(--foreground-muted))]/70 px-1">
+                {formatClockTime(notif.created_at)}
+              </span>
+              <Tooltip label={NOTIFICATION_COPY.dismiss} side="left">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleDismiss(); }}
+                  className="p-1 rounded-lg text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-all cursor-pointer shrink-0 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100 focus-visible:opacity-100"
+                  aria-label={NOTIFICATION_COPY.dismiss}
+                >
+                  <X size={13} />
+                </button>
+              </Tooltip>
+            </div>
           </div>
 
           {notif.message.trim() && (
-            <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed break-words">
+            <p className="text-[12px] text-[rgb(var(--foreground-muted))] leading-relaxed break-words line-clamp-2">
               {notif.message}
             </p>
           )}
 
           <div className="flex items-center gap-2 pt-0.5">
+            <span className="text-[11px] text-[rgb(var(--foreground-muted))]/70 truncate">
+              {formatSessionRecency(notif.created_at)}
+              {turnMeta && ` · ${turnMeta}`}
+            </span>
+            <div className="flex-1" aria-hidden="true" />
             {isCritical && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border border-[rgba(var(--error),0.35)] text-[rgb(var(--error))]">
-                <AlertCircle size={10} />
-                Critical
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[rgb(var(--error))] shrink-0">
+                <AlertCircle size={11} />
+                {NOTIFICATION_COPY.severityCritical}
               </span>
             )}
             {isWarning && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border border-[rgba(var(--warning),0.35)] text-[rgb(var(--warning))]">
-                <AlertTriangle size={10} />
-                Warning
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[rgb(var(--warning))] shrink-0">
+                <AlertTriangle size={11} />
+                {NOTIFICATION_COPY.severityWarning}
               </span>
             )}
 
@@ -295,7 +289,7 @@ const NotificationItem = memo(
                     "flex items-center justify-center w-7 h-7 rounded-lg border transition-colors cursor-pointer",
                     isWorking
                       ? "border-[rgba(var(--accent),0.4)] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] cursor-wait"
-                      : "border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.10)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.20)] hover:border-[rgba(var(--accent),0.5)] active:scale-95 shadow-sm"
+                      : "border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.10)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.20)] hover:border-[rgba(var(--accent),0.5)] active:scale-95"
                   )}
                 >
                   {isWorking ? (
@@ -311,7 +305,7 @@ const NotificationItem = memo(
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); handleOpen(); }}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer inline-flex items-center gap-0.5"
+                className="px-2 py-1 rounded-lg text-[11px] font-semibold text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer inline-flex items-center gap-0.5 shrink-0"
               >
                 {NOTIFICATION_COPY.view}
                 <ChevronRight size={10} />
@@ -357,8 +351,13 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
   const executeAction = useNotificationStore((s) => s.executeAction);
   const loading = useNotificationStore((s) => s.loading);
 
+  // Deferred past the 220ms rail slide so the IPC round-trip + store
+  // churn never lands inside the open animation's frame budget.
   useEffect(() => {
-    markAllRead().catch(() => {});
+    const t = setTimeout(() => {
+      markAllRead().catch(() => {});
+    }, 280);
+    return () => clearTimeout(t);
   }, [markAllRead]);
 
   const displayedItems = activeTab === "tasks" ? tasks : updates;
@@ -507,7 +506,7 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
 
         {/* Unread badge (only when panel has unread count) */}
         {badgeCount > 0 && (
-          <span className="mb-2 ml-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-mono text-[9px] font-black leading-none flex items-center justify-center">
+          <span className="mb-2 ml-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] font-mono text-[11px] font-black leading-none flex items-center justify-center">
             {badgeCount > 9 ? "9+" : badgeCount}
           </span>
         )}

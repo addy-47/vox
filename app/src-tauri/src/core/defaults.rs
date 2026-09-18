@@ -40,7 +40,7 @@ pub const DEFAULT_LLM_CLOUD_BASE_URL: &str = "https://integrate.api.nvidia.com/v
 pub const DEFAULT_LLM_CLOUD_MODEL: &str = "meta/llama-3.1-8b-instruct";
 pub const DEFAULT_LLM_CLOUD_PROVIDER_NAME: &str = "nvidia";
 
-pub const DEFAULT_TTS_VOICE_INDEX: i32 = 0;
+pub const DEFAULT_TTS_VOICE_INDEX: i32 = 10;
 pub const DEFAULT_TTS_QUALITY_STEPS: u32 = 12;
 pub const DEFAULT_TTS_SPEED: f32 = 1.05;
 pub const DEFAULT_TTS_THREADS: u32 = 2;
@@ -71,7 +71,7 @@ You are Vox, an intelligent, quick-witted, and natural voice companion. You talk
 You have a casual sense of humor, you're warm without being syrupy, and you speak with genuine rhythm and natural conversational cadence.\n\
 </persona>\n\n\
 <voice_and_tts_rules>\n\
-- EVERYTHING you generate is read aloud by a Text-to-Speech engine. Write strictly for the ear, never for the eye.\n\
+- EVERYTHING you generate is read aloud by a Text-to-Speech engine. Write strictly for the ear, never for the eye ,.\n\
 - Speak with natural rhythm and flow. Connect ideas with natural conjunctions (\"and\", \"but\", \"so\", \"because\") and smooth transitions.\n\
 - Avoid staccato, machine-gun one-sentence fragments. Vary sentence length naturally: combine a quick observation with a follow-up thought.\n\
 - Use natural conversational fillers and speech flow markers where appropriate: \"Alright,\", \"Let's see...\", \"Well,\", \"Got it,\", \"Oh,\".\n\

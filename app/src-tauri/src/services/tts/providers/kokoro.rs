@@ -21,8 +21,10 @@ use crate::{
     services::{
         translit::is_devanagari,
         tts::{
-            MAX_SPEED, MIN_SPEED, MODEL_DIRNAME_TTS_KOKORO_ESPEAK, MODEL_FILE_TTS_KOKORO_MODEL,
-            MODEL_FILE_TTS_KOKORO_TOKENS, MODEL_FILE_TTS_KOKORO_VOICES,
+            KOKORO_SILENCE_SCALE, KOKORO_VOICE_ROW_BYTES, MAX_SPEED, MIN_SPEED,
+            MODEL_DIRNAME_TTS_KOKORO_ESPEAK, MODEL_FILE_TTS_KOKORO_LEXICON_US,
+            MODEL_FILE_TTS_KOKORO_MODEL, MODEL_FILE_TTS_KOKORO_TOKENS,
+            MODEL_FILE_TTS_KOKORO_VOICES,
         },
     },
 };
@@ -66,6 +68,7 @@ impl KokoroEngine {
                     voices: Some(mp(MODEL_FILE_TTS_KOKORO_VOICES)),
                     tokens: Some(mp(MODEL_FILE_TTS_KOKORO_TOKENS)),
                     data_dir: Some(mp(MODEL_DIRNAME_TTS_KOKORO_ESPEAK)),
+                    lexicon: Some(mp(MODEL_FILE_TTS_KOKORO_LEXICON_US)),
                     length_scale: 1.0,
                     ..Default::default()
                 },
@@ -80,16 +83,27 @@ impl KokoroEngine {
         let tts = OfflineTts::create(&config)
             .ok_or_else(|| anyhow!("[Kokoro] Failed to create OfflineTts instance"))?;
 
+        // Clamp sid into the voices file so a stale settings index can never
+        // drive an out-of-bounds style lookup in the native engine.
+        let voice_count = std::fs::metadata(mp(MODEL_FILE_TTS_KOKORO_VOICES))
+            .map(|m| m.len() / KOKORO_VOICE_ROW_BYTES)
+            .unwrap_or(0);
+        let clamped_voice = if voice_count > 0 {
+            voice.clamp(0, voice_count.saturating_sub(1) as i32)
+        } else {
+            voice.max(0)
+        };
+
         log::info!(
             "[Kokoro] Initialized Kokoro Multi-Lang v1.1 (voice={}, speed={})",
-            voice,
+            clamped_voice,
             speed
         );
 
         Ok(Self {
             tts: Mutex::new(tts),
             speed: AtomicF32::new(speed.clamp(MIN_SPEED, MAX_SPEED)),
-            voice: AtomicI32::new(voice.max(0)),
+            voice: AtomicI32::new(clamped_voice),
         })
     }
 }
@@ -155,7 +169,7 @@ impl TtsProvider for KokoroEngine {
         let gen_config = GenerationConfig {
             sid,
             speed,
-            silence_scale: 0.1,
+            silence_scale: KOKORO_SILENCE_SCALE,
             ..Default::default()
         };
 

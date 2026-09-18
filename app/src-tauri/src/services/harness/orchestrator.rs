@@ -413,7 +413,7 @@ impl Harness {
         };
 
         // Phase 3: Inline Compaction (if critical utilization triggered)
-        if let (true, Some(provider)) = (can_compact, req.provider.as_ref()) {
+        if can_compact {
             transition(
                 InteractionState::Working,
                 &req.routing_ctx,
@@ -436,71 +436,83 @@ impl Harness {
                 }
             }
 
-            let compactor_cancel = req.cancel.clone();
-            let session_id = req.app_state.conversation_id.load(Relaxed) as i64;
-            let (from_turn, history_slice) = {
-                let guard = harness_arc.lock();
-                guard
-                    .as_ref()
-                    .map(|h| (h.from_turn_id(), h.history.messages().to_vec()))
-                    .unwrap_or((0, Vec::new()))
-            };
-            let to_turn = turn_id;
-            let provider = provider.clone();
+            if let Some(provider) = req.provider.as_ref() {
+                let compactor_cancel = req.cancel.clone();
+                let session_id = req.app_state.conversation_id.load(Relaxed) as i64;
+                let (from_turn, history_slice) = {
+                    let guard = harness_arc.lock();
+                    guard
+                        .as_ref()
+                        .map(|h| (h.from_turn_id(), h.history.messages().to_vec()))
+                        .unwrap_or((0, Vec::new()))
+                };
+                let to_turn = turn_id;
+                let provider = provider.clone();
 
-            let llm_settings = req.app_state.settings.read().ok().map(|s| s.llm.clone());
-            let db = req.db.clone();
-            let handle = tokio::runtime::Handle::current();
-            let compaction_res = tokio::task::spawn_blocking(move || {
-                let conn = db.connect().map_err(|e| {
-                    anyhow::anyhow!("Failed to connect to db for compaction: {}", e)
-                })?;
-                handle.block_on(async {
-                    let params = CompactionParams {
-                        session_id,
-                        trigger_kind: "inline",
-                        from_turn_id: from_turn,
-                        to_turn_id: to_turn,
-                        history_messages: &history_slice,
-                        llm_settings: llm_settings.as_ref(),
-                        cancel: Some(&compactor_cancel),
-                    };
-                    CompactionStage::run_and_persist(provider.as_ref(), &conn, params).await
+                let llm_settings = req.app_state.settings.read().ok().map(|s| s.llm.clone());
+                let db = req.db.clone();
+                let handle = tokio::runtime::Handle::current();
+                let compaction_res = tokio::task::spawn_blocking(move || {
+                    let conn = db.connect().map_err(|e| {
+                        anyhow::anyhow!("Failed to connect to db for compaction: {}", e)
+                    })?;
+                    handle.block_on(async {
+                        let params = CompactionParams {
+                            session_id,
+                            trigger_kind: "inline",
+                            from_turn_id: from_turn,
+                            to_turn_id: to_turn,
+                            history_messages: &history_slice,
+                            llm_settings: llm_settings.as_ref(),
+                            cancel: Some(&compactor_cancel),
+                        };
+                        CompactionStage::run_and_persist(provider.as_ref(), &conn, params).await
+                    })
                 })
-            })
-            .await
-            .unwrap_or_else(|join_err| {
-                Err(anyhow::anyhow!(
-                    "Compaction blocking task panicked: {:?}",
-                    join_err
-                ))
-            });
+                .await
+                .unwrap_or_else(|join_err| {
+                    Err(anyhow::anyhow!(
+                        "Compaction blocking task panicked: {:?}",
+                        join_err
+                    ))
+                });
 
-            let mut guard = harness_arc.lock();
-            if let Some(ref mut harness) = *guard {
-                match compaction_res {
-                    Ok(result) => {
-                        if !result.session_context.trim().is_empty() {
-                            harness.apply_session_context(&result.session_context, &req.query);
-                            harness.set_last_compacted_to_turn(to_turn);
-                            log::info!("[Harness] Inline compaction succeeded; history refreshed.");
-                        } else {
+                let mut guard = harness_arc.lock();
+                if let Some(ref mut harness) = *guard {
+                    match compaction_res {
+                        Ok(result) => {
+                            if !result.session_context.trim().is_empty() {
+                                harness.apply_session_context(&result.session_context, &req.query);
+                                harness.set_last_compacted_to_turn(to_turn);
+                                log::info!("[Harness] Inline compaction succeeded; history refreshed.");
+                            } else {
+                                log::warn!(
+                                    "[Harness] Inline compaction returned empty context; executing degraded FIFO shift."
+                                );
+                                harness.fallback_fifo_shift();
+                            }
+                        }
+                        Err(err) => {
                             log::warn!(
-                                "[Harness] Inline compaction returned empty context; executing degraded FIFO shift."
+                                "[Harness] Inline compaction failed (0-retry): {}. Executing degraded FIFO shift.",
+                                err
                             );
                             harness.fallback_fifo_shift();
                         }
                     }
-                    Err(err) => {
-                        log::warn!(
-                            "[Harness] Inline compaction failed (0-retry): {}. Executing degraded FIFO shift.",
-                            err
-                        );
-                        harness.fallback_fifo_shift();
-                    }
+                }
+            } else {
+                log::warn!(
+                    "[Harness] Critical context threshold reached on turn {} but no LLM provider available — executing degraded FIFO shift.",
+                    turn_id
+                );
+                let mut guard = harness_arc.lock();
+                if let Some(ref mut harness) = *guard {
+                    harness.fallback_fifo_shift();
                 }
             }
         }
+
 
         // Phase 4: Prompt Assembly & GenerationRequest Building
         let generation_request = {

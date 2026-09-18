@@ -32,6 +32,8 @@ export const NOTIFICATION_COPY = {
   retrying: "Retrying...",
   retryTooltip: "Retry operation",
   resolvedTooltip: "Task resolved",
+  severityCritical: "Critical",
+  severityWarning: "Warning",
   openSetup: "Open setup",
   justNow: "Just now",
   turnSingular: "turn",

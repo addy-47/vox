@@ -22,6 +22,8 @@ pub struct PipelineAtomics {
     pub dictation_state_tx: tokio::sync::watch::Sender<InteractionState>,
     pub dictation_state_rx: tokio::sync::watch::Receiver<InteractionState>,
     pub ingestion_gate: Arc<AtomicBool>,
+    pub is_playback_muted: Arc<AtomicBool>,
+    pub is_mic_muted: Arc<AtomicBool>,
     pub turn_token: Arc<parking_lot::Mutex<tokio_util::sync::CancellationToken>>,
     pub engine_shutdown: Arc<AtomicBool>,
 }
@@ -51,6 +53,8 @@ impl PipelineAtomics {
             dictation_state_tx,
             dictation_state_rx,
             ingestion_gate: Arc::new(AtomicBool::new(false)),
+            is_playback_muted: Arc::new(AtomicBool::new(false)),
+            is_mic_muted: Arc::new(AtomicBool::new(false)),
             turn_token: Arc::new(parking_lot::Mutex::new(
                 tokio_util::sync::CancellationToken::new(),
             )),
@@ -58,9 +62,14 @@ impl PipelineAtomics {
         }
     }
 
-    /// Recomputes the lock-free audio ingestion gate based on dual-track states.
-    /// Invariant: Gate Is Open <=> (assistant in {Ready, Listening, Thinking, Speaking}) || (dictation in {Ready, Listening, Thinking})
+    /// Recomputes the lock-free audio ingestion gate based on dual-track states and mic mute.
+    /// Invariant: Gate Is Open <=> !is_mic_muted && ((assistant in {Ready, Listening, Thinking, Speaking, Working}) || (dictation in {Ready, Listening, Thinking}))
     pub fn update_ingestion_gate(&self) {
+        if self.is_mic_muted.load(Ordering::Relaxed) {
+            self.ingestion_gate.store(false, Ordering::Relaxed);
+            return;
+        }
+
         let a = InteractionState::from(self.current_state_atomic.load(Ordering::Relaxed));
         let d = InteractionState::from(self.dictation_state_atomic.load(Ordering::Relaxed));
         let open = matches!(

@@ -13,7 +13,12 @@ import {
   pttStop,
   pttCancel,
 } from "@/services/sessionService";
-import { testClip } from "@/services/pipelineService";
+import {
+  submitTextInput,
+  setPlaybackMuted,
+  setMicMuted,
+  setSessionPrivateMode,
+} from "@/services/pipelineService";
 import {
   continueSession as continueSessionIpc,
   createSession as createSessionIpc,
@@ -38,8 +43,10 @@ export interface VoiceSessionContextValue {
   transcript: string;
   assistantText: string;
   cpuWarning: { governor: string } | null;
-  testMode: boolean;
-  testingClip: string | null;
+  isTemporarySession: boolean;
+  isTextModeOpen: boolean;
+  isPlaybackMuted: boolean;
+  isMicMuted: boolean;
   dialogueHistory: DialogueTurn[];
   activeSessionId: number | null;
   isRestoring: boolean;
@@ -57,11 +64,14 @@ export interface VoiceSessionContextValue {
   handlePttStop: () => Promise<void>;
   handlePttCancel: () => Promise<void>;
   togglePtt: () => Promise<void>;
-  handleTestClip: (clipId: string) => Promise<void>;
+  submitText: (text: string) => Promise<void>;
+  toggleTemporarySession: () => Promise<void>;
+  setTextModeOpen: (open: boolean) => void;
+  togglePlaybackMute: () => Promise<void>;
+  toggleMicMute: () => Promise<void>;
   selectSession: (sessionId: number) => Promise<void>;
   startNewConversation: (projectId?: string) => Promise<void>;
   dismissRestoreError: () => void;
-  setTestMode: (mode: boolean) => void;
   handleEngage: () => Promise<void>;
   handleEnd: () => Promise<void>;
   handlePause: () => Promise<void>;
@@ -80,8 +90,10 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const pipelineMode = useSessionStore((s) => s.pipelineMode);
   const isLaunching = useSessionStore((s) => s.isLaunching);
   const cpuWarning = useSessionStore((s) => s.cpuWarning);
-  const testMode = useSessionStore((s) => s.testMode);
-  const testingClip = useSessionStore((s) => s.testingClip);
+  const isTemporarySession = useSessionStore((s) => s.isTemporarySession);
+  const isTextModeOpen = useSessionStore((s) => s.isTextModeOpen);
+  const isPlaybackMuted = useSessionStore((s) => s.isPlaybackMuted);
+  const isMicMuted = useSessionStore((s) => s.isMicMuted);
   const dialogueHistory = useSessionStore((s) => s.dialogueHistory);
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const isRestoring = useSessionStore((s) => s.isRestoring);
@@ -120,12 +132,8 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       const next = payload.state as InteractionState;
       if (next === "Ready") {
         commitTurn();
-        storeApi().setTestingClip(null);
       } else if (next === "Idle") {
         clearTranscript();
-        storeApi().setTestingClip(null);
-        storeApi().setTranscript("");
-        storeApi().setAssistantText("");
       }
     },
     [commitTurn, clearTranscript],
@@ -291,23 +299,51 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
   }, [isEngaged, isPaused, pttStatus, handlePttStart, handlePttStop]);
 
-  const handleTestClip = useCallback(
-    async (clipId: string) => {
-      if (isEngaged) return;
-      clearTranscript();
-      const api = storeApi();
-      api.setTestingClip(clipId);
-      api.setTestMode(false);
-      api.setTranscript("");
-      api.setAssistantText("");
-      try {
-        await testClip(clipId);
-      } catch {
-        storeApi().setTestingClip(null);
+  const submitText = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      if (!isEngaged) {
+        await engage();
       }
+      await submitTextInput(trimmed);
     },
-    [isEngaged, clearTranscript],
+    [isEngaged, engage],
   );
+
+  const toggleTemporarySession = useCallback(async () => {
+    const next = !storeApi().isTemporarySession;
+    storeApi().setIsTemporarySession(next);
+    try {
+      await setSessionPrivateMode(next);
+    } catch {
+      // Best-effort IPC notification
+    }
+  }, []);
+
+  const setTextModeOpen = useCallback((open: boolean) => {
+    storeApi().setIsTextModeOpen(open);
+  }, []);
+
+  const togglePlaybackMute = useCallback(async () => {
+    const next = !storeApi().isPlaybackMuted;
+    storeApi().setIsPlaybackMuted(next);
+    try {
+      await setPlaybackMuted(next);
+    } catch {
+      storeApi().setIsPlaybackMuted(!next);
+    }
+  }, []);
+
+  const toggleMicMute = useCallback(async () => {
+    const next = !storeApi().isMicMuted;
+    storeApi().setIsMicMuted(next);
+    try {
+      await setMicMuted(next);
+    } catch {
+      storeApi().setIsMicMuted(!next);
+    }
+  }, []);
 
   const selectSession = useCallback(async (sessionId: number) => {
     const s = storeApi();
@@ -356,10 +392,6 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     storeApi().setRestoreError(null);
   }, []);
 
-  const setTestMode = useCallback((mode: boolean) => {
-    storeApi().setTestMode(mode);
-  }, []);
-
   const value = useMemo<VoiceSessionContextValue>(
     () => ({
       interactionState,
@@ -373,8 +405,10 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       transcript,
       assistantText,
       cpuWarning,
-      testMode,
-      testingClip,
+      isTemporarySession,
+      isTextModeOpen,
+      isPlaybackMuted,
+      isMicMuted,
       dialogueHistory,
       activeSessionId,
       isRestoring,
@@ -392,11 +426,14 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       handlePttStop,
       handlePttCancel,
       togglePtt,
-      handleTestClip,
+      submitText,
+      toggleTemporarySession,
+      setTextModeOpen,
+      togglePlaybackMute,
+      toggleMicMute,
       selectSession,
       startNewConversation,
       dismissRestoreError,
-      setTestMode,
       handleEngage: engage,
       handleEnd: disengage,
       handlePause: pause,
@@ -414,8 +451,10 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       transcript,
       assistantText,
       cpuWarning,
-      testMode,
-      testingClip,
+      isTemporarySession,
+      isTextModeOpen,
+      isPlaybackMuted,
+      isMicMuted,
       dialogueHistory,
       activeSessionId,
       isRestoring,
@@ -431,11 +470,14 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       handlePttStop,
       handlePttCancel,
       togglePtt,
-      handleTestClip,
+      submitText,
+      toggleTemporarySession,
+      setTextModeOpen,
+      togglePlaybackMute,
+      toggleMicMute,
       selectSession,
       startNewConversation,
       dismissRestoreError,
-      setTestMode,
     ],
   );
 

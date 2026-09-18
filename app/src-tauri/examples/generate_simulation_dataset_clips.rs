@@ -166,6 +166,7 @@ fn main() -> Result<()> {
                 pending_synthesis_jobs,
                 playback_intent: Arc::new(std::sync::atomic::AtomicU8::new(0)),
                 event_tx,
+                is_playback_muted: Arc::new(AtomicBool::new(false)),
             };
 
             let playback = Arc::new(vox_lib::services::audio::PlaybackEngine::from_parts(

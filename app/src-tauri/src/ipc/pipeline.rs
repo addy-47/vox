@@ -1,6 +1,6 @@
 //! Strongly-typed IPC command handlers for assistant pipeline control.
 
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
 use tauri::{AppHandle, Manager, State};
 
@@ -11,7 +11,6 @@ use crate::{
         events::VoxEvent,
         state::{AppState, InteractionOwner, InteractionState},
     },
-    pipeline::test::{cancel_test_clip, execute_test_clip},
 };
 
 /// Launches and initializes the 3-tier audio engine.
@@ -179,21 +178,72 @@ pub async fn ptt_cancel<R: tauri::Runtime>(
     Ok(())
 }
 
-/// Injects a pre-recorded audio clip directly into the active voice pipeline seam.
+/// Submits a typed user query into the assistant conversational pipeline.
 #[tauri::command]
-pub async fn test_clip(
-    app: AppHandle,
+pub async fn submit_text_input<R: tauri::Runtime>(
+    query: String,
+    _app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
-    clip_id: String,
 ) -> Result<(), VoxIpcError> {
-    execute_test_clip(&app, &state, &clip_id).await
+    let current_state = state.pipeline.state();
+    if current_state == InteractionState::Idle {
+        return Err(VoxIpcError::InvalidState(
+            "Cannot submit text input: pipeline is not engaged".into(),
+        ));
+    }
+
+    let event_tx = state
+        .event_tx
+        .lock()
+        .clone()
+        .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
+
+    event_tx
+        .send(VoxEvent::TextInput { text: query })
+        .map_err(|e| VoxIpcError::Engine(format!("Failed to send TextInput event: {}", e)))?;
+
+    Ok(())
 }
 
-/// Cancels a running test clip turn and resets speech recognition / playback.
+/// Toggles speaker audio output muting at the CPAL output sink layer.
 #[tauri::command]
-pub async fn test_clip_cancel(
-    app: AppHandle,
+pub async fn set_playback_muted<R: tauri::Runtime>(
+    muted: bool,
+    _app: AppHandle<R>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), VoxIpcError> {
-    cancel_test_clip(&app, &state).await
+    state
+        .pipeline
+        .is_playback_muted
+        .store(muted, Ordering::Relaxed);
+    log::info!("[IPC::Pipeline] Playback mute set to: {}", muted);
+    Ok(())
+}
+
+/// Toggles microphone audio input gating at the CPAL ingestion layer.
+#[tauri::command]
+pub async fn set_mic_muted<R: tauri::Runtime>(
+    muted: bool,
+    _app: AppHandle<R>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
+    state.pipeline.is_mic_muted.store(muted, Ordering::Relaxed);
+    state.pipeline.update_ingestion_gate();
+    log::info!("[IPC::Pipeline] Mic mute set to: {}", muted);
+    Ok(())
+}
+
+/// Toggles ephemeral private mode for the current session in memory without modifying settings.json.
+#[tauri::command]
+pub async fn set_session_private_mode<R: tauri::Runtime>(
+    enabled: bool,
+    _app: AppHandle<R>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
+    state
+        .telemetry
+        .is_private_mode
+        .store(enabled, Ordering::Relaxed);
+    log::info!("[IPC::Pipeline] Session private mode set to: {}", enabled);
+    Ok(())
 }
