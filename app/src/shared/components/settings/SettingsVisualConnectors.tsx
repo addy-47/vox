@@ -85,7 +85,7 @@ export const SettingsConnectorsOverlay = memo(({
   lines,
 }: SettingsConnectorsOverlayProps) => {
   return (
-    <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible">
+    <svg className="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-visible">
       {domains.map((domain) => {
         if (!activeDomains.includes(domain.id)) return null;
         const line = lines[domain.id];

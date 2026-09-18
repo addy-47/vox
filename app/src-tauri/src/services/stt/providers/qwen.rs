@@ -3,10 +3,13 @@ use std::{path::Path, time::Instant};
 use anyhow::{anyhow, Result};
 use sherpa_onnx::{OfflineQwen3ASRModelConfig, OfflineRecognizer, OfflineRecognizerConfig};
 
-use super::{
-    SttEngine as SttEngineTrait, MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_ENCODER,
-    MODEL_FILE_ASR_FRONTEND, MODEL_FILE_ASR_TOKENIZER, QWEN_MAX_NEW_TOKENS, QWEN_MAX_TOTAL_LEN,
-    SAMPLE_RATE,
+use super::SttEngine as SttEngineTrait;
+use crate::services::{
+    audio::SAMPLE_RATE,
+    stt::{
+        MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_ENCODER, MODEL_FILE_ASR_FRONTEND,
+        MODEL_FILE_ASR_TOKENIZER, QWEN_MAX_NEW_TOKENS, QWEN_MAX_TOTAL_LEN,
+    },
 };
 
 /// Speech-to-text inference engine wrapping Sherpa-ONNX Qwen3-ASR offline recognizer.

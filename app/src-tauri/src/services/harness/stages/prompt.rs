@@ -2,15 +2,15 @@ use crate::services::{harness::PromptTag, memory::ml::tokenizer::estimate_tokens
 
 /// Plugin managing system prompt assembly, user identity grounding, and system budget ceiling enforcement.
 #[derive(Debug, Clone)]
-pub struct PromptBuilderPlugin {
+pub struct PromptBuilderStage {
     base_system_prompt: String,
     personal_memory: Option<String>,
     max_context_tokens: usize,
     max_context_share: f32,
 }
 
-impl PromptBuilderPlugin {
-    /// Creates a new `PromptBuilderPlugin` with base prompt, token ceiling, and configurable memory share.
+impl PromptBuilderStage {
+    /// Creates a new `PromptBuilderStage` with base prompt, token ceiling, and configurable memory share.
     pub fn new(
         base_system_prompt: String,
         max_context_tokens: usize,

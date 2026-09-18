@@ -23,7 +23,7 @@ use vox_lib::{
     },
     pipeline::{assistant::llm::on_llm_finished, RoutingContext},
     services::{
-        harness::{HarnessSession, StreamRoutingHandles, TurnPreparation},
+        harness::{Harness, TurnExecutionRequest, TurnOutcome},
         llm::{
             actor::{spawn_llm_worker, LlmCommand},
             EmbeddedProvider,
@@ -95,11 +95,11 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
 
         state.pipeline.set_state(InteractionState::Thinking);
 
-        // 4. Mount production modular HarnessSession
+        // 4. Mount production modular Harness
         {
             let settings = state.settings.read().unwrap().clone();
             let prompt = "You are a concise voice assistant. Reply in exactly two short sentences.".to_string();
-            *state.harness.lock() = Some(HarnessSession::new_modular(
+            *state.harness.lock() = Some(Harness::new_modular(
                 Some(1),
                 prompt,
                 None,
@@ -115,7 +115,6 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
         });
 
         let cancel = state.pipeline.turn_token();
-        let cancel_flag = Arc::clone(&state.pipeline.cancel_flag);
         let accumulator = Arc::clone(&state.pipeline_accumulator);
         let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
 
@@ -123,52 +122,36 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
         let user_query = "Hello! State your name and your purpose.".to_string();
 
         // ---------------------------------------------------------------------
-        // Entry Seam: HarnessSession::prepare_turn generates request via chassis
+        // Entry Seam: Harness::execute_turn orchestrates the entire turn lifecycle
         // ---------------------------------------------------------------------
-        let prep = {
-            let mut guard = state.harness.lock();
-            let harness = guard.as_mut().expect("HarnessSession must be mounted");
-            harness.prepare_turn(&user_query, turn_id)
-        };
-
-        let request = match prep {
-            TurnPreparation::Ready(req) => req,
-            other => panic!("Expected TurnPreparation::Ready, got {:?}", other),
-        };
-
-        // Transmit GenerationRequest over duplex dialogue pipe to LlmActor
-        let (response_tx, response_rx) = mpsc::channel();
-        llm_tx
-            .send(LlmCommand::Generate {
-                request: Box::new(request),
-                turn_id,
-                cancel: cancel.clone(),
-                response_tx,
-            })
-            .expect("Failed to send Generate to LLM worker");
-
-        // Route token stream via HarnessSession's active StreamRoutingPlugin
-        let handles = StreamRoutingHandles {
+        let req = TurnExecutionRequest {
+            query: user_query.clone(),
             turn_id,
+            cancel: cancel.clone(),
             owner: InteractionOwner::Assistant,
-            accumulator: Arc::clone(&accumulator),
+            llm_tx: Some(llm_tx.clone()),
             tts_tx: Some(tts_tx.clone()),
+            provider: None,
+            db: Arc::clone(&state.db),
+            pipeline_tx: Some(pipeline_tx.clone()),
+            accumulator: Arc::clone(&accumulator),
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
-            cancel: Arc::clone(&cancel_flag),
-            event_tx: pipeline_tx.clone(),
             app: app.clone(),
+            routing_ctx: RoutingContext::from_app_state(&state),
+            app_state: Arc::clone(&state),
         };
 
-        let route_res = {
-            let guard = state.harness.lock();
-            let harness = guard.as_ref().unwrap();
-            harness.route_stream(handles, response_rx)
-        };
-        assert!(
-            route_res.is_ok(),
-            "Stream routing must succeed: {:?}",
-            route_res
-        );
+        let outcome = Harness::execute_turn(&state.harness, req).await;
+        match outcome {
+            TurnOutcome::Completed {
+                turn_id: tid,
+                assistant_response,
+            } => {
+                assert_eq!(tid, turn_id, "Completed turn_id must match request");
+                assert!(!assistant_response.is_empty(), "Assistant response must not be empty");
+            }
+            other => panic!("Expected TurnOutcome::Completed, got {:?}", other),
+        }
 
         // ---------------------------------------------------------------------
         // Observable Exit 1: Real tokens streamed and VoxEvent::LlmFinished emitted
@@ -280,15 +263,15 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
         }
 
         // ---------------------------------------------------------------------
-        // Observable Exit 6: HarnessSession commits turn to history & watcher
+        // Observable Exit 6: Harness commits turn to history & watcher
         // ---------------------------------------------------------------------
         {
             let mut guard = state.harness.lock();
-            let harness = guard.as_mut().expect("HarnessSession must be mounted");
-            harness.history_mut().push_assistant_turn(full_text.clone());
+            let harness = guard.as_mut().expect("Harness must be mounted");
+            harness.push_assistant_turn(full_text.clone());
             harness.on_turn_completed(Arc::clone(&state), Arc::clone(&state.harness));
 
-            let msgs = harness.history().messages();
+            let msgs = harness.messages();
             assert!(
                 msgs.iter().any(|m| m.content == user_query),
                 "History must contain the user query"

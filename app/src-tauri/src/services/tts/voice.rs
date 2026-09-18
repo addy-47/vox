@@ -1,6 +1,13 @@
 //! Voice service for audio validation, decoding, resampling, speaker pre-baking, and recording.
 
-use std::{fs::File, path::Path, sync::Arc};
+use std::{
+    fs::{create_dir_all, File},
+    io::ErrorKind,
+    mem,
+    path::Path,
+    sync::Arc,
+    time::Duration,
+};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use once_cell::sync::Lazy;
@@ -118,9 +125,7 @@ fn decode_audio_stream(src_path: &str) -> Result<(Vec<f32>, u32), String> {
         let packet = match format.next_packet() {
             Ok(Some(packet)) => packet,
             Ok(None) => break,
-            Err(Error::IoError(ref err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
-                break
-            }
+            Err(Error::IoError(ref err)) if err.kind() == ErrorKind::UnexpectedEof => break,
             Err(e) => return Err(format!("Audio decoding error: {}", e)),
         };
 
@@ -229,7 +234,7 @@ pub fn write_pcm_to_wav(
 pub fn pre_bake_speaker_tensors(source_wav: &Path, baked_dir: &Path) -> Result<(), String> {
     use chatterbox_rs::{Engine, EngineOptions};
 
-    std::fs::create_dir_all(baked_dir)
+    create_dir_all(baked_dir)
         .map_err(|e| format!("Failed to create baked voice directory: {}", e))?;
 
     let tts_model_dir = model_dir(CHATTERBOX_MODEL_DIR);
@@ -336,7 +341,7 @@ pub fn stop_recording() -> Result<(Vec<f32>, u32), String> {
 
     drop(recorder._stream);
 
-    let samples = std::mem::take(&mut *recorder.samples.lock());
+    let samples = mem::take(&mut *recorder.samples.lock());
     let sample_rate = recorder.sample_rate;
     log::info!(
         "[Voice] Recording stopped. Captured {} samples at {} Hz ({:.2}s)",
@@ -350,7 +355,7 @@ pub fn stop_recording() -> Result<(Vec<f32>, u32), String> {
 /// Query Microsoft's Read Aloud endpoint for available Edge TTS voices.
 pub async fn fetch_remote_edge_voices() -> Result<Vec<EdgeTtsVoiceEntry>, String> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(6))
+        .timeout(Duration::from_secs(6))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 

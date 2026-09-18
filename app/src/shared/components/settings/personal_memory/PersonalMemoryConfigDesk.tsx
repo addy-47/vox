@@ -1,6 +1,8 @@
-import { useState, memo, useCallback } from "react";
+import { useState, memo, useCallback, useMemo, useEffect } from "react";
+import {  Clock } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
+import { SegmentedControl } from "@/shared/ui";
 import { PERSONAL_MEMORY_CONFIG_DESK_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
 
 export interface PersonalMemoryConfigDeskProps {
@@ -15,6 +17,33 @@ const TABS: Array<{ id: PersonalMemorySubTab; label: string }> = [
   { id: "cutoff", label: PERSONAL_MEMORY_CONFIG_DESK_COPY.tabs.cutoff },
 ];
 
+function computeNextRunText(
+  cadence: string,
+  timeStr: string,
+  copy: typeof PERSONAL_MEMORY_CONFIG_DESK_COPY.consolidation
+): string | null {
+  if (cadence !== "daily") return null;
+  const parts = timeStr.split(":");
+  if (parts.length !== 2) return null;
+  const hour = parseInt(parts[0], 10);
+  const minute = parseInt(parts[1], 10);
+  if (isNaN(hour) || isNaN(minute)) return null;
+
+  const now = new Date();
+  const targetToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0);
+
+  if (targetToday.getTime() > now.getTime()) {
+    const diffMs = targetToday.getTime() - now.getTime();
+    const totalMinutes = Math.floor(diffMs / 60000);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    const durationStr = h > 0 ? `${h}${copy.hoursShort} ${m}${copy.minutesShort}` : `${m}${copy.minutesShort}`;
+    return `${copy.nextRunLabel}: ${copy.todayAt} ${timeStr} (${copy.in} ${durationStr})`;
+  } else {
+    return `${copy.nextRunLabel}: ${copy.tomorrowAt} ${timeStr}`;
+  }
+}
+
 export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConfigDeskProps) => {
   const [activeSubTab, setActiveSubTab] = useState<PersonalMemorySubTab>("consolidation");
   const personalMemory = useSettingsStore((s) => s.draftSettings?.personal_memory);
@@ -24,6 +53,40 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
   const semanticSimilarityCutoff = personalMemory?.semantic_similarity_cutoff ?? 0.40;
   const consolidationCadence = personalMemory?.consolidation_cadence ?? "daily";
   const consolidationTime = personalMemory?.consolidation_time ?? "02:00";
+
+  const [timeDraft, setTimeDraft] = useState(consolidationTime);
+
+  useEffect(() => {
+    setTimeDraft(consolidationTime);
+  }, [consolidationTime]);
+
+  const handleTimeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setTimeDraft(val);
+    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(val)) {
+      updateDraft("personal_memory", "consolidation_time", val);
+    }
+  }, [updateDraft]);
+
+  const handleTimeBlur = useCallback(() => {
+    const trimmed = timeDraft.trim();
+    if (/^([01]?\d|2[0-3]):([0-5]?\d)$/.test(trimmed)) {
+      const [h, m] = trimmed.split(":");
+      const clean = `${h.padStart(2, "0")}:${m.padStart(2, "0")}`;
+      setTimeDraft(clean);
+      updateDraft("personal_memory", "consolidation_time", clean);
+    } else if (/^([01]?\d|2[0-3])$/.test(trimmed)) {
+      const clean = `${trimmed.padStart(2, "0")}:00`;
+      setTimeDraft(clean);
+      updateDraft("personal_memory", "consolidation_time", clean);
+    } else if (/^([01]\d|2[0-3])([0-5]\d)$/.test(trimmed)) {
+      const clean = `${trimmed.slice(0, 2)}:${trimmed.slice(2, 4)}`;
+      setTimeDraft(clean);
+      updateDraft("personal_memory", "consolidation_time", clean);
+    } else {
+      setTimeDraft(consolidationTime);
+    }
+  }, [timeDraft, consolidationTime, updateDraft]);
 
   const handleCustomDepthChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -49,20 +112,22 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
     [updateDraft]
   );
 
-  const handleTimeChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = e.target.value;
-      updateDraft("personal_memory", "consolidation_time", val);
-    },
-    [updateDraft]
-  );
-
   const copy = PERSONAL_MEMORY_CONFIG_DESK_COPY;
   const isSmall = layoutMode === "small";
 
   const isDepthCustom = ![3, 5, 8].includes(topKFacts);
   const cutoffPct = Math.round(semanticSimilarityCutoff * 100);
   const isCutoffCustom = ![25, 40, 70].includes(cutoffPct);
+
+  const nextRunText = computeNextRunText(consolidationCadence, consolidationTime, copy.consolidation);
+
+  const cadenceOptions = useMemo(
+    () => [
+      { id: "manual", label: copy.consolidation.manualLabel },
+      { id: "daily", label: copy.consolidation.dailyLabel },
+    ],
+    [copy.consolidation.manualLabel, copy.consolidation.dailyLabel]
+  );
 
   return (
     <div className="w-full flex-1 flex flex-col justify-between select-none animate-fade-in">
@@ -103,56 +168,69 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
       >
         {/* TAB 1: CONSOLIDATION */}
         {activeSubTab === "consolidation" && (
-          <div className="flex flex-row items-center justify-between gap-3 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+          <div className="flex flex-row items-center justify-between gap-4 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+            {/* Left: Title & Description */}
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
-                  {copy.consolidation.title}
+                  {copy.consolidation.title} <span className="text-[9px] font-bold px-1.5 text-[rgb(var(--accent))]">
+                  {copy.consolidation.sublabel}
                 </span>
-                <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
-                  {consolidationCadence === "daily" ? consolidationTime : copy.consolidation.manualLabel}
                 </span>
               </div>
               <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
                 {copy.consolidation.description}
               </p>
-            </div>
-
-            {/* Cadence selection + Time input */}
-            <div className="shrink-0 flex flex-col gap-1.5 w-[110px] sm:w-[125px]">
-              <div className="grid grid-cols-2 gap-1">
-                {(["daily", "manual"] as const).map((cadence) => (
-                  <button
-                    key={cadence}
-                    type="button"
-                    onClick={() => updateDraft("personal_memory", "consolidation_cadence", cadence)}
-                    className={cn(
-                      "py-1 rounded-lg border text-[10.5px] font-mono font-bold transition-all duration-200 cursor-pointer flex items-center justify-center uppercase",
-                      consolidationCadence === cadence
-                        ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
-                        : "border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))]/80 hover:border-[rgba(var(--accent),0.2)] hover:text-[rgb(var(--foreground))]"
-                    )}
-                  >
-                    {cadence === "daily" ? copy.consolidation.dailyLabel : copy.consolidation.manualLabel}
-                  </button>
-                ))}
-              </div>
-
-              {consolidationCadence === "daily" ? (
-                <div className="rounded-lg border border-[rgba(var(--accent),0.15)] bg-[rgba(var(--foreground),0.02)] flex items-center justify-center px-2 py-0.5 focus-within:border-[rgba(var(--accent),0.4)]">
-                  <input
-                    type="time"
-                    value={consolidationTime}
-                    onChange={handleTimeChange}
-                    className="w-full text-center text-[11px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))]"
-                  />
+              {consolidationCadence === "daily" && nextRunText ? (
+                <div className="flex items-center gap-1.5 text-[10px] sm:text-[10.5px] font-mono text-[rgb(var(--accent))] font-medium pt-0.5">
+                  <Clock size={11} className="shrink-0 opacity-85" />
+                  <span>{nextRunText}</span>
                 </div>
               ) : (
-                <div className="rounded-lg border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] text-center py-1 text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50">
-                  On-demand only
-                </div>
+                <p className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/50 pt-0.5">
+                  {copy.consolidation.noSchedule}
+                </p>
               )}
             </div>
+
+            {/* Right: Segmented Control + Time Input */}
+            <div className="shrink-0 flex flex-col items-center justify-center gap-2">
+              <SegmentedControl
+                options={cadenceOptions}
+                value={consolidationCadence}
+                onChange={(val) =>
+                  updateDraft("personal_memory", "consolidation_cadence", val)
+                }
+                size="sm"
+              />
+
+              {consolidationCadence === "daily" ? (
+                <div className="flex flex-col items-center text-[rgb(var(--foreground))]">
+                  <div className="flex items-center gap-1.5">
+                    <Clock
+                      size={12}
+                      className="text-[rgb(var(--accent))] shrink-0"
+                    />
+
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={timeDraft}
+                      onChange={handleTimeChange}
+                      onBlur={handleTimeBlur}
+                      placeholder="14:00"
+                      maxLength={5}
+                      aria-label={copy.consolidation.timeFormatHint}
+                      className="w-12 bg-transparent font-mono text-[12.5px] font-bold outline-none text-[rgb(var(--foreground))] text-center tracking-wider caret-[rgb(var(--accent))] selection:bg-[rgba(var(--accent),0.25)]"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="text-[9.5px] font-mono font-medium text-[rgb(var(--foreground-muted))]/40 py-0.5 tracking-tight">
+                  {copy.consolidation.onDemandStatus}
+                </div>
+              )}
+</div>
           </div>
         )}
 

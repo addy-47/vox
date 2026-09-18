@@ -1,3 +1,6 @@
+// NOTE: Streaming tag demuxing is intentionally deferred.
+// Text flows directly through ClauseChunker to TTS for robust uninhibited pipeline audio testing.
+
 use std::sync::{
     atomic::{AtomicBool, AtomicU32, Ordering},
     mpsc::{Receiver, Sender},
@@ -30,16 +33,16 @@ pub struct StreamRoutingHandles<R: tauri::Runtime> {
 
 /// Plugin managing egress token stream demuxing, TTS clause dispatch, and turn finalization.
 #[derive(Debug, Clone)]
-pub struct StreamRoutingPlugin;
+pub struct StreamRoutingStage;
 
-impl Default for StreamRoutingPlugin {
+impl Default for StreamRoutingStage {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl StreamRoutingPlugin {
-    /// Constructs a new `StreamRoutingPlugin` instance.
+impl StreamRoutingStage {
+    /// Constructs a new `StreamRoutingStage` instance.
     pub fn new() -> Self {
         Self
     }
@@ -51,6 +54,8 @@ impl StreamRoutingPlugin {
         handles: StreamRoutingHandles<R>,
         response_rx: Receiver<LlmResponse>,
     ) -> Result<String, String> {
+        let mut saw_finished = false;
+
         while let Ok(response) = response_rx.recv() {
             if handles.cancel.load(Ordering::Relaxed) {
                 log::info!(
@@ -66,6 +71,7 @@ impl StreamRoutingPlugin {
                     self.handle_token(token, &handles);
                 }
                 LlmResponse::Finished => {
+                    saw_finished = true;
                     break;
                 }
                 LlmResponse::Cancelled => {
@@ -82,12 +88,20 @@ impl StreamRoutingPlugin {
                         handles.turn_id,
                         err
                     );
-                    if let Err(e) = handles.event_tx.send(VoxEvent::Error(err)) {
+                    if let Err(e) = handles.event_tx.send(VoxEvent::Error(err.clone())) {
                         log::warn!("[Harness::Stream] Failed to dispatch Error: {}", e);
                     }
-                    return Ok(handles.accumulator.lock().assistant_response.clone());
+                    return Err(format!("LLM stream error: {:?}", err));
                 }
             }
+        }
+
+        if !saw_finished && !handles.cancel.load(Ordering::Relaxed) {
+            log::error!(
+                "[Harness::Stream] LLM stream disconnected prematurely before Finished (turn {})",
+                handles.turn_id
+            );
+            return Err("LLM stream disconnected prematurely".to_string());
         }
 
         self.flush_remainder(&handles);
@@ -141,9 +155,11 @@ impl StreamRoutingPlugin {
                 intent: AudioIntent::TurnResponse,
             };
             if let Err(e) = tx.send(cmd) {
-                handles
-                    .pending_synthesis_jobs
-                    .fetch_sub(1, Ordering::Relaxed);
+                let _ = handles.pending_synthesis_jobs.fetch_update(
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                    |val| Some(val.saturating_sub(1)),
+                );
                 log::warn!("[Harness::Stream] Failed to dispatch clause to TTS: {}", e);
             } else {
                 log::info!(
@@ -182,9 +198,11 @@ impl StreamRoutingPlugin {
             intent: AudioIntent::TurnResponse,
         };
         if let Err(e) = tx.send(cmd) {
-            handles
-                .pending_synthesis_jobs
-                .fetch_sub(1, Ordering::Relaxed);
+            let _ = handles.pending_synthesis_jobs.fetch_update(
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+                |val| Some(val.saturating_sub(1)),
+            );
             log::warn!(
                 "[Harness::Stream] Failed to dispatch remainder to TTS: {}",
                 e

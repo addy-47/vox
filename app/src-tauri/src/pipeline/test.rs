@@ -15,7 +15,7 @@ use crate::{
         state::{AppState, InteractionOwner, InteractionState},
     },
     pipeline::{transition, RoutingContext},
-    services::{harness::HarnessSession, stt::SttCommand},
+    services::{harness::Harness, stt::SttCommand},
     utils::paths::{cache_dir, get},
 };
 
@@ -153,11 +153,11 @@ async fn ensure_test_pipeline_ready<R: Runtime>(
             .ok()
             .and_then(|g| g.as_ref().and_then(|e| e.llm_tx.clone()));
         if let Some(llm_tx) = llm_tx_opt {
-            let harness = HarnessSession::new_modular(None, prompt, None, &settings, llm_tx);
+            let harness = Harness::new_modular(None, prompt, None, &settings, llm_tx);
             *state.harness.lock() = Some(harness);
         }
     } else {
-        *state.harness.lock() = Some(HarnessSession::new_realtime(None, prompt, None, &settings));
+        *state.harness.lock() = Some(Harness::new_realtime(None, prompt, None, &settings));
     }
 
     Ok(())

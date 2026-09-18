@@ -1,10 +1,9 @@
 pub mod actor;
+pub mod factory;
 pub mod providers;
 pub mod voice;
-pub use actor::{
-    cool_down_tts, create_tts_provider, resolve_reference_audio, spawn_tts_worker, warm_up_tts,
-    TtsClauseChunker, TtsCommand,
-};
+pub use actor::{cool_down_tts, spawn_tts_worker, warm_up_tts, TtsCommand};
+pub use factory::{create_tts_provider, resolve_reference_audio};
 pub use providers::{
     chatterbox::ChatterboxEngine, chatterbox_remote::ChatterboxRemoteProvider,
     edge_tts::EdgeTtsProvider, kokoro::KokoroEngine, supertonic::TtsEngine, TtsProvider,

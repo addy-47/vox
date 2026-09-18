@@ -161,7 +161,9 @@ impl SettingReloadPolicy {
 
 pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy {
     match domain {
-        "appearance" | "memory" | "persona" | "history" | "realtime" => SettingReloadPolicy::Hot,
+        "appearance" | "working_memory" | "personal_memory" | "persona" | "realtime" => {
+            SettingReloadPolicy::Hot
+        }
         "tts"
             if key == "quality_steps"
                 || key == "speed"

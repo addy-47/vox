@@ -3,6 +3,7 @@ mod protocol;
 mod session;
 
 use std::{
+    env::var,
     net::ToSocketAddrs,
     sync::{atomic::AtomicU32, Arc},
 };
@@ -83,7 +84,7 @@ impl RealtimeVoiceProvider for DeepgramVoiceAgentProvider {
         }
 
         let api_key = self.config.api_key.clone();
-        let url = std::env::var("DEEPGRAM_AGENT_ENDPOINT_OVERRIDE")
+        let url = var("DEEPGRAM_AGENT_ENDPOINT_OVERRIDE")
             .unwrap_or_else(|_| DEEPGRAM_DEFAULT_WS_URL.to_string());
 
         let (ws_write, ws_read) = tokio_handle.block_on(handshake::perform_handshake(

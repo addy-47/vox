@@ -1,6 +1,8 @@
 use std::{
+    f32::consts,
     path::Path,
     sync::atomic::{AtomicI32, AtomicU32, Ordering},
+    time::Instant,
 };
 
 use anyhow::{anyhow, Result};
@@ -147,7 +149,7 @@ impl TtsProvider for KokoroEngine {
             sid
         );
 
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         let speed = self.speed.load(Ordering::Relaxed);
 
         let gen_config = GenerationConfig {
@@ -249,7 +251,7 @@ pub fn trim_and_fade_samples(samples: &[f32], sample_rate: usize) -> Vec<f32> {
     if actual_fade_in > 0 {
         for (i, sample) in trimmed[..actual_fade_in].iter_mut().enumerate() {
             let t = i as f32 / actual_fade_in as f32;
-            let gain = (t * std::f32::consts::FRAC_PI_2).sin();
+            let gain = (t * consts::FRAC_PI_2).sin();
             *sample *= gain;
         }
     }
@@ -260,7 +262,7 @@ pub fn trim_and_fade_samples(samples: &[f32], sample_rate: usize) -> Vec<f32> {
         let fade_start = n - actual_fade_out;
         for (j, sample) in trimmed[fade_start..].iter_mut().enumerate() {
             let t = j as f32 / actual_fade_out as f32;
-            let gain = (t * std::f32::consts::FRAC_PI_2).cos();
+            let gain = (t * consts::FRAC_PI_2).cos();
             *sample *= gain;
         }
     }

@@ -1,6 +1,9 @@
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64},
-    Arc,
+use std::{
+    sync::{
+        atomic::{AtomicBool, AtomicU64},
+        Arc,
+    },
+    time::Duration,
 };
 
 use crate::core::state::{AppState, InteractionState};
@@ -9,6 +12,7 @@ use crate::core::state::{AppState, InteractionState};
 pub struct MemoryAppState {
     pub graph_version: Arc<AtomicU64>,
     pub user_paused_ingestion: Arc<AtomicBool>,
+    pub scheduler_handle: parking_lot::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
 }
 
 impl Default for MemoryAppState {
@@ -22,6 +26,7 @@ impl MemoryAppState {
         Self {
             graph_version: Arc::new(AtomicU64::new(1)),
             user_paused_ingestion: Arc::new(AtomicBool::new(false)),
+            scheduler_handle: parking_lot::Mutex::new(None),
         }
     }
 }
@@ -45,6 +50,10 @@ pub use ml::{
     unload_all_onnx_models, unload_memory_pipeline_onnx_models,
 };
 pub use personal::consolidate_personal_memory;
+pub use scheduler::{
+    check_missed_consolidation_on_boot, spawn_consolidation_scheduler,
+    start_consolidation_scheduler, stop_consolidation_scheduler,
+};
 
 pub use crate::core::error::MemoryError;
 
@@ -79,7 +88,7 @@ pub fn spawn_quiet_ingestion_observer(state: Arc<AppState>) {
 
             if is_enabled && is_quiet_state(current) {
                 tokio::select! {
-                    _ = tokio::time::sleep(std::time::Duration::from_secs(QUIET_INGESTION_DEBOUNCE_SECS)) => {
+                    _ = tokio::time::sleep(Duration::from_secs(QUIET_INGESTION_DEBOUNCE_SECS)) => {
                         let latest = state.pipeline.state();
                         let still_enabled = state
                             .settings
@@ -124,7 +133,7 @@ pub fn spawn_quiet_ingestion_observer(state: Arc<AppState>) {
                             break;
                         }
                     }
-                    _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {}
+                    _ = tokio::time::sleep(Duration::from_secs(10)) => {}
                 }
             }
         }

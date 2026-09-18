@@ -29,7 +29,7 @@ use vox_lib::{
         notifications::find_notification_by_group,
     },
     services::{
-        harness::plugins::compaction::{CompactionPlugin, MIN_MESSAGES_FOR_COMPACTION},
+        harness::stages::compaction::{CompactionStage, MIN_MESSAGES_FOR_COMPACTION},
         memory::compaction::coordinator::CompactionCoordinator,
     },
     utils::json::parse_unified_compaction_json,
@@ -310,28 +310,28 @@ async fn test_memory_compaction_concurrency_and_partial_unique_index() {
 }
 
 // ============================================================================
-// Subtest 4: Harness CompactionPlugin Invariants & Context Injection
+// Subtest 4: Harness CompactionStage Invariants & Context Injection
 // ============================================================================
 #[test]
 fn test_compaction_plugin_preemptive_fifo_and_context_injection() {
     // 1. Invariant: Minimum 4 messages required for inline compaction
-    let plugin = CompactionPlugin::new(8192, false, true);
+    let plugin = CompactionStage::new(8192, false, true);
     assert_eq!(MIN_MESSAGES_FOR_COMPACTION, 4);
     assert!(!plugin.can_perform_inline_compaction(0));
     assert!(!plugin.can_perform_inline_compaction(3));
     assert!(plugin.can_perform_inline_compaction(4));
 
     // 2. Invariant: Embedded models at standard context window (>=8192) perform inline compaction
-    let embedded_model = CompactionPlugin::new(8192, true, true);
+    let embedded_model = CompactionStage::new(8192, true, true);
     assert!(!embedded_model.can_perform_inline_compaction(3));
     assert!(embedded_model.can_perform_inline_compaction(4));
 
-    let remote_model = CompactionPlugin::new(8192, false, true);
+    let remote_model = CompactionStage::new(8192, false, true);
     assert!(!remote_model.can_perform_inline_compaction(3));
     assert!(remote_model.can_perform_inline_compaction(4));
 
     // 3. Invariant: prune_history_with_summary injects <session_context> and prunes to [System, User]
-    let mut active_plugin = CompactionPlugin::new(8192, false, true);
+    let mut active_plugin = CompactionStage::new(8192, false, true);
     let sample_context = "User is building Vox with Turso SQLite and Gemma3 LLM.";
     active_plugin.apply_session_context(sample_context);
 

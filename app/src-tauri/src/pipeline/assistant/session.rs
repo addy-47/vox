@@ -23,7 +23,7 @@ use crate::{
     pipeline::{spawn_idle_monitor, transition, RoutingContext},
     services::{
         self,
-        harness::HarnessSession,
+        harness::Harness,
         llm::actor::LlmCommand,
         memory::compaction::coordinator::CompactionCoordinator,
         notifications::{Action, ActionPayload, NotificationCategory, NotificationParams},
@@ -268,24 +268,18 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
                 .ok()
                 .and_then(|g| g.as_ref().and_then(|e| e.llm_tx.clone()));
             if let Some(llm_tx) = llm_tx_opt {
-                let mut harness = HarnessSession::new_modular(
-                    session_id,
-                    prompt,
-                    personal_memory,
-                    &settings,
-                    llm_tx,
-                );
+                let mut harness =
+                    Harness::new_modular(session_id, prompt, personal_memory, &settings, llm_tx);
                 if !turns.is_empty() || summary.is_some() {
                     harness.seed_continuation(summary, turns);
                 }
                 *state.harness.lock() = Some(harness);
             } else {
-                log::warn!("[Pipeline::Session] No LLM tx available for HarnessSession mount");
+                log::warn!("[Pipeline::Session] No LLM tx available for Harness mount");
             }
         }
         PipelineMode::Realtime => {
-            let mut harness =
-                HarnessSession::new_realtime(session_id, prompt, personal_memory, &settings);
+            let mut harness = Harness::new_realtime(session_id, prompt, personal_memory, &settings);
             if !turns.is_empty() || summary.is_some() {
                 harness.seed_continuation(summary, turns);
             }

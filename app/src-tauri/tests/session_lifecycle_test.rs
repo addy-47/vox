@@ -285,7 +285,7 @@ async fn test_session_continuation_seeds_harness() {
             let harness = guard.as_ref().expect("HarnessSession must be mounted");
             assert_eq!(harness.session_id(), Some(existing_sid));
 
-            let messages = harness.history().messages();
+            let messages = harness.messages();
             assert!(
                 messages
                     .iter()
@@ -718,7 +718,7 @@ async fn test_session_end_purges_and_unmounts_harness() {
             settings.interaction.pipeline_mode = PipelineMode::Realtime;
         }
 
-        let harness = vox_lib::services::harness::HarnessSession::new_realtime(
+        let harness = vox_lib::services::harness::Harness::new_realtime(
             Some(conv_id as i64),
             "System prompt".to_string(),
             None,
