@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { type InteractionState } from "@/services/eventsService";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import {
@@ -72,15 +72,38 @@ export function useHomePage() {
     toggleMicMute,
   } = session;
 
-  // Auto-scroll the dialogue rail to newest content while the user stays
-  // pinned near the bottom; never yanks away a manual scroll-back.
-  useEffect(() => {
+  const shouldAutoScrollRef = useRef(true);
+
+  const handleDialogueScroll = useCallback(() => {
     const el = dialogueScrollRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distanceFromBottom < 120) {
-      el.scrollTop = el.scrollHeight;
-    }
+    // Pinned if within 40px of bottom
+    shouldAutoScrollRef.current = distanceFromBottom <= 40;
+  }, []);
+
+  // When submitting text, immediately re-pin auto-scroll to bottom
+  const handleSubmitText = useCallback(async (text: string) => {
+    shouldAutoScrollRef.current = true;
+    await submitText(text);
+    requestAnimationFrame(() => {
+      const el = dialogueScrollRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+  }, [submitText]);
+
+  // Auto-scroll the dialogue rail whenever turns, transcript, or assistant text updates
+  useEffect(() => {
+    const el = dialogueScrollRef.current;
+    if (!el || !shouldAutoScrollRef.current) return;
+
+    requestAnimationFrame(() => {
+      if (dialogueScrollRef.current && shouldAutoScrollRef.current) {
+        dialogueScrollRef.current.scrollTop = dialogueScrollRef.current.scrollHeight;
+      }
+    });
   }, [dialogueHistory, transcript, assistantText]);
 
   return {
@@ -112,7 +135,7 @@ export function useHomePage() {
     handlePttStart,
     handlePttStop,
     handlePttCancel,
-    submitText,
+    submitText: handleSubmitText,
     toggleTemporarySession,
     setTextModeOpen,
     togglePlaybackMute,
@@ -121,6 +144,8 @@ export function useHomePage() {
     setHistoryOpen,
     telemetryRef,
     dialogueScrollRef,
+    handleDialogueScroll,
+    shouldAutoScrollRef,
     isMobileScreen,
   };
 }

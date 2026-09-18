@@ -31,10 +31,10 @@ const NUM_SHEETS = 7;
 const TARGET_SCALE: Record<string, number> = {
   Idle:      1.0,
   Ready:     1.0,
-  Listening: 0.90,
+  Listening: 0.96,
   Thinking:  1.0,
   Working:   1.0,
-  Speaking:  1.14,
+  Speaking:  1.06,
   Paused:    1.0,
   Sleeping:  0.98,
   Error:     1.0,
@@ -440,7 +440,19 @@ export const VoxOrb = React.memo(({
   }, []);
 
   // ── Dynamic FPS controls ─────────────────────────────────────────────────
-  const isActive = interactionState !== 'Idle' && interactionState !== 'Paused';
+  // Maintain 60 FPS while state is actively engaged OR during state transitions
+  // so the orb settles smoothly without dropping frames mid-shrink.
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  useEffect(() => {
+    setIsTransitioning(true);
+    const timer = setTimeout(() => {
+      setIsTransitioning(false);
+    }, 1400);
+    return () => clearTimeout(timer);
+  }, [interactionState]);
+
+  const isActive = (interactionState !== 'Idle' && interactionState !== 'Paused') || isTransitioning;
 
   /**
    * Runtime scene context — populated by the init effect below.
@@ -475,6 +487,7 @@ export const VoxOrb = React.memo(({
     resizeObs: ResizeObserver;
     container: HTMLDivElement;
     curScale: number;
+    scaleVelocity: number;
     curBaseVal: number;
     heartbeatPhase: number;
     noiseTime: number;
@@ -556,12 +569,24 @@ export const VoxOrb = React.memo(({
     ctx.smoothedEnergy = prevEnergy + (targetEnergy - prevEnergy) * energyRate;
     const audioEnergy = ctx.smoothedEnergy;
 
-    // 3. State Scale Transition (slow breathe out/in; quicker glide back to calm
-    // so pause/interrupt settles smoothly instead of snapping or crawling).
+    // 3. Critically Damped Spring Scale Transition (silky acceleration & deceleration)
+    // Symmetrically guides both expansion and contraction without instantaneous jerk or abrupt snap.
     const targetScale = TARGET_SCALE[state] ?? 1.0;
-    const currentScale = ctx.curScale ?? 1.0;
-    const scaleLambda = state === 'Speaking' || state === 'Listening' ? 2.2 : 4.0;
-    ctx.curScale = currentScale + (targetScale - currentScale) * rate(scaleLambda);
+    const prevScale = ctx.curScale ?? 1.0;
+    const scaleVel = ctx.scaleVelocity ?? 0;
+
+    const springFreq = 3.6; // Natural frequency in rad/s
+    const damping = 0.92;   // Near critical damping (zero harsh bounce, organic liquid ease)
+    const f = 1.0 + 2.0 * dtSec * damping * springFreq;
+    const oo = springFreq * springFreq;
+    const ho = dtSec * oo;
+    const hhoo = dtSec * ho;
+    const detInv = 1.0 / (f + hhoo);
+
+    const delta = prevScale - targetScale;
+    const nextScale = (f * prevScale + dtSec * scaleVel + hhoo * targetScale) * detInv;
+    ctx.scaleVelocity = (scaleVel - ho * delta) * detInv;
+    ctx.curScale = nextScale;
     ctx.group.scale.set(ctx.curScale, ctx.curScale, ctx.curScale);
 
     // 4. Smoothly transition base offset value on state changes (eliminates instant state-jump visual pops)
@@ -640,7 +665,7 @@ export const VoxOrb = React.memo(({
     isVisible,
     isPageVisible,
     fpsActive: 60,
-    fpsIdle: 5,
+    fpsIdle: 24,
     isActive,
     isPaused: isSleeping,
   });
@@ -755,7 +780,7 @@ export const VoxOrb = React.memo(({
       renderer.setSize(w, h, false);
       const fovRad = (45 * Math.PI) / 180;
       const fitDist = SHELL_R / Math.tan(fovRad / 2);
-      camera.position.z = Math.max(fitDist * 1.08, 6.5);
+      camera.position.z = Math.max(fitDist * 1.52, 8.5);
     }
     updateCamera(width, height);
 
@@ -797,6 +822,7 @@ export const VoxOrb = React.memo(({
       resizeObs,
       container,
       curScale: 1.0,
+      scaleVelocity: 0.0,
       curBaseVal: 0.02,
       heartbeatPhase: 0,
       noiseTime: 0,

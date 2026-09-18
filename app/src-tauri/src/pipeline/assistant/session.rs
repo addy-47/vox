@@ -302,7 +302,10 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
 /// Pauses the active voice session, silencing audio output and placing the state machine in Paused.
 pub fn on_pause<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {
     let current_state = state.pipeline.state();
-    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
+    if current_state == InteractionState::Idle
+        || current_state == InteractionState::Paused
+        || current_state == InteractionState::Sleeping
+    {
         log::debug!(
             "[Pipeline::Session] Pause dropped: already in {:?}",
             current_state
@@ -390,21 +393,28 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, _ctx: 
 
     let resume_res = match assistant_ctx.pipeline_mode {
         PipelineMode::Modular => {
-            let vad_mode = match assistant_ctx.interaction_mode {
-                InteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
-                InteractionMode::PTT => VadOperationalMode::WindowedValidation,
-            };
-            if let Ok(guard) = state.engine.try_lock() {
-                if let Some(ref engine) = *guard {
-                    if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {
-                        log::warn!(
-                            "[Pipeline::Session] Failed to set VAD mode on resume: {}",
-                            e
-                        );
+            // Re-warm workers offloaded during sustained Paused/Sleeping so
+            // resume never lands in Ready with dead LLM/TTS channels.
+            if let Err(e) = ensure_modular_workers_sync(state) {
+                Err(e)
+            } else {
+                let vad_mode = match assistant_ctx.interaction_mode {
+                    InteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
+                    InteractionMode::PTT => VadOperationalMode::WindowedValidation,
+                };
+                if let Ok(guard) = state.engine.try_lock() {
+                    if let Some(ref engine) = *guard {
+                        if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode))
+                        {
+                            log::warn!(
+                                "[Pipeline::Session] Failed to set VAD mode on resume: {}",
+                                e
+                            );
+                        }
                     }
                 }
+                Ok(())
             }
-            Ok(())
         }
         PipelineMode::Realtime => resume_realtime(app, state, &assistant_ctx),
     };

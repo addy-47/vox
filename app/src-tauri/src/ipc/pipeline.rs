@@ -4,13 +4,11 @@ use std::sync::{atomic::Ordering, Arc};
 
 use tauri::{AppHandle, Manager, State};
 
-use crate::{
-    core::{
-        engine::{start_audio_engine, stop_audio_engine},
-        error::VoxIpcError,
-        events::VoxEvent,
-        state::{AppState, InteractionOwner, InteractionState},
-    },
+use crate::core::{
+    engine::{start_audio_engine, stop_audio_engine},
+    error::VoxIpcError,
+    events::VoxEvent,
+    state::{AppState, InteractionOwner, InteractionState},
 };
 
 /// Launches and initializes the 3-tier audio engine.

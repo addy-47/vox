@@ -484,7 +484,9 @@ impl Harness {
                             if !result.session_context.trim().is_empty() {
                                 harness.apply_session_context(&result.session_context, &req.query);
                                 harness.set_last_compacted_to_turn(to_turn);
-                                log::info!("[Harness] Inline compaction succeeded; history refreshed.");
+                                log::info!(
+                                    "[Harness] Inline compaction succeeded; history refreshed."
+                                );
                             } else {
                                 log::warn!(
                                     "[Harness] Inline compaction returned empty context; executing degraded FIFO shift."
@@ -512,7 +514,6 @@ impl Harness {
                 }
             }
         }
-
 
         // Phase 4: Prompt Assembly & GenerationRequest Building
         let generation_request = {
