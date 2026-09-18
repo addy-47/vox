@@ -243,7 +243,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
 
   const pause = useCallback(async () => {
     const current = storeApi().interactionState;
-    if (current === "Idle" || current === "Paused" || current === "Error") return;
+    if (current === "Idle" || current === "Paused" || current === "Sleeping" || current === "Error") return;
     try {
       await pauseSession();
     } catch {
@@ -253,7 +253,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
 
   const resume = useCallback(async () => {
     const current = storeApi().interactionState;
-    if (current !== "Paused" && current !== "Error") return;
+    if (current !== "Paused" && current !== "Sleeping" && current !== "Error") return;
     try {
       await resumeSession();
     } catch {
@@ -263,7 +263,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
 
   const handlePttStart = useCallback(async () => {
     const s = storeApi();
-    if (s.interactionState === "Idle" || s.interactionState === "Paused" || s.interactionState === "Error") return;
+    if (s.interactionState === "Idle" || s.interactionState === "Paused" || s.interactionState === "Sleeping" || s.interactionState === "Error") return;
     try {
       await pttStart();
     } catch {
@@ -273,7 +273,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
 
   const handlePttStop = useCallback(async () => {
     const s = storeApi();
-    if (s.interactionState === "Idle" || s.interactionState === "Paused" || s.interactionState === "Error") return;
+    if (s.interactionState === "Idle" || s.interactionState === "Paused" || s.interactionState === "Sleeping" || s.interactionState === "Error") return;
     try {
       await pttStop();
     } catch {

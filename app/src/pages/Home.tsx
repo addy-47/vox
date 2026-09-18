@@ -1,5 +1,5 @@
-import React, { memo, useMemo } from "react";
-import { VoxOrb, PipelineField, StatusCapsule, RestorePulse, SessionPanel } from "@/shared/components/home";
+import React, { memo, useMemo, useRef, useEffect } from "react";
+import { VoxOrb, PipelineField, StatusCapsule, RestorePulse, SessionPanel, DialogueBubble } from "@/shared/components/home";
 import { TextInputBar } from "@/shared/components/home/TextInputBar";
 import { ActiveTranscript } from "@/shared/components/home/ActiveTranscript";
 import { ErrorBoundary } from "@/shared/components/common";
@@ -9,7 +9,6 @@ import {
   GOVERNOR_LABELS,
   HOME_CONTROLS_COPY,
   ERROR_BANNER_COPY,
-  DIALOGUE_COPY,
 } from "@/data/homeCopy";
 
 import { Power, Mic, Keyboard, Play, Pause, X, AlertCircle, RotateCcw } from "lucide-react";
@@ -21,25 +20,14 @@ import {
   toStatusLabel,
   isDotActive,
 } from "@/shared/hooks/useHomePage";
-import { Markdown } from "@/shared/ui/Markdown";
 
 const DialogueTurn = memo(({ turn }: { turn: { user: string; assistant: string; id: number } }) => (
   <React.Fragment>
     {turn.user && (
-      <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--foreground-muted))] font-normal text-[13px] leading-relaxed select-text p-3 rounded-2xl bg-[rgb(var(--card))]/80 border border-[rgba(var(--border),0.12)]">
-        <span className="text-[11px] tracking-widest text-[rgb(var(--foreground-muted))] uppercase block mb-1 font-bold">
-          {DIALOGUE_COPY.userBadge}
-        </span>
-        <Markdown content={turn.user} variant="bubble" />
-      </div>
+      <DialogueBubble role="user" content={turn.user} />
     )}
     {turn.assistant && (
-      <div className="w-full max-w-[280px] break-words text-left text-[rgb(var(--accent))] font-medium text-[13px] leading-relaxed select-text p-3 rounded-2xl bg-[rgb(var(--card))]/90 border border-[rgba(var(--accent),0.2)]">
-        <span className="text-[11px] tracking-widest text-[rgb(var(--accent))]/80 uppercase block mb-1 font-bold">
-          {DIALOGUE_COPY.assistantBadge}
-        </span>
-        <Markdown content={turn.assistant} variant="bubble" />
-      </div>
+      <DialogueBubble role="assistant" content={turn.assistant} />
     )}
   </React.Fragment>
 ));
@@ -66,7 +54,6 @@ export const Home = memo(() => {
     restoreError,
     dismissRestoreError,
     restoreSignal,
-    dialogueScrollRef,
     isLaunching,
     isThinking,
     isMobileScreen,
@@ -81,7 +68,28 @@ export const Home = memo(() => {
     setTextModeOpen,
     togglePlaybackMute,
     toggleMicMute,
+    dialogueScrollRef,
+    handleDialogueScroll,
+    shouldAutoScrollRef,
   } = useHomePage();
+
+  const contentInnerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll follower: keep pinned to bottom as text streams in or messages are sent
+  useEffect(() => {
+    const inner = contentInnerRef.current;
+    const scrollContainer = dialogueScrollRef.current;
+    if (!inner || !scrollContainer) return;
+
+    const observer = new ResizeObserver(() => {
+      if (shouldAutoScrollRef.current && scrollContainer) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      }
+    });
+    observer.observe(inner);
+
+    return () => observer.disconnect();
+  }, [shouldAutoScrollRef, dialogueScrollRef]);
 
   const { isPanelOpen, closePanel } = usePanelStateContext();
   const closeSessions = () => closePanel("sessions");
@@ -164,27 +172,30 @@ export const Home = memo(() => {
       >
         <div
           ref={dialogueScrollRef}
+          onScroll={handleDialogueScroll}
           className="w-full max-h-[85%] overflow-y-auto scrollbar-none flex flex-col items-center gap-4 pointer-events-auto select-text px-4 pb-6"
           style={{
             maskImage: "linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)",
             WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%)",
           }}
         >
-          <div className="flex-1 min-h-[4vh]" />
-          {/* Dialogue History */}
-          {visibleDialogueTurns.map((turn: { user: string; assistant: string; id: number }) => (
-            <DialogueTurn key={turn.id} turn={turn} />
-          ))}
+          <div ref={contentInnerRef} className="w-full flex flex-col items-center gap-4">
+            <div className="flex-1 min-h-[4vh]" />
+            {/* Dialogue History */}
+            {visibleDialogueTurns.map((turn: { user: string; assistant: string; id: number }) => (
+              <DialogueTurn key={turn.id} turn={turn} />
+            ))}
 
-          {/* Isolated Active Streaming Transcript */}
-          <ActiveTranscript transcript={transcript} assistantText={assistantText} />
+            {/* Isolated Active Streaming Transcript */}
+            <ActiveTranscript transcript={transcript} assistantText={assistantText} />
+          </div>
         </div>
       </div>
 
       {/* ── Orb Stage (Vertically centered in stage distance between top edge & EdgeNav) ── */}
       <div
         className={cn(
-          "absolute z-10 overflow-hidden flex items-center justify-center select-none",
+          "absolute z-10 flex items-center justify-center select-none transition-all duration-700 ease-out",
           isPttActive ? "pointer-events-auto cursor-pointer" : "pointer-events-none"
         )}
         onPointerDown={isPttActive ? () => handlePttStart() : undefined}
@@ -258,17 +269,17 @@ export const Home = memo(() => {
               <React.Fragment>
                 {/* Pause / Resume */}
                 <button
-                  onClick={isPaused ? resume : pause}
+                  onClick={(isPaused || isSleeping) ? resume : pause}
                   className={cn(
                     "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer",
-                    isPaused
+                    (isPaused || isSleeping)
                       ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
                       : "text-[rgb(var(--accent))]"
                   )}
-                  aria-label={isPaused ? HOME_CONTROLS_COPY.passive.resumeAriaLabel : HOME_CONTROLS_COPY.passive.pauseAriaLabel}
-                  title={isPaused ? HOME_CONTROLS_COPY.passive.resumeTooltip : HOME_CONTROLS_COPY.passive.pauseTooltip}
+                  aria-label={(isPaused || isSleeping) ? HOME_CONTROLS_COPY.passive.resumeAriaLabel : HOME_CONTROLS_COPY.passive.pauseAriaLabel}
+                  title={(isPaused || isSleeping) ? HOME_CONTROLS_COPY.passive.resumeTooltip : HOME_CONTROLS_COPY.passive.pauseTooltip}
                 >
-                  {isPaused ? <Play size={28} /> : <Pause size={28} />}
+                  {(isPaused || isSleeping) ? <Play size={28} /> : <Pause size={28} />}
                 </button>
 
                 {/* PTT Mic Button */}
@@ -277,13 +288,13 @@ export const Home = memo(() => {
                     onPointerDown={() => handlePttStart()}
                     onPointerUp={() => handlePttStop()}
                     onPointerLeave={() => { if (pttStatus === "RECORDING") handlePttCancel(); }}
-                    disabled={isPaused}
+                    disabled={isPaused || isSleeping}
                     className={cn(
                       "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer",
                       pttStatus === "RECORDING"
                         ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
                         : "text-[rgb(var(--accent))]",
-                      isPaused && "opacity-40 cursor-not-allowed hover:bg-transparent hover:scale-100"
+                      (isPaused || isSleeping) && "opacity-40 cursor-not-allowed hover:bg-transparent hover:scale-100"
                     )}
                     aria-label={HOME_CONTROLS_COPY.ptt.micAriaLabel}
                     title={HOME_CONTROLS_COPY.ptt.micTooltip}

@@ -275,7 +275,7 @@ export const TtsVoiceManager = memo(({
           const totalCores = (typeof navigator !== "undefined" ? navigator.hardwareConcurrency : undefined) || 4;
           const balancedThreads = Math.max(1, Math.floor(totalCores / 2));
           const ecoThreads = Math.max(1, Math.floor(totalCores / 4));
-          const currentThreads = draftSettings.tts.threads ?? 2;
+          const currentThreads = draftSettings.tts.threads ?? 6;
           const currentProfile =
             currentThreads === totalCores ? "max"
             : currentThreads === balancedThreads ? "balanced"

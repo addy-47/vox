@@ -58,5 +58,7 @@ export const ERROR_BANNER_COPY = {
 export const DIALOGUE_COPY = {
   userBadge: "USER",
   assistantBadge: "VOX",
+  readMore: "Read more",
+  readLess: "Show less",
 } as const;
 

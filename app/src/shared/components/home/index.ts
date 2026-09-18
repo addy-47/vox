@@ -5,3 +5,4 @@ export * from "./TextInputBar";
 export * from "./SessionPanel";
 export * from "./RestorePulse";
 export * from "./ActiveSessionHeader";
+export * from "./DialogueBubble";

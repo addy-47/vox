@@ -26,7 +26,10 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx
     }
 
     let current_state = state.pipeline.state();
-    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
+    if current_state == InteractionState::Idle
+        || current_state == InteractionState::Paused
+        || current_state == InteractionState::Sleeping
+    {
         log::warn!(
             "[Pipeline::Ptt] PttStart dropped: session not active ({:?})",
             current_state

@@ -143,13 +143,18 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
             if current_state == InteractionState::Idle
                 || current_state == InteractionState::Sleeping
             {
-                log::debug!("[Pipeline::Router] TextInput dropped in {:?}", current_state);
+                log::debug!(
+                    "[Pipeline::Router] TextInput dropped in {:?}",
+                    current_state
+                );
                 return;
             }
 
             // Auto-resume so typed input is never silently dropped while paused.
             if current_state == InteractionState::Paused {
-                log::info!("[Pipeline::Router] TextInput while Paused: auto-resuming before dispatch");
+                log::info!(
+                    "[Pipeline::Router] TextInput while Paused: auto-resuming before dispatch"
+                );
                 super::assistant::session::on_resume(app, state, &ctx);
             }
 
@@ -168,7 +173,13 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
             };
 
             transition(InteractionState::Thinking, &ctx, app, state);
-            super::assistant::transcript::on_transcript_final(active_turn_id, text, app, state, &ctx);
+            super::assistant::transcript::on_transcript_final(
+                active_turn_id,
+                text,
+                app,
+                state,
+                &ctx,
+            );
         }
         VoxEvent::LlmFinished { turn_id } => {
             super::assistant::llm::on_llm_finished(turn_id, state, &ctx);
