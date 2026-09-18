@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 use parking_lot::Mutex;
 
 use super::{
-    nemotron::SttEngine as NemotronEngine, qwen::SttEngine as QwenEngine, stitch_transcripts,
-    SttEngine, SttProvider, SttProviderKind,
+    nemotron::SttEngine as NemotronEngine, qwen::SttEngine as QwenEngine, SttEngine, SttProvider,
+    SttProviderKind,
 };
+use crate::services::stt::stitcher::stitch_transcripts;
 
 struct EmbeddedSttProviderInner {
     model_path: PathBuf,

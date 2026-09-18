@@ -13,7 +13,7 @@
 //! (prepare_turn -> commit_turn) until the REAL budget plugin reports
 //! Critical (>=85%) and returns NeedsInlineCompaction. That slice is compacted
 //! with ONE gemma3:12b run via the production inline function
-//! (CompactionPlugin::run_and_persist, trigger_kind "inline"), persisted to a
+//! (CompactionStage::run_and_persist, trigger_kind "inline"), persisted to a
 //! fresh eval DB, then judged once for semantic extraction quality.
 //!
 //! The rung-1 DB file is the ladder handoff to rung 2. Nothing is forced: if
@@ -32,7 +32,7 @@ use clap::Parser;
 use common::{db, judge, report, settings_cfg, turns};
 use tokio_util::sync::CancellationToken;
 use vox_lib::services::{
-    harness::{CompactionParams, CompactionPlugin, HarnessSession, TurnPreparation},
+    harness::{CompactionParams, CompactionStage, Harness},
     llm::{actor::create_llm_provider_from_llm_settings, LlmCommand},
     memory::ml::tokenizer::estimate_tokens,
 };
@@ -124,7 +124,7 @@ async fn run(args: Args) -> Result<()> {
     )
     .map_err(|e| anyhow::anyhow!("Failed to build server provider: {e}"))?;
     let (llm_tx, _llm_rx) = std::sync::mpsc::channel::<LlmCommand>();
-    let mut harness = HarnessSession::new_modular(
+    let mut harness = Harness::new_modular(
         Some(session_id),
         EVAL_BASE_PROMPT.to_string(),
         None,
@@ -140,26 +140,15 @@ async fn run(args: Args) -> Result<()> {
     let mut tripped_turn: Option<u32> = None;
     let mut compact_slice = Vec::new();
     for t in &fixture {
-        match harness.prepare_turn(&t.user, t.turn) {
-            TurnPreparation::NeedsInlineCompaction {
-                uncompacted_slice, ..
-            } => {
-                tripped_turn = Some(t.turn);
-                fed_turns = t.turn;
-                compact_slice = uncompacted_slice;
-                break;
-            }
-            TurnPreparation::Ready(_) => {
-                harness.commit_turn(t.assistant.clone());
-                fed_turns = t.turn;
-            }
-            TurnPreparation::DuplicateTurnIgnored => {
-                anyhow::bail!(
-                    "Fixture turn {} was dropped as duplicate — fixture error",
-                    t.turn
-                );
-            }
+        harness.push_user_turn(t.user.clone());
+        if let Some(slice) = harness.check_critical_compaction_eligibility() {
+            tripped_turn = Some(t.turn);
+            fed_turns = t.turn;
+            compact_slice = slice;
+            break;
         }
+        harness.push_assistant_turn(t.assistant.clone());
+        fed_turns = t.turn;
     }
     let tripped_turn = tripped_turn.with_context(|| {
         format!(
@@ -190,7 +179,7 @@ async fn run(args: Args) -> Result<()> {
     };
     let result = tokio::time::timeout(
         Duration::from_secs(600),
-        CompactionPlugin::run_and_persist(provider.as_ref(), &conn, params),
+        CompactionStage::run_and_persist(provider.as_ref(), &conn, params),
     )
     .await
     .context("Compaction executor call timed out")?

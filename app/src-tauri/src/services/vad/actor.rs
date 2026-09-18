@@ -14,11 +14,12 @@ use ringbuf::traits::Consumer;
 use thread_priority::{set_current_thread_priority, ThreadPriority};
 
 use super::{
-    telemetry::process_and_emit_telemetry,
-    utils::{f32_to_i16_pcm, PreRollBuffer},
-    VadBackend, VadEngine as _, VadOperationalMode, VAD_ACTOR_IDLE_SLEEP_MS, VAD_CHUNK_SIZE,
-    VAD_INPUT_SAMPLE_RATE, VAD_MIN_UTTERANCE_SAMPLES, VAD_PARTIAL_INTERVAL_SAMPLES,
-    VAD_PRE_ROLL_CAPACITY,
+    segmenter::{
+        process_and_emit_telemetry, process_continuous_segmentation, process_stream_passthrough,
+        process_windowed_validation, PreRollBuffer,
+    },
+    VadBackend, VAD_ACTOR_IDLE_SLEEP_MS, VAD_CHUNK_SIZE, VAD_INPUT_SAMPLE_RATE,
+    VAD_PARTIAL_INTERVAL_SAMPLES, VAD_PRE_ROLL_CAPACITY,
 };
 use crate::{
     core::{
@@ -27,9 +28,41 @@ use crate::{
         state::InteractionState,
     },
     monitoring::TelemetryEvent,
-    services::{stt::SttCommand, vad::VadCommand},
+    services::stt::SttCommand,
     utils::audio_filters::FilterBank,
 };
+
+/// Generic operational modes supported by the decoupled VAD actor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VadOperationalMode {
+    /// Autonomous neural speech onset/offset segmentation with utterance dispatch.
+    ContinuousSegmentation,
+    /// Caller-gated window evaluation (evaluates voice presence for caller-owned recording windows).
+    WindowedValidation,
+    /// Low-latency direct audio chunk forwarding to a configured realtime sender.
+    StreamPassthrough,
+}
+
+/// Commands dispatched to the dedicated VAD OS thread via `mpsc::Sender<VadCommand>`.
+pub enum VadCommand {
+    UpdateThreshold(f32),
+    UpdateNoiseGate(f32),
+    UpdateSilenceDuration(u32),
+    UpdateSpeechOnset(u32),
+    UpdateMode(InteractionMode),
+    UpdateAudioMode(AudioOutputMode),
+    SetOperationalMode(VadOperationalMode),
+    StartWindowValidation,
+    StopWindowValidation {
+        response_tx: mpsc::Sender<VadValidationResult>,
+    },
+    Shutdown,
+    StartRealtime {
+        tx: tokio::sync::mpsc::Sender<Vec<i16>>,
+        is_ptt: bool,
+    },
+    StopRealtime,
+}
 
 /// Result returned from windowed speech validation.
 #[derive(Debug, Clone)]
@@ -70,6 +103,36 @@ pub struct VadActorState {
     pub window_first_speech_sample: usize,
     pub window_last_speech_sample: usize,
     pub window_buffer: Vec<f32>,
+}
+
+/// Configuration settings for the VAD actor.
+#[derive(Debug, Clone)]
+pub struct VadActorConfig {
+    pub initial_threshold: f32,
+    pub initial_noise_gate: f32,
+    pub initial_silence_duration_ms: u32,
+    pub initial_speech_onset_ms: u32,
+    pub initial_mode: InteractionMode,
+    pub initial_audio_mode: AudioOutputMode,
+}
+
+/// Shared atomic handles and flags passed to the VAD actor.
+#[derive(Clone)]
+pub struct VadActorHandles {
+    pub state_atomic: Arc<AtomicU32>,
+    pub turn_id_atomic: Arc<AtomicU32>,
+    pub audio_suppressed: Arc<AtomicBool>,
+    pub engine_shutdown: Arc<AtomicBool>,
+    pub dropped_counter: Arc<AtomicU64>,
+    pub ingestion_gate: Arc<AtomicBool>,
+}
+
+/// Communication channels utilized by the VAD actor.
+pub struct VadActorChannels {
+    pub stt_tx: mpsc::Sender<SttCommand>,
+    pub vad_rx: mpsc::Receiver<VadCommand>,
+    pub telemetry_tx: crossbeam_channel::Sender<TelemetryEvent>,
+    pub vox_event_tx: Option<mpsc::Sender<VoxEvent>>,
 }
 
 impl VadActorState {
@@ -273,215 +336,6 @@ fn should_suppress_audio(
         && InteractionState::from(state_atomic.load(Ordering::Relaxed))
             == InteractionState::Speaking
         && state.audio_mode == AudioOutputMode::Speaker
-}
-
-/// Configuration settings for the VAD actor.
-#[derive(Debug, Clone)]
-pub struct VadActorConfig {
-    pub initial_threshold: f32,
-    pub initial_noise_gate: f32,
-    pub initial_silence_duration_ms: u32,
-    pub initial_speech_onset_ms: u32,
-    pub initial_mode: InteractionMode,
-    pub initial_audio_mode: AudioOutputMode,
-}
-
-/// Shared atomic handles and flags passed to the VAD actor.
-#[derive(Clone)]
-pub struct VadActorHandles {
-    pub state_atomic: Arc<AtomicU32>,
-    pub turn_id_atomic: Arc<AtomicU32>,
-    pub audio_suppressed: Arc<AtomicBool>,
-    pub engine_shutdown: Arc<AtomicBool>,
-    pub dropped_counter: Arc<AtomicU64>,
-    pub ingestion_gate: Arc<AtomicBool>,
-}
-
-/// Communication channels utilized by the VAD actor.
-pub struct VadActorChannels {
-    pub stt_tx: mpsc::Sender<SttCommand>,
-    pub vad_rx: mpsc::Receiver<VadCommand>,
-    pub telemetry_tx: crossbeam_channel::Sender<TelemetryEvent>,
-    pub vox_event_tx: Option<mpsc::Sender<VoxEvent>>,
-}
-
-/// Handles speech start event transition, stream resets, and pre-roll transfer.
-fn handle_speech_start(
-    state: &mut VadActorState,
-    handles: &VadActorHandles,
-    stt_tx: &mpsc::Sender<SttCommand>,
-    vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
-) {
-    state.in_speech = true;
-    state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
-
-    log::info!("[VAD Actor] Speech Start (turn: {})", state.current_turn_id);
-
-    if let Some(tx) = vox_event_tx {
-        if let Err(e) = tx.send(VoxEvent::SpeechStart) {
-            log::warn!("[VAD Actor] Failed to send SpeechStart event: {}", e);
-        }
-    }
-
-    state.utterance_buffer.clear();
-    state.pre_roll_buffer.copy_into(&mut state.utterance_buffer);
-    state.samples_since_partial = state.utterance_buffer.len();
-
-    if !state.utterance_buffer.is_empty() && state.realtime_tx.is_none() {
-        if let Err(e) = stt_tx.send(SttCommand::StreamChunk {
-            turn_id: state.current_turn_id,
-            audio: state.utterance_buffer.clone(),
-        }) {
-            log::warn!("[VAD Actor] Failed to send pre-roll chunk to STT: {}", e);
-        }
-    }
-
-    state.pre_roll_buffer.clear();
-}
-
-/// Handles speech end event transition, flushing VAD detector and dispatching final STT audio.
-fn handle_speech_end(
-    vad: &mut VadBackend,
-    state: &mut VadActorState,
-    handles: &VadActorHandles,
-    stt_tx: &mpsc::Sender<SttCommand>,
-    vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
-) {
-    state.in_speech = false;
-    // Authoritative turn reload: the pipeline router allocates the turn on SpeechStart,
-    // after this detector stamped its local copy at onset. Reload the shared atomic so
-    // the Final carries the pipeline-owned turn (matches PTT, playback, and LLM turns).
-    state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
-    log::info!("[VAD Actor] Speech End (turn: {})", state.current_turn_id);
-
-    if let Some(tx) = vox_event_tx {
-        if let Err(e) = tx.send(VoxEvent::SpeechEnd) {
-            log::warn!("[VAD Actor] Failed to send SpeechEnd event: {}", e);
-        }
-    }
-
-    vad.flush();
-
-    if state.utterance_buffer.len() >= VAD_MIN_UTTERANCE_SAMPLES && state.realtime_tx.is_none() {
-        if let Err(e) = stt_tx.send(SttCommand::Final(
-            state.current_turn_id,
-            state.utterance_buffer.clone(),
-        )) {
-            log::warn!("[VAD Actor] Failed to send Final audio to STT: {}", e);
-        }
-    }
-
-    state.utterance_buffer.clear();
-    state.samples_since_partial = 0;
-}
-
-/// Accumulates streaming audio frames during active speech and forwards chunks to STT worker.
-fn accumulate_speech_frames(
-    chunk: &[f32],
-    state: &mut VadActorState,
-    stt_tx: &mpsc::Sender<SttCommand>,
-) {
-    state.utterance_buffer.extend_from_slice(chunk);
-    state.samples_since_partial += chunk.len();
-
-    if state.realtime_tx.is_none() {
-        if let Err(e) = stt_tx.send(SttCommand::StreamChunk {
-            turn_id: state.current_turn_id,
-            audio: chunk.to_vec(),
-        }) {
-            log::warn!("[VAD Actor] Failed to send streaming chunk to STT: {}", e);
-        }
-    }
-}
-
-/// Executes ContinuousSegmentation mode for autonomous speech bounding.
-fn process_continuous_segmentation(
-    chunk: &[f32],
-    raw_energy: f32,
-    vad: &mut VadBackend,
-    state: &mut VadActorState,
-    handles: &VadActorHandles,
-    stt_tx: &mpsc::Sender<SttCommand>,
-    vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
-) {
-    let is_speech = vad.predict(chunk) && vad.is_above_noise_gate(raw_energy, state.noise_gate);
-    let (speech_start_threshold, speech_end_threshold) = if vad.is_onnx() {
-        (1, 1)
-    } else {
-        (state.speech_start_frames, state.speech_end_frames)
-    };
-
-    if is_speech {
-        state.active_frames += 1;
-        state.inactive_frames = 0;
-
-        if !state.in_speech && state.active_frames >= speech_start_threshold {
-            handle_speech_start(state, handles, stt_tx, vox_event_tx);
-        }
-
-        if state.in_speech {
-            state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
-            accumulate_speech_frames(chunk, state, stt_tx);
-        }
-    } else {
-        state.inactive_frames += 1;
-        state.active_frames = 0;
-
-        if state.in_speech {
-            if state.inactive_frames >= speech_end_threshold {
-                handle_speech_end(vad, state, handles, stt_tx, vox_event_tx);
-                state.pre_roll_buffer.push(chunk);
-            } else {
-                state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
-                accumulate_speech_frames(chunk, state, stt_tx);
-            }
-        } else {
-            state.pre_roll_buffer.push(chunk);
-        }
-    }
-}
-
-/// Executes WindowedValidation mode to evaluate speech presence and sample boundaries in caller-owned windows.
-fn process_windowed_validation(
-    chunk: &[f32],
-    raw_energy: f32,
-    vad: &mut VadBackend,
-    state: &mut VadActorState,
-) {
-    if !state.window_active {
-        state.pre_roll_buffer.push(chunk);
-        return;
-    }
-
-    state.window_buffer.extend_from_slice(chunk);
-    let is_speech = vad.predict(chunk) && vad.is_above_noise_gate(raw_energy, state.noise_gate);
-
-    if is_speech {
-        if !state.window_speech_detected {
-            state.window_speech_detected = true;
-            state.window_first_speech_sample = state
-                .window_sample_offset
-                .saturating_sub(VAD_PRE_ROLL_CAPACITY);
-        }
-        state.window_last_speech_sample = state.window_sample_offset + chunk.len();
-    }
-
-    state.window_sample_offset += chunk.len();
-    state.pre_roll_buffer.push(chunk);
-}
-
-/// Executes StreamPassthrough mode for direct low-latency routing to realtime cloud sinks.
-fn process_stream_passthrough(chunk: &[f32], state: &mut VadActorState) {
-    if let Some(ref tx) = state.realtime_tx {
-        let mut pcm = state
-            .realtime_recycle_rx
-            .try_recv()
-            .unwrap_or_else(|_| Vec::with_capacity(chunk.len()));
-        f32_to_i16_pcm(chunk, &mut pcm);
-        if let Err(e) = tx.try_send(pcm) {
-            log::trace!("[VAD Actor] Passthrough queue full or disconnected: {}", e);
-        }
-    }
 }
 
 /// Spawns the synchronous, low-latency VAD actor thread.

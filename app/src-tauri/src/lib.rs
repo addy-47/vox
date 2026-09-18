@@ -374,7 +374,14 @@ pub fn run() {
             spawn_system_monitor(app.handle().clone());
             spawn_telemetry_emitter(app.handle().clone());
             spawn_quiet_ingestion_observer(Arc::clone(&state_arc));
-            spawn_consolidation_scheduler(app.handle().clone(), Arc::clone(&state_arc));
+            let is_daily_cadence = state_arc
+                .settings
+                .read()
+                .map(|s| s.personal_memory.consolidation_cadence == "daily")
+                .unwrap_or(false);
+            if is_daily_cadence {
+                spawn_consolidation_scheduler(app.handle().clone(), Arc::clone(&state_arc));
+            }
 
             // ── 1.6 Dictation Global Hotkey Registration ──────────────────────────
             {

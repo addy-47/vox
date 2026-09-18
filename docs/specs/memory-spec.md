@@ -66,6 +66,13 @@ Every compaction pass (Critical, Soft, or Manual) produces a single unified JSON
 - **Buffer Pruning**: Compacted raw turns are pruned completely from the in-memory FIFO buffer upon successful compaction.
 - **Lenient Parse Fallback**: If the model returns non-empty text that fails JSON parsing, the raw text is preserved directly inside `<session_context>` with zero staged DB facts rather than dropping context.
 
+### 3.2.1 Compaction LLM Parameter & Settings Invariants
+Compaction execution operates with dedicated, deterministic generation parameters isolated from user conversational settings. Compaction derives ONLY the active provider/model and context window ceiling (`effective_ctx_size()`) from user settings:
+1. **JSON Output Mode Enforced Always**: Compaction strictly enforces `OutputConstraint::JsonSchema` with the canonical 6-bucket memory schema (falling back to `OutputConstraint::JsonObject` baseline only when the model catalog explicitly lacks structured output support).
+2. **Reasoning Always Disabled**: Compaction reasoning is strictly disabled (`ReasoningMode::Disabled`), even if reasoning is enabled for conversation turns, avoiding latency overhead and unpredictable reasoning tags.
+3. **Hardcoded Temperature Constant**: Compaction strictly uses `DEFAULT_LLM_COMPACTION_TEMPERATURE = 0.2` for deterministic, low-hallucination extraction. User conversation temperature settings are ignored.
+4. **Autonomous Output Budget**: Max output tokens are calculated autonomously via `calculate_compaction_max_tokens(effective_ctx_size, probed_max_output)` (`(ctx * 0.15).clamp(256, 16384)`), completely independent of the user's conversational `max_output_tokens` setting.
+
 ### 3.3 Compaction Triggers & Behavioral Rules
 
 #### A. Critical Inline Compaction (`CONTEXT_CRITICAL_THRESHOLD = 0.85`)

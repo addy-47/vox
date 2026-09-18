@@ -27,13 +27,25 @@ const SHELL_R = 2.30;
 /** Number of silk-sheet disc layers. */
 const NUM_SHEETS = 7;
 
-/** Target amplitude per interaction state. */
+/** Target scale per interaction state (subtle pop-up on speaking, focused intake on listening). */
+const TARGET_SCALE: Record<string, number> = {
+  Idle:      1.0,
+  Ready:     1.0,
+  Listening: 0.95,
+  Thinking:  1.0,
+  Speaking:  1.06,
+  Paused:    1.0,
+  Sleeping:  0.98,
+  Error:     1.0,
+};
+
+/** Target amplitude per interaction state (calm breathing floor; live multi-band audio drives dynamic range). */
 const BASE_AMP: Record<string, number> = {
   Idle:      0.02,
   Ready:     0.08,
-  Listening: 0.58,
-  Thinking:  0.30,
-  Speaking:  0.58,
+  Listening: 0.16,
+  Thinking:  0.26,
+  Speaking:  0.16,
   Paused:    0.02,
   Sleeping:  0.02,
   Error:     0.02,
@@ -193,6 +205,8 @@ const DISC_VERT = `
   uniform float u_phase;
   uniform float u_waveScale;
   uniform float u_highs;
+  uniform float u_lows;
+  uniform float u_mids;
 
   varying vec3  vWorldPos;
   varying vec3  vNormal;    // world-space sphere normal
@@ -219,16 +233,17 @@ const DISC_VERT = `
     // Two noise octaves at different frequencies / drift speeds.
     // Displacement tapers smoothly to zero near the equator so the rim
     // stays well-defined; maximum crumple is at ~60 % of the radius.
-    // Make displacement negative (inward) only to prevent overflowing the outer rim boundary
-    float dispScale = 0.22 + u_amplitude * 0.95;
+    // Lows drive deep silk wave amplitude, mids shape the secondary octave, highs scale outer ripple.
+    float dispScale = 0.18 + u_amplitude * 0.75 + u_lows * 0.25;
     float taper     = sin(vRadius * 3.14159) * smoothstep(1.0, 0.6, vRadius);
 
-    float currentWaveScale = u_waveScale * (1.0 + u_highs * 0.4);
+    float currentWaveScale = u_waveScale * (1.0 + u_highs * 0.45);
     vec3 nc1 = hemi * currentWaveScale
                + vec3(u_time * 0.11, u_time * 0.08,  u_phase);
     vec3 nc2 = hemi * currentWaveScale * 2.5
                + vec3(-u_time * 0.17, u_time * 0.14, u_phase + 5.3);
-    float disp = -abs(snoise(nc1) + snoise(nc2) * 0.45) * dispScale * taper * 0.85;
+    float midOctave = 0.45 + u_mids * 0.30;
+    float disp = -abs(snoise(nc1) + snoise(nc2) * midOctave) * dispScale * taper * 0.85;
 
     vec3 pos = hemi + sNorm * disp;
 
@@ -440,6 +455,8 @@ export const VoxOrb = React.memo(({
       u_colorAccent: { value: THREE.Color };
       u_sleeping: { value: number };
       u_highs: { value: number };
+      u_lows: { value: number };
+      u_mids: { value: number };
     };
     discGroup: THREE.Group;
     group: THREE.Group;
@@ -460,6 +477,9 @@ export const VoxOrb = React.memo(({
     heartbeatPhase: number;
     noiseTime: number;
     smoothedEnergy: number;
+    smoothedLow: number;
+    smoothedMid: number;
+    smoothedHigh: number;
   }
 
   const sceneRef = useRef<SceneContext | null>(null);
@@ -478,37 +498,70 @@ export const VoxOrb = React.memo(({
     const state = stateRef.current;
     const sleeping = sleepingRef.current;
 
-    // 1. Calculate raw voice/VAD energy input based on current state
+    // 1. Calculate raw voice/VAD multi-band inputs based on current state
     let rawEnergy = 0;
+    let rawLow = 0;
+    let rawMid = 0;
     let rawHigh = 0;
 
     if (telemetryRef?.current) {
-      const e = telemetryRef.current.energy;
-      const h = telemetryRef.current.high;
+      const e = telemetryRef.current.energy || 0;
+      const l = telemetryRef.current.low || 0;
+      const m = telemetryRef.current.mid || 0;
+      const h = telemetryRef.current.high || 0;
       const v = telemetryRef.current.vad_prob || 0;
       
       if (state === 'Listening' || state === 'Speaking') {
         rawEnergy = e;
+        rawLow = l;
+        rawMid = m;
         rawHigh = h;
       } else if (state === 'Ready') {
-        // Subtle energy feedback when ready based on mic energy & VAD
-        rawEnergy = e * 0.4 + v * 0.2;
-        rawHigh = h * 0.3;
+        // Subtle ambient feedback when ready based on mic energy
+        rawEnergy = e * 0.35 + v * 0.15;
+        rawLow = l * 0.25;
+        rawMid = m * 0.25;
+        rawHigh = h * 0.25;
       }
     } else if (amplitudeRef.current > 0) {
       rawEnergy = amplitudeRef.current;
-      rawHigh = rawEnergy;
+      rawLow = rawEnergy * 0.8;
+      rawMid = rawEnergy * 0.5;
+      rawHigh = rawEnergy * 0.3;
     }
 
-    // 2. Smoothed audio energy (fast attack, slow graceful release envelope follower)
+    // 2. Smoothed multi-band audio envelopes (gentle attack, graceful slow decay followers)
+    // Low band (vocal pitch, deep vowel core): slow, warm attack and decay
+    const prevLow = ctx.smoothedLow ?? 0;
+    const lowRate = rawLow > prevLow ? 0.14 : 0.035;
+    ctx.smoothedLow = prevLow + (Math.min(rawLow, 1.0) - prevLow) * lowRate;
+
+    // Mid band (formants, articulation, clarity): balanced tracking
+    const prevMid = ctx.smoothedMid ?? 0;
+    const midRate = rawMid > prevMid ? 0.16 : 0.04;
+    ctx.smoothedMid = prevMid + (Math.min(rawMid, 1.0) - prevMid) * midRate;
+
+    // High band (sibilance, consonants, crispness): responsive but smooth
+    const prevHigh = ctx.smoothedHigh ?? 0;
+    const highRate = rawHigh > prevHigh ? 0.20 : 0.05;
+    ctx.smoothedHigh = prevHigh + (Math.min(rawHigh, 1.0) - prevHigh) * highRate;
+
+    // Overall energy envelope
     const targetEnergy = Math.min(rawEnergy, 1.0);
     const prevEnergy = ctx.smoothedEnergy ?? 0;
-    const energyRate = targetEnergy > prevEnergy ? 0.35 : 0.04;
+    const energyRate = targetEnergy > prevEnergy ? 0.18 : 0.04;
     ctx.smoothedEnergy = prevEnergy + (targetEnergy - prevEnergy) * energyRate;
     const audioEnergy = ctx.smoothedEnergy;
 
-    // 3. Stable Holographic Boundary (No physical bouncing or heartbeat scaling)
-    ctx.group.scale.set(1.0, 1.0, 1.0);
+    // 3. Subtle State Scale Transition:
+    // When state changes to speaking, expands subtly (~1.06x projection pop-up)
+    // When state changes to listening, contracts subtly (~0.95x attentive intake)
+    // When finished, smoothly returns to 1.00x normal.
+    const targetScale = TARGET_SCALE[state] ?? 1.0;
+    const currentScale = ctx.curScale ?? 1.0;
+    const scaleRate = state === 'Speaking' ? 0.07 : 0.05;
+    ctx.curScale = currentScale + (targetScale - currentScale) * scaleRate;
+    ctx.group.scale.set(ctx.curScale, ctx.curScale, ctx.curScale);
 
     // 4. Smoothly transition base offset value on state changes (eliminates instant state-jump visual pops)
     const targetBase = BASE_AMP[state] ?? 0.02;
@@ -518,19 +571,22 @@ export const VoxOrb = React.memo(({
     }
     ctx.curBaseVal += (baseVal - ctx.curBaseVal) * 0.06;
 
-    // 5. Calculate internal vertex deformation amplitude (u_amplitude) directly from smoothed audio energy
-    // This allows the internal "silk" to deepen fluidly and hold its shape during speech, without rhythmic bouncing.
-    const targetAmp = ctx.curBaseVal + audioEnergy * 0.4;
+    // 5. Calculate internal vertex deformation amplitude (u_amplitude) from smoothed audio energy
+    // Silk deepens fluidly and holds its shape during speech, without rhythmic bouncing.
+    const targetAmp = ctx.curBaseVal + audioEnergy * 0.38;
     const curAmp = ctx.sharedUni.u_amplitude.value;
-    const ampRate = targetAmp > curAmp ? 0.25 : 0.08;
+    const ampRate = targetAmp > curAmp ? 0.20 : 0.06;
     ctx.sharedUni.u_amplitude.value += (targetAmp - curAmp) * ampRate;
 
-    // 7. Internal noise/texture boiling (accelerate time drift based on voice activity)
-    const speedBoost = 1.0 + audioEnergy * 3.5;
+    // 6. Internal noise/texture boiling (accelerate time drift based on voice activity & mid frequencies)
+    const speedBoost = 1.0 + audioEnergy * 2.2 + ctx.smoothedMid * 1.2;
     ctx.noiseTime += dtSec * speedBoost;
     ctx.sharedUni.u_time.value = ctx.noiseTime;
 
-    ctx.sharedUni.u_highs.value = rawHigh * (1.0 + audioEnergy * 0.5);
+    // 7. Update multi-band uniforms
+    ctx.sharedUni.u_lows.value = ctx.smoothedLow;
+    ctx.sharedUni.u_mids.value = ctx.smoothedMid;
+    ctx.sharedUni.u_highs.value = ctx.smoothedHigh;
     ctx.sharedUni.u_sleeping.value += (Number(sleeping) - ctx.sharedUni.u_sleeping.value) * 0.08;
 
     const themeAccent = themeRef.current.accent;
@@ -562,8 +618,8 @@ export const VoxOrb = React.memo(({
     ctx.outerMat.uniforms['u_colorGlow'].value.copy(ctx.curGlow);
     ctx.outerMat.uniforms['u_colorAccent'].value.copy(ctx.curAccent);
 
-    // 8. Treble/Highs drive rotation speed multiplier (tied to smoothed energy to prevent frantic jumps)
-    const speedMult = 1.0 + audioEnergy * 0.8;
+    // 8. Mid & Energy drive rotational drift across sheets
+    const speedMult = 1.0 + audioEnergy * 0.6 + ctx.smoothedMid * 0.5;
     for (let i = 0; i < NUM_SHEETS; i++) {
       const mesh = ctx.discGroup.children[i] as THREE.Mesh;
       const anim = ctx.discAnims[i];
@@ -616,6 +672,8 @@ export const VoxOrb = React.memo(({
       u_colorAccent: { value: initAccent.clone() },
       u_sleeping: { value: 0.0 },
       u_highs: { value: 0.0 },
+      u_lows: { value: 0.0 },
+      u_mids: { value: 0.0 },
     };
 
     const discGroup = new THREE.Group();
@@ -636,6 +694,8 @@ export const VoxOrb = React.memo(({
           u_colorAccent: sharedUni.u_colorAccent,
           u_sleeping: sharedUni.u_sleeping,
           u_highs: sharedUni.u_highs,
+          u_lows: sharedUni.u_lows,
+          u_mids: sharedUni.u_mids,
           u_phase: { value: i * 1.73 + Math.random() * 2.1 },
           u_waveScale: { value: 0.38 + Math.random() * 0.48 },
           u_baseOpacity: { value: 0.11 + Math.random() * 0.28 },
@@ -740,6 +800,9 @@ export const VoxOrb = React.memo(({
       heartbeatPhase: 0,
       noiseTime: 0,
       smoothedEnergy: 0,
+      smoothedLow: 0,
+      smoothedMid: 0,
+      smoothedHigh: 0,
     };
 
     return () => {

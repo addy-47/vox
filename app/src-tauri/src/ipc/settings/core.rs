@@ -21,6 +21,7 @@ use crate::{
     pipeline::dictation::transition_dictation,
     services::{
         dictation::init_dictation_hotkey_listener,
+        memory::{start_consolidation_scheduler, stop_consolidation_scheduler},
         tts::TtsCommand,
         vad::{VadCommand, VadOperationalMode},
     },
@@ -278,6 +279,20 @@ async fn handle_setting_side_effects<R: tauri::Runtime>(
                 );
             }
         });
+    } else if domain == "personal_memory"
+        && (key == "consolidation_cadence" || key == "consolidation_time")
+    {
+        let cadence = state
+            .settings
+            .read()
+            .map(|s| s.personal_memory.consolidation_cadence.clone())
+            .unwrap_or_default();
+        if cadence == "daily" {
+            let state_arc = app.state::<Arc<AppState>>().inner().clone();
+            start_consolidation_scheduler(app.clone(), state_arc);
+        } else {
+            stop_consolidation_scheduler(state);
+        }
     }
 }
 

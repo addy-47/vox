@@ -1,5 +1,5 @@
 use crate::services::{
-    harness::{ChatMessage, ConversationHistoryPlugin},
+    harness::{ChatMessage, ConversationHistoryStage},
     memory::ml::tokenizer::estimate_tokens,
 };
 
@@ -15,12 +15,12 @@ pub enum ContextStatus {
 
 /// Plugin managing context window token budgeting, threshold evaluation, and FIFO degradation.
 #[derive(Debug, Clone)]
-pub struct ContextBudgetPlugin {
+pub struct ContextBudgetStage {
     max_context_tokens: usize,
     reserved_generation_tokens: usize,
 }
 
-impl ContextBudgetPlugin {
+impl ContextBudgetStage {
     pub fn new(max_context_tokens: usize, reserved_generation_tokens: usize) -> Self {
         Self {
             max_context_tokens,
@@ -30,10 +30,6 @@ impl ContextBudgetPlugin {
 
     pub fn set_max_context_tokens(&mut self, max_tokens: usize) {
         self.max_context_tokens = max_tokens;
-    }
-
-    pub fn set_reserved_generation_tokens(&mut self, reserved_tokens: usize) {
-        self.reserved_generation_tokens = reserved_tokens;
     }
 
     pub fn reserved_generation_tokens(&self) -> usize {
@@ -69,7 +65,7 @@ impl ContextBudgetPlugin {
         (utilization, status)
     }
 
-    pub fn execute_fifo_shift(&self, history: &mut ConversationHistoryPlugin) -> usize {
+    pub fn execute_fifo_shift(&self, history: &mut ConversationHistoryStage) -> usize {
         let target_budget = (self.usable_budget() * SOFT_COMPACTION_THRESHOLD_PERCENT) / 100;
         let mut dropped = 0;
 

@@ -1,6 +1,9 @@
-use std::sync::{
-    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-    mpsc, Arc, RwLock,
+use std::{
+    fmt::{Display, Formatter, Result},
+    sync::{
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        mpsc, Arc, RwLock,
+    },
 };
 
 use tokio::sync::Mutex;
@@ -17,7 +20,7 @@ use crate::{
     monitoring::snapshots::MonitoringState,
     persistence::{db::VoxDb, PersistenceEvent},
     pipeline::assistant::accumulator::TurnAccumulator,
-    services::{harness::HarnessSession, llm::LlmProvider, realtime::RealtimeActor},
+    services::{harness::Harness, llm::LlmProvider, realtime::RealtimeActor},
     setup::{manifest::VoxManifest, model_manager::ModelManager},
 };
 
@@ -46,8 +49,8 @@ impl AsRef<str> for AppWindow {
     }
 }
 
-impl std::fmt::Display for AppWindow {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for AppWindow {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.as_str())
     }
 }
@@ -140,7 +143,7 @@ pub struct AppState {
     pub cpu_governor: parking_lot::Mutex<String>,
     pub cpu_governor_optimal: Arc<AtomicBool>,
     pub setup_running: Arc<Mutex<bool>>,
-    pub harness: Arc<parking_lot::Mutex<Option<HarnessSession>>>,
+    pub harness: Arc<parking_lot::Mutex<Option<Harness>>>,
     pub llm_provider: Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>>>,
     pub event_tx: parking_lot::Mutex<Option<mpsc::Sender<VoxEvent>>>,
     pub pipeline_accumulator: Arc<parking_lot::Mutex<TurnAccumulator>>,

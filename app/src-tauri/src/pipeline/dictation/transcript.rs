@@ -1,4 +1,8 @@
-use std::io::Write;
+use std::{
+    fs::OpenOptions,
+    io::Write,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use tauri::AppHandle;
 
@@ -121,8 +125,8 @@ pub fn on_transcript_final<R: tauri::Runtime>(
 fn append_to_cache_history(text: &str) {
     let cache_dir = paths::cache_dir();
     let file_path = cache_dir.join(DICTATION_HISTORY_FILENAME);
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
 
@@ -132,7 +136,7 @@ fn append_to_cache_history(text: &str) {
     });
 
     if let Ok(json_line) = serde_json::to_string(&entry) {
-        if let Ok(mut file) = std::fs::OpenOptions::new()
+        if let Ok(mut file) = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&file_path)

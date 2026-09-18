@@ -11,7 +11,8 @@
 //! ============================================================================
 
 use vox_lib::{
-    pipeline::assistant::accumulator::TurnAccumulator, services::tts::actor::TtsClauseChunker,
+    pipeline::assistant::accumulator::TurnAccumulator,
+    services::harness::stages::streaming::ClauseChunker,
 };
 
 /// Subtest 1: The exact same logical text fed across two wildly different
@@ -144,7 +145,7 @@ fn test_chunking_determinism_emergency_cap() {
     let tokens_b: Vec<String> = words.chunks(3).map(|chunk| chunk.join(" ") + " ").collect();
 
     // Run A
-    let mut chunker_a = TtsClauseChunker::new();
+    let mut chunker_a = ClauseChunker::new();
     let mut chunks_a = Vec::new();
     for tok in &tokens_a {
         chunks_a.extend(chunker_a.push_str(tok));
@@ -156,7 +157,7 @@ fn test_chunking_determinism_emergency_cap() {
     }
 
     // Run B
-    let mut chunker_b = TtsClauseChunker::new();
+    let mut chunker_b = ClauseChunker::new();
     let mut chunks_b = Vec::new();
     for tok in &tokens_b {
         chunks_b.extend(chunker_b.push_str(tok));
@@ -210,7 +211,7 @@ fn test_chunking_determinism_comma_gate_stable() {
     let tokens_short_1 = vec!["Hello my friend, ", "how are you today?"];
     let tokens_short_2 = vec!["Hello", " my ", "friend", ",", " how are you today?"];
 
-    let mut c1 = TtsClauseChunker::new();
+    let mut c1 = ClauseChunker::new();
     let mut res1 = Vec::new();
     for t in tokens_short_1 {
         res1.extend(c1.push_str(t));
@@ -219,7 +220,7 @@ fn test_chunking_determinism_comma_gate_stable() {
         res1.push(r);
     }
 
-    let mut c2 = TtsClauseChunker::new();
+    let mut c2 = ClauseChunker::new();
     let mut res2 = Vec::new();
     for t in tokens_short_2 {
         res2.extend(c2.push_str(t));
@@ -252,7 +253,7 @@ fn test_chunking_determinism_comma_gate_stable() {
         " and here is the remainder.",
     ];
 
-    let mut c3 = TtsClauseChunker::new();
+    let mut c3 = ClauseChunker::new();
     let mut res3 = Vec::new();
     for t in tokens_long_1 {
         res3.extend(c3.push_str(t));
@@ -261,7 +262,7 @@ fn test_chunking_determinism_comma_gate_stable() {
         res3.push(r);
     }
 
-    let mut c4 = TtsClauseChunker::new();
+    let mut c4 = ClauseChunker::new();
     let mut res4 = Vec::new();
     for t in tokens_long_2 {
         res4.extend(c4.push_str(t));

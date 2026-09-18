@@ -2,13 +2,13 @@ use crate::services::harness::{ChatMessage, Role};
 
 /// Plugin managing conversation turn history, KV-cache synchronization, and turn rollback.
 #[derive(Debug, Clone, Default)]
-pub struct ConversationHistoryPlugin {
+pub struct ConversationHistoryStage {
     messages: Vec<ChatMessage>,
     kv_synced_index: usize,
 }
 
-impl ConversationHistoryPlugin {
-    /// Creates a new empty `ConversationHistoryPlugin` instance.
+impl ConversationHistoryStage {
+    /// Creates a new empty `ConversationHistoryStage` instance.
     pub fn new() -> Self {
         Self {
             messages: Vec::new(),
@@ -16,7 +16,7 @@ impl ConversationHistoryPlugin {
         }
     }
 
-    /// Initializes a `ConversationHistoryPlugin` with an active system prompt message.
+    /// Initializes a `ConversationHistoryStage` with an active system prompt message.
     pub fn with_system_prompt(system_prompt: String) -> Self {
         Self {
             messages: vec![ChatMessage::new(Role::System, system_prompt)],
@@ -87,6 +87,23 @@ impl ConversationHistoryPlugin {
             }
         }
         None
+    }
+
+    /// Synchronizes the root system prompt in place without wiping conversational history turns.
+    pub fn sync_system_prompt(&mut self, system_prompt: &str) {
+        if let Some(first) = self.messages.first_mut() {
+            if first.role == Role::System {
+                if first.content != system_prompt {
+                    first.content = system_prompt.to_string();
+                    self.kv_synced_index = 0;
+                    log::debug!("[Harness::History] Root system prompt synchronized in-place");
+                }
+                return;
+            }
+        }
+        self.messages
+            .insert(0, ChatMessage::new(Role::System, system_prompt.to_string()));
+        self.kv_synced_index = 0;
     }
 
     /// Resets the conversation history with a fresh system prompt.

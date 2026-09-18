@@ -155,28 +155,28 @@ export const Settings: React.FC = () => {
           />
 
           {/* Top-Left Slot (Col 1-4, Row 1-3) -> 10:00 (Interaction Card) */}
-          <div className="col-start-1 col-span-4 row-start-1 row-span-3 flex items-end justify-end p-2 relative">
+          <div className="col-start-1 col-span-4 row-start-1 row-span-3 flex items-end justify-end p-2 relative z-10">
             <SettingsCardWrapper domain={DOMAINS[5]} isActive={activeDomains.includes("interaction")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[5].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>
 
           {/* Top-Center Slot (Col 5-8, Row 1-2) -> 12:00 (Persona Card) */}
-          <div className="col-start-5 col-span-4 row-start-1 row-span-2 flex items-end justify-center p-2 relative">
+          <div className="col-start-5 col-span-4 row-start-1 row-span-2 flex items-end justify-center p-2 relative z-10">
             <SettingsCardWrapper domain={DOMAINS[0]} isActive={activeDomains.includes("persona")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[0].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>
 
           {/* Top-Right Slot (Col 9-12, Row 1-3) -> 2:00 (Models Card) */}
-          <div className="col-start-9 col-span-4 row-start-1 row-span-3 flex items-end justify-start p-2 relative">
+          <div className="col-start-9 col-span-4 row-start-1 row-span-3 flex items-end justify-start p-2 relative z-10">
             <SettingsCardWrapper domain={DOMAINS[1]} isActive={activeDomains.includes("models")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[1].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>
 
           {/* Middle-Left Slot (Col 1-4, Row 4-6) -> 8:00 (Personal Memory Card) */}
-          <div className="col-start-1 col-span-4 row-start-4 row-span-3 flex items-start justify-end p-2 relative">
+          <div className="col-start-1 col-span-4 row-start-4 row-span-3 flex items-start justify-end p-2 relative z-10">
             <SettingsCardWrapper domain={DOMAINS[4]} isActive={activeDomains.includes("personal_memory")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[4].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
@@ -209,14 +209,14 @@ export const Settings: React.FC = () => {
           </div>
 
           {/* Middle-Right Slot (Col 9-12, Row 4-6) -> 4:00 (Working Memory Card) */}
-          <div className="col-start-9 col-span-4 row-start-4 row-span-3 flex items-start justify-start p-2 relative">
+          <div className="col-start-9 col-span-4 row-start-4 row-span-3 flex items-start justify-start p-2 relative z-10">
             <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("working_memory")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[2].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>
 
           {/* Bottom-Center Slot (Col 5-8, Row 5-6) -> 6:00 (Appearance Card) */}
-          <div className="col-start-5 col-span-4 row-start-5 row-span-2 flex items-start justify-center p-2 relative">
+          <div className="col-start-5 col-span-4 row-start-5 row-span-2 flex items-start justify-center p-2 relative z-10">
             <SettingsCardWrapper domain={DOMAINS[3]} isActive={activeDomains.includes("appearance")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[3].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>

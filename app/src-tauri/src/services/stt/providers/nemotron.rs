@@ -4,9 +4,13 @@ use anyhow::{anyhow, Result};
 use parking_lot::Mutex;
 use sherpa_onnx::{OnlineRecognizer, OnlineRecognizerConfig, OnlineStream};
 
-use super::{
-    SttEngine as SttEngineTrait, MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_ENCODER,
-    MODEL_FILE_ASR_JOINER, MODEL_FILE_ASR_TOKENS, SAMPLE_RATE,
+use super::SttEngine as SttEngineTrait;
+use crate::services::{
+    audio::SAMPLE_RATE,
+    stt::{
+        MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_ENCODER, MODEL_FILE_ASR_JOINER,
+        MODEL_FILE_ASR_TOKENS,
+    },
 };
 
 struct NemotronInner {

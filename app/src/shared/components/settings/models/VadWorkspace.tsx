@@ -35,6 +35,9 @@ export const VadWorkspace = memo(
     if (!vad) return null;
     const activeVadBackend = vad.vad_backend || "earshot";
     const vadModels = modelCatalog?.vad || [];
+    if (process.env.NODE_ENV === "development") {
+      console.log("[VadWorkspace] Loaded VAD models:", vadModels);
+    }
 
     const currentThreshold = vad.threshold ?? 0.5;
     const currentSilenceMs = vad.silence_duration_ms ?? 800;
@@ -46,10 +49,10 @@ export const VadWorkspace = memo(
         {activeCategoryTab === "model" ? (
           <div
             className={cn(
-              "grid gap-2.5 h-full",
+              "grid gap-2.5",
               vadModels.length <= 2
-                ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr" : "grid-cols-2 grid-rows-1")
-                : (layoutMode === "small" ? "grid-cols-1 auto-rows-full snap-y snap-mandatory" : "grid-cols-2 auto-rows-full snap-y snap-mandatory")
+                ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr h-full" : "grid-cols-2 grid-rows-1 h-full")
+                : (layoutMode === "small" ? "grid-cols-1 auto-rows-auto" : "grid-cols-2 auto-rows-auto")
             )}
           >
             {vadModels.map((model) => {

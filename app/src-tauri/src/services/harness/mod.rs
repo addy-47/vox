@@ -5,19 +5,17 @@ use std::{
 
 use crate::services::translit::is_devanagari;
 
-pub mod plugins;
-pub mod session;
-pub mod watcher;
+pub mod orchestrator;
+pub mod stages;
 
-pub use plugins::{
-    budget::{ContextBudgetPlugin, ContextStatus},
-    compaction::{CompactionParams, CompactionPlugin},
-    history::ConversationHistoryPlugin,
-    prompt::PromptBuilderPlugin,
-    stream::{StreamRoutingHandles, StreamRoutingPlugin},
+pub use orchestrator::{Harness, PipelineDomain, TurnExecutionRequest, TurnOutcome};
+pub use stages::{
+    budget::{ContextBudgetStage, ContextStatus},
+    compaction::{CompactionParams, CompactionStage},
+    history::ConversationHistoryStage,
+    prompt::PromptBuilderStage,
+    streaming::{ClauseChunker, StreamRoutingHandles, StreamRoutingStage},
 };
-pub use session::{HarnessSession, PipelineDomain, TurnPreparation};
-pub use watcher::QuietCompactionWatcher;
 
 pub const TRANSITION_MESSAGES_EN: &[&str] = &[
     "Give me a moment to gather my thoughts.",
@@ -75,14 +73,6 @@ impl ChatMessage {
             role,
             content,
             timestamp_ms: current_timestamp_ms(),
-        }
-    }
-
-    pub fn with_timestamp(role: Role, content: String, timestamp_ms: u64) -> Self {
-        Self {
-            role,
-            content,
-            timestamp_ms,
         }
     }
 }
