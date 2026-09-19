@@ -56,6 +56,10 @@ export function launchEngine(): Promise<void> {
   return invoke("launch_engine");
 }
 
+export function restartEngine(): Promise<void> {
+  return invoke("restart_engine");
+}
+
 export function startSession(sessionId?: number | null): Promise<void> {
   return invoke("start_session", { sessionId: sessionId ?? null });
 }
@@ -84,12 +88,20 @@ export function pttCancel(): Promise<void> {
   return invoke("ptt_cancel");
 }
 
-export function testClip(clipId: string): Promise<void> {
-  return invoke("test_clip", { clip_id: clipId });
+export function submitTextInput(query: string): Promise<void> {
+  return invoke("submit_text_input", { query });
 }
 
-export function testClipCancel(): Promise<void> {
-  return invoke("test_clip_cancel");
+export function setPlaybackMuted(muted: boolean): Promise<void> {
+  return invoke("set_playback_muted", { muted });
+}
+
+export function setMicMuted(muted: boolean): Promise<void> {
+  return invoke("set_mic_muted", { muted });
+}
+
+export function setSessionPrivateMode(enabled: boolean): Promise<void> {
+  return invoke("set_session_private_mode", { enabled });
 }
 
 export function getRuntimeSnapshot(): Promise<RuntimeSnapshot | null> {

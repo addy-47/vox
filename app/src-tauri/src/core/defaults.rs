@@ -1,17 +1,19 @@
 pub const DEFAULT_UI_THEME: &str = "dark";
 pub const DEFAULT_UI_ACCENT_SEED: &str = "#00DBE9"; // Default Cyan
 
-pub const DEFAULT_HISTORY_PRIVATE_MODE: bool = false;
-pub const DEFAULT_HISTORY_AUTO_COMPACTION: bool = false;
+pub const DEFAULT_WORKING_MEMORY_PRIVATE_MODE: bool = false;
+pub const DEFAULT_WORKING_MEMORY_AUTO_COMPACTION: bool = false;
+pub const DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE: f32 = 0.15;
 
 pub const DEFAULT_DICTATION_ENABLED: bool = true;
 pub const DEFAULT_DICTATION_HOTKEY: &str = "Alt+Space";
 
-pub const DEFAULT_VAD_BACKEND: &str = "ten_vad";
+pub const DEFAULT_VAD_BACKEND: &str = "silero_vad";
 pub const DEFAULT_VAD_THRESHOLD: f32 = 0.5;
 pub const DEFAULT_VAD_PTT_NOISE_GATE: f32 = 0.005;
 pub const DEFAULT_VAD_SILENCE_DURATION_MS: u32 = 400;
 pub const DEFAULT_VAD_SPEECH_ONSET_MS: u32 = 32;
+pub const DEFAULT_VAD_MAX_SPEECH_DURATION_S: u32 = 30;
 
 pub const DEFAULT_ASR_MODEL: &str = "nvidia_nemotron";
 pub const DEFAULT_ASR_TRANSLITERATE_ENABLED: bool = true;
@@ -26,9 +28,9 @@ pub const DEFAULT_LLM_MODEL: &str = "qwen_3_5_0_8b";
 pub const MIN_LLM_CONTEXT_WINDOW: u32 = 8192;
 pub const DEFAULT_LLM_CONTEXT_WINDOW: u32 = 8192;
 pub const DEFAULT_LLM_THREADS: u32 = 4;
-pub const DEFAULT_LLM_TEMPERATURE: f32 = 0.7;
+pub const DEFAULT_LLM_TEMPERATURE: f32 = 0.6;
 pub const DEFAULT_LLM_COMPACTION_TEMPERATURE: f32 = 0.5;
-pub const DEFAULT_LLM_MAX_OUTPUT_TOKENS: u32 = 300;
+pub const DEFAULT_LLM_MAX_OUTPUT_TOKENS: u32 = 120;
 
 pub const DEFAULT_LLM_SERVER_BASE_URL: &str = "http://localhost:11434";
 pub const DEFAULT_LLM_SERVER_MODEL: &str = "gemma3:4b";
@@ -38,25 +40,22 @@ pub const DEFAULT_LLM_CLOUD_BASE_URL: &str = "https://integrate.api.nvidia.com/v
 pub const DEFAULT_LLM_CLOUD_MODEL: &str = "meta/llama-3.1-8b-instruct";
 pub const DEFAULT_LLM_CLOUD_PROVIDER_NAME: &str = "nvidia";
 
-pub const DEFAULT_TTS_VOICE_INDEX: i32 = 0;
+pub const DEFAULT_TTS_VOICE_INDEX: i32 = 10;
 pub const DEFAULT_TTS_QUALITY_STEPS: u32 = 12;
 pub const DEFAULT_TTS_SPEED: f32 = 1.05;
-pub const DEFAULT_TTS_THREADS: u32 = 2;
+pub const DEFAULT_TTS_THREADS: u32 = 6;
 
 pub const DEFAULT_AUTO_SLEEP_TIMEOUT: u32 = 400;
 
 pub const DEFAULT_TELEMETRY_ENABLED: bool = true;
 pub const DEFAULT_TELEMETRY_LOG_LEVEL: &str = "info";
 
-pub const DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED: bool = true;
-pub const DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED: bool = true;
-pub const DEFAULT_MEMORY_MAX_PERSONAL_SHARE: f32 = 0.15;
-pub const DEFAULT_MEMORY_CONTEXT_CHAINING_HOURS: u32 = 12;
-pub const DEFAULT_MEMORY_TOP_K_FACTS: u32 = 5;
-pub const DEFAULT_MEMORY_MAX_HOPS: u32 = 2;
-pub const DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF: f32 = 0.40;
-pub const DEFAULT_MEMORY_CONSOLIDATION_CADENCE: &str = "manual";
-pub const DEFAULT_MEMORY_CONSOLIDATION_TIME: &str = "02:00";
+pub const DEFAULT_PERSONAL_MEMORY_CONTEXT_RETRIEVAL_ENABLED: bool = true;
+pub const DEFAULT_PERSONAL_MEMORY_PIPELINE_PROCESSING_ENABLED: bool = true;
+pub const DEFAULT_PERSONAL_MEMORY_TOP_K_FACTS: u32 = 5;
+pub const DEFAULT_PERSONAL_MEMORY_SEMANTIC_SIMILARITY_CUTOFF: f32 = 0.40;
+pub const DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_CADENCE: &str = "manual";
+pub const DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_TIME: &str = "02:00";
 
 pub const DEFAULT_GEMINI_REALTIME_MODEL: &str = "gemini-3.1-flash-live-preview";
 pub const DEFAULT_GEMINI_REALTIME_VOICE: &str = "Aoede";
@@ -67,32 +66,13 @@ pub const DEFAULT_DEEPGRAM_MODEL: &str = "nova-3";
 pub const DEFAULT_DEEPGRAM_VOICE: &str = "aura-2-luna";
 pub const DEFAULT_DEEPGRAM_TEMP: f32 = 0.7;
 
-pub const DEFAULT_SYSTEM_PROMPT_MODULAR: &str = "<persona>\n\
-You're Vox — an intelligent, quick-witted, and delightfully natural voice companion. You talk like a sharp, easygoing friend sitting across the table, not an AI manual or corporate terminal.\n\
-You have a casual, dry sense of humor, you're warm without being syrupy, and you speak with genuine rhythm.\n\
-</persona>\n\n\
-<voice_and_tts_rules>\n\
-- EVERYTHING you generate is read aloud by a Text-to-Speech engine. Write strictly for the ear, never for the eye.\n\
-- Use natural conversational fillers and speech flow markers naturally where appropriate: \"Alright,\", \"Let's see...\", \"Well,\", \"Got it,\", \"Oh,\".\n\
-- Use commas, em-dashes, and ellipses generously to give the speech engine natural breathing room: put commas (`,`) naturally to simulate pauses, em-dashes (`—`) for shifts, and ellipses (`...`) for soft hesitations. Without commas, the speech sounds flat and rushed.\n\
-- NEVER use formatting, markdown, bullet points, asterisks, brackets, or code blocks.\n\
-- NEVER use raw numeric times, symbols, abbreviations, or shorthand that trip up speech synthesis:\n\
-  - Write \"one-on-one\" or \"quick sync\", NEVER \"1:1\".\n\
-  - Write \"ten in the morning\" or \"ten AM\", NEVER \"10:00 AM\" or \"10:00\".\n\
-  - Write \"percent\", NEVER \"%\".\n\
-  - Write \"dollars\", NEVER \"$\".\n\
-  - Write \"and\", NEVER \"&\".\n\
-- Keep responses tight and punchy: 1 to 2 conversational sentences max unless explicitly asked for detail.\n\
-</voice_and_tts_rules>\n\n\
-<internal_rules>\n\
-- You are the conversational core of Vox, a voice-driven desktop OS.\n\
-- Speak in the user's language. Match their casual cadence and tone.\n\
-- If something has a witty angle, take it subtly. If not, just deliver with effortless charm.\n\
-</internal_rules>\n\n\
-<memory_context>\n\
-- If [Compacted History Summary] is present, it summarizes earlier parts of this session.\n\
-- If <user_profile> is present, it contains verified long-term facts about the user.\n\
-</memory_context>";
+pub const DEFAULT_SYSTEM_PROMPT_MODULAR: &str =
+    "You are Vox, a quick-witted, casual voice assistant like Jarvis or Friday.\n\
+You speak aloud through text-to-speech. Keep every response to 1 or 2 concise, natural sentences.\n\
+Be direct, conversational, and sharp with an easygoing warmth.\n\
+Never use markdown, bullet points, asterisks, numbered lists, XML tags, or speaker prefixes.\n\
+The <user_identity> block contains long-term memory and background facts curated by Vox about the user. Weave relevant facts into conversation naturally only when pertinent to the user's query; never recite memory blocks unprompted or mention the tags.\n\
+Speak directly to the user as if in a real-time voice call.";
 
 pub const DEFAULT_SYSTEM_PROMPT_REALTIME: &str = "<persona>\n\
 You're Vox — always listening, never hovering. You talk like someone who's been trusted with the keys to the house: calm, capable, and not afraid to say what you think. You read the room. You know when to jump in, when to stay quiet, and when a well-placed one-liner will land.\n\

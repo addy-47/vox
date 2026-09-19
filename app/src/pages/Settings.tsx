@@ -3,7 +3,6 @@ import { RotateCcw, Check, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
 import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
-import { TopRightCluster } from "@/shared/ui";
 import { AnimatePresence, motion } from "framer-motion";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
@@ -12,8 +11,8 @@ import { SETTINGS_COPY } from "@/data/settingsCopy";
 const loadPersona = () => import("@/shared/components/settings/persona/PersonaCard").then(m => ({ default: m.PersonaCard }));
 const loadModels = () => import("@/shared/components/settings/models/ModelsCard").then(m => ({ default: m.ModelsCard }));
 const loadRealtime = () => import("@/shared/components/settings/realtime/RealtimeCard").then(m => ({ default: m.RealtimeCard }));
-const loadHistory = () => import("@/shared/components/settings/history/HistoryCard").then(m => ({ default: m.HistoryCard }));
-const loadMemory = () => import("@/shared/components/settings/memory/MemoryCard").then(m => ({ default: m.MemoryCard }));
+const loadWorkingMemory = () => import("@/shared/components/settings/working_memory/WorkingMemoryCard").then(m => ({ default: m.WorkingMemoryCard }));
+const loadPersonalMemory = () => import("@/shared/components/settings/personal_memory/PersonalMemoryCard").then(m => ({ default: m.PersonalMemoryCard }));
 const loadAppearance = () => import("@/shared/components/settings/appearance/AppearanceCard").then(m => ({ default: m.AppearanceCard }));
 const loadInteraction = () => import("@/shared/components/settings/interaction/InteractionCard").then(m => ({ default: m.InteractionCard }));
 
@@ -21,8 +20,8 @@ const loadInteraction = () => import("@/shared/components/settings/interaction/I
 const PersonaCard = lazy(loadPersona);
 const ModelsCard = lazy(loadModels);
 const RealtimeCard = lazy(loadRealtime);
-const HistoryCard = lazy(loadHistory);
-const MemoryCard = lazy(loadMemory);
+const WorkingMemoryCard = lazy(loadWorkingMemory);
+const PersonalMemoryCard = lazy(loadPersonalMemory);
 const AppearanceCard = lazy(loadAppearance);
 const InteractionCard = lazy(loadInteraction);
 
@@ -38,10 +37,10 @@ const DomainContent = memo(({ domain, layoutMode }: { domain: DomainId; layoutMo
             return <PersonaCard layoutMode={layoutMode} />;
           case "models":
             return isRealtime ? <RealtimeCard layoutMode={layoutMode} /> : <ModelsCard layoutMode={layoutMode} />;
-          case "history":
-            return <HistoryCard layoutMode={layoutMode} />;
-          case "memory":
-            return <MemoryCard layoutMode={layoutMode} />;
+          case "working_memory":
+            return <WorkingMemoryCard layoutMode={layoutMode} />;
+          case "personal_memory":
+            return <PersonalMemoryCard layoutMode={layoutMode} />;
           case "appearance":
             return <AppearanceCard layoutMode={layoutMode} />;
           case "interaction":
@@ -143,12 +142,6 @@ export const Settings: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col min-w-0 z-10 h-full relative overflow-hidden bg-transparent select-none p-0 lg:p-6 lg:pb-[72px]">
 
-      {/* ── Top-right: Help + Notifications (Desktop) ── */}
-      {!isCompact && (
-        <div className="absolute top-4 right-5 z-30">
-          <TopRightCluster />
-        </div>
-      )}
 
       {/* ── Desktop & Tablet Hexagon/Grid Layout (>= 1024px) ────────────────── */}
       {!isCompact ? (
@@ -162,29 +155,29 @@ export const Settings: React.FC = () => {
           />
 
           {/* Top-Left Slot (Col 1-4, Row 1-3) -> 10:00 (Interaction Card) */}
-          <div className="col-start-1 col-span-4 row-start-1 row-span-3 flex items-end justify-end p-2 relative">
+          <div className="col-start-1 col-span-4 row-start-1 row-span-3 flex items-end justify-end p-2 relative z-10">
             <SettingsCardWrapper domain={DOMAINS[5]} isActive={activeDomains.includes("interaction")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[5].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>
 
           {/* Top-Center Slot (Col 5-8, Row 1-2) -> 12:00 (Persona Card) */}
-          <div className="col-start-5 col-span-4 row-start-1 row-span-2 flex items-end justify-center p-2 relative">
+          <div className="col-start-5 col-span-4 row-start-1 row-span-2 flex items-end justify-center p-2 relative z-10">
             <SettingsCardWrapper domain={DOMAINS[0]} isActive={activeDomains.includes("persona")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[0].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>
 
           {/* Top-Right Slot (Col 9-12, Row 1-3) -> 2:00 (Models Card) */}
-          <div className="col-start-9 col-span-4 row-start-1 row-span-3 flex items-end justify-start p-2 relative">
+          <div className="col-start-9 col-span-4 row-start-1 row-span-3 flex items-end justify-start p-2 relative z-10">
             <SettingsCardWrapper domain={DOMAINS[1]} isActive={activeDomains.includes("models")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[1].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>
 
-          {/* Middle-Left Slot (Col 1-4, Row 4-6) -> 8:00 (Memory Card) */}
-          <div className="col-start-1 col-span-4 row-start-4 row-span-3 flex items-start justify-end p-2 relative">
-            <SettingsCardWrapper domain={DOMAINS[4]} isActive={activeDomains.includes("memory")} layoutMode={layoutMode}>
+          {/* Middle-Left Slot (Col 1-4, Row 4-6) -> 8:00 (Personal Memory Card) */}
+          <div className="col-start-1 col-span-4 row-start-4 row-span-3 flex items-start justify-end p-2 relative z-10">
+            <SettingsCardWrapper domain={DOMAINS[4]} isActive={activeDomains.includes("personal_memory")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[4].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>
@@ -215,15 +208,15 @@ export const Settings: React.FC = () => {
             </div>
           </div>
 
-          {/* Middle-Right Slot (Col 9-12, Row 4-6) -> 4:00 (History Card) */}
-          <div className="col-start-9 col-span-4 row-start-4 row-span-3 flex items-start justify-start p-2 relative">
-            <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("history")} layoutMode={layoutMode}>
+          {/* Middle-Right Slot (Col 9-12, Row 4-6) -> 4:00 (Working Memory Card) */}
+          <div className="col-start-9 col-span-4 row-start-4 row-span-3 flex items-start justify-start p-2 relative z-10">
+            <SettingsCardWrapper domain={DOMAINS[2]} isActive={activeDomains.includes("working_memory")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[2].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
           </div>
 
           {/* Bottom-Center Slot (Col 5-8, Row 5-6) -> 6:00 (Appearance Card) */}
-          <div className="col-start-5 col-span-4 row-start-5 row-span-2 flex items-start justify-center p-2 relative">
+          <div className="col-start-5 col-span-4 row-start-5 row-span-2 flex items-start justify-center p-2 relative z-10">
             <SettingsCardWrapper domain={DOMAINS[3]} isActive={activeDomains.includes("appearance")} layoutMode={layoutMode}>
               <DomainContent domain={DOMAINS[3].id} layoutMode={layoutMode} />
             </SettingsCardWrapper>
@@ -304,9 +297,6 @@ export const Settings: React.FC = () => {
                 </>
               )}
 
-              {/* Help & Notifications */}
-              <TopRightCluster className="pointer-events-auto" />
-
               {/* Restore Defaults with confirm state */}
               <Tooltip
                 label={isMobileConfirmRestore ? "Tap again to confirm reset" : SETTINGS_COPY.restoreDefaults}
@@ -338,7 +328,7 @@ export const Settings: React.FC = () => {
 
           <div className="flex-1 w-full overflow-y-auto custom-scrollbar pb-[95px] space-y-5 sm:space-y-6 animate-fade-in pr-0.5">
             {[...DOMAINS].sort((a, b) => {
-              const order = ["interaction", "models", "appearance", "memory", "history", "persona"];
+              const order = ["interaction", "models", "appearance", "working_memory", "personal_memory", "persona"];
               return order.indexOf(a.id) - order.indexOf(b.id);
             }).map((domain) => (
               <div key={domain.id} className="w-full glass-card rounded-2xl p-4 sm:p-5">

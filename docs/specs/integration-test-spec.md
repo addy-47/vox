@@ -16,10 +16,11 @@ related_docs:
 
 # Phase 11 — Target Integration Test Specification (v2.3)
 
-> **Specification Ground Truth:**  
-> - **Approved Baseline:** Phase 11 (App Version **0.8.8**).  
-> - **Architectural SSOT:** Unified across Harness v2 (`services/harness/`), Memory v2 (`persistence/` & `services/memory/`), Notification 3D matrix (`services/notifications/`), Database v2 (10-table Turso SQLite), and 6-Domain Event Contracts (`pipeline/assistant/`, `pipeline/dictation/`).  
-> - **Testing Standard:** Strictly complies with `.agents/rules/testing-style-guide.md` and `.agents/rules/test-engineer.md`. Zero mocks when local models, assets, or API keys exist.  
+> **Specification Ground Truth:**
+>
+> - **Approved Baseline:** Phase 11 (App Version **0.8.8**).
+> - **Architectural SSOT:** Unified across Harness v2 (`services/harness/`), Memory v2 (`persistence/` & `services/memory/`), Notification 3D matrix (`services/notifications/`), Database v2 (10-table Turso SQLite), and 6-Domain Event Contracts (`pipeline/assistant/`, `pipeline/dictation/`).
+> - **Testing Standard:** Strictly complies with `.agents/rules/testing-style-guide.md` and `.agents/rules/test-engineer.md`. Zero mocks when local models, assets, or API keys exist.
 > - **Execution Discipline:** `cargo nextest run --test <file> --release --nocapture --test-threads=1`. Single-thread isolation, release builds only.
 
 ---
@@ -31,7 +32,7 @@ related_docs:
 - **Conventions:** Every seam defines:
   1. **Production Path Trace (`/create-test` Phase 1)**: The exact chain of production modules from trigger to exit.
   2. **Testability & Direction Check (`/create-test` Phase 2a)**: Verification that the test calls the upstream trigger, not the sink.
-  3. **False-Green Audit Table (`/create-test` Phase 2b)**: 2–5 specific mechanical defects that *must* fail the test.
+  3. **False-Green Audit Table (`/create-test` Phase 2b)**: 2–5 specific mechanical defects that _must_ fail the test.
   4. **Execution & Evidence Criteria (`/test`)**: Hard timeouts, exact metrics, and Levenshtein thresholds.
   5. **Mutation Sensitivity (`/mutate`)**: Tier 1 production code mutations used to empirically prove test sensitivity.
 - **Non-goals:** This document does not specify unit tests (internal helper logic in `src/**/#[cfg(test)]`) or macro benchmarks (`benches/`).
@@ -52,11 +53,12 @@ The integration test specification reflects the true post-refactor system topolo
 ```
 
 ### The 4 Cognitive Seams in Harness v2:
+
 1. **`STT ──► HarnessSession` (`prepare_turn`)**:
    `on_transcript_final` enters `HarnessSession`. Evaluates token budget (65% soft / 85% critical). If critical compaction is required, transitions `Thinking` $\to$ `Working`, dispatches `AudioIntent::InterimFiller` to TTS, and triggers inline compaction. If valid text, stays in `Thinking` and issues generation request via duplex pipe. If empty, recovers to `Ready` with Info Toast.
 2. **`HarnessSession ◄──► LlmActor` (Duplex Dialogue Pipe)**:
    Session-scoped bidirectional channel. Harness sends generation requests, assembled prompt, and cancellation token. `LlmActor` streams raw tokens back to Harness. Zero direct TTS, CPAL, or UI knowledge in `LlmActor`.
-3. **`HarnessSession ──► TTS` (`StreamRoutingPlugin`)**:
+3. **`HarnessSession ──► TTS` (`StreamRoutingStage`)**:
    The Harness owns the stream router. Parses streaming tokens, demuxes `<response>` tag, chunks clauses via `TtsClauseChunker`, and dispatches synthesized clauses directly to `TtsActor`. Trailing orchestration tags (`<title>`, `<action>`) are routed out of band to persistence and notifications.
 4. **`TTS ──► Playback` (Audio Intent & State Gating)**:
    Dispatches audio tagged with `AudioIntent::InterimFiller` or `AudioIntent::TurnResponse`. Interim filler playback holds the pipeline in `InteractionState::Working` and **never** emits `PlaybackFinished` $\to$ `Ready`. Only `TurnResponse` audio transitions `Working` $\to$ `Speaking` $\to$ `Ready`.
@@ -83,6 +85,7 @@ app/src-tauri/tests/
 ```
 
 ### Shared Harness Invariants:
+
 1. **Zero Production Duplication**: Test helpers must never reimplement production loops, ring buffers, or parsing logic (`create-test Phase 1`).
 2. **Filesystem & Database Isolation**: Tests interacting with SQLite or `~/.vox/` must use `TempPathsGuard` to isolate paths to an ephemeral temporary directory, preventing host database contamination.
 3. **Hard Timeout Enforcement**: Every async test function must be wrapped in `tokio::time::timeout(Duration::from_secs(N), ...)`; every synchronous test function must use an explicit `Instant::now() + Duration::from_secs(N)` deadline.
@@ -112,10 +115,12 @@ Seam Status Legend:
 - **Metrics:** Perceived latency, Levenshtein transcript similarity ($\ge 0.90$)
 
 #### 1.1 `/create-test` Phase 0 — Classification
+
 - **Type:** Integration Test.
 - **Rationale:** Verifies cross-thread, lock-free audio streaming and actor coordination between CPAL ring buffer, `VadActor`, and `SttActor` without mocking.
 
 #### 1.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 SUT: Passive voice detection, speech onset segmentation, silence cutoff detection, and local STT transcription.
 
@@ -147,21 +152,24 @@ Helpers Written:
 ```
 
 #### 1.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`RingBuffer` producer).
 2. Production constructors used? **Yes** (`setup_stt_worker`, `setup_vad_actor`).
 3. Channels/events observable? **Yes** (`pipeline_event_rx`).
 4. Real observable exit without mocks? **Yes** (`TranscriptFinal` text).
 
 #### 1.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 1 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Upstream audio producer completely silent / zero frames pushed** | **Must fail** | `pipeline_event_rx.recv_timeout` times out waiting for `TranscriptFinal`. |
-| `VadActor` audio passthrough suppression inverted (`should_suppress_audio` stuck `true`) | Must fail | VAD suppresses all frames; no speech onset; times out. |
-| `SttActor` drops `SttCommand::Final` or fails to dispatch `TranscriptFinal` | Must fail | Channel receives no final event; times out. |
-| VAD silence cutoff detection broken (`silence_duration_ms` timer never fires) | Must fail | Audio window never terminates; test exceeds 60s deadline. |
-| STT decoder emits empty string or distorted characters | Must fail | `assert_similarity_above` panics (Levenshtein score $< 0.90$). |
+
+| If this production defect existed                                                        | Would Seam 1 test fail? | Expected Failure Mode                                                     |
+| ---------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------- |
+| **Upstream audio producer completely silent / zero frames pushed**                       | **Must fail**           | `pipeline_event_rx.recv_timeout` times out waiting for `TranscriptFinal`. |
+| `VadActor` audio passthrough suppression inverted (`should_suppress_audio` stuck `true`) | Must fail               | VAD suppresses all frames; no speech onset; times out.                    |
+| `SttActor` drops `SttCommand::Final` or fails to dispatch `TranscriptFinal`              | Must fail               | Channel receives no final event; times out.                               |
+| VAD silence cutoff detection broken (`silence_duration_ms` timer never fires)            | Must fail               | Audio window never terminates; test exceeds 60s deadline.                 |
+| STT decoder emits empty string or distorted characters                                   | Must fail               | `assert_similarity_above` panics (Levenshtein score $< 0.90$).            |
 
 #### 1.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test passive_streaming_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. English briefing clip (`supertonic_01_en_briefing.wav`): Levenshtein similarity $\ge 0.90$ against reference text.
@@ -173,12 +181,13 @@ Helpers Written:
   - `AssertionError: similarity < 0.90`: Indicates acoustic distortion, incorrect resampling, or truncated audio window.
 
 #### 1.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 1.1 (Gate Inversion):** In `services/vad/actor.rs:should_suppress_audio`, replace body with `true` unconditionally.  
-  *Prediction:* Test goes RED via `RecvTimeoutError` because VAD suppresses all input frames.
+  _Prediction:_ Test goes RED via `RecvTimeoutError` because VAD suppresses all input frames.
 - **Mutant 1.2 (Silent Drop):** In `services/stt/actor.rs`, comment out `vox_event_tx.send(VoxEvent::TranscriptFinal { .. })`.  
-  *Prediction:* Test goes RED via `RecvTimeoutError` on `pipeline_event_rx`.
+  _Prediction:_ Test goes RED via `RecvTimeoutError` on `pipeline_event_rx`.
 - **Mutant 1.3 (Boundary Flip):** In `services/vad/actor.rs`, set `speech_threshold = 1.0` (unreachable speech probability).  
-  *Prediction:* Test goes RED because speech onset is never detected.
+  _Prediction:_ Test goes RED because speech onset is never detected.
 
 ---
 
@@ -193,10 +202,12 @@ Helpers Written:
 - **Metrics:** Perceived latency, Levenshtein transcript similarity ($\ge 0.90$), state transitions, ghost gate suppression.
 
 #### 2.1 `/create-test` Phase 0 — Classification
+
 - **Type:** Integration Test.
 - **Rationale:** Verifies user PTT interaction lifecycle (`ptt_start`, `ptt_stop`, `ptt_cancel`), non-blocking lock discipline on Tokio threads, VAD windowed buffer accumulation, ghost audio discard, and clean STT handoff.
 
 #### 2.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 SUT: User holds/releases PTT in Modular pipeline_mode; VAD window evaluates speech and dispatches trimmed audio to STT or discards ghost audio.
 
@@ -238,21 +249,24 @@ Helpers Written:
 ```
 
 #### 2.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`ptt_start`, `ptt_stop`, `ptt_cancel`).
 2. Production constructors used? **Yes** (`setup_stt_worker`, `setup_vad_actor`, `attach_mock_engine_with_vad_to_state`).
 3. Channels/events observable? **Yes** (`pipeline_event_rx`, `state.pipeline.state()`, `turn_token()`).
 4. Real observable exit without mocks? **Yes** (Real audio asset, real Nemotron STT, real VAD windowing).
 
 #### 2.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 2 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Upstream PTT trigger silent / dropped** | **Must fail** | State never transitions to `Listening`; assertion fails immediately. |
-| `ptt_start` drops window accumulation buffer | Must fail | STT receives empty buffer; fails similarity $\ge 0.90$. |
-| Ghost gate broken (silence window falsely treated as speech) | Must fail | Subtest 2 fails: state enters `Thinking` instead of `Ready`, and `pipeline_event_rx` receives unexpected event. |
-| `ptt_cancel` fails to cancel `turn_token` | Must fail | Subtest 3 fails: `assert!(turn_token.is_cancelled())` panics. |
-| Blocking lock re-introduced in `assistant/ptt.rs` | Must fail | Deadlocks Tokio runtime; test times out on 60s hard deadline. |
+
+| If this production defect existed                            | Would Seam 2 test fail? | Expected Failure Mode                                                                                           |
+| ------------------------------------------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **Upstream PTT trigger silent / dropped**                    | **Must fail**           | State never transitions to `Listening`; assertion fails immediately.                                            |
+| `ptt_start` drops window accumulation buffer                 | Must fail               | STT receives empty buffer; fails similarity $\ge 0.90$.                                                         |
+| Ghost gate broken (silence window falsely treated as speech) | Must fail               | Subtest 2 fails: state enters `Thinking` instead of `Ready`, and `pipeline_event_rx` receives unexpected event. |
+| `ptt_cancel` fails to cancel `turn_token`                    | Must fail               | Subtest 3 fails: `assert!(turn_token.is_cancelled())` panics.                                                   |
+| Blocking lock re-introduced in `assistant/ptt.rs`            | Must fail               | Deadlocks Tokio runtime; test times out on 60s hard deadline.                                                   |
 
 #### 2.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test ptt_window_modular_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. Subtest 1 (Speech): User speech during PTT hold transitions `Ready` $\to$ `Listening` $\to$ `Thinking`, and emits `TranscriptFinal` with similarity $\ge 0.90$ on `supertonic_01_en_briefing.wav`.
@@ -265,12 +279,13 @@ Helpers Written:
   - `turn_token.is_cancelled() == false`: Cancellation flag not propagated to pipeline atomics.
 
 #### 2.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 2.1 (Gate Inversion):** In `services/vad/actor.rs:StopWindowValidation`, force `speech_detected = true` unconditionally for all windows.  
-  *Prediction:* Subtest 2 goes RED because silence hold emits an unexpected `TranscriptFinal` instead of reverting to `Ready`.
+  _Prediction:_ Subtest 2 goes RED because silence hold emits an unexpected `TranscriptFinal` instead of reverting to `Ready`.
 - **Mutant 2.2 (Silent Drop):** In `pipeline/assistant/ptt.rs:ptt_cancel`, comment out `state.pipeline.cancel_current_turn()`.  
-  *Prediction:* Subtest 3 goes RED on `assert!(turn_token.is_cancelled())`.
+  _Prediction:_ Subtest 3 goes RED on `assert!(turn_token.is_cancelled())`.
 - **Mutant 2.3 (Boundary Flip):** In `services/vad/actor.rs:StopWindowValidation`, invert `speech_detected` boolean (`!speech_detected`).  
-  *Prediction:* Subtest 1 goes RED because valid speech is discarded as ghost audio, never reaching STT.
+  _Prediction:_ Subtest 1 goes RED because valid speech is discarded as ghost audio, never reaching STT.
 
 ---
 
@@ -289,10 +304,12 @@ Helpers Written:
 > The current test file in `tests/ptt_window_realtime_test.rs` uses synthetic in-memory test doubles (`MockRealtimeProvider`, `MockRealtimeSession`) to verify local sample clamping and call counts without external network calls. Under the Zero-Mock invariant and active API key availability (`GEMINI_API_KEY`), this seam must be upgraded in an implementation sprint to exercise the real `GeminiLiveDriver` WebSocket connection harness.
 
 #### 3.1 `/create-test` Phase 0 — Classification
+
 - **Type:** Integration Test.
 - **Rationale:** Verifies user PTT interaction lifecycle in `PipelineMode::Realtime`, clamping float PCM samples to integer mono frames, and committing speech turns directly to the realtime WebSocket provider actor without local STT.
 
 #### 3.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 SUT: User holds/releases PTT in Realtime pipeline_mode; VAD window evaluates speech, clamps audio to 16-bit PCM integer samples, and dispatches a speech commit frame to the realtime provider actor.
 
@@ -332,21 +349,24 @@ Production Functions Called:
 ```
 
 #### 3.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`ptt_start`, `ptt_stop`, `ptt_cancel`).
 2. Production constructors used? **Yes** (`RealtimeActor`, `GeminiLiveDriver`, `setup_vad_actor`).
 3. Outbound frames observable? **Yes** (WebSocket driver stream / actor event loop).
 4. Real provider without synthetic stubs? **Target Requirement:** Uses real `GeminiLiveDriver` with `GEMINI_API_KEY` (tagged `#[ignore]`).
 
 #### 3.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 3 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Upstream PTT trigger silent / dropped** | **Must fail** | Window never activates; state stays `Ready`; zero audio pushed. |
-| Ghost gate deleted in `assistant/ptt.rs:on_ptt_stop` | Must fail | Subtest 2 fails: silence window incorrectly commits audio to cloud actor. |
-| f32-to-i16 clamping removed (`x.clamp(-1.0, 1.0)` deleted in `dispatch_ptt_speech_audio`) | Must fail | Sample-exact assertion fails: full-scale audio clips/wraps around in integer representation. |
-| `signal_speech_committed` call omitted or not awaited in Realtime branch | Must fail | Realtime provider receives zero committed audio frames. |
-| Dispatch routes to Modular STT instead of Realtime provider | Must fail | Realtime engine receives zero samples while local mock STT receives spurious commands. |
+
+| If this production defect existed                                                         | Would Seam 3 test fail? | Expected Failure Mode                                                                        |
+| ----------------------------------------------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------- |
+| **Upstream PTT trigger silent / dropped**                                                 | **Must fail**           | Window never activates; state stays `Ready`; zero audio pushed.                              |
+| Ghost gate deleted in `assistant/ptt.rs:on_ptt_stop`                                      | Must fail               | Subtest 2 fails: silence window incorrectly commits audio to cloud actor.                    |
+| f32-to-i16 clamping removed (`x.clamp(-1.0, 1.0)` deleted in `dispatch_ptt_speech_audio`) | Must fail               | Sample-exact assertion fails: full-scale audio clips/wraps around in integer representation. |
+| `signal_speech_committed` call omitted or not awaited in Realtime branch                  | Must fail               | Realtime provider receives zero committed audio frames.                                      |
+| Dispatch routes to Modular STT instead of Realtime provider                               | Must fail               | Realtime engine receives zero samples while local mock STT receives spurious commands.       |
 
 #### 3.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test ptt_window_realtime_test --release --nocapture --test-threads=1 -- --ignored`
 - **Success Criteria:**
   1. Subtest 1 (Speech): Real audio window dispatches clamped `i16` PCM samples; transitions state to `Thinking`; provider commits turn.
@@ -357,12 +377,13 @@ Production Functions Called:
   - `GhostGateLeak`: Outbound WebSocket frames detected during silence window.
 
 #### 3.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 3.1 (Boundary Flip):** In `pipeline/assistant/ptt.rs:dispatch_ptt_speech_audio`, delete `.clamp(-1.0, 1.0)`.  
-  *Prediction:* Test goes RED on full-scale audio fixtures due to integer overflow / clamping distortion.
+  _Prediction:_ Test goes RED on full-scale audio fixtures due to integer overflow / clamping distortion.
 - **Mutant 3.2 (Silent Drop):** In `pipeline/assistant/ptt.rs:dispatch_ptt_speech_audio`, comment out `rt_actor.signal_speech_committed(&i16_samples)`.  
-  *Prediction:* Subtest 1 goes RED because provider commit count remains 0.
+  _Prediction:_ Subtest 1 goes RED because provider commit count remains 0.
 - **Mutant 3.3 (Routing Swap):** In `pipeline/assistant/ptt.rs:dispatch_ptt_speech_audio`, swap branch condition `ctx.pipeline_mode == PipelineMode::Realtime` to `PipelineMode::Modular`.  
-  *Prediction:* Subtest 1 goes RED because audio is misrouted to STT worker instead of the Realtime actor.
+  _Prediction:_ Subtest 1 goes RED because audio is misrouted to STT worker instead of the Realtime actor.
 
 ---
 
@@ -377,10 +398,12 @@ Production Functions Called:
 - **Metrics:** Latency, Levenshtein transcript similarity ($\ge 0.90$), state transitions, zero LLM commands, Option C gate purge.
 
 #### 4.1 `/create-test` Phase 0 — Classification
+
 - **Type:** Integration Test.
 - **Rationale:** Verifies dictation hotkey/passive interaction lifecycle across central FIFO router, lock-free 2-layer ingestion gate, VAD windowing, Nemotron STT decoding, OS output routing (Tray, Clipboard, Simulate Paste), and strict isolation from the LLM Cognitive Stage.
 
 #### 4.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 SUT: Dictation hotkey/passive accumulation dispatches to STT and routes transcript to OS injection, NEVER to LLM; ingestion gate, owner handover, and error recovery hold.
 
@@ -434,21 +457,24 @@ Production Functions Called:
 ```
 
 #### 4.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`state.event_tx.send(VoxEvent::PttStart)`).
 2. Production constructors used? **Yes** (`spawn_router`, `setup_stt_worker`, `setup_vad_actor`).
 3. Channels/state observable? **Yes** (`dictation_state()`, `dictation_last_transcript`, `llm_rx`).
 4. Real observable exit without mocks? **Yes** (Real Nemotron STT, real VAD windowing, real router thread).
 
 #### 4.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 4 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Upstream hotkey trigger silent / dropped in router** | **Must fail** | Dictation state never leaves `Ready`; assertion fails. |
-| Dictation routes to LLM (accidental coupling to Cognitive Stage) | Must fail | `llm_rx.recv()` succeeds; LLM Zero Invariant assertion panics. |
-| Ghost gate deleted in `dictation/ptt.rs:on_ptt_stop` | Must fail | Subtest 2 fails: silence hold enters `Thinking` and emits spurious STT transcript. |
-| Option C Layer-2 gate purge omitted in `VadActor` | Must fail | Subtest 5 fails: stale audio held while gate was closed triggers STT upon reopening. |
-| Disabled dictation auto-recovers to `Ready` on hotkey press | Must fail | Subtest 6 fails: `PttStart` when `Idle` leaves state in `Ready` or `Listening` instead of `Idle`. |
+
+| If this production defect existed                                | Would Seam 4 test fail? | Expected Failure Mode                                                                             |
+| ---------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------- |
+| **Upstream hotkey trigger silent / dropped in router**           | **Must fail**           | Dictation state never leaves `Ready`; assertion fails.                                            |
+| Dictation routes to LLM (accidental coupling to Cognitive Stage) | Must fail               | `llm_rx.recv()` succeeds; LLM Zero Invariant assertion panics.                                    |
+| Ghost gate deleted in `dictation/ptt.rs:on_ptt_stop`             | Must fail               | Subtest 2 fails: silence hold enters `Thinking` and emits spurious STT transcript.                |
+| Option C Layer-2 gate purge omitted in `VadActor`                | Must fail               | Subtest 5 fails: stale audio held while gate was closed triggers STT upon reopening.              |
+| Disabled dictation auto-recovers to `Ready` on hotkey press      | Must fail               | Subtest 6 fails: `PttStart` when `Idle` leaves state in `Ready` or `Listening` instead of `Idle`. |
 
 #### 4.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test dictation_window_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. Subtest 1 (PTT Speech): Dictation state transitions `Ready` $\to$ `Listening` $\to$ `Thinking` $\to$ `Ready`; `dictation_last_transcript` has similarity $\ge 0.90$; `llm_rx` is completely empty.
@@ -463,12 +489,13 @@ Production Functions Called:
   - `Gate Purge Failure`: STT event received on reopened gate from stale buffer.
 
 #### 4.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 4.1 (Routing Swap):** In `pipeline/dictation/transcript.rs:on_transcript_final`, add call dispatching `LlmCommand::Generate` to LLM worker.  
-  *Prediction:* Subtest 1 and Subtest 4 go RED immediately on `assert_channel_empty_after(&llm_rx)`.
+  _Prediction:_ Subtest 1 and Subtest 4 go RED immediately on `assert_channel_empty_after(&llm_rx)`.
 - **Mutant 4.2 (Gate Inversion):** In `services/vad/actor.rs`, invert Layer-2 gate condition `if !handles.ingestion_gate.load(...)` to `if handles.ingestion_gate.load(...)`.  
-  *Prediction:* Subtest 5 goes RED because stale audio is preserved and processed upon gate reopening.
+  _Prediction:_ Subtest 5 goes RED because stale audio is preserved and processed upon gate reopening.
 - **Mutant 4.3 (Default Fallback Flip):** In `pipeline/dictation/ptt.rs:on_ptt_start`, delete the `dictation_state == Idle` error guard and let it fall through to recording.  
-  *Prediction:* Subtest 6 goes RED because pressing hotkey while disabled transitions to `Listening` instead of staying in `Idle`.
+  _Prediction:_ Subtest 6 goes RED because pressing hotkey while disabled transitions to `Listening` instead of staying in `Idle`.
 
 ---
 
@@ -483,15 +510,18 @@ Production Functions Called:
 - **Metrics:** Context preparation latency, token budget utilization, filler dispatch on critical threshold, GenerationRequest assembly, duplex pipe token stream initiation.
 
 > [!NOTE]
-> **Rework Requirement Ledger:**  
+> **Rework Requirement Ledger:**
+>
 > 1. `tests/transcript_to_llm_test.rs` currently instantiates a synthetic in-memory mock provider (`TestMockLlmProvider`) which emits static tokens (`"Hello from mock LLM"`). Under the Zero-Mock invariant, it must be upgraded in an implementation sprint to exercise the real local `EmbeddedProvider` (Qwen GGUF) or remote Nvidia NIM model.
 > 2. Subtest 4 asserts legacy Phase 10 logic (`pending_synthesis_jobs.store(1)` in `assistant/transcript.rs:on_transcript_final`), which was removed during the Harness v2 / Realtime refactor where `RealtimeActor` manages its own streaming guard. The assertion expectations must be aligned with Harness v2 contracts.
 
 #### 5.1 `/create-test` Phase 0 — Classification
+
 - **Type:** Integration Test.
 - **Rationale:** Verifies the cognitive front door: STT finalized user transcript enters `on_transcript_final`, triggers `HarnessSession::prepare_turn` to evaluate context utilization and compaction thresholds, dispatches interim transition filler if critical, assembles full system prompt + personal memory + history context into a `GenerationRequest`, and transmits it over the duplex dialogue pipe to `LlmActor`.
 
 #### 5.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 SUT: Final user transcript triggers context preparation (buffer push + threshold maintenance + prompt assembly) and dispatch of a GenerationRequest to the LLM worker; the real LLM generates tokens into the accumulator and emits LlmFinished.
 
@@ -516,14 +546,14 @@ Production Path:
               │   │   transitions to InteractionState::Working,
               │   │   dispatches AudioIntent::InterimFiller to TtsActor,
               │   │   increments pending_synthesis_jobs,
-              │   │   executes inline compaction via CompactionPlugin::run_and_persist,
+              │   │   executes inline compaction via CompactionStage::run_and_persist,
               │   │   applies compaction summary, falls back to FIFO on failure
               │   └─► Context utilization < 0.85:
               │       appends ChatMessage::user(&query) to working history buffer
               └─► harness.create_generation_request()
           ──► Transmits generation request over session duplex channel (request_tx) to LlmActor
-          ──► LlmActor generates tokens ──► streamed back via response_rx to StreamRoutingPlugin
-          ──► StreamRoutingPlugin demuxes <response> tags and dispatches clauses to TTS.
+          ──► LlmActor generates tokens ──► streamed back via response_rx to StreamRoutingStage
+          ──► StreamRoutingStage demuxes <response> tags and dispatches clauses to TTS.
 
 Observable Exit:
   1. Valid query (<0.85): GenerationRequest dispatched over duplex pipe; LlmActor emits token stream; LlmFinished arrives.
@@ -539,21 +569,24 @@ Production Functions Called:
 ```
 
 #### 5.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`on_transcript_final`).
 2. Production constructors used? **Yes** (`HarnessSession`, `EmbeddedProvider`, `AppState`).
 3. State and channels observable? **Yes** (`state.pipeline.state()`, `pending_synthesis_jobs`, duplex channel).
 4. Real LLM without synthetic mocks? **Target Requirement:** Uses real `EmbeddedProvider` with local Qwen 3.5 GGUF or remote Nvidia NIM.
 
 #### 5.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 5 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Upstream `on_transcript_final` never invoked** | **Must fail** | `LlmActor` never receives request; channel assertion fails. |
-| `on_transcript_final` drops valid transcript (guard misfires) | Must fail | State stays in `Thinking`; zero requests dispatched over duplex pipe. |
-| Empty transcript fails to guard to `Ready` | Must fail | Subtest 2 fails: empty query passes to LLM instead of recovering to `Ready`. |
-| Critical threshold ($\ge 0.85$) fails to trigger filler | Must fail | Subtest 5 fails: `tts_rx` receives no `InterimFiller` clause; state does not enter `Working`. |
-| Duplex pipe `request_tx.send` omitted in `spawn_modular_llm_task` | Must fail | `LlmActor` never generates tokens; stream routing times out. |
+
+| If this production defect existed                                 | Would Seam 5 test fail? | Expected Failure Mode                                                                         |
+| ----------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------- |
+| **Upstream `on_transcript_final` never invoked**                  | **Must fail**           | `LlmActor` never receives request; channel assertion fails.                                   |
+| `on_transcript_final` drops valid transcript (guard misfires)     | Must fail               | State stays in `Thinking`; zero requests dispatched over duplex pipe.                         |
+| Empty transcript fails to guard to `Ready`                        | Must fail               | Subtest 2 fails: empty query passes to LLM instead of recovering to `Ready`.                  |
+| Critical threshold ($\ge 0.85$) fails to trigger filler           | Must fail               | Subtest 5 fails: `tts_rx` receives no `InterimFiller` clause; state does not enter `Working`. |
+| Duplex pipe `request_tx.send` omitted in `spawn_modular_llm_task` | Must fail               | `LlmActor` never generates tokens; stream routing times out.                                  |
 
 #### 5.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test transcript_to_llm_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. Subtest 1 (Valid Dispatch): Valid transcript in `Thinking` enters `HarnessSession`, dispatches `GenerationRequest`, and yields real generated tokens.
@@ -565,12 +598,13 @@ Production Functions Called:
   - `MissingFiller`: Critical context threshold failed to trigger interim speech filler.
 
 #### 5.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 5.1 (Gate Inversion):** In `pipeline/assistant/transcript.rs:on_transcript_final`, delete `if trimmed.is_empty()` guard.  
-  *Prediction:* Subtest 2 goes RED because whitespace transcripts are sent to the LLM.
+  _Prediction:_ Subtest 2 goes RED because whitespace transcripts are sent to the LLM.
 - **Mutant 5.2 (Silent Drop):** In `pipeline/assistant/transcript.rs:spawn_modular_llm_task`, comment out `harness.create_generation_request()`.  
-  *Prediction:* Subtest 1 goes RED because no request is dispatched over the duplex pipe.
+  _Prediction:_ Subtest 1 goes RED because no request is dispatched over the duplex pipe.
 - **Mutant 5.3 (Threshold Flip):** In `services/harness/plugins/budget.rs`, set critical threshold to `1.5` (unreachable).  
-  *Prediction:* Subtest 5 goes RED because critical context never triggers interim filler.
+  _Prediction:_ Subtest 5 goes RED because critical context never triggers interim filler.
 
 ---
 
@@ -585,18 +619,21 @@ Production Functions Called:
 - **Metrics:** Real token generation, clause chunking boundaries, atomic `pending_synthesis_jobs` accounting, tail remainder flush, `HarnessSession` turn commit lifecycle.
 
 > [!NOTE]
-> **Rework Requirement Ledger:**  
+> **Rework Requirement Ledger:**
+>
 > 1. Under the [Harness v2 Specification §4](file:///home/addy/projects/apps/vox/docs/specs/harness-spec.md#L69-L92), `LlmActor` has no direct relationship with TTS. It is an isolated model actor that communicates strictly over a private duplex dialogue pipe with `HarnessSession`.
-> 2. `tests/llm_to_tts_test.rs` is a legacy Phase 10 test that directly instantiates an ad-hoc `StreamRoutingPlugin::new()` and sends raw `LlmCommand::Generate` into `LlmActor`, completely bypassing `HarnessSession` encapsulation and turn lifecycle (`prepare_turn` $\to$ duplex pipe $\to$ `StreamRoutingPlugin` $\to$ `commit_turn` $\to$ `on_turn_completed`).
+> 2. `tests/llm_to_tts_test.rs` is a legacy Phase 10 test that directly instantiates an ad-hoc `StreamRoutingStage::new()` and sends raw `LlmCommand::Generate` into `LlmActor`, completely bypassing `HarnessSession` encapsulation and turn lifecycle (`prepare_turn` $\to$ duplex pipe $\to$ `StreamRoutingStage` $\to$ `commit_turn` $\to$ `on_turn_completed`).
 > 3. In an implementation sprint, this test must be upgraded to construct a real `HarnessSession::new_modular(...)` with its 5 plugins active, feeding generation requests through the session chassis to verify that the Cognitive Stage as a whole fulfills the contract. Code modification is out of scope for this classification task.
 
 #### 6.1 `/create-test` Phase 0 — Classification
+
 - **Type:** Integration Test.
-- **Rationale:** Verifies the complete Cognitive Stage orchestration under Harness v2: `HarnessSession` manages turn context, sends requests over the duplex dialogue pipe to `LlmActor`, streams tokens through `StreamRoutingPlugin` to emit speakable clauses to `tts_tx` with `AudioIntent::TurnResponse`, and finalizes the turn via `commit_turn` and quiet watcher scheduling.
+- **Rationale:** Verifies the complete Cognitive Stage orchestration under Harness v2: `HarnessSession` manages turn context, sends requests over the duplex dialogue pipe to `LlmActor`, streams tokens through `StreamRoutingStage` to emit speakable clauses to `tts_tx` with `AudioIntent::TurnResponse`, and finalizes the turn via `commit_turn` and quiet watcher scheduling.
 
 #### 6.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
-SUT: Real local Qwen LLM generation streams tokens across duplex channel into StreamRoutingPlugin, chunks speakable clauses via TtsClauseChunker, and dispatches real TtsCommand::Generate synthesis jobs with AudioIntent::TurnResponse, atomic pending accounting, and remainder flush.
+SUT: Real local Qwen LLM generation streams tokens across duplex channel into StreamRoutingStage, chunks speakable clauses via TtsClauseChunker, and dispatches real TtsCommand::Generate synthesis jobs with AudioIntent::TurnResponse, atomic pending accounting, and remainder flush.
 
 Production Entry Seam:
   HarnessSession::prepare_turn(&query, turn_id) -> GenerationRequest transmitted over duplex dialogue pipe to LlmActor.
@@ -605,12 +642,12 @@ Production Entry Seam:
 Production Path:
   HarnessSession::prepare_turn(&query, turn_id)
   ──► Checks duplicate turn (DuplicateTurnIgnored)
-  ──► ContextBudgetPlugin evaluates utilization (Critical triggers Working + interim filler)
-  ──► ConversationHistoryPlugin appends query to working history
+  ──► ContextBudgetStage evaluates utilization (Critical triggers Working + interim filler)
+  ──► ConversationHistoryStage appends query to working history
   ──► Emits GenerationRequest to LlmActor over persistent duplex pipe
   ──► LlmActor (EmbeddedProvider with local Qwen 3.5 GGUF) generates tokens on OS thread
-  ──► Streams raw LlmStreamEvent::Token over duplex channel (response_rx) to StreamRoutingPlugin
-  ──► StreamRoutingPlugin (services/harness/plugins/stream.rs):
+  ──► Streams raw LlmStreamEvent::Token over duplex channel (response_rx) to StreamRoutingStage
+  ──► StreamRoutingStage (services/harness/plugins/stream.rs):
       ├─► Demuxes <response> tags from token stream
       ├─► Pushes tokens into TtsClauseChunker (accumulating into assistant_response)
       ├─► When speakable sentence clause formed:
@@ -626,7 +663,7 @@ Production Path:
   ──► HarnessSession commits turn to history and schedules quiet compaction watcher.
 
 Observable Exit:
-  1. Real Qwen inference streams authentic tokens via duplex channel into StreamRoutingPlugin.
+  1. Real Qwen inference streams authentic tokens via duplex channel into StreamRoutingStage.
   2. tts_rx receives at least 1 real streaming clause matching sentence boundary before LlmFinished.
   3. on_llm_finished cleanly flushes unpunctuated remainder to tts_rx.
   4. pending_synthesis_jobs exactly equals all_clauses.len().
@@ -640,21 +677,24 @@ Production Functions Called:
 ```
 
 #### 6.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`harness.prepare_turn`, `llm_tx.send`).
 2. Production constructors used? **Yes** (`HarnessSession`, `EmbeddedProvider`, `spawn_llm_worker`).
 3. Output channels and atomics observable? **Yes** (`tts_rx`, `pending_synthesis_jobs`, `event_rx`, `history`).
 4. Real LLM model without mocks? **Yes** (Real local Qwen 3.5 GGUF).
 
 #### 6.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 6 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Upstream `LlmCommand::Generate` dropped / Qwen model fails to load** | **Must fail** | `tts_rx` empty after timeout; `VoxEvent::LlmFinished` never emitted. |
-| Real Qwen inference loop fails to stream tokens (llama.cpp error) | Must fail | `response_rx` empty; 0 clauses dispatched; accumulator empty. |
-| Token-to-clause chunking bypassed (`push_token` returns empty vec) | Must fail | `streaming_clauses.is_empty()` assertion fails. |
-| Tail remainder flush deleted on `LlmFinished` (`assistant/llm.rs:47`) | Must fail | `pending_synthesis_jobs` mismatch against dispatched clauses. |
-| Dispatched clauses misclassified as `AudioIntent::InterimFiller` | Must fail | `assert_eq!(intent, AudioIntent::TurnResponse)` panics. |
+
+| If this production defect existed                                      | Would Seam 6 test fail? | Expected Failure Mode                                                |
+| ---------------------------------------------------------------------- | ----------------------- | -------------------------------------------------------------------- |
+| **Upstream `LlmCommand::Generate` dropped / Qwen model fails to load** | **Must fail**           | `tts_rx` empty after timeout; `VoxEvent::LlmFinished` never emitted. |
+| Real Qwen inference loop fails to stream tokens (llama.cpp error)      | Must fail               | `response_rx` empty; 0 clauses dispatched; accumulator empty.        |
+| Token-to-clause chunking bypassed (`push_token` returns empty vec)     | Must fail               | `streaming_clauses.is_empty()` assertion fails.                      |
+| Tail remainder flush deleted on `LlmFinished` (`assistant/llm.rs:47`)  | Must fail               | `pending_synthesis_jobs` mismatch against dispatched clauses.        |
+| Dispatched clauses misclassified as `AudioIntent::InterimFiller`       | Must fail               | `assert_eq!(intent, AudioIntent::TurnResponse)` panics.              |
 
 #### 6.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test llm_to_tts_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. `VoxEvent::LlmFinished` arrives within 30s deadline.
@@ -668,12 +708,13 @@ Production Functions Called:
   - `pending != clauses.len()`: Atomic accounting discrepancy in stream router.
 
 #### 6.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 6.1 (Silent Drop):** In `services/harness/plugins/stream.rs:route_stream`, comment out `tts_tx.send(TtsCommand::Generate { .. })`.  
-  *Prediction:* Test goes RED on `assert!(!streaming_clauses.is_empty())`.
+  _Prediction:_ Test goes RED on `assert!(!streaming_clauses.is_empty())`.
 - **Mutant 6.2 (Boundary Flip):** In `pipeline/assistant/llm.rs:on_llm_finished`, delete `flush_modular_tts_remainder` call.  
-  *Prediction:* Test goes RED on `assert_eq!(final_pending, all_clauses.len())` due to unflushed tail remainder.
+  _Prediction:_ Test goes RED on `assert_eq!(final_pending, all_clauses.len())` due to unflushed tail remainder.
 - **Mutant 6.3 (Intent Swap):** In `services/harness/plugins/stream.rs`, set clause intent to `AudioIntent::InterimFiller` instead of `TurnResponse`.  
-  *Prediction:* Test goes RED on `assert_eq!(intent, AudioIntent::TurnResponse)`.
+  _Prediction:_ Test goes RED on `assert_eq!(intent, AudioIntent::TurnResponse)`.
 
 ---
 
@@ -688,22 +729,25 @@ Production Functions Called:
 - **Metrics:** Real ONNX audio synthesis (RMS > 0.001), 24kHz to 48kHz 2x upsampling, 12,000-sample pre-roll cushion arming, short utterance `flush_pre_roll`, atomic `pending_synthesis_jobs` decrement.
 
 > [!NOTE]
-> **Rework Requirement Ledger:**  
+> **Rework Requirement Ledger:**
+>
 > 1. **Manual Router Handler Invocation in Subtest 1:** In lines 176–187 of `tests/tts_to_playback_test.rs`, the test manually calls `on_playback_started(turn_id, ...)` directly instead of having the central pipeline router receive `VoxEvent::PlaybackStarted` from `event_tx` and execute the state transition `Thinking -> Speaking`.
 > 2. **TTS Actor Bypassed in Subtest 2:** In `test_tts_to_playback_short_utterance_flush` (lines 255–270), the test pushes audio directly into `engine.ingest_chunk(&short_chunk)` and manually invokes `engine.flush_pre_roll()`. It completely bypasses `spawn_tts_worker`. The production path under test is that when `spawn_tts_worker` finishes synthesizing a chunk and observes `pending_synthesis_jobs <= 1`, the worker loop itself automatically calls `handles.playback.flush_pre_roll()`. Subtest 2 tests none of the worker loop accounting.
 > 3. **Rework Scope:** In an implementation sprint, Subtest 2 must send a short text string to `TtsCommand::Generate`, verifying that the worker thread completes synthesis, decrements `pending_synthesis_jobs`, and automatically triggers `flush_pre_roll()` to arm playback. Modifying test code is out of scope for this classification pass.
 
 #### 7.1 `/create-test` Phase 0 — Classification
+
 - **Type:** Integration Test.
 - **Rationale:** Verifies the physical speech synthesis and audio rendering boundary: `TtsCommand::Generate` received by dedicated TTS worker thread, executed against real local Supertonic ONNX engine, PCM audio upsampled 2x and pushed into lock-free playback ring buffer, pre-roll cushion gate evaluated to emit `VoxEvent::PlaybackStarted`, pipeline state transitioned from `Thinking` to `Speaking`, and worker-driven short utterance `flush_pre_roll`.
 
 #### 7.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 SUT: Real Supertonic ONNX text-to-speech synthesis jobs generate real PCM audio from text, upsample 2x to 48kHz, ingest into the lock-free playback ring buffer, satisfy the pre-roll cushion threshold gate (12,000 samples for Modular Assistant), transition state to Speaking, and flush unplayed samples on completion.
 
 Production Entry Seam:
   TtsCommand::Generate { turn_id, text, intent } sent to tts_tx.
-  Direction Check: PASS — entry seam is the upstream TTS dispatch command from StreamRoutingPlugin, NOT direct injection into PlaybackEngine.
+  Direction Check: PASS — entry seam is the upstream TTS dispatch command from StreamRoutingStage, NOT direct injection into PlaybackEngine.
 
 Production Path A (Standard Utterance > Pre-roll Threshold):
   tts_tx.send(TtsCommand::Generate { turn_id, text, intent })
@@ -753,22 +797,25 @@ Production Functions Called:
 ```
 
 #### 7.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`TtsCommand::Generate { turn_id, text, intent }`).
 2. Production constructors used? **Yes** (`SupertonicEngine`, `spawn_tts_worker`, `PlaybackEngine`).
 3. Channels and atomics observable? **Yes** (`event_rx`, `buffer_len()`, `pending_synthesis_jobs`, `state`).
 4. Real TTS engine without synthetic mocks? **Yes** (Real local Supertonic-3 ONNX models).
 
 #### 7.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 7 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Upstream TTS worker silent / drops `TtsCommand::Generate`** | **Must fail** | `event_rx` receives no `PlaybackStarted`; 30s timeout assertion panics. |
-| Supertonic ONNX inference broken (e.g. invalid model path) | Must fail | Constructor fails or generates 0 samples; buffer remains empty (`occupied == 0`). |
-| Vocoder emits pure silence / NaNs | Must fail | `rms > 0.001` assertion fails. |
-| Pre-roll threshold cushion gate deleted (`turn_armed` set unconditionally) | Must fail | Subtest 2 fails: short utterance arms immediately before `flush_pre_roll`. |
-| `flush_pre_roll` omitted or disabled | Must fail | Subtest 2 fails: short utterance (<12,000 samples) never arms and times out. |
-| `pending_synthesis_jobs.fetch_sub` omitted in `spawn_tts_worker` | Must fail | Subtest 1 fails: `pending_jobs` remains 1; assertion `pending == 0` fails. |
+
+| If this production defect existed                                          | Would Seam 7 test fail? | Expected Failure Mode                                                             |
+| -------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------- |
+| **Upstream TTS worker silent / drops `TtsCommand::Generate`**              | **Must fail**           | `event_rx` receives no `PlaybackStarted`; 30s timeout assertion panics.           |
+| Supertonic ONNX inference broken (e.g. invalid model path)                 | Must fail               | Constructor fails or generates 0 samples; buffer remains empty (`occupied == 0`). |
+| Vocoder emits pure silence / NaNs                                          | Must fail               | `rms > 0.001` assertion fails.                                                    |
+| Pre-roll threshold cushion gate deleted (`turn_armed` set unconditionally) | Must fail               | Subtest 2 fails: short utterance arms immediately before `flush_pre_roll`.        |
+| `flush_pre_roll` omitted or disabled                                       | Must fail               | Subtest 2 fails: short utterance (<12,000 samples) never arms and times out.      |
+| `pending_synthesis_jobs.fetch_sub` omitted in `spawn_tts_worker`           | Must fail               | Subtest 1 fails: `pending_jobs` remains 1; assertion `pending == 0` fails.        |
 
 #### 7.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test tts_to_playback_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. Subtest 1 (Real Synthesis & Pre-roll): `PlaybackStarted` emitted within 30s; ring buffer occupied; drained samples RMS > 0.001; state transitions to `Speaking`; `pending_synthesis_jobs` reaches 0.
@@ -780,12 +827,13 @@ Production Functions Called:
   - `pending != 0`: Atomic counter leak in worker loop.
 
 #### 7.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 7.1 (Pre-roll Gate Inversion):** In `services/audio/playback.rs:ingest_chunk_with_threshold`, change `if occupied >= preroll_threshold` to `if true`.  
-  *Prediction:* Subtest 2 goes RED because short chunks arm immediately on push instead of waiting for flush.
+  _Prediction:_ Subtest 2 goes RED because short chunks arm immediately on push instead of waiting for flush.
 - **Mutant 7.2 (Flush Deletion):** In `services/audio/playback.rs:flush_pre_roll`, comment out `self.turn_armed.store(true, Ordering::Relaxed)`.  
-  *Prediction:* Subtest 2 goes RED on `assert!(turn_armed.load(...))`.
+  _Prediction:_ Subtest 2 goes RED on `assert!(turn_armed.load(...))`.
 - **Mutant 7.3 (Accounting Drop):** In `services/tts/actor.rs:spawn_tts_worker`, comment out `jobs.fetch_sub(1, Ordering::Relaxed)`.  
-  *Prediction:* Subtest 1 goes RED on `assert_eq!(pending_jobs.load(Ordering::Relaxed), 0)`.
+  _Prediction:_ Subtest 1 goes RED on `assert_eq!(pending_jobs.load(Ordering::Relaxed), 0)`.
 
 ---
 
@@ -800,20 +848,23 @@ Production Functions Called:
 - **Metrics:** Settings IPC voice hot-swap without worker thread restart, critical threshold compaction filler dispatch, Working state gating on InterimFiller.
 
 > [!NOTE]
-> **Rework Requirement Ledger:**  
+> **Rework Requirement Ledger:**
+>
 > 1. **Mock Orchestration Defect in Path B:** In `test_compaction_filler_dispatch_and_pending_accounting`, lines 225–233, the test author manually calls `tts_tx.send(TtsCommand::Generate { intent: AudioIntent::InterimFiller, .. })` directly inside the test's `match prep` handler, and then line 240 asserts that `tts_rx.recv()` receives the exact command the test just sent to itself! This completely bypasses the real production router dispatch in `pipeline/assistant/transcript.rs:spawn_modular_llm_task` (lines 95–107).
 > 2. **Zero Coverage of `AudioIntent::InterimFiller` Gating:** The critical behavioral contract of `AudioIntent::InterimFiller` is defined in `pipeline/assistant/playback.rs`: when `intent == AudioIntent::InterimFiller`, `on_playback_started` and `on_playback_finished` MUST NOT transition to `Speaking` or `Ready` (they must keep the pipeline locked in `InteractionState::Working`). The test tests none of these playback gate transitions.
 > 3. **Bypassed Settings Entry Seam in Path A:** In production, voice switching originates via `ipc::settings::core::update_setting("tts", "voice_index", 2)`. The test bypasses IPC and manually injects `TtsCommand::SetVoice` directly onto the worker channel.
-> 4. **Embedded Context Window Invariant Defect:** Setting `context_window = 2048` in Path B violates `EMBEDDED_MODEL_MIN_CONTEXT_WINDOW = 4096` in `CompactionPlugin`, causing `can_perform_inline_compaction` to evaluate to false and panic on `TurnPreparation::Ready`.
+> 4. **Embedded Context Window Invariant Defect:** Setting `context_window = 2048` in Path B violates `EMBEDDED_MODEL_MIN_CONTEXT_WINDOW = 4096` in `CompactionStage`, causing `can_perform_inline_compaction` to evaluate to false and panic on `TurnPreparation::Ready`.
 > 5. **Rework Scope:** In an implementation sprint, this test must be rewritten to enter through `on_transcript_final` when history $\ge 85\%$, asserting real `Working` state transition, real `spawn_modular_llm_task` dispatch to `tts_tx`, and playback gating preservation. Code modification is out of scope for this classification pass.
 
 #### 8.1 `/create-test` Phase 0 — Classification
+
 - **Type:** Integration Test.
 - **Rationale:** Verifies the runtime voice switching and transitional speech gating:
   1. Settings IPC updates `voice_index`, sending `TtsCommand::SetVoice` to update active speaker embeddings in `SupertonicEngine` without worker thread termination.
   2. History context exceeding 85% utilization triggers `on_transcript_final` $\to$ `spawn_modular_llm_task` to transition the pipeline to `InteractionState::Working`, increment `pending_synthesis_jobs`, and dispatch `AudioIntent::InterimFiller` to TTS, holding the pipeline in `Working` through playback until finalized turn response synthesis.
 
 #### 8.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 SUT: TTS voice hot-swap updates speaker embeddings without dropping in-flight synthesis; critical context budget threshold in HarnessSession dispatches interim transition filler with AudioIntent::InterimFiller to mask compaction latency.
 
@@ -837,7 +888,7 @@ Production Entry Seam B (Compaction Transition Filler & Working State):
 Production Path B:
   on_transcript_final ──► spawn_modular_llm_task
   ──► harness.prepare_turn(&query, turn_id)
-  ──► ContextBudgetPlugin evaluates utilization (tracked_tokens >= 85% of budget)
+  ──► ContextBudgetStage evaluates utilization (tracked_tokens >= 85% of budget)
   ──► Returns TurnPreparation::NeedsInlineCompaction { filler_phrase, uncompacted_slice }
   ──► transition(InteractionState::Working, &ctx, &app, &state)
   ──► pending_jobs.fetch_add(1)
@@ -861,22 +912,25 @@ Production Functions Called:
 ```
 
 #### 8.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seams callable with production signatures? **Yes** (`tts_tx.send(TtsCommand::SetVoice)`, `harness.prepare_turn`).
 2. Production constructors used? **Yes** (`SupertonicEngine`, `HarnessSession::new_modular`).
 3. State and channels observable? **Yes** (`pending_synthesis_jobs`, `tts_rx`, `consumer_arc`).
 4. Real local models used? **Yes** (Real local Supertonic-3 ONNX model).
 
 #### 8.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 8 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Upstream `TtsCommand::SetVoice` dropped / ignored in worker** | **Must fail** | Second clause synthesizes with old voice; voice mutation fails. |
-| `SetVoice` clears pending jobs prematurely | Must fail | `pending_jobs` drops to 0 before synthesis completes; assertion fails. |
-| `SetVoice` drops in-flight generation jobs | Must fail | Ring buffer missing second clause audio; sample count / RMS assertion fails. |
-| Critical threshold fails to return `NeedsInlineCompaction` | Must fail | Path B panics on `Expected NeedsInlineCompaction`. |
-| Filler command tagged as `TurnResponse` instead of `InterimFiller` | Must fail | `assert_eq!(intent, AudioIntent::InterimFiller)` fails. |
-| Non-critical turn dispatches spurious filler | Must fail | `tts_rx.try_recv().is_err()` assertion fails. |
+
+| If this production defect existed                                  | Would Seam 8 test fail? | Expected Failure Mode                                                        |
+| ------------------------------------------------------------------ | ----------------------- | ---------------------------------------------------------------------------- |
+| **Upstream `TtsCommand::SetVoice` dropped / ignored in worker**    | **Must fail**           | Second clause synthesizes with old voice; voice mutation fails.              |
+| `SetVoice` clears pending jobs prematurely                         | Must fail               | `pending_jobs` drops to 0 before synthesis completes; assertion fails.       |
+| `SetVoice` drops in-flight generation jobs                         | Must fail               | Ring buffer missing second clause audio; sample count / RMS assertion fails. |
+| Critical threshold fails to return `NeedsInlineCompaction`         | Must fail               | Path B panics on `Expected NeedsInlineCompaction`.                           |
+| Filler command tagged as `TurnResponse` instead of `InterimFiller` | Must fail               | `assert_eq!(intent, AudioIntent::InterimFiller)` fails.                      |
+| Non-critical turn dispatches spurious filler                       | Must fail               | `tts_rx.try_recv().is_err()` assertion fails.                                |
 
 #### 8.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test tts_transition_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. Subtest 1 (`test_tts_voice_switch_without_worker_restart`): Voice 0 $\to$ SetVoice(2) $\to$ Voice 2 completes cleanly; `pending_synthesis_jobs` returns to 0; drained samples RMS > 0.001.
@@ -886,12 +940,13 @@ Production Functions Called:
   - `RMS <= 0.001`: Synthesis failed across voice hot-swap.
 
 #### 8.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 8.1 (Voice Switch Deletion):** In `services/tts/actor.rs:spawn_tts_worker`, comment out `provider.set_voice(voice)` in the `TtsCommand::SetVoice` match arm.  
-  *Prediction:* Subtest 1 fails to update engine speaker embedding.
+  _Prediction:_ Subtest 1 fails to update engine speaker embedding.
 - **Mutant 8.2 (Intent Corruption):** In `pipeline/assistant/transcript.rs` (or test dispatch), change filler intent from `AudioIntent::InterimFiller` to `AudioIntent::TurnResponse`.  
-  *Prediction:* Subtest 2 goes RED on `assert_eq!(intent, AudioIntent::InterimFiller)`.
+  _Prediction:_ Subtest 2 goes RED on `assert_eq!(intent, AudioIntent::InterimFiller)`.
 - **Mutant 8.3 (Threshold Inversion):** In `services/harness/plugins/budget.rs:evaluate_utilization`, invert `utilization >= critical` to `< critical`.  
-  *Prediction:* Subtest 2 goes RED because seeded critical buffer returns `Ready` and normal buffer triggers compaction.
+  _Prediction:_ Subtest 2 goes RED because seeded critical buffer returns `Ready` and normal buffer triggers compaction.
 
 ---
 
@@ -906,7 +961,8 @@ Production Functions Called:
 - **Metrics:** Pre-roll cushion threshold (12,000 samples), autonomous sink callback `PlaybackFinished` emission, `pending_synthesis_jobs` deferral, VAD speaker ducking suppression, 6-step barge-in state mutations.
 
 > [!NOTE]
-> **Rework Requirement Ledger:**  
+> **Rework Requirement Ledger:**
+>
 > 1. **Tautological Self-Dispatch in Subtest 1:** In `tests/playback_interrupt_test.rs:111-128`, the test manually calls `event_tx.send(VoxEvent::PlaybackFinished)` to itself, reads it back from `event_rx`, and manually calls `on_playback_finished`. In production, `PlaybackFinished` is emitted autonomously by the CPAL audio sink callback (`services/audio/sink.rs:137-163`) when the consumer buffer is drained and `pending_synthesis_jobs == 0`. The test completely bypasses the real audio sink callback.
 > 2. **Manual Router Handler Stitching in Subtests 1 & 3:** In Subtests 1 and 3, the test directly invokes `on_playback_started` and `on_playback_finished` as isolated functions rather than spawning the central router thread (`spawn_router`) to receive events from `event_tx` and execute state transitions.
 > 3. **Direct `on_interrupt` Call in Subtest 6:** In Subtest 6 (line 458), the test calls `on_interrupt(&app, &state, &ctx)` directly rather than triggering barge-in through the production router entry seam (`VoxEvent::PttStart` or `VoxEvent::SpeechStart` arriving while in `Speaking`).
@@ -914,6 +970,7 @@ Production Functions Called:
 > 5. **Rework Scope:** In an implementation sprint, Subtest 1 must exercise the real sink drain callback, and Subtests 1, 3, and 6 must run through `spawn_router`. Test code modification is out of scope for this classification pass.
 
 #### 9.1 `/create-test` Phase 0 — Classification
+
 - **Type:** Integration Test.
 - **Rationale:** Verifies the physical audio playback rendering lifecycle, acoustic echo suppression, and barge-in:
   1. Playback gating: 12,000-sample pre-roll cushion arms playback and emits `PlaybackStarted` (transitioning `Thinking -> Speaking`).
@@ -922,6 +979,7 @@ Production Functions Called:
   4. 6-step barge-in: Interruption during `Speaking` halts playback, advances turn ID, clears accumulator, cancels turn token, resets pending jobs, and transitions to `Listening`.
 
 #### 9.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 SUT: PlaybackEngine buffer ingestion and sink callback enforce pre-roll arming and completion gating; VAD actor suppresses mic input during Speaker playback; user interruption triggers the 6-step canonical barge-in sequence.
 
@@ -980,23 +1038,26 @@ Production Functions Called:
 ```
 
 #### 9.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seams callable with production signatures? **Yes** (`playback_engine.ingest_chunk`, `event_tx.send(PttStart)`).
 2. Production constructors used? **Yes** (`PlaybackEngine`, `VadActor`, `spawn_router`).
 3. State and channels observable? **Yes** (`event_rx`, `state.pipeline.state()`, `pending_synthesis_jobs`).
 4. Real VAD models used? **Yes** (Real local Earshot ONNX model).
 
 #### 9.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 9 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Upstream CPAL sink callback fails to emit `PlaybackFinished` when buffer empty** | **Must fail** | `PlaybackFinished` never emitted; state stays in `Speaking` indefinitely. |
-| Pre-roll threshold gate omitted (arms immediately on 1 sample) | Must fail | Subtest 2 fails: short chunk arms before `flush_pre_roll`. |
-| `pending_synthesis_jobs > 0` check deleted in `on_playback_finished` | Must fail | Subtest 3 fails: transitions to `Ready` while synthesis jobs in-flight. |
-| VAD speaker ducking logic deleted in `VadActor` | Must fail | Subtest 4 fails: mic speech during Speaker playback emits `SpeechStart`. |
-| Headset mode incorrectly suppresses mic input | Must fail | Subtest 5 fails: `SpeechStart` never fires in Headset mode. |
-| Barge-in fails to reset `pending_synthesis_jobs` to 0 | Must fail | Subtest 6 fails: `pending_jobs` retains stale count from interrupted turn. |
-| Barge-in fails to advance `turn_id` strictly monotonically | Must fail | Subtest 6 fails: `new_turn_id > old_turn_id` assertion panics. |
+
+| If this production defect existed                                                  | Would Seam 9 test fail? | Expected Failure Mode                                                      |
+| ---------------------------------------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------- |
+| **Upstream CPAL sink callback fails to emit `PlaybackFinished` when buffer empty** | **Must fail**           | `PlaybackFinished` never emitted; state stays in `Speaking` indefinitely.  |
+| Pre-roll threshold gate omitted (arms immediately on 1 sample)                     | Must fail               | Subtest 2 fails: short chunk arms before `flush_pre_roll`.                 |
+| `pending_synthesis_jobs > 0` check deleted in `on_playback_finished`               | Must fail               | Subtest 3 fails: transitions to `Ready` while synthesis jobs in-flight.    |
+| VAD speaker ducking logic deleted in `VadActor`                                    | Must fail               | Subtest 4 fails: mic speech during Speaker playback emits `SpeechStart`.   |
+| Headset mode incorrectly suppresses mic input                                      | Must fail               | Subtest 5 fails: `SpeechStart` never fires in Headset mode.                |
+| Barge-in fails to reset `pending_synthesis_jobs` to 0                              | Must fail               | Subtest 6 fails: `pending_jobs` retains stale count from interrupted turn. |
+| Barge-in fails to advance `turn_id` strictly monotonically                         | Must fail               | Subtest 6 fails: `new_turn_id > old_turn_id` assertion panics.             |
 
 #### 9.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test playback_interrupt_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. Subtest 1: Ingest >= 12,000 samples $\to$ `PlaybackStarted` $\to$ `Speaking`; drain buffer with pending == 0 $\to$ `PlaybackFinished` $\to$ `Ready`.
@@ -1010,12 +1071,13 @@ Production Functions Called:
   - `SpeechStart emitted during Speaker playback`: Ducking suppression failure.
 
 #### 9.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 9.1 (Pending Deferral Bypass):** In `pipeline/assistant/playback.rs:on_playback_finished`, delete the `if pending_jobs > 0 { return; }` guard.  
-  *Prediction:* Subtest 3 goes RED because calling finished with `pending == 1` transitions to `Ready` instead of remaining `Speaking`.
+  _Prediction:_ Subtest 3 goes RED because calling finished with `pending == 1` transitions to `Ready` instead of remaining `Speaking`.
 - **Mutant 9.2 (Ducking Inversion):** In `services/vad/actor.rs`, invert the speaker ducking condition so Speaker mode does not suppress audio.  
-  *Prediction:* Subtest 4 goes RED because `SpeechStart` is detected during playback.
+  _Prediction:_ Subtest 4 goes RED because `SpeechStart` is detected during playback.
 - **Mutant 9.3 (Barge-in Pending Reset Deletion):** In `pipeline/assistant/interrupt.rs:on_interrupt`, comment out `state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed)`.  
-  *Prediction:* Subtest 6 goes RED on `assert_eq!(pending_synthesis_jobs, 0)`.
+  _Prediction:_ Subtest 6 goes RED on `assert_eq!(pending_synthesis_jobs, 0)`.
 
 ---
 
@@ -1030,19 +1092,21 @@ Production Functions Called:
 - **Metrics:** Invariance across token fragmentation, emergency 20-word cap determinism, comma prosody gating stability, clean buffer flush.
 
 #### 10.1 `/create-test` Phase 0 — Classification
+
 - **Type:** Integration Test.
 - **Rationale:** Verifies the text boundary extraction and prosody engine: incoming LLM streaming tokens arriving with varying token fragmentation boundaries (simulating LLM TPS and network packet jitter) pass through `TurnAccumulator::push_token`, chunk deterministically at valid sentence and sub-clause punctuation marks, enforce the emergency word cap, and flush cleanly without losing tail characters.
 
 #### 10.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 SUT: TurnAccumulator and TtsClauseChunker process streaming token slices and extract speakable sentence and sub-clause strings deterministically, independent of upstream tokenization fragmentation.
 
 Production Entry Seam:
   TurnAccumulator::push_token(&token) called repeatedly as tokens stream over duplex channel.
-  Direction Check: PASS — entry seam is the streaming token feed from StreamRoutingPlugin, NOT internal find_split_point leaf logic.
+  Direction Check: PASS — entry seam is the streaming token feed from StreamRoutingStage, NOT internal find_split_point leaf logic.
 
 Production Path:
-  StreamRoutingPlugin receives token over duplex channel
+  StreamRoutingStage receives token over duplex channel
   ──► handles.accumulator.lock().push_token(&token)
       ├─► Appends token to assistant_response (full turn text)
       └─► chunker.push_str(&token)
@@ -1071,21 +1135,24 @@ Production Functions Called:
 ```
 
 #### 10.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`acc.push_token(&token)`, `acc.flush_chunker()`).
 2. Production constructors used? **Yes** (`TurnAccumulator::new()`, `TtsClauseChunker::new()`).
 3. State observable? **Yes** (`clauses`, `acc.chunker.is_empty()`).
 4. Real components without mocks? **Yes** (Zero mocks, 100% production code).
 
 #### 10.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 10 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Upstream `push_token` fails to append / drops tokens** | **Must fail** | `clauses_a` is empty; assertion `!clauses_a.is_empty()` panics. |
-| Split point scan runs right-to-left instead of left-to-right | Must fail | Clause order inverted; `assert_eq!(clauses_a, clauses_b)` fails. |
-| Emergency word cap threshold off-by-one (splits at 19 or 21 words) | Must fail | Subtest 2 fails: `chunk_0_word_count == 20` panics. |
-| Comma prosody gate (< 5 words) ignored (splits on all commas) | Must fail | Subtest 3 fails: `res1.len() == 1` assertion panics (got 2). |
-| Tail remainder flush loses unpunctuated final words | Must fail | Subtest 2 fails: `chunks_a.len() == 2` panics (got 1). |
+
+| If this production defect existed                                  | Would Seam 10 test fail? | Expected Failure Mode                                            |
+| ------------------------------------------------------------------ | ------------------------ | ---------------------------------------------------------------- |
+| **Upstream `push_token` fails to append / drops tokens**           | **Must fail**            | `clauses_a` is empty; assertion `!clauses_a.is_empty()` panics.  |
+| Split point scan runs right-to-left instead of left-to-right       | Must fail                | Clause order inverted; `assert_eq!(clauses_a, clauses_b)` fails. |
+| Emergency word cap threshold off-by-one (splits at 19 or 21 words) | Must fail                | Subtest 2 fails: `chunk_0_word_count == 20` panics.              |
+| Comma prosody gate (< 5 words) ignored (splits on all commas)      | Must fail                | Subtest 3 fails: `res1.len() == 1` assertion panics (got 2).     |
+| Tail remainder flush loses unpunctuated final words                | Must fail                | Subtest 2 fails: `chunks_a.len() == 2` panics (got 1).           |
 
 #### 10.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test chunking_determinism_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. Subtest 1: `clauses_a == clauses_b` byte-for-byte; accumulator buffer empty after flush.
@@ -1096,24 +1163,27 @@ Production Functions Called:
   - `Word count mismatch`: Emergency cap or prosody threshold drift.
 
 #### 10.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 10.1 (Comma Gate Inversion):** In `services/tts/actor.rs:find_split_point`, change `if word_count >= 5` to `if word_count >= 1`.  
-  *Prediction:* Subtest 3 goes RED because short comma clause splits prematurely (`res1.len()` is 2 instead of 1).
+  _Prediction:_ Subtest 3 goes RED because short comma clause splits prematurely (`res1.len()` is 2 instead of 1).
 - **Mutant 10.2 (Emergency Cap Off-By-One):** In `services/tts/actor.rs:find_split_point`, change `target_word_count = 20` to `target_word_count = 21`.  
-  *Prediction:* Subtest 2 goes RED on `assert_eq!(chunk_0_word_count, 20)`.
+  _Prediction:_ Subtest 2 goes RED on `assert_eq!(chunk_0_word_count, 20)`.
 - **Mutant 10.3 (Decimal Guard Deletion):** In `services/tts/actor.rs:find_split_point`, delete `if prev_is_digit && next_is_digit { continue; }`.  
-  *Prediction:* Test goes RED on inputs containing decimals (e.g. "3.14" splits into "3." and "14").
+  _Prediction:_ Test goes RED on inputs containing decimals (e.g. "3.14" splits into "3." and "14").
 
 ---
 
 ### Seam 11 — Assistant Session Lifecycle & FSM (`tests/session_lifecycle_test.rs`)
 
 #### 11.1 Seam Identifier & Classification
+
 - **Binary:** `app/src-tauri/tests/session_lifecycle_test.rs`
 - **Classification:** **Category B (Needs Rework — Mock Elimination & Real Router/Persistence Integration)**
 - **Subsystems:** `pipeline/assistant/session.rs`, `pipeline/router.rs`, `ipc/pipeline.rs`, `persistence/worker.rs`, `services/harness/session.rs`
 - **Execution Command:** `cargo nextest run --test session_lifecycle_test --release --nocapture --test-threads=1`
 
 #### 11.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 Production Entry Seam:
   IPC Command: ipc::pipeline::start_session(sessionId) / pause_session / resume_session / end_session
@@ -1193,23 +1263,26 @@ Production Functions Called:
 ```
 
 #### 11.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (Dispatches `VoxEvent` via `spawn_router`).
 2. Production constructors used? **Yes** (`spawn_router`, `HarnessSession`, `persistence::worker`).
 3. State observable? **Yes** (`state.pipeline.state()`, `state.harness`, Turso SQLite database).
 4. Real components without mocks? **Yes** (Mock engine used only for audio/model I/O suppression; persistence and router are 100% production).
 
 #### 11.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 11 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Upstream `spawn_router` fails to route `SessionStart`** | **Must fail** | State remains `Idle`; timeout waiting for `Ready`. |
-| `persistence::worker` drops `SessionStarted` | Must fail | SQLite query `SELECT COUNT(*) FROM sessions WHERE id = ?` returns 0. |
-| Continuation ignores `session_id` (always boots fresh) | Must fail | Seeded turns from DB missing in `HarnessSession` working memory. |
-| `on_end` fails to unmount `HarnessSession` | Must fail | Assertion `state.harness.lock().is_none()` panics. |
-| `on_end` CPAL gate kills engine when dictation is Ready | Must fail | Assertion `state.engine.lock().is_some()` panics (engine was destroyed). |
-| `on_pause` fails to yield owner to `Dictation` | Must fail | Assertion `state.owner.load() == InteractionOwner::Dictation` panics. |
-| `on_resume` rejects `Sleeping` or `Error` states | Must fail | State remains `Sleeping` or `Error` instead of transitioning to `Ready`. |
+
+| If this production defect existed                         | Would Seam 11 test fail? | Expected Failure Mode                                                    |
+| --------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------ |
+| **Upstream `spawn_router` fails to route `SessionStart`** | **Must fail**            | State remains `Idle`; timeout waiting for `Ready`.                       |
+| `persistence::worker` drops `SessionStarted`              | Must fail                | SQLite query `SELECT COUNT(*) FROM sessions WHERE id = ?` returns 0.     |
+| Continuation ignores `session_id` (always boots fresh)    | Must fail                | Seeded turns from DB missing in `HarnessSession` working memory.         |
+| `on_end` fails to unmount `HarnessSession`                | Must fail                | Assertion `state.harness.lock().is_none()` panics.                       |
+| `on_end` CPAL gate kills engine when dictation is Ready   | Must fail                | Assertion `state.engine.lock().is_some()` panics (engine was destroyed). |
+| `on_pause` fails to yield owner to `Dictation`            | Must fail                | Assertion `state.owner.load() == InteractionOwner::Dictation` panics.    |
+| `on_resume` rejects `Sleeping` or `Error` states          | Must fail                | State remains `Sleeping` or `Error` instead of transitioning to `Ready`. |
 
 #### 11.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test session_lifecycle_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. Subtest 1 (`test_session_start_modular_sets_ready_and_identity`): Starts via `VoxEvent::SessionStart`, state transitions `Idle` $\to$ `Ready`, real Turso DB has session row, identity facts present in harness.
@@ -1225,20 +1298,22 @@ Production Functions Called:
   - `Harness not None after EndSession`: Zero harness in idle invariant violated.
 
 #### 11.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 11.1 (Persistence Dispatch Deletion):** In `pipeline/assistant/session.rs:on_session_start`, delete `persist_tx.try_send(PersistenceEvent::SessionStarted { .. })`.  
-  *Prediction:* Subtest 1 goes RED because Turso SQLite contains no row for the session.
+  _Prediction:_ Subtest 1 goes RED because Turso SQLite contains no row for the session.
 - **Mutant 11.2 (Harness Unmount Deletion):** In `pipeline/assistant/session.rs:on_end`, delete `state.harness.lock().take()`.  
-  *Prediction:* Subtest 7 goes RED on `assert!(state.harness.lock().is_none())`.
+  _Prediction:_ Subtest 7 goes RED on `assert!(state.harness.lock().is_none())`.
 - **Mutant 11.3 (CPAL Gate Inversion):** In `pipeline/assistant/session.rs:on_end`, change `if state.pipeline.dictation_state() == InteractionState::Idle` to `if true`.  
-  *Prediction:* Subtest 6 goes RED because CPAL engine is prematurely destroyed when dictation is Ready.
+  _Prediction:_ Subtest 6 goes RED because CPAL engine is prematurely destroyed when dictation is Ready.
 - **Mutant 11.4 (Continuation Branch Deletion):** In `pipeline/assistant/session.rs:on_session_start`, replace `if let Some(sid) = session_id` with `if false`.  
-  *Prediction:* Subtest 2 goes RED because seeded database turns are never hydrated into working memory.
+  _Prediction:_ Subtest 2 goes RED because seeded database turns are never hydrated into working memory.
 
 ---
 
-### Seam 12 — Memory Compaction Coordinator & `CompactionPlugin` v2 (`tests/memory_compaction_test.rs`)
+### Seam 12 — Memory Compaction Coordinator & `CompactionStage` v2 (`tests/memory_compaction_test.rs`)
 
 #### 12.1 Seam Identifier & Classification
+
 - **Binary:** `app/src-tauri/tests/memory_compaction_test.rs`
 - **Classification:** **Category C (Decommission Legacy v1 XML & Author Target Memory v2 Subsystem Spec)**
 - **Subsystems:** `services/memory/compaction/coordinator.rs`, `services/memory/compaction/runner.rs`, `services/harness/plugins/compaction.rs`, `persistence/compactions.rs`, `persistence/notifications.rs`
@@ -1246,12 +1321,13 @@ Production Functions Called:
 - **Execution Command (Cloud Live API):** `cargo nextest run --test memory_compaction_test --release --nocapture --test-threads=1 -- --ignored`
 
 #### 12.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 Production Entry Seams:
   Entry Seam A (Boundary / Manual / Auto Compaction):
     CompactionCoordinator::run_compaction_slice(app, state, session_id, trigger_kind, cancel_token)
   Entry Seam B (Inline Turn Budget Compaction):
-    CompactionPlugin::run_and_persist(provider, conn, params)
+    CompactionStage::run_and_persist(provider, conn, params)
 
 Direction Check: PASS — entry seams are the Coordinator slice executor and Harness Plugin runner, NOT leaf database helpers or prompt string interpolations.
 
@@ -1284,8 +1360,8 @@ Production Path — Coordinator Slicing & Database Ledger:
       ├─► dismiss_interactive_by_entity(conn, "session_compaction", session_id)
       └─► emit_session_compaction_success_receipt(app, conn, session_id, facts_count)
 
-Production Path — Harness CompactionPlugin:
-  CompactionPlugin::run_and_persist(provider, conn, params)
+Production Path — Harness CompactionStage:
+  CompactionStage::run_and_persist(provider, conn, params)
   ├─► Invariant check: can_perform_inline_compaction (context_window > 4096, message_count >= 4)
   ├─► Runs run_compaction and commits output to DB
   └─► prune_history_with_summary(system_prompt, user_turn):
@@ -1300,28 +1376,31 @@ Observable Exit:
 
 Production Functions Called:
   setup:   get_test_app_and_state(), VoxDb::open(), seed_turns_from_dataset(), MockLlmProvider / NvidiaProvider
-  entry:   CompactionCoordinator::run_compaction_slice(), CompactionPlugin::run_and_persist(), CompactionPlugin::prune_history_with_summary()
+  entry:   CompactionCoordinator::run_compaction_slice(), CompactionStage::run_and_persist(), CompactionStage::prune_history_with_summary()
   observe: Turso SQLite queries on `session_compactions`, `memory_ingestion_queue`, `notifications`, CompactionExecutionSummary
   teardown: drop TempPathsGuard
 ```
 
 #### 12.3 `/create-test` Phase 2a — Testability Check
-1. Entry seam callable with production signature? **Yes** (`CompactionCoordinator::run_compaction_slice`, `CompactionPlugin::run_and_persist`).
-2. Production constructors used? **Yes** (`CompactionCoordinator`, `CompactionPlugin::new`, `commit_compaction_output`).
+
+1. Entry seam callable with production signature? **Yes** (`CompactionCoordinator::run_compaction_slice`, `CompactionStage::run_and_persist`).
+2. Production constructors used? **Yes** (`CompactionCoordinator`, `CompactionStage::new`, `commit_compaction_output`).
 3. State observable? **Yes** (Turso SQLite tables `session_compactions`, `memory_ingestion_queue`, `notifications`).
 4. Real components without mocks? **Yes** (Cloud live subtest runs against real Nvidia/OpenAI API; local test runs against real Turso DB with canned LLM provider).
 
 #### 12.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 12 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Upstream coordinator fails to query uncompacted turns** | **Must fail** | Slicing returns `Ok(None)`; `session_compactions` row not created. |
-| `commit_compaction_output` skips inserting into `memory_ingestion_queue` | Must fail | Query `SELECT COUNT(*) FROM memory_ingestion_queue WHERE session_id = ?` returns 0. |
-| Partial unique index missing (allows concurrent duplicate in-progress runs) | Must fail | Concurrent slicing creates two `in_progress` runs instead of rejecting the second with `Ok(None)`. |
-| LLM JSON output missing one of 6 required flat keys | Must fail | Live test validates presence of `personal`, `objective`, `workdone`, `blocker`, `next_step`, `pitfall`. |
-| `can_perform_inline_compaction` permits compaction on <= 3 messages | Must fail | Plugin subtest asserts `can_perform_inline_compaction(3) == false`. |
-| `prune_history_with_summary` fails to wrap context in `<session_context>` | Must fail | Assertion on formatted prompt panics (missing tag). |
+
+| If this production defect existed                                           | Would Seam 12 test fail? | Expected Failure Mode                                                                                   |
+| --------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------- |
+| **Upstream coordinator fails to query uncompacted turns**                   | **Must fail**            | Slicing returns `Ok(None)`; `session_compactions` row not created.                                      |
+| `commit_compaction_output` skips inserting into `memory_ingestion_queue`    | Must fail                | Query `SELECT COUNT(*) FROM memory_ingestion_queue WHERE session_id = ?` returns 0.                     |
+| Partial unique index missing (allows concurrent duplicate in-progress runs) | Must fail                | Concurrent slicing creates two `in_progress` runs instead of rejecting the second with `Ok(None)`.      |
+| LLM JSON output missing one of 6 required flat keys                         | Must fail                | Live test validates presence of `personal`, `objective`, `workdone`, `blocker`, `next_step`, `pitfall`. |
+| `can_perform_inline_compaction` permits compaction on <= 3 messages         | Must fail                | Plugin subtest asserts `can_perform_inline_compaction(3) == false`.                                     |
+| `prune_history_with_summary` fails to wrap context in `<session_context>`   | Must fail                | Assertion on formatted prompt panics (missing tag).                                                     |
 
 #### 12.5 `/test` Execution Protocol
+
 - **Default Suite:** `cargo nextest run --test memory_compaction_test --release --nocapture --test-threads=1` (Runs subtests 2–5 locally in < 1s).
 - **Ignored Live Suite:** `cargo nextest run --test memory_compaction_test --release --nocapture --test-threads=1 -- --ignored` (Runs Subtest 1 against real cloud API).
 - **Subtests:**
@@ -1332,24 +1411,27 @@ Production Functions Called:
   5. `test_compaction_notification_lifecycle`: Verifies interactive card creation (`notify_uncompacted_session`), dismissal on slice completion, and receipt emission.
 
 #### 12.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 12.1 (Ingestion Queue Staging Deletion):** In `persistence/compactions.rs:commit_compaction_output`, comment out `insert_ingestion_queue_batch`.  
-  *Prediction:* Subtests 1 & 2 go RED because `memory_ingestion_queue` contains 0 pending facts.
+  _Prediction:_ Subtests 1 & 2 go RED because `memory_ingestion_queue` contains 0 pending facts.
 - **Mutant 12.2 (Partial Unique Index Inversion):** In `services/memory/compaction/coordinator.rs:run_compaction_slice`, delete the `in_progress` check.  
-  *Prediction:* Subtest 3 goes RED on concurrency check.
+  _Prediction:_ Subtest 3 goes RED on concurrency check.
 - **Mutant 12.3 (Preemptive FIFO Threshold Inversion):** In `services/harness/plugins/compaction.rs:can_perform_inline_compaction`, change `>= MIN_MESSAGES_FOR_COMPACTION` to `>= 1`.  
-  *Prediction:* Subtest 4 goes RED on `assert!(!plugin.can_perform_inline_compaction(3))`.
+  _Prediction:_ Subtest 4 goes RED on `assert!(!plugin.can_perform_inline_compaction(3))`.
 
 ---
 
 ### Seam 13 — Ingestion Queue & 2-Stage Deduplication v2 (`tests/memory_ingestion_test.rs`)
 
 #### 13.1 Seam Identifier & Classification
+
 - **Binary:** `app/src-tauri/tests/memory_ingestion_test.rs`
 - **Classification:** **Category C (Decommission Legacy v1 4-Stage & Author Target Memory v2 Subsystem Spec)**
 - **Subsystems:** `services/memory/ingestion/runner.rs`, `services/memory/ingestion/stage1_dedup.rs`, `services/memory/ingestion/stage2_embed.rs`, `persistence/queue.rs`, `persistence/facts.rs`, `services/memory/ml/embedder.rs`
 - **Execution Command:** `cargo nextest run --test memory_ingestion_test --release --nocapture --test-threads=1`
 
 #### 13.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 Production Entry Seams:
   Entry Seam A (Full Cycle):
@@ -1410,22 +1492,25 @@ Production Functions Called:
 ```
 
 #### 13.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`run_ingestion_cycle`, `run_stage1_exact_dedup`, `run_stage2_cosine_dedup`, `reconcile_crashed_queue_on_boot`).
 2. Production constructors used? **Yes** (`VoxDb::open`, `enqueue_fact`, `generate_embeddings_batch`).
 3. State observable? **Yes** (Turso tables `memory_ingestion_queue`, `memory_facts`, `memory_facts_vectors`).
 4. Real components without mocks? **Yes** (Real local MiniLM ONNX embedder from `~/.vox/models/embedding/minilm-l12-v2`, real Turso SQLite database).
 
 #### 13.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 13 test fail? | Expected Failure Mode |
-|---|---|---|
-| **`run_stage1_exact_dedup` fails to claim pending items** | **Must fail** | Queue items remain `pending`; `summary.processed == 0`. |
-| Winner-Takes-All deactivation omitted in Stage 1 | Must fail | `fetch_active_facts_by_type` returns 2 active facts instead of 1. |
-| Stage 2 fails to generate 384-dim embeddings | Must fail | Query on `memory_facts_vectors` returns 0 rows or vector length != 384. |
-| Cosine threshold ignored (treats dissimilar facts as duplicate) | Must fail | Dissimilar fact deactivates unrelated active fact; active count drops. |
-| Queue status fails to update to `completed` | Must fail | Queue status query returns `stage2_processing` or `stage1_done`. |
-| Crash reconciliation does not move items with retry >= 3 to `failed` | Must fail | Poison pill item reset to `pending` instead of `failed`. |
+
+| If this production defect existed                                    | Would Seam 13 test fail? | Expected Failure Mode                                                   |
+| -------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------- |
+| **`run_stage1_exact_dedup` fails to claim pending items**            | **Must fail**            | Queue items remain `pending`; `summary.processed == 0`.                 |
+| Winner-Takes-All deactivation omitted in Stage 1                     | Must fail                | `fetch_active_facts_by_type` returns 2 active facts instead of 1.       |
+| Stage 2 fails to generate 384-dim embeddings                         | Must fail                | Query on `memory_facts_vectors` returns 0 rows or vector length != 384. |
+| Cosine threshold ignored (treats dissimilar facts as duplicate)      | Must fail                | Dissimilar fact deactivates unrelated active fact; active count drops.  |
+| Queue status fails to update to `completed`                          | Must fail                | Queue status query returns `stage2_processing` or `stage1_done`.        |
+| Crash reconciliation does not move items with retry >= 3 to `failed` | Must fail                | Poison pill item reset to `pending` instead of `failed`.                |
 
 #### 13.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test memory_ingestion_test --release --nocapture --test-threads=1`
 - **Execution Target:** 4 subtests run locally in < 3.0s using local ONNX weights.
 - **Subtests:**
@@ -1435,24 +1520,27 @@ Production Functions Called:
   4. `test_crash_reconciliation_and_poison_pill`: Seeds crashed in-flight items with retry counts 0, 1, and 3, runs `reconcile_crashed_queue_on_boot`, asserts retries incremented and retry 3 marked `failed`.
 
 #### 13.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 13.1 (Winner-Takes-All Inversion):** In `services/memory/ingestion/stage1_dedup.rs:process_stage1_item`, delete `deactivate_facts_batch(conn, &duplicate_ids)`.  
-  *Prediction:* Subtest 1 goes RED because older fact remains `active` (`active_facts.len()` is 2 instead of 1).
+  _Prediction:_ Subtest 1 goes RED because older fact remains `active` (`active_facts.len()` is 2 instead of 1).
 - **Mutant 13.2 (Cosine Dedup Threshold Drift):** In `services/memory/ingestion/mod.rs`, change `SOFT_VECTOR_DEDUP_THRESHOLD = 0.95` to `SOFT_VECTOR_DEDUP_THRESHOLD = 1.05`.  
-  *Prediction:* Subtest 2 goes RED because paraphrase is treated as new instead of duplicate (`duplicates_deactivated == 0`).
+  _Prediction:_ Subtest 2 goes RED because paraphrase is treated as new instead of duplicate (`duplicates_deactivated == 0`).
 - **Mutant 13.3 (Poison Pill Threshold Deletion):** In `persistence/queue.rs:reconcile_crashed_queue_on_boot`, change `retry_count >= 3` to `false`.  
-  *Prediction:* Subtest 4 goes RED because poison pill item is reset to `pending` instead of `failed`.
+  _Prediction:_ Subtest 4 goes RED because poison pill item is reset to `pending` instead of `failed`.
 
 ---
 
 ### Seam 14 — Personal Memory Document & Session Continuation v2 (`tests/personal_memory_test.rs`)
 
 #### 14.1 Seam Identifier & Classification
+
 - **Binary:** `app/src-tauri/tests/personal_memory_test.rs`
 - **Classification:** **Category C (Decommission Legacy v1 BFS Retrieval & Author Target Memory v2 Subsystem Spec)**
 - **Subsystems:** `services/memory/personal.rs`, `persistence/personal_memory.rs`, `persistence/sessions.rs`, `persistence/facts.rs`, `ipc/memory.rs`
 - **Execution Command:** `cargo nextest run --test personal_memory_test --release --nocapture --test-threads=1`
 
 #### 14.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 Production Entry Seams:
   Entry Seam A (Personal Memory CRUD / Optimistic Save):
@@ -1518,22 +1606,25 @@ Production Functions Called:
 ```
 
 #### 14.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`save_personal_memory`, `consolidate_personal_memory`, `fetch_session_continuation`).
 2. Production constructors used? **Yes** (`VoxDb::open`, `get_personal_memory`, `save_consolidated_memory`).
 3. State observable? **Yes** (`personal_memory`, `memory_facts`, `session_compactions`, `SessionContinuationData`).
 4. Real components without mocks? **Yes** (Real Turso SQLite engine; canned/mock LLM provider for deterministic fact consolidation).
 
 #### 14.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 14 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Optimistic concurrency check omitted (unconditional overwrite)** | **Must fail** | Stale save succeeds instead of returning version conflict error. |
-| `mark_facts_consolidated` omitted on successful merge | Must fail | Merged facts remain `status = 'active'`; `fetch_active_facts_by_type` returns > 0. |
-| Quiescence gate ignores in-progress compaction | Must fail | Consolidation proceeds during active compaction instead of returning Precondition error. |
-| Quiescence gate ignores pending ingestion queue items | Must fail | Consolidation proceeds with pending queue items instead of returning Precondition error. |
-| Continuation turn slicing includes already compacted turns | Must fail | `turns.len()` in continuation data contains old compacted turns. |
-| Export writes empty or corrupted file | Must fail | Exported disk file fails byte-for-byte equality assertion against database content. |
+
+| If this production defect existed                                  | Would Seam 14 test fail? | Expected Failure Mode                                                                    |
+| ------------------------------------------------------------------ | ------------------------ | ---------------------------------------------------------------------------------------- |
+| **Optimistic concurrency check omitted (unconditional overwrite)** | **Must fail**            | Stale save succeeds instead of returning version conflict error.                         |
+| `mark_facts_consolidated` omitted on successful merge              | Must fail                | Merged facts remain `status = 'active'`; `fetch_active_facts_by_type` returns > 0.       |
+| Quiescence gate ignores in-progress compaction                     | Must fail                | Consolidation proceeds during active compaction instead of returning Precondition error. |
+| Quiescence gate ignores pending ingestion queue items              | Must fail                | Consolidation proceeds with pending queue items instead of returning Precondition error. |
+| Continuation turn slicing includes already compacted turns         | Must fail                | `turns.len()` in continuation data contains old compacted turns.                         |
+| Export writes empty or corrupted file                              | Must fail                | Exported disk file fails byte-for-byte equality assertion against database content.      |
 
 #### 14.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test personal_memory_test --release --nocapture --test-threads=1`
 - **Execution Target:** 5 subtests run locally in < 1.0s.
 - **Subtests:**
@@ -1544,20 +1635,22 @@ Production Functions Called:
   5. `test_session_continuation_data_assembly`: Seeds 10 turns, completed compaction for turns 1–5, asserts continuation data contains strictly turns 6–10.
 
 #### 14.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 14.1 (Optimistic Concurrency Inversion):** In `persistence/personal_memory.rs:save_personal_memory`, delete `AND version = ?`.  
-  *Prediction:* Subtest 1 goes RED because stale update succeeds without conflict.
+  _Prediction:_ Subtest 1 goes RED because stale update succeeds without conflict.
 - **Mutant 14.2 (Quiescence Gate Deletion):** In `services/memory/personal.rs:consolidate_personal_memory`, delete `verify_ingestion_quiescence(conn).await?;`.  
-  *Prediction:* Subtest 3 goes RED because consolidation executes despite in-progress compaction.
+  _Prediction:_ Subtest 3 goes RED because consolidation executes despite in-progress compaction.
 - **Mutant 14.3 (Fact Consolidation Status Omission):** In `services/memory/personal.rs:consolidate_personal_memory`, delete `mark_facts_consolidated(conn, &fact_ids).await?;`.  
-  *Prediction:* Subtest 2 goes RED because active personal facts are not transitioned to `consolidated`.
+  _Prediction:_ Subtest 2 goes RED because active personal facts are not transitioned to `consolidated`.
 - **Mutant 14.4 (Continuation Turn Watermark Off-By-One):** In `persistence/sessions.rs:fetch_session_continuation`, change `last_compacted + 1` to `last_compacted`.  
-  *Prediction:* Subtest 5 goes RED because turn count is 6 instead of 5 (includes already compacted turn).
+  _Prediction:_ Subtest 5 goes RED because turn count is 6 instead of 5 (includes already compacted turn).
 
 ---
 
 ### Seam 15 — Settings Persistence & Atomic Corrupt Recovery (`tests/settings_persistence_test.rs`)
 
 #### 15.1 Seam Identifier & Classification
+
 - **Binary:** `app/src-tauri/tests/settings_persistence_test.rs`
 - **Classification:** **Category A (Solid — Verified Green & Validated)**
 - **Subsystems:** `core/settings.rs`, `ipc/settings/mutation.rs`, `utils/paths.rs`
@@ -1565,6 +1658,7 @@ Production Functions Called:
 - **Execution Baseline:** 3 passed in 0.037s (verified green).
 
 #### 15.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 Production Entry Seams:
   Entry Seam A (Settings Mutation & Save):
@@ -1614,22 +1708,25 @@ Production Functions Called:
 ```
 
 #### 15.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`apply_setting_mutation`, `settings.save`, `VoxSettings::load`).
 2. Production constructors used? **Yes** (`VoxSettings::default()`).
 3. State observable? **Yes** (`settings.json` file, `settings.corrupt.<ts>.json`, `VoxSettings` fields).
 4. Real components without mocks? **Yes** (100% production code, zero mocks).
 
 #### 15.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 15 test fail? | Expected Failure Mode |
-|---|---|---|
-| **`settings.save()` fails to write file or is a no-op** | **Must fail** | Assertion `settings_path.exists()` panics. |
-| `save()` omits domain fields during serialization | Must fail | Raw JSON check `json_val["tts"]["voice_index"] == 42` panics. |
-| `load()` does not preserve mutated domain fields | Must fail | Reloaded field assertion `reloaded.tts.voice_index == 42` panics. |
-| Malformed JSON causes `load()` to panic | Must fail | Subtest 2 panics instead of returning defaults. |
-| Corrupt file backup creation omitted on parse failure | Must fail | Subtest 2 assertion `found_corrupt_backup` panics. |
-| Partial section recovery drops valid sections | Must fail | Subtest 3 assertion `recovered.appearance.theme == "nordic_frost"` panics. |
+
+| If this production defect existed                       | Would Seam 15 test fail? | Expected Failure Mode                                                      |
+| ------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------- |
+| **`settings.save()` fails to write file or is a no-op** | **Must fail**            | Assertion `settings_path.exists()` panics.                                 |
+| `save()` omits domain fields during serialization       | Must fail                | Raw JSON check `json_val["tts"]["voice_index"] == 42` panics.              |
+| `load()` does not preserve mutated domain fields        | Must fail                | Reloaded field assertion `reloaded.tts.voice_index == 42` panics.          |
+| Malformed JSON causes `load()` to panic                 | Must fail                | Subtest 2 panics instead of returning defaults.                            |
+| Corrupt file backup creation omitted on parse failure   | Must fail                | Subtest 2 assertion `found_corrupt_backup` panics.                         |
+| Partial section recovery drops valid sections           | Must fail                | Subtest 3 assertion `recovered.appearance.theme == "nordic_frost"` panics. |
 
 #### 15.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test settings_persistence_test --release --nocapture --test-threads=1`
 - **Success Criteria:** 3 tests pass in < 0.1s.
 - **Subtests:**
@@ -1638,18 +1735,20 @@ Production Functions Called:
   3. `test_settings_partial_section_recovery`: Partial JSON with valid `appearance` and `tts` $\to$ `load()` $\to$ valid sections recovered, missing sections defaulted.
 
 #### 15.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 15.1 (Atomic Write Temp Rename Deletion):** In `core/settings.rs:save`, replace `fs::rename(&tmp_path, &path)` with `Ok(())`.  
-  *Prediction:* Subtest 1 goes RED because `settings.json` is never written/renamed (`settings_path.exists()` fails).
+  _Prediction:_ Subtest 1 goes RED because `settings.json` is never written/renamed (`settings_path.exists()` fails).
 - **Mutant 15.2 (Corrupt Backup Inversion):** In `core/settings.rs:load`, delete `fs::rename(&path, &bak)`.  
-  *Prediction:* Subtest 2 goes RED on `assert!(found_corrupt_backup)`.
+  _Prediction:_ Subtest 2 goes RED on `assert!(found_corrupt_backup)`.
 - **Mutant 15.3 (Partial Section Recovery Deletion):** In `core/settings.rs:load`, delete the partial JSON recovery loop and always jump to corrupt backup.  
-  *Prediction:* Subtest 3 goes RED because valid sections in partial JSON are not recovered.
+  _Prediction:_ Subtest 3 goes RED because valid sections in partial JSON are not recovered.
 
 ---
 
 ### Seam 16 — Model Eviction & Zero Idle RAM (`tests/model_eviction_test.rs`)
 
 #### 16.1 Seam Identifier & Classification
+
 - **Binary:** `app/src-tauri/tests/model_eviction_test.rs`
 - **Classification:** **Category A (Solid — Verified Green & Validated)**
 - **Subsystems:** `services/memory/ml/mod.rs`, `services/memory/ml/embedder.rs`, `services/translit.rs`, `services/tts/actor.rs`, `services/llm/actor.rs`
@@ -1657,6 +1756,7 @@ Production Functions Called:
 - **Execution Baseline:** 2 passed in 2.666s (verified green).
 
 #### 16.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 Production Entry Seams:
   Entry Seam A (ONNX Singleton Lifecycle):
@@ -1706,22 +1806,25 @@ Production Functions Called:
 ```
 
 #### 16.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`ensure_embedder_loaded`, `unload_all_onnx_models`, `warm_up_tts`, `cool_down_tts`).
 2. Production constructors used? **Yes** (Real ONNX sessions via `ort`, real threads via `std::thread::Builder`).
 3. State observable? **Yes** (`is_embedder_loaded()`, `tts_tx.is_none()`, thread join result).
 4. Real components without mocks? **Yes** (Real local MiniLM and Supertonic model weights; playback engine mock used only to sink audio).
 
 #### 16.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 16 test fail? | Expected Failure Mode |
-|---|---|---|
-| **`ensure_embedder_loaded` fails to load model** | **Must fail** | Assertion `is_embedder_loaded()` panics. |
-| `unload_memory_pipeline_onnx_models` fails to drop embedder | Must fail | Assertion `!is_embedder_loaded()` panics (still true). |
-| Partial eviction inadvertently drops transliteration engine | Must fail | Assertion `is_transliteration_engine_loaded()` panics (was evicted). |
-| Calling `generate_embedding` when unloaded panics / faults | Must fail | Subtest 1 panics instead of returning `Ok(None)`. |
-| `cool_down_tts` fails to take `tts_tx` | Must fail | Assertion `tts_tx.is_none()` panics (still `Some`). |
-| TTS worker thread ignores `TtsCommand::Shutdown` | Must fail | `handle.join()` hangs until test timeout expires. |
+
+| If this production defect existed                           | Would Seam 16 test fail? | Expected Failure Mode                                                |
+| ----------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------- |
+| **`ensure_embedder_loaded` fails to load model**            | **Must fail**            | Assertion `is_embedder_loaded()` panics.                             |
+| `unload_memory_pipeline_onnx_models` fails to drop embedder | Must fail                | Assertion `!is_embedder_loaded()` panics (still true).               |
+| Partial eviction inadvertently drops transliteration engine | Must fail                | Assertion `is_transliteration_engine_loaded()` panics (was evicted). |
+| Calling `generate_embedding` when unloaded panics / faults  | Must fail                | Subtest 1 panics instead of returning `Ok(None)`.                    |
+| `cool_down_tts` fails to take `tts_tx`                      | Must fail                | Assertion `tts_tx.is_none()` panics (still `Some`).                  |
+| TTS worker thread ignores `TtsCommand::Shutdown`            | Must fail                | `handle.join()` hangs until test timeout expires.                    |
 
 #### 16.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test model_eviction_test --release --nocapture --test-threads=1`
 - **Success Criteria:** 2 tests pass in < 5.0s.
 - **Subtests:**
@@ -1729,18 +1832,20 @@ Production Functions Called:
   2. `test_tts_worker_cool_down_clears_handles_and_joins`: Real Supertonic warm-up $\to$ `cool_down_tts` $\to$ `tts_tx.is_none()` $\to$ thread joins Ok.
 
 #### 16.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 16.1 (Embedder Unload Deletion):** In `services/memory/ml/mod.rs:unload_memory_pipeline_onnx_models`, comment out `embedder::unload_embedder()`.  
-  *Prediction:* Subtest 1 goes RED on `assert!(!is_embedder_loaded())`.
+  _Prediction:_ Subtest 1 goes RED on `assert!(!is_embedder_loaded())`.
 - **Mutant 16.2 (TTS Shutdown Send Deletion):** In `services/tts/actor.rs:cool_down_tts`, comment out `tx.send(TtsCommand::Shutdown)`.  
-  *Prediction:* Subtest 2 hangs or fails to join thread cleanly.
+  _Prediction:_ Subtest 2 hangs or fails to join thread cleanly.
 - **Mutant 16.3 (Channel Take Omission):** In `services/tts/actor.rs:cool_down_tts`, replace `tts_tx.take()` with `tts_tx.as_ref()`.  
-  *Prediction:* Subtest 2 goes RED on `assert!(tts_tx.is_none())`.
+  _Prediction:_ Subtest 2 goes RED on `assert!(tts_tx.is_none())`.
 
 ---
 
 ### Seam 17 — Model Manager: Manifest, Verification & Archive Traversal Defense (`tests/model_manager_test.rs`)
 
 #### 17.1 Seam Identifier & Classification
+
 - **Binary:** `app/src-tauri/tests/model_manager_test.rs`
 - **Classification:** **Category A (Solid — Verified Green & Validated)**
 - **Subsystems:** `setup/model_manager.rs`, `setup/manager_ops.rs`, `setup/manifest.rs`
@@ -1748,6 +1853,7 @@ Production Functions Called:
 - **Execution Baseline:** 5 passed in 0.060s (verified green).
 
 #### 17.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 Production Entry Seams:
   Entry Seam A (Model Presence & Verification):
@@ -1802,23 +1908,26 @@ Production Functions Called:
 ```
 
 #### 17.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`is_model_file_present`, `delete_model_file`, `do_extract`).
 2. Production constructors used? **Yes** (`VerifiedMarker`, `ZipArchive`, `tar::Archive`).
 3. State observable? **Yes** (`.verified` JSON marker, physical file existence, error results).
 4. Real components without mocks? **Yes** (100% production code, zero mocks).
 
 #### 17.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 17 test fail? | Expected Failure Mode |
-|---|---|---|
-| **`is_model_file_present` returns true for non-existent files** | **Must fail** | Assertion on absent model file panics. |
-| Verification marker creation omitted on valid payload | Must fail | Assertion `verified_path.exists()` panics. |
-| Size mismatch silently accepted without hash validation | Must fail | Subtest 2 assertion `!present` panics. |
-| Stale marker with wrong SHA-256 accepted | Must fail | Subtest 2 assertion on bad marker panics. |
-| ZipSlip defense omitted (allows parent directory traversal) | Must fail | Subtest 3 assertion `entry.enclosed_name().is_none()` panics. |
-| TarSlip defense omitted (allows `ParentDir` extraction) | Must fail | Subtest 3 assertion `has_parent` panics. |
-| `delete_model_file` leaves `.verified` marker on disk | Must fail | Subtest 4 assertion `!verified_path.exists()` panics. |
+
+| If this production defect existed                               | Would Seam 17 test fail? | Expected Failure Mode                                         |
+| --------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------- |
+| **`is_model_file_present` returns true for non-existent files** | **Must fail**            | Assertion on absent model file panics.                        |
+| Verification marker creation omitted on valid payload           | Must fail                | Assertion `verified_path.exists()` panics.                    |
+| Size mismatch silently accepted without hash validation         | Must fail                | Subtest 2 assertion `!present` panics.                        |
+| Stale marker with wrong SHA-256 accepted                        | Must fail                | Subtest 2 assertion on bad marker panics.                     |
+| ZipSlip defense omitted (allows parent directory traversal)     | Must fail                | Subtest 3 assertion `entry.enclosed_name().is_none()` panics. |
+| TarSlip defense omitted (allows `ParentDir` extraction)         | Must fail                | Subtest 3 assertion `has_parent` panics.                      |
+| `delete_model_file` leaves `.verified` marker on disk           | Must fail                | Subtest 4 assertion `!verified_path.exists()` panics.         |
 
 #### 17.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test model_manager_test --release --nocapture --test-threads=1`
 - **Success Criteria:** 5 tests pass in < 0.2s.
 - **Subtests:**
@@ -1829,19 +1938,20 @@ Production Functions Called:
   5. `test_model_manager_removal_cleans_marker`: `delete_model_file` deletes payload and `.verified` marker.
 
 #### 17.6 `/mutate` Mutant Definitions (Tier 1)
-- **Mutant 17.1 (Marker Fast-Path Hash Check Deletion):** In `setup/manager_ops.rs:is_model_file_present`, change `marker.sha256 == file.sha256` to `true`.  
-  *Prediction:* Subtest 2 goes RED because bad marker with wrong hash passes validation.
-- **Mutant 17.2 (Marker File Deletion Omission):** In `setup/manager_ops.rs:delete_model_file`, comment out `remove_file(&verified_path)`.  
-  *Prediction:* Subtest 4 goes RED on `assert!(!verified_path.exists())`.
-- **Mutant 17.3 (ZipSlip Enclosed Name Inversion):** In `setup/model_manager.rs:do_extract`, replace `entry.enclosed_name()` with `Some(PathBuf::from(entry.name()))`.  
-  *Prediction:* Subtest 3 goes RED because Zip-Slip traversal error is not triggered.
 
+- **Mutant 17.1 (Marker Fast-Path Hash Check Deletion):** In `setup/manager_ops.rs:is_model_file_present`, change `marker.sha256 == file.sha256` to `true`.  
+  _Prediction:_ Subtest 2 goes RED because bad marker with wrong hash passes validation.
+- **Mutant 17.2 (Marker File Deletion Omission):** In `setup/manager_ops.rs:delete_model_file`, comment out `remove_file(&verified_path)`.  
+  _Prediction:_ Subtest 4 goes RED on `assert!(!verified_path.exists())`.
+- **Mutant 17.3 (ZipSlip Enclosed Name Inversion):** In `setup/model_manager.rs:do_extract`, replace `entry.enclosed_name()` with `Some(PathBuf::from(entry.name()))`.  
+  _Prediction:_ Subtest 3 goes RED because Zip-Slip traversal error is not triggered.
 
 ---
 
 ### Seam 18 — Notification Center: 3D Matrix Routing, Category Aggregation & Action Execution (`tests/notifications_crud_test.rs`)
 
 #### 18.1 Seam Identifier & Classification
+
 - **Binary:** `app/src-tauri/tests/notifications_crud_test.rs`
 - **Classification:** **Category B (Needs Expansion — 3D Matrix Routing & Action Execution Integration)**
 - **Subsystems:** `services/notifications/mod.rs`, `services/notifications/channels.rs`, `persistence/notifications.rs`, `persistence/compactions.rs`, `core/notifications.rs`, `ipc/notifications/mod.rs`
@@ -1849,7 +1959,8 @@ Production Functions Called:
 - **Execution Baseline:** 3 passed in 0.038s (testing raw SQLite persistence layer).
 
 > [!NOTE]
-> **Expansion Requirement Ledger:**  
+> **Expansion Requirement Ledger:**
+>
 > 1. Under the [Notification Center Behavioral & Interface Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/notifications-spec.md), notifications route across a 3D matrix (`impact`, `severity`, `action`), mapped to 7 closed categories (`AudioHardware`, `ModelLifecycle`, `Inference`, `ContextBudget`, `Network`, `Memory`, `SystemHealth`).
 > 2. `tests/notifications_crud_test.rs` currently verifies only raw SQLite schema persistence in `persistence/notifications.rs` and `persistence/compactions.rs` (CRUD, pagination, filters, and cascades).
 > 3. The target integration test must expand coverage to the active routing service:
@@ -1858,6 +1969,7 @@ Production Functions Called:
 >    - **Action Execution Engine:** `services::notifications::execute_notification_action` dispatches polymorphic payloads (`TriggerCompaction`, `SwitchModel`, `OpenSettings`, `Dismiss`) and executes targeted mutations cleanly.
 
 #### 18.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 Production Entry Seams:
   Entry Seam A (System Notification Ingestion & Routing):
@@ -1920,21 +2032,24 @@ Production Functions Called:
 ```
 
 #### 18.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`notify(&state, event)`, `execute_notification_action(...)`, `list_notifications(...)`).
 2. Production constructors used? **Yes** (`NotificationEvent`, `ActionPayload`, real in-memory SQLite connection via Turso engine).
 3. State observable? **Yes** (SQLite database state, `occurrence_count`, `action_status`, IPC event emission).
 4. Real components without mocks? **Yes** (Real notification service and Turso persistence engine).
 
 #### 18.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 18 test fail? | Expected Failure Mode |
-|---|---|---|
-| **Transient notification written to database (violating Zero-DB Invariant)** | **Must fail** | Assertion `list_notifications().is_empty()` panics. |
-| Group-key duplicate creates new row instead of in-place `occurrence_count` increment | Must fail | Assertion `notifications.len() == 1` panics (returns 2). |
-| Occurrence count not incremented on deduplicated notification | Must fail | Assertion `notification.occurrence_count == 2` panics (remains 1). |
-| `execute_notification_action` fails to mark action as `Executed` | Must fail | Assertion `action_status == ActionStatus::Executed` panics. |
-| Filter by `NotificationCategory` returns wrong category entries | Must fail | Subtest assertion filtering by category receives unexpected records. |
+
+| If this production defect existed                                                    | Would Seam 18 test fail? | Expected Failure Mode                                                |
+| ------------------------------------------------------------------------------------ | ------------------------ | -------------------------------------------------------------------- |
+| **Transient notification written to database (violating Zero-DB Invariant)**         | **Must fail**            | Assertion `list_notifications().is_empty()` panics.                  |
+| Group-key duplicate creates new row instead of in-place `occurrence_count` increment | Must fail                | Assertion `notifications.len() == 1` panics (returns 2).             |
+| Occurrence count not incremented on deduplicated notification                        | Must fail                | Assertion `notification.occurrence_count == 2` panics (remains 1).   |
+| `execute_notification_action` fails to mark action as `Executed`                     | Must fail                | Assertion `action_status == ActionStatus::Executed` panics.          |
+| Filter by `NotificationCategory` returns wrong category entries                      | Must fail                | Subtest assertion filtering by category receives unexpected records. |
 
 #### 18.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test notifications_crud_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. Subtest 1 (Persistence CRUD & Pagination): Create, read, update read status, soft delete, and category filtering.
@@ -1948,6 +2063,7 @@ Production Functions Called:
 ### Seam 19 — Realtime S2S WebSocket Driver Transport Lifecycle (`tests/realtime_transport_test.rs`)
 
 #### 19.1 Seam Identifier & Classification
+
 - **Binary:** `app/src-tauri/tests/realtime_transport_test.rs`
 - **Classification:** **Category D (Brand New Seam — Target Specification for Integration Test)**
 - **Subsystems:** `services/realtime/transport/connection.rs`, `services/realtime/transport/mod.rs`, `services/realtime/transport/health.rs`, `services/realtime/session.rs`, `services/realtime/providers/gemini/session.rs`, `services/realtime/providers/deepgram/session.rs`
@@ -1955,12 +2071,14 @@ Production Functions Called:
 - **Cloud Ignored Suite:** `cargo nextest run --test realtime_transport_test --release --nocapture --test-threads=1 -- --ignored`
 
 > [!NOTE]
-> **Architectural Invariant Ledger:**  
+> **Architectural Invariant Ledger:**
+>
 > 1. **Zero External Cloud Dependency by Default:** All standard CI subtests run against a local in-process mock WebSocket server (`tokio-tungstenite`) to verify wire framing, reconnect backoff, keepalive pings, and GoAway handling deterministically with zero network flakiness.
 > 2. **Cloud E2E Gated Behind `#[ignore]`:** Subtests connecting to live Gemini Live or Deepgram endpoints require real API keys and must be annotated `#[ignore]` per Rule 3.4.
 > 3. **Terminal Error Invariant:** When `max_reconnect_attempts` (default 3) is exhausted, the harness must cleanly set `terminated = true`, emit `RealtimeProviderEvent::Error` with `PipelineImpact::SessionHalted`, abort background tasks, and drop `ws_sender`.
 
 #### 19.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 Production Entry Seams:
   Entry Seam A (Transport Harness Spawning & Outbound Transmission):
@@ -2025,21 +2143,24 @@ Production Functions Called:
 ```
 
 #### 19.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`spawn_harness`, `create_realtime_provider`, `purge_session_cache`).
 2. Production constructors used? **Yes** (`HarnessConfig`, `HarnessInit`, `GeminiDriver`, real `tokio` runtime).
 3. State observable? **Yes** (`provider_event_rx`, `terminated` atomic flag, mock server packet logs).
 4. Deterministic local execution? **Yes** (Runs in-process on `127.0.0.1` in < 2.0s without external API calls).
 
 #### 19.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 19 test fail? | Expected Failure Mode |
-|---|---|---|
-| **`spawn_harness` drops outbound commands (`run_outbound_encoder` stalls)** | **Must fail** | Mock server receives 0 frames; timeout assertion panics. |
-| Reconnect loop does not back off / spams reconnect immediately | Must fail | Elapsed time assertion before reconnect attempt panics. |
-| Reconnect attempts exceed `max_reconnect_attempts` without halting session | Must fail | Subtest fails: `terminated` remains `false`; no `SessionHalted` error emitted. |
-| Disconnect during `InteractionState::Paused` triggers reconnect | Must fail | Subtest fails: reconnect callback executed despite `Paused` state. |
-| Expired session resumption token not purged from disk | Must fail | Subtest fails: cache file still exists after `create_realtime_provider`. |
+
+| If this production defect existed                                           | Would Seam 19 test fail? | Expected Failure Mode                                                          |
+| --------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------ |
+| **`spawn_harness` drops outbound commands (`run_outbound_encoder` stalls)** | **Must fail**            | Mock server receives 0 frames; timeout assertion panics.                       |
+| Reconnect loop does not back off / spams reconnect immediately              | Must fail                | Elapsed time assertion before reconnect attempt panics.                        |
+| Reconnect attempts exceed `max_reconnect_attempts` without halting session  | Must fail                | Subtest fails: `terminated` remains `false`; no `SessionHalted` error emitted. |
+| Disconnect during `InteractionState::Paused` triggers reconnect             | Must fail                | Subtest fails: reconnect callback executed despite `Paused` state.             |
+| Expired session resumption token not purged from disk                       | Must fail                | Subtest fails: cache file still exists after `create_realtime_provider`.       |
 
 #### 19.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test realtime_transport_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. Subtest 1 (Duplex Wire Framing): Outbound commands encoded and delivered; inbound audio frames decoded into `RealtimeProviderEvent::AudioChunk`.
@@ -2050,25 +2171,28 @@ Production Functions Called:
   6. Subtest 6 (Live Gemini / Deepgram E2E) `#[ignore]`: Connects to live endpoint with API key and verifies handshake.
 
 #### 19.6 `/mutate` Mutant Definitions (Tier 1)
+
 - **Mutant 19.1 (Terminal Flag Deletion):** In `services/realtime/transport/connection.rs`, comment out `terminated_clone.store(true, Ordering::SeqCst)`.  
-  *Prediction:* Subtest 3 goes RED on `assert!(handles.terminated.load(Ordering::SeqCst))`.
+  _Prediction:_ Subtest 3 goes RED on `assert!(handles.terminated.load(Ordering::SeqCst))`.
 - **Mutant 19.2 (Paused State Reconnect Inversion):** In `services/realtime/transport/connection.rs:spawn_connection_tasks`, remove `if *state_rx.borrow() == InteractionState::Paused { break; }`.  
-  *Prediction:* Subtest 4 goes RED because reconnect notifier is signaled during Paused state.
+  _Prediction:_ Subtest 4 goes RED because reconnect notifier is signaled during Paused state.
 - **Mutant 19.3 (Cache Expiry Logic Inversion):** In `services/realtime/session.rs:create_realtime_provider`, change `now_ms < expires_at` to `now_ms > expires_at`.  
-  *Prediction:* Subtest 5 goes RED because unexpired tokens are purged and expired tokens are kept.
+  _Prediction:_ Subtest 5 goes RED because unexpired tokens are purged and expired tokens are kept.
 
 ---
 
 ### Seam 20 — Database v2 Persistence Boundary & Turso MVCC (`tests/database_persistence_boundary_test.rs`)
 
 #### 20.1 Seam Identifier & Classification
+
 - **Binary:** `app/src-tauri/tests/database_persistence_boundary_test.rs`
 - **Classification:** **Category D (Brand New Seam — Target Specification for Integration Test)**
 - **Subsystems:** `persistence/db.rs`, `persistence/schema.rs`, `persistence/worker.rs`, `persistence/mod.rs`, `persistence/compactions.rs`, `persistence/facts.rs`, `persistence/personal_memory.rs`, `persistence/projects.rs`, `persistence/sessions.rs`, `persistence/notifications.rs`
 - **Execution Command:** `cargo nextest run --test database_persistence_boundary_test --release --nocapture --test-threads=1`
 
 > [!NOTE]
-> **Architectural Invariant Ledger:**  
+> **Architectural Invariant Ledger:**
+>
 > 1. **Turso Native MVCC & WAL Invariant:** `VoxDb::open` configures `PRAGMA journal_mode = WAL`, `PRAGMA busy_timeout = 5000`, and `PRAGMA foreign_keys = ON`. Concurrent multi-threaded reads must never block or be blocked by background persistence worker writes.
 > 2. **Relational Cascade & Restriction Invariants:**
 >    - `projects` deletion is blocked (`ON DELETE RESTRICT`) when child `sessions` exist.
@@ -2078,6 +2202,7 @@ Production Functions Called:
 > 4. **`F32_BLOB(384)` Vector Fidelity:** Embeddings stored via `encode_f32_blob` and loaded via `decode_f32_blob` retain exact IEEE 754 float representations across 384 dimensions.
 
 #### 20.2 `/create-test` Phase 1 — Production Path Trace
+
 ```
 Production Entry Seams:
   Entry Seam A (Database Initialization & Schema Migration):
@@ -2137,21 +2262,24 @@ Production Functions Called:
 ```
 
 #### 20.3 `/create-test` Phase 2a — Testability Check
+
 1. Entry seam callable with production signature? **Yes** (`VoxDb::open`, `run_migrations`, `record_compaction_start`, etc.).
 2. Production constructors used? **Yes** (`turso::Builder`, real temporary SQLite file on disk).
 3. State observable? **Yes** (Database tables, PRAGMA queries, return `Result` values).
 4. Real components without mocks? **Yes** (100% production Turso engine and repositories).
 
 #### 20.4 `/create-test` Phase 2b — False-Green Audit Table
-| If this production defect existed | Would Seam 20 test fail? | Expected Failure Mode |
-|---|---|---|
-| **`PRAGMA foreign_keys = ON` omitted in `VoxDb::open`** | **Must fail** | RESTRICT test allows deleting project with active sessions; CASCADE fails. |
-| Schema migration fails to create partial index `idx_compactions_one_in_progress` | Must fail | Subtest 3 succeeds in creating 2 concurrent `in_progress` compactions (must fail). |
-| WAL mode not enabled (`PRAGMA journal_mode` remains DELETE) | Must fail | Subtest 4 concurrent worker/reader test deadlocks or hits `database locked`. |
-| Session cascade configured as `CASCADE` on `memory_facts` instead of `SET NULL` | Must fail | Subtest 2 fails: memory facts deleted when session is deleted (history lost). |
-| `F32_BLOB` vector encoding truncates or corrupts float alignment | Must fail | Subtest 5 assertion `retrieved_vec == original_vec` panics. |
+
+| If this production defect existed                                                | Would Seam 20 test fail? | Expected Failure Mode                                                              |
+| -------------------------------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------- |
+| **`PRAGMA foreign_keys = ON` omitted in `VoxDb::open`**                          | **Must fail**            | RESTRICT test allows deleting project with active sessions; CASCADE fails.         |
+| Schema migration fails to create partial index `idx_compactions_one_in_progress` | Must fail                | Subtest 3 succeeds in creating 2 concurrent `in_progress` compactions (must fail). |
+| WAL mode not enabled (`PRAGMA journal_mode` remains DELETE)                      | Must fail                | Subtest 4 concurrent worker/reader test deadlocks or hits `database locked`.       |
+| Session cascade configured as `CASCADE` on `memory_facts` instead of `SET NULL`  | Must fail                | Subtest 2 fails: memory facts deleted when session is deleted (history lost).      |
+| `F32_BLOB` vector encoding truncates or corrupts float alignment                 | Must fail                | Subtest 5 assertion `retrieved_vec == original_vec` panics.                        |
 
 #### 20.5 `/test` Execution Protocol
+
 - **Command:** `cargo nextest run --test database_persistence_boundary_test --release --nocapture --test-threads=1`
 - **Success Criteria:**
   1. Subtest 1 (Migration & Seeding): Migration sets `user_version = 4`, creates 10 tables, seeds default project and personal memory.
@@ -2161,10 +2289,10 @@ Production Functions Called:
   5. Subtest 5 (F32_BLOB 384-dim Vector Roundtrip): Encodes 384 floats, inserts into `memory_facts_vectors`, selects blob, decodes and asserts exact IEEE 754 equality.
 
 #### 20.6 `/mutate` Mutant Definitions (Tier 1)
-- **Mutant 20.1 (Foreign Keys Pragma Deletion):** In `persistence/db.rs:open`, comment out `conn.execute("PRAGMA foreign_keys = ON;", ()).await`.  
-  *Prediction:* Subtest 2 goes RED because `delete_project` succeeds despite child sessions.
-- **Mutant 20.2 (Partial Index WHERE Clause Deletion):** In `persistence/schema.rs:V2_TABLE_STATEMENTS`, remove `WHERE status = 'in_progress'` from `idx_compactions_one_in_progress`.  
-  *Prediction:* Subtest 3 goes RED because multiple completed compactions are erroneously rejected.
-- **Mutant 20.3 (Vector Float Little-Endian Swap):** In `persistence/mod.rs:encode_f32_blob`, replace `f.to_le_bytes()` with `f.to_be_bytes()`.  
-  *Prediction:* Subtest 5 goes RED on `assert_eq!(retrieved, original)`.
 
+- **Mutant 20.1 (Foreign Keys Pragma Deletion):** In `persistence/db.rs:open`, comment out `conn.execute("PRAGMA foreign_keys = ON;", ()).await`.  
+  _Prediction:_ Subtest 2 goes RED because `delete_project` succeeds despite child sessions.
+- **Mutant 20.2 (Partial Index WHERE Clause Deletion):** In `persistence/schema.rs:V2_TABLE_STATEMENTS`, remove `WHERE status = 'in_progress'` from `idx_compactions_one_in_progress`.  
+  _Prediction:_ Subtest 3 goes RED because multiple completed compactions are erroneously rejected.
+- **Mutant 20.3 (Vector Float Little-Endian Swap):** In `persistence/mod.rs:encode_f32_blob`, replace `f.to_le_bytes()` with `f.to_be_bytes()`.  
+  _Prediction:_ Subtest 5 goes RED on `assert_eq!(retrieved, original)`.

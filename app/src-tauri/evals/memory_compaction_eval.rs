@@ -13,7 +13,7 @@
 //! (prepare_turn -> commit_turn) until the REAL budget plugin reports
 //! Critical (>=85%) and returns NeedsInlineCompaction. That slice is compacted
 //! with ONE gemma3:12b run via the production inline function
-//! (CompactionPlugin::run_and_persist, trigger_kind "inline"), persisted to a
+//! (CompactionStage::run_and_persist, trigger_kind "inline"), persisted to a
 //! fresh eval DB, then judged once for semantic extraction quality.
 //!
 //! The rung-1 DB file is the ladder handoff to rung 2. Nothing is forced: if
@@ -32,7 +32,7 @@ use clap::Parser;
 use common::{db, judge, report, settings_cfg, turns};
 use tokio_util::sync::CancellationToken;
 use vox_lib::services::{
-    harness::{CompactionParams, CompactionPlugin, HarnessSession, TurnPreparation},
+    harness::{CompactionParams, CompactionStage, Harness},
     llm::{actor::create_llm_provider_from_llm_settings, LlmCommand},
     memory::ml::tokenizer::estimate_tokens,
 };
@@ -49,17 +49,27 @@ const EVAL_BASE_PROMPT: &str =
     about = "Memory ladder rung 1: critical compaction eval"
 )]
 struct Args {
-    /// Context window; trip math is percentage-based, so a smaller window lets
-    /// one 100-turn session genuinely cross the 85% critical line.
-    #[arg(long, default_value_t = 4096)]
+    /// Context window; 8192 is the production floor (MIN_LLM_CONTEXT_WINDOW).
+    /// The 300-turn trip feed is sized so the 85% line is genuinely crossed.
+    #[arg(long, default_value_t = 8192)]
     context_window: u32,
-    /// Remote Ollama base URL (gemma3:12b executor).
+    /// Executor endpoint (Ollama /v1 or any OpenAI-compatible base URL).
     #[arg(long, default_value = "http://100.67.98.126:11434/v1")]
     server_url: String,
     /// Executor model on the server.
     #[arg(long, default_value = "gemma3:12b")]
     server_model: String,
-    /// Nvidia hosted judge model.
+    /// Executor API key (empty for keyless endpoints like local Ollama).
+    #[arg(long, default_value = "")]
+    server_api_key: String,
+    /// Executor transport preset: "ollama" for Ollama native, "" for generic
+    /// OpenAI chat-completions (e.g. Nvidia).
+    #[arg(long, default_value = "ollama")]
+    server_provider: String,
+    /// Judge chat-completions URL (empty = Nvidia default).
+    #[arg(long, default_value = "")]
+    judge_url: String,
+    /// Judge model.
     #[arg(long, default_value = "nvidia/nemotron-3-super-120b-a12b")]
     judge_model: String,
     /// Skip the judge call (deterministic asserts still run; verdict pending).
@@ -87,7 +97,7 @@ async fn run(args: Args) -> Result<()> {
     let db_path = run_dir.join("eval_r1.db");
 
     // --- Load fixture + fresh DB -------------------------------------------
-    let fixture = turns::load_session_turns()?;
+    let fixture = turns::load_trip_turns()?;
     anyhow::ensure!(!fixture.is_empty(), "Turn fixture is empty");
     let (_db, conn) = db::open_fresh_eval_db(&db_path).await?;
     let (session_id, _turn_rows) = db::seed_session_with_turns(&conn, &fixture).await?;
@@ -97,6 +107,16 @@ async fn run(args: Args) -> Result<()> {
         &args.server_url,
         &args.server_model,
         args.context_window,
+        if args.server_api_key.trim().is_empty() {
+            None
+        } else {
+            Some(args.server_api_key.clone())
+        },
+        if args.server_provider.trim().is_empty() {
+            None
+        } else {
+            Some(args.server_provider.clone())
+        },
     );
     let provider = create_llm_provider_from_llm_settings(
         &settings_cfg::llm_settings_of(&settings),
@@ -104,7 +124,7 @@ async fn run(args: Args) -> Result<()> {
     )
     .map_err(|e| anyhow::anyhow!("Failed to build server provider: {e}"))?;
     let (llm_tx, _llm_rx) = std::sync::mpsc::channel::<LlmCommand>();
-    let mut harness = HarnessSession::new_modular(
+    let mut harness = Harness::new_modular(
         Some(session_id),
         EVAL_BASE_PROMPT.to_string(),
         None,
@@ -120,26 +140,15 @@ async fn run(args: Args) -> Result<()> {
     let mut tripped_turn: Option<u32> = None;
     let mut compact_slice = Vec::new();
     for t in &fixture {
-        match harness.prepare_turn(&t.user, t.turn) {
-            TurnPreparation::NeedsInlineCompaction {
-                uncompacted_slice, ..
-            } => {
-                tripped_turn = Some(t.turn);
-                fed_turns = t.turn;
-                compact_slice = uncompacted_slice;
-                break;
-            }
-            TurnPreparation::Ready(_) => {
-                harness.commit_turn(t.assistant.clone());
-                fed_turns = t.turn;
-            }
-            TurnPreparation::DuplicateTurnIgnored => {
-                anyhow::bail!(
-                    "Fixture turn {} was dropped as duplicate — fixture error",
-                    t.turn
-                );
-            }
+        harness.push_user_turn(t.user.clone());
+        if let Some(slice) = harness.check_critical_compaction_eligibility() {
+            tripped_turn = Some(t.turn);
+            fed_turns = t.turn;
+            compact_slice = slice;
+            break;
         }
+        harness.push_assistant_turn(t.assistant.clone());
+        fed_turns = t.turn;
     }
     let tripped_turn = tripped_turn.with_context(|| {
         format!(
@@ -169,8 +178,8 @@ async fn run(args: Args) -> Result<()> {
         cancel: Some(&cancel),
     };
     let result = tokio::time::timeout(
-        Duration::from_secs(150),
-        CompactionPlugin::run_and_persist(provider.as_ref(), &conn, params),
+        Duration::from_secs(600),
+        CompactionStage::run_and_persist(provider.as_ref(), &conn, params),
     )
     .await
     .context("Compaction executor call timed out")?
@@ -258,8 +267,7 @@ async fn run(args: Args) -> Result<()> {
     let judge_out = if args.no_judge {
         None
     } else {
-        let api_key = std::env::var("NVIDIA_API_KEY")
-            .context("NVIDIA_API_KEY not set — export it from temp/.env first")?;
+        let api_key = std::env::var("NVIDIA_API_KEY").unwrap_or_default();
         let system_prompt = judge::load_prompt("judge_compaction.md")?;
         let turns_json = serde_json::to_string_pretty(
             &fixture
@@ -273,11 +281,12 @@ async fn run(args: Args) -> Result<()> {
             tokio::time::timeout(
                 Duration::from_secs(600),
                 judge::run_judge(
+                    &args.judge_url,
                     &api_key,
                     &args.judge_model,
                     &system_prompt,
                     &user_content,
-                    4000,
+                    6000,
                 ),
             )
             .await
@@ -309,19 +318,27 @@ async fn run(args: Args) -> Result<()> {
         "executor": {
             "latency_s": llm_latency_s,
             "facts_extracted": result.facts.len(),
+            "facts": result.facts,
             "ledger_run_id": latest.id,
             "ledger_status": latest.status,
             "staged_queue_items": staged.len(),
         },
         "judge": judge_out.as_ref().map(|j| serde_json::json!({
-            "verdict": j.verdict,
+            "verdict": j.verdict.as_str(),
             "latency_s": j.latency_s,
-            "raw_response": j.raw_content,
+            "report_markdown": j.report_markdown,
         })),
         "ladder_handoff_db": db_path.to_string_lossy(),
         "total_latency_s": total_s,
     });
+    db::checkpoint_source_db(&db_path)
+        .await
+        .context("Failed to checkpoint rung-1 DB for ladder handoff")?;
     let written = report::write_report(eval_name, &run_id, payload)?;
+    if let Some(j) = judge_out.as_ref() {
+        let _ = std::fs::write(written.join("judge_report.md"), &j.report_markdown);
+        println!("Judge verdict: {}", j.verdict.as_str());
+    }
     println!(
         "Rung 1 complete: {fed_turns} turns fed, trip at turn {tripped_turn}, {} facts staged.",
         result.facts.len()

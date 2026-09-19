@@ -41,6 +41,10 @@ The entire JSON output is injected into working memory (<session_context>) so th
 - Concise, self-contained declarative statements only. No conversational filler ("The user said...", "In this chat...").
 - "personal" describes the user; the other 5 categories describe the assistant's operational task state.
 - Completely ignore small-talk, greetings, and pleasantries. Output an empty list [] for categories with no substantive content.
+- Dialogue often repeats the same topics: deduplicate, but capture each distinct durable fact once — repetition is emphasis, not noise.
+- "personal" is mandatory whenever the dialogue states user identity, preferences, habits, background, or health constraints: put such facts in "personal" itself, never nested inside other buckets behind prefixes like "profile_recorded:" or "preference_recorded:".
+- Extract every distinct durable fact across the whole slice; do not stop after the first few.
+- System/hardware configuration, people and their organizational roles, health constraints, and locations are always durable: never omit them.
 - If <prior_summary> is present, update the state incrementally; do not repeat unchanged facts.
 - Output ONLY the raw JSON object adhering to <schema>. No markdown formatting, backticks, or commentary.
 </rules>"#;
@@ -49,6 +53,24 @@ pub const COMPACTION_OUTPUT_RATIO: f32 = 0.15;
 pub const COMPACTION_MIN_OUTPUT_TOKENS: u32 = 256;
 pub const COMPACTION_MAX_OUTPUT_TOKENS: u32 = 16_384;
 pub const DEFAULT_LLM_COMPACTION_TEMPERATURE: f32 = 0.2;
+
+/// Canonical JSON Schema enforced on every compaction extraction.
+/// Single source of truth shared by the prompt prose and the wire constraint.
+pub fn compaction_json_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "personal": { "type": "array", "items": { "type": "string" } },
+            "objective": { "type": "array", "items": { "type": "string" } },
+            "workdone": { "type": "array", "items": { "type": "string" } },
+            "blocker": { "type": "array", "items": { "type": "string" } },
+            "next_step": { "type": "array", "items": { "type": "string" } },
+            "pitfall": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["personal", "objective", "workdone", "blocker", "next_step", "pitfall"],
+        "additionalProperties": false
+    })
+}
 
 /// Calculates dynamic max compaction output tokens based on context window and probed ceiling.
 /// Formula: min(slice, probed_max_output) where slice = (ctx_size * 0.15).
@@ -117,8 +139,8 @@ pub fn build_compaction_request(
     let effective_settings = settings.unwrap_or(&default_settings);
     let eff_ctx = effective_settings.effective_ctx_size();
     let model = effective_settings.active_model();
-    let probed_max_output =
-        crate::services::llm::catalog::get_baseline_spec(model).and_then(|s| s.max_output_tokens);
+    let baseline_spec = crate::services::llm::catalog::get_baseline_spec(model);
+    let probed_max_output = baseline_spec.and_then(|s| s.max_output_tokens);
     let compaction_max_tokens = calculate_compaction_max_tokens(eff_ctx, probed_max_output);
     let policy = GenerationPolicy::from_settings(effective_settings, Some(compaction_max_tokens));
 
@@ -140,6 +162,12 @@ pub fn build_compaction_request(
         },
     );
     request.options.temperature = Some(DEFAULT_LLM_COMPACTION_TEMPERATURE);
+    // INVARIANT: compaction reasoning is always disabled, even if the user
+    // later enables reasoning for agentic conversation. Voice-native default.
+    request.options.reasoning = crate::services::llm::ReasoningMode::Disabled;
+    // Universal compaction contract: strict schema where the backend supports
+    // it, JSON-object baseline otherwise (transports negotiate down on 400s).
+    request.output = compaction_output_constraint(model);
 
     if let (Some(sys), Some(usr)) = (
         request.input.messages.first(),
@@ -155,4 +183,25 @@ pub fn build_compaction_request(
     }
 
     request
+}
+
+/// Selects the strict schema constraint, falling back to JSON-object when the
+/// catalog baseline explicitly reports no structured-output support.
+fn compaction_output_constraint(model: &str) -> crate::services::llm::OutputConstraint {
+    let supported = crate::services::llm::catalog::get_baseline_spec(model)
+        .map(|s| s.supports_structured)
+        .unwrap_or(true);
+    if supported {
+        crate::services::llm::OutputConstraint::JsonSchema {
+            name: "memory_compaction".to_string(),
+            schema: compaction_json_schema(),
+            strict: true,
+        }
+    } else {
+        log::warn!(
+            "[CompactionLLM::Output] Model {} lacks structured-output support; using JSON-object baseline.",
+            model
+        );
+        crate::services::llm::OutputConstraint::JsonObject
+    }
 }

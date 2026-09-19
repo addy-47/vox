@@ -81,12 +81,20 @@ export const Tooltip: React.FC<TooltipProps> = ({
   useEffect(() => {
     if (!isVisible) return undefined;
     updatePosition();
-    const handleScroll = () => updatePosition();
-    window.addEventListener("scroll", handleScroll, true);
-    window.addEventListener("resize", handleScroll);
+    let rafId: number | null = null;
+    const throttledUpdate = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        updatePosition();
+      });
+    };
+    window.addEventListener("scroll", throttledUpdate, true);
+    window.addEventListener("resize", throttledUpdate);
     return () => {
-      window.removeEventListener("scroll", handleScroll, true);
-      window.removeEventListener("resize", handleScroll);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener("scroll", throttledUpdate, true);
+      window.removeEventListener("resize", throttledUpdate);
     };
   }, [isVisible, updatePosition]);
 

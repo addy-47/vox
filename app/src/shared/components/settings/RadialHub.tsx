@@ -33,9 +33,9 @@ export const RadialNode = memo(({ domain, isActive, onSelect, radiusX, radiusY }
         id={`node-${domain.id}`}
         onClick={() => onSelect(domain.id)}
         className={cn(
-          "relative w-10 h-10 rounded-full flex items-center justify-center border transition-all duration-400",
+          "relative w-10 h-10 rounded-full flex items-center justify-center border transition-all duration-400 hover:scale-[1.06] backdrop-blur-sm",
           isActive
-            ? "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.4)]"
+            ? "text-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.4)] shadow-[0_0_12px_rgba(var(--accent),0.2)]"
             : "text-[rgb(var(--foreground-muted))] dark:text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.15)] dark:border-[rgba(var(--border),0.08)] hover:border-[rgba(var(--accent),0.25)] hover:bg-[rgba(var(--accent),0.06)]"
         )}
         aria-label={tooltipLabel}
@@ -43,8 +43,8 @@ export const RadialNode = memo(({ domain, isActive, onSelect, radiusX, radiusY }
         <Icon size={20} strokeWidth={isActive ? 2.5 : 1.5} />
         <span 
           className={cn(
-            "absolute left-1/2 -translate-x-1/2 text-[11px] sm:text-[12px] font-bold uppercase tracking-[0.15em] leading-none whitespace-nowrap pointer-events-none text-center transition-all duration-400",
-            isUpper ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]",
+            "absolute left-1/2 -translate-x-1/2 text-[10.5px] sm:text-[11px] font-bold uppercase tracking-[0.16em] leading-none whitespace-nowrap pointer-events-none text-center transition-all duration-400 px-1.5 py-0.5",
+            isUpper ? "bottom-[calc(100%+10px)]" : "top-[calc(100%+10px)]",
             isActive ? "opacity-0 scale-90" : "opacity-100 scale-100"
           )}
         >

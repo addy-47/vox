@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { type InteractionState } from "@/services/eventsService";
 import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import {
@@ -35,8 +35,6 @@ export function useHomePage() {
 
   const telemetryRef = useTelemetry();
   const dialogueScrollRef = useRef<HTMLDivElement>(null);
-  const testButtonRef = useRef<HTMLButtonElement>(null);
-  const testPanelRef = useRef<HTMLDivElement>(null);
 
   const {
     interactionState,
@@ -50,9 +48,10 @@ export function useHomePage() {
     transcript,
     assistantText,
     cpuWarning,
-    testMode,
-    setTestMode,
-    testingClip,
+    isTemporarySession,
+    isTextModeOpen,
+    isPlaybackMuted,
+    isMicMuted,
     dialogueHistory,
     isLaunching,
     isThinking,
@@ -66,8 +65,46 @@ export function useHomePage() {
     handlePttStart,
     handlePttStop,
     handlePttCancel,
-    handleTestClip,
+    submitText,
+    toggleTemporarySession,
+    setTextModeOpen,
+    togglePlaybackMute,
+    toggleMicMute,
   } = session;
+
+  const shouldAutoScrollRef = useRef(true);
+
+  const handleDialogueScroll = useCallback(() => {
+    const el = dialogueScrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // Pinned if within 40px of bottom
+    shouldAutoScrollRef.current = distanceFromBottom <= 40;
+  }, []);
+
+  // When submitting text, immediately re-pin auto-scroll to bottom
+  const handleSubmitText = useCallback(async (text: string) => {
+    shouldAutoScrollRef.current = true;
+    await submitText(text);
+    requestAnimationFrame(() => {
+      const el = dialogueScrollRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+  }, [submitText]);
+
+  // Auto-scroll the dialogue rail whenever turns, transcript, or assistant text updates
+  useEffect(() => {
+    const el = dialogueScrollRef.current;
+    if (!el || !shouldAutoScrollRef.current) return;
+
+    requestAnimationFrame(() => {
+      if (dialogueScrollRef.current && shouldAutoScrollRef.current) {
+        dialogueScrollRef.current.scrollTop = dialogueScrollRef.current.scrollHeight;
+      }
+    });
+  }, [dialogueHistory, transcript, assistantText]);
 
   return {
     interactionState,
@@ -81,9 +118,10 @@ export function useHomePage() {
     transcript,
     assistantText,
     cpuWarning,
-    testMode,
-    setTestMode,
-    testingClip,
+    isTemporarySession,
+    isTextModeOpen,
+    isPlaybackMuted,
+    isMicMuted,
     dialogueHistory,
     isLaunching,
     isThinking,
@@ -97,13 +135,17 @@ export function useHomePage() {
     handlePttStart,
     handlePttStop,
     handlePttCancel,
-    handleTestClip,
+    submitText: handleSubmitText,
+    toggleTemporarySession,
+    setTextModeOpen,
+    togglePlaybackMute,
+    toggleMicMute,
     historyOpen,
     setHistoryOpen,
     telemetryRef,
     dialogueScrollRef,
+    handleDialogueScroll,
+    shouldAutoScrollRef,
     isMobileScreen,
-    testButtonRef,
-    testPanelRef,
   };
 }

@@ -89,6 +89,9 @@ impl PlaybackStreamContext {
         }
 
         self.drain_and_telemetry(output);
+        if self.handles.is_playback_muted.load(Ordering::Relaxed) {
+            output.fill(0.0);
+        }
     }
 
     /// Resets filter bank and smoothing state when playback stops or is discarded.

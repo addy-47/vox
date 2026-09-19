@@ -4,7 +4,7 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 
 use super::{config::ConnectionConfig, sse::SseDecoder};
-use crate::services::llm::{GenerationRequest, LlmError, OutputConstraint};
+use crate::services::llm::{GenerationRequest, LlmError, OutputConstraint, ReasoningMode};
 
 #[derive(Serialize)]
 struct ChatMessage {
@@ -72,6 +72,12 @@ pub fn build_request_body(
     }
     if let Some(seed) = request.options.seed {
         body.insert("seed".to_string(), serde_json::json!(seed));
+    }
+    if request.options.reasoning == ReasoningMode::Disabled {
+        body.insert(
+            "reasoning".to_string(),
+            serde_json::json!({ "enabled": false }),
+        );
     }
 
     match &request.output {

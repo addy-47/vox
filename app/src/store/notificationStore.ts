@@ -291,9 +291,16 @@ export function selectUpdatesRolledUp(
   return cachedUpdatesResult;
 }
 
+let cachedUncompactedNotificationsRef: NotificationRecord[] | null = null;
+let cachedUncompactedIdsResult = new Set<number>();
+
 export function selectUncompactedSessionIds(
   state: NotificationStoreState
 ): Set<number> {
+  if (state.notifications === cachedUncompactedNotificationsRef) {
+    return cachedUncompactedIdsResult;
+  }
+  cachedUncompactedNotificationsRef = state.notifications;
   const ids = new Set<number>();
   for (const n of state.notifications) {
     if (
@@ -306,6 +313,42 @@ export function selectUncompactedSessionIds(
       ids.add(n.session_id);
     }
   }
-  return ids;
+  cachedUncompactedIdsResult = ids;
+  return cachedUncompactedIdsResult;
+}
+
+let cachedCompactionNotifsRef: NotificationRecord[] | null = null;
+let cachedActiveActionsRef: string[] | null = null;
+let cachedActiveCompactionSessionIds = new Set<number>();
+
+export function selectActiveCompactionSessionIds(
+  state: NotificationStoreState
+): Set<number> {
+  if (
+    state.notifications === cachedCompactionNotifsRef &&
+    state.activeActionIds === cachedActiveActionsRef
+  ) {
+    return cachedActiveCompactionSessionIds;
+  }
+  cachedCompactionNotifsRef = state.notifications;
+  cachedActiveActionsRef = state.activeActionIds;
+  const ids = new Set<number>();
+  if (state.activeActionIds.length > 0) {
+    const activeSet = new Set(state.activeActionIds);
+    for (const n of state.notifications) {
+      if (
+        n.category === "session_compaction" &&
+        n.session_id !== null &&
+        n.session_id !== undefined &&
+        n.status !== "dismissed" &&
+        metadataResolution(n) !== "resolved" &&
+        activeSet.has(n.id)
+      ) {
+        ids.add(n.session_id);
+      }
+    }
+  }
+  cachedActiveCompactionSessionIds = ids;
+  return cachedActiveCompactionSessionIds;
 }
 

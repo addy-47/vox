@@ -1,54 +1,24 @@
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::Arc;
 
 use tauri::{AppHandle, Manager};
 
 use crate::{
     core::{
         error::PipelineImpact,
-        events::{emit_ipc_to, AudioIntent, IpcEvent, Severity, TranscriptPayload},
+        events::{emit_ipc_to, IpcEvent, Severity, TranscriptPayload},
         settings::PipelineMode,
         state::{AppState, InteractionState},
     },
     pipeline::{target_window, transition, RoutingContext},
     services::{
         self,
-        harness::{
-            CompactionParams, CompactionPlugin, Role, StreamRoutingHandles, TurnPreparation,
-        },
-        llm::{actor::LlmCommand, GenerationRequest},
+        harness::{Harness, TurnExecutionRequest, TurnOutcome},
         notifications::{Action, NotificationCategory, NotificationParams},
         translit::transliterate_if_hi,
-        tts::actor::TtsCommand,
     },
 };
 
-/// Logs a compact summary of the assembled LLM generation request for turn tracing.
-fn log_generation_request(turn_id: u32, request: &GenerationRequest) {
-    let mut system_chars = 0usize;
-    let mut user_chars = 0usize;
-    let mut assistant_chars = 0usize;
-    for msg in &request.input.messages {
-        match msg.role {
-            Role::System => system_chars += msg.content.len(),
-            Role::User => user_chars += msg.content.len(),
-            Role::Assistant => assistant_chars += msg.content.len(),
-        }
-    }
-    log::info!(
-        "[Pipeline::Transcript] LLM request assembled (turn {}, purpose {:?}, messages {}, system_chars {}, user_chars {}, assistant_chars {}, temp {:?}, max_tokens {:?}, seed {:?})",
-        turn_id,
-        request.purpose,
-        request.input.messages.len(),
-        system_chars,
-        user_chars,
-        assistant_chars,
-        request.options.temperature,
-        request.options.max_output_tokens,
-        request.options.seed
-    );
-}
-
-/// Spawns the background asynchronous task to prepare conversational context and trigger LLM generation.
+/// Spawns the background asynchronous task to execute conversational turn through Harness.
 fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
     turn_id: u32,
     query: String,
@@ -56,13 +26,7 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
-    let settings = state
-        .settings
-        .read()
-        .unwrap_or_else(|p| p.into_inner())
-        .clone();
     let cancel = state.pipeline.turn_token();
-    let cancel_flag = Arc::clone(&state.pipeline.cancel_flag);
     let pending_jobs = Arc::clone(&state.pipeline.pending_synthesis_jobs);
     let accumulator = Arc::clone(&state.pipeline_accumulator);
     let app_clone = app.clone();
@@ -73,7 +37,6 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
     let app_state = Arc::clone(app_state_arc.inner());
     let harness_arc = Arc::clone(&state.harness);
     let provider_arc = Arc::clone(&state.llm_provider);
-    let session_id = state.conversation_id.load(Ordering::Relaxed) as i64;
 
     tauri::async_runtime::spawn(async move {
         let (tts_tx, llm_tx, pipeline_tx) = {
@@ -90,208 +53,61 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
                 .unwrap_or((None, None, None))
         };
 
-        let prep = {
-            let mut guard = harness_arc.lock();
-            let Some(ref mut harness) = *guard else {
-                log::error!("[Pipeline::Transcript] No active HarnessSession mounted");
-                return;
-            };
-            harness.prepare_turn(&query, turn_id)
+        let req = TurnExecutionRequest {
+            query,
+            turn_id,
+            cancel,
+            owner: ctx_owner,
+            llm_tx,
+            tts_tx,
+            provider: provider_arc.read().clone(),
+            db: Arc::clone(&app_state.db),
+            pipeline_tx,
+            accumulator,
+            pending_synthesis_jobs: pending_jobs,
+            app: app_clone.clone(),
+            routing_ctx: ctx_clone.clone(),
+            app_state: Arc::clone(&app_state),
         };
 
-        let request = match prep {
-            TurnPreparation::DuplicateTurnIgnored => {
-                log::info!(
-                    "[Pipeline::Transcript] Duplicate turn ignored (turn {})",
-                    turn_id
-                );
-                return;
-            }
-            TurnPreparation::Ready(req) => {
-                log_generation_request(turn_id, &req);
-                req
-            }
-            TurnPreparation::NeedsInlineCompaction {
-                filler_phrase,
-                uncompacted_slice,
+        let outcome = Harness::execute_turn(&harness_arc, req).await;
+
+        match outcome {
+            TurnOutcome::Completed {
+                turn_id,
+                assistant_response,
             } => {
                 log::info!(
-                    "[Pipeline::Transcript] Context threshold >= 85%. Transitioning to Working."
+                    "[Pipeline::Transcript] Turn {} completed (chars {})",
+                    turn_id,
+                    assistant_response.len()
                 );
-                transition(
-                    InteractionState::Working,
-                    &ctx_clone,
-                    &app_clone,
-                    &app_state,
-                );
-
-                if let Some(ref t_tx) = tts_tx {
-                    pending_jobs.fetch_add(1, Ordering::Relaxed);
-                    if let Err(e) = t_tx.send(TtsCommand::Generate {
-                        turn_id,
-                        text: filler_phrase.to_string(),
-                        intent: AudioIntent::InterimFiller,
-                    }) {
-                        log::warn!(
-                            "[Pipeline::Transcript] Failed to dispatch filler to TTS: {}",
-                            e
-                        );
-                    } else {
-                        log::info!(
-                            "[Pipeline::Transcript] Interim filler dispatched to TTS (turn {}, chars {})",
-                            turn_id,
-                            filler_phrase.len()
-                        );
-                    }
+                let mut guard = harness_arc.lock();
+                if let Some(ref mut harness) = *guard {
+                    harness.on_turn_completed(Arc::clone(&app_state), Arc::clone(&harness_arc));
                 }
-
-                let from_turn = {
-                    let guard = harness_arc.lock();
-                    guard.as_ref().map(|h| h.from_turn_id()).unwrap_or(0)
-                };
-
-                let provider_opt = provider_arc.read().clone();
-                if let Some(provider) = provider_opt {
-                    let params = CompactionParams {
-                        session_id,
-                        trigger_kind: "inline",
-                        from_turn_id: from_turn,
-                        to_turn_id: turn_id,
-                        history_messages: &uncompacted_slice,
-                        llm_settings: Some(&settings.llm),
-                        cancel: Some(&cancel),
-                    };
-
-                    let compaction_res = match app_state.db.connect() {
-                        Ok(conn) => {
-                            CompactionPlugin::run_and_persist(provider.as_ref(), &conn, params)
-                                .await
-                        }
-                        Err(e) => Err(anyhow::anyhow!(
-                            "Failed to vend connection for compaction: {e}"
-                        )),
-                    };
-
-                    let mut guard = harness_arc.lock();
-                    if let Some(ref mut harness) = *guard {
-                        match compaction_res {
-                            Ok(result) => {
-                                harness.apply_compaction_summary(&result.session_context, &query);
-                                harness.set_last_compacted_to_turn(turn_id);
-                            }
-                            Err(e) => {
-                                log::warn!("[Pipeline::Transcript] Compaction error ({}). Falling back to FIFO.", e);
-                                harness.fallback_fifo_shift();
-                            }
-                        }
-                    }
-                }
-
-                let guard = harness_arc.lock();
-                let Some(ref harness) = *guard else {
-                    return;
-                };
-                harness.create_generation_request()
             }
-        };
-
-        if cancel.is_cancelled() {
-            log::info!(
-                "[Pipeline::Transcript] Turn {} cancelled before LLM dispatch",
-                turn_id
-            );
-            return;
-        }
-
-        let (response_tx, response_rx) = std::sync::mpsc::channel();
-
-        if let Some(ref tx) = llm_tx {
-            if let Err(e) = tx.send(LlmCommand::Generate {
-                request: Box::new(request),
-                turn_id,
-                cancel,
-                response_tx,
-            }) {
-                log::warn!(
-                    "[Pipeline::Transcript] Failed to send Generate to LLM: {}",
-                    e
-                );
-                return;
+            TurnOutcome::DuplicateIgnored { turn_id } => {
+                log::info!("[Pipeline::Transcript] Duplicate turn {} ignored", turn_id);
+                transition(InteractionState::Ready, &ctx_clone, &app_clone, &app_state);
             }
-            log::info!(
-                "[Pipeline::Transcript] LLM Generate dispatched (turn {})",
-                turn_id
-            );
-        }
-
-        if let Some(p_tx) = pipeline_tx {
-            let stream_plugin_snapshot = {
-                let guard = harness_arc.lock();
-                guard.as_ref().map(|h| h.clone_stream_plugin())
-            };
-            let Some(stream_plugin) = stream_plugin_snapshot else {
-                return;
-            };
-            let handles = StreamRoutingHandles {
-                turn_id,
-                owner: ctx_owner,
-                accumulator,
-                tts_tx,
-                pending_synthesis_jobs: pending_jobs,
-                cancel: cancel_flag,
-                event_tx: p_tx,
-                app: app_clone,
-            };
-            let stream_result = tokio::task::spawn_blocking(move || {
-                stream_plugin.route_stream(handles, response_rx)
-            })
-            .await;
-
-            match stream_result {
-                Ok(Ok(full_text)) => {
-                    let response_chars = full_text.chars().count();
-                    let response_words = full_text.split_whitespace().count();
-                    let mut guard = harness_arc.lock();
-                    if let Some(ref mut harness) = *guard {
-                        if !full_text.trim().is_empty() {
-                            harness.commit_turn(full_text);
-                            log::info!(
-                                "[Pipeline::Transcript] Turn committed (turn {}, response_chars {}, response_words {})",
-                                turn_id, response_chars, response_words
-                            );
-                        } else {
-                            harness.rollback_user_turn();
-                            log::info!(
-                                "[Pipeline::Transcript] Empty response rolled back (turn {})",
-                                turn_id
-                            );
-                        }
-                        harness.on_turn_completed(app_state, Arc::clone(&harness_arc));
-                    }
-                }
-                Ok(Err(e)) => {
-                    log::warn!("[Pipeline::Transcript] Stream routing failed: {}", e);
-                    let mut guard = harness_arc.lock();
-                    if let Some(ref mut harness) = *guard {
-                        harness.rollback_user_turn();
-                    }
-                }
-                Err(e) => {
-                    log::warn!(
-                        "[Pipeline::Transcript] Stream routing task join error: {}",
-                        e
-                    );
-                    let mut guard = harness_arc.lock();
-                    if let Some(ref mut harness) = *guard {
-                        harness.rollback_user_turn();
-                    }
-                }
+            TurnOutcome::Cancelled { turn_id } => {
+                log::info!("[Pipeline::Transcript] Turn {} cancelled", turn_id);
+                transition(InteractionState::Ready, &ctx_clone, &app_clone, &app_state);
+            }
+            TurnOutcome::Error { turn_id, message } => {
+                log::error!(
+                    "[Pipeline::Transcript] Turn {} failed: {}",
+                    turn_id,
+                    message
+                );
+                transition(InteractionState::Ready, &ctx_clone, &app_clone, &app_state);
             }
         }
     });
 }
 
-/// Handles finalized speech transcript, validating non-empty text and routing to LLM or idle recovery.
+/// Handles finalized speech transcript or direct text input, validating non-empty text and routing to LLM.
 pub fn on_transcript_final<R: tauri::Runtime>(
     turn_id: u32,
     text: String,

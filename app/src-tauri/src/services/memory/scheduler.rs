@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
 use tauri::AppHandle;
@@ -64,8 +64,11 @@ pub async fn run_consolidation_once<R: tauri::Runtime>(
     let provider = resolve_provider(state)
         .ok_or_else(|| anyhow!("Failed to initialize LLM provider for consolidation"))?;
 
+    let llm_settings = state.settings.read().ok().map(|s| s.llm.clone());
     let conn = state.db.connect()?;
-    let record = consolidate_personal_memory(&conn, provider.as_ref(), None, None).await?;
+    let record =
+        consolidate_personal_memory(&conn, provider.as_ref(), None, None, llm_settings.as_ref())
+            .await?;
 
     if let Err(e) = emit_ipc(app, IpcEvent::PersonalMemoryUpdated(record)) {
         log::warn!(
@@ -125,8 +128,8 @@ pub async fn check_missed_consolidation_on_boot<R: tauri::Runtime>(
         .read()
         .map(|s| {
             (
-                s.memory.consolidation_cadence.clone(),
-                s.memory.consolidation_time.clone(),
+                s.personal_memory.consolidation_cadence.clone(),
+                s.personal_memory.consolidation_time.clone(),
             )
         })
         .unwrap_or_else(|_| ("manual".to_string(), "02:00".to_string()));
@@ -183,8 +186,8 @@ pub async fn check_missed_consolidation_on_boot<R: tauri::Runtime>(
 }
 
 /// Duration from now until the next local `hour:minute`. Falls back to 24h on DST gaps.
-fn duration_until_next(hour: u32, minute: u32) -> std::time::Duration {
-    let fallback = std::time::Duration::from_secs(DAY_SECS);
+fn duration_until_next(hour: u32, minute: u32) -> Duration {
+    let fallback = Duration::from_secs(DAY_SECS);
     let now = chrono::Local::now();
     let today = now
         .date_naive()
@@ -200,19 +203,58 @@ fn duration_until_next(hour: u32, minute: u32) -> std::time::Duration {
         .unwrap_or(fallback)
 }
 
-/// Spawns the daily consolidation timer. Sleeps until the next scheduled time and wakes
-/// once per run; deferred runs retry at the next scheduled time, never sooner.
-pub fn spawn_consolidation_scheduler<R: tauri::Runtime + 'static>(
+/// Spawns the daily consolidation timer. Checks cadence before spawning, sleeps until the
+/// next scheduled time, and records its JoinHandle in AppState for lifecycle management.
+pub fn start_consolidation_scheduler<R: tauri::Runtime + 'static>(
     app: AppHandle<R>,
     state: Arc<AppState>,
 ) {
-    tauri::async_runtime::spawn(async move {
-        log::info!("[Memory::Scheduler] Consolidation scheduler spawned.");
+    stop_consolidation_scheduler(&state);
+
+    let (cadence, time_str) = match state.settings.read() {
+        Ok(s) => (
+            s.personal_memory.consolidation_cadence.clone(),
+            s.personal_memory.consolidation_time.clone(),
+        ),
+        Err(_) => {
+            log::warn!("[Memory::Scheduler] Settings lock poisoned; scheduler not started.");
+            return;
+        }
+    };
+
+    if cadence == "manual" {
+        return;
+    }
+
+    let (hour, minute) = match parse_consolidation_time(&time_str) {
+        Some(t) => t,
+        None => {
+            log::warn!(
+                "[Memory::Scheduler] Invalid consolidation_time '{time_str}'; scheduler not started."
+            );
+            return;
+        }
+    };
+
+    let dur = duration_until_next(hour, minute);
+    let total_mins = dur.as_secs() / 60;
+    log::info!(
+        "[Memory::Scheduler] Consolidation scheduler started (daily at {:02}:{:02}). Next run in {}h {}m.",
+        hour,
+        minute,
+        total_mins / 60,
+        total_mins % 60
+    );
+
+    let app_clone = app.clone();
+    let state_clone = Arc::clone(&state);
+
+    let handle = tauri::async_runtime::spawn(async move {
         loop {
-            let (cadence, time_str) = match state.settings.read() {
+            let (cadence, time_str) = match state_clone.settings.read() {
                 Ok(s) => (
-                    s.memory.consolidation_cadence.clone(),
-                    s.memory.consolidation_time.clone(),
+                    s.personal_memory.consolidation_cadence.clone(),
+                    s.personal_memory.consolidation_time.clone(),
                 ),
                 Err(_) => {
                     log::warn!("[Memory::Scheduler] Settings lock poisoned; scheduler stopping.");
@@ -234,17 +276,17 @@ pub fn spawn_consolidation_scheduler<R: tauri::Runtime + 'static>(
 
             tokio::time::sleep(duration_until_next(hour, minute)).await;
 
-            let still_daily = state
+            let still_daily = state_clone
                 .settings
                 .read()
-                .map(|s| s.memory.consolidation_cadence.clone())
+                .map(|s| s.personal_memory.consolidation_cadence.clone())
                 .unwrap_or_default()
                 == "daily";
             if !still_daily {
                 break;
             }
 
-            match run_consolidation_once(&app, &state).await {
+            match run_consolidation_once(&app_clone, &state_clone).await {
                 Ok(()) => {
                     log::info!("[Memory::Scheduler] Daily consolidation completed.");
                 }
@@ -271,7 +313,7 @@ pub fn spawn_consolidation_scheduler<R: tauri::Runtime + 'static>(
                         metadata: None,
                         duration_ms: None,
                     };
-                    if let Err(notif_err) = notify(&app, &state.db, params).await {
+                    if let Err(notif_err) = notify(&app_clone, &state_clone.db, params).await {
                         log::warn!(
                             "[Memory::Scheduler] Failed to emit consolidation failure notification: {}",
                             notif_err
@@ -280,6 +322,26 @@ pub fn spawn_consolidation_scheduler<R: tauri::Runtime + 'static>(
                 }
             }
         }
-        log::info!("[Memory::Scheduler] Consolidation scheduler stopped.");
+        log::info!("[Memory::Scheduler] Consolidation scheduler loop ended.");
     });
+
+    let mut lock = state.memory.scheduler_handle.lock();
+    *lock = Some(handle);
+}
+
+/// Stops the active consolidation scheduler task, if running.
+pub fn stop_consolidation_scheduler(state: &AppState) {
+    let mut lock = state.memory.scheduler_handle.lock();
+    if let Some(handle) = lock.take() {
+        handle.abort();
+        log::info!("[Memory::Scheduler] Consolidation scheduler stopped.");
+    }
+}
+
+/// Backward-compatible alias for `start_consolidation_scheduler`.
+pub fn spawn_consolidation_scheduler<R: tauri::Runtime + 'static>(
+    app: AppHandle<R>,
+    state: Arc<AppState>,
+) {
+    start_consolidation_scheduler(app, state);
 }

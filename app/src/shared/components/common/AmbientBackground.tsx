@@ -15,6 +15,8 @@ interface AmbientBackgroundProps {
   rippleSpeedMultiplier?: number;
   /** Shape geometry of ripples — 'circle' for orb views, 'orbit' for 3D tilted chamber */
   rippleShape?: RippleShape;
+  /** When true, freezes the rAF loop and CSS animations to preserve GPU budget */
+  paused?: boolean;
 }
 
 interface MoodConfig {
@@ -27,28 +29,28 @@ interface MoodConfig {
 
 const MOOD_CONFIG: Record<AmbientMood, MoodConfig> = {
   calm: {
-    rippleDuration: 16,
+    rippleDuration: 24, // 1.5x slower (was 16)
     rippleOpacity: 0.10,
     blobSpeed: 40,
     blobOpacity: 0.032,
     glowOpacity: 0.05,
   },
   thinking: {
-    rippleDuration: 10,
+    rippleDuration: 15, // 1.5x slower (was 10)
     rippleOpacity: 0.14,
     blobSpeed: 25,
     blobOpacity: 0.045,
     glowOpacity: 0.08,
   },
   active: {
-    rippleDuration: 15,
+    rippleDuration: 22.5, // 1.5x slower (was 15)
     rippleOpacity: 0.18,
     blobSpeed: 18,
     blobOpacity: 0.055,
     glowOpacity: 0.1,
   },
   speaking: {
-    rippleDuration: 14,
+    rippleDuration: 21, // 1.5x slower (was 14)
     rippleOpacity: 0.16,
     blobSpeed: 22,
     blobOpacity: 0.05,
@@ -78,6 +80,7 @@ export const AmbientBackground = React.memo(({
   originY = "50%",
   rippleSpeedMultiplier = 1.0,
   rippleShape = "circle",
+  paused = false,
 }: AmbientBackgroundProps) => {
   useMemoryTrace("AmbientBackground (rAF Dynamic Glow)");
 
@@ -105,6 +108,13 @@ export const AmbientBackground = React.memo(({
   const blobRefs = React.useRef<(HTMLDivElement | null)[]>([]);
 
   React.useEffect(() => {
+    if (paused) {
+      if (rippleRef.current) {
+        rippleRef.current.style.animationPlayState = "paused";
+      }
+      return;
+    }
+
     let animId: number | null = null;
     let smoothedEnergy = 0;
     let isRunning = false;
@@ -199,7 +209,7 @@ export const AmbientBackground = React.memo(({
       clearInterval(checkInterval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [cfg, glowOpacityMultiplier, rippleOpacityMultiplier, telemetryRef]);
+  }, [cfg, glowOpacityMultiplier, rippleOpacityMultiplier, telemetryRef, paused]);
 
   const rpAnimName = (mood === "active" || (mood as string) === "listening") ? "ripple-in" : "ripple-out";
 
@@ -232,9 +242,10 @@ export const AmbientBackground = React.memo(({
             height: blob.size,
             background: `radial-gradient(circle, rgba(var(--accent), ${cfg.blobOpacity * blobOpacityMultiplier}) 0%, transparent 68%)`,
             animation: `${blob.animName} ${cfg.blobSpeed}s ease-in-out infinite`,
+            animationPlayState: paused ? "paused" : "running",
             animationDelay: `${blob.delay}s`,
             borderRadius: blob.borderRadius,
-            willChange: "transform",
+            willChange: paused ? "auto" : "transform",
           }}
         />
       ))}

@@ -100,14 +100,6 @@ Manages the single evolving Personal Memory markdown document.
   - If `comments` None: verifies ingestion queue is quiet, fetches all `status = 'active'` personal facts, merges them via LLM, marks facts `'consolidated'`, and updates the document.
   - Broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
-#### `export_personal_memory(targetPath: String, projectId: Option<String>)` — [NEW]
-- **Purpose**: Exports the current Personal Memory document to a local markdown file.
-- **Behavior**: Reads document from Turso `personal_memory` and writes to specified file path on host disk.
-
-#### `import_personal_memory(sourcePath: String, projectId: Option<String>)` — [NEW]
-- **Purpose**: Overwrites or initializes the Personal Memory document from an external markdown file.
-- **Behavior**: Reads markdown file from host disk, validates content, updates `personal_memory`, increments version counter, and broadcasts `IpcEvent::PersonalMemoryUpdated`.
-
 #### `get_active_facts(projectId: Option<String>)` — [NEW]
 - **Purpose**: Returns all `status = 'active'` facts from `memory_facts` for memory graph visualization.
 - **Behavior**: Queries all active fact rows (all `fact_type` values: `personal`, `objective`, `workdone`, `blocker`, `next_step`, `pitfall`), optionally scoped by `project_id` via the session join. Returns `Vec<FactRecord>` ordered by `created_at DESC`. Read-only; no working memory mutation.
@@ -167,9 +159,12 @@ pub struct NotificationFilter {
 ### 2.5 Pipeline & Audio Domain (`ipc/pipeline.rs` & `ipc/audio.rs`)
 Controls the voice interaction lifecycle and hardware devices.
 
-#### `launch_engine()` & `stop_engine()`
-- **Purpose**: Initializes or completely shuts down the audio engine, VAD, and model workers.
-- **Behavior**: Bootstraps CPAL streams, model weights, and hotkey listeners, or cleanly joins threads and releases mic hardware.
+#### `launch_engine()`, `stop_engine()`, `restart_engine()`
+- **Purpose**: Initializes, completely shuts down, or restarts the 3-tier audio engine, VAD, and model workers.
+- **Behavior**: 
+  - `launch_engine()`: Bootstraps CPAL streams, model weights, and hotkey listeners in `Idle` state.
+  - `stop_engine()`: Cleanly joins worker threads, terminates the central router pump, and releases mic hardware.
+  - `restart_engine()`: Atomically stops and relaunches the audio engine while preserving active session continuity. If an assistant session was actively running (`state.pipeline.state() != Idle`), it captures the current `conversation_id`, stops and starts the audio engine, and automatically re-dispatches `VoxEvent::SessionStart` with the preserved `session_id`, restoring the pipeline state directly to `Ready` without dropping into un-resumable `Idle`.
 
 #### `start_session(sessionId: Option<i64>)` — [ALIGNED]
 - **Purpose**: Transitions assistant from `Idle` to `Ready`, mounting the `HarnessSession`.
@@ -186,9 +181,21 @@ Controls the voice interaction lifecycle and hardware devices.
 - **Purpose**: Controls Push-To-Talk voice windows.
 - **Behavior**: Dispatches `PttStart`, `PttStop`, or `PttCancel` to `event_tx` for window validation and barge-in evaluation.
 
-#### `test_clip(path: String, isPrivateMode: bool)` & `test_clip_cancel()`
-- **Purpose**: Runs synthetic developer test audio through the active pipeline.
-- **Behavior**: Feeds WAV PCM frames into the pipeline without requiring physical microphone speech.
+#### `submit_text_input(query: String)`
+- **Purpose**: Submits a typed user query directly into the active conversational pipeline, bypassing audio input, VAD, and STT.
+- **Behavior**: Dispatches `VoxEvent::TextInput { text }` to the central `event_tx` Router. If the pipeline is `Paused`, the router auto-resumes (`ResumeSession` shared FX: `cancel_flag=false`, renewed turn token, `owner=Assistant`, VAD re-arm) and then processes the query as a `Ready`-state turn, so typed input is never silently dropped. `Idle`/`Sleeping` still drop. If the pipeline is in `Thinking`, `Speaking`, or `Working`, it invokes `on_interrupt()` to halt previous playback and vend a new turn before dispatching to LLM generation. TTS is synthesized and played back normally through the standard lifecycle.
+
+#### `set_playback_muted(muted: bool)`
+- **Purpose**: Toggles speaker audio output muting at the CPAL output sink layer.
+- **Behavior**: Atomically updates `state.pipeline.is_playback_muted`. When true, CPAL hardware output buffer is filled with silence (`0.0`) while synthesis frame consumption and pipeline event timing proceed normally.
+
+#### `set_mic_muted(muted: bool)`
+- **Purpose**: Toggles microphone audio input gating at the CPAL input ingestion layer.
+- **Behavior**: Atomically updates `state.pipeline.is_mic_muted` and recomputes `ingestion_gate`. When true, microphone audio frames are dropped before VAD.
+
+#### `set_session_private_mode(enabled: bool)`
+- **Purpose**: Toggles ephemeral temporary session mode (incognito / private mode) in memory without modifying `settings.json`.
+- **Behavior**: Atomically updates `state.telemetry.is_private_mode`. While enabled, the persistence worker drops disk write events for turns and sessions, leaving conversations strictly in memory.
 
 #### `list_audio_devices()`
 - **Purpose**: Enumerates available host input microphones.
@@ -258,7 +265,7 @@ Every event emitted by the backend via `emit_ipc` or `emit_ipc_to` is mapped dir
 | `show_toast` | `ToastPayload { title, message, level, duration_ms? }` | Ephemeral toast popups for user feedback. |
 | `notification_created` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when a persistent actionable notification or alert is created. |
 | `notification_updated` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when an active notification status changes (e.g. marked read or updated). |
-| `personal_memory_updated`| `PersonalMemoryRecord { id, project_id, content, version, last_consolidated_at, updated_at }` | Emitted when Personal Memory is consolidated, edited, imported, or regenerated. |
+| `personal_memory_updated`| `PersonalMemoryRecord { id, project_id, content, version, last_consolidated_at, updated_at }` | Emitted when Personal Memory is consolidated, edited, or regenerated. |
 | `sessions_changed` | `void` | Signals frontend when sessions are updated asynchronously / out-of-band by the backend (e.g. background title generation or compaction cleanup). Frontend refetches the session list. |
 | `settings-updated` | `void` | Signals frontend that application settings were hot-reloaded. |
 | `toggle_tray` | `void` | Toggles tray drawer visibility. |

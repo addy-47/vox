@@ -1,11 +1,11 @@
 use std::mem::take;
 
-use crate::services::tts::actor::TtsClauseChunker;
+use crate::services::harness::stages::streaming::ClauseChunker;
 
 /// Canonical turn-level textual accumulator and TTS clause chunker.
 #[derive(Debug, Clone)]
 pub struct TurnAccumulator {
-    pub chunker: TtsClauseChunker,
+    pub chunker: ClauseChunker,
     pub assistant_response: String,
     pub user_transcript: String,
     next_clause_seq: u32,
@@ -21,7 +21,7 @@ impl TurnAccumulator {
     /// Creates a new empty TurnAccumulator.
     pub fn new() -> Self {
         Self {
-            chunker: TtsClauseChunker::new(),
+            chunker: ClauseChunker::new(),
             assistant_response: String::new(),
             user_transcript: String::new(),
             next_clause_seq: 0,

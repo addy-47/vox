@@ -1,13 +1,13 @@
-import { useMemo, useCallback, memo } from "react";
+import { useMemo, useCallback, useState, memo } from "react";
 import { AlertCircle, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
+import { restartEngine } from "@/services/pipelineService";
 import { ErrorBoundary } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
 import type { SettingsDomain as Domain } from "@/data/settingsCopy";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
-import { HelpCircle } from "lucide-react";
-import { usePanelStateContext } from "@/shared/hooks/usePanelState";
+
 
 export interface SettingsCardWrapperProps {
   domain: Domain;
@@ -22,7 +22,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   const commitChanges = useSettingsStore((s) => s.commitChanges);
 
   const hasChanges = useSettingsStore(useCallback((s: any) => Boolean(s.isDomainDirty(domain.id)), [domain.id]));
-  const { openPanel } = usePanelStateContext();
+
 
   const requiresRestart = useMemo(() => {
     if (!settings || !draftSettings) return false;
@@ -53,11 +53,36 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
     draftSettings?.interaction?.pipeline_mode === "realtime" &&
     ((draftSettings?.realtime?.active === "gemini_live" && !(draftSettings?.realtime?.gemini_live?.api_key || (draftSettings?.realtime as any)?.gemini?.api_key)?.trim()) ||
      (draftSettings?.realtime?.active === "deepgram_voice_agent" && !(draftSettings?.realtime?.deepgram_voice_agent?.api_key || (draftSettings?.realtime as any)?.deepgram?.api_key)?.trim()));
-  const isMissingCloudKey = isCloudLlmMissingKey || isCloudSttMissingKey || isRealtimeMissingKey;
 
-  const handleSave = () => {
-    if (isMissingCloudKey) return;
-    commitChanges();
+  const isDomainMissingCloudKey = useMemo(() => {
+    if (domain.id === "models") {
+      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+      return isRealtime ? isRealtimeMissingKey : (isCloudLlmMissingKey || isCloudSttMissingKey);
+    }
+    if (domain.id === "interaction") {
+      const isRealtime = draftSettings?.interaction?.pipeline_mode === "realtime";
+      return isRealtime ? isRealtimeMissingKey : false;
+    }
+    return false;
+  }, [domain.id, draftSettings?.interaction?.pipeline_mode, isRealtimeMissingKey, isCloudLlmMissingKey, isCloudSttMissingKey]);
+
+  const [isReloading, setIsReloading] = useState(false);
+
+  const handleSave = async () => {
+    if (isDomainMissingCloudKey || isReloading) return;
+    if (requiresRestart) {
+      setIsReloading(true);
+      try {
+        await commitChanges();
+        await restartEngine();
+      } catch (e) {
+        console.error("[Settings] Error restarting engine after commit:", e);
+      } finally {
+        setIsReloading(false);
+      }
+    } else {
+      await commitChanges();
+    }
   };
 
   const isAutoSavedHere = useSettingsStore((s) => s.autoSavedDomain === domain.id);
@@ -79,20 +104,6 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
               hasChanges && "has-unsaved-changes"
             )}
           >
-            {/* Per-card Help trigger (desktop layouts only) */}
-            {(layoutMode === "full-max" || layoutMode === "full-min") && (
-              <div className="flex justify-end pr-1 -mb-1">
-                <button
-                  onClick={() => openPanel("help")}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.06)] transition-all cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
-                  aria-label={`Help: ${domain.label}`}
-                >
-                  <HelpCircle size={12} strokeWidth={1.75} />
-                  Help
-                </button>
-              </div>
-            )}
-
             {/* Actual Card content */}
             <ErrorBoundary name={`Settings:${domain.id}`}>
               {children}
@@ -102,7 +113,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
             {(layoutMode === "full-max" || layoutMode === "full-min") && (
               <AnimatePresence>
                 {/* Mode A: Explicit Restart Required Bar (ONLY for Type 3 Restart or Missing Cloud Key) */}
-                {hasChanges && (requiresRestart || isMissingCloudKey) && (
+                {hasChanges && (requiresRestart || isDomainMissingCloudKey) && (
                   <motion.div
                     key="restart-footer"
                     initial={{ opacity: 0, height: 0 }}
@@ -111,7 +122,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                     transition={{ duration: 0.2 }}
                     className="w-full p-3 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
                   >
-                    {isMissingCloudKey ? (
+                    {isDomainMissingCloudKey ? (
                       <>
                         <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
                           <AlertCircle size={14} /> {SETTINGS_COPY.apiKeyRequired}
@@ -134,18 +145,21 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                     ) : (
                       <>
                         <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5">
-                          <RefreshCw size={14} /> {requiresRestart ? "Pipeline Restart Required" : SETTINGS_COPY.unsavedChanges}
+                          <RefreshCw size={14} className={isReloading ? "animate-spin" : undefined} /> {requiresRestart ? "Pipeline Restart Required" : SETTINGS_COPY.unsavedChanges}
                         </span>
                         <div className="flex gap-2">
                           <button
                             onClick={handleSave}
-                            className="px-3.5 py-1 rounded-lg bg-[rgb(var(--accent))] text-black dark:text-white font-black text-[12px] uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all cursor-pointer shadow-md flex items-center gap-1.5"
+                            disabled={isReloading}
+                            className="px-3.5 py-1 rounded-lg bg-[rgb(var(--accent))] text-black dark:text-white font-black text-[12px] uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all cursor-pointer shadow-md flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <span>{requiresRestart ? "Apply & Reload" : SETTINGS_COPY.saveChanges}</span>
+                            {isReloading && <RefreshCw size={12} className="animate-spin" />}
+                            <span>{isReloading ? "Reloading..." : (requiresRestart ? "Apply & Reload" : SETTINGS_COPY.saveChanges)}</span>
                           </button>
                           <button
                             onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                            className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                            disabled={isReloading}
+                            className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {SETTINGS_COPY.discardChanges}
                           </button>

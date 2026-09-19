@@ -1,6 +1,7 @@
 name: Build and Release macOS App
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
@@ -48,6 +49,7 @@ jobs:
           CMAKE_OSX_DEPLOYMENT_TARGET: "11.0"
           CFLAGS: "-mmacosx-version-min=11.0"
           CXXFLAGS: "-mmacosx-version-min=11.0 -D_LIBCPP_DISABLE_AVAILABILITY"
+          CMAKE_TOOLCHAIN_FILE: "${{ github.workspace }}/.github/cmake/macos-toolchain.cmake"
         run: |
           cd app
           export SDKROOT="$(xcrun --show-sdk-path)"

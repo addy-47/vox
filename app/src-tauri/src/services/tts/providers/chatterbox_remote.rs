@@ -1,9 +1,10 @@
 use std::{
-    io::Read,
+    io::{ErrorKind, Read},
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
     },
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, Result};
@@ -39,16 +40,26 @@ impl ChatterboxRemoteProvider {
         remote_path: &str,
     ) -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
-            .timeout(Some(std::time::Duration::from_secs(30)))
-            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(Some(Duration::from_secs(30)))
+            .connect_timeout(Duration::from_secs(5))
             .pool_max_idle_per_host(5)
             .build()
             .map_err(|e| anyhow!("Failed to build reqwest client: {}", e))?;
 
+        let clean_lang = if language.len() != 2 || language.starts_with("chatterbox_voice_") {
+            log::warn!(
+                "[ChatterboxRemote] Invalid language '{}' provided; falling back to 'en'",
+                language
+            );
+            "en"
+        } else {
+            language
+        };
+
         let prov = Self {
             client,
             endpoint: endpoint.to_string(),
-            language: language.to_string(),
+            language: clean_lang.to_string(),
             quality_steps: AtomicU32::new(
                 quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_CHATTERBOX),
             ),
@@ -194,7 +205,7 @@ fn stream_pcm_response(
                     playback.ingest_chunk_with_intent(&stretched_chunk, intent);
                 }
             }
-            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
             Err(e) => return Err(anyhow!("Error reading remote stream: {}", e)),
         }
     }
@@ -237,7 +248,7 @@ impl TtsProvider for ChatterboxRemoteProvider {
     fn health_check(&self) -> bool {
         self.client
             .get(format!("{}/health", self.endpoint))
-            .timeout(std::time::Duration::from_secs(2))
+            .timeout(Duration::from_secs(2))
             .send()
             .map(|r| r.status().is_success())
             .unwrap_or(false)
@@ -251,7 +262,7 @@ impl TtsProvider for ChatterboxRemoteProvider {
             text
         );
 
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         let quality_steps = self.quality_steps.load(Ordering::Relaxed);
         let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
 

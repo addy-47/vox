@@ -24,8 +24,8 @@ export const ORBIT_RADIUS_MARGIN = 20;
 export const ORBIT_SLOT_FACTOR = 1.15;
 
 /** Session/day cards per window (orbit capacity bounds). */
-export const ORBIT_CAPACITY_MIN = 6;
-export const ORBIT_CAPACITY_MAX = 12;
+export const ORBIT_CAPACITY_MIN = 12;
+export const ORBIT_CAPACITY_MAX = 24;
 
 /** Depth attenuation range for projected cards (back → front). */
 export const ORBIT_CARD_SCALE_MIN = 0.62;
@@ -105,14 +105,72 @@ export function orbitCapacityFor(
 }
 
 /**
- * Deterministic angle for the i-th card (newest first): the newest card sits
- * at the front (π/2, bottom) and older cards follow counter-clockwise.
+ * Precomputed arc length table for an ellipse with compression ORBIT_TILT_COMPRESSION.
+ * For parameter t from 0 to 2*PI, calculates the cumulative arc length along:
+ * x(t) = cos(t), y(t) = sin(t) * ORBIT_TILT_COMPRESSION.
+ */
+const ELLIPSE_STEPS = 360;
+const ELLIPSE_ARC_TABLE: number[] = (() => {
+  const table = new Array<number>(ELLIPSE_STEPS + 1);
+  table[0] = 0;
+  let cum = 0;
+  const b = ORBIT_TILT_COMPRESSION;
+  for (let i = 1; i <= ELLIPSE_STEPS; i++) {
+    const tPrev = ((i - 1) * 2 * Math.PI) / ELLIPSE_STEPS;
+    const tCurr = (i * 2 * Math.PI) / ELLIPSE_STEPS;
+    const tMid = (tPrev + tCurr) / 2;
+    // Speed: ds/dt = sqrt( (-sin t)^2 + (b * cos t)^2 )
+    const speed = Math.sqrt(Math.sin(tMid) ** 2 + (b * Math.cos(tMid)) ** 2);
+    cum += speed * (tCurr - tPrev);
+    table[i] = cum;
+  }
+  return table;
+})();
+
+const ELLIPSE_TOTAL_PERIMETER = ELLIPSE_ARC_TABLE[ELLIPSE_STEPS];
+
+/** Converts fractional perimeter distance s in [0, 1) into elliptic parameter angle t. */
+export function ellipseAngleFromFraction(fraction: number): number {
+  const norm = ((fraction % 1) + 1) % 1;
+  const targetArc = norm * ELLIPSE_TOTAL_PERIMETER;
+
+  // Binary search table
+  let low = 0;
+  let high = ELLIPSE_STEPS;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (ELLIPSE_ARC_TABLE[mid] < targetArc) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  const idx = Math.max(1, low);
+  const arcPrev = ELLIPSE_ARC_TABLE[idx - 1];
+  const arcNext = ELLIPSE_ARC_TABLE[idx];
+  const ratio = arcNext === arcPrev ? 0 : (targetArc - arcPrev) / (arcNext - arcPrev);
+
+  const tPrev = ((idx - 1) * 2 * Math.PI) / ELLIPSE_STEPS;
+  const tNext = (idx * 2 * Math.PI) / ELLIPSE_STEPS;
+  return tPrev + ratio * (tNext - tPrev);
+}
+
+/**
+ * Deterministic angle for the i-th card (newest first).
+ * Cards are distributed with equal angular steps around the full ring.
+ * Equal angular steps → equal horizontal spread (x = cos θ · R), which is
+ * what the eye perceives as "even spacing" on a tilted perspective ellipse.
+ * The newest card sits at the front (π/2) and older cards follow clockwise.
  */
 export function distributeAngles(count: number): number[] {
-  return Array.from(
-    { length: count },
-    (_, i) => Math.PI / 2 - (i * Math.PI * 2) / count
-  );
+  if (count <= 0) return [];
+  if (count === 1) return [Math.PI / 2];
+  const step = (2 * Math.PI) / count;
+  return Array.from({ length: count }, (_, i) => {
+    // Start at front (π/2) and go backwards (older sessions follow)
+    return Math.PI / 2 - i * step;
+  });
 }
 
 // Days/months with more sessions than the orbit can hold are chunked into
@@ -123,6 +181,8 @@ export interface SessionWindow {
   sessions: SessionRow[];
   /** Mono label, e.g. "07:12 – 11:48". */
   label: string;
+  /** Date span label, e.g. "SEP 11 – 15" or "SEP 15". */
+  dateSpanLabel: string;
   /** Newest session timestamp in the window. */
   startMs: number;
   /** Oldest session timestamp in the window. */
@@ -135,7 +195,28 @@ export interface MonthWindow {
   label: string;
 }
 
-/** Chunks newest-first sessions into bounded windows, labeled by time range. */
+/** Formats a date range span from a list of sessions, e.g. "SEP 11 – 15" or "SEP 15". */
+export function formatSessionDateSpan(sessions: SessionRow[]): string {
+  if (sessions.length === 0) return "";
+  const sorted = [...sessions].sort((a, b) => a.created_at - b.created_at);
+  const start = new Date(sorted[0].created_at);
+  const end = new Date(sorted[sorted.length - 1].created_at);
+
+  const startMonth = start.toLocaleString("en-US", { month: "short" }).toUpperCase();
+  const endMonth = end.toLocaleString("en-US", { month: "short" }).toUpperCase();
+  const startDay = start.getDate();
+  const endDay = end.getDate();
+
+  if (start.toDateString() === end.toDateString()) {
+    return `${startMonth} ${startDay}`;
+  }
+  if (startMonth === endMonth) {
+    return `${startMonth} ${startDay} – ${endDay}`;
+  }
+  return `${startMonth} ${startDay} – ${endMonth} ${endDay}`;
+}
+
+/** Chunks newest-first sessions into bounded windows, labeled by time range and date span. */
 export function chunkSessionsIntoWindows(
   sessions: SessionRow[],
   maxPerWindow: number
@@ -152,6 +233,7 @@ export function chunkSessionsIntoWindows(
       startMs: newest.created_at,
       endMs: oldest.created_at,
       label: formatTimeRange(oldest.created_at, newest.created_at),
+      dateSpanLabel: formatSessionDateSpan(slice),
     });
   }
   return windows;

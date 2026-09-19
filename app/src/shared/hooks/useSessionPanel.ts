@@ -10,7 +10,7 @@ import { onSessionsChanged } from "@/services/eventsService";
 import { useVoiceSession } from "@/shared/context/VoiceSessionContext";
 import { SESSION_COPY } from "@/data/sessionCopy";
 
-interface ProjectGroup {
+export interface ProjectGroup {
   project: ProjectRow;
   sessions: SessionRow[];
 }
@@ -23,7 +23,7 @@ interface UseSessionPanelReturn {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  createNewSession: () => Promise<void>;
+  createNewSession: (projectId?: string) => Promise<void>;
   createNewProject: (name: string) => Promise<void>;
   togglePin: (sessionId: number) => Promise<void>;
   selectSession: (sessionId: number) => Promise<void>;
@@ -128,9 +128,9 @@ export function useSessionPanel(): UseSessionPanelReturn {
     [nonPinnedSessions, projects]
   );
 
-  const createNewSession = useCallback(async () => {
+  const createNewSession = useCallback(async (projectId?: string) => {
     try {
-      await startNewConversation();
+      await startNewConversation(projectId);
     } catch (e) {
       console.error("[SessionPanel] Failed to create session:", e);
     }

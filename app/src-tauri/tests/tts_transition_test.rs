@@ -32,7 +32,7 @@ use vox_lib::{
         RoutingContext,
     },
     services::{
-        harness::{HarnessSession, TurnPreparation, TRANSITION_MESSAGES_EN},
+        harness::{Harness, TRANSITION_MESSAGES_EN},
         tts::{
             actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
             providers::{
@@ -295,10 +295,11 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
         {
             let mut settings = state.settings.write().unwrap();
             settings.llm.context_window = 8192;
+            settings.working_memory.auto_compaction = true; // required: default is false, compaction won't trigger without this
         }
 
         let settings = state.settings.read().unwrap().clone();
-        let mut harness = HarnessSession::new_modular(
+        let mut harness = Harness::new_modular(
             Some(402),
             "You are a helpful voice assistant.".to_string(),
             None,
@@ -308,11 +309,11 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
 
         // 1. Seed conversation buffer to exceed critical threshold (>85% of usable 7680 = >6528 tokens; 105 turns ≈ 7035 tokens)
         for i in 0..105 {
-            harness.history_mut().push_user_turn(format!(
+            harness.push_user_turn(format!(
                 "Turn {} user statement with sufficient length and detail to accumulate tokens in accountant memory buffer. We are discussing neural networks, integration testing, and long context tracking across conversational agents.",
                 i
             ));
-            harness.history_mut().push_assistant_turn(format!(
+            harness.push_assistant_turn(format!(
                 "Turn {} assistant response describing system operations, memory compaction protocols, and pipeline states in detail. High token utilization will trigger inline compaction and transition filler phrase dispatch.",
                 i
             ));
@@ -411,22 +412,18 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
         // ---------------------------------------------------------------------
         // Observable Exit 4: Under normal context (<85% utilization), zero filler dispatched
         // ---------------------------------------------------------------------
-        let mut normal_harness = HarnessSession::new_modular(
+        let mut normal_harness = Harness::new_modular(
             Some(403),
             "System prompt for new session".to_string(),
             None,
             &settings,
             llm_tx,
         );
-        normal_harness
-            .history_mut()
-            .push_user_turn("Short prompt".to_string());
-
-        let normal_prep = normal_harness.prepare_turn("Another short query", turn_id + 1);
-        match normal_prep {
-            TurnPreparation::Ready(_) => {}
-            other => panic!("Normal context must yield Ready, got {:?}", other),
-        }
+        normal_harness.push_user_turn("Short prompt".to_string());
+        assert!(
+            normal_harness.check_critical_compaction_eligibility().is_none(),
+            "Normal context must not trigger critical compaction"
+        );
 
         assert!(
             tts_rx.try_recv().is_err(),

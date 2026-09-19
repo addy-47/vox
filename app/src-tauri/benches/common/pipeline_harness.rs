@@ -169,6 +169,7 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         pending_synthesis_jobs: state.pipeline.pending_synthesis_jobs.clone(),
         playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx: event_tx.clone(),
+        is_playback_muted: state.pipeline.is_playback_muted.clone(),
     };
     let playback_engine = Arc::new(PlaybackEngine::from_parts(
         pb_prod,

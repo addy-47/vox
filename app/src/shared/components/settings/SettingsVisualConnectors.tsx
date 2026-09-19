@@ -85,7 +85,7 @@ export const SettingsConnectorsOverlay = memo(({
   lines,
 }: SettingsConnectorsOverlayProps) => {
   return (
-    <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible">
+    <svg className="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-visible">
       {domains.map((domain) => {
         if (!activeDomains.includes(domain.id)) return null;
         const line = lines[domain.id];
@@ -99,7 +99,7 @@ export const SettingsConnectorsOverlay = memo(({
 
         if (!isVertical) {
           const dx_mid = Math.abs(line.y2 - line.y1);
-          if (domain.id === "models" || domain.id === "history") {
+          if (domain.id === "models" || domain.id === "working_memory") {
             nextX = Math.min(line.x2, line.x1 + dx_mid);
           } else {
             nextX = Math.max(line.x2, line.x1 - dx_mid);

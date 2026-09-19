@@ -29,6 +29,8 @@ export function toMood(state: InteractionState, isEngaged: boolean): AmbientMood
       return "Thinking";
     case "Speaking":
       return "Speaking";
+    case "Sleeping":
+      return "Paused";
     case "Paused":
       return "Paused";
     case "Error":
@@ -40,19 +42,18 @@ export function toMood(state: InteractionState, isEngaged: boolean): AmbientMood
 
 /**
  * Derives the user-facing status label displayed on the HUD/home status cluster.
+ * Maps 1:1 to the pipeline state; PTT sub-states never override it.
  */
 export function toStatusLabel(
   state: InteractionState,
   engaged: boolean,
   sleeping: boolean,
-  ptt: "IDLE" | "RECORDING" | "PROCESSING",
   isPaused: boolean
 ): string {
   if (state === "Error") return "Error";
   if (!engaged || state === "Idle") return "Dormant";
-  if (isPaused || state === "Paused" || sleeping) return "Paused";
-  if (ptt === "RECORDING") return "Recording";
-  if (ptt === "PROCESSING") return "Processing";
+  if (sleeping || state === "Sleeping") return "Sleeping";
+  if (isPaused || state === "Paused") return "Paused";
   switch (state) {
     case "Ready":
       return "Ready";
@@ -65,7 +66,7 @@ export function toStatusLabel(
     case "Speaking":
       return "Speaking";
     default:
-      return "Ready";
+      return state;
   }
 }
 
@@ -75,10 +76,8 @@ export function toStatusLabel(
 export function isDotActive(
   engaged: boolean,
   state: InteractionState,
-  ptt: "IDLE" | "RECORDING" | "PROCESSING",
   sleeping: boolean
 ): boolean {
   if (!engaged || sleeping || state === "Idle" || state === "Paused" || state === "Error") return false;
-  if (ptt === "RECORDING" || ptt === "PROCESSING") return true;
   return state === "Listening" || state === "Thinking" || state === "Working" || state === "Speaking";
 }

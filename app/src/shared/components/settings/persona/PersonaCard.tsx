@@ -2,8 +2,7 @@ import { useState, memo, useCallback, useMemo, useRef } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { CircleUserRound, Code2, Eye, Sparkles } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import ReactMarkdown from "react-markdown";
-import { Card, SegmentedControl } from "@/shared/ui";
+import { Card, SegmentedControl, Markdown } from "@/shared/ui";
 import { PERSONA_COPY } from "@/data/settingsCopy";
 
 interface PersonaCardProps {
@@ -166,33 +165,7 @@ function parseXmlToSections(rawPrompt: string): ParsedSection[] {
   return sections;
 }
 
-const MarkdownPreviewComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
-  h1: ({ node, ...props }) => <h1 className="text-[13px] font-bold mt-2 mb-1 text-[rgb(var(--accent))]" {...props} />,
-  h2: ({ node, ...props }) => <h2 className="text-[12.5px] font-bold mt-2 mb-1 text-[rgb(var(--accent))]" {...props} />,
-  h3: ({ node, ...props }) => <h3 className="text-[12px] font-bold mt-1.5 mb-1 text-[rgb(var(--accent))]" {...props} />,
-  p: ({ node, ...props }) => <p className="mb-1.5 last:mb-0 text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed" {...props} />,
-  ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2 pl-1 space-y-1 text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed" {...props} />,
-  ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2 pl-1 space-y-1 text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed" {...props} />,
-  li: ({ node, ...props }) => <li className="ml-1" {...props} />,
-  code: ({ node, children, ...props }) => {
-    const str = String(children);
-    if (str === "<lang>" || str === "<script>") {
-      return (
-        <span className="text-amber-400 font-mono font-bold bg-amber-400/10 px-1 py-0.5 rounded border border-amber-400/20 text-[11px]">
-          {str}
-        </span>
-      );
-    }
-    return (
-      <code className="bg-[rgba(var(--foreground),0.06)] px-1 py-0.5 rounded font-mono text-[11px] text-[rgb(var(--accent))]" {...props}>
-        {children}
-      </code>
-    );
-  },
-  pre: ({ node, ...props }) => (
-    <pre className="bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.1)] rounded-lg p-2 font-mono text-[11px] overflow-x-auto my-1.5 w-full" {...props} />
-  ),
-};
+
 
 /**
  * Identifies all protected XML tag spans in the text [start, end)
@@ -402,9 +375,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
                     )}
                   </div>
                   <div className="text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed">
-                    <ReactMarkdown components={MarkdownPreviewComponents}>
-                      {sec.content}
-                    </ReactMarkdown>
+                    <Markdown content={sec.content} variant="preview" />
                   </div>
                 </div>
               ))

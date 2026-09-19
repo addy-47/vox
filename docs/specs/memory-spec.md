@@ -66,6 +66,13 @@ Every compaction pass (Critical, Soft, or Manual) produces a single unified JSON
 - **Buffer Pruning**: Compacted raw turns are pruned completely from the in-memory FIFO buffer upon successful compaction.
 - **Lenient Parse Fallback**: If the model returns non-empty text that fails JSON parsing, the raw text is preserved directly inside `<session_context>` with zero staged DB facts rather than dropping context.
 
+### 3.2.1 Compaction LLM Parameter & Settings Invariants
+Compaction execution operates with dedicated, deterministic generation parameters isolated from user conversational settings. Compaction derives ONLY the active provider/model and context window ceiling (`effective_ctx_size()`) from user settings:
+1. **JSON Output Mode Enforced Always**: Compaction strictly enforces `OutputConstraint::JsonSchema` with the canonical 6-bucket memory schema (falling back to `OutputConstraint::JsonObject` baseline only when the model catalog explicitly lacks structured output support).
+2. **Reasoning Always Disabled**: Compaction reasoning is strictly disabled (`ReasoningMode::Disabled`), even if reasoning is enabled for conversation turns, avoiding latency overhead and unpredictable reasoning tags.
+3. **Hardcoded Temperature Constant**: Compaction strictly uses `DEFAULT_LLM_COMPACTION_TEMPERATURE = 0.2` for deterministic, low-hallucination extraction. User conversation temperature settings are ignored.
+4. **Autonomous Output Budget**: Max output tokens are calculated autonomously via `calculate_compaction_max_tokens(effective_ctx_size, probed_max_output)` (`(ctx * 0.15).clamp(256, 16384)`), completely independent of the user's conversational `max_output_tokens` setting.
+
 ### 3.3 Compaction Triggers & Behavioral Rules
 
 #### A. Critical Inline Compaction (`CONTEXT_CRITICAL_THRESHOLD = 0.85`)
@@ -154,8 +161,8 @@ Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_
 - Pre-structured for future project scoping via `project_id NULLABLE`.
 
 ### 5.2 User Interaction Modes
-1. **View, Export & Import**: User views markdown in the UI, exports to disk, or imports an external file to overwrite or initialize.
-2. **Direct Manual Edit**: User directly edits markdown text and saves changes.
+1. **View & Copy**: User views formatted markdown in the UI and can copy the raw markdown text directly to their clipboard. (No backend file export logic needed).
+2. **Direct Manual Edit**: User directly edits markdown text in the UI and saves changes. (Importing external markdown is performed directly by editing and pasting content into the editor).
 3. **Comment-Driven Regeneration**: User leaves directive comments. The backend triggers an LLM pass taking `[Current Document] + [User Comments]` to regenerate the document.
 
 ### 5.3 Background Consolidation Pipeline
@@ -182,7 +189,7 @@ Configurable in `settings.memory.consolidation_cadence` (`"manual"` default, `"d
 - **Missed & Failed Runs**: A run due while the app was down emits a persistent `personal_consolidation` notification card (`pending`, tap-to-run) instead of running silently. A failed run flips its card to `failed` with the error; successes complete silently.
 
 ### 5.5 Project Scope (Current)
-Memory is global: the merge folds all `status = 'active'` personal facts into the single document regardless of `project_id` (which is reserved scaffolding for future project-specific memory). Import replaces only the document text and leaves waiting facts active by design.
+Memory is global: the merge folds all `status = 'active'` personal facts into the single document regardless of `project_id` (which is reserved scaffolding for future project-specific memory). Direct manual edits replace only the document text and leave waiting facts active by design.
 
 ---
 

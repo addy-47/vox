@@ -23,14 +23,15 @@ use crate::{
     pipeline::{spawn_idle_monitor, transition, RoutingContext},
     services::{
         self,
-        harness::HarnessSession,
-        llm::actor::LlmCommand,
-        memory::compaction::coordinator::CompactionCoordinator,
+        harness::Harness,
+        llm::actor::{cool_down_llm, LlmCommand},
+        memory::{compaction::coordinator::CompactionCoordinator, trim_heap},
         notifications::{Action, ActionPayload, NotificationCategory, NotificationParams},
         realtime::{
             session::{create_realtime_provider, purge_session_cache},
             RealtimeActor,
         },
+        tts::actor::cool_down_tts,
         vad::{VadCommand, VadOperationalMode},
     },
 };
@@ -268,24 +269,18 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
                 .ok()
                 .and_then(|g| g.as_ref().and_then(|e| e.llm_tx.clone()));
             if let Some(llm_tx) = llm_tx_opt {
-                let mut harness = HarnessSession::new_modular(
-                    session_id,
-                    prompt,
-                    personal_memory,
-                    &settings,
-                    llm_tx,
-                );
+                let mut harness =
+                    Harness::new_modular(session_id, prompt, personal_memory, &settings, llm_tx);
                 if !turns.is_empty() || summary.is_some() {
                     harness.seed_continuation(summary, turns);
                 }
                 *state.harness.lock() = Some(harness);
             } else {
-                log::warn!("[Pipeline::Session] No LLM tx available for HarnessSession mount");
+                log::warn!("[Pipeline::Session] No LLM tx available for Harness mount");
             }
         }
         PipelineMode::Realtime => {
-            let mut harness =
-                HarnessSession::new_realtime(session_id, prompt, personal_memory, &settings);
+            let mut harness = Harness::new_realtime(session_id, prompt, personal_memory, &settings);
             if !turns.is_empty() || summary.is_some() {
                 harness.seed_continuation(summary, turns);
             }
@@ -308,7 +303,10 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
 /// Pauses the active voice session, silencing audio output and placing the state machine in Paused.
 pub fn on_pause<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {
     let current_state = state.pipeline.state();
-    if current_state == InteractionState::Idle || current_state == InteractionState::Paused {
+    if current_state == InteractionState::Idle
+        || current_state == InteractionState::Paused
+        || current_state == InteractionState::Sleeping
+    {
         log::debug!(
             "[Pipeline::Session] Pause dropped: already in {:?}",
             current_state
@@ -396,21 +394,28 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, _ctx: 
 
     let resume_res = match assistant_ctx.pipeline_mode {
         PipelineMode::Modular => {
-            let vad_mode = match assistant_ctx.interaction_mode {
-                InteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
-                InteractionMode::PTT => VadOperationalMode::WindowedValidation,
-            };
-            if let Ok(guard) = state.engine.try_lock() {
-                if let Some(ref engine) = *guard {
-                    if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {
-                        log::warn!(
-                            "[Pipeline::Session] Failed to set VAD mode on resume: {}",
-                            e
-                        );
+            // Re-warm workers offloaded during sustained Paused/Sleeping so
+            // resume never lands in Ready with dead LLM/TTS channels.
+            if let Err(e) = ensure_modular_workers_sync(state) {
+                Err(e)
+            } else {
+                let vad_mode = match assistant_ctx.interaction_mode {
+                    InteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
+                    InteractionMode::PTT => VadOperationalMode::WindowedValidation,
+                };
+                if let Ok(guard) = state.engine.try_lock() {
+                    if let Some(ref engine) = *guard {
+                        if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode))
+                        {
+                            log::warn!(
+                                "[Pipeline::Session] Failed to set VAD mode on resume: {}",
+                                e
+                            );
+                        }
                     }
                 }
+                Ok(())
             }
-            Ok(())
         }
         PipelineMode::Realtime => resume_realtime(app, state, &assistant_ctx),
     };
@@ -518,23 +523,27 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
         .owner
         .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
 
-    // Stop CPAL engine only if dictation is also disabled, otherwise switch VAD to dictation mode.
+    // Stop CPAL engine only if dictation track is disabled (Idle).
+    // Otherwise, dictation is active (Ready/Listening/Thinking): keep VAD + STT hot in memory,
+    // switch VAD to dictation mode, and offload LLM and TTS since assistant session has ended.
     if state.pipeline.dictation_state() == InteractionState::Idle {
         if let Err(e) = stop_audio_engine_sync(state) {
             log::warn!("[Pipeline::Session] Error stopping audio engine: {}", e);
         }
     } else {
-        let dictation_mode = state
-            .settings
-            .read()
-            .map(|s| s.dictation.interaction_mode.clone())
-            .unwrap_or(DictationInteractionMode::Ptt);
-        let vad_op_mode = match dictation_mode {
-            DictationInteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
-            DictationInteractionMode::Ptt => VadOperationalMode::WindowedValidation,
-        };
-        if let Ok(guard) = state.engine.try_lock() {
-            if let Some(ref engine) = *guard {
+        if let Ok(mut guard) = state.engine.try_lock() {
+            if let Some(ref mut engine) = *guard {
+                cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));
+                cool_down_tts(&mut engine.tts_tx);
+                let dictation_mode = state
+                    .settings
+                    .read()
+                    .map(|s| s.dictation.interaction_mode.clone())
+                    .unwrap_or(DictationInteractionMode::Ptt);
+                let vad_op_mode = match dictation_mode {
+                    DictationInteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
+                    DictationInteractionMode::Ptt => VadOperationalMode::WindowedValidation,
+                };
                 if let Err(e) = engine
                     .vad_tx
                     .send(VadCommand::SetOperationalMode(vad_op_mode))
@@ -546,6 +555,7 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
                 }
             }
         }
+        trim_heap("session_end_dictation_standby");
     }
 
     transition(InteractionState::Idle, ctx, app, state);
@@ -555,7 +565,7 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
     let auto_compaction = state
         .settings
         .read()
-        .map(|s| s.history.auto_compaction)
+        .map(|s| s.working_memory.auto_compaction)
         .unwrap_or(false);
 
     let app_handle = app.clone();

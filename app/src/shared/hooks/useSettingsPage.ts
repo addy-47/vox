@@ -32,8 +32,8 @@ export function useSettingsPage() {
   const [lines, setLines] = useState<Record<DomainId, { x1: number; y1: number; x2: number; y2: number } | null>>({
     persona: null,
     models: null,
-    history: null,
-    memory: null,
+    working_memory: null,
+    personal_memory: null,
     appearance: null,
     interaction: null,
   });
@@ -107,8 +107,8 @@ export function useSettingsPage() {
       setLines({
         persona: null,
         models: null,
-        history: null,
-        memory: null,
+        working_memory: null,
+        personal_memory: null,
         appearance: null,
         interaction: null,
       });
@@ -154,11 +154,11 @@ export function useSettingsPage() {
                 y2 = cardRect.top - containerRect.top;
                 break;
               case "models":
-              case "history":
+              case "working_memory":
                 x2 = cardRect.left - containerRect.left;
                 y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
                 break;
-              case "memory":
+              case "personal_memory":
               case "interaction":
                 x2 = cardRect.right - containerRect.left;
                 y2 = (cardRect.top + cardRect.bottom) / 2 - containerRect.top;
@@ -208,10 +208,29 @@ export function useSettingsPage() {
     };
 
     calculate();
-    const timer = setTimeout(calculate, 320);
+    const timer1 = setTimeout(calculate, 100);
+    const timer2 = setTimeout(calculate, 320);
+    const timer3 = setTimeout(calculate, 600);
+
+    // Watch for card and container resizes (e.g. when lazy-loaded card chunks mount and expand)
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && containerRef.current) {
+      observer = new ResizeObserver(() => {
+        calculate();
+      });
+      observer.observe(containerRef.current);
+      DOMAINS.forEach((d) => {
+        const el = document.getElementById(`card-${d.id}`);
+        if (el && observer) observer.observe(el);
+      });
+    }
+
     return () => {
-      clearTimeout(timer);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
       cancelAnimationFrame(calcRafId);
+      if (observer) observer.disconnect();
     };
   }, [activeDomains, isCompact, windowWidth, windowHeight]);
 

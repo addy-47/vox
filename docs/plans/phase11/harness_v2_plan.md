@@ -1,297 +1,321 @@
-# Implementation Plan — Plugin-Based LLM Agent Harness Runtime (v2)
+# Implementation Plan — Vox LLM Agent Harness Runtime Refactor (Production LLD)
 
-Translate the approved [LLM Agent Harness & Plugin Runtime Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/harness-spec.md) into code. This refactor cleanly replaces the legacy `services/harness/` subsystem (over 1,600 lines) with a modular 5-plugin agent chassis (`ConversationHistoryPlugin`, `PromptBuilderPlugin`, `ContextBudgetPlugin`, `CompactionPlugin`, `StreamRoutingPlugin`), decouples `services/llm/actor.rs` into a pure stateless token engine, introduces `InteractionState::Working` and `AudioIntent` (defined directly in `core/events.rs`), establishes the 1:1 session lifecycle (`start_session(Option<sessionId>)`), and eliminates ambient background polling loops.
-
----
-
-## User Review Required
-
-> [!IMPORTANT]
-> **Scope & Role Boundary Alignment**:
-> 1. **`AudioIntent` Placement**: Defined directly in [core/events.rs](file:///home/addy/projects/apps/vox/app/src-tauri/src/core/events.rs) alongside pipeline event payloads.
-> 2. **Test Suite Scope**: Authoring and updating integration test suites is strictly out of scope for this backend implementation plan; it is deferred to the dedicated **test-engineer** role. Backend verification within these batches is strictly scoped to fast syntax/build/type checks (`cargo check --release`, `cargo clippy`, `pnpm build`).
-> 3. **Batch Sizing & Subdivision**: The former large harness batch is divided into 3 balanced, bite-sized batches:
->    - **Batch 2**: Decouple `LlmActor` & Author `StreamRoutingPlugin`.
->    - **Batch 3**: Harness Core Messages, Tags, Filler Catalogs, `ConversationHistoryPlugin`, and `PromptBuilderPlugin`.
->    - **Batch 4**: `ContextBudgetPlugin`, `CompactionPlugin`, and Reactive Soft Compaction Watcher.
->    - **Batch 5**: `HarnessSession` Chassis Assembly & Pipeline 1:1 Lifecycle Integration.
+Translate the approved [LLM Agent Harness Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/harness-spec.md) and [Target Event-Domain Architectural Specification](file:///home/addy/projects/apps/vox/docs/specs/events-spec.md) into code. This plan establishes `Harness` in `services/harness/orchestrator.rs` as the single cognitive turn sequencer owning `execute_turn`, extracts NLP clause chunking out of physical audio synthesis (`services/tts/actor.rs`), enforces the Generic Non-Terminal Phase contract (`InteractionState::Working = 8`), and resolves live failure hazards (dropped finishes, deadlocks on missing channels, and history wipes).
 
 ---
 
-## Specification Cross-Reference Matrix (Full Coverage Audit)
+## Target End-State
 
-Every section, invariant, and threshold from [harness-spec.md](file:///home/addy/projects/apps/vox/docs/specs/harness-spec.md) is mapped to its implementing batch:
-
-| Spec Section | Topic & Mandate | Target Subsystem / File | Mapped Batch |
-| :--- | :--- | :--- | :---: |
-| **§1.1 – 1.2** | Clean-slate deletion of 5 legacy harness files | `services/harness/` | **Batch 3** |
-| **§2.1 – 2.2** | Agent = Model + Harness; Spatial & Temporal composability | `services/llm/actor.rs` & `services/harness/session.rs` | **Batch 2 & 5** |
-| **§3.1** | 1:1 Lifecycle mapping (`session_start` to `session_end`) | `core/state.rs`, `pipeline/assistant/session.rs` | **Batch 5** |
-| **§3.2** | `continue_session` (UI fetch only) vs `start_session(Option<id>)` | `ipc/persistence.rs`, `ipc/pipeline.rs` | **Batch 5** |
-| **§4.1** | Harness as cognitive front door; sole emitter of `LlmFinished` | `StreamRoutingPlugin`, `pipeline/assistant/transcript.rs` | **Batch 2 & 5** |
-| **§4.2** | Duplex Dialogue Pipe (`LlmCommand::Generate` with `response_tx`) | `services/llm/actor.rs`, `HarnessSession` | **Batch 2 & 5** |
-| **§5.1** | `InteractionState::Working = 8` state invariant | `core/state.rs`, `eventsService.ts`, `voiceDisplay.ts` | **Batch 1** |
-| **§5.2** | `AudioIntent::InterimFiller` vs `AudioIntent::TurnResponse` | `core/events.rs`, `services/tts/actor.rs` | **Batch 1** |
-| **§5.3** | Playback Engine Gating (InterimFiller locks Working, no Speaking/Ready) | `services/audio/playback.rs`, `pipeline/assistant/playback.rs` | **Batch 1** |
-| **§6.1** | Token accounting formula `(tokens / (max - reserved_gen))`, 20% system share | `ContextBudgetPlugin`, `PromptBuilderPlugin` | **Batch 3 & 4** |
-| **§6.2** | Nominal path (< 85% utilization) token routing | `HarnessSession::prepare_turn`, `StreamRoutingPlugin` | **Batch 2 & 5** |
-| **§6.3** | Critical inline compaction (utilization $\ge 85\%$): Devanagari detection, filler dispatch $\to$ `Working`, 2-attempt LLM summarization (45s timeout), fact staging, buffer rebuild | `CompactionPlugin`, `filler.rs`, `pipeline/assistant/transcript.rs` | **Batch 3, 4 & 5** |
-| **§6.4** | Degraded FIFO fallback (context $\le 4096$, history $\le 3$, or retries fail) | `ContextBudgetPlugin`, `CompactionPlugin` | **Batch 4** |
-| **§6.5** | Reactive opportunistic soft compaction (65%–85%): 20s quiet debounce timer, zero idle polling loops | `CompactionPlugin`, removal from `lib.rs` | **Batch 4 & 5** |
-| **§7.1** | 5-Plugin Component Taxonomy | `services/harness/plugins/` | **Batch 2, 3 & 4** |
-| **§7.2** | Strongly-typed `PromptTag` (`UserIdentity`, `SessionContext`, `PastTurns`) | `services/harness/tags.rs` | **Batch 3** |
-| **§8.0** | Domain configurations (Modular mounts all; Realtime mounts history/prompt only) | `HarnessSession::new_fresh`, `new_realtime` | **Batch 5** |
-| **§9.1 – 9.2** | Integration slots for Tagged Demuxer & On-Demand Episodic Tool Calling | `StreamRoutingPlugin` | **Batch 2** |
-| **§10.1 – 10.5** | Architectural invariants (ZBC, hot path lock-free, lock discipline across await, decoupled actor, LlmFinished authority) | Entire codebase | **All Batches** |
+1. **Physical Audio Worker Decoupled (`services/tts/actor.rs`)**:
+   - `services/tts/actor.rs` pruned to $<180$ lines, owning physical audio synthesis only. Zero NLP or string chunking logic.
+   - `ClauseChunker` ported byte-identically to `services/harness/streaming/chunker.rs`.
+   - `create_tts_provider` extracted to `services/tts/factory.rs`.
+   - Saturating counter decrement discipline applied to `pending_synthesis_jobs` to prevent `u32` wrap under external resets.
+2. **Single Orchestrator Authority (`services/harness/orchestrator.rs`)**:
+   - `Harness` is the sole orchestrator owning session lifecycle, quiet compaction watcher, and `execute_turn`.
+   - Upstream caller (`pipeline/assistant/transcript.rs`) thinned from ~390 lines to a pure event adapter: receives `VoxEvent::TranscriptFinal`, invokes `harness.execute_turn(req).await`, and translates the returned `TurnOutcome` into pipeline state transitions.
+   - Legacy `services/harness/session.rs` and `services/harness/plugins/` (all 6 files) deleted completely.
+3. **Pure Stage Taxonomy (`services/harness/stages/`)**:
+   - `stages/history.rs`: `ConversationHistoryStage` (FIFO message buffer, deduplication, turn commits, rollback).
+   - `stages/prompt.rs`: `PromptBuilderStage` (persona grounding, `<user_identity>` budget ceiling, `build_generation_request` payload assembly).
+   - `stages/budget.rs`: `ContextBudgetStage` (token estimation, 65% soft / 85% critical threshold evaluation, `execute_fifo_shift`).
+   - `stages/compaction.rs`: `CompactionStage` (0-retry fail-fast compaction, executor isolation on `tokio::task::spawn_blocking` for local compute, Turso DB fact staging).
+4. **Decoupled Egress Streaming (`services/harness/streaming/`)**:
+   - `streaming/chunker.rs`: `ClauseChunker` (sentence boundary detection, prosody morphing `.` $\to$ `,` under 5 words).
+   - `streaming/router.rs`: `StreamRouter` (duplex stream consumer, clause dispatch to TTS with `AudioIntent::TurnResponse`, subtitle IPC emit, `TurnAccumulator` writes, sole emitter of `VoxEvent::LlmFinished`).
+   - `streaming/demuxer.rs`: `StreamingTagDemuxer` (deferred slot stub enforcing 64-token speculative buffer ceiling and leading tag resolution invariant upstream of both chunker and UI subtitles).
+5. **Robust Concurrency & Error Contracts**:
+   - Dropped-finish hazard resolved: `pipeline/assistant/llm.rs::on_llm_finished` guard check expanded to accept `InteractionState::Working` alongside `Thinking` and `Speaking`.
+   - Single-turn cancellation token discipline: `CancellationToken` captured by value per turn, eliminating shared `AtomicBool` split-brain hazards. Cancelled turns never emit `VoxEvent::LlmFinished`.
+   - Missing-channel deadlock prevention: Pre-dispatch checks return clean `TurnOutcome::Error` if `llm_tx` or `pipeline_tx` is `None`, and run degraded text-only mode if `tts_tx` is `None`.
+   - Staging order guarantee: Active user query staged into history *before* cognitive maintenance, guaranteeing zero query loss during fallback FIFO shifts.
 
 ---
 
-## Balanced Execution Batches
+## Resolved Architectural Decisions
+
+| Decision / Gap | Production Resolution |
+| :--- | :--- |
+| **Struct Name & File Placement** | Struct is `Harness`; file is `services/harness/orchestrator.rs`. |
+| **`turn_id` Wire Representation** | Wire type is strictly `u32` across `TurnExecutionRequest`, `TurnOutcome`, and `Harness` to match `PipelineAtomics`. |
+| **Compaction Policy & Retries** | Zero-retry fail-fast. If the single inline compaction attempt fails or returns malformed JSON, immediately fallback to deterministic FIFO shift to preserve conversational latency. |
+| **Compaction Executor Isolation** | Embedded/local provider inference executed inside `tokio::task::spawn_blocking` to prevent starving the Tokio async reactor. Cloud providers await natively. |
+| **Prompt In-Place Synchronization** | On prompt changes, `PromptBuilderStage` updates `messages[0]` (System) in place. It never wipes the message vec, eliminating the historical turn wipe bug. |
+| **Dropped Query Preservation** | User query is staged in Phase 2 *before* budget evaluation or compaction. On FIFO shift, oldest turn pairs are dropped from index 1 while preserving the active query at the tail. |
+| **Leading Tag Demuxer Placement** | Demuxer sits strictly upstream of both `ClauseChunker` (audio) and `IpcEvent::LlmToken` (subtitles), with bounded 64-token speculative buffer. |
+| **Dropped-Finish Hazard** | `pipeline/assistant/llm.rs::on_llm_finished` guard accepts `Thinking \| Working \| Speaking`. |
+| **Missing Channels (`None`)** | `llm_tx == None` or `pipeline_tx == None` fails fast with `Error` without blocking on orphaned `response_rx`. `tts_tx == None` executes degraded text-only stream. |
+
+---
+
+## Detailed Type Contracts & Signatures
+
+### 1. Domain Types (`services/harness/mod.rs`)
+
+```rust
+pub mod orchestrator;
+pub mod stages;
+pub mod streaming;
+pub mod watcher;
+
+pub use orchestrator::{Harness, PipelineDomain, TurnExecutionRequest, TurnOutcome};
+pub use watcher::QuietCompactionWatcher;
+
+pub enum Role {
+    System,
+    User,
+    Assistant,
+}
+
+pub struct ChatMessage {
+    pub role: Role,
+    pub content: String,
+    pub timestamp_ms: u64,
+}
+
+pub enum PromptTag {
+    UserIdentity,
+    SessionContext,
+    PastTurns,
+}
+
+pub enum ContextStatus {
+    Nominal,
+    SoftWarning,
+    Critical,
+}
+
+pub enum TurnOutcome {
+    Completed { assistant_response: String, turn_id: u32 },
+    DuplicateIgnored { turn_id: u32 },
+    Cancelled { turn_id: u32 },
+    Error { turn_id: u32, message: String },
+}
+
+pub struct TurnExecutionRequest<'a, R: tauri::Runtime> {
+    pub query: &'a str,
+    pub turn_id: u32,
+    pub cancel: tokio_util::sync::CancellationToken,
+    pub owner: crate::core::state::InteractionOwner,
+    pub llm_tx: Option<std::sync::mpsc::Sender<crate::services::llm::actor::LlmCommand>>,
+    pub tts_tx: Option<std::sync::mpsc::Sender<crate::services::tts::actor::TtsCommand>>,
+    pub provider: Option<std::sync::Arc<dyn crate::services::llm::LlmProvider>>,
+    pub db: std::sync::Arc<crate::persistence::db::VoxDb>,
+    pub pipeline_tx: Option<std::sync::mpsc::Sender<crate::core::events::VoxEvent>>,
+    pub accumulator: std::sync::Arc<parking_lot::Mutex<crate::pipeline::assistant::accumulator::TurnAccumulator>>,
+    pub pending_synthesis_jobs: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub app: tauri::AppHandle<R>,
+    pub routing_ctx: crate::pipeline::router::RoutingContext,
+    pub app_state: std::sync::Arc<crate::core::state::AppState>,
+}
+```
+
+### 2. Audio Boundary Decoupling
+
+#### `services/harness/streaming/chunker.rs` (`ClauseChunker`)
+Byte-identical port of `services/tts/actor.rs:333-490`:
+- Adaptive thresholds: clause 0 `(5, 8, 12)`, clause 1 `(10, 15, 20)`, steady state `(16, 24, 32)`.
+- Strong terminators (`\n`, `?`, `!`) split unconditionally.
+- Gated sub-clause terminators (`,`, `;`, `:`, `—`, `–`) split once word count $\ge w_{min}$.
+- Abbreviation and decimal guards (`is_abbreviation`, digit-period-digit protection).
+- Prosody morphing: periods rewritten to commas when word count $< 5$ and followed by whitespace.
+- Emergency word cap fallback at $w_{max}$.
+
+#### `services/tts/factory.rs`
+Extracted from `services/tts/actor.rs:200-267`:
+```rust
+pub fn create_tts_provider(
+    settings: &crate::core::settings::VoxSettings,
+    super_tts_path: &std::path::Path,
+    reference_audio: Option<&str>,
+) -> Result<Box<dyn super::providers::TtsProvider>, String>;
+
+pub async fn resolve_reference_audio(
+    conn: &turso::Connection,
+    voice_id: Option<&str>,
+) -> Option<String>;
+```
+
+#### Pruned `services/tts/actor.rs` ($<180$ lines)
+- Retains only: `TtsCommand`, `TtsWorkerHandles`, `spawn_tts_worker`, `TtsWarmUpHandles`, `warm_up_tts`, `cool_down_tts`.
+- Implements saturating decrement on `pending_synthesis_jobs` via `fetch_update` to prevent integer wrap under external resets.
+
+### 3. Harness Stages (`services/harness/stages/`)
+
+- **`stages/history.rs` (`ConversationHistoryStage`)**:
+  - In-memory message vec (`Vec<ChatMessage>`) and KV-cache sync index.
+  - `push_user_turn`, `push_assistant_turn`, `rollback_last_user_turn`.
+  - `is_duplicate_user_turn` (last-message equality check).
+  - `truncate_oldest_turns(count)` (drops turn pairs from index 1, preserving root system prompt).
+- **`stages/prompt.rs` (`PromptBuilderStage`)**:
+  - Bounded `<user_identity>` injection (20% context window ceiling, floor character boundary truncation).
+  - `assemble(&self) -> String`: returns canonical root system prompt string.
+  - `build_generation_request(&self, history: &[ChatMessage], query: &str, options: GenerationOptions) -> GenerationRequest`: builds payload without mutating history.
+- **`stages/budget.rs` (`ContextBudgetStage`)**:
+  - Tracks context utilization formula: `tracked_tokens / (max_tokens - reserved_tokens)`.
+  - Reserved tokens derived from `settings.llm.max_output_tokens` clamped to `[256, 2048]`.
+  - `evaluate_utilization(tokens) -> (f32, ContextStatus)` (`Nominal`, `SoftWarning`, `Critical`).
+  - `execute_fifo_shift(&self, history: &mut ConversationHistoryStage) -> usize`: shifts historical turns until utilization $<65\%$.
+- **`stages/compaction.rs` (`CompactionStage`)**:
+  - `can_perform_inline_compaction`: eligible if message count $\ge 4$.
+  - `run_and_persist`: records start in Turso DB `compactions` ledger, invokes `run_compaction`, records finish, and stages facts into ingestion queue.
+  - Zero-retry fail-fast execution: failures return `Err`, triggering immediate FIFO fallback.
+
+### 4. Egress Streaming (`services/harness/streaming/`)
+
+- **`streaming/router.rs` (`StreamRouter`)**:
+  - Consumes `LlmResponse` across duplex pipe.
+  - Checks `cancel.is_cancelled()` on every iteration. On cancel: emits `VoxEvent::Cancelled`, returns partial text without emitting `LlmFinished`.
+  - Disconnect without `Finished` returns `Err("stream disconnected")`, triggering abort without committing partial text.
+  - Feeds incoming tokens through `StreamingTagDemuxer` before dispatching to `ClauseChunker` or emitting `IpcEvent::LlmToken`.
+  - Dispatches clauses to `tts_tx` with `AudioIntent::TurnResponse` and increments `pending_synthesis_jobs`.
+  - Sole authority for `VoxEvent::LlmFinished`, emitted only on successful completion with non-empty text.
+- **`streaming/demuxer.rs` (`StreamingTagDemuxer`)**:
+  - Deferred slot stub with `DEMUXER_MAX_SPECULATIVE_TOKENS = 64`.
+  - Buffers tokens until first non-whitespace character is resolved. If non-`<`, flushes speculative buffer immediately as raw text.
+  - If `<` prefix does not match a registered tag within 64 tokens, flushes as raw text.
+
+---
+
+## The 7-Phase Execution Sequence (`Harness::execute_turn`)
 
 ```
-  ┌────────────────────────────────────────────────────────┐
-  │ Batch 1: Core Event Contracts & AudioIntent Gating     │
-  │ • AudioIntent defined in core/events.rs                │
-  │ • VoxEvent::SessionStart { session_id }, PlaybackIntent│
-  │ • InteractionState::Working = 8 backend & frontend     │
-  │ • TTS & PlaybackEngine intent gating                   │
-  └──────────────────────────┬─────────────────────────────┘
-                             │
-                             ▼
-  ┌────────────────────────────────────────────────────────┐
-  │ Batch 2: Model Decoupling & Stream Routing Plugin      │
-  │ • LlmResponse enum (Token, Finished, Error)            │
-  │ • Decouple LlmActor into pure stateless token engine   │
-  │ • Implement StreamRoutingPlugin (clauses, TTS, IPC)    │
-  └──────────────────────────┬─────────────────────────────┘
-                             │
-                             ▼
-  ┌────────────────────────────────────────────────────────┐
-  │ Batch 3: Dialog History, Tags & Prompt Assembly        │
-  │ • Delete legacy accountant/buffer/facade/manager/prompt│
-  │ • Implement ChatMessage, Role, PromptTag, filler.rs    │
-  │ • Implement ConversationHistoryPlugin & PromptBuilder   │
-  └──────────────────────────┬─────────────────────────────┘
-                             │
-                             ▼
-  ┌────────────────────────────────────────────────────────┐
-  │ Batch 4: Context Budgeting, Compaction & Quiet Watcher │
-  │ • ContextBudgetPlugin (token formula, FIFO shift)      │
-  │ • CompactionPlugin (inline summarization, fact staging)│
-  │ • Reactive 20s debounced quiet watcher (zero polling)  │
-  └──────────────────────────┬─────────────────────────────┘
-                             │
-                             ▼
-  ┌────────────────────────────────────────────────────────┐
-  │ Batch 5: HarnessSession Chassis & 1:1 Lifecycle Wiring │
-  │ • HarnessSession chassis assembling the 5 plugins      │
-  │ • AppState.harness: Arc<Mutex<Option<HarnessSession>>> │
-  │ • 1:1 Session start/end lifecycle, transcript wiring   │
-  │ • continue_session zero-idle check; delete lib.rs loop │
-  └────────────────────────────────────────────────────────┘
+                                  execute_turn(req)
+                                          │
+                  ┌───────────────────────┴───────────────────────┐
+                  ▼                                               ▼
+         Is Duplicate Turn?                             Turn Pre-Cancelled?
+         [DuplicateIgnored]                                 [Cancelled]
+                  │ (No)
+                  ▼
+         Phase 2: Push User Query to History (Guaranteed Staging)
+                  │
+                  ▼
+         Evaluate Context Utilization (stages/budget.rs)
+                  │
+        ┌─────────┴───────────────────────────────────────────────┐
+        ▼ (Critical >= 85% & len >= 4)                            ▼ (Nominal < 85%)
+   Phase 3: Critical Inline Compaction                            │
+   • Transition: Thinking -> Working                              │
+   • Dispatch: InterimFiller -> TTS                               │
+   • Vend DB & Run Compaction (spawn_blocking for local)          │
+   • Success: Apply <session_context> summary                     │
+   • Failure: Degraded FIFO Shift (Query Preserved!)              │
+        │                                                         │
+        └─────────────────────────┬───────────────────────────────┘
+                                  ▼
+         Phase 4: Prompt Assembly & GenerationRequest Building
+                  │
+                  ▼
+         Phase 5: Duplex Model Pipe Dispatch (llm_tx Send)
+                  • Check None Channels (Fail-fast on deadlocks)
+                  • Create (response_tx, response_rx)
+                  │
+                  ▼
+         Phase 6: Egress Stream Routing (spawn_blocking)
+                  • Demuxer Speculative Check (Max 64 Tokens)
+                  • Emit Subtitle IPC (IpcEvent::LlmToken)
+                  • Push to ClauseChunker & Dispatch TTS (AudioIntent::TurnResponse)
+                  • Append to TurnAccumulator
+                  │
+                  ▼
+         Phase 7: Finalization & Commit
+                  • Succeeded: Commit turn to History, emit LlmFinished,
+                               arm 20s quiet watcher if soft window (65-85%)
+                               -> Return Completed
+                  • Cancelled: Rollback staged query -> Return Cancelled
+                  • Error/Drop: Rollback staged query, transition to Ready
+                               -> Return Error
 ```
 
 ---
 
-### Batch 1: Core Event Contracts & AudioIntent Gating
-- **Goal**: Establish core event contracts (`AudioIntent` in `core/events.rs`, `InteractionState::Working = 8`, `VoxEvent::SessionStart`, `PlaybackStarted`, `PlaybackFinished`) and intent-gated audio playback.
-- **Dependencies**: None.
-- **Files Touched**:
-  - `app/src-tauri/src/core/events.rs`:
-    - Define `AudioIntent` directly:
-      ```rust
-      #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-      #[serde(rename_all = "snake_case")]
-      pub enum AudioIntent {
-          InterimFiller,
-          TurnResponse,
-      }
-      ```
-    - Update `VoxEvent::SessionStart { owner: InteractionOwner, session_id: Option<i64> }`.
-    - Update `VoxEvent::PlaybackStarted { turn_id: u32, intent: AudioIntent }`.
-    - Update `VoxEvent::PlaybackFinished { turn_id: u32, intent: AudioIntent }`.
-  - `app/src-tauri/src/core/state.rs`:
-    - Add `InteractionState::Working = 8` (and `From<u32>` / `From<InteractionState> for u32`).
-  - `app/src/services/eventsService.ts`:
-    - Add `"Working"` to TypeScript `InteractionState` union.
-  - `app/src/shared/lib/voiceDisplay.ts`:
-    - Map `"Working"` to mood/status in `toMood`.
-  - `app/src-tauri/src/services/tts/actor.rs`:
-    - Update `TtsCommand::Generate { turn_id: u32, text: String, intent: AudioIntent }`.
-    - Forward `intent` to `synthesize_chunk`.
-  - `app/src-tauri/src/services/tts/providers/mod.rs` & providers (`supertonic.rs`, `kokoro.rs`, `chatterbox.rs`, `chatterbox_remote.rs`, `edge_tts.rs`):
-    - Accept `intent: AudioIntent` and forward to `playback.ingest_chunk_with_intent(&chunk, intent)`.
-  - `app/src-tauri/src/services/audio/playback.rs`:
-    - Add `playback_intent: Arc<AtomicU8>` to `PlaybackEngine`. Rename `stream` to `_stream: Option<cpal::Stream>` (fixing dead_code warning).
-    - Expose `ingest_chunk_with_intent(&self, chunk_24khz: &[f32], intent: AudioIntent)`.
-    - Pre-roll threshold satisfied $\to$ emit `VoxEvent::PlaybackStarted { turn_id, intent }`.
-  - `app/src-tauri/src/services/audio/sink.rs`:
-    - Output buffer empty $\to$ emit `VoxEvent::PlaybackFinished { turn_id, intent }`.
-  - `app/src-tauri/src/pipeline/router.rs`:
-    - Update pattern matches on `SessionStart`, `PlaybackStarted`, and `PlaybackFinished`.
-    - Update `ingestion_gate`: include `InteractionState::Working`.
-  - `app/src-tauri/src/pipeline/assistant/playback.rs`:
-    - `on_playback_started`: If `AudioIntent::InterimFiller`, remain in `Working` (no transition to `Speaking`, no IPC event). If `AudioIntent::TurnResponse`, transition to `Speaking` and emit `IpcEvent::StateChanged(Speaking)`.
-    - `on_playback_finished`: If `AudioIntent::InterimFiller`, remain in `Working` (no transition to `Ready`, no IPC event). If `AudioIntent::TurnResponse`, transition to `Ready` and emit `IpcEvent::StateChanged(Ready)`.
-- **Verification**: `cargo check --release` passes; frontend builds cleanly.
+## Refactoring `pipeline/assistant/transcript.rs`
+
+`spawn_modular_llm_task` drops lines 93-270 of manual orchestration, reducing to a clean adapter:
+
+```rust
+// 1. Snapshot lightweight handles
+let cancel = state.pipeline.turn_token();
+let req = TurnExecutionRequest {
+    query: &query,
+    turn_id,
+    cancel,
+    owner: ctx_owner,
+    llm_tx: engine_llm_tx,
+    tts_tx: engine_tts_tx,
+    provider: provider_arc.read().clone(),
+    db: Arc::clone(&app_state.db),
+    pipeline_tx: engine_pipeline_tx,
+    accumulator,
+    pending_synthesis_jobs: pending_jobs,
+    app: app_clone,
+    routing_ctx: ctx_clone,
+    app_state: Arc::clone(&app_state),
+};
+
+// 2. Spawn and execute via single orchestrator
+tauri::async_runtime::spawn(async move {
+    let outcome = {
+        let mut guard = harness_arc.lock();
+        let Some(ref mut harness) = *guard else {
+            log::error!("[Pipeline::Transcript] No active Harness mounted");
+            return;
+        };
+        harness.execute_turn(req).await
+    };
+
+    // 3. Map strongly typed TurnOutcome to state transitions
+    match outcome {
+        TurnOutcome::Completed { turn_id, assistant_response } => {
+            log::info!("[Pipeline::Transcript] Turn {} completed (chars {})", turn_id, assistant_response.len());
+            // Playback engine drives Speaking -> Ready
+        }
+        TurnOutcome::DuplicateIgnored { turn_id } => {
+            log::info!("[Pipeline::Transcript] Duplicate turn {} ignored", turn_id);
+            transition(InteractionState::Ready, &ctx_clone, &app_clone, &app_state);
+        }
+        TurnOutcome::Cancelled { turn_id } => {
+            log::info!("[Pipeline::Transcript] Turn {} cancelled", turn_id);
+            transition(InteractionState::Ready, &ctx_clone, &app_clone, &app_state);
+        }
+        TurnOutcome::Error { turn_id, message } => {
+            log::error!("[Pipeline::Transcript] Turn {} failed: {}", turn_id, message);
+            transition(InteractionState::Ready, &ctx_clone, &app_clone, &app_state);
+        }
+    }
+});
+```
 
 ---
 
-### Batch 2: Model Decoupling & Stream Routing Plugin
-- **Goal**: Convert `LlmActor` into a pure stateless token engine, and author `StreamRoutingPlugin` to own token accumulation, clause chunking, TTS dispatch, and UI IPC emissions.
-- **Dependencies**: Batch 1 (`AudioIntent`, `VoxEvent`).
-- **Files Touched**:
-  - `app/src-tauri/src/services/llm/actor.rs`:
-    - Define `LlmResponse`:
-      ```rust
-      pub enum LlmResponse {
-          Token(String),
-          Finished,
-          Error(PipelineError),
-      }
-      ```
-    - Refactor `LlmCommand::Generate`:
-      ```rust
-      LlmCommand::Generate {
-          request: Box<GenerationRequest>,
-          turn_id: u32,
-          cancel: tokio_util::sync::CancellationToken,
-          response_tx: mpsc::Sender<LlmResponse>,
-      }
-      ```
-    - Strip `accumulator`, `tts_tx`, `pending_synthesis_jobs`, and UI IPC calls from `spawn_llm_worker`.
-    - Worker streams tokens directly to `response_tx.send(LlmResponse::Token(token))` and sends `LlmResponse::Finished` on completion.
-    - Remove emission of `VoxEvent::LlmFinished` from `LlmActor`.
-  - [NEW] `app/src-tauri/src/services/harness/plugins/stream.rs`:
-    - `StreamRoutingPlugin`: Consumes `LlmResponse` stream over the duplex pipe.
-    - Accumulates tokens into clauses via `TtsClauseChunker`.
-    - Dispatches synthesized clauses as `TtsCommand::Generate { turn_id, text, intent: AudioIntent::TurnResponse }`.
-    - Emits `IpcEvent::LlmToken` directly to the webview window.
-    - On stream finish, flushes remainder to TTS and emits `VoxEvent::LlmFinished { turn_id }`.
-- **Verification**: `cargo check --release` passes; `LlmActor` has zero imports of audio, TTS, or IPC window code.
+## Ordered Execution Batches
 
----
-
-### Batch 3: Dialog History, Tags & Prompt Assembly
-- **Goal**: Clean-slate delete the 5 legacy harness files and author core messages, strongly-typed XML tags, localized transition filler phrases, `ConversationHistoryPlugin`, and `PromptBuilderPlugin`.
-- **Dependencies**: Batch 1 (`AudioIntent`), Batch 2.
-- **Files Touched**:
-  - [DELETE] `app/src-tauri/src/services/harness/accountant.rs`
-  - [DELETE] `app/src-tauri/src/services/harness/buffer.rs`
-  - [DELETE] `app/src-tauri/src/services/harness/facade.rs`
-  - [DELETE] `app/src-tauri/src/services/harness/manager.rs`
-  - [DELETE] `app/src-tauri/src/services/harness/prompt_builder.rs`
-  - [NEW] `app/src-tauri/src/services/harness/message.rs`:
-    - `Role`: `System`, `User`, `Assistant` with Display formatting.
-    - `ChatMessage`: `role: Role`, `content: String`, `timestamp_ms: u64`.
-    - `current_timestamp_ms`: Current millisecond epoch.
-  - [NEW] `app/src-tauri/src/services/harness/tags.rs`:
-    - `PromptTag`: `UserIdentity`, `SessionContext`, `PastTurns` with `open_tag(&self) -> &'static str` and `close_tag(&self) -> &'static str`.
-  - [NEW] `app/src-tauri/src/services/harness/filler.rs`:
-    - `TRANSITION_MESSAGES_EN`: 10 English filler phrases.
-    - `TRANSITION_MESSAGES_HI`: 10 Hindi filler phrases.
-    - `select_filler_phrase(&str) -> &'static str`: Detects Devanagari via `services::translit::is_devanagari` to select Hindi vs English.
-  - [NEW] `app/src-tauri/src/services/harness/plugins/history.rs`:
-    - `ConversationHistoryPlugin`: In-memory FIFO message sequence, KV-cache index synchronization, trailing turn deduplication, and interruption rollback (`pop_last_user_turn`, `save_partial_assistant_turn`).
-  - [NEW] `app/src-tauri/src/services/harness/plugins/prompt.rs`:
-    - `PromptBuilderPlugin`: Pure text assembly with persona prompt + `<user_identity>` markdown document; enforces 20% budget share ceiling and deterministic truncation; zero legacy Memory v1 XML methods.
-  - [NEW] `app/src-tauri/src/services/harness/plugins/mod.rs`: Module exports.
-- **Verification**: `services/harness/` message, tag, history, and prompt modules compile cleanly.
-
----
-
-### Batch 4: Context Budgeting, Compaction & Reactive Quiet Watcher
-- **Goal**: Author `ContextBudgetPlugin` and `CompactionPlugin`, and wire reactive 20s debounced soft compaction without ambient polling loops.
-- **Dependencies**: Batch 1, Batch 2, Batch 3.
-- **Files Touched**:
-  - [NEW] `app/src-tauri/src/services/harness/plugins/budget.rs`:
-    - `ContextBudgetPlugin`: Real-time token accountant, usable budget calculation `(max_tokens - reserved_generation)`, 65% soft / 85% critical threshold classification, deterministic FIFO sliding window shift.
-  - [NEW] `app/src-tauri/src/services/harness/plugins/compaction.rs`:
-    - `CompactionPlugin`:
-      - Inline critical compaction (utilization $\ge 85\%$): sends compaction task over duplex pipe to `LlmActor` (up to 2 attempts, 45s timeout), parses JSON (summary + facts: personal, objective, workdone, blocker, next_step, pitfall), stages to Turso DB queue, rebuilds history `[System Prompt, Rolling Context Summary, Active User Turn]`. Degraded FIFO fallback if model $\le 4096$ or history $\le 3$ or retries fail.
-      - Reactive soft compaction (65%–85%): Post-turn, arms 20s quiet debounce timer. Aborts on user speech, interrupt, or leaving Ready/Paused. Commits on 20s quiet interval.
-  - `app/src-tauri/src/lib.rs`:
-    - Remove `spawn_state_compaction_observer` import and background task invocation.
-- **Verification**: `services/harness/` budgeting and compaction modules compile cleanly with zero background polling loops.
-
----
-
-### Batch 5: HarnessSession Chassis Assembly & 1:1 Lifecycle Integration
-- **Goal**: Assemble `HarnessSession` chassis from the 5 plugins and integrate into `AppState`, session lifecycle commands, pipeline event handlers, and IPC handlers.
-- **Dependencies**: Batches 1, 2, 3, 4.
-- **Files Touched**:
-  - [NEW] `app/src-tauri/src/services/harness/session.rs`:
-    - `HarnessSession`: Chassis managing the 5 plugins, session-scoped duplex pipe to `LlmActor`, domain configurations for Modular vs Realtime, `prepare_turn`, and constructors (`new_fresh`, `new_continuing`, `new_realtime`).
-  - [MODIFY] `app/src-tauri/src/services/harness/mod.rs`:
-    - Subsystem root exporting `HarnessSession`, `ChatMessage`, `Role`, `PromptTag`, and filler constants.
-  - `app/src-tauri/src/core/state.rs`:
-    - Replace `pub conversation_manager` with `pub harness: Arc<parking_lot::Mutex<Option<HarnessSession>>>`.
-  - `app/src-tauri/src/ipc/pipeline.rs`:
-    - `start_session(session_id: Option<i64>)`: Routes `VoxEvent::SessionStart { owner: Assistant, session_id }`.
-  - `app/src-tauri/src/ipc/persistence.rs`:
-    - `continue_session`: Queries Turso for metadata and turns for UI display only. Leaves `HarnessSession` untouched while `Idle`.
-    - `create_session`: Clears UI selection and resets `conversation_id = 0`. Leaves `HarnessSession` untouched while `Idle`.
-  - `app/src-tauri/src/ipc/memory.rs` & `services/memory/scheduler.rs`:
-    - Update personal memory in DB. If `state.harness.lock().as_mut()` is `Some(h)`, update active prompt.
-  - `app/src-tauri/src/pipeline/assistant/session.rs`:
-    - `on_session_start`: Boots `HarnessSession` (`session_id: Option<i64>`). If `Some(id)`, fetches continuation context from Turso; if `None`, boots fresh. Sets up duplex pipe, assigns to `state.harness`, and transitions `Idle` $\to$ `Ready`.
-    - `on_end`: Drops `state.harness.lock().take()`, cancels session-scoped tokens, transitions `Current` $\to$ `Idle`.
-  - `app/src-tauri/src/pipeline/assistant/transcript.rs`:
-    - `on_transcript_final`: Routes turn query to `HarnessSession::prepare_turn`.
-    - If utilization $\ge 85\%$: Harness dispatches filler phrase with `AudioIntent::InterimFiller` to TTS, transitions `Thinking` $\to$ `Working`, runs inline compaction via `LlmActor`, prunes history, stages facts, then initiates answer generation with `AudioIntent::TurnResponse`.
-  - `app/src-tauri/src/pipeline/assistant/interrupt.rs`:
-    - `on_interrupt`: Extracts partial assistant turn from `state.harness`, pushes to history, dispatches `TurnCompleted` persistence event under interrupted turn ID.
-  - `app/src-tauri/src/pipeline/assistant/llm.rs`:
-    - `on_llm_finished`: Pre-roll flush and audio playback completion guard.
-  - `app/src-tauri/src/pipeline/lifecycle.rs`:
-    - Prune obsolete sync helpers replaced by `HarnessSession`.
-- **Verification**: `cargo clippy --release --lib -- -D warnings` and `pnpm build` pass with 0 errors.
-
----
-
-### Batch 6: Hardening, CompactionPlugin Ledger Staging, Watcher Wiring & Test Alignment [ADDED]
-- **Goal**: Relocate inline & soft compaction execution and Turso DB fact staging (`record_compaction_start` + `commit_compaction_output`) into `CompactionPlugin` to keep `transcript.rs` lean and compliant with Spec §7.1. Wire `QuietCompactionWatcher` into `CompactionPlugin` and hook into turn lifecycle events (`on_playback_finished`, speech onset, interrupts). Fix `InteractionState::Working` transition and barge-in gating. Modernize test targets to use `HarnessSession` so `cargo clippy --all-targets -- -D warnings` passes.
-- **Dependencies**: Batches 1–5.
-- **Files Touched**:
-  - `app/src-tauri/src/services/harness/plugins/compaction.rs`:
-    - Encapsulate inline & soft compaction execution, Turso DB ledger recording (`record_compaction_start`), and fact staging (`commit_compaction_output`) inside `CompactionPlugin`.
-    - Integrate `QuietCompactionWatcher` into `CompactionPlugin`, managing the 20s debounce timer.
-  - `app/src-tauri/src/services/harness/session.rs`:
-    - Expose lifecycle handles (`execute_inline_compaction`, `on_turn_completed`, `abort_watcher`) on `HarnessSession`.
-  - `app/src-tauri/src/pipeline/assistant/transcript.rs`:
-    - Call explicit `transition(InteractionState::Working, ctx, app, state)` when inline compaction triggers.
-    - Delegate inline compaction and DB fact staging to `HarnessSession` / `CompactionPlugin`, slimming down `transcript.rs`.
-    - Resolve engine channels asynchronously via `state.engine.lock().await` inside spawned task instead of synchronous `try_lock()`.
-  - `app/src-tauri/src/pipeline/assistant/speech.rs`:
-    - Add `InteractionState::Working` to barge-in check (`if current_state == Thinking || Speaking || Working => on_interrupt(...)`).
-    - Abort quiet compaction watcher on speech onset.
-  - `app/src-tauri/src/pipeline/assistant/ptt.rs`:
-    - Add `InteractionState::Working` to barge-in check (`if current_state == Thinking || Speaking || Working => on_interrupt(...)`).
-  - `app/src-tauri/src/pipeline/assistant/playback.rs`:
-    - Trigger `harness.on_turn_completed(...)` when `on_playback_finished` transitions to `Ready`.
-  - `app/src-tauri/src/pipeline/assistant/interrupt.rs`:
-    - Abort quiet compaction watcher on interrupt.
-    - Guard against consecutive `User` turns when `partial_assistant` is empty.
-  - `app/src-tauri/tests/session_lifecycle_test.rs`:
-    - Migrate `conversation_manager` references to `state.harness.lock().as_ref().unwrap().prompt.assemble()`.
-  - `app/src-tauri/tests/tts_transition_test.rs`:
-    - Migrate deleted `facade::prepare_turn_context` calls to `HarnessSession::prepare_turn` with `TurnPreparation::NeedsInlineCompaction`.
-  - `app/src-tauri/tests/transcript_to_llm_test.rs`:
-    - Migrate `conversation_manager` references to `state.harness.lock().as_mut().unwrap().history`.
+- **Batch 0 — Scaffolding & Types**: Create `stages/` and `streaming/` module trees; define domain types (`TurnExecutionRequest`, `TurnOutcome`, `ContextStatus`) in `harness/mod.rs`. Holds green build throughout.
+- **Batch 1 — Audio Layer Boundary Decoupling**: Move `TtsClauseChunker` $\to$ `services/harness/streaming/chunker.rs::ClauseChunker`. Extract `create_tts_provider` $\to$ `services/tts/factory.rs`. Prune `services/tts/actor.rs` to $<180$ lines with saturating decrement. Update `accumulator.rs` and `chunking_determinism_test.rs`. Holds green build throughout.
+- **Batch 2 — Pure Stages Implementation**: Implement `stages/history.rs`, `stages/prompt.rs`, `stages/budget.rs`, `stages/compaction.rs`, and `stages/mod.rs` with in-place prompt synchronization and 0-retry isolation. Holds green build throughout.
+- **Batch 3 — Egress Stream Router & Demuxer**: Implement `streaming/router.rs` and `streaming/demuxer.rs` with owned `CancellationToken` and 64-token speculative buffer ceiling. Holds green build throughout.
+- **Batch 4 — Orchestrator Assembly & execute_turn**: Implement `services/harness/orchestrator.rs::Harness` owning the 7-phase turn lifecycle. Update `watcher.rs` and re-export from `harness/mod.rs`. Red mid-batch, green at batch end.
+- **Batch 5 — Pipeline Adapter Cutover & Legacy Pruning**: Thin `pipeline/assistant/transcript.rs` to delegate to `execute_turn`. Expand `pipeline/assistant/llm.rs::on_llm_finished` guard to accept `InteractionState::Working`. Delete legacy `services/harness/session.rs` and `services/harness/plugins/`. Wire `core/state.rs`, `pipeline/assistant/session.rs`, and tests. Green at batch completion.
 
 ---
 
 ## Verification Plan
 
-1. **Clippy Code Style & Lint Cleanliness (All Targets)**:
+### Automated Tests
+1. **Clause Chunking Determinism**:
    ```bash
-   cargo clippy --release --all-targets -- -D warnings
+   cargo nextest run --test chunking_determinism_test --release --nocapture --test-threads=1
    ```
-2. **Integration Test Sanity Check**:
+2. **Memory & Compaction Integration**:
    ```bash
-   cargo test --test session_lifecycle_test --test transcript_to_llm_test --test tts_transition_test -- --nocapture
+   cargo nextest run --test memory_compaction_test --release --nocapture --test-threads=1
    ```
-3. **Frontend Type & Build Health**:
+3. **Session Lifecycle & Transitions**:
    ```bash
-   pnpm build
+   cargo nextest run --test session_lifecycle_test --release --nocapture --test-threads=1
+   ```
+4. **Full 20-Seam Isolated Regression Suite**:
+   ```bash
+   RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1 --no-fail-fast
    ```

@@ -5,10 +5,13 @@ use tauri::{AppHandle, Manager, State};
 use crate::{
     core::{
         error::VoxIpcError,
-        settings::{caps_for_id, get_preset_colors, ProviderCaps, VoiceProfile, VoxSettings},
+        settings::{
+            caps_for_id, get_preset_colors, ProviderCaps, TtsActiveProvider, VoiceProfile,
+            VoxSettings,
+        },
         state::AppState,
     },
-    services::tts::voice::get_voice_profiles,
+    services::tts::voice::{get_supertonic_voice_profiles, get_voice_profiles},
     setup::manifest::{ModelGroup, VoxManifest},
     utils::paths,
 };
@@ -121,6 +124,18 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         .cloned()
         .collect();
 
+    let tts_active = {
+        let guard = state
+            .settings
+            .read()
+            .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
+        guard.tts.active
+    };
+    let voices = match tts_active {
+        TtsActiveProvider::Supertonic => get_supertonic_voice_profiles(),
+        _ => get_voice_profiles(),
+    };
+
     Ok(ModelCatalog {
         llm,
         stt,
@@ -128,7 +143,7 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
         vad,
         auxiliary,
         model_groups: groups,
-        voices: get_voice_profiles(),
+        voices,
         preset_colors: get_preset_colors(),
     })
 }

@@ -479,6 +479,80 @@ async fn test_dictation_matrix() {
         }
 
         // =====================================================================
+        // Subtest 7: Post-Session Cancel Flag Reset Invariant
+        // =====================================================================
+        {
+            // Simulate voice session teardown setting cancel_flag = true
+            state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
+            assert!(
+                state.pipeline.cancel_flag.load(Ordering::Relaxed),
+                "Precondition: cancel_flag must be true following session teardown"
+            );
+
+            state
+                .owner
+                .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
+            transition_dictation(InteractionState::Ready, &app, &state);
+
+            // Trigger passive speech start and verify cancel_flag is immediately cleared
+            event_tx
+                .send(VoxEvent::SpeechStart)
+                .expect("Failed to send SpeechStart");
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Listening,
+                    Duration::from_secs(5),
+                )
+                .await,
+                "Passive SpeechStart must transition dictation state to Listening"
+            );
+
+            // Invariant: cancel_flag MUST be cleared to false upon speech onset so STT won't drop utterances
+            assert!(
+                !state.pipeline.cancel_flag.load(Ordering::Relaxed),
+                "Regression invariant: cancel_flag must be cleared to false on dictation speech onset"
+            );
+
+            // Complete turn
+            event_tx
+                .send(VoxEvent::SpeechEnd)
+                .expect("Failed to send SpeechEnd");
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Thinking,
+                    Duration::from_secs(5),
+                )
+                .await,
+                "Passive SpeechEnd must transition dictation state to Thinking"
+            );
+
+            let turn_id = state.pipeline.peek_turn_id();
+            let test_text = "Testing cancel flag reset after assistant session".to_string();
+            event_tx
+                .send(VoxEvent::TranscriptFinal {
+                    turn_id,
+                    text: test_text.clone(),
+                })
+                .expect("Failed to send TranscriptFinal");
+
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Ready,
+                    Duration::from_secs(5),
+                )
+                .await,
+                "Must return to Ready after transcript"
+            );
+            assert_eq!(
+                state.dictation_last_transcript.lock().as_deref(),
+                Some(test_text.as_str())
+            );
+        }
+
+        // =====================================================================
         // Teardown
         // =====================================================================
         let _ = event_tx.send(VoxEvent::Shutdown);

@@ -35,9 +35,13 @@ export const VadWorkspace = memo(
     if (!vad) return null;
     const activeVadBackend = vad.vad_backend || "earshot";
     const vadModels = modelCatalog?.vad || [];
+    if (process.env.NODE_ENV === "development") {
+      console.log("[VadWorkspace] Loaded VAD models:", vadModels);
+    }
 
     const currentThreshold = vad.threshold ?? 0.5;
     const currentSilenceMs = vad.silence_duration_ms ?? 800;
+    const currentSpeechOnsetMs = vad.speech_onset_ms ?? 32;
     const currentNoiseGate = vad.ptt_noise_gate ?? 0.005;
 
     return (
@@ -45,10 +49,10 @@ export const VadWorkspace = memo(
         {activeCategoryTab === "model" ? (
           <div
             className={cn(
-              "grid gap-2.5 h-full",
+              "grid gap-2.5",
               vadModels.length <= 2
-                ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr" : "grid-cols-2 grid-rows-1")
-                : (layoutMode === "small" ? "grid-cols-1 auto-rows-full snap-y snap-mandatory" : "grid-cols-2 auto-rows-full snap-y snap-mandatory")
+                ? (layoutMode === "small" ? "grid-cols-1 auto-rows-fr h-full" : "grid-cols-2 grid-rows-1 h-full")
+                : (layoutMode === "small" ? "grid-cols-1 auto-rows-auto" : "grid-cols-2 auto-rows-auto")
             )}
           >
             {vadModels.map((model) => {
@@ -231,7 +235,78 @@ export const VadWorkspace = memo(
                 </div>
               )}
 
-              {/* SUBTAB 3: NOISE GATE - MemoryCard Side-by-Side 2x2 Layout */}
+              {/* SUBTAB 3: SPEECH ONSET DURATION - MemoryCard Side-by-Side 2x2 Layout */}
+              {activeSubTab === "speechOnset" && (
+                <div className="flex flex-row items-center justify-between gap-3 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
+                  <div className="flex flex-col gap-1 min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
+                        {VAD_SETTINGS_COPY.speechOnset.title}
+                      </span>
+                      <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
+                        {currentSpeechOnsetMs} ms
+                      </span>
+                    </div>
+                    <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
+                      {VAD_SETTINGS_COPY.speechOnset.description}
+                    </p>
+                  </div>
+
+                  {/* 2x2 Grid: [32ms, 64ms, 128ms, Custom] */}
+                  <div className="shrink-0 grid grid-cols-2 gap-1.5 w-[116px] sm:w-[136px]">
+                    {[
+                      { label: "32ms", val: 32 },
+                      { label: "64ms", val: 64 },
+                      { label: "128ms", val: 128 },
+                    ].map(({ label, val }) => {
+                      const isSelected = currentSpeechOnsetMs === val;
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => updateDraft("vad", "speech_onset_ms", val)}
+                          className={cn(
+                            "py-1 rounded-lg border text-[11px] font-mono font-bold transition-all duration-200 cursor-pointer flex items-center justify-center",
+                            isSelected
+                              ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
+                              : "border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] text-[rgb(var(--foreground-muted))]/80 hover:border-[rgba(var(--accent),0.2)] hover:text-[rgb(var(--foreground))]"
+                          )}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                    <div
+                      className={cn(
+                        "rounded-lg border flex items-center justify-center transition-all overflow-hidden",
+                        ![32, 64, 128].includes(currentSpeechOnsetMs)
+                          ? "border-[rgb(var(--accent))] bg-[rgba(var(--accent),0.15)] text-[rgb(var(--accent))] shadow-[0_0_12px_rgba(var(--accent),0.25)]"
+                          : "border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] focus-within:border-[rgba(var(--accent),0.35)]"
+                      )}
+                    >
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={
+                          ![32, 64, 128].includes(currentSpeechOnsetMs) ? `${currentSpeechOnsetMs}ms` : ""
+                        }
+                        onChange={(e) => {
+                          const clean = e.target.value.replace(/[^0-9]/g, "");
+                          if (!clean) return;
+                          const num = parseInt(clean, 10);
+                          if (!isNaN(num) && num >= 16 && num <= 1000) {
+                            updateDraft("vad", "speech_onset_ms", num);
+                          }
+                        }}
+                        placeholder={COMPUTE_PROFILE_COPY.custom}
+                        className="w-full text-center text-[10.5px] font-mono font-bold bg-transparent outline-none text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 placeholder:font-sans placeholder:font-normal py-1 appearance-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SUBTAB 4: NOISE GATE - MemoryCard Side-by-Side 2x2 Layout */}
               {activeSubTab === "noiseGate" && (
                 <div className="flex flex-row items-center justify-between gap-3 h-full p-2.5 sm:p-3 rounded-xl bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.08)] animate-fade-in">
                   <div className="flex flex-col gap-1 min-w-0 flex-1">
