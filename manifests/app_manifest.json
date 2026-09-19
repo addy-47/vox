@@ -1,10 +1,12 @@
 {
-  "latest_version": "0.8.5",
+  "latest_version": "0.8.8",
   "release_notes": [
-    "Revamped Vox UI with the vision of a voice-first OS .",
-    "OpenAI-Compatible Remote LLM Support, fully provider agnostic and custom API endpoints alongside embedded local inference.",
-    "Added Cloud providers for llm category with dynamic model discvery and health checks ",
-    "Test clips feature and  Orb reimagined with ambient background pulses "
+    "Modular LLM Agent Harness Architecture: Re-architected harness runtime into a modular stage taxonomy (history, prompt, budget, compaction, streaming) with unified execute_turn orchestration and decoupled NLP clause chunking.",
+    "Harness Production Hardening & Async Resilience: Sealed stage encapsulation, offloaded blocking Turso DB and compaction inference off the Tokio reactor, automated user turn rollback on stream error, and zero-overhead prompt synchronization.",
+    "Universal Compaction Contract & Cognitive Ladder: Shipped strict 6-bucket JsonSchema SSOT with reasoning disabled across Ollama and remote transports, 400-negotiation downgrade, and verified 2-stage memory deduplication (Jaccard + MiniLM ONNX cosine).",
+    "Core Pipeline 4-Pillar Standardization: Standardized TTS, STT, VAD, and LLM services around dedicated OS-thread actors, declarative contracts, and domain-isolated provider factories with zero compiler warnings.",
+    "Text-as-Input & Ephemeral Voice Sessions: Introduced direct keyboard text input with auto-resume from Paused and Sleeping states, mic and speaker mute controls, and zero-persistence Temporary Chat sessions.",
+    "Streaming Audio Prosody & Speech Normalization: Integrated pre-synthesis text normalization for numbers, currencies, and units, refined clause boundary prosody for Kokoro TTS, and verified 11-speaker profile mapping."
   ],
   "linux": {
     "package": "vox",
