@@ -159,9 +159,12 @@ pub struct NotificationFilter {
 ### 2.5 Pipeline & Audio Domain (`ipc/pipeline.rs` & `ipc/audio.rs`)
 Controls the voice interaction lifecycle and hardware devices.
 
-#### `launch_engine()` & `stop_engine()`
-- **Purpose**: Initializes or completely shuts down the audio engine, VAD, and model workers.
-- **Behavior**: Bootstraps CPAL streams, model weights, and hotkey listeners, or cleanly joins threads and releases mic hardware.
+#### `launch_engine()`, `stop_engine()`, `restart_engine()`
+- **Purpose**: Initializes, completely shuts down, or restarts the 3-tier audio engine, VAD, and model workers.
+- **Behavior**: 
+  - `launch_engine()`: Bootstraps CPAL streams, model weights, and hotkey listeners in `Idle` state.
+  - `stop_engine()`: Cleanly joins worker threads, terminates the central router pump, and releases mic hardware.
+  - `restart_engine()`: Atomically stops and relaunches the audio engine while preserving active session continuity. If an assistant session was actively running (`state.pipeline.state() != Idle`), it captures the current `conversation_id`, stops and starts the audio engine, and automatically re-dispatches `VoxEvent::SessionStart` with the preserved `session_id`, restoring the pipeline state directly to `Ready` without dropping into un-resumable `Idle`.
 
 #### `start_session(sessionId: Option<i64>)` — [ALIGNED]
 - **Purpose**: Transitions assistant from `Idle` to `Ready`, mounting the `HarnessSession`.

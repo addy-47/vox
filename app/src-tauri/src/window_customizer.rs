@@ -9,9 +9,10 @@ impl<R: Runtime> Plugin<R> for PinchZoomDisablePlugin {
         "vox-pinch-zoom-disable"
     }
 
-    fn webview_created(&mut self, webview: Webview<R>) {
+    #[allow(unused_variables)]
+    fn webview_created(&mut self, _webview: Webview<R>) {
         #[cfg(target_os = "linux")]
-        if let Err(e) = webview.with_webview(|_webview| {
+        if let Err(e) = _webview.with_webview(|_webview| {
             use gtk::glib::ObjectExt;
             use gtk::prelude::*;
             use webkit2gtk::glib::gobject_ffi;
@@ -60,7 +61,4 @@ impl<R: Runtime> Plugin<R> for PinchZoomDisablePlugin {
             log::warn!("[PinchZoom] Failed to access webview: {}", e);
         }
     }
-
-    #[cfg(not(target_os = "linux"))]
-    fn webview_created(&mut self, _webview: Webview<R>) {}
 }

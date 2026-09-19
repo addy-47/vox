@@ -46,10 +46,20 @@ impl ChatterboxRemoteProvider {
             .build()
             .map_err(|e| anyhow!("Failed to build reqwest client: {}", e))?;
 
+        let clean_lang = if language.len() != 2 || language.starts_with("chatterbox_voice_") {
+            log::warn!(
+                "[ChatterboxRemote] Invalid language '{}' provided; falling back to 'en'",
+                language
+            );
+            "en"
+        } else {
+            language
+        };
+
         let prov = Self {
             client,
             endpoint: endpoint.to_string(),
-            language: language.to_string(),
+            language: clean_lang.to_string(),
             quality_steps: AtomicU32::new(
                 quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_CHATTERBOX),
             ),
