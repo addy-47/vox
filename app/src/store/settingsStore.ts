@@ -211,6 +211,7 @@ export interface TtsChatterboxRemoteConfig {
   endpoint: string;
   language: string;
   remote_path: string;
+  voice_id?: string | null;
 }
 
 export interface TtsSettings {
