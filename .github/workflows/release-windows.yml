@@ -7,6 +7,9 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  MSYS_NO_PATHCONV: "1"
+  CXXFLAGS: "-D_USE_MATH_DEFINES"
+  CFLAGS: "-D_USE_MATH_DEFINES"
 
 jobs:
   release-windows:
@@ -45,8 +48,6 @@ jobs:
         shell: bash
         env:
           CMAKE_TOOLCHAIN_FILE: "${{ github.workspace }}/.github/cmake/windows-toolchain.cmake"
-          CXXFLAGS: "/D_USE_MATH_DEFINES"
-          CFLAGS: "/D_USE_MATH_DEFINES"
         run: |
           cd app
           pnpm tauri build
