@@ -3,6 +3,8 @@ use std::sync::{atomic::Ordering, Arc};
 use tauri::{AppHandle, Manager, State};
 
 #[cfg(target_os = "linux")]
+use crate::toast::setup_linux_toast_layer;
+#[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
 use crate::{
     core::{
@@ -11,7 +13,6 @@ use crate::{
         settings::DictationOutputMode,
         state::{AppState, InteractionOwner},
     },
-    toast::setup_linux_toast_layer,
     tray::{ensure_tray_window, position_tray_window},
     window_main::ensure_main_window,
 };
