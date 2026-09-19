@@ -1,11 +1,12 @@
 {
-  "latest_version": "0.8.7",
+  "latest_version": "0.8.8",
   "release_notes": [
-    "Domain-Partitioned Event-Driven Pipeline: Single-writer vox-router architecture across 6 interaction domains (Modular Passive/PTT, Realtime S2S, Dictation) with instant barge-in and warm audio pausing.",
-    "Sentient Cognitive Memory v2: 3D Fibonacci tree canopy with Fresnel core in Three.js, 2-stage deduplication (Jaccard + all-MiniLM-L6-v2 ONNX cosine), and rolling working compaction.",
-    "Dynamic Model Capability Catalog: Dynamic catalog supporting 4,500+ models with live TTFT/TPS probing, system-wide 8,192-token context floor, and unified cloud/local provider hub.",
-    "Realtime Duplex Voice Engine: Native bi-directional WebSocket streaming for Gemini Live and Deepgram Voice Agent alongside the on-device modular pipeline.",
-    "Native Turso SQLite MVCC Engine: Multi-version concurrency control with isolated connection pooling and transactional memory persistence."
+    "Modular LLM Agent Harness Architecture: Re-architected harness runtime into a modular stage taxonomy (history, prompt, budget, compaction, streaming) with unified execute_turn orchestration and decoupled NLP clause chunking.",
+    "Harness Production Hardening & Async Resilience: Sealed stage encapsulation, offloaded blocking Turso DB and compaction inference off the Tokio reactor, automated user turn rollback on stream error, and zero-overhead prompt synchronization.",
+    "Universal Compaction Contract & Cognitive Ladder: Shipped strict 6-bucket JsonSchema SSOT with reasoning disabled across Ollama and remote transports, 400-negotiation downgrade, and verified 2-stage memory deduplication (Jaccard + MiniLM ONNX cosine).",
+    "Core Pipeline 4-Pillar Standardization: Standardized TTS, STT, VAD, and LLM services around dedicated OS-thread actors, declarative contracts, and domain-isolated provider factories with zero compiler warnings.",
+    "Text-as-Input & Ephemeral Voice Sessions: Introduced direct keyboard text input with auto-resume from Paused and Sleeping states, mic and speaker mute controls, and zero-persistence Temporary Chat sessions.",
+    "Streaming Audio Prosody & Speech Normalization: Integrated pre-synthesis text normalization for numbers, currencies, and units, refined clause boundary prosody for Kokoro TTS, and verified 11-speaker profile mapping."
   ],
   "linux": {
     "package": "vox",
