@@ -49,11 +49,21 @@ impl ChatterboxEngine {
         let cfm = quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_CHATTERBOX) as i32;
         let ref_audio = reference_audio.unwrap_or("").to_string();
 
+        let clean_lang = if language.len() != 2 || language.starts_with("chatterbox_voice_") {
+            log::warn!(
+                "[Chatterbox] Invalid language '{}' provided; falling back to 'en'",
+                language
+            );
+            "en"
+        } else {
+            language
+        };
+
         if !ref_audio.is_empty() {
             if Path::new(&ref_audio).exists() {
                 log::info!(
                     "[Chatterbox] Loading engine with voice clone. lang={}, cfm_steps={}, speed={:.2}, ref={}",
-                    language, cfm, speed, ref_audio
+                    clean_lang, cfm, speed, ref_audio
                 );
             } else {
                 log::warn!(
@@ -64,7 +74,7 @@ impl ChatterboxEngine {
         } else {
             log::info!(
                 "[Chatterbox] Loading engine. lang={}, cfm_steps={}, speed={:.2}",
-                language,
+                clean_lang,
                 cfm,
                 speed
             );
@@ -73,7 +83,7 @@ impl ChatterboxEngine {
         let mut opts = EngineOptions {
             t3_gguf_path: t3_path.to_string_lossy().into_owned(),
             s3gen_gguf_path: s3_path.to_string_lossy().into_owned(),
-            language: language.to_string(),
+            language: clean_lang.to_string(),
             n_gpu_layers: 0,
             cfm_steps: cfm,
             seed: 42,

@@ -27,6 +27,47 @@ pub async fn stop_engine<R: tauri::Runtime>(app: AppHandle<R>) -> Result<(), Vox
     stop_audio_engine(&state).await.map_err(VoxIpcError::Engine)
 }
 
+/// Restarts the 3-tier audio engine, preserving the active session if one was running.
+#[tauri::command]
+pub async fn restart_engine<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), VoxIpcError> {
+    let active_session_id = if state.pipeline.state() != InteractionState::Idle {
+        let conv_id = state.conversation_id.load(Ordering::Relaxed);
+        if conv_id > 0 {
+            Some(conv_id as i64)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    stop_audio_engine(&state).await.map_err(VoxIpcError::Engine)?;
+    start_audio_engine(&app, &state)
+        .await
+        .map_err(VoxIpcError::Engine)?;
+
+    if let Some(sid) = active_session_id {
+        log::info!("[Core::Engine] Re-engaging active session {} post-restart", sid);
+        let event_tx = state
+            .event_tx
+            .lock()
+            .clone()
+            .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
+
+        event_tx
+            .send(VoxEvent::SessionStart {
+                owner: InteractionOwner::Assistant,
+                session_id: Some(sid),
+            })
+            .map_err(|e| VoxIpcError::Engine(format!("Failed to send SessionStart on restart: {}", e)))?;
+    }
+
+    Ok(())
+}
+
 /// Starts the voice assistant session by booting audio engine and routing SessionStart.
 #[tauri::command]
 pub async fn start_session<R: tauri::Runtime>(

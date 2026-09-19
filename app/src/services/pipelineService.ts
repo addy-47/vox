@@ -56,9 +56,8 @@ export function launchEngine(): Promise<void> {
   return invoke("launch_engine");
 }
 
-export async function restartEngine(): Promise<void> {
-  await stopEngine();
-  await launchEngine();
+export function restartEngine(): Promise<void> {
+  return invoke("restart_engine");
 }
 
 export function startSession(sessionId?: number | null): Promise<void> {

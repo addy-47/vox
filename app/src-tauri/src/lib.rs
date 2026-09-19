@@ -58,8 +58,8 @@ use crate::{
         },
         pipeline::{
             end_session, launch_engine, pause_session, ptt_cancel, ptt_start, ptt_stop,
-            resume_session, set_mic_muted, set_playback_muted, set_session_private_mode,
-            start_session, stop_engine, submit_text_input,
+            restart_engine, resume_session, set_mic_muted, set_playback_muted,
+            set_session_private_mode, start_session, stop_engine, submit_text_input,
         },
         projects::{create_project, delete_project, get_projects, rename_project},
         settings::{
@@ -640,6 +640,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             launch_engine,
             stop_engine,
+            restart_engine,
             start_session,
             end_session,
             pause_session,
