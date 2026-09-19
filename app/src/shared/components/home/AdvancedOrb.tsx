@@ -14,7 +14,6 @@ interface VoxOrbProps {
 }
 
 
-
 /**
  * Disc radius = sphere surface radius where each disc projects to.
  * Injected into GLSL as a literal so the shader can reference it as a const.
@@ -27,14 +26,17 @@ const SHELL_R = 2.30;
 /** Number of silk-sheet disc layers. */
 const NUM_SHEETS = 7;
 
-/** Target scale per interaction state (pop-up on speaking, focused intake on listening). */
+/**
+ * State-dependent scale target for the root group.
+ * The 2nd-order critically damped spring smoothly drives group scale to these values.
+ */
 const TARGET_SCALE: Record<string, number> = {
   Idle:      1.0,
   Ready:     1.0,
-  Listening: 0.96,
+  Listening: 0.94,
   Thinking:  1.0,
   Working:   1.0,
-  Speaking:  1.06,
+  Speaking:  1.10,
   Paused:    1.0,
   Sleeping:  0.98,
   Error:     1.0,
@@ -780,7 +782,7 @@ export const VoxOrb = React.memo(({
       renderer.setSize(w, h, false);
       const fovRad = (45 * Math.PI) / 180;
       const fitDist = SHELL_R / Math.tan(fovRad / 2);
-      camera.position.z = Math.max(fitDist * 1.52, 8.5);
+      camera.position.z = Math.max(fitDist * 1.05, 6.95);
     }
     updateCamera(width, height);
 

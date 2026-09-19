@@ -1,7 +1,8 @@
-import { useMemo, useCallback, memo } from "react";
+import { useMemo, useCallback, useState, memo } from "react";
 import { AlertCircle, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
+import { restartEngine } from "@/services/pipelineService";
 import { ErrorBoundary } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
 import type { SettingsDomain as Domain } from "@/data/settingsCopy";
@@ -65,9 +66,23 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
     return false;
   }, [domain.id, draftSettings?.interaction?.pipeline_mode, isRealtimeMissingKey, isCloudLlmMissingKey, isCloudSttMissingKey]);
 
-  const handleSave = () => {
-    if (isDomainMissingCloudKey) return;
-    commitChanges();
+  const [isReloading, setIsReloading] = useState(false);
+
+  const handleSave = async () => {
+    if (isDomainMissingCloudKey || isReloading) return;
+    if (requiresRestart) {
+      setIsReloading(true);
+      try {
+        await commitChanges();
+        await restartEngine();
+      } catch (e) {
+        console.error("[Settings] Error restarting engine after commit:", e);
+      } finally {
+        setIsReloading(false);
+      }
+    } else {
+      await commitChanges();
+    }
   };
 
   const isAutoSavedHere = useSettingsStore((s) => s.autoSavedDomain === domain.id);
@@ -130,18 +145,21 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                     ) : (
                       <>
                         <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5">
-                          <RefreshCw size={14} /> {requiresRestart ? "Pipeline Restart Required" : SETTINGS_COPY.unsavedChanges}
+                          <RefreshCw size={14} className={isReloading ? "animate-spin" : undefined} /> {requiresRestart ? "Pipeline Restart Required" : SETTINGS_COPY.unsavedChanges}
                         </span>
                         <div className="flex gap-2">
                           <button
                             onClick={handleSave}
-                            className="px-3.5 py-1 rounded-lg bg-[rgb(var(--accent))] text-black dark:text-white font-black text-[12px] uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all cursor-pointer shadow-md flex items-center gap-1.5"
+                            disabled={isReloading}
+                            className="px-3.5 py-1 rounded-lg bg-[rgb(var(--accent))] text-black dark:text-white font-black text-[12px] uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all cursor-pointer shadow-md flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <span>{requiresRestart ? "Apply & Reload" : SETTINGS_COPY.saveChanges}</span>
+                            {isReloading && <RefreshCw size={12} className="animate-spin" />}
+                            <span>{isReloading ? "Reloading..." : (requiresRestart ? "Apply & Reload" : SETTINGS_COPY.saveChanges)}</span>
                           </button>
                           <button
                             onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
-                            className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                            disabled={isReloading}
+                            className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {SETTINGS_COPY.discardChanges}
                           </button>

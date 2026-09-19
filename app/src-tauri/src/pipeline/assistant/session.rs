@@ -24,13 +24,14 @@ use crate::{
     services::{
         self,
         harness::Harness,
-        llm::actor::LlmCommand,
-        memory::compaction::coordinator::CompactionCoordinator,
+        llm::actor::{cool_down_llm, LlmCommand},
+        memory::{compaction::coordinator::CompactionCoordinator, trim_heap},
         notifications::{Action, ActionPayload, NotificationCategory, NotificationParams},
         realtime::{
             session::{create_realtime_provider, purge_session_cache},
             RealtimeActor,
         },
+        tts::actor::cool_down_tts,
         vad::{VadCommand, VadOperationalMode},
     },
 };
@@ -522,23 +523,27 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
         .owner
         .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
 
-    // Stop CPAL engine only if dictation is also disabled, otherwise switch VAD to dictation mode.
+    // Stop CPAL engine only if dictation track is disabled (Idle).
+    // Otherwise, dictation is active (Ready/Listening/Thinking): keep VAD + STT hot in memory,
+    // switch VAD to dictation mode, and offload LLM and TTS since assistant session has ended.
     if state.pipeline.dictation_state() == InteractionState::Idle {
         if let Err(e) = stop_audio_engine_sync(state) {
             log::warn!("[Pipeline::Session] Error stopping audio engine: {}", e);
         }
     } else {
-        let dictation_mode = state
-            .settings
-            .read()
-            .map(|s| s.dictation.interaction_mode.clone())
-            .unwrap_or(DictationInteractionMode::Ptt);
-        let vad_op_mode = match dictation_mode {
-            DictationInteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
-            DictationInteractionMode::Ptt => VadOperationalMode::WindowedValidation,
-        };
-        if let Ok(guard) = state.engine.try_lock() {
-            if let Some(ref engine) = *guard {
+        if let Ok(mut guard) = state.engine.try_lock() {
+            if let Some(ref mut engine) = *guard {
+                cool_down_llm(&mut engine.llm_tx, Some(&state.llm_provider));
+                cool_down_tts(&mut engine.tts_tx);
+                let dictation_mode = state
+                    .settings
+                    .read()
+                    .map(|s| s.dictation.interaction_mode.clone())
+                    .unwrap_or(DictationInteractionMode::Ptt);
+                let vad_op_mode = match dictation_mode {
+                    DictationInteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
+                    DictationInteractionMode::Ptt => VadOperationalMode::WindowedValidation,
+                };
                 if let Err(e) = engine
                     .vad_tx
                     .send(VadCommand::SetOperationalMode(vad_op_mode))
@@ -550,6 +555,7 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
                 }
             }
         }
+        trim_heap("session_end_dictation_standby");
     }
 
     transition(InteractionState::Idle, ctx, app, state);

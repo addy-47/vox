@@ -232,10 +232,14 @@ export const Home = memo(() => {
         </div>
       </div>
 
-      {/* ── Bottom Controls ── */}
+      {/* ── Bottom Controls (Positioned 60% from Sphere bottom edge & 40% from EdgeNav top edge) ── */}
       <div
-        className="absolute left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-3 w-full max-w-md pointer-events-auto"
-        style={{ bottom: "calc(72px + clamp(12px, 2.5vh, 28px))" }}
+        className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-3 w-full max-w-md pointer-events-auto"
+        style={{
+          top: isMobileScreen
+            ? "calc(80% - 58px + min(82vw, 50vh, 580px) * 0.16)"
+            : "calc(80% - 58px + min(65vw, 56vh, 580px) * 0.16)",
+        }}
       >
         {/* Text Input Bar — replaces button cluster when open */}
         {isTextModeOpen && isEngaged ? (

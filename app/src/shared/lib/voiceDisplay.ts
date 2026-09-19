@@ -52,7 +52,8 @@ export function toStatusLabel(
 ): string {
   if (state === "Error") return "Error";
   if (!engaged || state === "Idle") return "Dormant";
-  if (isPaused || state === "Paused" || sleeping) return "Paused";
+  if (sleeping || state === "Sleeping") return "Sleeping";
+  if (isPaused || state === "Paused") return "Paused";
   switch (state) {
     case "Ready":
       return "Ready";
@@ -64,8 +65,6 @@ export function toStatusLabel(
       return "Working";
     case "Speaking":
       return "Speaking";
-    case "Sleeping":
-      return "Sleeping";
     default:
       return state;
   }
