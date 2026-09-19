@@ -284,6 +284,7 @@ pub fn show_toast<R: tauri::Runtime>(
                     log::warn!("[Toast] Fallback show failed: {}", e);
                 }
                 tokio::time::sleep(Duration::from_millis(120)).await;
+                #[cfg(target_os = "linux")]
                 setup_linux_toast_layer(&app_for_emit, AppWindow::Toast.as_str());
             }
         }
@@ -303,6 +304,7 @@ pub fn show_toast<R: tauri::Runtime>(
     tauri::async_runtime::spawn(async move {
         position_toast_window(&win_clone).await;
         tokio::time::sleep(Duration::from_millis(60)).await;
+        #[cfg(target_os = "linux")]
         setup_linux_toast_layer(&app_clone, "toast");
     });
 

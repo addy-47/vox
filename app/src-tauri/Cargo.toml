@@ -104,6 +104,9 @@ notify-rust = "4"
 enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 
 
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 sherpa-onnx = { version = "1.13.6", default-features = false, features = ["static"] }
 

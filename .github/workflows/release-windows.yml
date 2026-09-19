@@ -43,6 +43,10 @@ jobs:
 
       - name: Build Tauri Application Bundle
         shell: bash
+        env:
+          CMAKE_TOOLCHAIN_FILE: "${{ github.workspace }}/.github/cmake/windows-toolchain.cmake"
+          CXXFLAGS: "/D_USE_MATH_DEFINES"
+          CFLAGS: "/D_USE_MATH_DEFINES"
         run: |
           cd app
           pnpm tauri build
