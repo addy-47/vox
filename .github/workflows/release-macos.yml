@@ -49,6 +49,7 @@ jobs:
           CFLAGS: "-mmacosx-version-min=11.0"
           CXXFLAGS: "-mmacosx-version-min=11.0 -D_LIBCPP_DISABLE_AVAILABILITY"
           SDKROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+          CMAKE_TOOLCHAIN_FILE: "${{ github.workspace }}/.github/cmake/macos-toolchain.cmake"
         run: |
           cd app
           pnpm tauri build

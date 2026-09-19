@@ -121,6 +121,13 @@ split-debuginfo = "unpacked"
 opt-level = 2
 debug = false
 
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+
 [[example]]
 name = "voice_clone"
 
