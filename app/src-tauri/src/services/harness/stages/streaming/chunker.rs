@@ -51,8 +51,8 @@ impl ClauseChunker {
     /// Returns the current adaptive (w_min, w_target, w_max) word count thresholds based on chunk index.
     fn current_word_thresholds(&self) -> (usize, usize, usize) {
         match self.chunk_index {
-            0 => (5, 8, 12),
-            1 => (10, 15, 20),
+            0 => (5, 8, 14),
+            1 => (10, 15, 22),
             _ => (16, 24, 32),
         }
     }
@@ -65,9 +65,19 @@ impl ClauseChunker {
         for i in 0..chars.len() {
             let (pos, c) = chars[i];
 
-            // Primary sentence boundaries: newline, question mark, exclamation mark
-            if c == '\n' || c == '?' || c == '!' {
+            // Explicit line breaks
+            if c == '\n' {
                 return Some((pos, c.len_utf8()));
+            }
+
+            // Sentence boundaries: question mark, exclamation mark (requires minimum word context)
+            if c == '?' || c == '!' {
+                let text_before = &self.buffer[..pos];
+                let word_count = text_before.split_whitespace().count();
+                if word_count >= w_min {
+                    return Some((pos, c.len_utf8()));
+                }
+                continue;
             }
 
             // Sub-clause boundaries: comma, semicolon, colon, em-dash
@@ -111,10 +121,6 @@ impl ClauseChunker {
                 let word_count = text_before.split_whitespace().count();
                 if word_count >= w_min {
                     return Some((pos, c.len_utf8()));
-                } else if i + 1 < chars.len() && chars[i + 1].1.is_whitespace() {
-                    // Prosody morphing: premature period with < w_min words (e.g. "Hai Addy.")
-                    // Rewrite '.' to ',' so StyleTTS2 maintains rising pitch contour and bundles forward.
-                    self.buffer.replace_range(pos..pos + 1, ",");
                 }
             }
         }
@@ -196,10 +202,10 @@ mod tests {
     fn test_chunker_strong_terminators_split() {
         let mut c = ClauseChunker::new();
         let chunks = c.push_str(
-            "Hello world? This is a complete follow up sentence with more than ten words here.",
+            "Hello world and welcome here? This is a complete follow up sentence with more than ten words here.",
         );
         assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0], "Hello world?");
+        assert_eq!(chunks[0], "Hello world and welcome here?");
         assert_eq!(
             chunks[1],
             "This is a complete follow up sentence with more than ten words here."
@@ -228,13 +234,13 @@ mod tests {
         assert_eq!(chunks2, vec!["This is a longer sentence,"]);
     }
 
-    /// Tests prosody morphing converts premature periods (< 5 words) into commas to preserve rising intonation.
+    /// Tests that natural periods are preserved without unnatural period-to-comma morphing for Kokoro.
     #[test]
-    fn test_chunker_prosody_morphing() {
+    fn test_chunker_prosody_preserves_periods() {
         let mut c = ClauseChunker::new();
         let chunks = c.push_str("Hai Addy. I'm Vox. I help you do things today.");
         assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], "Hai Addy, I'm Vox, I help you do things today.");
+        assert_eq!(chunks[0], "Hai Addy. I'm Vox. I help you do things today.");
     }
 
     /// Tests period does not split on decimal like 3.14
@@ -307,14 +313,29 @@ mod tests {
     #[test]
     fn test_chunker_multiple_clauses() {
         let mut c = ClauseChunker::new();
-        let chunks =
-            c.push_str("First sentence! Second? Third sentence is now significantly longer so that it easily satisfies the steady state minimum threshold of sixteen words.");
+        let chunks = c.push_str(
+            "This is the first sentence that is long enough! And here is the second sentence that contains more than ten words easily? Third sentence is now significantly longer so that it easily satisfies the steady state minimum threshold of sixteen words.",
+        );
         assert_eq!(chunks.len(), 3);
-        assert_eq!(chunks[0], "First sentence!");
-        assert_eq!(chunks[1], "Second?");
+        assert_eq!(chunks[0], "This is the first sentence that is long enough!");
+        assert_eq!(
+            chunks[1],
+            "And here is the second sentence that contains more than ten words easily?"
+        );
         assert_eq!(
             chunks[2],
             "Third sentence is now significantly longer so that it easily satisfies the steady state minimum threshold of sixteen words."
+        );
+    }
+
+    /// Tests short greetings or exclamations like 'Hey!' do not split prematurely under w_min.
+    #[test]
+    fn test_chunker_short_exclamation_does_not_split_prematurely() {
+        let mut c = ClauseChunker::new();
+        let chunks = c.push_str("Hey! What is up");
+        assert!(
+            chunks.is_empty(),
+            "Short exclamation under w_min must not split alone"
         );
     }
 }

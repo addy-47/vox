@@ -549,6 +549,13 @@ pub fn run() {
                     )
                 };
 
+                let state: tauri::State<'_, Arc<AppState>> = handle.state();
+                if setup_completed && dictation_enabled {
+                    state.pipeline.set_dictation_state(InteractionState::Ready);
+                } else {
+                    state.pipeline.set_dictation_state(InteractionState::Idle);
+                }
+
                 if setup_completed && dictation_enabled && dictation_mode == DictationInteractionMode::Passive {
                     log::info!("[BOOTSTRAP] Passive Dictation enabled. Auto-launching audio/STT engine...");
                     if let Err(e) = launch_engine(handle).await {

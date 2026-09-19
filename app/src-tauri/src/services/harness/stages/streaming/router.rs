@@ -16,7 +16,9 @@ use crate::{
         state::InteractionOwner,
     },
     pipeline::{assistant::accumulator::TurnAccumulator, target_window},
-    services::{llm::actor::LlmResponse, tts::actor::TtsCommand},
+    services::{
+        harness::stages::streaming::TextNormalizer, llm::actor::LlmResponse, tts::actor::TtsCommand,
+    },
 };
 
 /// Bundled handles and shared state required to route streaming LLM responses.
@@ -142,16 +144,20 @@ impl StreamRoutingStage {
 
         let first_clause_id = handles.accumulator.lock().claim_clause_ids(clauses.len());
         for (index, clause) in clauses.into_iter().enumerate() {
+            let normalized = TextNormalizer::normalize_for_speech(&clause);
+            if normalized.is_empty() {
+                continue;
+            }
             let clause_id = first_clause_id + index as u32;
-            let clause_chars = clause.chars().count();
-            let clause_words = clause.split_whitespace().count();
+            let clause_chars = normalized.chars().count();
+            let clause_words = normalized.split_whitespace().count();
             let queued = handles
                 .pending_synthesis_jobs
                 .fetch_add(1, Ordering::Relaxed)
                 + 1;
             let cmd = TtsCommand::Generate {
                 turn_id: handles.turn_id,
-                text: clause,
+                text: normalized,
                 intent: AudioIntent::TurnResponse,
             };
             if let Err(e) = tx.send(cmd) {
@@ -181,12 +187,16 @@ impl StreamRoutingStage {
         let Some(remainder_text) = remainder else {
             return;
         };
+        let normalized = TextNormalizer::normalize_for_speech(&remainder_text);
+        if normalized.is_empty() {
+            return;
+        }
         let Some(ref tx) = handles.tts_tx else {
             return;
         };
 
-        let remainder_chars = remainder_text.chars().count();
-        let remainder_words = remainder_text.split_whitespace().count();
+        let remainder_chars = normalized.chars().count();
+        let remainder_words = normalized.split_whitespace().count();
         let clause_id = handles.accumulator.lock().claim_clause_ids(1);
         handles
             .pending_synthesis_jobs
@@ -194,7 +204,7 @@ impl StreamRoutingStage {
         let queued = handles.pending_synthesis_jobs.load(Ordering::Relaxed);
         let cmd = TtsCommand::Generate {
             turn_id: handles.turn_id,
-            text: remainder_text,
+            text: normalized,
             intent: AudioIntent::TurnResponse,
         };
         if let Err(e) = tx.send(cmd) {

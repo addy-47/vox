@@ -262,23 +262,30 @@ async fn handle_setting_side_effects<R: tauri::Runtime>(
         handle_dictation_side_effects(app, state, key, value).await;
     } else if domain == "interaction" {
         handle_interaction_side_effects(app, state, key, value).await;
-    } else if domain == "vad" && key == "vad_backend" {
-        log::info!("[Settings] VAD backend changed. Hot-swapping 3-Tier Engine...");
-        let app_clone = app.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Err(e) = stop_engine(app_clone.clone()).await {
-                log::warn!(
-                    "[Settings::Mutation] Failed to stop engine on VAD swap: {}",
-                    e
-                );
-            }
-            if let Err(e) = launch_engine(app_clone).await {
-                log::warn!(
-                    "[Settings::Mutation] Failed to launch engine on VAD swap: {}",
-                    e
-                );
-            }
-        });
+    } else if (domain == "vad" && key == "vad_backend")
+        || (domain == "tts" && key == "active")
+        || (domain == "stt" && key == "active")
+        || (domain == "llm" && key == "active")
+    {
+        let is_running = state.engine.lock().await.is_some();
+        if is_running {
+            log::info!("[Settings] {}.{} changed. Reloading Audio Engine...", domain, key);
+            let app_clone = app.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = stop_engine(app_clone.clone()).await {
+                    log::warn!(
+                        "[Settings::Mutation] Failed to stop engine on provider swap: {}",
+                        e
+                    );
+                }
+                if let Err(e) = launch_engine(app_clone).await {
+                    log::warn!(
+                        "[Settings::Mutation] Failed to launch engine on provider swap: {}",
+                        e
+                    );
+                }
+            });
+        }
     } else if domain == "personal_memory"
         && (key == "consolidation_cadence" || key == "consolidation_time")
     {

@@ -140,9 +140,7 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
         }
         VoxEvent::TextInput { text } => {
             let current_state = state.pipeline.state();
-            if current_state == InteractionState::Idle
-                || current_state == InteractionState::Sleeping
-            {
+            if current_state == InteractionState::Idle {
                 log::debug!(
                     "[Pipeline::Router] TextInput dropped in {:?}",
                     current_state
@@ -150,10 +148,13 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
                 return;
             }
 
-            // Auto-resume so typed input is never silently dropped while paused.
-            if current_state == InteractionState::Paused {
+            // Auto-resume so typed input is never silently dropped while paused or sleeping.
+            if current_state == InteractionState::Paused
+                || current_state == InteractionState::Sleeping
+            {
                 log::info!(
-                    "[Pipeline::Router] TextInput while Paused: auto-resuming before dispatch"
+                    "[Pipeline::Router] TextInput while {:?}: auto-resuming before dispatch",
+                    current_state
                 );
                 super::assistant::session::on_resume(app, state, &ctx);
             }
