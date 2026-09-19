@@ -93,6 +93,7 @@ tar = "0.4"                                      # Tar archive extraction
 flate2 = "1.0"                                   # Gzip decompression
 zip = "2.0"                                      # Zip archive extraction
 once_cell = "1.21.4"                             # Lazy static cell initialization
+num2words = "0.4"                                   # Spoken number and currency verbalization for TTS
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18", features = ["v3_24"] }
@@ -102,6 +103,9 @@ libc = "0.2"
 notify-rust = "4"
 enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 
+
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 sherpa-onnx = { version = "1.13.6", default-features = false, features = ["static"] }
@@ -119,6 +123,13 @@ split-debuginfo = "unpacked"
 [profile.dev.package."*"]
 opt-level = 2
 debug = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
 
 [[example]]
 name = "voice_clone"

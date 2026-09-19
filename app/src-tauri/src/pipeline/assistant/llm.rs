@@ -32,9 +32,12 @@ fn persist_assistant_turn(turn_id: u32, full_text: String, user_text: String, st
 /// Finalizes LLM output generation, flushes audio pre-roll, and persists turn.
 pub fn on_llm_finished(turn_id: u32, state: &AppState, ctx: &RoutingContext) {
     let current_state = state.pipeline.state();
-    if current_state != InteractionState::Thinking && current_state != InteractionState::Speaking {
+    if current_state != InteractionState::Thinking
+        && current_state != InteractionState::Speaking
+        && current_state != InteractionState::Working
+    {
         log::debug!(
-            "[Pipeline::Llm] LlmFinished dropped: state is {:?}, expected Thinking or Speaking",
+            "[Pipeline::Llm] LlmFinished dropped: state is {:?}, expected Thinking, Speaking, or Working",
             current_state
         );
         return;

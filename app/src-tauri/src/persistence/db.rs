@@ -78,11 +78,6 @@ impl VoxDb {
         Ok(conn)
     }
 
-    /// Access the underlying raw `Database` engine handle.
-    pub fn raw_database(&self) -> &Arc<Database> {
-        &self.db
-    }
-
     /// Returns the database file path.
     pub fn path(&self) -> &Path {
         &self.path

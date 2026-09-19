@@ -42,7 +42,7 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
         ...activeConfig,
         api_key: key,
       };
-      updateDraft("realtime", activeSubkey, updated);
+      updateDraft("realtime", activeSubkey, updated, "interaction");
     },
     [activeConfig, activeSubkey, updateDraft]
   );
@@ -55,7 +55,8 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
       updateDraft(
         "realtime",
         "active",
-        REALTIME_PROVIDERS[nextIndex].id as RealtimeActiveProvider
+        REALTIME_PROVIDERS[nextIndex].id as RealtimeActiveProvider,
+        "interaction"
       );
     },
     [providerIndex, updateDraft]

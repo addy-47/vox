@@ -464,8 +464,7 @@ fn main() {
                 .lock()
                 .as_ref()
                 .and_then(|h| {
-                    h.history()
-                        .messages()
+                    h.messages()
                         .iter()
                         .rev()
                         .find(|m| m.role == vox_lib::services::harness::Role::Assistant)

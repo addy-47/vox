@@ -17,8 +17,9 @@ use serde::Deserialize;
 use crate::{
     core::settings::LlmModelInfo,
     services::llm::{
-        GenerationRequest, LlmError, ProviderCapabilities, ProviderKind, Support,
-        DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS, DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS,
+        GenerationRequest, LlmError, LlmStreamEvent, OutputConstraint, ProviderCapabilities,
+        ProviderKind, ReasoningMode, Support, DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS,
+        DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS,
     },
 };
 
@@ -114,6 +115,92 @@ impl RemoteTransport {
     pub fn config(&self) -> &ConnectionConfig {
         &self.config
     }
+
+    /// Routes a generation request to the configured wire transport.
+    fn dispatch_stream<'a>(
+        &'a self,
+        cfg: &'a ConnectionConfig,
+        request: &'a GenerationRequest,
+        turn_id: u32,
+        cancel: &'a tokio_util::sync::CancellationToken,
+        tx: &'a mpsc::Sender<LlmStreamEvent>,
+    ) -> BoxFuture<'a, Result<(), LlmError>> {
+        Box::pin(async move {
+            if cfg.capability_source == CapabilitySource::OllamaNative
+                && cfg.token_limit_field == TokenLimitField::NumPredict
+            {
+                ollama::stream_ollama(&self.client, cfg, request, turn_id, cancel, tx).await
+            } else if cfg.transport == TransportType::Responses {
+                responses::stream_responses(&self.client, cfg, request, turn_id, cancel, tx).await
+            } else {
+                chat_completions::stream_chat_completions(
+                    &self.client,
+                    cfg,
+                    request,
+                    turn_id,
+                    cancel,
+                    tx,
+                )
+                .await
+            }
+        })
+    }
+
+    /// Flips the token-limit field after a provider 400 rejection, returning true when flipped.
+    fn flip_token_field(&self, cfg: &mut ConnectionConfig) -> bool {
+        let next_field = match cfg.token_limit_field {
+            TokenLimitField::MaxTokens => TokenLimitField::MaxCompletionTokens,
+            TokenLimitField::MaxCompletionTokens => TokenLimitField::MaxTokens,
+            _ => return false,
+        };
+        log::info!(
+            "[RemoteTransport] Provider rejected {:?}, negotiating to {:?}",
+            cfg.token_limit_field,
+            next_field
+        );
+        *self.active_token_limit_field.write() = next_field;
+        cfg.token_limit_field = next_field;
+        true
+    }
+}
+
+/// Reports whether a 400 message names the token-limit field.
+fn is_token_field_rejection(msg_lower: &str) -> bool {
+    msg_lower.contains("unsupported_parameter")
+        || msg_lower.contains("max_completion_tokens")
+        || msg_lower.contains("max_tokens")
+}
+
+/// Strips provider-rejected format controls, returning true when the request was degraded.
+fn degrade_request_on_unsupported(request: &mut GenerationRequest, msg_lower: &str) -> bool {
+    if request.options.reasoning == ReasoningMode::Disabled
+        && (msg_lower.contains("reasoning") || msg_lower.contains("think"))
+    {
+        log::warn!(
+            "[RemoteTransport] Provider rejected reasoning controls; retrying without them."
+        );
+        request.options.reasoning = ReasoningMode::Enabled;
+        return true;
+    }
+    if msg_lower.contains("response_format")
+        || msg_lower.contains("json_schema")
+        || msg_lower.contains("json_object")
+    {
+        match &request.output {
+            OutputConstraint::JsonSchema { .. } => {
+                log::warn!("[RemoteTransport] Provider rejected strict schema; falling back to JSON-object.");
+                request.output = OutputConstraint::JsonObject;
+                return true;
+            }
+            OutputConstraint::JsonObject => {
+                log::warn!("[RemoteTransport] Provider rejected JSON-object; falling back to prompt-only JSON.");
+                request.output = OutputConstraint::Text;
+                return true;
+            }
+            OutputConstraint::Text => {}
+        }
+    }
+    false
 }
 
 impl super::LlmProvider for RemoteTransport {
@@ -127,76 +214,30 @@ impl super::LlmProvider for RemoteTransport {
         Box::pin(async move {
             let mut cfg = self.config.clone();
             cfg.token_limit_field = *self.active_token_limit_field.read();
+            let mut request = request;
 
-            let res = if cfg.capability_source == CapabilitySource::OllamaNative
-                && cfg.token_limit_field == TokenLimitField::NumPredict
-            {
-                ollama::stream_ollama(&self.client, &cfg, &request, turn_id, cancel, tx).await
-            } else if cfg.transport == TransportType::Responses {
-                responses::stream_responses(&self.client, &cfg, &request, turn_id, cancel, tx).await
-            } else {
-                chat_completions::stream_chat_completions(
-                    &self.client,
-                    &cfg,
-                    &request,
-                    turn_id,
-                    cancel,
-                    tx,
-                )
-                .await
-            };
-
-            // Negotiation: if HTTP 400 unsupported_parameter naming the token field, flip and retry once
-            if let Err(LlmError::Provider {
-                status: 400,
-                ref message,
-            }) = res
-            {
-                let msg_lower = message.to_lowercase();
-                if msg_lower.contains("unsupported_parameter")
-                    || msg_lower.contains("max_completion_tokens")
-                    || msg_lower.contains("max_tokens")
-                {
-                    let next_field = match cfg.token_limit_field {
-                        TokenLimitField::MaxTokens => TokenLimitField::MaxCompletionTokens,
-                        TokenLimitField::MaxCompletionTokens => TokenLimitField::MaxTokens,
-                        other => other,
-                    };
-                    if next_field != cfg.token_limit_field {
-                        log::info!(
-                            "[RemoteTransport] Provider rejected {:?}, negotiating to {:?}",
-                            cfg.token_limit_field,
-                            next_field
-                        );
-                        *self.active_token_limit_field.write() = next_field;
-                        cfg.token_limit_field = next_field;
-
-                        return if cfg.transport == TransportType::Responses {
-                            responses::stream_responses(
-                                &self.client,
-                                &cfg,
-                                &request,
-                                turn_id,
-                                cancel,
-                                tx,
-                            )
-                            .await
-                        } else {
-                            chat_completions::stream_chat_completions(
-                                &self.client,
-                                &cfg,
-                                &request,
-                                turn_id,
-                                cancel,
-                                tx,
-                            )
-                            .await
-                        };
+            for _ in 0..3 {
+                let res = self
+                    .dispatch_stream(&cfg, &request, turn_id, cancel, tx)
+                    .await;
+                match res {
+                    Err(LlmError::Provider { status, message }) if status == 400 => {
+                        let msg_lower = message.to_lowercase();
+                        if degrade_request_on_unsupported(&mut request, &msg_lower) {
+                            continue;
+                        }
+                        if is_token_field_rejection(&msg_lower) && self.flip_token_field(&mut cfg) {
+                            continue;
+                        }
+                        return Err(LlmError::Provider { status, message });
                     }
+                    other => return other,
                 }
             }
 
-            res
+            Err(LlmError::Transport(
+                "request negotiation exhausted after format fallbacks".to_string(),
+            ))
         })
     }
 

@@ -5,6 +5,7 @@ use std::{
         atomic::{AtomicI32, AtomicU32, Ordering},
         Arc,
     },
+    time::Instant,
 };
 
 use anyhow::{anyhow, Result};
@@ -219,7 +220,7 @@ impl TtsProvider for TtsEngine {
             ctx.intent
         );
 
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         let speed = self.speed.load(Ordering::Relaxed);
         let quality_steps = self.quality_steps.load(Ordering::Relaxed);
 

@@ -33,6 +33,7 @@ dependencies = [
  "ndarray",
  "nnnoiseless",
  "notify-rust",
+ "num2words",
  "once_cell",
  "ort",
  "parking_lot",
@@ -4282,6 +4283,12 @@ checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
 ]
+
+[[package]]
+name = "num2words"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1f9771c0512b6a954a62b5106cc000bb5d77b1f60a792b5f70f531b84baefff"
 
 [[package]]
 name = "num_enum"

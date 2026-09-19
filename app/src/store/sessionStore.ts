@@ -21,9 +21,11 @@ export interface SessionStoreState {
   sessionError: string | null;
   cpuWarning: { governor: string } | null;
 
-  // Test Clip Support
-  testMode: boolean;
-  testingClip: string | null;
+  // Text Mode, Temporary Session & Mute Controls
+  isTemporarySession: boolean;
+  isTextModeOpen: boolean;
+  isPlaybackMuted: boolean;
+  isMicMuted: boolean;
 
   // Session & Turn History
   activeSessionId: number | null;
@@ -45,8 +47,10 @@ export interface SessionStoreState {
   setAssistantText: (text: string) => void;
   setSessionError: (error: string | null) => void;
   setCpuWarning: (warning: { governor: string } | null) => void;
-  setTestMode: (testMode: boolean) => void;
-  setTestingClip: (clipId: string | null) => void;
+  setIsTemporarySession: (isTemporarySession: boolean) => void;
+  setIsTextModeOpen: (isTextModeOpen: boolean) => void;
+  setIsPlaybackMuted: (isPlaybackMuted: boolean) => void;
+  setIsMicMuted: (isMicMuted: boolean) => void;
   setActiveSessionId: (id: number | null) => void;
   setDialogueHistory: (history: DialogueTurn[] | ((prev: DialogueTurn[]) => DialogueTurn[])) => void;
   setTurnIdCounter: (counter: number | ((prev: number) => number)) => void;
@@ -55,6 +59,9 @@ export interface SessionStoreState {
   setRestoreSignal: (signal: number) => void;
   bumpSessionListVersion: () => void;
   resetSessionState: () => void;
+  /** Breadcrumb shown in layout when panel is closed: { sessionTitle, projectName } */
+  activeSessionLabel: { sessionTitle: string | null; projectName: string | null };
+  setActiveSessionLabel: (label: { sessionTitle: string | null; projectName: string | null }) => void;
 }
 
 const INITIAL_STATE = {
@@ -66,8 +73,10 @@ const INITIAL_STATE = {
   assistantText: "",
   sessionError: null,
   cpuWarning: null,
-  testMode: false,
-  testingClip: null,
+  isTemporarySession: false,
+  isTextModeOpen: false,
+  isPlaybackMuted: false,
+  isMicMuted: false,
   activeSessionId: null,
   dialogueHistory: [],
   turnIdCounter: 0,
@@ -75,6 +84,7 @@ const INITIAL_STATE = {
   restoreError: null,
   restoreSignal: 0,
   sessionListVersion: 0,
+  activeSessionLabel: { sessionTitle: null, projectName: null },
 };
 
 export const useSessionStore = create<SessionStoreState>((set) => ({
@@ -88,8 +98,10 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
   setAssistantText: (assistantText) => set({ assistantText }),
   setSessionError: (sessionError) => set({ sessionError }),
   setCpuWarning: (cpuWarning) => set({ cpuWarning }),
-  setTestMode: (testMode) => set({ testMode }),
-  setTestingClip: (testingClip) => set({ testingClip }),
+  setIsTemporarySession: (isTemporarySession) => set({ isTemporarySession }),
+  setIsTextModeOpen: (isTextModeOpen) => set({ isTextModeOpen }),
+  setIsPlaybackMuted: (isPlaybackMuted) => set({ isPlaybackMuted }),
+  setIsMicMuted: (isMicMuted) => set({ isMicMuted }),
   setActiveSessionId: (activeSessionId) => set({ activeSessionId }),
   setDialogueHistory: (historyOrUpdater) =>
     set((state) => ({
@@ -109,6 +121,7 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
   setRestoreError: (restoreError) => set({ restoreError }),
   setRestoreSignal: (restoreSignal) => set({ restoreSignal }),
   bumpSessionListVersion: () => set((state) => ({ sessionListVersion: state.sessionListVersion + 1 })),
+  setActiveSessionLabel: (activeSessionLabel) => set({ activeSessionLabel }),
   resetSessionState: () =>
     set({
       interactionState: "Idle",

@@ -1,17 +1,15 @@
 pub mod actor;
-pub mod embedded;
-pub mod nemotron;
-pub mod qwen;
+pub mod factory;
+pub mod providers;
 pub mod stitcher;
 
-use std::path::Path;
-
 pub use actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand};
-pub use embedded::EmbeddedSttProvider;
-use serde::{Deserialize, Serialize};
+pub use factory::{create_stt_instance_from_settings, create_stt_provider};
+pub use providers::{
+    EmbeddedSttProvider, NemotronEngine, QwenEngine, SttEngine, SttProvider, SttProviderKind,
+};
 pub use stitcher::stitch_transcripts;
 
-use crate::core::settings::SttProviderConfig;
 pub use crate::{core::error::SttError, services::audio::SAMPLE_RATE};
 
 pub const QWEN_ASR_MODEL_DIR: &str = "stt/qwen3-asr";
@@ -31,53 +29,3 @@ pub const STT_MIN_PARTIAL_THROTTLE_MS: u64 = 300;
 pub const STT_PARTIAL_ERROR_PENALTY_MS: u64 = 500;
 pub const STT_WORKER_RECV_TIMEOUT_MS: u64 = 150;
 pub const STT_WORKER_THREAD_PRIORITY: u8 = 80;
-
-/// Provider kind identifier for speech recognition backends.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SttProviderKind {
-    Embedded,
-    Cloud,
-}
-
-/// Abstract contract for speech-to-text inference providers.
-pub trait SttProvider: Send {
-    fn transcribe_chunk(&self, chunk: &[f32], is_final: bool) -> anyhow::Result<String>;
-    fn reset_state(&self) -> anyhow::Result<()>;
-    fn health_check(&self) -> bool;
-    fn kind(&self) -> SttProviderKind;
-}
-/// Speech-to-Text inference engine contract for ONNX models.
-pub trait SttEngine: Send + Sync {
-    fn transcribe(&self, audio: &[f32]) -> anyhow::Result<String>;
-    fn accept_audio_chunk(&self, _audio: &[f32]) -> anyhow::Result<()> {
-        Ok(())
-    }
-    fn get_partial_result(&self) -> anyhow::Result<String> {
-        Ok(String::new())
-    }
-    fn finalize_stream(&self) -> anyhow::Result<String> {
-        Ok(String::new())
-    }
-    fn reset_stream(&self) -> anyhow::Result<()> {
-        Ok(())
-    }
-}
-
-/// Instantiates an SttProvider instance from the specified configuration and model path.
-pub fn create_stt_provider(
-    provider_config: &SttProviderConfig,
-    model_path: &Path,
-    num_threads: u32,
-) -> anyhow::Result<Box<dyn SttProvider>> {
-    match provider_config {
-        SttProviderConfig::Embedded { model_type } => Ok(Box::new(EmbeddedSttProvider::new(
-            model_path,
-            model_type,
-            num_threads,
-        )?)),
-        SttProviderConfig::Cloud { provider, .. } => {
-            anyhow::bail!("Unknown cloud STT provider: \"{}\"", provider)
-        }
-    }
-}

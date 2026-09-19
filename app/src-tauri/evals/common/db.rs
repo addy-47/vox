@@ -50,6 +50,26 @@ pub async fn open_existing_eval_db(path: &std::path::Path) -> Result<(VoxDb, Con
     Ok((db, conn))
 }
 
+/// Flushes hot journal content into the main database file so a plain file
+/// copy carries the full state. Must run before any ladder handoff copy —
+/// Turso keeps recent writes in sidecar files that `fs::copy` would miss.
+pub async fn checkpoint_source_db(path: &std::path::Path) -> Result<()> {
+    let (db, conn) = open_existing_eval_db(path).await?;
+    let mut rows = conn
+        .query("PRAGMA wal_checkpoint(TRUNCATE);", ())
+        .await
+        .context("wal_checkpoint failed")?;
+    while rows
+        .next()
+        .await
+        .context("wal_checkpoint row failed")?
+        .is_some()
+    {}
+    drop(conn);
+    drop(db);
+    Ok(())
+}
+
 /// Inserts a session row plus one `turns` row per fixture turn (mirrors the
 /// production persistence path where turns land in the DB as they complete).
 /// Returns the session id and the `TurnRow`s for `seed_continuation`.

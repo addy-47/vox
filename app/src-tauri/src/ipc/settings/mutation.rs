@@ -213,6 +213,11 @@ fn apply_llm_mutation(
             }
             settings.llm.max_output_tokens = val;
         }
+        "reasoning_enabled" => {
+            settings.llm.reasoning_enabled = value
+                .as_bool()
+                .ok_or("reasoning_enabled must be a boolean")?;
+        }
         "context_window" => {
             let val = value
                 .as_u64()
@@ -444,15 +449,26 @@ fn apply_dictation_mutation(
     Ok(true)
 }
 
-fn apply_history_mutation(
+fn apply_working_memory_mutation(
     settings: &mut VoxSettings,
     key: &str,
     value: &serde_json::Value,
 ) -> Result<bool, String> {
     match key {
         "private_mode" => {
-            settings.history.private_mode =
+            settings.working_memory.private_mode =
                 value.as_bool().ok_or("private_mode must be a boolean")?;
+        }
+        "auto_compaction" => {
+            settings.working_memory.auto_compaction =
+                value.as_bool().ok_or("auto_compaction must be a boolean")?;
+        }
+        "max_context_share" => {
+            let val = value.as_f64().ok_or("max_context_share must be a number")? as f32;
+            if !(0.0..=1.0).contains(&val) {
+                return Err("max_context_share must be between 0.0 and 1.0".to_string());
+            }
+            settings.working_memory.max_context_share = val;
         }
         _ => return Ok(false),
     }
@@ -513,34 +529,21 @@ fn apply_realtime_mutation(
     Ok(true)
 }
 
-fn apply_memory_mutation(
+fn apply_personal_memory_mutation(
     settings: &mut VoxSettings,
     key: &str,
     value: &serde_json::Value,
 ) -> Result<bool, String> {
     match key {
         "context_retrieval_enabled" => {
-            settings.memory.context_retrieval_enabled = value
+            settings.personal_memory.context_retrieval_enabled = value
                 .as_bool()
                 .ok_or("context_retrieval_enabled must be a boolean")?;
         }
         "pipeline_processing_enabled" => {
-            settings.memory.pipeline_processing_enabled = value
+            settings.personal_memory.pipeline_processing_enabled = value
                 .as_bool()
                 .ok_or("pipeline_processing_enabled must be a boolean")?;
-        }
-        "max_context_share" => {
-            let val = value.as_f64().ok_or("max_context_share must be a number")? as f32;
-            if !(0.0..=1.0).contains(&val) {
-                return Err("max_context_share must be between 0.0 and 1.0".to_string());
-            }
-            settings.memory.max_context_share = val;
-        }
-        "context_chaining_window_hours" => {
-            settings.memory.context_chaining_window_hours = value
-                .as_u64()
-                .ok_or("context_chaining_window_hours must be a positive integer")?
-                as u32;
         }
         "top_k_facts" => {
             let top_k = value
@@ -549,16 +552,7 @@ fn apply_memory_mutation(
             if top_k == 0 || top_k > 100 {
                 return Err("top_k_facts must be between 1 and 100".to_string());
             }
-            settings.memory.top_k_facts = top_k;
-        }
-        "max_hops" => {
-            let max_hops = value
-                .as_u64()
-                .ok_or("max_hops must be a positive integer")? as u32;
-            if max_hops == 0 || max_hops > 10 {
-                return Err("max_hops must be between 1 and 10".to_string());
-            }
-            settings.memory.max_hops = max_hops;
+            settings.personal_memory.top_k_facts = top_k;
         }
         "semantic_similarity_cutoff" => {
             let val = value
@@ -567,7 +561,7 @@ fn apply_memory_mutation(
             if !(0.0..=1.0).contains(&val) {
                 return Err("semantic_similarity_cutoff must be between 0.0 and 1.0".to_string());
             }
-            settings.memory.semantic_similarity_cutoff = val;
+            settings.personal_memory.semantic_similarity_cutoff = val;
         }
         "consolidation_cadence" => {
             let val = value
@@ -576,7 +570,7 @@ fn apply_memory_mutation(
             if !matches!(val, "manual" | "daily") {
                 return Err("consolidation_cadence must be one of: manual, daily".to_string());
             }
-            settings.memory.consolidation_cadence = val.to_string();
+            settings.personal_memory.consolidation_cadence = val.to_string();
         }
         "consolidation_time" => {
             let val = value
@@ -584,7 +578,7 @@ fn apply_memory_mutation(
                 .ok_or("consolidation_time must be a string")?;
             parse_consolidation_time(val)
                 .ok_or("consolidation_time must be in HH:MM 24-hour format".to_string())?;
-            settings.memory.consolidation_time = val.to_string();
+            settings.personal_memory.consolidation_time = val.to_string();
         }
         _ => return Ok(false),
     }
@@ -634,10 +628,10 @@ pub fn apply_setting_mutation(
         "tts" => apply_tts_mutation(settings, key, value),
         "interaction" => apply_interaction_mutation(settings, key, value),
         "dictation" => apply_dictation_mutation(settings, key, value),
-        "history" => apply_history_mutation(settings, key, value),
+        "working_memory" => apply_working_memory_mutation(settings, key, value),
         "persona" => apply_persona_mutation(settings, key, value),
         "realtime" => apply_realtime_mutation(settings, key, value),
-        "memory" => apply_memory_mutation(settings, key, value),
+        "personal_memory" => apply_personal_memory_mutation(settings, key, value),
         "system" => apply_system_mutation(settings, key, value),
         _ => Ok(false),
     }

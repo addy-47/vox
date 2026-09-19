@@ -69,4 +69,5 @@ pub struct PlaybackEngineHandles {
     pub pending_synthesis_jobs: Arc<AtomicU32>,
     pub event_tx: Sender<VoxEvent>,
     pub playback_intent: Arc<AtomicU8>,
+    pub is_playback_muted: Arc<AtomicBool>,
 }

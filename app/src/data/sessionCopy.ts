@@ -23,6 +23,7 @@ export const SESSION_COPY = {
   pinnedSection: "Pinned",
   projectsSection: "Projects",
   conversationsSection: "Conversations",
+  conversationHistory: "Conversation History",
   uncategorizedSection: "More conversations",
   noPinnedSessions: "No pinned conversations",
   noProjectsYet: "No projects yet",
@@ -30,6 +31,7 @@ export const SESSION_COPY = {
   noOtherSessions: "No other conversations",
   newProjectPlaceholder: "New project name",
   createProjectAriaLabel: "Create project",
+  newInProjectAriaLabel: "New conversation in project",
   turnSingular: "turn",
   turnPlural: "turns",
   actions: {

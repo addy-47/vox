@@ -149,7 +149,7 @@ export const TtsVoiceManager = memo(({
   const selectedVoiceId = isEdgeTts
     ? draftSettings.tts.edge_tts?.voice || (edgeVoicesList[0]?.id || "en-US-AriaNeural")
     : isCustomVoices
-      ? customConfig?.language || "default"
+      ? customConfig?.voice_id || "default"
       : String(draftSettings.tts.voice_index ?? 0);
 
   const handleVoiceChange = (id: string) => {
@@ -161,7 +161,8 @@ export const TtsVoiceManager = memo(({
     } else if (isCustomVoices) {
       updateDraft("tts", customConfigKey, {
         ...customConfig,
-        language: id,
+        voice_id: id === "default" ? null : id,
+        language: customConfig?.language || "en",
       });
     } else {
       updateDraft("tts", "voice_index", Number(id));
@@ -275,7 +276,7 @@ export const TtsVoiceManager = memo(({
           const totalCores = (typeof navigator !== "undefined" ? navigator.hardwareConcurrency : undefined) || 4;
           const balancedThreads = Math.max(1, Math.floor(totalCores / 2));
           const ecoThreads = Math.max(1, Math.floor(totalCores / 4));
-          const currentThreads = draftSettings.tts.threads ?? 2;
+          const currentThreads = draftSettings.tts.threads ?? 6;
           const currentProfile =
             currentThreads === totalCores ? "max"
             : currentThreads === balancedThreads ? "balanced"

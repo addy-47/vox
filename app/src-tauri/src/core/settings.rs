@@ -13,23 +13,24 @@ use crate::{
         DEFAULT_DEEPGRAM_MODEL, DEFAULT_DEEPGRAM_TEMP, DEFAULT_DEEPGRAM_VOICE,
         DEFAULT_DICTATION_ENABLED, DEFAULT_DICTATION_HOTKEY, DEFAULT_GEMINI_REALTIME_LANG,
         DEFAULT_GEMINI_REALTIME_MODEL, DEFAULT_GEMINI_REALTIME_TEMP, DEFAULT_GEMINI_REALTIME_VOICE,
-        DEFAULT_HISTORY_AUTO_COMPACTION, DEFAULT_HISTORY_PRIVATE_MODE, DEFAULT_LLM_CLOUD_BASE_URL,
-        DEFAULT_LLM_CLOUD_MODEL, DEFAULT_LLM_CLOUD_PROVIDER_NAME,
+        DEFAULT_LLM_CLOUD_BASE_URL, DEFAULT_LLM_CLOUD_MODEL, DEFAULT_LLM_CLOUD_PROVIDER_NAME,
         DEFAULT_LLM_COMPACTION_TEMPERATURE, DEFAULT_LLM_CONTEXT_WINDOW,
         DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_MODEL, DEFAULT_LLM_SERVER_BASE_URL,
         DEFAULT_LLM_SERVER_MODEL, DEFAULT_LLM_SERVER_PROVIDER_NAME, DEFAULT_LLM_TEMPERATURE,
-        DEFAULT_LLM_THREADS, DEFAULT_MEMORY_CONSOLIDATION_CADENCE,
-        DEFAULT_MEMORY_CONSOLIDATION_TIME, DEFAULT_MEMORY_CONTEXT_CHAINING_HOURS,
-        DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED, DEFAULT_MEMORY_MAX_HOPS,
-        DEFAULT_MEMORY_MAX_PERSONAL_SHARE, DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED,
-        DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF, DEFAULT_MEMORY_TOP_K_FACTS,
+        DEFAULT_LLM_THREADS, DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_CADENCE,
+        DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_TIME,
+        DEFAULT_PERSONAL_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
+        DEFAULT_PERSONAL_MEMORY_PIPELINE_PROCESSING_ENABLED,
+        DEFAULT_PERSONAL_MEMORY_SEMANTIC_SIMILARITY_CUTOFF, DEFAULT_PERSONAL_MEMORY_TOP_K_FACTS,
         DEFAULT_STT_CLOUD_LANGUAGE, DEFAULT_STT_CLOUD_MODEL, DEFAULT_STT_CLOUD_PROVIDER,
         DEFAULT_STT_CLOUD_REGION, DEFAULT_STT_PARTIAL_THROTTLE_MS, DEFAULT_STT_THREADS,
         DEFAULT_SYSTEM_PROMPT_MODULAR, DEFAULT_SYSTEM_PROMPT_REALTIME, DEFAULT_TELEMETRY_ENABLED,
         DEFAULT_TELEMETRY_LOG_LEVEL, DEFAULT_TTS_QUALITY_STEPS, DEFAULT_TTS_SPEED,
         DEFAULT_TTS_THREADS, DEFAULT_TTS_VOICE_INDEX, DEFAULT_UI_ACCENT_SEED, DEFAULT_UI_THEME,
-        DEFAULT_VAD_PTT_NOISE_GATE, DEFAULT_VAD_SILENCE_DURATION_MS, DEFAULT_VAD_SPEECH_ONSET_MS,
-        DEFAULT_VAD_THRESHOLD, MIN_LLM_CONTEXT_WINDOW,
+        DEFAULT_VAD_MAX_SPEECH_DURATION_S, DEFAULT_VAD_PTT_NOISE_GATE,
+        DEFAULT_VAD_SILENCE_DURATION_MS, DEFAULT_VAD_SPEECH_ONSET_MS, DEFAULT_VAD_THRESHOLD,
+        DEFAULT_WORKING_MEMORY_AUTO_COMPACTION, DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE,
+        DEFAULT_WORKING_MEMORY_PRIVATE_MODE, MIN_LLM_CONTEXT_WINDOW,
     },
     utils::paths,
 };
@@ -46,9 +47,11 @@ pub enum AudioOutputMode {
 pub enum VadBackendOption {
     /// Earshot — pure Rust, no ONNX dependency, embedded neural weights.
     Earshot,
-    /// TenVAD — ONNX-based standard VAD engine. Default engine for Vox.
-    #[default]
+    /// TenVAD — ONNX-based standard VAD engine.
     TenVad,
+    /// SileroVad — MIT-licensed ONNX VAD engine with superior noise immunity.
+    #[default]
+    SileroVad,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
@@ -87,6 +90,12 @@ pub enum PipelineMode {
 pub struct VoiceProfile {
     pub id: i32,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gender: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -152,7 +161,9 @@ impl SettingReloadPolicy {
 
 pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy {
     match domain {
-        "appearance" | "memory" | "persona" | "history" | "realtime" => SettingReloadPolicy::Hot,
+        "appearance" | "working_memory" | "personal_memory" | "persona" | "realtime" => {
+            SettingReloadPolicy::Hot
+        }
         "tts"
             if key == "quality_steps"
                 || key == "speed"
@@ -164,6 +175,7 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
         "llm"
             if key == "temperature"
                 || key == "compaction_temperature"
+                || key == "reasoning_enabled"
                 || key == "max_output_tokens" =>
         {
             SettingReloadPolicy::Hot
@@ -172,7 +184,8 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
             if key == "threshold"
                 || key == "ptt_noise_gate"
                 || key == "silence_duration_ms"
-                || key == "speech_onset_ms" =>
+                || key == "speech_onset_ms"
+                || key == "max_speech_duration_s" =>
         {
             SettingReloadPolicy::WorkerCommand
         }
@@ -229,6 +242,7 @@ pub struct VadSettings {
     pub vad_backend: VadBackendOption,
     pub silence_duration_ms: u32,
     pub speech_onset_ms: u32,
+    pub max_speech_duration_s: u32,
 }
 
 impl Default for VadSettings {
@@ -236,9 +250,10 @@ impl Default for VadSettings {
         Self {
             threshold: DEFAULT_VAD_THRESHOLD,
             ptt_noise_gate: DEFAULT_VAD_PTT_NOISE_GATE,
-            vad_backend: VadBackendOption::TenVad,
+            vad_backend: VadBackendOption::SileroVad,
             silence_duration_ms: DEFAULT_VAD_SILENCE_DURATION_MS,
             speech_onset_ms: DEFAULT_VAD_SPEECH_ONSET_MS,
+            max_speech_duration_s: DEFAULT_VAD_MAX_SPEECH_DURATION_S,
         }
     }
 }
@@ -473,6 +488,8 @@ pub struct LlmSettings {
     pub max_output_tokens: u32,
     pub context_window: u32,
     pub threads: u32,
+    /// Voice-native default is off; reserved for future user-driven agentic opt-in.
+    pub reasoning_enabled: bool,
     pub embedded: LlmEmbeddedConfig,
     pub server: LlmRemoteConfig,
     pub cloud: LlmRemoteConfig,
@@ -487,6 +504,7 @@ impl Default for LlmSettings {
             max_output_tokens: DEFAULT_LLM_MAX_OUTPUT_TOKENS,
             context_window: DEFAULT_LLM_CONTEXT_WINDOW,
             threads: DEFAULT_LLM_THREADS,
+            reasoning_enabled: false,
             embedded: LlmEmbeddedConfig::default(),
             server: LlmRemoteConfig::server_default(),
             cloud: LlmRemoteConfig::cloud_default(),
@@ -756,48 +774,44 @@ impl Default for DictationSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
-pub struct HistorySettings {
+pub struct WorkingMemorySettings {
     pub private_mode: bool,
     pub auto_compaction: bool,
+    pub max_context_share: f32,
 }
 
-impl Default for HistorySettings {
+impl Default for WorkingMemorySettings {
     fn default() -> Self {
         Self {
-            private_mode: DEFAULT_HISTORY_PRIVATE_MODE,
-            auto_compaction: DEFAULT_HISTORY_AUTO_COMPACTION,
+            private_mode: DEFAULT_WORKING_MEMORY_PRIVATE_MODE,
+            auto_compaction: DEFAULT_WORKING_MEMORY_AUTO_COMPACTION,
+            max_context_share: DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE,
         }
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default)]
-pub struct MemorySettings {
+pub struct PersonalMemorySettings {
     pub context_retrieval_enabled: bool,
     pub pipeline_processing_enabled: bool,
-    pub max_context_share: f32,
-    pub context_chaining_window_hours: u32,
     pub top_k_facts: u32,
-    pub max_hops: u32,
     pub semantic_similarity_cutoff: f32,
     pub consolidation_cadence: String,
     pub consolidation_time: String,
 }
 
-impl Default for MemorySettings {
+impl Default for PersonalMemorySettings {
     fn default() -> Self {
         Self {
-            context_retrieval_enabled: DEFAULT_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
-            pipeline_processing_enabled: DEFAULT_MEMORY_PIPELINE_PROCESSING_ENABLED,
-            max_context_share: DEFAULT_MEMORY_MAX_PERSONAL_SHARE,
-            context_chaining_window_hours: DEFAULT_MEMORY_CONTEXT_CHAINING_HOURS,
-            top_k_facts: DEFAULT_MEMORY_TOP_K_FACTS,
-            max_hops: DEFAULT_MEMORY_MAX_HOPS,
-            semantic_similarity_cutoff: DEFAULT_MEMORY_SEMANTIC_SIMILARITY_CUTOFF,
-            consolidation_cadence: DEFAULT_MEMORY_CONSOLIDATION_CADENCE.to_string(),
-            consolidation_time: DEFAULT_MEMORY_CONSOLIDATION_TIME.to_string(),
+            context_retrieval_enabled: DEFAULT_PERSONAL_MEMORY_CONTEXT_RETRIEVAL_ENABLED,
+            pipeline_processing_enabled: DEFAULT_PERSONAL_MEMORY_PIPELINE_PROCESSING_ENABLED,
+            top_k_facts: DEFAULT_PERSONAL_MEMORY_TOP_K_FACTS,
+            semantic_similarity_cutoff: DEFAULT_PERSONAL_MEMORY_SEMANTIC_SIMILARITY_CUTOFF,
+            consolidation_cadence: DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_CADENCE.to_string(),
+            consolidation_time: DEFAULT_PERSONAL_MEMORY_CONSOLIDATION_TIME.to_string(),
         }
     }
 }
@@ -947,9 +961,9 @@ pub struct VoxSettings {
     pub realtime: RealtimeSettings,
     pub interaction: InteractionSettings,
     pub dictation: DictationSettings,
-    pub history: HistorySettings,
+    pub working_memory: WorkingMemorySettings,
     pub appearance: AppearanceSettings,
-    pub memory: MemorySettings,
+    pub personal_memory: PersonalMemorySettings,
     pub persona: PersonaSettings,
     pub system: SystemSettings,
 }
@@ -1019,10 +1033,10 @@ impl VoxSettings {
                         settings.dictation = v;
                     }
                     if let Some(v) = obj
-                        .get("history")
+                        .get("working_memory")
                         .and_then(|v| serde_json::from_value(v.clone()).ok())
                     {
-                        settings.history = v;
+                        settings.working_memory = v;
                     }
                     if let Some(v) = obj
                         .get("appearance")
@@ -1031,10 +1045,10 @@ impl VoxSettings {
                         settings.appearance = v;
                     }
                     if let Some(v) = obj
-                        .get("memory")
+                        .get("personal_memory")
                         .and_then(|v| serde_json::from_value(v.clone()).ok())
                     {
-                        settings.memory = v;
+                        settings.personal_memory = v;
                     }
                     if let Some(v) = obj
                         .get("persona")

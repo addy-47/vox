@@ -1,6 +1,13 @@
 //! Voice service for audio validation, decoding, resampling, speaker pre-baking, and recording.
 
-use std::{fs::File, path::Path, sync::Arc};
+use std::{
+    fs::{create_dir_all, File},
+    io::ErrorKind,
+    mem,
+    path::Path,
+    sync::Arc,
+    time::Duration,
+};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use once_cell::sync::Lazy;
@@ -118,9 +125,7 @@ fn decode_audio_stream(src_path: &str) -> Result<(Vec<f32>, u32), String> {
         let packet = match format.next_packet() {
             Ok(Some(packet)) => packet,
             Ok(None) => break,
-            Err(Error::IoError(ref err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
-                break
-            }
+            Err(Error::IoError(ref err)) if err.kind() == ErrorKind::UnexpectedEof => break,
             Err(e) => return Err(format!("Audio decoding error: {}", e)),
         };
 
@@ -229,7 +234,7 @@ pub fn write_pcm_to_wav(
 pub fn pre_bake_speaker_tensors(source_wav: &Path, baked_dir: &Path) -> Result<(), String> {
     use chatterbox_rs::{Engine, EngineOptions};
 
-    std::fs::create_dir_all(baked_dir)
+    create_dir_all(baked_dir)
         .map_err(|e| format!("Failed to create baked voice directory: {}", e))?;
 
     let tts_model_dir = model_dir(CHATTERBOX_MODEL_DIR);
@@ -336,7 +341,7 @@ pub fn stop_recording() -> Result<(Vec<f32>, u32), String> {
 
     drop(recorder._stream);
 
-    let samples = std::mem::take(&mut *recorder.samples.lock());
+    let samples = mem::take(&mut *recorder.samples.lock());
     let sample_rate = recorder.sample_rate;
     log::info!(
         "[Voice] Recording stopped. Captured {} samples at {} Hz ({:.2}s)",
@@ -350,7 +355,7 @@ pub fn stop_recording() -> Result<(Vec<f32>, u32), String> {
 /// Query Microsoft's Read Aloud endpoint for available Edge TTS voices.
 pub async fn fetch_remote_edge_voices() -> Result<Vec<EdgeTtsVoiceEntry>, String> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(6))
+        .timeout(Duration::from_secs(6))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
@@ -398,48 +403,161 @@ pub async fn fetch_remote_edge_voices() -> Result<Vec<EdgeTtsVoiceEntry>, String
         .collect())
 }
 
-/// Returns default system voice profiles (Supertonic/Kokoro speaker mappings).
+/// Returns canonical Kokoro voice profiles (accurate 11-speaker ledger with correct gender and accent tags).
 pub fn get_voice_profiles() -> Vec<VoiceProfile> {
     vec![
         VoiceProfile {
             id: 0,
-            name: "James".to_string(),
+            name: "Alloy".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
         },
         VoiceProfile {
             id: 1,
-            name: "David".to_string(),
+            name: "Bella".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
         },
         VoiceProfile {
             id: 2,
-            name: "Alex".to_string(),
+            name: "Nicole".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
         },
         VoiceProfile {
             id: 3,
-            name: "Ryan".to_string(),
+            name: "Sarah".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
         },
         VoiceProfile {
             id: 4,
-            name: "Ethan".to_string(),
+            name: "Sky".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
         },
         VoiceProfile {
             id: 5,
-            name: "Sophia".to_string(),
+            name: "Adam".to_string(),
+            gender: Some("Male".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
         },
         VoiceProfile {
             id: 6,
-            name: "Olivia".to_string(),
+            name: "Michael".to_string(),
+            gender: Some("Male".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
         },
         VoiceProfile {
             id: 7,
             name: "Emma".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("British".to_string()),
+            language: Some("en-GB".to_string()),
+        },
+        VoiceProfile {
+            id: 8,
+            name: "Isabella".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("British".to_string()),
+            language: Some("en-GB".to_string()),
+        },
+        VoiceProfile {
+            id: 9,
+            name: "George".to_string(),
+            gender: Some("Male".to_string()),
+            accent: Some("British".to_string()),
+            language: Some("en-GB".to_string()),
+        },
+        VoiceProfile {
+            id: 10,
+            name: "Heart".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
+        },
+    ]
+}
+
+/// Returns default Supertonic voice profiles.
+pub fn get_supertonic_voice_profiles() -> Vec<VoiceProfile> {
+    vec![
+        VoiceProfile {
+            id: 0,
+            name: "James".to_string(),
+            gender: Some("Male".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
+        },
+        VoiceProfile {
+            id: 1,
+            name: "David".to_string(),
+            gender: Some("Male".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
+        },
+        VoiceProfile {
+            id: 2,
+            name: "Alex".to_string(),
+            gender: Some("Male".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
+        },
+        VoiceProfile {
+            id: 3,
+            name: "Ryan".to_string(),
+            gender: Some("Male".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
+        },
+        VoiceProfile {
+            id: 4,
+            name: "Ethan".to_string(),
+            gender: Some("Male".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
+        },
+        VoiceProfile {
+            id: 5,
+            name: "Sophia".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
+        },
+        VoiceProfile {
+            id: 6,
+            name: "Olivia".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
+        },
+        VoiceProfile {
+            id: 7,
+            name: "Emma".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
         },
         VoiceProfile {
             id: 8,
             name: "Ava".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
         },
         VoiceProfile {
             id: 9,
             name: "Mia".to_string(),
+            gender: Some("Female".to_string()),
+            accent: Some("American".to_string()),
+            language: Some("en-US".to_string()),
         },
     ]
 }

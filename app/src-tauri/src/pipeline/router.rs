@@ -138,6 +138,50 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
         VoxEvent::TranscriptFinal { turn_id, text } => {
             super::assistant::transcript::on_transcript_final(turn_id, text, app, state, &ctx);
         }
+        VoxEvent::TextInput { text } => {
+            let current_state = state.pipeline.state();
+            if current_state == InteractionState::Idle {
+                log::debug!(
+                    "[Pipeline::Router] TextInput dropped in {:?}",
+                    current_state
+                );
+                return;
+            }
+
+            // Auto-resume so typed input is never silently dropped while paused or sleeping.
+            if current_state == InteractionState::Paused
+                || current_state == InteractionState::Sleeping
+            {
+                log::info!(
+                    "[Pipeline::Router] TextInput while {:?}: auto-resuming before dispatch",
+                    current_state
+                );
+                super::assistant::session::on_resume(app, state, &ctx);
+            }
+
+            let current_state = state.pipeline.state();
+            let active_turn_id = if current_state == InteractionState::Thinking
+                || current_state == InteractionState::Speaking
+                || current_state == InteractionState::Working
+            {
+                super::assistant::interrupt::on_interrupt(app, state, &ctx)
+            } else if current_state == InteractionState::Ready {
+                let (new_turn_id, _) = state.pipeline.next_turn();
+                state.pipeline_accumulator.lock().clear();
+                new_turn_id
+            } else {
+                return;
+            };
+
+            transition(InteractionState::Thinking, &ctx, app, state);
+            super::assistant::transcript::on_transcript_final(
+                active_turn_id,
+                text,
+                app,
+                state,
+                &ctx,
+            );
+        }
         VoxEvent::LlmFinished { turn_id } => {
             super::assistant::llm::on_llm_finished(turn_id, state, &ctx);
         }

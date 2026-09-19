@@ -20,7 +20,7 @@ import { FactRecord } from "@/services/memoryService";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
 import {
-  getCollectionColor,
+  getActiveDynamicPalette,
   getCollectionIcon,
   type MemoryCategory,
 } from "./memoryGraphTypes";
@@ -48,6 +48,8 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
   const [filterQuery, setFilterQuery] = useState("");
   const [activeDrillSession, setActiveDrillSession] = useState<SessionRow | null>(null);
   const [expandedCompactions, setExpandedCompactions] = useState<Set<number>>(new Set());
+
+  const palette = useMemo(() => getActiveDynamicPalette(isLightMode), [isLightMode]);
 
   // Load sessions once
   useEffect(() => {
@@ -152,12 +154,12 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
   }, []);
 
   return (
-    <div className="flex flex-col h-full w-full bg-transparent overflow-hidden select-none">
+    <div className="flex flex-col h-full w-full bg-transparent overflow-hidden select-none font-sans">
       {/* ── View 1: Level 2 Compactions Drill-Down ── */}
       {activeDrillSession ? (
         <div className="flex flex-col h-full overflow-hidden">
-          {/* Top Drill Bar */}
-          <div className="px-4 py-3 shrink-0 border-b border-[rgba(var(--border),0.12)] bg-[rgba(var(--background),0.35)] flex flex-col gap-2">
+          {/* Top Drill Bar — matches SessionPanel section header language */}
+          <div className="px-3 py-2.5 shrink-0 border-b border-[rgba(var(--border),0.08)] bg-[rgba(var(--background),0.2)] flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <button
                 type="button"
@@ -168,7 +170,7 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
                 <span>{MEMORY_COPY.backToSessions}</span>
               </button>
 
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[rgba(var(--accent),0.1)] border border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))]">
+              <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70">
                 #{activeDrillSession.id}
               </span>
             </div>
@@ -188,7 +190,7 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
           </div>
 
           {/* Compaction Accordions List */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-2.5 scrollbar-thin scrollbar-thumb-[rgba(var(--foreground),0.15)] scrollbar-track-transparent">
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-3 pb-16 space-y-2.5 scrollbar-thin scrollbar-thumb-[rgba(var(--foreground),0.15)] scrollbar-track-transparent">
             {compactionGroups.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-8 text-center">
                 <Sparkles size={24} className="text-[rgb(var(--foreground-muted))] opacity-40 mb-2" />
@@ -202,7 +204,7 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
                 return (
                   <div
                     key={group.compactionId}
-                    className="rounded-2xl border border-[rgba(var(--border),0.12)] bg-[rgba(var(--card),0.55)] backdrop-blur-md overflow-hidden transition-all"
+                    className="rounded-xl border border-[rgba(var(--border),0.12)] bg-[rgba(var(--card),0.55)] backdrop-blur-md overflow-hidden transition-all"
                   >
                     {/* Accordion Header */}
                     <button
@@ -220,7 +222,7 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]">
+                        <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70">
                           {group.facts.length} {MEMORY_COPY.factsLabel.toLowerCase()}
                         </span>
                         <ChevronDown
@@ -238,7 +240,7 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
                       <div className="p-2 border-t border-[rgba(var(--border),0.08)] bg-[rgba(var(--background),0.25)] space-y-1.5">
                         {group.facts.map((fact) => {
                           const isFactSelected = selectedFactId === fact.id;
-                          const col = getCollectionColor(fact.fact_type, false, isLightMode);
+                          const col = palette[fact.fact_type as MemoryCategory] ?? palette.objective;
                           const Icon = getCollectionIcon(fact.fact_type);
                           const catLabel = MEMORY_COPY.categories[fact.fact_type as MemoryCategory] || fact.fact_type;
 
@@ -287,22 +289,23 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
       ) : (
         /* ── View 2: Level 1 Sessions List ── */
         <div className="flex flex-col h-full overflow-hidden">
-          {/* Search Filter Header */}
-          <div className="px-3.5 py-2.5 shrink-0 border-b border-[rgba(var(--border),0.12)] bg-[rgba(var(--background),0.3)]">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.10)] focus-within:border-[rgba(var(--accent),0.4)] transition-colors">
-              <Search size={13} className="text-[rgb(var(--foreground-muted))] shrink-0" />
+          {/* Search Filter Header — underline search input UI */}
+          <div className="px-4 py-2 shrink-0 border-b border-[rgba(var(--border),0.08)] bg-[rgba(var(--background),0.2)]">
+            <div className="flex items-center gap-2 py-1.5 border-b border-[rgba(var(--foreground),0.15)] focus-within:border-[rgba(var(--accent),0.7)] transition-colors">
+              <Search size={13} className="text-[rgb(var(--accent))] opacity-70 shrink-0" />
               <input
                 type="text"
                 value={filterQuery}
                 onChange={(e) => setFilterQuery(e.target.value)}
                 placeholder={MEMORY_COPY.filterSessionsPlaceholder}
-                className="w-full bg-transparent text-[11.5px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))] focus:outline-none"
+                className="w-full bg-transparent text-[11.5px] font-mono text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 focus:outline-none"
               />
               {filterQuery && (
                 <button
                   type="button"
                   onClick={() => setFilterQuery("")}
-                  className="p-0.5 rounded text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer"
+                  className="p-0.5 rounded text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] cursor-pointer transition-colors"
+                  aria-label="Clear filter"
                 >
                   <X size={12} />
                 </button>
@@ -310,8 +313,8 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
             </div>
           </div>
 
-          {/* Sessions List */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin scrollbar-thumb-[rgba(var(--foreground),0.15)] scrollbar-track-transparent">
+          {/* Sessions List — custom-scrollbar + bottom cushion like SessionPanel */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-3 pb-16 space-y-2 scrollbar-thin scrollbar-thumb-[rgba(var(--foreground),0.15)] scrollbar-track-transparent">
             {loading ? (
               <div className="flex items-center justify-center p-8">
                 <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] animate-pulse">
@@ -342,7 +345,7 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
                     type="button"
                     onClick={() => handleSelectSessionCard(session)}
                     className={cn(
-                      "group w-full text-left p-3 rounded-2xl border transition-all cursor-pointer flex flex-col gap-2",
+                      "group w-full text-left p-3 rounded-xl border transition-all cursor-pointer flex flex-col gap-2",
                       isSelected
                         ? "border-[rgba(var(--accent),0.55)] bg-[rgba(var(--accent),0.12)] shadow-md ring-1 ring-[rgba(var(--accent),0.3)]"
                         : "border-[rgba(var(--border),0.10)] bg-[rgba(var(--card),0.5)] hover:border-[rgba(var(--accent),0.35)] hover:bg-[rgba(var(--card),0.85)]"
@@ -375,18 +378,16 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
                       </span>
                     </div>
 
-                    {/* Meta Row: Turns + Facts Badges */}
-                    <div className="flex items-center justify-between pt-1 border-t border-[rgba(var(--border),0.06)] text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
-                      <div className="flex items-center gap-1.5">
-                        <span className="px-1.5 py-0.5 rounded bg-[rgba(var(--foreground),0.05)]">
-                          {session.turn_count} {MEMORY_COPY.turnsLabel.toLowerCase()}
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.2)] font-semibold">
-                          {factCount} {MEMORY_COPY.factsLabel.toLowerCase()}
-                        </span>
+                    {/* Meta Row: Turns + Facts — plain text, no badge chrome */}
+                    <div className="flex items-center justify-between pt-1 border-t border-[rgba(var(--border),0.06)] text-[10px] font-mono text-[rgb(var(--foreground-muted))]/80">
+                      <div className="flex items-center gap-2">
+                        <span>{session.turn_count} {MEMORY_COPY.turnsLabel.toLowerCase()}</span>
+                        {factCount > 0 && (
+                          <span className="text-[rgb(var(--accent))]/80">{factCount} {MEMORY_COPY.factsLabel.toLowerCase()}</span>
+                        )}
                       </div>
 
-                      <span className="text-[9px] opacity-50">
+                      <span className="text-[9px] opacity-40">
                         #{session.id}
                       </span>
                     </div>

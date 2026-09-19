@@ -19,6 +19,7 @@ export interface CentralClockNodeProps {
   secondaryLabel: string;
   metaLabel: string;
   dayHeroParts?: { month: string; day: string };
+  dateSpanLabel?: string | null;
   weekdayLabel?: string;
   monthFullLabel?: string;
   sessionsCount: number;
@@ -50,6 +51,7 @@ export const CentralClockNode = memo(
     primaryLabel,
     secondaryLabel,
     dayHeroParts,
+    dateSpanLabel,
     weekdayLabel,
     monthFullLabel,
     sessionsCount,
@@ -92,12 +94,12 @@ export const CentralClockNode = memo(
         <div
           className="relative rounded-full flex flex-col items-center justify-center text-center transition-all duration-300 overflow-hidden isolate backdrop-blur-md"
           style={{
-            width: "clamp(320px, 36vw, 440px)",
-            height: "clamp(320px, 36vw, 440px)",
-            minWidth: "300px",
-            minHeight: "300px",
-            maxWidth: "460px",
-            maxHeight: "460px",
+            width: "clamp(250px, 26vw, 320px)",
+            height: "clamp(250px, 26vw, 320px)",
+            minWidth: "240px",
+            minHeight: "240px",
+            maxWidth: "330px",
+            maxHeight: "330px",
             background: isLightMode
               ? "radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.15) 60%, rgba(var(--accent), 0.10) 100%)"
               : "radial-gradient(circle at 50% 35%, rgba(var(--card), 0.98) 0%, rgba(10, 14, 18, 0.98) 72%, rgba(var(--accent), 0.12) 100%)",
@@ -173,7 +175,7 @@ export const CentralClockNode = memo(
                         ? "rgb(var(--accent))"
                         : "rgba(var(--foreground-muted), 0.15)"
                     }
-                    strokeWidth={isCurrent ? 2.5 : 1.5}
+                    strokeWidth={isCurrent ? 1.3 : 0.8}
                     strokeLinecap="round"
                   />
                 );
@@ -218,7 +220,7 @@ export const CentralClockNode = memo(
           </button>
 
           {/* ── Inner Circular Safe Zone: Centered Content with Perfect Breathing Room ── */}
-          <div className="relative z-20 flex flex-col items-center justify-between w-[74%] h-[74%] py-2 select-none">
+          <div className="relative z-20 flex flex-col items-center justify-between w-[76%] h-[76%] pt-1.5 pb-3.5 select-none">
             {/* 1. Top Section: Mode Pill Toggle */}
             <div
               className={cn(
@@ -269,18 +271,25 @@ export const CentralClockNode = memo(
                 <span className="w-1 h-1 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_5px_rgb(var(--accent))]" />
               </div>
 
-              {/* Hero Date: Dual-Tone "AUG 12" in Day view, or Full Month Name "AUGUST" in Month view */}
-              {variant === "day" && dayHeroParts ? (
+              {/* Hero Date: Custom Date Span (e.g. "SEP 11 – 15"), Dual-Tone "AUG 12", or Month Name */}
+              {variant === "day" && dateSpanLabel ? (
+                <span
+                  className="font-display font-black tracking-tight text-[rgb(var(--foreground))] leading-none"
+                  style={{ fontSize: "clamp(18px, 2.2vw, 24px)" }}
+                >
+                  {dateSpanLabel}
+                </span>
+              ) : variant === "day" && dayHeroParts ? (
                 <div className="flex items-baseline gap-1.5 font-display font-black tracking-tight leading-none">
                   <span
                     className="text-[rgb(var(--foreground))]"
-                    style={{ fontSize: "clamp(28px, 3.2vw, 36px)" }}
+                    style={{ fontSize: "clamp(22px, 2.6vw, 28px)" }}
                   >
                     {dayHeroParts.month}
                   </span>
                   <span
                     className="text-[rgb(var(--accent))] drop-shadow-[0_0_18px_rgba(var(--accent),0.65)]"
-                    style={{ fontSize: "clamp(28px, 3.2vw, 36px)" }}
+                    style={{ fontSize: "clamp(22px, 2.6vw, 28px)" }}
                   >
                     {dayHeroParts.day}
                   </span>
@@ -288,7 +297,7 @@ export const CentralClockNode = memo(
               ) : (
                 <span
                   className="font-display font-black tracking-tight text-[rgb(var(--accent))] leading-none drop-shadow-[0_0_18px_rgba(var(--accent),0.65)] uppercase"
-                  style={{ fontSize: "clamp(24px, 3.2vw, 36px)" }}
+                  style={{ fontSize: "clamp(20px, 2.5vw, 28px)" }}
                 >
                   {monthFullLabel || primaryLabel}
                 </span>
@@ -333,16 +342,16 @@ export const CentralClockNode = memo(
             </div>
 
             {/* 3. Bottom Section: Time Span Footer */}
-            <div className="w-full flex flex-col gap-1">
-              <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-[rgba(var(--accent),0.25)] to-transparent" />
-              <div className="flex items-center justify-center gap-1.5 text-[11px] font-mono text-[rgb(var(--foreground-muted))] pt-0.5">
-                <Clock size={11} className="text-[rgb(var(--accent))]" />
-                <span className="text-[11px] font-bold uppercase tracking-wider">{HISTORY_COPY.clockSpan}</span>
-                <span className="text-[11px] font-bold text-[rgb(var(--foreground))]">
+            <div className="w-full flex flex-col items-center gap-1 shrink-0">
+              <div className="w-3/4 h-[1px] bg-gradient-to-r from-transparent via-[rgba(var(--accent),0.25)] to-transparent" />
+              <div className="flex items-center justify-center gap-1.5 text-[10px] sm:text-[10.5px] font-mono text-[rgb(var(--foreground-muted))] pt-0.5 whitespace-nowrap px-1">
+                <Clock size={11} className="text-[rgb(var(--accent))] shrink-0" />
+                <span className="text-[9.5px] sm:text-[10px] font-bold uppercase tracking-wider">{HISTORY_COPY.clockSpan}</span>
+                <span className="text-[10px] sm:text-[10.5px] font-bold text-[rgb(var(--foreground))]">
                   {timeSpanLabel || windowLabel || "00:00 – 23:59"}
                 </span>
                 {showArc && (
-                  <span className="text-[rgb(var(--accent))] font-semibold text-[11px]">
+                  <span className="text-[rgb(var(--accent))] font-bold text-[10px] sm:text-[10.5px]">
                     [{windowProgress.index + 1}/{windowProgress.count}]
                   </span>
                 )}

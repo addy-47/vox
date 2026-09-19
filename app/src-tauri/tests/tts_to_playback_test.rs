@@ -234,6 +234,7 @@ async fn test_tts_to_playback_short_utterance_flush() {
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
             playback_intent: Arc::new(AtomicU8::new(0)),
             event_tx: event_tx.clone(),
+            is_playback_muted: Arc::new(AtomicBool::new(false)),
         };
 
         let playback_engine = Arc::new(vox_lib::services::audio::PlaybackEngine::from_parts(

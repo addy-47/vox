@@ -6,30 +6,34 @@ memory document.
 
 Input sections in the user message:
 - FACTS: the active personal facts that went into the run.
+- PRE_EXISTING_DOCUMENT: what was already in the document before (may be empty).
 - DOCUMENT: the resulting memory document.
 
-Grade these three semantic dimensions (status transitions and gate checks are
-handled elsewhere — you judge meaning only):
+Write a fluid markdown report covering these three dimensions in your own words
+(use these as sections; quote facts and document lines you discuss):
 
-1. COVERAGE: is every input fact represented in the document? Paraphrase and
-   folding several facts into one sentence are fine; silently dropping a fact
-   is not. Name each dropped fact.
-2. QUALITY: is the document well organized under clear headings? Are
-   contradictions between facts resolved sensibly (newer/more specific wins)?
-   Is stale or superseded information removed rather than kept alongside the
-   replacement?
-3. GROUNDEDNESS: does every claim in the document trace back to the input facts
-   (or to explicitly pre-existing document content, which is quoted separately
-   if present)? Flag anything invented.
+## Coverage
+Is every input fact represented in the document? Paraphrase and folding several
+facts into one sentence are fine; silently dropping a fact is not. Name each
+dropped fact.
 
-Reply with EXACTLY this JSON shape and nothing else (no fences, no prose):
-{
-  "coverage_score": 0-100,
-  "quality_score": 0-100,
-  "groundedness_score": 0-100,
-  "covered": ["<fact text represented in the doc>"],
-  "dropped": ["<fact text missing from the doc>"],
-  "contradictions": [{"older": "<text>", "newer": "<text>", "resolved_well": true, "note": "<one line>"}],
-  "invented": ["<document claim with no basis in the facts>"],
-  "verdict": "<2-4 sentence overall judgment>"
-}
+## Quality
+Is the document well organized under clear headings? Are contradictions between
+facts resolved sensibly (newer/more specific wins)? Is stale or superseded
+information removed rather than kept alongside its replacement?
+
+## Groundedness
+Does every claim trace back to the input facts or the pre-existing document?
+Flag anything invented.
+
+## Scores
+Give three scores 0-100 with one line of justification each: coverage, quality,
+groundedness.
+
+End your report with exactly one line in this format (it is machine-read):
+VERDICT: PASS
+or
+VERDICT: FAIL
+
+Pass bar: PASS only if every input fact is represented, contradictions (if any)
+are resolved sensibly, and nothing is invented. Otherwise FAIL.

@@ -144,17 +144,6 @@ pub async fn fetch_active_notifications(conn: &Connection) -> Result<Vec<Notific
     Ok(list)
 }
 
-/// Updates the status of an existing notification.
-pub async fn update_notification_status(conn: &Connection, id: &str, status: &str) -> Result<()> {
-    let now = current_timestamp_ms();
-    conn.execute(
-        "UPDATE notifications SET status = ?, updated_at = ? WHERE id = ?",
-        (status.to_string(), now, id.to_string()),
-    )
-    .await?;
-    Ok(())
-}
-
 /// Marks unread notifications matching the filter (or all unread) as read.
 pub async fn mark_notifications_read(
     conn: &Connection,
@@ -356,17 +345,6 @@ pub async fn mark_all_notifications_read(conn: &Connection) -> Result<()> {
     mark_notifications_read(conn, None).await
 }
 
-/// Returns true when a notification with the given ID exists (any status).
-pub async fn notification_exists(conn: &Connection, id: &str) -> Result<bool> {
-    let mut rows = conn
-        .query(
-            "SELECT id FROM notifications WHERE id = ?",
-            (id.to_string(),),
-        )
-        .await?;
-    Ok(rows.next().await?.is_some())
-}
-
 /// Fetches a single notification by ID.
 pub async fn fetch_notification_by_id(
     conn: &Connection,
@@ -379,31 +357,6 @@ pub async fn fetch_notification_by_id(
              FROM notifications
              WHERE id = ?",
             (id.to_string(),),
-        )
-        .await?;
-
-    if let Some(row) = rows.next().await? {
-        Ok(Some(map_notification_row(&row)?))
-    } else {
-        Ok(None)
-    }
-}
-
-/// Finds an active (non-dismissed) notification for a specific session and category.
-pub async fn find_active_notification_by_session(
-    conn: &Connection,
-    session_id: i64,
-    category: &str,
-) -> Result<Option<NotificationRecord>> {
-    let mut rows = conn
-        .query(
-            "SELECT id, group_key, category, severity, action_type, action_payload,
-                    title, message, status, session_id, metadata, created_at, updated_at
-             FROM notifications
-             WHERE session_id = ? AND category = ? AND status != 'dismissed'
-             ORDER BY created_at DESC
-             LIMIT 1",
-            (session_id, category.to_string()),
         )
         .await?;
 

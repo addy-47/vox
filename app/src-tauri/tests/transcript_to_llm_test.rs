@@ -23,7 +23,7 @@ use vox_lib::{
     },
     pipeline::{assistant::transcript::on_transcript_final, RoutingContext},
     services::{
-        harness::{HarnessSession, TRANSITION_MESSAGES_EN},
+        harness::{Harness, TRANSITION_MESSAGES_EN},
         llm::{
             actor::{spawn_llm_worker, LlmCommand},
             EmbeddedProvider,
@@ -58,8 +58,8 @@ async fn test_transcript_to_llm_matrix() {
             settings.llm.context_window = 8192;
             settings.llm.max_output_tokens = 512;
             settings.llm.temperature = 0.7;
-            settings.history.auto_compaction = true;
-            settings.memory.context_retrieval_enabled = false;
+            settings.working_memory.auto_compaction = true;
+            settings.personal_memory.context_retrieval_enabled = false;
         }
         state
             .owner
@@ -94,11 +94,11 @@ async fn test_transcript_to_llm_matrix() {
             pipeline_tx,
         );
 
-        // 4. Mount production modular HarnessSession
+        // 4. Mount production modular Harness
         {
             let settings = state.settings.read().unwrap().clone();
             let prompt = state.resolve_base_prompt();
-            *state.harness.lock() = Some(HarnessSession::new_modular(
+            *state.harness.lock() = Some(Harness::new_modular(
                 Some(1),
                 prompt,
                 None,
@@ -247,13 +247,13 @@ async fn test_transcript_to_llm_matrix() {
             // Seed conversation buffer with enough messages to exceed critical threshold (>85% of usable 7680 = >6528 tokens; 105 turns ≈ 7035 tokens)
             {
                 let mut guard = state.harness.lock();
-                let harness = guard.as_mut().expect("HarnessSession must be mounted");
+                let harness = guard.as_mut().expect("Harness must be mounted");
                 for i in 0..105 {
-                    harness.history_mut().push_user_turn(format!(
+                    harness.push_user_turn(format!(
                         "Turn {} user statement with sufficient length and detail to accumulate tokens in accountant memory buffer. We are discussing neural networks, integration testing, and long context tracking across conversational agents.",
                         i
                     ));
-                    harness.history_mut().push_assistant_turn(format!(
+                    harness.push_assistant_turn(format!(
                         "Turn {} assistant response describing system operations, memory compaction protocols, and pipeline states in detail. High token utilization will trigger inline compaction and transition filler phrase dispatch.",
                         i
                     ));

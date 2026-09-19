@@ -244,17 +244,11 @@ export const Monitoring: React.FC<MonitoringProps> = ({
             <button
               onClick={handleToggleEngine}
               disabled={togglingEngine}
-              style={{
-                backgroundColor: isEngineLoaded
-                  ? "rgba(239, 68, 68, 0.12)"
-                  : `rgba(${colors.primary}, 0.12)`,
-                borderColor: isEngineLoaded
-                  ? "rgba(239, 68, 68, 0.35)"
-                  : `rgba(${colors.primary}, 0.35)`,
-                color: isEngineLoaded ? "#ef4444" : `rgb(${colors.primary})`,
-              }}
               className={cn(
-                "px-3 py-1.5 rounded-xl border transition-all duration-300 flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase cursor-pointer shadow-md hover:scale-[1.02]",
+                "px-3 py-1.5 rounded-xl border flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase cursor-pointer shadow-md hover:scale-[1.02] transition-transform",
+                isEngineLoaded
+                  ? "bg-red-500/15 border-red-500/40 text-red-400"
+                  : "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))]",
                 togglingEngine && "opacity-50 cursor-wait"
               )}
             >

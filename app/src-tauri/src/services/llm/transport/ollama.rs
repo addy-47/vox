@@ -4,7 +4,7 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 
 use super::{config::ConnectionConfig, sse::SseDecoder};
-use crate::services::llm::{GenerationRequest, LlmError, OutputConstraint};
+use crate::services::llm::{GenerationRequest, LlmError, OutputConstraint, ReasoningMode};
 
 #[derive(Serialize)]
 struct OllamaMessage {
@@ -57,17 +57,26 @@ pub fn build_request_body(
     if let Some(seed) = request.options.seed {
         options.insert("seed".to_string(), serde_json::json!(seed));
     }
+    if let Some(ctx) = request.options.context_window {
+        options.insert("num_ctx".to_string(), serde_json::json!(ctx));
+    }
 
     let mut body = serde_json::Map::new();
     body.insert("model".to_string(), serde_json::json!(config.model));
     body.insert("messages".to_string(), serde_json::json!(messages));
     body.insert("stream".to_string(), serde_json::json!(true));
     body.insert("options".to_string(), serde_json::Value::Object(options));
+    if request.options.reasoning == ReasoningMode::Disabled {
+        body.insert("think".to_string(), serde_json::json!(false));
+    }
 
     match &request.output {
         OutputConstraint::Text => {}
-        OutputConstraint::JsonObject | OutputConstraint::JsonSchema { .. } => {
+        OutputConstraint::JsonObject => {
             body.insert("format".to_string(), serde_json::json!("json"));
+        }
+        OutputConstraint::JsonSchema { schema, .. } => {
+            body.insert("format".to_string(), schema.clone());
         }
     }
 

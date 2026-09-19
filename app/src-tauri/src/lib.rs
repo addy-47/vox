@@ -44,8 +44,8 @@ use crate::{
     ipc::{
         audio::list_audio_devices,
         memory::{
-            consolidate_personal_memory, export_personal_memory, get_active_facts,
-            get_personal_memory, import_personal_memory, save_personal_memory,
+            consolidate_personal_memory, get_active_facts, get_personal_memory,
+            save_personal_memory,
         },
         monitoring::{get_profiler_snapshot, get_runtime_snapshot, record_memory_profile_event},
         notifications::{
@@ -58,7 +58,8 @@ use crate::{
         },
         pipeline::{
             end_session, launch_engine, pause_session, ptt_cancel, ptt_start, ptt_stop,
-            resume_session, start_session, stop_engine, test_clip, test_clip_cancel,
+            restart_engine, resume_session, set_mic_muted, set_playback_muted,
+            set_session_private_mode, start_session, stop_engine, submit_text_input,
         },
         projects::{create_project, delete_project, get_projects, rename_project},
         settings::{
@@ -374,7 +375,14 @@ pub fn run() {
             spawn_system_monitor(app.handle().clone());
             spawn_telemetry_emitter(app.handle().clone());
             spawn_quiet_ingestion_observer(Arc::clone(&state_arc));
-            spawn_consolidation_scheduler(app.handle().clone(), Arc::clone(&state_arc));
+            let is_daily_cadence = state_arc
+                .settings
+                .read()
+                .map(|s| s.personal_memory.consolidation_cadence == "daily")
+                .unwrap_or(false);
+            if is_daily_cadence {
+                spawn_consolidation_scheduler(app.handle().clone(), Arc::clone(&state_arc));
+            }
 
             // ── 1.6 Dictation Global Hotkey Registration ──────────────────────────
             {
@@ -541,6 +549,13 @@ pub fn run() {
                     )
                 };
 
+                let state: tauri::State<'_, Arc<AppState>> = handle.state();
+                if setup_completed && dictation_enabled {
+                    state.pipeline.set_dictation_state(InteractionState::Ready);
+                } else {
+                    state.pipeline.set_dictation_state(InteractionState::Idle);
+                }
+
                 if setup_completed && dictation_enabled && dictation_mode == DictationInteractionMode::Passive {
                     log::info!("[BOOTSTRAP] Passive Dictation enabled. Auto-launching audio/STT engine...");
                     if let Err(e) = launch_engine(handle).await {
@@ -625,12 +640,15 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             launch_engine,
             stop_engine,
+            restart_engine,
             start_session,
             end_session,
             pause_session,
             resume_session,
-            test_clip,
-            test_clip_cancel,
+            submit_text_input,
+            set_playback_muted,
+            set_mic_muted,
+            set_session_private_mode,
             hide_tray_window,
             set_window_click_through,
             show_main_window,
@@ -665,8 +683,6 @@ pub fn run() {
             get_personal_memory,
             save_personal_memory,
             consolidate_personal_memory,
-            export_personal_memory,
-            import_personal_memory,
             get_active_facts,
             // Voices
             list_voices,

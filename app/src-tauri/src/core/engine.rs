@@ -13,7 +13,7 @@ use tauri::AppHandle;
 use crate::{
     core::{
         events::{emit_ipc_to, IpcEvent, TranscriptPayload, VoxEvent},
-        settings::{SttProviderConfig, TtsActiveProvider, VadBackendOption},
+        settings::TtsActiveProvider,
         state::{AppState, InteractionOwner, InteractionState},
     },
     monitoring::TelemetryEvent,
@@ -31,7 +31,7 @@ use crate::{
         memory::{trim_heap, unload_all_onnx_models},
         stt::{
             actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
-            create_stt_provider, SttProvider, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR,
+            create_stt_instance_from_settings, SttProvider,
         },
         tts::{
             actor::{cool_down_tts, warm_up_tts, TtsWarmUpHandles},
@@ -39,9 +39,7 @@ use crate::{
         },
         vad::{
             actor::{spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles},
-            earshot_vad::EarshotVadEngine,
-            ten_onnx::VadEngine as TenVadEngine,
-            VadBackend, VadCommand, MODEL_DIR_VAD, MODEL_FILE_VAD,
+            create_vad_instance_from_settings, VadBackend, VadCommand,
         },
     },
     setup::manifest::VoxManifest,
@@ -99,69 +97,24 @@ async fn ensure_manifest_loaded(state: &AppState) {
 
 /// Resolves and instantiates the active STT provider.
 fn create_stt_instance(state: &AppState) -> Result<Box<dyn SttProvider>, String> {
-    let (asr_provider, stt_threads) = {
-        let s = state
-            .settings
-            .read()
-            .map_err(|e| format!("[Core::Engine] Settings lock poisoned: {}", e))?;
-        (s.stt.to_provider_config(), s.stt.embedded.threads)
-    };
+    let settings = state
+        .settings
+        .read()
+        .map_err(|e| format!("[Core::Engine] Settings lock poisoned: {}", e))?;
     let models_dir = paths::get().models.clone();
-
-    match asr_provider {
-        SttProviderConfig::Embedded { ref model_type } => {
-            let path = match model_type.as_str() {
-                "nvidia_nemotron" => models_dir.join(NEMOTRON_MODEL_DIR),
-                _ => models_dir.join(QWEN_ASR_MODEL_DIR),
-            };
-            create_stt_provider(&asr_provider, &path, stt_threads)
-                .map_err(|e| format!("[Core::Engine] STT provider creation failed: {}", e))
-        }
-        SttProviderConfig::Cloud { .. } => {
-            let path = models_dir.join("stt");
-            create_stt_provider(&asr_provider, &path, stt_threads)
-                .map_err(|e| format!("[Core::Engine] STT provider creation failed: {}", e))
-        }
-    }
+    create_stt_instance_from_settings(&settings.stt, &models_dir)
+        .map_err(|e| format!("[Core::Engine] {}", e))
 }
 
 /// Resolves and instantiates the active VAD backend engine.
 async fn create_vad_instance(state: &AppState) -> Result<VadBackend, String> {
-    let (vad_backend, threshold) = {
-        let s = state
-            .settings
-            .read()
-            .map_err(|e| format!("[Core::Engine] Settings lock poisoned: {}", e))?;
-        (s.vad.vad_backend.clone(), s.vad.threshold)
-    };
-
-    match vad_backend {
-        VadBackendOption::Earshot => {
-            log::info!("[Core::Engine] Initializing pure-Rust Earshot VAD");
-            EarshotVadEngine::new(threshold)
-                .map(VadBackend::Earshot)
-                .map_err(|e| format!("[Core::Engine] Earshot VAD init failed: {}", e))
-        }
-        VadBackendOption::TenVad => {
-            let vad_path = paths::get().models.join(MODEL_DIR_VAD).join(MODEL_FILE_VAD);
-            if !vad_path.exists() {
-                log::warn!(
-                    "[Core::Engine] Ten VAD model missing at {:?}. Falling back to Earshot.",
-                    vad_path
-                );
-                return EarshotVadEngine::new(threshold)
-                    .map(VadBackend::Earshot)
-                    .map_err(|e| format!("[Core::Engine] Earshot VAD fallback failed: {}", e));
-            }
-            log::info!(
-                "[Core::Engine] Initializing Ten ONNX VAD from {:?}",
-                vad_path
-            );
-            TenVadEngine::new(&vad_path, threshold)
-                .map(VadBackend::Ten)
-                .map_err(|e| format!("[Core::Engine] Ten VAD init failed: {}", e))
-        }
-    }
+    let settings = state
+        .settings
+        .read()
+        .map_err(|e| format!("[Core::Engine] Settings lock poisoned: {}", e))?;
+    let models_dir = paths::get().models.clone();
+    create_vad_instance_from_settings(&settings.vad, &models_dir)
+        .map_err(|e| format!("[Core::Engine] {}", e))
 }
 
 /// Creates and initializes the CPAL audio playback engine.
@@ -184,6 +137,7 @@ fn create_playback_engine(
         pending_synthesis_jobs: Arc::clone(&state.pipeline.pending_synthesis_jobs),
         event_tx,
         playback_intent: Arc::new(AtomicU8::new(0)),
+        is_playback_muted: Arc::clone(&state.pipeline.is_playback_muted),
     };
 
     let pe = PlaybackEngine::new(engine_handles, telemetry_handles)

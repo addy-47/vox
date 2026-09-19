@@ -4,14 +4,15 @@ use std::{
     thread::{Builder, JoinHandle},
 };
 
+pub use super::factory::{create_llm_provider, create_llm_provider_from_llm_settings};
 use super::{
-    ConversationInput, EmbeddedProvider, GenerationOptions, GenerationPurpose, GenerationRequest,
-    LlmProvider, OutputConstraint, RemoteTransport,
+    ConversationInput, GenerationOptions, GenerationPurpose, GenerationRequest, LlmProvider,
+    OutputConstraint, ReasoningMode,
 };
 use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
-        settings::{LlmProviderConfig, LlmSettings, VoxSettings},
+        settings::{LlmSettings, VoxSettings},
     },
     services::harness::{ChatMessage, Role},
 };
@@ -34,6 +35,7 @@ pub struct GenerationDefaults {
     pub temperature: f32,
     pub max_output_tokens: u32,
     pub output: OutputConstraint,
+    pub reasoning: ReasoningMode,
 }
 
 /// Generation policy engine translating user/system settings into generation requests.
@@ -69,17 +71,20 @@ impl GenerationPolicy {
     /// Constructs policy from current `LlmSettings` and optional explicit compaction token ceiling.
     pub fn from_settings(settings: &LlmSettings, compaction_max_tokens: Option<u32>) -> Self {
         let compaction_tokens = compaction_max_tokens.unwrap_or(settings.max_output_tokens);
+        let reasoning = ReasoningMode::from_enabled(settings.reasoning_enabled);
 
         Self {
             conversation: GenerationDefaults {
                 temperature: settings.temperature,
                 max_output_tokens: settings.max_output_tokens,
                 output: OutputConstraint::Text,
+                reasoning,
             },
             compaction: GenerationDefaults {
                 temperature: settings.compaction_temperature,
                 max_output_tokens: compaction_tokens,
                 output: OutputConstraint::JsonObject,
+                reasoning,
             },
         }
     }
@@ -102,6 +107,7 @@ impl GenerationPolicy {
             options: GenerationOptions {
                 temperature: Some(defaults.temperature),
                 max_output_tokens: Some(defaults.max_output_tokens),
+                reasoning: defaults.reasoning,
                 ..Default::default()
             },
             output: defaults.output.clone(),
@@ -314,45 +320,6 @@ fn classify_llm_error(turn_id: u32, err_str: String) -> PipelineError {
         source: "LlmActor".to_string(),
         impact,
     }
-}
-
-/// Creates a boxed LLM provider directly from `LlmSettings` configuration.
-pub fn create_llm_provider_from_llm_settings(
-    llm_settings: &LlmSettings,
-    llm_path: &Path,
-) -> Result<Box<dyn LlmProvider>, String> {
-    let provider_config = llm_settings.to_provider_config();
-    let ctx_size = llm_settings.context_window;
-    let n_threads = llm_settings.threads;
-
-    match provider_config {
-        LlmProviderConfig::Embedded => EmbeddedProvider::new(llm_path, ctx_size, n_threads)
-            .map(|p| Box::new(p) as Box<dyn LlmProvider>)
-            .map_err(|e| e.to_string()),
-        LlmProviderConfig::OpenAiCompat {
-            base_url,
-            model,
-            api_key,
-            provider_name,
-        } => {
-            let conn_cfg = super::transport::ConnectionConfig::new(
-                &base_url,
-                &model,
-                api_key.as_deref(),
-                provider_name.as_deref(),
-            );
-            let provider = RemoteTransport::new(conn_cfg);
-            Ok(Box::new(provider) as Box<dyn LlmProvider>)
-        }
-    }
-}
-
-/// Creates a boxed LLM provider based on settings configuration.
-pub fn create_llm_provider(
-    settings: &VoxSettings,
-    llm_path: &Path,
-) -> Result<Box<dyn LlmProvider>, String> {
-    create_llm_provider_from_llm_settings(&settings.llm, llm_path)
 }
 
 /// Spawns and initializes a persistent LLM worker actor thread.

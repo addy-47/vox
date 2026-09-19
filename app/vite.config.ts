@@ -38,6 +38,9 @@ export default defineConfig(async () => ({
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
+      // 4. use polling to avoid ENOSPC when system inotify limit is exhausted
+      usePolling: true,
+      interval: 1000,
     },
   },
   build: {
