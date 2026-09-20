@@ -347,6 +347,10 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
       document.removeEventListener("visibilitychange", onVisibility);
       resizeObserver.disconnect();
       if (rafId) cancelAnimationFrame(rafId);
+      if (canvas) {
+        canvas.width = 1;
+        canvas.height = 1;
+      }
     };
   }, [open, popover]);
 

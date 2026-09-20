@@ -334,7 +334,8 @@ export const Home = memo(() => {
               <div className="relative flex flex-col items-center">
                 <button
                   onClick={resume}
-                  className="flex items-center justify-center gap-2.5 px-6 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/50 bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] shadow-[0_0_24px_rgba(var(--accent),0.25)] cursor-pointer"
+                  tabIndex={0}
+                  className="flex items-center justify-center gap-2.5 px-6 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/50 bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] shadow-[0_0_24px_rgba(var(--accent),0.25)] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105"
                   aria-label={HOME_CONTROLS_COPY.error.reconnectAriaLabel}
                   title={HOME_CONTROLS_COPY.error.reconnectTooltip}
                 >
@@ -350,8 +351,9 @@ export const Home = memo(() => {
                 {/* Pause / Resume */}
                 <button
                   onClick={(isPaused || isSleeping) ? resume : pause}
+                  tabIndex={0}
                   className={cn(
-                    "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer",
+                    "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
                     (isPaused || isSleeping)
                       ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
                       : "text-[rgb(var(--accent))]"
@@ -369,8 +371,9 @@ export const Home = memo(() => {
                     onPointerUp={() => handlePttStop()}
                     onPointerLeave={() => { if (pttStatus === "RECORDING") handlePttCancel(); }}
                     disabled={isPaused || isSleeping}
+                    tabIndex={isPaused || isSleeping ? -1 : 0}
                     className={cn(
-                      "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer",
+                      "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
                       pttStatus === "RECORDING"
                         ? "bg-[rgb(var(--accent))]/20 border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))]"
                         : "text-[rgb(var(--accent))]",
@@ -386,7 +389,8 @@ export const Home = memo(() => {
                 {/* Text Mode Toggle */}
                 <button
                   onClick={() => setTextModeOpen(true)}
-                  className="flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] cursor-pointer"
+                  tabIndex={0}
+                  className="flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]"
                   aria-label={HOME_CONTROLS_COPY.textMode.toggleAriaLabel}
                   title={HOME_CONTROLS_COPY.textMode.toggleTooltip}
                 >
@@ -397,8 +401,9 @@ export const Home = memo(() => {
                 <div className="relative flex flex-col items-center">
                   <button
                     onClick={disengage}
+                    tabIndex={0}
                     className={cn(
-                      "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 cursor-pointer",
+                      "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/60 text-[rgb(var(--accent))] bg-[rgb(var(--accent))]/15 hover:bg-[rgb(var(--accent))]/25 hover:scale-105 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
                       isThinking && "engage-btn-loading border-transparent",
                       isLaunching && "animate-spin"
                     )}
@@ -425,8 +430,9 @@ export const Home = memo(() => {
                   )}
                   <button
                     onClick={engage}
+                    tabIndex={0}
                     className={cn(
-                      "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] cursor-pointer",
+                      "flex items-center justify-center w-14 h-14 rounded-full transition-all duration-500 border border-[rgb(var(--accent))]/25 bg-transparent hover:bg-[rgb(var(--accent))]/10 hover:scale-105 active:scale-95 text-[rgb(var(--accent))] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))] focus-visible:scale-105 focus-visible:shadow-[0_0_24px_rgba(var(--accent),0.4)]",
                       isLaunching && "animate-spin"
                     )}
                     disabled={isLaunching}

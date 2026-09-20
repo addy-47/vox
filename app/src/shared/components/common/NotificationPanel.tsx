@@ -41,7 +41,7 @@ import {
   type NotificationRecord,
   type NotificationCategory,
 } from "@/services/notificationService";
-import { formatSessionRecency } from "@/services/historyService";
+import { formatSessionRecency } from "@/shared/lib/dateTime";
 
 interface NotificationPanelProps {
   onClose: () => void;

@@ -119,11 +119,16 @@ export function useMemoryProfiler(enabled = true) {
           });
           console.info(`[MemoryProfiler] Manual snapshot captured (${currentTotal.toFixed(1)} MB) -> temp/${filename}`, snap);
 
+          const threeMetrics = (typeof window !== "undefined" && (window as any).__VOX_THREE_METRICS__?.getMetrics?.()) || undefined;
+
           await recordMemoryProfileEvent({
             route: r,
             event_type: "snapshot",
             baseline_ram_mb: baselineTotal,
             current_ram_mb: currentTotal,
+            core_app_ram_mb: snap.core_app_ram_mb,
+            devtools_ram_mb: snap.devtools_ram_mb,
+            total_pss_mb: snap.total_pss_mb,
             peak_ram_mb: peakTotal,
             peak_delta_mb: peakDelta,
             retained_ram_mb: null,
@@ -134,6 +139,9 @@ export function useMemoryProfiler(enabled = true) {
             dom_node_count: domCount,
             font_face_count: fontCount,
             timestamp_ms: now,
+            css_indicators: cssSample,
+            three_metrics: threeMetrics,
+            js_heap: jsSample,
             process_tree: snap.process_tree,
           });
 

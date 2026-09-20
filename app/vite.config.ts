@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { visualizer } from "rollup-plugin-visualizer";
+import inspect from "vite-plugin-inspect";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -9,7 +11,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig(async () => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    inspect(),
+    visualizer({
+      filename: "dist/stats.html",
+      gzipSize: true,
+      brotliSize: true,
+      open: false,
+    }),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

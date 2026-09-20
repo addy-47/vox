@@ -109,8 +109,14 @@ export const LiveWaveform = memo(({
       needsRedrawRef.current = true
     })
 
-    resizeObserver.observe(container)
-    return () => resizeObserver.disconnect()
+    resizeObserver.observe(container);
+    return () => {
+      resizeObserver.disconnect();
+      if (canvas) {
+        canvas.width = 1;
+        canvas.height = 1;
+      }
+    };
   }, [])
 
   // Reset transition progress on state transitions

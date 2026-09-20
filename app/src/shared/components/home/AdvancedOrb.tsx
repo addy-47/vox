@@ -667,7 +667,7 @@ export const VoxOrb = React.memo(({
     isVisible,
     isPageVisible,
     fpsActive: 60,
-    fpsIdle: 24,
+    fpsIdle: 12,
     isActive,
     isPaused: isSleeping,
   });
@@ -689,6 +689,20 @@ export const VoxOrb = React.memo(({
     renderer.domElement.style.cssText =
       'position:absolute;top:0;left:0;width:100%;height:100%;margin:0;padding:0;';
     container.appendChild(renderer.domElement);
+
+    if (typeof window !== "undefined") {
+      (window as any).__VOX_THREE_METRICS__ = {
+        getMetrics: () => ({
+          geometries: renderer.info.memory.geometries,
+          textures: renderer.info.memory.textures,
+          calls: renderer.info.render.calls,
+          triangles: renderer.info.render.triangles,
+          points: renderer.info.render.points,
+          lines: renderer.info.render.lines,
+          frame: renderer.info.render.frame,
+        }),
+      };
+    }
 
     const initGlow = getCSSColor('--accent-dark', '#0891b2');
     const initAccent = getCSSColor('--accent', '#00dbe9');
@@ -844,6 +858,13 @@ export const VoxOrb = React.memo(({
       outerGeo.dispose();
       outerMat.dispose();
       discMats.forEach((m) => m.dispose());
+      if (typeof window !== "undefined") {
+        delete (window as any).__VOX_THREE_METRICS__;
+      }
+      if (renderer.domElement) {
+        renderer.domElement.width = 1;
+        renderer.domElement.height = 1;
+      }
       renderer.forceContextLoss();
       renderer.dispose();
     };

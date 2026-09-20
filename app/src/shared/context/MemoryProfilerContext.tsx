@@ -8,21 +8,39 @@ export interface ComponentTraceData {
   lastMountedAt: number;
 }
 
-export interface MemoryProfilerContextValue {
+export interface MemoryProfilerActions {
   isProfilerActive: boolean;
   setIsProfilerActive: (active: boolean) => void;
-  componentTraces: Record<string, ComponentTraceData>;
   registerMount: (componentName: string) => void;
   registerUnmount: (componentName: string) => void;
   resetTraces: () => void;
+  getComponentTraces: () => Record<string, ComponentTraceData>;
 }
 
-const MemoryProfilerContext = createContext<MemoryProfilerContextValue | null>(null);
+export interface MemoryProfilerData {
+  componentTraces: Record<string, ComponentTraceData>;
+}
+
+export type MemoryProfilerContextValue = MemoryProfilerActions & MemoryProfilerData;
+
+const MemoryProfilerActionsContext = createContext<MemoryProfilerActions | null>(null);
+const MemoryProfilerDataContext = createContext<MemoryProfilerData | null>(null);
 
 export const MemoryProfilerProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isProfilerActive, setIsProfilerActive] = useState<boolean>(true);
   const [componentTraces, setComponentTraces] = useState<Record<string, ComponentTraceData>>({});
   const tracesRef = useRef<Record<string, ComponentTraceData>>({});
+  const updatePendingRef = useRef<boolean>(false);
+
+  // Batched trace state sync to avoid synchronous re-render waves across React tree
+  const scheduleSync = useCallback(() => {
+    if (updatePendingRef.current) return;
+    updatePendingRef.current = true;
+    queueMicrotask(() => {
+      updatePendingRef.current = false;
+      setComponentTraces({ ...tracesRef.current });
+    });
+  }, []);
 
   const registerMount = useCallback((componentName: string) => {
     const now = performance.now();
@@ -34,78 +52,86 @@ export const MemoryProfilerProvider: React.FC<{ children: ReactNode }> = ({ chil
       lastMountedAt: now,
     };
 
-    const updated: ComponentTraceData = {
+    tracesRef.current[componentName] = {
       ...current,
       mountCount: current.mountCount + 1,
       activeInstances: current.activeInstances + 1,
       lastMountedAt: now,
     };
-
-    tracesRef.current = {
-      ...tracesRef.current,
-      [componentName]: updated,
-    };
-    setComponentTraces(tracesRef.current);
-  }, []);
+    scheduleSync();
+  }, [scheduleSync]);
 
   const registerUnmount = useCallback((componentName: string) => {
     const current = tracesRef.current[componentName];
     if (!current) return;
 
-    const updated: ComponentTraceData = {
+    tracesRef.current[componentName] = {
       ...current,
       activeInstances: Math.max(0, current.activeInstances - 1),
     };
-
-    tracesRef.current = {
-      ...tracesRef.current,
-      [componentName]: updated,
-    };
-    setComponentTraces(tracesRef.current);
-  }, []);
+    scheduleSync();
+  }, [scheduleSync]);
 
   const resetTraces = useCallback(() => {
     tracesRef.current = {};
     setComponentTraces({});
   }, []);
 
-  const value = useMemo(
+  const getComponentTraces = useCallback(() => tracesRef.current, []);
+
+  const actionsValue = useMemo<MemoryProfilerActions>(
     () => ({
       isProfilerActive,
       setIsProfilerActive,
-      componentTraces,
       registerMount,
       registerUnmount,
       resetTraces,
+      getComponentTraces,
     }),
-    [
-      isProfilerActive,
+    [isProfilerActive, registerMount, registerUnmount, resetTraces, getComponentTraces]
+  );
+
+  const dataValue = useMemo<MemoryProfilerData>(
+    () => ({
       componentTraces,
-      registerMount,
-      registerUnmount,
-      resetTraces,
-    ]
+    }),
+    [componentTraces]
   );
 
   return (
-    <MemoryProfilerContext.Provider value={value}>
-      {children}
-    </MemoryProfilerContext.Provider>
+    <MemoryProfilerActionsContext.Provider value={actionsValue}>
+      <MemoryProfilerDataContext.Provider value={dataValue}>
+        {children}
+      </MemoryProfilerDataContext.Provider>
+    </MemoryProfilerActionsContext.Provider>
   );
 };
 
-export function useMemoryProfilerContext(): MemoryProfilerContextValue {
-  const ctx = useContext(MemoryProfilerContext);
+export function useMemoryProfilerActions(): MemoryProfilerActions {
+  const ctx = useContext(MemoryProfilerActionsContext);
   if (!ctx) {
-    // Return safe fallback if not wrapped in provider
     return {
       isProfilerActive: false,
       setIsProfilerActive: () => {},
-      componentTraces: {},
       registerMount: () => {},
       registerUnmount: () => {},
       resetTraces: () => {},
+      getComponentTraces: () => ({}),
     };
   }
   return ctx;
+}
+
+export function useMemoryProfilerData(): MemoryProfilerData {
+  const ctx = useContext(MemoryProfilerDataContext);
+  if (!ctx) {
+    return { componentTraces: {} };
+  }
+  return ctx;
+}
+
+export function useMemoryProfilerContext(): MemoryProfilerContextValue {
+  const actions = useMemoryProfilerActions();
+  const data = useMemoryProfilerData();
+  return { ...actions, ...data };
 }

@@ -8,6 +8,8 @@ let sharedIntervalId: ReturnType<typeof setInterval> | null = null;
 let sharedListeners = new Set<(snap: RuntimeSnapshot | null) => void>();
 let isVisible = true;
 
+let isListenerAttached = false;
+
 function startSharedPolling(): void {
   if (sharedIntervalId !== null) return;
   const poll = async () => {
@@ -24,7 +26,10 @@ function startSharedPolling(): void {
   };
   poll();
   sharedIntervalId = setInterval(poll, POLL_INTERVAL_MS);
-  document.addEventListener("visibilitychange", handleVisibility);
+  if (!isListenerAttached && typeof document !== "undefined") {
+    isListenerAttached = true;
+    document.addEventListener("visibilitychange", handleVisibility);
+  }
 }
 
 function stopSharedPolling(): void {
@@ -32,7 +37,10 @@ function stopSharedPolling(): void {
     clearInterval(sharedIntervalId);
     sharedIntervalId = null;
   }
-  document.removeEventListener("visibilitychange", handleVisibility);
+  if (isListenerAttached && typeof document !== "undefined") {
+    isListenerAttached = false;
+    document.removeEventListener("visibilitychange", handleVisibility);
+  }
 }
 
 function handleVisibility(): void {

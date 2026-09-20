@@ -17,7 +17,7 @@ interface TopRightClusterProps {
 
 export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
   ({ className }) => {
-    const { togglePanel, isPanelOpen } = usePanelStateContext();
+    const { togglePanel, isPanelOpen, closePanel, openPanel } = usePanelStateContext();
     const unreadCount = useNotificationStore(selectBadgeCount);
     const location = useLocation();
     const isHome = location.pathname === "/";
@@ -82,7 +82,7 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
         </Tooltip>
         <Tooltip label="Help & guide" shortcutId="global.help" side="bottom">
           <button
-            onClick={() => togglePanel("help")}
+            onClick={() => (isHelpOpen ? closePanel("help") : openPanel("help"))}
             aria-expanded={isHelpOpen}
             disabled={isNotifsOpen}
             data-edge-trigger="right"

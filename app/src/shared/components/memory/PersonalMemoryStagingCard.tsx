@@ -86,7 +86,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
       <div
         className={cn(
           "relative w-full h-full min-h-0 rounded-2xl p-5 sm:p-6 flex flex-col transition-all duration-500 overflow-hidden",
-          "glass-card border bg-[rgba(var(--card),0.45)] backdrop-blur-sm",
+          "glass-card border bg-[rgba(var(--card),0.45)] backdrop-blur-sm contain-paint transform-gpu",
           mode === "edit" || mode === "import" || mode === "comment"
             ? "border-[rgba(var(--accent),0.25)] shadow-lg"
             : "border-[rgba(var(--accent),0.18)] hover:border-[rgba(var(--accent),0.35)] shadow-2xl",

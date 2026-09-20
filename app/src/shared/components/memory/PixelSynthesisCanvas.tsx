@@ -114,6 +114,10 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
     return () => {
       cancelAnimationFrame(animId);
       resizeObserver.disconnect();
+      if (canvas) {
+        canvas.width = 1;
+        canvas.height = 1;
+      }
     };
   }, [active]);
 
