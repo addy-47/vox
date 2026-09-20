@@ -7,6 +7,10 @@ export interface ProcessMemoryEntry {
   parent_pid: number | null;
   name: string;
   memory_mb: number;
+  private_ram_mb?: number;
+  shared_ram_mb?: number;
+  pss_mb?: number;
+  is_devtools?: boolean;
   cpu_usage: number;
   start_time: number;
   is_main_process: boolean;
@@ -15,6 +19,9 @@ export interface ProcessMemoryEntry {
 
 export interface ProfilerSnapshot {
   total_vox_ram_mb: number;
+  core_app_ram_mb: number;
+  devtools_ram_mb: number | null;
+  total_pss_mb: number | null;
   main_process_ram_mb: number;
   main_webview_ram_mb: number | null;
   tray_webview_ram_mb: number | null;
@@ -57,6 +64,9 @@ export interface MemoryProfileLogEvent {
   event_type: string;
   baseline_ram_mb: number | null;
   current_ram_mb: number;
+  core_app_ram_mb?: number;
+  devtools_ram_mb?: number | null;
+  total_pss_mb?: number | null;
   peak_ram_mb: number | null;
   peak_delta_mb: number | null;
   retained_ram_mb: number | null;
@@ -67,6 +77,9 @@ export interface MemoryProfileLogEvent {
   dom_node_count: number;
   font_face_count: number;
   timestamp_ms: number;
+  css_indicators?: CSSIndicatorsSample;
+  three_metrics?: Record<string, unknown>;
+  js_heap?: JSHeapSample;
   process_tree?: ProcessMemoryEntry[];
 }
 

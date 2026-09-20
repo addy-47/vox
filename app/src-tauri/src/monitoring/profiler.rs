@@ -16,6 +16,14 @@ pub struct ProcessMemoryEntry {
     pub parent_pid: Option<u32>,
     pub name: String,
     pub memory_mb: f32,
+    #[serde(default)]
+    pub private_ram_mb: Option<f32>,
+    #[serde(default)]
+    pub shared_ram_mb: Option<f32>,
+    #[serde(default)]
+    pub pss_mb: Option<f32>,
+    #[serde(default)]
+    pub is_devtools: bool,
     pub cpu_usage: f32,
     pub start_time: u64,
     pub is_main_process: bool,
@@ -26,6 +34,9 @@ pub struct ProcessMemoryEntry {
 #[derive(Debug, Clone, Serialize)]
 pub struct ProfilerSnapshot {
     pub total_vox_ram_mb: f32,
+    pub core_app_ram_mb: f32,
+    pub devtools_ram_mb: Option<f32>,
+    pub total_pss_mb: Option<f32>,
     pub main_process_ram_mb: f32,
     pub main_webview_ram_mb: Option<f32>,
     pub tray_webview_ram_mb: Option<f32>,
@@ -47,6 +58,12 @@ pub struct MemoryProfileLogEvent {
     pub event_type: String,
     pub baseline_ram_mb: Option<f32>,
     pub current_ram_mb: f32,
+    #[serde(default)]
+    pub core_app_ram_mb: Option<f32>,
+    #[serde(default)]
+    pub devtools_ram_mb: Option<f32>,
+    #[serde(default)]
+    pub total_pss_mb: Option<f32>,
     pub peak_ram_mb: Option<f32>,
     pub peak_delta_mb: Option<f32>,
     pub retained_ram_mb: Option<f32>,
@@ -57,6 +74,12 @@ pub struct MemoryProfileLogEvent {
     pub dom_node_count: usize,
     pub font_face_count: usize,
     pub timestamp_ms: u64,
+    #[serde(default)]
+    pub css_indicators: Option<serde_json::Value>,
+    #[serde(default)]
+    pub three_metrics: Option<serde_json::Value>,
+    #[serde(default)]
+    pub js_heap: Option<serde_json::Value>,
     #[serde(default)]
     pub process_tree: Option<Vec<ProcessMemoryEntry>>,
 }
@@ -116,6 +139,66 @@ pub fn sanitize_page_name(route: &str) -> String {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn read_linux_proc_memory(pid: u32) -> (Option<f32>, Option<f32>, Option<f32>) {
+    let mut private_anon_mb = None;
+    let mut shared_file_mb = None;
+    let mut pss_mb = None;
+
+    let status_path = format!("/proc/{}/status", pid);
+    if let Ok(content) = std::fs::read_to_string(&status_path) {
+        for line in content.lines() {
+            if line.starts_with("RssAnon:") {
+                if let Some(val) = parse_kb_line(line) {
+                    private_anon_mb = Some((val as f32 / 1024.0 * 100.0).round() / 100.0);
+                }
+            } else if line.starts_with("RssFile:") {
+                if let Some(val) = parse_kb_line(line) {
+                    shared_file_mb = Some((val as f32 / 1024.0 * 100.0).round() / 100.0);
+                }
+            }
+        }
+    }
+
+    let smaps_path = format!("/proc/{}/smaps_rollup", pid);
+    if let Ok(content) = std::fs::read_to_string(&smaps_path) {
+        for line in content.lines() {
+            if line.starts_with("Pss:") {
+                if let Some(val) = parse_kb_line(line) {
+                    pss_mb = Some((val as f32 / 1024.0 * 100.0).round() / 100.0);
+                    break;
+                }
+            }
+        }
+    }
+
+    (private_anon_mb, shared_file_mb, pss_mb)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn read_linux_proc_memory(_pid: u32) -> (Option<f32>, Option<f32>, Option<f32>) {
+    (None, None, None)
+}
+
+fn parse_kb_line(line: &str) -> Option<u64> {
+    line.split_whitespace().nth(1)?.parse::<u64>().ok()
+}
+
+#[cfg(target_os = "linux")]
+fn is_devtools_process(pid: u32) -> bool {
+    let cmdline_path = format!("/proc/{}/cmdline", pid);
+    if let Ok(content) = std::fs::read_to_string(&cmdline_path) {
+        let lower = content.to_lowercase();
+        return lower.contains("inspector") || lower.contains("devtools");
+    }
+    false
+}
+
+#[cfg(not(target_os = "linux"))]
+fn is_devtools_process(_pid: u32) -> bool {
+    false
+}
+
 fn extract_descendant_processes(
     sys: &System,
     target: sysinfo::Pid,
@@ -149,6 +232,9 @@ fn extract_descendant_processes(
         }
 
         if is_descendant {
+            let pid_u32 = p_pid.as_u32();
+            let (private_anon, shared_file, pss) = read_linux_proc_memory(pid_u32);
+            let is_devtools = is_devtools_process(pid_u32);
             let mem_bytes = proc.memory();
             total_bytes += mem_bytes;
             let mem_mb = mem_bytes as f32 / 1024.0 / 1024.0;
@@ -158,6 +244,8 @@ fn extract_descendant_processes(
             let role = if is_main {
                 main_ram = mem_mb;
                 "Main Process (Rust Core)".to_string()
+            } else if is_devtools {
+                "WebKit Inspector / DevTools".to_string()
             } else if name.contains("WebKitWeb") || name.contains("WebProcess") {
                 "WebKit WebProcess".to_string()
             } else if name.contains("WebKitNetwork") || name.contains("NetworkProcess") {
@@ -169,10 +257,14 @@ fn extract_descendant_processes(
             };
 
             process_tree.push(ProcessMemoryEntry {
-                pid: p_pid.as_u32(),
+                pid: pid_u32,
                 parent_pid: proc.parent().map(|p| p.as_u32()),
                 name,
                 memory_mb: (mem_mb * 100.0).round() / 100.0,
+                private_ram_mb: private_anon,
+                shared_ram_mb: shared_file,
+                pss_mb: pss,
+                is_devtools,
                 cpu_usage: (cpu * 10.0).round() / 10.0,
                 start_time: proc.start_time(),
                 is_main_process: is_main,
@@ -193,7 +285,7 @@ fn assign_webview_roles(
     let mut web_pids: Vec<(u32, u64, f32)> = process_tree
         .iter()
         .filter(|p| {
-            !p.is_main_process && (p.name.contains("WebKitWeb") || p.name.contains("WebProcess"))
+            !p.is_main_process && !p.is_devtools && (p.name.contains("WebKitWeb") || p.name.contains("WebProcess"))
         })
         .map(|p| (p.pid, p.start_time, p.memory_mb))
         .collect();
@@ -223,7 +315,8 @@ fn assign_webview_roles(
 
     while idx < web_pids.len() {
         if let Some(entry) = process_tree.iter_mut().find(|p| p.pid == web_pids[idx].0) {
-            entry.role = "WebKit Auxiliary WebProcess".to_string();
+            entry.role = "WebKit Inspector / DevTools".to_string();
+            entry.is_devtools = true;
         }
         idx += 1;
     }
@@ -269,9 +362,34 @@ pub fn collect_profiler_snapshot(
     });
 
     let total_vox_mb = (total_bytes as f32 / 1024.0 / 1024.0 * 100.0).round() / 100.0;
+    let mut core_app_ram = 0.0;
+    let mut devtools_ram = 0.0;
+    let mut total_pss = 0.0;
+
+    for entry in &tree {
+        if let Some(pss) = entry.pss_mb {
+            total_pss += pss;
+        }
+        if entry.is_devtools {
+            devtools_ram += entry.memory_mb;
+        } else {
+            core_app_ram += entry.memory_mb;
+        }
+    }
 
     ProfilerSnapshot {
         total_vox_ram_mb: total_vox_mb,
+        core_app_ram_mb: (core_app_ram * 100.0).round() / 100.0,
+        devtools_ram_mb: if devtools_ram > 0.0 {
+            Some((devtools_ram * 100.0).round() / 100.0)
+        } else {
+            None
+        },
+        total_pss_mb: if total_pss > 0.0 {
+            Some((total_pss * 100.0).round() / 100.0)
+        } else {
+            None
+        },
         main_process_ram_mb: (main_ram * 100.0).round() / 100.0,
         main_webview_ram_mb: main_web,
         tray_webview_ram_mb: tray_web,
@@ -283,7 +401,7 @@ pub fn collect_profiler_snapshot(
         system_ram_pct: (sys_pct * 10.0).round() / 10.0,
         process_tree: tree,
         timestamp_ms: now,
-        accuracy: "Measured (OS-level RSS via /proc & sysinfo)",
+        accuracy: "Measured (OS-level RSS & PSS via /proc & sysinfo)",
     }
 }
 
@@ -292,16 +410,15 @@ pub fn persist_memory_profile_event(event: &MemoryProfileLogEvent) -> Result<(),
     if event.event_type != "poll" {
         log::info!(
             target: "memory_profiler",
-            "[MEMORY_PROFILE] Route: {} | Event: {} | Current: {:.1}MB | Peak: {:?}MB (Δ{:?}MB) | Retained: {:?}MB (Δ{:?}MB) | WebViews: Main={:?}MB, Tray={:?}MB | DOM Nodes: {} | Components: {:?}",
+            "[MEMORY_PROFILE] Route: {} | Event: {} | Core App: {:?}MB | Total RSS: {:.1}MB | DevTools: {:?}MB | PSS: {:?}MB | Peak: {:?}MB | WebViews: Main={:?}MB | DOM Nodes: {} | Components: {:?}",
             event.route,
             event.event_type,
+            event.core_app_ram_mb,
             event.current_ram_mb,
+            event.devtools_ram_mb,
+            event.total_pss_mb,
             event.peak_ram_mb,
-            event.peak_delta_mb,
-            event.retained_ram_mb,
-            event.retained_delta_mb,
             event.main_webview_ram_mb,
-            event.tray_webview_ram_mb,
             event.dom_node_count,
             event.active_components,
         );

@@ -193,6 +193,30 @@ Vox embeds a production memory profiler (`ProfilerDrawer`) sampling four indepen
 
 ---
 
+### 2.7 Phase 11 Diagnostic Toolchain Integration & Root-Cause Memory Leak Elimination
+
+**Problem**:
+- Route cycling between Home, History, and Memory showed linear RAM accumulation ($\Delta \approx +18.2\text{ MB/cycle}$).
+- Linux WebKitGTK with Mesa OpenGL retained full-resolution GPU texture backing framebuffers in process memory even after Three.js `renderer.dispose()` was called.
+- `MemoryProfilerProvider` placed at `App.tsx` root stored volatile `componentTraces` state in the same context as mount/unmount registration dispatchers, invalidating the context value and re-rendering all `useMemoryTrace` consumer components on every route transition.
+- Dense graph node arrays (`gNodesRef`, `gLinksRef`, `conduitsRef`) and 240,000 Float32Array line buffers in `useMemoryGraphScene.ts` remained referenced in closures across unmounts.
+- Statically importing `formatSessionRecency` in global `NotificationPanel.tsx` forced history IPC bindings into the initial entry bundle (`index.js`).
+
+**Fix**:
+1. **WebKitGTK Canvas Dimension Collapse Invariant**: In `AdvancedOrb.tsx`, `useMemoryGraphScene.ts`, and `PixelSynthesisCanvas.tsx`, explicitly collapse canvas dimensions to 1x1 (`canvas.width = 1; canvas.height = 1;`) and invoke `renderer.forceContextLoss()` immediately before `renderer.dispose()`. This forces WebKitGTK and Mesa to release the offscreen backing framebuffer instantly.
+2. **Action/Data Context Decoupling**: Split `MemoryProfilerContext` into referentially stable `MemoryProfilerActionsContext` (`registerMount`, `registerUnmount`, `resetTraces`) and microtask-batched `MemoryProfilerDataContext` (`componentTraces`). `useMemoryTrace` subscribes solely to actions, eliminating re-render cascades.
+3. **Array & Buffer Nulling**: Added explicit nulling of `gNodesRef.current = []`, `gLinksRef.current = []`, `conduitsRef.current = []`, and `sessionAnchorsRef.current = []` in `useMemoryGraphScene.ts` unmount effect.
+4. **Bundle Decoupling & Dead Package Pruning**: Extracted pure date utilities to `src/shared/lib/dateTime.ts`, unblocking Vite chunk splitting. Pruned 74 dead dependencies (`react-force-graph-2d`, `react-force-graph-3d`, `sigma`, `@sdkrouter/aisphere`).
+5. **Toolchain Integration**:
+   - `rollup-plugin-visualizer` configured for automatic bundle analysis (`dist/stats.html`).
+   - `vite-plugin-inspect` enabled for AST and plugin transform inspection (`/__inspect/`).
+   - `react-scan` integrated in `index.html` for visual render-diff tracking.
+   - Autonomous crawler runner (`sandbox/scripts/profile_crawler.mjs`).
+
+**Files**: [`app/src/shared/components/home/AdvancedOrb.tsx`](file:///home/addy/projects/apps/vox/app/src/shared/components/home/AdvancedOrb.tsx), [`app/src/shared/hooks/useMemoryGraphScene.ts`](file:///home/addy/projects/apps/vox/app/src/shared/hooks/useMemoryGraphScene.ts), [`app/src/shared/components/memory/PixelSynthesisCanvas.tsx`](file:///home/addy/projects/apps/vox/app/src/shared/components/memory/PixelSynthesisCanvas.tsx), [`app/src/shared/context/MemoryProfilerContext.tsx`](file:///home/addy/projects/apps/vox/app/src/shared/context/MemoryProfilerContext.tsx), [`app/src/shared/lib/dateTime.ts`](file:///home/addy/projects/apps/vox/app/src/shared/lib/dateTime.ts), [`sandbox/scripts/profile_crawler.mjs`](file:///home/addy/projects/apps/vox/sandbox/scripts/profile_crawler.mjs)
+
+---
+
 ## 3. Observed Memory Behavior & Expected Baseline Shifts
 
 ### 3.1 Why RSS Doesn't Return to Cold-Boot Baseline
@@ -236,3 +260,6 @@ After the first model load $\to$ unload cycle, a ~125MB permanent baseline shift
 | **Three.js GC object hoisting** | ✅ | ✅ | ✅ |
 | **Category-scoped dirty tracking & reset** | ✅ | ✅ | ✅ |
 | **DOM stacking order navigation guard** | ✅ | ✅ | ✅ |
+| **WebKitGTK 1x1 canvas dimension collapse** | ✅ (Mesa EGL/DRI release) | ✅ (Metal backing release) | ✅ (DirectX D3D release) |
+| **Context action/data split (zero re-render)** | ✅ | ✅ | ✅ |
+| **Automated profile crawler & visualizer** | ✅ | ✅ | ✅ |

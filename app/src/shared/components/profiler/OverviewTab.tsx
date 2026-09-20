@@ -94,7 +94,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <span className="font-mono text-xs text-[rgb(var(--foreground-muted))]">MB</span>
           </div>
           <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] mt-1 truncate">
-            {PROFILER_COPY.overview.processTreeAggregate}
+            {latestSnapshot?.devtools_ram_mb
+              ? `Core: ${(latestSnapshot.core_app_ram_mb ?? totalRss).toFixed(1)} MB (+${latestSnapshot.devtools_ram_mb.toFixed(1)}M DevTools)`
+              : latestSnapshot?.total_pss_mb
+              ? `PSS: ${latestSnapshot.total_pss_mb.toFixed(1)} MB (Unique Physical)`
+              : PROFILER_COPY.overview.processTreeAggregate}
           </p>
         </div>
 
@@ -360,6 +364,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         "px-2 py-0.5 rounded text-[11px] font-mono",
                         proc.is_main_process
                           ? "bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/30"
+                          : proc.is_devtools || proc.role.includes("Inspector") || proc.role.includes("DevTools")
+                          ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
                           : proc.role.includes("Main WebView")
                           ? "bg-[rgb(var(--accent))]/15 text-[rgb(var(--foreground))] border border-[rgba(var(--border),0.25)]"
                           : proc.role.includes("Tray")
@@ -370,8 +376,13 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                       {proc.role}
                     </span>
                   </td>
-                  <td className="py-2.5 font-bold text-[rgb(var(--accent))]">
-                    {proc.memory_mb.toFixed(2)} MB
+                  <td className="py-2.5">
+                    <span className="font-bold text-[rgb(var(--accent))]">{proc.memory_mb.toFixed(1)} MB</span>
+                    {proc.private_ram_mb !== undefined && (
+                      <span className="ml-1 text-[10px] text-[rgb(var(--foreground-muted))]">
+                        (anon: {proc.private_ram_mb.toFixed(1)}M)
+                      </span>
+                    )}
                   </td>
                   <td className="py-2.5 text-[rgb(var(--foreground-muted))]">
                     {proc.cpu_usage.toFixed(1)}%

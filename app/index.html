@@ -277,6 +277,15 @@
       })();
     </script>
 
+    <!-- React Scan: automatic real-time visual inspection of wasted re-renders in DEV mode -->
+    <script>
+      if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+        var s = document.createElement("script");
+        s.src = "https://unpkg.com/react-scan/dist/auto.global.js";
+        s.async = true;
+        document.head.appendChild(s);
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
     <script>
       // Global error handler — catches EVERYTHING, shows on screen

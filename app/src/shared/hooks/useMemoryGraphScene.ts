@@ -1174,11 +1174,19 @@ export function useMemoryGraphScene({
         animFrameRef.current = null;
       }
       controls.dispose();
+      if (renderer.domElement) {
+        renderer.domElement.width = 1;
+        renderer.domElement.height = 1;
+      }
       renderer.forceContextLoss();
       renderer.dispose();
       if (renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
+      gNodesRef.current = [];
+      gLinksRef.current = [];
+      conduitsRef.current = [];
+      sessionAnchorsRef.current = [];
       instancedMesh.dispose();
       instancedRing.dispose();
       sphereGeo.dispose();

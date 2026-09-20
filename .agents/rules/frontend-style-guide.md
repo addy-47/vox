@@ -82,14 +82,25 @@ These invariants apply to every component, hook, context, and page in `app/src/`
 - **Stable Callback References:** Callbacks passed to memoized children must be stabilized with `useCallback`. Avoid passing inline arrow functions in render loops.
 
 ### 4.6 WebGL & GPU Resource Teardown
+- **Mandatory Canvas Dimension Reset (WebKitGTK Backing Store Invariant):** Prior to `renderer.forceContextLoss()` and `renderer.dispose()`, `canvas.width = 1; canvas.height = 1;` MUST be explicitly assigned to the `<canvas>` DOM element. In Linux WebKitGTK + Mesa, removing a canvas from the DOM without resetting dimensions leaves the full-resolution DRI/EGL backing framebuffer in process memory.
 - **Mandatory Force Context Loss:** Every Three.js WebGLRenderer must execute `renderer.forceContextLoss()` prior to `renderer.dispose()` during unmount cleanup, ensuring the WebGL context is released by the browser/webview engine.
 - **Geometry & Material Disposals:** All Three.js geometries, instanced meshes, and materials must be explicitly disposed in `useEffect` cleanup.
+- **2D Canvas Teardown:** 2D canvas components (`PixelSynthesisCanvas`, `LiquidChamber`) must cancel RAF loops, disconnect `ResizeObserver`, and reset `canvas.width = 1; canvas.height = 1;` on unmount.
 
 ### 4.7 DOM Ref Callbacks in Loops
 - **Zero Inline Ref Callbacks in `.map()`:** Passing inline arrow functions to `ref` inside loops (`ref={(el) => ...}`) forces React to detach (`null`) and reattach every element on every render. Use a stable ref callback cache (`Map<string, (el) => void>`) or dataset query.
 
 ### 4.8 Input Debounce & WebGL Buffer Invariant
 - **Debounce Heavy Compute/Filter Inputs:** Text inputs driving graph filtering, full-text searches, or WebGL buffer updates must debounce parent state commits by >= 150ms to preserve 60 FPS typing responsiveness.
+
+### 4.9 Zero Volatile State in Root Context Providers
+- **Split Volatile Subscription Data from Stable Actions:** Never place volatile tracking or telemetry state (e.g. per-component trace tables, streaming token metrics) in the same React context provider as stable dispatch actions (`registerMount`, `registerUnmount`). Volatile data must live in an independent context (`MemoryProfilerDataContext`) with microtask batching or an external subscriber store to prevent whole-app re-render cascades.
+
+### 4.10 Dense Data Array & Topology Cleanup on Unmount
+- **Explicit Array Teardown:** Components or hooks maintaining large object graphs, caches, or vertex buffers (`gNodesRef`, `gLinksRef`, `Float32Array`) must explicitly clear or null them (`ref.current = []`) in unmount cleanup to break closure references and allow V8 GC to reclaim memory.
+
+### 4.11 Chunk Splitting & Pure Utility Isolation
+- **No IPC Imports in Pure Utilities:** Pure formatting, date/time, and string helpers must NEVER be exported from service modules that import `@tauri-apps/api` or state stores. Pure helpers belong strictly in `src/shared/lib/` to prevent polluting the main bundle chunk.
 
 ---
 

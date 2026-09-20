@@ -273,7 +273,15 @@ export const OrbitCarousel = memo(({
     };
   }, []);
 
-  useEffect(() => stopLoop, [stopLoop]);
+  useEffect(() => {
+    return () => {
+      stopLoop();
+      nodeElsRef.current.clear();
+      styleCacheRef.current.clear();
+      baseAnglesRef.current.clear();
+      refCallbacksMapRef.current.clear();
+    };
+  }, [stopLoop]);
 
   // ── Reduced-motion awareness ───────────────────────────────────────────────
   useEffect(() => {

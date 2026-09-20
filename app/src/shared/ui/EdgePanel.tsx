@@ -44,8 +44,8 @@ const EdgePanelInner = memo(
       if (target.closest("[data-edge-panel]")) {
         return false;
       }
-      // Clicking on an edge trigger button must NOT dismiss this panel
-      if (target.closest("[data-edge-trigger]")) {
+      // Clicking on an edge trigger button or top-right cluster must NOT dismiss this panel
+      if (target.closest("[data-edge-trigger]") || target.closest("[data-spatial-zone='cluster']")) {
         return false;
       }
       // Clicking inside a context menu portal (rendered in body) must NOT dismiss this panel

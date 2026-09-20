@@ -45,6 +45,11 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
     closePanel("help");
   }, [closePanel]);
   const closeNotifications = useCallback(() => closePanel("notifications"), [closePanel]);
+  const isHelpOpen = isPanelOpen("help");
+  const isHelpOpenRef = useRef(isHelpOpen);
+  useEffect(() => {
+    isHelpOpenRef.current = isHelpOpen;
+  }, [isHelpOpen]);
 
   const sessionsOpen = isPanelOpen("sessions");
 
@@ -115,10 +120,9 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       const candidates = all.filter((el) => {
         if (el === active) return false;
         if (el.getAttribute("tabindex") === "-1") return false;
+        if (el.offsetWidth === 0 && el.offsetHeight === 0) return false;
         if (el.closest("[aria-hidden='true']")) return false;
         if (el.closest(".pointer-events-none") && !el.closest(".pointer-events-auto")) return false;
-        const rects = el.getClientRects();
-        if (rects.length === 0) return false;
         const r = el.getBoundingClientRect();
         return r.width > 0 && r.height > 0;
       });
@@ -221,7 +225,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       // Ctrl + / -> Toggle Help & Guide
       if (mod && (key === "/" || e.code === "Slash")) {
         e.preventDefault();
-        if (isPanelOpen("help")) {
+        if (isHelpOpenRef.current) {
           closeHelp();
         } else {
           setHelpInitialShortcuts(false);
@@ -232,7 +236,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       // ? (or Shift + /) -> Toggle Keyboard Shortcuts sheet
       if (!mod && (key === "?" || (shift && (key === "/" || e.code === "Slash")))) {
         e.preventDefault();
-        if (isPanelOpen("help")) {
+        if (isHelpOpenRef.current) {
           closeHelp();
         } else {
           setHelpInitialShortcuts(true);
