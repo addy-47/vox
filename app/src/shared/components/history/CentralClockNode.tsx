@@ -111,32 +111,32 @@ export const CentralClockNode = memo(
               : "0 25px 70px -10px rgba(0, 0, 0, 0.9), 0 0 60px rgba(var(--accent), 0.22), inset 0 2px 20px rgba(255, 255, 255, 0.14), inset 0 -15px 35px rgba(var(--accent), 0.25)",
           }}
         >
-          {/* Perimeter Dial Ticks on Outer Rim */}
+          {/* Perimeter Dial Ticks on Outer Sphere Rim */}
           <svg
-            className="absolute inset-0 w-full h-full pointer-events-none opacity-35"
+            className="absolute inset-0 w-full h-full pointer-events-none opacity-40 z-10"
             viewBox="0 0 200 200"
             aria-hidden
           >
             {Array.from({ length: totalTicks }, (_, i) => {
               const angle = (i * 360) / totalTicks;
-              // Remove tick lines at 3:00 (90 deg) and 9:00 (270 deg) to place carousel buttons directly there
-              if (angle === 90 || angle === 270) return null;
+              // Remove tick lines near 3:00 (90 deg) and 9:00 (270 deg) for carousel buttons
+              if (Math.abs(angle - 90) < 16 || Math.abs(angle - 270) < 16) return null;
 
               const isQuarter = i % (totalTicks / 4) === 0;
               const isEighth = i % (totalTicks / 8) === 0;
               const length = isQuarter ? 8 : isEighth ? 5 : 3;
               const strokeColor = isQuarter
                 ? "rgb(var(--accent))"
-                : "rgba(var(--foreground-muted), 0.5)";
+                : "rgba(var(--foreground-muted), 0.6)";
               const strokeWidth = isQuarter ? 2 : 1;
 
               return (
                 <line
                   key={i}
                   x1={100}
-                  y1={5}
+                  y1={2}
                   x2={100}
-                  y2={5 + length}
+                  y2={2 + length}
                   stroke={strokeColor}
                   strokeWidth={strokeWidth}
                   transform={`rotate(${angle} 100 100)`}
@@ -145,38 +145,37 @@ export const CentralClockNode = memo(
             })}
           </svg>
 
-          {/* Segmented window arc on the rim */}
+          {/* Active window arc directly on outer sphere boundary */}
           {showArc && (
             <svg
-              className="absolute inset-0 w-full h-full pointer-events-none z-10"
-              viewBox="0 0 100 100"
+              className="absolute inset-0 w-full h-full pointer-events-none z-20"
+              viewBox="0 0 200 200"
               aria-hidden
             >
               {Array.from({ length: windowProgress.count }, (_, i) => {
                 const anglePerSegment = 360 / windowProgress.count;
                 const startAngle = i * anglePerSegment - 90;
                 const endAngle = (i + 1) * anglePerSegment - 90 - 4;
-                const r = 46;
+                const r = 97.5;
                 const isCurrent = i === windowProgress.index;
                 const startRad = (startAngle * Math.PI) / 180;
                 const endRad = (endAngle * Math.PI) / 180;
-                const x1 = 50 + r * Math.cos(startRad);
-                const y1 = 50 + r * Math.sin(startRad);
-                const x2 = 50 + r * Math.cos(endRad);
-                const y2 = 50 + r * Math.sin(endRad);
+                const x1 = 100 + r * Math.cos(startRad);
+                const y1 = 100 + r * Math.sin(startRad);
+                const x2 = 100 + r * Math.cos(endRad);
+                const y2 = 100 + r * Math.sin(endRad);
+
+                if (!isCurrent) return null;
 
                 return (
                   <path
                     key={i}
                     d={`M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`}
                     fill="none"
-                    stroke={
-                      isCurrent
-                        ? "rgb(var(--accent))"
-                        : "rgba(var(--foreground-muted), 0.15)"
-                    }
-                    strokeWidth={isCurrent ? 1.3 : 0.8}
+                    stroke="rgb(var(--accent))"
+                    strokeWidth={3}
                     strokeLinecap="round"
+                    className="drop-shadow-[0_0_8px_rgba(var(--accent),0.6)]"
                   />
                 );
               })}
@@ -220,7 +219,7 @@ export const CentralClockNode = memo(
           </button>
 
           {/* ── Inner Circular Safe Zone: Centered Content with Perfect Breathing Room ── */}
-          <div className="relative z-20 flex flex-col items-center justify-between w-[76%] h-[76%] pt-1.5 pb-3.5 select-none">
+          <div className="relative z-20 flex flex-col items-center justify-between w-[82%] h-[82%] pt-1.5 pb-2.5 select-none">
             {/* 1. Top Section: Mode Pill Toggle */}
             <div
               className={cn(
@@ -342,20 +341,20 @@ export const CentralClockNode = memo(
             </div>
 
             {/* 3. Bottom Section: Time Span Footer */}
-            <div className="w-full flex flex-col items-center gap-1 shrink-0">
-              <div className="w-3/4 h-[1px] bg-gradient-to-r from-transparent via-[rgba(var(--accent),0.25)] to-transparent" />
-              <div className="flex items-center justify-center gap-1.5 text-[10px] sm:text-[10.5px] font-mono text-[rgb(var(--foreground-muted))] pt-0.5 whitespace-nowrap px-1">
-                <Clock size={11} className="text-[rgb(var(--accent))] shrink-0" />
-                <span className="text-[9.5px] sm:text-[10px] font-bold uppercase tracking-wider">{HISTORY_COPY.clockSpan}</span>
-                <span className="text-[10px] sm:text-[10.5px] font-bold text-[rgb(var(--foreground))]">
-                  {timeSpanLabel || windowLabel || "00:00 – 23:59"}
-                </span>
+            <div className="w-full flex flex-col items-center gap-0.5 shrink-0 pt-0.5 pb-1">
+              <div className="w-2/3 h-[1px] bg-gradient-to-r from-transparent via-[rgba(var(--accent),0.25)] to-transparent mb-0.5" />
+              <div className="flex items-center justify-center gap-1 text-[9.5px] font-mono text-[rgb(var(--foreground-muted))]">
+                <Clock size={10} className="text-[rgb(var(--accent))] shrink-0" />
+                <span className="font-bold uppercase tracking-wider">{HISTORY_COPY.clockSpan}</span>
                 {showArc && (
-                  <span className="text-[rgb(var(--accent))] font-bold text-[10px] sm:text-[10.5px]">
+                  <span className="text-[rgb(var(--accent))] font-bold">
                     [{windowProgress.index + 1}/{windowProgress.count}]
                   </span>
                 )}
               </div>
+              <span className="text-[10px] sm:text-[10.5px] font-mono font-bold text-[rgb(var(--foreground))] tracking-tight whitespace-nowrap">
+                {timeSpanLabel || windowLabel || "00:00 – 23:59"}
+              </span>
             </div>
           </div>
         </div>

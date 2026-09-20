@@ -14,9 +14,11 @@ import { ModelStatusOverlay } from "@/shared/components/settings/ModelStatusOver
 import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
+import { usePageDrawer } from "@/shared/context/PageDrawerContext";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import { useSessionStore } from "@/store/sessionStore";
+import { getStackSize } from "@/shared/lib/overlayStack";
 
 const Monitoring = lazy(() => import("@/pages/Monitoring").then((m) => ({ default: m.Monitoring })));
 
@@ -31,11 +33,17 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const monitorBtnRef = useRef<HTMLButtonElement>(null);
   const { voxCpu, voxRam, isReady } = useVoxFootprint();
   const { openProfiler } = useProfilerDrawer();
-  const { isPanelOpen, closePanel, togglePanel } = usePanelStateContext();
+  const { openActiveDrawer, closeActiveDrawer } = usePageDrawer();
+  const { isPanelOpen, closePanel, openPanel, togglePanel } = usePanelStateContext();
   const historyDisplayMode = useHistoryFilterStore((s) => s.displayMode);
   const interactionState = useSessionStore((s) => s.interactionState);
 
-  const closeHelp = useCallback(() => closePanel("help"), [closePanel]);
+  const [helpInitialShortcuts, setHelpInitialShortcuts] = useState(false);
+
+  const closeHelp = useCallback(() => {
+    setHelpInitialShortcuts(false);
+    closePanel("help");
+  }, [closePanel]);
   const closeNotifications = useCallback(() => closePanel("notifications"), [closePanel]);
 
   const sessionsOpen = isPanelOpen("sessions");
@@ -81,48 +89,202 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
     };
   }, [navigate]);
 
-  // ── Arrow Keys Page Navigation ─────────────────────────────────────────────
+  // ── Arrow-key handler: page-nav vs in-page movement vs spatial (v2) ──
+  // Precedence (checked in order):
+  //   1. If focus is in input/textarea/select/contenteditable → caret keys win (skip)
+  //   2. If focus is inside [data-arrow-nav] → widget handles (stopPropagation)
+  //   3. If focus is in EdgeNav (nav[data-edge-nav]) or on body/nothing-focusable → page-nav
+  //   4. Otherwise → spatial move to nearest focusable in that direction
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Check if focus is in an input/textarea/select/editable
-      const activeEl = document.activeElement;
-      if (activeEl) {
-        const tagName = activeEl.tagName.toLowerCase();
-        if (
-          tagName === "input" ||
-          tagName === "textarea" ||
-          tagName === "select" ||
-          activeEl.getAttribute("contenteditable") === "true"
-        ) {
-          return;
+    const isEditable = (el: Element | null): boolean => {
+      if (!el) return false;
+      const tag = el.tagName.toLowerCase();
+      return tag === "input" || tag === "textarea" || tag === "select" || el.getAttribute("contenteditable") === "true";
+    };
+
+    const isInArrowGroup = (el: Element | null): boolean => {
+      return !!el && !!el.closest("[data-arrow-nav]");
+    };
+
+    const focusableSelector = 'button:not([disabled]),[tabIndex="0"]:not([tabindex="-1"]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[href],[contenteditable]';
+
+    const spatialMove = (direction: "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight") => {
+      const all = Array.from(document.querySelectorAll<HTMLElement>(focusableSelector));
+      const active = document.activeElement as HTMLElement | null;
+
+      const candidates = all.filter((el) => {
+        if (el === active) return false;
+        if (el.getAttribute("tabindex") === "-1") return false;
+        if (el.closest("[aria-hidden='true']")) return false;
+        if (el.closest(".pointer-events-none") && !el.closest(".pointer-events-auto")) return false;
+        const rects = el.getClientRects();
+        if (rects.length === 0) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      });
+
+      if (candidates.length === 0) return;
+
+      const ar = active?.getBoundingClientRect();
+      if (!ar || active === document.body) {
+        candidates[0]?.focus();
+        return;
+      }
+
+      const activeCx = ar.left + ar.width / 2;
+      const activeCy = ar.top + ar.height / 2;
+
+      let best: HTMLElement | null = null;
+      let bestScore = Infinity;
+
+      for (const el of candidates) {
+        const r = el.getBoundingClientRect();
+        const candCx = r.left + r.width / 2;
+        const candCy = r.top + r.height / 2;
+
+        let primary = Infinity;
+        let secondary = Infinity;
+        let overlap = 0;
+
+        if (direction === "ArrowRight") {
+          if (r.left >= ar.left + 4 || candCx > activeCx + 4) {
+            primary = Math.max(0, r.left - ar.right);
+            secondary = Math.abs(candCy - activeCy);
+            overlap = Math.max(0, Math.min(ar.bottom, r.bottom) - Math.max(ar.top, r.top));
+          }
+        } else if (direction === "ArrowLeft") {
+          if (r.right <= ar.right - 4 || candCx < activeCx - 4) {
+            primary = Math.max(0, ar.left - r.right);
+            secondary = Math.abs(candCy - activeCy);
+            overlap = Math.max(0, Math.min(ar.bottom, r.bottom) - Math.max(ar.top, r.top));
+          }
+        } else if (direction === "ArrowDown") {
+          if (r.top >= ar.top + 4 || candCy > activeCy + 4) {
+            primary = Math.max(0, r.top - ar.bottom);
+            secondary = Math.abs(candCx - activeCx);
+            overlap = Math.max(0, Math.min(ar.right, r.right) - Math.max(ar.left, r.left));
+          }
+        } else if (direction === "ArrowUp") {
+          if (r.bottom <= ar.bottom - 4 || candCy < activeCy - 4) {
+            primary = Math.max(0, ar.top - r.bottom);
+            secondary = Math.abs(candCx - activeCx);
+            overlap = Math.max(0, Math.min(ar.right, r.right) - Math.max(ar.left, r.left));
+          }
+        }
+
+        if (primary < Infinity) {
+          const overlapBonus = overlap > 0 ? 0.4 : 1.0;
+          const score = (primary + 1) + (secondary * 2.2 * overlapBonus);
+          if (score < bestScore) {
+            bestScore = score;
+            best = el;
+          }
         }
       }
 
-      const isCompact = window.innerWidth < 1024;
-      // Match visual sequence in EdgeNav: Home (/) -> History (/history) -> Memory (/memory) -> System (/settings)
-      const routes = isCompact
-        ? ["/", "/history", "/memory", "/settings", "/monitoring"]
-        : ["/", "/history", "/memory", "/settings"];
+      best?.focus();
+    };
 
-      const currentIndex = routes.indexOf(location.pathname);
-      if (currentIndex === -1) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
 
-      if (e.key === "ArrowRight") {
+      // 1. Editables → caret keys win
+      if (isEditable(activeEl)) return;
+
+      // ---- Globals (outside editables, always) ----
+      if (e.repeat) return;
+      const key = e.key;
+      const mod = e.ctrlKey || e.metaKey;
+      const shift = e.shiftKey;
+
+      // Application Lifecycle (Ctrl+W close, Ctrl+Q quit)
+      if (mod && (key === "w" || key === "W")) {
         e.preventDefault();
-        setMonitorOpen(false);
-        const nextIndex = (currentIndex + 1) % routes.length;
-        navigate(routes[nextIndex]);
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        setMonitorOpen(false);
-        const nextIndex = (currentIndex - 1 + routes.length) % routes.length;
-        navigate(routes[nextIndex]);
+        import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
+          getCurrentWindow().close();
+        }).catch(() => {});
+        return;
       }
+      if (mod && (key === "q" || key === "Q")) {
+        e.preventDefault();
+        import("@tauri-apps/plugin-process").then(({ exit }) => {
+          exit(0);
+        }).catch(() => {});
+        return;
+      }
+
+      // Rails & Popovers
+      if (mod && (key === "m" || key === "M")) { e.preventDefault(); setMonitorOpen((v) => !v); return; }
+      if (mod && (key === "s" || key === "S")) { e.preventDefault(); togglePanel("sessions"); return; }
+      if (mod && (key === "n" || key === "N")) { e.preventDefault(); togglePanel("notifications"); return; }
+      
+      // Ctrl + / -> Toggle Help & Guide
+      if (mod && (key === "/" || e.code === "Slash")) {
+        e.preventDefault();
+        if (isPanelOpen("help")) {
+          closeHelp();
+        } else {
+          setHelpInitialShortcuts(false);
+          openPanel("help");
+        }
+        return;
+      }
+      // ? (or Shift + /) -> Toggle Keyboard Shortcuts sheet
+      if (!mod && (key === "?" || (shift && (key === "/" || e.code === "Slash")))) {
+        e.preventDefault();
+        if (isPanelOpen("help")) {
+          closeHelp();
+        } else {
+          setHelpInitialShortcuts(true);
+          openPanel("help");
+        }
+        return;
+      }
+
+      // Page Navigation: Shift + Left / Right (always wins outside editables)
+      if (shift && (key === "ArrowRight" || key === "ArrowLeft")) {
+        e.preventDefault();
+        const isCompact = window.innerWidth < 1024;
+        const routes = isCompact ? ["/", "/history", "/memory", "/settings", "/monitoring"] : ["/", "/history", "/memory", "/settings"];
+        const currentIndex = routes.indexOf(location.pathname);
+        if (currentIndex !== -1) {
+          setMonitorOpen(false);
+          if (key === "ArrowRight") {
+            navigate(routes[(currentIndex + 1) % routes.length]);
+          } else {
+            navigate(routes[(currentIndex - 1 + routes.length) % routes.length]);
+          }
+        }
+        return;
+      }
+
+      // Context Drawers: Shift + Up / Down (contextual by route)
+      if (shift && key === "ArrowUp") {
+        e.preventDefault();
+        if (getStackSize() === 0) {
+          openActiveDrawer();
+        }
+        return;
+      }
+      if (shift && key === "ArrowDown") {
+        e.preventDefault();
+        closeActiveDrawer();
+        return;
+      }
+
+      // ---- Plain Directional Arrows: Spatial Navigation inside active zone ----
+      if (key !== "ArrowRight" && key !== "ArrowLeft" && key !== "ArrowUp" && key !== "ArrowDown") return;
+
+      // 2. Widget group with roving tabindex owns it
+      if (isInArrowGroup(activeEl)) return;
+
+      // 3. Zone-bounded spatial move
+      spatialMove(key as "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown");
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [location.pathname, navigate]);
+  }, [location.pathname, navigate, togglePanel, openPanel, openActiveDrawer, closeActiveDrawer]);
 
   const isSettings = location.pathname === "/settings";
   const isHome = location.pathname === "/";
@@ -144,7 +306,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
       <TitleBar />
 
       {/* ── Content Area ──────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative", minHeight: 0 }}>
+      <div data-spatial-zone="stage" style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative", minHeight: 0 }}>
         {/* Resize Handles (Invisible, for cursor hit-testing on Linux) */}
         <div className="absolute top-0 left-0 w-full h-[3px] cursor-ns-resize z-[100]" />
         <div className="absolute bottom-0 left-0 w-full h-[3px] cursor-ns-resize z-[100]" />
@@ -309,7 +471,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
           minimalHeader
         >
           <ErrorBoundary name="HelpPanel">
-            <HelpPanel onClose={closeHelp} />
+            <HelpPanel onClose={closeHelp} initialShortcuts={helpInitialShortcuts} />
           </ErrorBoundary>
         </EdgePanel>
         <EdgePanel

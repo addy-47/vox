@@ -71,6 +71,29 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
           e.stopPropagation();
           onClose();
         }
+
+        const menuItems = Array.from(
+          menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
+        );
+        if (menuItems.length === 0) return;
+
+        const currentFocus = document.activeElement as HTMLElement;
+        const currentIndex = menuItems.indexOf(currentFocus);
+
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          const next = currentIndex < menuItems.length - 1 ? currentIndex + 1 : 0;
+          menuItems[next]?.focus();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          const prev = currentIndex > 0 ? currentIndex - 1 : menuItems.length - 1;
+          menuItems[prev]?.focus();
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (currentFocus && currentFocus.getAttribute("data-action")) {
+            currentFocus.click();
+          }
+        }
       };
 
       window.addEventListener("pointerdown", handlePointerDown, true);
@@ -116,6 +139,9 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
           }}
           onClick={(e) => e.stopPropagation()}
           data-context-menu
+          role="menu"
+          aria-haspopup="menu"
+          aria-expanded={open}
           className="z-[9999] rounded-xl border border-[rgba(var(--border),0.16)] bg-[rgb(var(--card))]/75 backdrop-blur-xl shadow-sm p-1 flex flex-col gap-0.5 text-[11.5px] font-sans select-none"
         >
           {isConfirmingDelete ? (
@@ -126,6 +152,9 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
               <div className="flex items-center gap-1.5 justify-end">
                 <button
                   type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  data-action="cancel"
                   onClick={() => setIsConfirmingDelete(false)}
                   className="px-2 py-1 rounded text-[10.5px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] cursor-pointer"
                 >
@@ -133,6 +162,9 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                 </button>
                 <button
                   type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  data-action="delete-confirm"
                   onClick={() => {
                     onDelete();
                     onClose();
@@ -149,6 +181,9 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                 <span>{SESSION_COPY.actions.moveToProject}</span>
                 <button
                   type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  data-action="back"
                   onClick={() => setMoveSubmenuOpen(false)}
                   className="text-[9px] hover:text-[rgb(var(--foreground))] cursor-pointer font-bold text-[rgb(var(--accent))]"
                 >
@@ -157,6 +192,9 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
               </div>
               <button
                 type="button"
+                role="menuitem"
+                tabIndex={-1}
+                data-action="remove-from-project"
                 onClick={() => {
                   onMoveToProject(null);
                   onClose();
@@ -166,23 +204,26 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                 <span className="w-1.5 h-1.5 rounded-full bg-[rgba(var(--foreground),0.3)]" />
                 <span className="truncate">{SESSION_COPY.actions.removeFromProject}</span>
               </button>
-              {allProjects.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    onMoveToProject(p.id);
-                    onClose();
-                  }}
-                  className={cn(
-                    "flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer",
-                    currentProjectId === p.id && "text-[rgb(var(--accent))] font-semibold"
-                  )}
-                >
-                  <Folder size={12} className="shrink-0" />
-                  <span className="truncate">{p.name}</span>
-                </button>
-              ))}
+                {allProjects.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    data-action={`move-to-project-${p.id}`}
+                    onClick={() => {
+                      onMoveToProject(p.id);
+                      onClose();
+                    }}
+                    className={cn(
+                      "flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer",
+                      currentProjectId === p.id && "text-[rgb(var(--accent))] font-semibold"
+                    )}
+                  >
+                    <Folder size={12} className="shrink-0" />
+                    <span className="truncate">{p.name}</span>
+                  </button>
+                ))}
             </div>
           ) : (
             <>
@@ -190,6 +231,9 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
                 <>
                   <button
                     type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    data-action="compact-session"
                     disabled={isCompacting}
                     onClick={() => {
                       onCompact();
@@ -214,6 +258,9 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
 
               <button
                 type="button"
+                role="menuitem"
+                tabIndex={-1}
+                data-action="rename"
                 onClick={() => {
                   onStartRename();
                   onClose();
@@ -226,6 +273,9 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
 
               <button
                 type="button"
+                role="menuitem"
+                tabIndex={-1}
+                data-action="move-to-project"
                 onClick={() => setMoveSubmenuOpen(true)}
                 className="flex items-center justify-between px-2 py-1.5 rounded-lg text-left hover:bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground))] transition-colors cursor-pointer"
               >
@@ -240,6 +290,9 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = memo(
 
               <button
                 type="button"
+                role="menuitem"
+                tabIndex={-1}
+                data-action="delete"
                 onClick={() => setIsConfirmingDelete(true)}
                 className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:bg-red-500/10 text-red-400 transition-colors cursor-pointer"
               >

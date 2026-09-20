@@ -23,7 +23,22 @@ export const CategorySelector = memo(
     const isCategoryDirty = useSettingsStore((s) => s.isCategoryDirty);
 
     return (
-      <div className="w-full flex items-center justify-between pt-0.5 pb-1 shrink-0 border-b border-[rgba(var(--accent),0.08)] mb-2 px-0.5 select-none overflow-x-auto no-scrollbar">
+      <div className="w-full flex items-center justify-between pt-0.5 pb-1 shrink-0 border-b border-[rgba(var(--accent),0.08)] mb-2 px-0.5 select-none overflow-x-auto no-scrollbar" data-arrow-nav role="tablist" aria-label="Category tabs" onKeyDown={(e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        e.stopPropagation();
+        const tabs = Array.from((e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('button[role="tab"]:not([disabled])'));
+        if (tabs.length === 0) return;
+        const currentIdx = tabs.findIndex((b) => b === document.activeElement);
+        let nextIdx: number;
+        if (e.key === "ArrowRight") nextIdx = currentIdx < tabs.length - 1 ? currentIdx + 1 : 0;
+        else nextIdx = currentIdx > 0 ? currentIdx - 1 : tabs.length - 1;
+        tabs[nextIdx].focus();
+        if (currentIdx !== nextIdx) {
+          const id = tabs[nextIdx].getAttribute("data-cat-id");
+          if (id) onSetCategory(id as "STT" | "LLM" | "TTS");
+        }
+      }}>
         {TABS.map((tab, idx, arr) => {
           const isActive = activeCategory === tab.id;
           const isDirty = isCategoryDirty(tab.id.toLowerCase());
@@ -33,6 +48,9 @@ export const CategorySelector = memo(
             <div key={tab.id} className="flex-1 min-w-0 flex items-center justify-center">
               <button
                 type="button"
+                role="tab"
+                data-cat-id={tab.id}
+                aria-selected={isActive}
                 onClick={() => onSetCategory(tab.id)}
                 className={cn(
                   "w-full flex items-center justify-center gap-1.5 pb-1 border-b-2 transition-all duration-200 bg-transparent text-[9.5px] sm:text-[10.5px] xl:text-[11px] font-black uppercase tracking-[0.04em] sm:tracking-[0.08em] outline-none cursor-pointer text-center truncate px-0.5",

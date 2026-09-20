@@ -1,4 +1,4 @@
-import React, { memo, useRef, useCallback } from "react";
+import React, { memo, useRef, useCallback, useEffect } from "react";
 import { X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/shared/lib/utils";
@@ -63,6 +63,30 @@ const EdgePanelInner = memo(
       shouldDismissOnPointerDown,
       active: open,
     });
+
+    // Focus-in on open, restore focus on close
+    const focusedBeforeRef = useRef<HTMLElement | null>(null);
+    const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+      let cleanup: (() => void) | undefined;
+      if (open) {
+        focusedBeforeRef.current = document.activeElement as HTMLElement | null;
+        focusTimerRef.current = setTimeout(() => {
+          const el = panelRef.current;
+          if (el) {
+            const focusable = el.querySelector<HTMLElement>(
+              'button:not([disabled]),[tabIndex="0"],input,textarea,select,[contenteditable]'
+            );
+            (focusable || el).focus();
+          }
+        }, 60);
+        cleanup = () => { if (focusTimerRef.current) clearTimeout(focusTimerRef.current); };
+      } else if (focusedBeforeRef.current) {
+        try { focusedBeforeRef.current.focus(); } catch {}
+        focusedBeforeRef.current = null;
+      }
+      return cleanup;
+    }, [open]);
 
     const isLeft = side === "left";
 

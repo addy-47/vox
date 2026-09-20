@@ -6,7 +6,7 @@
 export const SESSION_COPY = {
   railTitle: "Conversations",
   railAriaLabel: "Conversation list",
-  openRailAriaLabel: "Open conversations",
+  openRailAriaLabel: "Open conversations (Ctrl+S)",
   closeRailAriaLabel: "Close conversations",
   newConversation: "New conversation",
   newConversationAriaLabel: "Start a new conversation",

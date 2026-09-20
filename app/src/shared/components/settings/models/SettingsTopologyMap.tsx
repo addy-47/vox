@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useCallback } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
@@ -23,6 +23,21 @@ export const SettingsTopologyMap = memo(
     onChangeSubTab,
     layoutMode,
   }: SettingsTopologyMapProps) => {
+    const handleKeyDown = useCallback(
+      (e: React.KeyboardEvent) => {
+        const ids = nodes.map((n) => n.id);
+        const currentIdx = ids.indexOf(activeSubTab);
+        if (e.key === "ArrowRight") {
+          e.preventDefault();
+          onChangeSubTab(ids[(currentIdx + 1) % ids.length]);
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          onChangeSubTab(ids[(currentIdx - 1 + ids.length) % ids.length]);
+        }
+      },
+      [activeSubTab, onChangeSubTab, nodes]
+    );
+
     return (
       <div
         className={cn(
@@ -31,6 +46,8 @@ export const SettingsTopologyMap = memo(
             ? "flex overflow-x-auto snap-x no-scrollbar scrollbar-none w-full scroll-smooth"
             : "flex items-center justify-around"
         )}
+        role="tablist"
+        aria-label="Settings topology"
       >
         {nodes.map(({ id, label, Icon, disabled }) => {
           const isActive = activeSubTab === id;
@@ -40,6 +57,11 @@ export const SettingsTopologyMap = memo(
               key={id}
               type="button"
               disabled={disabled}
+              role="tab"
+              aria-selected={isActive}
+              tabIndex={isActive ? 0 : -1}
+              data-arrow-nav
+              onKeyDown={handleKeyDown}
               onClick={() => !disabled && onChangeSubTab(id)}
               className={cn(
                 "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden cursor-pointer flex-1",

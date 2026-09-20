@@ -6,6 +6,7 @@ import { ErrorBoundary, OrbitalLoader } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
 import { SETTINGS_DOMAINS as DOMAINS, type SettingsDomainId as DomainId } from "@/data/settingsCopy";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
+import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 
 // Loader functions for eager prewarming
 const loadPersona = () => import("@/shared/components/settings/persona/PersonaCard").then(m => ({ default: m.PersonaCard }));
@@ -113,6 +114,12 @@ export const Settings: React.FC = () => {
     handleCenterClick,
     setActiveDomains,
   } = useSettingsPage();
+
+  const drawerHandlers = useMemo(() => ({
+    open: () => setActiveDomains(DOMAINS.map((d) => d.id)),
+    close: () => setActiveDomains([]),
+  }), [setActiveDomains]);
+  useRegisterPageDrawer(drawerHandlers);
 
   // Escape collapses the topmost active Settings card (mirrors outside-click FILO pop).
   useEffect(() => {

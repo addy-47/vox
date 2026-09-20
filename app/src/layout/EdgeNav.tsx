@@ -12,6 +12,8 @@ const navItems = [
   { icon: SlidersHorizontal, label: "Settings", path: "/settings" },
 ];
 
+import { Tooltip } from "@/shared/ui/Tooltip";
+
 export const EdgeNav: React.FC = () => {
   return (
     <>
@@ -19,32 +21,60 @@ export const EdgeNav: React.FC = () => {
           z-[38] sits above EdgePanels (z-35) and page drawers (z-30) but below layout docks (z-40) and the nav itself (z-60). */}
       <BottomDockFeather className="fixed bottom-0 left-0 right-0 h-[110px] z-[38]" />
 
-      <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] pointer-events-auto flex items-center gap-2 px-3 py-1.5 h-[56px] glass-card border border-[rgba(var(--accent),0.15)] rounded-full shadow-2xl">
+      <nav
+        data-edge-nav
+        data-spatial-zone="dock"
+        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] pointer-events-auto flex items-center gap-2 px-3 py-1.5 h-[56px] glass-card border border-[rgba(var(--accent),0.15)] rounded-full shadow-2xl"
+      >
         {navItems.map((item) => (
+          <Tooltip key={item.label} label={item.label} side="top">
+            <NavLink
+              to={item.path}
+              end={item.path === "/"}
+              className={({ isActive }) =>
+                cn(
+                  "relative flex items-center justify-center w-11 h-11 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all duration-300 group hover:bg-[rgb(var(--accent))]/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))]",
+                  isActive && "text-[rgb(var(--accent))] bg-transparent"
+                )
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <item.icon
+                    size={24}
+                    strokeWidth={isActive ? 2 : 1.5}
+                    className={cn("transition-transform duration-500", !isActive && "group-hover:scale-110")}
+                  />
+
+                  {/* Active Indicator dot */}
+                  {isActive && (
+                    <div className="absolute -bottom-1 w-1 h-1 rounded-full bg-[rgb(var(--accent))]" />
+                  )}
+                </>
+              )}
+            </NavLink>
+          </Tooltip>
+        ))}
+
+        {/* Compact layout — monitoring in EdgeNav instead of corner */}
+        <Tooltip label={LAYOUT_COPY.nav.monitor} side="top">
           <NavLink
-            key={item.label}
-            to={item.path}
-            end={item.path === "/"}
+            to="/monitoring"
             className={({ isActive }) =>
               cn(
-                "relative flex items-center justify-center w-11 h-11 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all duration-300 group hover:bg-[rgb(var(--accent))]/5",
+                "lg:hidden relative flex items-center justify-center w-11 h-11 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all duration-300 group hover:bg-[rgb(var(--accent))]/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))] focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--background))]",
                 isActive && "text-[rgb(var(--accent))] bg-transparent"
               )
             }
+            aria-label={LAYOUT_COPY.nav.engineMonitor}
           >
             {({ isActive }) => (
               <>
-                <item.icon
+                <Activity
                   size={24}
                   strokeWidth={isActive ? 2 : 1.5}
                   className={cn("transition-transform duration-500", !isActive && "group-hover:scale-110")}
                 />
-                
-                {/* Tooltip */}
-                <span className="absolute bottom-14 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none px-2.5 py-1 rounded-md text-[12px] font-bold tracking-wider uppercase bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground))] shadow-lg">
-                  {item.label}
-                </span>
-
                 {/* Active Indicator dot */}
                 {isActive && (
                   <div className="absolute -bottom-1 w-1 h-1 rounded-full bg-[rgb(var(--accent))]" />
@@ -52,37 +82,7 @@ export const EdgeNav: React.FC = () => {
               </>
             )}
           </NavLink>
-        ))}
-
-        {/* Compact layout — monitoring in EdgeNav instead of corner */}
-        <NavLink
-          to="/monitoring"
-          className={({ isActive }) =>
-            cn(
-              "lg:hidden relative flex items-center justify-center w-11 h-11 rounded-full text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-all duration-300 group hover:bg-[rgb(var(--accent))]/5",
-              isActive && "text-[rgb(var(--accent))] bg-transparent"
-            )
-          }
-          aria-label={LAYOUT_COPY.nav.engineMonitor}
-        >
-          {({ isActive }) => (
-            <>
-              <Activity
-                size={24}
-                strokeWidth={isActive ? 2 : 1.5}
-                className={cn("transition-transform duration-500", !isActive && "group-hover:scale-110")}
-              />
-              {/* Tooltip */}
-              <span className="absolute bottom-14 scale-95 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 pointer-events-none px-2.5 py-1 rounded-md text-[12px] font-bold tracking-wider uppercase bg-[rgb(var(--background))]/95 border border-[rgba(var(--accent),0.15)] text-[rgb(var(--foreground))] shadow-lg">
-                {LAYOUT_COPY.nav.monitor}
-              </span>
-              {/* Active Indicator dot */}
-              {isActive && (
-                <div className="absolute -bottom-1 w-1 h-1 rounded-full bg-[rgb(var(--accent))]" />
-              )}
-            </>
-          )}
-        </NavLink>
+        </Tooltip>
       </nav>
     </>
   );

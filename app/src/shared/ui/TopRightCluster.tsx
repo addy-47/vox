@@ -37,7 +37,7 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
     const isHelpOpen = isPanelOpen("help");
 
     return (
-      <div className={cn("flex items-center gap-1.5", className)}>
+      <div data-spatial-zone="cluster" className={cn("flex items-center gap-1.5", className)}>
         {isHome && (
           <Tooltip label={HOME_CONTROLS_COPY.temporary.toggleTooltip} side="bottom">
             <button
@@ -56,7 +56,7 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
             </button>
           </Tooltip>
         )}
-        <Tooltip label={NOTIFICATION_COPY.title} side="bottom">
+        <Tooltip label={NOTIFICATION_COPY.title} shortcutId="global.notifications" side="bottom">
           <button
             onClick={() => togglePanel("notifications")}
             aria-expanded={isNotifsOpen}
@@ -80,7 +80,7 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
             )}
           </button>
         </Tooltip>
-        <Tooltip label="Help & guide" side="bottom">
+        <Tooltip label="Help & guide" shortcutId="global.help" side="bottom">
           <button
             onClick={() => togglePanel("help")}
             aria-expanded={isHelpOpen}

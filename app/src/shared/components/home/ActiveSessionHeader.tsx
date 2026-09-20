@@ -125,6 +125,10 @@ export const ActiveSessionHeader: React.FC<ActiveSessionHeaderProps> = ({
         pointerEvents: panelOpen ? "none" : "auto",
       }}
       onClick={panelOpen ? undefined : onOpenPanel}
+      onKeyDown={panelOpen ? undefined : (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenPanel(); } }}
+      role="button"
+      tabIndex={0}
+      aria-label={`${projectName ? `${projectName} — ` : ""}${sessionTitle || "Session"}`}
       className="flex flex-col gap-0 select-none cursor-pointer pl-1"
     >
       {projectName && (

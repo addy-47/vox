@@ -11,6 +11,8 @@ import { ProfilerPanel } from "./ProfilerPanel";
 interface ProfilerDrawerContextValue {
   /** Open the global memory-profiler bottom drawer from anywhere. */
   openProfiler: () => void;
+  /** Close the global memory-profiler bottom drawer. */
+  closeProfiler: () => void;
 }
 
 const ProfilerDrawerContext = createContext<ProfilerDrawerContextValue | null>(null);
@@ -127,10 +129,18 @@ const ProfilerDrawer: React.FC<ProfilerDrawerProps> = ({ open, onClose }) => {
 export const ProfilerDrawerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [open, setOpen] = useState(false);
 
+  const openProfiler = React.useCallback(() => setOpen(true), []);
+  const closeProfiler = React.useCallback(() => setOpen(false), []);
+
+  const value = React.useMemo(
+    () => ({ openProfiler, closeProfiler }),
+    [openProfiler, closeProfiler]
+  );
+
   return (
-    <ProfilerDrawerContext.Provider value={{ openProfiler: () => setOpen(true) }}>
+    <ProfilerDrawerContext.Provider value={value}>
       {children}
-      <ProfilerDrawer open={open} onClose={() => setOpen(false)} />
+      <ProfilerDrawer open={open} onClose={closeProfiler} />
     </ProfilerDrawerContext.Provider>
   );
 };

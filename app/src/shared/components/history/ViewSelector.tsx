@@ -17,17 +17,32 @@ export const ViewSelector = memo(({ view, onChange }: ViewSelectorProps) => {
 
   return (
     <div
-      className="flex items-center gap-4 select-none"
-      role="group"
+      data-arrow-nav
+      role="tablist"
       aria-label={HISTORY_COPY.viewSelectorLabel}
+      className="flex items-center gap-4 select-none"
+      onKeyDown={(e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        e.stopPropagation();
+        const tabs = Array.from((e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('button[role="tab"]'));
+        if (tabs.length === 0) return;
+        const currentIdx = tabs.findIndex((b) => b === document.activeElement);
+        let nextIdx: number;
+        if (e.key === "ArrowRight") nextIdx = currentIdx < tabs.length - 1 ? currentIdx + 1 : 0;
+        else nextIdx = currentIdx > 0 ? currentIdx - 1 : tabs.length - 1;
+        tabs[nextIdx].focus();
+        if (currentIdx !== nextIdx) onChange(options[nextIdx].value);
+      }}
     >
       {options.map((option) => {
         const isActive = view === option.value;
         return (
           <button
             key={option.value}
+            role="tab"
+            aria-selected={isActive}
             onClick={() => onChange(option.value)}
-            aria-pressed={isActive}
             className={cn(
               "text-[12px] font-mono font-bold uppercase tracking-[0.2em] transition-all cursor-pointer relative pb-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]",
               isActive

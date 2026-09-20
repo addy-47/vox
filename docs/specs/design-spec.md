@@ -431,7 +431,188 @@ Vox uses one overlay grammar across the shipped interface:
 
 ---
 
-## 12. Do / Don't
+
+## 14. Vox Keyboard Interaction, Spatial Navigation & Tooltip System
+
+- **Status:** Proposed Target Spec
+- **Domain:** Frontend / Interaction UX / Voice Pipeline
+- **Owner:** Frontend Engineering
+- **Core Dependencies Added:** `@floating-ui/react`, `@norigin-media/norigin-spatial-navigation`
+
+---
+
+### 1. Executive Summary & Core Philosophy
+
+Vox is an ultra-fast, voice-first desktop application built for ambient intelligence. Every user interaction must feel optimistic, immediate, and predictable. 
+
+The previous keyboard implementation suffered from several critical flaws:
+1. **Key Overloading & Collisions:** The four arrow keys (`←`, `→`, `↑`, `↓`) were asked to handle three conflicting roles simultaneously: page navigation, widget item roving, and 2D spatial focus navigation. This resulted in erratic jumps where spatial navigation leaped from in-page canvas items down to the bottom dock (as seen in Image 1).
+2. **Disconnected Focus Rings vs. State:** Browser `:focus-visible` rings became stranded on navigation icons without changing route or updating state, confusing visual active state with keyboard focus state.
+3. **Fragile Tooltips:** An ad-hoc coordinate calculation tooltip caused clipping, missed flip directions, lack of pointer anchors, and intrusive popups during rapid keyboard navigation.
+4. **Missing Voice & Application Lifecycle Hotkeys:** Missing explicit Pause/Resume toggles, and missing standard desktop Close Window (`Ctrl+W`) and Quit Application (`Ctrl+Q`) shortcuts.
+
+This specification establishes a **Zero-Ambiguity Keyboard Contract** built upon clear modifier hierarchy, industry-standard spatial navigation via `@norigin-media/norigin-spatial-navigation`, an industry-standard tooltip system via `@floating-ui/react`, and a complete Voice Pipeline lifecycle.
+
+---
+
+### 2. Key Hierarchy & Modifiers Philosophy
+
+To prevent clashes and make interactions immediately intuitive, keys are categorized into strict functional tiers:
+
+| Modifier Level | Scope | Primary Purpose | Example |
+| :--- | :--- | :--- | :--- |
+| **`Shift + Arrow`** | Application Navigation | Global page cycling (`←` / `→`) and contextual drawer expanding (`↑` / `↓`) | `Shift + Right` (Next Page) |
+| **`Ctrl / Cmd + Key`** | Rails & Window Lifecycle | Toggling persistent side rails, window close, and app quit | `Ctrl + S` (Sessions), `Ctrl + W` (Close), `Ctrl + Q` (Quit) |
+| **Plain Arrows (`↑ ↓ ← →`)** | In-Page Spatial Navigation | Moving focus between cards/widgets strictly within the active zone via `@norigin-media/norigin-spatial-navigation` | Navigating session nodes in History orbit |
+| **Single Alpha (`M`, `T`, `P`)** | Voice Pipeline Direct Controls | Immediate single-stroke voice pipeline controls when not typing | `M` (Mute Mic), `P` (Pause/Resume), `T` (Text Mode) |
+| **`Space` / `Enter` / `Esc`** | Primaries | PTT hold-to-talk, selection activation, and hierarchical overlay dismissal | `Space` (Hold to Talk), `Escape` (Dismiss) |
+
+---
+
+### 3. Comprehensive Shortcuts Matrix
+
+#### 3.1 Application & Window Lifecycle
+
+| Shortcut | Action | Scope | Behavior & Invariants |
+| :--- | :--- | :--- | :--- |
+| **`Ctrl + W`** (or `Cmd + W`) | Close / Hide Window | Global | Closes the active window to the system tray (`getCurrentWindow().close()`). Voice agent continues running in background. |
+| **`Ctrl + Q`** (or `Cmd + Q`) | Quit Application | Global | Terminates the Vox application and backend process entirely (`exit(0)` via `@tauri-apps/plugin-process`). Intercepts default browser behavior. |
+
+---
+
+#### 3.2 Global & Page Navigation
+
+| Shortcut | Action | Scope / Context | Behavior & Invariants |
+| :--- | :--- | :--- | :--- |
+| **`Shift + →`** | Navigate to Next Page | Global | Cycles forward: `Home` → `History` → `Memory` → `Settings` (→ `Monitoring` if compact). Never conflicts with in-page left/right arrows. |
+| **`Shift + ←`** | Navigate to Previous Page | Global | Cycles backward: `Settings` → `Memory` → `History` → `Home`. |
+| **`Shift + ↑`** | Open / Expand Context Drawer | Contextual by Route | **Home:** Opens UI Profiler drawer.<br>**History:** Opens Session Detail drawer (for selected session).<br>**Memory:** Opens Personal Memory drawer / staging.<br>**Settings:** Expands all domain configuration cards. |
+| **`Shift + ↓`** | Close / Collapse Context Drawer | Contextual by Route | **Home:** Closes UI Profiler drawer.<br>**History:** Closes Session Detail drawer.<br>**Memory:** Closes Personal Memory drawer.<br>**Settings:** Collapses all domain configuration cards. |
+
+---
+
+#### 3.3 Persistent Rails & Overlays
+
+| Shortcut | Action | Scope | Behavior & Invariants |
+| :--- | :--- | :--- | :--- |
+| **`Ctrl + S`** (or `Cmd + S`) | Toggle Sessions Rail | Global | Toggles docked left rail. Intercepts default browser "Save Page As" dialog via `e.preventDefault()`. |
+| **`Ctrl + N`** (or `Cmd + N`) | Toggle Notifications Rail | Global | Toggles docked right rail. Intercepts browser "New Window" via `e.preventDefault()`. |
+| **`Ctrl + /`** (or `Cmd + /`) | Toggle Help Panel | Global | Opens / closes Help Panel in Route Guide mode. |
+| **`?`** (`Shift + /`) | Toggle Keyboard Shortcuts Matrix | Global | Toggles Help Panel directly in the interactive **Keyboard Shortcuts cheat sheet** mode (bypassing guide). |
+| **`Ctrl + M`** (or `Cmd + M`) | Toggle Engine Monitor Popover | Global (Desktop) | Opens quick-look engine telemetry popover in top-left header. |
+
+---
+
+#### 3.4 Voice Pipeline Lifecycle Hotkeys
+
+| Shortcut | Pipeline Action | Context Condition | Detailed Behavior |
+| :--- | :--- | :--- | :--- |
+| **`Space` (Hold)** | Push-To-Talk (PTT) | Engaged + PTT Mode | `keydown`: Enters `Listening` state immediately, starts audio streaming.<br>`keyup`: Commits audio turn to STT/LLM pipeline.<br>If released in <200ms, treated as accidental tap and cancelled (`handlePttCancel()`). |
+| **`M`** | Toggle Mic Mute | Outside Editables | Toggles physical microphone stream capture (`toggleMicMute()`). Visualized by muted microphone icon badge. |
+| **`Shift + M`** | Toggle Speaker Mute | Outside Editables | Toggles audio output playback / TTS mute (`togglePlaybackMute()`). Visualized by muted speaker badge. |
+| **`P`** | Pause / Resume Voice Pipeline | Outside Editables | **If Active/Listening/Speaking:** Pauses pipeline (`pause()`), transitioning state to `Paused`.<br>**If Paused:** Resumes pipeline (`resume()`), returning to `Ready`/`Listening`. |
+| **`T`** | Open Text Input Mode | Outside Editables | Activates bottom text input bar and automatically focuses the input field for silent text querying. |
+| **`Ctrl + Space`** | Engage / Disengage Agent | Global | Toggles voice agent awake vs. sleeping (`engage()` / `disengage()`). |
+| **`Escape`** (Voice) | Barge-In / Stop Generation | Speaking or Thinking | If agent is currently `Speaking`, immediately cuts off audio playback.<br>If agent is `Thinking`, cancels LLM streaming and returns pipeline to `Ready`. |
+
+---
+
+#### 3.5 Universal Primaries & Editors
+
+| Shortcut | Action | Detailed Behavior |
+| :--- | :--- | :--- |
+| **`Escape`** | Hierarchical Dismissal (`OverlayStack`) | Closes topmost active layer in exact reverse stack order:<br>1. Tooltip / Comment Popover<br>2. Active Page Drawer (`Shift+Down`)<br>3. Docked Edge Rail (Sessions/Notifications/Help)<br>4. Text Input Bar (discards draft)<br>5. Active Voice Turn (cancels turn)<br>6. Blurs focused element. |
+| **`Enter`** | Activate / Commit | • On buttons/links: executes click.<br>• On History session card: selects session and opens transcript drawer.<br>• In single-line Text Input Bar: sends message. |
+| **`Shift + Enter`** | Soft Linebreak | Inserts newline in multi-line prompt fields, memory notes, and comment popovers without triggering submit. |
+| **`Ctrl + Enter`** (or `Cmd + Enter`) | Save & Commit | Commits multi-line edits immediately (Personal Memory document, System Prompt, Comment additions). |
+| **`Tab` / `Shift + Tab`** | Sequential Focus Navigation | Standard browser sequential focus navigation fallback across interactive DOM elements. |
+
+---
+
+### 4. Spatial Navigation Architecture: `@norigin-media/norigin-spatial-navigation`
+
+#### 4.1 Root Cause of Image 1 Bug
+In Image 1, naive geometric calculation scored the bottom dock's Settings `<NavLink>` as the closest element downward from the active History orbit cards. Focus hopped to Settings, causing a red outline (`:focus-visible`) on Settings while History remained the active page (red dot).
+
+#### 4.2 Library Adoption: `@norigin-media/norigin-spatial-navigation`
+We adopt `@norigin-media/norigin-spatial-navigation`, the industry standard for 2D spatial navigation in complex web and desktop interfaces:
+- **Spatial Focus Containers (`FocusContext.Provider`)**:
+  - `STAGE_CONTAINER`: Scopes all in-page content (Home stage, History orbit/carousel cards, Memory nodes, Settings domain cards).
+  - `DOCK_CONTAINER`: Scopes bottom floating navigation (`EdgeNav`).
+  - `CLUSTER_CONTAINER`: Scopes top-right header utilities.
+  - `RAIL_CONTAINER`: Scopes open side panels (Sessions, Notifications, Help).
+- **Invariants**:
+  1. Directional arrow presses navigate strictly within the active `FocusContext`. Focus will NEVER accidentally hop from an orbit card to the bottom navigation bar.
+  2. Crossing between containers (e.g. from `STAGE_CONTAINER` to `DOCK_CONTAINER`) requires explicit edge boundary rules or `Tab`/`Shift+Tab`.
+  3. Seamless focus synchronizes with state: navigating to an orbit card automatically marks that card active and selected.
+
+---
+
+### 5. Tooltip System Overhaul: `@floating-ui/react`
+
+#### 5.1 Library Adoption: `@floating-ui/react`
+We adopt `@floating-ui/react` to completely replace the manual math in `Tooltip.tsx`.
+
+#### 5.2 Floating Tooltip Architecture
+- **Placement & Collision:**
+  ```tsx
+  import { useFloating, autoUpdate, offset, flip, shift, arrow, FloatingArrow, FloatingPortal } from "@floating-ui/react";
+
+  const { refs, floatingStyles, context } = useFloating({
+    placement: side, // "top" | "bottom" | "left" | "right"
+    middleware: [
+      offset(8),
+      flip({ fallbackAxisSideDirection: "start" }),
+      shift({ padding: 8 }),
+      arrow({ element: arrowRef })
+    ],
+    whileElementsMounted: autoUpdate,
+  });
+  ```
+- **Visual Design (Matching Image 2):**
+  - Container: Sleek dark glass card (`glass-card px-3 py-1.5 rounded-lg border border-[rgba(var(--accent),0.2)] bg-[rgb(var(--card))]/95 backdrop-blur-md shadow-2xl text-[12px] text-[rgb(var(--foreground))]`).
+  - Arrow: `FloatingArrow` component with matching fill and border stroke.
+  - Shortcut Badge: Formatted `<kbd>` badge:
+    ```tsx
+    <div className="flex items-center gap-2">
+      <span className="font-medium">{label}</span>
+      {keys && (
+        <kbd className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-white/10 text-[rgb(var(--foreground-muted))] border border-white/10">
+          {keys}
+        </kbd>
+      )}
+    </div>
+    ```
+- **Keyboard Navigation Silence:**
+  - While navigating via arrow keys (managed by `@norigin-media/norigin-spatial-navigation`), a global `isSpatialNavigating` signal silences tooltips. Tooltips only appear on mouse hover or deliberate 600ms focus pause.
+- **Universal Rollout:**
+  - Standardizes tooltips across `EdgeNav`, `TopRightCluster`, and all action buttons, removing brittle inline hover spans.
+
+---
+
+### 6. Implementation Stages
+
+1. **Stage 1 — Dependencies Installation:**
+   - Install `@floating-ui/react` and `@norigin-media/norigin-spatial-navigation` in `app/`.
+2. **Stage 2 — Specification & Contract Registry:**
+   - Update `app/src/data/shortcuts.ts` with complete SSOT definitions (including `Ctrl+W`, `Ctrl+Q`, and `P` Pause/Resume).
+3. **Stage 3 — Application Lifecycle & Page Navigation:**
+   - Implement `Ctrl+W` (hide to tray) and `Ctrl+Q` (quit app).
+   - Implement `Shift + Left` / `Shift + Right` for page navigation in `ResponsiveLayout.tsx`.
+   - Implement route-aware `Shift + Up` / `Shift + Down` drawer dispatcher (Home: Profiler, History: Detail, Memory: Personal Drawer, Settings: All Cards).
+4. **Stage 4 — Spatial Navigation (`@norigin-media/norigin-spatial-navigation`):**
+   - Initialize spatial navigation and wrap layout zones in `FocusContext.Provider`.
+   - Fix History orbit/carousel cards to sync selection with focus.
+5. **Stage 5 — Floating Tooltip (`@floating-ui/react`):**
+   - Implement modern `Tooltip.tsx` with floating arrow, collision detection, and shortcut badges matching Image 2.
+   - Silence tooltips during spatial navigation.
+6. **Stage 6 — Voice Pipeline Flow:**
+   - Implement `P` (Pause/Resume), `Space` (PTT), `M`, `Shift + M`, `T`, `Ctrl + Space`, and `Escape` (Barge-in).
+   - Verify all TypeScript types and test suites pass.
+
+---
+
+## 15. Do / Don't
 
 | Do | Don't |
 | :--- | :--- |
@@ -445,5 +626,6 @@ Vox uses one overlay grammar across the shipped interface:
 | Speak layman copy (no engine/STT/LLM jargon) | Use acronyms or sci-fi jargon in user-facing text |
 
 ---
+
 
 **Last Updated:** 2026-08-20

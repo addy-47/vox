@@ -209,6 +209,70 @@ export const OrbitCarousel = memo(({
     rafRef.current = requestAnimationFrame(loop);
   }, [loop, setBlurDisabled]);
 
+  const orbitAnimRafRef = useRef<number | null>(null);
+
+  const orbitToAngle = useCallback(
+    (target: number) => {
+      if (orbitAnimRafRef.current !== null) {
+        cancelAnimationFrame(orbitAnimRafRef.current);
+        orbitAnimRafRef.current = null;
+      }
+      setBlurDisabled(true);
+
+      const startTime = performance.now();
+      const startAngle = angleRef.current;
+      const distance = target - startAngle;
+      const duration = reducedMotionRef.current ? 50 : 450;
+
+      const step = (now: number) => {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / duration);
+        // Quartic ease out: fast start, buttery soft settle
+        const ease = 1 - Math.pow(1 - progress, 4);
+
+        angleRef.current = startAngle + distance * ease;
+        projectFrame();
+
+        if (progress < 1) {
+          orbitAnimRafRef.current = requestAnimationFrame(step);
+        } else {
+          orbitAnimRafRef.current = null;
+          setBlurDisabled(false);
+        }
+      };
+
+      orbitAnimRafRef.current = requestAnimationFrame(step);
+    },
+    [projectFrame, setBlurDisabled]
+  );
+
+  // Auto-orbit to center the selected card whenever selectedId changes
+  useEffect(() => {
+    if (!selectedId) return;
+    const base = baseAnglesRef.current.get(selectedId);
+    if (base === undefined) return;
+
+    const TWO_PI = Math.PI * 2;
+    // Front position on tilted ring is Math.PI / 2
+    const desired = Math.PI / 2 - base;
+    let delta = (desired - angleRef.current) % TWO_PI;
+    if (delta > Math.PI) delta -= TWO_PI;
+    else if (delta < -Math.PI) delta += TWO_PI;
+
+    if (Math.abs(delta) > 0.005) {
+      orbitToAngle(angleRef.current + delta);
+    }
+  }, [selectedId, orbitToAngle]);
+
+  useEffect(() => {
+    return () => {
+      if (orbitAnimRafRef.current !== null) {
+        cancelAnimationFrame(orbitAnimRafRef.current);
+        orbitAnimRafRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => stopLoop, [stopLoop]);
 
   // ── Reduced-motion awareness ───────────────────────────────────────────────

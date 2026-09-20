@@ -253,3 +253,48 @@ For high-level workspace invariants and active guidelines, refer to [AGENTS.md](
 - **Settings Connector Line First-Mount Lifecycle & VAD Model Card Layout Fix (2026-09-17):** Resolved Settings SVG connector line overflow by mounting a `ResizeObserver` in `useSettingsPage` with progressive 100ms/320ms/600ms layout settlement checks and reordering z-index layers (`z-0` on SVG overlay, `z-10` on card slots); fixed VAD model cards in `VadWorkspace` where `h-full` and invalid `auto-rows-full` crushed the description, RAM, and parameters paragraph into 0px height when >2 models are present; added `min-h-[115px]` to `SubModelCard` and development logging in `VadWorkspace`; validated clean with `pnpm build` (9.52s).
 - **Consolidation Flow Trace (2026-09-17):** Traced auto vs manual consolidation flows end-to-end including scheduler boot loop, boot reconciliation, manual IPC trigger, comment regeneration, timezone handling (chrono::Local), model unavailability propagation, and notification routing (4 notification variants across auto success/failure/missed/manual). Report at `CONSOLIDATION_TRACE.md`.
 
+---
+
+## Past Work (2026-09-17)
+
+> Entries migrated from `AGENTS.md` Section 5 on 2026-09-17 (delta since last migration).
+
+- **v0.8.8 Release Preparation & Cross-Platform CI Hardening:** Merged `dev` into `master` preserving full commit history; aligned `manifests/app_manifest.json` release notes with major Phase 11 milestones (Modular Harness architecture, hardening, Universal Compaction & Cognitive Ladder, 4-pillar pipeline standardization, text-as-input, and audio prosody); bumped version to `0.8.8` across Cargo, Tauri, and npm manifests; fixed Windows release MSVC C++17 flags (`-std:c++17 -EHsc`) and macOS CMake toolchain. Locally tagged `v0.8.8`.
+- **Full Keyboard Functionality Contract (Phase 11):** Audited all keyboard handling in `app/src` (global `Escape` overlay stack, `ArrowLeft/Right` page nav, local `Enter/Space/Escape` sites, `ToggleTile`/`VoiceRippleNode` reference patterns, dictation hotkey recorder) and proved `Space`/`M`/`[`/`]` help-copy shortcuts have no frontend handlers. Authored click-parity contract in `docs/plans/phase11/keyboard-contract.md` covering global key meanings, PTT hold-to-talk, per-page tables (Home/History/Memory/Settings/Monitoring/Wizard/rails), 8 shared widget patterns, arrow-scoping fix, focus/ARIA rules, and 9-batch implementation plan. Docs-only, no code touched.
+- **Keyboard Contract v2 (Practical-Only Revision):** Revised `docs/plans/phase11/keyboard-contract.md` per user review — practical scope only (skipped color-drag, calendar-grid, camera/drag emulation, resize/reorder keys); shortcuts documented inline with feature explanations plus a Help-header toggle rendering the full key→action map from a single `SHORTCUTS` registry; every shortcut suffixed in its hover/focus tooltip; new globals `Ctrl+M` (monitor), `Alt+N` (notifications, avoids `Ctrl+N` new-window trap), `Ctrl+S` (sessions), `?` (Help), `Shift+Up/Down` per-page drawer map (profiler / DetailPanel gated on selection / dossier / Settings open-all); page-nav arrows gated to EdgeNav/body focus with full-spatial in-page arrow movement alongside Tab. Docs-only, no code touched.
+
+---
+
+## Past Work (2026-09-17 — keyboard contract implementation)
+
+> Code implementation of the practical-only keyboard contract across 5 batches. `tsc --noEmit` and `pnpm build` green across all batches.
+
+- **Batch 0 (Arrow precedence + globals + tooltip suffixes):** `ResponsiveLayout.tsx` arrow-precedence handler (EdgeNav/body→page-nav, widget-group arrows, spatial fallback); new globals Ctrl+M (monitor), Alt+N (notifications), Ctrl+S (sessions), ? (Help), Shift+Up/Down (page drawers); `data/shortcuts.ts` SHORTCUTS registry SSOT; tooltip key suffixes across `layoutCopy`, `homeCopy`, `sessionCopy`. `EdgeNav.tsx` `data-edge-nav`; `ActiveSessionHeader.tsx` keyboard accessible.
+- **Batch 1 (Dead-card triage):** `SubModelCard.tsx` (role=button tabIndex=0 + Enter/Space + aria-disabled/pressed); `HistoryListView.tsx` (role=button tabIndex=0 + Enter/Space + aria-pressed); `ModelCategory.tsx` (header role=button + checkbox/row role=checkbox with Space toggle). Fixed `rgb(var(card))` typo → `rgb(var(--card))`.
+- **Batch 2 (Home voice parity):** `Home.tsx` keyboard shortcut handler with `useEffect` — M (mute mic), Shift+M (mute speaker), T (text mode), Space (PTT hold-to-talk keydown/keyup).
+- **Batch 3 (Practical arrow-nav rollout):** `SegmentedControl.tsx` (radiogroup + Left/Right nav); `CategorySelector.tsx` (tablist + Left/Right nav with data-cat-id); `ViewSelector.tsx` (tablist + Left/Right nav); `CarouselSelector.tsx` (data-arrow-nav + Left/Right).
+- **Batch 4 (Help inline + header map + EdgePanel focus):** `HelpPanel.tsx` toggle + full key→action map from `SHORTCUTS` registry, Escape exits map→guide; `shortcuts.ts` `getShortcutsGroupedByRoute()` helper; `EdgePanel.tsx` focus-in on open (first focusable or panel) + focus-restore on close.
+- **Batches 0–4:** `HelpPanel.tsx`, `shortcuts.ts`, `ResponsiveLayout.tsx`, `Home.tsx`, `SegmentedControl.tsx`, `CategorySelector.tsx`, `ViewSelector.tsx`, `CarouselSelector.tsx`, `SubModelCard.tsx`, `HistoryListView.tsx`, `ModelCategory.tsx`, `ActiveSessionHeader.tsx`, `EdgeNav.tsx`, `EdgePanel.tsx`. Verified `pnpm tsc --noEmit` clean and `pnpm build` green throughout.
+
+### Batch 5 (Search/Menu/Focus Polish)
+
+- **SearchBar combobox:** `data-arrow-nav` + `role="combobox"`, `role="listbox"`, `role="option"`; ArrowDown/Up cycles results with scroll-into-view; Enter selects active or commits text; Escape closes and clears. `aria-expanded`, `aria-controls`, `aria-activedescendant`, `aria-haspopup` on input. `SearchBar.tsx`.
+- **SessionContextMenu:** `role="menu"`, `aria-haspopup="menu"`, `aria-expanded` on container; `role="menuitem"` + `tabIndex={-1}` on all 9 menu buttons; ArrowDown/Up cycles focus; Enter/Space activates; Escape closes. `SessionContextMenu.tsx`.
+- **ProfilerPanel tab bar:** `role="tablist"` + `role="tab"`, `data-arrow-nav`, ArrowLeft/Right nav, roving tabIndex, `aria-controls`/`role="tabpanel"`. `ProfilerPanel.tsx`.
+- **NotificationPanel tab bar:** `role="tablist"` + `role="tab"`, `data-arrow-nav`, ArrowLeft/Right nav, roving tabIndex, `aria-controls`/`role="tabpanel"`. `NotificationPanel.tsx`.
+- **DictationConfigDesk, ModelsTopologyMap, SettingsTopologyMap:** Added `data-arrow-nav`, `role="tablist"`/`role="tab"`, ArrowLeft/Right nav with roving tabIndex.
+- **HelpControlItem shortcut:** `shortcut: "Delete"` on History "Delete a Chat" (only registered binding matching SHORTCUTS).
+- Verified `pnpm tsc --noEmit` clean and `pnpm build` green.
+
+---
+
+## Past Work (2026-09-20 — Keyboard Contract Redesign & Floating Tooltip Overhaul)
+
+- **Shortcuts SSOT Consolidation & Matrix (`design-spec.md` §14, `shortcuts.ts`):** Consolidated keyboard contract into section 14 of `design-spec.md`. Added `Ctrl+W` (close window to tray), `Ctrl+Q` (quit app via `@tauri-apps/plugin-process`), `Ctrl+N` (notifications rail), `Ctrl+H` (help guide), `?` (help shortcuts matrix), `Shift+Left`/`Right` (page cycling), `Shift+Up`/`Down` (page drawers), `P` (voice pause/resume), `Ctrl+Space` (voice engage/disengage), and `Escape` (barge-in speech cutoff).
+- **Floating Tooltip System (`@floating-ui/react`):** Rebuilt `Tooltip.tsx` with `@floating-ui/react` featuring `offset(8)`, `flip()`, `shift()`, `FloatingArrow`, shortcut badge pill rendering (`<kbd>`), and spatial navigation silencing during arrow navigation. Standardized across `EdgeNav` and `TopRightCluster`.
+- **Zone-Bounded Spatial Navigation (`@noriginmedia/norigin-spatial-navigation`):** Initialized spatial navigation in `spatialNavigation.ts` and tagged DOM focus containment zones (`data-spatial-zone="stage"`, `"dock"`, `"cluster"`). Fixed Image 1 bug where arrow keys jumped from session orbit cards down to EdgeNav's Settings icon.
+- **Context-Aware Page Drawer Dispatcher (`PageDrawerContext.tsx`):** Created `PageDrawerProvider` and `useRegisterPageDrawer` hook. Shift+Up/Down dynamically dispatches to active page drawers: Home (Profiler), History (Session Detail panel), Memory (Personal Memory dossier), and Settings (Expand/Collapse all domain cards).
+- **Voice Pipeline Hotkeys (`Home.tsx`):** Added `P` for pause/resume toggle, `Ctrl+Space` for wake/sleep, and `Escape` for instant speech cutoff/barge-in.
+- **Build Verification:** `pnpm tsc --noEmit` and `pnpm build` 100% green.
+
+

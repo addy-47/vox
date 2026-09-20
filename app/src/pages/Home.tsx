@@ -15,6 +15,8 @@ import { Power, Mic, Keyboard, Play, Pause, X, AlertCircle, RotateCcw } from "lu
 import { cn } from "@/shared/lib/utils";
 
 
+import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
+import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import {
   useHomePage,
   toStatusLabel,
@@ -73,6 +75,13 @@ export const Home = memo(() => {
     shouldAutoScrollRef,
   } = useHomePage();
 
+  const { openProfiler, closeProfiler } = useProfilerDrawer();
+  const drawerHandlers = useMemo(() => ({
+    open: openProfiler,
+    close: closeProfiler,
+  }), [openProfiler, closeProfiler]);
+  useRegisterPageDrawer(drawerHandlers);
+
   const contentInnerRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll follower: keep pinned to bottom as text streams in or messages are sent
@@ -90,6 +99,73 @@ export const Home = memo(() => {
 
     return () => observer.disconnect();
   }, [shouldAutoScrollRef, dialogueScrollRef]);
+
+  // Keyboard shortcuts (Home page): M = mute mic, Shift+M = mute speaker, P = pause/resume, T = text mode, Space = PTT hold, Ctrl+Space = engage/disengage
+  useEffect(() => {
+    const isEditable = (el: Element | null): boolean => {
+      if (!el) return false;
+      const tag = el.tagName.toLowerCase();
+      return tag === "input" || tag === "textarea" || tag === "select" || el.getAttribute("contenteditable") === "true";
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isEditable(document.activeElement)) return;
+      if (e.repeat) return;
+
+      if ((e.key === "m" || e.key === "M") && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        toggleMicMute();
+        return;
+      }
+      if ((e.key === "m" || e.key === "M") && e.shiftKey) {
+        e.preventDefault();
+        togglePlaybackMute();
+        return;
+      }
+      if ((e.key === "p" || e.key === "P") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        if (isPaused) resume();
+        else pause();
+        return;
+      }
+      if (e.key === " " && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        if (isEngaged) disengage();
+        else engage();
+        return;
+      }
+      if ((e.key === "t" || e.key === "T") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        if (isEngaged) setTextModeOpen(true);
+        return;
+      }
+      if (e.key === "Escape" && (interactionState === "Speaking" || interactionState === "Thinking")) {
+        e.preventDefault();
+        pause();
+        return;
+      }
+      if (e.key === " " && !e.ctrlKey && !e.metaKey && interactionMode === "PTT" && isEngaged && !isPaused && !isSleeping && interactionState !== "Error") {
+        e.preventDefault();
+        handlePttStart();
+      }
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === " " && !e.ctrlKey && !e.metaKey) {
+        if (interactionMode === "PTT" && isEngaged && !isPaused && !isSleeping && interactionState !== "Error") {
+          if (pttStatus === "RECORDING") handlePttStop();
+          else handlePttCancel();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [toggleMicMute, togglePlaybackMute, isPaused, pause, resume, isEngaged, engage, disengage, setTextModeOpen, interactionMode, isSleeping, interactionState, handlePttStart, handlePttStop, handlePttCancel, pttStatus]);
 
   const { isPanelOpen, closePanel } = usePanelStateContext();
   const closeSessions = () => closePanel("sessions");

@@ -320,9 +320,19 @@ export const HistoryListView: React.FC<HistoryListViewProps> = memo(
             return (
               <div
                 key={session.id}
+                role="button"
+                tabIndex={0}
+                aria-pressed={isSelected}
+                aria-label={title}
                 onClick={(e) => {
                   e.stopPropagation();
                   onSelect(session);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelect(session);
+                  }
                 }}
                 className={cn(
                   "w-full rounded-2xl p-4 flex flex-col text-left transition-all duration-200 select-none cursor-pointer relative group glass-card",

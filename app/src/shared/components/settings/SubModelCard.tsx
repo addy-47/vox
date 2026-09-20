@@ -129,8 +129,19 @@ export const SubModelCard = memo<SubModelCardProps>(({
 
   return (
     <div
+      role="button"
+      tabIndex={isDownloaded && !isActive ? 0 : -1}
+      aria-disabled={!(isDownloaded && !isActive)}
+      aria-label={name}
+      aria-pressed={isActive}
       onClick={() => {
         if (isDownloaded && !isActive) {
+          onSelect();
+        }
+      }}
+      onKeyDown={(e) => {
+        if ((e.key === "Enter" || e.key === " ") && isDownloaded && !isActive) {
+          e.preventDefault();
           onSelect();
         }
       }}
