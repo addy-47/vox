@@ -15,21 +15,21 @@ export const HOME_CONTROLS_COPY = {
   passive: {
     pauseAriaLabel: "Pause Vox",
     resumeAriaLabel: "Resume Vox",
-    pauseTooltip: "Pause Audio & Passthrough",
-    resumeTooltip: "Resume Audio & Passthrough",
+    pauseTooltip: "Pause Audio & Passthrough (Tab then Enter)",
+    resumeTooltip: "Resume Audio & Passthrough (Tab then Enter)",
   },
   ptt: {
     micAriaLabel: "Hold to Talk (Push-To-Talk)",
-    micTooltip: "Hold or Tap to Talk",
+    micTooltip: "Hold or Tap to Talk (Space)",
   },
   error: {
     reconnectAriaLabel: "Reconnect Vox Session",
     reconnectLabel: "Reconnect",
-    reconnectTooltip: "Attempt Session Reconnection",
+    reconnectTooltip: "Attempt Session Reconnection (Enter)",
   },
   textMode: {
     toggleAriaLabel: "Toggle Text Input Mode",
-    toggleTooltip: "Type Query (Text Input)",
+    toggleTooltip: "Type Query (Text Input) (T)",
     placeholder: "Type a message to Vox...",
     sendAriaLabel: "Send Message",
     sendTooltip: "Send (Enter)",

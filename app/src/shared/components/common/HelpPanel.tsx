@@ -1,4 +1,4 @@
-import { memo, useMemo, lazy, Suspense } from "react";
+import { memo, useMemo, useState, useEffect, lazy, Suspense } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Sparkles,
@@ -6,8 +6,10 @@ import {
   Brain,
   SlidersHorizontal,
   Activity,
+  Key,
 } from "lucide-react";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { getShortcutsGroupedByRoute } from "@/data/shortcuts";
 
 const HomeHelpContent = lazy(() =>
   import("@/shared/components/help/HomeHelpContent").then((m) => ({ default: m.HomeHelpContent }))
@@ -25,12 +27,19 @@ const SettingsHelpContent = lazy(() =>
 export interface HelpPanelProps {
   onClose?: () => void;
   deepLink?: string | null;
+  initialShortcuts?: boolean;
 }
 
-export const HelpPanel = memo(({ onClose: _onClose }: HelpPanelProps) => {
+export const HelpPanel = memo(({ onClose: _onClose, initialShortcuts = false }: HelpPanelProps) => {
   const { pathname } = useLocation();
+  const [showShortcuts, setShowShortcuts] = useState(initialShortcuts);
 
-  // Route-based exclusive page configuration
+  useEffect(() => {
+    if (initialShortcuts) {
+      setShowShortcuts(true);
+    }
+  }, [initialShortcuts]);
+
   const pageMeta = useMemo(() => {
     if (pathname.startsWith("/history")) {
       return {
@@ -73,6 +82,21 @@ export const HelpPanel = memo(({ onClose: _onClose }: HelpPanelProps) => {
   }, [pathname]);
 
   const Icon = pageMeta.icon;
+  const grouped = useMemo(() => getShortcutsGroupedByRoute(), []);
+
+  // Escape exits the shortcut map (back to route guide); overlayStack closes panel after
+  useEffect(() => {
+    if (!showShortcuts) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowShortcuts(false);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [showShortcuts]);
 
   return (
     <div className="flex flex-col h-full min-h-0 select-none">
@@ -83,24 +107,63 @@ export const HelpPanel = memo(({ onClose: _onClose }: HelpPanelProps) => {
             <Icon size={13} strokeWidth={2} />
           </span>
           <h2 className="font-display text-[13.5px] font-bold tracking-wide text-[rgb(var(--foreground))]">
-            {pageMeta.title}
+            {showShortcuts ? "Keyboard Shortcuts" : pageMeta.title}
           </h2>
         </div>
-        <span className="font-mono text-[10.5px] px-2 py-0.5 rounded-full border border-[rgba(var(--accent),0.2)] bg-[rgba(var(--accent),0.06)] text-[rgb(var(--accent))] font-semibold">
-          {pageMeta.routeBadge}
-        </span>
+        <div className="flex items-center gap-2">
+          {!showShortcuts && (
+            <span className="font-mono text-[10.5px] px-2 py-0.5 rounded-full border border-[rgba(var(--accent),0.2)] bg-[rgba(var(--accent),0.06)] text-[rgb(var(--accent))] font-semibold">
+              {pageMeta.routeBadge}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowShortcuts((v) => !v)}
+            aria-label={showShortcuts ? "Show route guide" : "Show all shortcuts"}
+            aria-pressed={showShortcuts}
+            className="flex items-center justify-center w-6 h-6 rounded-md border border-[rgba(var(--border),0.15)] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-colors cursor-pointer shrink-0"
+            title={showShortcuts ? "Show guide" : "Show shortcuts"}
+          >
+            <Key size={13} strokeWidth={2} />
+          </button>
+        </div>
       </div>
 
-      {/* ── Scrollable Exclusive Page Content ── */}
+      {/* ── Scrollable Content ── */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar px-4 pt-4 pb-28">
-        <ErrorBoundary name={`HelpGuide:${pageMeta.id}`}>
+        {showShortcuts ? (
+          <ErrorBoundary name="HelpShortcutsMap">
+            <div className="space-y-4">
+              {Object.entries(grouped).map(([route, shortcuts]) => (
+                <div key={route}>
+                  <h3 className="font-display text-[12px] font-bold uppercase tracking-[0.15em] text-[rgb(var(--accent))] mb-2">
+                    {route}
+                  </h3>
+                  <div className="space-y-1.5">
+                    {shortcuts.map((s) => (
+                      <div key={s.id} className="flex items-center gap-3 py-1">
+                        <kbd className="font-mono text-[11px] px-2 py-0.5 rounded bg-[rgba(var(--accent),0.1)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.2)] font-semibold shrink-0">
+                          {s.keys}
+                        </kbd>
+                        <span className="text-[12.5px] text-[rgb(var(--foreground))]">{s.label}</span>
+                        {s.note && (
+                          <span className="text-[11px] text-[rgb(var(--foreground-muted))] italic">— {s.note}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ErrorBoundary>
+        ) : (
           <Suspense fallback={<div className="p-4 text-[12px] font-mono text-[rgb(var(--foreground-muted))]/60">Loading guide...</div>}>
             {pageMeta.id === "history" && <HistoryHelpContent />}
             {pageMeta.id === "memory" && <MemoryHelpContent />}
             {pageMeta.id === "settings" && <SettingsHelpContent />}
             {(pageMeta.id === "home" || pageMeta.id === "monitoring") && <HomeHelpContent />}
           </Suspense>
-        </ErrorBoundary>
+        )}
       </div>
     </div>
   );

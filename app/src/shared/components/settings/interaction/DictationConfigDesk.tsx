@@ -17,6 +17,8 @@ const OUTPUT_OPTIONS = [
   { id: "tray" as const, label: DICTATION_COPY.modeTray },
 ];
 
+const OUTPUT_IDS = OUTPUT_OPTIONS.map((o) => o.id);
+
 export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: DictationConfigDeskProps) => {
   const dictationDraft = useSettingsStore((s) => s.draftSettings?.dictation);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
@@ -33,6 +35,22 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
   const [savedToast, setSavedToast] = useState(false);
 
   const outputMode = dictation.output_mode || "paste";
+
+  const handleOutputKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const currentIdx = OUTPUT_IDS.indexOf(outputMode);
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        const nextIdx = (currentIdx + 1) % OUTPUT_IDS.length;
+        updateDraft("dictation", "output_mode", OUTPUT_IDS[nextIdx]);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        const prevIdx = (currentIdx - 1 + OUTPUT_IDS.length) % OUTPUT_IDS.length;
+        updateDraft("dictation", "output_mode", OUTPUT_IDS[prevIdx]);
+      }
+    },
+    [outputMode, updateDraft]
+  );
 
   useEffect(() => {
     setTempHotkey(dictation.hotkey || "Alt+Space");
@@ -191,13 +209,22 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
         </div>
 
         {/* Right: Output Mode Underline Tabs (Short Titles) */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 pl-0.5 sm:pl-1">
+        <div
+          className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 pl-0.5 sm:pl-1"
+          role="tablist"
+          aria-label="Output mode"
+        >
           {OUTPUT_OPTIONS.map((mode, idx, arr) => {
             const isActive = outputMode === mode.id;
             return (
               <div key={mode.id} className="flex items-center gap-1.5 sm:gap-2.5">
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  tabIndex={isActive ? 0 : -1}
+                  data-arrow-nav
+                  onKeyDown={handleOutputKeyDown}
                   onClick={() => updateDraft("dictation", "output_mode", mode.id)}
                   className={cn(
                     "flex items-center justify-center gap-1 pb-0.5 sm:pb-1 border-b-2 transition-all duration-200 bg-transparent text-[11px] sm:text-[12px] font-black uppercase tracking-[0.08em] sm:tracking-[0.12em] outline-none cursor-pointer",

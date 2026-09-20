@@ -14,6 +14,7 @@ import { EmptyState, OrbitalLoader, ErrorBoundary } from "@/shared/components/co
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import type { SessionRow } from "@/services/historyService";
+import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 
 export const History: React.FC = () => {
   const setDisplayMode = useHistoryFilterStore((s) => s.setDisplayMode);
@@ -85,6 +86,60 @@ export const History: React.FC = () => {
     },
     [setSelectedSession]
   );
+
+  const drawerHandlers = React.useMemo(() => ({
+    open: () => {
+      if (selectedSession) return;
+      if (currentWindowSessions.length > 0) {
+        setSelectedSession(currentWindowSessions[0]);
+      } else if (sessions.length > 0) {
+        setSelectedSession(sessions[0]);
+      }
+    },
+    close: () => {
+      setSelectedSession(null);
+    },
+  }), [selectedSession, currentWindowSessions, sessions, setSelectedSession]);
+  useRegisterPageDrawer(drawerHandlers);
+
+  // Arrow-key session card navigation: ArrowLeft / ArrowRight cycles sessions and orbits the ring
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const tag = activeEl?.tagName.toLowerCase();
+      const isEditable =
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        activeEl?.getAttribute("contenteditable") === "true";
+      if (isEditable) return;
+      if (e.shiftKey || e.ctrlKey || e.metaKey) return;
+
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        if (!isOrbitViewport || currentWindowSessions.length === 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const currentId = selectedSession?.id;
+        const currentIndex = currentWindowSessions.findIndex((s) => s.id === currentId);
+
+        let nextIndex: number;
+        if (currentIndex === -1) {
+          nextIndex = e.key === "ArrowRight" ? 0 : currentWindowSessions.length - 1;
+        } else {
+          nextIndex =
+            e.key === "ArrowRight"
+              ? (currentIndex + 1) % currentWindowSessions.length
+              : (currentIndex - 1 + currentWindowSessions.length) % currentWindowSessions.length;
+        }
+
+        setSelectedSession(currentWindowSessions[nextIndex]);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOrbitViewport, currentWindowSessions, selectedSession, setSelectedSession]);
 
   const monthNodeIds = React.useMemo(() => {
     return (currentMonthWindow?.days ?? []).map((d) => d.dayKey);

@@ -1,4 +1,4 @@
-import { useState, useEffect, memo, useCallback, useMemo } from "react";
+import { useState, useEffect, memo, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Bell,
@@ -341,6 +341,7 @@ TimeGroupHeader.displayName = "TimeGroupHeader";
 export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"tasks" | "updates">("tasks");
+  const tabListRef = useRef<HTMLDivElement>(null);
   const tasks = useNotificationStore(selectTasksRolledUp);
   const updates = useNotificationStore(selectUpdatesRolledUp);
   const badgeCount = useNotificationStore(selectBadgeCount);
@@ -424,10 +425,37 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
     <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-0 p-3 pb-24">
 
       {/* ── Underline tab bar ── */}
-      <div className="flex items-end gap-0 mb-4 border-b border-[rgba(var(--border),0.1)]">
+      <div
+        ref={tabListRef}
+        role="tablist"
+        aria-label="Notification tabs"
+        className="flex items-end gap-0 mb-4 border-b border-[rgba(var(--border),0.1)]"
+        onKeyDown={(e) => {
+          if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+            e.preventDefault();
+            const buttons = tabListRef.current?.querySelectorAll<HTMLButtonElement>('[data-arrow-nav]');
+            if (!buttons || buttons.length === 0) return;
+            const currentIndex = Array.from(buttons).findIndex((b) => b === document.activeElement);
+            let nextIndex: number;
+            if (e.key === "ArrowLeft") {
+              nextIndex = currentIndex <= 0 ? buttons.length - 1 : currentIndex - 1;
+            } else {
+              nextIndex = currentIndex >= buttons.length - 1 ? 0 : currentIndex + 1;
+            }
+            buttons[nextIndex]?.focus();
+            buttons[nextIndex]?.click();
+          }
+        }}
+      >
         {/* Tasks tab */}
         <button
           type="button"
+          id="notification-tab-tasks"
+          role="tab"
+          aria-selected={activeTab === "tasks"}
+          aria-controls="notification-tabpanel"
+          tabIndex={activeTab === "tasks" ? 0 : -1}
+          data-arrow-nav
           onClick={() => setActiveTab("tasks")}
           className={cn(
             "relative flex items-center gap-1.5 px-3 pb-2.5 pt-1 text-[12px] font-semibold transition-colors duration-150 cursor-pointer shrink-0",
@@ -460,6 +488,12 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
         {/* Updates tab */}
         <button
           type="button"
+          id="notification-tab-updates"
+          role="tab"
+          aria-selected={activeTab === "updates"}
+          aria-controls="notification-tabpanel"
+          tabIndex={activeTab === "updates" ? 0 : -1}
+          data-arrow-nav
           onClick={() => setActiveTab("updates")}
           className={cn(
             "relative flex items-center gap-1.5 px-3 pb-2.5 pt-1 text-[12px] font-semibold transition-colors duration-150 cursor-pointer shrink-0",
@@ -514,7 +548,7 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
 
       {/* Content list */}
       {loading && displayedItems.length === 0 ? (
-        <div className="flex flex-col gap-2.5" aria-hidden="true">
+        <div id="notification-tabpanel" role="tabpanel" aria-labelledby="notification-tab-tasks" className="flex flex-col gap-2.5" aria-hidden="true">
           {[0, 1, 2].map((i) => (
             <div
               key={i}
@@ -533,7 +567,7 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
           ))}
         </div>
       ) : displayedItems.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 px-4 text-center gap-3">
+        <div id="notification-tabpanel" role="tabpanel" aria-labelledby="notification-tab-tasks" className="flex flex-col items-center justify-center py-16 px-4 text-center gap-3">
           <div className="w-14 h-14 rounded-2xl border border-[rgba(var(--accent),0.2)] bg-[rgba(var(--accent),0.05)] flex items-center justify-center mb-1">
             <Bell size={24} className="text-[rgb(var(--accent))]/50" />
           </div>
@@ -545,7 +579,7 @@ export const NotificationPanel = memo(({ onClose }: NotificationPanelProps) => {
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div id="notification-tabpanel" role="tabpanel" aria-labelledby="notification-tab-tasks" className="flex flex-col gap-3">
           {sections.map(({ group, items }) => (
             <div key={group} className="flex flex-col gap-1.5">
               <TimeGroupHeader group={group} />

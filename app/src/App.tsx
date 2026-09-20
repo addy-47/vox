@@ -15,6 +15,8 @@ import { installOverlayStack } from "@/shared/lib/overlayStack";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { Home } from "@/pages/Home";
+import { PageDrawerProvider } from "@/shared/context/PageDrawerContext";
+import { initSpatialNavigation } from "@/shared/lib/spatialNavigation";
 
 // Lazy load secondary pages for performance
 const History = lazy(() => import("@/pages/History").then(m => ({ default: m.History })));
@@ -140,6 +142,7 @@ const App: React.FC = () => {
     } else {
       setTimeout(cb, 200);
     }
+    initSpatialNavigation();
   }, []);
 
   return (
@@ -154,28 +157,30 @@ const App: React.FC = () => {
                   <Suspense fallback={null}>
                     <PanelStateProvider>
                       <ProfilerDrawerProvider>
-                        <Routes>
-                        {/* If setup not completed, always redirect to wizard */}
-                        {!setupCompleted && (
-                          <>
-                            <Route path="/wizard" element={<WizardRoot />} />
-                            <Route path="*" element={<Navigate to="/wizard" replace />} />
-                          </>
-                        )}
+                        <PageDrawerProvider>
+                          <Routes>
+                          {/* If setup not completed, always redirect to wizard */}
+                          {!setupCompleted && (
+                            <>
+                              <Route path="/wizard" element={<WizardRoot />} />
+                              <Route path="*" element={<Navigate to="/wizard" replace />} />
+                            </>
+                          )}
 
-                        {/* Main App Routes */}
-                        {setupCompleted && (
-                          <Route element={<ResponsiveLayout />}>
-                            <Route path="/" element={<ErrorBoundary name="Home"><Home /></ErrorBoundary>} />
-                            <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
-                            <Route path="/memory" element={<ErrorBoundary name="Memory"><Memory /></ErrorBoundary>} />
-                            <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
-                            <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
-                            <Route path="/wizard" element={<Navigate to="/" replace />} />
-                            <Route path="*" element={<Navigate to="/" replace />} />
-                          </Route>
-                        )}
-                      </Routes>
+                          {/* Main App Routes */}
+                          {setupCompleted && (
+                            <Route element={<ResponsiveLayout />}>
+                              <Route path="/" element={<ErrorBoundary name="Home"><Home /></ErrorBoundary>} />
+                              <Route path="/history" element={<ErrorBoundary name="History"><History /></ErrorBoundary>} />
+                              <Route path="/memory" element={<ErrorBoundary name="Memory"><Memory /></ErrorBoundary>} />
+                              <Route path="/settings" element={<ErrorBoundary name="Settings"><Settings /></ErrorBoundary>} />
+                              <Route path="/monitoring" element={<ErrorBoundary name="Monitoring"><Monitoring /></ErrorBoundary>} />
+                              <Route path="/wizard" element={<Navigate to="/" replace />} />
+                              <Route path="*" element={<Navigate to="/" replace />} />
+                            </Route>
+                          )}
+                        </Routes>
+                        </PageDrawerProvider>
                       </ProfilerDrawerProvider>
                     </PanelStateProvider>
                   </Suspense>

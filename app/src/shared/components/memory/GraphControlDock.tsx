@@ -31,7 +31,7 @@ export const GraphControlDock = memo(
         className="fixed right-2 sm:right-5 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl bg-[rgba(var(--card),0.75)] backdrop-blur-2xl border border-[rgba(var(--border),0.14)] shadow-2xl pointer-events-auto transition-all"
       >
         {/* Recenter View */}
-        <Tooltip label={MEMORY_COPY.recenterView} side="left">
+        <Tooltip label={MEMORY_COPY.recenterView} shortcutId="memory.recenter" side="left">
           <button
             type="button"
             onClick={onRecenter}
@@ -86,7 +86,7 @@ export const GraphControlDock = memo(
         <div className="w-4 sm:w-5 h-[1px] bg-[rgba(var(--border),0.12)] my-0.5" />
 
         {/* Zoom In */}
-        <Tooltip label={MEMORY_COPY.zoomIn} side="left">
+        <Tooltip label={MEMORY_COPY.zoomIn} shortcutId="memory.zoomIn" side="left">
           <button
             type="button"
             onClick={onZoomIn}
@@ -98,7 +98,7 @@ export const GraphControlDock = memo(
         </Tooltip>
 
         {/* Zoom Out */}
-        <Tooltip label={MEMORY_COPY.zoomOut} side="left">
+        <Tooltip label={MEMORY_COPY.zoomOut} shortcutId="memory.zoomOut" side="left">
           <button
             type="button"
             onClick={onZoomOut}

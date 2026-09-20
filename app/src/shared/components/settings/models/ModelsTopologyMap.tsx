@@ -1,10 +1,12 @@
-import { memo } from "react";
+import { memo, useCallback } from "react";
 import { AudioWaveform, Ear, BrainCircuit, AudioLines, LifeBuoy } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
 import { DIRTY_STATE_COPY } from "@/data/settingsCopy";
 
 export type PipelineTab = "vad" | "stt" | "llm" | "tts" | "auxiliary";
+
+const PIPELINE_IDS: PipelineTab[] = ["vad", "stt", "llm", "tts", "auxiliary"];
 
 interface ModelsTopologyMapProps {
   activeTab: PipelineTab;
@@ -38,31 +40,53 @@ export const ModelsTopologyMap = memo(
       { id: "auxiliary" as PipelineTab, label: "Support", Icon: LifeBuoy, isVerified: isAuxiliaryVerified },
     ];
 
-    return (
-      <div
-        className={cn(
-          "gap-1 shrink-0 p-1 rounded-xl glass overflow-visible mb-2.5 bg-[rgba(var(--foreground),0.02)]",
-          layoutMode === "small"
-            ? "flex overflow-x-auto snap-x no-scrollbar scrollbar-none w-full scroll-smooth"
-            : "grid grid-cols-5"
-        )}
-      >
-        {PIPELINE_NODES.map(({ id, label, Icon }) => {
-          const isDirty = isCategoryDirty(id);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const currentIdx = PIPELINE_IDS.indexOf(activeTab);
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        onChangeTab(PIPELINE_IDS[(currentIdx + 1) % PIPELINE_IDS.length]);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        onChangeTab(PIPELINE_IDS[(currentIdx - 1 + PIPELINE_IDS.length) % PIPELINE_IDS.length]);
+      }
+    },
+    [activeTab, onChangeTab]
+  );
 
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onChangeTab(id)}
-              className={cn(
-                "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden cursor-pointer",
-                activeTab === id
-                  ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
-                  : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
-                layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1"
-              )}
-            >
+  return (
+    <div
+      className={cn(
+        "gap-1 shrink-0 p-1 rounded-xl glass overflow-visible mb-2.5 bg-[rgba(var(--foreground),0.02)]",
+        layoutMode === "small"
+          ? "flex overflow-x-auto snap-x no-scrollbar scrollbar-none w-full scroll-smooth"
+          : "grid grid-cols-5"
+      )}
+      role="tablist"
+      aria-label="Pipeline topology"
+    >
+      {PIPELINE_NODES.map(({ id, label, Icon }) => {
+        const isDirty = isCategoryDirty(id);
+        const isActive = activeTab === id;
+
+        return (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            tabIndex={isActive ? 0 : -1}
+            data-arrow-nav
+            onKeyDown={handleKeyDown}
+            onClick={() => onChangeTab(id)}
+            className={cn(
+              "p-2 rounded-lg flex flex-col items-center justify-center gap-1.5 border text-center transition-all duration-300 relative group overflow-hidden cursor-pointer",
+              isActive
+                ? "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))] scale-[1.02]"
+                : "bg-transparent border-transparent hover:bg-[rgb(var(--foreground))]/[0.03]",
+              layoutMode === "small" && "min-w-[75px] snap-center flex-1 py-1.5 px-1"
+            )}
+          >
               {isDirty && (
                 <span
                   title={DIRTY_STATE_COPY.category}

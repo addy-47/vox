@@ -1,8 +1,8 @@
 export const LAYOUT_COPY = {
   nav: {
-    monitor: "Monitor",
+    monitor: "System Monitor (Ctrl+M)",
     engineMonitor: "Engine Monitor",
-    openProfiler: "Open UI Memory Profiler",
+    openProfiler: "Open UI Memory Profiler (Shift+Up)",
   },
   titleBar: {
     close: "Close",

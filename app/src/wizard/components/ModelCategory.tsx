@@ -68,6 +68,10 @@ export const ModelCategory = ({
             <div 
                 className="flex items-center justify-between p-5 cursor-pointer select-none gap-4" 
                 onClick={() => setIsExpanded(!isExpanded)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setIsExpanded(!isExpanded); } }}
+                aria-label={isExpanded ? `Collapse ${label}` : `Expand ${label}`}
             >
                 <div className="flex items-center gap-4 flex-1 min-w-0">
                     <div className={cn(
@@ -98,6 +102,16 @@ export const ModelCategory = ({
                             onClick={(e) => {
                                 e.stopPropagation();
                                 if (!required) onToggle();
+                            }}
+                            role="checkbox"
+                            tabIndex={required ? -1 : 0}
+                            aria-checked={selected}
+                            aria-disabled={required}
+                            onKeyDown={(e) => {
+                                if (e.key === " " && !required) {
+                                    e.preventDefault();
+                                    onToggle();
+                                }
                             }}
                             className={cn(
                                 "w-6 h-6 rounded-xl border flex items-center justify-center transition-all duration-300",
@@ -143,7 +157,17 @@ export const ModelCategory = ({
                                 return (
                                     <div 
                                         key={group.id} 
+                                        role="checkbox"
+                                        tabIndex={required ? -1 : 0}
+                                        aria-checked={isGroupSelected}
+                                        aria-disabled={required}
                                         onClick={handleLineClick}
+                                        onKeyDown={(e) => {
+                                            if (e.key === " " && !required) {
+                                                e.preventDefault();
+                                                onToggleModel?.(group.id);
+                                            }
+                                        }}
                                         className={cn(
                                             "flex items-center justify-between text-[12px] font-bold py-2.5 px-4 glass rounded-xl group transition-all border border-transparent hover:border-[rgb(var(--accent))]/20",
                                             !required && "cursor-pointer"

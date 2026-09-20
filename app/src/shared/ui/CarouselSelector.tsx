@@ -34,11 +34,19 @@ export const CarouselSelector = memo(
         )}
 
         <div
+          data-arrow-nav
           className={cn(
             "flex items-center justify-between bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--accent),0.15)] rounded-lg h-[34px] px-1.5 transition-all select-none",
             disabled && "opacity-40 pointer-events-none",
             className
           )}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.key === "ArrowLeft") onPrev();
+            else onNext();
+          }}
         >
           <button
             type="button"

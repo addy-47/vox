@@ -29,6 +29,7 @@ import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
 import { EdgePanel, Tooltip, Markdown } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
+import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
 import {
@@ -89,6 +90,13 @@ export const Memory: React.FC = memo(() => {
 
   // Drawer & Staging mode state
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const drawerHandlers = useMemo(() => ({
+    open: () => setDrawerOpen(true),
+    close: () => setDrawerOpen(false),
+  }), []);
+  useRegisterPageDrawer(drawerHandlers);
+
   const [drawerBodyReady, setDrawerBodyReady] = useState(false);
   const [stagingMode, setStagingMode] = useState<StagingMode>("idle");
   const [saving, setSaving] = useState(false);
@@ -484,6 +492,59 @@ export const Memory: React.FC = memo(() => {
     setSelectedFact(null);
     setTooltipPos(null);
   }, []);
+
+  // Keyboard shortcuts specific to Memory page (Ctrl+K search, Ctrl+R recenter, Shift+= zoom in, Shift+- zoom out)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const tag = activeEl?.tagName.toLowerCase();
+      const isEditable =
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        activeEl?.getAttribute("contenteditable") === "true";
+
+      const mod = e.ctrlKey || e.metaKey;
+      const shift = e.shiftKey;
+
+      // Ctrl + K -> Focus Search Bar
+      if (mod && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        const searchInput = document.getElementById("memory-search-input") as HTMLInputElement | null;
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.select();
+        }
+        return;
+      }
+
+      if (isEditable) return;
+
+      // Ctrl + R -> Recenter Graph
+      if (mod && (e.key === "r" || e.key === "R")) {
+        e.preventDefault();
+        handleRecenter();
+        return;
+      }
+
+      // Shift + = or + -> Zoom In
+      if (shift && (e.key === "=" || e.key === "+")) {
+        e.preventDefault();
+        handleZoomIn();
+        return;
+      }
+
+      // Shift + - or _ -> Zoom Out
+      if (shift && (e.key === "-" || e.key === "_")) {
+        e.preventDefault();
+        handleZoomOut();
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleRecenter, handleZoomIn, handleZoomOut]);
 
   return (
     <div

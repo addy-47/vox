@@ -1,9 +1,10 @@
 # Vox Full Keyboard Functionality Contract (Phase 11)
 
 > **Status:** Proposed Contract / Plan — SSOT for keyboard behavior going forward.
-> **Scope:** Every route and surface in `app/src`: global chrome, Home, History, Memory, Settings, Monitoring, Wizard, rails/panels/overlays, shared widget primitives.
-> **Goal — click parity:** everything doable with click/hover/drag must be doable with keyboard alone. Not just Tab/arrow navigation, but activation, selection, editing, reordering, canvas/graph operation, PTT, dialogs, and dismissal.
+> **Scope (v2 — practical-only):** Global chrome, Home, History (list + orbit select, no calendar-grid), Memory (rail/search/tooltip/dossier, graph node-select only), Settings (hub/cards/toggles/inputs, no color-picker drag parity), Monitoring popover, Wizard (dead-div triage + heading focus only), rails/panels/overlays, Help panel + tooltips.
+> **Goal — practical click parity:** everything *practical* doable with click must be doable with keyboard. Deliberately out of scope: Appearance color-drag parity (`HexColorPicker` — pointer-only stays), full calendar-grid arrows (`CalendarPicker` — Tab/Enter on day buttons is enough), free camera/orbit drag emulation, graph 3D camera nudging, knob-dial drag emulation beyond steppers/inputs.
 > **Non-goals:** changing visual design; changing IPC/backend contracts; implementing the contract (this doc is the contract + plan — implementation follows in batches).
+> **Revision v2 (2026-09-19):** applied user review — practical-only scope; Help shows shortcuts inline with feature explanations + header toggle for the full key→action map across all pages; every shortcut appears in its control's hover tooltip; new globals `Ctrl+M` / `Alt+N` / `Ctrl+S` / `?` / `Shift+Up/Down`; page-nav arrows fire only when EdgeNav (or nothing focusable) has focus, otherwise arrows move within the page alongside Tab.
 
 ---
 
@@ -46,6 +47,8 @@ Full audit of `app/src/**/*.{ts,tsx}` for `onKeyDown/onKeyUp/onKeyPress`, `keydo
 
 ### 0.2 Gap summary (click without keyboard parity)
 
+> v2 note: this audit trail is unchanged; §1.1 marks which gaps are practical (in scope) vs skipped (calendar-grid, color-drag, camera/drag emulation, resize arrows, reorder keys).
+
 1. **Dead `<div onClick>` card selects:** `SubModelCard` body (`SubModelCard.tsx:131`), `HistoryListView` session card (`HistoryListView.tsx:321`), `ActiveSessionHeader` breadcrumb (`ActiveSessionHeader.tsx:117`), wizard `ModelCategory` header/checkbox/rows (`ModelCategory.tsx:68,97,144`). All pointer-only.
 2. **Pointer-drag controls with no keyboard path:** `OrbitCarousel` drag-rotate, `MemoryGraph` orbit + node/core picking (core-click → dossier drawer unreachable by keyboard), `RotaryKnob` dial drag (steppers OK), project `Reorder`/session HTML5 DnD, `HexColorPicker` (`react-colorful`, no text fallback), Drawer resize handle (`role=separator`, drag only).
 3. **PTT has no keyboard path:** orb stage surface (`Home.tsx:196-203` `onPointerDown/Up/Leave` only) + Mic button (`Home.tsx:291-308` `onPointerDown/Up/Leave` only — a `<button>` that ignores `Enter/Space`).
@@ -63,13 +66,13 @@ Full audit of `app/src/**/*.{ts,tsx}` for `onKeyDown/onKeyUp/onKeyPress`, `keydo
 
 ## 1. Global principles (apply everywhere)
 
-### 1.1 Click parity rule
-Every pointer affordance gets a keyboard affordance reaching the *same outcome*:
+### 1.1 Practical parity rule (v2 — replaces full click parity)
+Only *practical* pointer affordances get keyboard equivalents:
 - Click/select/activate → `Enter` and/or `Space` (see §1.2 for which).
-- Hover-reveal info → focus-reveal (already true for `Tooltip`; extend to `ModelStatusOverlay`, capability chips, TitleBar cards, EdgeNav labels, WelcomeStep callouts).
-- Drag-adjust (knob, slider, color, resize, orbit, graph camera) → arrow-key adjust with the same clamps/steps.
-- Drag-reorder / drag-move (projects, session→project) → explicit keyboard move commands (no blind DnD emulation).
-- Text-selection trigger (memory comment) → explicit focus + shortcut trigger.
+- Hover-reveal info → focus-reveal for practical surfaces (`Tooltip` already does this; extend to `ModelStatusOverlay`, TitleBar cards, EdgeNav labels). Capability-chip hover specs and WelcomeStep tray callouts stay hover-only (skipped as non-practical).
+- Panel/drawer open-close → explicit globals (§1.6) + `Shift+Up/Down` (§1.7).
+- Text-selection trigger (memory comment) → explicit focus + shortcut trigger (kept — practical).
+- Explicitly skipped (no keyboard path required): color-field drag (`HexColorPicker`), calendar day-cell arrow-grid, orbit-ring drag rotation beyond card Tab/Enter, graph camera orbit/pan, knob-dial drag (steppers + numeric inputs cover it), Drawer resize-handle arrows, project drag-reorder (menu path covers moves).
 
 ### 1.2 Key-to-meaning table (normative)
 
@@ -83,10 +86,14 @@ Every pointer affordance gets a keyboard affordance reaching the *same outcome*:
 | `Home/End` | First/last item in current group (tab strip, carousel, menu, calendar week, orbit ring, session list). |
 | `PageUp/PageDown` | Larger jumps: prev/next day-window or month-window (History), drawer height steps, knob large steps. |
 | `Delete/Backspace` | Delete/dismiss focused item **only** where a visible delete affordance exists (session row, voice, comment). Always arms confirm first — never instant-deletes. `Backspace` in text respects `PersonaCard` protected-tag guard. |
-| `?` (Shift+/) | Open keyboard shortcut reference (new, see §1.6). |
-| `Ctrl/Cmd+K` or `/` | Focus global search where the page has one (Memory graph search, History list search, LLM catalog search). `/` only when not in an input. |
+| `?` (`Shift+/`) | Open Help panel (§1.8). Outside inputs only. |
+| `Ctrl/Cmd+K` or `/` | Focus page search where the page has one (Memory graph search, History list search, LLM catalog search). `/` only when not in an input. |
 | `Ctrl/Cmd+Enter` | Save/commit in multi-line editors (staging comment/import/edit). |
-| `Ctrl/Cmd+S` | Commit draft in `PersonaCard` textarea (currently autosave — contract adds explicit save affordance parity; harmless if mapped to blur/commit). |
+| `Ctrl+M` | Toggle Monitoring popover (same as bottom-left Activity button). Outside inputs. `Escape` closes, focus restores to toggle. |
+| `Alt+N` | Toggle Notifications right rail (same as bell button). Chosen over `Ctrl+N` — browsers reserve `Ctrl+N` for new-window and frequently refuse `preventDefault`. Outside inputs. |
+| `Ctrl+S` | Toggle Sessions left rail (same as session-rail trigger). Calls `preventDefault` (browser Save). Outside inputs. No relation to Persona save (autosave — no `Ctrl+S` binding there). |
+| `Shift+Up` | Open page drawer (§1.7): profiler (Home) / DetailPanel if a session is selected (History, else no-op) / dossier drawer (Memory) / all Settings cards (Settings = HubCenter open-all). Outside inputs. |
+| `Shift+Down` | Close page drawer (§1.7): reverse of `Shift+Up`. `Escape` still closes topmost overlay first. |
 
 ### 1.3 Focus rules (normative)
 1. Every overlay that appears (`Drawer`, `EdgePanel`, `SessionContextMenu`, `MemoryNodeTooltip`, monitor popover, calendar popover, search dropdowns) **moves focus into itself on open** and **restores focus to the trigger on close**. `Drawer` already restores — extend the pattern to `EdgePanel` + menus + tooltips + popovers.
@@ -96,33 +103,66 @@ Every pointer affordance gets a keyboard affordance reaching the *same outcome*:
 5. Visible focus ring on everything (`focus-visible:outline` already used in several places — standardize).
 6. No positive `tabindex`. `tabIndex=0` for interactive cards/rows; `tabIndex=-1` for programmatic-only targets (drawer sheet, step headings, graph canvas mirror).
 
-### 1.4 Arrow-key scoping (resolves the page-nav collision) — normative
-**Problem:** `ResponsiveLayout` global `ArrowLeft/Right` page navigation fires whenever focus is not in an editable. Every widget below that wants `ArrowLeft/Right` (tabs, carousels, knobs, sliders, calendars, menus, orbit, graph) would double-trigger page nav today.
+### 1.4 Arrow model — full-spatial in-page movement, page-nav only from EdgeNav (v2, normative)
+
+**User decision:** keep `Tab` AND let all four arrows move around the page; page navigation fires only when EdgeNav (or effectively nothing) has focus.
+
+**How one key set serves "so many things" (the mental model):** arrows never have a global meaning. Exactly one scope owns them at a time, decided by focus:
+1. Focus inside a widget group (tab strip, list, menu, search dropdown, table/grid of buttons) → arrows move *within that group* (`data-arrow-nav` roots, `role=tab/slider/menu/listbox/gridcell/option/switch`).
+2. Focus on `body`/non-interactive chrome or inside `EdgeNav` (`nav [data-edge-nav]`, `:focus-within`) → `ArrowLeft/Right` navigates pages (existing wrap-around order), `ArrowUp/Down` do nothing (reserved).
+3. Focus on a lone button/input/card outside any group → arrows move focus spatially to the nearest focusable in that direction (see below); they never change routes.
 
 **Contract:**
-1. Introduce a single `isWidgetArrowTarget(el)` guard in the page-nav handler: if `document.activeElement` is inside `[data-arrow-nav]` (any widget root claiming arrows) **or** is `role=slider|tab|menu|menuitem|listbox|option|gridcell|switch`, page-nav **does not fire**. Widget handles the key (and `stopPropagation`).
-2. Keep page-nav behavior otherwise identical (same routes, wrap-around, skip editables, close monitor popover).
-3. Every widget that binds arrows sets `data-arrow-nav` on its root and calls `e.stopPropagation()` (bubble) after handling, so page-nav never double-fires.
-4. `ArrowUp/Down` remain free globally (no page-nav binding) — widgets may claim freely.
-5. Document in code comment at `ResponsiveLayout.tsx:84-125` when implemented.
+1. Replace the current app-wide page-nav guard (`ResponsiveLayout.tsx:84-125`, today only skips editables) with: page-nav fires on `ArrowLeft/Right` **iff** `document.activeElement` is `body`, OR inside `[data-edge-nav]`, OR is not inside any `button/input/textarea/select/[contenteditable]/[data-arrow-nav]/[role=tab/slider/menu/menuitem/listbox/option/gridcell/switch/dialog]`. Every other arrow press is in-page movement or widget movement — never a route change.
+2. Widget groups keep their §9.1 arrows (tabs, lists, menus, dropdowns, preset pill rows, topology tabs, filter pills, notification tabs). Group roots set `data-arrow-nav` and `stopPropagation` after handling.
+3. **Full-spatial fallback (new):** when focus is on a focusable element with no arrow-group owner, `ArrowUp/Down/Left/Right` moves DOM focus to the nearest visible focusable in that direction (bounding-rect distance, same-origin page only; skip `disabled`/`aria-hidden`/`pointer-events-none`). `Tab` order is unchanged and remains the SR ground truth; arrows are an accelerator, not a replacement. Skip entirely when focus is in `input/textarea/select/contenteditable` (caret keys win) — except `Escape` and combos with `Ctrl/Shift`.
+4. Spatial move must never trap: if no candidate exists in that direction, keep focus (no wrap, no page change). Announce nothing (focus ring + SR name suffice).
+5. `Drawer`/`EdgePanel`/`popover` open → arrows are scoped to the overlay first (same rule; overlay content wins over page content).
+6. Document the precedence in a code comment at `ResponsiveLayout.tsx:84-125` when implemented: `EdgeNav-or-body → page-nav; arrow-group → widget; otherwise → spatial; editable → caret`.
+
+**Conflicts answered:** yes, three real ones, all resolved by the precedence above — (a) page-nav vs widget arrows (EdgeNav/body gate fixes it), (b) caret arrows in inputs (editables always win), (c) `Space` PTT vs button activation (§2.1 keeps PTT only on Mic/orb focus). `Shift+Up/Down` never collides with arrows because the `Shift` modifier takes a separate branch and is ignored inside text inputs (would extend selection).
 
 ### 1.5 Screen-reader / ARIA minimum (normative)
 - Tabs: `role=tablist/tab/tabpanel` + `aria-selected` (replaces bare `aria-pressed` on tab strips: `CategorySelector`, `ViewSelector`, `ModelsTopologyMap`, `SettingsTopologyMap`, dictation output tabs, persona tabs, profiler tabs, notification tabs, History pill).
 - Switches: `role=switch` + `aria-checked` (already `ToggleTile`; add to `RealtimeToggleRow`).
 - Menus: `role=menu/menuitem` + `aria-haspopup/aria-expanded` on trigger (`SessionContextMenu`).
 - Comboboxes: `role=combobox` input + `role=listbox/option` dropdown + `aria-activedescendant` + `aria-expanded` (`SearchBar`, rail filter, history search, LLM search results if arrow-to-result added).
-- Grids: `role=grid/row/gridcell` + `aria-selected` (`CalendarPicker`).
+- Grids: skipped (CalendarPicker out of scope — no `role=grid` retrofit).
 - Sliders: `role=slider` + `aria-valuemin/max/now/text` (`RotaryKnob` dial, Drawer handle as `separator` with keyboard = keep `separator` + add keys).
 - Canvas/graph/orbit surfaces: `role=application` + `aria-label` + offscreen listbox mirror for SR (Memory graph, orbit ring).
-- Status/live: keep `role=status aria-live=polite` (`StatusCapsule`); add `aria-live` to recorder value, knob value, color value, save/commit toasts, delete arms, search result counts.
+- Status/live: keep `role=status aria-live=polite` (`StatusCapsule`); add `aria-live` to recorder value, save/commit toasts, delete arms, search result counts.
 
 ### 1.6 New global affordances (normative)
-| Keys | Scope | Action |
+| Keys | Scope (all outside inputs unless noted) | Action |
 |---|---|---|
-| `?` (`Shift+/`) | Global (outside inputs) | Open keyboard shortcut reference panel (new `EdgePanel` content or `Drawer`; lists this contract's bindings per route). `Escape` closes. |
-| `g` then `h/t/m/s` (optional, Phase 2) | Global (outside inputs) | Go to Home/History/Memory/Settings. Only if page-nav arrows prove insufficient; do not implement until arrow scoping ships. Listed here so key choices don't collide. |
+| `?` (`Shift+/`) | Global | Open Help right rail on the current route's guide (§1.8). `Escape` closes, focus restores to trigger. |
+| `Ctrl+M` | Global | Toggle Monitoring popover (same as Activity button). `Escape` closes. |
+| `Alt+N` | Global | Toggle Notifications right rail (same as bell). `Alt` avoids the `Ctrl+N` new-window trap. |
+| `Ctrl+S` | Global | Toggle Sessions left rail (same as rail trigger). `preventDefault` browser Save. |
+| `Shift+Up` / `Shift+Down` | Global, per-page map (§1.7) | Open / close the page's bottom drawer (or all Settings cards). No-op where no valid target (e.g. History with no selection). Ignored inside text inputs. |
 | `Ctrl/Cmd+K` or `/` | Per-page with search | Focus page search (Memory, History list, LLM catalog). |
-| `Escape` | Global | FILO dismiss via `overlayStack` (no change, but extend registration to every new overlay: shortcut reference, calendar popover, search dropdowns when open, custom confirms). |
+| `Escape` | Global | FILO dismiss via `overlayStack` (extend registration to shortcut map overlay, monitor popover, search dropdowns when open, custom confirms). |
+
+### 1.7 `Shift+Up` / `Shift+Down` page-drawer map (normative)
+Same keys everywhere, per-page target (mirrors existing click handlers; no new state):
+- **Home:** `Shift+Up` → `openProfiler()` (same as CPU/RAM HUD button `ResponsiveLayout.tsx:261-265`); `Shift+Down` → close profiler drawer (same as Drawer X/backdrop/`Escape`).
+- **History:** `Shift+Up` → open `DetailPanel` drawer **iff** a session is already selected (same as clicking its card; user decision: no selection → no-op, never auto-pick). `Shift+Down` → close it (`setSelectedSession(null)`, same as X/backdrop/`Escape`).
+- **Memory:** `Shift+Up` → open dossier drawer (same as core-click `handleCoreClick` `Memory.tsx:255-261`); `Shift+Down` → close it (same `onClose`, keeps pending-comments reopen flag).
+- **Settings:** `Shift+Up` → open **all** domain cards (same as HubCenter `handleCenterClick` when none active — `DOMAINS.map(id)`); `Shift+Down` → clear all (same as HubCenter when any active). Compact `<1024px` renders all cards already — keys are no-ops there.
+- **Monitoring:** no bottom drawer — keys are no-ops (popover uses `Ctrl+M`/`Escape`).
+- Guards: ignored when focus is in `input/textarea/select/contenteditable` (would clash with text selection); `Shift+Down` never closes more than the page drawer (overlays still unwind via `Escape` first).
+
+### 1.8 Help panel: inline shortcuts + header full-map toggle (normative)
+User requirement: shortcuts live *with* their feature explanations (not a detached table), plus one header toggle showing the key→action map for every page.
+- **Inline (default Help view, per route):** every `HelpControlItem` that has a keyboard equivalent sets `shortcut` (`HelpControlCard.tsx:5-13` already renders a `<kbd>` pill, `action` field stays unused). Copy rule: `shortcut` = the literal keys (`Space`, `M`, `Ctrl+M`, `Alt+N`, `Shift+Up`…), `outcome` describes the result. Route guides keep their current structure (`Home/History/Memory/SettingsHelpContent` + `helpCopy.ts` sections) — authors just fill in `shortcut` per control. No separate shortcut section.
+- **Header toggle (new):** add a kbd-icon toggle button in the `HelpPanel` header row (`HelpPanel.tsx:80-92`, right side next to `routeBadge :89-91`). `aria-pressed` + `aria-label="Show all shortcuts"`. On: body swaps the route guide for a **full key→action map grouped by page** (Global, Home, History, Memory, Settings, Monitoring, Wizard, Rails) sourced from one central `SHORTCUTS` registry (single SSOT — inline pills and map render from the same entries so they can't drift). Off: restores the route guide (previous scroll/selection preserved). `Escape` exits map-first (back to guide), second `Escape` closes panel via stack.
+- **Registry rule:** one `SHORTCUTS: {id, keys, label, route}` list owns all bindings; Help inline pills, header map, and tooltips (§1.9) all render from it. Adding a binding without a registry entry is a spec violation.
+
+### 1.9 Tooltips show their shortcut (normative)
+Industry-standard: hover (and focus) tooltips name the key.
+- Every control with a keyboard equivalent appends it to its tooltip: `<Tooltip label="…">` or native `title=` becomes `"Base label (Key)"`, e.g. `Type Query (T)`, `Notifications (Alt+N)`, `Monitor (Ctrl+M)`, `Conversations (Ctrl+S)`, `Send (Enter)`, `Discard & Close (Esc)` (last two already exist in `homeCopy.ts:35,37` — keep as the template).
+- `Tooltip.tsx:101-110` already shows on focus as well as hover — keep; add the same suffix to `EdgeNav` custom hover spans (`EdgeNav.tsx:44-46,76-78`, currently `group-hover` only — also mirror on `focus-visible` per §3.2) and to `GraphControlDock`/TopRightCluster/Settings labels at implementation time.
+- Tooltip text and the §1.8 registry must match (same source string where feasible); a tooltip claiming a key that does nothing is a bug.
 
 ---
 
@@ -158,18 +198,18 @@ These resolve the fiction in `helpCopy.ts` (`Space` PTT, `M` mute documented but
 - App-update pill (`:151` hover-reveals release-notes card): make card focus-reveal (`onFocus/onBlur` mirror `group-hover`, same as `Tooltip` pattern) + inner Copy-command button already keyboardable (`:172`). `Escape` dismisses card (register as overlay or close on blur — implementer's choice, must be `Escape`-dismissable).
 - Model-update pill → Manage Models (`:187,211`): inner `navigate('/settings?tab=models')` button already keyboardable — keep + focus-reveal card.
 
-### 3.2 EdgeNav + page navigation — normative
-- `EdgeNav.tsx:24,58` `NavLink`s: keep native Tab/Enter. Add focus-visible tooltip (currently `group-hover` only `:44,76` — mirror on `focus-visible`).
-- Global `ArrowLeft/Right` page cycle: keep routes/order/wrap (see §1.4 for widget scoping fix — the only change).
+### 3.2 EdgeNav + page navigation — normative (v2)
+- `EdgeNav.tsx:24,58` `NavLink`s: keep native Tab/Enter. Add `data-edge-nav` on the `<nav>` root (new scoping hook for §1.4) + focus-visible tooltip (currently `group-hover` only `:44,76` — mirror on `focus-visible`) with shortcut suffix where applicable (§1.9).
+- Page cycle keeps routes/order/wrap/close-monitor-popover; **only the trigger changes**: `ArrowLeft/Right` navigates iff focus is in EdgeNav or on body/nothing-focusable (§1.4). All other focus → in-page/ widget arrows.
 - Compact-only Monitoring `NavLink` (`lg:hidden`): no keyboard change.
 
 ### 3.3 Session rail trigger, ActiveSessionHeader, TopRightCluster — normative
-- Session rail trigger (`ResponsiveLayout.tsx:190` `<button data-edge-trigger>`): keep Tab/Enter. Add `aria-expanded` already present — verify `aria-controls` points at rail.
+- Session rail trigger (`ResponsiveLayout.tsx:190` `<button data-edge-trigger>`): keep Tab/Enter. Add `aria-expanded` already present — verify `aria-controls` points at rail. Global `Ctrl+S` toggles the same rail (§1.6); tooltip reads `Conversations (Ctrl+S)` (§1.9).
 - `ActiveSessionHeader.tsx:117` breadcrumb `motion.div onClick`: **must become keyboardable** — convert to `<button>` (preferred) or add `role=button tabIndex=0` + `Enter/Space → onOpenPanel` (copy `SessionPanel.tsx:168-174` pattern).
 - `TopRightCluster.tsx:43,60,84` Temporary-chat / bell / help: already `<button>`s with `aria-pressed/expanded` — keep. No new keys beyond Tab/Enter/Space. Disabled-while-other-open states must use real `disabled` (verify) so SR announces.
 
 ### 3.4 Bottom dock (Monitor toggle, CPU/RAM HUD, ModelStatusOverlay, RestoreDefaults) — normative
-- Monitor toggle (`ResponsiveLayout.tsx:242`), CPU/RAM HUD (`:261`): keep buttons. `Escape` closes popover (exists via `useOverlay` + page-nav handler closes monitor on page move — keep).
+- Monitor toggle (`ResponsiveLayout.tsx:242`), CPU/RAM HUD (`:261`): keep buttons. `Escape` closes popover (exists via `useOverlay` + page-nav handler closes monitor on page move — keep). Global `Ctrl+M` toggles the popover (§1.6); tooltip reads `Monitor (Ctrl+M)` (§1.9). `Shift+Up` on Home opens the profiler drawer (same as HUD button, §1.7).
 - `ModelStatusOverlay.tsx:98,129,159` chips (`div cursor-help group` hover-only): make focusable (`tabIndex=0`) + focus-reveal tooltip (same content as hover). `Enter/Space` optional (no action — info only; focus-reveal suffices for parity since hover has no action either).
 - `RestoreDefaultsButton.tsx:27`: keep two-tap arm/confirm. Add `Escape` cancels armed state; announce arm via `aria-live` (label swap alone is insufficient).
 
@@ -202,39 +242,33 @@ Home sub-view matrix (all covered above): `idle / engaged / paused / sleeping / 
 
 Navigation: `DAY ⇄ MONTH` pill + `ViewSelector` tabs; orbit (desktop) vs `HistoryListView` (narrow); month→day drill; day-window Prev/Next; session → `DetailPanel` drawer; stage click deselects.
 
-### 5.1 Orbit view — normative
+### 5.1 Orbit view — normative (practical subset)
+Practical: orbit cards stay Tab-focusable with existing `Enter/Space` select (`VoiceRippleNode` pattern — keep). Container arrows rotate only if cheap at implementation time; otherwise Tab-through-cards is the contract (drag-rotation parity explicitly skipped as non-practical).
 | Keys | Scope | Action |
 |---|---|---|
-| `Left/Right` | Orbit container focused (`tabIndex=0`, `data-arrow-nav`, `role=application`) | Rotate ring one card (focus follows front card; scene rotates to match — rotation follows focus, not just DOM order). `stopPropagation` so page-nav doesn't fire. |
-| `Enter/Space` | Focused orbit card | Open session (`onSelect`, same as click). Cards keep existing `VoiceRippleNode` `role=button tabIndex=0` handling — container arrows are the addition. |
-| `Home` | Orbit container | Jump to newest session. |
-| `Delete` | Focused card (when delete affordance visible) | Arm 2-step delete (same as Trash button); `Enter` confirms, `Escape` cancels. Focus moves per §1.3. |
+| `Enter/Space` | Focused orbit card | Open session (`onSelect`, same as click). |
+| `Delete` | Focused card (when delete affordance visible) | Arm 2-step delete; `Enter` confirms, `Escape` cancels. Focus moves per §1.3. |
 | `Escape` | Detail drawer open | Close drawer (exists via `Drawer`/stack — keep). |
-| `[` / `]` | Orbit container focused (or History page outside inputs) | Rotate ring (matches documented `[ or ]` in help copy). Alias of `Left/Right`. |
-| `ArrowUp/Down` | Orbit container | Same as `Left/Right` (or move between concentric rings if multi-ring layout exists; otherwise alias). |
+| `[` / `]` | History page outside inputs | Rotate ring (matches documented help copy) — only if container-arrow support ships; else omit and remove the copy claim in the same PR. |
 
-`CentralClockNode` Prev/Next (`:187,205` buttons): keep Tab/Enter + add `PageUp/PageDown` = prev/next window when clock focused. DAY/MONTH pill (`:233,247`): add `role=radiogroup` + `Left/Right` moves + selects.
-`ViewSelector.tsx:27` Day/Month tabs: add `role=tablist/tab` + `aria-selected` + `Left/Right`.
+`CentralClockNode` Prev/Next (`:187,205` buttons): keep Tab/Enter (no `PageUp` addition — non-practical). DAY/MONTH pill (`:233,247`): keep buttons; `Left/Right` moves + selects only if tablist work is already being done for §9.1, else Tab/Enter suffices.
+`ViewSelector.tsx:27` Day/Month tabs: Tab/Enter suffices; arrows optional.
 
-### 5.2 List view (`HistoryListView`) — normative
-- Session card (`:321` **dead `div onClick`**): give the `VoiceRippleNode` treatment — `role=button tabIndex=0`, `Enter/Space → onSelect`. This is the highest-value History fix (list-view keyboard users currently cannot open sessions at all).
-- Prev/Next day chevrons (`:191,201`), search input + clear (`:217,225`), filter pills (`:249`), calendar funnel toggle (`:270`): keep native Tab/Enter. Add `Left/Right` across filter pills + `role=radiogroup`.
-- `CalendarPicker.tsx:140,149,157,188`: full calendar-grid contract — container `role=grid`, days `role=gridcell` buttons, `Arrow` keys move day (with month wrap), `Home/End` week ends, `PageUp/PageDown` prev/next month, `Enter/Space` select range endpoint (same range logic as click: start → end, same-day double = single day), `Escape` clear-and-close. Filler days stay `disabled` (skipped by arrows).
+### 5.2 List view (`HistoryListView`) — normative (practical subset)
+- Session card (`:321` **dead `div onClick`**): give the `VoiceRippleNode` treatment — `role=button tabIndex=0`, `Enter/Space → onSelect`. Highest-value History fix (list-view keyboard users currently cannot open sessions at all). Kept.
+- Prev/Next day chevrons (`:191,201`), search input + clear (`:217,225`), filter pills (`:249`), calendar funnel toggle (`:270`): keep native Tab/Enter. `Left/Right` across filter pills only if §9.1 tab work is in flight; not required.
+- `CalendarPicker.tsx`: **skipped (non-practical).** Day/month buttons stay Tab/Enter-activatable as today; no `role=grid`, no calendar arrow/`Home`/`End`/`PgUp`/`PgDn` contract. Rationale: no UX demand for keyboard date-grid navigation.
 - List per-row Delete → Confirm/Cancel (`:365,372,381` buttons): keep + `Delete` key arms focused row's delete; focus moves per §1.3.
-- `DetailPanel.tsx:138,177,200` Compact/Retry/Load-older: keep buttons. Optional `End` = load-all (Phase 2).
+- `DetailPanel.tsx:138,177,200` Compact/Retry/Load-older: keep buttons. `Shift+Up/Down` opens/closes the drawer per §1.7 (open only with a selection, else no-op).
 
 ---
 
 ## 6. Memory (`pages/Memory.tsx`)
 
-### 6.1 Graph canvas (`MemoryGraph.tsx:254`) — normative (largest Memory gap)
-Canvas container is pointer-only (`div onPointerDown`, raycast picking, `selectModeEnabled` gate, core-click → dossier drawer).
-- Container: `tabIndex=0`, `role=application`, `aria-label="Memory graph. Arrow keys move between facts, Enter opens details."`, `data-arrow-nav`.
-- `Arrow` keys: move focus ring between facts (spatial order or list order — implementer picks, must be stable and documented). Scene camera follows focused node (rotate/center so focus is visible).
-- `Enter/Space`: select focused node → same as node click (`onSelectNode` + tooltip). When core focused: `Enter` opens dossier drawer (same as core click).
-- `0`: recenter (same as `GraphControlDock` Recenter). `+`/`-`: zoom in/out. `S`: toggle select-mode. `R`: refresh. `Escape`: deselect / close tooltip (keep stack behavior).
-- SR mirror: offscreen `role=listbox` of facts (same order as arrow nav) so screen readers get list semantics; `aria-activedescendant` on container tracks focused fact.
-- `selectModeEnabled` gate applies equally to keyboard (when off, arrows orbit camera only; document it).
+### 6.1 Graph canvas (`MemoryGraph.tsx:254`) — normative (practical subset)
+Canvas container is pointer-only today. Practical contract only: Tab reaches the canvas; `Enter` opens the dossier (same as core click); `Escape` deselects/closes tooltip. Skipped as non-practical: arrow-to-arrow node hopping with camera follow, `0/+/-/S/R` view aliases, SR listbox mirror, `selectModeEnabled` keyboard gating (pointer behavior unchanged).
+- Container: `tabIndex=0`, `role=application`, `aria-label` naming the `Enter`/`Escape` actions above.
+- `GraphControlDock` buttons (§6.2) remain the keyboard path for recenter/zoom/refresh/select-mode (Tab/Enter — already full).
 
 ### 6.2 Graph chrome — normative
 - `GraphControlDock.tsx:35,51,69,90,101` Recenter/Select/Refresh/Zoom±: keep buttons (already full). Shortcut reference lists `0/S/R/+/-` aliases above.
@@ -287,7 +321,7 @@ Navigation: desktop radial hub (6 `RadialNode` buttons ⇄ domain cards in grid 
 - Param desks (VAD/STT/LLM/TTS preset 2×2 grids + custom numeric inputs; WorkingMemory budget; PersonalMemory depth/cutoff): keep buttons/inputs; add `Left/Right` between presets, `Up/Down` on focused custom input = ±1 step clamped to documented ranges (thr 5–95%, silence 100–3000ms, onset 16–1000ms, gate 0.001–0.09, throttle 50–1500ms, tokens 50–128k, temp 0–2, context 8192–ceiling), value announced via `aria-live`.
 - `TtsVoiceManager` region cyclers: add container `Left/Right`; `VoiceCarousel` voice region: `Left/Right` = prev/next voice (wrap, same as ‹ › buttons); `Escape` closes search/clone mode; custom-voice `Delete` = arm delete (replaces native `confirm()` in Phase 2 — see §10).
 - `RemoteServerSetup` host/port/key + Deploy: keep native; progress/log is `aria-live` status (add if missing).
-- `AppearanceCard` theme segmented: radiogroup + arrows. `HexColorPicker` (`react-colorful`, pointer-drag only): add hex text `<input>` fallback (type `#rrggbb`, same commit path as drag) + arrow-nudge on focused picker + `aria-label` + value announcement. (Without the text fallback there is no keyboard parity possible.)
+- `AppearanceCard` theme segmented: keep Tab/Enter buttons (no radiogroup-arrow requirement — practical Tab parity suffices). `HexColorPicker` (`react-colorful`, pointer-drag only): **skipped (non-practical).** No hex-input fallback, no arrow-nudge contract; pointer-only stays.
 - `RealtimeCard`: `RealtimeInput` native; temperature `input[type=range]` already arrow-capable (keep, verify label linkage); `RealtimeToggleRow` button → add `role=switch aria-checked` (keys already work); voice prev/next + dots → container `Left/Right` (dots display-only).
 - `UnderlineInput`/`ApiKeyField`/`CarouselSelector` shared primitives: keep native; ensure Test-Connection button is Tab-reachable (it is) + status `aria-live` (add).
 
@@ -312,16 +346,14 @@ Same `containerContent` both modes; popover adds `role=dialog` + `Escape`/outsid
 
 ## 9. Shared widget patterns (normative — implement once, apply everywhere)
 
-### 9.1 Arrow-nav family (tabs, carousels, preset grids, topology maps, legend, metric carousel, clock pill)
-- Root: `data-arrow-nav`, `role=tablist/radiogroup/group` as appropriate.
-- `Left/Right` (horizontal) move focus + select (automatic activation — selection follows focus, matching click semantics of these controls). `Up/Down` in 2-D grids (legend 3×2, preset 2×2, calendar, topology) move row-aware. `Home/End` first/last. Skip `disabled`. `stopPropagation` on handled arrows.
-- Applies to: `SegmentedControl`, `CategorySelector`, `ViewSelector`, `ModelsTopologyMap`, `SettingsTopologyMap`, `CarouselSelector` (+ cloud/realtime/region/voice derivatives), WorkingMemory/PersonalMemory preset grids, `MemoryLegendOverlay`, `MetricCarousel`, `CentralClockNode` pill, dictation output tabs, persona tabs, profiler tabs, notification tabs, History filter pills.
+### 9.1 Arrow-nav family — practical subset (tabs, lists, menus, dropdowns, pill rows)
+- Root: `data-arrow-nav`, `role=tablist/radiogroup/group` as appropriate (only where tablist work is practical — tab strips, filter pills, notification tabs, topology tabs, carousel prev/next groups).
+- `Left/Right` (horizontal) move focus + select (automatic activation). `Up/Down` in vertical lists (session rows, notification items, device rows, menu items). `Home/End` first/last. Skip `disabled`. `stopPropagation` on handled arrows (feeds §1.4 precedence).
+- Applies to: `SegmentedControl`, `CategorySelector`, `ViewSelector`, `ModelsTopologyMap`, `SettingsTopologyMap`, `CarouselSelector` family, `MemoryLegendOverlay` (flat list nav is fine — row-aware optional), `MetricCarousel`, dictation output tabs, persona tabs, profiler tabs, notification tabs, History filter pills. Calendar grid explicitly excluded (§5.2 skip).
 
-### 9.2 Slider/knob family (`RotaryKnob` dial, custom numeric inputs, Drawer handle, temperature range)
-- Focusable handle/input: `role=slider` (dial, temp already native range) or `role=separator` (drawer handle — keep role, add keys).
-- `Up/Right` +step, `Down/Left` −step (dial: documented step; numeric inputs: ±1 clamped to §7.4 ranges); `PageUp/PageDown` large step (±10× or preset jump); `Home/End` min/max; `0` or `Backspace` reset default (dial double-click parity).
-- Value in `aria-valuenow/aria-valuetext` + visible badge where one exists (temp has it; dial needs it).
-- Drawer handle: `Up/Down` ±5% height, `Shift` = min/max, `Enter/Space` toggle expand (double-click parity).
+### 9.2 Slider/knob family — practical subset (native inputs + steppers only)
+- Native `input[type=range]` (realtime temperature) already arrow-capable — keep, verify label linkage. Custom numeric inputs + preset pill buttons + `RotaryKnob` −/+ steppers: keep Tab/Enter/typing as today. No `role=slider` retrofit, no `PageUp`/`Home`/`End` dial contract, no Drawer-handle arrow contract (drag stays pointer-only).
+- Value announcement via existing visible badges where present; add `aria-live` only where a badge already exists.
 
 ### 9.3 Card-select family (`SubModelCard`, `HistoryListView` rows, wizard `ModelCategory` rows, `ActiveSessionHeader`)
 - Template: `VoiceRippleNode.tsx:48-59` / `LlmCatalogView.tsx:366-392` — `role=button|option tabIndex=0`, `Enter/Space → onSelect` with `preventDefault` on Space, `focus-visible` ring, `aria-selected/current` where applicable.
@@ -334,14 +366,11 @@ Same `containerContent` both modes; popover adds `role=dialog` + `Escape`/outsid
 ### 9.5 Combobox family (Memory `SearchBar`, rail filter, History search, LLM catalog search)
 - See §6.2 combobox contract. All get `role=combobox/listbox/option`, `Down` opens, arrows move, `Enter` selects, `Escape` clears-then-closes, count announced.
 
-### 9.6 Calendar-grid family (`CalendarPicker`)
-- See §5.2. `role=grid/row/gridcell`, full calendar keys.
+### 9.6 Calendar-grid family — SKIPPED (non-practical, see §5.2)
 
-### 9.7 Canvas family (Memory graph, orbit ring)
-- See §6.1 + §5.1. `role=application`, `tabIndex=0`, arrows move scene-synced focus, `Enter` selects, `Escape` deselects, `0/+/-/S/R` view commands, SR listbox mirror.
+### 9.7 Canvas family — practical subset only (see §6.1 + §5.1)
 
-### 9.8 Color family (`HexColorPicker`)
-- Hex text input fallback (normative — no parity without it) + arrow-nudge + announcement. See §7.4.
+### 9.8 Color family — SKIPPED (non-practical, see §7.4)
 
 ---
 
@@ -355,18 +384,21 @@ Same `containerContent` both modes; popover adds `role=dialog` + `Escape`/outsid
 
 ### 10.2 NotificationPanel (right rail)
 - Tasks/Updates tabs (`:429,461`), Dismiss-all (`:495`), per-item Dismiss (`:238`), primary action (`:283`), View › (`:305`): keep buttons.
-- Add: `Left/Right` across tabs (tablist); `Up/Down` between items in a group; `Delete` dismisses focused item (same as its Dismiss X); `Enter` triggers focused item's primary action (same as action button). Focus moves to next item on dismiss (§1.3). Severity/category tooltips → focus-reveal.
+- Add: `Left/Right` across tabs (tablist); `Up/Down` between items in a group; `Delete` dismisses focused item (same as its Dismiss X); `Enter` triggers focused item's primary action. Focus moves to next item on dismiss (§1.3).
+- Globals: `Alt+N` toggles the rail (same as bell, §1.6); tooltip on bell reads `Notifications (Alt+N)` (§1.9).
 
-### 10.3 HelpPanel (right rail)
-- `HelpOrbVisualizer` mood buttons, `SettingsHelpContent` category tabs, `HelpInteractionDiagram` mode tabs, `HelpMemoryKnobsDiagram` knob tabs: keep buttons + add tablist `Left/Right` (same §9.1 pattern).
-- Static diagrams/copy: no keys. WelcomeStep tray-demo callouts (hover-only divs) → focus-reveal equivalents (make zones `tabIndex=0` with same callout content on focus).
+### 10.3 HelpPanel (right rail — v2: inline shortcuts + header map toggle)
+- Guide content stays per-route with shortcuts inline: each practical control's `HelpControlItem.shortcut` is set and rendered as the existing `<kbd>` pill next to its explanation (`HelpControlCard.tsx:45-49,86-90`). No detached shortcut table in the guide body.
+- Header toggle button (§1.8): kbd-icon, `aria-pressed`, in `HelpPanel.tsx:80-92` next to `routeBadge`; swaps guide ↔ full key→action map (all pages, from `SHORTCUTS` registry); `Escape` exits map first, then panel.
+- Globals: `?` opens Help on the current route's guide (§1.6); tooltip on Help trigger reads `Help & guide (?)` (§1.9).
+- `HelpOrbVisualizer` mood buttons, `SettingsHelpContent` category tabs, `HelpInteractionDiagram` mode tabs: keep buttons; tablist arrows only where §9.1 work is already in flight.
 
 ### 10.4 TextInputBar (already full — lock in, don't regress)
 - Keep: autofocus, `Enter` submit, `Escape` close, mic/playback mute buttons, Send/Discard buttons, disabled-empty Send. Add nothing normative (optional `Up` history in Phase 2).
 
 ### 10.5 Overlays-to-come (normative for new work)
-- Shortcut reference panel (`?`): registered overlay, focus-in + restore, `Escape` closes.
-- Custom confirm dialogs (voice delete, session delete if migrated off native `confirm()`, restore-defaults if migrated): `role=alertdialog`, focus confirm on open, `Enter` confirms, `Escape` cancels, restore on close.
+- Shortcut full-map (Help header toggle, §1.8): registered overlay content, focus-in + restore, `Escape` exits map first (then panel).
+- Custom confirm dialogs (only if voice/session delete migrates off native `confirm()` — optional): `role=alertdialog`, focus confirm on open, `Enter` confirms, `Escape` cancels, restore on close.
 
 ---
 
@@ -387,46 +419,46 @@ Linear XState: welcome → checking → downloading → audio → testing → co
 
 ---
 
-## 12. Conflicts & decisions (normative)
+## 12. Conflicts & decisions (normative, v2)
 
-1. **Page-nav arrows vs widget arrows:** widget wins when focus is inside `[data-arrow-nav]` or a slider/tab/menu/listbox/gridcell/switch role (§1.4). Implement the guard — without it, §5–§9 arrows are unshippable.
-2. **`Space` PTT vs `Space` activation:** PTT hold wins only when (a) Home engaged + PTT mode + not paused/sleeping/error, and (b) focus is on the Mic button or orb wrapper. Everywhere else `Space` activates. Shortcut reference documents this.
-3. **`M` mute vs typing:** `M` fires only outside inputs/textareas/selects/contenteditables (same editable guard as page-nav). Same for `T`, `?`, `/`, `[`/`]`, `0/S/R/+/-` aliases.
-4. **`Enter` in multi-line editors is inconsistent today** (popover `Enter`=save vs staging `Cmd/Ctrl+Enter`=save). Contract **keeps both as-is** (changing either breaks muscle memory) and documents per-surface behavior in the shortcut reference. New editors follow the staging rule (`Cmd/Ctrl+Enter` save, plain `Enter` newline).
-5. **Native `confirm()` for voice delete works with keyboard** — keep for v1, replace with custom `alertdialog` in Phase 2 for focus-return polish. Not a parity blocker.
-6. **Help copy fiction (`Space`/`M`/`[`/`]`):** contract implements them (§2, §5.1) — copy stays. If implementation descope happens, copy must be edited in the same PR (spec-code drift is forbidden per workspace §4.3).
-
----
-
-## 13. Implementation plan (batches — each shippable, each testable)
-
-> Batches ordered by blast radius + dependency. Batch 0 first (without it, later arrow work collides with page-nav).
-
-- **Batch 0 — Arrow scoping + reference panel skeleton.** Guard `ResponsiveLayout` page-nav with `isWidgetArrowTarget` (§1.4). Add `?` shortcut-reference panel (content can be minimal v1 — list global keys + per-route tabs stubbed). Acceptance: widget arrows never change routes; `?` opens/closes with focus restore.
-- **Batch 1 — Dead-card triage (highest click-parity value).** `SubModelCard` body, `HistoryListView` rows, `ActiveSessionHeader`, wizard `ModelCategory` rows (§9.3). Acceptance: every session/model/category reachable + activatable by keyboard; no focusable noop.
-- **Batch 2 — Home voice parity.** §2.1 PTT hold, §2.2 `M`/`T`/`Shift+M`, dialogue rail tab stop + scroll keys. Acceptance: full voice session operable keyboard-only (engage → talk via Space → text via T → mute via M → pause → disengage).
-- **Batch 3 — Arrow-nav family rollout.** §9.1 across tab strips, carousels, preset grids, topology maps, legend, metric carousel, clock pill, notification tabs, profiler tabs. Acceptance: arrows move + select in every strip; page-nav never double-fires.
-- **Batch 4 — Sliders/knobs/handles + color fallback.** §9.2 + hex input. Acceptance: knob/speed/temp/resize/color all adjustable keyboard-only with announced values.
-- **Batch 5 — Comboboxes + calendar + menus.** §9.5/§9.6/§9.4 (§5.2, §6.2, §10.1–10.2). Acceptance: search-to-select, range-pick, menu-operate all keyboard-only with correct roles.
-- **Batch 6 — Canvas parity.** Memory graph (§6.1) + orbit ring (§5.1) + SR mirrors. Acceptance: nodes/sessions selectable, camera follows focus, core/dossier reachable, SR list announces facts.
-- **Batch 7 — Focus-restore + hover-parity sweep.** `EdgePanel` focus-in/restore, tooltip/menu focus-reveal (`ModelStatusOverlay`, capability chips, TitleBar cards, EdgeNav labels, WelcomeStep callouts), notification dismiss focus-move, `RestoreDefaults` live region, voice-delete custom dialog. Acceptance: focus never lost/dropped; every hover tooltip has a focus equivalent.
-- **Batch 8 — Wizard focus + DnD alternatives.** W-2 heading focus, project `Ctrl+Arrow` reorder, session→project menu path documented in shortcut reference. Acceptance: wizard + rails fully keyboard-operable end to end.
-
-**Testing per batch:** isolated `cargo nextest` unaffected (frontend-only); `pnpm build` green; manual keyboard walkthrough per route (Tab order matches visual order; every click has a key; `Escape` always unwinds one level; focus always visible and never lost); screen-reader spot-check for new roles/live regions. Add `playwright`/`vitest` keyboard specs where harness exists (follow `testing-style-guide` when authoring — this contract does not itself add tests).
+1. **Page-nav vs in-page arrows:** solved by §1.4 precedence — EdgeNav-or-body → page-nav; arrow-group → widget; lone focusable → spatial move; editable → caret. Widget roots set `data-arrow-nav` + `stopPropagation`. Without this gate, in-page arrows are unshippable.
+2. **`Space` PTT vs `Space` activation:** PTT hold wins only when (a) Home engaged + PTT mode + not paused/sleeping/error, and (b) focus is on the Mic button or orb wrapper. Everywhere else `Space` activates. Help inline + tooltip document this.
+3. **Single-letter keys vs typing:** `M`/`T`/`?`/`/`/`[`/`]` fire only outside inputs/textareas/selects/contenteditables (same editable guard as page-nav). `Ctrl+M`, `Alt+N`, `Ctrl+S`, `Shift+Up/Down` also ignored inside text inputs (except `Ctrl+S` still `preventDefault`s globally to block browser Save — but only toggles the rail when outside inputs).
+4. **`Ctrl+S` vs browser Save:** always `preventDefault`; rail toggles only outside inputs. No Persona-save binding exists (autosave), so no in-app collision.
+5. **`Alt+N` over `Ctrl+N` (user decision):** browsers reserve `Ctrl+N` for new-window and may ignore `preventDefault`, especially in browser builds. `Alt+N` is conflict-free and still one-handed. Tooltip + Help show `Alt+N`.
+6. **`Shift+Up/Down` vs text selection:** ignored inside editable focus. `Shift+Down` never cascades past the page drawer (overlays unwind via `Escape` first). History `Shift+Up` with no selection is a deliberate no-op (user decision) — never auto-picks.
+7. **`Enter` in multi-line editors stays inconsistent by design** (popover `Enter`=save vs staging `Cmd/Ctrl+Enter`=save). Keep both; Help documents per-surface behavior. New editors follow staging (`Cmd/Ctrl+Enter` save).
+8. **Native `confirm()` for voice delete stays** (keyboard-operable natively; custom dialog deferred as non-practical).
+9. **Help copy fiction (`Space`/`M`/`[`/`]`):** contract implements the practical subset (§2, §5.1) — copy stays where implemented; any descoped claim (e.g. orbit `[`/`]` if container arrows don't ship) must be edited in the same PR (no spec-code drift per workspace §4.3).
+10. **Skipped = skipped:** calendar-grid, color-drag, camera/drag emulation, resize-handle arrows, reorder-via-keys are explicitly out of scope and must not block acceptance (§14).
 
 ---
 
-## 14. Acceptance checklist (contract is done when all hold)
+## 13. Implementation plan (practical batches — each shippable, each testable)
 
-- [ ] Every `<div onClick>` in scope has a keyboard equivalent or is converted to a native control (§9.3 inventory: `SubModelCard`, list rows, breadcrumb, `ModelCategory`).
-- [ ] No pointer-drag control lacks arrow-key parity (knob, resize, color, orbit, graph, reorder/DnD via commands).
-- [ ] No hover-only content (all tooltips/callouts focus-revealable).
+> Batch 0 first (arrow precedence + globals unblock everything else). Skipped work (§1.1) never blocks acceptance.
+
+- **Batch 0 — Arrow precedence + globals + tooltip suffix.** Gate `ResponsiveLayout` page-nav to EdgeNav/body (§1.4, add `data-edge-nav`); add full-spatial fallback mover; add `Ctrl+M` / `Alt+N` / `Ctrl+S` / `?` / `Shift+Up/Down` (§1.6–§1.7) with editable guards + `preventDefault` on `Ctrl+S`; append `(Key)` suffixes to practical tooltips (§1.9). Acceptance: arrows never change routes outside EdgeNav/body; every global toggles + restores focus; tooltips name their keys.
+- **Batch 1 — Dead-card triage (highest practical value).** `SubModelCard` body, `HistoryListView` rows, `ActiveSessionHeader`, wizard `ModelCategory` rows (§9.3). Pending wizard steps get real `disabled`. Acceptance: every practical card/row reachable + activatable; no focusable noop.
+- **Batch 2 — Home voice parity.** §2.1 PTT hold, `M`/`T`/`Shift+M`, dialogue rail tab stop + scroll keys, `Shift+Up` profiler open/close. Acceptance: engage → talk via Space → text via T → mute via M → profiler via Shift+Up — all keyboard-only.
+- **Batch 3 — Practical arrow-nav rollout.** §9.1 subset (tab strips, lists, menus, dropdowns, pill rows, notification tabs) + `Up/Down` in session rows/notification items/device rows. Acceptance: arrows move + select in every covered group; page-nav never double-fires.
+- **Batch 4 — Help inline + header map + rails/drawers.** Fill `shortcut` on practical `HelpControlItem`s; build header toggle + `SHORTCUTS` registry + full key→action map (§1.8); `EdgePanel` focus-in/restore; History `Shift+Up/Down` (selection-gated), Memory dossier `Shift+Up/Down`, Settings `Shift+Up/Down` open-all/clear-all. Acceptance: shortcuts explained inline; header map matches implementation; every drawer opens/closes via keys with focus restore.
+- **Batch 5 — Search/menu/focus polish.** Combobox `Down`/`Enter`/`Escape` on Memory/History/LLM searches (no full ARIA-grid retrofit required beyond `aria-expanded` + count), `SessionContextMenu` `Menu`-key open + `Up/Down` + `Escape`, notification `Delete`/`Enter`, `RestoreDefaults` live region, wizard heading focus. Acceptance: search-to-select, menu-operate, dismiss-focus-move all keyboard-only.
+
+**Testing per batch:** frontend-only (isolated `cargo nextest` unaffected); `pnpm build` green; manual keyboard walkthrough per route (Tab order matches visual order; every practical click has a key; `Escape` unwinds one level; `Shift+Down` closes page drawer; focus visible, never lost). Skipped items (§1.1) are not tested and do not gate.
+
+---
+
+## 14. Acceptance checklist (practical scope — skipped items don't gate)
+
+- [ ] Every practical `<div onClick>` has a keyboard equivalent (§9.3: `SubModelCard`, list rows, breadcrumb, `ModelCategory`).
+- [ ] Every practical control with a key names it in its hover/focus tooltip (§1.9) and in Help inline next to its explanation (§1.8); header full-map matches implementation (single registry).
+- [ ] Globals work: `Ctrl+M` monitor, `Alt+N` notifications, `Ctrl+S` sessions, `?` Help, `Shift+Up/Down` page drawers (History no-selection = no-op), all outside inputs only.
+- [ ] Arrows move within page/widgets alongside Tab and never change routes unless EdgeNav/body focused (§1.4); caret keys win in inputs.
 - [ ] PTT, mute, text-mode, pause/resume, engage/disengage all keyboard-operable (§2).
-- [ ] `Escape` unwinds exactly one level everywhere (overlay stack + local edits); never destructive, never navigates.
-- [ ] Arrows never change routes when a widget claims them (§1.4 guard + `data-arrow-nav` coverage).
+- [ ] `Escape` unwinds exactly one level everywhere; `Shift+Down` closes the page drawer; neither is destructive nor navigates.
 - [ ] Focus moves in on every overlay/menu/drawer/step and restores on close; never left on removed nodes.
-- [ ] Roles/live regions per §1.5 on all new/changed widgets; `?` reference panel ships and matches implementation.
-- [ ] Help copy (`Space`/`M`/`[`/`]`) is true — or copy edited in the same PR.
+- [ ] Skipped items (calendar-grid, color-drag, camera/drag emulation, resize arrows, reorder keys) are absent from Help/tooltips and do not block sign-off.
 
 ---
 

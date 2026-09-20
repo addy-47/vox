@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "@elevenlabs/react": "^1.2.1",
+    "@floating-ui/react": "^0.27.20",
     "@fontsource-variable/geist": "^5.2.8",
+    "@noriginmedia/norigin-spatial-navigation": "^3.3.0",
     "@sdkrouter/aisphere": "0.1.31",
     "@sdkrouter/client": "^0.2.21",
     "@tauri-apps/api": "2.11.0",

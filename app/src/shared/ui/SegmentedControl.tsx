@@ -28,10 +28,37 @@ function SegmentedControlInner<T extends string = string>({
 }: SegmentedControlProps<T>) {
   return (
     <div
+      data-arrow-nav
+      role="radiogroup"
+      aria-label={className ?? "segmented control"}
       className={cn(
         "flex bg-[rgba(var(--foreground),0.03)] border border-[rgba(var(--border),0.08)] p-0.5 rounded-xl gap-0.5 shrink-0 select-none",
         className
       )}
+      onKeyDown={(e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        e.stopPropagation();
+        const btns = Array.from(
+          (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>(
+            'button:not([disabled])'
+          )
+        );
+        if (btns.length === 0) return;
+        const currentIdx = btns.findIndex((b) => b === document.activeElement);
+        let nextIdx: number;
+        if (e.key === "ArrowRight") {
+          nextIdx = currentIdx < btns.length - 1 ? currentIdx + 1 : 0;
+        } else {
+          nextIdx = currentIdx > 0 ? currentIdx - 1 : btns.length - 1;
+        }
+        const next = btns[nextIdx];
+        next.focus();
+        if (currentIdx !== nextIdx) {
+          const optId = next.getAttribute("data-seg-id");
+          if (optId !== null) onChange(optId as T);
+        }
+      }}
     >
       {options.map((opt) => {
         const isActive = value === opt.id;
@@ -41,8 +68,11 @@ function SegmentedControlInner<T extends string = string>({
         const button = (
           <button
             type="button"
+            data-seg-id={opt.id}
             disabled={isDisabled}
             onClick={() => !isDisabled && onChange(opt.id)}
+            aria-selected={isActive}
+            aria-disabled={isDisabled}
             aria-label={opt.title || opt.label || opt.id}
             className={cn(
               "transition-all duration-300 border flex items-center justify-center font-bold",
