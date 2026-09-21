@@ -371,7 +371,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
             )
       )}
     >
-      <div className="flex flex-col gap-2.5 flex-1 min-h-0">
+      <div className="flex flex-col  flex-1 min-h-0">
         {/* Header Row: Title on Left, Model | Settings Toggle on Right */}
         <div className="flex items-center justify-between gap-2 mb-3 shrink-0 border-b border-[rgba(var(--accent),0.08)] pb-2 w-full">
           <div className="flex items-center gap-2 min-w-0">

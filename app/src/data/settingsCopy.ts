@@ -286,7 +286,7 @@ export const INTERACTION_CONFIG_DESK_COPY = {
       description: "Language models run directly on your local hardware using Vox's embedded inference engine. All conversational context and prompt reasoning remain completely offline and private.",
     },
     remote: {
-      title: "Self-Hosted / Ollama Server",
+      title: "Remote Server",
       urlLabel: "Server URL",
       urlPlaceholder: "http://127.0.0.1:11434",
       apiKeyLabel: "API Key (Optional)",
@@ -296,6 +296,9 @@ export const INTERACTION_CONFIG_DESK_COPY = {
       title: "Cloud Provider API",
       providerLabel: "Cloud Provider",
       apiKeyLabel: "API Key (Required)",
+      searchPlaceholder: "Search providers...",
+      sortAsc: "Sort A-Z",
+      sortDesc: "Sort Z-A",
     },
   },
   status: {
@@ -434,6 +437,7 @@ export const VOICE_CAROUSEL_COPY = {
 
 export const LLM_CATALOG_COPY = {
   connectedServer: "Connected Server",
+  serverErrorTooltip: "Connection failed or invalid API key. Ensure the server is online and credentials are correct.",
   fetching: "Fetching...",
   customModelPlaceholder: "Enter custom model ID (e.g. mistralai/mistral-large)...",
   customModelTitle: "Enter custom model ID",

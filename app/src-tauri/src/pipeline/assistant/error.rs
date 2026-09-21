@@ -64,9 +64,21 @@ pub fn on_error<R: tauri::Runtime + 'static>(
     }
 
     // Classify error and delegate alerting strictly to the Notification Service
-    let category = if err.source.contains("Audio") || err.source.contains("Microphone") {
+    let msg_lower = err.message.to_lowercase();
+    let is_hw_error = err.source.contains("Audio")
+        || err.source.contains("Microphone")
+        || msg_lower.contains("microphone")
+        || msg_lower.contains("audio device");
+
+    let is_model_error = err.source.contains("Model")
+        || msg_lower.contains("model")
+        || msg_lower.contains("404")
+        || msg_lower.contains("not found")
+        || msg_lower.contains("nosuchmodel");
+
+    let category = if is_hw_error {
         NotificationCategory::Hardware
-    } else if err.source.contains("Model") {
+    } else if is_model_error {
         NotificationCategory::Models
     } else {
         NotificationCategory::Pipeline
@@ -81,7 +93,14 @@ pub fn on_error<R: tauri::Runtime + 'static>(
     let action = match err.impact {
         PipelineImpact::None | PipelineImpact::Degraded => Action::Transient,
         PipelineImpact::TurnAborted => {
-            if err.message.contains("context") || err.message.contains("prompt too long") {
+            if msg_lower.contains("context")
+                || msg_lower.contains("prompt too long")
+                || msg_lower.contains("nokvcache")
+                || msg_lower.contains("rate limit")
+                || msg_lower.contains("rate_limit")
+                || msg_lower.contains("429")
+                || msg_lower.contains("quota")
+            {
                 Action::Interactive(ActionPayload::Navigate {
                     target: "settings/ai".to_string(),
                 })
@@ -90,11 +109,11 @@ pub fn on_error<R: tauri::Runtime + 'static>(
             }
         }
         PipelineImpact::SessionHalted => {
-            if err.source.contains("Audio") {
+            if is_hw_error {
                 Action::Interactive(ActionPayload::Navigate {
                     target: "settings/audio".to_string(),
                 })
-            } else if err.source.contains("Model") {
+            } else if is_model_error {
                 Action::Interactive(ActionPayload::Navigate {
                     target: "settings/models".to_string(),
                 })
@@ -106,9 +125,25 @@ pub fn on_error<R: tauri::Runtime + 'static>(
         }
     };
 
+    let title = if is_hw_error {
+        "Voice Notice: Audio".to_string()
+    } else if is_model_error {
+        "Voice Notice: Models".to_string()
+    } else if msg_lower.contains("context") || msg_lower.contains("prompt too long") {
+        "Voice Notice: Context".to_string()
+    } else if msg_lower.contains("rate limit") || msg_lower.contains("429") {
+        "Voice Notice: Rate Limit".to_string()
+    } else if msg_lower.contains("auth")
+        || msg_lower.contains("401")
+        || msg_lower.contains("api key")
+    {
+        "Voice Notice: Auth".to_string()
+    } else {
+        format!("Voice Notice: {}", err.source)
+    };
+
     let app_handle = app.clone();
     let db = std::sync::Arc::clone(&state.db);
-    let title = format!("Voice Notice: {}", err.source);
     let message = err.message.clone();
     let group_key = format!("pipeline_error:{}", err.source);
     let impact = err.impact;

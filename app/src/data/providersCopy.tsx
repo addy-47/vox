@@ -5,17 +5,57 @@ export interface CloudProvider {
   name: string;
   url: string;
   keyPlaceholder: string;
+  popular?: boolean;
+  tagline?: string;
 }
 
 export const CLOUD_PROVIDERS: CloudProvider[] = [
-  { id: "nvidia", name: "NVIDIA NIM", url: "https://integrate.api.nvidia.com/v1", keyPlaceholder: "nvapi-..." },
-  { id: "openai", name: "OpenAI", url: "https://api.openai.com/v1", keyPlaceholder: "sk-proj-..." },
-  { id: "gemini", name: "Gemini", url: "https://generativelanguage.googleapis.com/v1beta", keyPlaceholder: "AIzaSy..." },
-  { id: "anthropic", name: "Anthropic", url: "https://api.anthropic.com/v1", keyPlaceholder: "sk-ant-..." },
-  { id: "groq", name: "Groq", url: "https://api.groq.com/openai/v1", keyPlaceholder: "gsk_..." },
+  // Popular / Recommended
+  { id: "opencode_zen", name: "OpenCode Zen", url: "https://api.opencode.ai/v1", keyPlaceholder: "zen_...", popular: true, tagline: "Reliable optimized models" },
+  { id: "opencode_go", name: "OpenCode Go", url: "https://api.opencode.ai/v1", keyPlaceholder: "go_...", popular: true, tagline: "Low cost subscription for everyone" },
+  { id: "openai", name: "OpenAI", url: "https://api.openai.com/v1", keyPlaceholder: "sk-proj-...", popular: true, tagline: "GPT-4o, o1, o3-mini" },
+  { id: "anthropic", name: "Anthropic", url: "https://api.anthropic.com/v1", keyPlaceholder: "sk-ant-...", popular: true, tagline: "Claude 3.7 Sonnet, Claude 3.5 Haiku" },
+  { id: "gemini", name: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai", keyPlaceholder: "AIzaSy...", popular: true, tagline: "Gemini 2.5 Flash & Pro" },
+  { id: "openrouter", name: "OpenRouter", url: "https://openrouter.ai/api/v1", keyPlaceholder: "sk-or-v1-...", popular: true, tagline: "Unified multi-model routing gateway" },
+  { id: "vercel", name: "Vercel AI Gateway", url: "https://gateway.ai.vercel.dev/v1", keyPlaceholder: "vcl_...", popular: true, tagline: "Edge AI gateway" },
+  { id: "groq", name: "Groq", url: "https://api.groq.com/openai/v1", keyPlaceholder: "gsk_...", popular: true, tagline: "Ultra-fast LPU inference" },
+  { id: "deepseek", name: "DeepSeek", url: "https://api.deepseek.com/v1", keyPlaceholder: "sk-...", popular: true, tagline: "DeepSeek-V3 & DeepSeek-R1" },
+  { id: "together", name: "Together AI", url: "https://api.together.xyz/v1", keyPlaceholder: "tog_...", popular: true, tagline: "High-performance open source models" },
+  { id: "mistral", name: "Mistral AI", url: "https://api.mistral.ai/v1", keyPlaceholder: "mis_...", popular: true, tagline: "Mistral Large, Codestral, Pixtral" },
+  { id: "nvidia", name: "NVIDIA NIM", url: "https://integrate.api.nvidia.com/v1", keyPlaceholder: "nvapi-...", popular: true, tagline: "Enterprise NIM microservices" },
+  { id: "cerebras", name: "Cerebras", url: "https://api.cerebras.ai/v1", keyPlaceholder: "csk-...", popular: true, tagline: "Wafer-scale high-throughput inference" },
+  { id: "fireworks", name: "Fireworks AI", url: "https://api.fireworks.ai/inference/v1", keyPlaceholder: "fw_...", popular: true, tagline: "Fast production inference platform" },
+  { id: "perplexity", name: "Perplexity", url: "https://api.perplexity.ai", keyPlaceholder: "pplx-...", popular: true, tagline: "Sonar search-grounded LLMs" },
+  { id: "xai", name: "xAI (Grok)", url: "https://api.x.ai/v1", keyPlaceholder: "xai-...", popular: true, tagline: "Grok-2 & Grok-beta" },
+  { id: "cohere", name: "Cohere", url: "https://api.cohere.com/v2", keyPlaceholder: "coh_...", popular: true, tagline: "Command R+ enterprise intelligence" },
+
+  // Specialized / Gateways / Cloud Providers
+  { id: "siliconflow", name: "SiliconFlow", url: "https://api.siliconflow.cn/v1", keyPlaceholder: "sk-...", tagline: "Fast cloud inference across top OSS models" },
+  { id: "moonshot", name: "Moonshot AI (Kimi)", url: "https://api.moonshot.cn/v1", keyPlaceholder: "sk-...", tagline: "Kimi long-context models" },
+  { id: "minimax", name: "MiniMax", url: "https://api.minimax.chat/v1", keyPlaceholder: "mm_...", tagline: "MiniMax-01 reasoning and dialogue" },
+  { id: "alibaba", name: "Alibaba DashScope", url: "https://dashscope.aliyuncs.com/compatible-mode/v1", keyPlaceholder: "sk-...", tagline: "Qwen 2.5 series" },
+  { id: "zhipu", name: "Zhipu AI (GLM)", url: "https://open.bigmodel.cn/api/paas/v4", keyPlaceholder: "glm_...", tagline: "GLM-4 foundation models" },
+  { id: "deepinfra", name: "Deep Infra", url: "https://api.deepinfra.com/v1/openai", keyPlaceholder: "di_...", tagline: "Serverless model inference" },
+  { id: "novita", name: "Novita AI", url: "https://api.novita.ai/v3/openai", keyPlaceholder: "nov_...", tagline: "Low latency serverless GPU inference" },
+  { id: "chutes", name: "Chutes", url: "https://chutes.ai/v1", keyPlaceholder: "ch_...", tagline: "Decentralized GPU inference" },
+  { id: "baseten", name: "Baseten", url: "https://bridge.baseten.co/v1", keyPlaceholder: "base_...", tagline: "Dedicated model deployments" },
+  { id: "databricks", name: "Databricks", url: "https://<workspace>.databricks.com/serving-endpoints", keyPlaceholder: "dapi...", tagline: "Enterprise lakehouse model serving" },
+  { id: "cloudflare", name: "Cloudflare AI Gateway", url: "https://gateway.ai.cloudflare.com/v1", keyPlaceholder: "cf_...", tagline: "Universal proxy with caching & guardrails" },
+  { id: "friendli", name: "Friendli", url: "https://inference.friendli.ai/v1", keyPlaceholder: "flp_...", tagline: "Optimized throughput engine" },
+  { id: "modal", name: "Modal", url: "https://<app>.modal.run/v1", keyPlaceholder: "mod_...", tagline: "Serverless custom cloud functions" },
+  { id: "stepfun", name: "StepFun", url: "https://api.stepfun.com/v1", keyPlaceholder: "step_...", tagline: "Step-1 & Step-2 multimodal models" },
+  { id: "ai21", name: "AI21 Labs", url: "https://api.ai21.com/studio/v1", keyPlaceholder: "ai21_...", tagline: "Jamba hybrid architecture models" },
+  { id: "huggingface", name: "Hugging Face", url: "https://api-inference.huggingface.co/v1", keyPlaceholder: "hf_...", tagline: "Serverless inference API" },
+  { id: "ollama_cloud", name: "Ollama Cloud", url: "https://ollama.ai/api/v1", keyPlaceholder: "ollama_...", tagline: "Managed Ollama endpoints" },
+
+  // Custom
+  { id: "custom", name: "Custom OpenAI-compatible", url: "https://api.example.com/v1", keyPlaceholder: "API Key / Token", tagline: "Any standard /v1/chat/completions endpoint" },
 ];
 
-export const CLOUD_PROVIDER_HOSTS = ["openai.com", "googleapis.com", "anthropic.com", "groq.com", "nvidia.com"] as const;
+export const checkIfCloudUrl = (url: string) => {
+  if (!url) return false;
+  return !url.includes("localhost") && !url.includes("127.0.0.1") && !url.includes("0.0.0.0");
+};
 
 export const GeminiLogo = ({
   active,
@@ -92,10 +132,13 @@ export const ElevenLabsLogo = ({
   </svg>
 );
 
-export const checkIfCloudUrl = (url: string) => {
-  if (!url) return false;
-  return CLOUD_PROVIDER_HOSTS.some((host) => url.includes(host));
-};
+export const CLOUD_PROVIDER_HOSTS = CLOUD_PROVIDERS.map((p) => {
+  try {
+    return new URL(p.url).hostname;
+  } catch {
+    return p.id;
+  }
+});
 
 export const REALTIME_PROVIDERS = [
   {

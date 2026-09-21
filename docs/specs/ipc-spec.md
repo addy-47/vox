@@ -45,7 +45,7 @@ Manages conversational sessions, turns, and session continuation.
 
 #### `create_session(projectId: Option<String>)` — [ALIGNED]
 - **Purpose**: Prepares UI and backend state for a fresh session (triggered by user clicking "+ New Session").
-- **Behavior**: If an active voice session is running (`InteractionState != Idle`), disengages the audio pipeline cleanly (`VoxEvent::EndSession`). Clears `conversation_id` to 0. Follows **lazy session persistence**: zero empty database rows are created upfront; Turso `sessions` row insertion is deferred until the first spoken turn. While `Idle`, **zero harness instances exist in memory**. When the user subsequently engages, frontend passes `sessionId: null` to `start_session(None)`.
+- **Behavior**: If an active voice session is running (`InteractionState != Idle`), disengages the audio pipeline cleanly (`VoxEvent::EndSession`). Clears `conversation_id` to 0. While `Idle`, **zero harness instances exist in memory**. When the user subsequently engages, frontend passes `sessionId: null` to `start_session(None)`, which mints the epoch monotonic session ID and dispatches `SessionStarted`. If a session ends with zero spoken turns, it is automatically swept by `cleanup_zero_turn_sessions`.
 
 #### `continue_session(sessionId: i64)` — [ALIGNED]
 - **Purpose**: Fetches historical session turns and metadata to display a past session in the conversation view.
@@ -170,7 +170,7 @@ Controls the voice interaction lifecycle and hardware devices.
 - **Purpose**: Transitions assistant from `Idle` to `Ready`, mounting the `HarnessSession`.
 - **Behavior**: 
   - If `sessionId == Some(id)`: Mounts the `HarnessSession` continuing session `id`, loading continuation turns and the latest summary from Turso.
-  - If `sessionId == None`: Mounts a fresh `HarnessSession` (`session_id = 0`, lazy DB row created on first turn).
+  - If `sessionId == None`: Mounts a fresh `HarnessSession` (minted epoch timestamp `conv_id`, with `SessionStarted` persisted on boot; zero-turn sessions swept on clean exit or restart).
   - Starts audio engine and dispatches `VoxEvent::SessionStart { owner: Assistant, session_id }` to `event_tx`.
 
 #### `pause_session()`, `resume_session()`, `end_session()`
@@ -266,7 +266,7 @@ Every event emitted by the backend via `emit_ipc` or `emit_ipc_to` is mapped dir
 | `notification_created` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when a persistent actionable notification or alert is created. |
 | `notification_updated` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when an active notification status changes (e.g. marked read or updated). |
 | `personal_memory_updated`| `PersonalMemoryRecord { id, project_id, content, version, last_consolidated_at, updated_at }` | Emitted when Personal Memory is consolidated, edited, or regenerated. |
-| `sessions_changed` | `void` | Signals frontend when sessions are updated asynchronously / out-of-band by the backend (e.g. background title generation or compaction cleanup). Frontend refetches the session list. |
+| `sessions_changed` | `void` | Signals frontend when sessions are updated asynchronously / out-of-band by the backend (e.g. session title assignment via `respond_and_set_title` or compaction cleanup). Frontend refetches the session list. |
 | `settings-updated` | `void` | Signals frontend that application settings were hot-reloaded. |
 | `toggle_tray` | `void` | Toggles tray drawer visibility. |
 

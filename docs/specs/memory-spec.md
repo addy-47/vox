@@ -29,15 +29,16 @@ A completed turn in the voice pipeline consists of:
 
 ## 3. Stage 1: LLM Harness & Working Memory Compaction
 
-### 3.1 Streaming Dual-Routing Harness (Wire Format Benchmarking)
+### 3.1 Normalized Egress Stream & Tool Interception Architecture
 To prevent orchestration logic from stalling speech synthesis or leaking into speech audio:
-- **Wire Format Benchmark Gate**: Streaming XML tags vs. structured JSON token demuxing must be empirically benchmarked for parser latency and TTS streaming throughput before locking the production wire format.
-- **Tagged Streaming Architecture**:
-  - The conversational speech response is framed inside `<response>...</response>`.
-  - Tokens within `<response>` stream immediately into TTS (`TtsClauseChunker` $\to$ `TtsActor`).
-  - The closing tag `</response>` immediately signals completion to the speech pipeline: TTS chunking finishes and `VoxEvent::LlmFinished` is emitted.
-  - Trailing orchestration tags (e.g. `<title>...</title>`, `<action>...</action>`) stream to their registered backend consumers off the voice hot path.
-- **First-Turn Session Titles**: On Turn 1 of a new session, the harness appends a prompt directive: *"At the end of your response, output a concise 3-5 word title in `<title>...</title>`."* The harness consumes this tag and dispatches `PersistenceEvent::UpdateSessionMetadata { session_id, key: "title", value }`.
+- **Normalized Event Stream**: The LLM layer emits strongly typed events (`TextDelta`, `ToolCall`, `Finished`, `Error`).
+- **Audio Hot Path Isolation**:
+  - `TextDelta` tokens stream directly through clause normalization and chunking into TTS (`TtsClauseChunker` $\to$ `TtsActor`).
+  - `ToolCall` events bypass the audio pipeline and are intercepted directly by the `Harness` orchestrator.
+- **First-Turn Session Titles via Agentic Tool**:
+  - When `session.title.is_none()` and title generation has not yet been attempted for the mounted session, the harness injects the `respond_and_set_title` tool schema into the candidate tool list.
+  - The model calls `respond_and_set_title` as a `Terminal` tool call, providing both the 3-5 word title and its complete `spoken_response` in a single pass.
+  - The spoken response is delivered immediately to TTS, while the title is persisted via an awaited database write in the persistence layer, followed immediately by emitting `IpcEvent::SessionsChanged` (`sessions_changed`) to trigger frontend session rail refresh. Legacy XML tag parsing (`<title>...</title>`) is decommissioned.
 
 ### 3.2 Compaction Output Contract (The Session Context)
 Every compaction pass (Critical, Soft, or Manual) produces a single unified JSON output containing two distinct buckets across 6 generic human/conversational memory categories:
@@ -198,7 +199,7 @@ Memory is global: the merge folds all `status = 'active'` personal facts into th
 ### 6.1 Episodic Memory Retrieval (Deferred as LLD)
 - Active episodic facts (`objective`, `workdone`, `blocker`, `next_step`, `pitfall`) are stored in `memory_facts` with denormalized metadata in `memory_facts_vectors`.
 - **Zero Automatic Turn Injection**: No scope classification, no per-turn injection.
-- **On-Demand Tool Call**: Retrieved exclusively when the model invokes `search_memory(...)`. Exact tool parameters, vector thresholding, and hybrid search options are deferred to Low-Level Design (LLD).
+- **On-Demand Tool Call**: Retrieved exclusively when the model invokes the non-terminal tool `search_memory(query, spoken_filler)`. Thresholding (cosine cutoff, top-K facts) is governed by system configuration, not model arguments (see `tools-spec.md §7.2`).
 
 ### 6.2 Session Continuation Context
 When a user restores and continues an existing session from the conversation list:

@@ -50,6 +50,10 @@ jobs:
           CFLAGS: "-mmacosx-version-min=11.0"
           CXXFLAGS: "-mmacosx-version-min=11.0 -D_LIBCPP_DISABLE_AVAILABILITY"
           CMAKE_TOOLCHAIN_FILE: "${{ github.workspace }}/.github/cmake/macos-toolchain.cmake"
+          CARGO_PROFILE_RELEASE_LTO: "thin"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+          CARGO_PROFILE_RELEASE_STRIP: "true"
+          CARGO_PROFILE_RELEASE_PANIC: "abort"
         run: |
           cd app
           export SDKROOT="$(xcrun --show-sdk-path)"

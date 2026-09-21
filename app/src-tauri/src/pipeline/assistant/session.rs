@@ -224,6 +224,34 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
     if let Err(e) = start_res {
         log::error!("[Pipeline::Session] Session start failed: {}", e);
         transition(InteractionState::Error, &session_ctx, app, state);
+
+        let app_handle = app.clone();
+        let db = state.db.clone();
+        let error_msg = format!("Session start failed: {}. Please check settings.", e);
+
+        tauri::async_runtime::spawn(async move {
+            let params = NotificationParams {
+                category: NotificationCategory::Pipeline,
+                severity: Severity::Critical,
+                impact: Some(PipelineImpact::SessionHalted),
+                action: Action::Interactive(ActionPayload::Navigate {
+                    target: "settings/ai".to_string(),
+                }),
+                title: "Session Start Failed",
+                message: &error_msg,
+                group_key: Some("session:start_failed"),
+                session_id: None,
+                metadata: None,
+                duration_ms: None,
+            };
+            if let Err(notify_err) = services::notifications::notify(&app_handle, &db, params).await
+            {
+                log::warn!(
+                    "[Pipeline::Session] Failed to dispatch start failure notification: {}",
+                    notify_err
+                );
+            }
+        });
         return;
     }
 

@@ -72,6 +72,10 @@ jobs:
           CMAKE_CXX_COMPILER: clang++
           CXXFLAGS: "-stdlib=libc++"
           LDFLAGS: "-lc++"
+          CARGO_PROFILE_RELEASE_LTO: "thin"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+          CARGO_PROFILE_RELEASE_STRIP: "true"
+          CARGO_PROFILE_RELEASE_PANIC: "abort"
         with:
           projectPath: ./app
           args: --bundles deb
