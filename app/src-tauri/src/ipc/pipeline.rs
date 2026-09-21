@@ -44,13 +44,18 @@ pub async fn restart_engine<R: tauri::Runtime>(
         None
     };
 
-    stop_audio_engine(&state).await.map_err(VoxIpcError::Engine)?;
+    stop_audio_engine(&state)
+        .await
+        .map_err(VoxIpcError::Engine)?;
     start_audio_engine(&app, &state)
         .await
         .map_err(VoxIpcError::Engine)?;
 
     if let Some(sid) = active_session_id {
-        log::info!("[Core::Engine] Re-engaging active session {} post-restart", sid);
+        log::info!(
+            "[Core::Engine] Re-engaging active session {} post-restart",
+            sid
+        );
         let event_tx = state
             .event_tx
             .lock()
@@ -62,7 +67,9 @@ pub async fn restart_engine<R: tauri::Runtime>(
                 owner: InteractionOwner::Assistant,
                 session_id: Some(sid),
             })
-            .map_err(|e| VoxIpcError::Engine(format!("Failed to send SessionStart on restart: {}", e)))?;
+            .map_err(|e| {
+                VoxIpcError::Engine(format!("Failed to send SessionStart on restart: {}", e))
+            })?;
     }
 
     Ok(())

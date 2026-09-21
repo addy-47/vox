@@ -254,6 +254,14 @@ export const LlmCatalogView = memo(({
                 <span className="font-bold text-[rgb(var(--foreground))] text-[13px] flex items-center gap-1.5 truncate">
                   <Network size={15} className="text-[rgb(var(--accent))] shrink-0" />
                   <span>{LLM_CATALOG_COPY.connectedServer}</span>
+                  {remoteModelsError && (
+                    <span
+                      title={typeof remoteModelsError === "string" && !remoteModelsError.includes("[object") ? remoteModelsError : LLM_CATALOG_COPY.serverErrorTooltip}
+                      className="inline-flex items-center text-amber-400 shrink-0 ml-0.5 cursor-help"
+                    >
+                      <AlertCircle size={14} />
+                    </span>
+                  )}
                 </span>
                 <span className="text-[11px] text-[rgb(var(--foreground-muted))] font-mono truncate max-w-[200px] sm:max-w-[280px]">
                   {remoteUrl || LLM_CATALOG_COPY.noServer}
@@ -300,13 +308,6 @@ export const LlmCatalogView = memo(({
             </>
           )}
         </div>
-
-        {remoteModelsError && (
-          <div className="text-[12px] font-bold text-red-400/90 bg-red-400/5 border border-red-400/20 rounded-xl px-3 py-2 flex items-center gap-2 shrink-0">
-            <AlertCircle size={16} className="shrink-0 text-red-400" />
-            <span>{remoteModelsError}</span>
-          </div>
-        )}
 
         {/* Remote Models 2-Column Grid (Only Scrollable Area) */}
         <div

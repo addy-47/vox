@@ -166,84 +166,43 @@ export const DictationConfigDesk = memo(({ layoutMode, disabled = false }: Dicta
         disabled && "opacity-40 pointer-events-none select-none"
       )}
     >
-      {/* Output Destination Selector Ribbon with arrow */}
-      <div className="flex flex-wrap items-center justify-between gap-y-1.5 gap-x-1 w-full pb-1.5 sm:pb-2 pt-1 shrink-0 px-1.5 sm:px-3">
-        {/* Left: Mode Title */}
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 pr-0.5 sm:pr-1">
-          <div className="p-0.5 sm:p-1 rounded-md text-[rgb(var(--accent))] flex items-center justify-center">
-            <OutputIcon size={13} className="shrink-0 sm:w-3.5 sm:h-3.5" />
-          </div>
-          <span className="text-[12px] sm:text-[13px] font-black tracking-wider uppercase text-[rgb(var(--accent))] select-none">
-            {DICTATION_COPY.outputTitle}
-          </span>
-        </div>
-
-        {/* Center Connector Arrow */}
-        <div className="flex flex-1 items-center px-1 min-w-[8px] pointer-events-none select-none overflow-hidden">
-          <svg
-            className="w-full h-2.5 sm:h-3 text-[rgb(var(--accent))]/50 overflow-visible"
-            viewBox="0 0 100 12"
-            preserveAspectRatio="none"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <line
-              x1="0"
-              y1="6"
-              x2="97"
-              y2="6"
-              stroke="currentColor"
-              strokeWidth="1.25"
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-            />
-            <path
-              d="M 92 2.5 L 98.5 6 L 92 9.5"
-              stroke="currentColor"
-              strokeWidth="1.25"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
-        </div>
-
-        {/* Right: Output Mode Underline Tabs (Short Titles) */}
-        <div
-          className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 pl-0.5 sm:pl-1"
-          role="tablist"
-          aria-label="Output mode"
-        >
-          {OUTPUT_OPTIONS.map((mode, idx, arr) => {
-            const isActive = outputMode === mode.id;
-            return (
-              <div key={mode.id} className="flex items-center gap-1.5 sm:gap-2.5">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  tabIndex={isActive ? 0 : -1}
-                  data-arrow-nav
-                  onKeyDown={handleOutputKeyDown}
-                  onClick={() => updateDraft("dictation", "output_mode", mode.id)}
-                  className={cn(
-                    "flex items-center justify-center gap-1 pb-0.5 sm:pb-1 border-b-2 transition-all duration-200 bg-transparent text-[11px] sm:text-[12px] font-black uppercase tracking-[0.08em] sm:tracking-[0.12em] outline-none cursor-pointer",
-                    isActive
-                      ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
-                      : "text-[rgb(var(--foreground-muted))]/50 border-transparent hover:text-[rgb(var(--foreground-muted))]/80"
-                  )}
-                >
-                  <span>{mode.label}</span>
-                </button>
-                {idx < arr.length - 1 && (
-                  <span className="text-[11px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/20 font-light select-none pb-0.5 sm:pb-1">
-                    |
-                  </span>
+      {/* Output Destination Underline Tabs (Clean structure without arrow) */}
+      <div
+        className="w-full flex items-center justify-between pt-0.5 pb-1 shrink-0 border-b border-[rgba(var(--accent),0.08)] mb-1 px-0.5 select-none overflow-x-auto no-scrollbar"
+        role="tablist"
+        aria-label="Dictation output mode"
+      >
+        {OUTPUT_OPTIONS.map((mode, idx, arr) => {
+          const isActive = outputMode === mode.id;
+          const ModeIcon = getOutputIcon(mode.id);
+          return (
+            <div key={mode.id} className="flex-1 min-w-0 flex items-center justify-center">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                tabIndex={isActive ? 0 : -1}
+                data-arrow-nav
+                onKeyDown={handleOutputKeyDown}
+                onClick={() => updateDraft("dictation", "output_mode", mode.id)}
+                className={cn(
+                  "w-full flex items-center justify-center gap-1.5 pb-1 border-b-2 transition-all duration-200 bg-transparent text-[10px] sm:text-[11px] font-black uppercase tracking-[0.06em] sm:tracking-[0.1em] outline-none cursor-pointer text-center truncate px-1",
+                  isActive
+                    ? "text-[rgb(var(--accent))] border-[rgb(var(--accent))]"
+                    : "text-[rgb(var(--foreground-muted))]/60 border-transparent hover:text-[rgb(var(--foreground))]"
                 )}
-              </div>
-            );
-          })}
-        </div>
+              >
+                <ModeIcon size={12} className={cn("shrink-0", isActive ? "text-[rgb(var(--accent))]" : "text-[rgb(var(--foreground-muted))]/50")} />
+                <span className="truncate">{mode.label}</span>
+              </button>
+              {idx < arr.length - 1 && (
+                <span className="text-[10px] text-[rgb(var(--foreground-muted))]/25 font-light select-none pb-1 shrink-0 px-1">
+                  |
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Desk Content Area */}

@@ -249,6 +249,10 @@ fn apply_llm_mutation(
             settings.llm.cloud = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid LLM cloud config: {}", e))?;
         }
+        "cloud_keys" => {
+            settings.llm.cloud_keys = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid LLM cloud_keys config: {}", e))?;
+        }
         "provider" => {
             if let Ok(prov) = serde_json::from_value::<LlmProviderConfig>(value.clone()) {
                 match prov {

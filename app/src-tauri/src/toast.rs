@@ -20,6 +20,17 @@ const TOAST_WIDTH: f64 = 360.0;
 const TOAST_HEIGHT: f64 = 96.0;
 const TOAST_PAD_TOP: f64 = 24.0;
 
+/// Delivery outcome of attempting to dispatch a toast notification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToastDeliveryOutcome {
+    /// Toast overlay window successfully scheduled and displayed.
+    Shown,
+    /// Toast overlay was suppressed because the main application window is focused in the foreground.
+    SuppressedFocused,
+    /// Webview window construction or display failed.
+    Failed,
+}
+
 /// Ensures the "toast" WebviewWindow exists, lazily constructing it if absent.
 pub fn ensure_toast_window<R: tauri::Runtime>(
     app: &AppHandle<R>,
@@ -217,18 +228,18 @@ pub fn should_show_error_toast<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
 }
 
 /// Lazily ensures the toast window, positions it, and emits a `show_toast` event.
-/// Suppresses floating overlay window when the main app window is focused.
+/// Suppresses floating overlay window when the main app window is focused, returning `SuppressedFocused`.
 pub fn show_toast<R: tauri::Runtime>(
     app: &AppHandle<R>,
     title: &str,
     message: &str,
     severity: Severity,
     duration_ms: Option<u64>,
-) -> Result<(), String> {
+) -> ToastDeliveryOutcome {
     if let Some(main_win) = app.get_webview_window(AppWindow::Main.as_str()) {
         if main_win.is_visible().unwrap_or(false) && main_win.is_focused().unwrap_or(false) {
             log::debug!("[Toast] Main window is focused; suppressing floating toast overlay");
-            return Ok(());
+            return ToastDeliveryOutcome::SuppressedFocused;
         }
     }
 
@@ -236,10 +247,13 @@ pub fn show_toast<R: tauri::Runtime>(
 
     let _window = match window_res {
         Ok(Ok(w)) => w,
-        Ok(Err(e)) => return Err(e),
+        Ok(Err(e)) => {
+            log::warn!("[Toast] ensure_toast_window failed: {}", e);
+            return ToastDeliveryOutcome::Failed;
+        }
         Err(_) => {
             log::debug!("[Toast] Window creation unimplemented on current runtime (mock/headless)");
-            return Ok(());
+            return ToastDeliveryOutcome::Failed;
         }
     };
     let title_owned = title.to_string();
@@ -308,7 +322,7 @@ pub fn show_toast<R: tauri::Runtime>(
         setup_linux_toast_layer(&app_clone, "toast");
     });
 
-    Ok(())
+    ToastDeliveryOutcome::Shown
 }
 
 /// Runs a GTK-handle operation without letting exotic backends panic the caller.

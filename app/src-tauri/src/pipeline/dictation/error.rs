@@ -50,13 +50,21 @@ pub fn on_error<R: tauri::Runtime>(err: PipelineError, app: &AppHandle<R>, state
         PipelineImpact::Degraded => Severity::Warning,
         _ => Severity::Critical,
     };
+    let action = match impact {
+        PipelineImpact::SessionHalted => {
+            Action::Interactive(services::notifications::ActionPayload::Navigate {
+                target: "settings/dictation".to_string(),
+            })
+        }
+        _ => Action::Transient,
+    };
 
     tauri::async_runtime::spawn(async move {
         let params = NotificationParams {
             category: NotificationCategory::Dictation,
             severity,
             impact: Some(impact),
-            action: Action::Transient,
+            action,
             title: "Dictation Notice",
             message: &message,
             group_key: Some("dictation:error"),

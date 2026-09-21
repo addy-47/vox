@@ -193,6 +193,7 @@ export interface LlmSettings {
   embedded: LlmEmbeddedConfig;
   server: LlmRemoteConfig;
   cloud: LlmRemoteConfig;
+  cloud_keys?: Record<string, string>;
 }
 
 export interface TtsEdgeTtsConfig {

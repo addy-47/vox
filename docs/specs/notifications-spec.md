@@ -271,9 +271,12 @@ When an error occurs during a voice turn, the runtime error boundary must execut
 ### 8.3 Dual Channel (`ToastAndNotification`)
 - **Atomic Dispatch**: Emits simultaneously to the HUD overlay window and commits a persistent record to SQLite.
 
-### 8.4 HUD Overlay Exclusivity & Graceful Elevation Fallback
+### 8.4 HUD Overlay Exclusivity & In-App Delivery Routing
 - **Sole Overlay Surface**: Floating HUD alerts are exclusively delivered via Vox's internal transparent webview window (`AppWindow::Toast` in `toast.rs`). External third-party OS notification crates (`notify-rust`, `tauri-plugin-notification`, libnotify) are strictly excluded to avoid platform daemon hang risks and UI format breakage.
-- **Graceful Elevation Fallback**: If `AppWindow::Toast` construction fails or is blocked by display server compositor restrictions, the Notification Service automatically falls back to committing the record to the persistent SQLite drawer (`NotificationOnly`) so alerts are never swallowed.
+- **Delivery Outcome Semantics**: `show_toast` returns an explicit delivery outcome (`Shown`, `SuppressedFocused`, `Failed`):
+  - `Shown`: HUD overlay webview displayed the toast to the user outside the app.
+  - `SuppressedFocused`: Floating overlay was suppressed because the main window is focused. The Notification Service emits `IpcEvent::ShowToast` directly to `AppWindow::Main` so in-app users receive visual transient feedback without overlay window jitter.
+  - `Failed`: Webview construction failed or was blocked by the display server compositor. The Notification Service logs the error and gracefully falls back to persistent drawer storage (`NotificationOnly`) so alerts are never swallowed.
 
 ---
 
@@ -285,10 +288,13 @@ When an error occurs during a voice turn, the runtime error boundary must execut
 - **Dismiss Notifications**: Accepts an optional filter targeting specific IDs, an entire correlation group key, a category, an `action_type`, or all active notifications. Updates matching records to dismissed status.
 - **Execute Notification Action**: Polymorphic action executor accepting a notification ID (`execute_notification_action(id)`). Resolves the action payload and dispatches backend-executable tasks (`CompactSession`, `ConsolidateMemory`, `Retry`). Does not handle `Navigate` (which is executed client-side by the React router). Does not mutate the card's attention status. Updates `metadata.resolution` in-place on completion.
 
-### 9.2 Drawer Presentation & Rollup Contracts
+### 9.2 Drawer Presentation, Rollup & Badge Contracts
 - **Two-Tab Drawer (`Tasks` vs `Updates`)**:
   - **`Tasks` Tab**: Shows actionable interactive cards requiring user remediation (`action_type == 'interactive'` and `metadata.resolution != 'resolved'`).
   - **`Updates` Tab**: Shows passive historical receipts and resolved tasks (`action_type == 'receipt'` or `metadata.resolution == 'resolved'`), rolled up with `(×N)` counters.
+- **Bell Badge Counter Contract**: The UI notification bell badge counter in the top-right cluster reflects all unread attention items according to the deterministic rule:
+  $$\text{countsTowardBadge} = (\text{status} == \text{'unread'}) \land ((\text{action\_type} == \text{'interactive'} \land \text{metadata.resolution} \neq \text{'resolved'}) \lor \text{severity} \in \{\text{'warning'}, \text{'critical'}\})$$
+  This guarantees that unresolved tasks always alert the user, system warnings and critical receipts are not hidden, and resolved interactive tasks do not artificially inflate the badge.
 - **Auto-Mark as Read**: Opening/mounting the drawer automatically marks unread notifications as read and clears the unread badge counter.
 - **Scoped Dismiss All**: A single `[Dismiss All]` header action is strictly scoped to the active tab (`filter: { action_type: activeTab }`).
 - **Icon Action Buttons**: Action buttons are minimal, sleek icon buttons (e.g. `Sparkles` for compaction, `Database` for consolidation, `RotateCcw` for retry) with hover tooltips indicating the action. No loud text buttons (e.g. no `[Tidy Now]`).
@@ -308,9 +314,12 @@ When an error occurs during a voice turn, the runtime error boundary must execut
 | **Pipeline TTS** | `on_error` | `Pipeline` | `Degraded` | `Warning` | `Transient` | Title: `"Voice Notice: TTS"`<br/>Msg: Degraded synthesis notice |
 | **Pipeline RAG** | `on_error` | `Pipeline` | `Degraded` | `Warning` | `Transient` | Title: `"Voice Notice: Memory"`<br/>Msg: `"Semantic retrieval skipped for this turn."` |
 | **Pipeline Context**| `on_error` | `Pipeline` | `TurnAborted` | `Warning` | `Interactive(Navigate("settings/ai"))` | Title: `"Voice Notice: Context"`<br/>Msg: `"System prompt exceeds context window."` |
-| **Pipeline Auth** | `on_error` | `Pipeline` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/ai"))` | Title: `"Voice Notice: LLM"`<br/>Msg: `"API key invalid or expired."` |
+| **Pipeline Rate Limit**| `on_error` | `Pipeline` | `TurnAborted` | `Warning` | `Interactive(Navigate("settings/ai"))` | Title: `"Voice Notice: Rate Limit"`<br/>Msg: `"Provider rate limit reached."` |
+| **Pipeline Network**| `on_error` | `Pipeline` | `TurnAborted` | `Warning` | `Interactive(Navigate("settings/ai"))` | Title: `"Voice Notice: Network"`<br/>Msg: `"Connection to provider failed or timed out."` |
+| **Pipeline Auth** | `on_error` | `Pipeline` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/ai"))` | Title: `"Voice Notice: Auth"`<br/>Msg: `"API key invalid, missing, or unauthorized."` |
 | **Hardware** | `on_error` | `Hardware` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/audio"))` | Title: `"Voice Notice: Audio"`<br/>Msg: `"Microphone device disconnected."` |
-| **Models** | `on_error` | `Models` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/models"))` | Title: `"Voice Notice: Models"`<br/>Msg: `"Local weights not found on disk."` |
+| **Models 404/Missing** | `on_error` | `Models` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/models"))` | Title: `"Voice Notice: Models"`<br/>Msg: `"Model weights or endpoint not found on server."` |
+| **Models Warmup** | `warm_up_llm` | `Models` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/models"))` | Title: `"Voice Notice: Models"`<br/>Msg: `"LLM provider initialization failed."` |
 | **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Info` | `Interactive(CompactSession(id))` | Title: `"Session #X Ready to Compact"`<br/>Msg: `"X uncompacted turns."` |
 | **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Info` | `Receipt` | Title: `"Session #X Compacted"`<br/>Msg: `"Extracted X memory facts."` |
 | **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Warning` | `Receipt` | Title: `"Session #X Compaction Failed"`<br/>Msg: Error description |

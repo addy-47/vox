@@ -9,26 +9,38 @@
 
 ## 1. Scope, Philosophy & Core Invariants
 
-#### 1.1 Scope Boundaries
+### 1.1 Scope Boundaries
 This specification defines the architectural design of the Vox LLM Agent Harness. The scope is strictly bounded to:
 1. **Single-Orchestrator Turn Execution**: Consolidating all conversational turn sequencing, state evaluation, and actor coordination into a single runtime orchestrator (`Harness` in `services/harness/orchestrator.rs`).
 2. **Narrow-Interface Stages**: Decoupling memory, budgeting, prompt assembly, and compaction into isolated, pure input-in/output-out stages (`stages/`).
 3. **Decoupled Egress Stream Processing**: Elevating token stream consumption, grammatical clause chunking, prosody punctuation morphing, TTS dispatch, and UI subtitle emissions out of both the LLM actor and the TTS actor into the Harness egress stream layer (`streaming/`).
-4. **Architectural Future-Proofing**: Establishing designated integration slots for the Tagged Streaming Demuxer and On-Demand Episodic Tool Calling without implementing unapproved runtime features in this phase.
+4. **Agentic Tool Execution Chassis**: Integrating the cognitive tool registry and multi-turn reentrant execution loop into `Harness::execute_turn`, supporting single-pass Terminal tools and reentrant Non-Terminal tools with strict audio isolation.
 
 ### 1.2 The Foundational Axiom: Agent = Model + Harness
 Vox treats conversational intelligence as a two-tier system:
 1. **The Model Layer (`LlmActor`)**: A pure, stateless compute engine. It accepts a structured conversation payload and produces an asynchronous stream of raw tokens. It possesses zero knowledge of audio devices, text-to-speech actors, user interface windows, clause chunking heuristics, or conversational state machines.
 2. **The Harness Layer (`Harness`)**: The conversational orchestrator and runtime environment. It manages dialog memory, enforces token budgets, injects personalization, drives multi-step cognitive loops, routes output tokens to audio synthesis, and dictates pipeline state transitions.
 
-### 1.3 The Six Architectural Invariants
-Every component and stage within the harness must strictly satisfy six invariants:
-1. **Single Orchestrator Authority**: Exactly one orchestrator (`Harness`) owns turn sequencing and lifecycle state. No other component or pipeline helper may make sequencing decisions.
-2. **Narrow, Typed Stage Interfaces**: Each stage accepts a typed input struct and returns a typed output struct. A stage never reaches into another stage's internals.
-3. **Zero Inter-Stage Communication**: Stages never import, call, or communicate with each other. The orchestrator mediates all data flow.
-4. **Exclusive State Ownership**: Each stage owns its state exclusively. There is zero shared mutable state or simultaneous multi-actor mutation.
-5. **Strict Boundary Encapsulation**: The orchestrator is an opaque black box. External callers cannot clone, borrow, or invoke internal stages directly.
-6. **Domain-Pure Layer Placement**: Text processing (token accumulation, clause chunking, prosody morphing) belongs strictly in the harness streaming layer. Audio processing (voice conditioning, sample synthesis, buffer playback) belongs strictly in the TTS and audio subsystems.
+### 1.3 Architectural & Subsystem Invariants
+Every component, stage, and actor within the harness runtime must strictly satisfy these foundational invariants:
+1. **Single Orchestrator Authority & Encapsulation**: Exactly one orchestrator (`Harness` in `services/harness/orchestrator.rs`) owns turn sequencing, state transitions, and stage coordination. External callers (`pipeline::assistant::transcript`) interact exclusively via `Harness::execute_turn`. They must never inspect, clone, or invoke internal stages (`stages/`) or streaming components (`streaming/`) directly.
+2. **Narrow, Typed Stage Interfaces & Zero Inter-Stage Communication**: Each stage accepts typed input structs and returns typed output structs. Stages never import, call, or communicate with each other; the orchestrator mediates all data flow.
+3. **Exclusive State Ownership**: Each stage owns its state exclusively. There is zero shared mutable state or simultaneous multi-actor mutation across the harness runtime.
+4. **Sacred Audio Hot Path**: Zero memory allocations, zero locks (`Mutex`/`RwLock`), and zero disk or database operations are permitted on the CPAL audio callback or real-time VAD processing threads. All harness operations execute on Tokio async tasks or dedicated background worker threads.
+5. **Domain-Pure Layer Placement**: Text processing (token accumulation, clause chunking, prosody morphing) belongs strictly in the harness streaming layer (`streaming/`). Audio processing (voice conditioning, sample synthesis, buffer playback) belongs strictly in TTS and audio playback subsystems (`services/tts/actor.rs`, `PlaybackEngine`). Audio workers must never contain NLP text-splitting logic.
+6. **Lock Discipline Across Await Points**: A `Mutex` or `RwLock` guard protecting conversational, stage, or orchestrator state must **never** be held across an `.await` boundary, particularly during LLM inference, tool execution, or database transactions.
+7. **Decoupled Stateless Model Worker**: `LlmActor` is strictly a stateless compute engine accepting structured generation requests and emitting normalized token/event streams (`TextDelta`, `ToolCall`, `Finished`, `Error`). It possesses zero knowledge of audio devices, text-to-speech actors, user interface windows, clause chunking heuristics, or conversational state machines.
+8. **Central Authority for Turn Completion**: `VoxEvent::LlmFinished` is emitted exclusively by `Harness` once after the **terminal** model pass concludes. Cancelled or aborted turns must never emit `VoxEvent::LlmFinished`.
+9. **Single-Turn Cancellation Token Discipline**: Turn cancellation tokens (`CancellationToken`) are captured by value per turn and threaded through LLM generation, tool execution, stream routing, and TTS synthesis.
+10. **Autonomous Reactive Quiet Watcher & History Pruning**: `QuietCompactionWatcher` is self-governing; it monitors pipeline state transitions via `state_rx` and `CancellationToken` directly, automatically aborting when the pipeline leaves `Ready`/`Paused` without imperative caller invocation. Upon successful completion of background soft compaction, working history must be pruned and replaced with structured `<session_context>` (both personal and working session buckets) to drop token utilization while retaining complete session fidelity.
+11. **Pipeline Turn Accumulator Boundary**: `TurnAccumulator` (in `pipeline/assistant/accumulator.rs`) remains the pipeline-level turn accumulation container for interruption recovery and partial turn snapshotting. During turn execution, `StreamRouter` writes incoming speakable text into the accumulator.
+12. **Turn-Local Ephemeral Scratchpad**: `Harness::execute_turn` maintains a turn-local scratchpad (`Vec<ChatMessage>`) for intermediate tool calls and observations during active multi-pass execution. At turn commit (or cancellation), the scratchpad is dropped; working `ConversationHistoryStage` and the Turso `turns` table store exclusively committed `User` and `Assistant` turns. Tool invocations are durably recorded in `session_tool_calls` for auditing and future rollback, guaranteeing 100% parity between active working memory and database-restored memory.
+13. **Single-Writer Barge-In Persistence**: The `Harness::Cancelled` branch is the sole persistence writer for interrupted turns. It inspects pass-local partial text: if `!partial.trim().is_empty()`, it commits `(user_query, partial)` to history and emits `PersistenceEvent::TurnCompleted`; if empty, it rolls back the user query from history and skips persistence. The turn-local scratchpad is unconditionally discarded.
+14. **Turn Synthesis Guard & Latch (`turn_open` & `drained_while_open`)**: The router sets `turn_open = true` at turn onset, and clears it on all terminal outcomes (`LlmFinished`, `Cancelled`, `Error`, interrupt, `End`, `Pause`). `on_playback_finished` sets `drained_while_open = true` if `turn_open == true` (instead of prematurely transitioning to `Ready`). `on_llm_finished` evaluates the latch and transitions to `Ready` if `pending_synthesis_jobs == 0`. On `PlaybackStarted`, the latch is cleared.
+15. **Session Lifecycle & Self-Healing Foreign Keys**: `session_id` is minted at session engage as an epoch timestamp (`u32` monotonic turn IDs) and persisted via `SessionStarted`. All tool-call ledger writes and title updates execute idempotent `INSERT OR IGNORE INTO sessions` self-healing to eliminate FK failures if `SessionStarted` is dropped by channel backpressure. Title updates are awaited in the persistence layer before emitting `IpcEvent::SessionsChanged` (`sessions_changed`).
+16. **Discovery Probe Non-Blocking FSM (`session_starting`)**: The capability discovery probe runs asynchronously off the router thread under a `session_starting = true` flag. The pipeline state remains `Idle` (not `Ready`), and `owner = Assistant` is set only after probe completion, ensuring dictation is never blocked.
+17. **Terminal Tool Single-Pass Resolution**: Terminal tools declare a required `spoken_response` parameter. Upon invocation, the harness dispatches `spoken_response` directly to speech synthesis as `AudioIntent::TurnResponse` while executing the tool action in the background, resolving the turn in a single generation pass with zero second-pass LLM latency and zero ghost background tasks.
+18. **Zero Backward Compatibility (ZBC)**: No legacy wrappers, transitional bridges, or compatibility shims will be retained. Redesign cleanly to the approved spec.
 
 ---
 
@@ -37,10 +49,12 @@ Every component and stage within the harness must strictly satisfy six invariant
 The voice pipeline router treats `Harness` as the single cognitive front door:
 ```
 [Audio In] ──► [VAD] ──► [STT] ──► [Harness (Orchestrator)] ──► [TTS Actor] ──► [PlaybackEngine]
-                                              ▲ │
-                           Duplex Session Pipe│ │Token Stream
-                                              │ ▼
-                                        [LlmActor (Pure Model)]
+                                         ▲ │        │
+                      Duplex Session Pipe│ │        ├─► [ToolExecutor] ──► [session_tool_calls DB]
+                      Normalized Events  │ │        │         │
+                                         │ ▼        │         └─► Reentrant Turn Loop (NonTerminal)
+                                   [LlmActor]       ▼
+                                            [StreamRouter] ──► [TextNormalizer] ──► [ClauseChunker]
 ```
 
 ### 2.1 Upstream Integration Contract (Caller $\to$ Harness)
@@ -53,11 +67,12 @@ The voice pipeline router treats `Harness` as the single cognitive front door:
   - `TurnOutcome::Error(String)`: Turn execution or model stream failed; history rolls back; pipeline emits error event and transitions to `Ready`.
 
 ### 2.2 Downstream Integration Contracts (Harness $\to$ Subsystems)
-- **Model Layer (`LlmActor`)**: The harness transmits `GenerationRequest` over the duplex session pipe and receives an asynchronous stream of `LlmResponse` tokens for conversational turn responses.
+- **Model Layer (`LlmActor`)**: The harness transmits `GenerationRequest` (including active tool schemas) over the duplex session pipe and receives an asynchronous normalized stream of `LlmResponse` events (`TextDelta`, `ToolCall`, `Finished`, `Error`).
+- **Tool Execution & Persistence (`ToolExecutor` & `Turso DB`)**: The harness executes invoked tools, stages execution records to `session_tool_calls`, and drives multi-turn observation loops.
 - **Speech Synthesis (`TtsActor`)**: The harness egress stream stage dispatches finished speakable clauses to the TTS worker thread via `TtsCommand::Generate { text, intent, turn_id }`. The TTS actor is strictly an audio worker; it contains zero clause-chunking, punctuation, or text-parsing logic.
 - **Audio Playback (`PlaybackEngine`)**: Receives synthesized PCM samples from the TTS actor and coordinates physical speaker playback, emitting state transition events (`Speaking`, `Ready`).
 - **Frontend IPC (`IpcEvent`)**: The harness egress stream stage emits clean subtitle tokens (`IpcEvent::LlmToken`) directly to the active UI window.
-- **Persistence (`Turso DB`)**: The compaction stage records compaction runs and staged memory facts to the local database ledger.
+- **Persistence (`Turso DB`)**: Records compaction runs, memory facts, turns, and tool scratchpad entries to the local database ledger.
 
 ### 2.3 Duplex Dialogue Pipe vs. Compaction Transport
 - **Conversational Duplex Dialogue Pipe (`Harness` $\leftrightarrow$ `LlmActor`)**: A persistent, session-scoped command channel (`llm_tx`) with per-turn one-shot response channels dedicated exclusively to conversational generation with low-latency token streaming, clause chunking, and TTS dispatch. The channel is established at session mount and terminated at session unmount.
@@ -91,8 +106,8 @@ The command contracts strictly separate browsing sessions from mounting active r
   - The `Harness` is **not** booted or seeded in memory prematurely.
 - **Engaging the Assistant (`start_session(sessionId: Option<i64>)`)**:
   - If `sessionId == Some(id)`: The user is engaging to continue a past conversation. The `Harness` boots, queries Turso DB for continuation turns and the latest compaction summary for session `id`, and seeds working memory.
-  - If `sessionId == None`: The user is engaging for a fresh session. The `Harness` boots with a fresh prompt (`session_id = 0`, lazy DB row created upon the first spoken turn).
-  - Clicking "+ New Session" (`create_session`) simply clears the active session selection in the UI; subsequent engagement sends `start_session(None)`.nt engagement sends `start_session(None)`.
+  - If `sessionId == None`: The user is engaging for a fresh session. The `Harness` boots with a fresh prompt (minted epoch timestamp `conv_id`, with `SessionStarted` persisted on engage; zero-turn sessions are swept on clean exit or restart).
+  - Clicking "+ New Session" (`create_session`) simply clears the active session selection in the UI; subsequent engagement sends `start_session(None)`.
 
 ### 3.3 Domain Gating Configuration
 Different interaction domains mount specific subsets of the harness stages:
@@ -109,16 +124,14 @@ Different interaction domains mount specific subsets of the harness stages:
 
 ## 4. The Functional Stages Taxonomy
 
-## 4. The Functional Stages Taxonomy
-
-The `Harness` orchestrator coordinates five distinct, decoupled functional stages:
+The `Harness` orchestrator coordinates six distinct, decoupled functional stages:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                                  HARNESS ORCHESTRATOR                                  │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │ 1. ConversationHistoryStage (`stages/history.rs`)                                      │
-│    • In-memory message sequence (System, User, Assistant)                              │
+│    • In-memory message sequence (System, User, Assistant, Tool)                        │
 │    • Trailing user turn deduplication and interruption rollback                        │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │ 2. ContextBudgetStage (`stages/budget.rs`)                                             │
@@ -129,6 +142,7 @@ The `Harness` orchestrator coordinates five distinct, decoupled functional stage
 │ 3. PromptBuilderStage (`stages/prompt.rs`)                                             │
 │    • Pure text assembly: Persona Prompt + <user_identity> + <session_context>          │
 │    • Personal memory token budget enforcement (20% context window share ceiling)       │
+│    • Dynamic tool schema injection from ToolRegistry based on session/turn policy      │
 │    • GenerationRequest payload assembly from history slice and active user query       │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │ 4. CompactionStage (`stages/compaction.rs` & `watcher.rs`)                             │
@@ -136,10 +150,16 @@ The `Harness` orchestrator coordinates five distinct, decoupled functional stage
 │    • Universal 6-bucket JsonSchema enforcement & fact staging to Turso DB              │
 │    • Reactive 20-second debounced soft compaction watcher                              │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
-│ 5. Egress Stream Stage (`streaming/chunker.rs` & `streaming/router.rs`)                │
-│    • Clause chunking accumulator and punctuation prosody boundary enforcement          │
+│ 5. ToolExecutionStage (`stages/tools/{registry.rs, executor.rs}`)                      │
+│    • Dual tool dispatch: Terminal (single-pass voice + action) vs NonTerminal (loop)   │
+│    • Scratchpad persistence logging to session_tool_calls table                        │
+│    • Ingress tool schema filtering and single non-terminal retrieval pass (Phase 12.1) │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ 6. Egress Stream Stage (`streaming/chunker.rs`, `router.rs`, `normalizer.rs`)          │
+│    • Live UI subtitle emission via IpcEvent::LlmToken                                  │
+│    • Speech normalization: abbreviation expansion, symbol stripping (normalizer.rs)   │
+│    • Clause chunking accumulator and punctuation prosody morphing (chunker.rs)         │
 │    • Text-to-Speech audio command dispatch tagged with AudioIntent                     │
-│    • Frontend subtitle streaming via IPC token events                                  │
 │    • Emission of VoxEvent::LlmFinished on full turn completion                         │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -203,12 +223,14 @@ The `Harness` orchestrator coordinates five distinct, decoupled functional stage
 
 To prevent the `Harness` from hardcoding one-off special cases for every cognitive operation, all non-terminal behaviors are governed by a single generic contract:
 
-1. **Stage Declaration**: Any stage within `stages/` (e.g., `CompactionStage` today, episodic memory retrieval or agentic tool execution tomorrow) can return an intermediate operation signal (`NonTerminalPhase`) to the `Harness`.
-2. **Uniform Transition**: When an intermediate operation is triggered, the `Harness` immediately transitions the voice pipeline from `InteractionState::Thinking` to `InteractionState::Working`.
-3. **Uniform Audio Cue**: If the intermediate operation provides an interim phrase (e.g., *"One moment while I organize our conversation..."*), the `Harness` dispatches it to `TtsActor` tagged as `AudioIntent::InterimFiller` to eliminate dead air.
-4. **Uniform Execution**: The `Harness` executes the operation asynchronously (guaranteeing thread/executor isolation for local inference or I/O).
+1. **Stage Declaration**: Any stage within `stages/` (e.g., `CompactionStage` or `ToolExecutionStage`) can declare a non-terminal cognitive phase (`NonTerminalPhase`). Crucially:
+   - **`ToolFlow::NonTerminal`**: Triggers `NonTerminalPhase`.
+   - **`ToolFlow::Terminal`**: Does NOT trigger `NonTerminalPhase`. Terminal tools include `spoken_response` in their parameter schema; the Harness executes the action and dispatches `spoken_response` directly to `TtsActor` as `AudioIntent::TurnResponse`, resolving the turn in a single pass.
+2. **Uniform Transition**: When a non-terminal tool is triggered, the `Harness` immediately transitions the voice pipeline from `InteractionState::Thinking` to `InteractionState::Working`.
+3. **Uniform Audio Cue**: The `Harness` extracts `spoken_filler` from the non-terminal tool arguments (with fallback to `select_filler_phrase`) and dispatches it to `TtsActor` tagged as `AudioIntent::InterimFiller` to eliminate dead air.
+4. **Uniform Execution**: The `Harness` executes the operation asynchronously with executor isolation.
 5. **State Locking**: The pipeline remains locked in `InteractionState::Working` throughout the intermediate execution. Playback of interim filler audio does not transition the pipeline to `Speaking` or `Ready`.
-6. **Resumption**: Once the intermediate operation completes, the `Harness` feeds the output into subsequent generation without leaving `Working` until the finalized response audio begins physical playback (`Working` $\to$ `Speaking` $\to$ `Ready`).
+6. **Resumption & Reentrant Loop**: Once the non-terminal operation completes, the `Harness` stages the `ToolResult` into working memory and initiates a reentrant generation pass across the duplex pipe without leaving `Working` until finalized response audio begins physical playback (`Working` $\to$ `Speaking` $\to$ `Ready`).
 7. **Terminal Error & Abort Recovery**: If any intermediate operation fails, encounters an error, or is cancelled, the `Harness` executes cleanup, rolls back the user turn if appropriate, and transitions the pipeline cleanly back to `InteractionState::Ready` (or `InteractionState::Idle` on fatal session halt), ensuring the pipeline is never stranded in `Working`.
 8. **Dropped-Finish Hazard Resolution**: The pipeline event handler `on_llm_finished` (`pipeline::assistant::llm`) explicitly accepts `InteractionState::Working` alongside `Thinking` and `Speaking`. When LLM token streaming completes before the first packet of TTS response audio reaches physical playback, `VoxEvent::LlmFinished` must not be dropped. Conversation and database records must be reliably committed.
 
@@ -239,7 +261,7 @@ The turn lifecycle is executed as an unbroken, deterministic sequence owned enti
 ### Phase 1: Intake & Deduplication Gate
 1. ⬆️ **[UPSTREAM]**  
    - **What**: The voice pipeline adapter (`pipeline::assistant::transcript`) invokes `Harness::execute_turn(query, turn_id, cancel)`.  
-   - **Input**: User utterance text `&str`, monotonic `turn_id: u64`, single-turn `cancel: CancellationToken`.  
+   - **Input**: User utterance text `&str`, monotonic `turn_id: u32`, single-turn `cancel: CancellationToken`.  
    - **Owner**: `pipeline::assistant::transcript` $\to$ `services/harness/orchestrator.rs`.
 2. 🔌 **[STAGE_CALL]**  
    - **What**: Deduplication check against trailing turn.  
@@ -251,21 +273,23 @@ The turn lifecycle is executed as an unbroken, deterministic sequence owned enti
 3. 🔌 **[STAGE_CALL]**  
    - **What**: Stage active user query into working memory.  
    - **Owner**: `stages/history.rs` (`ConversationHistoryStage::push_user_turn`).  
-   - **Invariant**: The user turn is staged *before* any cognitive maintenance, guaranteeing that fallback truncation never drops the active query.
+   - **Invariant**: The user turn is staged *before* any cognitive maintenance, guaranteeing that fallback truncation never drops the active query. Initial turn allocates a fresh turn-local `scratchpad: Vec<ChatMessage>`.
 4. 🔌 **[STAGE_CALL]**  
    - **What**: Real-time context capacity evaluation.  
    - **Owner**: `stages/budget.rs` (`ContextBudgetStage::evaluate_utilization`).  
-   - **Calculation**: Sums tracked in-memory tokens across system prompt, injected memory, active summary, and staged history against usable window (`max_window - reserve_tokens`).  
+   - **Re-Entry Invariant**: Reentrant cognitive loops from Phase 6 re-enter directly at Step 4, **skipping Step 3** (`push_user_turn`).
+   - **Calculation**: Sums tracked in-memory tokens across system prompt, injected memory, active summary, staged history, registered tool schemas, and active scratchpad against usable window (`max_window - reserve_tokens`).  
    - **Branch**: Classifies state as `ContextStatus::Nominal` ($<85\%$) or `ContextStatus::Critical` ($\ge 85\%$).
 
 ### Phase 3: Generic Non-Terminal Phase Branch (Inline Compaction / Maintenance)
 5. 🔀 **[COORDINATOR_DISPATCH]**  
    - **What**: Non-terminal operation evaluation.  
    - **Owner**: `Harness` orchestrator.  
+   - **Filler Policy**: Gated by `has_played_filler` for harness-owned compaction filler only; executed **at most once per turn**. Model-provided `spoken_filler` in tool calls (§8.2) is not gated by `has_played_filler`.
    - **Branch A (Nominal $<85\%$ or History $<4$ messages)**: Skips maintenance; proceeds immediately to Phase 4.  
    - **Branch B (Critical $\ge 85\%$ & Eligible)**: Triggers intermediate non-terminal phase:
      - a. ⬇️ **[DOWNSTREAM]**: Emits pipeline transition `Thinking` $\to$ `InteractionState::Working`.
-     - b. ⬇️ **[DOWNSTREAM]**: Dispatches localized filler phrase (Devanagari / English) to `TtsActor` as `AudioIntent::InterimFiller` to eliminate dead air.
+     - b. ⬇️ **[DOWNSTREAM]**: Dispatches localized filler phrase (Devanagari / English) to `TtsActor` as `AudioIntent::InterimFiller` if not already spoken.
      - c. 🔌 **[STAGE_CALL]**: Executes `stages/compaction.rs` directly via `Arc<dyn LlmProvider>` on an isolated blocking thread (`tokio::task::spawn_blocking`), enforcing the 6-bucket JsonSchema with 0 retries.
      - d. ⬇️ **[DOWNSTREAM]**: Persists extracted facts to Turso DB (`compactions` ledger) and stages facts to the memory ingestion queue.
      - e. 🔌 **[STAGE_CALL]**: Prunes older turn pairs in `stages/history.rs`, replacing them with structured `<session_context>`.
@@ -277,46 +301,70 @@ The turn lifecycle is executed as an unbroken, deterministic sequence owned enti
 
 ### Phase 4: Generation Request Assembly
 6. 🔌 **[STAGE_CALL]**  
-   - **What**: Root prompt synchronization and generation payload assembly.  
+   - **What**: Root prompt synchronization, active tool schema injection, and generation payload assembly.  
    - **Owner**: `stages/prompt.rs` (`PromptBuilderStage::build_generation_request`).  
-   - **Input**: Persona prompt, bounded `<user_identity>` (20% ceiling), active `<session_context>`, and staged message history slice from `stages/history.rs`.  
-   - **Output**: Fully structured `GenerationRequest` containing `[System Message 0, Historical Turns, Active User Query]`.  
-   - **Invariant**: Message turns (1..N) are preserved intact; system prompt updates do not wipe active history.
+   - **Input**: Persona prompt, bounded `<user_identity>` (20% ceiling), active `<session_context>`, staged message history slice from `stages/history.rs`, candidate tool schemas from `tools/registry.rs`, and the turn-local ephemeral `scratchpad`.  
+   - **Output**: Fully structured `GenerationRequest` containing `[System Message 0, Historical Turns, Active User Query, Scratchpad Tool Interactions, Registered Tools]`.
 
 ### Phase 5: Duplex Model Pipe Dispatch
 7. ⬇️ **[DOWNSTREAM]**  
-   - **What**: Turn generation command dispatch.  
+   - **What**: Turn generation command dispatch across long-lived session pipe.  
    - **Owner**: `Harness` $\to$ `services/llm/actor.rs`.  
    - **Action**: Creates per-turn one-shot response channel `(response_tx, response_rx)`. Captures single-turn `CancellationToken` by value.  
    - **Command**: Transmits `LlmCommand::Generate { request, response_tx, cancel_token }` across long-lived `llm_tx`.
 
-### Phase 6: Egress Token Processing & Sentence Chunking
+### Phase 6: Egress Stream Demuxing, Normalization & Tool Interception
 8. 🔌 **[STAGE_CALL]**  
-   - **What**: Token stream demuxing, subtitle emission, and grammatical clause chunking.  
-   - **Owner**: `streaming/router.rs` (`StreamRouter`) and `streaming/chunker.rs` (`ClauseChunker`).  
-   - **Loop Actions**:
-     - a. Reads raw tokens from `response_rx`.
-     - b. Resolves leading tags in speculative demuxer buffer (or immediately flushes raw speakable text).
-     - c. ⬇️ **[DOWNSTREAM]**: Emits clean subtitle tokens to active UI window via `IpcEvent::LlmToken`.
-     - d. 🔌 **[STAGE_CALL]**: Accumulates tokens in `ClauseChunker`, enforcing adaptive word counts (clause 0: 5–12 words; clause 1: 10–20 words; steady state: 16–32 words) and applying prosody morphing (`.` $\to$ `,` under 5 words).
-     - e. ⬇️ **[DOWNSTREAM]**: Dispatches complete clauses to `TtsActor` as `TtsCommand::Generate` tagged with `AudioIntent::TurnResponse`.
-     - f. ⬇️ **[DOWNSTREAM]**: On first synthesized audio frame reaching hardware, `PlaybackEngine` transitions `Working`/`Thinking` $\to$ `InteractionState::Speaking`.
+   - **What**: Consumes normalized `LlmResponse` events from `response_rx`.  
+   - **Owner**: `streaming/router.rs` (`StreamRouter`), `streaming/normalizer.rs` (`TextNormalizer`), and `streaming/chunker.rs` (`ClauseChunker`).  
+   - **Event Routing Loop**:
+     - **Case A: `LlmResponse::TextDelta(token)`**:
+       - a. ⬇️ **[DOWNSTREAM]**: Emits clean subtitle tokens to active UI window via `IpcEvent::LlmToken`.
+       - b. 🔌 **[STAGE_CALL]**: Appends token to pass-local accumulator.
+       - c. 🔌 **[STAGE_CALL]**: Normalizes completed clause string via `TextNormalizer::normalize_for_speech`.
+       - d. 🔌 **[STAGE_CALL]**: Feeds normalized text into `ClauseChunker`, enforcing adaptive word bounds and prosody morphing (`.` $\to$ `,` under 5 words).
+       - e. ⬇️ **[DOWNSTREAM]**: Dispatches complete clauses to `TtsActor` as `TtsCommand::Generate` tagged with `AudioIntent::TurnResponse`.
+       - f. ⬇️ **[DOWNSTREAM]**: On first synthesized audio frame reaching hardware, `PlaybackEngine` transitions `Working`/`Thinking` $\to$ `InteractionState::Speaking`.
+     - **Case B: `LlmResponse::ToolCall(call)`**:
+        - Bypasses standard streaming text path. Evaluates tool classification via `ToolRegistry`:
+          - **Pre-Tool Partial Text Handling**:
+            - If preceded by non-empty partial text in the same pass:
+              - *NonTerminal*: Flush partial text through `ClauseChunker` $\to$ `TtsActor` as `AudioIntent::TurnResponse` *before* transitioning to `Working` and dispatching `spoken_filler`.
+              - *Terminal*: Discard accumulated partial text without chunker flush or TTS dispatch (`spoken_response` supersedes it entirely).
+          - **If `ToolFlow::Terminal` (e.g. `respond_and_set_title`)**:
+            - Extracts required `spoken_response` parameter from arguments.
+            - Immediately routes `spoken_response` through `TextNormalizer` $\to$ `ClauseChunker` $\to$ `TtsActor` as `AudioIntent::TurnResponse`. Conversational voice begins playback with optimal clause-level TTFA, zero delay, and zero 2-pass latency.
+            - Pipeline transitions directly `Thinking` → `Speaking`. Zero state transition to `Working`.
+            - Tool execution action runs asynchronously (e.g. persists title via awaited DB write, then emits `IpcEvent::SessionsChanged`).
+            - Logs invocation and outcome to `session_tool_calls` scratchpad ledger.
+            - Resolves the conversational turn in a single pass. The tool call and its response are excluded from subsequent turn prompt histories (only `spoken_response` text is committed to `ConversationHistoryStage`).
+          - **If `ToolFlow::NonTerminal` (e.g. `search_memory`)**:
+            - Pipeline transitions immediately from `Thinking` to `InteractionState::Working` (triggering `NonTerminalPhase`).
+            - Extracts required `spoken_filler` parameter from arguments (e.g. *"Checking your notes on that..."*) and dispatches it to `TtsActor` as `AudioIntent::InterimFiller` to eliminate dead air (falling back to localized filler phrases if missing). Not subject to `has_played_filler` compaction suppression.
+            - Executes tool action with a strict per-tool timeout (`TOOL_EXECUTION_TIMEOUT = 10s`).
+            - Logs invocation and result to `session_tool_calls` scratchpad ledger.
+            - Appends `ChatMessage { role: Role::Assistant, tool_calls: Some(vec![call]), ... }` and `ChatMessage { role: Role::Tool, tool_call_id, content: result }` to the **turn-local ephemeral scratchpad** (never to permanent working history).
+            - **REENTRANT COGNITIVE LOOP**: Harness loops back to **Phase 2 at Step 4 (Token Budget Evaluation)**, skipping Step 3.
+            - **Recursion Guard**: Iterations bounded by `MAX_TOOL_ITERATIONS = 5`. On breach, executes one final generation pass with `tools = None` to produce a spoken summary rather than aborting.
 
-### Phase 7: Turn Finalization, Failure Recovery & Watcher Arming
+### Phase 7: Turn Finalization, Commit & Watcher Arming
 9. 🔀 **[COORDINATOR_DISPATCH]**  
    - **What**: Stream conclusion, abort handling, and commit.  
    - **Owner**: `streaming/router.rs` and `Harness`.  
    - **Outcome Branches**:
      - **Branch A (Stream Disconnect / Provider Error without Finished)**:  
-       Rolls back staged user query from `stages/history.rs`. Transitions `Working`/`Thinking` $\to$ `InteractionState::Ready`. Emits `VoxEvent::Error(PipelineError::TurnAborted)`. Never commits partial text as a complete turn. Returns `TurnOutcome::Error`.
+       Rolls back staged user query from `stages/history.rs`. Discards turn-local scratchpad. Transitions `Working`/`Thinking` $\to$ `InteractionState::Ready`. Emits `VoxEvent::Error(PipelineError::TurnAborted)`. Returns `TurnOutcome::Error`.
      - **Branch B (Turn Cancelled via Token / Barge-In)**:  
-       Rolls back staged user query. Transitions state to `Ready`. Never emits `VoxEvent::LlmFinished`. Returns `TurnOutcome::Cancelled`.
+       Inspects pass-local partial assistant text from `StreamPassOutcome::Cancelled { partial }`.
+       - If `!partial.trim().is_empty()`: commits `(user_query, partial)` to `stages/history.rs` and dispatches `PersistenceEvent::TurnCompleted`.
+       - If `partial.trim().is_empty()`: rolls back user query from `stages/history.rs` and skips persistence.
+       - The turn-local ephemeral scratchpad is unconditionally discarded. Transitions state to `Ready` (or `Listening` if barge-in). Returns `TurnOutcome::Cancelled`.
      - **Branch C (LlmResponse::Finished Succeeded)**:  
        - a. ⬇️ **[DOWNSTREAM]**: Flushes `ClauseChunker` remainder text to `TtsActor`.  
-       - b. ⬇️ **[DOWNSTREAM]**: `StreamRouter` emits `VoxEvent::LlmFinished { turn_id, assistant_text }` onto `event_tx`, triggering Turso DB turn row persistence.  
-       - c. 🔌 **[STAGE_CALL]**: Commits full assistant response into `stages/history.rs`.  
+       - b. ⬇️ **[DOWNSTREAM]**: If `assistant_text.trim().is_empty()`: rolls back user turn from `stages/history.rs`, skips `TurnCompleted`, and returns `TurnOutcome::Completed`.
+       - c. ⬇️ **[DOWNSTREAM]**: If `!assistant_text.trim().is_empty()`: `Harness` emits `VoxEvent::LlmFinished { turn_id, assistant_text }` once, triggering Turso DB turn row persistence, and commits `(user_query, assistant_text)` into `stages/history.rs`. The turn-local ephemeral scratchpad is dropped.
        - d. 🔌 **[STAGE_CALL]**: If post-turn utilization is in soft window ($65\% \le \text{utilization} < 85\%$), arms the 20-second quiet debounce watcher (`services/harness/watcher.rs`).  
-       - e. ⬇️ **[DOWNSTREAM]**: Audio playback drains to empty $\to$ `PlaybackEngine` emits `PlaybackFinished`, transitioning `Speaking` $\to$ `InteractionState::Ready`.  
+       - e. ⬇️ **[DOWNSTREAM]**: Audio playback drains to empty $\to$ `PlaybackEngine` emits `PlaybackFinished`, evaluating `drained_while_open` latch and transitioning `Speaking` $\to$ `InteractionState::Ready`.  
        - f. Returns `TurnOutcome::Completed { assistant_response, turn_id }` to caller.
 
 ---
@@ -361,31 +409,38 @@ To eliminate ad-hoc string formatting, prompt tags are governed by a strictly ty
 
 ---
 
-## 8. Future-Proofing: Tool Calling & Demuxer Slots
+## 8. Agentic Tool Calling & Harness Consumption Model
 
-While deferred from the current refactoring phase, the architecture formally reserves slots for future streaming capabilities without interface breakage:
+The Harness acts as the single orchestrator and runtime consumer for all agentic tools specified in `docs/specs/tools-spec.md`.
 
-### 8.1 On-Demand Agentic Tool Calling Loop (Non-Normative / Conceptual Target)
-Future episodic memory retrieval and external CLI execution will operate on-demand via the model's output stream without altering the outer `Harness::execute_turn` interface:
-1. The model generates an interim conversational tag followed by a tool request tag:
-   ```
-   <response>Searching through your project notes...</response>
-   <tool name="search_episodic_memory">authentication refactor</tool>
-   ```
-2. The egress stream layer demuxes the stream:
-   - `<response>` tokens route immediately to Text-to-Speech as `AudioIntent::InterimFiller`.
-   - The pipeline enters `InteractionState::Working`.
-   - `<tool>` tokens are intercepted by the Harness.
-3. The Harness pauses inference, executes the tool against the database, and captures retrieved facts.
-4. The Harness appends tool results as a context observation and transmits an augmented payload back across the duplex pipe to the `LlmActor`.
-5. The `LlmActor` generates the final conversational response, which streams to TTS as `AudioIntent::TurnResponse`.
+### 8.1 Ingress Capability Gating & Notification
+- **Discovery Check**: At session boot (`start_session`), the Harness reads the persistent `model_capabilities.json` cache.
+- **Blocking Discovery Probe**: If unprobed, a synchronous capability probe runs with a strict 4.0-second timeout (`SESSION_BOOT_PROBE_TIMEOUT = 4s`).
+- **State Boundary**: The pipeline remains in transition and does NOT emit `state_changed(Ready)` until capability resolution completes.
+- **Degradation**: If the probe times out or errors, capability defaults to `supports_tools = false`, all tool schemas are suppressed from `PromptBuilderStage`, and a persistent system notification (`category: "system"`) is dispatched to inform the user that the model is running in text-only conversational mode.
 
-### 8.2 Streaming Tag Demuxer Slot
-The egress stream layer reserves an integration point (`streaming/demuxer.rs`) for a zero-allocation streaming state machine. When activated in a future phase, it will distinguish untagged raw text from structured tag streams (`<title>`, `<response>`, `<tool>`), routing subtitle metadata and audio clauses cleanly without tag leakage into speech synthesis.
-- **Upstream Layer Placement**: The streaming demuxer sits strictly **upstream of both** the `ClauseChunker` (audio synthesis) and the UI subtitle emitter (`IpcEvent::LlmToken`). Output tokens never reach audio or subtitle channels prior to demuxer filtering.
-- **Speculative Buffer Bounds**: The demuxer buffers initial incoming tokens speculatively up to a bounded maximum ceiling of 64 tokens (sufficient to resolve delimiter prefixes and tag names).
-- **Leading Tag Resolution Invariant**: The streaming demuxer must buffer initial tokens speculatively and definitively resolve the leading tag before dispatching any textual payload downstream to the TTS clause chunker or conversation history. If the leading token sequence does not match a registered tag delimiter (e.g., the first non-whitespace character is not `<`, or the prefix fails match against registered tags within the bounded window), the speculative buffer is immediately flushed downstream to both the UI subtitle emitter and the TTS clause chunker as raw speakable text. This guarantees zero latency overhead for untagged responses while definitively preventing premature audio playback or tag leakage during tag evaluation.
-- **Mid-Stream Stream End Handling**: If the token stream concludes (`LlmResponse::Finished`) or disconnects while tokens reside in the speculative buffer without resolving a registered tag, the buffer is flushed immediately to UI subtitles and conversation history as raw text.
+### 8.2 Tool Consumption & Execution Routing
+When `LlmActor` returns `LlmResponse::ToolCall(call)` over the duplex pipe, `StreamRouter` routes the event directly to `Harness::execute_turn`, completely bypassing the audio synthesis path:
+1. **`ToolFlow::Terminal` (e.g. `respond_and_set_title`)**:
+   - The pipeline transitions directly from `Thinking` to `Speaking`. Zero transition to `InteractionState::Working`.
+   - `spoken_response` is extracted from arguments and immediately routed through `TextNormalizer` $\to$ `ClauseChunker` $\to$ `TtsActor` as `AudioIntent::TurnResponse` — optimal clause-level TTFA, no dead air, no 2-pass latency.
+   - Tool side-effect (e.g. title persistence) runs asynchronously, then emits `IpcEvent::SessionsChanged`.
+   - Invocation is logged to `session_tool_calls`. Excluded from subsequent turn prompts (only `spoken_response` is committed to history).
+2. **`ToolFlow::NonTerminal` (e.g. `search_memory`)**:
+   - The pipeline transitions from `Thinking` to `InteractionState::Working`.
+   - `spoken_filler` is extracted from arguments and dispatched as `AudioIntent::InterimFiller` to eliminate dead air (falling back to localized filler phrases if missing). Not gated by `has_played_filler`.
+   - The tool executes under `TOOL_EXECUTION_TIMEOUT = 10s` (applying user-configured `top_k_facts` and `semantic_similarity_cutoff` thresholds from settings).
+   - Execution is logged to the `session_tool_calls` scratchpad.
+   - The structured `ToolResult` is appended to the turn-local scratchpad, triggering a reentrant generation pass to produce the final conversational response.
+
+### 8.3 Interim Filler Source (Non-Terminal Tools)
+- `spoken_filler` is a required parameter in every `NonTerminal` tool schema. The model provides a context-aware 3–5 word filler phrase alongside the tool arguments (e.g. *"Checking your project notes..."*).
+- The Harness dispatches the model-provided `spoken_filler` to `TtsActor` as `AudioIntent::InterimFiller` immediately upon tool invocation, before awaiting the result.
+- If `spoken_filler` is empty or missing (e.g. model failure or compaction path), the Harness falls back to a localized filler phrase set (Devanagari / English).
+
+### 8.4 Ingress Tag Demuxer Shim (Local & Non-Native Models)
+- For cloud models with native tool streaming (OpenAI, Gemini), tool calls are parsed directly from structured streaming frames.
+- For local GGUF models or models emitting textual syntax (e.g. `<tool_call>`), a streaming ingress filter resides strictly **within the provider adapter layer**. It intercepts raw tags and translates them into canonical `LlmStreamEvent::ToolCall` events before the stream reaches the Harness. The Harness egress layer never performs string-level tag parsing.
 
 ---
 
@@ -397,26 +452,49 @@ The `services/harness/` subsystem is organized strictly by role:
 ```
 services/harness/
 ├── mod.rs                 # Domain constants, Role, ChatMessage, PromptTag, TurnOutcome
-├── orchestrator.rs             # Harness: The SINGLE orchestrator (owns execute_turn)
+├── orchestrator/          # Harness orchestrator modules
+│   ├── mod.rs             # Harness struct, new(), run loop, public facade
+│   ├── turn.rs            # execute_turn(), TurnState, pass loops
+│   ├── phase.rs           # NonTerminalPhase trait & enter_non_terminal_phase helper
+│   └── barge_in.rs        # Cancellation, rollback, partial-turn commit logic
 ├── stages/                # Pure input->output stages (never call each other)
 │   ├── history.rs         # ConversationHistoryStage: in-memory FIFO buffer & dedup
 │   ├── prompt.rs          # PromptBuilderStage: persona + memory + GenerationRequest assembly
 │   ├── budget.rs          # ContextBudgetStage: token counting, limits, FIFO shifts
-│   └── compaction.rs      # CompactionStage: inline summarization & DB fact staging
+│   ├── compaction.rs      # CompactionStage: inline summarization & DB fact staging
+│   └── tools/             # ToolExecutionStage: registry, execution, Terminal & NonTerminal dispatch
+│       ├── mod.rs         # Tool trait, ToolDefinition, ToolFlow, ToolResult
+│       ├── registry.rs    # ToolRegistry: dynamic injection, name lookups, capability gate
+│       ├── executor.rs    # ToolExecutor: Terminal single-pass + NonTerminal reentrant dispatch
+│       ├── title.rs       # RespondAndSetTitleTool (Terminal implementation)
+│       └── memory.rs      # MemorySearchTool (NonTerminal implementation)
 └── streaming/             # Egress stream processing
     ├── chunker.rs         # ClauseChunker: punctuation, prosody morphing, split boundaries
     ├── router.rs          # StreamRouter: TTS clause dispatch & UI subtitle IPC
-    └── demuxer.rs         # (Deferred Slot) Streaming tag demuxer state machine
+    └── normalizer.rs      # TextNormalizer: speech substitutions, abbreviation expansion
 ```
 
-### 9.2 Durable Subsystem Invariants
-1. **Zero Backward Compatibility (ZBC)**: No legacy wrappers or compatibility bridges will be retained.
-2. **Sacred Audio Hot Path**: Zero memory allocations, zero locks (`Mutex`/`RwLock`), and zero disk or database operations are permitted on the CPAL audio callback or real-time VAD processing threads. All harness operations occur on Tokio tasks or dedicated background workers.
-3. **Lock Discipline Across Await Points**: A `Mutex` or `RwLock` guard protecting conversational state must **never** be held across an `.await` boundary, particularly during LLM inference or database transactions.
-4. **Decoupled Actor Invariant**: The `LlmActor` must never import or interact with audio channels, clause accumulators, or UI IPC emitters. It is strictly a token-generating worker.
-5. **Central Authority for Turn Completion**: `VoxEvent::LlmFinished` is emitted exclusively by the `StreamRouter` upon complete conclusion of all turn token streaming.
-6. **Strict Single-Orchestrator Encapsulation**: `Harness` is the sole sequencing orchestrator. External callers (`pipeline::assistant::transcript`) must interact exclusively through `execute_turn`. They must never inspect, clone, or invoke internal stages (`stages/`) or streaming components (`streaming/`) directly.
-7. **Audio Layer Boundary Invariant**: `services/tts/actor.rs` owns physical audio synthesis only. Clause chunking, prosody punctuation morphing, and abbreviation guards belong exclusively in `services/harness/streaming/chunker.rs`. Audio workers must never contain NLP text-splitting logic.
-8. **Autonomous Reactive Quiet Watcher & History Pruning**: The `QuietCompactionWatcher` is self-governing; it monitors pipeline state transitions via `state_rx` and `CancellationToken` directly, automatically aborting when the pipeline leaves `Ready`/`Paused` without imperative caller invocation. Upon successful completion of background soft compaction, working history must be pruned and replaced with the structured `<session_context>` containing the entire compaction output (both personal and working session buckets) to ensure token utilization drops while retaining complete session fidelity for subsequent turns.
-9. **Single-Turn Cancellation Token Discipline**: Turn cancellation tokens (`CancellationToken`) are captured by value per turn and threaded through LLM generation, stream routing, and TTS synthesis. Cancelled turns must never emit `VoxEvent::LlmFinished`.
-10. **Pipeline Turn Accumulator Boundary**: `TurnAccumulator` (in `pipeline/assistant/accumulator.rs`) remains the pipeline-level turn accumulation container for interruption recovery and partial turn snapshotting. During turn execution, `StreamRouter` writes incoming speakable text into the accumulator.
+
+---
+
+## 10. Future Capabilities & Evolution (Phase 12.2+)
+
+The following harness-level capabilities are formally deferred. Their architecture must be considered when making Phase 12.1 decisions to avoid major refactors later.
+
+### 10.1 Interactive Capability Discovery Probe
+- **Current**: A synchronous, single-attempt probe with a strict 4.0-second timeout (`SESSION_BOOT_PROBE_TIMEOUT = 4s`). On timeout, falls back to `supports_tools = false`.
+- **Future**: Replace with an interactive probe featuring retry and exponential backoff. The UI must surface probe progress and retry state to the user so the session boot does not appear frozen. On repeated failure, the user can choose to proceed without tool support or abort session initialization.
+
+### 10.2 Adaptive Tool Recursion & Multi-Step Planning
+- **Current**: Observation turns are bounded to `MAX_TOOL_ITERATIONS = 5` with a hard fallback error on breach.
+- **Future**: Replace the hard iteration cap with a token-budget-aware stopping heuristic. The recursion guard evaluates remaining context headroom after each observation pass and terminates gracefully before overflow rather than crashing with a fallback error. Supports graph-based multi-step tool planning.
+
+### 10.3 Multi-Turn Session Rollback Engine
+- **Architecture must support this without major refactors**: The separated ledgers (`turns`, `session_tool_calls`, `session_compactions`) enable atomic rollback — pruning spoken turns, pruning tool traces, invalidating post-rollback compaction snapshots, and reconstructing context from the latest valid compaction.
+- **Deferred**: The user-facing command, state machine, and context reconstruction execution logic is not implemented in Phase 12.1.
+
+### 10.4 Compensating Side-Effect Rollback Actions
+- **Deferred**: Inverse operations to undo external mutations (e.g., reverting a title write) when a turn is cancelled or rewound. Requires a compensating action registry on `ToolDefinition`.
+
+### 10.5 MCP Multi-Server Daemon Lifecycle
+- **Deferred**: Spawning, managing, and hot-reloading external sub-process MCP servers over standard I/O. The `ToolRegistry` interface is designed to accommodate external tool providers without harness changes.

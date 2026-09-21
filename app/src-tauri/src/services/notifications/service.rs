@@ -8,7 +8,10 @@ use super::{
     Action, NotificationParams,
 };
 use crate::{
-    core::events::{emit_ipc, IpcEvent},
+    core::{
+        events::{emit_ipc, emit_ipc_to, IpcEvent, ToastPayload},
+        state::AppWindow,
+    },
     persistence::{
         db::VoxDb,
         notifications::{
@@ -16,6 +19,7 @@ use crate::{
             NewNotification, NotificationRecord,
         },
     },
+    toast::ToastDeliveryOutcome,
 };
 
 /// Universal front door for all user alerting across the Vox application.
@@ -28,16 +32,35 @@ pub async fn notify<R: tauri::Runtime>(
     let channel = resolve_channel(params.impact, params.severity, &params.action);
 
     if channel == DeliveryChannel::ToastOnly || channel == DeliveryChannel::ToastAndNotification {
-        let toast_ok = dispatch_toast(
+        let outcome = dispatch_toast(
             app,
             params.title,
             params.message,
             params.severity,
             params.duration_ms,
         );
-        if !toast_ok && channel == DeliveryChannel::ToastOnly {
-            let conn = db.connect()?;
-            return elevate_toast_to_drawer(app, &conn, &params).await;
+        match outcome {
+            ToastDeliveryOutcome::Shown => {}
+            ToastDeliveryOutcome::SuppressedFocused => {
+                let payload = ToastPayload {
+                    title: params.title.to_string(),
+                    message: params.message.to_string(),
+                    severity: params.severity,
+                    duration_ms: params.duration_ms,
+                };
+                if let Err(e) = emit_ipc_to(app, AppWindow::Main, IpcEvent::ShowToast(payload)) {
+                    log::warn!(
+                        "[Notifications] In-app ShowToast emit to Main failed: {}",
+                        e
+                    );
+                }
+            }
+            ToastDeliveryOutcome::Failed => {
+                if channel == DeliveryChannel::ToastOnly {
+                    let conn = db.connect()?;
+                    return elevate_toast_to_drawer(app, &conn, &params).await;
+                }
+            }
         }
     }
 
@@ -57,13 +80,8 @@ fn dispatch_toast<R: tauri::Runtime>(
     message: &str,
     severity: crate::core::events::Severity,
     duration_ms: Option<u64>,
-) -> bool {
-    if let Err(e) = crate::toast::show_toast(app, title, message, severity, duration_ms) {
-        log::warn!("[Notifications] show_toast overlay dispatch failed: {}", e);
-        false
-    } else {
-        true
-    }
+) -> ToastDeliveryOutcome {
+    crate::toast::show_toast(app, title, message, severity, duration_ms)
 }
 
 async fn elevate_toast_to_drawer<R: tauri::Runtime>(

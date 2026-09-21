@@ -297,27 +297,37 @@ fn handle_generate(
     }
 }
 
-/// Classifies error string into standard pipeline impact.
+/// Classifies error string into standard pipeline impact and source.
 fn classify_llm_error(turn_id: u32, err_str: String) -> PipelineError {
-    let impact = if err_str.contains("context window")
-        || err_str.contains("context length")
-        || err_str.contains("prompt too long")
-        || err_str.contains("NoKvCacheSlot")
-    {
-        PipelineImpact::TurnAborted
-    } else if err_str.contains("401")
-        || err_str.contains("Unauthorized")
-        || err_str.contains("API key")
-    {
+    let lower = err_str.to_lowercase();
+    let is_missing_model = lower.contains("404")
+        || lower.contains("not found")
+        || lower.contains("nosuchmodel")
+        || lower.contains("does not exist");
+
+    let is_auth_fail = lower.contains("401")
+        || lower.contains("403")
+        || lower.contains("unauthorized")
+        || lower.contains("forbidden")
+        || lower.contains("api key")
+        || lower.contains("invalid_api_key");
+
+    let impact = if is_missing_model || is_auth_fail {
         PipelineImpact::SessionHalted
     } else {
         PipelineImpact::TurnAborted
     };
 
+    let source = if is_missing_model {
+        "ModelActor".to_string()
+    } else {
+        "LlmActor".to_string()
+    };
+
     PipelineError {
         turn_id,
         message: err_str,
-        source: "LlmActor".to_string(),
+        source,
         impact,
     }
 }

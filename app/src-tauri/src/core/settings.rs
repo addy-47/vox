@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs,
     io::Write,
     time::{SystemTime, UNIX_EPOCH},
@@ -176,7 +177,8 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
             if key == "temperature"
                 || key == "compaction_temperature"
                 || key == "reasoning_enabled"
-                || key == "max_output_tokens" =>
+                || key == "max_output_tokens"
+                || key == "cloud_keys" =>
         {
             SettingReloadPolicy::Hot
         }
@@ -493,6 +495,8 @@ pub struct LlmSettings {
     pub embedded: LlmEmbeddedConfig,
     pub server: LlmRemoteConfig,
     pub cloud: LlmRemoteConfig,
+    #[serde(default)]
+    pub cloud_keys: HashMap<String, String>,
 }
 
 impl Default for LlmSettings {
@@ -508,6 +512,7 @@ impl Default for LlmSettings {
             embedded: LlmEmbeddedConfig::default(),
             server: LlmRemoteConfig::server_default(),
             cloud: LlmRemoteConfig::cloud_default(),
+            cloud_keys: HashMap::new(),
         }
     }
 }
@@ -1159,5 +1164,46 @@ mod tests {
         assert_eq!(edge.voices, TtsVoiceSource::Edge);
         assert!(!edge.speed && !edge.quality_steps && !edge.clone);
         assert_eq!(caps_for_id("no_such_engine"), caps_for_id("supertonic"));
+    }
+
+    #[test]
+    fn test_llm_cloud_keys_persistence() {
+        let mut settings = VoxSettings::default();
+        assert!(settings.llm.cloud_keys.is_empty());
+
+        settings
+            .llm
+            .cloud_keys
+            .insert("gemini".to_string(), "AIzaSyTestKey".to_string());
+        settings
+            .llm
+            .cloud_keys
+            .insert("nvidia".to_string(), "nvapi-TestKey".to_string());
+
+        let json = serde_json::to_string(&settings).expect("Serialization failed");
+        let deserialized: VoxSettings =
+            serde_json::from_str(&json).expect("Deserialization failed");
+
+        assert_eq!(
+            deserialized
+                .llm
+                .cloud_keys
+                .get("gemini")
+                .map(|s| s.as_str()),
+            Some("AIzaSyTestKey")
+        );
+        assert_eq!(
+            deserialized
+                .llm
+                .cloud_keys
+                .get("nvidia")
+                .map(|s| s.as_str()),
+            Some("nvapi-TestKey")
+        );
+
+        // Verify backward compatibility: older JSON payload without cloud_keys defaults to empty HashMap
+        let old_json = r#"{"active":"embedded","temperature":0.7,"compaction_temperature":0.3,"max_output_tokens":4096,"context_window":8192,"threads":4,"reasoning_enabled":false,"embedded":{"model":"qwen"},"server":{"base_url":"http://127.0.0.1:11434","model":"qwen2.5:0.5b"},"cloud":{"base_url":"https://api.openai.com/v1","model":"gpt-4o-mini"}}"#;
+        let old_llm: LlmSettings = serde_json::from_str(old_json).expect("Backward compat failed");
+        assert!(old_llm.cloud_keys.is_empty());
     }
 }

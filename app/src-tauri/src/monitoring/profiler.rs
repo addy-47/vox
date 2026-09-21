@@ -285,7 +285,9 @@ fn assign_webview_roles(
     let mut web_pids: Vec<(u32, u64, f32)> = process_tree
         .iter()
         .filter(|p| {
-            !p.is_main_process && !p.is_devtools && (p.name.contains("WebKitWeb") || p.name.contains("WebProcess"))
+            !p.is_main_process
+                && !p.is_devtools
+                && (p.name.contains("WebKitWeb") || p.name.contains("WebProcess"))
         })
         .map(|p| (p.pid, p.start_time, p.memory_mb))
         .collect();

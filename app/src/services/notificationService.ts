@@ -43,9 +43,17 @@ export function isReceipt(notif: NotificationRecord): boolean {
   return notif.action_type === "receipt";
 }
 
-/** Counts badge weight: unread, interactive tasks only. */
+/**
+ * Counts badge weight per spec §9.2:
+ * - Unread interactive tasks that are not yet resolved
+ * - Unread warning or critical receipts/updates
+ */
 export function countsTowardBadge(notif: NotificationRecord): boolean {
-  return notif.status === "unread" && notif.action_type === "interactive";
+  if (notif.status !== "unread") return false;
+  if (notif.action_type === "interactive") {
+    return metadataResolution(notif) !== "resolved";
+  }
+  return notif.severity === "warning" || notif.severity === "critical";
 }
 
 /** Resolves task resolution state from metadata ("pending" | "resolved" | "failed"). */

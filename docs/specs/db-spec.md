@@ -47,6 +47,18 @@ pub enum PersistenceEvent {
         user_text: String,
         assistant_text: String,
     },
+    ToolCallExecuted {
+        id: String,
+        session_id: i64,
+        turn_id: u32,
+        tool_name: String,
+        tool_kind: String,
+        arguments: String,
+        result: Option<String>,
+        is_error: bool,
+        duration_ms: Option<u64>,
+        created_at: u64,
+    },
     UpdateSessionMetadata {
         session_id: i64,
         key: String,   // e.g. "title", "project_id"
@@ -248,3 +260,35 @@ Persistent, actionable desktop notification center (governed by `notifications-s
 -   `idx_notifications_status_created` ON notifications(status, created_at DESC);
 -   `idx_notifications_group_status` ON notifications(group_key, status);
 -   `idx_notifications_session` ON notifications(session_id);
+
+---
+
+### 2.10 `session_tool_calls` (Cognitive Scratchpad Ledger)
+Tracks all agentic tool calls, execution payloads, results, and timing. Decoupled from the spoken `turns` ledger to preserve speech-only audio replay while enabling precise multi-turn session rollback and tool execution audits.
+
+| Field | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | TEXT | PRIMARY KEY | Unique tool invocation identifier (UUID/ULID) |
+| `session_id` | INTEGER | NOT NULL REFERENCES `sessions(id)` ON DELETE CASCADE | Associated session |
+| `turn_id` | INTEGER | NOT NULL | Monotonic `u32` turn counter within session |
+| `tool_name` | TEXT | NOT NULL | Tool identifier (e.g. `'respond_and_set_title'`, `'search_memory'`) |
+| `tool_kind` | TEXT | NOT NULL | Operational category (`'terminal'` or `'non_terminal'`) |
+| `arguments` | TEXT | NOT NULL | Serialized JSON parameters provided by model |
+| `result` | TEXT | NULLABLE | Serialized JSON output returned by tool |
+| `is_error` | BOOLEAN | NOT NULL DEFAULT FALSE | Failure indicator flag |
+| `duration_ms` | INTEGER | NULLABLE | Wall-clock execution latency in milliseconds |
+| `created_at` | INTEGER | NOT NULL | Millisecond epoch timestamp of invocation |
+
+*Foreign Key Self-Healing & Memory Parity:*
+- **Self-Healing Parent Row**: To guard against foreign key constraint violations if the initial `SessionStarted` persistence event was delayed or dropped by channel backpressure, write operations to `session_tool_calls` (via `PersistenceEvent::ToolCallExecuted`) and session title updates execute an idempotent self-heal before writing:
+  `INSERT OR IGNORE INTO sessions (id, project_id, is_pinned, created_at, updated_at) VALUES (?, 'default', 0, ?, ?);`
+- **Ephemeral Scratchpad vs Permanent Ledger**: Active in-memory working memory maintains intermediate tool interactions in a turn-local ephemeral scratchpad that is dropped at turn commit/cancellation. Only `session_tool_calls` preserves the durable execution history, guaranteeing 100% parity between active working memory and database-reconstructed sessions.
+- **Cascade & Rollback Boundaries**:
+  - **Session Deletion**: Deleting a session hard-cascades to `session_tool_calls` (`ON DELETE CASCADE`).
+  - **Turn Rollback (Deferred)**: Interactive multi-turn rollback is architected for Phase 12.2+ (see `harness-spec.md §10`). When invoked, rewinding to turn $N$ executes atomic cleanup:
+    `DELETE FROM session_tool_calls WHERE session_id = ? AND turn_id > N;`
+    in lock-step with `DELETE FROM turns WHERE session_id = ? AND turn_id > N;`.
+
+*Indexes:*
+- `idx_tool_calls_session_turn`: `(session_id, turn_id)`
+- `idx_tool_calls_created`: `(created_at DESC)`

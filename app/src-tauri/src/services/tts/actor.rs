@@ -121,12 +121,14 @@ pub fn spawn_tts_worker(
                             turn_id,
                             e
                         );
-                        if let Err(send_err) = handles.event_tx.send(VoxEvent::Error(PipelineError {
-                            turn_id,
-                            message: format!("TTS synthesis failed: {}", e),
-                            source: "tts".into(),
-                            impact: PipelineImpact::Degraded,
-                        })) {
+                        if let Err(send_err) =
+                            handles.event_tx.send(VoxEvent::Error(PipelineError {
+                                turn_id,
+                                message: format!("TTS synthesis failed: {}", e),
+                                source: "tts".into(),
+                                impact: PipelineImpact::Degraded,
+                            }))
+                        {
                             log::warn!(
                                 "[TTS Worker] Failed to dispatch synthesis error event: {}",
                                 send_err
@@ -140,12 +142,14 @@ pub fn spawn_tts_worker(
                             .or_else(|| payload.downcast_ref::<String>().map(|s| s.as_str()))
                             .unwrap_or("unknown panic");
                         log::error!("[TTS Worker] Engine panicked on turn {}: {}", turn_id, msg);
-                        if let Err(send_err) = handles.event_tx.send(VoxEvent::Error(PipelineError {
-                            turn_id,
-                            message: format!("TTS engine panic: {}", msg),
-                            source: "tts".into(),
-                            impact: PipelineImpact::Degraded,
-                        })) {
+                        if let Err(send_err) =
+                            handles.event_tx.send(VoxEvent::Error(PipelineError {
+                                turn_id,
+                                message: format!("TTS engine panic: {}", msg),
+                                source: "tts".into(),
+                                impact: PipelineImpact::Degraded,
+                            }))
+                        {
                             log::warn!(
                                 "[TTS Worker] Failed to dispatch engine panic error event: {}",
                                 send_err
