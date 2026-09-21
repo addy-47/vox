@@ -24,6 +24,7 @@ pub type LlmWarmUpHandles<'a> = LlmWorkerHandles<'a>;
 #[derive(Debug, Clone)]
 pub enum LlmResponse {
     Token(String),
+    ToolCall(super::CanonicalToolCall),
     Finished,
     Cancelled,
     Error(PipelineError),
@@ -112,6 +113,7 @@ impl GenerationPolicy {
             },
             output: defaults.output.clone(),
             purpose,
+            tools: None,
         }
     }
 }
@@ -165,17 +167,22 @@ fn handle_warmup(
                     role: Role::System,
                     content: system_prompt,
                     timestamp_ms: 0,
+                    tool_call_id: None,
+                    tool_calls: None,
                 },
                 ChatMessage {
                     role: Role::User,
                     content: "[WARMUP]".to_string(),
                     timestamp_ms: 0,
+                    tool_call_id: None,
+                    tool_calls: None,
                 },
             ],
         },
         options: GenerationOptions::default(),
         output: OutputConstraint::Text,
         purpose: GenerationPurpose::Conversation,
+        tools: None,
     };
     let gen_handle = runtime.spawn(async move {
         provider_clone
@@ -226,6 +233,15 @@ fn handle_generate(
                     break;
                 }
                 if let Err(e) = response_tx.send(LlmResponse::Token(token)) {
+                    log::debug!("[Llm::Worker] response_tx disconnected: {}", e);
+                    break;
+                }
+            }
+            super::LlmStreamEvent::ToolCall(call) => {
+                if cancel.is_cancelled() {
+                    break;
+                }
+                if let Err(e) = response_tx.send(LlmResponse::ToolCall(call)) {
                     log::debug!("[Llm::Worker] response_tx disconnected: {}", e);
                     break;
                 }

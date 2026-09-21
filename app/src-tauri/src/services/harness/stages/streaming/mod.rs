@@ -7,4 +7,4 @@ pub mod router;
 
 pub use chunker::ClauseChunker;
 pub use normalizer::TextNormalizer;
-pub use router::{StreamRoutingHandles, StreamRoutingStage};
+pub use router::{StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage};

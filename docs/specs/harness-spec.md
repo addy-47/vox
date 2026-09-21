@@ -277,7 +277,7 @@ The turn lifecycle is executed as an unbroken, deterministic sequence owned enti
 4. 🔌 **[STAGE_CALL]**  
    - **What**: Real-time context capacity evaluation.  
    - **Owner**: `stages/budget.rs` (`ContextBudgetStage::evaluate_utilization`).  
-   - **Re-Entry Invariant**: Reentrant cognitive loops from Phase 6 re-enter directly at Step 4, **skipping Step 3** (`push_user_turn`).
+   - **Loop Cycle Invariant**: Turn intake (Step 3 `push_user_turn`) executes exactly once per turn, outside the reentrant loop. The reentrant cognitive loop is a self-contained cycle — **budget (Step 4) $\to$ assembly (Phase 4) $\to$ dispatch (Phase 5) $\to$ stream (Phase 6) $\to$ tools (Phase 6 Case B)** — owned solely by `orchestrator/loop.rs`. Loop iterations re-enter at Step 4 and never re-stage the user turn.
    - **Calculation**: Sums tracked in-memory tokens across system prompt, injected memory, active summary, staged history, registered tool schemas, and active scratchpad against usable window (`max_window - reserve_tokens`).  
    - **Branch**: Classifies state as `ContextStatus::Nominal` ($<85\%$) or `ContextStatus::Critical` ($\ge 85\%$).
 
@@ -327,10 +327,9 @@ The turn lifecycle is executed as an unbroken, deterministic sequence owned enti
        - f. ⬇️ **[DOWNSTREAM]**: On first synthesized audio frame reaching hardware, `PlaybackEngine` transitions `Working`/`Thinking` $\to$ `InteractionState::Speaking`.
      - **Case B: `LlmResponse::ToolCall(call)`**:
         - Bypasses standard streaming text path. Evaluates tool classification via `ToolRegistry`:
-          - **Pre-Tool Partial Text Handling**:
-            - If preceded by non-empty partial text in the same pass:
-              - *NonTerminal*: Flush partial text through `ClauseChunker` $\to$ `TtsActor` as `AudioIntent::TurnResponse` *before* transitioning to `Working` and dispatching `spoken_filler`.
-              - *Terminal*: Discard accumulated partial text without chunker flush or TTS dispatch (`spoken_response` supersedes it entirely).
+          - **Pre-Tool Partial Text Handling (Drop-All-Prefix)**:
+            - If preceded by non-empty partial text in the same pass, the Harness discards it entirely: no chunker flush, no TTS dispatch for either `Terminal` or `NonTerminal` tools. Only `spoken_response` (`Terminal`) or `spoken_filler` (`NonTerminal`) may be synthesized.
+            - **Buffering Requirement**: the egress stream layer must buffer clause dispatch within a pass until the pass outcome is known (`Completed` vs `ToolCallReceived`), so prefix text streamed before a tool call is never already in the TTS queue when the tool call arrives. Eager per-token TTS dispatch that cannot be recalled violates this contract.
           - **If `ToolFlow::Terminal` (e.g. `respond_and_set_title`)**:
             - Extracts required `spoken_response` parameter from arguments.
             - Immediately routes `spoken_response` through `TextNormalizer` $\to$ `ClauseChunker` $\to$ `TtsActor` as `AudioIntent::TurnResponse`. Conversational voice begins playback with optimal clause-level TTFA, zero delay, and zero 2-pass latency.
@@ -344,7 +343,7 @@ The turn lifecycle is executed as an unbroken, deterministic sequence owned enti
             - Executes tool action with a strict per-tool timeout (`TOOL_EXECUTION_TIMEOUT = 10s`).
             - Logs invocation and result to `session_tool_calls` scratchpad ledger.
             - Appends `ChatMessage { role: Role::Assistant, tool_calls: Some(vec![call]), ... }` and `ChatMessage { role: Role::Tool, tool_call_id, content: result }` to the **turn-local ephemeral scratchpad** (never to permanent working history).
-            - **REENTRANT COGNITIVE LOOP**: Harness loops back to **Phase 2 at Step 4 (Token Budget Evaluation)**, skipping Step 3.
+            - **REENTRANT COGNITIVE LOOP**: Harness appends the tool observation to the turn-local ephemeral scratchpad and iterates the loop cycle defined in Phase 2 Step 4 (budget $\to$ assembly $\to$ dispatch $\to$ stream $\to$ tools).
             - **Recursion Guard**: Iterations bounded by `MAX_TOOL_ITERATIONS = 5`. On breach, executes one final generation pass with `tools = None` to produce a spoken summary rather than aborting.
 
 ### Phase 7: Turn Finalization, Commit & Watcher Arming
@@ -452,11 +451,18 @@ The `services/harness/` subsystem is organized strictly by role:
 ```
 services/harness/
 ├── mod.rs                 # Domain constants, Role, ChatMessage, PromptTag, TurnOutcome
-├── orchestrator/          # Harness orchestrator modules
-│   ├── mod.rs             # Harness struct, new(), run loop, public facade
-│   ├── turn.rs            # execute_turn(), TurnState, pass loops
-│   ├── phase.rs           # NonTerminalPhase trait & enter_non_terminal_phase helper
-│   └── barge_in.rs        # Cancellation, rollback, partial-turn commit logic
+├── orchestrator/          # Harness orchestrator modules (named steps + loop owner)
+│   ├── mod.rs             # Module declarations and re-exports only. Zero business logic.
+│   ├── chassis.rs         # Harness struct, constructors, session-scoped state. No turn sequencing.
+│   ├── loop.rs            # Sole turn-sequencing owner: execute_turn() + reentrant budget→assemble→dispatch→stream→tools cycle
+│   ├── intake.rs          # Phase 1 & 2 intake: dedup gate, user-turn staging, budget evaluation (runs once per turn)
+│   ├── compaction.rs      # Phase 3 inline compaction / maintenance (runs once per turn, before the loop)
+│   ├── assemble.rs        # Phase 4: delegates to PromptBuilderStage::build_generation_request (sole assembly authority)
+│   ├── dispatch.rs        # Phase 5: duplex LlmCommand::Generate dispatch over the session pipe
+│   ├── stream.rs          # Phase 6 streaming adapter: single-pass outcome demuxing (Completed / ToolCall / Cancelled / Error)
+│   ├── tools.rs           # Phase 6 Case B: Terminal single-pass vs NonTerminal filler + scratchpad append
+│   ├── phase.rs           # NonTerminalPhase trigger + enter_non_terminal_phase helper (Working + InterimFiller)
+│   └── finalize.rs        # Phase 7: commit / cancelled-partial / error branches (sole history writer with the loop)
 ├── stages/                # Pure input->output stages (never call each other)
 │   ├── history.rs         # ConversationHistoryStage: in-memory FIFO buffer & dedup
 │   ├── prompt.rs          # PromptBuilderStage: persona + memory + GenerationRequest assembly
@@ -473,6 +479,15 @@ services/harness/
     ├── router.rs          # StreamRouter: TTS clause dispatch & UI subtitle IPC
     └── normalizer.rs      # TextNormalizer: speech substitutions, abbreviation expansion
 ```
+
+### 9.2 Orchestrator Refactor Contract (Phase 12.2)
+
+The pre-12.2 orchestrator split (`turn.rs` / `loop_driver.rs` / `barge_in.rs` with sequencing logic inside `mod.rs` and turn helpers inside `chassis.rs`) is superseded by the §9.1 layout. The refactor is a pure move with zero behavior change, executed before any §5.5 finding fix:
+
+1. **Single loop owner**: all sequencing lives in `orchestrator/loop.rs` (`execute_turn` + iteration). `mod.rs` returns to declarations/re-exports; `chassis.rs` keeps Harness data, constructors, and session helpers only.
+2. **One-shot vs loop separation**: `intake.rs` and `compaction.rs` run once per turn before the loop; `assemble.rs` / `dispatch.rs` / `stream.rs` / `tools.rs` / `finalize.rs` expose single-purpose step functions the loop calls without duplicating assembly, dispatch, or outcome-branching logic.
+3. **Assembly authority**: the duplicate request builder in the old loop driver is deleted; `assemble.rs` delegates to `PromptBuilderStage::build_generation_request`, which owns history slice + scratchpad + tool-schema injection.
+4. **NonTerminal unity**: `phase.rs` remains the single `Working` + `InterimFiller` helper shared by compaction and NonTerminal tools; no step reimplements the transition or filler fallback.
 
 
 ---

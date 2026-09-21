@@ -5,7 +5,7 @@
 //! Component    : persistence/{db,schema,worker,sessions,projects,facts,compactions}
 //! Prerequisites: Turso SQLite engine (vox.db), isolated temporary database
 //! Execution    : cargo nextest run --test database_persistence_boundary_test --release --nocapture --test-threads=1
-//! Metrics      : Schema migrations user_version = 4, foreign key RESTRICT / CASCADE / SET NULL,
+//! Metrics      : Schema migrations user_version = 5, foreign key RESTRICT / CASCADE / SET NULL,
 //!                unique partial index concurrency enforcement, multi-threaded MVCC read/write,
 //!                F32_BLOB 384-dimensional vector float precision
 //! ============================================================================
@@ -43,7 +43,7 @@ use vox_lib::persistence::{
 ///
 /// Verifies:
 ///   - Database opens and applies pragmas (foreign_keys = ON, busy_timeout).
-///   - `run_migrations` transitions database to schema version 4 (`PRAGMA user_version = 4`).
+///   - `run_migrations` transitions database to schema version 5 (`PRAGMA user_version = 5`).
 ///   - Seed project `'default'` is created.
 ///   - Seed global personal memory document (project_id = NULL, version = 1) is created.
 ///   - Core v2 tables exist in `sqlite_master`.
@@ -61,15 +61,15 @@ async fn test_schema_migration_and_seed_data() {
             .await
             .expect("Failed to execute schema migrations");
 
-        // 1. Verify PRAGMA user_version = 4
+        // 1. Verify PRAGMA user_version = 5
         let mut rows = conn
             .query("PRAGMA user_version;", ())
             .await
             .expect("Failed to query user_version");
         let version: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(
-            version, 4,
-            "Database user_version must be 4 after migration"
+            version, 5,
+            "Database user_version must be 5 after migration"
         );
 
         // 2. Verify foreign_keys = ON
@@ -106,6 +106,7 @@ async fn test_schema_migration_and_seed_data() {
             "memory_ingestion_queue",
             "personal_memory",
             "voices",
+            "session_tool_calls",
         ];
 
         for table in &expected_tables {
@@ -197,6 +198,15 @@ async fn test_relational_cascades_and_foreign_key_restrictions() {
             .expect("Failed to record session-specific compaction");
         assert!(session_compaction_id > 0);
 
+        // Insert tool call belonging to session_id
+        conn.execute(
+            "INSERT INTO session_tool_calls (id, session_id, turn_id, tool_name, tool_kind, arguments, result, is_error, duration_ms, created_at) \
+             VALUES ('call_cascade_test', ?, 1, 'respond_and_set_title', 'terminal', '{}', 'ok', 0, 5, 1000);",
+            (session_id,),
+        )
+        .await
+        .expect("Failed to insert tool call");
+
         // Insert fact associated with session_id
         let fact_id = "fact_cascade_20201".to_string();
         let fact_rec = FactRecord {
@@ -271,6 +281,20 @@ async fn test_relational_cascades_and_foreign_key_restrictions() {
         assert_eq!(
             comp_count, 0,
             "Compactions must be deleted on session delete (CASCADE)"
+        );
+
+        // Tool calls must be deleted (CASCADE)
+        let mut tc_rows = conn
+            .query(
+                "SELECT COUNT(*) FROM session_tool_calls WHERE session_id = ?;",
+                (session_id,),
+            )
+            .await
+            .unwrap();
+        let tc_count: i64 = tc_rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(
+            tc_count, 0,
+            "Tool calls must be deleted on session delete (CASCADE)"
         );
 
         // 4. SET NULL Check: Fact must survive with session_id = NULL

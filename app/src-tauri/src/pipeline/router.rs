@@ -183,7 +183,7 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
             );
         }
         VoxEvent::LlmFinished { turn_id } => {
-            super::assistant::llm::on_llm_finished(turn_id, state, &ctx);
+            super::assistant::llm::on_llm_finished(turn_id, Some(app), state, &ctx);
         }
         VoxEvent::PlaybackStarted { turn_id, intent } => {
             super::assistant::playback::on_playback_started(turn_id, intent, app, state, &ctx);

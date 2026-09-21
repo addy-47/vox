@@ -105,6 +105,7 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
                 None,
                 &settings,
                 llm_tx.clone(),
+                true,
             ));
         }
 
@@ -221,7 +222,7 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
             interaction_mode: InteractionMode::PTT,
             owner: InteractionOwner::Assistant,
         };
-        on_llm_finished(turn_id, &state, &ctx);
+        on_llm_finished(turn_id, Some(&app), &state, &ctx);
 
         // Collect any flushed remainder clauses
         let mut all_clauses = streaming_clauses;

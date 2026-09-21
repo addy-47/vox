@@ -110,21 +110,14 @@ pub fn benchmark_llm_provider(
         let warmup_req = GenerationRequest {
             input: ConversationInput {
                 messages: vec![
-                    ChatMessage {
-                        role: Role::System,
-                        content: system_prompt.to_string(),
-                        timestamp_ms: 0,
-                    },
-                    ChatMessage {
-                        role: Role::User,
-                        content: "[WARMUP]".to_string(),
-                        timestamp_ms: 0,
-                    },
+                    ChatMessage::new(Role::System, system_prompt.to_string()),
+                    ChatMessage::new(Role::User, "[WARMUP]".to_string()),
                 ],
             },
             options: GenerationOptions::default(),
             output: OutputConstraint::Text,
             purpose: GenerationPurpose::Conversation,
+            tools: None,
         };
 
         runtime
@@ -136,11 +129,7 @@ pub fn benchmark_llm_provider(
     }
 
     let memory_rss_mb = get_process_memory_mb();
-    let mut history = vec![ChatMessage {
-        role: Role::System,
-        content: system_prompt.to_string(),
-        timestamp_ms: 0,
-    }];
+    let mut history = vec![ChatMessage::new(Role::System, system_prompt.to_string())];
 
     let turns_to_run = params.turns.min(CANONICAL_CONVERSATION_TURNS.len());
     let mut turn_results = Vec::new();
@@ -152,11 +141,7 @@ pub fn benchmark_llm_provider(
     {
         let turn_id = (turn_idx + 1) as u32;
 
-        history.push(ChatMessage {
-            role: Role::User,
-            content: prompt_text.to_string(),
-            timestamp_ms: 0,
-        });
+        history.push(ChatMessage::new(Role::User, prompt_text.to_string()));
 
         let request = GenerationRequest {
             input: ConversationInput {
@@ -172,6 +157,7 @@ pub fn benchmark_llm_provider(
             },
             output: OutputConstraint::Text,
             purpose: GenerationPurpose::Conversation,
+            tools: None,
         };
 
         let (tx, rx) = mpsc::channel();
@@ -199,6 +185,7 @@ pub fn benchmark_llm_provider(
                     full_response.push_str(&tok);
                     token_count += 1;
                 }
+                LlmStreamEvent::ToolCall(_) => {}
                 LlmStreamEvent::Finished => break,
             }
         }
@@ -228,11 +215,7 @@ pub fn benchmark_llm_provider(
             turn_id, ttft_ms, gen_time_ms, token_count, tokens_per_sec
         );
 
-        history.push(ChatMessage {
-            role: Role::Assistant,
-            content: full_response.clone(),
-            timestamp_ms: 0,
-        });
+        history.push(ChatMessage::new(Role::Assistant, full_response.clone()));
 
         turn_results.push(LlmTurnResult {
             turn_id,

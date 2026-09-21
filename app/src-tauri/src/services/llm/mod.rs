@@ -16,9 +16,10 @@ pub use catalog::{
 pub use embedded::{EmbeddedProvider, LlmWorker, ModelFamily};
 pub use factory::{create_llm_provider, create_llm_provider_from_llm_settings};
 pub use provider::{
-    global_llama_backend, ConversationInput, GenerationOptions, GenerationPurpose,
-    GenerationRequest, LlmEngine, LlmError, LlmProvider, LlmStreamEvent, OutputConstraint,
-    ProviderCapabilities, ProviderKind, ReasoningMode, Support,
+    global_llama_backend, CanonicalToolCall, CanonicalToolDefinition, ConversationInput,
+    GenerationOptions, GenerationPurpose, GenerationRequest, LlmEngine, LlmError, LlmProvider,
+    LlmStreamEvent, OutputConstraint, ProviderCapabilities, ProviderKind, ReasoningMode, Support,
+    ToolFlow,
 };
 pub use transport::{
     AuthScheme, CapabilitySource, ConnectionConfig, RemoteTransport, TokenLimitField, TransportType,

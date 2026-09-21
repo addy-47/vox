@@ -244,18 +244,10 @@ fn build_history_messages(turns: &[TurnRow]) -> Vec<ChatMessage> {
     let mut messages = Vec::with_capacity(turns.len() * 2);
     for turn in turns {
         if !turn.user_text.trim().is_empty() {
-            messages.push(ChatMessage {
-                role: Role::User,
-                content: turn.user_text.clone(),
-                timestamp_ms: 0,
-            });
+            messages.push(ChatMessage::new(Role::User, turn.user_text.clone()));
         }
         if !turn.assistant_text.trim().is_empty() {
-            messages.push(ChatMessage {
-                role: Role::Assistant,
-                content: turn.assistant_text.clone(),
-                timestamp_ms: 0,
-            });
+            messages.push(ChatMessage::new(Role::Assistant, turn.assistant_text.clone()));
         }
     }
     messages

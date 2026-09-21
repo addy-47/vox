@@ -130,6 +130,7 @@ async fn run(args: Args) -> Result<()> {
         None,
         &settings,
         llm_tx,
+        true,
     );
     harness.seed_continuation(None, Vec::new());
 

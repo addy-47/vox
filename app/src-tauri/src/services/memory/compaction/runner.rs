@@ -60,6 +60,7 @@ async fn execute_compaction_attempt(
                     LlmStreamEvent::Token(token) => {
                         summary_content.push_str(&token);
                     }
+                    LlmStreamEvent::ToolCall(_) => {}
                     LlmStreamEvent::Finished => {
                         log::info!(
                             "[MemoryCompaction] LlmFinished received; full summary received."

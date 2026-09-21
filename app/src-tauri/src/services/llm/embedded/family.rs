@@ -81,6 +81,22 @@ impl ModelFamily {
                         prompt.push_str(&format!("{}\n", msg.content))
                     }
                 },
+                Role::Tool => match self {
+                    ModelFamily::Gemma => {
+                        prompt.push_str(&format!("<|turn>tool\n{}<turn|>\n", msg.content))
+                    }
+                    ModelFamily::Qwen => prompt.push_str(&format!(
+                        "<|im_start|>user\n<tool_response>\n{}\n</tool_response><|im_end|>\n",
+                        msg.content
+                    )),
+                    ModelFamily::Llama3 => prompt.push_str(&format!(
+                        "<|start_header_id|>ipython<|end_header_id|>\n\n{}<|eot_id|>",
+                        msg.content
+                    )),
+                    ModelFamily::Nemotron | ModelFamily::Unknown => {
+                        prompt.push_str(&format!("Tool: {}\n", msg.content))
+                    }
+                },
             }
         }
         prompt

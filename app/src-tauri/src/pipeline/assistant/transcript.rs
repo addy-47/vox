@@ -89,10 +89,12 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
             }
             TurnOutcome::DuplicateIgnored { turn_id } => {
                 log::info!("[Pipeline::Transcript] Duplicate turn {} ignored", turn_id);
+                app_state.pipeline.reset_turn_guards();
                 transition(InteractionState::Ready, &ctx_clone, &app_clone, &app_state);
             }
             TurnOutcome::Cancelled { turn_id } => {
                 log::info!("[Pipeline::Transcript] Turn {} cancelled", turn_id);
+                app_state.pipeline.reset_turn_guards();
                 transition(InteractionState::Ready, &ctx_clone, &app_clone, &app_state);
             }
             TurnOutcome::Error { turn_id, message } => {
@@ -101,6 +103,7 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
                     turn_id,
                     message
                 );
+                app_state.pipeline.reset_turn_guards();
                 transition(InteractionState::Ready, &ctx_clone, &app_clone, &app_state);
             }
         }
@@ -191,6 +194,8 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         );
     }
 
+    state.pipeline.set_turn_open(true);
+    state.pipeline.clear_drained_while_open();
     transition(InteractionState::Thinking, ctx, app, state);
 
     match ctx.pipeline_mode {

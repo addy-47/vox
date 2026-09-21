@@ -266,21 +266,29 @@ mod tests {
                         role: Role::System,
                         content: "You are a helpful voice assistant.".to_string(),
                         timestamp_ms: 100,
+                        tool_call_id: None,
+                        tool_calls: None,
                     },
                     MemMsg {
                         role: Role::User,
                         content: "Hello!".to_string(),
                         timestamp_ms: 200,
+                        tool_call_id: None,
+                        tool_calls: None,
                     },
                     MemMsg {
                         role: Role::Assistant,
                         content: "Hi there! How can I help?".to_string(),
                         timestamp_ms: 300,
+                        tool_call_id: None,
+                        tool_calls: None,
                     },
                     MemMsg {
                         role: Role::User,
                         content: "What's the weather?".to_string(),
                         timestamp_ms: 400,
+                        tool_call_id: None,
+                        tool_calls: None,
                     },
                 ],
             },
@@ -291,6 +299,7 @@ mod tests {
             },
             output: OutputConstraint::Text,
             purpose: GenerationPurpose::Conversation,
+            tools: None,
         };
 
         let body = build_request_body(&config, &request);

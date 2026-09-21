@@ -15,6 +15,7 @@ pub mod projects;
 pub mod queue;
 pub mod schema;
 pub mod sessions;
+pub mod tool_calls;
 pub mod voices;
 pub mod worker;
 
@@ -33,7 +34,10 @@ pub use queue::{
     enqueue_fact, has_unfinished_items, record_queue_item_failure, update_queue_item_status,
     QueueItem,
 };
-pub use sessions::{fetch_session_project_id, SessionRow, TurnRow};
+pub use sessions::{
+    ensure_session_exists, fetch_session_project_id, set_session_title, SessionRow, TurnRow,
+};
+pub use tool_calls::persist_tool_call;
 
 /// Asynchronous pipeline events offloaded from the voice hot-path to the persistence worker.
 #[derive(Debug, Clone)]
@@ -51,6 +55,18 @@ pub enum PersistenceEvent {
         turn_id: u32,
         user_text: String,
         assistant_text: String,
+    },
+    ToolCallExecuted {
+        id: String,
+        session_id: i64,
+        turn_id: u32,
+        tool_name: String,
+        tool_flow: crate::services::llm::ToolFlow,
+        arguments: serde_json::Value,
+        result: String,
+        is_error: bool,
+        duration_ms: u64,
+        created_at: u64,
     },
     UpdateSessionMetadata {
         session_id: i64,
