@@ -12,6 +12,7 @@ use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
         events::{AudioIntent, VoxEvent},
+        metrics::TurnMetricsCollector,
         settings::VoxSettings,
     },
     services::{
@@ -41,6 +42,7 @@ pub struct TtsWorkerHandles {
     pub cancel_flag: Arc<AtomicBool>,
     pub pending_synthesis_jobs: Option<Arc<AtomicU32>>,
     pub telemetry_rtf: Option<Arc<AtomicU32>>,
+    pub turn_metrics: Option<Arc<TurnMetricsCollector>>,
 }
 
 pub fn spawn_tts_worker(
@@ -108,6 +110,9 @@ pub fn spawn_tts_worker(
                         handles.playback.flush_pre_roll();
                         flushed_pre_roll = true;
                     }
+                }
+                if let Some(ref tm) = handles.turn_metrics {
+                    tm.record_tts_job_completed(remaining_jobs == 0);
                 }
                 log::info!(
                     "[TTS Worker] Job finished (job {}, turn {}, remaining_jobs {}, flushed_pre_roll {})",
@@ -189,6 +194,7 @@ pub struct TtsWarmUpHandles<'a> {
     pub playback_engine: Arc<PlaybackEngine>,
     pub pending_synthesis_jobs: Option<Arc<AtomicU32>>,
     pub telemetry_rtf: Option<Arc<AtomicU32>>,
+    pub turn_metrics: Option<Arc<TurnMetricsCollector>>,
 }
 
 /// Spawns and initializes a persistent TTS worker actor thread.
@@ -215,6 +221,7 @@ pub fn warm_up_tts(
         cancel_flag: handles.cancel_flag,
         pending_synthesis_jobs: handles.pending_synthesis_jobs,
         telemetry_rtf: handles.telemetry_rtf,
+        turn_metrics: handles.turn_metrics,
     };
 
     let handle = Builder::new()

@@ -6,7 +6,7 @@ pub use embedder::{
     generate_embeddings_batch, init_embedder, is_embedder_loaded, l2_normalize_in_place,
     unload_embedder, TextEmbedder,
 };
-pub use tokenizer::estimate_tokens;
+pub use tokenizer::{estimate_tokens, warmup_tokenizer};
 
 use crate::services::translit::unload_transliteration_engine;
 

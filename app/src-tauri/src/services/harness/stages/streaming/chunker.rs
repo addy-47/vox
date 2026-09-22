@@ -60,6 +60,7 @@ impl ClauseChunker {
     /// Scans buffer text and locates valid clause or sentence split byte positions.
     fn find_split_point(&mut self) -> Option<(usize, usize)> {
         let (w_min, w_target, w_max) = self.current_word_thresholds();
+        let terminal_w_min = if self.chunk_index == 0 { 2 } else { w_min };
         let chars: Vec<(usize, char)> = self.buffer.char_indices().collect();
 
         for i in 0..chars.len() {
@@ -74,7 +75,7 @@ impl ClauseChunker {
             if c == '?' || c == '!' {
                 let text_before = &self.buffer[..pos];
                 let word_count = text_before.split_whitespace().count();
-                if word_count >= w_min {
+                if word_count >= terminal_w_min {
                     return Some((pos, c.len_utf8()));
                 }
                 continue;
@@ -119,7 +120,7 @@ impl ClauseChunker {
                 }
 
                 let word_count = text_before.split_whitespace().count();
-                if word_count >= w_min {
+                if word_count >= terminal_w_min {
                     return Some((pos, c.len_utf8()));
                 }
             }
@@ -337,5 +338,13 @@ mod tests {
             chunks.is_empty(),
             "Short exclamation under w_min must not split alone"
         );
+    }
+
+    /// Tests 2-word conversational marker on chunk 0 splits immediately.
+    #[test]
+    fn test_chunker_chunk0_two_word_marker_splits() {
+        let mut c = ClauseChunker::new();
+        let chunks = c.push_str("Sure thing! I will check that for you right now.");
+        assert_eq!(chunks, vec!["Sure thing!"]);
     }
 }

@@ -25,14 +25,13 @@ use std::{
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use vox_lib::{
-    core::{
-        events::AudioIntent,
-        settings::VoxSettings,
-    },
+    core::{events::AudioIntent, settings::VoxSettings, state::InteractionOwner},
     persistence::{
         facts::{insert_fact, insert_vector, FactRecord},
         schema::run_migrations,
+        worker::spawn_persistence_worker,
     },
+    core::metrics::TurnMetricsCollector,
     services::{
         harness::{
             chassis::Harness,
@@ -45,6 +44,7 @@ use vox_lib::{
             Role, TurnExecutionRequest,
         },
         llm::{
+            actor::LlmResponse,
             transport::{ConnectionConfig, RemoteTransport},
             CanonicalToolCall, CanonicalToolDefinition, ConversationInput, GenerationOptions,
             GenerationPurpose, GenerationRequest, LlmProvider, LlmStreamEvent, OutputConstraint,
@@ -72,6 +72,14 @@ async fn test_terminal_tool_title_and_accumulator_parity() {
         let conn = state.db.connect().expect("Failed to connect to db");
         run_migrations(&conn).await.expect("Failed to run migrations");
 
+        let persist_tx = spawn_persistence_worker(
+            Arc::clone(&state.db),
+            state.telemetry.is_db_healthy.clone(),
+            state.telemetry.latest_persistence_rate.clone(),
+            state.telemetry.is_private_mode.clone(),
+        );
+        *state.persist_tx.lock() = Some(persist_tx);
+
         // Seed session
         let session_id = 99887766i64;
         let now = 1700000000000i64;
@@ -89,13 +97,14 @@ async fn test_terminal_tool_title_and_accumulator_parity() {
 
         let stream_handles = StreamRoutingHandles {
             turn_id: 1,
-            owner: vox_lib::core::state::InteractionOwner::Assistant,
+            owner: InteractionOwner::Assistant,
             accumulator: Arc::clone(&state.pipeline_accumulator),
             tts_tx: Some(tts_tx),
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
             cancel: cancel_atomic,
             event_tx: pipeline_tx,
             app: app.clone(),
+            turn_metrics: Arc::new(TurnMetricsCollector::new()),
         };
 
         let stream_stage = StreamRoutingStage::new();
@@ -185,11 +194,22 @@ async fn test_terminal_tool_title_and_accumulator_parity() {
         }
 
         // 4. Assert SQLite sessions table was updated with the title
-        let mut rows = conn
-            .query("SELECT title FROM sessions WHERE id = ?;", (session_id,))
-            .await
-            .expect("Query failed");
-        let title: Option<String> = rows.next().await.unwrap().unwrap().get(0).ok();
+        let mut title = None;
+        for _ in 0..50 {
+            let mut rows = conn
+                .query("SELECT title FROM sessions WHERE id = ?;", (session_id,))
+                .await
+                .expect("Query failed");
+            if let Ok(Some(row)) = rows.next().await {
+                if let Ok(t) = row.get::<Option<String>>(0) {
+                    if t.is_some() {
+                        title = t;
+                        break;
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
         assert_eq!(title, Some("Rust Async Concurrency".to_string()));
 
         // 5. Assert title_set is true on Harness
@@ -276,13 +296,14 @@ async fn test_search_memory_non_terminal_rrf_retrieval() {
 
         let stream_handles = StreamRoutingHandles {
             turn_id: 1,
-            owner: vox_lib::core::state::InteractionOwner::Assistant,
+            owner: InteractionOwner::Assistant,
             accumulator: Arc::clone(&state.pipeline_accumulator),
             tts_tx: Some(tts_tx.clone()),
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
             cancel: cancel_atomic,
             event_tx: pipeline_tx,
             app: app.clone(),
+            turn_metrics: Arc::new(TurnMetricsCollector::new()),
         };
 
         let stream_stage = StreamRoutingStage::new();
@@ -406,13 +427,14 @@ async fn test_clause_buffering_and_prefix_drop_on_tool_call() {
 
         let stream_handles = StreamRoutingHandles {
             turn_id: 1,
-            owner: vox_lib::core::state::InteractionOwner::Assistant,
+            owner: InteractionOwner::Assistant,
             accumulator: Arc::clone(&state.pipeline_accumulator),
             tts_tx: Some(tts_tx),
             pending_synthesis_jobs: Arc::clone(&pending_jobs),
             cancel: cancel_atomic,
             event_tx: pipeline_tx,
             app: app.clone(),
+            turn_metrics: Arc::new(TurnMetricsCollector::new()),
         };
 
         let stream_stage = StreamRoutingStage::new();
@@ -420,7 +442,7 @@ async fn test_clause_buffering_and_prefix_drop_on_tool_call() {
 
         // Send tokens, then ToolCall
         response_tx
-            .send(vox_lib::services::llm::actor::LlmResponse::Token(
+            .send(LlmResponse::Token(
                 "Checking my notes for you right now. ".to_string(),
             ))
             .unwrap();
@@ -476,9 +498,10 @@ fn spawn_mock_wire_server(
     content_type: &'static str,
     captured: Arc<Mutex<Option<serde_json::Value>>>,
 ) -> (String, std::thread::JoinHandle<()>) {
-    let listener =
-        std::net::TcpListener::bind("127.0.0.1:0").expect("mock wire server must bind");
-    let addr = listener.local_addr().expect("mock wire server needs an addr");
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("mock wire server must bind");
+    let addr = listener
+        .local_addr()
+        .expect("mock wire server needs an addr");
     let handle = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("mock wire server must accept");
         stream
@@ -507,7 +530,9 @@ fn spawn_mock_wire_server(
                     .and_then(|v| v.trim().parse::<usize>().ok())
                     .unwrap_or(0);
                 while raw.len() < end + len {
-                    let n = stream.read(&mut buf).expect("mock wire server must read body");
+                    let n = stream
+                        .read(&mut buf)
+                        .expect("mock wire server must read body");
                     if n == 0 {
                         break;
                     }
@@ -526,8 +551,12 @@ fn spawn_mock_wire_server(
             content_type,
             response_body.len()
         );
-        stream.write_all(head.as_bytes()).expect("mock must write head");
-        stream.write_all(&response_body).expect("mock must write body");
+        stream
+            .write_all(head.as_bytes())
+            .expect("mock must write head");
+        stream
+            .write_all(&response_body)
+            .expect("mock must write body");
     });
     (format!("http://{}", addr), handle)
 }

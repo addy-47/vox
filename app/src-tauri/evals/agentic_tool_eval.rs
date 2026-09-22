@@ -37,6 +37,7 @@ use vox_lib::{
     persistence::{
         facts::{insert_fact, insert_vector, FactRecord},
         sessions::create_session,
+        worker::spawn_persistence_worker,
     },
     services::{
         audio::{
@@ -201,7 +202,10 @@ async fn run(args: Args) -> Result<()> {
             &dummy_vector,
         )
         .await?;
-        println!("Seeded episodic memory fact [ID: {}]: {}", fact_record.id, fact_record.text);
+        println!(
+            "Seeded episodic memory fact [ID: {}]: {}",
+            fact_record.id, fact_record.text
+        );
     }
 
     println!("[DEBUG] Configuring VoxSettings...");
@@ -280,9 +284,25 @@ async fn run(args: Args) -> Result<()> {
     });
 
     println!("[DEBUG] Initializing AppState...");
-    let state = Arc::new(AppState::new(&tauri_app, None, telemetry, Arc::clone(&db_arc)));
+    let state = Arc::new(AppState::new(
+        &tauri_app,
+        None,
+        telemetry,
+        Arc::clone(&db_arc),
+    ));
     *state.settings.write().unwrap() = settings.clone();
-    state.conversation_id.store(session_id as u64, Ordering::Relaxed);
+    state
+        .conversation_id
+        .store(session_id as u64, Ordering::Relaxed);
+
+    println!("[DEBUG] Spawning persistence worker (tool-call ledger)...");
+    let persist_tx = spawn_persistence_worker(
+        Arc::clone(&db_arc),
+        Arc::clone(&state.telemetry.is_db_healthy),
+        Arc::clone(&state.telemetry.latest_persistence_rate),
+        Arc::clone(&state.telemetry.is_private_mode),
+    );
+    *state.persist_tx.lock() = Some(persist_tx);
 
     println!("[DEBUG] Spawning LLM Provider & Worker thread...");
     let (llm_tx, llm_rx) = mpsc::channel::<LlmCommand>();
@@ -316,6 +336,7 @@ async fn run(args: Args) -> Result<()> {
         event_tx: event_tx.clone(),
         playback_intent: Arc::new(AtomicU8::new(0)),
         is_playback_muted: Arc::new(AtomicBool::new(false)),
+        turn_metrics: None,
     };
     let playback_engine = PlaybackEngine::from_parts(
         pb_prod,
@@ -342,7 +363,8 @@ async fn run(args: Args) -> Result<()> {
     });
 
     println!("[DEBUG] Creating TTS provider ({}) ...", args.tts_provider);
-    let supertonic_path = vox_lib::utils::paths::model_dir(vox_lib::services::tts::SUPERTONIC_MODEL_DIR);
+    let supertonic_path =
+        vox_lib::utils::paths::model_dir(vox_lib::services::tts::SUPERTONIC_MODEL_DIR);
     let tts_provider = create_tts_provider(&settings, &supertonic_path, None)
         .map_err(|e| anyhow::anyhow!(e))
         .context("Failed to create TTS provider")?;
@@ -353,6 +375,7 @@ async fn run(args: Args) -> Result<()> {
         cancel_flag: Arc::clone(&cancel_flag),
         pending_synthesis_jobs: Some(Arc::clone(&pending_synthesis_jobs)),
         telemetry_rtf: None,
+        turn_metrics: None,
     };
     let _tts_worker = std::thread::Builder::new()
         .name("vox-tts-worker".to_string())
@@ -403,7 +426,8 @@ async fn run(args: Args) -> Result<()> {
 
     // Wait for all pending TTS audio synthesis jobs to finish
     let tts_drain_deadline = Instant::now() + Duration::from_secs(15);
-    while pending_synthesis_jobs.load(Ordering::Relaxed) > 0 && Instant::now() < tts_drain_deadline {
+    while pending_synthesis_jobs.load(Ordering::Relaxed) > 0 && Instant::now() < tts_drain_deadline
+    {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     tokio::time::sleep(Duration::from_millis(300)).await; // allow consumer drain
@@ -426,12 +450,33 @@ async fn run(args: Args) -> Result<()> {
         }
         writer.finalize()?;
         wav_duration_s = audio_samples.len() as f64 / 48000.0;
-        println!("Synthesized audio saved: {} ({:.2}s, {} samples)", wav_path.display(), wav_duration_s, audio_samples.len());
+        println!(
+            "Synthesized audio saved: {} ({:.2}s, {} samples)",
+            wav_path.display(),
+            wav_duration_s,
+            audio_samples.len()
+        );
     } else {
         println!("Warning: No audio samples were captured during TTS synthesis.");
     }
 
     // 10. Inspect Database Tool Calls & Outcome
+    // Drain the async persistence worker: poll until the tool-call ledger row
+    // lands (or 10s), otherwise the query below races the worker thread.
+    let ledger_deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let mut probe = conn
+            .query(
+                "SELECT COUNT(*) FROM session_tool_calls WHERE session_id = ?;",
+                (session_id,),
+            )
+            .await?;
+        let landed = matches!(probe.next().await?, Some(row) if row.get::<i64>(0).unwrap_or(0) > 0);
+        if landed || Instant::now() >= ledger_deadline {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     let mut tool_rows = conn
         .query(
             "SELECT tool_name, id, arguments, result, is_error, duration_ms FROM session_tool_calls WHERE session_id = ? ORDER BY created_at ASC;",
@@ -460,7 +505,9 @@ async fn run(args: Args) -> Result<()> {
     }
 
     let final_assistant_text = match &outcome {
-        TurnOutcome::Completed { assistant_response, .. } => assistant_response.clone(),
+        TurnOutcome::Completed {
+            assistant_response, ..
+        } => assistant_response.clone(),
         TurnOutcome::Cancelled { .. } => "[CANCELLED]".to_string(),
         TurnOutcome::Error { message, .. } => format!("[ERROR: {}]", message),
         TurnOutcome::DuplicateIgnored { .. } => "[DUPLICATE]".to_string(),

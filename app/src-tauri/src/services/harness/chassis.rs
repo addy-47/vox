@@ -3,6 +3,7 @@ use std::sync::{mpsc, Arc};
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
+use super::{execute_turn, PipelineDomain, TurnExecutionRequest, TurnOutcome};
 use crate::{
     core::{
         settings::{LlmProviderConfig, VoxSettings},
@@ -26,10 +27,6 @@ use crate::{
             GenerationRequest, OutputConstraint, ReasoningMode,
         },
     },
-};
-
-use super::{
-    execute_turn, PipelineDomain, TurnExecutionRequest, TurnOutcome,
 };
 
 /// The session-scoped conversational orchestrator and stage chassis.

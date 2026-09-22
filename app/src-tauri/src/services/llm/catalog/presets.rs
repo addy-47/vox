@@ -42,7 +42,8 @@ mod tests {
     use crate::services::llm::transport::TransportType;
 
     /// Vendor param paths per modelparams.dev provider slug.
-    fn vendor_param_paths() -> std::collections::HashMap<String, std::collections::HashSet<String>> {
+    fn vendor_param_paths() -> std::collections::HashMap<String, std::collections::HashSet<String>>
+    {
         let raw: serde_json::Value =
             serde_json::from_str(VENDOR_MODELPARAMS_JSON).expect("vendor catalog must parse");
         let mut map: std::collections::HashMap<String, std::collections::HashSet<String>> =

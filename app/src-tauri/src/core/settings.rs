@@ -99,6 +99,10 @@ pub struct VoiceProfile {
     pub language: Option<String>,
 }
 
+/// Canonical capability-cache provider-kind labels. Writer (probe) and reader (session boot) must agree.
+pub const CAP_KIND_EMBEDDED: &str = "embedded";
+pub const CAP_KIND_OPENAI_COMPAT: &str = "openai_compat";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModelCapabilities {
     pub model_id: String,

@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     core::{
-        events::{emit_ipc, emit_ipc_to, IpcEvent, ToastPayload},
+        events::{emit_ipc, emit_ipc_to, IpcEvent, Severity, ToastPayload},
         state::AppWindow,
     },
     persistence::{
@@ -19,7 +19,7 @@ use crate::{
             NewNotification, NotificationRecord,
         },
     },
-    toast::ToastDeliveryOutcome,
+    toast::{show_toast, ToastDeliveryOutcome},
 };
 
 /// Universal front door for all user alerting across the Vox application.
@@ -78,10 +78,10 @@ fn dispatch_toast<R: tauri::Runtime>(
     app: &AppHandle<R>,
     title: &str,
     message: &str,
-    severity: crate::core::events::Severity,
+    severity: Severity,
     duration_ms: Option<u64>,
 ) -> ToastDeliveryOutcome {
-    crate::toast::show_toast(app, title, message, severity, duration_ms)
+    show_toast(app, title, message, severity, duration_ms)
 }
 
 async fn elevate_toast_to_drawer<R: tauri::Runtime>(

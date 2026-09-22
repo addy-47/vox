@@ -37,6 +37,7 @@ export function useTranscriptStream(
     const turnId = activeTurnIdRef.current;
     const user = activeUserTextRef.current.trim();
     const assistant = activeAiTextRef.current.trim();
+    console.info("[Stream] commitTurn", { turnId, userLen: user.length, assistantLen: assistant.length });
     if ((user || assistant) && onTurnCompleteRef.current) {
       onTurnCompleteRef.current({
         id: turnId ?? Date.now(),
@@ -136,6 +137,7 @@ export function useTranscriptStream(
           activeTurnIdRef.current = payload.turn_id;
           setActiveTurnId(payload.turn_id);
           activeAiTextRef.current = payload.token;
+          console.info("[Stream] llm_token: new turn", payload.turn_id, "first token chars", payload.token.length);
         } else {
           activeAiTextRef.current += payload.token;
         }

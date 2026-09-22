@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSessionStore } from "@/store/sessionStore";
 import {
   getSessions,
   sortSessionsNewestFirst,
@@ -160,18 +161,38 @@ export function useSessionPanel(): UseSessionPanelReturn {
   const renameSessionHandle = useCallback(async (sessionId: number, newTitle: string) => {
     try {
       await updateSession(sessionId, { title: newTitle });
+      const activeId = useSessionStore.getState().activeSessionId;
+      if (activeId === sessionId) {
+        const currentLabel = useSessionStore.getState().activeSessionLabel;
+        useSessionStore.getState().setActiveSessionLabel({
+          sessionTitle: newTitle,
+          projectName: currentLabel.projectName,
+        });
+      }
     } catch (e) {
       console.error("[SessionPanel] Failed to rename session:", e);
     }
   }, []);
 
-  const moveSessionToProjectHandle = useCallback(async (sessionId: number, projectId: string | null) => {
-    try {
-      await updateSession(sessionId, { projectId });
-    } catch (e) {
-      console.error("[SessionPanel] Failed to move session:", e);
-    }
-  }, []);
+  const moveSessionToProjectHandle = useCallback(
+    async (sessionId: number, projectId: string | null) => {
+      try {
+        await updateSession(sessionId, { projectId });
+        const activeId = useSessionStore.getState().activeSessionId;
+        if (activeId === sessionId) {
+          const project = projectId ? sortedProjects.find((p) => p.id === projectId) : null;
+          const currentLabel = useSessionStore.getState().activeSessionLabel;
+          useSessionStore.getState().setActiveSessionLabel({
+            sessionTitle: currentLabel.sessionTitle,
+            projectName: project?.name ?? null,
+          });
+        }
+      } catch (e) {
+        console.error("[SessionPanel] Failed to move session:", e);
+      }
+    },
+    [sortedProjects]
+  );
 
   const deleteSessionHandle = useCallback(async (sessionId: number) => {
     try {

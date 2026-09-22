@@ -1,12 +1,8 @@
 use futures_util::future::{BoxFuture, FutureExt};
 use serde_json::{json, Value};
 
-use crate::{
-    persistence::set_session_title,
-    services::llm::ToolFlow,
-};
-
 use super::{ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
+use crate::{persistence::PersistenceEvent, services::llm::ToolFlow};
 
 /// Built-in terminal tool that sets the conversational session title and delivers spoken audio.
 pub struct RespondAndSetTitleTool;
@@ -74,17 +70,30 @@ impl ToolDefinition for RespondAndSetTitleTool {
                 .load(std::sync::atomic::Ordering::Relaxed);
 
             if !is_private {
-                let conn = match ctx.app_state.db.connect() {
-                    Ok(c) => c,
-                    Err(e) => {
-                        log::warn!("[RespondAndSetTitleTool] Failed to connect to database: {}", e);
-                        return Err(ToolError::ExecutionFailed(format!("Database connect error: {}", e)));
+                let persist_tx = ctx.app_state.persist_tx.lock().clone();
+                match persist_tx {
+                    Some(tx) => {
+                        if let Err(e) = tx.try_send(PersistenceEvent::UpdateSessionMetadata {
+                            session_id: ctx.session_id,
+                            key: "title".to_string(),
+                            value: title.clone(),
+                        }) {
+                            log::warn!(
+                                "[RespondAndSetTitleTool] Failed to queue title update: {}",
+                                e
+                            );
+                            return Err(ToolError::ExecutionFailed(format!(
+                                "Persistence queue error: {}",
+                                e
+                            )));
+                        }
                     }
-                };
-
-                if let Err(e) = set_session_title(&conn, ctx.session_id, &title).await {
-                    log::warn!("[RespondAndSetTitleTool] Failed to set session title: {}", e);
-                    return Err(ToolError::ExecutionFailed(format!("Database error: {}", e)));
+                    None => {
+                        log::warn!(
+                            "[RespondAndSetTitleTool] No persistence worker; title not set for session {}",
+                            ctx.session_id
+                        );
+                    }
                 }
 
                 if let Some(ref notify_cb) = ctx.on_sessions_changed {
@@ -92,7 +101,7 @@ impl ToolDefinition for RespondAndSetTitleTool {
                 }
 
                 log::info!(
-                    "[RespondAndSetTitleTool] Set session {} title to '{}'",
+                    "[RespondAndSetTitleTool] Queued title update for session {} to '{}'",
                     ctx.session_id,
                     title
                 );

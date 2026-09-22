@@ -21,9 +21,7 @@ pub use provider::{
     LlmStreamEvent, OutputConstraint, ProviderCapabilities, ProviderKind, ReasoningMode, Support,
     ToolFlow,
 };
-pub use transport::{
-    AuthScheme, ConnectionConfig, RemoteTransport, TransportType,
-};
+pub use transport::{AuthScheme, ConnectionConfig, RemoteTransport, TransportType};
 
 pub const QWEN_MODEL_DIR: &str = "llm/qwen";
 pub const QWEN_MODEL_FILE: &str = "qwen-3.5-0.8b-q4_k_m.gguf";

@@ -1,8 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::services::llm::CanonicalToolDefinition;
-
 use super::{memory::MemorySearchTool, title::RespondAndSetTitleTool, ToolDefinition};
+use crate::services::llm::CanonicalToolDefinition;
 
 /// Contextual filters governing tool availability on a per-turn basis.
 #[derive(Debug, Clone, Default)]
@@ -49,9 +48,19 @@ impl ToolRegistry {
         let mut defs = Vec::new();
         for (name, tool) in &self.tools {
             if name == "respond_and_set_title" && !(filter.is_first_turn && filter.title_is_unset) {
+                log::info!(
+                    "[Harness::Tools] '{}' excluded: requires first turn with unset title (first_turn={}, title_unset={})",
+                    name,
+                    filter.is_first_turn,
+                    filter.title_is_unset
+                );
                 continue;
             }
             if name == "search_memory" && !filter.memory_retrieval_enabled {
+                log::info!(
+                    "[Harness::Tools] '{}' excluded: memory retrieval disabled in settings",
+                    name
+                );
                 continue;
             }
             defs.push(tool.to_canonical());

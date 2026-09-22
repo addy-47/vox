@@ -262,6 +262,7 @@ async fn execute_fetch_turns(conn: &Connection, session_id: i64) -> Result<Vec<T
 }
 
 /// Updates session metadata fields (title, is_pinned, and/or project_id).
+/// Metadata-only writes never touch `updated_at`; recency is owned solely by the TurnCompleted path.
 pub async fn update_session_metadata(
     conn: &Connection,
     session_id: i64,
@@ -269,31 +270,26 @@ pub async fn update_session_metadata(
     is_pinned: Option<bool>,
     project_id: Option<&str>,
 ) -> Result<()> {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-
     if let Some(t) = title {
         conn.execute(
-            "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
-            (t.to_string(), now, session_id),
+            "UPDATE sessions SET title = ? WHERE id = ?",
+            (t.to_string(), session_id),
         )
         .await?;
     }
 
     if let Some(p) = is_pinned {
         conn.execute(
-            "UPDATE sessions SET is_pinned = ?, updated_at = ? WHERE id = ?",
-            (if p { 1i64 } else { 0i64 }, now, session_id),
+            "UPDATE sessions SET is_pinned = ? WHERE id = ?",
+            ((if p { 1i64 } else { 0i64 }), session_id),
         )
         .await?;
     }
 
     if let Some(pid) = project_id {
         conn.execute(
-            "UPDATE sessions SET project_id = ?, updated_at = ? WHERE id = ?",
-            (pid.to_string(), now, session_id),
+            "UPDATE sessions SET project_id = ? WHERE id = ?",
+            (pid.to_string(), session_id),
         )
         .await?;
     }

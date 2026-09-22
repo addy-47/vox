@@ -103,10 +103,7 @@ pub fn build_request_body(
 
     if let Some(ref tools) = request.tools {
         if !tools.is_empty() {
-            body.insert(
-                "tools".to_string(),
-                super::canonical_tools_json(tools),
-            );
+            body.insert("tools".to_string(), super::canonical_tools_json(tools));
             if let Some(choice) = config.policy.tool_choice {
                 body.insert("tool_choice".to_string(), serde_json::json!(choice));
             }

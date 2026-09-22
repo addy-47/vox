@@ -1,6 +1,9 @@
 use std::{
     path::Path,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
     time::Instant,
 };
 
@@ -172,35 +175,41 @@ impl TtsProvider for ChatterboxEngine {
         );
 
         let start = Instant::now();
+        let cancel_cb = ctx.cancel.clone();
+        let playback_cb = Arc::clone(ctx.playback);
+        let intent = ctx.intent;
+        let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
+        let mut total_samples = 0usize;
 
-        let pcm = {
+        {
             let engine = self.engine.lock();
-            let result = engine
-                .synthesize(text)
-                .map_err(|e| anyhow!("Chatterbox synthesis failed: {}", e))?;
-            result.pcm
-        };
+            let _ = engine
+                .synthesize_streaming(text, |chunk, _chunk_idx, _is_last| {
+                    if cancel_cb.load(Ordering::Relaxed) || chunk.is_empty() {
+                        return;
+                    }
+                    total_samples += chunk.len();
+                    let output = if (speed - 1.0).abs() >= 0.01 {
+                        Self::apply_speed(chunk, speed)
+                    } else {
+                        chunk.to_vec()
+                    };
+                    for sub_chunk in output.chunks(TTS_CHUNK_SIZE) {
+                        if cancel_cb.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        playback_cb.ingest_chunk_with_intent(sub_chunk, intent);
+                    }
+                })
+                .map_err(|e| anyhow!("Chatterbox streaming synthesis failed: {}", e))?;
+        }
 
         if ctx.cancel.load(Ordering::Relaxed) {
             return Ok(());
         }
 
         let elapsed = start.elapsed().as_secs_f32();
-        let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
-        let output = if (speed - 1.0).abs() >= 0.01 {
-            Self::apply_speed(&pcm, speed)
-        } else {
-            pcm
-        };
-
-        for chunk in output.chunks(TTS_CHUNK_SIZE) {
-            if ctx.cancel.load(Ordering::Relaxed) {
-                return Ok(());
-            }
-            ctx.playback.ingest_chunk_with_intent(chunk, ctx.intent);
-        }
-
-        let audio_duration = output.len() as f32 / TTS_SAMPLE_RATE as f32;
+        let audio_duration = total_samples as f32 / TTS_SAMPLE_RATE as f32;
         let rtf = if audio_duration > 0.0 {
             elapsed / audio_duration
         } else {

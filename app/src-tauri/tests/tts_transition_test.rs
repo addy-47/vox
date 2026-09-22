@@ -149,6 +149,7 @@ async fn test_tts_voice_switch_without_worker_restart() {
             cancel_flag: Arc::clone(&cancel_flag),
             pending_synthesis_jobs: Some(Arc::clone(&pending_jobs)),
             telemetry_rtf: None,
+            turn_metrics: None,
         };
 
         // 4. Spawn persistent TTS worker thread

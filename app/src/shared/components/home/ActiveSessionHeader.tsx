@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 import { useSessionStore } from "@/store/sessionStore";
 import { onSessionsChanged } from "@/services/eventsService";
 import { getSessions, resolveSessionTitle } from "@/services/historyService";
+import { getProjects } from "@/services/projectService";
+import { getRuntimeSnapshot } from "@/services/pipelineService";
 
 interface ActiveSessionHeaderProps {
   panelOpen: boolean;
@@ -74,31 +76,70 @@ export const ActiveSessionHeader: React.FC<ActiveSessionHeaderProps> = ({
     return () => window.clearInterval(interval);
   }, [sessionTitle, panelOpen]);
 
-  // ── Listen for backend session updates to dynamically update title ──
+  // ── Listen for backend session updates to dynamically update title and project ──
   useEffect(() => {
     let isMounted = true;
 
     const unlisten = onSessionsChanged(async () => {
-      const currentActiveId = useSessionStore.getState().activeSessionId;
-      if (!currentActiveId || !isMounted) return;
+      let currentActiveId = useSessionStore.getState().activeSessionId;
+      if (!currentActiveId) {
+        try {
+          const snap = await getRuntimeSnapshot();
+          if (snap && snap.conversation_id > 0) {
+            currentActiveId = snap.conversation_id;
+            useSessionStore.getState().setActiveSessionId(snap.conversation_id);
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (!currentActiveId || !isMounted) {
+        console.info("[Header] sessions_changed: early return", { currentActiveId, isMounted });
+        return;
+      }
+
+      // 60ms delay to ensure asynchronous SQLite worker commit finishes
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      if (!isMounted) return;
 
       try {
-        const sessions = await getSessions();
+        const [sessions, projects] = await Promise.all([
+          getSessions(),
+          getProjects().catch(() => []),
+        ]);
         if (!isMounted) return;
 
         const found = sessions.find((s) => s.id === currentActiveId);
+        if (!found) {
+          console.info("[Header] sessions_changed: active session not in list", currentActiveId);
+        }
         if (found && isMounted) {
-          const resolved = resolveSessionTitle(found);
+          const resolvedTitle = resolveSessionTitle(found);
+          const resolvedProjectName = found.project_id
+            ? projects.find((p) => p.id === found.project_id)?.name ?? null
+            : null;
+
           const currentLabel = useSessionStore.getState().activeSessionLabel;
-          if (resolved && resolved !== currentLabel.sessionTitle) {
+          if (
+            resolvedTitle !== currentLabel.sessionTitle ||
+            resolvedProjectName !== currentLabel.projectName
+          ) {
+            console.info(
+              "[Header] label update:",
+              currentLabel,
+              "->",
+              { sessionTitle: resolvedTitle, projectName: resolvedProjectName }
+            );
             setActiveSessionLabel({
-              projectName: currentLabel.projectName,
-              sessionTitle: resolved,
+              projectName: resolvedProjectName,
+              sessionTitle: resolvedTitle,
             });
+          } else {
+            console.info("[Header] sessions_changed: no label change", JSON.stringify(resolvedTitle));
           }
         }
       } catch (e) {
-        console.warn("[ActiveSessionHeader] Failed to refresh session title:", e);
+        console.warn("[ActiveSessionHeader] Failed to refresh session label:", e);
       }
     });
 

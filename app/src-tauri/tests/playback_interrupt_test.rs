@@ -631,7 +631,10 @@ async fn test_invariant_14_synthesis_guard_latch_lifecycle() {
         assert!(!state.pipeline.is_drained_while_open());
 
         // Premature audio drain: Playback finishes while turn_open is still true (LLM still generating)
-        state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
+        state
+            .pipeline
+            .pending_synthesis_jobs
+            .store(0, Ordering::Relaxed);
         vox_lib::pipeline::assistant::playback::on_playback_finished(
             turn_id,
             AudioIntent::TurnResponse,
@@ -676,4 +679,3 @@ async fn test_invariant_14_synthesis_guard_latch_lifecycle() {
     .await
     .expect("test_invariant_14_synthesis_guard_latch_lifecycle timed out");
 }
-

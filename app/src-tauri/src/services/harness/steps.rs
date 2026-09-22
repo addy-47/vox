@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     core::{
-        events::{emit_ipc_to, AudioIntent, IpcEvent},
+        events::{emit_ipc_to, AudioIntent, IpcEvent, LlmTokenPayload},
         state::{AppState, AppWindow, InteractionState},
     },
     persistence::PersistenceEvent,
@@ -58,7 +58,10 @@ pub fn step1_intake<R: tauri::Runtime>(
     let turn_id = req.turn_id;
 
     if req.cancel.is_cancelled() {
-        log::info!("[Harness::Intake] Turn {} pre-cancelled before staging", turn_id);
+        log::info!(
+            "[Harness::Intake] Turn {} pre-cancelled before staging",
+            turn_id
+        );
         return IntakeResult::Terminal(TurnOutcome::Cancelled { turn_id });
     }
 
@@ -134,10 +137,7 @@ fn evaluate_compaction_eligibility(harness: &mut Harness, turn_id: u32) -> bool 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NonTerminalTrigger {
     Compaction,
-    NonTerminalTool {
-        tool_name: String,
-        call_id: String,
-    },
+    NonTerminalTool { tool_name: String, call_id: String },
 }
 
 /// Description of a non-terminal operational phase (compaction, tool execution, etc.).
@@ -280,9 +280,9 @@ pub async fn step3_execute_compaction<R: tauri::Runtime + 'static>(
     let handle = tokio::runtime::Handle::current();
 
     let compaction_res = tokio::task::spawn_blocking(move || {
-        let conn = db.connect().map_err(|e| {
-            anyhow::anyhow!("Failed to connect to db for compaction: {}", e)
-        })?;
+        let conn = db
+            .connect()
+            .map_err(|e| anyhow::anyhow!("Failed to connect to db for compaction: {}", e))?;
         handle.block_on(async {
             let params = CompactionParams {
                 session_id,
@@ -297,9 +297,7 @@ pub async fn step3_execute_compaction<R: tauri::Runtime + 'static>(
         })
     })
     .await
-    .unwrap_or_else(|join_err| {
-        Err(anyhow::anyhow!("Compaction task panic: {:?}", join_err))
-    });
+    .unwrap_or_else(|join_err| Err(anyhow::anyhow!("Compaction task panic: {:?}", join_err)));
 
     apply_compaction_result(harness_arc, compaction_res, to_turn, &req.query);
 }
@@ -352,7 +350,10 @@ pub fn step4_assemble_request(
         return Err("Harness unmounted during execution".to_string());
     };
 
-    log::trace!("[Harness::Assemble] Assembling request for turn {}", turn_id);
+    log::info!(
+        "[Harness::Assemble] Assembling request for turn {}",
+        turn_id
+    );
     let tools = if harness.supports_tools && allow_tools {
         let is_first_turn = harness.history.messages().len() <= 2;
         let filter = ToolFilter {
@@ -362,11 +363,30 @@ pub fn step4_assemble_request(
         };
         let active = harness.tool_registry.active_definitions(&filter);
         if active.is_empty() {
+            log::info!(
+                "[Harness::Assemble] Turn {}: tools omitted (none active; first_turn={}, title_set={}, memory_enabled={})",
+                turn_id,
+                is_first_turn,
+                !filter.title_is_unset,
+                filter.memory_retrieval_enabled
+            );
             None
         } else {
+            let names: Vec<&str> = active.iter().map(|t| t.name.as_str()).collect();
+            log::info!(
+                "[Harness::Assemble] Turn {}: attaching tools {:?}",
+                turn_id,
+                names
+            );
             Some(active)
         }
     } else {
+        log::info!(
+            "[Harness::Assemble] Turn {}: tools omitted (supports_tools={}, allow_tools={})",
+            turn_id,
+            harness.supports_tools,
+            allow_tools
+        );
         None
     };
 
@@ -401,6 +421,10 @@ pub fn step5_dispatch_llm(
     };
     tx.send(cmd)
         .map_err(|e| format!("Failed to dispatch LlmCommand: {}", e))?;
+    log::info!(
+        "[Harness::Dispatch] Turn {} dispatched to LLM actor",
+        turn_id
+    );
     Ok(response_rx)
 }
 
@@ -416,11 +440,9 @@ pub async fn step6_run_stream_pass<R: tauri::Runtime + 'static>(
 ) -> Result<StreamPassOutcome, String> {
     let handles_clone = stream_handles.clone();
     let stage_clone = stream_stage.clone();
-    tokio::task::spawn_blocking(move || {
-        stage_clone.route_stream(handles_clone, response_rx)
-    })
-    .await
-    .unwrap_or_else(|join_err| Err(format!("Stream task panic: {:?}", join_err)))
+    tokio::task::spawn_blocking(move || stage_clone.route_stream(handles_clone, response_rx))
+        .await
+        .unwrap_or_else(|join_err| Err(format!("Stream task panic: {:?}", join_err)))
 }
 
 /// Handles Phase 6 Case B: Terminal tool execution (single pass, voice + action, commit).
@@ -437,10 +459,7 @@ pub async fn step6_handle_terminal_tool<R: tauri::Runtime + 'static>(
         .trim()
         .to_string();
 
-    ctx.stream_handles
-        .accumulator
-        .lock()
-        .assistant_response = spoken_response.clone();
+    ctx.stream_handles.accumulator.lock().assistant_response = spoken_response.clone();
 
     if !spoken_response.is_empty() {
         ctx.stream_stage.dispatch_spoken_response(
@@ -461,7 +480,10 @@ pub async fn step6_handle_terminal_tool<R: tauri::Runtime + 'static>(
 
     let outcome = ToolExecutor::execute_tool(ctx.tool_registry, call, tool_ctx).await;
     if ctx.req.cancel.is_cancelled() {
-        log::info!("[Harness::Tools] Terminal tool cancelled (turn {})", turn_id);
+        log::info!(
+            "[Harness::Tools] Terminal tool cancelled (turn {})",
+            turn_id
+        );
         return step7_handle_cancelled(CancelledTurnContext {
             harness_arc: ctx.harness_arc,
             turn_id,
@@ -477,10 +499,7 @@ pub async fn step6_handle_terminal_tool<R: tauri::Runtime + 'static>(
     } else {
         let fallback = outcome.result.spoken_response.unwrap_or_default();
         if !fallback.is_empty() {
-            ctx.stream_handles
-                .accumulator
-                .lock()
-                .assistant_response = fallback.clone();
+            ctx.stream_handles.accumulator.lock().assistant_response = fallback.clone();
         }
         fallback
     };
@@ -491,6 +510,35 @@ pub async fn step6_handle_terminal_tool<R: tauri::Runtime + 'static>(
             harness.title_set = true;
         }
         harness.history.push_assistant_turn(final_response.clone());
+    }
+
+    log::info!(
+        "[Harness::Tools] Turn {} finalized by terminal tool '{}' (is_error={})",
+        turn_id,
+        outcome.tool_name,
+        outcome.is_error
+    );
+
+    if !final_response.is_empty() {
+        if let Err(e) = emit_ipc_to(
+            &ctx.req.app,
+            AppWindow::Main,
+            IpcEvent::LlmToken(LlmTokenPayload {
+                turn_id,
+                token: final_response.clone(),
+            }),
+        ) {
+            log::warn!(
+                "[Harness::Tools] Failed to emit LlmToken for terminal tool response: {}",
+                e
+            );
+        } else {
+            log::info!(
+                "[Harness::Tools] Emitted LlmToken ({} chars) for terminal tool response (turn {})",
+                final_response.len(),
+                turn_id
+            );
+        }
     }
 
     TurnOutcome::Completed {
@@ -507,7 +555,11 @@ pub async fn step6_handle_non_terminal_tool<R: tauri::Runtime + 'static>(
     scratchpad: &mut Vec<ChatMessage>,
 ) -> bool {
     let turn_id = ctx.req.turn_id;
-    ctx.stream_handles.accumulator.lock().assistant_response.clear();
+    ctx.stream_handles
+        .accumulator
+        .lock()
+        .assistant_response
+        .clear();
 
     let spoken_filler = call
         .arguments
@@ -539,7 +591,10 @@ pub async fn step6_handle_non_terminal_tool<R: tauri::Runtime + 'static>(
 
     let outcome = ToolExecutor::execute_tool(ctx.tool_registry, call.clone(), tool_ctx).await;
     if ctx.req.cancel.is_cancelled() {
-        log::info!("[Harness::Tools] Non-terminal tool cancelled (turn {})", turn_id);
+        log::info!(
+            "[Harness::Tools] Non-terminal tool cancelled (turn {})",
+            turn_id
+        );
         return true;
     }
 
@@ -568,6 +623,8 @@ fn make_sessions_changed_callback<R: tauri::Runtime + 'static>(
     Some(Arc::new(move || {
         if let Err(e) = emit_ipc_to(&app_clone, AppWindow::Main, IpcEvent::SessionsChanged) {
             log::warn!("[Harness::Tools] Failed to emit SessionsChanged IPC: {}", e);
+        } else {
+            log::info!("[Harness::Tools] Emitted SessionsChanged IPC");
         }
     }) as Arc<dyn Fn() + Send + Sync>)
 }
@@ -597,7 +654,9 @@ pub fn step7_handle_cancelled(ctx: CancelledTurnContext<'_>) -> TurnOutcome {
     let mut guard = ctx.harness_arc.lock();
     if !ctx.partial_text.trim().is_empty() {
         if let Some(ref mut harness) = *guard {
-            harness.history.push_assistant_turn(ctx.partial_text.clone());
+            harness
+                .history
+                .push_assistant_turn(ctx.partial_text.clone());
         }
         drop(guard);
         let persist_lock = ctx.app_state.persist_tx.lock();
@@ -620,7 +679,9 @@ pub fn step7_handle_cancelled(ctx: CancelledTurnContext<'_>) -> TurnOutcome {
     }
 
     ctx.app_state.pipeline_accumulator.lock().clear();
-    TurnOutcome::Cancelled { turn_id: ctx.turn_id }
+    TurnOutcome::Cancelled {
+        turn_id: ctx.turn_id,
+    }
 }
 
 /// Handles Phase 7 Branch A: turn error and state rollback.
@@ -653,7 +714,9 @@ pub fn step7_commit_completed(
 
     let mut guard = harness_arc.lock();
     if let Some(ref mut harness) = *guard {
-        harness.history.push_assistant_turn(assistant_response.clone());
+        harness
+            .history
+            .push_assistant_turn(assistant_response.clone());
     }
 
     TurnOutcome::Completed {

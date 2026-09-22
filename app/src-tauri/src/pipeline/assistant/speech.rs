@@ -47,6 +47,7 @@ pub fn on_speech_start<R: tauri::Runtime>(
         state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
         transition(InteractionState::Listening, ctx, app, state);
+        state.turn_metrics.start_turn(new_turn_id);
         new_turn_id
     } else {
         return;
@@ -77,6 +78,7 @@ pub fn on_speech_end<R: tauri::Runtime>(
         return;
     }
 
+    state.turn_metrics.record_speech_end();
     transition(InteractionState::Thinking, ctx, app, state);
 
     log::info!(

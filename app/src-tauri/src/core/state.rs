@@ -2,11 +2,21 @@ use std::{
     fmt::{Display, Formatter, Result},
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-        mpsc, Arc, RwLock,
+        mpsc::Sender,
+        Arc, RwLock,
     },
 };
 
-use tokio::sync::Mutex;
+use crossbeam_channel::Sender as CrossbeamSender;
+use parking_lot::{Mutex as ParkingMutex, RwLock as ParkingRwLock};
+use serde::{Deserialize, Serialize};
+use tauri::{
+    async_runtime::JoinHandle,
+    menu::CheckMenuItem,
+    AppHandle, Runtime, Wry,
+};
+use tokio::sync::{Mutex as TokioMutex, RwLock as TokioRwLock};
+use tracing_appender::non_blocking::WorkerGuard;
 
 pub use crate::{
     core::engine::VoxEngine, monitoring::telemetry::TelemetryState, pipeline::PipelineAtomics,
@@ -15,16 +25,17 @@ pub use crate::{
 use crate::{
     core::{
         events::VoxEvent,
+        metrics::TurnMetricsCollector,
         settings::{PipelineMode, VoxSettings},
     },
     monitoring::snapshots::MonitoringState,
     persistence::{db::VoxDb, PersistenceEvent},
-    pipeline::assistant::accumulator::TurnAccumulator,
+    pipeline::assistant::{accumulator::TurnAccumulator},
     services::{harness::Harness, llm::LlmProvider, realtime::RealtimeActor},
     setup::{manifest::VoxManifest, model_manager::ModelManager},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AppWindow {
     Main,
     Tray,
@@ -55,7 +66,7 @@ impl Display for AppWindow {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum InteractionOwner {
     Dictation = 0,
     Assistant = 1,
@@ -76,14 +87,14 @@ impl From<InteractionOwner> for u32 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum RuntimeStatus {
     Initializing,
     Ready,
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u32)]
 pub enum InteractionState {
     Idle = 0,
@@ -120,40 +131,41 @@ impl From<InteractionState> for u32 {
 }
 
 pub struct AppState {
-    pub engine: Mutex<Option<VoxEngine>>,
-    pub realtime_engine: Mutex<Option<RealtimeActor>>,
+    pub engine: TokioMutex<Option<VoxEngine>>,
+    pub realtime_engine: TokioMutex<Option<RealtimeActor>>,
     pub owner: Arc<AtomicU32>,
     pub hud_visible: Arc<AtomicBool>,
     pub memory: MemoryAppState,
     pub settings: Arc<RwLock<VoxSettings>>,
-    pub hud_menu_item: parking_lot::Mutex<Option<tauri::menu::CheckMenuItem<tauri::Wry>>>,
+    pub hud_menu_item: ParkingMutex<Option<CheckMenuItem<Wry>>>,
     pub pipeline: PipelineAtomics,
-    pub save_debounce: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
-    pub _log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
+    pub save_debounce: TokioMutex<Option<JoinHandle<()>>>,
+    pub _log_guard: Option<WorkerGuard>,
     pub telemetry: Arc<TelemetryState>,
-    pub dictation_last_transcript: parking_lot::Mutex<Option<String>>,
+    pub dictation_last_transcript: ParkingMutex<Option<String>>,
     pub conversation_id: Arc<AtomicU64>,
     pub runtime_status: Arc<AtomicU32>,
     pub main_window_destroyed: Arc<AtomicBool>,
-    pub persist_tx: parking_lot::Mutex<Option<crossbeam_channel::Sender<PersistenceEvent>>>,
+    pub persist_tx: ParkingMutex<Option<CrossbeamSender<PersistenceEvent>>>,
     pub dropped_persistence_events: Arc<AtomicU64>,
     pub monitoring: Arc<MonitoringState>,
     pub model_manager: Arc<ModelManager>,
-    pub manifest: Arc<tokio::sync::RwLock<Option<VoxManifest>>>,
-    pub cpu_governor: parking_lot::Mutex<String>,
+    pub manifest: Arc<TokioRwLock<Option<VoxManifest>>>,
+    pub cpu_governor: ParkingMutex<String>,
     pub cpu_governor_optimal: Arc<AtomicBool>,
-    pub setup_running: Arc<Mutex<bool>>,
-    pub harness: Arc<parking_lot::Mutex<Option<Harness>>>,
-    pub llm_provider: Arc<parking_lot::RwLock<Option<Arc<dyn LlmProvider>>>>,
-    pub event_tx: parking_lot::Mutex<Option<mpsc::Sender<VoxEvent>>>,
-    pub pipeline_accumulator: Arc<parking_lot::Mutex<TurnAccumulator>>,
+    pub setup_running: Arc<TokioMutex<bool>>,
+    pub harness: Arc<ParkingMutex<Option<Harness>>>,
+    pub llm_provider: Arc<ParkingRwLock<Option<Arc<dyn LlmProvider>>>>,
+    pub event_tx: ParkingMutex<Option<Sender<VoxEvent>>>,
+    pub pipeline_accumulator: Arc<ParkingMutex<TurnAccumulator>>,
+    pub turn_metrics: Arc<TurnMetricsCollector>,
     pub db: Arc<VoxDb>,
 }
 
 impl AppState {
-    pub fn new<R: tauri::Runtime>(
-        app_handle: &tauri::AppHandle<R>,
-        log_guard: Option<tracing_appender::non_blocking::WorkerGuard>,
+    pub fn new<R: Runtime>(
+        app_handle: &AppHandle<R>,
+        log_guard: Option<WorkerGuard>,
         telemetry: Arc<TelemetryState>,
         db: Arc<VoxDb>,
     ) -> Self {
@@ -163,36 +175,37 @@ impl AppState {
             .store(settings.working_memory.private_mode, Ordering::Relaxed);
 
         let model_manager = Arc::new(ModelManager::new(Some(app_handle.clone())));
-        let manifest = Arc::new(tokio::sync::RwLock::new(None));
+        let manifest = Arc::new(TokioRwLock::new(None));
 
         Self {
-            engine: Mutex::new(None),
-            realtime_engine: Mutex::new(None),
+            engine: TokioMutex::new(None),
+            realtime_engine: TokioMutex::new(None),
             owner: Arc::new(AtomicU32::new(InteractionOwner::Dictation as u32)),
             hud_visible: Arc::new(AtomicBool::new(true)),
             memory: MemoryAppState::new(),
             settings: Arc::new(RwLock::new(settings)),
-            hud_menu_item: parking_lot::Mutex::new(None),
+            hud_menu_item: ParkingMutex::new(None),
             pipeline: PipelineAtomics::new(),
-            save_debounce: Mutex::new(None),
+            save_debounce: TokioMutex::new(None),
             _log_guard: log_guard,
             telemetry: Arc::clone(&telemetry),
-            dictation_last_transcript: parking_lot::Mutex::new(None),
+            dictation_last_transcript: ParkingMutex::new(None),
             conversation_id: Arc::new(AtomicU64::new(0)),
             runtime_status: Arc::new(AtomicU32::new(RuntimeStatus::Initializing as u32)),
             main_window_destroyed: Arc::new(AtomicBool::new(false)),
-            persist_tx: parking_lot::Mutex::new(None),
+            persist_tx: ParkingMutex::new(None),
             dropped_persistence_events: Arc::new(AtomicU64::new(0)),
             monitoring: Arc::new(MonitoringState::new()),
             model_manager,
             manifest,
-            cpu_governor: parking_lot::Mutex::new("ondemand".into()),
+            cpu_governor: ParkingMutex::new("ondemand".into()),
             cpu_governor_optimal: Arc::new(AtomicBool::new(true)),
-            setup_running: Arc::new(Mutex::new(false)),
-            harness: Arc::new(parking_lot::Mutex::new(None)),
-            llm_provider: Arc::new(parking_lot::RwLock::new(None)),
-            event_tx: parking_lot::Mutex::new(None),
-            pipeline_accumulator: Arc::new(parking_lot::Mutex::new(TurnAccumulator::new())),
+            setup_running: Arc::new(TokioMutex::new(false)),
+            harness: Arc::new(ParkingMutex::new(None)),
+            llm_provider: Arc::new(ParkingRwLock::new(None)),
+            event_tx: ParkingMutex::new(None),
+            pipeline_accumulator: Arc::new(ParkingMutex::new(TurnAccumulator::new())),
+            turn_metrics: Arc::new(TurnMetricsCollector::new()),
             db,
         }
     }

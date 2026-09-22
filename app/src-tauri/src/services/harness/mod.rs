@@ -28,10 +28,6 @@ pub mod steps;
 
 pub use chassis::Harness;
 pub use r#loop::execute_turn;
-pub use steps::{
-    enter_non_terminal_phase, step7_handle_cancelled as handle_turn_cancelled, CancelledTurnContext,
-    NonTerminalContext, NonTerminalPhase, NonTerminalTrigger,
-};
 pub use stages::{
     budget::{ContextBudgetStage, ContextStatus},
     compaction::{CompactionParams, CompactionStage},
@@ -42,6 +38,10 @@ pub use stages::{
         MemorySearchTool, RespondAndSetTitleTool, ToolDefinition, ToolError, ToolExecutionContext,
         ToolExecutionOutcome, ToolExecutor, ToolFilter, ToolRegistry, ToolResult,
     },
+};
+pub use steps::{
+    enter_non_terminal_phase, step7_handle_cancelled as handle_turn_cancelled,
+    CancelledTurnContext, NonTerminalContext, NonTerminalPhase, NonTerminalTrigger,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

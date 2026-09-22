@@ -71,6 +71,7 @@ pub fn create_mock_playback_engine_with_handles(
         playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx,
         is_playback_muted: Arc::new(AtomicBool::new(false)),
+        turn_metrics: None,
     };
 
     let engine = PlaybackEngine::from_parts(producer, handles, discard_request, turn_armed, None);
@@ -102,6 +103,7 @@ pub fn create_headless_playback_with_sink(
         playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx,
         is_playback_muted: Arc::new(AtomicBool::new(false)),
+        turn_metrics: None,
     };
 
     let telemetry = vox_lib::services::audio::PlaybackTelemetryHandles {

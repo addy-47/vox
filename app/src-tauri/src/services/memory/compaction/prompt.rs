@@ -3,8 +3,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::{
     core::settings::LlmSettings,
     services::{
-        harness::{ChatMessage, Role},
-        llm::{ConversationInput, GenerationPolicy, GenerationPurpose, GenerationRequest},
+        harness::{ChatMessage, PromptTag::SessionContext, Role},
+        llm::{
+            catalog, ConversationInput, GenerationPolicy, GenerationPurpose, GenerationRequest,
+            OutputConstraint, ReasoningMode,
+        },
     },
 };
 
@@ -92,7 +95,7 @@ pub fn build_compaction_request(
     let prior_summary = history_messages
         .iter()
         .find(|m| m.role == Role::System)
-        .and_then(|m| crate::services::harness::PromptTag::SessionContext.extract(&m.content));
+        .and_then(|m| SessionContext.extract(&m.content));
 
     let prior_summary_block = match prior_summary {
         Some(s) if !s.trim().is_empty() => {
@@ -139,7 +142,7 @@ pub fn build_compaction_request(
     let effective_settings = settings.unwrap_or(&default_settings);
     let eff_ctx = effective_settings.effective_ctx_size();
     let model = effective_settings.active_model();
-    let baseline_spec = crate::services::llm::catalog::get_baseline_spec(model);
+    let baseline_spec = catalog::get_baseline_spec(model);
     let probed_max_output = baseline_spec.and_then(|s| s.max_output_tokens);
     let compaction_max_tokens = calculate_compaction_max_tokens(eff_ctx, probed_max_output);
     let policy = GenerationPolicy::from_settings(effective_settings, Some(compaction_max_tokens));
@@ -168,7 +171,7 @@ pub fn build_compaction_request(
     request.options.temperature = Some(DEFAULT_LLM_COMPACTION_TEMPERATURE);
     // INVARIANT: compaction reasoning is always disabled, even if the user
     // later enables reasoning for agentic conversation. Voice-native default.
-    request.options.reasoning = crate::services::llm::ReasoningMode::Disabled;
+    request.options.reasoning = ReasoningMode::Disabled;
     // Universal compaction contract: strict schema where the backend supports
     // it, JSON-object baseline otherwise (transports negotiate down on 400s).
     request.output = compaction_output_constraint(model);
@@ -191,12 +194,12 @@ pub fn build_compaction_request(
 
 /// Selects the strict schema constraint, falling back to JSON-object when the
 /// catalog baseline explicitly reports no structured-output support.
-fn compaction_output_constraint(model: &str) -> crate::services::llm::OutputConstraint {
-    let supported = crate::services::llm::catalog::get_baseline_spec(model)
+fn compaction_output_constraint(model: &str) -> OutputConstraint {
+    let supported = catalog::get_baseline_spec(model)
         .map(|s| s.supports_structured)
         .unwrap_or(true);
     if supported {
-        crate::services::llm::OutputConstraint::JsonSchema {
+        OutputConstraint::JsonSchema {
             name: "memory_compaction".to_string(),
             schema: compaction_json_schema(),
             strict: true,
@@ -206,6 +209,6 @@ fn compaction_output_constraint(model: &str) -> crate::services::llm::OutputCons
             "[CompactionLLM::Output] Model {} lacks structured-output support; using JSON-object baseline.",
             model
         );
-        crate::services::llm::OutputConstraint::JsonObject
+        OutputConstraint::JsonObject
     }
 }

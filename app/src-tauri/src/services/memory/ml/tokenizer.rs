@@ -30,3 +30,9 @@ pub fn estimate_tokens(text: &str) -> usize {
         (token_estimate as f64 / 3.0).ceil() as usize
     }
 }
+
+/// Pre-warms the static BPE tokenizer vocabulary dictionary in background.
+pub fn warmup_tokenizer() {
+    let _ = get_bpe();
+}
+
