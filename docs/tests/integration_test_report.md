@@ -94,10 +94,13 @@ This ledger records the initial execution results of all translated integration 
 - **Status:** ✅ **PASS** (Zero-Mock Verified)
 - **Command:** `RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --test llm_to_tts_test --release --nocapture --test-threads=1`
 - **Execution Time:** ~2.59s
+- **Defects / Blockers Resolved:**
+  - Enforced pass-level clause buffering with drop-all-prefix: clauses generated prior to an LLM tool call proposal are buffered and completely discarded if a tool proposal is returned, preventing accidental partial TTS synthesis.
 - **Evidence Observed:**
   - **Full Cognitive Stage Flow:** Prepared turn via `harness.prepare_turn(&mut state, &event_tx)`, acquired system prompt and conversation messages, and submitted to duplex dialogue channel `llm_tx.send(LlmCommand::Generate)`.
   - **Real Local Inference:** Real Qwen 3.5 0.8B GGUF model (`EmbeddedProvider`) running on dedicated OS worker thread generated token stream.
   - **Streaming Chunker & Routing:** Handled tokens through `harness.route_stream(&mut state, &event_tx, &handles, chunk)`, chunking streaming tokens into complete sentence clauses dispatched as `TtsCommand::Generate` with `AudioIntent::TurnResponse`.
+  - **Clause Buffering & Drop-All-Prefix:** Verified that stream clauses generated ahead of a `ToolCall` proposal are buffered in `buffered_clauses` and completely dropped upon tool detection, ensuring zero spoken leakage from prefix tokens.
   - **History Commit & Lifecycle:** Upon `LlmFinished`, routed stream completion through `harness.on_llm_finished(&mut state, &handles)`, verified history commit (`session.history().get_recent_history().len() == 2`), and dispatched turn completion to `QuietCompactionWatcher`.
   - **Pending Accounting Invariant:** Verified `pending_synthesis_jobs` matched the exact count of dispatched clauses ($N = \text{clauses.len()}$).
   - **Teardown:** Clean shutdown via `LlmCommand::Shutdown` and worker join with zero leaks or panics.
@@ -130,9 +133,11 @@ This ledger records the initial execution results of all translated integration 
   2. *Verified Active Voice Hot-Swap with Audio Synthesis:* Worker thread verified active voice update on `VoiceTrackingProvider` (0 -> 2) and synthesized subsequent clauses with non-zero RMS (> 0.001) while preserving thread handle identity.
   3. *Eliminated Mock Session Loop in Path B:* Real `on_transcript_final` invokes `spawn_modular_llm_task` with real `HarnessSession::new_modular`. Calibrated context window (4200) and seeded history (>85% utilization threshold) to trigger `TurnPreparation::NeedsInlineCompaction`.
   4. *Verified Real Dispatch & Playback Gating Contracts:* Verified real router dispatch sends `TtsCommand::Generate` with `AudioIntent::InterimFiller` to `tts_rx`, increments `pending_synthesis_jobs`, and transitions state to `InteractionState::Working`. Validated negative playback gating assertions (filler onset/finish keeps state in `Working`, while `TurnResponse` onset transitions to `Speaking`).
+  5. *Phase 12 Speech Normalization & At-Most-Once Guard:* Verified that `enter_non_terminal_phase` applies regex-based speech normalization to `spoken_filler` prior to TTS dispatch, and verified `has_played_filler` prevents duplicate audio emissions across multi-pass or compaction loops.
 - **Evidence Observed:**
   - **Subtest 1 (Real IPC Voice Hot-Swap Without Worker Restart):** Worker thread preserved across voice switch (thread handle ID unchanged). IPC `update_setting` updated active voice index to 2. Subsequent clause synthesis produced valid audio frames with non-zero RMS.
   - **Subtest 2 (Critical Context Compaction Filler Dispatch & Pending Accounting):** Exceeding 85% token capacity triggered immediate transition filler dispatch (`AudioIntent::InterimFiller`) to TTS with atomic increment of `pending_synthesis_jobs` and transition to `Working`. Playback gating contracts verified. Normal turns (<85% capacity) verified to emit zero filler commands.
+  - **Subtest 3 (Speech Normalization of Spoken Filler):** Verified raw markdown and symbol structures in filler text are stripped before TTS dispatch.
   - **Teardown:** Clean shutdown via `TtsCommand::Shutdown` with bounded thread joins and zero panics.
 
 ---
@@ -148,6 +153,7 @@ This ledger records the initial execution results of all translated integration 
   3. *Verified Multi-Tier Pending Job Deferral:* Subtest 3 verified that real sink callback records buffer underrun and defers `PlaybackFinished` emission while `pending_jobs > 0`, and the router handler similarly defers state transition until pending synthesis reaches 0.
   4. *Preserved Sacred VAD Ducking Invariants with Bounded Joins:* Subtests 4 and 5 verified real Earshot VAD ONNX speaker ducking suppression during `Speaking` in `Speaker` mode, instant resumption in `Ready`, and transparent bypass in `Headset` mode; thread joins wrapped with 5s bounded timeouts.
   5. *Wired Production Barge-In Seam:* Subtest 6 now triggers barge-in through the real upstream production entry seam (`VoxEvent::PttStart` over router channel) rather than directly invoking `on_interrupt`. Verified all 6 canonical mutations: monotonic turn advancement, old token cancellation, active new token, pending jobs reset to 0, accumulator cleared, playback engine cancellation, and transition to `Listening`.
+  6. *Phase 12 Invariant 14 Synthesis Guard Latch:* Subtest 7 verifies that when CPAL audio playback drains while the LLM generation stream is still open (`is_turn_open() == true`), `drained_while_open` is latched and the pipeline remains in `Speaking`. `Ready` is only restored when `on_llm_finished` arrives.
 - **Evidence Observed:**
   - **Subtest 1 (Real Sink Callback Drain & Router Transition):** Pre-roll threshold (12,000 samples) triggered `PlaybackStarted` and transitioned `Thinking` → `Speaking`. Real sink callback drained 12,000 samples and autonomously emitted `PlaybackFinished`, transitioning `Speaking` → `Ready`.
   - **Subtest 2 (Short Utterance Cushion Gate):** Ingesting 2,000 samples did not emit `PlaybackStarted` before flush; `flush_pre_roll` immediately emitted `PlaybackStarted`.
@@ -155,6 +161,7 @@ This ledger records the initial execution results of all translated integration 
   - **Subtest 4 (Sacred VAD Ducking Suppression):** Real speech clip (`supertonic_01_en_briefing.wav`) streaming during `Speaking` under `Speaker` mode produced zero `SpeechStart` events.
   - **Subtest 5 (VAD Ducking Resumption & Headset Invariant):** Returning to `Ready` under `Speaker` mode emitted `SpeechStart`; `Headset` mode in `Speaking` state emitted `SpeechStart` without suppression.
   - **Subtest 6 (Canonical 6-Step Barge-in Sequence):** Upstream `VoxEvent::PttStart` during `Speaking` advanced turn ID, cancelled old token, reset pending jobs to 0, cleared accumulator, cancelled playback engine, and transitioned to `Listening`.
+  - **Subtest 7 (Invariant 14 Synthesis Guard Latch Lifecycle):** Streamed audio frame while `turn_open = true`; playback finish latched `drained_while_open = true` without state flip; subsequent `on_llm_finished` evaluated latch and cleanly returned pipeline state to `Ready`.
   - **Teardown:** Clean shutdown via `VoxEvent::Shutdown` and bounded thread joins with zero leaks or panics.
 
 ---
@@ -181,6 +188,7 @@ This ledger records the initial execution results of all translated integration 
   2. *Turso Seed Schema Compliance (`tests/session_lifecycle_test.rs`):* Subtest 2 inserted `NULL` into `project_id` (violating `NOT NULL DEFAULT 'default'`) and targeted non-existent column `summary` instead of v2 schema columns `(trigger_kind, from_turn_id, to_turn_id, compaction_output, status, created_at)` in `session_compactions`. Corrected seed queries to valid v2 schema.
   3. *Realtime Pipeline Mode Purge Assertion (`tests/session_lifecycle_test.rs`):* Subtest 6 configured `new_modular` but asserted `purge_session_cache` on disk, which only runs when `ctx.pipeline_mode == PipelineMode::Realtime`. Configured `settings.interaction.pipeline_mode = PipelineMode::Realtime` and mounted `HarnessSession::new_realtime`.
   4. *Active Context Refresh in `on_session_start` and `on_resume` (`src/pipeline/assistant/session.rs`):* `route_event` captured `ctx` before mutating `state.owner`. Handlers used stale pre-transition context, causing VAD mode to remain in Dictation mode (`WindowedValidation`) rather than Assistant mode (`ContinuousSegmentation`). Re-derived `session_ctx` and `assistant_ctx` from `RoutingContext::from_app_state(state)` immediately after `state.owner` update.
+  5. *Phase 12 Model Capability Gating & Discovery Probe:* Integrated `resolve_model_tool_support` to read `model_capabilities.json` without network blocks, setting `harness.supports_tools` immediately or spawning non-blocking probe.
 - **Evidence Observed:**
   - **Subtest 1 (`test_session_start_modular_sets_ready_and_identity`):** Dispatched `VoxEvent::SessionStart` from `Idle`. Verified state transitioned to `Ready`, `state.owner` set to `Assistant`, real Turso SQLite row persisted in `sessions` table via `spawn_persistence_worker`, `HarnessSession` initialized with base identity prompt, VAD set to `ContinuousSegmentation`, and subsequent start proved idempotent.
   - **Subtest 2 (`test_session_continuation_seeds_harness`):** Resumed session ID (`987654321`) with pre-seeded turns in Turso DB. Verified continuation history hydrated into `HarnessSession` and turn counter advanced past pre-existing turns.
@@ -188,6 +196,7 @@ This ledger records the initial execution results of all translated integration 
   - **Subtest 4 (`test_session_resume_from_sleeping_and_error`):** Validated recovery transitions from `Sleeping -> Ready` and `Error -> Ready`; verified resume dropped when `Idle`.
   - **Subtest 5 (`test_session_end_dictation_gate_keeps_engine`):** When Dictation was `Ready`, assistant `EndSession` transitioned assistant to `Idle` while preserving CPAL audio engine (`Some`) and switching VAD to dictation mode. When Dictation was `Idle`, `EndSession` stopped audio engine (`None`).
   - **Subtest 6 (`test_session_end_purges_and_unmounts_harness`):** Dispatched `EndSession` -> unmounted `state.harness` (`None`), purged realtime session cache on disk, cleared accumulator, and cancelled turn token.
+  - **Subtest 7 (`test_session_boot_capability_cached_lookup`):** Seeded `model_capabilities.json` with `supports_tools: true`; verified `on_session_start` loaded cached capability synchronously without network probe and initialized `harness.supports_tools == true`.
 - **Teardown:** Router, persistence worker, and VAD threads joined cleanly.
 
 ---
@@ -330,5 +339,26 @@ This ledger records the initial execution results of all translated integration 
   - **Subtest 3 (`test_unique_partial_index_one_in_progress_compaction`):** Verified `idx_compactions_one_in_progress` partial unique index: attempting to insert a second `in_progress` compaction on the same session fails with `UNIQUE constraint failed`, while completing the first compaction allows a new `in_progress` compaction to be created.
   - **Subtest 4 (`test_concurrent_mvcc_wal_readers_and_persistence_worker`):** Verified concurrent reader connections reading under Turso MVCC while background worker commits writes without deadlocks or WAL stalls.
   - **Subtest 5 (`test_f32_blob_vector_precision_roundtrip`):** Inserted 384-dimensional vector embedding blob via `f32_slice_to_blob`. Queried and decoded via `blob_to_f32_vec`. Verified 100% exact bit-level roundtrip fidelity across all 384 f32 dimensions.
+  - **Subtest 6 (`test_schema_v5_session_tool_calls_and_private_mode_suppression`):** Executed Schema v5 migration on Turso SQLite. Verified `session_tool_calls` table and indices (`idx_tool_calls_session_turn`, `idx_tool_calls_created`). Verified self-healing foreign key parent insertion (`ensure_session_exists`). Verified private mode drops `PersistenceEvent::ToolCallExecuted` without writing rows to SQLite.
+- **Teardown:** `TempPathsGuard` cleaned isolated database state cleanly.
+
+---
+
+## Seam 21: `tests/agentic_tool_runtime_test.rs`
+- **SUT:** Agentic Tool Runtime, Tool Taxonomy, Dynamic Turn Gating & Scratchpad Context Isolation (`services/harness/stages/tools/`, `services/harness/steps.rs`, `persistence/sessions.rs`, `pipeline/assistant/session.rs`)
+- **Status:** ✅ **PASS** (Zero-Mock Verified; 3 passed, 1 ignored in 1.35s)
+- **Command:** `RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --test agentic_tool_runtime_test --release --nocapture --test-threads=1`
+- **Execution Time:** ~1.35s
+- **Defects / Blockers Resolved:**
+  - Resolved missing `stream_handles` parameter requirement in `step6_handle_terminal_tool` to update `TurnAccumulator.assistant_response`, ensuring DB `turns` table parity with voice output.
+  - Implemented dynamic session-local `is_first_turn` filter in `ToolRegistry::active_definitions`, offering title tool on Turn 1 only.
+- **Evidence Observed:**
+  - **Subtest 1 (`test_terminal_tool_title_and_accumulator_parity`):** Verified `respond_and_set_title` updates SQLite `sessions.title`, sets `TurnAccumulator.assistant_response`, emits `LlmFinished`, and dispatches `TurnResponse` audio clauses to TTS.
+  - **Subtest 2 (`test_tool_filter_session_local_turn1_gate`):** Verified dynamic turn gating: Turn 1 provides `respond_and_set_title`, Turn 2+ suppresses title tool and provides only memory tools.
+  - **Subtest 3 (`test_scratchpad_isolation_and_drop_on_commit`):** Verified NonTerminal `search_memory` executes hybrid RRF retrieval, returns structured observation to `scratchpad`, re-enters generation, and drops scratchpad at turn exit without leaking tool syntax into working history.
+  - **Subtest 4 (`test_private_mode_title_leak_prevention`):** Verified private mode suppresses DB writes to `sessions.title` during terminal tool execution.
+  - **Subtest 5 (`test_live_cloud_model_tool_calling_single_pass`):** Marked `#[ignore]`, reserved for manual execution with live Nvidia NIM API key (`NVIDIA_API_KEY`).
+- **Teardown:** `TempPathsGuard` cleaned isolated database state cleanly.
+
 
 

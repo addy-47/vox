@@ -715,41 +715,61 @@ fn resolve_model_tool_support<R: tauri::Runtime + 'static>(
         }
     }
 
-    log::info!("[Pipeline::Session] Model {} unprobed; executing 4s probe", key);
+    log::info!(
+        "[Pipeline::Session] Model {} unprobed; spawning async background probe",
+        key
+    );
     let state_arc = app.state::<Arc<AppState>>().inner().clone();
+    let app_handle = app.clone();
+    let model_name = active_model.to_string();
+    let is_cloud = provider_kind == "cloud";
+
     let tokio_handle = get_tokio_handle();
-    let probe_res = tokio_handle.block_on(async move {
-        tokio::time::timeout(
+    tokio_handle.spawn(async move {
+        let probe_res = tokio::time::timeout(
             Duration::from_secs(4),
             crate::services::llm::catalog::probe_capabilities(&state_arc, None, None, None),
         )
-        .await
+        .await;
+
+        let supported = match probe_res {
+            Ok(Ok(probe_result)) => {
+                let s = probe_result.capabilities.supports_tools;
+                log::info!(
+                    "[Pipeline::Session] Background probe resolved for {}: supports_tools = {}",
+                    key,
+                    s
+                );
+                s
+            }
+            Ok(Err(err)) => {
+                log::warn!(
+                    "[Pipeline::Session] Background probe failed for {}: {}",
+                    key,
+                    err
+                );
+                false
+            }
+            Err(_) => {
+                log::warn!(
+                    "[Pipeline::Session] Background probe timed out (4s) for {}",
+                    key
+                );
+                false
+            }
+        };
+
+        let mut guard = state_arc.harness.lock();
+        if let Some(ref mut harness) = *guard {
+            harness.supports_tools = supported;
+        }
+
+        if !supported {
+            emit_tool_unsupported_notification(&app_handle, &state_arc, &model_name);
+        }
     });
 
-    match probe_res {
-        Ok(Ok(probe_result)) => {
-            let supported = probe_result.capabilities.supports_tools;
-            log::info!(
-                "[Pipeline::Session] Probe resolved for {}: supports_tools = {}",
-                key,
-                supported
-            );
-            if !supported {
-                emit_tool_unsupported_notification(app, state, active_model);
-            }
-            supported
-        }
-        Ok(Err(err)) => {
-            log::warn!("[Pipeline::Session] Probe failed for {}: {}", key, err);
-            emit_tool_unsupported_notification(app, state, active_model);
-            false
-        }
-        Err(_) => {
-            log::warn!("[Pipeline::Session] Probe timed out (4s) for {}", key);
-            emit_tool_unsupported_notification(app, state, active_model);
-            false
-        }
-    }
+    is_cloud
 }
 
 /// Dispatches a warning notification when tool calling is unavailable on the active model.

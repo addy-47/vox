@@ -49,6 +49,30 @@ impl ContextBudgetStage {
             .sum()
     }
 
+    /// Calculates tracked tokens across history, ephemeral scratchpad, and active tool schemas.
+    pub fn calculate_tracked_tokens_with_extras(
+        &self,
+        messages: &[ChatMessage],
+        scratchpad: &[ChatMessage],
+        tools: Option<&[crate::services::llm::CanonicalToolDefinition]>,
+    ) -> usize {
+        let history_tokens: usize = messages.iter().map(|msg| estimate_tokens(&msg.content)).sum();
+        let scratchpad_tokens: usize = scratchpad.iter().map(|msg| estimate_tokens(&msg.content)).sum();
+        let tool_tokens: usize = match tools {
+            Some(tool_list) => tool_list
+                .iter()
+                .map(|t| {
+                    estimate_tokens(&t.name)
+                        + estimate_tokens(&t.description)
+                        + estimate_tokens(&t.parameters.to_string())
+                })
+                .sum(),
+            None => 0,
+        };
+
+        history_tokens + scratchpad_tokens + tool_tokens
+    }
+
     pub fn evaluate_utilization(&self, tracked_tokens: usize) -> (f32, ContextStatus) {
         let usable = self.usable_budget() as f32;
         let utilization = tracked_tokens as f32 / usable;

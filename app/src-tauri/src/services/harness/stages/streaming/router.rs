@@ -1,6 +1,3 @@
-// NOTE: Streaming tag demuxing is intentionally deferred.
-// Text flows directly through ClauseChunker to TTS for robust uninhibited pipeline audio testing.
-
 use std::sync::{
     atomic::{AtomicBool, AtomicU32, Ordering},
     mpsc::{Receiver, Sender},
@@ -89,6 +86,25 @@ impl StreamRoutingStage {
         handles: StreamRoutingHandles<R>,
         response_rx: Receiver<LlmResponse>,
     ) -> Result<StreamPassOutcome, String> {
+        let mut buffered_clauses: Vec<String> = Vec::new();
+        let outcome = self.consume_stream_events(&handles, response_rx, &mut buffered_clauses)?;
+
+        if let StreamPassOutcome::Completed { .. } = &outcome {
+            self.dispatch_clauses(buffered_clauses, AudioIntent::TurnResponse, &handles);
+            self.flush_remainder(&handles);
+            self.emit_finished(&handles);
+        }
+
+        Ok(outcome)
+    }
+
+    /// Consumes stream responses until completion, tool call, cancellation, or error.
+    fn consume_stream_events<R: tauri::Runtime + 'static>(
+        &self,
+        handles: &StreamRoutingHandles<R>,
+        response_rx: Receiver<LlmResponse>,
+        buffered_clauses: &mut Vec<String>,
+    ) -> Result<StreamPassOutcome, String> {
         let mut saw_finished = false;
 
         while let Ok(response) = response_rx.recv() {
@@ -97,7 +113,7 @@ impl StreamRoutingStage {
                     "[Harness::Stream] Stream cancelled (turn {})",
                     handles.turn_id
                 );
-                self.emit_cancelled(&handles);
+                self.emit_cancelled(handles);
                 return Ok(StreamPassOutcome::Cancelled {
                     partial_text: handles.accumulator.lock().assistant_response.clone(),
                 });
@@ -105,12 +121,17 @@ impl StreamRoutingStage {
 
             match response {
                 LlmResponse::Token(token) => {
-                    self.handle_token(token, &handles);
+                    self.buffer_token(token, handles, buffered_clauses);
                 }
                 LlmResponse::ToolCall(call) => {
-                    let partial_text = handles.accumulator.lock().assistant_response.clone();
+                    buffered_clauses.clear();
+                    let partial_text = {
+                        let mut acc = handles.accumulator.lock();
+                        acc.chunker.clear();
+                        acc.assistant_response.clone()
+                    };
                     log::info!(
-                        "[Harness::Stream] ToolCall '{}' ({}) received (turn {}, partial_chars {})",
+                        "[Harness::Stream] ToolCall '{}' ({}) received (turn {}, dropped prefix_chars {})",
                         call.name,
                         call.id,
                         handles.turn_id,
@@ -130,7 +151,7 @@ impl StreamRoutingStage {
                         "[Harness::Stream] Stream cancelled (turn {})",
                         handles.turn_id
                     );
-                    self.emit_cancelled(&handles);
+                    self.emit_cancelled(handles);
                     return Ok(StreamPassOutcome::Cancelled {
                         partial_text: handles.accumulator.lock().assistant_response.clone(),
                     });
@@ -157,20 +178,22 @@ impl StreamRoutingStage {
             return Err("LLM stream disconnected prematurely".to_string());
         }
 
-        self.flush_remainder(&handles);
-        self.emit_finished(&handles);
-
         let full_text = handles.accumulator.lock().assistant_response.clone();
         Ok(StreamPassOutcome::Completed {
             assistant_text: full_text,
         })
     }
 
-    /// Emits IPC token event, pushes token to clause chunker, and dispatches clauses to TTS.
-    fn handle_token<R: tauri::Runtime>(&self, token: String, handles: &StreamRoutingHandles<R>) {
+    /// Emits IPC token event and buffers extracted clauses for pass conclusion.
+    fn buffer_token<R: tauri::Runtime>(
+        &self,
+        token: String,
+        handles: &StreamRoutingHandles<R>,
+        buffered_clauses: &mut Vec<String>,
+    ) {
         self.emit_token_ipc(&token, handles);
         let clauses = handles.accumulator.lock().push_token(&token);
-        self.dispatch_clauses(clauses, AudioIntent::TurnResponse, handles);
+        buffered_clauses.extend(clauses);
     }
 
     /// Emits a single token to the frontend IPC rail.

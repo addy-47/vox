@@ -48,6 +48,8 @@ pub struct Harness {
     pub(crate) tool_registry: ToolRegistry,
     pub(crate) supports_tools: bool,
     pub(crate) title_set: bool,
+    pub(crate) memory_retrieval_enabled: bool,
+    pub(crate) has_played_filler: bool,
 }
 
 impl Harness {
@@ -102,6 +104,8 @@ impl Harness {
             tool_registry: ToolRegistry::with_default_tools(),
             supports_tools,
             title_set: false,
+            memory_retrieval_enabled: settings.personal_memory.context_retrieval_enabled,
+            has_played_filler: false,
         }
     }
 
@@ -136,6 +140,8 @@ impl Harness {
             tool_registry: ToolRegistry::new(),
             supports_tools: false,
             title_set: false,
+            memory_retrieval_enabled: settings.personal_memory.context_retrieval_enabled,
+            has_played_filler: false,
         }
     }
 
@@ -253,6 +259,22 @@ impl Harness {
 
     pub fn messages(&self) -> &[ChatMessage] {
         self.history.messages()
+    }
+
+    pub fn history(&self) -> &ConversationHistoryStage {
+        &self.history
+    }
+
+    pub fn history_mut(&mut self) -> &mut ConversationHistoryStage {
+        &mut self.history
+    }
+
+    pub fn supports_tools(&self) -> bool {
+        self.supports_tools
+    }
+
+    pub fn title_set(&self) -> bool {
+        self.title_set
     }
 
     pub fn check_critical_compaction_eligibility(&self) -> Option<Vec<ChatMessage>> {

@@ -128,6 +128,7 @@ impl RemoteTransport {
         Box::pin(async move {
             if cfg.capability_source == CapabilitySource::OllamaNative
                 && cfg.token_limit_field == TokenLimitField::NumPredict
+                && !cfg.base_url.trim_end_matches('/').ends_with("/v1")
             {
                 ollama::stream_ollama(&self.client, cfg, request, turn_id, cancel, tx).await
             } else if cfg.transport == TransportType::Responses {

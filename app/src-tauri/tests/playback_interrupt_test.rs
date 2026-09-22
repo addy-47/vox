@@ -592,3 +592,88 @@ async fn test_barge_in_cancels_and_advances_turn() {
     .await
     .expect("test_barge_in_cancels_and_advances_turn timed out");
 }
+
+// ============================================================================
+// Subtest 4: test_invariant_14_synthesis_guard_latch_lifecycle
+// ============================================================================
+/// Verifies Invariant 14 Synthesis Guard Latch (`turn_open` and `drained_while_open`):
+/// 1. Router sets `turn_open = true` at turn onset.
+/// 2. Audio finishes playing (`on_playback_finished`) while LLM stream is still actively generating.
+/// 3. Latch catches premature exit: sets `drained_while_open = true` and holds state in `Speaking` (does NOT transition to `Ready`).
+/// 4. LLM finishes (`on_llm_finished`): clears `turn_open`, detects `drained_while_open == true` and `pending == 0`, and cleanly transitions to `Ready`.
+#[tokio::test]
+async fn test_invariant_14_synthesis_guard_latch_lifecycle() {
+    let test_timeout = Duration::from_secs(15);
+    tokio::time::timeout(test_timeout, async {
+        let _guard = common::paths::TempPathsGuard::new();
+        vox_lib::utils::paths::init();
+        let (app, state) = common::harness::get_test_app_and_state().await;
+
+        let turn_id = 905;
+        state.pipeline.turn_id.store(turn_id, Ordering::Relaxed);
+        let routing_ctx = vox_lib::pipeline::RoutingContext::from_app_state(&state);
+
+        // Turn begins: transcript sets turn_open = true
+        state.pipeline.set_state(InteractionState::Thinking);
+        state.pipeline.set_turn_open(true);
+        state.pipeline.clear_drained_while_open();
+        assert!(state.pipeline.is_turn_open());
+
+        // Audio starts playing first clause -> transitions to Speaking
+        vox_lib::pipeline::assistant::playback::on_playback_started(
+            turn_id,
+            AudioIntent::TurnResponse,
+            &app,
+            &state,
+            &routing_ctx,
+        );
+        assert_eq!(state.pipeline.state(), InteractionState::Speaking);
+        assert!(!state.pipeline.is_drained_while_open());
+
+        // Premature audio drain: Playback finishes while turn_open is still true (LLM still generating)
+        state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed);
+        vox_lib::pipeline::assistant::playback::on_playback_finished(
+            turn_id,
+            AudioIntent::TurnResponse,
+            &app,
+            &state,
+            &routing_ctx,
+        );
+
+        // LATCH INVARIANT: Pipeline must NOT transition to Ready! It must remain Speaking and set drained_while_open = true
+        assert_eq!(
+            state.pipeline.state(),
+            InteractionState::Speaking,
+            "Premature audio drain while turn_open=true must NOT transition to Ready"
+        );
+        assert!(
+            state.pipeline.is_drained_while_open(),
+            "drained_while_open latch must be armed"
+        );
+
+        // LLM finishes later: on_llm_finished evaluates the latch and completes transition to Ready
+        vox_lib::pipeline::assistant::llm::on_llm_finished(
+            turn_id,
+            Some(&app),
+            &state,
+            &routing_ctx,
+        );
+
+        assert_eq!(
+            state.pipeline.state(),
+            InteractionState::Ready,
+            "on_llm_finished must evaluate the armed latch and transition to Ready"
+        );
+        assert!(
+            !state.pipeline.is_turn_open(),
+            "turn_open must be cleared on turn completion"
+        );
+        assert!(
+            !state.pipeline.is_drained_while_open(),
+            "drained_while_open must be cleared after evaluation"
+        );
+    })
+    .await
+    .expect("test_invariant_14_synthesis_guard_latch_lifecycle timed out");
+}
+

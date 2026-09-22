@@ -304,3 +304,46 @@ pub async fn fetch_active_vectors_by_type(
 
     Ok(results)
 }
+
+/// Episodic fact candidate returned from persistence layer for hybrid retrieval.
+#[derive(Debug, Clone)]
+pub struct EpisodicFactCandidate {
+    pub id: String,
+    pub fact_type: String,
+    pub text: String,
+    pub embedding: Option<Vec<f32>>,
+}
+
+/// Fetches all active non-personal episodic facts with their vector embeddings.
+pub async fn fetch_active_episodic_memory(conn: &Connection) -> Result<Vec<EpisodicFactCandidate>> {
+    let mut rows = conn
+        .query(
+            "SELECT f.id, f.type, f.text, v.embedding
+             FROM memory_facts f
+             LEFT JOIN memory_facts_vectors v ON f.id = v.fact_id
+             WHERE f.status = 'active' AND f.type != 'personal'
+             ORDER BY f.created_at DESC",
+            (),
+        )
+        .await?;
+
+    let mut results = Vec::new();
+    while let Some(row) = rows.next().await? {
+        let id: String = row.get(0)?;
+        let fact_type: String = row.get(1)?;
+        let text: String = row.get(2)?;
+        let embedding = row
+            .get::<Vec<u8>>(3)
+            .ok()
+            .map(|blob| decode_f32_blob(&blob));
+
+        results.push(EpisodicFactCandidate {
+            id,
+            fact_type,
+            text,
+            embedding,
+        });
+    }
+
+    Ok(results)
+}

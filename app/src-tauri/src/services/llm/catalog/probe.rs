@@ -230,16 +230,40 @@ impl CapabilityProbeEngine {
         }
     }
 
-    /// Builds capability matrix for local embedded GGUF model.
+    /// Builds capability matrix for local embedded GGUF model by consulting models_manifest.json.
     pub fn probe_local_embedded(
         model_id: &str,
         ctx_window: Option<u32>,
         now: u64,
     ) -> ModelCapabilities {
+        let manifest_path = paths::get().models.join("models_manifest.json");
+        let supports_tools = if manifest_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    val.get("models")
+                        .and_then(|m| m.as_array())
+                        .and_then(|arr| {
+                            arr.iter().find(|item| {
+                                item.get("id").and_then(|v| v.as_str()) == Some(model_id)
+                                    || item.get("name").and_then(|v| v.as_str()) == Some(model_id)
+                            })
+                        })
+                        .and_then(|item| item.get("supports_tools").and_then(|v| v.as_bool()))
+                        .unwrap_or(false)
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
         ModelCapabilities {
             model_id: model_id.to_string(),
             provider_kind: "embedded".to_string(),
-            supports_tools: true,
+            supports_tools,
             supports_latin: true,
             supports_devanagari: true,
             context_window: ctx_window.or(Some(8192)),

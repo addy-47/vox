@@ -800,3 +800,218 @@ async fn test_session_end_purges_and_unmounts_harness() {
     .await
     .expect("test_session_end_purges_and_unmounts_harness timed out");
 }
+
+// ============================================================================
+// Subtest 7: test_session_boot_capability_probe_and_cache_lifecycle
+// ============================================================================
+/// Verifies Seam 11 Phase 12 Capability Discovery & Cache Flow:
+/// 1. Cold boot with unprobed model: resolve_model_tool_support initiates background probe.
+/// 2. If probe times out / model is unsupported: dispatches model_tool_unsupported notification.
+/// 3. Cached model capability hit: reads model_capabilities.json from cache directory
+///    and initializes Harness with supports_tools immediately with zero probe delay.
+#[tokio::test]
+async fn test_session_boot_capability_probe_and_cache_lifecycle() {
+    let test_timeout = Duration::from_secs(15);
+    tokio::time::timeout(test_timeout, async {
+        let (_paths_guard, app, state) = common::harness::setup_isolated_app_state().await;
+
+        // Initialize TOKIO_HANDLE so background probe tasks spawned from the
+        // router thread execute on the test's tokio runtime (not the undriven
+        // fallback current-thread runtime).
+        let _ = vox_lib::persistence::db::TOKIO_HANDLE.set(tokio::runtime::Handle::current());
+
+        let db_path = vox_lib::utils::paths::db_path();
+        seed_test_identity_facts(&db_path)
+            .await
+            .expect("Failed to seed identity facts");
+
+        wire_persistence_worker(&state);
+
+        let (vad_cmd_tx, _vad_cmd_rx) = mpsc::channel::<VadCommand>();
+        let (_stt_tx, _pipeline_rx, _pipeline_tx) =
+            attach_lifecycle_mock_engine(&app, &state, vad_cmd_tx);
+
+        let cache_dir = vox_lib::utils::paths::get().cache.clone();
+        tokio::fs::create_dir_all(&cache_dir)
+            .await
+            .expect("Failed to create cache dir");
+        let cache_file = cache_dir.join("model_capabilities.json");
+
+        // Ensure cache starts blank
+        if cache_file.exists() {
+            let _ = tokio::fs::remove_file(&cache_file).await;
+        }
+
+        // Configure active model to an unprobed remote model
+        let test_model = "test-model-404".to_string();
+        {
+            let mut settings = state.settings.write().unwrap();
+            settings.llm.active = vox_lib::core::settings::LlmActiveProvider::Server;
+            settings.llm.server.model = test_model.clone();
+            settings.llm.server.base_url = "http://127.0.0.1:9999".to_string(); // unresponsive dummy port
+        }
+
+        // Spawn central production router
+        let (event_tx, event_rx) = mpsc::channel::<VoxEvent>();
+        let router_handle =
+            spawn_router(app.clone(), event_rx).expect("Failed to spawn router thread");
+
+        // ---------------------------------------------------------------------
+        // Part A: Cold Boot with Unprobed Model -> Enters Ready, triggers background probe
+        // ---------------------------------------------------------------------
+        event_tx
+            .send(VoxEvent::SessionStart {
+                owner: InteractionOwner::Assistant,
+                session_id: None,
+            })
+            .expect("Failed to dispatch SessionStart");
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if state.pipeline.state() == InteractionState::Ready {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(
+            state.pipeline.state(),
+            InteractionState::Ready,
+            "Pipeline must enter Ready on session start without blocking on probe"
+        );
+
+        // Wait for background probe timeout / resolution (up to 4.5s)
+        let poll_probe = Instant::now() + Duration::from_secs(6);
+        let mut unsupported_notification_found = false;
+        let db_conn = state.db.connect().expect("Failed to connect to db");
+        while Instant::now() < poll_probe {
+            let mut rows = db_conn
+                .query(
+                    "SELECT COUNT(*) FROM notifications WHERE group_key = 'model_tool_unsupported';",
+                    (),
+                )
+                .await
+                .expect("Failed to query notifications");
+            if let Ok(Some(row)) = rows.next().await {
+                let count: i64 = row.get(0).unwrap_or(0);
+                if count > 0 {
+                    unsupported_notification_found = true;
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        assert!(
+            unsupported_notification_found,
+            "Unresponsive probe must emit model_tool_unsupported notification toast"
+        );
+
+        // ---------------------------------------------------------------------
+        // Part B: Populate Cache & Verify Warm Cache Hit on Second Session
+        // ---------------------------------------------------------------------
+        // End first session
+        event_tx
+            .send(VoxEvent::EndSession)
+            .expect("Failed to dispatch EndSession");
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            if state.pipeline.state() == InteractionState::Idle {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(state.pipeline.state(), InteractionState::Idle);
+
+        // Seed model_capabilities.json with supported model
+        let supported_model = "test-agentic-model".to_string();
+        let key = format!("server:{}", supported_model);
+        let mut caps_map = std::collections::HashMap::new();
+        caps_map.insert(
+            key,
+            vox_lib::core::settings::ModelCapabilities {
+                model_id: supported_model.clone(),
+                provider_kind: "server".to_string(),
+                supports_tools: true,
+                supports_latin: true,
+                supports_devanagari: true,
+                context_window: Some(8192),
+                max_output_tokens: Some(512),
+                provenance: Some("test_cache".to_string()),
+                tps: Some(50.0),
+                ttft_ms: Some(120),
+                server_has_gpu: false,
+                is_gpu_accelerated: false,
+                gpu_status: "Test".to_string(),
+                vram_bytes: None,
+                parameter_size: None,
+                quantization: None,
+                family: Some("qwen2.5".to_string()),
+                tested_at_epoch: 1700000000,
+            },
+        );
+        let json_content = serde_json::to_string_pretty(&caps_map).unwrap();
+        tokio::fs::write(&cache_file, json_content)
+            .await
+            .expect("Failed to write test cache");
+
+        // Update settings to use the cached model
+        {
+            let mut settings = state.settings.write().unwrap();
+            settings.llm.server.model = supported_model.clone();
+        }
+
+        // Re-attach mock engine — EndSession calls stop_audio_engine which
+        // takes the engine out of AppState. The second SessionStart needs a
+        // live engine to pass ensure_modular_workers.
+        state
+            .pipeline
+            .engine_shutdown
+            .store(false, Ordering::Relaxed);
+        let (vad_cmd_tx2, _vad_cmd_rx2) = mpsc::channel::<VadCommand>();
+        let (_stt_tx2, _pipeline_rx2, _pipeline_tx2) =
+            attach_lifecycle_mock_engine(&app, &state, vad_cmd_tx2);
+
+        // Start session again
+        event_tx
+            .send(VoxEvent::SessionStart {
+                owner: InteractionOwner::Assistant,
+                session_id: None,
+            })
+            .expect("Failed to dispatch SessionStart for warm session");
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            if state.pipeline.state() == InteractionState::Ready {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(state.pipeline.state(), InteractionState::Ready);
+
+        // Assert Harness was immediately mounted with supports_tools = true
+        let harness_supports_tools = state
+            .harness
+            .lock()
+            .as_ref()
+            .map(|h| h.supports_tools())
+            .unwrap_or(false);
+
+        assert!(
+            harness_supports_tools,
+            "Cached model capabilities must immediately set harness.supports_tools = true"
+        );
+
+        // Teardown router
+        let _ = event_tx.send(VoxEvent::Shutdown);
+        let _ = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::task::spawn_blocking(move || router_handle.join()),
+        )
+        .await
+        .expect("Router thread join timed out");
+    })
+    .await
+    .expect("test_session_boot_capability_probe_and_cache_lifecycle timed out");
+}
+

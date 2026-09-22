@@ -7,7 +7,7 @@ use super::{memory::MemorySearchTool, title::RespondAndSetTitleTool, ToolDefinit
 /// Contextual filters governing tool availability on a per-turn basis.
 #[derive(Debug, Clone, Default)]
 pub struct ToolFilter {
-    pub turn_id: u32,
+    pub is_first_turn: bool,
     pub title_is_unset: bool,
     pub memory_retrieval_enabled: bool,
 }
@@ -48,7 +48,7 @@ impl ToolRegistry {
     pub fn active_definitions(&self, filter: &ToolFilter) -> Vec<CanonicalToolDefinition> {
         let mut defs = Vec::new();
         for (name, tool) in &self.tools {
-            if name == "respond_and_set_title" && !(filter.turn_id == 1 && filter.title_is_unset) {
+            if name == "respond_and_set_title" && !(filter.is_first_turn && filter.title_is_unset) {
                 continue;
             }
             if name == "search_memory" && !filter.memory_retrieval_enabled {

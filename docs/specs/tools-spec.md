@@ -31,15 +31,22 @@ The runtime defines exactly three canonical tool entities:
 
 ### 2.2 Wire Schema Translation Matrix
 
+#### Modular Assistant Providers (HTTP / SSE)
 | Provider Protocol | Egress Schema Translation (Harness $\to$ Model) | Ingress Stream Normalization (Model $\to$ Harness) |
 | :--- | :--- | :--- |
 | **OpenAI-Compatible** (`/v1/chat/completions`) | Maps canonical definitions to `tools: [{"type": "function", "function": {...}}]`. | Accumulates streamed delta fragments from `choices[].delta.tool_calls[]`. Emits a single completed `Canonical Tool Call` once argument JSON is closed. |
-| **Google Gemini** | Maps canonical definitions to `tools: [{"functionDeclarations": [...]}]`. | Parses `candidates[].content.parts[].functionCall` and normalizes to `Canonical Tool Call`. |
+| **Google Gemini (REST)** | Maps canonical definitions to `tools: [{"functionDeclarations": [...]}]`. | Parses `candidates[].content.parts[].functionCall` and normalizes to `Canonical Tool Call`. |
 | **Ollama Native** (`/api/chat`) | Maps canonical definitions to `tools: [...]`. | Parses `message.tool_calls[]` and normalizes to `Canonical Tool Call`. |
 | **Textual Syntax Fallback** (Local GGUF / Non-tool models) | Injects formatted tool schemas into the root system prompt with XML delimiters. | Provider adapter ingress filter intercepts `<tool_call>{"name":"...","arguments":{...}}</tool_call>` from the raw text stream, strips the tags, parses JSON, and emits a `Canonical Tool Call`. Text tokens never leak into speech synthesis. |
 
+#### Realtime S2S Providers (Full-Duplex WebSocket)
+| Provider Protocol | Egress Setup Declaration (`RealtimeActor` $\to$ Provider) | Ingress Tool Call (`Provider` $\to$ `RealtimeActor`) | Outbound Tool Response (`RealtimeActor` $\to$ Provider) |
+| :--- | :--- | :--- | :--- |
+| **Google Gemini Live** (`BidiGenerateContent`) | Maps canonical realtime definitions to `setup.tools: [{"functionDeclarations": [...]}]`. | Parses `serverContent.toolCall.functionCalls[]` into `Canonical Tool Call`. | Encodes to `toolResponse: {"functionResponses": [{"id": call_id, "response": {"output": result}}]}`. |
+| **Deepgram Agent** (`/v1/agent/converse`) | Maps canonical realtime definitions to `settings.configuration.functions: [...]`. | Parses `FunctionCallRequest` into `Canonical Tool Call`. | Encodes to `FunctionCallResponse: {"function_call_id": call_id, "output": result}`. |
+
 ### 2.3 Streaming Argument Accumulation Invariant
-Tool execution cannot commence on partial JSON fragments. Provider adapters must buffer incremental argument deltas internally and emit a canonical tool call event only when the argument payload has concluded and validated as well-formed JSON.
+Tool execution cannot commence on partial JSON fragments. Provider adapters must buffer incremental argument deltas internally and emit a canonical tool call event only when the argument payload has concluded and validated as well-formed JSON. Realtime S2S providers deliver complete function call frames atomically within control messages.
 
 ---
 
@@ -47,9 +54,9 @@ Tool execution cannot commence on partial JSON fragments. Provider adapters must
 
 ### 3.1 Capability Gate Contract
 1. A model's tool-calling capability must be definitively verified prior to offering any tool schema during a session.
-2. Capability status is read from a persistent capability discovery cache indexed by the model's provider and identifier. Realtime models have tools explicitly disabled/off this sprint.
+2. Capability status is read from a persistent capability discovery cache indexed by the model's provider and identifier. Realtime models (Gemini Live, Deepgram Agent) support tools via the Realtime Service adapter layer without HTTP capability probing.
 3. **Session Boot Blocking Probe Invariant**:
-   - If a model lacks a cached capability record when a session begins, a capability probe executes off the router thread within a strict 4.0-second time boundary before the session transitions to an interactive state (`session_starting = true`).
+   - If a modular model lacks a cached capability record when a session begins, a capability probe executes off the router thread within a strict 4.0-second time boundary before the session transitions to an interactive state (`session_starting = true`).
    - The 4.0-second timeout strictly bounds the HTTP probe round-trip itself, decoupled from model runtime cold-load latency.
    - The session must not transition to `Ready` or accept user speech until capability resolution finishes.
    - If the probe returns a definitive negative (e.g. HTTP 400 "Function calling not supported"), the system records the model as unsupported in persistent cache. Transient network timeouts are treated as session-scoped without permanently marking the model as unsupported.
@@ -83,15 +90,25 @@ Every tool registered in the runtime must strictly declare one of two behavioral
 - **Context Inclusion Invariant**: The tool call and structured observation result remain present in the turn-local ephemeral scratchpad during the active turn.
 - **Persistence Invariant**: The invocation parameters and execution result must be recorded into `session_tool_calls`.
 
+### 4.3 Domain Projections (`ToolDomain::Modular` vs `ToolDomain::Realtime`)
+Every tool definition co-locates schemas and descriptions for both interaction domains within its implementation:
+1. **`ToolDomain::Modular`**:
+   - Embeds speech coordination parameters (`spoken_response` for `Terminal`, `spoken_filler` for `NonTerminal`).
+   - Driven by `Harness::execute_turn` and local `TtsActor`.
+2. **`ToolDomain::Realtime`**:
+   - Strips all speech parameters; exposes clean business fields (`query`, `title`).
+   - The remote realtime model synthesizes PCM audio natively over the WebSocket; local `TtsActor` is dormant.
+   - Driven event-driven via `RealtimeActor` / `RealtimeSession` over WebSocket without local reentrant prompt assembly.
+
 ---
 
 ## 5. Persistence Scratchpad Ledger
 
 ### 5.1 Separation of Spoken Dialogue and Cognitive Scratchpad
 1. Spoken conversation history must be preserved in a dedicated `turns` ledger containing exclusively the user's spoken text, the assistant's spoken text, and sequential turn numbering. It must never contain internal tool syntax or JSON structures.
-2. All tool invocations (both terminal and non-terminal) must be recorded in an independent `session_tool_calls` scratchpad ledger.
+2. All tool invocations (both terminal and non-terminal, modular and realtime) must be recorded in an independent `session_tool_calls` scratchpad ledger.
 3. **Self-Healing Foreign Key Invariant**: Any write to `session_tool_calls` (or session metadata) must execute an idempotent `INSERT OR IGNORE INTO sessions (id, project_id, is_pinned, created_at, updated_at) VALUES (?, 'default', 0, ?, ?)` self-heal before writing to prevent foreign key constraint violations if the initial `SessionStarted` persistence event was delayed or dropped under channel backpressure.
-4. **Ephemeral In-Memory Scratchpad**: In active working memory, tool call and observation messages exist exclusively in a turn-local scratchpad owned by `execute_turn`. Upon turn completion or cancellation, this scratchpad is dropped, ensuring 100% parity between live working memory and DB-restored memory.
+4. **Ephemeral In-Memory Scratchpad**: In active working memory, tool call and observation messages exist exclusively in a turn-local scratchpad owned by `execute_turn` (modular) or active turn state (realtime). Upon turn completion or cancellation, this scratchpad is dropped, ensuring 100% parity between live working memory and DB-restored memory.
 
 ---
 
@@ -106,34 +123,42 @@ The following capabilities are formally architected into the data contracts but 
 
 ## 7. Foundational Tool Catalog
 
-### 7.1 Tool 1: `respond_and_set_title` (Terminal)
-- **Classification**: Terminal.
-- **Description**: Responds conversationally to the user while assigning a concise 3 to 5 word title to initialize this new conversation session.
-- **Parameters**:
-  - `spoken_response` (String, required): Your natural, concise conversational spoken response to the user's message.
-  - `title` (String, required): A concise 3 to 5 word title summarizing the user's intent.
-- **Behavioral Invariants**:
-  1. **Turn 1 Injection Gate**: The tool schema must be provided in the model request strictly on the first turn of a session, and only if the session title is unassigned or set to the default placeholder.
-  2. **Turn 2+ Suppression**: Once the first turn concludes or a title has been assigned, the tool schema must be permanently omitted from subsequent turn requests.
-  3. **Single-Pass Execution**: On invocation, the system dispatches `spoken_response` directly to speech synthesis as `AudioIntent::TurnResponse`, writes the title to persistent storage for the active session, dispatches `IpcEvent::SessionsChanged` to update the navigation rail, and logs the execution to the scratchpad. Resolves the turn in exactly one generation pass.
+### 7.1 Tool 1: `respond_and_set_title` (Modular) / `set_session_title` (Realtime)
+- **Classification**: Action / State Mutation.
+- **Implementor**: `services/harness/stages/tools/respond_and_set_title.rs`.
+- **Modular Specification (`respond_and_set_title`)**:
+  - **Classification**: Terminal.
+  - **Description**: Responds conversationally to the user while assigning a concise 3 to 5 word title to initialize this new conversation session.
+  - **Parameters**:
+    - `spoken_response` (String, required): Your natural, concise conversational spoken response to the user's message.
+    - `title` (String, required): A concise 3 to 5 word title summarizing the user's intent.
+  - **Behavioral Invariants**:
+    1. **Turn 1 Injection Gate**: Injected in the model request strictly on the first turn if title is unassigned.
+    2. **Turn 2+ Suppression**: Permanently omitted from subsequent turn requests.
+    3. **Single-Pass Audio Delivery**: Dispatches `spoken_response` directly to local speech synthesis as `AudioIntent::TurnResponse`.
+- **Realtime Specification (`set_session_title`)**:
+  - **Classification**: Action.
+  - **Description**: Assigns a concise 3 to 5 word title to initialize this new conversation session.
+  - **Parameters**:
+    - `title` (String, required): A concise 3 to 5 word title summarizing the user's intent.
+  - **Behavioral Invariants**:
+    1. **Continuous Availability**: Declared continuously in WebSocket session configuration frames.
+    2. **Execution-Level Idempotency Guard**: If invoked when the session title is already set, the tool checks `ctx.is_title_already_set()`, skips database write and `IpcEvent::SessionsChanged`, logs invocation to `session_tool_calls` as ignored, and returns a graceful rejection (`{"status": "ignored", "message": "Session title has already been set and is locked for this session."}`).
+    3. **Native Provider Audio**: Zero local TTS audio dispatch; the provider model manages vocal output natively.
 
-### 7.2 Tool 2: `search_memory` (NonTerminal)
-- **Classification**: NonTerminal.
+### 7.2 Tool 2: `search_memory` (Modular & Realtime)
+- **Classification**: Cognitive Observation.
+- **Implementor**: `services/harness/stages/tools/search_memory.rs`.
 - **Description**: Searches episodic project memory for past factual decisions, completed work, blockers, next steps, or technical context.
-- **Parameters (Exposed to Model)**:
+- **Modular Parameters**:
   - `query` (String, required): The semantic search phrase or keyword expression to look up.
-  - `spoken_filler` (String, required): A natural, brief 3 to 5 word spoken filler phrase to say aloud to the user right now while searching (e.g. 'Checking your project notes...', 'Let me look that up...').
+  - `spoken_filler` (String, required): A natural, brief 3 to 5 word spoken filler phrase to say aloud to the user right now while searching.
+- **Realtime Parameters**:
+  - `query` (String, required): The semantic search phrase or keyword expression to look up. (No spoken filler field).
 - **Threshold Authority Rule**:
-  - The model is not permitted to specify result limits or threshold cutoffs.
-  - The retrieval engine applies user-configured memory settings (`top_k_facts` and `semantic_similarity_cutoff`) directly from system configuration.
+  - The model is not permitted to specify result limits or threshold cutoffs. User-configured memory settings (`top_k_facts` and `semantic_similarity_cutoff`) apply directly.
 - **Search Scope Boundary**:
-  - The search must query only active episodic facts tagged as objective, work done, blocker, next step, or pitfall.
-  - Facts tagged as personal identity must be excluded from this search, as personal identity is governed exclusively by the root personal memory document.
-- **Hybrid Retrieval Flow**:
-  1. Harness immediately dispatches `spoken_filler` to speech synthesis (`AudioIntent::InterimFiller`).
-  2. Transforms the query into a dense vector embedding.
-  3. Queries active vectors using cosine distance.
-  4. Queries active fact text using lexical full-text matching.
-  5. Fuses rankings using Reciprocal Rank Fusion (RRF) with constant $k = 60$.
-  6. Filters results by the similarity cutoff threshold and slices the top K facts.
-  7. Appends formatted facts to the turn scratchpad and triggers the reentrant conversational pass.
+  - Queries active episodic facts tagged as objective, work done, blocker, next step, or pitfall (excludes personal identity facts).
+- **Execution Flow**:
+  1. **Modular**: Harness dispatches `spoken_filler` to local TTS (`AudioIntent::InterimFiller`), executes hybrid RRF search, appends facts to scratchpad, and triggers reentrant cognitive pass.
+  2. **Realtime**: RealtimeActor executes hybrid RRF search directly, encodes facts into provider `toolResponse` frame, and sends over WebSocket. The provider consumes facts and continues streaming voice audio.

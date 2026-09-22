@@ -123,26 +123,60 @@
 ## Batch 5 — Session Boot Capability Gating
 **Dependencies**: Batch 0, Batch 1, Batch 3
 
-- [ ] `app/src-tauri/src/pipeline/assistant/session.rs`
-  - [ ] `on_session_start`: Check `ModelProbeResult` for active model; run 4s probe if unprobed off the router thread.
-  - [ ] `on_session_start`: Pass `supports_tools` boolean flag into `Harness::new_modular`.
-  - [ ] `on_session_start`: Emit `NotificationCreated` warning if tool calling is unsupported or probe timed out.
-- [ ] `app/src-tauri/src/services/harness/orchestrator/mod.rs`
-  - [ ] `Harness::new_modular`: Accept `supports_tools: bool` parameter during initialization.
+- [x] `app/src-tauri/src/pipeline/assistant/session.rs`
+  - [x] `on_session_start`: Check `ModelProbeResult` for active model; run 4s probe if unprobed off the router thread.
+  - [x] `on_session_start`: Pass `supports_tools` boolean flag into `Harness::new_modular`.
+  - [x] `on_session_start`: Emit `NotificationCreated` warning if tool calling is unsupported or probe timed out.
+- [x] `app/src-tauri/src/services/harness/orchestrator/chassis.rs`
+  - [x] `Harness::new_modular`: Accept `supports_tools: bool` parameter during initialization.
 
 ---
 
 ## Batch 6 — Persistence Worker & DB Integration
 **Dependencies**: Batch 1
 
-- [ ] `app/src-tauri/src/persistence/worker.rs`
-  - [ ] `handle_event`: Add arm for `PersistenceEvent::ToolCallExecuted` calling `persist_tool_call`.
+- [x] `app/src-tauri/src/persistence/worker.rs`
+  - [x] `handle_event`: Add arm for `PersistenceEvent::ToolCallExecuted` calling `persist_tool_call`.
+  - [x] `log_skipped_private_event`: Add arm for `PersistenceEvent::ToolCallExecuted` to log skipped tool calls under private mode.
 
 ---
 
 ## Batch 7 — Provider Adapter Normalization
 **Dependencies**: Batch 1
 
-- [ ] `app/src-tauri/src/services/llm/providers/openai.rs`
-  - [ ] Stream reader: Accumulate chunked `delta.tool_calls` JSON buffers.
-  - [ ] Stream reader: Emit `LlmStreamEvent::ToolCall(CanonicalToolCall)` once full tool argument payload is received and validated.
+- [x] `app/src-tauri/src/services/llm/transport/chat_completions.rs`
+  - [x] Request payload: Serialize registered tools into OpenAI function calling format and serialize messages with tool calls and tool responses.
+  - [x] Stream reader: Accumulate chunked `delta.tool_calls` JSON buffers across streaming choices.
+  - [x] Stream reader: Emit `LlmStreamEvent::ToolCall(CanonicalToolCall)` once full tool argument payload is received, validated, and normalized.
+
+---
+
+## Batch 8 — System Architecture Remediation & Spec Harmonization
+**Dependencies**: Batches 0–7
+
+- [x] Sub-batch 8.1 — Pure-Move Orchestrator Refactor (§9.1 & §9.2)
+  - [x] Decompose `services/harness/orchestrator/` into named step files + `loop.rs` owner (`mod.rs`, `chassis.rs`, `loop.rs`, `intake.rs`, `compaction.rs`, `assemble.rs`, `dispatch.rs`, `stream.rs`, `tools.rs`, `phase.rs`, `finalize.rs`).
+  - [x] Restore `PromptBuilderStage::build_generation_request` in `stages/prompt.rs` as sole assembly authority.
+  - [x] Verify clean build with `cargo check`.
+- [x] Sub-batch 8.2 — Audio Stream & Intent Integrity (A.1, A.2)
+  - [x] `stages/streaming/router.rs`: Buffer un-synthesized clauses to prevent prefix token leakage.
+  - [x] `orchestrator/tools.rs`: Drop prefix text unconditionally on `ToolCallReceived`; eliminate pre-tool `TurnResponse` audio flush.
+  - [x] `orchestrator/tools.rs` (`handle_terminal_tool`): Update `TurnAccumulator.assistant_response` with `spoken_response` before emitting `LlmFinished` (N1).
+- [x] Sub-batch 8.3 — Invariant 13 & Barge-In Persistence (B.1, B.2, G.2, G.4)
+  - [x] `orchestrator/finalize.rs` (`handle_turn_cancelled`): Commit non-empty `partial_text` to history and DB; rollback staged user turn if empty.
+  - [x] `pipeline/assistant/interrupt.rs`: Remove duplicate `TurnCompleted` dispatch on barge-in (N13).
+  - [x] `orchestrator/tools.rs`: Check turn `CancellationToken` after `execute_tool` returns; return `Cancelled` on interruption (G.2).
+  - [x] `pipeline/assistant/llm.rs` (`on_llm_finished`): Roll back staged user turn on empty finish (G.4).
+- [x] Sub-batch 8.4 — Tool Gating, Budget Lifecycle & Compaction (B.3, C.2, C.3, D.3, G.3, G.6)
+  - [x] `stages/tools/registry.rs`: Change `respond_and_set_title` gate to session-local first turn (`history.messages().len() <= 2`) (N2).
+  - [x] `stages/budget.rs` / `orchestrator/loop.rs`: Include scratchpad AND tool schemas in `ContextBudgetStage` utilization evaluations (C.2, G.6).
+  - [x] `orchestrator/loop.rs`: Connect `settings.working_memory` to `ToolFilter.memory_retrieval_enabled` (C.3).
+  - [x] `orchestrator/compaction.rs`: Fix `trigger_kind` from `"inline"` to `"critical"` (N5). Add `has_played_filler` check.
+  - [x] `orchestrator/loop.rs`: Bound reentrant loop to 5 tool iterations + 1 final tool-free text pass (G.3).
+- [x] Sub-batch 8.5 — Retrieval Implementation & Persistence Hardening (C.4, D.1, D.2, D.4, D.5, B.4, G.1, G.6)
+  - [x] `stages/tools/memory.rs`: Implement hybrid RRF episodic retrieval ($k=60$) excluding `personal` tag (N3).
+  - [x] `stages/tools/title.rs`: Gate `set_session_title` on `!app_state.telemetry.is_private_mode` (D.2, G.6).
+  - [x] `persistence/schema.rs`: Add `idx_tool_calls_created` index to migration v5 (D.4).
+  - [x] `services/llm/transport/chat_completions.rs`: Reject invalid JSON arguments; emit sanitized `ToolResult { is_error: true }` (N11).
+  - [x] `pipeline/assistant/session.rs`: Make capability probe non-blocking with `session_starting = true` (B.4).
+  - [x] `services/llm/catalog/probe.rs` & transports: Check `models_manifest.json` for embedded models; parse tool calls; explicitly gate non-OpenAI transports (D.1, G.1).
