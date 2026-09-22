@@ -65,6 +65,7 @@ pub fn on_llm_finished<R: tauri::Runtime>(
         return;
     }
 
+    state.turn_metrics.record_llm_finish();
     state.pipeline.clear_turn_open();
     flush_pre_roll(state, &ctx.pipeline_mode);
 
@@ -103,9 +104,12 @@ fn evaluate_synthesis_latch<R: tauri::Runtime>(
     ctx: &RoutingContext,
 ) {
     let drained = state.pipeline.is_drained_while_open();
-    let pending_jobs = state.pipeline.pending_synthesis_jobs.load(Ordering::Relaxed);
-    let should_transition = pending_jobs == 0
-        && (drained || current_state != InteractionState::Speaking);
+    let pending_jobs = state
+        .pipeline
+        .pending_synthesis_jobs
+        .load(Ordering::Relaxed);
+    let should_transition =
+        pending_jobs == 0 && (drained || current_state != InteractionState::Speaking);
 
     if should_transition {
         state.pipeline.clear_drained_while_open();

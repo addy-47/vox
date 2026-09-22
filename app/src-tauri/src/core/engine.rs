@@ -138,6 +138,7 @@ fn create_playback_engine(
         event_tx,
         playback_intent: Arc::new(AtomicU8::new(0)),
         is_playback_muted: Arc::clone(&state.pipeline.is_playback_muted),
+        turn_metrics: Some(Arc::clone(&state.turn_metrics)),
     };
 
     let pe = PlaybackEngine::new(engine_handles, telemetry_handles)
@@ -461,6 +462,7 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
                 playback_engine,
                 pending_synthesis_jobs: Some(Arc::clone(&state.pipeline.pending_synthesis_jobs)),
                 telemetry_rtf: Some(Arc::clone(&state.telemetry.latest_tts_rtf)),
+                turn_metrics: Some(Arc::clone(&state.turn_metrics)),
             },
             &settings,
             &tts_path,

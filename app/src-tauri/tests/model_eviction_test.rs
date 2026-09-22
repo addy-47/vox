@@ -141,6 +141,7 @@ async fn test_tts_worker_cool_down_clears_handles_and_joins() {
             playback_engine,
             pending_synthesis_jobs: Some(pending_jobs),
             telemetry_rtf: None,
+            turn_metrics: None,
         };
 
         let warm_res = warm_up_tts(handles, &settings, &supertonic_model_dir, None, event_tx);

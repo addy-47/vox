@@ -441,10 +441,7 @@ mod tests {
             .expect("Count row exists")
             .get(0)
             .expect("Count col");
-        assert_eq!(
-            tool_count, 0,
-            "Tool calls must cascade delete with session"
-        );
+        assert_eq!(tool_count, 0, "Tool calls must cascade delete with session");
 
         // Verify mutual exclusion: only one in_progress run per session
         conn.execute(

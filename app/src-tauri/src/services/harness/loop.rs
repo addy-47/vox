@@ -4,13 +4,14 @@ use std::sync::{
 };
 
 use parking_lot::Mutex;
+use tauri::{async_runtime::spawn as spawn_task, Runtime};
 
 use crate::services::{
     harness::{
         chassis::Harness,
         stages::{
             streaming::{StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage},
-            tools::ToolRegistry,
+            tools::{ToolFilter, ToolRegistry},
         },
         steps::{
             step1_intake, step3_execute_compaction, step4_assemble_request, step5_dispatch_llm,
@@ -25,7 +26,7 @@ use crate::services::{
 
 const MAX_TOOL_ITERATIONS: usize = 5;
 
-pub struct TurnLoopContext<'a, R: tauri::Runtime> {
+pub struct TurnLoopContext<'a, R: Runtime> {
     pub harness_arc: &'a Arc<Mutex<Option<Harness>>>,
     pub req: &'a TurnExecutionRequest<R>,
     pub stream_stage: &'a StreamRoutingStage,
@@ -40,11 +41,17 @@ enum LoopAction {
 }
 
 /// Primary coordinator entry point: orchestrates the 7-phase conversational turn lifecycle.
-pub async fn execute_turn<R: tauri::Runtime + 'static>(
+pub async fn execute_turn<R: Runtime + 'static>(
     harness_arc: &Arc<Mutex<Option<Harness>>>,
     req: TurnExecutionRequest<R>,
 ) -> TurnOutcome {
     let turn_id = req.turn_id;
+    log::info!(
+        "[Harness::Loop] Turn {} started: session={} query_len={}",
+        turn_id,
+        req.app_state.conversation_id.load(Relaxed),
+        req.query.len()
+    );
 
     // === STEP 1 & STEP 2: Intake Deduplication & Token Budget Check ===
     let (can_compact, stream_stage) = match step1_intake(harness_arc, &req) {
@@ -65,7 +72,7 @@ pub async fn execute_turn<R: tauri::Runtime + 'static>(
 }
 
 /// Orchestrates Step 4 (Assembly), Step 5 (Dispatch), and Step 6 (Reentrant Loop).
-async fn run_cognitive_loop<R: tauri::Runtime + 'static>(
+async fn run_cognitive_loop<R: Runtime + 'static>(
     harness_arc: &Arc<Mutex<Option<Harness>>>,
     req: TurnExecutionRequest<R>,
     stream_stage: StreamRoutingStage,
@@ -81,6 +88,12 @@ async fn run_cognitive_loop<R: tauri::Runtime + 'static>(
         };
         (harness.tool_registry.clone(), harness.supports_tools)
     };
+    log::info!(
+        "[Harness::Loop] Turn {} cognitive loop: supports_tools={} registered_tools={}",
+        turn_id,
+        supports_tools,
+        tool_registry.canonical_definitions().len()
+    );
 
     let Some(ref pipeline_tx) = req.pipeline_tx else {
         return step7_handle_error(harness_arc, turn_id, "No pipeline event channel".to_string());
@@ -89,7 +102,7 @@ async fn run_cognitive_loop<R: tauri::Runtime + 'static>(
     let cancel_atomic = Arc::new(AtomicBool::new(req.cancel.is_cancelled()));
     let cancel_atomic_clone = Arc::clone(&cancel_atomic);
     let cancel_token_clone = req.cancel.clone();
-    let cancel_bridge = tauri::async_runtime::spawn(async move {
+    let cancel_bridge = spawn_task(async move {
         cancel_token_clone.cancelled().await;
         cancel_atomic_clone.store(true, Relaxed);
     });
@@ -103,6 +116,7 @@ async fn run_cognitive_loop<R: tauri::Runtime + 'static>(
         cancel: Arc::clone(&cancel_atomic),
         event_tx: pipeline_tx.clone(),
         app: req.app.clone(),
+        turn_metrics: Arc::clone(&req.app_state.turn_metrics),
     };
 
     let session_id = req.app_state.conversation_id.load(Relaxed) as i64;
@@ -121,7 +135,7 @@ async fn run_cognitive_loop<R: tauri::Runtime + 'static>(
 }
 
 /// Executes iterative generation and tool interception passes until completion or budget breach.
-async fn execute_loop_iterations<R: tauri::Runtime + 'static>(
+async fn execute_loop_iterations<R: Runtime + 'static>(
     ctx: &TurnLoopContext<'_, R>,
     supports_tools: bool,
     cancel_atomic: &Arc<AtomicBool>,
@@ -134,24 +148,26 @@ async fn execute_loop_iterations<R: tauri::Runtime + 'static>(
     // === REENTRANT COGNITIVE LOOP (Up to MAX_TOOL_ITERATIONS passes) ===
     while iteration <= MAX_TOOL_ITERATIONS {
         if ctx.req.cancel.is_cancelled() || cancel_atomic.load(Relaxed) {
-            let partial = ctx.stream_handles.accumulator.lock().assistant_response.clone();
+            let partial = ctx
+                .stream_handles
+                .accumulator
+                .lock()
+                .assistant_response
+                .clone();
             return step7_handle_cancelled(cancelled_ctx(ctx, partial));
         }
 
         check_loop_budget(ctx, &scratchpad, allow_tools, iteration);
 
         // === STEP 4: Assemble Generation Request with Scratchpad ===
-        let generation_request = match step4_assemble_request(
-            ctx.harness_arc,
-            &scratchpad,
-            turn_id,
-            allow_tools,
-        ) {
-            Ok(req_obj) => req_obj,
-            Err(e) => return step7_handle_error(ctx.harness_arc, turn_id, e),
-        };
+        let generation_request =
+            match step4_assemble_request(ctx.harness_arc, &scratchpad, turn_id, allow_tools) {
+                Ok(req_obj) => req_obj,
+                Err(e) => return step7_handle_error(ctx.harness_arc, turn_id, e),
+            };
 
         // === STEP 5: Dispatch Request to Duplex LLM Pipe ===
+        ctx.req.app_state.turn_metrics.record_llm_dispatch();
         let response_rx = match step5_dispatch_llm(
             ctx.req.llm_tx.as_ref(),
             generation_request,
@@ -163,7 +179,8 @@ async fn execute_loop_iterations<R: tauri::Runtime + 'static>(
         };
 
         // === STEP 6: Stream Tokens & Intercept Tool Calls ===
-        let stream_res = step6_run_stream_pass(ctx.stream_stage, ctx.stream_handles, response_rx).await;
+        let stream_res =
+            step6_run_stream_pass(ctx.stream_stage, ctx.stream_handles, response_rx).await;
         match stream_res {
             Ok(pass_outcome) => {
                 let action = handle_pass_outcome(
@@ -179,6 +196,12 @@ async fn execute_loop_iterations<R: tauri::Runtime + 'static>(
                     LoopAction::Terminal(outcome) => return outcome,
                     LoopAction::Continue => {
                         iteration += 1;
+                        log::info!(
+                            "[Harness::Loop] Turn {} iteration {} continuing: scratchpad_messages={}",
+                            turn_id,
+                            iteration,
+                            scratchpad.len()
+                        );
                         if iteration >= MAX_TOOL_ITERATIONS {
                             log::warn!(
                                 "[Harness::Loop] Turn {} reached MAX_TOOL_ITERATIONS; running final tool-free pass.",
@@ -201,7 +224,7 @@ async fn execute_loop_iterations<R: tauri::Runtime + 'static>(
 }
 
 /// Evaluates context budget including history, scratchpad, and tool schemas.
-fn check_loop_budget<R: tauri::Runtime>(
+fn check_loop_budget<R: Runtime>(
     ctx: &TurnLoopContext<'_, R>,
     scratchpad: &[ChatMessage],
     allow_tools: bool,
@@ -211,7 +234,7 @@ fn check_loop_budget<R: tauri::Runtime>(
     if let Some(ref harness) = *guard {
         if let Some(ref budget) = harness.budget {
             let tools = if allow_tools && harness.supports_tools {
-                let filter = crate::services::harness::stages::tools::ToolFilter {
+                let filter = ToolFilter {
                     is_first_turn: harness.history.messages().len() <= 2,
                     title_is_unset: !harness.title_set,
                     memory_retrieval_enabled: harness.memory_retrieval_enabled,
@@ -239,7 +262,7 @@ fn check_loop_budget<R: tauri::Runtime>(
 }
 
 /// Processes single-pass stream outcomes and branches to terminal resolution or reentrant looping.
-async fn handle_pass_outcome<R: tauri::Runtime + 'static>(
+async fn handle_pass_outcome<R: Runtime + 'static>(
     ctx: &TurnLoopContext<'_, R>,
     pass_outcome: StreamPassOutcome,
     scratchpad: &mut Vec<ChatMessage>,
@@ -249,6 +272,11 @@ async fn handle_pass_outcome<R: tauri::Runtime + 'static>(
     let turn_id = ctx.req.turn_id;
     match pass_outcome {
         StreamPassOutcome::Completed { assistant_text } => {
+            log::info!(
+                "[Harness::Loop] Turn {} pass completed with no tool call ({} chars); finalizing",
+                turn_id,
+                assistant_text.len()
+            );
             if cancel_atomic.load(Relaxed) {
                 LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, assistant_text)))
             } else {
@@ -288,7 +316,8 @@ async fn handle_pass_outcome<R: tauri::Runtime + 'static>(
                 let outcome = step6_handle_terminal_tool(ctx, call).await;
                 LoopAction::Terminal(outcome)
             } else {
-                let cancelled = step6_handle_non_terminal_tool(ctx, call, &partial_text, scratchpad).await;
+                let cancelled =
+                    step6_handle_non_terminal_tool(ctx, call, &partial_text, scratchpad).await;
                 if cancelled {
                     LoopAction::Terminal(step7_handle_cancelled(cancelled_ctx(ctx, String::new())))
                 } else {
@@ -300,7 +329,7 @@ async fn handle_pass_outcome<R: tauri::Runtime + 'static>(
 }
 
 /// Constructs a CancelledTurnContext from active turn loop state.
-fn cancelled_ctx<'a, R: tauri::Runtime>(
+fn cancelled_ctx<'a, R: Runtime>(
     ctx: &'a TurnLoopContext<'_, R>,
     partial_text: String,
 ) -> CancelledTurnContext<'a> {

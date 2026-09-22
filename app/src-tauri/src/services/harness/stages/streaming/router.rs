@@ -5,14 +5,18 @@ use std::sync::{
 };
 
 use parking_lot::Mutex;
-use tauri::AppHandle;
+use tauri::{AppHandle, Runtime};
 
 use crate::{
     core::{
         events::{emit_ipc_to, AudioIntent, IpcEvent, LlmTokenPayload, VoxEvent},
+        metrics::TurnMetricsCollector,
         state::InteractionOwner,
     },
-    pipeline::{assistant::accumulator::TurnAccumulator, target_window},
+    pipeline::{
+        assistant::accumulator::TurnAccumulator,
+        target_window,
+    },
     services::{
         harness::stages::streaming::{ClauseChunker, TextNormalizer},
         llm::{actor::LlmResponse, CanonicalToolCall},
@@ -37,7 +41,7 @@ pub enum StreamPassOutcome {
 }
 
 /// Bundled handles and shared state required to route streaming LLM responses.
-pub struct StreamRoutingHandles<R: tauri::Runtime> {
+pub struct StreamRoutingHandles<R: Runtime> {
     pub turn_id: u32,
     pub owner: InteractionOwner,
     pub accumulator: Arc<Mutex<TurnAccumulator>>,
@@ -46,9 +50,10 @@ pub struct StreamRoutingHandles<R: tauri::Runtime> {
     pub cancel: Arc<AtomicBool>,
     pub event_tx: Sender<VoxEvent>,
     pub app: AppHandle<R>,
+    pub turn_metrics: Arc<TurnMetricsCollector>,
 }
 
-impl<R: tauri::Runtime> Clone for StreamRoutingHandles<R> {
+impl<R: Runtime> Clone for StreamRoutingHandles<R> {
     fn clone(&self) -> Self {
         Self {
             turn_id: self.turn_id,
@@ -59,6 +64,7 @@ impl<R: tauri::Runtime> Clone for StreamRoutingHandles<R> {
             cancel: Arc::clone(&self.cancel),
             event_tx: self.event_tx.clone(),
             app: self.app.clone(),
+            turn_metrics: Arc::clone(&self.turn_metrics),
         }
     }
 }
@@ -81,7 +87,7 @@ impl StreamRoutingStage {
 
     /// Consumes incoming tokens over the duplex pipe, chunks into clauses for TTS,
     /// emits IPC token events, and routes streaming outcomes.
-    pub fn route_stream<R: tauri::Runtime + 'static>(
+    pub fn route_stream<R: Runtime + 'static>(
         &self,
         handles: StreamRoutingHandles<R>,
         response_rx: Receiver<LlmResponse>,
@@ -99,7 +105,7 @@ impl StreamRoutingStage {
     }
 
     /// Consumes stream responses until completion, tool call, cancellation, or error.
-    fn consume_stream_events<R: tauri::Runtime + 'static>(
+    fn consume_stream_events<R: Runtime + 'static>(
         &self,
         handles: &StreamRoutingHandles<R>,
         response_rx: Receiver<LlmResponse>,
@@ -121,9 +127,11 @@ impl StreamRoutingStage {
 
             match response {
                 LlmResponse::Token(token) => {
+                    handles.turn_metrics.record_llm_first_token();
                     self.buffer_token(token, handles, buffered_clauses);
                 }
                 LlmResponse::ToolCall(call) => {
+                    handles.turn_metrics.record_llm_first_token();
                     buffered_clauses.clear();
                     let partial_text = {
                         let mut acc = handles.accumulator.lock();
@@ -137,10 +145,7 @@ impl StreamRoutingStage {
                         handles.turn_id,
                         partial_text.len()
                     );
-                    return Ok(StreamPassOutcome::ToolCallReceived {
-                        partial_text,
-                        call,
-                    });
+                    return Ok(StreamPassOutcome::ToolCallReceived { partial_text, call });
                 }
                 LlmResponse::Finished => {
                     saw_finished = true;
@@ -165,7 +170,10 @@ impl StreamRoutingStage {
                     if let Err(e) = handles.event_tx.send(VoxEvent::Error(err.clone())) {
                         log::warn!("[Harness::Stream] Failed to dispatch Error: {}", e);
                     }
-                    return Ok(StreamPassOutcome::Error(format!("LLM stream error: {:?}", err)));
+                    return Ok(StreamPassOutcome::Error(format!(
+                        "LLM stream error: {:?}",
+                        err
+                    )));
                 }
             }
         }
@@ -185,7 +193,7 @@ impl StreamRoutingStage {
     }
 
     /// Emits IPC token event and buffers extracted clauses for pass conclusion.
-    fn buffer_token<R: tauri::Runtime>(
+    fn buffer_token<R: Runtime>(
         &self,
         token: String,
         handles: &StreamRoutingHandles<R>,
@@ -197,7 +205,7 @@ impl StreamRoutingStage {
     }
 
     /// Emits a single token to the frontend IPC rail.
-    fn emit_token_ipc<R: tauri::Runtime>(&self, token: &str, handles: &StreamRoutingHandles<R>) {
+    fn emit_token_ipc<R: Runtime>(&self, token: &str, handles: &StreamRoutingHandles<R>) {
         let target = target_window(handles.owner);
         let payload = IpcEvent::LlmToken(LlmTokenPayload {
             turn_id: handles.turn_id,
@@ -209,7 +217,7 @@ impl StreamRoutingStage {
     }
 
     /// Dispatches extracted text clauses to the TTS synthesis worker with the requested intent.
-    fn dispatch_clauses<R: tauri::Runtime>(
+    fn dispatch_clauses<R: Runtime>(
         &self,
         clauses: Vec<String>,
         intent: AudioIntent,
@@ -243,6 +251,7 @@ impl StreamRoutingStage {
                     .fetch_sub(1, Ordering::Relaxed);
                 log::warn!("[Harness::Stream] Failed to dispatch clause to TTS: {}", e);
             } else {
+                handles.turn_metrics.record_tts_chunk0_dispatch();
                 log::info!(
                     "[Harness::Stream] Clause dispatched (turn {}, clause {}, chars {}, words {}, intent {:?}, pending_jobs {})",
                     handles.turn_id,
@@ -257,7 +266,7 @@ impl StreamRoutingStage {
     }
 
     /// Dispatches a complete text string through speech normalization and clause chunking to TTS.
-    pub fn dispatch_spoken_response<R: tauri::Runtime>(
+    pub fn dispatch_spoken_response<R: Runtime>(
         &self,
         text: &str,
         intent: AudioIntent,
@@ -272,7 +281,7 @@ impl StreamRoutingStage {
     }
 
     /// Flushes unpunctuated tail remainder to the TTS worker.
-    fn flush_remainder<R: tauri::Runtime>(&self, handles: &StreamRoutingHandles<R>) {
+    fn flush_remainder<R: Runtime>(&self, handles: &StreamRoutingHandles<R>) {
         let remainder = handles.accumulator.lock().flush_chunker();
         let Some(remainder_text) = remainder else {
             return;
@@ -319,7 +328,7 @@ impl StreamRoutingStage {
     }
 
     /// Emits `VoxEvent::Cancelled` if turn was aborted during stream.
-    fn emit_cancelled<R: tauri::Runtime>(&self, handles: &StreamRoutingHandles<R>) {
+    fn emit_cancelled<R: Runtime>(&self, handles: &StreamRoutingHandles<R>) {
         let event = VoxEvent::Cancelled {
             turn_id: handles.turn_id,
         };
@@ -329,7 +338,7 @@ impl StreamRoutingStage {
     }
 
     /// Emits `VoxEvent::LlmFinished` upon complete stream consumption.
-    pub fn emit_finished<R: tauri::Runtime>(&self, handles: &StreamRoutingHandles<R>) {
+    pub fn emit_finished<R: Runtime>(&self, handles: &StreamRoutingHandles<R>) {
         if handles.cancel.load(Ordering::Relaxed) {
             return;
         }
@@ -341,6 +350,7 @@ impl StreamRoutingStage {
                 acc.assistant_response.split_whitespace().count(),
             )
         };
+        handles.turn_metrics.record_llm_stats(response_chars, response_words);
         log::info!(
             "[Harness::Stream] Stream finished (turn {}, response_chars {}, response_words {})",
             handles.turn_id,

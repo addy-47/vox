@@ -788,4 +788,3 @@ async fn test_session_tool_calls_persistence_and_indexes() {
     .await
     .expect("test_session_tool_calls_persistence_and_indexes timed out");
 }
-

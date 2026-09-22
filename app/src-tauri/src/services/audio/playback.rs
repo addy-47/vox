@@ -15,7 +15,10 @@ use super::{
 };
 pub use super::{PlaybackEngineHandles, PlaybackTelemetryHandles};
 use crate::{
-    core::events::{AudioIntent, VoxEvent},
+    core::{
+        events::{AudioIntent, VoxEvent},
+        metrics::TurnMetricsCollector,
+    },
     services::realtime::{RealtimeAudioConfig, DEFAULT_OUTPUT_SAMPLE_RATE},
 };
 
@@ -29,6 +32,7 @@ pub struct PlaybackEngine {
     turn_armed: Arc<AtomicBool>,
     pending_synthesis_jobs: Arc<AtomicU32>,
     playback_intent: Arc<AtomicU8>,
+    pub turn_metrics: Option<Arc<TurnMetricsCollector>>,
     _stream: Option<cpal::Stream>,
 }
 
@@ -73,6 +77,7 @@ impl PlaybackEngine {
             turn_armed,
             pending_synthesis_jobs: handles.pending_synthesis_jobs,
             playback_intent: handles.playback_intent,
+            turn_metrics: handles.turn_metrics,
             _stream: Some(stream),
         })
     }
@@ -97,6 +102,7 @@ impl PlaybackEngine {
             turn_armed,
             pending_synthesis_jobs: handles.pending_synthesis_jobs,
             playback_intent: handles.playback_intent,
+            turn_metrics: handles.turn_metrics,
             _stream: stream,
         }
     }
@@ -117,6 +123,11 @@ impl PlaybackEngine {
     pub fn ingest_chunk_with_threshold(&self, chunk_24khz: &[f32], preroll_threshold: usize) {
         if self.cancel_flag.load(Ordering::Relaxed) {
             return;
+        }
+
+        if let Some(ref metrics) = self.turn_metrics {
+            metrics.record_tts_first_audio();
+            metrics.record_tts_samples(chunk_24khz.len() as u64);
         }
 
         let mut guard = self.producer.lock();

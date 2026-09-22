@@ -25,7 +25,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         Arc,
     },
-    thread::{current, sleep},
+    thread::{current, sleep, Builder as ThreadBuilder},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -93,7 +93,7 @@ use crate::{
         memory::{
             compaction::reconcile_uncompacted_sessions_on_boot,
             scheduler::{check_missed_consolidation_on_boot, spawn_consolidation_scheduler},
-            spawn_quiet_ingestion_observer,
+            spawn_quiet_ingestion_observer, warmup_tokenizer,
         },
         stt::SttCommand,
         vad::VadCommand,
@@ -201,6 +201,12 @@ pub fn run() {
                     }
                 }
             });
+
+            // Pre-warm BPE tokenizer vocabulary to eliminate Turn 1 dispatch latency
+            ThreadBuilder::new()
+                .name("vox-bpe-warmup".into())
+                .spawn(warmup_tokenizer)
+                .ok();
 
             // ── 0. Paths Singleton (must be first) ──────────────────────────────────
             paths::init();

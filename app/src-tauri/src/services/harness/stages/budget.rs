@@ -56,8 +56,14 @@ impl ContextBudgetStage {
         scratchpad: &[ChatMessage],
         tools: Option<&[crate::services::llm::CanonicalToolDefinition]>,
     ) -> usize {
-        let history_tokens: usize = messages.iter().map(|msg| estimate_tokens(&msg.content)).sum();
-        let scratchpad_tokens: usize = scratchpad.iter().map(|msg| estimate_tokens(&msg.content)).sum();
+        let history_tokens: usize = messages
+            .iter()
+            .map(|msg| estimate_tokens(&msg.content))
+            .sum();
+        let scratchpad_tokens: usize = scratchpad
+            .iter()
+            .map(|msg| estimate_tokens(&msg.content))
+            .sum();
         let tool_tokens: usize = match tools {
             Some(tool_list) => tool_list
                 .iter()

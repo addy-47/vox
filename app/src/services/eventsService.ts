@@ -244,7 +244,10 @@ export function onNotificationUpdated(handler: (payload: NotificationRecord) => 
 }
 
 export function onSessionsChanged(handler: () => void): () => void {
-  return on("sessions_changed", handler);
+  return on("sessions_changed", () => {
+    console.info("[Events] sessions_changed received");
+    handler();
+  });
 }
 
 export function onPersonalMemoryUpdated(

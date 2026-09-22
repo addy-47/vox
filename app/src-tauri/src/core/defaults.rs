@@ -43,7 +43,7 @@ pub const DEFAULT_LLM_CLOUD_PROVIDER_NAME: &str = "nvidia";
 pub const DEFAULT_TTS_VOICE_INDEX: i32 = 10;
 pub const DEFAULT_TTS_QUALITY_STEPS: u32 = 12;
 pub const DEFAULT_TTS_SPEED: f32 = 1.05;
-pub const DEFAULT_TTS_THREADS: u32 = 6;
+pub const DEFAULT_TTS_THREADS: u32 = 4;
 
 pub const DEFAULT_AUTO_SLEEP_TIMEOUT: u32 = 400;
 

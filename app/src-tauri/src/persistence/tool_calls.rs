@@ -1,7 +1,7 @@
 use turso::Connection;
 
 use crate::{
-    persistence::{schema::Result, PersistenceEvent,sessions::ensure_session_exists},
+    persistence::{schema::Result, sessions::ensure_session_exists, PersistenceEvent},
     services::llm::ToolFlow,
 };
 

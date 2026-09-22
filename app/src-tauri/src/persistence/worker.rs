@@ -12,8 +12,8 @@ use turso::Connection;
 
 use super::{
     queue::reconcile_crashed_queue_on_boot, sessions::cleanup_zero_turn_sessions,
-    tool_calls::persist_tool_call, PersistenceEvent, PERSISTENCE_CHANNEL_CAPACITY,
-    PERSISTENCE_RATE_INTERVAL, WORKER_EVENT_POLL_TIMEOUT,
+    sessions::ensure_session_exists, tool_calls::persist_tool_call, PersistenceEvent,
+    PERSISTENCE_CHANNEL_CAPACITY, PERSISTENCE_RATE_INTERVAL, WORKER_EVENT_POLL_TIMEOUT,
 };
 use crate::{
     core::error::PersistenceError,
@@ -107,19 +107,65 @@ fn run_event_loop(
             continue;
         }
 
-        if let Err(e) = rt_handle.block_on(process_event(db, event)) {
-            if e.to_string() == "SHUTDOWN" {
-                break;
+        let label = persistence_event_label(&event);
+        let mut exit_loop = false;
+        let mut attempt = 0;
+        loop {
+            attempt += 1;
+            match rt_handle.block_on(process_event(db, event.clone())) {
+                Ok(()) => {
+                    is_db_healthy.store(true, Ordering::Relaxed);
+                    writes_last_second += 1;
+                    break;
+                }
+                Err(e) if e.to_string() == "SHUTDOWN" => {
+                    exit_loop = true;
+                    break;
+                }
+                Err(e) if attempt < 4 && is_retryable_event_err(&e) => {
+                    log::warn!(
+                        "[Persistence::Worker] {} processing failed (attempt {}): {}; retrying",
+                        label,
+                        attempt,
+                        e
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(30 * attempt));
+                }
+                Err(e) => {
+                    is_db_healthy.store(false, Ordering::Relaxed);
+                    log::error!(
+                        "[Persistence::Worker] Event processing error ({}): {}",
+                        label,
+                        e
+                    );
+                    break;
+                }
             }
-            is_db_healthy.store(false, Ordering::Relaxed);
-            log::error!("[Persistence::Worker] Event processing error: {}", e);
-        } else {
-            is_db_healthy.store(true, Ordering::Relaxed);
-            writes_last_second += 1;
+        }
+        if exit_loop {
+            break;
         }
 
         maybe_flush_rate(&mut writes_last_second, &mut last_tick, persistence_rate);
     }
+}
+
+/// Returns the display label for an event so failures identify which event was dropped.
+fn persistence_event_label(event: &PersistenceEvent) -> &'static str {
+    match event {
+        PersistenceEvent::SessionStarted { .. } => "SessionStarted",
+        PersistenceEvent::SessionEnded { .. } => "SessionEnded",
+        PersistenceEvent::TurnCompleted { .. } => "TurnCompleted",
+        PersistenceEvent::ToolCallExecuted { .. } => "ToolCallExecuted",
+        PersistenceEvent::UpdateSessionMetadata { .. } => "UpdateSessionMetadata",
+        PersistenceEvent::Shutdown => "Shutdown",
+    }
+}
+
+/// Mirrors `VoxDb::is_retryable` against the anyhow-wrapped error surfaced by `process_event`.
+fn is_retryable_event_err(e: &anyhow::Error) -> bool {
+    let msg = e.to_string();
+    msg.contains("conflict") || msg.contains("Busy") || msg.contains("busy")
 }
 
 fn maybe_flush_rate(writes: &mut u32, last_tick: &mut Instant, rate_atomic: &Arc<AtomicU32>) {
@@ -183,10 +229,7 @@ async fn process_event(conn: &Connection, event: PersistenceEvent) -> anyhow::Re
                 session_id
             );
         }
-        PersistenceEvent::SessionEnded {
-            session_id,
-            timestamp_ms,
-        } => {
+        PersistenceEvent::SessionEnded { session_id, .. } => {
             // Delete zero-turn session if it produced no turns
             let deleted = conn
                 .execute(
@@ -201,13 +244,8 @@ async fn process_event(conn: &Connection, event: PersistenceEvent) -> anyhow::Re
                     session_id
                 );
             } else {
-                conn.execute(
-                    "UPDATE sessions SET updated_at = ? WHERE id = ?",
-                    (timestamp_ms as i64, session_id),
-                )
-                .await?;
                 log::debug!(
-                    "[Persistence::Worker] SessionEnded: session_id={}",
+                    "[Persistence::Worker] SessionEnded: session_id={} (updated_at untouched; last-turn owned)",
                     session_id
                 );
             }
@@ -294,31 +332,27 @@ async fn process_event(conn: &Connection, event: PersistenceEvent) -> anyhow::Re
             key,
             value,
         } => {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as i64;
-
+            ensure_session_exists(conn, session_id).await?;
             match key.as_str() {
                 "title" => {
                     conn.execute(
-                        "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
-                        (value, now, session_id),
+                        "UPDATE sessions SET title = ? WHERE id = ?",
+                        (value, session_id),
                     )
                     .await?;
                 }
                 "project_id" => {
                     conn.execute(
-                        "UPDATE sessions SET project_id = ?, updated_at = ? WHERE id = ?",
-                        (value, now, session_id),
+                        "UPDATE sessions SET project_id = ? WHERE id = ?",
+                        (value, session_id),
                     )
                     .await?;
                 }
                 "is_pinned" => {
                     let pinned = value == "true" || value == "1";
                     conn.execute(
-                        "UPDATE sessions SET is_pinned = ?, updated_at = ? WHERE id = ?",
-                        (if pinned { 1i64 } else { 0i64 }, now, session_id),
+                        "UPDATE sessions SET is_pinned = ? WHERE id = ?",
+                        ((if pinned { 1i64 } else { 0i64 }), session_id),
                     )
                     .await?;
                 }

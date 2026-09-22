@@ -18,6 +18,7 @@ import {
   setPlaybackMuted,
   setMicMuted,
   setSessionPrivateMode,
+  getRuntimeSnapshot,
 } from "@/services/pipelineService";
 import {
   continueSession as continueSessionIpc,
@@ -132,6 +133,13 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
       const next = payload.state as InteractionState;
       if (next === "Ready") {
         commitTurn();
+        if (!storeApi().activeSessionId) {
+          void getRuntimeSnapshot().then((snapshot) => {
+            if (snapshot && snapshot.conversation_id > 0) {
+              storeApi().setActiveSessionId(snapshot.conversation_id);
+            }
+          }).catch(() => {});
+        }
       } else if (next === "Idle") {
         clearTranscript();
       }
@@ -214,6 +222,15 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
             ? "Session start timed out. State resynced from snapshot."
             : "Could not start session.",
         );
+      } else {
+        try {
+          const snapshot = await getRuntimeSnapshot();
+          if (snapshot && snapshot.conversation_id > 0) {
+            api.setActiveSessionId(snapshot.conversation_id);
+          }
+        } catch {
+          // best-effort snapshot sync
+        }
       }
     } catch {
       storeApi().setSessionError("Could not start session.");

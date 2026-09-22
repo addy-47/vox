@@ -178,6 +178,8 @@ pub fn on_transcript_final<R: tauri::Runtime>(
         .lock()
         .set_user_transcript(query.clone());
 
+    state.turn_metrics.record_transcript_final();
+
     let payload = TranscriptPayload {
         turn_id,
         text: query.clone(),

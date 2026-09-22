@@ -102,6 +102,7 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
             cancel_flag: Arc::clone(&cancel_flag),
             pending_synthesis_jobs: Some(Arc::clone(&pending_jobs)),
             telemetry_rtf: None,
+            turn_metrics: None,
         };
 
         // 4. Spawn persistent TTS worker thread
@@ -235,6 +236,7 @@ async fn test_tts_to_playback_short_utterance_flush() {
             playback_intent: Arc::new(AtomicU8::new(0)),
             event_tx: event_tx.clone(),
             is_playback_muted: Arc::new(AtomicBool::new(false)),
+            turn_metrics: None,
         };
 
         let playback_engine = Arc::new(vox_lib::services::audio::PlaybackEngine::from_parts(
@@ -301,6 +303,7 @@ async fn test_tts_to_playback_short_utterance_flush() {
             cancel_flag: Arc::clone(&cancel_flag),
             pending_synthesis_jobs: Some(Arc::clone(&pending_jobs)),
             telemetry_rtf: None,
+            turn_metrics: None,
         };
 
         // Spawn dedicated TTS worker thread

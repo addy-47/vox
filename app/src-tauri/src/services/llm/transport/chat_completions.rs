@@ -1,4 +1,4 @@
- use std::{collections::BTreeMap, sync::mpsc};
+use std::{collections::BTreeMap, sync::mpsc};
 
 use futures_util::StreamExt;
 use serde::Deserialize;
@@ -254,10 +254,7 @@ fn populate_tools(
 ) {
     if let Some(ref tools) = request.tools {
         if !tools.is_empty() {
-            body.insert(
-                "tools".to_string(),
-                super::canonical_tools_json(tools),
-            );
+            body.insert("tools".to_string(), super::canonical_tools_json(tools));
             if let Some(choice) = config.policy.tool_choice {
                 body.insert("tool_choice".to_string(), serde_json::json!(choice));
             }
@@ -355,7 +352,10 @@ pub async fn stream_chat_completions(
     );
     let req_body = build_request_body(config, request);
     println!("[DEBUG LLM URL] POST {}", url);
-    println!("[DEBUG LLM REQ] {}", serde_json::to_string(&req_body).unwrap_or_default());
+    println!(
+        "[DEBUG LLM REQ] {}",
+        serde_json::to_string(&req_body).unwrap_or_default()
+    );
 
     let mut builder = client.post(&url).json(&req_body);
     builder = super::inject_auth_headers(builder, &config.auth);

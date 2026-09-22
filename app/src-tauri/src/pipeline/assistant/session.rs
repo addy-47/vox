@@ -1,18 +1,26 @@
 use std::{
+    collections::HashMap,
+    fs,
     sync::{atomic::Ordering, Arc},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use tauri::{AppHandle, Manager};
+use serde_json::from_str;
+use tauri::{async_runtime::spawn as spawn_task, AppHandle, Manager, Runtime, State};
+use tokio::time::{sleep, timeout};
 
 use crate::{
     core::{
         engine::{ensure_modular_workers_sync, stop_audio_engine_sync},
         error::PipelineImpact,
         events::Severity,
-        settings::{DictationInteractionMode, InteractionMode, PipelineMode},
+        settings::{
+            DictationInteractionMode, InteractionMode, LlmActiveProvider, ModelCapabilities,
+            PipelineMode, VoxSettings, CAP_KIND_EMBEDDED, CAP_KIND_OPENAI_COMPAT,
+        },
         state::{AppState, InteractionOwner, InteractionState},
     },
+    paths::get,
     persistence::{
         compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
         db::get_tokio_handle,
@@ -24,7 +32,10 @@ use crate::{
     services::{
         self,
         harness::Harness,
-        llm::actor::{cool_down_llm, LlmCommand},
+        llm::{
+            actor::{cool_down_llm, LlmCommand},
+            catalog::probe_capabilities,
+        },
         memory::{compaction::coordinator::CompactionCoordinator, trim_heap},
         notifications::{Action, ActionPayload, NotificationCategory, NotificationParams},
         realtime::{
@@ -69,7 +80,7 @@ fn start_modular_session(state: &AppState, ctx: &RoutingContext) -> Result<(), S
 }
 
 /// Connects to the real-time speech-to-speech provider and configures bidirectional audio streaming.
-fn start_realtime_session<R: tauri::Runtime + 'static>(
+fn start_realtime_session<R: Runtime + 'static>(
     app: &AppHandle<R>,
     state: &AppState,
     ctx: &RoutingContext,
@@ -125,7 +136,7 @@ fn start_realtime_session<R: tauri::Runtime + 'static>(
 }
 
 /// Restarts real-time provider session and wires audio streaming on resume.
-fn resume_realtime<R: tauri::Runtime + 'static>(
+fn resume_realtime<R: Runtime + 'static>(
     app: &AppHandle<R>,
     state: &AppState,
     ctx: &RoutingContext,
@@ -174,8 +185,8 @@ fn resume_realtime<R: tauri::Runtime + 'static>(
     }
 }
 
-/// Initializes voice session context, persists lifecycle start events, arms workers, and transitions to Ready.
-pub fn on_session_start<R: tauri::Runtime + 'static>(
+/// Starts or continues an assistant voice conversation session.
+pub fn on_session_start<R: Runtime + 'static>(
     owner: InteractionOwner,
     session_id: Option<i64>,
     app: &AppHandle<R>,
@@ -229,7 +240,7 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
         let db = state.db.clone();
         let error_msg = format!("Session start failed: {}. Please check settings.", e);
 
-        tauri::async_runtime::spawn(async move {
+        spawn_task(async move {
             let params = NotificationParams {
                 category: NotificationCategory::Pipeline,
                 severity: Severity::Critical,
@@ -323,7 +334,7 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
         }
     }
 
-    let state_arc: tauri::State<'_, Arc<AppState>> = app.state();
+    let state_arc: State<'_, Arc<AppState>> = app.state();
     spawn_idle_monitor(app.clone(), Arc::clone(state_arc.inner()));
 
     state.pipeline_accumulator.lock().clear();
@@ -335,8 +346,8 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
     );
 }
 
-/// Pauses the active voice session, silencing audio output and placing the state machine in Paused.
-pub fn on_pause<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {
+/// Transitions the assistant pipeline to Paused and mutes real-time audio streams.
+pub fn on_pause<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {
     let current_state = state.pipeline.state();
     if current_state == InteractionState::Idle
         || current_state == InteractionState::Paused
@@ -407,7 +418,7 @@ pub fn on_pause<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &R
 }
 
 /// Resumes a paused, sleeping, or error-state voice session, re-arming VAD and provider pipelines.
-pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, _ctx: &RoutingContext) {
+pub fn on_resume<R: Runtime>(app: &AppHandle<R>, state: &AppState, _ctx: &RoutingContext) {
     let current_state = state.pipeline.state();
     if current_state != InteractionState::Paused
         && current_state != InteractionState::Sleeping
@@ -467,7 +478,7 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, _ctx: 
             e
         );
 
-        tauri::async_runtime::spawn(async move {
+        spawn_task(async move {
             let params = NotificationParams {
                 category: NotificationCategory::Pipeline,
                 severity: Severity::Critical,
@@ -497,8 +508,8 @@ pub fn on_resume<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, _ctx: 
     log::info!("[Pipeline::Session] Session resumed -> Ready");
 }
 
-/// Ends the active voice session, drains playback, flushes lifecycle events, and transitions to Idle.
-pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {
+/// Ends active conversation session, persists final metadata, and triggers background compaction.
+pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingContext) {
     let current_state = state.pipeline.state();
     if current_state == InteractionState::Idle {
         log::debug!("[Pipeline::Session] EndSession called while already Idle; no-op");
@@ -609,8 +620,8 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
     let session_id = conv_id as i64;
     let db = state.db.clone();
 
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(500)).await;
+    spawn_task(async move {
+        sleep(Duration::from_millis(500)).await;
 
         let conn = match db.connect() {
             Ok(c) => c,
@@ -633,8 +644,7 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
             let uncompacted_count = turns.len() as u32;
             if uncompacted_count > 0 {
                 if auto_compaction {
-                    use tauri::Manager;
-                    let state_handle: tauri::State<'_, Arc<AppState>> = app_handle.state();
+                    let state_handle: State<'_, Arc<AppState>> = app_handle.state();
                     let app_state: &Arc<AppState> = state_handle.inner();
                     if let Err(e) = CompactionCoordinator::notify_uncompacted_session(
                         &app_handle,
@@ -683,23 +693,24 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
 }
 
 /// Resolves tool calling capability for the active model from capability cache or 4s probe.
-fn resolve_model_tool_support<R: tauri::Runtime + 'static>(
+fn resolve_model_tool_support<R: Runtime + 'static>(
     app: &AppHandle<R>,
     state: &AppState,
-    settings: &crate::core::settings::VoxSettings,
+    settings: &VoxSettings,
 ) -> bool {
     let active_model = settings.llm.active_model();
-    let provider_kind = match settings.llm.active {
-        crate::core::settings::LlmActiveProvider::Embedded => "embedded",
-        crate::core::settings::LlmActiveProvider::Server => "server",
-        crate::core::settings::LlmActiveProvider::Cloud => "cloud",
+    let is_cloud = matches!(settings.llm.active, LlmActiveProvider::Cloud);
+    let provider_kind = if matches!(settings.llm.active, LlmActiveProvider::Embedded) {
+        CAP_KIND_EMBEDDED
+    } else {
+        CAP_KIND_OPENAI_COMPAT
     };
     let key = format!("{}:{}", provider_kind, active_model);
 
-    let cache_file = crate::paths::get().cache.join("model_capabilities.json");
+    let cache_file = get().cache.join("model_capabilities.json");
     if cache_file.exists() {
-        if let Ok(content) = std::fs::read_to_string(&cache_file) {
-            if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, crate::core::settings::ModelCapabilities>>(&content) {
+        if let Ok(content) = fs::read_to_string(&cache_file) {
+            if let Ok(map) = from_str::<HashMap<String, ModelCapabilities>>(&content) {
                 if let Some(caps) = map.get(&key) {
                     log::info!(
                         "[Pipeline::Session] Cached capability for {}: supports_tools = {}",
@@ -722,13 +733,12 @@ fn resolve_model_tool_support<R: tauri::Runtime + 'static>(
     let state_arc = app.state::<Arc<AppState>>().inner().clone();
     let app_handle = app.clone();
     let model_name = active_model.to_string();
-    let is_cloud = provider_kind == "cloud";
 
     let tokio_handle = get_tokio_handle();
     tokio_handle.spawn(async move {
-        let probe_res = tokio::time::timeout(
+        let probe_res = timeout(
             Duration::from_secs(4),
-            crate::services::llm::catalog::probe_capabilities(&state_arc, None, None, None),
+            probe_capabilities(&state_arc, None, None, None),
         )
         .await;
 
@@ -773,7 +783,7 @@ fn resolve_model_tool_support<R: tauri::Runtime + 'static>(
 }
 
 /// Dispatches a warning notification when tool calling is unavailable on the active model.
-fn emit_tool_unsupported_notification<R: tauri::Runtime + 'static>(
+fn emit_tool_unsupported_notification<R: Runtime + 'static>(
     app: &AppHandle<R>,
     state: &AppState,
     model: &str,
@@ -782,7 +792,7 @@ fn emit_tool_unsupported_notification<R: tauri::Runtime + 'static>(
     let db = state.db.clone();
     let model_name = model.to_string();
 
-    tauri::async_runtime::spawn(async move {
+    spawn_task(async move {
         let msg = format!(
             "Active model '{}' does not support tool calling. Advanced agentic tools disabled.",
             model_name
@@ -809,4 +819,3 @@ fn emit_tool_unsupported_notification<R: tauri::Runtime + 'static>(
         }
     });
 }
-

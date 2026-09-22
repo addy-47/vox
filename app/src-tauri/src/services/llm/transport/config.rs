@@ -41,9 +41,7 @@ impl ConnectionConfig {
         api_key: Option<&str>,
         provider_preset: Option<&str>,
     ) -> Self {
-        let preset = provider_preset
-            .and_then(lookup_preset)
-            .unwrap_or_default();
+        let preset = provider_preset.and_then(lookup_preset).unwrap_or_default();
 
         let resolved_base_url = if base_url.trim().is_empty() {
             preset.base_url.to_string()
@@ -53,9 +51,7 @@ impl ConnectionConfig {
 
         let auth = if let Some(key) = api_key.filter(|k| !k.trim().is_empty()) {
             match preset.auth_scheme {
-                CatalogAuthScheme::AnthropicNative => {
-                    AuthScheme::AnthropicNative(key.to_string())
-                }
+                CatalogAuthScheme::AnthropicNative => AuthScheme::AnthropicNative(key.to_string()),
                 CatalogAuthScheme::Bearer => AuthScheme::Bearer(Some(key.to_string())),
                 CatalogAuthScheme::None => AuthScheme::None,
             }

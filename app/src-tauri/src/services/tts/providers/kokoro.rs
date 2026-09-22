@@ -1,7 +1,10 @@
 use std::{
     f32::consts,
     path::Path,
-    sync::atomic::{AtomicI32, AtomicU32, Ordering},
+    sync::{
+        atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering},
+        Arc,
+    },
     time::Instant,
 };
 
@@ -95,9 +98,10 @@ impl KokoroEngine {
         };
 
         log::info!(
-            "[Kokoro] Initialized Kokoro Multi-Lang v1.1 (voice={}, speed={})",
+            "[Kokoro] Initialized Kokoro Multi-Lang v1.1 (voice={}, speed={}, threads={})",
             clamped_voice,
-            speed
+            speed,
+            num_threads
         );
 
         Ok(Self {
@@ -174,35 +178,61 @@ impl TtsProvider for KokoroEngine {
         };
 
         let intent = ctx.intent;
+        let cancel_cb = ctx.cancel.clone();
+        let playback_cb = Arc::clone(ctx.playback);
+        let streamed_samples_count = Arc::new(AtomicUsize::new(0));
+        let streamed_count_cb = Arc::clone(&streamed_samples_count);
 
         let tts_guard = self.tts.lock();
-        let audio =
-            tts_guard.generate_with_config::<fn(&[f32], f32) -> bool>(text, &gen_config, None);
+        let sample_rate = tts_guard.sample_rate() as usize;
+        let audio = tts_guard.generate_with_config(
+            text,
+            &gen_config,
+            Some(move |raw_samples: &[f32], _progress: f32| -> bool {
+                if cancel_cb.load(Ordering::Relaxed) {
+                    return false;
+                }
+                if raw_samples.is_empty() {
+                    return true;
+                }
+                streamed_count_cb.fetch_add(raw_samples.len(), Ordering::Relaxed);
+                let processed = trim_and_fade_samples(raw_samples, sample_rate);
+                if !processed.is_empty() && !cancel_cb.load(Ordering::Relaxed) {
+                    playback_cb.ingest_chunk_with_intent(&processed, intent);
+                }
+                true
+            }),
+        );
         drop(tts_guard);
 
         if ctx.cancel.load(Ordering::Relaxed) {
             return Ok(());
         }
 
-        let (samples, sample_rate) = match audio {
-            Some(ref audio_data) => (audio_data.samples(), audio_data.sample_rate() as usize),
-            None => {
-                if !ctx.cancel.load(Ordering::Relaxed) {
-                    return Err(anyhow!("[Kokoro] Generation failed"));
+        let streamed_total = streamed_samples_count.load(Ordering::Relaxed);
+        let mut total_samples_count = streamed_total;
+        if streamed_total == 0 {
+            let (samples, sr) = match audio {
+                Some(ref audio_data) => (audio_data.samples(), audio_data.sample_rate() as usize),
+                None => {
+                    if !ctx.cancel.load(Ordering::Relaxed) {
+                        return Err(anyhow!("[Kokoro] Generation failed"));
+                    }
+                    return Ok(());
                 }
-                return Ok(());
-            }
-        };
+            };
 
-        let processed = trim_and_fade_samples(samples, sample_rate);
-        if !processed.is_empty() && !ctx.cancel.load(Ordering::Relaxed) {
-            ctx.playback.ingest_chunk_with_intent(&processed, intent);
+            let processed = trim_and_fade_samples(samples, sr);
+            if !processed.is_empty() && !ctx.cancel.load(Ordering::Relaxed) {
+                ctx.playback.ingest_chunk_with_intent(&processed, intent);
+            }
+            total_samples_count = processed.len();
         }
 
         let elapsed = start.elapsed().as_secs_f32();
 
         let audio_duration = if sample_rate > 0 {
-            processed.len() as f32 / sample_rate as f32
+            total_samples_count as f32 / sample_rate as f32
         } else {
             0.0
         };
@@ -280,6 +310,11 @@ pub fn trim_and_fade_samples(samples: &[f32], sample_rate: usize) -> Vec<f32> {
             *sample *= gain;
         }
     }
+
+    // Chunker splits at sentence punctuation, so each job is trimmed edge-to-edge
+    // and concatenated gaplessly — restoring a floor pause between chunks.
+    let gap = (sample_rate as f32 * 0.15) as usize;
+    trimmed.extend(std::iter::repeat_n(0.0f32, gap));
 
     trimmed
 }

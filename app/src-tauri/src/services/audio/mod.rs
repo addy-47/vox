@@ -4,7 +4,7 @@ use std::sync::{
     Arc,
 };
 
-use crate::core::events::VoxEvent;
+use crate::core::{events::VoxEvent, metrics::TurnMetricsCollector};
 
 pub const SAMPLE_RATE: u32 = 16000;
 pub const CLONE_SAMPLE_RATE: u32 = 24_000;
@@ -70,4 +70,5 @@ pub struct PlaybackEngineHandles {
     pub event_tx: Sender<VoxEvent>,
     pub playback_intent: Arc<AtomicU8>,
     pub is_playback_muted: Arc<AtomicBool>,
+    pub turn_metrics: Option<Arc<TurnMetricsCollector>>,
 }

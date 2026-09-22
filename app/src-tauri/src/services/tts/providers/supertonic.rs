@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     path::Path,
     sync::{
-        atomic::{AtomicI32, AtomicU32, Ordering},
+        atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering},
         Arc,
     },
     time::Instant,
@@ -10,6 +10,7 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use parking_lot::Mutex;
+use serde_json::json;
 use sherpa_onnx::{
     GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsModelConfig,
     OfflineTtsSupertonicModelConfig,
@@ -225,7 +226,7 @@ impl TtsProvider for TtsEngine {
         let quality_steps = self.quality_steps.load(Ordering::Relaxed);
 
         let mut extra = HashMap::new();
-        extra.insert("lang".to_string(), serde_json::json!(lang));
+        extra.insert("lang".to_string(), json!(lang));
 
         let gen_config = GenerationConfig {
             sid,
@@ -240,6 +241,8 @@ impl TtsProvider for TtsEngine {
         let playback_cb = Arc::clone(ctx.playback);
         let intent = ctx.intent;
         let mut lpf = BiquadFilter::new_lpf_11k();
+        let streamed_samples_count = Arc::new(AtomicUsize::new(0));
+        let streamed_count_cb = Arc::clone(&streamed_samples_count);
 
         let tts_guard = self.tts.lock();
         let audio = tts_guard.generate_with_config(
@@ -253,16 +256,36 @@ impl TtsProvider for TtsEngine {
                     return true;
                 }
                 let samples_24k = resample_44100_to_24000(raw_samples, &mut lpf);
+                streamed_count_cb.fetch_add(samples_24k.len(), Ordering::Relaxed);
                 playback_cb.ingest_chunk_with_intent(&samples_24k, intent);
                 true
             }),
         );
         drop(tts_guard);
 
+        if ctx.cancel.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+
+        let streamed_total = streamed_samples_count.load(Ordering::Relaxed);
+        let mut total_samples_count = streamed_total;
+        if streamed_total == 0 {
+            if let Some(ref audio_data) = audio {
+                let mut fallback_lpf = BiquadFilter::new_lpf_11k();
+                let samples_24k = resample_44100_to_24000(audio_data.samples(), &mut fallback_lpf);
+                if !samples_24k.is_empty() && !ctx.cancel.load(Ordering::Relaxed) {
+                    ctx.playback.ingest_chunk_with_intent(&samples_24k, intent);
+                }
+                total_samples_count = samples_24k.len();
+            } else if !ctx.cancel.load(Ordering::Relaxed) {
+                return Err(anyhow!("[Supertonic] Generation failed"));
+            }
+        }
+
         let elapsed = start.elapsed().as_secs_f32();
 
-        let audio_duration = if let Some(ref audio_data) = audio {
-            audio_data.samples().len() as f32 / audio_data.sample_rate() as f32
+        let audio_duration = if TTS_SAMPLE_RATE > 0 {
+            total_samples_count as f32 / TTS_SAMPLE_RATE as f32
         } else {
             0.0
         };

@@ -531,7 +531,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       (domain === "llm" && key === "context_window") ||
       (domain === "llm" && key === "threads") ||
       (domain === "tts" && key === "active") ||
-      (domain === "tts" && key === "threads") ||
       (domain === "vad" && key === "vad_backend") ||
       (domain === "audio" && key === "input_device");
 

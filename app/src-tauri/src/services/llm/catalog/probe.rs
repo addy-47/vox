@@ -17,7 +17,10 @@ use super::{
 };
 use crate::{
     core::{
-        settings::{LlmModelInfo, LlmProviderConfig, ModelCapabilities},
+        settings::{
+            LlmModelInfo, LlmProviderConfig, ModelCapabilities, CAP_KIND_EMBEDDED,
+            CAP_KIND_OPENAI_COMPAT,
+        },
         state::AppState,
     },
     services::llm::{
@@ -262,7 +265,7 @@ impl CapabilityProbeEngine {
 
         ModelCapabilities {
             model_id: model_id.to_string(),
-            provider_kind: "embedded".to_string(),
+            provider_kind: CAP_KIND_EMBEDDED.to_string(),
             supports_tools,
             supports_latin: true,
             supports_devanagari: true,
@@ -345,7 +348,7 @@ impl CapabilityProbeEngine {
 
         Ok(ModelCapabilities {
             model_id: config.model.clone(),
-            provider_kind: "openai_compat".to_string(),
+            provider_kind: CAP_KIND_OPENAI_COMPAT.to_string(),
             supports_tools: meta.supports_tools,
             supports_latin,
             supports_devanagari,

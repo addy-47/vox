@@ -2,9 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    core::settings::ModelCapabilities, services::llm::transport::TransportType,
-};
+use crate::{core::settings::ModelCapabilities, services::llm::transport::TransportType};
 
 /// Provenance tier identifying the source and confidence of a discovered capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

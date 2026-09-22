@@ -132,7 +132,7 @@ export function resolveSessionTitle(session: SessionRow): string {
   return SESSION_COPY.untitledSession;
 }
 
-/** Timestamp driving newest-first ordering: `updated_at` is bumped on every mutation. */
+/** Timestamp driving newest-first ordering: `updated_at` reflects the last persisted turn only (metadata edits never bump it). */
 export function sessionLastActivity(session: SessionRow): number {
   return session.updated_at;
 }

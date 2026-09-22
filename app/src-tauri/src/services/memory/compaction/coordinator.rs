@@ -16,6 +16,7 @@ use crate::{
             commit_compaction_output, fetch_latest_compaction_run, fetch_turns_for_compaction,
             record_compaction_finish, record_compaction_start,
         },
+        db::VoxDb,
         notifications::{find_notification_by_group, resolve_notification_in_place},
         TurnRow,
     },
@@ -207,7 +208,7 @@ impl CompactionCoordinator {
     /// Emits a new notification alerting the user that a session has uncompacted turns.
     pub async fn notify_uncompacted_session<R: tauri::Runtime>(
         app: &AppHandle<R>,
-        db: &crate::persistence::db::VoxDb,
+        db: &VoxDb,
         session_id: i64,
         uncompacted_turns: u32,
     ) -> Result<Option<String>> {
@@ -247,7 +248,10 @@ fn build_history_messages(turns: &[TurnRow]) -> Vec<ChatMessage> {
             messages.push(ChatMessage::new(Role::User, turn.user_text.clone()));
         }
         if !turn.assistant_text.trim().is_empty() {
-            messages.push(ChatMessage::new(Role::Assistant, turn.assistant_text.clone()));
+            messages.push(ChatMessage::new(
+                Role::Assistant,
+                turn.assistant_text.clone(),
+            ));
         }
     }
     messages
@@ -263,7 +267,7 @@ fn resolve_llm_provider(settings: &LlmSettings) -> Option<Box<dyn LlmProvider>> 
 /// Resolves interactive card in-place on compaction success, or emits passive receipt if none exists.
 async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
     app: &AppHandle<R>,
-    db: &crate::persistence::db::VoxDb,
+    db: &VoxDb,
     conn: &Connection,
     session_id: i64,
     facts_count: u32,
@@ -312,7 +316,7 @@ async fn emit_session_compaction_success_receipt<R: tauri::Runtime>(
 /// Resolves interactive card in-place on compaction failure, or emits passive warning receipt if none exists.
 async fn emit_session_compaction_failure_receipt<R: tauri::Runtime>(
     app: &AppHandle<R>,
-    db: &crate::persistence::db::VoxDb,
+    db: &VoxDb,
     session_id: i64,
     err_str: &str,
 ) {

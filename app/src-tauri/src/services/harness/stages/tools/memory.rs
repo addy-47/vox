@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
 use futures_util::future::{BoxFuture, FutureExt};
 use serde_json::{json, Value};
 
+use super::{ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
 use crate::{
     persistence::{fetch_active_episodic_memory, EpisodicFactCandidate},
     services::{
@@ -10,8 +11,6 @@ use crate::{
         memory::ml::{cosine_similarity, ensure_embedder_loaded, generate_embedding},
     },
 };
-
-use super::{ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
 
 const RRF_K: f32 = 60.0;
 
@@ -80,7 +79,10 @@ impl ToolDefinition for MemorySearchTool {
                 query
             );
 
+            let retrieval_start = Instant::now();
             let observation = perform_hybrid_search(ctx, &query).await?;
+            let retrieval_dur = retrieval_start.elapsed().as_millis() as u64;
+            ctx.app_state.turn_metrics.record_retrieval(retrieval_dur);
             Ok(ToolResult::new(observation).with_spoken_filler(spoken_filler))
         }
         .boxed()
@@ -92,13 +94,15 @@ async fn perform_hybrid_search(
     ctx: &ToolExecutionContext,
     query: &str,
 ) -> Result<String, ToolError> {
-    let conn = ctx.app_state.db.connect().map_err(|e| {
-        ToolError::ExecutionFailed(format!("Database connect error: {}", e))
-    })?;
+    let conn = ctx
+        .app_state
+        .db
+        .connect()
+        .map_err(|e| ToolError::ExecutionFailed(format!("Database connect error: {}", e)))?;
 
-    let candidates = fetch_active_episodic_memory(&conn).await.map_err(|e| {
-        ToolError::ExecutionFailed(format!("Episodic memory query error: {}", e))
-    })?;
+    let candidates = fetch_active_episodic_memory(&conn)
+        .await
+        .map_err(|e| ToolError::ExecutionFailed(format!("Episodic memory query error: {}", e)))?;
 
     if candidates.is_empty() {
         return Ok(format!(
@@ -108,9 +112,11 @@ async fn perform_hybrid_search(
     }
 
     let (top_k, cutoff) = {
-        let guard = ctx.app_state.settings.read().map_err(|e| {
-            ToolError::ExecutionFailed(format!("Settings lock error: {}", e))
-        })?;
+        let guard = ctx
+            .app_state
+            .settings
+            .read()
+            .map_err(|e| ToolError::ExecutionFailed(format!("Settings lock error: {}", e)))?;
         (
             guard.personal_memory.top_k_facts as usize,
             guard.personal_memory.semantic_similarity_cutoff,
@@ -125,7 +131,13 @@ async fn perform_hybrid_search(
         }
     };
 
-    let results = rank_candidates(&candidates, query, query_embedding.as_deref(), top_k, cutoff);
+    let results = rank_candidates(
+        &candidates,
+        query,
+        query_embedding.as_deref(),
+        top_k,
+        cutoff,
+    );
     if results.is_empty() {
         Ok(format!(
             "Memory search completed for query '{}'. No relevant historical records found.",
@@ -136,7 +148,10 @@ async fn perform_hybrid_search(
             .into_iter()
             .map(|f| format!("- [{}] {}", f.fact_type, f.text))
             .collect();
-        Ok(format!("Found relevant memory records:\n{}", lines.join("\n")))
+        Ok(format!(
+            "Found relevant memory records:\n{}",
+            lines.join("\n")
+        ))
     }
 }
 
@@ -169,7 +184,10 @@ fn rank_candidates<'a>(
     let mut lexical_scores: HashMap<String, usize> = HashMap::new();
     for c in candidates {
         let lower = c.text.to_lowercase();
-        let matches: usize = query_terms.iter().filter(|&term| lower.contains(term)).count();
+        let matches: usize = query_terms
+            .iter()
+            .filter(|&term| lower.contains(term))
+            .count();
         if matches > 0 {
             lexical_scores.insert(c.id.clone(), matches);
         }
@@ -190,5 +208,9 @@ fn rank_candidates<'a>(
     }
 
     rrf_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    rrf_scores.into_iter().take(top_k.max(1)).map(|(c, _)| c).collect()
+    rrf_scores
+        .into_iter()
+        .take(top_k.max(1))
+        .map(|(c, _)| c)
+        .collect()
 }

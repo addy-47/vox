@@ -3,16 +3,13 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
+use super::{registry::ToolRegistry, ToolDefinition, ToolExecutionContext, ToolResult};
 use crate::{
     persistence::PersistenceEvent,
     services::{
         harness::TOOL_EXECUTION_TIMEOUT,
         llm::{CanonicalToolCall, ToolFlow},
     },
-};
-
-use super::{
-    registry::ToolRegistry, ToolDefinition, ToolExecutionContext, ToolResult,
 };
 
 /// Outcome record of a single executed tool invocation.
@@ -100,20 +97,15 @@ impl ToolExecutor {
         ctx: ToolExecutionContext,
     ) -> ToolExecutionOutcome {
         let start = Instant::now();
+        ctx.app_state.turn_metrics.record_tool_start(&call.name);
         let tool = match registry.get(&call.name) {
             Some(t) => t,
             None => {
                 log::warn!("[ToolExecutor] Tool '{}' not found in registry", call.name);
                 let duration_ms = start.elapsed().as_millis() as u64;
+                ctx.app_state.turn_metrics.record_tool_finish(duration_ms, true);
                 let err_msg = format!("Tool '{}' not found in registry", call.name);
-                dispatch_persistence(
-                    &ctx,
-                    &call,
-                    ToolFlow::Terminal,
-                    &err_msg,
-                    true,
-                    duration_ms,
-                );
+                dispatch_persistence(&ctx, &call, ToolFlow::Terminal, &err_msg, true, duration_ms);
                 return ToolExecutionOutcome {
                     call_id: call.id,
                     tool_name: call.name,
@@ -128,15 +120,9 @@ impl ToolExecutor {
         let flow = tool.flow();
         let (result, is_error) = run_with_guards(&tool, &call, &ctx).await;
         let duration_ms = start.elapsed().as_millis() as u64;
+        ctx.app_state.turn_metrics.record_tool_finish(duration_ms, is_error);
 
-        dispatch_persistence(
-            &ctx,
-            &call,
-            flow,
-            &result.content,
-            is_error,
-            duration_ms,
-        );
+        dispatch_persistence(&ctx, &call, flow, &result.content, is_error, duration_ms);
 
         log::info!(
             "[ToolExecutor] Executed {} ({:?}) in {}ms (is_error: {})",
