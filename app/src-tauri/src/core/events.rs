@@ -155,6 +155,17 @@ pub struct NotificationRecord {
     pub updated_at: i64,
 }
 
+/// Payload emitted on `turn_metrics` event containing key turn latencies and context utilization.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnMetricsPayload {
+    pub turn_id: u32,
+    pub ttft_ms: u32,
+    pub ttfa_ms: u32,
+    pub total_voice_latency_ms: u32,
+    pub context_tokens_used: u32,
+    pub context_window: u32,
+}
+
 /// Strongly-typed universal Tauri IPC event enum.
 /// Every IPC event emitted to any webview window must have a canonical entry here.
 #[derive(Debug, Clone, Serialize)]
@@ -167,6 +178,7 @@ pub enum IpcEvent {
     ModelProgress(ModelSetupStatus),
     Telemetry(TelemetryData),
     SystemStats(SystemStatsPayload),
+    TurnMetrics(TurnMetricsPayload),
     SettingsUpdated,
     ToggleTray,
     ShowToast(ToastPayload),
@@ -205,6 +217,7 @@ impl IpcEvent {
             Self::ModelProgress(_) => "model_progress",
             Self::Telemetry(_) => "telemetry",
             Self::SystemStats(_) => "system_stats",
+            Self::TurnMetrics(_) => "turn_metrics",
             Self::SettingsUpdated => "settings-updated",
             Self::ToggleTray => "toggle_tray",
             Self::ShowToast(_) => "show_toast",
@@ -227,6 +240,7 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::ModelProgress(payload) => app.emit(name, payload),
         IpcEvent::Telemetry(payload) => app.emit(name, payload),
         IpcEvent::SystemStats(payload) => app.emit(name, payload),
+        IpcEvent::TurnMetrics(payload) => app.emit(name, payload),
         IpcEvent::SettingsUpdated => app.emit(name, ()),
         IpcEvent::ToggleTray => app.emit(name, ()),
         IpcEvent::ShowToast(payload) => app.emit(name, payload),
@@ -253,6 +267,7 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::ModelProgress(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::Telemetry(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::SystemStats(payload) => app.emit_to(target_str, name, payload),
+        IpcEvent::TurnMetrics(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::SettingsUpdated => app.emit_to(target_str, name, ()),
         IpcEvent::ToggleTray => app.emit_to(target_str, name, ()),
         IpcEvent::ShowToast(payload) => app.emit_to(target_str, name, payload),

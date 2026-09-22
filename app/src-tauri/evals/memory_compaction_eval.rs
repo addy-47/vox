@@ -34,7 +34,7 @@ use tokio_util::sync::CancellationToken;
 use vox_lib::services::{
     harness::{CompactionParams, CompactionStage, Harness},
     llm::{actor::create_llm_provider_from_llm_settings, LlmCommand},
-    memory::ml::tokenizer::estimate_tokens,
+    memory::ml::estimate_tokens,
 };
 
 /// Fixed base prompt for the eval session (same role as production's persona

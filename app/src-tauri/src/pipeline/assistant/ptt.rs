@@ -75,6 +75,8 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx
         new_turn_id
     };
 
+    state.turn_metrics.start_turn(turn_id);
+
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             if let Err(e) = engine.vad_tx.send(VadCommand::StartWindowValidation) {
@@ -180,6 +182,7 @@ pub fn on_ptt_stop<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx:
     }
 
     let validated_samples = audio.len();
+    state.turn_metrics.record_speech_end();
     dispatch_ptt_speech_audio(turn_id, audio, &stt_tx, app, state, ctx);
 
     log::info!(

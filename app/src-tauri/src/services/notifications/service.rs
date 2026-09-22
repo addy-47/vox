@@ -4,8 +4,7 @@ use tauri::AppHandle;
 use turso::Connection;
 
 use super::{
-    router::{resolve_channel, DeliveryChannel},
-    Action, NotificationParams,
+    Action, DeliveryChannel, NotificationParams, resolve_channel,
 };
 use crate::{
     core::{
@@ -13,7 +12,7 @@ use crate::{
         state::AppWindow,
     },
     persistence::{
-        db::VoxDb,
+        VoxDb,
         notifications::{
             create_notification, find_active_interactive_by_group, update_interactive_notification,
             NewNotification, NotificationRecord,

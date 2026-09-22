@@ -29,8 +29,8 @@ use crate::{
         settings::{PipelineMode, VoxSettings},
     },
     monitoring::snapshots::MonitoringState,
-    persistence::{db::VoxDb, PersistenceEvent},
-    pipeline::assistant::{accumulator::TurnAccumulator},
+    persistence::{VoxDb, PersistenceEvent},
+    pipeline::assistant::TurnAccumulator,
     services::{harness::Harness, llm::LlmProvider, realtime::RealtimeActor},
     setup::{manifest::VoxManifest, model_manager::ModelManager},
 };

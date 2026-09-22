@@ -224,11 +224,8 @@ async fn run(args: Args) -> Result<()> {
         Some(args.server_provider.clone())
     };
     settings.llm.context_window = args.context_window;
-    if args.tool == "respond_and_set_title" || args.tool == "set_title" {
-        settings.personal_memory.context_retrieval_enabled = false;
-    } else {
-        settings.personal_memory.context_retrieval_enabled = true;
-    }
+    settings.personal_memory.context_retrieval_enabled =
+        !(args.tool == "respond_and_set_title" || args.tool == "set_title");
 
     // TTS Provider selection
     match args.tts_provider.as_str() {

@@ -23,7 +23,7 @@ use crate::{
     paths::get,
     persistence::{
         compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
-        db::get_tokio_handle,
+        get_tokio_handle,
         personal_memory::get_personal_memory,
         sessions::fetch_session_continuation,
         PersistenceEvent,
@@ -38,10 +38,7 @@ use crate::{
         },
         memory::{compaction::coordinator::CompactionCoordinator, trim_heap},
         notifications::{Action, ActionPayload, NotificationCategory, NotificationParams},
-        realtime::{
-            session::{create_realtime_provider, purge_session_cache},
-            RealtimeActor,
-        },
+        realtime::{create_realtime_provider, purge_session_cache, RealtimeActor},
         tts::actor::cool_down_tts,
         vad::{VadCommand, VadOperationalMode},
     },

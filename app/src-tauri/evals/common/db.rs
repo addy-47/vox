@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use turso::Connection;
-use vox_lib::persistence::{db::VoxDb, schema::run_migrations, sessions::TurnRow};
+use vox_lib::persistence::{VoxDb, schema::run_migrations, sessions::TurnRow};
 
 use super::turns::DatasetTurn;
 

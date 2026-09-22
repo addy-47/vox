@@ -168,6 +168,8 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
             } else if current_state == InteractionState::Ready {
                 let (new_turn_id, _) = state.pipeline.next_turn();
                 state.pipeline_accumulator.lock().clear();
+                state.turn_metrics.start_turn(new_turn_id);
+                state.turn_metrics.record_speech_end();
                 new_turn_id
             } else {
                 return;

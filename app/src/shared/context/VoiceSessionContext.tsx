@@ -142,6 +142,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
         }
       } else if (next === "Idle") {
         clearTranscript();
+        storeApi().setLatestTurnMetrics(null);
       }
     },
     [commitTurn, clearTranscript],
@@ -176,6 +177,9 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     onTranscriptFinal: handleFinal,
     onLlmToken: handleToken,
     onSettingsUpdated: handleSettingsUpdated,
+    onTurnMetrics: (payload) => {
+      storeApi().setLatestTurnMetrics(payload);
+    },
   });
 
   const handleHydrated = useCallback(
@@ -248,6 +252,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     api.setDialogueHistory([]);
     api.setActiveSessionId(null);
     api.setTurnIdCounter(0);
+    api.setLatestTurnMetrics(null);
     api.bumpSessionListVersion();
     try {
       await disengageSession((state) => storeApi().setInteractionState(state));

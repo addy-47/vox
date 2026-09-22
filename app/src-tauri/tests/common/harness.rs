@@ -505,7 +505,7 @@ pub async fn get_test_app_and_state() -> (
     let telemetry = make_test_telemetry();
 
     vox_lib::utils::paths::init();
-    let db_conn = vox_lib::persistence::db::VoxDb::open(&vox_lib::utils::paths::db_path())
+    let db_conn = vox_lib::persistence::VoxDb::open(&vox_lib::utils::paths::db_path())
         .await
         .expect("Failed to open test database");
     let db = Arc::new(db_conn);
@@ -521,7 +521,7 @@ pub async fn get_test_app_state() -> vox_lib::core::state::AppState {
     let telemetry = make_test_telemetry();
 
     vox_lib::utils::paths::init();
-    let db_conn = vox_lib::persistence::db::VoxDb::open(&vox_lib::utils::paths::db_path())
+    let db_conn = vox_lib::persistence::VoxDb::open(&vox_lib::utils::paths::db_path())
         .await
         .expect("Failed to open test database");
     let db = Arc::new(db_conn);

@@ -1,18 +1,20 @@
 ---
 title: "Vox Backend Architecture"
 audience: "Internal — backend (Rust) contributors, system architects, agents"
-last_updated: 2026-09-10
+last_updated: 2026-09-22
 owners: "backend-engineer role"
 related_docs:
   - "docs/frontend.md — Frontend consumes the IPC event contract (§8)"
   - "docs/models.md — Model inventory & specs"
-  - "docs/features/* — Deep dives (memory, dictation, voice-flow, ...)"
+  - "docs/features/* — Deep dives (memory, dictation, ...)"
   - "AGENTS.md §2, §5 — Workspace map & invariants"
 ---
 
 # Vox — Backend Architecture
 
-> **A realtime, event-driven native audio processing system** built in Rust with C++ inference backends (ONNX Runtime, llama.cpp). Runs entirely on-device with sub-200ms perceived pipeline latency on 8GB RAM systems. Handler event-driven: a central non-blocking router (`vox-router`, `pipeline/router.rs`) dispatches each `VoxEvent` to a flat set of handler functions (`pipeline/assistant/*` + `pipeline/dictation/mod.rs`) instead of a domain-partitioned or monolithic loop (see `docs/features/voice-flow.md`).
+> **App version 0.8.8** (`tauri.conf.json`, `Cargo.toml`)
+
+> **A realtime, event-driven native audio processing system** built in Rust with C++ inference backends (ONNX Runtime, llama.cpp). Runs entirely on-device with sub-200ms perceived pipeline latency on 8GB RAM systems. Handler event-driven: a central non-blocking router (`vox-router`, `pipeline/router.rs`) dispatches each `VoxEvent` to a flat set of handler functions (`pipeline/assistant/*` + `pipeline/dictation/mod.rs`) instead of a domain-partitioned or monolithic loop.
 
 ---
 
@@ -22,7 +24,7 @@ related_docs:
 - **Scope:** the Rust 4-layer architecture, provider/trait system, threading model, lifecycle, and the Tauri IPC event contract.
 - **Convention:** claims use `path/file.rs` pointers; schemas are linked, not pasted.
 - **Non-goals:** not the frontend (→ `docs/frontend.md`), not model specs (→ `docs/models.md`). The IPC event list in §8 is the contract the frontend consumes.
-- **SSOT:** event payloads (§8), settings reload policies (§10), and hardware tiers (§2) are authoritative here. Orchestration topology is SSOT in `core/events.rs` (IPC contract), `pipeline/router.rs` (routing), and `pipeline/assistant/` + `pipeline/dictation/` (handlers); `docs/features/voice-flow.md` is the handler-level companion reference.
+- **SSOT:** event payloads (§8), settings reload policies (§10), and hardware tiers (§2) are authoritative here. Orchestration topology is SSOT in `core/events.rs` (IPC contract), `pipeline/router.rs` (routing), and `pipeline/assistant/` + `pipeline/dictation/` (handlers).
 
 ## 1. Architecture Stack
 
@@ -81,39 +83,41 @@ src/
 │   ├── defaults.rs         # Centralized default values for all 13 settings domains
 │   ├── engine.rs           # System engine lifecycle (start_audio_engine, stop_audio_engine, worker joining) — owns VoxEngine handle bag
 │   ├── error.rs            # Unified VoxError + domain-specific errors
-│   ├── events.rs           # SSOT event registry: VoxEvent (14 variants) + IpcEvent (14 variants) + payloads
-│   ├── settings.rs         # VoxSettings (13 domains: appearance, audio, vad, stt, llm, tts, realtime, interaction, dictation, history, memory, persona, system)
+│   ├── events.rs           # SSOT event registry: VoxEvent (17 variants) + IpcEvent (15 variants) + payloads
+│   ├── metrics.rs          # TurnMetricsCollector; turn/tts latency atomics; context budget tracking
+│   ├── settings.rs         # VoxSettings (13 domains: audio, vad, stt, llm, tts, realtime, interaction, dictation, working_memory, personal_memory, persona, system)
 │   └── state.rs            # SSOT state: InteractionState (Idle/Ready/Listening/Thinking/Speaking/Paused/Error/Sleeping/Working) + InteractionOwner + PipelineAtomics + AppState
 ├── services/
 │   ├── audio/              # device (cpal AudioStream), playback (PlaybackEngine, Cubic Hermite 2× upsample), decode, sink, mod
-│   ├── vad/                # VadEngine trait + VadBackend (Earshot / TenVAD) + actor (3 operational modes) + utils + telemetry
-│   ├── stt/                # SttEngine trait + EmbeddedSttProvider (Nemotron-3.5 / Qwen3-ASR) + actor + stitcher
-│   ├── llm/                # LlmProvider trait (Embedded / RemoteTransport), actor, config, catalog, transport (chat_completions, responses, ollama, sse), probe, policy, capability_probe
-│   ├── tts/                # TtsProvider trait (EdgeTTS / Supertonic3 / Chatterbox / ChatterboxRemote), actor (TtsClauseChunker), voice
-│   ├── realtime/           # RealtimeVoiceProvider + RealtimeSession traits, engine, audio_bridge, playback_bridge (Gemini Live, Deepgram)
-│   ├── memory/             # v2 architecture: retrieval/, compaction/, ingestion/ (2-stage dedup), ml/ (embedder, nli, edge_classifier, scope_classifier, tokenizer), scheduler
+│   ├── vad/                # VadEngine trait + VadBackend (Earshot / TenVAD / SileroVad) + actor (3 operational modes) + providers/{earshot_vad, silero_onnx, ten_onnx, mod}, utils + telemetry
+│   ├── stt/                # SttEngine trait + EmbeddedSttProvider (Nemotron-3.5 / Qwen3-ASR) + actor + stitcher + providers/{embedded, nemotron, qwen, mod}
+│   ├── llm/                # LlmProvider trait (Embedded / RemoteTransport), actor, factory, config, catalog/{mod,probe,presets,sync,types}, transport/{chat_completions,config,mod,ollama,responses,sse}, baseline_catalog.json, baseline_providers.json, modelparams_vendor.json
+│   ├── tts/                # TtsProvider trait (EdgeTTS / Supertonic / Kokoro / Chatterbox / ChatterboxRemote), actor (TtsClauseChunker), voice, providers/{chatterbox, chatterbox_remote, edge_tts, kokoro, supertonic, mod}
+│   ├── realtime/           # RealtimeVoiceProvider + RealtimeSession traits, engine, audio_bridge, session, providers/{deepgram, gemini, mod}, transport/{connection, health, mod}
+│   ├── memory/             # v2 architecture: personal.rs, scheduler.rs, mod.rs, ml/{embedder,tokenizer,mod}, compaction/{runner,coordinator,prompt,mod}, ingestion/{stage1_dedup,stage2_embed,runner,mod}
 │   ├── dictation/          # Clipboard, hotkey (OS integration home), input, output_router, mod
-│   ├── harness/            # Conversation & context harness (buffer, accountant, prompt_builder, manager, facade, mod)
-│   └── pipeline/           # Central router, handler functions, and shared context
-│       ├── assistant/      # Handler event-driven layer (flat, no domain dirs)
-│       │   ├── speech.rs       # SpeechStart/SpeechEnd (passive gate + barge-in)
-│       │   ├── transcript.rs   # TranscriptFinal → harness → LLM dispatch
-│       │   ├── llm.rs          # LlmFinished → TTS remainder + persistence
-│       │   ├── playback.rs     # PlaybackStarted/Finished → Speaking/Ready
-│       │   ├── ptt.rs          # PttStart/Stop/Cancel (windowed VAD validation)
-│       │   ├── session.rs      # SessionStart/Pause/Resume/End + idle monitor; unconditional owner handover to Dictation
-│       │   ├── error.rs        # Error/Cancelled
-│       │   ├── interrupt.rs    # Barge-in helper (cancel + next_turn)
-│       │   └── accumulator.rs  # TurnAccumulator (TtsClauseChunker + buffers)
-│       ├── dictation/      # Unified passive/PTT OS-wide dictation handler (mod, ptt, speech, transcript, error)
-│       ├── router.rs       # Central VoxEvent dispatcher thread (spawn_router, route_event; dual-track dispatch by owner)
-│       └── mod.rs          # RoutingContext, transition, target_window, init_new_session, spawn_idle_monitor
+│   ├── harness/            # Conversation & context harness: chassis.rs, loop.rs, steps.rs, mod.rs + stages/{history,budget,compaction,prompt,mod,streaming/{chunker,normalizer,router,mod},tools/{mod,executor,registry,title,memory}.rs}
+│   └── notifications/      # Notification center subsystem (service.rs, router.rs, actions.rs, mod.rs)
+├── pipeline/               # Central router, handler functions, and shared context (TOP-LEVEL)
+│   ├── assistant/          # Handler event-driven layer (flat, no domain dirs)
+│   │   ├── speech.rs       # SpeechStart/SpeechEnd (passive gate + barge-in)
+│   │   ├── transcript.rs   # TranscriptFinal → harness → LLM dispatch
+│   │   ├── llm.rs          # LlmFinished → TTS remainder + persistence
+│   │   ├── playback.rs     # PlaybackStarted/Finished → Speaking/Ready
+│   │   ├── ptt.rs          # PttStart/Stop/Cancel (windowed VAD validation)
+│   │   ├── session.rs      # SessionStart/Pause/Resume/End + idle monitor; unconditional owner handover to Dictation
+│   │   ├── error.rs        # Error/Cancelled
+│   │   ├── interrupt.rs    # Barge-in helper (cancel + next_turn)
+│   │   └── accumulator.rs  # TurnAccumulator (TtsClauseChunker + buffers)
+│   ├── dictation/          # Unified passive/PTT OS-wide dictation handler (mod, ptt, speech, transcript, error)
+│   ├── router.rs           # Central VoxEvent dispatcher thread (spawn_router, route_event; dual-track dispatch by owner)
+│   └── mod.rs              # RoutingContext, transition, target_window, init_new_session, spawn_idle_monitor
 ├── ipc/                    # Tauri command handlers
-│   ├── pipeline/           # assistant (start/end/pause/resume/ptt_* + engine), dictation (settings, recovery, clipboard copy), test_clip
-│   ├── settings/           # catalog, health (probe, validate_token_cap, hardware), mutation (update_setting, dispatch_worker_command, transition_dictation)
+│   ├── pipeline.rs         # assistant + dictation + test_clip lifecycle
+│   ├── settings/           # core, mutation, catalog, health (probe, validate_token_cap, hardware)
 │   ├── memory/             # graph, conflicts, ingestion, mutations, personal_memory, projects, sessions
 │   ├── notifications.rs, audio.rs, history.rs, memory_profiler.rs, monitoring.rs, setup.rs, tray.rs, voices.rs, persistence.rs, projects.rs
-├── persistence/            # VoxDb (Turso/libSQL), schema, queries, mutations, voices, worker, memory_worker, events
+├── persistence/            # VoxDb (Turso/libSQL), schema, queries, mutations, voices, worker, memory_worker, tool_calls, events
 ├── monitoring/             # aggregator (crossbeam bounded 4096), collector, system_monitor (/proc/stat), snapshot, runtime_state, telemetry_emitter
 ├── setup/                  # manifest (AppManifest/VoxManifest fetch+cache), model_manager, runtime_check, update_check
 ├── utils/                  # paths singleton, logging (tracing + file rotation), audio_filters, hardware (detect_local_gpu)
@@ -144,7 +148,7 @@ audio(cpal 16kHz f32 SPSC ring 4s) → VAD actor (256-sample frames) → VoxEven
         PipelineMode selects the downstream path inside the handler: Modular → local STT/LLM/TTS actors; Realtime → RealtimeActor WebSocket (Gemini Live / Deepgram)
 ```
 
-### Pipeline State Machine (7 Canonical Turn States)
+### Pipeline State Machine (9 InteractionState Variants)
 
 | State       | Definition                                                      | Engaged (`state != Idle`) |             Audio Ingestion              | Description                                                                              |
 | ----------- | --------------------------------------------------------------- | :-----------------------: | :--------------------------------------: | ---------------------------------------------------------------------------------------- |
@@ -158,7 +162,7 @@ audio(cpal 16kHz f32 SPSC ring 4s) → VAD actor (256-sample frames) → VoxEven
 | `Sleeping`  | Auto-sleep; LLM+TTS evicted, VAD+STT stay resident              |          `true`           |                  Gated                   | `cool_down_llm`/`cool_down_tts` active; `interaction.auto_sleep_timeout` (default 400s). |
 | `Working`   | Background work active (compaction, memory ingestion)           |          `true`           |                  Gated                   | `CompactionCoordinator` or `memory_worker` active.                                       |
 
-States are defined in `core/state.rs:InteractionState` and mirrored in `services/eventsService.ts:InteractionState`. Ownership is binary: `InteractionOwner::Dictation (0)` vs `Assistant (1)` (`core/state.rs:10-28`).
+States are defined in `core/state.rs:InteractionState` and mirrored in `services/eventsService.ts:InteractionState`. Ownership is binary: `InteractionOwner::Dictation (0)` vs `Assistant (1)` (`core/state.rs:99-109`).
 
 ### Sub-Sentence Chunking (`TtsClauseChunker`)
 
@@ -183,7 +187,7 @@ Every AI domain uses a **trait-based provider system** — the pipeline dispatch
 
 | Backend                                                      | Type                          | Latency | Threshold                                              | Notes                                       |
 | ------------------------------------------------------------ | ----------------------------- | ------: | ------------------------------------------------------ | ------------------------------------------- |
-| **Earshot** (default dispatch, TenVad still default setting) | Rust-native, embedded weights |    ~1ms | 0.5 (hot-reloadable via `VadCommand::UpdateThreshold`) | ~20× faster than TenVAD, zero ONNX overhead |
+| **SileroVad** (default)  | Rust-native, embedded weights | ~1ms | 0.5 | ~20× faster than TenVAD, zero ONNX overhead |
 | **TenVAD** (legacy)                                          | ONNX via sherpa-onnx          |   ~15ms | 0.5                                                    | Requires `ten_vad.onnx` model file          |
 
 Runtime selection via `VadBackendOption` in `core/settings.rs:VadSettings`; actor is `services/vad/actor.rs` (high-priority OS thread, emits `VoxEvent::SpeechStart/SpeechEnd`).
@@ -208,7 +212,7 @@ Throttling: partials dynamically throttled with floor at 300ms (`STT_MIN_PARTIAL
 
 Selection is `LlmActiveProvider::{Embedded, Server, Cloud}` (`core/settings.rs:398-405`). Cloud routing is automatic: `provider_name = "openai"` → `api.openai.com`, `"gemini"` → `generativelanguage.googleapis.com/v1beta/openai`, `"nvidia"` → `integrate.api.nvidia.com/v1`, etc. Default local model is `qwen_3_5_0_8b` (`core/defaults.rs:30`); defaults for server/cloud are `gemma3:4b` / `meta/llama-3.1-8b-instruct`.
 
-#### Capability Probing & Settings Engine (`services/llm/capability_probe.rs`)
+#### Capability Probing & Settings Engine (`services/llm/catalog/probe.rs`)
 
 - **Multi-Phase Streaming Probe (`probe_capabilities`)**:
   - **Phase 1: Streaming Latency & Script**: Dispatches streaming `/v1/chat/completions` request measuring true Time-to-First-Token (`ttft_ms`) on initial byte arrival, pure inter-token generation throughput (`tps` = tokens / duration), and multi-lingual script output for Unicode Devanagari (`U+0900..U+097F`) and Latin scripts.
@@ -226,13 +230,13 @@ Selection is `LlmActiveProvider::{Embedded, Server, Cloud}` (`core/settings.rs:3
 
 | Provider                     | Type                                      |  Params |    Memory    | Output       | Feature                                                    |
 | ---------------------------- | ----------------------------------------- | ------: | :----------: | ------------ | ---------------------------------------------------------- |
-| **Edge TTS** (default)       | Pure Rust WebSocket (`tokio-tungstenite`) |  Remote |   **0 MB**   | 24kHz f32    | Free Microsoft Bing ReadAloud, 3.3× RTF, sub-200ms latency |
-| **Supertonic 3** (local)     | ONNX INT8, sherpa-onnx                    |     99M |   ~144 MB    | 24kHz f32    | 31 languages, 10 local voices                              |
-| **Kokoro** (local)           | ONNX, sherpa-onnx                         |     82M |   ~120 MB    | 24kHz f32    | Multi-lang, 50+ voices                                     |
-| **Chatterbox** (local clone) | GGML, chatterbox-rs                       | 340M Q4 |   ~1.1 GB    | 24kHz native | Voice cloning from 5s reference                            |
-| **Chatterbox Remote**        | reqwest blocking HTTP                     |    340M | 0 MB (local) | 24kHz        | Offloads to remote CUDA GPU                                |
+| **Kokoro** (default)     | ONNX, sherpa-onnx                         |     82M |   ~120 MB    | 24kHz f32    | Multi-lang, 50+ voices                                     |
+| **Supertonic 3** (local) | ONNX INT8, sherpa-onnx                    |     99M |   ~144 MB    | 24kHz f32    | 31 languages, 10 local voices                              |
+| **Edge TTS**             | Pure Rust WebSocket (`tokio-tungstenite`) |  Remote |   **0 MB**   | 24kHz f32    | Free Microsoft Bing ReadAloud, 3.3× RTF, sub-200ms latency |
+| **Chatterbox** (local clone) | GGML, chatterbox-rs                    | 340M Q4 |   ~1.1 GB    | 24kHz native | Voice cloning from 5s reference                            |
+| **Chatterbox Remote**      | reqwest blocking HTTP                     |    340M | 0 MB (local) | 24kHz        | Offloads to remote CUDA GPU                                |
 
-Selection is `TtsActiveProvider::{EdgeTts,Supertonic,Kokoro,Chatterbox,ChatterboxRemote}` (`core/settings.rs:479`). Quality steps, speed, and `threads` (default `DEFAULT_TTS_THREADS=2`) are `WorkerCommand` hot-reloadable.
+Selection is `TtsActiveProvider::{EdgeTts,Supertonic,Kokoro,Chatterbox,ChatterboxRemote}` (`core/settings.rs:558-565`). Quality steps, speed, and `threads` (default `DEFAULT_TTS_THREADS=2`) are `WorkerCommand` hot-reloadable.
 
 ### 4.5 Realtime S2S — Speech-to-Speech
 
@@ -257,14 +261,14 @@ A pre-retrieval **MemoryScope classifier** (ModernBERT INT8 ONNX, 4-class) route
 
 The ingestion pipeline runs as a batched ONNX inference system with background thread offload: **Dedup → Embed → Eval (NLI + Edge) → Commit**. All 3 pipeline ONNX models (Embedder, NLI Engine, Edge Classifier) use an **evictable singleton pattern** (`parking_lot::RwLock<Option<T>>`). They are lazy-loaded only when `personal_memory_queue` has pending items during 30s idle sweeps, and evicted immediately on voice engagement (`Idle→!Idle`), disengage, or batch completion.
 
-Key files: `services/memory/` (retrieval, compaction, ingestion, ml modules), `persistence/memory_worker.rs`, `persistence/` (v2 schema: `projects`, `sessions`, `compactions`, `personal_memory`, `queue`, `facts`, `notifications`). See [`docs/specs/memory-spec.md`](specs/memory-spec.md) for the current v2 architecture reference.
+Key files: `services/memory/` (personal.rs, scheduler.rs, mod.rs, ml/{embedder,tokenizer,mod}, compaction/{runner,coordinator,prompt,mod}, ingestion/{stage1_dedup,stage2_embed,runner,mod}), `persistence/memory_worker.rs`, `persistence/` (v5 schema: `projects`, `sessions`, `turns`, `session_compactions`, `personal_memory`, `memory_ingestion_queue`, `memory_facts`, `memory_facts_vectors`, `notifications`, `voices`, `session_tool_calls`). See [`docs/specs/memory-spec.md`](specs/memory-spec.md) for the current v2 architecture reference.
 
 ---
 
 ## 6. Persistence Layer
 
-- **Database**: Turso/libSQL (`turso` crate), WAL mode, `busy_timeout = 5000ms`
-- **Tables** (v2 schema, 10 tables): `projects`, `sessions`, `turns`, `voice_library`, `memory_facts`, `memory_facts_vectors`, `memory_relations`, `personal_memory`, `compactions`, `notifications`
+- **Database**: Turso/libSQL (`turso` crate 0.8.0-pre.11), WAL mode, `busy_timeout = 5000ms`; `SCHEMA_VERSION: u32 = 5`
+- **Tables** (v5 schema, 11 tables): `projects`, `sessions`, `turns`, `session_compactions`, `personal_memory`, `memory_ingestion_queue`, `memory_facts`, `memory_facts_vectors`, `notifications`, `voices`, `session_tool_calls`
 - **Workers**: Dedicated OS thread for session persistence (`persistence/worker.rs`), dedicated OS thread for background memory ingestion (`persistence/memory_worker.rs`)
 - **Events**: `SessionStarted`, `SessionEnded`, `TurnCompleted`, `TurnCancelled`, `Shutdown`
 - **Private mode**: Atomic `is_private_mode` check before each write (`AppState::is_private_mode`)
@@ -309,7 +313,7 @@ Remaining: audio (Tier 1, Max priority), VAD (Tier 2, high priority)
 
 ## 8. Event System
 
-### Internal VoxEvent (mpsc channel, `core/events.rs:22-55`)
+### Internal VoxEvent (mpsc channel, `core/events.rs:22-55`) — 17 variants
 
 ```
 Lifecycle:  SessionStart { owner, session_id? }, PauseSession, ResumeSession, EndSession
@@ -321,7 +325,7 @@ Playback:   PlaybackStarted { turn_id, intent }, PlaybackFinished { turn_id, int
 Flow:       Cancelled { turn_id }, Error(PipelineError), Shutdown
 ```
 
-### Tauri IPC Events (frontend-bound, via `app.emit` / `app.emit_to`, SSOT `core/events.rs:IpcEvent`)
+### Tauri IPC Events (frontend-bound, via `app.emit` / `app.emit_to`, SSOT `core/events.rs:IpcEvent`) — 15 variants
 
 | Event                                           | Payload                                                   | Source                           | Description                                                                                                                      |
 | ----------------------------------------------- | --------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -338,6 +342,7 @@ Flow:       Cancelled { turn_id }, Error(PipelineError), Shutdown
 | `notification_created` / `notification_updated` | `NotificationRecord`                                      | `ipc/notifications.rs`           | Notification center events                                                                                                       |
 | `personal_memory_updated`                       | `PersonalMemoryRecord`                                    | `ipc/memory.rs`                  | Personal memory mutation                                                                                                         |
 | `sessions_changed`                              | —                                                         | `ipc/memory.rs`                  | Session list change notification                                                                                                 |
+| `turn_metrics`                                | `TurnMetricsPayload`                                   | `playback.rs` / `llm.rs`         | Turn timing metrics (TTFT, TTFA, voice latency, CTX utilization)                                                                 |
 
 Full consumer map is in `docs/frontend.md:§9` and typed wrappers in `services/eventsService.ts:164-280`.
 
@@ -407,6 +412,8 @@ Any ──(realtime mode)──────────→ WS (no local LLM/STT/
 ---
 
 ## 12. Monitoring & Telemetry
+
+App version **0.8.8** (`tauri.conf.json`, `Cargo.toml`).
 
 - **TelemetryAggregator**: Dedicated OS thread, `crossbeam_channel::bounded(4096)`, collects audio energy, VAD probability, system health; fan-out to atomics in `AppStateTelemetryHandles`.
 - **SystemMonitor**: Spawns every 5s (`SYSTEM_STATS_INTERVAL`), reads `/proc/stat` + `/proc/meminfo`, filters Linux thread sub-tasks to prevent RSS double-counting (`monitoring/system_monitor.rs`).

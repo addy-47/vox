@@ -16,7 +16,7 @@ use crate::{
             commit_compaction_output, fetch_latest_compaction_run, fetch_turns_for_compaction,
             record_compaction_finish, record_compaction_start,
         },
-        db::VoxDb,
+        VoxDb,
         notifications::{find_notification_by_group, resolve_notification_in_place},
         TurnRow,
     },

@@ -17,7 +17,7 @@ use crate::{
         state::{AppState, InteractionOwner, InteractionState},
     },
     monitoring::TelemetryEvent,
-    persistence::{db::get_tokio_handle, worker::spawn_persistence_worker, PersistenceEvent},
+    persistence::{get_tokio_handle, worker::spawn_persistence_worker, PersistenceEvent},
     pipeline::{router::spawn_router, target_window},
     services::{
         audio::{

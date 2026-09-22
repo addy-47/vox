@@ -257,6 +257,10 @@ fn check_loop_budget<R: Runtime>(
                 utilization * 100.0,
                 status
             );
+            ctx.req.app_state.turn_metrics.record_context_budget(
+                total_tokens,
+                budget.max_context_tokens(),
+            );
         }
     }
 }

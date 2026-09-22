@@ -4,7 +4,7 @@ use tauri::AppHandle;
 
 use crate::{
     core::{
-        events::AudioIntent,
+        events::{emit_ipc, AudioIntent, IpcEvent},
         state::{AppState, InteractionState},
     },
     pipeline::{transition, RoutingContext},
@@ -39,9 +39,12 @@ pub fn on_playback_started<R: tauri::Runtime>(
     }
 
     transition(InteractionState::Speaking, ctx, app, state);
-    state
+    let metrics_payload = state
         .turn_metrics
         .record_playback_started(turn_id, &state.telemetry);
+    if let Err(e) = emit_ipc(app, IpcEvent::TurnMetrics(metrics_payload)) {
+        log::warn!("[Pipeline::Playback] Failed to emit TurnMetrics IPC: {:?}", e);
+    }
     log::info!(
         "[Pipeline::Playback] Playback started -> Speaking (turn: {})",
         turn_id

@@ -87,7 +87,7 @@ use crate::{
             TelemetryAggregatorHandles,
         },
     },
-    persistence::{db::TOKIO_HANDLE, worker::spawn_persistence_worker, PersistenceEvent},
+    persistence::{TOKIO_HANDLE, worker::spawn_persistence_worker, PersistenceEvent},
     services::{
         dictation::init_dictation_hotkey_listener,
         memory::{
@@ -327,8 +327,8 @@ pub fn run() {
             });
 
             // ── 0.7 Database & Persistence Worker ──────────────────────────────────
-            let rt_handle = persistence::db::get_tokio_handle();
-            let vox_db = match rt_handle.block_on(persistence::db::VoxDb::open(&paths::get().db)) {
+            let rt_handle = persistence::get_tokio_handle();
+            let vox_db = match rt_handle.block_on(persistence::VoxDb::open(&paths::get().db)) {
                 Ok(db) => db,
                 Err(e) => {
                     log::error!("[BOOTSTRAP] Failed to open main database: {}", e);
