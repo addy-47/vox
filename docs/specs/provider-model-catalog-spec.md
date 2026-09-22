@@ -73,51 +73,56 @@ This specification establishes a language-agnostic contract for:
 ### 2. Provider Wire Manifest (the clean solution — replaces ad-hoc branches)
 
 1. `baseline_providers.json` is the SSOT for **how to serialize for each provider**.
-   Every preset must declare the full wire policy (no implicit defaults that change
-   meaning per transport):
-   - `id`, `default_base_url`, `auth_scheme`, `display_label`.
-   - `transport`: `ollama_native` | `chat_completions` | `responses`.
-     The value is **authoritative**. Transports dispatch on it, never on URL suffixes.
-   - `token_limit_field`: `max_tokens` | `max_completion_tokens` |
-     `max_output_tokens` | `num_predict` (with `location`: top-level body vs
-     `options.` object for native transports).
-   - `reasoning_wire`: exactly one of:
-     - `think_bool` (Ollama `/api/chat`: `think:false` when Disabled, omit when Enabled),
-     - `reasoning_effort_none` (Ollama `/v1`, OpenAI reasoning models:
-       `reasoning_effort:"none"` / `reasoning:{effort:"none"}` when Disabled, omit when Enabled),
-     - `omit` (plain chat models: send nothing),
-     - `warn_omit` (Responses API: no off-switch exists; log once, send nothing).
-   - `tool_choice_policy`: `auto_when_tools` | `never` (Ollama native + `/v1`:
-     `never` — the field is unsupported and must be omitted even when tools exist).
-   - `stream_options_policy`: `include_usage` | `never` (gateways with 503s on the
-     flag, e.g. Nvidia NIM class, use `never`).
-   - `response_format_wire`: `chat_response_format` | `native_format` | `text_format`
-     (maps `OutputConstraint` to the correct envelope per transport).
-   - `tool_stream_shape`: `openai_delta` | `ollama_ndjson` | `openai_delta_with_xml_fallback`
-     (declares which parser owns the stream).
-   - `extra_body_passthrough`: explicit allow-list (e.g. `top_k` for vLLM class).
-     Anything not listed is dropped, never forwarded speculatively.
-2. `ProviderPresetMeta` (`catalog/types.rs`) must mirror every manifest field 1:1.
-   Adding a wire knob without adding the struct field + JSON key + preset value is
-   a spec violation.
-3. Every preset row must carry `source` (upstream URL) + `source_checked` (date).
-   Authoritative sources, in priority order:
-   - Cloud endpoints: `modelparams.dev` per-model JSON (`/api/v1/models/{provider}/{model}.json`,
-     schema-validated, MIT) — vendored and pinned, never live-fetched at runtime
-     (offline-first startup is invariant).
+   Each row is plain data in plain words — no policy enums, no indirections.
+   A row declares identity plus, for every canonical intent the serializers emit,
+   the exact wire path and value (dotted paths nest, e.g. `options.num_predict`):
+   - `id`, `name`, `base_url`, `auth` (`bearer` | `anthropic_native` | `none`),
+     `transport` (`ollama_native` | `chat_completions` | `responses`).
+     `transport` is **authoritative**: transports dispatch on it, never on URL suffixes.
+   - `token_limit`: wire path for `max_output_tokens`
+     (e.g. `max_tokens`, `max_completion_tokens`, `options.num_predict`).
+   - `reasoning_off`: `{ path, value }` emitted when reasoning is Disabled
+     (e.g. `{think, false}`, `{reasoning_effort, "none"}`), or `null` = send nothing
+     (plain chat models; Responses transport additionally logs one warning).
+   - `tool_choice`: value sent when tools are present (e.g. `"auto"`), or `null` =
+     omit even when tools exist (Ollama native + `/v1` reject the field).
+   - `stream_usage`: send `stream_options:{include_usage:true}` or omit it
+     (gateways that 503 on the flag set `false`).
+   - `response_envelope`: `chat` (`response_format`) | `native` (`format`) |
+     `text` (`text.format`) — selects the `OutputConstraint` envelope.
+   - `tool_stream`: `openai_delta` | `ollama_ndjson` | `openai_delta_with_xml_fallback`
+     — declares which parser owns the stream.
+   - `top_k_field`: dotted path allowed for `top_k` (e.g. `extra_body.top_k` for
+     vLLM class), or `null` = drop `top_k`, never forward speculatively.
+   - `catalog`: modelparams.dev provider slug when covered (`openai`, `nvidia`,
+     `groq`, `mistral`, `google`, `deepseek`, `anthropic`), else `null` (local
+     endpoints modelparams.dev does not cover).
+   - `context_window`: published default used only as a probe fallback, else `null`.
+   - `source` + `checked`: upstream URL + date. A row without a citation fails review.
+2. The full per-parameter reference is vendored, not hand-written:
+   `catalog/modelparams_vendor.json` (modelparams.dev static JSON, MIT, 7 providers,
+   188 models, pinned 2026-09-22). Unit tests cross-check every row's `token_limit`
+   and `reasoning_off.path` against the vendor param paths for its `catalog` slug —
+   a mapping that names a non-existent path fails the build.
+3. Authoritative sources, in priority order:
+   - Cloud endpoints: the vendored `modelparams_vendor.json`
+     (from `modelparams.dev/api/v1/models.json`, schema-validated, MIT).
+     Vendored and pinned, never live-fetched at runtime (offline-first startup
+     is invariant). Refresh = re-download + re-run cross-check tests.
    - Local endpoints (Ollama native + `/v1`, LM Studio, vLLM): official vendor docs
      (Ollama `docs/openapi.yaml`, `docs.ollama.com/api/openai-compatibility`) —
      modelparams.dev does not cover these.
    - Model facts only: `models.dev` (`models.json`, via `catalog/sync.rs`).
-   A row without a source citation fails review. No Rust crate is used as a source:
-   surveyed crates (`llmrust`, `multi-llm`, `llm-connector`, `aether-llm`) embed the
-   same per-provider `if` mappings in code — depending on one would trade our
-   branches for theirs plus a dependency tree.
-3. `ConnectionConfig::new()` (`transport/config.rs`) resolves preset → config by
-   **lookup only**. It must not infer transport from URL substrings, model-name
+   No Rust crate is used as a source: surveyed crates (`llmrust`, `multi-llm`,
+   `llm-connector`, `aether-llm`) embed the same per-provider `if` mappings in
+   code — depending on one would trade our branches for theirs plus a dependency tree.
+4. `ConnectionConfig::new()` (`transport/config.rs`) resolves preset → config by
+   **lookup only**, copying the row's mapping into an owned resolved policy.
+   It must not infer transport from URL substrings, model-name
    substrings, or probe results. Unknown preset → explicit error, never silent
-   `MaxTokens` fallback that changes wire meaning.
-4. `RemoteTransport::dispatch_stream()` (`transport/mod.rs`) matches **only** on
+   fallback that changes wire meaning. (Open: constructor still returns `Self`;
+   converting unknown-preset fallback to `Err` is tracked P1 follow-up.)
+5. `RemoteTransport::dispatch_stream()` (`transport/mod.rs`) matches **only** on
    `config.transport`. URL-suffix conditions (`ends_with("/v1")`) are forbidden.
    An Ollama preset pointing at a `/v1` base URL must either be a distinct preset
    (`ollama_openai_compat`) or an explicit per-connection `transport` override —
@@ -260,5 +265,9 @@ This specification establishes a language-agnostic contract for:
   rules that previously lived as scattered `if/else` across `transport/`.
 - `baseline_providers.json` must grow from 7 display/routing fields to the full
   wire policy (§2.1) before any transport refactor lands (spec-first per AGENTS §4.3).
-- `TransportType` gains `OllamaNative` as an explicit variant; `CapabilitySource`
-  stays as discovery provenance only and loses all dispatch role.
+- `TransportType` gains `OllamaNative` as an explicit variant and becomes the
+  single discriminator for dispatch, probing, and health/list URLs.
+  `CapabilitySource` and `TokenLimitField` were deleted outright (2026-09-22):
+  the former duplicated the transport name, the latter duplicated the manifest's
+  `token_limit` path while the 400-flip wrote to it unread. The flip now toggles
+  `policy.token_limit` between the two known chat paths.

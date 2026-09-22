@@ -7,12 +7,14 @@
 //! Prerequisites: Isolated temporary DB paths
 //! Execution    : cargo nextest run --test agentic_tool_runtime_test --release --nocapture --test-threads=1
 //! Metrics      : Terminal tool single-pass execution, DB title update, TurnAccumulator
-//!                parity, NonTerminal RRF retrieval, scratchpad drop, prefix audio drop
+//!                parity, NonTerminal RRF retrieval, scratchpad drop, prefix audio drop,
+//!                provider wire bytes (request mapping) + stream parsing to ToolCall
 //! ============================================================================
 
 mod common;
 
 use std::{
+    io::{Read, Write},
     sync::{
         atomic::{AtomicBool, AtomicU32},
         mpsc, Arc,
@@ -42,7 +44,12 @@ use vox_lib::{
             steps::{step6_handle_non_terminal_tool, step6_handle_terminal_tool},
             Role, TurnExecutionRequest,
         },
-        llm::CanonicalToolCall,
+        llm::{
+            transport::{ConnectionConfig, RemoteTransport},
+            CanonicalToolCall, CanonicalToolDefinition, ConversationInput, GenerationOptions,
+            GenerationPurpose, GenerationRequest, LlmProvider, LlmStreamEvent, OutputConstraint,
+            ReasoningMode, ToolFlow,
+        },
         tts::actor::TtsCommand,
     },
 };
@@ -457,4 +464,269 @@ async fn test_clause_buffering_and_prefix_drop_on_tool_call() {
     })
     .await
     .expect("test_clause_buffering_and_prefix_drop_on_tool_call timed out");
+}
+
+// ============================================================================
+// Wire harness: std-only mock HTTP server speaking canned SSE / NDJSON.
+// Exercises the REAL path: manifest mapping -> request bytes -> stream parser.
+// ============================================================================
+/// Serves one canned HTTP response, captures the JSON request body, then exits.
+fn spawn_mock_wire_server(
+    response_body: Vec<u8>,
+    content_type: &'static str,
+    captured: Arc<Mutex<Option<serde_json::Value>>>,
+) -> (String, std::thread::JoinHandle<()>) {
+    let listener =
+        std::net::TcpListener::bind("127.0.0.1:0").expect("mock wire server must bind");
+    let addr = listener.local_addr().expect("mock wire server needs an addr");
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("mock wire server must accept");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .expect("mock read timeout");
+        stream
+            .set_write_timeout(Some(Duration::from_secs(10)))
+            .expect("mock write timeout");
+        let mut raw = Vec::new();
+        let mut buf = [0u8; 4096];
+        loop {
+            let n = stream.read(&mut buf).expect("mock wire server must read");
+            if n == 0 {
+                break;
+            }
+            raw.extend_from_slice(&buf[..n]);
+            if let Some(end) = raw
+                .windows(4)
+                .position(|w| w == b"\r\n\r\n")
+                .map(|pos| pos + 4)
+            {
+                let head = String::from_utf8_lossy(&raw[..end]).to_lowercase();
+                let len = head
+                    .lines()
+                    .find_map(|l| l.strip_prefix("content-length:"))
+                    .and_then(|v| v.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                while raw.len() < end + len {
+                    let n = stream.read(&mut buf).expect("mock wire server must read body");
+                    if n == 0 {
+                        break;
+                    }
+                    raw.extend_from_slice(&buf[..n]);
+                }
+                let have = raw.len().saturating_sub(end).min(len);
+                if let Ok(body) = serde_json::from_slice::<serde_json::Value>(&raw[end..end + have])
+                {
+                    *captured.lock() = Some(body);
+                }
+                break;
+            }
+        }
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            content_type,
+            response_body.len()
+        );
+        stream.write_all(head.as_bytes()).expect("mock must write head");
+        stream.write_all(&response_body).expect("mock must write body");
+    });
+    (format!("http://{}", addr), handle)
+}
+
+/// Builds the turn-1 `respond_and_set_title` generation request used by wire tests.
+fn turn1_title_request() -> GenerationRequest {
+    GenerationRequest {
+        input: ConversationInput {
+            messages: vec![vox_lib::services::harness::ChatMessage::new(
+                Role::User,
+                "Hello Vox!".to_string(),
+            )],
+        },
+        options: GenerationOptions {
+            max_output_tokens: Some(120),
+            reasoning: ReasoningMode::Disabled,
+            ..Default::default()
+        },
+        output: OutputConstraint::Text,
+        purpose: GenerationPurpose::Conversation,
+        tools: Some(vec![CanonicalToolDefinition {
+            name: "respond_and_set_title".to_string(),
+            description: "Sets the session title and speaks a response.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "spoken_response": {"type": "string"}
+                },
+                "required": ["title", "spoken_response"]
+            }),
+            flow: ToolFlow::Terminal,
+        }]),
+    }
+}
+
+/// Drains stream events until `Finished` or the deadline, returning what arrived.
+fn drain_wire_events(rx: &mpsc::Receiver<LlmStreamEvent>) -> Vec<LlmStreamEvent> {
+    let mut events = Vec::new();
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match rx.recv_timeout(remaining) {
+            Ok(LlmStreamEvent::Finished) => {
+                events.push(LlmStreamEvent::Finished);
+                break;
+            }
+            Ok(ev) => events.push(ev),
+            Err(_) => break,
+        }
+    }
+    events
+}
+
+// ============================================================================
+// Subtest 4: test_nvidia_preset_wire_request_and_tool_stream
+// ============================================================================
+/// Wire regression for the Phase 12 eval failure: reasoning tokens ate the
+/// 120-token budget because the body carried `think:false` + `reasoning.enabled`
+/// (both ignored on NIM) instead of `reasoning_effort:"none"`.
+/// Drives the REAL `RemoteTransport` against a mock server and asserts both the
+/// exact request bytes and the parsed `ToolCall` out of chunked SSE deltas.
+#[tokio::test]
+async fn test_nvidia_preset_wire_request_and_tool_stream() {
+    let test_timeout = Duration::from_secs(25);
+    tokio::time::timeout(test_timeout, async {
+        let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+        let sse = concat!(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"respond_and_set_title\",\"arguments\":\"{\\\"title\\\":\\\"\"}}]},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"Debugging\\\",\\\"spoken_response\\\":\\\"hi\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let (base_url, server) =
+            spawn_mock_wire_server(sse.as_bytes().to_vec(), "text/event-stream", Arc::clone(&captured));
+
+        let config = ConnectionConfig::new(&base_url, "test-model", Some("k"), Some("nvidia_nim"));
+        let transport = RemoteTransport::new(config);
+        let cancel = CancellationToken::new();
+        let (tx, rx) = mpsc::channel::<LlmStreamEvent>();
+
+        transport
+            .generate(turn1_title_request(), 1, &cancel, &tx)
+            .await
+            .expect("nvidia wire stream must succeed");
+
+        let events = drain_wire_events(&rx);
+        let tool_call = events.iter().find_map(|ev| match ev {
+            LlmStreamEvent::ToolCall(call) => Some(call),
+            _ => None,
+        });
+        let call = tool_call.expect("chunked SSE deltas must assemble into one ToolCall");
+        assert_eq!(call.name, "respond_and_set_title");
+        assert_eq!(
+            call.arguments.get("title").and_then(|v| v.as_str()),
+            Some("Debugging")
+        );
+        assert_eq!(
+            call.arguments.get("spoken_response").and_then(|v| v.as_str()),
+            Some("hi")
+        );
+        assert!(
+            events.iter().any(|ev| matches!(ev, LlmStreamEvent::Finished)),
+            "stream must terminate with Finished"
+        );
+
+        let body = captured.lock().clone().expect("mock must capture request body");
+        assert_eq!(body.get("model").and_then(|v| v.as_str()), Some("test-model"));
+        assert_eq!(body.get("max_tokens").and_then(|v| v.as_u64()), Some(120));
+        assert_eq!(
+            body.get("reasoning_effort").and_then(|v| v.as_str()),
+            Some("none"),
+            "NIM disables thinking via reasoning_effort, not think",
+        );
+        assert!(body.get("think").is_none(), "think must not be sent to NIM");
+        assert!(body.get("reasoning").is_none(), "reasoning.enabled must not be sent to NIM");
+        assert_eq!(body.get("tool_choice").and_then(|v| v.as_str()), Some("auto"));
+        assert!(body.get("stream_options").is_none(), "NIM 503s on stream_options");
+        assert_eq!(
+            body
+                .get("tools")
+                .and_then(|t| t.get(0))
+                .and_then(|t| t.get("function"))
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str()),
+            Some("respond_and_set_title")
+        );
+
+        server.join().expect("mock wire server must exit cleanly");
+    })
+    .await
+    .expect("test_nvidia_preset_wire_request_and_tool_stream timed out");
+}
+
+// ============================================================================
+// Subtest 5: test_ollama_native_wire_request_and_tool_stream
+// ============================================================================
+/// Native `/api/chat` wire contract: `think:false` + `options.num_predict`,
+/// complete per-line NDJSON tool calls, and NO `tool_choice` (unsupported).
+#[tokio::test]
+async fn test_ollama_native_wire_request_and_tool_stream() {
+    let test_timeout = Duration::from_secs(25);
+    tokio::time::timeout(test_timeout, async {
+        let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+        let ndjson = concat!(
+            "{\"message\":{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"function\":{\"name\":\"respond_and_set_title\",\"arguments\":{\"title\":\"T\",\"spoken_response\":\"hi\"}}}]},\"done\":false}\n",
+            "{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true}\n",
+        );
+        let (base_url, server) = spawn_mock_wire_server(
+            ndjson.as_bytes().to_vec(),
+            "application/x-ndjson",
+            Arc::clone(&captured),
+        );
+
+        let config = ConnectionConfig::new(&base_url, "qwen3.5:9b", None, Some("ollama"));
+        let transport = RemoteTransport::new(config);
+        let cancel = CancellationToken::new();
+        let (tx, rx) = mpsc::channel::<LlmStreamEvent>();
+
+        transport
+            .generate(turn1_title_request(), 1, &cancel, &tx)
+            .await
+            .expect("ollama native wire stream must succeed");
+
+        let events = drain_wire_events(&rx);
+        let tool_call = events.iter().find_map(|ev| match ev {
+            LlmStreamEvent::ToolCall(call) => Some(call),
+            _ => None,
+        });
+        let call = tool_call.expect("NDJSON tool_calls must surface as ToolCall");
+        assert_eq!(call.name, "respond_and_set_title");
+        assert_eq!(
+            call.arguments.get("title").and_then(|v| v.as_str()),
+            Some("T")
+        );
+
+        let body = captured.lock().clone().expect("mock must capture request body");
+        assert_eq!(body.get("think"), Some(&serde_json::json!(false)));
+        assert_eq!(
+            body.get("options").and_then(|o| o.get("num_predict")).and_then(|v| v.as_u64()),
+            Some(120)
+        );
+        assert!(body.get("tool_choice").is_none(), "Ollama rejects tool_choice");
+        assert!(body.get("stream_options").is_none(), "NDJSON has no stream_options");
+        assert_eq!(
+            body
+                .get("tools")
+                .and_then(|t| t.get(0))
+                .and_then(|t| t.get("function"))
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str()),
+            Some("respond_and_set_title")
+        );
+
+        server.join().expect("mock wire server must exit cleanly");
+    })
+    .await
+    .expect("test_ollama_native_wire_request_and_tool_stream timed out");
 }

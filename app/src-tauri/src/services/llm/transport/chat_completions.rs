@@ -5,6 +5,7 @@ use serde::Deserialize;
 
 use super::{config::ConnectionConfig, sse::SseDecoder};
 use crate::services::llm::{
+    catalog::{ResponseEnvelope, WireValue},
     CanonicalToolCall, GenerationRequest, LlmError, OutputConstraint, ReasoningMode,
 };
 
@@ -110,14 +111,16 @@ pub fn build_request_body(
     body.insert("model".to_string(), serde_json::json!(config.model));
     body.insert("messages".to_string(), serde_json::json!(messages));
     body.insert("stream".to_string(), serde_json::json!(true));
-    body.insert(
-        "stream_options".to_string(),
-        serde_json::json!({ "include_usage": true }),
-    );
+    if config.policy.stream_usage {
+        body.insert(
+            "stream_options".to_string(),
+            serde_json::json!({ "include_usage": true }),
+        );
+    }
 
     populate_sampling_options(&mut body, config, request);
-    populate_format_constraints(&mut body, request);
-    populate_tools(&mut body, request);
+    populate_format_constraints(&mut body, config, request);
+    populate_tools(&mut body, config, request);
 
     serde_json::Value::Object(body)
 }
@@ -175,14 +178,15 @@ fn populate_sampling_options(
         body.insert("top_p".to_string(), serde_json::json!(top_p));
     }
     if let Some(top_k) = request.options.top_k {
-        body.insert("top_k".to_string(), serde_json::json!(top_k));
+        if let Some(field) = config.policy.top_k_field {
+            super::insert_dotted(body, field, serde_json::json!(top_k));
+        }
     }
     if let Some(max_tokens) = request.options.max_output_tokens {
-        let field_key = match config.token_limit_field {
-            TokenLimitField::NumPredict => "max_tokens",
-            other => other.as_str(),
-        };
-        body.insert(field_key.to_string(), serde_json::json!(max_tokens));
+        body.insert(
+            config.policy.token_limit.to_string(),
+            serde_json::json!(max_tokens),
+        );
     }
     if !request.options.stop.is_empty() {
         body.insert("stop".to_string(), serde_json::json!(request.options.stop));
@@ -191,18 +195,30 @@ fn populate_sampling_options(
         body.insert("seed".to_string(), serde_json::json!(seed));
     }
     if request.options.reasoning == ReasoningMode::Disabled {
-        body.insert(
-            "reasoning".to_string(),
-            serde_json::json!({ "enabled": false }),
-        );
-        body.insert("think".to_string(), serde_json::json!(false));
+        if let Some(off) = &config.policy.reasoning_off {
+            let value = match off.value {
+                WireValue::Bool(flag) => serde_json::json!(flag),
+                WireValue::Str(level) => serde_json::json!(level),
+            };
+            body.insert(off.path.to_string(), value);
+        }
     }
 }
 
 fn populate_format_constraints(
     body: &mut serde_json::Map<String, serde_json::Value>,
+    config: &ConnectionConfig,
     request: &GenerationRequest,
 ) {
+    if config.policy.response_envelope != ResponseEnvelope::Chat {
+        if !matches!(request.output, OutputConstraint::Text) {
+            log::warn!(
+                "[ChatCompletions] response_envelope {:?} unsupported on chat transport; sending unconstrained",
+                config.policy.response_envelope
+            );
+        }
+        return;
+    }
     match &request.output {
         OutputConstraint::Text => {}
         OutputConstraint::JsonObject => {
@@ -233,25 +249,18 @@ fn populate_format_constraints(
 
 fn populate_tools(
     body: &mut serde_json::Map<String, serde_json::Value>,
+    config: &ConnectionConfig,
     request: &GenerationRequest,
 ) {
     if let Some(ref tools) = request.tools {
         if !tools.is_empty() {
-            let tools_json: Vec<serde_json::Value> = tools
-                .iter()
-                .map(|t| {
-                    serde_json::json!({
-                        "type": "function",
-                        "function": {
-                            "name": t.name,
-                            "description": t.description,
-                            "parameters": t.parameters
-                        }
-                    })
-                })
-                .collect();
-            body.insert("tools".to_string(), serde_json::json!(tools_json));
-            body.insert("tool_choice".to_string(), serde_json::json!("auto"));
+            body.insert(
+                "tools".to_string(),
+                super::canonical_tools_json(tools),
+            );
+            if let Some(choice) = config.policy.tool_choice {
+                body.insert("tool_choice".to_string(), serde_json::json!(choice));
+            }
         }
     }
 }

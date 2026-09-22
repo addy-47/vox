@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{config::ConnectionConfig, sse::SseDecoder};
 use crate::services::llm::{
+    catalog::{ResponseEnvelope, WireValue},
     CanonicalToolCall, GenerationRequest, LlmError, OutputConstraint, ReasoningMode,
 };
 
@@ -62,10 +63,18 @@ pub fn build_request_body(
         options.insert("top_p".to_string(), serde_json::json!(top_p));
     }
     if let Some(top_k) = request.options.top_k {
-        options.insert("top_k".to_string(), serde_json::json!(top_k));
+        if let Some(field) = config.policy.top_k_field {
+            let key = field.strip_prefix("options.").unwrap_or(field);
+            options.insert(key.to_string(), serde_json::json!(top_k));
+        }
     }
     if let Some(max_tokens) = request.options.max_output_tokens {
-        options.insert("num_predict".to_string(), serde_json::json!(max_tokens));
+        let key = config
+            .policy
+            .token_limit
+            .strip_prefix("options.")
+            .unwrap_or(config.policy.token_limit);
+        options.insert(key.to_string(), serde_json::json!(max_tokens));
     }
     if !request.options.stop.is_empty() {
         options.insert("stop".to_string(), serde_json::json!(request.options.stop));
@@ -83,35 +92,43 @@ pub fn build_request_body(
     body.insert("stream".to_string(), serde_json::json!(true));
     body.insert("options".to_string(), serde_json::Value::Object(options));
     if request.options.reasoning == ReasoningMode::Disabled {
-        body.insert("think".to_string(), serde_json::json!(false));
+        if let Some(off) = &config.policy.reasoning_off {
+            let value = match off.value {
+                WireValue::Bool(flag) => serde_json::json!(flag),
+                WireValue::Str(level) => serde_json::json!(level),
+            };
+            body.insert(off.path.to_string(), value);
+        }
     }
 
     if let Some(ref tools) = request.tools {
         if !tools.is_empty() {
-            let tools_json: Vec<serde_json::Value> = tools
-                .iter()
-                .map(|t| {
-                    serde_json::json!({
-                        "type": "function",
-                        "function": {
-                            "name": t.name,
-                            "description": t.description,
-                            "parameters": t.parameters
-                        }
-                    })
-                })
-                .collect();
-            body.insert("tools".to_string(), serde_json::json!(tools_json));
+            body.insert(
+                "tools".to_string(),
+                super::canonical_tools_json(tools),
+            );
+            if let Some(choice) = config.policy.tool_choice {
+                body.insert("tool_choice".to_string(), serde_json::json!(choice));
+            }
         }
     }
 
-    match &request.output {
-        OutputConstraint::Text => {}
-        OutputConstraint::JsonObject => {
-            body.insert("format".to_string(), serde_json::json!("json"));
+    if config.policy.response_envelope != ResponseEnvelope::Native {
+        if !matches!(request.output, OutputConstraint::Text) {
+            log::warn!(
+                "[OllamaTransport] response_envelope {:?} unsupported on native transport; sending unconstrained",
+                config.policy.response_envelope
+            );
         }
-        OutputConstraint::JsonSchema { schema, .. } => {
-            body.insert("format".to_string(), schema.clone());
+    } else {
+        match &request.output {
+            OutputConstraint::Text => {}
+            OutputConstraint::JsonObject => {
+                body.insert("format".to_string(), serde_json::json!("json"));
+            }
+            OutputConstraint::JsonSchema { schema, .. } => {
+                body.insert("format".to_string(), schema.clone());
+            }
         }
     }
 
@@ -205,6 +222,7 @@ pub async fn stream_ollama(
             Some(Ok(bytes)) => {
                 let lines = decoder.decode_chunk(&bytes);
                 for line in lines {
+                    if let Ok(chunk) = serde_json::from_str::<OllamaChatChunk>(&line) {
                         if let Some(msg) = chunk.message {
                             if let Some(tool_calls) = msg.tool_calls {
                                 for tc in tool_calls {

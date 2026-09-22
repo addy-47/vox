@@ -22,7 +22,7 @@ pub use provider::{
     ToolFlow,
 };
 pub use transport::{
-    AuthScheme, CapabilitySource, ConnectionConfig, RemoteTransport, TokenLimitField, TransportType,
+    AuthScheme, ConnectionConfig, RemoteTransport, TransportType,
 };
 
 pub const QWEN_MODEL_DIR: &str = "llm/qwen";

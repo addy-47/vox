@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-pub use config::{AuthScheme, CapabilitySource, ConnectionConfig, TokenLimitField, TransportType};
+pub use config::{AuthScheme, ConnectionConfig, TransportType};
 use futures_util::future::BoxFuture;
 use parking_lot::RwLock;
 use serde::Deserialize;
@@ -17,9 +17,9 @@ use serde::Deserialize;
 use crate::{
     core::settings::LlmModelInfo,
     services::llm::{
-        GenerationRequest, LlmError, LlmStreamEvent, OutputConstraint, ProviderCapabilities,
-        ProviderKind, ReasoningMode, Support, DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS,
-        DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS,
+        CanonicalToolDefinition, GenerationRequest, LlmError, LlmStreamEvent, OutputConstraint,
+        ProviderCapabilities, ProviderKind, ReasoningMode, Support,
+        DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS, DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS,
     },
 };
 
@@ -51,7 +51,7 @@ struct OllamaTagsEntry {
 pub struct RemoteTransport {
     config: ConnectionConfig,
     client: reqwest::Client,
-    active_token_limit_field: Arc<RwLock<TokenLimitField>>,
+    active_token_limit: Arc<RwLock<&'static str>>,
     capabilities: ProviderCapabilities,
 }
 
@@ -76,10 +76,60 @@ pub fn inject_auth_headers(
     builder
 }
 
+/// Serializes canonical tool definitions into the shared OpenAI function envelope.
+pub fn canonical_tools_json(tools: &[CanonicalToolDefinition]) -> serde_json::Value {
+    serde_json::Value::Array(
+        tools
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters
+                    }
+                })
+            })
+            .collect(),
+    )
+}
+
+/// Inserts a value at a dotted path, creating intermediate objects as needed.
+pub fn insert_dotted(
+    body: &mut serde_json::Map<String, serde_json::Value>,
+    path: &str,
+    value: serde_json::Value,
+) {
+    let mut split = path.splitn(2, '.');
+    let (Some(first), second) = (split.next(), split.next()) else {
+        return;
+    };
+    if first.is_empty() {
+        return;
+    }
+    match second {
+        None => {
+            body.insert(first.to_string(), value);
+        }
+        Some(rest) => {
+            let nested = body
+                .entry(first.to_string())
+                .or_insert_with(|| serde_json::json!({}));
+            if !nested.is_object() {
+                *nested = serde_json::json!({});
+            }
+            if let Some(obj) = nested.as_object_mut() {
+                insert_dotted(obj, rest, value);
+            }
+        }
+    }
+}
+
 impl RemoteTransport {
     /// Creates a new `RemoteTransport` from explicit connection configuration.
     pub fn new(config: ConnectionConfig) -> Self {
-        let initial_field = config.token_limit_field;
+        let initial_limit = config.policy.token_limit;
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS))
             .timeout(Duration::from_secs(DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS))
@@ -106,7 +156,7 @@ impl RemoteTransport {
         Self {
             config,
             client,
-            active_token_limit_field: Arc::new(RwLock::new(initial_field)),
+            active_token_limit: Arc::new(RwLock::new(initial_limit)),
             capabilities,
         }
     }
@@ -126,41 +176,43 @@ impl RemoteTransport {
         tx: &'a mpsc::Sender<LlmStreamEvent>,
     ) -> BoxFuture<'a, Result<(), LlmError>> {
         Box::pin(async move {
-            if cfg.capability_source == CapabilitySource::OllamaNative
-                && cfg.token_limit_field == TokenLimitField::NumPredict
-                && !cfg.base_url.trim_end_matches('/').ends_with("/v1")
-            {
-                ollama::stream_ollama(&self.client, cfg, request, turn_id, cancel, tx).await
-            } else if cfg.transport == TransportType::Responses {
-                responses::stream_responses(&self.client, cfg, request, turn_id, cancel, tx).await
-            } else {
-                chat_completions::stream_chat_completions(
-                    &self.client,
-                    cfg,
-                    request,
-                    turn_id,
-                    cancel,
-                    tx,
-                )
-                .await
+            match cfg.transport {
+                TransportType::OllamaNative => {
+                    ollama::stream_ollama(&self.client, cfg, request, turn_id, cancel, tx).await
+                }
+                TransportType::Responses => {
+                    responses::stream_responses(&self.client, cfg, request, turn_id, cancel, tx)
+                        .await
+                }
+                TransportType::ChatCompletions => {
+                    chat_completions::stream_chat_completions(
+                        &self.client,
+                        cfg,
+                        request,
+                        turn_id,
+                        cancel,
+                        tx,
+                    )
+                    .await
+                }
             }
         })
     }
 
-    /// Flips the token-limit field after a provider 400 rejection, returning true when flipped.
+    /// Flips the token-limit path after a provider 400 rejection, returning true when flipped.
     fn flip_token_field(&self, cfg: &mut ConnectionConfig) -> bool {
-        let next_field = match cfg.token_limit_field {
-            TokenLimitField::MaxTokens => TokenLimitField::MaxCompletionTokens,
-            TokenLimitField::MaxCompletionTokens => TokenLimitField::MaxTokens,
+        let next_limit = match cfg.policy.token_limit {
+            "max_tokens" => "max_completion_tokens",
+            "max_completion_tokens" => "max_tokens",
             _ => return false,
         };
         log::info!(
-            "[RemoteTransport] Provider rejected {:?}, negotiating to {:?}",
-            cfg.token_limit_field,
-            next_field
+            "[RemoteTransport] Provider rejected {}, negotiating to {}",
+            cfg.policy.token_limit,
+            next_limit
         );
-        *self.active_token_limit_field.write() = next_field;
-        cfg.token_limit_field = next_field;
+        *self.active_token_limit.write() = next_limit;
+        cfg.policy.token_limit = next_limit;
         true
     }
 }
@@ -214,7 +266,7 @@ impl super::LlmProvider for RemoteTransport {
     ) -> BoxFuture<'a, Result<(), LlmError>> {
         Box::pin(async move {
             let mut cfg = self.config.clone();
-            cfg.token_limit_field = *self.active_token_limit_field.read();
+            cfg.policy.token_limit = *self.active_token_limit.read();
             let mut request = request;
 
             for _ in 0..3 {
@@ -244,12 +296,19 @@ impl super::LlmProvider for RemoteTransport {
 
     fn health_check<'a>(&'a self) -> BoxFuture<'a, Result<(), LlmError>> {
         Box::pin(async move {
-            let url = if self.config.capability_source == CapabilitySource::OllamaNative {
-                format!("{}/api/tags", self.config.base_url.trim_end_matches('/'))
-            } else if self.config.base_url.ends_with("/v1") {
-                format!("{}/models", self.config.base_url.trim_end_matches('/'))
-            } else {
-                format!("{}/v1/models", self.config.base_url.trim_end_matches('/'))
+            let base = self.config.base_url.trim_end_matches('/');
+            let url = match self.config.transport {
+                TransportType::OllamaNative => {
+                    let root = base.strip_suffix("/v1").unwrap_or(base);
+                    format!("{}/api/tags", root)
+                }
+                TransportType::ChatCompletions | TransportType::Responses => {
+                    if base.ends_with("/v1") {
+                        format!("{}/models", base)
+                    } else {
+                        format!("{}/v1/models", base)
+                    }
+                }
             };
 
             let mut builder = self.client.get(&url).timeout(Duration::from_secs(3));
@@ -273,8 +332,10 @@ impl super::LlmProvider for RemoteTransport {
 
     fn list_models<'a>(&'a self) -> BoxFuture<'a, Result<Vec<LlmModelInfo>, LlmError>> {
         Box::pin(async move {
-            if self.config.capability_source == CapabilitySource::OllamaNative {
-                let url = format!("{}/api/tags", self.config.base_url.trim_end_matches('/'));
+            if self.config.transport == TransportType::OllamaNative {
+                let base = self.config.base_url.trim_end_matches('/');
+                let root = base.strip_suffix("/v1").unwrap_or(base);
+                let url = format!("{}/api/tags", root);
                 let mut builder = self.client.get(&url).timeout(Duration::from_secs(4));
                 builder = inject_auth_headers(builder, &self.config.auth);
 

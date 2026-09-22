@@ -23,7 +23,7 @@ use crate::{
     services::llm::{
         transport::{
             chat_completions, inject_auth_headers, ollama, responses, sse::SseDecoder,
-            CapabilitySource, ConnectionConfig, TokenLimitField, TransportType,
+            ConnectionConfig, TransportType,
         },
         EmbeddedProvider, LlmProvider, RemoteTransport, QWEN_MODEL_DIR,
     },
@@ -310,14 +310,14 @@ impl CapabilityProbeEngine {
             meta.provenance = base.provenance;
         }
 
-        match config.capability_source {
-            CapabilitySource::OllamaNative => {
+        match config.transport {
+            TransportType::OllamaNative => {
                 Self::probe_ollama_metadata(client, config, &mut meta).await;
             }
-            CapabilitySource::ProbedGeneric => {
+            TransportType::ChatCompletions | TransportType::Responses => {
                 if let Some(meta_preset) = preset_meta {
                     if meta.context_window.is_none() {
-                        meta.context_window = meta_preset.published_context_window;
+                        meta.context_window = meta_preset.context_window;
                         if meta.provenance == CapabilityProvenance::Unknown {
                             meta.provenance = CapabilityProvenance::CatalogBaseline;
                         }
@@ -431,8 +431,7 @@ impl CapabilityProbeEngine {
         client: &Client,
         config: &ConnectionConfig,
     ) -> (bool, bool, Option<f32>, Option<u32>) {
-        let is_ollama_native = config.capability_source == CapabilitySource::OllamaNative
-            && config.token_limit_field == TokenLimitField::NumPredict;
+        let is_ollama_native = config.transport == TransportType::OllamaNative;
 
         let (url, payload) = if is_ollama_native {
             (
@@ -542,7 +541,7 @@ impl CapabilityProbeEngine {
     }
 
     async fn empirical_tool_probe(client: &Client, config: &ConnectionConfig) -> bool {
-        if config.capability_source == CapabilitySource::OllamaNative {
+        if config.transport == TransportType::OllamaNative {
             return false;
         }
 
