@@ -242,8 +242,8 @@ mod tests {
     use crate::services::{
         harness::{ChatMessage as MemMsg, Role},
         llm::{
-            AuthScheme, CapabilitySource, ConversationInput, GenerationOptions, GenerationPurpose,
-            OutputConstraint, TokenLimitField, TransportType,
+            catalog::ProviderPresetMeta, AuthScheme, ConversationInput, GenerationOptions,
+            GenerationPurpose, OutputConstraint, TransportType,
         },
     };
 
@@ -254,9 +254,8 @@ mod tests {
             base_url: "https://api.openai.com/v1".to_string(),
             model: "gpt-4o".to_string(),
             auth: AuthScheme::Bearer(Some("test".to_string())),
-            token_limit_field: TokenLimitField::MaxOutputTokens,
-            capability_source: CapabilitySource::ProbedGeneric,
             provider_preset: Some("openai".to_string()),
+            policy: ProviderPresetMeta::default(),
         };
 
         let request = GenerationRequest {

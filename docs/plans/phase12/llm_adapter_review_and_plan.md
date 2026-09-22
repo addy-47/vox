@@ -114,8 +114,9 @@ spelling.
 
 Rule for all batches: **a new provider difference = a new manifest field + a new
 golden test, never a new `if` in shared code.** `TransportType` gains an explicit
-`OllamaNative` variant; `CapabilitySource` keeps discovery provenance only and
-loses all dispatch role (spec §2.4, §6.3).
+`OllamaNative` variant and is the single discriminator everywhere;
+`CapabilitySource` and `TokenLimitField` were deleted outright (they duplicated
+the transport name and the manifest `token_limit` path).
 
 ### Batch P0 — Manifest + types (spec §2)
 
@@ -130,19 +131,34 @@ loses all dispatch role (spec §2.4, §6.3).
 | Local wire params (ollama native + `/v1`, lm_studio, vllm) | Official Ollama `docs/openapi.yaml` + `docs.ollama.com/api/openai-compatibility` (native `think:bool\|low\|medium\|high\|max`, `options.num_predict`; `/v1` accepts `max_tokens` + `reasoning_effort`, rejects `tool_choice`). modelparams.dev covers none of these — hand-row from official docs only. |
 | Model facts (context, tools, structured) | `models.dev` (`models.json`, already synced by `catalog/sync.rs:9`) — unchanged. |
 
-- Extend `baseline_providers.json` to full wire policy per preset:
-  `transport` (now including `ollama_native`), `token_limit_field` + location,
-  `reasoning_wire`, `tool_choice_policy`, `stream_options_policy`,
-  `response_format_wire`, `tool_stream_shape`, `extra_body_passthrough`.
-- Each row gains `source` + `source_checked` (URL + date). A row without a source
+- Extend `baseline_providers.json` to plain mapping rows per preset: identity
+  (`id`, `name`, `base_url`, `auth`, `transport` incl. `ollama_native`) plus one
+  exact wire path per canonical intent (`token_limit`, `reasoning_off{path,value}`
+  or `null`, `tool_choice` or `null`, `stream_usage`, `response_envelope`,
+  `tool_stream`, `top_k_field` or `null`) plus `catalog` slug, `context_window`,
+  `source` + `checked`. No policy enums — paths and values ARE the policy.
+- Each row gains `source` + `checked` (URL + date). A row without a source
   citation fails review — this is what makes the JSON non-shallow.
 - Add `ollama_openai_compat` preset (base `http://…:11434/v1`, transport
-  `chat_completions`, `max_tokens`, `reasoning_effort_none`, `tool_choice:never`).
-  Existing `ollama` preset becomes native-only.
-- Mirror every key in `ProviderPresetMeta`; add JSON schema test (unknown key →
-  parse error, missing policy key → parse error, not silent default).
+  `chat_completions`, `max_tokens`, `reasoning_off={reasoning_effort,none}`,
+  `tool_choice:null`). Existing `ollama` preset becomes native-only.
+- Mirror every key in `ProviderPresetMeta`; vendor `modelparams_vendor.json`
+  (modelparams.dev static JSON, MIT) and cross-check mapping paths in tests.
 - **Done when:** `cargo test -p vox_lib catalog::` green on bundled JSON; spec §2
   table matches every preset row.
+- ✅ **DONE 2026-09-22 (revised — enums deleted, vendors in):** 14 plain rows with
+  `source`+`checked`; `modelparams_vendor.json` vendored (7 providers, 188 models)
+  with a cross-check test that fails the build on unverified paths (already caught
+  2 real errors: groq is `max_completion_tokens`, google vendor entries describe
+  the native surface, not our compat endpoint); `TransportType::OllamaNative`;
+  dispatch/health/list_models match on transport (URL sniff deleted); serializers
+  in `chat_completions.rs`/`ollama.rs` read `cfg.policy` (dual reasoning emission,
+  unconditional `tool_choice`/`stream_options`/bare `top_k` deleted); 58/58 lib
+  tests green, `clippy --lib` clean. Drive-by repairs (were blocking compile):
+  native stream loop now parses each NDJSON line (§1.7), `TokenLimitField` import
+  restored in `chat_completions.rs`. Partial P1 completed as required dependency
+  (explicit match dispatch + resolved `policy` on `ConnectionConfig`); remaining
+  P1 (unknown-preset `Err`) still open.
 
 ### Batch P1 — Config + dispatch (spec §2.3–§2.4)
 
@@ -199,6 +215,14 @@ loses all dispatch role (spec §2.4, §6.3).
 - Add `#[ignore]` live tests (explicit approval only, per AGENTS §3.4): Nvidia NIM
   + Ollama `qwen3.5:9b` turn-1 asserting `session_tool_calls` row + TTS handoff.
 - Re-run `agentic_tool_eval --no-judge` rapid inspection, then full judged eval.
+- ✅ **PARTIAL 2026-09-22:** 2 wire subtests added to `agentic_tool_runtime_test.rs`
+  (nvidia preset: exact request bytes incl. `reasoning_effort:none`, absent `think`,
+  plus chunked-SSE → single `ToolCall`; ollama native: `think:false`,
+  `options.num_predict`, absent `tool_choice`, plus NDJSON → `ToolCall`) via a
+  std-only mock HTTP server — no new deps, no network. 5/5 green `--release`;
+  red-proofed with a wrong-value mutant (failed as required, reverted).
+  Still open: `mock_*` rename of the 3 harness-routing subtests, `#[ignore]` live
+  tests (NIM + Ollama `qwen3.5:9b`), eval rerun.
 - **Done when:** CI suite green **and** live-ignored suite green on demand; eval
   judge passes turn-1 `respond_and_set_title` interception. Only then unpause
   testing/eval.
