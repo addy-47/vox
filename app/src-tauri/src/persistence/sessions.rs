@@ -301,6 +301,31 @@ pub async fn update_session_metadata(
     Ok(())
 }
 
+/// Idempotently ensures the session parent record exists in the database.
+pub async fn ensure_session_exists(
+    conn: &Connection,
+    session_id: i64,
+) -> std::result::Result<(), turso::Error> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    conn.execute(
+        "INSERT OR IGNORE INTO sessions (id, project_id, is_pinned, created_at, updated_at) VALUES (?, 'default', 0, ?, ?);",
+        (session_id, now, now),
+    )
+    .await?;
+    Ok(())
+}
+
+/// Sets the title of a session, idempotently ensuring the session record exists first.
+pub async fn set_session_title(conn: &Connection, session_id: i64, title: &str) -> Result<()> {
+    ensure_session_exists(conn, session_id)
+        .await
+        .map_err(|e| anyhow!(e))?;
+    update_session_metadata(conn, session_id, Some(title), None, None).await
+}
+
 /// Deletes a session. If hard is true, executes hard deletion (cascades to turns and compactions);
 /// otherwise marks deleted_at timestamp (soft delete).
 pub async fn delete_session(conn: &Connection, session_id: i64, hard: bool) -> Result<()> {

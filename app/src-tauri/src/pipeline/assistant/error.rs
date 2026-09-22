@@ -45,6 +45,7 @@ pub fn on_error<R: tauri::Runtime + 'static>(
                 .pipeline
                 .pending_synthesis_jobs
                 .store(0, Ordering::Relaxed);
+            state.pipeline.reset_turn_guards();
             transition(InteractionState::Ready, ctx, app, state);
         }
         PipelineImpact::SessionHalted => {
@@ -59,6 +60,7 @@ pub fn on_error<R: tauri::Runtime + 'static>(
                 .pipeline
                 .pending_synthesis_jobs
                 .store(0, Ordering::Relaxed);
+            state.pipeline.reset_turn_guards();
             transition(InteractionState::Error, ctx, app, state);
         }
     }
@@ -192,6 +194,7 @@ pub fn on_cancelled<R: tauri::Runtime>(
         .pipeline
         .pending_synthesis_jobs
         .store(0, Ordering::Relaxed);
+    state.pipeline.reset_turn_guards();
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {

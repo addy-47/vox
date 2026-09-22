@@ -109,7 +109,7 @@ pub fn build_compaction_request(
         let speaker = match msg.role {
             Role::User => "user",
             Role::Assistant => "assistant",
-            Role::System => continue,
+            Role::System | Role::Tool => continue,
         };
         history_text.push_str(&format!(
             r#"<turn speaker="{}">{}</turn>
@@ -152,11 +152,15 @@ pub fn build_compaction_request(
                     role: Role::System,
                     content: COMPACTION_SYSTEM_PROMPT.to_string(),
                     timestamp_ms: now_ms,
+                    tool_call_id: None,
+                    tool_calls: None,
                 },
                 ChatMessage {
                     role: Role::User,
                     content: user_content,
                     timestamp_ms: now_ms,
+                    tool_call_id: None,
+                    tool_calls: None,
                 },
             ],
         },

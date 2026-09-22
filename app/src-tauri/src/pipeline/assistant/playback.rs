@@ -26,6 +26,8 @@ pub fn on_playback_started<R: tauri::Runtime>(
         return;
     }
 
+    state.pipeline.clear_drained_while_open();
+
     let current_state = state.pipeline.state();
     if current_state != InteractionState::Thinking && current_state != InteractionState::Working {
         log::debug!(
@@ -69,6 +71,15 @@ pub fn on_playback_finished<R: tauri::Runtime>(
         return;
     }
 
+    if state.pipeline.is_turn_open() {
+        state.pipeline.set_drained_while_open(true);
+        log::debug!(
+            "[Pipeline::Playback] PlaybackFinished deferred (turn {}): turn_open=true, latching drained_while_open",
+            turn_id
+        );
+        return;
+    }
+
     let pending_jobs = state
         .pipeline
         .pending_synthesis_jobs
@@ -82,6 +93,7 @@ pub fn on_playback_finished<R: tauri::Runtime>(
         return;
     }
 
+    state.pipeline.clear_drained_while_open();
     transition(InteractionState::Ready, ctx, app, state);
     log::info!(
         "[Pipeline::Playback] Playback finished -> Ready (turn: {})",

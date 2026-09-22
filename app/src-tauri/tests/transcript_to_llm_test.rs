@@ -104,6 +104,7 @@ async fn test_transcript_to_llm_matrix() {
                 None,
                 &settings,
                 llm_tx.clone(),
+                true,
             ));
         }
 

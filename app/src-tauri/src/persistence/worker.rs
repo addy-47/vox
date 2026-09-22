@@ -11,8 +11,9 @@ use crossbeam_channel::{bounded, Receiver, Sender};
 use turso::Connection;
 
 use super::{
-    queue::reconcile_crashed_queue_on_boot, sessions::cleanup_zero_turn_sessions, PersistenceEvent,
-    PERSISTENCE_CHANNEL_CAPACITY, PERSISTENCE_RATE_INTERVAL, WORKER_EVENT_POLL_TIMEOUT,
+    queue::reconcile_crashed_queue_on_boot, sessions::cleanup_zero_turn_sessions,
+    tool_calls::persist_tool_call, PersistenceEvent, PERSISTENCE_CHANNEL_CAPACITY,
+    PERSISTENCE_RATE_INTERVAL, WORKER_EVENT_POLL_TIMEOUT,
 };
 use crate::{
     core::error::PersistenceError,
@@ -146,6 +147,19 @@ fn log_skipped_private_event(event: &PersistenceEvent) {
                 "[Persistence::Worker] Private Mode active: skipping turn record (session={}, turn={})",
                 session_id,
                 turn_id
+            );
+        }
+        PersistenceEvent::ToolCallExecuted {
+            session_id,
+            turn_id,
+            tool_name,
+            ..
+        } => {
+            log::info!(
+                "[Persistence::Worker] Private Mode active: skipping tool call record (session={}, turn={}, tool={})",
+                session_id,
+                turn_id,
+                tool_name
             );
         }
         _ => {}
@@ -316,6 +330,9 @@ async fn process_event(conn: &Connection, event: PersistenceEvent) -> anyhow::Re
                     );
                 }
             }
+        }
+        PersistenceEvent::ToolCallExecuted { .. } => {
+            persist_tool_call(conn, &event).await?;
         }
         PersistenceEvent::Shutdown => {
             log::info!("[Persistence::Worker] Shutdown event received. Exiting");

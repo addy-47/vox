@@ -25,6 +25,8 @@ pub struct PipelineAtomics {
     pub is_playback_muted: Arc<AtomicBool>,
     pub is_mic_muted: Arc<AtomicBool>,
     pub turn_token: Arc<parking_lot::Mutex<tokio_util::sync::CancellationToken>>,
+    pub turn_open: Arc<AtomicBool>,
+    pub drained_while_open: Arc<AtomicBool>,
     pub engine_shutdown: Arc<AtomicBool>,
 }
 
@@ -58,6 +60,8 @@ impl PipelineAtomics {
             turn_token: Arc::new(parking_lot::Mutex::new(
                 tokio_util::sync::CancellationToken::new(),
             )),
+            turn_open: Arc::new(AtomicBool::new(false)),
+            drained_while_open: Arc::new(AtomicBool::new(false)),
             engine_shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -162,5 +166,41 @@ impl PipelineAtomics {
         let id = self.next_turn_id();
         let tok = self.rearm_turn_token();
         (id, tok)
+    }
+
+    /// Returns whether the conversational turn is currently open for synthesis.
+    pub fn is_turn_open(&self) -> bool {
+        self.turn_open.load(Ordering::SeqCst)
+    }
+
+    /// Sets whether the conversational turn is currently open for synthesis.
+    pub fn set_turn_open(&self, val: bool) {
+        self.turn_open.store(val, Ordering::SeqCst);
+    }
+
+    /// Clears the turn open flag back to false.
+    pub fn clear_turn_open(&self) {
+        self.turn_open.store(false, Ordering::SeqCst);
+    }
+
+    /// Returns whether audio playback drained while the turn was still open.
+    pub fn is_drained_while_open(&self) -> bool {
+        self.drained_while_open.load(Ordering::SeqCst)
+    }
+
+    /// Sets whether audio playback drained while the turn was still open.
+    pub fn set_drained_while_open(&self, val: bool) {
+        self.drained_while_open.store(val, Ordering::SeqCst);
+    }
+
+    /// Clears the drained_while_open latch flag back to false.
+    pub fn clear_drained_while_open(&self) {
+        self.drained_while_open.store(false, Ordering::SeqCst);
+    }
+
+    /// Atomically clears all turn synthesis guard latches back to initial idle defaults.
+    pub fn reset_turn_guards(&self) {
+        self.turn_open.store(false, Ordering::SeqCst);
+        self.drained_while_open.store(false, Ordering::SeqCst);
     }
 }

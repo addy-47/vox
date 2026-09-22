@@ -1,6 +1,6 @@
 use std::{
     fmt,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crate::services::translit::is_devanagari;
@@ -8,14 +8,23 @@ use crate::services::translit::is_devanagari;
 pub mod orchestrator;
 pub mod stages;
 
-pub use orchestrator::{Harness, PipelineDomain, TurnExecutionRequest, TurnOutcome};
+pub use orchestrator::{
+    Harness, NonTerminalPhase, NonTerminalTrigger, PipelineDomain, TurnExecutionRequest,
+    TurnOutcome,
+};
 pub use stages::{
     budget::{ContextBudgetStage, ContextStatus},
     compaction::{CompactionParams, CompactionStage},
     history::ConversationHistoryStage,
     prompt::PromptBuilderStage,
     streaming::{ClauseChunker, StreamRoutingHandles, StreamRoutingStage},
+    tools::{
+        MemorySearchTool, RespondAndSetTitleTool, ToolDefinition, ToolError, ToolExecutionContext,
+        ToolExecutionOutcome, ToolExecutor, ToolFilter, ToolRegistry, ToolResult,
+    },
 };
+
+pub const TOOL_EXECUTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub const TRANSITION_MESSAGES_EN: &[&str] = &[
     "Give me a moment to gather my thoughts.",
@@ -43,11 +52,14 @@ pub const TRANSITION_MESSAGES_HI: &[&str] = &[
     "बस एक सेकंड रुकिए।",
 ];
 
+pub use crate::services::llm::{CanonicalToolCall, CanonicalToolDefinition, ToolFlow};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
     System,
     User,
     Assistant,
+    Tool,
 }
 
 impl fmt::Display for Role {
@@ -56,6 +68,7 @@ impl fmt::Display for Role {
             Self::System => write!(f, "system"),
             Self::User => write!(f, "user"),
             Self::Assistant => write!(f, "assistant"),
+            Self::Tool => write!(f, "tool"),
         }
     }
 }
@@ -65,6 +78,8 @@ pub struct ChatMessage {
     pub role: Role,
     pub content: String,
     pub timestamp_ms: u64,
+    pub tool_call_id: Option<String>,
+    pub tool_calls: Option<Vec<CanonicalToolCall>>,
 }
 
 impl ChatMessage {
@@ -73,6 +88,20 @@ impl ChatMessage {
             role,
             content,
             timestamp_ms: current_timestamp_ms(),
+            tool_call_id: None,
+            tool_calls: None,
+        }
+    }
+}
+
+impl Default for ChatMessage {
+    fn default() -> Self {
+        Self {
+            role: Role::User,
+            content: String::new(),
+            timestamp_ms: 0,
+            tool_call_id: None,
+            tool_calls: None,
         }
     }
 }

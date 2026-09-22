@@ -29,6 +29,7 @@ pub fn on_interrupt<R: tauri::Runtime>(
         .pipeline
         .pending_synthesis_jobs
         .store(0, Ordering::Relaxed);
+    state.pipeline.reset_turn_guards();
 
     let signal_provider_interrupt = matches!(
         (&ctx.pipeline_mode, &ctx.interaction_mode),

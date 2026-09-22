@@ -305,6 +305,7 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
             None,
             &settings,
             llm_tx.clone(),
+            true,
         );
 
         // 1. Seed conversation buffer to exceed critical threshold (>85% of usable 7680 = >6528 tokens; 105 turns ≈ 7035 tokens)
@@ -418,6 +419,7 @@ async fn test_compaction_filler_dispatch_and_pending_accounting() {
             None,
             &settings,
             llm_tx,
+            true,
         );
         normal_harness.push_user_turn("Short prompt".to_string());
         assert!(

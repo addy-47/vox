@@ -297,8 +297,15 @@ pub fn on_session_start<R: tauri::Runtime + 'static>(
                 .ok()
                 .and_then(|g| g.as_ref().and_then(|e| e.llm_tx.clone()));
             if let Some(llm_tx) = llm_tx_opt {
-                let mut harness =
-                    Harness::new_modular(session_id, prompt, personal_memory, &settings, llm_tx);
+                let supports_tools = resolve_model_tool_support(app, state, &settings);
+                let mut harness = Harness::new_modular(
+                    session_id,
+                    prompt,
+                    personal_memory,
+                    &settings,
+                    llm_tx,
+                    supports_tools,
+                );
                 if !turns.is_empty() || summary.is_some() {
                     harness.seed_continuation(summary, turns);
                 }
@@ -344,6 +351,7 @@ pub fn on_pause<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &R
 
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
     state.pipeline.turn_token().cancel();
+    state.pipeline.reset_turn_guards();
     state.pipeline_accumulator.lock().clear();
 
     if let Ok(guard) = state.engine.try_lock() {
@@ -499,6 +507,7 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
 
     state.pipeline.cancel_flag.store(true, Ordering::Relaxed);
     state.pipeline.turn_token().cancel();
+    state.pipeline.reset_turn_guards();
     state.pipeline_accumulator.lock().clear();
     state.harness.lock().take();
 
@@ -672,3 +681,112 @@ pub fn on_end<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &Rou
         }
     });
 }
+
+/// Resolves tool calling capability for the active model from capability cache or 4s probe.
+fn resolve_model_tool_support<R: tauri::Runtime + 'static>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    settings: &crate::core::settings::VoxSettings,
+) -> bool {
+    let active_model = settings.llm.active_model();
+    let provider_kind = match settings.llm.active {
+        crate::core::settings::LlmActiveProvider::Embedded => "embedded",
+        crate::core::settings::LlmActiveProvider::Server => "server",
+        crate::core::settings::LlmActiveProvider::Cloud => "cloud",
+    };
+    let key = format!("{}:{}", provider_kind, active_model);
+
+    let cache_file = crate::paths::get().cache.join("model_capabilities.json");
+    if cache_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&cache_file) {
+            if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, crate::core::settings::ModelCapabilities>>(&content) {
+                if let Some(caps) = map.get(&key) {
+                    log::info!(
+                        "[Pipeline::Session] Cached capability for {}: supports_tools = {}",
+                        key,
+                        caps.supports_tools
+                    );
+                    if !caps.supports_tools {
+                        emit_tool_unsupported_notification(app, state, active_model);
+                    }
+                    return caps.supports_tools;
+                }
+            }
+        }
+    }
+
+    log::info!("[Pipeline::Session] Model {} unprobed; executing 4s probe", key);
+    let state_arc = app.state::<Arc<AppState>>().inner().clone();
+    let tokio_handle = get_tokio_handle();
+    let probe_res = tokio_handle.block_on(async move {
+        tokio::time::timeout(
+            Duration::from_secs(4),
+            crate::services::llm::catalog::probe_capabilities(&state_arc, None, None, None),
+        )
+        .await
+    });
+
+    match probe_res {
+        Ok(Ok(probe_result)) => {
+            let supported = probe_result.capabilities.supports_tools;
+            log::info!(
+                "[Pipeline::Session] Probe resolved for {}: supports_tools = {}",
+                key,
+                supported
+            );
+            if !supported {
+                emit_tool_unsupported_notification(app, state, active_model);
+            }
+            supported
+        }
+        Ok(Err(err)) => {
+            log::warn!("[Pipeline::Session] Probe failed for {}: {}", key, err);
+            emit_tool_unsupported_notification(app, state, active_model);
+            false
+        }
+        Err(_) => {
+            log::warn!("[Pipeline::Session] Probe timed out (4s) for {}", key);
+            emit_tool_unsupported_notification(app, state, active_model);
+            false
+        }
+    }
+}
+
+/// Dispatches a warning notification when tool calling is unavailable on the active model.
+fn emit_tool_unsupported_notification<R: tauri::Runtime + 'static>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    model: &str,
+) {
+    let app_handle = app.clone();
+    let db = state.db.clone();
+    let model_name = model.to_string();
+
+    tauri::async_runtime::spawn(async move {
+        let msg = format!(
+            "Active model '{}' does not support tool calling. Advanced agentic tools disabled.",
+            model_name
+        );
+        let params = NotificationParams {
+            category: NotificationCategory::Pipeline,
+            severity: Severity::Warning,
+            impact: Some(PipelineImpact::Degraded),
+            action: Action::Interactive(ActionPayload::Navigate {
+                target: "settings/ai".to_string(),
+            }),
+            title: "Tool Calling Unavailable",
+            message: &msg,
+            group_key: Some("model_tool_unsupported"),
+            session_id: None,
+            metadata: None,
+            duration_ms: Some(5000),
+        };
+        if let Err(notify_err) = services::notifications::notify(&app_handle, &db, params).await {
+            log::warn!(
+                "[Pipeline::Session] Failed to dispatch tool unsupported notification: {}",
+                notify_err
+            );
+        }
+    });
+}
+

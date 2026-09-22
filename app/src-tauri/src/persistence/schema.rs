@@ -12,7 +12,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-const SCHEMA_VERSION: u32 = 4;
+const SCHEMA_VERSION: u32 = 5;
 
 const V2_TABLE_STATEMENTS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS projects (
@@ -126,6 +126,19 @@ const V2_TABLE_STATEMENTS: &[&str] = &[
         created_at INTEGER NOT NULL
     );",
     "CREATE INDEX IF NOT EXISTS idx_voices_created ON voices(created_at DESC);",
+    "CREATE TABLE IF NOT EXISTS session_tool_calls (
+        id TEXT PRIMARY KEY,
+        session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        turn_id INTEGER NOT NULL,
+        tool_name TEXT NOT NULL,
+        tool_kind TEXT NOT NULL,
+        arguments TEXT NOT NULL,
+        result TEXT,
+        is_error INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER,
+        created_at INTEGER NOT NULL
+    );",
+    "CREATE INDEX IF NOT EXISTS idx_tool_calls_session_turn ON session_tool_calls(session_id, turn_id);",
 ];
 
 /// Runs schema migrations, dropping obsolete legacy tables and initializing v2 schema.
@@ -299,9 +312,9 @@ mod tests {
             .expect("Row exists")
             .get(0)
             .expect("Version column");
-        assert_eq!(version, 4, "Schema version must be 4");
+        assert_eq!(version, 5, "Schema version must be 5");
 
-        // Verify all 10 tables exist
+        // Verify all 11 tables exist
         let expected_tables = [
             "projects",
             "sessions",
@@ -313,6 +326,7 @@ mod tests {
             "memory_facts_vectors",
             "notifications",
             "voices",
+            "session_tool_calls",
         ];
 
         for table in &expected_tables {
@@ -379,6 +393,13 @@ mod tests {
         .await
         .expect("Insert turn");
 
+        conn.execute(
+            "INSERT INTO session_tool_calls (id, session_id, turn_id, tool_name, tool_kind, arguments, result, is_error, duration_ms, created_at) VALUES ('call-1', 1, 1, 'respond_and_set_title', 'terminal', '{}', 'ok', 0, 15, ?)",
+            (now,),
+        )
+        .await
+        .expect("Insert tool call");
+
         // Deleting project 'default' must fail due to ON DELETE RESTRICT from sessions
         let proj_del_res = conn
             .execute("DELETE FROM projects WHERE id = 'default'", ())
@@ -388,7 +409,7 @@ mod tests {
             "Deleting project with child sessions must violate foreign key restriction"
         );
 
-        // Deleting session must cascade to turns
+        // Deleting session must cascade to turns and session_tool_calls
         conn.execute("DELETE FROM sessions WHERE id = 1", ())
             .await
             .expect("Delete session");
@@ -404,6 +425,25 @@ mod tests {
             .get(0)
             .expect("Count col");
         assert_eq!(turn_count, 0, "Turns must cascade delete with session");
+
+        let mut tool_rows = conn
+            .query(
+                "SELECT COUNT(*) FROM session_tool_calls WHERE session_id = 1",
+                (),
+            )
+            .await
+            .expect("Query tool_calls count");
+        let tool_count: i64 = tool_rows
+            .next()
+            .await
+            .expect("Row next")
+            .expect("Count row exists")
+            .get(0)
+            .expect("Count col");
+        assert_eq!(
+            tool_count, 0,
+            "Tool calls must cascade delete with session"
+        );
 
         // Verify mutual exclusion: only one in_progress run per session
         conn.execute(
