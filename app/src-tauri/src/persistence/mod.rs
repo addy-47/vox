@@ -24,8 +24,8 @@ pub use compactions::{
     resolve_uncompacted_range, CompactionRecord,
 };
 pub use facts::{
-    deactivate_fact, deactivate_facts_batch, fetch_active_facts_by_type, fetch_all_active_facts,
-    FactRecord,
+    deactivate_fact, deactivate_facts_batch, fetch_active_episodic_memory,
+    fetch_active_facts_by_type, fetch_all_active_facts, EpisodicFactCandidate, FactRecord,
 };
 pub use notifications::{NewNotification, NotificationRecord};
 pub use personal_memory::PersonalMemoryRecord;

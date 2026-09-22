@@ -17,7 +17,7 @@ use crate::{
         commit_compaction_output, record_compaction_finish, record_compaction_start,
     },
     services::{
-        harness::{orchestrator::Harness, ChatMessage, PromptTag, Role},
+        harness::{ChatMessage, Harness, PromptTag, Role},
         llm::LlmProvider,
         memory::compaction::runner::{run_compaction, CompactionResult},
     },

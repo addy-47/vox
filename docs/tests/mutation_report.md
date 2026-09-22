@@ -125,10 +125,10 @@ This ledger records empirical proof that tests go RED when critical production p
 ---
 
 ## Seam 9: `tests/playback_interrupt_test.rs`
-- **Mutants Attempted:** 3
-- **Killed:** 3
-- **Survivors:** 0
-- **Mutation Score:** 3/3 (100.0%)
+- **Mutants Attempted:** 7
+- **Killed:** 5
+- **Survivors:** 2 (Documented gaps in turn_token cancellation assertion and Invariant 13 partial persistence simulation)
+- **Mutation Score:** 5/7 (71.4%)
 - **Mutations Realized & Verified:**
   1. **Mutant 9.1 (Pending Deferral Bypass):** In `pipeline/assistant/playback.rs:76-83`, comment out `if pending_jobs > 0 { return; }` in `on_playback_finished`.
      - *Result:* 🔴 **KILLED** (`assertion left == right failed: on_playback_finished must be deferred by router while pending_synthesis_jobs > 0 (left: Ready, right: Speaking)` at `tests/playback_interrupt_test.rs:250:9`, `FAIL [0.08s]`).
@@ -136,6 +136,14 @@ This ledger records empirical proof that tests go RED when critical production p
      - *Result:* 🔴 **KILLED** (`[VAD ducking suppression during Speaker Speaking] Negative assertion failed: expected empty channel, but found item: SpeechStart` at `tests/common/harness.rs:290:9`, `FAIL [1.14s]`).
   3. **Mutant 9.3 (Barge-in Pending Reset Deletion):** In `pipeline/assistant/interrupt.rs:31`, comment out `state.pipeline.pending_synthesis_jobs.store(0, Ordering::Relaxed)` in `on_interrupt`.
      - *Result:* 🔴 **KILLED** (`assertion left == right failed: pending_synthesis_jobs must be reset to 0 upon barge-in (left: 2, right: 0)` at `tests/playback_interrupt_test.rs:556:9`, `FAIL [0.07s]`).
+  4. **Mutant 9.4 (Accumulator Clear Omission on Interrupt):** Commented out `state.pipeline_accumulator.lock().clear()` in `pipeline/assistant/interrupt.rs:54`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/playback_interrupt_test.rs:564:13: Accumulator assistant response must be cleared on interrupt`, `FAIL [0.06s]`).
+  5. **Mutant 9.5 (Turn Token Cancel Omission on Interrupt):** Omitted `state.pipeline.turn_token().cancel()` in `pipeline/assistant/interrupt.rs:26`.
+     - *Result:* ⚠️ **SURVIVED** (`test_barge_in_cancels_and_advances_turn` asserts `cancel_flag` and `state`, but does not verify `old_turn_token.is_cancelled()`; documented gap).
+  6. **Mutant 9.6 (Turn Monotonic Advance Suppressed on Interrupt):** Replaced `next_turn()` with `(interrupted_turn_id, ())` in `pipeline/assistant/interrupt.rs:56`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/playback_interrupt_test.rs:531:9: Interrupt must generate new turn_id > old_turn_id (got 1 vs 1)`, `FAIL [0.06s]`).
+  7. **Mutant 9.7 (Interrupt Ready State Inversion):** Changed interrupt transition from `Listening` to `Ready` in `pipeline/assistant/interrupt.rs:58`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/playback_interrupt_test.rs:577:9: assertion left == right failed: left: Ready, right: Listening`, `FAIL [0.06s]`).
 
 ---
 
@@ -152,10 +160,10 @@ This ledger records empirical proof that tests go RED when critical production p
 ---
 
 ## Seam 11: `tests/session_lifecycle_test.rs`
-- **Mutants Attempted:** 4
-- **Killed:** 4
+- **Mutants Attempted:** 5
+- **Killed:** 5
 - **Survivors:** 0
-- **Mutation Score:** 4/4 (100.0%)
+- **Mutation Score:** 5/5 (100.0%)
 - **Mutations Realized & Verified:**
   1. **Mutant 11.1 (Persistence Dispatch Deletion):** Commented out `tx.try_send(PersistenceEvent::SessionStarted { ... })` in `pipeline/assistant/session.rs:205`.
      - *Result:* 🔴 **KILLED** (`Turso SQLite must contain inserted session row from persistence worker` at `tests/session_lifecycle_test.rs:134:9`, `FAIL [0.26s]`).
@@ -165,6 +173,8 @@ This ledger records empirical proof that tests go RED when critical production p
      - *Result:* 🔴 **KILLED** (`assertion failed: state.engine.lock().is_some(): CPAL engine must remain active when dictation is Ready` at `tests/session_lifecycle_test.rs:592:13`, `FAIL [0.09s]`).
   4. **Mutant 11.4 (Continuation Branch Deletion):** Replaced `if let (Some(sid), Some(conn)) = (session_id, conn.as_ref())` with `if false` in `pipeline/assistant/session.rs:240`.
      - *Result:* 🔴 **KILLED** (`assertion failed: Seeded database turn must be hydrated into working memory history` at `tests/session_lifecycle_test.rs:289:9`, `FAIL [0.24s]`).
+  5. **Mutant 11.5 (Capability Cache Inversion):** Inverted cached `supports_tools` boolean in `pipeline/assistant/session.rs:712` in `resolve_model_tool_support`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/session_lifecycle_test.rs:1000:9: Cached model capabilities must immediately set harness.supports_tools = true`, `FAIL [0.08s]`).
 
 ---
 
@@ -285,10 +295,10 @@ This ledger records empirical proof that tests go RED when critical production p
 ---
 
 ## Seam 20: `tests/database_persistence_boundary_test.rs`
-- **Mutants Attempted:** 3
-- **Killed:** 3
+- **Mutants Attempted:** 4
+- **Killed:** 4
 - **Survivors:** 0
-- **Mutation Score:** 3/3 (100.0%)
+- **Mutation Score:** 4/4 (100.0%)
 - **Mutations Realized & Verified:**
   1. **Mutant 20.1 (Foreign Keys Inversion):** Set `PRAGMA foreign_keys = OFF;` in `persistence/schema.rs:149`.
      - *Result:* 🔴 **KILLED** (`panicked at tests/database_persistence_boundary_test.rs: Turns must be deleted on session delete (CASCADE)`).
@@ -296,4 +306,26 @@ This ledger records empirical proof that tests go RED when critical production p
      - *Result:* 🔴 **KILLED** (`panicked at tests/database_persistence_boundary_test.rs: New in_progress compaction must succeed after previous one completed: UNIQUE constraint failed`).
   3. **Mutant 20.3 (Vector Float Little-Endian Swap):** Replaced `to_le_bytes()` with `to_be_bytes()` in `persistence/mod.rs:65`.
      - *Result:* 🔴 **KILLED** (`panicked at tests/database_persistence_boundary_test.rs: Float bit-fidelity mismatch at dimension 1: original 0.012345356, decoded 0.0000000000111577934`).
+  4. **Mutant 20.4 (Private Mode Event Drop Bypass):** Bypassed `is_private_mode` check for `PersistenceEvent::ToolCallExecuted` in `persistence/worker.rs:105`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/database_persistence_boundary_test.rs:783:9: assertion left == right failed: Tool call record must NOT be inserted into SQLite when private mode is active`, `FAIL [0.08s]`).
+
+---
+
+## Seam 21: `tests/agentic_tool_runtime_test.rs`
+- **Mutants Attempted:** 5
+- **Killed:** 3
+- **Survivors:** 2 (Documented gaps in explicit tool.flow() assertion and empty title negative check)
+- **Mutation Score:** 3/5 (60.0%)
+- **Mutations Realized & Verified:**
+  1. **Mutant 21.1 (Terminal Flow Contract Inversion):** Changed `RespondAndSetTitleTool::flow()` from `ToolFlow::Terminal` to `ToolFlow::NonTerminal` in `services/harness/stages/tools/title.rs:41`.
+     - *Result:* ⚠️ **SURVIVED** (`test_terminal_tool_title_and_accumulator_parity` invoked `step6_handle_terminal_tool` directly without asserting `tool.flow() == Terminal`; documented gap).
+  2. **Mutant 21.2 (Turn 2+ Title Filter Inversion):** Bypassed `respond_and_set_title` suppression filter on Turn 2+ in `services/harness/stages/tools/registry.rs:51`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/agentic_tool_runtime_test.rs:199:9: Turn 2 must suppress respond_and_set_title`, `FAIL [0.03s]`).
+  3. **Mutant 21.3 (Title Emptiness Validation Bypass):** Bypassed `title.is_empty()` error validation check in `services/harness/stages/tools/title.rs:64`.
+     - *Result:* ⚠️ **SURVIVED** (Integration suite only executed valid happy path payloads; documented negative input validation gap).
+  4. **Mutant 21.4 (Turn Accumulator Parity Omission):** Omitted `stream_handles.accumulator` assignment in `services/harness/steps.rs:440` inside `step6_handle_terminal_tool`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/agentic_tool_runtime_test.rs:165:9: assertion left == right failed: TurnAccumulator must capture spoken_response for DB parity`, `FAIL [0.02s]`).
+  5. **Mutant 21.5 (Scratchpad Observation Push Corruption):** Pushed empty string observation to `scratchpad` in `services/harness/steps.rs:556` inside `step6_handle_non_terminal_tool`.
+     - *Result:* 🔴 **KILLED** (`panicked at tests/agentic_tool_runtime_test.rs:359:9: Scratchpad observation must contain memory search output`, `FAIL [0.03s]`).
+
 

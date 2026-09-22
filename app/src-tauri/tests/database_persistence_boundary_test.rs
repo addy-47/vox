@@ -648,3 +648,144 @@ async fn test_f32_blob_vector_precision_roundtrip() {
     .await
     .expect("test_f32_blob_vector_precision_roundtrip timed out");
 }
+
+// ============================================================================
+// Subtest 12: test_session_tool_calls_persistence_and_indexes
+// ============================================================================
+/// Verifies Seam 20 Phase 12 Schema v5 & Persistence Worker Contracts:
+/// 1. Verifies `session_tool_calls` table and both `idx_tool_calls_session_turn` and `idx_tool_calls_created` indexes.
+/// 2. Verifies self-healing foreign key parent insertion on `ToolCallExecuted` event.
+/// 3. Verifies private mode suppression of `session_tool_calls` insertion.
+#[tokio::test]
+async fn test_session_tool_calls_persistence_and_indexes() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let dir = tempdir().expect("Failed to create tempdir");
+        let db_path = dir.path().join("test_tool_calls.db");
+
+        let db = VoxDb::open(&db_path).await.expect("Failed to open VoxDb");
+        let conn = db.connect().expect("Failed to vend connection");
+        run_migrations(&conn).await.expect("Failed to run migrations");
+
+        // 1. Verify schema v5 and indexes exist
+        let mut idx_rows = conn
+            .query(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'session_tool_calls';",
+                (),
+            )
+            .await
+            .expect("Failed to query indexes");
+
+        let mut indexes = Vec::new();
+        while let Ok(Some(row)) = idx_rows.next().await {
+            let name: String = row.get(0).unwrap();
+            indexes.push(name);
+        }
+        assert!(
+            indexes.contains(&"idx_tool_calls_session_turn".to_string()),
+            "Index idx_tool_calls_session_turn must exist"
+        );
+        assert!(
+            indexes.contains(&"idx_tool_calls_created".to_string()),
+            "Index idx_tool_calls_created must exist"
+        );
+
+        // Setup persistence worker with shared db
+        let is_healthy = Arc::new(AtomicBool::new(true));
+        let rate = Arc::new(AtomicU32::new(0));
+        let is_private = Arc::new(AtomicBool::new(false));
+
+        let persist_tx = spawn_persistence_worker(
+            Arc::new(db),
+            is_healthy,
+            rate,
+            Arc::clone(&is_private),
+        );
+
+        // 2. Send ToolCallExecuted for an unregistered session ID (Self-Healing FK test)
+        let orphan_sid = 999111222i64;
+        let call_id = "call_test_123".to_string();
+        persist_tx
+            .send(PersistenceEvent::ToolCallExecuted {
+                id: call_id.clone(),
+                session_id: orphan_sid,
+                turn_id: 1,
+                tool_name: "respond_and_set_title".to_string(),
+                tool_flow: vox_lib::services::llm::ToolFlow::Terminal,
+                arguments: serde_json::json!({
+                    "title": "Self Healing Session",
+                    "spoken_response": "Hello world"
+                }),
+                result: "Session title updated".to_string(),
+                is_error: false,
+                duration_ms: 45,
+                created_at: 1700000000100,
+            })
+            .expect("Failed to send ToolCallExecuted");
+
+        // Wait for persistence
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut tool_call_found = false;
+        while std::time::Instant::now() < deadline {
+            let mut rows = conn
+                .query(
+                    "SELECT tool_name, tool_kind, duration_ms FROM session_tool_calls WHERE id = ?;",
+                    (call_id.clone(),),
+                )
+                .await
+                .expect("Failed to query session_tool_calls");
+
+            if let Ok(Some(row)) = rows.next().await {
+                let name: String = row.get(0).unwrap();
+                let kind: String = row.get(1).unwrap();
+                let dur: i64 = row.get(2).unwrap();
+                assert_eq!(name, "respond_and_set_title");
+                assert_eq!(kind, "terminal");
+                assert_eq!(dur, 45);
+                tool_call_found = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        assert!(
+            tool_call_found,
+            "session_tool_calls record must be inserted with self-healed session"
+        );
+
+        // 3. Test Private Mode Suppression
+        is_private.store(true, Ordering::Relaxed);
+        let private_call_id = "call_private_456".to_string();
+        persist_tx
+            .send(PersistenceEvent::ToolCallExecuted {
+                id: private_call_id.clone(),
+                session_id: orphan_sid,
+                turn_id: 2,
+                tool_name: "search_memory".to_string(),
+                tool_flow: vox_lib::services::llm::ToolFlow::NonTerminal,
+                arguments: serde_json::json!({ "query": "secret" }),
+                result: "None".to_string(),
+                is_error: false,
+                duration_ms: 20,
+                created_at: 1700000000200,
+            })
+            .expect("Failed to send private ToolCallExecuted");
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let mut rows = conn
+            .query(
+                "SELECT COUNT(*) FROM session_tool_calls WHERE id = ?;",
+                (private_call_id,),
+            )
+            .await
+            .expect("Query failed");
+        let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(
+            count, 0,
+            "Tool call record must NOT be inserted into SQLite when private mode is active"
+        );
+    })
+    .await
+    .expect("test_session_tool_calls_persistence_and_indexes timed out");
+}
+

@@ -1,4 +1,11 @@
-use crate::services::{harness::PromptTag, memory::ml::tokenizer::estimate_tokens};
+use crate::services::{
+    harness::{ChatMessage, PromptTag},
+    llm::{
+        CanonicalToolDefinition, ConversationInput, GenerationOptions, GenerationPurpose,
+        GenerationRequest, OutputConstraint,
+    },
+    memory::ml::tokenizer::estimate_tokens,
+};
 
 /// Plugin managing system prompt assembly, user identity grounding, and system budget ceiling enforcement.
 #[derive(Debug, Clone)]
@@ -67,6 +74,26 @@ impl PromptBuilderStage {
             memory[..safe_idx].to_string()
         } else {
             memory.to_string()
+        }
+    }
+
+    /// Assembles the complete GenerationRequest payload including history, scratchpad, options, and tools.
+    pub fn build_generation_request(
+        &self,
+        history: &[ChatMessage],
+        scratchpad: &[ChatMessage],
+        options: GenerationOptions,
+        tools: Option<Vec<CanonicalToolDefinition>>,
+    ) -> GenerationRequest {
+        let mut messages = history.to_vec();
+        messages.extend_from_slice(scratchpad);
+
+        GenerationRequest {
+            input: ConversationInput { messages },
+            options,
+            output: OutputConstraint::Text,
+            purpose: GenerationPurpose::Conversation,
+            tools,
         }
     }
 }

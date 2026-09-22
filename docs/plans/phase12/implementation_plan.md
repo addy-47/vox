@@ -335,6 +335,69 @@ All questions below were resolved during the spec synchronization and Claude rev
 
 ---
 
+### [ADDED] Batch 8 — System Architecture Remediation & Spec Harmonization 🟡
+
+> [!IMPORTANT]
+> **Remediation Trigger:** System Architect Audit & Review Report (`docs/plans/phase12/audit_review_report.md`, 2026-09-22) addressing 15 architectural divergences, audio hot path violations, barge-in data loss, and 6 residual gaps.
+
+**Blast radius**:
+- `services/harness/orchestrator/` (decoupling into named steps per §9.1)
+- `services/harness/stages/` (`prompt.rs`, `streaming/router.rs`, `tools/`)
+- `pipeline/assistant/` (`interrupt.rs`, `llm.rs`, `session.rs`)
+- `persistence/` (`schema.rs`)
+- `services/llm/` (`transport/chat_completions.rs`, `catalog/probe.rs`)
+
+**Dependencies**: Batches 0–7 completed.
+
+#### Sub-batch 8.1 — Pure-Move Orchestrator Refactor (§9.1 & §9.2) 🟢
+- [ ] Decompose `services/harness/orchestrator/` into named step files + `loop.rs` owner:
+  - `mod.rs`: Pure module declarations and re-exports. Zero business logic.
+  - `chassis.rs`: `Harness` struct, constructors (`new_modular`, `new_realtime`), session state, quiet watcher. No turn sequencing.
+  - `loop.rs`: Sole sequencing owner: `execute_turn()` entrypoint + reentrant loop driver (budget → assemble → dispatch → stream → tools).
+  - `intake.rs`: Phase 1 & 2: Dedup gate, push user turn, initial budget check (runs once per turn).
+  - `compaction.rs`: Phase 3: Inline compaction maintenance (runs once per turn, before loop).
+  - `assemble.rs`: Phase 4: Delegates directly to `PromptBuilderStage::build_generation_request`.
+  - `dispatch.rs`: Phase 5: Duplex `LlmCommand::Generate` dispatch over session pipe.
+  - `stream.rs`: Phase 6: Streaming adapter & outcome demuxing (`Completed`, `ToolCallReceived`, `Cancelled`, `Error`).
+  - `tools.rs`: Phase 6 Case B: Terminal dispatch vs NonTerminal interim filler + scratchpad append.
+  - `phase.rs`: `NonTerminalPhase` state machine contract and interim filler audio dispatch.
+  - `finalize.rs`: Phase 7: Single-writer commit / cancelled-partial / error branches.
+- [ ] Restore `PromptBuilderStage::build_generation_request` in `stages/prompt.rs` as sole assembly authority; eliminate duplicate assembly from orchestrator loop.
+- [ ] Verify zero behavior change via `cargo check`.
+
+#### Sub-batch 8.2 — Audio Stream & Intent Integrity (A.1, A.2) 🟢
+- [ ] `stages/streaming/router.rs`: Implement pass-level clause buffering or un-synthesized item discard so prefix tokens preceding a tool call are never leaked to `TtsActor`.
+- [ ] `orchestrator/tools.rs`: Discard prefix text unconditionally on `ToolCallReceived` for both Terminal and NonTerminal tools. Eliminate pre-tool `TurnResponse` audio flush.
+- [ ] `orchestrator/tools.rs` (`handle_terminal_tool`): Update `TurnAccumulator.assistant_response` with `spoken_response` before emitting `VoxEvent::LlmFinished`, guaranteeing 100% parity with SQLite `turns` table (N1).
+
+#### Sub-batch 8.3 — Invariant 13 & Barge-In Persistence (B.1, B.2, G.2, G.4) 🟢
+- [ ] `orchestrator/finalize.rs` (`handle_turn_cancelled`): Thread `partial_text`; if non-empty, commit `(query, partial_text)` to working history and emit `PersistenceEvent::TurnCompleted`. If empty, roll back staged user turn.
+- [ ] `pipeline/assistant/interrupt.rs`: Remove duplicate `PersistenceEvent::TurnCompleted` dispatch on barge-in, establishing Harness `finalize.rs` as the sole persistence writer (N13).
+- [ ] `orchestrator/tools.rs`: Inspect turn `CancellationToken` after `execute_tool` returns in both Terminal and NonTerminal handlers; on cancelled, discard audio/history side effects and return `Cancelled` outcome (G.2).
+- [ ] `pipeline/assistant/llm.rs` (`on_llm_finished`): On empty-finish path, trigger rollback of staged user turn from working history (G.4).
+
+#### Sub-batch 8.4 — Tool Gating, Budget Lifecycle & Compaction (B.3, C.2, C.3, D.3, G.3, G.6) 🟢
+- [ ] `stages/tools/registry.rs`: Change `respond_and_set_title` gate from global monotonic `turn_id == 1` to session-local first turn criteria (`harness.history.messages().len() <= 2` and `!harness.title_set`) (N2).
+- [ ] `stages/budget.rs` / `orchestrator/loop.rs`: Wire `ContextBudgetStage::calculate_tracked_tokens` to evaluate utilization including scratchpad messages AND registered tool schemas on every reentrant loop cycle (C.2, G.6).
+- [ ] `orchestrator/loop.rs`: Connect active user settings (`settings.working_memory`) to `ToolFilter.memory_retrieval_enabled` instead of hardcoding `true` (C.3).
+- [ ] `orchestrator/compaction.rs`: Fix `trigger_kind` from `"inline"` to `"critical"` to satisfy `db-spec.md` CHECK constraint (N5). Add `has_played_filler` check for compaction interim filler.
+- [ ] `orchestrator/loop.rs`: Bound reentrant loop to 5 tool iterations + 1 final tool-free summarization pass. Discard any hallucinated tool call on final pass and commit text only (G.3).
+
+#### Sub-batch 8.5 — Retrieval Implementation & Persistence Hardening (C.4, D.1, D.2, D.4, D.5, B.4, G.1, G.6) 🟢
+- [ ] `stages/tools/memory.rs`: Implement hybrid RRF episodic retrieval ($k=60$) over vector embedding + SQLite FTS tables, excluding `personal` tagged facts per `tools-spec.md §7.2` (N3).
+- [ ] `stages/tools/title.rs`: Gate direct `set_session_title` SQLite write on `!app_state.telemetry.is_private_mode` (D.2, G.6).
+- [ ] `persistence/schema.rs`: Add `CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON session_tool_calls(created_at DESC);` to migration v5 (D.4).
+- [ ] `services/llm/transport/chat_completions.rs`: Reject malformed JSON arguments; emit sanitized `ToolResult { is_error: true }` back to model rather than wrapping in `{"raw": ...}` (N11).
+- [ ] `pipeline/assistant/session.rs`: Decouple capability probe into non-blocking async task with `session_starting = true` state guarding `Ready` transition (B.4).
+- [ ] `services/llm/catalog/probe.rs` & transports: Consult `models_manifest.json` for embedded models; parse actual tool calls in probe response; explicitly gate non-OpenAI transports with unsupported notification rather than silent drop (D.1, G.1).
+
+**Done when**:
+- All 15 audit findings + 6 residual gaps are remediated.
+- Clean directory layout matching `harness-spec.md §9.1` with `<50` lines per function and `<500` lines per file.
+- `cargo clippy --all-targets` passes with 0 errors and 0 warnings.
+
+---
+
 ## Verification Plan
 
 ### Automated Tests
@@ -342,18 +405,16 @@ All questions below were resolved during the spec synchronization and Claude rev
 # Full suite — should remain at 105+ tests baseline
 RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1 --no-fail-fast
 
-# Isolated new tests
-cargo nextest run -E 'test(tool)' --release --nocapture --test-threads=1
-cargo nextest run -E 'test(latch)' --release --nocapture --test-threads=1
-cargo nextest run -E 'test(schema)' --release --nocapture --test-threads=1
+# Isolated checks
+cargo clippy --all-targets
 ```
 
 ### Manual Verification
 - Start a session with a cloud model that has `supports_tools = true`.
 - Verify `respond_and_set_title` fires on Turn 1, voice response plays in single pass, and title appears in sidebar.
-- Verify Turn 2+ does NOT include `respond_and_set_title` schema.
+- Verify Turn 2+ does NOT include `respond_and_set_title` schema across all sessions (not just the first session).
 - Verify the `turn_open` latch prevents premature `Ready` transitions during slow TTS.
-- Inspect `session_tool_calls` table via `tursodb` to confirm tool call records are persisted.
+- Inspect `session_tool_calls` table via `tursodb` to confirm tool call records are persisted with index.
 
 ---
 
@@ -361,8 +422,9 @@ cargo nextest run -E 'test(schema)' --release --nocapture --test-threads=1
 
 | Risk | Mitigation |
 |---|---|
-| `spawn_blocking` for stream routing may conflict with the reentrant loop needing async tool execution | The loop itself runs in async context; only individual stream passes use `spawn_blocking`. Tool execution happens between passes in async. |
-| Tool call delta accumulation varies across providers | Batch 7 is isolated per-provider. Only OpenAI-compat is in scope for Phase 12.1. |
+| File moves in Sub-batch 8.1 break existing imports | Execute pure move with zero logic change first; run `cargo check` before modifying behavior. |
+| Pass-level clause buffering adds audible latency | Buffer only until the first non-tool token is committed, then stream immediately. |
+| Tool call delta accumulation varies across providers | Non-OpenAI transports are cleanly gated with unsupported notification until normalized. |
 | Schema version bump (4→5) breaks existing DBs | `CREATE TABLE IF NOT EXISTS` + `SCHEMA_VERSION` check ensures additive migration. No destructive changes. |
 | `turn_open` latch race between `LlmFinished` and `PlaybackFinished` | Both read/write atomics with `Relaxed` ordering, which is safe because both events are serialized through the single-writer Router FIFO. |
 
@@ -372,19 +434,19 @@ cargo nextest run -E 'test(schema)' --release --nocapture --test-threads=1
 
 Every requirement from the active specifications has been mapped to a batch:
 
-- ✅ Normalized `LlmResponse` stream (`TextDelta`, `ToolCall`, `Finished`, `Error`) — Batch 1
-- ✅ Turn-local ephemeral scratchpad with drop-at-commit — Batch 4
-- ✅ Reentrant cognitive loop (Phase 2 Step 4 re-entry for NonTerminal tools) — Batch 4
-- ✅ `Terminal` vs `NonTerminal` execution dispatch — Batch 3 + 4
-- ✅ `respond_and_set_title` foundational tool (single-pass with `spoken_response`) — Batch 3 + 4
-- ✅ `search_memory` stub (with `spoken_filler`) — Batch 3
-- ✅ `session_tool_calls` DB table + self-healing FK — Batch 1 + 6
+- ✅ Normalized `LlmResponse` stream (`TextDelta`, `ToolCall`, `Finished`, `Error`) — Batch 1 + 7 + 8.2
+- ✅ Turn-local ephemeral scratchpad with drop-at-commit — Batch 4 + 8.1
+- ✅ Reentrant cognitive loop (budget → assemble → dispatch → stream → tools) — Batch 4 + 8.1 + 8.4
+- ✅ `Terminal` vs `NonTerminal` execution dispatch — Batch 3 + 4 + 8.1 + 8.2
+- ✅ `respond_and_set_title` foundational tool (single-pass with `spoken_response`) — Batch 3 + 4 + 8.2 + 8.4
+- ✅ `search_memory` hybrid RRF retrieval — Batch 8.5
+- ✅ `session_tool_calls` DB table + self-healing FK + indices — Batch 1 + 6 + 8.5
 - ✅ `turn_open` / `drained_while_open` synthesis guard — Batch 2
-- ✅ Single-writer barge-in persistence (Invariant 13) — Batch 4
-- ✅ Session boot capability gating with 4s probe — Batch 5
-- ✅ Provider ingress normalization — Batch 7
-- ✅ `MAX_TOOL_ITERATIONS = 5` recursion guard — Batch 4
-- ✅ Tool failure contract (never abort, return error to model) — Batch 3
+- ✅ Single-writer barge-in persistence (Invariant 13) — Batch 4 + 8.3
+- ✅ Session boot capability gating with non-blocking probe — Batch 5 + 8.5
+- ✅ Provider ingress normalization & transport gating — Batch 7 + 8.5
+- ✅ `MAX_TOOL_ITERATIONS = 5` recursion guard + final pass — Batch 4 + 8.4
+- ✅ Tool failure contract (never abort, return error to model) — Batch 3 + 8.5
 
 **Deliberately deferred** (per spec §10 / tools-spec §6):
 - Interactive capability probe with retry/backoff
@@ -392,4 +454,3 @@ Every requirement from the active specifications has been mapped to a batch:
 - Multi-turn session rollback engine
 - Compensating action rollback registry
 - MCP multi-server daemon lifecycle
-- `search_memory` full RRF hybrid retrieval implementation

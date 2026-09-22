@@ -67,28 +67,41 @@ impl ToolDefinition for RespondAndSetTitleTool {
                 ));
             }
 
-            let conn = match ctx.app_state.db.connect() {
-                Ok(c) => c,
-                Err(e) => {
-                    log::warn!("[RespondAndSetTitleTool] Failed to connect to database: {}", e);
-                    return Err(ToolError::ExecutionFailed(format!("Database connect error: {}", e)));
+            let is_private = ctx
+                .app_state
+                .telemetry
+                .is_private_mode
+                .load(std::sync::atomic::Ordering::Relaxed);
+
+            if !is_private {
+                let conn = match ctx.app_state.db.connect() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        log::warn!("[RespondAndSetTitleTool] Failed to connect to database: {}", e);
+                        return Err(ToolError::ExecutionFailed(format!("Database connect error: {}", e)));
+                    }
+                };
+
+                if let Err(e) = set_session_title(&conn, ctx.session_id, &title).await {
+                    log::warn!("[RespondAndSetTitleTool] Failed to set session title: {}", e);
+                    return Err(ToolError::ExecutionFailed(format!("Database error: {}", e)));
                 }
-            };
 
-            if let Err(e) = set_session_title(&conn, ctx.session_id, &title).await {
-                log::warn!("[RespondAndSetTitleTool] Failed to set session title: {}", e);
-                return Err(ToolError::ExecutionFailed(format!("Database error: {}", e)));
+                if let Some(ref notify_cb) = ctx.on_sessions_changed {
+                    notify_cb();
+                }
+
+                log::info!(
+                    "[RespondAndSetTitleTool] Set session {} title to '{}'",
+                    ctx.session_id,
+                    title
+                );
+            } else {
+                log::info!(
+                    "[RespondAndSetTitleTool] Private mode active; skipping session title DB write for session {}",
+                    ctx.session_id
+                );
             }
-
-            if let Some(ref notify_cb) = ctx.on_sessions_changed {
-                notify_cb();
-            }
-
-            log::info!(
-                "[RespondAndSetTitleTool] Set session {} title to '{}'",
-                ctx.session_id,
-                title
-            );
 
             Ok(ToolResult::new(format!("Session title set to '{}'", title))
                 .with_spoken_response(spoken_response))

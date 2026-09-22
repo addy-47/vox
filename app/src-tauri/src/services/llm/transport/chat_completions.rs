@@ -79,13 +79,17 @@ impl PendingToolCall {
         let arguments = if self.arguments_buffer.trim().is_empty() {
             serde_json::json!({})
         } else {
-            serde_json::from_str::<serde_json::Value>(&self.arguments_buffer).unwrap_or_else(|err| {
-                log::warn!(
-                    "[ChatCompletions] Failed to parse tool arguments as JSON: {}. Using raw string.",
-                    err
-                );
-                serde_json::json!({ "raw": self.arguments_buffer })
-            })
+            match serde_json::from_str::<serde_json::Value>(&self.arguments_buffer) {
+                Ok(val) => val,
+                Err(err) => {
+                    log::warn!(
+                        "[ChatCompletions] Rejecting invalid JSON tool arguments for {}: {}",
+                        self.name,
+                        err
+                    );
+                    return None;
+                }
+            }
         };
         Some(CanonicalToolCall {
             id,
@@ -174,10 +178,11 @@ fn populate_sampling_options(
         body.insert("top_k".to_string(), serde_json::json!(top_k));
     }
     if let Some(max_tokens) = request.options.max_output_tokens {
-        body.insert(
-            config.token_limit_field.as_str().to_string(),
-            serde_json::json!(max_tokens),
-        );
+        let field_key = match config.token_limit_field {
+            TokenLimitField::NumPredict => "max_tokens",
+            other => other.as_str(),
+        };
+        body.insert(field_key.to_string(), serde_json::json!(max_tokens));
     }
     if !request.options.stop.is_empty() {
         body.insert("stop".to_string(), serde_json::json!(request.options.stop));
@@ -190,6 +195,7 @@ fn populate_sampling_options(
             "reasoning".to_string(),
             serde_json::json!({ "enabled": false }),
         );
+        body.insert("think".to_string(), serde_json::json!(false));
     }
 }
 
@@ -245,6 +251,7 @@ fn populate_tools(
                 })
                 .collect();
             body.insert("tools".to_string(), serde_json::json!(tools_json));
+            body.insert("tool_choice".to_string(), serde_json::json!("auto"));
         }
     }
 }
@@ -287,6 +294,7 @@ fn process_sse_line(
     pending_tool_calls: &mut BTreeMap<usize, PendingToolCall>,
     tx: &mpsc::Sender<super::super::LlmStreamEvent>,
 ) -> bool {
+    println!("[DEBUG SSE] {}", line);
     if line == "[DONE]" {
         flush_pending_tool_calls(pending_tool_calls, tx);
         if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
@@ -337,6 +345,8 @@ pub async fn stream_chat_completions(
         url
     );
     let req_body = build_request_body(config, request);
+    println!("[DEBUG LLM URL] POST {}", url);
+    println!("[DEBUG LLM REQ] {}", serde_json::to_string(&req_body).unwrap_or_default());
 
     let mut builder = client.post(&url).json(&req_body);
     builder = super::inject_auth_headers(builder, &config.auth);

@@ -118,6 +118,7 @@ Different interaction domains mount specific subsets of the harness stages:
 | **PromptBuilderStage** | **Active**: Persona + Personal Memory | **Active**: Session persona initialization | **None**: No prompt construction |
 | **ContextBudgetStage** | **Active**: 65% soft / 85% critical checks | **None**: Context managed server-side | **None**: No token budgeting |
 | **CompactionStage** | **Active**: Inline & Opportunistic | **None**: Context managed server-side | **None**: No local compaction |
+| **ToolExecutionStage** | **Active**: Dual terminal/non-terminal loop $\to$ TTS | **Active**: Realtime registry projected $\to$ `RealtimeActor` WS | **None**: No tool execution |
 | **StreamRouter & Chunker** | **Active**: Token clause chunking $\to$ TTS | **None**: Provider outputs PCM audio | **None**: STT transcript $\to$ OS typing |
 
 ---
@@ -446,48 +447,63 @@ When `LlmActor` returns `LlmResponse::ToolCall(call)` over the duplex pipe, `Str
 ## 9. Subsystem Organization & Architectural Invariants
 
 ### 9.1 Directory Structure
-The `services/harness/` subsystem is organized strictly by role:
+The `services/harness/` subsystem is organized cleanly and flatly by role:
 
 ```
 services/harness/
-├── mod.rs                 # Domain constants, Role, ChatMessage, PromptTag, TurnOutcome
-├── orchestrator/          # Harness orchestrator modules (named steps + loop owner)
-│   ├── mod.rs             # Module declarations and re-exports only. Zero business logic.
-│   ├── chassis.rs         # Harness struct, constructors, session-scoped state. No turn sequencing.
-│   ├── loop.rs            # Sole turn-sequencing owner: execute_turn() + reentrant budget→assemble→dispatch→stream→tools cycle
-│   ├── intake.rs          # Phase 1 & 2 intake: dedup gate, user-turn staging, budget evaluation (runs once per turn)
-│   ├── compaction.rs      # Phase 3 inline compaction / maintenance (runs once per turn, before the loop)
-│   ├── assemble.rs        # Phase 4: delegates to PromptBuilderStage::build_generation_request (sole assembly authority)
-│   ├── dispatch.rs        # Phase 5: duplex LlmCommand::Generate dispatch over the session pipe
-│   ├── stream.rs          # Phase 6 streaming adapter: single-pass outcome demuxing (Completed / ToolCall / Cancelled / Error)
-│   ├── tools.rs           # Phase 6 Case B: Terminal single-pass vs NonTerminal filler + scratchpad append
-│   ├── phase.rs           # NonTerminalPhase trigger + enter_non_terminal_phase helper (Working + InterimFiller)
-│   └── finalize.rs        # Phase 7: commit / cancelled-partial / error branches (sole history writer with the loop)
-├── stages/                # Pure input->output stages (never call each other)
-│   ├── history.rs         # ConversationHistoryStage: in-memory FIFO buffer & dedup
-│   ├── prompt.rs          # PromptBuilderStage: persona + memory + GenerationRequest assembly
-│   ├── budget.rs          # ContextBudgetStage: token counting, limits, FIFO shifts
-│   ├── compaction.rs      # CompactionStage: inline summarization & DB fact staging
-│   └── tools/             # ToolExecutionStage: registry, execution, Terminal & NonTerminal dispatch
-│       ├── mod.rs         # Tool trait, ToolDefinition, ToolFlow, ToolResult
-│       ├── registry.rs    # ToolRegistry: dynamic injection, name lookups, capability gate
-│       ├── executor.rs    # ToolExecutor: Terminal single-pass + NonTerminal reentrant dispatch
-│       ├── title.rs       # RespondAndSetTitleTool (Terminal implementation)
-│       └── memory.rs      # MemorySearchTool (NonTerminal implementation)
-└── streaming/             # Egress stream processing
-    ├── chunker.rs         # ClauseChunker: punctuation, prosody morphing, split boundaries
-    ├── router.rs          # StreamRouter: TTS clause dispatch & UI subtitle IPC
-    └── normalizer.rs      # TextNormalizer: speech substitutions, abbreviation expansion
+├── mod.rs                 # Domain constants, Role, ChatMessage, PromptTag, TurnOutcome, TurnExecutionRequest
+├── chassis.rs             # Harness struct, constructors, session-scoped state. No turn sequencing.
+├── loop.rs                # Sole turn-sequencing coordinator: execute_turn() + reentrant budget→assemble→dispatch→stream→tools cycle
+├── steps.rs               # Sequential phase step functions: Step 1 (Intake), Step 2 (Budget), Step 3 (Compaction & Working), Step 4 (Assemble), Step 5 (Dispatch), Step 6 (Stream & Tools), Step 7 (Finalize)
+└── stages/                # Pure domain stages (never call each other; consumed by steps.rs)
+    ├── history.rs         # ConversationHistoryStage: in-memory FIFO buffer & dedup
+    ├── prompt.rs          # PromptBuilderStage: persona + memory + GenerationRequest assembly
+    ├── budget.rs          # ContextBudgetStage: token counting, limits, FIFO shifts
+    ├── compaction.rs      # CompactionStage: inline summarization & DB fact staging
+    ├── streaming/         # Egress stream processing (chunker, router, normalizer)
+    └── tools/             # ToolExecutionStage: registry, executor, title, memory
+        ├── mod.rs         # Tool trait, ToolDefinition, ToolFlow, ToolResult
+        ├── registry.rs    # ToolRegistry: dynamic injection, name lookups, capability gate
+        ├── executor.rs    # ToolExecutor: Terminal single-pass + NonTerminal reentrant dispatch
+        ├── title.rs       # RespondAndSetTitleTool (Terminal implementation)
+        └── memory.rs      # MemorySearchTool (NonTerminal implementation)
 ```
 
-### 9.2 Orchestrator Refactor Contract (Phase 12.2)
+### 9.2 Layered Communication Hierarchy
 
-The pre-12.2 orchestrator split (`turn.rs` / `loop_driver.rs` / `barge_in.rs` with sequencing logic inside `mod.rs` and turn helpers inside `chassis.rs`) is superseded by the §9.1 layout. The refactor is a pure move with zero behavior change, executed before any §5.5 finding fix:
+Communication strictly obeys a 4-tier uni-directional hierarchy:
+```
+[Upstream Pipeline (transcript.rs / Session)]
+                      │
+                      ▼
+[Harness Coordinator (`loop.rs`)]
+   ├── Step 1 & 2: Intake & Budget
+   ├── Step 3: Compaction
+   └── Reentrant Cognitive Loop (Iterative passes up to MAX_TOOL_ITERATIONS)
+                      │
+                      ▼
+[Sequential Step Functions (`steps.rs`)]
+   ├── step1_intake
+   ├── step3_execute_compaction & enter_non_terminal_phase
+   ├── step4_assemble_request
+   ├── step5_dispatch_llm
+   ├── step6_run_stream_pass & tool handlers
+   └── step7_finalize (commit / cancelled / error)
+                      │
+                      ▼
+[Domain Stages (`stages/`)]
+   ├── history, prompt, budget, compaction, streaming, tools
+                      │
+                      ▼
+[Subsystems, Actors, Storage & IPC]
+   ├── LlmActor, TtsActor, Turso SQLite, Frontend IpcEvent
+```
 
-1. **Single loop owner**: all sequencing lives in `orchestrator/loop.rs` (`execute_turn` + iteration). `mod.rs` returns to declarations/re-exports; `chassis.rs` keeps Harness data, constructors, and session helpers only.
-2. **One-shot vs loop separation**: `intake.rs` and `compaction.rs` run once per turn before the loop; `assemble.rs` / `dispatch.rs` / `stream.rs` / `tools.rs` / `finalize.rs` expose single-purpose step functions the loop calls without duplicating assembly, dispatch, or outcome-branching logic.
-3. **Assembly authority**: the duplicate request builder in the old loop driver is deleted; `assemble.rs` delegates to `PromptBuilderStage::build_generation_request`, which owns history slice + scratchpad + tool-schema injection.
-4. **NonTerminal unity**: `phase.rs` remains the single `Working` + `InterimFiller` helper shared by compaction and NonTerminal tools; no step reimplements the transition or filler fallback.
+1. **Top-to-Bottom Flow**: `loop.rs` contains the high-level turn coordinator and reentrant `while` loop without inlined helper clutter.
+2. **Sequential Step Implementation**: `steps.rs` arranges concrete step helper functions in chronological order (Step 1 through Step 7) with step banners.
+3. **Assembly Authority**: `step4_assemble_request` delegates exclusively to `PromptBuilderStage::build_generation_request`.
+4. **NonTerminal Unity**: `enter_non_terminal_phase` in `steps.rs` is the single unified path for transitioning to `Working` and dispatching speech-normalized `AudioIntent::InterimFiller`. Both `spoken_response` and `spoken_filler` route through speech normalization before dispatching to TTS.
+5. **Spoken Filler Delivery (Flagged)**: Currently `spoken_filler` is dispatched exclusively to audio synthesis (`AudioIntent::InterimFiller`) to eliminate dead air. Flagged for potential future UI message box rendering via an IPC token stream if visual display of interim filler is desired.
 
 
 ---

@@ -1,9 +1,19 @@
+use std::collections::HashMap;
+
 use futures_util::future::{BoxFuture, FutureExt};
 use serde_json::{json, Value};
 
-use crate::services::llm::ToolFlow;
+use crate::{
+    persistence::{fetch_active_episodic_memory, EpisodicFactCandidate},
+    services::{
+        llm::ToolFlow,
+        memory::ml::{cosine_similarity, ensure_embedder_loaded, generate_embedding},
+    },
+};
 
-use super::{ToolDefinition, ToolExecutionContext, ToolError, ToolResult};
+use super::{ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
+
+const RRF_K: f32 = 60.0;
 
 /// Non-terminal cognitive tool for searching personal memory documents and episodic turns.
 pub struct MemorySearchTool;
@@ -65,20 +75,120 @@ impl ToolDefinition for MemorySearchTool {
             }
 
             log::info!(
-                "[MemorySearchTool] Turn {}: searching memory for query: '{}' (filler: '{}')",
+                "[MemorySearchTool] Turn {}: hybrid episodic search for: '{}'",
                 ctx.turn_id,
-                query,
-                spoken_filler
-            );
-
-            // Phase 12.1 stub: vector search integration occurs in Batch 5
-            let observation = format!(
-                "Memory search completed for query '{}'. No relevant historical records found.",
                 query
             );
 
+            let observation = perform_hybrid_search(ctx, &query).await?;
             Ok(ToolResult::new(observation).with_spoken_filler(spoken_filler))
         }
         .boxed()
     }
+}
+
+/// Orchestrates DB candidate retrieval, embedding generation, and ranking.
+async fn perform_hybrid_search(
+    ctx: &ToolExecutionContext,
+    query: &str,
+) -> Result<String, ToolError> {
+    let conn = ctx.app_state.db.connect().map_err(|e| {
+        ToolError::ExecutionFailed(format!("Database connect error: {}", e))
+    })?;
+
+    let candidates = fetch_active_episodic_memory(&conn).await.map_err(|e| {
+        ToolError::ExecutionFailed(format!("Episodic memory query error: {}", e))
+    })?;
+
+    if candidates.is_empty() {
+        return Ok(format!(
+            "Memory search completed for query '{}'. No relevant historical records found.",
+            query
+        ));
+    }
+
+    let (top_k, cutoff) = {
+        let guard = ctx.app_state.settings.read().map_err(|e| {
+            ToolError::ExecutionFailed(format!("Settings lock error: {}", e))
+        })?;
+        (
+            guard.personal_memory.top_k_facts as usize,
+            guard.personal_memory.semantic_similarity_cutoff,
+        )
+    };
+
+    let query_embedding = {
+        if ensure_embedder_loaded(true).unwrap_or(false) {
+            generate_embedding(query).unwrap_or(None)
+        } else {
+            None
+        }
+    };
+
+    let results = rank_candidates(&candidates, query, query_embedding.as_deref(), top_k, cutoff);
+    if results.is_empty() {
+        Ok(format!(
+            "Memory search completed for query '{}'. No relevant historical records found.",
+            query
+        ))
+    } else {
+        let lines: Vec<String> = results
+            .into_iter()
+            .map(|f| format!("- [{}] {}", f.fact_type, f.text))
+            .collect();
+        Ok(format!("Found relevant memory records:\n{}", lines.join("\n")))
+    }
+}
+
+/// Fuses dense cosine similarity and lexical token matches via Reciprocal Rank Fusion.
+fn rank_candidates<'a>(
+    candidates: &'a [EpisodicFactCandidate],
+    query: &str,
+    query_embedding: Option<&[f32]>,
+    top_k: usize,
+    cutoff: f32,
+) -> Vec<&'a EpisodicFactCandidate> {
+    let mut vector_scores: HashMap<String, f32> = HashMap::new();
+    if let Some(q_vec) = query_embedding {
+        for c in candidates {
+            if let Some(ref c_vec) = c.embedding {
+                let sim = cosine_similarity(q_vec, c_vec);
+                if sim >= cutoff {
+                    vector_scores.insert(c.id.clone(), sim);
+                }
+            }
+        }
+    }
+
+    let query_terms: Vec<String> = query
+        .split_whitespace()
+        .map(|w| w.to_lowercase())
+        .filter(|w| w.len() >= 3)
+        .collect();
+
+    let mut lexical_scores: HashMap<String, usize> = HashMap::new();
+    for c in candidates {
+        let lower = c.text.to_lowercase();
+        let matches: usize = query_terms.iter().filter(|&term| lower.contains(term)).count();
+        if matches > 0 {
+            lexical_scores.insert(c.id.clone(), matches);
+        }
+    }
+
+    let mut rrf_scores: Vec<(&'a EpisodicFactCandidate, f32)> = Vec::new();
+    for c in candidates {
+        let mut score = 0.0f32;
+        if let Some(vec_score) = vector_scores.get(&c.id) {
+            score += vec_score / (RRF_K + 1.0);
+        }
+        if let Some(lex_count) = lexical_scores.get(&c.id) {
+            score += (*lex_count as f32) / (RRF_K + 1.0);
+        }
+        if score > 0.0 {
+            rrf_scores.push((c, score));
+        }
+    }
+
+    rrf_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    rrf_scores.into_iter().take(top_k.max(1)).map(|(c, _)| c).collect()
 }

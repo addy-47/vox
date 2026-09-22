@@ -1,16 +1,36 @@
 use std::{
     fmt,
+    sync::{atomic::AtomicU32, mpsc, Arc},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::services::translit::is_devanagari;
+use parking_lot::Mutex;
+use tokio_util::sync::CancellationToken;
 
-pub mod orchestrator;
+use crate::{
+    core::{
+        events::VoxEvent,
+        state::{AppState, InteractionOwner},
+    },
+    persistence::db::VoxDb,
+    pipeline::{assistant::accumulator::TurnAccumulator, router::RoutingContext},
+    services::{
+        llm::{actor::LlmCommand, LlmProvider},
+        translit::is_devanagari,
+        tts::actor::TtsCommand,
+    },
+};
+
+pub mod chassis;
+pub mod r#loop;
 pub mod stages;
+pub mod steps;
 
-pub use orchestrator::{
-    Harness, NonTerminalPhase, NonTerminalTrigger, PipelineDomain, TurnExecutionRequest,
-    TurnOutcome,
+pub use chassis::Harness;
+pub use r#loop::execute_turn;
+pub use steps::{
+    enter_non_terminal_phase, step7_handle_cancelled as handle_turn_cancelled, CancelledTurnContext,
+    NonTerminalContext, NonTerminalPhase, NonTerminalTrigger,
 };
 pub use stages::{
     budget::{ContextBudgetStage, ContextStatus},
@@ -23,6 +43,50 @@ pub use stages::{
         ToolExecutionOutcome, ToolExecutor, ToolFilter, ToolRegistry, ToolResult,
     },
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PipelineDomain {
+    ModularAssistant,
+    RealtimeS2S,
+    Dictation,
+}
+
+/// Strongly typed terminal outcome of executing a conversational turn.
+#[derive(Debug)]
+pub enum TurnOutcome {
+    Completed {
+        turn_id: u32,
+        assistant_response: String,
+    },
+    DuplicateIgnored {
+        turn_id: u32,
+    },
+    Cancelled {
+        turn_id: u32,
+    },
+    Error {
+        turn_id: u32,
+        message: String,
+    },
+}
+
+/// Request parameters bundled for executing a conversational turn.
+pub struct TurnExecutionRequest<R: tauri::Runtime> {
+    pub query: String,
+    pub turn_id: u32,
+    pub owner: InteractionOwner,
+    pub cancel: CancellationToken,
+    pub routing_ctx: RoutingContext,
+    pub app: tauri::AppHandle<R>,
+    pub app_state: Arc<AppState>,
+    pub db: Arc<VoxDb>,
+    pub accumulator: Arc<Mutex<TurnAccumulator>>,
+    pub tts_tx: Option<mpsc::Sender<TtsCommand>>,
+    pub llm_tx: Option<mpsc::Sender<LlmCommand>>,
+    pub pipeline_tx: Option<mpsc::Sender<VoxEvent>>,
+    pub pending_synthesis_jobs: Arc<AtomicU32>,
+    pub provider: Option<Arc<dyn LlmProvider>>,
+}
 
 pub const TOOL_EXECUTION_TIMEOUT: Duration = Duration::from_secs(10);
 

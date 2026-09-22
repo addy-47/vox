@@ -80,8 +80,28 @@ pub fn on_llm_finished<R: tauri::Runtime>(
             full_text
         );
         persist_assistant_turn(turn_id, full_text, user_text, state);
+    } else {
+        log::warn!(
+            "[Pipeline::Llm] LlmFinished with empty response (turn {}); rolling back staged user turn",
+            turn_id
+        );
+        let mut guard = state.harness.lock();
+        if let Some(ref mut harness) = *guard {
+            harness.history.rollback_last_user_turn();
+        }
     }
 
+    evaluate_synthesis_latch(turn_id, current_state, app, state, ctx);
+}
+
+/// Evaluates whether synthesis has drained and pipeline can transition to Ready.
+fn evaluate_synthesis_latch<R: tauri::Runtime>(
+    turn_id: u32,
+    current_state: InteractionState,
+    app: Option<&AppHandle<R>>,
+    state: &AppState,
+    ctx: &RoutingContext,
+) {
     let drained = state.pipeline.is_drained_while_open();
     let pending_jobs = state.pipeline.pending_synthesis_jobs.load(Ordering::Relaxed);
     let should_transition = pending_jobs == 0

@@ -139,6 +139,7 @@ const V2_TABLE_STATEMENTS: &[&str] = &[
         created_at INTEGER NOT NULL
     );",
     "CREATE INDEX IF NOT EXISTS idx_tool_calls_session_turn ON session_tool_calls(session_id, turn_id);",
+    "CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON session_tool_calls(created_at DESC);",
 ];
 
 /// Runs schema migrations, dropping obsolete legacy tables and initializing v2 schema.

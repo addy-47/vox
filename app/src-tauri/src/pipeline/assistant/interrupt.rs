@@ -7,7 +7,6 @@ use crate::{
         settings::{InteractionMode, PipelineMode},
         state::{AppState, InteractionState},
     },
-    persistence::PersistenceEvent,
     pipeline::{transition, RoutingContext},
 };
 
@@ -50,27 +49,8 @@ pub fn on_interrupt<R: tauri::Runtime>(
     }
 
     let interrupted_turn_id = state.pipeline.peek_turn_id();
-    let (partial_assistant, user_text) = {
-        let mut acc = state.pipeline_accumulator.lock();
-        (acc.take_assistant_response(), acc.user_transcript())
-    };
 
-    let conv_id = state.conversation_id.load(Ordering::Relaxed);
-    let persist_lock = state.persist_tx.lock();
-    if let Some(ref tx) = *persist_lock {
-        if let Err(e) = tx.try_send(PersistenceEvent::TurnCompleted {
-            session_id: conv_id as i64,
-            turn_id: interrupted_turn_id,
-            user_text,
-            assistant_text: partial_assistant,
-        }) {
-            log::warn!(
-                "[Pipeline::Interrupt] Failed to send TurnCompleted on interrupt: {}",
-                e
-            );
-        }
-    }
-
+    // 5. Accumulator Reset: Clears TurnAccumulator for the incoming user utterance (events-spec §5 item 5)
     state.pipeline_accumulator.lock().clear();
 
     let (new_turn_id, _) = state.pipeline.next_turn();
