@@ -50,6 +50,14 @@ export const SESSION_COPY = {
     compactingSession: "Compacting...",
     uncompactedTurnsTooltip: "Uncompacted turns",
   },
+  projectActions: {
+    rename: "Rename project",
+    delete: "Delete project",
+    deleteConfirm: "Delete?",
+    confirm: "Delete",
+    cancel: "Cancel",
+    notEmptyError: "Cannot delete: project contains conversations",
+  },
   reorderProjectsAriaLabel: "Drag to reorder project",
   recency: {
     justNow: "Just now",

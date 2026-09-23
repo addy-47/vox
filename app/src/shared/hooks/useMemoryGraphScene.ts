@@ -112,6 +112,8 @@ export function useMemoryGraphScene({
   const isLightModeRef = useRef(isLightMode);
   isLightModeRef.current = isLightMode;
 
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   // ── External pause/resume: suspends or resumes the rAF render loop ──────────
   useEffect(() => {
@@ -245,6 +247,9 @@ export function useMemoryGraphScene({
       if (!visible) {
         radius = 0.001;
         colHex = colHexMain;
+      } else if (isSelected) {
+        radius = 12;
+        colHex = isLight ? "#000000" : "#ffffff";
       } else if (hasSearch && !matchesSearch) {
         radius = 1.2;
         colHex = isLight ? "#94a3b8" : "#283344";
@@ -256,12 +261,12 @@ export function useMemoryGraphScene({
       } else if (isSessionSelected) {
         // Vividly highlighted session nodes
         const isAnchor = node.id.startsWith("anchor_");
-        radius = isSelected ? 13 : isAnchor ? 8.0 : node.collection === "personal" ? 6.5 : 5.4;
+        radius = isAnchor ? 8.0 : node.collection === "personal" ? 6.5 : 5.4;
         colHex = colHexMain;
       } else {
         // Normal state
         const isAnchor = node.id.startsWith("anchor_");
-        radius = isSelected ? 12 : isAnchor ? 6.2 : node.collection === "personal" ? 5.5 : 3.8;
+        radius = isAnchor ? 6.2 : node.collection === "personal" ? 5.5 : 3.8;
         colHex = colHexMain;
       }
 
@@ -785,20 +790,6 @@ export function useMemoryGraphScene({
     rebuildTopology(facts, isLightMode);
   }, [facts, isLightMode, rebuildTopology]);
 
-  // Smooth Camera Fly-To Lerp when selectedFactId changes
-  useEffect(() => {
-    if (!selectedFactId) return;
-    const gNodes = gNodesRef.current;
-    const node = gNodes.find((n) => n.id === selectedFactId);
-    if (!node) return;
-
-    flyToTargetRef.current = {
-      cam: { x: node.x, y: node.y, z: node.z + 350 },
-      target: { x: node.x, y: node.y, z: node.z },
-    };
-    wakeLoopRef.current();
-  }, [selectedFactId]);
-
   // Navigation helpers
   const recenter = useCallback(() => {
     flyToTargetRef.current = {
@@ -823,7 +814,7 @@ export function useMemoryGraphScene({
 
     flyToTargetRef.current = {
       cam: { x: anchor.x, y: anchor.y, z: anchor.z + 450 },
-      target: { x: anchor.x, y: anchor.y, z: anchor.z },
+      target: { x: 0, y: 0, z: 0 },
     };
     wakeLoopRef.current();
   }, []);
@@ -833,10 +824,20 @@ export function useMemoryGraphScene({
     const node = gNodes.find((n) => n.id === factId);
     if (!node) return;
 
-    flyToTargetRef.current = {
-      cam: { x: node.x, y: node.y, z: node.z + 320 },
-      target: { x: node.x, y: node.y, z: node.z },
-    };
+    const dist = Math.hypot(node.x, node.y, node.z);
+    if (dist < 10) {
+      flyToTargetRef.current = {
+        cam: { x: 0, y: 0, z: 650 },
+        target: { x: 0, y: 0, z: 0 },
+      };
+    } else {
+      const offset = 420;
+      const factor = (dist + offset) / dist;
+      flyToTargetRef.current = {
+        cam: { x: node.x * factor, y: node.y * factor, z: node.z * factor },
+        target: { x: 0, y: 0, z: 0 },
+      };
+    }
     wakeLoopRef.current();
   }, []);
 
@@ -1063,12 +1064,11 @@ export function useMemoryGraphScene({
     let isSuspended = false;
 
     const wakeLoop = () => {
+      if (pausedRef.current) return;
       lastActivityTimestamp = performance.now();
-      if (isSuspended) {
-        isSuspended = false;
-        if (animFrameRef.current === null) {
-          animFrameRef.current = requestAnimationFrame(render);
-        }
+      isSuspended = false;
+      if (animFrameRef.current === null) {
+        animFrameRef.current = requestAnimationFrame(render);
       }
     };
     wakeLoopRef.current = wakeLoop;

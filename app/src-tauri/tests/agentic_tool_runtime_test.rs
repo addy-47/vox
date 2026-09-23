@@ -27,6 +27,7 @@ use tokio_util::sync::CancellationToken;
 use vox_lib::{
     core::{
         events::AudioIntent,
+        metrics::TurnMetricsCollector,
         settings::{PipelineMode, VoxSettings},
         state::InteractionOwner,
     },
@@ -35,7 +36,6 @@ use vox_lib::{
         schema::run_migrations,
         worker::spawn_persistence_worker,
     },
-    core::metrics::TurnMetricsCollector,
     services::{
         harness::{
             chassis::Harness,

@@ -51,6 +51,29 @@ Your task is to update and reorganize the user's Personal Memory markdown docume
 4. Output ONLY the raw markdown text. Start directly with the first heading or bullet. Never enclose the response in markdown code blocks or triple backticks.
 </rules>"#;
 
+pub use crate::persistence::{
+    list_personal_memory_versions, set_active_personal_memory_version,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum ConsolidationConflictPolicy {
+    #[default]
+    PromptIfBusy,
+    PauseCompaction,
+    QueueBehind,
+}
+
+impl std::str::FromStr for ConsolidationConflictPolicy {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "pause_compaction" | "pause" | "cancel" => Ok(Self::PauseCompaction),
+            "queue" | "queue_behind" => Ok(Self::QueueBehind),
+            _ => Ok(Self::PromptIfBusy),
+        }
+    }
+}
+
 /// Consolidates accumulated personal facts or applies user directive comments into the personal memory document.
 pub async fn consolidate_personal_memory(
     conn: &Connection,
@@ -58,17 +81,36 @@ pub async fn consolidate_personal_memory(
     comments: Option<Vec<String>>,
     project_id: Option<&str>,
     settings: Option<&LlmSettings>,
+    conflict_policy: Option<ConsolidationConflictPolicy>,
 ) -> Result<PersonalMemoryRecord> {
     let fallback_settings = LlmSettings::default();
     let effective_settings = settings.unwrap_or(&fallback_settings);
 
     let current_record = get_personal_memory(conn, project_id).await?;
 
+    log::info!(
+        "[Memory::Personal] Starting consolidation (project_id={:?}, comments_count={}, conflict_policy={:?}, current_version={})",
+        project_id,
+        comments.as_ref().map(|c| c.len()).unwrap_or(0),
+        conflict_policy,
+        current_record.version
+    );
+
     if let Some(user_comments) = comments {
         if user_comments.is_empty() {
+            log::info!(
+                "[Memory::Personal] Empty comments list, returning current personal memory v{} unchanged.",
+                current_record.version
+            );
             return Ok(current_record);
         }
-        verify_ingestion_quiescence(conn).await?;
+        // Direct user directive comments are pure text transformations on the existing document.
+        // They are NEVER blocked by background ingestion queues or active compactions.
+        log::info!(
+            "[Memory::Personal] Directing {} user comment(s) to document regeneration for v{}",
+            user_comments.len(),
+            current_record.version
+        );
         return regenerate_with_comments(
             conn,
             llm_provider,
@@ -80,17 +122,48 @@ pub async fn consolidate_personal_memory(
         .await;
     }
 
+    let policy = conflict_policy.unwrap_or_default();
+
+    if has_in_progress_compaction(conn).await? {
+        log::warn!(
+            "[Memory::Personal] Compaction in progress detected. Applying policy: {:?}",
+            policy
+        );
+        match policy {
+            ConsolidationConflictPolicy::PauseCompaction => {
+                log::info!("[Memory::Personal] Preempting/pausing in-progress compaction for personal consolidation.");
+                crate::persistence::pause_in_progress_compactions(conn, None).await?;
+                // Run an ingestion deduplication pass on any pending items
+                if let Err(e) = crate::services::memory::ingestion::run_ingestion_cycle(conn).await {
+                    log::warn!("[Memory::Personal] Ingestion cycle error during compaction preemption: {}", e);
+                }
+            }
+            ConsolidationConflictPolicy::QueueBehind => {
+                log::info!("[Memory::Personal] Consolidation queued behind in-progress compaction.");
+                return Err(anyhow!("CompactionQueued: consolidation queued behind in-progress compaction"));
+            }
+            ConsolidationConflictPolicy::PromptIfBusy => {
+                log::info!("[Memory::Personal] Active compaction in progress; prompting user for resolution.");
+                return Err(anyhow!("CompactionInProgress: active compaction is in progress; consolidation requires user resolution"));
+            }
+        }
+    }
+
     verify_ingestion_quiescence(conn).await?;
 
     let active_facts = fetch_active_facts_by_type(conn, "personal").await?;
     if active_facts.is_empty() {
-        log::info!("[Memory::Personal] No active personal facts to consolidate.");
+        log::info!(
+            "[Memory::Personal] No active personal facts to consolidate. Keeping memory at v{}.",
+            current_record.version
+        );
         return Ok(current_record);
     }
 
     log::info!(
-        "[Memory::Personal] Consolidating {} active personal facts into personal memory...",
-        active_facts.len()
+        "[Memory::Personal] Consolidating {} active personal facts into personal memory v{}...",
+        active_facts.len(),
+        current_record.version
     );
 
     let mut facts_text = String::new();
@@ -121,8 +194,9 @@ pub async fn consolidate_personal_memory(
     mark_facts_consolidated(conn, &fact_ids).await?;
 
     log::info!(
-        "[Memory::Personal] Personal memory consolidated (v{}). Marked {} facts as consolidated.",
+        "[Memory::Personal] Personal memory consolidated (v{}, {} chars). Marked {} facts as consolidated.",
         saved.version,
+        saved.content.len(),
         fact_ids.len()
     );
 
@@ -138,6 +212,13 @@ async fn regenerate_with_comments(
     project_id: Option<&str>,
     settings: &LlmSettings,
 ) -> Result<PersonalMemoryRecord> {
+    log::info!(
+        "[Memory::Personal] Starting comment regeneration: applying {} comment(s) to v{} (chars: {})...",
+        comments.len(),
+        current_record.version,
+        current_record.content.len()
+    );
+
     let comments_list = comments
         .iter()
         .map(|c| {
@@ -165,23 +246,32 @@ async fn regenerate_with_comments(
     )
     .await?;
 
-    save_personal_memory(conn, project_id, &updated_markdown, current_record.version).await
+    let saved = save_personal_memory(conn, project_id, &updated_markdown, current_record.version).await?;
+    log::info!(
+        "[Memory::Personal] Comment regeneration successful: saved v{} ({} chars)",
+        saved.version,
+        saved.content.len()
+    );
+    Ok(saved)
 }
 
 /// Checks that no compaction or pending ingestion queue items are currently executing.
 async fn verify_ingestion_quiescence(conn: &Connection) -> Result<()> {
     if has_in_progress_compaction(conn).await? {
+        log::warn!("[Memory::Personal] Quiescence check failed: active compaction is in progress");
         return Err(anyhow!(
             "Precondition failed: active compaction is in progress; personal consolidation deferred"
         ));
     }
 
     if has_unfinished_items(conn).await? {
+        log::warn!("[Memory::Personal] Quiescence check failed: pending items in memory ingestion queue");
         return Err(anyhow!(
             "Precondition failed: pending items in memory ingestion queue; personal consolidation deferred"
         ));
     }
 
+    log::info!("[Memory::Personal] Ingestion quiescence verified.");
     Ok(())
 }
 
@@ -226,6 +316,14 @@ async fn execute_personal_llm_pass(
     request.options.temperature = Some(settings.compaction_temperature);
     request.options.context_window = Some(settings.context_window);
 
+    log::info!(
+        "[Memory::Personal] Dispatching LLM pass: prompt={} chars, user_content={} chars, model={}",
+        system_prompt.len(),
+        user_content.len(),
+        settings.active_model()
+    );
+    let gen_start = std::time::Instant::now();
+
     let cancel = CancellationToken::new();
     let (tx, rx) = mpsc::channel();
     let (async_tx, mut async_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -253,17 +351,31 @@ async fn execute_personal_llm_pass(
                     output.push_str(&token);
                 }
             }
+            log::info!(
+                "[Memory::Personal] LLM pass completed in {:.2?} (received {} chars)",
+                gen_start.elapsed(),
+                output.len()
+            );
         }
         Ok(Err(e)) => {
             if let Err(join_err) = pump_handle.await {
                 log::warn!("[PersonalMemory] Token pump task join error: {}", join_err);
             }
+            log::error!(
+                "[Memory::Personal] LLM generation error after {:.2?}: {}",
+                gen_start.elapsed(),
+                e
+            );
             return Err(anyhow!("LLM generation error: {}", e));
         }
         Err(_) => {
             if let Err(join_err) = pump_handle.await {
                 log::warn!("[PersonalMemory] Token pump task join error: {}", join_err);
             }
+            log::error!(
+                "[Memory::Personal] LLM consolidation timed out after 45s (elapsed: {:.2?})",
+                gen_start.elapsed()
+            );
             return Err(anyhow!(
                 "LLM personal memory consolidation timed out after 45s"
             ));
@@ -272,6 +384,7 @@ async fn execute_personal_llm_pass(
 
     let cleaned = output.trim();
     if cleaned.is_empty() {
+        log::error!("[Memory::Personal] LLM generated empty personal memory document!");
         return Err(anyhow!("LLM generated empty personal memory document"));
     }
 

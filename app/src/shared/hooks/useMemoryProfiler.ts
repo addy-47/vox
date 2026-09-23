@@ -170,8 +170,10 @@ export function useMemoryProfiler(enabled = true) {
       (k) => componentTracesRef.current[k].activeInstances > 0
     );
 
-    // Capture memory state for UI inspection only (without writing files to disk)
-    (async () => {
+    // Defer snapshot capture until drawer slide-in transition (380ms) finishes
+    // to preserve 60 FPS animation smoothness without layout thrashing
+    const timer = setTimeout(async () => {
+      if (isCancelled) return;
       const snap = await captureSnapshot({ isManual: false });
       if (!snap || isCancelled) return;
 
@@ -192,17 +194,13 @@ export function useMemoryProfiler(enabled = true) {
           },
         };
       });
-    })();
+    }, 420);
 
     return () => {
       isCancelled = true;
+      clearTimeout(timer);
     };
   }, [location.pathname, enabled, captureSnapshot]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    captureSnapshot();
-  }, [enabled, captureSnapshot]);
 
 
   // Writes a "poll" event every 5 seconds. Disabled by default, can be toggled on when profiling.

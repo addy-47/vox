@@ -45,7 +45,7 @@ use crate::{
         audio::list_audio_devices,
         memory::{
             consolidate_personal_memory, get_active_facts, get_personal_memory,
-            save_personal_memory,
+            get_personal_memory_versions, save_personal_memory, set_active_personal_memory_version,
         },
         monitoring::{get_profiler_snapshot, get_runtime_snapshot, record_memory_profile_event},
         notifications::{
@@ -87,7 +87,7 @@ use crate::{
             TelemetryAggregatorHandles,
         },
     },
-    persistence::{TOKIO_HANDLE, worker::spawn_persistence_worker, PersistenceEvent},
+    persistence::{worker::spawn_persistence_worker, PersistenceEvent, TOKIO_HANDLE},
     services::{
         dictation::init_dictation_hotkey_listener,
         memory::{
@@ -689,6 +689,8 @@ pub fn run() {
             get_personal_memory,
             save_personal_memory,
             consolidate_personal_memory,
+            get_personal_memory_versions,
+            set_active_personal_memory_version,
             get_active_facts,
             // Voices
             list_voices,

@@ -4,9 +4,8 @@ use std::{
 };
 
 use anyhow::Result;
-use tokio::task::JoinHandle;
-
 use tauri::Manager;
+use tokio::task::JoinHandle;
 
 use crate::{
     core::{
@@ -175,7 +174,9 @@ impl RealtimeActor {
                                 id
                             );
                             let Some(app_state) = state_clone else {
-                                log::error!("[RealtimeActor] AppState unavailable for tool execution");
+                                log::error!(
+                                    "[RealtimeActor] AppState unavailable for tool execution"
+                                );
                                 return;
                             };
                             let session_id = app_state
@@ -208,7 +209,9 @@ impl RealtimeActor {
                             let result_val: serde_json::Value =
                                 match serde_json::from_str(&outcome.result.content) {
                                     Ok(v) => v,
-                                    Err(_) => serde_json::json!({ "output": outcome.result.content }),
+                                    Err(_) => {
+                                        serde_json::json!({ "output": outcome.result.content })
+                                    }
                                 };
                             if let Err(e) =
                                 session_clone.send_tool_response(&id, &name, &result_val)

@@ -646,13 +646,18 @@ input[type="range"]:active::-webkit-slider-thumb {
 }
 
 @keyframes ripple-out {
-  0%   { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  0%   { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+  15%  { opacity: 1; }
+  75%  { opacity: 0.35; }
   100% { transform: translate(-50%, -50%) scale(8); opacity: 0; }
 }
 
 @keyframes ripple-in {
   0%   { transform: translate(-50%, -50%) scale(8); opacity: 0; }
-  100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  25%  { opacity: 0.45; }
+  65%  { opacity: 0.85; }
+  88%  { opacity: 0.35; }
+  100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
 }
 
 .rp-wrapper {
@@ -661,6 +666,14 @@ input[type="range"]:active::-webkit-slider-thumb {
   opacity: 0;
   pointer-events: none;
   will-change: opacity;
+}
+
+.rp-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  will-change: opacity;
+  transition: opacity 1.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .rp-ring {
@@ -674,8 +687,16 @@ input[type="range"]:active::-webkit-slider-thumb {
   transform: translate(-50%, -50%) scale(1);
   opacity: 0;
   will-change: transform, opacity;
-  animation: var(--rp-anim-name, ripple-out) var(--rp-dur, 16s) cubic-bezier(0.1, 0.4, 0.2, 1) infinite;
 }
+
+.rp-ring-out {
+  animation: ripple-out var(--rp-dur, 20s) cubic-bezier(0.12, 0.4, 0.2, 1) infinite;
+}
+
+.rp-ring-in {
+  animation: ripple-in var(--rp-in-dur, 32s) cubic-bezier(0.3, 0.1, 0.25, 1) infinite;
+}
+
 .rp-ring-orbit {
   height: 118px; /* Compressed to 0.42 tilt aspect ratio matching orbitMath */
   border-radius: 50% / 50%;

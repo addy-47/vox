@@ -1,5 +1,7 @@
 pub mod embedder;
 
+use std::sync::OnceLock;
+
 pub use embedder::{
     cosine_similarity, embedding_dim, ensure_embedder_loaded, generate_embedding,
     generate_embeddings_batch, init_embedder, is_embedder_loaded, l2_normalize_in_place,
@@ -7,7 +9,6 @@ pub use embedder::{
 };
 
 use crate::services::translit::unload_transliteration_engine;
-use std::sync::OnceLock;
 
 /// Singleton tiktoken BPE tokenizer instance (cl100k_base).
 static BPE_TOKENIZER: OnceLock<Option<tiktoken_rs::CoreBPE>> = OnceLock::new();

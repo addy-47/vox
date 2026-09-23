@@ -249,6 +249,41 @@ pub async fn has_in_progress_compaction(conn: &Connection) -> Result<bool> {
     Ok(rows.next().await?.is_some())
 }
 
+/// Pauses/preempts any in-progress compaction by resetting its status to 'pending'
+/// so personal memory consolidation can proceed immediately without being blocked,
+/// while allowing background auto-compaction to resume/pick it back up later.
+pub async fn pause_in_progress_compactions(
+    conn: &Connection,
+    session_id: Option<i64>,
+) -> Result<usize> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    let rows_affected = match session_id {
+        Some(sid) => {
+            conn.execute(
+                "UPDATE session_compactions
+                 SET status = 'pending', error_msg = 'Paused for personal memory consolidation', finished_at = ?
+                 WHERE session_id = ? AND status = 'in_progress'",
+                (now, sid),
+            )
+            .await?
+        }
+        None => {
+            conn.execute(
+                "UPDATE session_compactions
+                 SET status = 'pending', error_msg = 'Paused for personal memory consolidation', finished_at = ?
+                 WHERE status = 'in_progress'",
+                (now,),
+            )
+            .await?
+        }
+    };
+    Ok(rows_affected as usize)
+}
+
 /// Item representing a session with pending uncompacted turns.
 #[derive(Debug, Clone)]
 pub struct UncompactedSessionItem {

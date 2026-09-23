@@ -6,7 +6,13 @@ import {
   updateSession,
   type SessionRow,
 } from "@/services/historyService";
-import { getProjects, createProject, type ProjectRow } from "@/services/projectService";
+import {
+  getProjects,
+  createProject,
+  renameProject,
+  deleteProject,
+  type ProjectRow,
+} from "@/services/projectService";
 import { onSessionsChanged } from "@/services/eventsService";
 import { useVoiceSession } from "@/shared/context/VoiceSessionContext";
 import { SESSION_COPY } from "@/data/sessionCopy";
@@ -26,6 +32,8 @@ interface UseSessionPanelReturn {
   refresh: () => Promise<void>;
   createNewSession: (projectId?: string) => Promise<void>;
   createNewProject: (name: string) => Promise<void>;
+  renameProject: (projectId: string, newName: string) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
   togglePin: (sessionId: number) => Promise<void>;
   selectSession: (sessionId: number) => Promise<void>;
   renameSession: (sessionId: number, newTitle: string) => Promise<void>;
@@ -145,6 +153,47 @@ export function useSessionPanel(): UseSessionPanelReturn {
     }
   }, []);
 
+  const renameProjectHandle = useCallback(
+    async (projectId: string, newName: string) => {
+      try {
+        await renameProject(projectId, newName);
+        await refresh();
+        const activeLabel = useSessionStore.getState().activeSessionLabel;
+        const activeSession = sessions.find((s) => s.id === useSessionStore.getState().activeSessionId);
+        if (activeSession?.project_id === projectId) {
+          useSessionStore.getState().setActiveSessionLabel({
+            sessionTitle: activeLabel.sessionTitle,
+            projectName: newName,
+          });
+        }
+      } catch (e) {
+        console.error("[SessionPanel] Failed to rename project:", e);
+      }
+    },
+    [refresh, sessions]
+  );
+
+  const deleteProjectHandle = useCallback(
+    async (projectId: string) => {
+      try {
+        await deleteProject(projectId);
+        await refresh();
+        const activeLabel = useSessionStore.getState().activeSessionLabel;
+        const activeSession = sessions.find((s) => s.id === useSessionStore.getState().activeSessionId);
+        if (activeSession?.project_id === projectId) {
+          useSessionStore.getState().setActiveSessionLabel({
+            sessionTitle: activeLabel.sessionTitle,
+            projectName: null,
+          });
+        }
+      } catch (e) {
+        console.error("[SessionPanel] Failed to delete project:", e);
+        throw e;
+      }
+    },
+    [sessions, refresh]
+  );
+
   const togglePin = useCallback(async (sessionId: number) => {
     try {
       const session = sessions.find((s) => s.id === sessionId);
@@ -230,6 +279,8 @@ export function useSessionPanel(): UseSessionPanelReturn {
     refresh,
     createNewSession,
     createNewProject,
+    renameProject: renameProjectHandle,
+    deleteProject: deleteProjectHandle,
     togglePin,
     selectSession: selectSessionHandle,
     renameSession: renameSessionHandle,

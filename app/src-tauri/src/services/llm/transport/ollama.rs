@@ -153,7 +153,6 @@ pub async fn stream_ollama(
     tx: &mpsc::Sender<super::super::LlmStreamEvent>,
 ) -> Result<(), LlmError> {
     let url = resolve_url(&config.base_url);
-    println!("[DEBUG] ENTERING stream_ollama to {}", url);
     log::debug!(
         "[OllamaTransport] Starting stream (turn: {}) to {}",
         turn_id,

@@ -251,9 +251,6 @@ export const PERSONA_COPY = {
   viewPreview: "Preview",
   modularPlaceholder: "Modular instruction prompt...",
   realtimePlaceholder: "Realtime instruction prompt...",
-  modularFooterPrefix: "Supports ",
-  modularFooterMid: " and ",
-  modularFooterSuffix: " template variables, dynamically resolved based on user speech language.",
   realtimeFooterHint: "Instructions supplied to duplex cloud speech-to-speech models (e.g. Gemini Live).",
   emptyPrompt: "No instructions defined. Switch to Edit to write prompt directives.",
 };

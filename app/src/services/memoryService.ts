@@ -10,16 +10,37 @@ export interface PersonalMemoryRecord {
   content: string;
   /** Monotonic version counter — must be passed back in save/import to detect concurrent edits. */
   version: number;
+  is_active?: number;
   last_consolidated_at: number;
   updated_at: number;
 }
 
 /**
- * Retrieves the personal memory document for global scope (`projectId: undefined`)
+ * Retrieves the active personal memory document for global scope (`projectId: undefined`)
  * or a specific project. Inserts a blank record if none exists yet.
  */
 export function getPersonalMemory(projectId?: string): Promise<PersonalMemoryRecord> {
   return invoke("get_personal_memory", { projectId: projectId ?? null });
+}
+
+/**
+ * Returns all historical revisions of the personal memory document, ordered by version DESC.
+ */
+export function getPersonalMemoryVersions(projectId?: string): Promise<PersonalMemoryRecord[]> {
+  return invoke("get_personal_memory_versions", { projectId: projectId ?? null });
+}
+
+/**
+ * Promotes a specific historical version to active status.
+ */
+export function setActivePersonalMemoryVersion(
+  version: number,
+  projectId?: string,
+): Promise<PersonalMemoryRecord> {
+  return invoke("set_active_personal_memory_version", {
+    version,
+    projectId: projectId ?? null,
+  });
 }
 
 /**
@@ -39,6 +60,8 @@ export function savePersonalMemory(
   });
 }
 
+export type ConsolidationConflictPolicy = "prompt" | "pause_compaction" | "queue";
+
 /**
  * Merges active personal facts or applies directive comments to consolidate the
  * personal memory document via LLM. Emits `PersonalMemoryUpdated` on success.
@@ -46,10 +69,12 @@ export function savePersonalMemory(
 export function consolidatePersonalMemory(
   comments?: string[],
   projectId?: string,
+  conflictPolicy?: ConsolidationConflictPolicy,
 ): Promise<PersonalMemoryRecord> {
   return invoke("consolidate_personal_memory", {
     comments: comments ?? null,
     projectId: projectId ?? null,
+    conflictPolicy: conflictPolicy ?? null,
   });
 }
 

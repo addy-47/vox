@@ -11,7 +11,7 @@ use tokio::time::{sleep, timeout};
 
 use crate::{
     core::{
-        engine::{ensure_modular_workers_sync, stop_audio_engine_sync},
+        engine::{ensure_memory_embedder, ensure_modular_workers_sync, stop_audio_engine_sync},
         error::PipelineImpact,
         events::Severity,
         settings::{
@@ -127,6 +127,13 @@ fn start_realtime_session<R: Runtime + 'static>(
             e
         );
     }
+
+    let settings = state
+        .settings
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
+    ensure_memory_embedder(&settings);
 
     *rt_guard = Some(rt_actor);
     Ok(())
@@ -303,10 +310,7 @@ pub fn on_session_start<R: Runtime + 'static>(
             (None, None, Vec::new(), 0, false)
         };
 
-    state
-        .pipeline
-        .turn_id
-        .store(max_turn_id, Ordering::Relaxed);
+    state.pipeline.turn_id.store(max_turn_id, Ordering::Relaxed);
     state.pipeline.rearm_turn_token();
     log::info!(
         "[Pipeline::Session] Synchronized turn counter to {} for session {}",

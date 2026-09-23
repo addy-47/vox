@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
-pub use crate::persistence::sessions::{SessionRow, TurnRow};
 use crate::{
     core::{
         error::VoxIpcError,
@@ -14,8 +13,10 @@ use crate::{
     },
     utils::paths,
 };
-
-pub use crate::ipc::pipeline::ContinueSessionResult;
+pub use crate::{
+    ipc::pipeline::ContinueSessionResult,
+    persistence::sessions::{SessionRow, TurnRow},
+};
 
 /// Retrieves the cached dictation transcript history (tray ephemeral buffer).
 #[tauri::command]

@@ -6,8 +6,9 @@ pub mod catalog;
 pub mod core;
 pub mod mutation;
 
-pub use catalog::*;
 pub use core::*;
+
+pub use catalog::*;
 pub use mutation::*;
 
 use crate::{

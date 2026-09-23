@@ -58,11 +58,18 @@ Every compaction pass (Critical, Soft, or Manual) produces a single unified JSON
 - **Compaction Input Isolation Contract**:
   - The compaction LLM operates strictly as an isolated summarizer. It NEVER receives the conversational session's system prompt, TTS instructions, or personal memory profile blob.
   - The compaction input consists strictly of:
-    1. Internal Compaction System Prompt: Instructs concise, dense, third-person extraction into the 6 generic categories and summary, ignoring conversational chit-chat.
+    1. Internal Compaction System Prompt containing:
+       - `<role>`: Frames the model as a session-state and memory extraction engine and states that the entire JSON output is injected into `<session_context>`.
+       - `<schema>`: The canonical 6-bucket JSON schema (shared SSOT with the wire `OutputConstraint::JsonSchema`).
+       - `<category_definitions>`: Per-bucket semantics for the 6 generic categories.
+       - `<rules>`: Concise, dense, third-person extraction rules; ignore chit-chat and pleasantries; deduplicate; never nest user facts behind prefixes in other buckets; output only the raw JSON object.
     2. User Message containing:
        - `<prior_summary>`: The prior session context string from the last compaction run, if any.
-       - `<dialogue>`: The uncompacted conversation slice wrapped as `<turn speaker="user">` and `<turn speaker="assistant">` elements (stripping any `Role::System` messages).
-       - `<schema>` and `<instructions>`.
+         - *In-session runs* (Critical, Soft): Extracted from the `<session_context>` tag of the root `Role::System` message in the active harness history.
+         - *Boundary runs* (Manual, Auto, Boot): Extracted from `session_compactions.compaction_output` of the latest completed run (`fetch_latest_compaction_run`) and injected as a `Role::System` message wrapped in `<session_context>` prepended to the uncompacted turn slice.
+         - Omitted only on the very first compaction run of a session where no prior completed compaction exists.
+       - `<dialogue>`: The uncompacted conversation slice wrapped as `<turn speaker="user">` and `<turn speaker="assistant">` elements (stripping any `Role::System` and `Role::Tool` messages).
+       - `<task>`: Extraction instructions directing analysis of `<dialogue>` in light of `<prior_summary>` and emission of only the raw JSON object starting with `{` and ending with `}`.
 - **Output Token Budget**: Determined strictly in code as `min(slice, probed_max_output_tokens)` where `slice = (context_window as f32 * 0.15) as u32`. If the 15% slice exceeds what the provider physically supports (`probed_max_output_tokens`), it clamps strictly to the provider ceiling; otherwise it uses the 15% slice. Zero arbitrary magic numbers.
 - **Buffer Pruning**: Compacted raw turns are pruned completely from the in-memory FIFO buffer upon successful compaction.
 - **Lenient Parse Fallback**: If the model returns non-empty text that fails JSON parsing, the raw text is preserved directly inside `<session_context>` with zero staged DB facts rather than dropping context.
@@ -109,6 +116,7 @@ Compaction execution operates with dedicated, deterministic generation parameter
   - If `settings.history.auto_compaction == true`: The backend automatically executes the background compaction slice against the pre-created notification. On completion, notification status transitions to `'completed'` (or `'failed'` with the error).
   - If `settings.history.auto_compaction == false`: The notification waits for user action via the Compact action button in the notification drawer or session rail.
 - **Mutual Exclusion**: Exactly one compaction run may execute per session at any time, enforced by a partial unique index (`one in_progress run per session_id`); concurrent duplicate runs are rejected at insert time, not just by pre-check.
+- **Prior Summary Seeding**: Boundary runs must seed the turn slice with the latest completed run's `compaction_output` formatted as `<session_context>` in a `Role::System` message, ensuring subsequent slices update the cumulative session state rather than compacting in a vacuum.
 
 ---
 
@@ -156,38 +164,46 @@ Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_
 
 ## 5. Stage 3A: Personal Memory & Consolidation Lifecycle
 
-### 5.1 Personal Memory Document
+### 5.1 Personal Memory Document & Historical Versioning
 - An evolving markdown document capturing consolidated knowledge about the user.
-- Stored in the `personal_memory` table in Turso DB, injected directly into the LLM system prompt for conversational awareness.
-- Pre-structured for future project scoping via `project_id NULLABLE`.
+- Stored in the `personal_memory` table in Turso DB (schema governed by `db-spec.md §2.5`) with versioning and `is_active` status.
+- **Historical Immutability**: New consolidations or manual saves insert a new record with `version = max_version + 1` and `is_active = 1`, setting previous versions to `is_active = 0`. Older versions remain permanently accessible in the database.
+- **Version Navigation & Activation**: The Memory Drawer UI provides an interactive version carousel (`[ < ] v{X} [ > ]`) allowing users to inspect older archived versions and promote any historical version back to `is_active = 1` via `set_active_personal_memory_version`.
+- **System Prompt Injection**: Only the currently active version (`is_active = 1`) is injected into the conversational system prompt.
 
 ### 5.2 User Interaction Modes
-1. **View & Copy**: User views formatted markdown in the UI and can copy the raw markdown text directly to their clipboard. (No backend file export logic needed).
-2. **Direct Manual Edit**: User directly edits markdown text in the UI and saves changes. (Importing external markdown is performed directly by editing and pasting content into the editor).
-3. **Comment-Driven Regeneration**: User leaves directive comments. The backend triggers an LLM pass taking `[Current Document] + [User Comments]` to regenerate the document.
+1. **View & Copy**: User views formatted markdown in the UI and can copy the raw markdown text directly to their clipboard.
+2. **Direct Manual Edit**: User directly edits markdown text in the UI and saves changes.
+3. **Comment-Driven Regeneration**: User leaves directive comments. The backend triggers an LLM pass taking `[Current Document] + [User Comments]` to regenerate the document. This operation is a pure text edit pass and is NEVER blocked by background ingestion queue items or compactions.
+4. **Version Carousel Navigation**: User flips between previous versions of personal memory to inspect changes over time or restore an earlier version as the active document.
 
 ### 5.3 Background Consolidation Pipeline
 Merges newly accumulated personal facts into the existing document:
 1. **Candidate Query**:
    `SELECT * FROM memory_facts WHERE type = 'personal' AND status = 'active'`
 2. **Execution Gating & Preconditions**:
-   Consolidation MUST NOT run if:
-   - An active compaction run is in progress (`session_compactions.status = 'in_progress'`).
-    - Unprocessed items exist in the ingestion queue (`memory_ingestion_queue.status != 'completed'`).
-    This gate applies equally to fact-merge consolidation and comment-driven regeneration.
+   Consolidation is NEVER hard-blocked by an active compaction or pending queue items:
+   - **Comment-Driven Regeneration**: Executes immediately regardless of ingestion queue state or ongoing compactions.
+   - **Fact Consolidation (Manual UI)**:
+     - If an active compaction is in progress (`session_compactions.status = 'in_progress'`), the UI provides a non-blocking resolution choice:
+       1. **Pause / Preempt Compaction & Consolidate Now**: Signals cancellation on the active compaction task, resets its DB record status from `'in_progress'` back to `'pending'` (allowing auto-compaction to resume/pick it back up once consolidation completes), processes pending ingestion items, and immediately runs consolidation.
+       2. **Queue Consolidation**: Registers the consolidation request in `PendingConsolidationState` to run automatically as soon as the ongoing compaction finishes.
+   - **Fact Consolidation (Daily / Scheduled Cadence)**:
+     - Headless scheduled runs never raise errors. If a compaction is in progress, the scheduled run is automatically queued in `PendingConsolidationState` and executes as soon as the active compaction and its ingestion cycle finish.
 3. **Consolidation Prompt & Merge**:
    - The LLM receives `[Current Personal Memory] + [Active Personal Facts]`.
    - Reorganizes sections and resolves contradictions using model reasoning (zero NLI or secondary classifier models).
 4. **State Transition on Success**:
-    - On successful merge, the document is saved with `last_consolidated_at` stamped to now, and merged personal facts transition from `status = 'active'` to `status = 'consolidated'`.
+   - On successful merge, a new row is inserted with `version = max_version + 1`, `is_active = 1`, and `last_consolidated_at` stamped to now. The prior active row is flipped to `is_active = 0`.
+   - Merged personal facts transition from `status = 'active'` to `status = 'consolidated'`.
 5. **UI Lock**:
    - While consolidation or regeneration executes, the UI locks the editor to prevent concurrent edit collisions.
 
 ### 5.4 Consolidation Cadence
 Configurable in `settings.memory.consolidation_cadence` (`"manual"` default, `"daily"` with `settings.memory.consolidation_time` as `"HH:MM"`):
-- **Manual**: Runs strictly when triggered by `[Consolidate Now]` or comment regeneration (today's behavior, the default).
-- **Scheduled Time**: Runs daily at the configured time. The scheduler sleeps until the next scheduled time and wakes once per run (no polling); a run deferred by the §5.3 gate retries at the next scheduled time. Boot reconciliation detects runs missed while the app was down.
-- **Missed & Failed Runs**: A run due while the app was down emits a persistent `personal_consolidation` notification card (`pending`, tap-to-run) instead of running silently. A failed run flips its card to `failed` with the error; successes complete silently.
+- **Manual**: Runs strictly when triggered by `[Consolidate Now]` or comment regeneration.
+- **Scheduled Time**: Runs daily at the configured time. If an active compaction or ingestion cycle is running at scheduled time, the run is queued behind it rather than deferred or failed.
+- **Missed & Failed Runs**: A run due while the app was down emits a persistent `personal_consolidation` notification card (`pending`, tap-to-run). A failed run flips its card to `failed` with the error; successes complete silently.
 
 ### 5.5 Project Scope (Current)
 Memory is global: the merge folds all `status = 'active'` personal facts into the single document regardless of `project_id` (which is reserved scaffolding for future project-specific memory). Direct manual edits replace only the document text and leave waiting facts active by design.
@@ -196,10 +212,16 @@ Memory is global: the merge folds all `status = 'active'` personal facts into th
 
 ## 6. Stage 3B: Episodic Memory Retrieval & Session Continuation
 
-### 6.1 Episodic Memory Retrieval (Deferred as LLD)
+### 6.1 Episodic Memory Retrieval & Embedding Model Lifecycle
 - Active episodic facts (`objective`, `workdone`, `blocker`, `next_step`, `pitfall`) are stored in `memory_facts` with denormalized metadata in `memory_facts_vectors`.
 - **Zero Automatic Turn Injection**: No scope classification, no per-turn injection.
 - **On-Demand Tool Call**: Retrieved exclusively when the model invokes the non-terminal tool `search_memory(query, spoken_filler)`. Thresholding (cosine cutoff, top-K facts) is governed by system configuration, not model arguments (see `tools-spec.md §7.2`).
+- **Dynamic Embedding Model Lifecycle (`minilm-l12-v2`)**:
+  1. *Session-Start Eager Pre-warming*: When a voice session starts (`ensure_modular_workers` in Modular mode, or `start_realtime_session` in Realtime mode), if `settings.personal_memory.context_retrieval_enabled == true`, the embedding model is loaded asynchronously in a non-blocking background task. This ensures zero cold-start delay (~50–120ms) when `search_memory` is first called by the LLM.
+  2. *Mid-Session Dynamic Settings Toggle*:
+     - Enabling retrieval (`context_retrieval_enabled = true`) while a session is active immediately warms the embedder in background and updates the active `Harness` (`harness.set_memory_retrieval_enabled(true)`), instantly exposing `search_memory` on subsequent turns.
+     - Disabling retrieval (`context_retrieval_enabled = false`) mid-session immediately updates `harness.set_memory_retrieval_enabled(false)` to prune `search_memory` from candidate tools, evicts the ONNX model from memory via `unload_memory_pipeline_onnx_models()`, and invokes `trim_heap` to free memory back to the OS.
+  3. *Zero-Idle Eviction Invariant*: When no session is active (`InteractionState::Idle`) or upon session teardown (`on_end`), all ONNX models are evicted via `stop_audio_engine` -> `unload_all_onnx_models()`. Model weights are never retained in RAM during idle state.
 
 ### 6.2 Session Continuation Context
 When a user restores and continues an existing session from the conversation list:

@@ -211,7 +211,8 @@ export const AmbientBackground = React.memo(({
     };
   }, [cfg, glowOpacityMultiplier, rippleOpacityMultiplier, telemetryRef, paused]);
 
-  const rpAnimName = (mood === "active" || (mood as string) === "listening") ? "ripple-in" : "ripple-out";
+  const isInward = mood === "active" || (mood as string) === "listening";
+  const effectiveInwardDuration = effectiveRippleDuration * 1.6;
 
   return (
     <div
@@ -220,7 +221,7 @@ export const AmbientBackground = React.memo(({
         "--origin-x": originX,
         "--origin-y": originY,
         "--rp-dur": `${effectiveRippleDuration}s`,
-        "--rp-anim-name": rpAnimName,
+        "--rp-in-dur": `${effectiveInwardDuration}s`,
       } as React.CSSProperties}
       aria-hidden="true"
     >
@@ -253,17 +254,43 @@ export const AmbientBackground = React.memo(({
       {/* Core glow — centered at orb origin */}
       <div ref={glowRef} className="amb-glow" />
 
-      {/* Ripple rings — expand from origin, circular or 3D orbit shape */}
+      {/* Ripple rings — cross-fading Outward and Inward layers for seamless bi-directional transitions */}
       <div ref={rippleRef} className="rp-wrapper">
-        {Array.from({ length: RIPPLE_COUNT }, (_, i) => (
-          <div
-            key={i}
-            className={rippleShape === "orbit" ? "rp-ring rp-ring-orbit" : "rp-ring"}
-            style={{
-              animationDelay: `${(i * effectiveRippleDuration) / RIPPLE_COUNT}s`,
-            }}
-          />
-        ))}
+        {/* Outward layer */}
+        <div
+          className="rp-layer"
+          style={{
+            opacity: isInward ? 0 : 1,
+          }}
+        >
+          {Array.from({ length: RIPPLE_COUNT }, (_, i) => (
+            <div
+              key={`out-${i}`}
+              className={rippleShape === "orbit" ? "rp-ring rp-ring-out rp-ring-orbit" : "rp-ring rp-ring-out"}
+              style={{
+                animationDelay: `${(i * effectiveRippleDuration) / RIPPLE_COUNT}s`,
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Inward layer */}
+        <div
+          className="rp-layer"
+          style={{
+            opacity: isInward ? 1 : 0,
+          }}
+        >
+          {Array.from({ length: RIPPLE_COUNT }, (_, i) => (
+            <div
+              key={`in-${i}`}
+              className={rippleShape === "orbit" ? "rp-ring rp-ring-in rp-ring-orbit" : "rp-ring rp-ring-in"}
+              style={{
+                animationDelay: `${(i * effectiveInwardDuration) / RIPPLE_COUNT}s`,
+              }}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Noise grain overlay */}

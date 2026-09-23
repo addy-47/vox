@@ -150,19 +150,21 @@ Tracks rolling compaction-of-compactions passes and retains raw outputs for roll
 ---
 
 ### 2.5 `personal_memory`
-Evolving user knowledge document, structured for global default and future project-scoped personalization.
+Evolving user knowledge document with append-only historical versioning, structured for global default and future project-scoped personalization.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Row ID |
 | `project_id` | TEXT | NULLABLE REFERENCES `projects(id)` ON DELETE CASCADE | NULL for global default personal memory; project ID for project-specific memory |
 | `content` | TEXT | NOT NULL | Markdown document text |
-| `version` | INTEGER | NOT NULL DEFAULT 1 | Monotonic revision counter for optimistic UI locking |
+| `version` | INTEGER | NOT NULL DEFAULT 1 | Monotonic revision counter |
+| `is_active` | INTEGER | NOT NULL DEFAULT 1 | Boolean (1/0): 1 for the current active profile injected into LLM system prompt; 0 for archived versions |
 | `last_consolidated_at` | INTEGER | NOT NULL | Millisecond epoch of last LLM merge |
 | `updated_at` | INTEGER | NOT NULL | Millisecond epoch of last edit (manual or LLM) |
 
 *Indexes:*
-- `idx_personal_memory_project`: `UNIQUE (project_id)`
+- `idx_personal_memory_active_project`: `UNIQUE (project_id) WHERE is_active = 1` (guarantees exactly one active version per project scope)
+- `idx_personal_memory_history`: `(project_id, version DESC)` (fast historical version queries)
 
 ---
 

@@ -11,8 +11,7 @@
 //! ============================================================================
 
 use vox_lib::{
-    pipeline::assistant::TurnAccumulator,
-    services::harness::stages::streaming::ClauseChunker,
+    pipeline::assistant::TurnAccumulator, services::harness::stages::streaming::ClauseChunker,
 };
 
 /// Subtest 1: The exact same logical text fed across two wildly different

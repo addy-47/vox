@@ -66,9 +66,15 @@ pub async fn run_consolidation_once<R: tauri::Runtime>(
 
     let llm_settings = state.settings.read().ok().map(|s| s.llm.clone());
     let conn = state.db.connect()?;
-    let record =
-        consolidate_personal_memory(&conn, provider.as_ref(), None, None, llm_settings.as_ref())
-            .await?;
+    let record = consolidate_personal_memory(
+        &conn,
+        provider.as_ref(),
+        None,
+        None,
+        llm_settings.as_ref(),
+        Some(crate::services::memory::personal::ConsolidationConflictPolicy::QueueBehind),
+    )
+    .await?;
 
     if let Err(e) = emit_ipc(app, IpcEvent::PersonalMemoryUpdated(record)) {
         log::warn!(

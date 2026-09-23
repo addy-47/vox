@@ -21,13 +21,16 @@ use vox_lib::{
         compactions::{commit_compaction_output, record_compaction_start},
         facts::{fetch_active_facts_by_type, insert_fact, FactRecord},
         has_in_progress_compaction,
-        personal_memory::{get_personal_memory, save_personal_memory},
+        personal_memory::{
+            get_personal_memory, list_personal_memory_versions, save_personal_memory,
+            set_active_personal_memory_version,
+        },
         queue::enqueue_fact,
         sessions::{create_session_with_id, fetch_session_continuation},
     },
     services::{
         llm::{ConnectionConfig, RemoteTransport},
-        memory::personal::consolidate_personal_memory,
+        memory::personal::{consolidate_personal_memory, ConsolidationConflictPolicy},
     },
 };
 
@@ -191,7 +194,7 @@ async fn test_personal_memory_consolidation_live_server() {
             "[Seam14/Live] Consolidating 100 facts via remote {REMOTE_OLLAMA_MODEL}..."
         );
         let start = Instant::now();
-        let consolidated = consolidate_personal_memory(&conn, &provider, None, None, None)
+        let consolidated = consolidate_personal_memory(&conn, &provider, None, None, None, None)
             .await
             .expect("consolidate_personal_memory must succeed against remote Ollama server");
 
@@ -349,7 +352,7 @@ async fn test_consolidation_quiescence_precondition_gating() {
         );
 
         let compaction_blocked =
-            consolidate_personal_memory(&conn, &provider, None, None, None).await;
+            consolidate_personal_memory(&conn, &provider, None, None, None, None).await;
         assert!(
             compaction_blocked.is_err(),
             "Consolidation must be blocked when compaction is in progress"
@@ -387,7 +390,8 @@ async fn test_consolidation_quiescence_precondition_gating() {
         .unwrap();
         assert!(q_id > 0);
 
-        let queue_blocked = consolidate_personal_memory(&conn, &provider, None, None, None).await;
+        let queue_blocked =
+            consolidate_personal_memory(&conn, &provider, None, None, None, None).await;
         assert!(
             queue_blocked.is_err(),
             "Consolidation must be blocked when items are pending in ingestion queue"
@@ -408,7 +412,8 @@ async fn test_consolidation_quiescence_precondition_gating() {
         .unwrap();
 
         // --- Gate Arm 3: Quiescent & No Active Facts -> clean no-op Ok ---
-        let quiescent_res = consolidate_personal_memory(&conn, &provider, None, None, None).await;
+        let quiescent_res =
+            consolidate_personal_memory(&conn, &provider, None, None, None, None).await;
         assert!(
             quiescent_res.is_ok(),
             "Consolidation must succeed (no-op) when pipeline is quiescent and no active facts exist"
@@ -593,4 +598,87 @@ async fn test_session_continuation_data_assembly() {
     })
     .await
     .expect("test_session_continuation_data_assembly timed out");
+}
+
+// ============================================================================
+// Subtest 6: Personal Memory Version History & Compaction Preemption
+// ============================================================================
+#[tokio::test]
+async fn test_personal_memory_versions_and_compaction_preemption() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let _guard = TempPathsGuard::new();
+        let (_app, state) = get_test_app_and_state().await;
+        let conn = state.db.connect().expect("Failed to connect to test database");
+        vox_lib::persistence::schema::run_migrations(&conn).await.unwrap();
+
+        // 1. Initial version is created (v1)
+        let v1 = get_personal_memory(&conn, None).await.unwrap();
+        assert_eq!(v1.version, 1);
+        assert_eq!(v1.is_active, 1);
+
+        // 2. Save v2 and v3
+        let v2 = save_personal_memory(&conn, None, "# Version 2 Content\n- User likes coffee.", 1)
+            .await
+            .unwrap();
+        assert_eq!(v2.version, 2);
+        assert_eq!(v2.is_active, 1);
+
+        let v3 = save_personal_memory(&conn, None, "# Version 3 Content\n- User likes tea.", 2)
+            .await
+            .unwrap();
+        assert_eq!(v3.version, 3);
+        assert_eq!(v3.is_active, 1);
+
+        // 3. List versions
+        let versions = list_personal_memory_versions(&conn, None).await.unwrap();
+        assert_eq!(versions.len(), 3);
+        assert_eq!(versions[0].version, 3);
+        assert_eq!(versions[0].is_active, 1);
+        assert_eq!(versions[1].version, 2);
+        assert_eq!(versions[1].is_active, 0);
+        assert_eq!(versions[2].version, 1);
+        assert_eq!(versions[2].is_active, 0);
+
+        // 4. Switch active version back to v2
+        let restored = set_active_personal_memory_version(&conn, None, 2).await.unwrap();
+        assert_eq!(restored.version, 2);
+        assert_eq!(restored.is_active, 1);
+
+        // Verify active memory is now v2
+        let active = get_personal_memory(&conn, None).await.unwrap();
+        assert_eq!(active.version, 2);
+        assert!(active.content.contains("Version 2 Content"));
+
+        // 5. Test Preemption: Record an in-progress compaction
+        let session_id = create_session_with_id(&conn, 14302, Some("default")).await.unwrap();
+        let _run_id = record_compaction_start(&conn, session_id, "manual", 1, 10).await.unwrap();
+        assert!(has_in_progress_compaction(&conn).await.unwrap());
+
+        // Consolidating with PauseCompaction policy must pause in-progress compaction back to pending
+        let conn_cfg = ConnectionConfig::new(
+            REMOTE_OLLAMA_URL,
+            REMOTE_OLLAMA_MODEL,
+            None,
+            Some("ollama"),
+        );
+        let provider = RemoteTransport::new(conn_cfg);
+
+        let preemption_res = consolidate_personal_memory(
+            &conn,
+            &provider,
+            None,
+            None,
+            None,
+            Some(ConsolidationConflictPolicy::PauseCompaction),
+        ).await;
+
+        assert!(preemption_res.is_ok(), "PauseCompaction policy must preempt compaction and succeed");
+        // Compaction should now no longer be in_progress
+        assert!(
+            !has_in_progress_compaction(&conn).await.unwrap(),
+            "Compaction must have been reset from 'in_progress' to 'pending'"
+        );
+    })
+    .await
+    .expect("test_personal_memory_versions_and_compaction_preemption timed out");
 }

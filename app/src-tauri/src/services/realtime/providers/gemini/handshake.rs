@@ -223,11 +223,7 @@ pub(super) fn encode_activity_end() -> String {
     serde_json::json!({ "realtimeInput": { "activityEnd": {} } }).to_string()
 }
 
-pub(super) fn encode_tool_response(
-    id: &str,
-    name: &str,
-    result: &serde_json::Value,
-) -> String {
+pub(super) fn encode_tool_response(id: &str, name: &str, result: &serde_json::Value) -> String {
     serde_json::json!({
         "toolResponse": {
             "functionResponses": [

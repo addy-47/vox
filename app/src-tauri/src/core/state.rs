@@ -10,11 +10,7 @@ use std::{
 use crossbeam_channel::Sender as CrossbeamSender;
 use parking_lot::{Mutex as ParkingMutex, RwLock as ParkingRwLock};
 use serde::{Deserialize, Serialize};
-use tauri::{
-    async_runtime::JoinHandle,
-    menu::CheckMenuItem,
-    AppHandle, Runtime, Wry,
-};
+use tauri::{async_runtime::JoinHandle, menu::CheckMenuItem, AppHandle, Runtime, Wry};
 use tokio::sync::{Mutex as TokioMutex, RwLock as TokioRwLock};
 use tracing_appender::non_blocking::WorkerGuard;
 
@@ -29,7 +25,7 @@ use crate::{
         settings::{PipelineMode, VoxSettings},
     },
     monitoring::snapshots::MonitoringState,
-    persistence::{VoxDb, PersistenceEvent},
+    persistence::{PersistenceEvent, VoxDb},
     pipeline::assistant::TurnAccumulator,
     services::{harness::Harness, llm::LlmProvider, realtime::RealtimeActor},
     setup::{manifest::VoxManifest, model_manager::ModelManager},

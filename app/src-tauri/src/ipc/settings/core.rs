@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager, State};
 use super::mutation::apply_setting_mutation;
 use crate::{
     core::{
-        engine::{start_audio_engine, stop_audio_engine},
+        engine::{ensure_memory_embedder, start_audio_engine, stop_audio_engine},
         error::VoxIpcError,
         events::{emit_ipc, IpcEvent},
         settings::{
@@ -21,7 +21,10 @@ use crate::{
     pipeline::dictation::transition_dictation,
     services::{
         dictation::init_dictation_hotkey_listener,
-        memory::{start_consolidation_scheduler, stop_consolidation_scheduler},
+        memory::{
+            start_consolidation_scheduler, stop_consolidation_scheduler,
+            unload_memory_pipeline_onnx_models,
+        },
         tts::TtsCommand,
         vad::{VadCommand, VadOperationalMode},
     },
@@ -262,19 +265,40 @@ async fn handle_setting_side_effects<R: tauri::Runtime>(
         handle_dictation_side_effects(app, state, key, value).await;
     } else if domain == "interaction" {
         handle_interaction_side_effects(app, state, key, value).await;
-    } else if domain == "personal_memory"
-        && (key == "consolidation_cadence" || key == "consolidation_time")
-    {
-        let cadence = state
-            .settings
-            .read()
-            .map(|s| s.personal_memory.consolidation_cadence.clone())
-            .unwrap_or_default();
-        if cadence == "daily" {
-            let state_arc = app.state::<Arc<AppState>>().inner().clone();
-            start_consolidation_scheduler(app.clone(), state_arc);
-        } else {
-            stop_consolidation_scheduler(state);
+    } else if domain == "personal_memory" {
+        if key == "consolidation_cadence" || key == "consolidation_time" {
+            let cadence = state
+                .settings
+                .read()
+                .map(|s| s.personal_memory.consolidation_cadence.clone())
+                .unwrap_or_default();
+            if cadence == "daily" {
+                let state_arc = app.state::<Arc<AppState>>().inner().clone();
+                start_consolidation_scheduler(app.clone(), state_arc);
+            } else {
+                stop_consolidation_scheduler(state);
+            }
+        } else if key == "context_retrieval_enabled" {
+            let enabled = value.as_bool().unwrap_or(false);
+            if let Some(ref mut h) = *state.harness.lock() {
+                h.set_memory_retrieval_enabled(enabled);
+            }
+            if enabled {
+                let is_active = state.pipeline.state() != InteractionState::Idle;
+                if is_active {
+                    let settings = state
+                        .settings
+                        .read()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .clone();
+                    ensure_memory_embedder(&settings);
+                }
+            } else {
+                tauri::async_runtime::spawn_blocking(|| {
+                    unload_memory_pipeline_onnx_models();
+                    log::info!("[Settings] Memory embedder evicted on retrieval disable");
+                });
+            }
         }
     }
 }

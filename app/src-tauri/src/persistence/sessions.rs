@@ -385,7 +385,12 @@ pub async fn fetch_session_continuation(
                     if !p.context_summary.trim().is_empty() {
                         Some(p.context_summary.trim().to_string())
                     } else {
-                        None
+                        let formatted = p.format_session_context();
+                        if !formatted.trim().is_empty() {
+                            Some(formatted)
+                        } else {
+                            None
+                        }
                     }
                 });
                 let compacted_turn = if summary.is_some() { run.to_turn_id } else { 0 };
@@ -413,10 +418,7 @@ pub async fn fetch_session_continuation(
 
     let title_is_set = {
         let mut rows = conn
-            .query(
-                "SELECT title FROM sessions WHERE id = ?",
-                (session_id,),
-            )
+            .query("SELECT title FROM sessions WHERE id = ?", (session_id,))
             .await?;
         if let Some(row) = rows.next().await? {
             let t: Option<String> = row.get(0)?;

@@ -25,15 +25,19 @@ pub mod voices;
 pub mod worker;
 
 pub use compactions::{
-    commit_compaction_output, has_in_progress_compaction, record_compaction_start,
-    resolve_uncompacted_range, CompactionRecord,
+    commit_compaction_output, has_in_progress_compaction, pause_in_progress_compactions,
+    record_compaction_start, resolve_uncompacted_range, CompactionRecord,
 };
 pub use facts::{
     deactivate_fact, deactivate_facts_batch, fetch_active_episodic_memory,
     fetch_active_facts_by_type, fetch_all_active_facts, EpisodicFactCandidate, FactRecord,
 };
 pub use notifications::{NewNotification, NotificationRecord};
-pub use personal_memory::PersonalMemoryRecord;
+pub use personal_memory::{
+    get_personal_memory, list_personal_memory_versions, save_consolidated_memory,
+    save_personal_memory, set_active_personal_memory_version, update_consolidated_memory,
+    PersonalMemoryRecord,
+};
 pub use projects::ProjectRow;
 pub use queue::{
     enqueue_fact, has_unfinished_items, record_queue_item_failure, update_queue_item_status,
@@ -129,7 +133,9 @@ pub struct VoxDb {
 
 impl VoxDb {
     /// Opens the local database engine and runs initial pragmas on a bootstrap connection.
-    pub async fn open(path: impl AsRef<Path>) -> Result<Self, crate::core::error::PersistenceError> {
+    pub async fn open(
+        path: impl AsRef<Path>,
+    ) -> Result<Self, crate::core::error::PersistenceError> {
         let path_buf = path.as_ref().to_path_buf();
         let path_str = path_buf.to_string_lossy().to_string();
         let db = Builder::new_local(&path_str)

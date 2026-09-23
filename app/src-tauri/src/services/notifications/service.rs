@@ -3,20 +3,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use turso::Connection;
 
-use super::{
-    Action, DeliveryChannel, NotificationParams, resolve_channel,
-};
+use super::{resolve_channel, Action, DeliveryChannel, NotificationParams};
 use crate::{
     core::{
         events::{emit_ipc, emit_ipc_to, IpcEvent, Severity, ToastPayload},
         state::AppWindow,
     },
     persistence::{
-        VoxDb,
         notifications::{
             create_notification, find_active_interactive_by_group, update_interactive_notification,
             NewNotification, NotificationRecord,
         },
+        VoxDb,
     },
     toast::{show_toast, ToastDeliveryOutcome},
 };

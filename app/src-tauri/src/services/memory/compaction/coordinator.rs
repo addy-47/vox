@@ -16,12 +16,11 @@ use crate::{
             commit_compaction_output, fetch_latest_compaction_run, fetch_turns_for_compaction,
             record_compaction_finish, record_compaction_start,
         },
-        VoxDb,
         notifications::{find_notification_by_group, resolve_notification_in_place},
-        TurnRow,
+        TurnRow, VoxDb,
     },
     services::{
-        harness::{ChatMessage, Role},
+        harness::{ChatMessage, PromptTag, Role},
         llm::{
             actor::create_llm_provider_from_llm_settings, LlmProvider, QWEN_MODEL_DIR,
             QWEN_MODEL_FILE,
@@ -29,7 +28,7 @@ use crate::{
         memory::compaction::runner::run_compaction,
         notifications::{notify, Action, ActionPayload, NotificationCategory, NotificationParams},
     },
-    utils::paths::get,
+    utils::{json::parse_unified_compaction_json, paths::get},
 };
 
 /// Summary of a successfully executed compaction slice.
@@ -68,20 +67,25 @@ impl CompactionCoordinator {
 
         let conn = state.db.connect()?;
 
-        if let Ok(Some(latest)) = fetch_latest_compaction_run(&conn, session_id).await {
-            if latest.status == "in_progress" {
-                log::info!(
-                    "[CompactionCoordinator] Compaction already in progress for session {}",
-                    session_id
-                );
-                return Ok(None);
+        let latest_run = match fetch_latest_compaction_run(&conn, session_id).await {
+            Ok(Some(latest)) => {
+                if latest.status == "in_progress" {
+                    log::info!(
+                        "[CompactionCoordinator] Compaction already in progress for session {}",
+                        session_id
+                    );
+                    return Ok(None);
+                }
+                if latest.status == "completed" {
+                    Some(latest)
+                } else {
+                    None
+                }
             }
-        }
-
-        let last_compacted_turn = match fetch_latest_compaction_run(&conn, session_id).await {
-            Ok(Some(run)) if run.status == "completed" => run.to_turn_id,
-            _ => 0,
+            _ => None,
         };
+
+        let last_compacted_turn = latest_run.as_ref().map(|r| r.to_turn_id).unwrap_or(0);
 
         let turns =
             fetch_turns_for_compaction(&conn, session_id, last_compacted_turn + 1, u32::MAX)
@@ -117,7 +121,26 @@ impl CompactionCoordinator {
             Err(e) => return Err(e),
         };
 
-        let history_messages = build_history_messages(&turns);
+        let prior_summary = latest_run.as_ref().and_then(|run| {
+            let trimmed = run.compaction_output.trim();
+            if trimmed.is_empty() || trimmed == "{}" {
+                return None;
+            }
+            if let Some(payload) = parse_unified_compaction_json(trimmed) {
+                let formatted = payload.format_session_context();
+                if !formatted.trim().is_empty() {
+                    Some(formatted)
+                } else if !payload.context_summary.trim().is_empty() {
+                    Some(payload.context_summary)
+                } else {
+                    Some(trimmed.to_string())
+                }
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+
+        let history_messages = build_history_messages(&turns, prior_summary.as_deref());
         let llm_settings = state
             .settings
             .read()
@@ -240,9 +263,16 @@ impl CompactionCoordinator {
     }
 }
 
-/// Helper building ChatMessage list from turns.
-fn build_history_messages(turns: &[TurnRow]) -> Vec<ChatMessage> {
-    let mut messages = Vec::with_capacity(turns.len() * 2);
+/// Helper building ChatMessage list from turns with optional prior summary.
+fn build_history_messages(turns: &[TurnRow], prior_summary: Option<&str>) -> Vec<ChatMessage> {
+    let mut messages = Vec::with_capacity(turns.len() * 2 + 1);
+    if let Some(summary) = prior_summary {
+        let trimmed = summary.trim();
+        if !trimmed.is_empty() {
+            let wrapped = PromptTag::SessionContext.wrap(trimmed);
+            messages.push(ChatMessage::new(Role::System, wrapped));
+        }
+    }
     for turn in turns {
         if !turn.user_text.trim().is_empty() {
             messages.push(ChatMessage::new(Role::User, turn.user_text.clone()));

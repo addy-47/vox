@@ -6,7 +6,7 @@ use crate::{
     core::settings::DeepgramVoiceAgentConfig,
     services::realtime::{
         transport::{WsReader, WsWriter},
-        WS_HANDSHAKE_TIMEOUT, DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE,
+        DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE, WS_HANDSHAKE_TIMEOUT,
     },
 };
 

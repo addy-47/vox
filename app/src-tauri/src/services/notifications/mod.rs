@@ -2,10 +2,10 @@ pub mod actions;
 pub mod service;
 
 pub use actions::execute_notification_action;
-pub use service::notify;
-use crate::core::{error::PipelineImpact, events::Severity};
-
 use serde::{Deserialize, Serialize};
+pub use service::notify;
+
+use crate::core::{error::PipelineImpact, events::Severity};
 
 /// Closed domain category taxonomy for system notifications and alerts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

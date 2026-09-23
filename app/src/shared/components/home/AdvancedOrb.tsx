@@ -11,6 +11,7 @@ interface VoxOrbProps {
   interactionState?: InteractionState;
   isSleeping?: boolean;
   isTesting?: boolean;
+  paused?: boolean;
 }
 
 
@@ -362,6 +363,7 @@ export const VoxOrb = React.memo(({
   interactionState = 'Idle',
   isSleeping = false,
   isTesting = false,
+  paused = false,
 }: VoxOrbProps) => {
   useMemoryTrace("VoxOrb (Three.js Shader)");
 
@@ -669,7 +671,7 @@ export const VoxOrb = React.memo(({
     fpsActive: 60,
     fpsIdle: 12,
     isActive,
-    isPaused: isSleeping,
+    isPaused: isSleeping || paused,
   });
 
   // ── Scene initialisation (runs once) ─────────────────────────────────────

@@ -19,10 +19,7 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
 ) {
     let current_state = state.pipeline.state();
     if current_state == InteractionState::Idle {
-        log::debug!(
-            "[Pipeline::Text] TextInput dropped in {:?}",
-            current_state
-        );
+        log::debug!("[Pipeline::Text] TextInput dropped in {:?}", current_state);
         return;
     }
 
@@ -89,10 +86,7 @@ pub fn on_text_input<R: tauri::Runtime + 'static>(
         target_window(ctx.owner),
         IpcEvent::TranscriptFinal(payload),
     ) {
-        log::warn!(
-            "[Pipeline::Text] Failed to emit TranscriptFinal IPC: {}",
-            e
-        );
+        log::warn!("[Pipeline::Text] Failed to emit TranscriptFinal IPC: {}", e);
     }
 
     state.pipeline.set_turn_open(true);

@@ -13,10 +13,7 @@ use crate::{
         metrics::TurnMetricsCollector,
         state::InteractionOwner,
     },
-    pipeline::{
-        assistant::TurnAccumulator,
-        target_window,
-    },
+    pipeline::{assistant::TurnAccumulator, target_window},
     services::{
         harness::stages::streaming::{ClauseChunker, TextNormalizer},
         llm::{actor::LlmResponse, CanonicalToolCall},
@@ -350,7 +347,9 @@ impl StreamRoutingStage {
                 acc.assistant_response.split_whitespace().count(),
             )
         };
-        handles.turn_metrics.record_llm_stats(response_chars, response_words);
+        handles
+            .turn_metrics
+            .record_llm_stats(response_chars, response_words);
         log::info!(
             "[Harness::Stream] Stream finished (turn {}, response_chars {}, response_words {})",
             handles.turn_id,

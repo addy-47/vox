@@ -12,7 +12,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-const SCHEMA_VERSION: u32 = 5;
+const SCHEMA_VERSION: u32 = 6;
 
 const V2_TABLE_STATEMENTS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS projects (
@@ -60,10 +60,12 @@ const V2_TABLE_STATEMENTS: &[&str] = &[
         project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
         content TEXT NOT NULL,
         version INTEGER NOT NULL DEFAULT 1,
+        is_active INTEGER NOT NULL DEFAULT 1,
         last_consolidated_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
     );",
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_memory_project ON personal_memory(project_id);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_memory_active_project ON personal_memory(project_id) WHERE is_active = 1;",
+    "CREATE INDEX IF NOT EXISTS idx_personal_memory_history ON personal_memory(project_id, version DESC);",
     "CREATE TABLE IF NOT EXISTS memory_ingestion_queue (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
@@ -161,6 +163,11 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         );
         conn.execute("PRAGMA foreign_keys = OFF;", ()).await?;
         conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
+
+        if current_version > 0 && current_version < 6 {
+            let _ = conn.execute("ALTER TABLE personal_memory ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;", ()).await;
+            let _ = conn.execute("DROP INDEX IF EXISTS idx_personal_memory_project;", ()).await;
+        }
 
         for stmt in V2_TABLE_STATEMENTS {
             conn.execute(stmt, ()).await?;
@@ -313,7 +320,7 @@ mod tests {
             .expect("Row exists")
             .get(0)
             .expect("Version column");
-        assert_eq!(version, 5, "Schema version must be 5");
+        assert_eq!(version, 6, "Schema version must be 6");
 
         // Verify all 11 tables exist
         let expected_tables = [

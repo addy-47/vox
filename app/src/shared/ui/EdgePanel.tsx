@@ -111,7 +111,7 @@ const EdgePanelInner = memo(
             exit={{ opacity: 0, x: isLeft ? "-100%" : "100%" }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             className={cn(
-              "absolute top-0 bottom-0 z-[35] flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.06)]",
+              "absolute top-0 bottom-0 z-[35] flex flex-col bg-[rgb(var(--card))]/90 backdrop-blur-md overflow-hidden pointer-events-auto select-auto border-[rgba(var(--border),0.06)] transform-gpu will-change-transform contain-paint",
               isLeft ? "left-0 border-r" : "right-0 border-l",
               "w-[330px] max-w-[92vw]",
               className
