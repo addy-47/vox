@@ -247,46 +247,60 @@ const SessionRowItem = memo(
           )}
         </div>
 
-        {/* Actions Area */}
+        {/* Actions / Recency Area */}
         {!isRenaming && (
-          <div className="flex items-center gap-0.5 shrink-0">
+          <div className="flex items-center gap-0.5 shrink-0 relative min-w-[36px] justify-end">
+            {/* Static Date/Time: visible by default, replaced on hover or when menu is open */}
             {showRecency && (
-              <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/40 opacity-0 group-hover:opacity-100 transition-opacity mr-1">
+              <span
+                className={cn(
+                  "text-[11px] font-mono text-[rgb(var(--foreground-muted))]/60 transition-opacity mr-1 whitespace-nowrap",
+                  menuOpen ? "hidden" : "group-hover:hidden"
+                )}
+              >
                 {recency}
               </span>
             )}
 
-            {/* Pin Toggle */}
-            <button
-              type="button"
-              onClick={handlePin}
-              aria-pressed={pinned}
-              aria-label={pinned ? SESSION_COPY.unpinAriaLabel : SESSION_COPY.pinAriaLabel}
+            {/* Interactive Action Buttons: hidden by default, visible on group hover or when menu is open */}
+            <div
               className={cn(
-                "flex items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--foreground),0.08)] transition-all cursor-pointer",
-                pinned
-                  ? "text-[rgb(var(--accent))] opacity-100"
-                  : "opacity-0 group-hover:opacity-60 hover:!opacity-100 text-[rgb(var(--foreground-muted))]"
+                "items-center gap-0.5",
+                menuOpen ? "flex" : "hidden group-hover:flex"
               )}
             >
-              <Pin size={12} fill={pinned ? "currentColor" : "none"} />
-            </button>
+              {/* Pin Toggle */}
+              <button
+                type="button"
+                onClick={handlePin}
+                aria-pressed={pinned}
+                aria-label={pinned ? SESSION_COPY.unpinAriaLabel : SESSION_COPY.pinAriaLabel}
+                className={cn(
+                  "flex items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--foreground),0.08)] transition-all cursor-pointer",
+                  pinned
+                    ? "text-[rgb(var(--accent))] opacity-100"
+                    : "opacity-60 hover:!opacity-100 text-[rgb(var(--foreground-muted))]"
+                )}
+              >
+                <Pin size={12} fill={pinned ? "currentColor" : "none"} />
+              </button>
 
-            {/* Vertical Three Dots Context Menu Trigger */}
-            <button
-              ref={triggerRef}
-              type="button"
-              onClick={handleMenuClick}
-              className={cn(
-                "flex items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--foreground),0.08)] transition-all cursor-pointer",
-                menuOpen
-                  ? "opacity-100 text-[rgb(var(--foreground))] bg-[rgba(var(--foreground),0.08)]"
-                  : "opacity-0 group-hover:opacity-60 hover:!opacity-100 text-[rgb(var(--foreground-muted))]"
-              )}
-              aria-label={SESSION_COPY.actions.moreOptions}
-            >
-              <MoreVertical size={13} />
-            </button>
+              {/* Vertical Three Dots Context Menu Trigger */}
+              <button
+                ref={triggerRef}
+                type="button"
+                onClick={handleMenuClick}
+                className={cn(
+                  "flex items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--foreground),0.08)] transition-all cursor-pointer",
+                  menuOpen
+                    ? "opacity-100 text-[rgb(var(--foreground))] bg-[rgba(var(--foreground),0.08)]"
+                    : "opacity-60 hover:!opacity-100 text-[rgb(var(--foreground-muted))]"
+                )}
+                aria-label={SESSION_COPY.actions.moreOptions}
+              >
+                <MoreVertical size={13} />
+              </button>
+            </div>
           </div>
         )}
 

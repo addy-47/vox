@@ -201,7 +201,7 @@ export const Drawer = memo(
               transition={{ duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
               style={{ height: `${heightPercent}%` }}
               className={cn(
-                "absolute bottom-0 left-0 right-0 flex flex-col rounded-t-3xl overflow-hidden border-0 shadow-2xl outline-none pointer-events-auto",
+                "absolute bottom-0 left-0 right-0 flex flex-col rounded-t-3xl overflow-hidden border-t border-[rgba(var(--accent),0.12)] [text-shadow:none] outline-none pointer-events-auto",
                 isDragging ? "select-none transition-none" : "transition-[height] duration-150 ease-out"
               )}
               onClick={(e) => e.stopPropagation()}

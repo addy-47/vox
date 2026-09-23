@@ -294,17 +294,18 @@ fn collect_process_metrics(sys: &System, pid: Option<Pid>) -> (f32, u32, u32) {
     let mut total_threads: u32 = 0;
 
     for (&p_pid, proc) in sys.processes() {
+        // On Linux, sysinfo lists both process-group-leaders and individual thread
+        // entries under sys.processes(). Thread entries have thread_kind() == Some(_).
+        // Skip thread entries to avoid double-counting memory with their parent process.
         #[cfg(target_os = "linux")]
-        {
-            if proc.tasks().is_none() {
-                continue;
-            }
+        if proc.thread_kind().is_some() {
+            continue;
         }
 
         if is_descendant_process(sys, p_pid, target_pid) {
             total_memory += proc.memory();
             total_cpu += proc.cpu_usage();
-            total_threads += proc.tasks().map(|t| t.len()).unwrap_or(0) as u32;
+            total_threads += proc.tasks().map(|t| t.len()).unwrap_or(1) as u32;
         }
     }
 

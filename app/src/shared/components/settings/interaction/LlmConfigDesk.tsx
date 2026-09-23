@@ -1,6 +1,6 @@
 import { useState, useEffect, memo, useCallback, useMemo } from "react";
 import { useSettingsStore, LlmProviderConfig } from "@/store/settingsStore";
-import { checkIfCloudUrl, CLOUD_PROVIDERS, CloudProvider } from "@/data/providersCopy";
+import { CLOUD_PROVIDERS, CloudProvider } from "@/data/providersCopy";
 import { INTERACTION_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { checkLlmProviderHealth } from "@/services/settingsService";
 import {
@@ -9,10 +9,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { ApiKeyField, UnderlineInput } from "@/shared/ui";
+import { ProviderTier } from "./ProviderSelectorView";
 
 interface LlmConfigDeskProps {
   activeCategory: "STT" | "LLM" | "TTS";
-  activePill: "local" | "remote" | "cloud";
+  activePill: ProviderTier;
   isModular: boolean;
   onBack?: () => void;
   layoutMode?: "full-max" | "full-min" | "small";
@@ -64,8 +65,6 @@ export const LlmConfigDesk = memo(({
     currentRemoteConfig?.provider_name,
   ]);
 
-  const isCloudUrl = checkIfCloudUrl(currentProvider.base_url || "");
-  const providerPill = currentProvider.kind === "embedded" ? "local" : isCloudUrl ? "cloud" : "remote";
 
   const activeCloudProviderId = useMemo(() => {
     const cloudName = (draftSettings?.llm?.cloud?.provider_name || "").toLowerCase();
@@ -168,7 +167,7 @@ export const LlmConfigDesk = memo(({
           if (!isMounted) return;
           setIsHealthy(healthy);
 
-          if (healthy && providerPill === "remote" && activeLlmProvider === "server") {
+          if (healthy && activeLlmProvider === "server") {
             const detectedName = providerBaseUrl?.includes("11434")
               ? "Ollama"
               : "Remote Host";
@@ -202,7 +201,6 @@ export const LlmConfigDesk = memo(({
     providerKind,
     providerBaseUrl,
     providerApiKey,
-    providerPill,
     activeLlmProvider,
     updateDraft,
   ]);
@@ -391,32 +389,32 @@ export const LlmConfigDesk = memo(({
       )}
 
       {/* ─── SECTION 1: STT CATEGORY ─── */}
-      {isModular && activeCategory === "STT" && activePill === "local" && (
+      {isModular && activeCategory === "STT" && activePill === "embedded" && (
         <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
           {renderHeader(
             <Mic size={14} className="text-[rgb(var(--accent))]" />,
-            copy.stt.local.title
+            copy.stt.embedded.title
           )}
           <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
             <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
-              {copy.stt.local.description}
+              {copy.stt.embedded.description}
             </p>
           </div>
         </div>
       )}
 
-      {isModular && activeCategory === "STT" && activePill === "remote" && (
+      {isModular && activeCategory === "STT" && activePill === "server" && (
         <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
           {renderHeader(
             <Server size={14} className="text-[rgb(var(--accent))]" />,
-            copy.stt.remote.title,
+            copy.stt.server.title,
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
-              {copy.stt.remote.badge}
+              {copy.stt.server.badge}
             </span>
           )}
           <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
             <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
-              {copy.stt.remote.description}
+              {copy.stt.server.description}
             </p>
           </div>
         </div>
@@ -440,23 +438,23 @@ export const LlmConfigDesk = memo(({
       )}
 
       {/* ─── SECTION 2: LLM CATEGORY ─── */}
-      {isModular && activeCategory === "LLM" && activePill === "local" && (
+      {isModular && activeCategory === "LLM" && activePill === "embedded" && (
         <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
           {renderHeader(
             <Brain size={14} className="text-[rgb(var(--accent))]" />,
-            copy.llm.local.title
+            copy.llm.embedded.title
           )}
           <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
             <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
-              {copy.llm.local.description}
+              {copy.llm.embedded.description}
             </p>
           </div>
         </div>
       )}
 
-      {isModular && activeCategory === "LLM" && activePill === "remote" && (
+      {isModular && activeCategory === "LLM" && activePill === "server" && (
         <div className="flex flex-col gap-2 h-full justify-between animate-fade-in">
-          {renderHeader(<Network size={14} className="text-[rgb(var(--accent))]" />, copy.llm.remote.title)}
+          {renderHeader(<Network size={14} className="text-[rgb(var(--accent))]" />, copy.llm.server.title)}
 
           <div
             className={cn(
@@ -465,16 +463,16 @@ export const LlmConfigDesk = memo(({
             )}
           >
             <UnderlineInput
-              label={copy.llm.remote.urlLabel}
+              label={copy.llm.server.urlLabel}
               value={url}
               onChange={(e) => handleUrlChange(e.target.value)}
-              placeholder={copy.llm.remote.urlPlaceholder}
+              placeholder={copy.llm.server.urlPlaceholder}
             />
             <ApiKeyField
-              label={copy.llm.remote.apiKeyLabel}
+              label={copy.llm.server.apiKeyLabel}
               value={apiKey}
               onChange={handleApiKeyChange}
-              placeholder={copy.llm.remote.apiKeyPlaceholder}
+              placeholder={copy.llm.server.apiKeyPlaceholder}
             />
           </div>
 
@@ -662,36 +660,36 @@ export const LlmConfigDesk = memo(({
       )}
 
       {/* ─── SECTION 3: TTS CATEGORY ─── */}
-      {isModular && activeCategory === "TTS" && activePill === "local" && (
+      {isModular && activeCategory === "TTS" && activePill === "embedded" && (
         <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
           {renderHeader(
             <Volume2 size={14} className="text-[rgb(var(--accent))]" />,
-            copy.tts.local.title
+            copy.tts.embedded.title
           )}
           <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
             <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
-              {copy.tts.local.description}
+              {copy.tts.embedded.description}
             </p>
           </div>
         </div>
       )}
 
-      {isModular && activeCategory === "TTS" && activePill === "remote" && (
+      {isModular && activeCategory === "TTS" && activePill === "server" && (
         <div className="flex flex-col gap-2 h-full justify-between animate-fade-in">
-          {renderHeader(<Network size={14} className="text-[rgb(var(--accent))]" />, copy.tts.remote.title)}
+          {renderHeader(<Network size={14} className="text-[rgb(var(--accent))]" />, copy.tts.server.title)}
 
           <div className="grid grid-cols-2 gap-3 pb-0.5">
             <UnderlineInput
-              label={copy.tts.remote.urlLabel}
+              label={copy.tts.server.urlLabel}
               value={remoteTtsEndpoint}
               onChange={(e) => handleRemoteTtsEndpointChange(e.target.value)}
-              placeholder={copy.tts.remote.urlPlaceholder}
+              placeholder={copy.tts.server.urlPlaceholder}
             />
             <UnderlineInput
-              label={copy.tts.remote.pathLabel}
+              label={copy.tts.server.pathLabel}
               value={remoteTtsPath}
               onChange={(e) => handleRemoteTtsPathChange(e.target.value)}
-              placeholder={copy.tts.remote.pathPlaceholder}
+              placeholder={copy.tts.server.pathPlaceholder}
             />
           </div>
         </div>

@@ -217,9 +217,13 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     api.setIsLaunching(true);
     api.setSessionError(null);
     api.setTranscript("");
-    api.setAssistantText("");
     try {
-      const result = await engageSession((state) => storeApi().setInteractionState(state));
+      const targetSessionId = storeApi().activeSessionId;
+      const result = await engageSession(
+        (state) => storeApi().setInteractionState(state),
+        8000,
+        targetSessionId,
+      );
       if (!result.success) {
         api.setSessionError(
           result.reason === "timeout"

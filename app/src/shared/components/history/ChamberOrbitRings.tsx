@@ -38,18 +38,18 @@ export const ChamberOrbitRings = memo(({ radius }: ChamberOrbitRingsProps) => {
         aria-hidden
       >
         <defs>
-          {/* Luminous front-arc gradient spotlight (intense front highlight matching mockup) */}
+          {/* Luminous front-arc gradient spotlight (soft subtle highlight) */}
           <linearGradient id="frontArcGlow" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="rgb(var(--accent))" stopOpacity="0.08" />
-            <stop offset="55%" stopColor="rgb(var(--accent))" stopOpacity="0.25" />
-            <stop offset="85%" stopColor="rgb(var(--accent))" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="rgb(var(--accent))" stopOpacity="1" />
+            <stop offset="0%" stopColor="rgb(var(--accent))" stopOpacity="0.04" />
+            <stop offset="60%" stopColor="rgb(var(--accent))" stopOpacity="0.15" />
+            <stop offset="85%" stopColor="rgb(var(--accent))" stopOpacity="0.40" />
+            <stop offset="100%" stopColor="rgb(var(--accent))" stopOpacity="0.50" />
           </linearGradient>
 
-          {/* Golden/Cyan glow filter for front spotlight */}
+          {/* Soft ambient glow filter for front spotlight */}
           <filter id="orbitNeonGlow" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur1" />
-            <feGaussianBlur in="SourceGraphic" stdDeviation="16" result="blur2" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur1" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur2" />
             <feMerge>
               <feMergeNode in="blur2" />
               <feMergeNode in="blur1" />
@@ -83,12 +83,12 @@ export const ChamberOrbitRings = memo(({ radius }: ChamberOrbitRingsProps) => {
           strokeOpacity="0.22"
         />
 
-        {/* 3. Primary Front Spotlight Arc (Intense Luminous Glow on the bottom half) */}
+        {/* 3. Primary Front Spotlight Arc (Subtle Luminous Glow on the bottom half) */}
         <path
           d={`M ${cx - rx} ${cy} A ${rx} ${ry} 0 0 0 ${cx + rx} ${cy}`}
           fill="none"
           stroke="url(#frontArcGlow)"
-          strokeWidth="2.75"
+          strokeWidth="1.75"
           strokeLinecap="round"
           filter="url(#orbitNeonGlow)"
         />

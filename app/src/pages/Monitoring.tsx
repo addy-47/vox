@@ -54,6 +54,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   const llmProvider = useSettingsStore((s) => s.settings?.llm?.active);
   const ttsProvider = useSettingsStore((s) => s.settings?.tts?.active);
   const sttProvider = useSettingsStore((s) => s.settings?.stt?.active);
+  const modelCatalog = useSettingsStore((s) => s.modelCatalog);
 
   // Dynamic CSS variable observer state
   const [accentRgbStr, setAccentRgbStr] = useState<string>("0, 219, 233");
@@ -120,9 +121,10 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     }
 
     let ttsVariant = "On Device";
-    if (ttsProvider === "edge_tts") {
+    const ttsModel = modelCatalog?.tts?.find((m) => m.id === ttsProvider);
+    if (ttsModel?.is_cloud) {
       ttsVariant = "In Cloud";
-    } else if (ttsProvider === "chatterbox_remote") {
+    } else if (ttsModel?.is_remote) {
       ttsVariant = "On Server";
     }
 
@@ -136,7 +138,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
       tts: ttsVariant,
       stt: sttVariant,
     };
-  }, [llmProvider, ttsProvider, sttProvider]);
+  }, [llmProvider, ttsProvider, sttProvider, modelCatalog]);
 
   // Derived Dynamic Color Palette (Primary Accent + Harmonized Violet/Magenta)
   const colors = useMemo(() => {

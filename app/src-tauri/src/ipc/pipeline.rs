@@ -100,10 +100,19 @@ pub async fn start_session<R: tauri::Runtime>(
         .clone()
         .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
 
+    let target_session_id = session_id.or_else(|| {
+        let existing = state.conversation_id.load(Ordering::Relaxed);
+        if existing > 0 {
+            Some(existing as i64)
+        } else {
+            None
+        }
+    });
+
     event_tx
         .send(VoxEvent::SessionStart {
             owner: InteractionOwner::Assistant,
-            session_id,
+            session_id: target_session_id,
         })
         .map_err(|e| VoxIpcError::Engine(format!("Failed to send SessionStart: {}", e)))?;
 

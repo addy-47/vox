@@ -52,11 +52,6 @@ export const CLOUD_PROVIDERS: CloudProvider[] = [
   { id: "custom", name: "Custom OpenAI-compatible", url: "https://api.example.com/v1", keyPlaceholder: "API Key / Token", tagline: "Any standard /v1/chat/completions endpoint" },
 ];
 
-export const checkIfCloudUrl = (url: string) => {
-  if (!url) return false;
-  return !url.includes("localhost") && !url.includes("127.0.0.1") && !url.includes("0.0.0.0");
-};
-
 export const GeminiLogo = ({
   active,
   ...props

@@ -2,7 +2,7 @@ import React, { useMemo, memo } from "react";
 import { Trash2, Check, X } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
-import { resolveSessionTitle, type SessionRow } from "@/services/historyService";
+import { resolveSessionTitle, formatDateShort, type SessionRow } from "@/services/historyService";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { formatClockTime, ORBIT_CARD_WIDTH } from "./orbitMath";
 
@@ -90,48 +90,60 @@ export const VoiceRippleNode = memo(
             </span>
           </div>
 
-          {/* Right: Delete Action Button THEN Duration Text */}
-          <div className="flex items-center gap-2">
-            {/* Delete button (or confirmation action) */}
-            <div
-              className={cn(
-                "transition-opacity duration-200",
-                isConfirmingDelete ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-              )}
-            >
-              {isConfirmingDelete ? (
-                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  <Tooltip label={HISTORY_COPY.deleteConfirm}>
+          {/* Right: Bars icon by default, replaced by Delete button on hover or delete confirmation */}
+          <div className="flex items-center justify-end h-6">
+            {isConfirmingDelete ? (
+              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                <Tooltip label={HISTORY_COPY.deleteConfirm}>
+                  <button
+                    onClick={(e) => onDelete(e, session.id)}
+                    className="w-6 h-6 rounded-full border border-[rgba(var(--accent),0.4)] bg-white dark:bg-black flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 cursor-pointer shadow-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                    aria-label={HISTORY_COPY.deleteConfirm}
+                  >
+                    <Check size={12} strokeWidth={2.5} />
+                  </button>
+                </Tooltip>
+                <Tooltip label={HISTORY_COPY.cancelDelete}>
+                  <button
+                    onClick={onCancelDelete}
+                    className="w-6 h-6 rounded-full border border-[rgba(var(--border),0.2)] bg-white dark:bg-black flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer shadow-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                    aria-label={HISTORY_COPY.cancelDelete}
+                  >
+                    <X size={12} strokeWidth={2.5} />
+                  </button>
+                </Tooltip>
+              </div>
+            ) : (
+              <>
+                {/* Default: bars icon (hidden on group-hover / group-focus-within) */}
+                <div className="flex items-end gap-[2.5px] h-3 group-hover:hidden group-focus-within:hidden">
+                  {bars.map((h, i) => (
+                    <span
+                      key={i}
+                      className="w-[2.5px] rounded-full"
+                      style={{
+                        height: `${Math.round(h * 11)}px`,
+                        backgroundColor: "rgb(var(--accent))",
+                        opacity: 0.4 + h * 0.6,
+                      }}
+                    />
+                  ))}
+                </div>
+
+                {/* Hover: Trash icon (hidden by default, shown on group-hover / group-focus-within) */}
+                <div className="hidden group-hover:block group-focus-within:block">
+                  <Tooltip label={HISTORY_COPY.deleteSession}>
                     <button
                       onClick={(e) => onDelete(e, session.id)}
-                      className="w-6 h-6 rounded-full border border-[rgba(var(--accent),0.4)] bg-white dark:bg-black flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 cursor-pointer shadow-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
-                      aria-label={HISTORY_COPY.deleteConfirm}
+                      className="w-6 h-6 rounded-full border border-[rgba(var(--border),0.2)] hover:border-[rgba(var(--accent),0.4)] bg-white/80 dark:bg-black/60 flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
+                      aria-label={HISTORY_COPY.deleteSession}
                     >
-                      <Check size={12} strokeWidth={2.5} />
-                    </button>
-                  </Tooltip>
-                  <Tooltip label={HISTORY_COPY.cancelDelete}>
-                    <button
-                      onClick={onCancelDelete}
-                      className="w-6 h-6 rounded-full border border-[rgba(var(--border),0.2)] bg-white dark:bg-black flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] cursor-pointer shadow-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
-                      aria-label={HISTORY_COPY.cancelDelete}
-                    >
-                      <X size={12} strokeWidth={2.5} />
+                      <Trash2 size={12} />
                     </button>
                   </Tooltip>
                 </div>
-              ) : (
-                <Tooltip label={HISTORY_COPY.deleteSession}>
-                  <button
-                    onClick={(e) => onDelete(e, session.id)}
-                    className="w-6 h-6 rounded-full border border-[rgba(var(--border),0.2)] hover:border-[rgba(var(--accent),0.4)] bg-white/80 dark:bg-black/60 flex items-center justify-center text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/10 transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))]"
-                    aria-label={HISTORY_COPY.deleteSession}
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </Tooltip>
-              )}
-            </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -140,21 +152,11 @@ export const VoiceRippleNode = memo(
           "{previewText}"
         </p>
 
-        {/* Derived voice signature: turn-count bars + turn total */}
+        {/* Derived voice signature: session date on left, turn total on right */}
         <div className="flex items-center justify-between mt-3 pt-1 border-t border-[rgba(var(--accent),0.08)]">
-          <div className="flex items-end gap-[3px] h-3">
-            {bars.map((h, i) => (
-              <span
-                key={i}
-                className="w-[3px] rounded-full"
-                style={{
-                  height: `${Math.round(h * 12)}px`,
-                  backgroundColor: "rgb(var(--accent))",
-                  opacity: 0.4 + h * 0.6,
-                }}
-              />
-            ))}
-          </div>
+          <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]">
+            {formatDateShort(session.created_at)}
+          </span>
           <span className="text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))]">
             {session.turn_count}{" "}
             {session.turn_count === 1

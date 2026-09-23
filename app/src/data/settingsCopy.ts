@@ -265,11 +265,11 @@ export const INTERACTION_CONFIG_DESK_COPY = {
     description: "Streaming STT, LLM inference, and TTS audio synthesis run tightly coupled in unified process memory for minimal perceived latency.",
   },
   stt: {
-    local: {
+    embedded: {
       title: "Embedded Speech Recognition",
       description: "Speech recognition models run 100% locally inside Vox using on-device neural engines. Voice audio is processed entirely on your hardware with zero external network transmission.",
     },
-    remote: {
+    server: {
       title: "Remote Speech Server",
       badge: "Coming Soon",
       description: "Stream microphone audio frames directly to a self-hosted or dedicated remote ASR inference node over secure WebSocket connection.",
@@ -281,11 +281,11 @@ export const INTERACTION_CONFIG_DESK_COPY = {
     },
   },
   llm: {
-    local: {
+    embedded: {
       title: "Embedded Neural LLM",
       description: "Language models run directly on your local hardware using Vox's embedded inference engine. All conversational context and prompt reasoning remain completely offline and private.",
     },
-    remote: {
+    server: {
       title: "Remote Server",
       urlLabel: "Server URL",
       urlPlaceholder: "http://127.0.0.1:11434",
@@ -310,11 +310,11 @@ export const INTERACTION_CONFIG_DESK_COPY = {
     providers: "Providers",
   },
   tts: {
-    local: {
+    embedded: {
       title: "Embedded Voice Synthesizer",
       description: "Voice generation models execute entirely on-device for crisp, realtime offline audio synthesis with zero cloud latency or external API costs.",
     },
-    remote: {
+    server: {
       title: "Chatterbox GPU Server",
       urlLabel: "Server HTTP URL",
       urlPlaceholder: "http://127.0.0.1:7860",
