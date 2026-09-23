@@ -90,6 +90,31 @@ export const CentralClockNode = memo(
         className="relative z-50 flex flex-col items-center justify-center select-none pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Floating Chevrons (outside clock sphere, icon only, no outer border or background) */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onPrev();
+          }}
+          disabled={!canPrev}
+          className="absolute -left-10 sm:-left-12 top-1/2 -translate-y-1/2 p-2 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] disabled:opacity-10 disabled:pointer-events-none transition-colors cursor-pointer z-30"
+          aria-label={variant === "day" ? HISTORY_COPY.prevDay : HISTORY_COPY.prevMonth}
+        >
+          <ChevronLeft size={24} strokeWidth={2} />
+        </button>
+
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onNext();
+          }}
+          disabled={!canNext}
+          className="absolute -right-10 sm:-right-12 top-1/2 -translate-y-1/2 p-2 text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] disabled:opacity-10 disabled:pointer-events-none transition-colors cursor-pointer z-30"
+          aria-label={variant === "day" ? HISTORY_COPY.nextDay : HISTORY_COPY.nextMonth}
+        >
+          <ChevronRight size={24} strokeWidth={2} />
+        </button>
+
         {/* Central Session Hub Node — Perfectly Centered 3D Acoustic Core */}
         <div
           className="relative rounded-full flex flex-col items-center justify-center text-center transition-all duration-300 overflow-hidden isolate backdrop-blur-md"
@@ -101,14 +126,14 @@ export const CentralClockNode = memo(
             maxWidth: "330px",
             maxHeight: "330px",
             background: isLightMode
-              ? "radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.15) 60%, rgba(var(--accent), 0.10) 100%)"
-              : "radial-gradient(circle at 50% 35%, rgba(var(--card), 0.98) 0%, rgba(10, 14, 18, 0.98) 72%, rgba(var(--accent), 0.12) 100%)",
+              ? "radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.4) 60%, rgba(var(--accent), 0.04) 100%)"
+              : "radial-gradient(circle at 50% 35%, rgba(var(--card), 0.98) 0%, rgba(10, 14, 18, 0.98) 72%, rgba(var(--accent), 0.08) 100%)",
             border: isLightMode
-              ? "1.5px solid rgba(var(--accent), 0.45)"
-              : "1.5px solid rgba(var(--accent), 0.55)",
+              ? "1px solid rgba(var(--border), 0.4)"
+              : "1px solid rgba(var(--border), 0.4)",
             boxShadow: isLightMode
-              ? "0 20px 45px -10px rgba(15, 23, 42, 0.08), 0 0 45px rgba(var(--accent), 0.15), inset 0 2px 14px rgba(255, 255, 255, 0.8), inset 0 -10px 25px rgba(var(--accent), 0.10)"
-              : "0 25px 70px -10px rgba(0, 0, 0, 0.9), 0 0 60px rgba(var(--accent), 0.22), inset 0 2px 20px rgba(255, 255, 255, 0.14), inset 0 -15px 35px rgba(var(--accent), 0.25)",
+              ? "0 10px 30px -10px rgba(15, 23, 42, 0.04), 0 0 20px rgba(var(--accent), 0.06), inset 0 2px 8px rgba(255, 255, 255, 0.8)"
+              : "0 20px 50px -10px rgba(0, 0, 0, 0.8), 0 0 35px rgba(var(--accent), 0.12), inset 0 2px 14px rgba(255, 255, 255, 0.08)",
           }}
         >
           {/* Perimeter Dial Ticks on Outer Sphere Rim */}
@@ -119,9 +144,6 @@ export const CentralClockNode = memo(
           >
             {Array.from({ length: totalTicks }, (_, i) => {
               const angle = (i * 360) / totalTicks;
-              // Remove tick lines near 3:00 (90 deg) and 9:00 (270 deg) for carousel buttons
-              if (Math.abs(angle - 90) < 16 || Math.abs(angle - 270) < 16) return null;
-
               const isQuarter = i % (totalTicks / 4) === 0;
               const isEighth = i % (totalTicks / 8) === 0;
               const length = isQuarter ? 8 : isEighth ? 5 : 3;
@@ -182,41 +204,6 @@ export const CentralClockNode = memo(
             </svg>
           )}
 
-          {/* Prev Button anchored directly at 9:00 Outer Rim Position */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onPrev();
-            }}
-            disabled={!canPrev}
-            className={cn(
-              "absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-9 sm:h-9 rounded-full border flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 hover:border-[rgb(var(--accent))] disabled:opacity-10 disabled:pointer-events-none transition-all cursor-pointer z-30",
-              isLightMode
-                ? "bg-white/90 border-[rgba(var(--accent),0.45)] shadow-md shadow-slate-300/30"
-                : "bg-black/80 border-[rgba(var(--accent),0.55)] shadow-[0_0_12px_rgba(0,0,0,0.6)]"
-            )}
-            aria-label={variant === "day" ? HISTORY_COPY.prevDay : HISTORY_COPY.prevMonth}
-          >
-            <ChevronLeft size={18} strokeWidth={2.5} />
-          </button>
-
-          {/* Next Button anchored directly at 3:00 Outer Rim Position */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onNext();
-            }}
-            disabled={!canNext}
-            className={cn(
-              "absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-9 sm:h-9 rounded-full border flex items-center justify-center text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/20 hover:border-[rgb(var(--accent))] disabled:opacity-10 disabled:pointer-events-none transition-all cursor-pointer z-30",
-              isLightMode
-                ? "bg-white/90 border-[rgba(var(--accent),0.45)] shadow-md shadow-slate-300/40"
-                : "bg-black/80 border-[rgba(var(--accent),0.55)] shadow-[0_0_12px_rgba(0,0,0,0.6)]"
-            )}
-            aria-label={variant === "day" ? HISTORY_COPY.nextDay : HISTORY_COPY.nextMonth}
-          >
-            <ChevronRight size={18} strokeWidth={2.5} />
-          </button>
 
           {/* ── Inner Circular Safe Zone: Centered Content with Perfect Breathing Room ── */}
           <div className="relative z-20 flex flex-col items-center justify-between w-[82%] h-[82%] pt-1.5 pb-2.5 select-none">

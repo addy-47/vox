@@ -1,6 +1,6 @@
 import { memo, useState, useEffect, useCallback } from "react";
 import { Ghost, AlertCircle, RotateCcw, Sparkles, Loader2 } from "lucide-react";
-import { formatDateTime, type SessionRow, type TurnRow } from "@/services/historyService";
+import { formatDateTime, resolveSessionTitle, type SessionRow, type TurnRow } from "@/services/historyService";
 import { EmptyState, OrbitalLoader } from "@/shared/components/common";
 import { HISTORY_COPY } from "@/data/historyCopy";
 import { Drawer } from "@/shared/ui/Drawer";
@@ -118,14 +118,22 @@ export const DetailPanel = memo(
         bodyClassName="px-6 py-4"
         title={
           session ? (
-            <div className="flex items-center gap-2">
-              <span className="text-[13px] font-display font-black tracking-[0.16em] uppercase text-[rgb(var(--accent))]">
-                {HISTORY_COPY.sessionPrefix}
-                {session.id}
+            <div className="flex items-center gap-1.5 min-w-0 pr-2 [text-shadow:none]">
+              <span className="text-[14px] font-display font-bold tracking-tight text-[rgb(var(--accent))] shrink-0">
+                {session.project_id || "default"}
+              </span>
+              <span className="text-[14px] font-display font-bold text-[rgb(var(--foreground-muted))]">
+                :
+              </span>
+              <span
+                className="text-[14px] font-display font-bold tracking-tight text-[rgb(var(--foreground))] truncate max-w-[240px] sm:max-w-[380px]"
+                title={resolveSessionTitle(session)}
+              >
+                {resolveSessionTitle(session)}
               </span>
               {isUncompacted && (
                 <span
-                  className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.7)] animate-pulse shrink-0"
+                  className="w-2 h-2 rounded-full bg-[rgb(var(--accent))] shadow-[0_0_8px_rgba(var(--accent),0.7)] animate-pulse shrink-0 ml-1"
                   title={HISTORY_COPY.uncompactedTurnsTooltip}
                 />
               )}
@@ -154,9 +162,15 @@ export const DetailPanel = memo(
         }
         subtitle={
           session ? (
-            <div className="text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))] mt-0.5">
-              {formatDateTime(session.created_at)} · {session.turn_count}{" "}
-              {session.turn_count === 1 ? HISTORY_COPY.turnSingular : HISTORY_COPY.turnPlural}
+            <div className="flex items-center gap-1.5 text-[11px] font-mono font-medium text-[rgb(var(--foreground-muted))] mt-0.5 [text-shadow:none]">
+              <span>#{session.id}</span>
+              <span>·</span>
+              <span>{formatDateTime(session.created_at)}</span>
+              <span>·</span>
+              <span>
+                {session.turn_count}{" "}
+                {session.turn_count === 1 ? HISTORY_COPY.turnSingular : HISTORY_COPY.turnPlural}
+              </span>
             </div>
           ) : undefined
         }

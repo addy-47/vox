@@ -3,6 +3,7 @@ import { Minus, Square, X, ArrowUpCircle, Copy, Check } from "lucide-react";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { useNavigate } from "react-router-dom";
 import { checkForUpdates, checkForModelUpdates } from "@/services/modelService";
+import { copyToClipboard } from "@/shared/lib/clipboard";
 
 export const TitleBar: React.FC = () => {
   const navigate = useNavigate();
@@ -41,10 +42,12 @@ export const TitleBar: React.FC = () => {
     fetchUpdates();
   }, [isTauri]);
 
-  const handleCopyCommand = (cmd: string) => {
-    navigator.clipboard.writeText(cmd);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyCommand = async (cmd: string) => {
+    const ok = await copyToClipboard(cmd);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   useEffect(() => {

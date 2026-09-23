@@ -341,31 +341,35 @@ pub async fn stop_audio_engine(state: &AppState) -> Result<(), String> {
     let stt_handle = engine.stt_handle.take();
     let vad_handle = engine.vad_handle.take();
 
+    let caller_tid = std::thread::current().id();
+    let is_caller_router = std::thread::current().name() == Some("vox-router");
+
     tokio::task::spawn_blocking(move || {
-        if let Some(h) = llm_handle {
-            if let Err(e) = h.join() {
-                log::warn!("[Core::Engine] Failed to join LLM handle: {:?}", e);
+        let join_worker = |h: std::thread::JoinHandle<()>, name: &str| {
+            if h.thread().id() == caller_tid || (name == "orchestrator" && is_caller_router) {
+                log::debug!(
+                    "[Core::Engine] {} handle matches calling thread; skipping self-join to prevent deadlock",
+                    name
+                );
+            } else if let Err(e) = h.join() {
+                log::warn!("[Core::Engine] Failed to join {} handle: {:?}", name, e);
             }
+        };
+
+        if let Some(h) = llm_handle {
+            join_worker(h, "LLM");
         }
         if let Some(h) = tts_handle {
-            if let Err(e) = h.join() {
-                log::warn!("[Core::Engine] Failed to join TTS handle: {:?}", e);
-            }
+            join_worker(h, "TTS");
         }
         if let Some(h) = orch_handle {
-            if let Err(e) = h.join() {
-                log::warn!("[Core::Engine] Failed to join orchestrator handle: {:?}", e);
-            }
+            join_worker(h, "orchestrator");
         }
         if let Some(h) = stt_handle {
-            if let Err(e) = h.join() {
-                log::warn!("[Core::Engine] Failed to join STT handle: {:?}", e);
-            }
+            join_worker(h, "STT");
         }
         if let Some(h) = vad_handle {
-            if let Err(e) = h.join() {
-                log::warn!("[Core::Engine] Failed to join VAD handle: {:?}", e);
-            }
+            join_worker(h, "VAD");
         }
     })
     .await

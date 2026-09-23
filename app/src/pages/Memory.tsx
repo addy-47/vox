@@ -32,6 +32,8 @@ import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
+import { copyToClipboard } from "@/shared/lib/clipboard";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   MemoryGraph,
   MemoryGraphRef,
@@ -273,21 +275,26 @@ export const Memory: React.FC = memo(() => {
     async (content: string) => {
       if (!personalMemory) return;
       setSaving(true);
+      // 1. Smoothly fade overlay in over old content
+      setIsCommitting(true);
+      setLeftFlash(true);
+
       try {
         const updated = await savePersonalMemory(content, personalMemory.version);
+        // 2. Wait until overlay is opaque (250ms) before swapping document content
+        await new Promise((resolve) => setTimeout(resolve, 250));
         setPersonalMemory(updated);
-        // Activate left card pixel reconstruction layer & right card committed indicator
-        setIsCommitting(true);
-        setLeftFlash(true);
-        // Fade right card editor back to skeleton gently at 500ms
+
+        // 3. Reset right card staging editor
         setTimeout(() => {
           setStagingMode("idle");
-        }, 500);
-        // Conclude pixel assimilation on left card at 1200ms
+        }, 300);
+
+        // 4. Smoothly fade overlay out to reveal new content
         setTimeout(() => {
           setIsCommitting(false);
           setLeftFlash(false);
-        }, 1200);
+        }, 900);
       } catch (e) {
         console.error("[Memory] Save failed:", e);
         setIsCommitting(false);
@@ -302,16 +309,22 @@ export const Memory: React.FC = memo(() => {
   const handleConsolidateNow = useCallback(async () => {
     if (consolidating || unconsolidatedIdentityCount === 0) return;
     setConsolidating(true);
+    // 1. Smoothly fade overlay in over old content
     setLeftFlash(true);
+
     try {
       const updated = await consolidatePersonalMemory();
+      // 2. Wait until overlay is opaque before swapping document content
+      await new Promise((resolve) => setTimeout(resolve, 250));
       setPersonalMemory(updated);
       await refresh(true);
       setIsCommitting(true);
+
+      // 3. Smoothly fade overlay out to reveal new content
       setTimeout(() => {
         setIsCommitting(false);
         setLeftFlash(false);
-      }, 700);
+      }, 900);
     } catch (e) {
       console.error("[Memory] Consolidate failed:", e);
       setLeftFlash(false);
@@ -320,12 +333,13 @@ export const Memory: React.FC = memo(() => {
     }
   }, [consolidating, unconsolidatedIdentityCount, refresh]);
 
-  const handleCopyDoc = useCallback(() => {
+  const handleCopyDoc = useCallback(async () => {
     if (!personalMemory?.content) return;
-    navigator.clipboard.writeText(personalMemory.content).then(() => {
+    const ok = await copyToClipboard(personalMemory.content);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    }
   }, [personalMemory?.content]);
 
   useEffect(() => {
@@ -748,13 +762,23 @@ export const Memory: React.FC = memo(() => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 h-full min-h-0 w-full items-stretch">
               {/* Left Column: Canonical Persistent Memory (DB Ground Truth) */}
               <div
-                className={cn(
-                  "w-full h-full min-h-0 flex flex-col glass-card rounded-2xl border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--card),0.65)] backdrop-blur-sm p-5 sm:p-6 transition-all duration-500 overflow-hidden",
-                  leftFlash
-                    ? "ring-2 ring-[rgb(var(--accent))] shadow-[0_0_35px_rgba(var(--accent),0.35)] scale-[1.008]"
-                    : "shadow-2xl"
-                )}
+                className="relative w-full h-full min-h-0 flex flex-col glass-card rounded-2xl border border-[rgba(var(--accent),0.18)] bg-[rgba(var(--card),0.65)] backdrop-blur-sm p-5 sm:p-6 shadow-2xl overflow-hidden"
               >
+                {/* Computational Pixel Reconstruction Overlay — smooth Framer Motion crossfade */}
+                <AnimatePresence>
+                  {leftFlash && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.35, ease: "easeInOut" }}
+                      className="absolute inset-0 z-30 rounded-2xl overflow-hidden bg-[rgba(var(--card),0.85)] backdrop-blur-md pointer-events-none"
+                    >
+                      <PixelSynthesisCanvas active={leftFlash} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 {/* Dossier Header Bar */}
                 <div className="flex items-center justify-between gap-4 border-b border-[rgba(var(--border),0.12)] pb-3.5 min-h-[44px] shrink-0">
                   <div className="flex items-center gap-3">
@@ -846,16 +870,6 @@ export const Memory: React.FC = memo(() => {
                       </Tooltip>
                     </div>
                   ))}
-
-                  {/* Computational Pixel Reconstruction Overlay */}
-                  <div
-                    className={cn(
-                      "absolute inset-0 z-20 rounded-xl overflow-hidden bg-[rgba(var(--card),0.85)] backdrop-blur-md transition-opacity duration-500 pointer-events-none",
-                      leftFlash ? "opacity-100" : "opacity-0 invisible"
-                    )}
-                  >
-                    <PixelSynthesisCanvas active={leftFlash} />
-                  </div>
 
                   {drawerBodyReady ? (
                     personalMemory?.content ? (

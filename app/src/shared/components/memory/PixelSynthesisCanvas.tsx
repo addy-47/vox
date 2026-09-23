@@ -6,9 +6,10 @@ interface PixelSynthesisCanvasProps {
 }
 
 /**
- * PixelSynthesisCanvas renders an organic computational dot/pixel matrix.
- * Rather than a generic linear loading bar, dots appear, brighten, fade,
- * and regenerate in dynamic clusters via multi-frequency spatial wave interference.
+ * PixelSynthesisCanvas renders an organic liquid blob / gradient orb dot matrix.
+ * An organic fluid orb drifts continuously across the card, causing dots directly
+ * in its vicinity to swell slightly larger and illuminate with rich accent color,
+ * while dots outside remain smaller in a crisp, clean baseline accent.
  */
 export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
   className = "",
@@ -33,8 +34,8 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
           const dpr = window.devicePixelRatio || 1;
           width = entry.contentRect.width;
           height = entry.contentRect.height;
-          canvas.width = width * dpr;
-          canvas.height = height * dpr;
+          canvas.width = Math.round(width * dpr);
+          canvas.height = Math.round(height * dpr);
           ctx.resetTransform();
           ctx.scale(dpr, dpr);
         }
@@ -42,67 +43,81 @@ export const PixelSynthesisCanvas: React.FC<PixelSynthesisCanvasProps> = ({
     });
     resizeObserver.observe(canvas);
 
-    // Dynamic extraction of CSS variable --accent (fallback to vox electric cyan 0, 229, 255)
     const getAccentRgb = (): string => {
       const val = getComputedStyle(document.documentElement)
         .getPropertyValue("--accent")
         .trim();
-      return val || "0, 229, 255";
+      return val || "124, 58, 237";
     };
 
     let accentRgb = getAccentRgb();
-    let startTime = performance.now();
+    const startTime = performance.now();
 
     // Dot grid configuration
-    const DOT_SPACING = 12; // Distance between points in pixels
-    const DOT_BASE_RADIUS = 1.25;
+    const DOT_SPACING = 15;
+    const BASE_RADIUS = 1.15; // Clean resting dot size
+    const PEAK_RADIUS = 3.15; // Swelled dot size inside the liquid blob
 
     const render = (now: number) => {
-      const t = (now - startTime) * 0.00085; // Slower, calmer wave rhythm
+      const t = (now - startTime) * 0.0011; // Fluid, organic time parameter
 
       ctx.clearRect(0, 0, width, height);
 
-      // Re-query accent occasionally in case theme toggles
-      if (Math.floor(t * 10) % 20 === 0) {
+      // Periodically refresh accent color
+      if (Math.floor(t * 10) % 30 === 0) {
         accentRgb = getAccentRgb();
       }
 
-      const cols = Math.floor(width / DOT_SPACING);
-      const rows = Math.floor(height / DOT_SPACING);
-      const offsetX = (width - cols * DOT_SPACING) / 2;
-      const offsetY = (height - rows * DOT_SPACING) / 2;
+      // Dynamic wandering liquid orb position (smooth multi-harmonic continuous path)
+      const orbX =
+        width * (0.5 + 0.34 * Math.sin(t * 0.95) + 0.12 * Math.sin(t * 1.8 + 1.2));
+      const orbY =
+        height * (0.5 + 0.34 * Math.cos(t * 0.75) + 0.12 * Math.cos(t * 1.4 + 0.8));
+
+      // Organic fluid orb influence radius with gentle breathing/wobble
+      const baseRadius = Math.min(width, height) * 0.42;
+
+      const cols = Math.ceil(width / DOT_SPACING) + 1;
+      const rows = Math.ceil(height / DOT_SPACING) + 1;
+      const offsetX = (width - (cols - 1) * DOT_SPACING) / 2;
+      const offsetY = (height - (rows - 1) * DOT_SPACING) / 2;
 
       for (let r = 0; r < rows; r++) {
         const y = offsetY + r * DOT_SPACING;
+        const dy = y - orbY;
+
         for (let c = 0; c < cols; c++) {
           const x = offsetX + c * DOT_SPACING;
+          const dx = x - orbX;
+          const dist = Math.sqrt(dx * dx + dy * dy);
 
-          // Normalized spatial coordinates
-          const nx = x / width;
-          const ny = y / height;
+          // Subtle organic blob contour wobble based on angle
+          const angle = Math.atan2(dy, dx);
+          const contourWobble =
+            1 +
+            0.12 * Math.sin(angle * 3 + t * 2.2) +
+            0.08 * Math.cos(angle * 2 - t * 1.6);
+          const effectiveOrbRadius = baseRadius * contourWobble;
 
-          // Multi-frequency organic wave interference
-          const w1 = Math.sin(nx * 6.0 + t * 1.5);
-          const w2 = Math.cos(ny * 5.0 - t * 1.2);
-          const w3 = Math.sin((nx + ny) * 5.5 + t * 1.8);
-          const distFromCenter = Math.sqrt((nx - 0.5) ** 2 + (ny - 0.5) ** 2);
-          const radialRipple = Math.sin(distFromCenter * 10.0 - t * 1.6);
+          // Proximity factor: 1 at orb center, smoothly decreasing to 0 at edge
+          const normDist = Math.min(1, dist / effectiveOrbRadius);
+          const proximity = (Math.cos(normDist * Math.PI) + 1) / 2;
 
-          // Smooth composite intensity without random jitter/flicker
-          let intensity = (w1 * 0.35 + w2 * 0.3 + w3 * 0.2 + radialRipple * 0.15 + 1) / 2;
-          intensity = Math.max(0, Math.min(1, intensity));
+          // Non-linear falloff curve
+          const influence = Math.pow(proximity, 1.5);
 
-          // Soft organic curve
-          const alpha = Math.pow(intensity, 2.2);
+          // Dot size scales smoothly with orb proximity
+          const radius = BASE_RADIUS + (PEAK_RADIUS - BASE_RADIUS) * influence;
 
-          if (alpha > 0.04) {
-            const radius = DOT_BASE_RADIUS + alpha * 1.1;
+          // Rich, colored accent values:
+          // Resting baseline has rich, visible color (0.22 opacity)
+          // Inside the liquid orb, swells to deep saturated accent (up to 0.88 opacity)
+          const alpha = 0.22 + 0.66 * influence;
 
-            ctx.beginPath();
-            ctx.arc(x, y, radius, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(${accentRgb}, ${alpha * 0.8})`;
-            ctx.fill();
-          }
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${accentRgb}, ${alpha.toFixed(3)})`;
+          ctx.fill();
         }
       }
 

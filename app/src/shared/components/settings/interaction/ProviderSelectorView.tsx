@@ -2,9 +2,12 @@ import { memo } from "react";
 import { Brain, Server, Cloud, ChevronRight } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui";
+import { LlmActiveProvider } from "@/store/settingsStore";
+
+export type ProviderTier = LlmActiveProvider;
 
 export interface ProviderOption {
-  id: "local" | "remote" | "cloud";
+  id: ProviderTier;
   label: string;
   sublabel: string;
   icon: typeof Brain;
@@ -12,21 +15,21 @@ export interface ProviderOption {
 
 interface ProviderSelectorViewProps {
   activeCategory: "STT" | "LLM" | "TTS";
-  activePill: "local" | "remote" | "cloud";
-  onSelectProvider: (pill: "local" | "remote" | "cloud") => void;
+  activePill: ProviderTier;
+  onSelectProvider: (pill: ProviderTier) => void;
   layoutMode?: "full-max" | "full-min" | "small";
 }
 
 const PROVIDER_OPTIONS: Record<"STT" | "LLM" | "TTS", ProviderOption[]> = {
   STT: [
     {
-      id: "local",
+      id: "embedded",
       label: "Embedded",
       sublabel: "Local Inference",
       icon: Brain,
     },
     {
-      id: "remote",
+      id: "server",
       label: "Server",
       sublabel: "Remote Server",
       icon: Server,
@@ -40,13 +43,13 @@ const PROVIDER_OPTIONS: Record<"STT" | "LLM" | "TTS", ProviderOption[]> = {
   ],
   LLM: [
     {
-      id: "local",
+      id: "embedded",
       label: "Embedded",
       sublabel: "On-Device GGUF",
       icon: Brain,
     },
     {
-      id: "remote",
+      id: "server",
       label: "Server",
       sublabel: "Ollama / Remote",
       icon: Server,
@@ -60,13 +63,13 @@ const PROVIDER_OPTIONS: Record<"STT" | "LLM" | "TTS", ProviderOption[]> = {
   ],
   TTS: [
     {
-      id: "local",
+      id: "embedded",
       label: "Embedded",
       sublabel: "Neural Voice",
       icon: Brain,
     },
     {
-      id: "remote",
+      id: "server",
       label: "Server",
       sublabel: "Chatterbox GPU",
       icon: Server,

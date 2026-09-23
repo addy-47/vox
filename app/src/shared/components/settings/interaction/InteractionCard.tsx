@@ -1,16 +1,15 @@
 import { useState, useEffect, useRef, memo, useCallback } from "react";
-import { useSettingsStore } from "@/store/settingsStore";
+import { useSettingsStore, TtsActiveProvider } from "@/store/settingsStore";
 import { SlidersHorizontal, Mic, MicOff, Activity, Radio } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { SegmentedControl, ToggleTile } from "@/shared/ui";
 import { TriggerModeCard } from "./TriggerModeCard";
 import { PipelineModeCard } from "./PipelineModeCard";
 import { CategorySelector } from "./CategorySelector";
-import { ProviderSelectorView } from "./ProviderSelectorView";
+import { ProviderSelectorView, ProviderTier } from "./ProviderSelectorView";
 import { LlmConfigDesk } from "./LlmConfigDesk";
 import { RealtimeConfigDesk } from "./RealtimeConfigDesk";
 import { DictationConfigDesk } from "./DictationConfigDesk";
-import { checkIfCloudUrl } from "@/data/providersCopy";
 import { DICTATION_COPY, INTERACTION_CARD_COPY } from "@/data/settingsCopy";
 
 interface InteractionCardProps {
@@ -32,9 +31,9 @@ export const InteractionCard = memo(
 
     const [activeView, setActiveView] = useState<"assistant" | "dictation">("assistant");
     const [activeCategory, setActiveCategory] = useState<"STT" | "LLM" | "TTS">("LLM");
-    const [drillDownProvider, setDrillDownProvider] = useState<"local" | "remote" | "cloud" | null>(null);
-    const [sttPillOverride, setSttPillOverride] = useState<"local" | "remote" | "cloud" | null>(null);
-    const [ttsPillOverride, setTtsPillOverride] = useState<"local" | "remote" | "cloud" | null>(null);
+    const [drillDownProvider, setDrillDownProvider] = useState<ProviderTier | null>(null);
+    const [sttPillOverride, setSttPillOverride] = useState<ProviderTier | null>(null);
+    const [ttsPillOverride, setTtsPillOverride] = useState<ProviderTier | null>(null);
 
     const prevCategoryRef = useRef<string>(activeCategory);
 
@@ -99,109 +98,64 @@ export const InteractionCard = memo(
     const dictationInteractionMode = dictation?.interaction_mode ?? "ptt";
     const isModular = interaction.pipeline_mode === "modular";
 
-    const savedLlm = settings.llm?.active || "embedded";
-    const savedLlmRemoteUrl = savedLlm === "server" ? settings.llm?.server?.base_url : savedLlm === "cloud" ? settings.llm?.cloud?.base_url : "";
-    const isSavedCloudUrl = checkIfCloudUrl(savedLlmRemoteUrl || "");
-    const savedLlmPill =
-      savedLlm === "embedded"
-        ? "local"
-        : savedLlm === "cloud"
-        ? "cloud"
-        : isSavedCloudUrl
-        ? "cloud"
-        : "remote";
+    const getTtsTier = (modelId: string): ProviderTier => {
+      const model = modelCatalog?.tts?.find((m) => m.id === modelId);
+      if (model?.is_remote) return "server";
+      if (model?.is_cloud) return "cloud";
+      return "embedded";
+    };
 
-    const savedSttPill = settings.stt?.active === "cloud" ? "cloud" : "local";
-    const savedTtsKind = settings.tts?.active || "supertonic";
-    const savedTtsModel = modelCatalog?.tts?.find((m) => m.id === savedTtsKind);
-    const savedTtsPill: "local" | "remote" | "cloud" = savedTtsModel
-      ? savedTtsModel.is_remote
-        ? "remote"
-        : savedTtsModel.is_cloud
-        ? "cloud"
-        : "local"
-      : savedTtsKind === "chatterbox_remote"
-      ? "remote"
-      : savedTtsKind === "edge_tts"
-      ? "cloud"
-      : "local";
+    const savedLlmPill: ProviderTier = settings.llm?.active || "embedded";
+    const savedSttPill: ProviderTier = settings.stt?.active === "cloud" ? "cloud" : "embedded";
+    const savedTtsPill: ProviderTier = getTtsTier(settings.tts?.active || "");
 
-    const savedPill =
+    const savedPill: ProviderTier =
       activeCategory === "STT"
         ? savedSttPill
         : activeCategory === "LLM"
         ? savedLlmPill
         : savedTtsPill;
 
-    const activeLlm = llm?.active || "embedded";
-    const activeRemoteUrl = activeLlm === "server" ? llm?.server?.base_url : activeLlm === "cloud" ? llm?.cloud?.base_url : "";
-    const isCloudUrl = checkIfCloudUrl(activeRemoteUrl || "");
-    const draftLlmPill =
-      activeLlm === "embedded"
-        ? "local"
-        : activeLlm === "cloud"
-        ? "cloud"
-        : isCloudUrl
-        ? "cloud"
-        : "remote";
+    const draftLlmPill: ProviderTier = llm?.active || "embedded";
+    const draftSttPill: ProviderTier =
+      sttPillOverride || (draftSettings.stt?.active === "cloud" ? "cloud" : "embedded");
+    const draftTtsPill: ProviderTier =
+      ttsPillOverride || getTtsTier(draftSettings.tts?.active || "");
 
-    const draftSttPill = sttPillOverride || (draftSettings.stt?.active === "cloud" ? "cloud" : "local");
-    const draftTtsKind = draftSettings.tts?.active || "supertonic";
-    const draftTtsModel = modelCatalog?.tts?.find((m) => m.id === draftTtsKind);
-    const draftTtsPill: "local" | "remote" | "cloud" =
-      ttsPillOverride ||
-      (draftTtsModel
-        ? draftTtsModel.is_remote
-          ? "remote"
-          : draftTtsModel.is_cloud
-          ? "cloud"
-          : "local"
-        : draftTtsKind === "chatterbox_remote"
-        ? "remote"
-        : draftTtsKind === "edge_tts"
-        ? "cloud"
-        : "local");
-
-    const draftPill =
+    const draftPill: ProviderTier =
       activeCategory === "STT"
         ? draftSttPill
         : activeCategory === "LLM"
         ? draftLlmPill
         : draftTtsPill;
 
-    const handleLlmPillChange = (value: string) => {
-      if (value === "local") {
-        updateDraft("llm", "active", "embedded");
-      } else if (value === "remote") {
-        updateDraft("llm", "active", "server");
-      } else if (value === "cloud") {
-        updateDraft("llm", "active", "cloud");
-      }
-    };
-
-    const handlePillChange = (value: "local" | "remote" | "cloud") => {
+    const handlePillChange = (value: ProviderTier) => {
       if (activeCategory === "STT") {
-        setSttPillOverride(value === "local" ? null : value);
-        // Only "embedded" is supported by backend STT engine.
-        // Selecting "remote" or "cloud" sets the preview pill override for documentation/coming-soon desk.
-        if (value === "local") {
+        setSttPillOverride(value === "embedded" ? null : value);
+        if (value === "embedded") {
           updateDraft("stt", "active", "embedded");
         }
       } else if (activeCategory === "LLM") {
-        handleLlmPillChange(value);
+        updateDraft("llm", "active", value);
       } else if (activeCategory === "TTS") {
         setTtsPillOverride(null);
-        if (value === "local") {
-          updateDraft("tts", "active", "supertonic");
-        } else if (value === "remote") {
-          updateDraft("tts", "active", "chatterbox_remote");
-        } else {
-          updateDraft("tts", "active", "edge_tts");
+        const currentTier = getTtsTier(draftSettings.tts?.active || "");
+        if (currentTier !== value) {
+          const targetModel = modelCatalog?.tts?.find((m) =>
+            value === "server"
+              ? m.is_remote
+              : value === "cloud"
+              ? m.is_cloud
+              : !m.is_remote && !m.is_cloud
+          );
+          if (targetModel) {
+            updateDraft("tts", "active", targetModel.id as TtsActiveProvider);
+          }
         }
       }
     };
 
-    const handleSelectProvider = (pill: "local" | "remote" | "cloud") => {
+    const handleSelectProvider = (pill: ProviderTier) => {
       handlePillChange(pill);
       setDrillDownProvider(pill);
     };

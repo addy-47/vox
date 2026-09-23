@@ -60,9 +60,10 @@ export async function pttCancel(): Promise<void> {
 export async function engageSession(
   notifyState: (state: InteractionState) => void,
   timeoutMs: number = 8000,
+  sessionId?: number | null,
 ): Promise<SessionOrchestrationResult> {
   try {
-    await startSession();
+    await startSession(sessionId);
   } catch (err: unknown) {
     if (isVoxIpcError(err) && isInvalidStateError(err)) {
       const synced = await resyncFromSnapshot();

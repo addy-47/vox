@@ -412,7 +412,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
             />
             <div className="shrink-0 flex items-center justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))] pt-1">
               <span>Supports standard markdown syntax.</span>
-              <span>{draft.length} characters</span>
+              <span>~{Math.ceil(draft.length / 4).toLocaleString()} tokens</span>
             </div>
           </div>
         )}
@@ -434,7 +434,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
             />
             <div className="shrink-0 flex items-center justify-between text-[10px] font-mono text-[rgb(var(--foreground-muted))] pt-1">
               <span>Saving streams updates directly to the canonical database.</span>
-              <span>{draft.length} characters</span>
+              <span>~{Math.ceil(draft.length / 4).toLocaleString()} tokens</span>
             </div>
           </div>
         )}
