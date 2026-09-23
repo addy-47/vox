@@ -75,7 +75,7 @@ export const Home = memo(() => {
     shouldAutoScrollRef,
   } = useHomePage();
 
-  const { openProfiler, closeProfiler } = useProfilerDrawer();
+  const { openProfiler, closeProfiler, isProfilerOpen } = useProfilerDrawer();
   const drawerHandlers = useMemo(() => ({
     open: openProfiler,
     close: closeProfiler,
@@ -169,6 +169,7 @@ export const Home = memo(() => {
 
   const { isPanelOpen, closePanel } = usePanelStateContext();
   const closeSessions = () => closePanel("sessions");
+  const isAnyOverlayOpen = isProfilerOpen || isPanelOpen("sessions") || isPanelOpen("help") || isPanelOpen("notifications");
 
   const statusLabel = toStatusLabel(
     interactionState,
@@ -303,6 +304,7 @@ export const Home = memo(() => {
               interactionState={interactionState}
               isSleeping={isSleeping}
               isTesting={false}
+              paused={isAnyOverlayOpen}
             />
           </ErrorBoundary>
         </div>

@@ -13,6 +13,8 @@ interface ProfilerDrawerContextValue {
   openProfiler: () => void;
   /** Close the global memory-profiler bottom drawer. */
   closeProfiler: () => void;
+  /** Whether the memory-profiler bottom drawer is currently open. */
+  isProfilerOpen: boolean;
 }
 
 const ProfilerDrawerContext = createContext<ProfilerDrawerContextValue | null>(null);
@@ -133,8 +135,8 @@ export const ProfilerDrawerProvider: React.FC<{ children: React.ReactNode }> = (
   const closeProfiler = React.useCallback(() => setOpen(false), []);
 
   const value = React.useMemo(
-    () => ({ openProfiler, closeProfiler }),
-    [openProfiler, closeProfiler]
+    () => ({ openProfiler, closeProfiler, isProfilerOpen: open }),
+    [openProfiler, closeProfiler, open]
   );
 
   return (

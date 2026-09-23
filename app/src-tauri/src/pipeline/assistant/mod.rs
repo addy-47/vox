@@ -9,6 +9,7 @@ pub mod text;
 pub mod transcript;
 
 use std::mem::take;
+
 use crate::services::harness::stages::streaming::ClauseChunker;
 
 /// Canonical turn-level textual accumulator and TTS clause chunker.

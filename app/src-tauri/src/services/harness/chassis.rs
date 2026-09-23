@@ -274,6 +274,14 @@ impl Harness {
         self.title_set
     }
 
+    pub fn memory_retrieval_enabled(&self) -> bool {
+        self.memory_retrieval_enabled
+    }
+
+    pub fn set_memory_retrieval_enabled(&mut self, enabled: bool) {
+        self.memory_retrieval_enabled = enabled;
+    }
+
     pub fn check_critical_compaction_eligibility(&self) -> Option<Vec<ChatMessage>> {
         let budget = self.budget.as_ref()?;
         let compaction = self.compaction.as_ref()?;
@@ -309,7 +317,8 @@ impl Harness {
     }
 
     pub fn apply_session_context(&mut self, session_context: &str, active_query: &str) {
-        self.prompt.set_session_context(Some(session_context.to_string()));
+        self.prompt
+            .set_session_context(Some(session_context.to_string()));
         if let Some(ref mut compaction) = self.compaction {
             compaction.apply_session_context(session_context);
         }

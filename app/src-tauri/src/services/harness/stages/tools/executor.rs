@@ -106,7 +106,9 @@ impl ToolExecutor {
             None => {
                 log::warn!("[ToolExecutor] Tool '{}' not found in registry", call.name);
                 let duration_ms = start.elapsed().as_millis() as u64;
-                ctx.app_state.turn_metrics.record_tool_finish(duration_ms, true);
+                ctx.app_state
+                    .turn_metrics
+                    .record_tool_finish(duration_ms, true);
                 let err_msg = format!("Tool '{}' not found in registry", call.name);
                 dispatch_persistence(&ctx, &call, ToolFlow::Terminal, &err_msg, true, duration_ms);
                 return ToolExecutionOutcome {
@@ -127,7 +129,9 @@ impl ToolExecutor {
                 mode
             );
             let duration_ms = start.elapsed().as_millis() as u64;
-            ctx.app_state.turn_metrics.record_tool_finish(duration_ms, true);
+            ctx.app_state
+                .turn_metrics
+                .record_tool_finish(duration_ms, true);
             let err_msg = format!(
                 "Tool '{}' does not support pipeline mode {:?}",
                 call.name, mode
@@ -146,7 +150,9 @@ impl ToolExecutor {
         let flow = tool.flow();
         let (result, is_error) = run_with_guards(&tool, mode, &call, &ctx).await;
         let duration_ms = start.elapsed().as_millis() as u64;
-        ctx.app_state.turn_metrics.record_tool_finish(duration_ms, is_error);
+        ctx.app_state
+            .turn_metrics
+            .record_tool_finish(duration_ms, is_error);
 
         dispatch_persistence(&ctx, &call, flow, &result.content, is_error, duration_ms);
 

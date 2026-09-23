@@ -397,3 +397,105 @@ async fn test_compaction_notification_lifecycle() {
     assert_eq!(resolved_meta["resolution"], "resolved");
     assert!(resolved.message.contains("Compacted 15 turns"));
 }
+
+// ============================================================================
+// Subtest 6: Boundary Multi-Slice Compaction Seeds Prior Summary Invariant
+// ============================================================================
+#[tokio::test]
+async fn test_compaction_boundary_multi_slice_preserves_prior_summary() {
+    let _guard = TempPathsGuard::new();
+    let (_app, state) = get_test_app_and_state().await;
+    let conn = state.db.connect().unwrap();
+    let session_id = 9106;
+
+    // 1. Seed initial turns (1..3)
+    let turns_1 = (1..=3)
+        .map(|i| DatasetTurn {
+            turn: i,
+            user: format!("User question {}", i),
+            assistant: format!("Bot answer {}", i),
+        })
+        .collect::<Vec<_>>();
+    seed_turns(&conn, session_id, &turns_1).await;
+
+    // 2. Commit completed compaction run for slice 1..3
+    let run1_id = record_compaction_start(&conn, session_id, "soft", 1, 3)
+        .await
+        .unwrap();
+    let prior_json =
+        r#"{"objective": ["Build rolling compaction pipeline"], "personal": ["Engineer"]}"#;
+    commit_compaction_output(
+        &conn,
+        run1_id,
+        prior_json,
+        &[(
+            "objective".to_string(),
+            "Build rolling compaction pipeline".to_string(),
+        )],
+        session_id,
+    )
+    .await
+    .unwrap();
+
+    // 3. Seed slice 4..5
+    let turns_2 = (4..=5)
+        .map(|i| DatasetTurn {
+            turn: i,
+            user: format!("User question {}", i),
+            assistant: format!("Bot answer {}", i),
+        })
+        .collect::<Vec<_>>();
+    seed_turns(&conn, session_id, &turns_2).await;
+
+    // 4. Verify fetch_session_continuation recovers formatted prior summary
+    let continuation =
+        vox_lib::persistence::sessions::fetch_session_continuation(&conn, session_id)
+            .await
+            .unwrap();
+    assert!(continuation.latest_summary.is_some());
+    let summary_str = continuation.latest_summary.unwrap();
+    assert!(summary_str.contains("Build rolling compaction pipeline"));
+
+    // 5. Query turns for next slice (turn 4+) and verify build_compaction_request receives prior summary
+    let next_turns = fetch_turns_for_compaction(&conn, session_id, 4, u32::MAX)
+        .await
+        .unwrap();
+    assert_eq!(next_turns.len(), 2);
+
+    let mut history_messages = Vec::new();
+    history_messages.push(vox_lib::services::harness::ChatMessage::new(
+        vox_lib::services::harness::Role::System,
+        vox_lib::services::harness::PromptTag::SessionContext.wrap(&summary_str),
+    ));
+    for t in next_turns {
+        history_messages.push(vox_lib::services::harness::ChatMessage::new(
+            vox_lib::services::harness::Role::User,
+            t.user_text,
+        ));
+        history_messages.push(vox_lib::services::harness::ChatMessage::new(
+            vox_lib::services::harness::Role::Assistant,
+            t.assistant_text,
+        ));
+    }
+
+    let request = vox_lib::services::memory::compaction::prompt::build_compaction_request(
+        &history_messages,
+        None,
+    );
+    let user_msg = request
+        .input
+        .messages
+        .iter()
+        .find(|m| m.role == vox_lib::services::harness::Role::User)
+        .expect("Must have user message in compaction request");
+    assert!(
+        user_msg.content.contains("<prior_summary>"),
+        "Compaction request must include <prior_summary> tag"
+    );
+    assert!(
+        user_msg
+            .content
+            .contains("Build rolling compaction pipeline"),
+        "Compaction request must include content from prior compaction"
+    );
+}

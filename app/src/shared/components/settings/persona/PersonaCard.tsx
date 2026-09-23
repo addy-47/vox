@@ -317,16 +317,16 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
       </div>
 
       {/* Main Body */}
-      <div className={cn("flex-1 flex flex-col justify-between gap-2", isSmall ? "min-h-[220px]" : "min-h-[160px]")}>
+      <div className="flex-1 flex flex-col w-full">
         {viewMode === "edit" ? (
-          <div className="relative flex-1 w-full rounded-xl overflow-hidden border border-[rgba(var(--accent),0.12)] bg-[rgba(var(--foreground),0.02)] focus-within:border-[rgba(var(--accent),0.35)] transition-colors">
+          <div className="relative w-full rounded-xl overflow-hidden border border-[rgba(var(--accent),0.12)] bg-[rgba(var(--foreground),0.02)] focus-within:border-[rgba(var(--accent),0.35)] transition-colors">
             {/* Syntax Highlight Backdrop Layer */}
             <div
               ref={highlightRef}
               aria-hidden="true"
               className={cn(
                 "absolute inset-0 p-3 pointer-events-none overflow-auto font-mono text-[12px] sm:text-[12.5px] leading-relaxed whitespace-pre-wrap break-words select-none",
-                layoutMode === "full-max" ? "h-[160px]" : isSmall ? "h-[200px]" : "h-[120px]"
+                layoutMode === "full-max" ? "h-[200px]" : isSmall ? "h-[200px]" : "h-[150px]"
               )}
             >
               {highlightedContent}
@@ -344,7 +344,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
               spellCheck={false}
               className={cn(
                 "relative z-10 w-full p-3 font-mono text-[12px] sm:text-[12.5px] leading-relaxed text-transparent caret-[rgb(var(--accent))] bg-transparent resize-none focus:outline-none overflow-auto whitespace-pre-wrap break-words selection:bg-[rgba(var(--accent),0.25)] selection:text-[rgb(var(--foreground))]",
-                layoutMode === "full-max" ? "h-[160px]" : isSmall ? "h-[200px]" : "h-[120px]"
+                layoutMode === "full-max" ? "h-[200px]" : isSmall ? "h-[200px]" : "h-[150px]"
               )}
             />
           </div>
@@ -353,7 +353,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
           <div 
             className={cn(
               "w-full bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.12)] rounded-xl p-3 overflow-y-auto select-text space-y-3.5 scrollbar-thin scrollbar-thumb-[rgba(var(--accent),0.2)] scrollbar-track-transparent",
-              layoutMode === "full-max" ? "h-[160px]" : isSmall ? "h-[200px]" : "h-[120px]"
+              layoutMode === "full-max" ? "h-[200px]" : isSmall ? "h-[200px]" : "h-[150px]"
             )}
           >
             {parsedSections.length === 0 ? (
@@ -382,17 +382,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
             )}
           </div>
         )}
-
-        {/* Footer Guidance Note */}
-        <p className="text-[11px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/60 leading-normal font-semibold uppercase tracking-wide px-0.5">
-          {activeTab === "modular" ? (
-            <>
-              {PERSONA_COPY.modularFooterPrefix}<code className="text-amber-400 font-mono font-bold bg-amber-400/10 px-1 py-0.2 rounded border border-amber-400/20">&lt;lang&gt;</code>{PERSONA_COPY.modularFooterMid}<code className="text-amber-400 font-mono font-bold bg-amber-400/10 px-1 py-0.2 rounded border border-amber-400/20">&lt;script&gt;</code>{PERSONA_COPY.modularFooterSuffix}
-            </>
-          ) : (
-            PERSONA_COPY.realtimeFooterHint
-          )}
-        </p>
+        
       </div>
     </Card>
   );

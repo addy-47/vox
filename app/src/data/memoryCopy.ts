@@ -76,4 +76,22 @@ export const MEMORY_COPY = {
   clearAllComments: "Clear All",
   selectTextPrompt: "Select text in the document on the left to anchor a comment to that line.",
   memoryHint: "Click the central orb to open your personal memory",
+  conflictModal: {
+    title: "Compaction In Progress",
+    description: "A conversation compaction is currently processing in the background. How would you like to proceed with personal memory consolidation?",
+    pauseAndConsolidate: "Pause Compaction & Consolidate Now",
+    pauseAndConsolidateDesc: "Temporarily pause the background compaction, drain pending memories, and update your personal memory immediately. Compaction will resume automatically afterward.",
+    queueBehind: "Queue Behind",
+    queueBehindDesc: "Allow the compaction to complete first before consolidating your profile.",
+  },
+  versions: {
+    title: "Version History",
+    activeBadge: "Active",
+    historicalBadge: "Historical",
+    viewingHistorical: "Viewing past revision",
+    restoreActive: "Restore as Active",
+    restoring: "Restoring…",
+    prevVersion: "Previous revision",
+    nextVersion: "Next revision",
+  },
 };

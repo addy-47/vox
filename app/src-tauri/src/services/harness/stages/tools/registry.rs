@@ -5,10 +5,7 @@ use super::{
     search_memory::MemorySearchTool,
     ToolDefinition,
 };
-use crate::{
-    core::settings::PipelineMode,
-    services::llm::CanonicalToolDefinition,
-};
+use crate::{core::settings::PipelineMode, services::llm::CanonicalToolDefinition};
 
 /// Contextual filters governing tool availability on a per-turn basis.
 #[derive(Debug, Clone, Default)]
@@ -60,10 +57,7 @@ impl ToolRegistry {
                 continue;
             }
             if name == "respond_and_set_title" && !filter.title_is_unset {
-                log::info!(
-                    "[Harness::Tools] '{}' excluded: title already set",
-                    name
-                );
+                log::info!("[Harness::Tools] '{}' excluded: title already set", name);
                 continue;
             }
             if name == "search_memory" && !filter.memory_retrieval_enabled {

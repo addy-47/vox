@@ -79,12 +79,22 @@ Manages the single evolving Personal Memory markdown document.
 - **Purpose**: Saves direct manual text edits made to the Personal Memory document.
 - **Behavior**: Optimistic concurrency check: updates content and increments version only if `version == expectedVersion`. If version drifted, rejects with `VoxIpcError::Conflict`. Broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
-#### `consolidate_personal_memory(comments: Option<Vec<String>>, projectId: Option<String>)` — [UNIFIED]
+#### `consolidate_personal_memory(comments: Option<Vec<String>>, projectId: Option<String>, conflictPolicy: Option<String>)` — [UNIFIED]
 - **Purpose**: Merges active personal facts into the document or performs comment-driven LLM regeneration.
 - **Behavior**: 
-  - If `comments` provided: triggers LLM regeneration taking `[Current Document] + [User Comments]`.
-  - If `comments` None: verifies ingestion queue is quiet, fetches all `status = 'active'` personal facts, merges them via LLM, marks facts `'consolidated'`, and updates the document.
+  - If `comments` provided: triggers LLM regeneration taking `[Current Document] + [User Comments]`. Never blocked by background ingestion queue items or compactions.
+  - If `comments` None:
+    - If compaction is active: evaluates `conflictPolicy` (`"pause_compaction" | "queue" | "prompt"`). If `pause_compaction`, resets ongoing compaction to `'pending'`, drains queue, and consolidates immediately. If `prompt` (default), raises `CompactionInProgress` error so UI can prompt user.
+    - Merges active personal facts via LLM, marks facts `'consolidated'`, increments version, sets `is_active = 1`, and deactivates previous versions.
   - Broadcasts `IpcEvent::PersonalMemoryUpdated`.
+
+#### `get_personal_memory_versions(projectId: Option<String>)` — [NEW]
+- **Purpose**: Lists all historical versions of the personal memory document for carousel browsing.
+- **Behavior**: Queries `personal_memory WHERE project_id IS ? ORDER BY version DESC`. Returns `Vec<PersonalMemoryRecord>` including `version` and `is_active` flags.
+
+#### `set_active_personal_memory_version(version: u64, projectId: Option<String>)` — [NEW]
+- **Purpose**: Restores a historical version as the active personal memory profile.
+- **Behavior**: Inside a transaction, updates `is_active = 0` for all versions of that project and sets `is_active = 1` for the specified version. Broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
 #### `get_active_facts(projectId: Option<String>)` — [NEW]
 - **Purpose**: Returns all `status = 'active'` facts from `memory_facts` for memory graph visualization.

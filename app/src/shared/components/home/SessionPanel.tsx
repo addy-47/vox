@@ -26,6 +26,7 @@ import { type ProjectRow } from "@/services/projectService";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import { Tooltip } from "@/shared/ui/Tooltip";
 import { SessionContextMenu } from "@/shared/ui/SessionContextMenu";
+import { ProjectContextMenu } from "@/shared/ui/ProjectContextMenu";
 import {
   useNotificationStore,
   selectUncompactedSessionIds,
@@ -214,7 +215,7 @@ const SessionRowItem = memo(
                   if (e.key === "Escape") handleCancelRename();
                 }}
                 onBlur={handleCommitRename}
-                className="w-full bg-[rgba(var(--foreground),0.06)] border border-[rgba(var(--accent),0.5)] rounded px-1.5 py-0.5 text-[12px] font-sans text-[rgb(var(--foreground))] focus:outline-none"
+                className="w-full bg-transparent border-0 border-b border-[rgb(var(--accent))] px-0 py-0.5 text-[12px] font-sans text-[rgb(var(--foreground))] focus:outline-none"
               />
               <button
                 type="button"
@@ -341,6 +342,8 @@ interface ProjectRowItemProps {
   onMoveSessionToProject: (id: number, projectId: string | null) => void;
   onDeleteSession: (id: number) => void;
   onCreateSessionInProject: (projectId: string) => void;
+  onRenameProject: (projectId: string, newName: string) => void;
+  onDeleteProject: (projectId: string) => Promise<void>;
   onDragOver: (e: React.DragEvent, projectId: string) => void;
   onDragLeave: (projectId: string) => void;
   onDrop: (e: React.DragEvent, projectId: string) => void;
@@ -361,6 +364,8 @@ const ProjectRowItem = memo(
     onMoveSessionToProject,
     onDeleteSession,
     onCreateSessionInProject,
+    onRenameProject,
+    onDeleteProject,
     onDragOver,
     onDragLeave,
     onDrop,
@@ -368,13 +373,18 @@ const ProjectRowItem = memo(
   }: ProjectRowItemProps) => {
     const [expanded, setExpanded] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
+    const [isRenaming, setIsRenaming] = useState(false);
+    const [renameName, setRenameName] = useState("");
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [menuAnchorRect, setMenuAnchorRect] = useState<DOMRect | null>(null);
+    const triggerRef = useRef<HTMLButtonElement>(null);
     const dragControls = useDragControls();
     const isDraggingRef = useRef(false);
 
     const handleToggleExpand = useCallback(() => {
-      if (isDraggingRef.current) return;
+      if (isDraggingRef.current || isRenaming || menuOpen) return;
       setExpanded((prev) => !prev);
-    }, []);
+    }, [isRenaming, menuOpen]);
 
     const handleCreateInProject = useCallback(
       (e: React.MouseEvent) => {
@@ -383,6 +393,35 @@ const ProjectRowItem = memo(
       },
       [group.project.id, onCreateSessionInProject]
     );
+
+    const handleStartRename = useCallback(() => {
+      setRenameName(group.project.name);
+      setIsRenaming(true);
+    }, [group.project.name]);
+
+    const handleCommitRename = useCallback(() => {
+      const trimmed = renameName.trim();
+      if (trimmed && trimmed !== group.project.name) {
+        onRenameProject(group.project.id, trimmed);
+      }
+      setIsRenaming(false);
+    }, [renameName, group.project.name, onRenameProject, group.project.id]);
+
+    const handleCancelRename = useCallback(() => {
+      setIsRenaming(false);
+    }, []);
+
+    const handleDelete = useCallback(() => {
+      return onDeleteProject(group.project.id);
+    }, [onDeleteProject, group.project.id]);
+
+    const handleMenuClick = useCallback((e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (triggerRef.current) {
+        setMenuAnchorRect(triggerRef.current.getBoundingClientRect());
+      }
+      setMenuOpen((prev) => !prev);
+    }, []);
 
     return (
       <Reorder.Item
@@ -418,12 +457,12 @@ const ProjectRowItem = memo(
         }}
         transition={{ type: "spring", stiffness: 300, damping: 35 }}
       >
-        {/* Project Header Row: Flat folder, title, hover + to add session */}
+        {/* Project Header Row: Flat folder, title / rename input, hover + to add session, hover 3-dots */}
         <div
           role="button"
           tabIndex={0}
           onPointerDown={(e) => {
-            if (e.button === 0 && !(e.target as HTMLElement).closest("button")) {
+            if (e.button === 0 && !(e.target as HTMLElement).closest("button") && !isRenaming) {
               dragControls.start(e);
             }
           }}
@@ -443,31 +482,92 @@ const ProjectRowItem = memo(
                   : "text-[rgb(var(--foreground-muted))]/60 group-hover:text-[rgb(var(--foreground-muted))]"
               )}
             />
-            <span className="truncate text-[13.5px] font-medium text-[rgb(var(--foreground))]">
-              {group.project.name}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1 shrink-0">
-            {/* Hover + button to start conversation in this project */}
-            <Tooltip label={SESSION_COPY.newInProjectAriaLabel} side="left">
-              <button
-                type="button"
-                onClick={handleCreateInProject}
-                className="opacity-0 group-hover:opacity-100 flex items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--accent),0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all cursor-pointer"
-                aria-label={SESSION_COPY.newInProjectAriaLabel}
+            {isRenaming ? (
+              <div
+                className="flex items-center gap-1 flex-1 min-w-0"
+                onClick={(e) => e.stopPropagation()}
               >
-                <Plus size={12} />
-              </button>
-            </Tooltip>
-
-            {group.sessions.length > 0 && (
-              <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]/50 px-1 py-0.2 rounded bg-[rgba(var(--foreground),0.04)] shrink-0">
-                {group.sessions.length}
+                <input
+                  autoFocus
+                  type="text"
+                  value={renameName}
+                  onChange={(e) => setRenameName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleCommitRename();
+                    if (e.key === "Escape") handleCancelRename();
+                  }}
+                  onBlur={handleCommitRename}
+                  className="w-full bg-transparent border-0 border-b border-[rgb(var(--accent))] px-0 py-0.5 text-[12px] font-sans text-[rgb(var(--foreground))] focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleCommitRename}
+                  className="p-1 rounded text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.1)] cursor-pointer"
+                >
+                  <Check size={12} />
+                </button>
+              </div>
+            ) : (
+              <span className="truncate text-[13.5px] font-medium text-[rgb(var(--foreground))]">
+                {group.project.name}
               </span>
             )}
           </div>
+
+          {!isRenaming && (
+            <div className="flex items-center gap-1 shrink-0 relative min-w-[36px] justify-end">
+              {/* Hover + button to start conversation in this project */}
+              <Tooltip label={SESSION_COPY.newInProjectAriaLabel} side="left">
+                <button
+                  type="button"
+                  onClick={handleCreateInProject}
+                  className="opacity-0 group-hover:opacity-100 flex items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--accent),0.1)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] transition-all cursor-pointer"
+                  aria-label={SESSION_COPY.newInProjectAriaLabel}
+                >
+                  <Plus size={12} />
+                </button>
+              </Tooltip>
+
+              {/* Static Session Count: visible by default, replaced on hover or when menu is open */}
+              {group.sessions.length > 0 && (
+                <span
+                  className={cn(
+                    "text-[11px] font-mono text-[rgb(var(--foreground-muted))]/50 px-1 py-0.2 rounded bg-[rgba(var(--foreground),0.04)] shrink-0 transition-opacity",
+                    menuOpen ? "hidden" : "group-hover:hidden"
+                  )}
+                >
+                  {group.sessions.length}
+                </span>
+              )}
+
+              {/* 3-dot action button: hidden by default, visible on group hover or when menu is open */}
+              <button
+                ref={triggerRef}
+                type="button"
+                onClick={handleMenuClick}
+                className={cn(
+                  "items-center justify-center w-5 h-5 rounded hover:bg-[rgba(var(--foreground),0.08)] transition-all cursor-pointer",
+                  menuOpen
+                    ? "flex opacity-100 text-[rgb(var(--foreground))] bg-[rgba(var(--foreground),0.08)]"
+                    : "hidden group-hover:flex opacity-60 hover:!opacity-100 text-[rgb(var(--foreground-muted))]"
+                )}
+                aria-label={SESSION_COPY.actions.moreOptions}
+              >
+                <MoreVertical size={13} />
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* Floating Project Context Menu Portal */}
+        <ProjectContextMenu
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          anchorRect={menuAnchorRect}
+          projectName={group.project.name}
+          onStartRename={handleStartRename}
+          onDelete={handleDelete}
+        />
 
         {/* Clean Nested Sessions (Indented under project) */}
         <AnimatePresence initial={false}>
@@ -525,6 +625,8 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
     refresh,
     createNewSession,
     createNewProject,
+    renameProject,
+    deleteProject,
     togglePin,
     selectSession,
     renameSession,
@@ -583,27 +685,24 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
           projectName: session.project_id ? projectNameMap.get(session.project_id) ?? null : null,
         });
       }
-      selectSession(id)
-        .then(() => onClose())
-        .catch(() => {});
+      onClose();
+      selectSession(id).catch(() => {});
     },
     [selectSession, onClose, pinnedSessions, uncategorizedSessions, projects, projectNameMap, setActiveSessionLabel]
   );
 
   const handleNew = useCallback(() => {
     setActiveSessionLabel({ sessionTitle: null, projectName: null });
-    createNewSession()
-      .then(() => onClose())
-      .catch(() => {});
+    onClose();
+    createNewSession().catch(() => {});
   }, [createNewSession, onClose, setActiveSessionLabel]);
 
   const handleCreateInProject = useCallback(
     (projectId: string) => {
       const project = allProjects.find((p) => p.id === projectId);
       setActiveSessionLabel({ sessionTitle: null, projectName: project?.name ?? null });
-      createNewSession(projectId)
-        .then(() => onClose())
-        .catch(() => {});
+      onClose();
+      createNewSession(projectId).catch(() => {});
     },
     [createNewSession, onClose, allProjects, setActiveSessionLabel]
   );
@@ -916,6 +1015,8 @@ export const SessionPanel = memo(({ onClose }: SessionPanelProps) => {
                         onMoveSessionToProject={moveSessionToProject}
                         onDeleteSession={deleteSession}
                         onCreateSessionInProject={handleCreateInProject}
+                        onRenameProject={renameProject}
+                        onDeleteProject={deleteProject}
                         onDragOver={handleSessionDragOver}
                         onDragLeave={handleSessionDragLeave}
                         onDrop={handleSessionDrop}

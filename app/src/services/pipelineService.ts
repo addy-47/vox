@@ -92,30 +92,35 @@ export async function continueSession(
   sessionId: number,
   notifyState?: (state: InteractionState) => void,
 ): Promise<ContinueSessionResult> {
+  // 1. If currently active, cleanly end the old session immediately
   try {
     const snap = await getRuntimeSnapshot();
     if (snap && snap.pipeline_state !== "Idle") {
+      await endSession();
       if (notifyState) {
-        await disengageSession(notifyState);
-      } else {
-        await endSession();
+        notifyState("Idle");
       }
     }
   } catch {
     // Best-effort cleanup prior to continuing session
   }
 
+  // 2. Fetch session data & set conversation_id in backend (<5ms SQLite query)
   const result = await invoke<ContinueSessionResult>("continue_session", { sessionId });
 
-  try {
-    if (notifyState) {
-      await engageSession(notifyState, 8000, sessionId);
-    } else {
-      await startSession(sessionId);
+  // 3. Auto-engage pipeline with the new sessionId in background so caller receives
+  // historical turns immediately without waiting for CPAL audio engine boot polling.
+  (async () => {
+    try {
+      if (notifyState) {
+        await engageSession(notifyState, 8000, sessionId);
+      } else {
+        await startSession(sessionId);
+      }
+    } catch (e) {
+      console.warn("[continueSession] Background auto-engagement notice:", e);
     }
-  } catch {
-    // Best-effort engagement
-  }
+  })();
 
   return result;
 }

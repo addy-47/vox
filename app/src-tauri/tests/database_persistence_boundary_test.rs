@@ -24,7 +24,6 @@ use common::paths::TempPathsGuard;
 use tempfile::tempdir;
 use vox_lib::persistence::{
     compactions::record_compaction_start,
-    VoxDb,
     decode_f32_blob, encode_f32_blob,
     facts::{insert_fact, insert_vector, FactRecord},
     notifications::{create_notification, NewNotification, Severity},
@@ -33,7 +32,7 @@ use vox_lib::persistence::{
     schema::run_migrations,
     sessions::{create_session_with_id, delete_session},
     worker::spawn_persistence_worker,
-    PersistenceEvent,
+    PersistenceEvent, VoxDb,
 };
 
 // ============================================================================

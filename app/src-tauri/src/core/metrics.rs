@@ -89,7 +89,8 @@ impl TurnMetricsCollector {
 
     /// Records time spent on context or episodic memory retrieval.
     pub fn record_retrieval(&self, duration_ms: u64) {
-        self.retrieval_duration_ms.store(duration_ms, Ordering::Relaxed);
+        self.retrieval_duration_ms
+            .store(duration_ms, Ordering::Relaxed);
     }
 
     /// Records when request is dispatched to the LLM worker.
@@ -158,7 +159,8 @@ impl TurnMetricsCollector {
     pub fn record_tts_job_completed(&self, is_last: bool) {
         self.tts_jobs_completed.fetch_add(1, Ordering::Relaxed);
         if is_last {
-            self.tts_last_chunk_finish_ms.store(now_ms(), Ordering::Relaxed);
+            self.tts_last_chunk_finish_ms
+                .store(now_ms(), Ordering::Relaxed);
         }
     }
 
@@ -166,8 +168,7 @@ impl TurnMetricsCollector {
     pub fn record_context_budget(&self, used_tokens: usize, window: usize) {
         self.context_tokens_used
             .store(used_tokens as u32, Ordering::Relaxed);
-        self.context_window
-            .store(window as u32, Ordering::Relaxed);
+        self.context_window.store(window as u32, Ordering::Relaxed);
     }
 
     /// Builds a strongly-typed turn metrics payload reflecting current turn milestones and token utilization.
@@ -286,22 +287,24 @@ impl TurnMetricsCollector {
             0
         };
 
-        let total_voice_latency_ms = if speech_end > 0
-            && playback_ts > speech_end
-            && (playback_ts - speech_end <= 30000)
-        {
-            playback_ts - speech_end
-        } else if llm_dispatch > 0 && playback_ts > llm_dispatch {
-            playback_ts - llm_dispatch
-        } else {
-            0
-        };
+        let total_voice_latency_ms =
+            if speech_end > 0 && playback_ts > speech_end && (playback_ts - speech_end <= 30000) {
+                playback_ts - speech_end
+            } else if llm_dispatch > 0 && playback_ts > llm_dispatch {
+                playback_ts - llm_dispatch
+            } else {
+                0
+            };
 
         if stt_ms > 0 {
-            telemetry.latest_stt_ms.store(stt_ms as u32, Ordering::Relaxed);
+            telemetry
+                .latest_stt_ms
+                .store(stt_ms as u32, Ordering::Relaxed);
         }
         if ttft_ms > 0 {
-            telemetry.latest_ttft_ms.store(ttft_ms as u32, Ordering::Relaxed);
+            telemetry
+                .latest_ttft_ms
+                .store(ttft_ms as u32, Ordering::Relaxed);
         }
         if perceived_latency_ms > 0 {
             telemetry
@@ -398,11 +401,12 @@ impl TurnMetricsCollector {
 
         let tts_chunk0_dispatch = self.tts_chunk0_dispatch_ms.load(Ordering::Relaxed);
         let tts_last_chunk_finish = self.tts_last_chunk_finish_ms.load(Ordering::Relaxed);
-        let tts_total_synthesis_ms = if tts_last_chunk_finish > tts_chunk0_dispatch && tts_chunk0_dispatch > 0 {
-            tts_last_chunk_finish - tts_chunk0_dispatch
-        } else {
-            0
-        };
+        let tts_total_synthesis_ms =
+            if tts_last_chunk_finish > tts_chunk0_dispatch && tts_chunk0_dispatch > 0 {
+                tts_last_chunk_finish - tts_chunk0_dispatch
+            } else {
+                0
+            };
 
         let samples = self.tts_total_samples.load(Ordering::Relaxed);
         let audio_dur_sec = samples as f32 / 24000.0;

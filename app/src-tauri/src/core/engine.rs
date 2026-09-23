@@ -13,7 +13,7 @@ use tauri::AppHandle;
 use crate::{
     core::{
         events::{emit_ipc_to, IpcEvent, TranscriptPayload, VoxEvent},
-        settings::TtsActiveProvider,
+        settings::{TtsActiveProvider, VoxSettings},
         state::{AppState, InteractionOwner, InteractionState},
     },
     monitoring::TelemetryEvent,
@@ -28,7 +28,7 @@ use crate::{
             actor::{cool_down_llm, warm_up_llm, LlmWarmUpHandles},
             LlmCommand, QWEN_MODEL_DIR, QWEN_MODEL_FILE,
         },
-        memory::{trim_heap, unload_all_onnx_models},
+        memory::{ensure_embedder_loaded, is_embedder_loaded, trim_heap, unload_all_onnx_models},
         stt::{
             actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
             create_stt_instance_from_settings, SttProvider,
@@ -489,7 +489,22 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
         }
     }
 
+    ensure_memory_embedder(&settings);
+
     Ok(())
+}
+
+/// Pre-warms the memory embedder asynchronously if context retrieval is enabled.
+pub fn ensure_memory_embedder(settings: &VoxSettings) {
+    if settings.personal_memory.context_retrieval_enabled && !is_embedder_loaded() {
+        tauri::async_runtime::spawn_blocking(|| {
+            if let Err(e) = ensure_embedder_loaded(true) {
+                log::warn!("[Core::Engine] Failed to pre-warm memory embedder: {}", e);
+            } else {
+                log::info!("[Core::Engine] Memory embedder pre-warmed successfully");
+            }
+        });
+    }
 }
 
 /// Synchronous wrapper for ensure_modular_workers to be called safely on the Router OS thread.

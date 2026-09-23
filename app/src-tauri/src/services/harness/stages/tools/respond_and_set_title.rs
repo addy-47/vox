@@ -2,11 +2,7 @@ use futures_util::future::{BoxFuture, FutureExt};
 use serde_json::{json, Value};
 
 use super::{ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolResult};
-use crate::{
-    core::settings::PipelineMode,
-    persistence::PersistenceEvent,
-    services::llm::ToolFlow,
-};
+use crate::{core::settings::PipelineMode, persistence::PersistenceEvent, services::llm::ToolFlow};
 
 /// Shared helper executing session title persistence and notification dispatch.
 async fn apply_session_title(title: &str, ctx: &ToolExecutionContext) -> Result<(), ToolError> {
@@ -25,10 +21,7 @@ async fn apply_session_title(title: &str, ctx: &ToolExecutionContext) -> Result<
                     key: "title".to_string(),
                     value: title.to_string(),
                 }) {
-                    log::warn!(
-                        "[SetSessionTitle] Failed to queue title update: {}",
-                        e
-                    );
+                    log::warn!("[SetSessionTitle] Failed to queue title update: {}", e);
                     return Err(ToolError::ExecutionFailed(format!(
                         "Persistence queue error: {}",
                         e

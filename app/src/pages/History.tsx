@@ -15,9 +15,13 @@ import { HISTORY_COPY } from "@/data/historyCopy";
 import { useHistoryFilterStore } from "@/store/historyFilterStore";
 import type { SessionRow } from "@/services/historyService";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
+import { usePanelStateContext } from "@/shared/hooks/usePanelState";
+import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 
 export const History: React.FC = () => {
   const setDisplayMode = useHistoryFilterStore((s) => s.setDisplayMode);
+  const { isPanelOpen } = usePanelStateContext();
+  const { isProfilerOpen } = useProfilerDrawer();
   const {
     sessions,
     showLoading,
@@ -277,7 +281,7 @@ export const History: React.FC = () => {
                 nodeIds={monthNodeIds}
                 radius={ringRadius}
                 selectedId={null}
-                paused={false}
+                paused={Boolean(selectedSession) || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications")}
                 onDragStateChange={handleDragState}
                 renderNode={renderMonthNode}
               />
@@ -319,7 +323,7 @@ export const History: React.FC = () => {
                 nodeIds={dayNodeIds}
                 radius={ringRadius}
                 selectedId={selectedSession ? String(selectedSession.id) : null}
-                paused={!!selectedSession}
+                paused={Boolean(selectedSession) || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications")}
                 onDragStateChange={handleDragState}
                 renderNode={renderDayNode}
               />

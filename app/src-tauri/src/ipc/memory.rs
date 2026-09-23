@@ -84,6 +84,7 @@ pub async fn consolidate_personal_memory(
     app: AppHandle,
     comments: Option<Vec<String>>,
     project_id: Option<String>,
+    conflict_policy: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<PersonalMemoryRecord, VoxIpcError> {
     let llm_settings = state
@@ -106,19 +107,83 @@ pub async fn consolidate_personal_memory(
         }
     };
 
+    log::info!(
+        "[IPC::Memory] consolidate_personal_memory initiated: comments_count={}, project_id={:?}, conflict_policy={:?}",
+        comments.as_ref().map(|c| c.len()).unwrap_or(0),
+        project_id,
+        conflict_policy
+    );
+
+    let parsed_policy = conflict_policy.and_then(|s| s.parse().ok());
+
     let conn = state
         .db
         .connect()
-        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+        .map_err(|e| {
+            log::error!("[IPC::Memory] Database connection error: {}", e);
+            VoxIpcError::Database(e.to_string())
+        })?;
     let record = service_consolidate_personal_memory(
         &conn,
         provider.as_ref(),
         comments,
         project_id.as_deref(),
         Some(&llm_settings),
+        parsed_policy,
     )
     .await
-    .map_err(|e| VoxIpcError::Engine(e.to_string()))?;
+    .map_err(|e| {
+        log::error!("[IPC::Memory] consolidate_personal_memory failed: {}", e);
+        VoxIpcError::Engine(e.to_string())
+    })?;
+
+    log::info!(
+        "[IPC::Memory] consolidate_personal_memory succeeded: v{} ({} chars)",
+        record.version,
+        record.content.len()
+    );
+
+    if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
+        log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
+    }
+
+    Ok(record)
+}
+
+/// Retrieves all historical versions of personal memory for a project or global default.
+#[tauri::command]
+pub async fn get_personal_memory_versions(
+    project_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<PersonalMemoryRecord>, VoxIpcError> {
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    crate::persistence::list_personal_memory_versions(&conn, project_id.as_deref())
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))
+}
+
+/// Sets a specific historical version of personal memory to active, deactivating previous versions.
+#[tauri::command]
+pub async fn set_active_personal_memory_version(
+    app: AppHandle,
+    version: i64,
+    project_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<PersonalMemoryRecord, VoxIpcError> {
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    let record = crate::persistence::set_active_personal_memory_version(
+        &conn,
+        project_id.as_deref(),
+        version,
+    )
+    .await
+    .map_err(|e| VoxIpcError::Database(e.to_string()))?;
 
     if let Err(e) = emit_ipc(&app, IpcEvent::PersonalMemoryUpdated(record.clone())) {
         log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);

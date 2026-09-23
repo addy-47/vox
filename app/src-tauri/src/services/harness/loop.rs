@@ -95,11 +95,17 @@ async fn run_cognitive_loop<R: Runtime + 'static>(
         "[Harness::Loop] Turn {} cognitive loop: supports_tools={} registered_tools={}",
         turn_id,
         supports_tools,
-        tool_registry.canonical_definitions(PipelineMode::Modular).len()
+        tool_registry
+            .canonical_definitions(PipelineMode::Modular)
+            .len()
     );
 
     let Some(ref pipeline_tx) = req.pipeline_tx else {
-        return step7_handle_error(harness_arc, turn_id, "No pipeline event channel".to_string());
+        return step7_handle_error(
+            harness_arc,
+            turn_id,
+            "No pipeline event channel".to_string(),
+        );
     };
 
     let cancel_atomic = Arc::new(AtomicBool::new(req.cancel.is_cancelled()));
@@ -261,10 +267,10 @@ fn check_loop_budget<R: Runtime>(
                 utilization * 100.0,
                 status
             );
-            ctx.req.app_state.turn_metrics.record_context_budget(
-                total_tokens,
-                budget.max_context_tokens(),
-            );
+            ctx.req
+                .app_state
+                .turn_metrics
+                .record_context_budget(total_tokens, budget.max_context_tokens());
         }
     }
 }

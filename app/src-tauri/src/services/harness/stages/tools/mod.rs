@@ -4,10 +4,7 @@ use futures_util::future::BoxFuture;
 use serde_json::Value;
 
 use crate::{
-    core::{
-        settings::PipelineMode,
-        state::AppState,
-    },
+    core::{settings::PipelineMode, state::AppState},
     services::llm::{CanonicalToolDefinition, ToolFlow},
 };
 
@@ -54,10 +51,14 @@ impl ToolExecutionContext {
     /// Checks if a non-placeholder title is already persisted for the active session.
     pub async fn is_title_already_set(&self) -> bool {
         if let Ok(conn) = self.app_state.db.connect() {
-            if let Ok(Some(session)) = crate::persistence::sessions::fetch_session_by_id(&conn, self.session_id).await {
+            if let Ok(Some(session)) =
+                crate::persistence::sessions::fetch_session_by_id(&conn, self.session_id).await
+            {
                 if let Some(ref title) = session.title {
                     let trimmed = title.trim();
-                    return !trimmed.is_empty() && trimmed != "Untitled Session" && trimmed != "New Session";
+                    return !trimmed.is_empty()
+                        && trimmed != "Untitled Session"
+                        && trimmed != "New Session";
                 }
             }
         }

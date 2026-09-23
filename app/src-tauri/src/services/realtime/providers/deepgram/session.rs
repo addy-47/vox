@@ -214,7 +214,10 @@ fn dispatch_deepgram_server_message(
                 }
             }
             "FunctionCallRequest" => {
-                log::info!("[DeepgramVoiceAgent] Received FunctionCallRequest frame: {:?}", val);
+                log::info!(
+                    "[DeepgramVoiceAgent] Received FunctionCallRequest frame: {:?}",
+                    val
+                );
                 let id = val
                     .get("function_call_id")
                     .and_then(|v| v.as_str())
@@ -229,7 +232,9 @@ fn dispatch_deepgram_server_message(
                     .get("input")
                     .cloned()
                     .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
-                if let Err(e) = provider_event_tx.try_send(RealtimeProviderEvent::ToolCall { id, name, args }) {
+                if let Err(e) =
+                    provider_event_tx.try_send(RealtimeProviderEvent::ToolCall { id, name, args })
+                {
                     log::warn!("[DeepgramVoiceAgent] Failed to forward ToolCall: {:?}", e);
                 }
             }

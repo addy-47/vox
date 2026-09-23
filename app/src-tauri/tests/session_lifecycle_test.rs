@@ -323,10 +323,10 @@ async fn test_session_continuation_seeds_harness() {
 async fn test_session_continuation_fallback_when_compaction_empty() {
     let test_timeout = Duration::from_secs(10);
     tokio::time::timeout(test_timeout, async {
-        let (app, state) = setup_test_context().await;
+        let (_paths_guard, _app, state) = common::harness::setup_isolated_app_state().await;
         let existing_sid = 999_888_777i64;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as i64;
 
@@ -382,7 +382,7 @@ async fn test_session_continuation_fallback_when_compaction_empty() {
             .await
             .expect("Failed to insert empty compaction");
 
-        let continuation = vox_lib::persistence::fetch_session_continuation(&db_conn, existing_sid)
+        let continuation = vox_lib::persistence::sessions::fetch_session_continuation(&db_conn, existing_sid)
             .await
             .expect("fetch_session_continuation must succeed");
 

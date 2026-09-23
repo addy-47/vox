@@ -29,7 +29,7 @@ export interface PersonalMemoryStagingCardProps {
   mode: StagingMode;
   onModeChange: (mode: StagingMode) => void;
   onSave: (content: string) => Promise<void>;
-  onRegenerateWithComments?: (comments: MemoryComment[]) => Promise<void>;
+  onRegenerateWithComments?: (comments: MemoryComment[], policy?: "pause_compaction" | "queue") => Promise<void>;
   comments?: MemoryComment[];
   onDeleteComment?: (id: string) => void;
   onUpdateComment?: (id: string, text: string) => void;
@@ -59,6 +59,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
     const [draft, setDraft] = useState("");
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [editingCommentText, setEditingCommentText] = useState("");
+    const [conflictInPlace, setConflictInPlace] = useState(false);
 
     const prevModeRef = useRef(mode);
 
@@ -68,6 +69,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
       const entered = prevModeRef.current !== mode;
       prevModeRef.current = mode;
       if (!entered) return;
+      setConflictInPlace(false);
       if (mode === "edit") setDraft(canonicalContent ?? "");
       else if (mode === "import") setDraft("");
     }, [mode]); // deliberately omit canonicalContent
@@ -77,9 +79,19 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
       await onSave(draft);
     };
 
-    const handleRegenerate = async () => {
+    const handleRegenerate = async (policy?: "pause_compaction" | "queue") => {
       if (!onRegenerateWithComments || comments.length === 0) return;
-      await onRegenerateWithComments(comments);
+      try {
+        await onRegenerateWithComments(comments, policy);
+        setConflictInPlace(false);
+      } catch (e: unknown) {
+        const msg = (e as { message?: string })?.message || String(e);
+        if (msg.includes("active compaction is in progress")) {
+          setConflictInPlace(true);
+        } else {
+          console.error("[PersonalMemoryStagingCard] Regenerate failed:", e);
+        }
+      }
     };
 
     return (
@@ -150,19 +162,49 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
               </span>
             ) : mode === "comment" ? (
               <>
-                <button
-                  type="button"
-                  onClick={handleRegenerate}
-                  disabled={isSaving || comments.length === 0}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.4)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
-                  title="Regenerate document applying all anchored comments"
-                >
-                  <Sparkles size={13} className={cn(isSaving && "animate-spin")} />
-                  {isSaving ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerate}
-                </button>
+                {conflictInPlace ? (
+                  <div className="flex items-center gap-1.5 p-0.5 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.3)] animate-in fade-in duration-150">
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => handleRegenerate("pause_compaction")}
+                      className="px-2 py-1 rounded-lg text-[10.5px] font-mono font-medium text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {isSaving ? "Pausing…" : "Pause & Run"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => handleRegenerate("queue")}
+                      className="px-2 py-1 rounded-lg text-[10.5px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {isSaving ? "Queueing…" : "Queue"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => setConflictInPlace(false)}
+                      className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleRegenerate()}
+                    disabled={isSaving || comments.length === 0}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.4)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
+                    title="Regenerate document applying all anchored comments"
+                  >
+                    <Sparkles size={13} className={cn(isSaving && "animate-spin")} />
+                    {isSaving ? MEMORY_COPY.regenerating : MEMORY_COPY.regenerate}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
+                    setConflictInPlace(false);
                     onClearComments?.();
                     onModeChange("idle");
                   }}
@@ -289,7 +331,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-[rgba(var(--accent),0.18)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.3)]">
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold  text-[rgb(var(--accent))] ]">
                           {MEMORY_COPY.linePrefix} {c.line}
                         </span>
                         <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] truncate max-w-[180px] sm:max-w-[240px]">

@@ -66,12 +66,10 @@ impl ProviderDriver for GeminiDriver {
                 Some(Message::Text(encode_activity_start().into()))
             }
             OutboundCommand::KeepAlive => None,
-            OutboundCommand::ToolResponse { id, name, result } => {
-                Some(Message::Text(encode_tool_response(&id, &name, &result).into()))
-            }
-            OutboundCommand::Text(text) => {
-                Some(Message::Text(encode_text_turn(&text).into()))
-            }
+            OutboundCommand::ToolResponse { id, name, result } => Some(Message::Text(
+                encode_tool_response(&id, &name, &result).into(),
+            )),
+            OutboundCommand::Text(text) => Some(Message::Text(encode_text_turn(&text).into())),
         }
     }
 
@@ -304,7 +302,9 @@ fn dispatch_server_message(
                     .cloned()
                     .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
                 log::info!("[GeminiLive] Forwarding ToolCall: name={} id={}", name, id);
-                if let Err(e) = event_tx.try_send(RealtimeProviderEvent::ToolCall { id, name, args }) {
+                if let Err(e) =
+                    event_tx.try_send(RealtimeProviderEvent::ToolCall { id, name, args })
+                {
                     log::warn!("[GeminiLive] ToolCall dropped: {:?}", e);
                 }
             }

@@ -382,7 +382,9 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     // Scenario 1: User clicks the currently active session -> no-op
     if (sessionId === s.activeSessionId || s.isRestoring) return;
     clearTranscript();
-    storeApi().setIsRestoring(true);
+    const api = storeApi();
+    api.setActiveSessionId(sessionId);
+    api.setIsRestoring(true);
     try {
       // Scenarios 2 & 3: continueSessionIpc handles clean disengagement (if active),
       // database continuation retrieval, and auto-engagement into Ready state

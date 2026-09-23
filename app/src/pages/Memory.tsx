@@ -16,9 +16,12 @@ import {
   FileText,
   MessageSquare,
   Hand,
+  X,
 } from "lucide-react";
 import {
   getPersonalMemory,
+  getPersonalMemoryVersions,
+  setActivePersonalMemoryVersion,
   savePersonalMemory,
   consolidatePersonalMemory,
   getActiveFacts,
@@ -29,6 +32,7 @@ import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
 import { EdgePanel, Tooltip, Markdown } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
+import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 import { cn } from "@/shared/lib/utils";
@@ -49,6 +53,7 @@ import {
   PersonalMemoryCommentPopover,
   type SelectionAnchor,
   PixelSynthesisCanvas,
+  PersonalMemoryVersionNav,
 } from "@/shared/components/memory";
 import { useMemoryStore } from "@/store/memoryStore";
 import Lenis from "lenis";
@@ -62,6 +67,10 @@ export const Memory: React.FC = memo(() => {
 
   // Data state
   const [personalMemory, setPersonalMemory] = useState<PersonalMemoryRecord | null>(null);
+  const [versions, setVersions] = useState<PersonalMemoryRecord[]>([]);
+  const [displayedRecord, setDisplayedRecord] = useState<PersonalMemoryRecord | null>(null);
+  const [isRestoringVersion, setIsRestoringVersion] = useState(false);
+  const [conflictInPlace, setConflictInPlace] = useState(false);
   const [facts, setFacts] = useState<FactRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -73,6 +82,7 @@ export const Memory: React.FC = memo(() => {
   const [selectedFact, setSelectedFact] = useState<FactRecord | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const { isPanelOpen, closePanel, togglePanel } = usePanelStateContext();
+  const { isProfilerOpen } = useProfilerDrawer();
   const sessionRailOpen = isPanelOpen("sessions");
   const setSessionRailOpen = (v: boolean) => {
     if (!v) closePanel("sessions");
@@ -92,6 +102,7 @@ export const Memory: React.FC = memo(() => {
 
   // Drawer & Staging mode state
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const isGraphPaused = drawerOpen || isProfilerOpen || isPanelOpen("help") || isPanelOpen("notifications");
 
   const drawerHandlers = useMemo(() => ({
     open: () => setDrawerOpen(true),
@@ -154,11 +165,14 @@ export const Memory: React.FC = memo(() => {
     if (!isSilent) setLoading(true);
     setRefreshing(true);
     try {
-      const [mem, allFacts] = await Promise.all([
+      const [mem, allFacts, allVersions] = await Promise.all([
         getPersonalMemory(),
         getActiveFacts(),
+        getPersonalMemoryVersions(),
       ]);
       setPersonalMemory(mem);
+      setDisplayedRecord(mem);
+      setVersions(allVersions);
       setFacts(allFacts);
     } catch (e) {
       console.error("[Memory] Failed to load data:", e);
@@ -271,6 +285,29 @@ export const Memory: React.FC = memo(() => {
   }, []);
 
   // ── Drawer Handlers ────────────────────────────────────────────────────────
+  const handleSelectVersion = useCallback((rec: PersonalMemoryRecord) => {
+    setDisplayedRecord(rec);
+  }, []);
+
+  const handleRestoreActive = useCallback(
+    async (version: number) => {
+      setIsRestoringVersion(true);
+      try {
+        const restored = await setActivePersonalMemoryVersion(version);
+        setPersonalMemory(restored);
+        setDisplayedRecord(restored);
+        const allVersions = await getPersonalMemoryVersions();
+        setVersions(allVersions);
+        await refresh(true);
+      } catch (e) {
+        console.error("[Memory] Restore version failed:", e);
+      } finally {
+        setIsRestoringVersion(false);
+      }
+    },
+    [refresh]
+  );
+
   const handleSaveStaging = useCallback(
     async (content: string) => {
       if (!personalMemory) return;
@@ -284,6 +321,9 @@ export const Memory: React.FC = memo(() => {
         // 2. Wait until overlay is opaque (250ms) before swapping document content
         await new Promise((resolve) => setTimeout(resolve, 250));
         setPersonalMemory(updated);
+        setDisplayedRecord(updated);
+        const allVersions = await getPersonalMemoryVersions();
+        setVersions(allVersions);
 
         // 3. Reset right card staging editor
         setTimeout(() => {
@@ -306,32 +346,49 @@ export const Memory: React.FC = memo(() => {
     [personalMemory]
   );
 
-  const handleConsolidateNow = useCallback(async () => {
-    if (consolidating || unconsolidatedIdentityCount === 0) return;
-    setConsolidating(true);
-    // 1. Smoothly fade overlay in over old content
-    setLeftFlash(true);
+  const handleConsolidateNow = useCallback(
+    async (conflictPolicy?: "prompt" | "pause_compaction" | "queue") => {
+      if (consolidating || unconsolidatedIdentityCount === 0) return;
+      setConsolidating(true);
+      // 1. Smoothly fade overlay in over old content
+      setLeftFlash(true);
 
-    try {
-      const updated = await consolidatePersonalMemory();
-      // 2. Wait until overlay is opaque before swapping document content
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      setPersonalMemory(updated);
-      await refresh(true);
-      setIsCommitting(true);
+      try {
+        const updated = await consolidatePersonalMemory(
+          undefined,
+          undefined,
+          conflictPolicy ?? "prompt"
+        );
+        // 2. Wait until overlay is opaque before swapping document content
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        setPersonalMemory(updated);
+        setDisplayedRecord(updated);
+        const allVersions = await getPersonalMemoryVersions();
+        setVersions(allVersions);
+        await refresh(true);
+        setIsCommitting(true);
+        setConflictInPlace(false);
 
-      // 3. Smoothly fade overlay out to reveal new content
-      setTimeout(() => {
-        setIsCommitting(false);
-        setLeftFlash(false);
-      }, 900);
-    } catch (e) {
-      console.error("[Memory] Consolidate failed:", e);
-      setLeftFlash(false);
-    } finally {
-      setConsolidating(false);
-    }
-  }, [consolidating, unconsolidatedIdentityCount, refresh]);
+        // 3. Smoothly fade overlay out to reveal new content
+        setTimeout(() => {
+          setIsCommitting(false);
+          setLeftFlash(false);
+        }, 900);
+      } catch (e: unknown) {
+        const msg = (e as { message?: string })?.message || String(e);
+        if (msg.includes("active compaction is in progress")) {
+          setLeftFlash(false);
+          setConflictInPlace(true);
+        } else {
+          console.error("[Memory] Consolidate failed:", e);
+          setLeftFlash(false);
+        }
+      } finally {
+        setConsolidating(false);
+      }
+    },
+    [consolidating, unconsolidatedIdentityCount, refresh]
+  );
 
   const handleCopyDoc = useCallback(async () => {
     if (!personalMemory?.content) return;
@@ -454,7 +511,7 @@ export const Memory: React.FC = memo(() => {
   }, [storeClearComments]);
 
   const handleRegenerateWithComments = useCallback(
-    async (commentsToApply: MemoryComment[]) => {
+    async (commentsToApply: MemoryComment[], policy?: "pause_compaction" | "queue") => {
       if (!commentsToApply.length) return;
       setSaving(true);
       setLeftFlash(true);
@@ -462,8 +519,15 @@ export const Memory: React.FC = memo(() => {
         const formattedComments = commentsToApply.map(
           (c) => `Line ${c.line} ("${c.quotedText}"): ${c.text}`
         );
-        const updated = await consolidatePersonalMemory(formattedComments);
+        const updated = await consolidatePersonalMemory(
+          formattedComments,
+          undefined,
+          policy ?? "prompt"
+        );
         setPersonalMemory(updated);
+        setDisplayedRecord(updated);
+        const allVersions = await getPersonalMemoryVersions();
+        setVersions(allVersions);
         storeClearComments();
         setIsCommitting(true);
         setTimeout(() => {
@@ -475,13 +539,13 @@ export const Memory: React.FC = memo(() => {
         }, 700);
         await refresh(true);
       } catch (e) {
-        console.error("[Memory] Regenerate with comments failed:", e);
         setLeftFlash(false);
+        throw e;
       } finally {
         setSaving(false);
       }
     },
-    [refresh]
+    [refresh, storeClearComments]
   );
 
   const handleRecenter = useCallback(() => graphRef.current?.recenter(), []);
@@ -658,7 +722,7 @@ export const Memory: React.FC = memo(() => {
             onSelectNode={handleSelectNode}
             onCoreClick={handleCoreClick}
             selectModeEnabled={selectModeEnabled}
-            paused={drawerOpen}
+            paused={isGraphPaused}
           />
         </ErrorBoundary>
       )}
@@ -725,34 +789,63 @@ export const Memory: React.FC = memo(() => {
         }
         headerActions={
           <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={handleConsolidateNow}
-              disabled={consolidating || unconsolidatedIdentityCount === 0}
-              className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm",
-                consolidating
-                  ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.5)] text-[rgb(var(--accent))]"
-                  : unconsolidatedIdentityCount > 0
-                  ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] cursor-pointer"
-                  : "bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]/40"
-              )}
-            >
-              <Zap
-                size={12}
-                className={cn(consolidating && "animate-pulse text-[rgb(var(--accent))]")}
-              />
-              <span>
-                {consolidating
-                  ? MEMORY_COPY.consolidating
-                  : MEMORY_COPY.consolidate}
-              </span>
-              {unconsolidatedIdentityCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-medium text-[rgb(var(--accent))]">
-                  {unconsolidatedIdentityCount}
+            {conflictInPlace ? (
+              <div className="flex items-center gap-1.5 p-0.5 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.3)] animate-in fade-in duration-150">
+                <button
+                  type="button"
+                  disabled={consolidating}
+                  onClick={() => handleConsolidateNow("pause_compaction")}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-mono font-medium text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.12)] transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {consolidating ? "Pausing…" : "Pause & Run"}
+                </button>
+                <button
+                  type="button"
+                  disabled={consolidating}
+                  onClick={() => handleConsolidateNow("queue")}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {consolidating ? "Queueing…" : "Queue"}
+                </button>
+                <button
+                  type="button"
+                  disabled={consolidating}
+                  onClick={() => setConflictInPlace(false)}
+                  className="p-1 rounded-lg text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.06)] transition-colors cursor-pointer"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleConsolidateNow()}
+                disabled={consolidating || unconsolidatedIdentityCount === 0}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm",
+                  consolidating
+                    ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.5)] text-[rgb(var(--accent))]"
+                    : unconsolidatedIdentityCount > 0
+                    ? "bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.2)] cursor-pointer"
+                    : "bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.12)] text-[rgb(var(--foreground-muted))]/40"
+                )}
+              >
+                <Zap
+                  size={12}
+                  className={cn(consolidating && "animate-pulse text-[rgb(var(--accent))]")}
+                />
+                <span>
+                  {consolidating
+                    ? MEMORY_COPY.consolidating
+                    : MEMORY_COPY.consolidate}
                 </span>
-              )}
-            </button>
+                {unconsolidatedIdentityCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-medium text-[rgb(var(--accent))]">
+                    {unconsolidatedIdentityCount}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         }
         bodyClassName="px-4 sm:px-6 py-4 overflow-y-auto lg:overflow-hidden h-full flex flex-col min-h-0"
@@ -806,16 +899,19 @@ export const Memory: React.FC = memo(() => {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {personalMemory && (
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-medium tracking-wide bg-[rgba(var(--accent),0.10)] border border-[rgba(var(--accent),0.22)] text-[rgb(var(--accent))]">
-                        {MEMORY_COPY.version} {personalMemory.version}
-                      </span>
-                    )}
+                    <PersonalMemoryVersionNav
+                      versions={versions}
+                      activeVersionRecord={personalMemory}
+                      displayedRecord={displayedRecord}
+                      onSelectVersion={handleSelectVersion}
+                      onCommitActiveVersion={handleRestoreActive}
+                      isRestoring={isRestoringVersion}
+                    />
 
                     <button
                       type="button"
                       onClick={handleCopyDoc}
-                      disabled={!personalMemory?.content}
+                      disabled={!displayedRecord?.content}
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
                       title="Copy personal memory markdown to clipboard"
                     >
@@ -872,9 +968,9 @@ export const Memory: React.FC = memo(() => {
                   ))}
 
                   {drawerBodyReady ? (
-                    personalMemory?.content ? (
+                    displayedRecord?.content ? (
                       <Markdown
-                        content={personalMemory.content}
+                        content={displayedRecord.content}
                         variant="document"
                         autoHeadings
                       />
@@ -893,7 +989,7 @@ export const Memory: React.FC = memo(() => {
 
               {/* Right Column: Dynamic Workspace / Staging Slate */}
               <PersonalMemoryStagingCard
-                canonicalContent={personalMemory?.content ?? ""}
+                canonicalContent={displayedRecord?.content ?? ""}
                 mode={stagingMode}
                 onModeChange={setStagingMode}
                 onSave={handleSaveStaging}

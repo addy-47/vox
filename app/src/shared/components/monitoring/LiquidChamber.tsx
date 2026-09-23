@@ -281,14 +281,6 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
       ctx.fillStyle = innerSpec;
       ctx.fillRect(0, 0, width, height);
 
-      // Top Glass Rim Curve
-      ctx.beginPath();
-      ctx.ellipse(width / 2, 20, width * 0.44, 10, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = light
-        ? "rgba(15, 23, 42, 0.08)"
-        : "rgba(255, 255, 255, 0.22)";
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
 
       // Bottom Base Glow
       const baseGlow = ctx.createRadialGradient(
@@ -374,25 +366,17 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
       <div className="relative z-10 w-full flex items-center justify-between px-2">
         {/* Top-Left CPU Indicator */}
         <div
-          className="flex items-center gap-2 text-[11px] font-mono font-bold select-none drop-shadow-xs"
+          className="text-[11px] font-mono font-bold select-none drop-shadow-xs"
           style={{ color: `rgb(${colors.complementary})` }}
         >
-          <span
-            style={{ backgroundColor: `rgb(${colors.complementary})` }}
-            className="w-2 h-2 rounded-full inline-block shadow-[0_0_8px_currentColor]"
-          />
           <span>CPU {cpuPct.toFixed(1)}%</span>
         </div>
 
         {/* Top-Right RAM Indicator */}
         <div
-          className="flex items-center gap-2 text-[11px] font-mono font-bold select-none drop-shadow-xs"
+          className="text-[11px] font-mono font-bold select-none drop-shadow-xs"
           style={{ color: `rgb(${colors.primary})` }}
         >
-          <span
-            style={{ backgroundColor: `rgb(${colors.primary})` }}
-            className="w-2 h-2 rounded-full inline-block shadow-[0_0_8px_currentColor]"
-          />
           <span>RAM {ramGb} GB</span>
         </div>
       </div>

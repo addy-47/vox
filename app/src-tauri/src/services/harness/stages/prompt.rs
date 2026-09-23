@@ -59,7 +59,8 @@ impl PromptBuilderStage {
         if let Some(ref mem) = self.personal_memory {
             let trimmed_mem = mem.trim();
             if !trimmed_mem.is_empty() {
-                let mem_budget = ((self.max_context_tokens as f32) * self.max_context_share) as usize;
+                let mem_budget =
+                    ((self.max_context_tokens as f32) * self.max_context_share) as usize;
                 let bounded_memory = self.bound_personal_memory(trimmed_mem, mem_budget);
                 sections.push(PromptTag::UserIdentity.wrap(&format!("\n{}\n", bounded_memory)));
                 has_memory = true;

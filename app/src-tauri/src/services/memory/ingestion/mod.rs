@@ -9,6 +9,7 @@ pub use stage1_dedup::{jaccard_similarity, run_stage1_exact_dedup, Stage1Summary
 pub use stage2_embed::{
     run_stage2_cosine_dedup, run_stage2_cosine_dedup_with_embedder, Stage2Summary,
 };
+
 use crate::persistence::queue::reconcile_crashed_queue_on_boot as persistence_reconcile;
 
 pub const JACCARD_EXACT_MATCH_THRESHOLD: f32 = 1.0;
