@@ -30,26 +30,36 @@ const INITIAL_VISIBLE_TURNS = 20;
 
 const TurnBubble = memo(({ turn }: { turn: TurnRow }) => {
   return (
-    <div className="space-y-4 [contain:content]">
-      {/* User bubble */}
+    <div className="space-y-2 [contain:content] w-full">
+      {/* User message */}
       <div className="flex flex-col items-end w-full">
-        <span className="text-[11px] font-sans font-bold text-[rgb(var(--foreground-muted))] uppercase tracking-widest mb-1 mr-2">
-          {HISTORY_COPY.userLabel}
-        </span>
-        <div className="glass-card rounded-2xl rounded-tr-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words select-text">
-          <Markdown content={turn.user_text} variant="bubble" />
+        <div className="max-w-[85%] sm:max-w-[75%] w-fit rounded-2xl rounded-br-xs px-4 py-2.5 bg-[rgba(var(--accent),0.10)] border border-[rgba(var(--accent),0.22)] shadow-xs select-text">
+          <div className="text-[13.5px] text-[rgb(var(--foreground))] leading-relaxed break-words font-medium">
+            <Markdown content={turn.user_text} variant="bubble" />
+          </div>
+          <div className="flex justify-end items-center mt-1 select-none">
+            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 font-medium">
+              {formatTime(turn.created_at)}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Assistant bubble */}
+      {/* Assistant message */}
       <div className="flex flex-col items-start w-full">
-        <span className="text-[11px] font-sans font-bold text-[rgb(var(--accent))] uppercase tracking-widest mb-1 ml-2">
-          {HISTORY_COPY.voxLabel}
-        </span>
-        <div className="glass-card rounded-2xl rounded-tl-none px-4 py-2.5 max-w-[75%] text-[14px] text-[rgb(var(--foreground))] leading-relaxed break-words select-text border border-[rgba(var(--accent),0.15)]">
-          <Markdown content={turn.assistant_text} variant="bubble" />
-          <div className="flex gap-3 mt-2 border-t border-[rgba(var(--accent),0.1)] pt-1.5 shrink-0 text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
-            <span className="ml-auto text-[rgb(var(--foreground-muted))] font-medium">
+        <div className="flex items-center gap-1.5 mb-1 ml-1 text-[11px] font-mono font-semibold text-[rgb(var(--accent))] select-none">
+          <Sparkles size={11} className="text-[rgb(var(--accent))]" />
+          <span>{HISTORY_COPY.voxLabel.toLowerCase()}</span>
+        </div>
+        <div className="max-w-[90%] sm:max-w-[80%] w-fit rounded-2xl rounded-bl-xs px-4 py-3 bg-[rgb(var(--card))]/75 backdrop-blur-md border border-[rgba(var(--foreground),0.08)] shadow-xs select-text">
+          <div className="text-[13.5px] text-[rgb(var(--foreground))] leading-relaxed break-words font-normal">
+            <Markdown content={turn.assistant_text} variant="bubble" />
+          </div>
+          <div className="flex items-center justify-between gap-4 mt-2 select-none pt-0.5">
+            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/40">
+              #{turn.turn_id}
+            </span>
+            <span className="text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 font-medium ml-auto">
               {formatTime(turn.created_at)}
             </span>
           </div>
@@ -204,7 +214,7 @@ export const DetailPanel = memo(
             className="py-12 border-0 bg-transparent"
           />
         ) : (
-          <div className="space-y-6 pb-4">
+          <div className="w-full space-y-6 pb-6">
             {visibleTurns.map((turn) => (
               <TurnBubble key={turn.id} turn={turn} />
             ))}

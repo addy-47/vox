@@ -53,13 +53,13 @@ use crate::{
             mark_notifications_read,
         },
         persistence::{
-            continue_session, create_session, delete_session, get_sessions, get_transcript_history,
-            get_turns, update_session,
+            delete_session, get_sessions, get_transcript_history, get_turns, update_session,
         },
         pipeline::{
-            end_session, launch_engine, pause_session, ptt_cancel, ptt_start, ptt_stop,
-            restart_engine, resume_session, set_mic_muted, set_playback_muted,
-            set_session_private_mode, start_session, stop_engine, submit_text_input,
+            continue_session, create_session, end_session, launch_engine, pause_session,
+            ptt_cancel, ptt_start, ptt_stop, restart_engine, resume_session, set_mic_muted,
+            set_playback_muted, set_session_private_mode, start_session, stop_engine,
+            submit_text_input,
         },
         projects::{create_project, delete_project, get_projects, rename_project},
         settings::{

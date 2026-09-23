@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { HardDrive, Cpu, Mic, ShieldCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { getRuntimeReport, type RuntimeReport } from '@/services/modelService';
+import { getRuntimeReport, type RuntimeReport } from '@/services/setupService';
 
 import { WizardHeader } from '../components/WizardHeader';
 import { WizardFooter } from '../components/WizardFooter';

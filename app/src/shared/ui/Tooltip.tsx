@@ -134,7 +134,11 @@ export const Tooltip: React.FC<TooltipProps> = React.memo(({
               width={10}
               height={5}
             />
-            <span className="truncate">{label}</span>
+            {typeof label === "string" ? (
+              <span className="truncate flex-1 min-w-0">{label}</span>
+            ) : (
+              <div className="flex-1 min-w-0 w-full">{label}</div>
+            )}
             {resolvedShortcut && (
               <kbd className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold tracking-tight bg-white/10 text-[rgb(var(--foreground-muted))] border border-white/15 shadow-xs shrink-0">
                 {resolvedShortcut}

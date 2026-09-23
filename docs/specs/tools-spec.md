@@ -150,8 +150,8 @@ The following capabilities are formally architected into the data contracts but 
     - `spoken_response` (String, required): Your natural, concise conversational spoken response to the user's message.
     - `title` (String, required): A concise 3 to 5 word title summarizing the user's intent.
   - **Behavioral Invariants**:
-    1. **Turn 1 Injection Gate**: Injected in the model request strictly on the first turn if title is unassigned.
-    2. **Turn 2+ Suppression**: Permanently omitted from subsequent turn requests.
+    1. **Title-Unset Injection Gate**: Offered in the model request whenever the session title is unset or unassigned (`title_is_unset == true`), regardless of turn index.
+    2. **Post-Title Suppression**: Permanently omitted from candidate tool lists once a non-placeholder title is assigned to the session.
     3. **Single-Pass Audio Delivery**: Dispatches `spoken_response` directly to local speech synthesis as `AudioIntent::TurnResponse`.
 - **Realtime Specification (`set_session_title`)**:
   - **Classification**: Action.

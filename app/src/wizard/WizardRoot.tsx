@@ -8,7 +8,7 @@ import { ModelSetupStep } from "./steps/ModelSetupStep";
 import { AudioSetupStep } from "./steps/AudioSetupStep";
 import { LiveTestStep } from "./steps/LiveTestStep";
 import { CompletedStep } from "./steps/CompletedStep";
-import { revealWizard, fetchManifest } from '@/services/modelService';
+import { revealWizard, fetchManifest } from '@/services/setupService';
 
 
 import { CheckCircle2 } from 'lucide-react';

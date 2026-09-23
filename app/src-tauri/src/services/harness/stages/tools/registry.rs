@@ -59,12 +59,10 @@ impl ToolRegistry {
             if !tool.domain().matches(filter.mode) {
                 continue;
             }
-            if name == "respond_and_set_title" && !(filter.is_first_turn && filter.title_is_unset) {
+            if name == "respond_and_set_title" && !filter.title_is_unset {
                 log::info!(
-                    "[Harness::Tools] '{}' excluded: requires first turn with unset title (first_turn={}, title_unset={})",
-                    name,
-                    filter.is_first_turn,
-                    filter.title_is_unset
+                    "[Harness::Tools] '{}' excluded: title already set",
+                    name
                 );
                 continue;
             }

@@ -1,5 +1,5 @@
 import { memo, useState, useEffect, useCallback } from "react";
-import { checkModelExists } from "@/services/modelService";
+import { checkModelExists } from "@/services/setupService";
 import { useSettings } from "@/shared/hooks/useSettings";
 import { Brain, Sparkles, Volume2, AlertTriangle, AlertCircle } from "lucide-react";
 import { MODEL_HUB_COPY } from "@/data/settingsCopy";

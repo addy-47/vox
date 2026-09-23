@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { getOnboardingStatus } from "@/services/modelService";
+import { getOnboardingStatus } from "@/services/setupService";
 import { ResponsiveLayout } from "@/layout/ResponsiveLayout";
 import { WizardRoot } from "@/wizard/WizardRoot";
 import { TitleBar } from "@/layout/TitleBar";

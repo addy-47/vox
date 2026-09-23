@@ -1,5 +1,5 @@
 use crate::services::{
-    harness::{ChatMessage, PromptTag},
+    harness::{ChatMessage, PromptTag, Role},
     llm::{
         CanonicalToolDefinition, ConversationInput, GenerationOptions, GenerationPurpose,
         GenerationRequest, OutputConstraint,
@@ -12,6 +12,7 @@ use crate::services::{
 pub struct PromptBuilderStage {
     base_system_prompt: String,
     personal_memory: Option<String>,
+    session_context: Option<String>,
     max_context_tokens: usize,
     max_context_share: f32,
 }
@@ -26,6 +27,7 @@ impl PromptBuilderStage {
         Self {
             base_system_prompt,
             personal_memory: None,
+            session_context: None,
             max_context_tokens,
             max_context_share,
         }
@@ -36,23 +38,74 @@ impl PromptBuilderStage {
         self.personal_memory = memory;
     }
 
-    /// Assembles the finalized system prompt with grounded `<user_identity>` within budget ceiling.
-    pub fn assemble(&self) -> String {
-        let Some(ref mem) = self.personal_memory else {
-            return self.base_system_prompt.clone();
-        };
+    /// Sets or updates the active session continuation context summary.
+    pub fn set_session_context(&mut self, context: Option<String>) {
+        self.session_context = context;
+    }
 
-        let trimmed_mem = mem.trim();
-        if trimmed_mem.is_empty() {
-            return self.base_system_prompt.clone();
+    /// Assembles the finalized system prompt with grounded `<user_identity>` and `<session_context>` without tools.
+    pub fn assemble(&self) -> String {
+        self.assemble_with_tools(None)
+    }
+
+    /// Assembles the finalized system prompt with grounded identity, session context, and active tool directives.
+    pub fn assemble_with_tools(&self, active_tools: Option<&[CanonicalToolDefinition]>) -> String {
+        let mut sections = Vec::new();
+        sections.push(self.base_system_prompt.trim().to_string());
+
+        let mut has_memory = false;
+        let mut has_session_context = false;
+
+        if let Some(ref mem) = self.personal_memory {
+            let trimmed_mem = mem.trim();
+            if !trimmed_mem.is_empty() {
+                let mem_budget = ((self.max_context_tokens as f32) * self.max_context_share) as usize;
+                let bounded_memory = self.bound_personal_memory(trimmed_mem, mem_budget);
+                sections.push(PromptTag::UserIdentity.wrap(&format!("\n{}\n", bounded_memory)));
+                has_memory = true;
+            }
         }
 
-        let mem_budget = ((self.max_context_tokens as f32) * self.max_context_share) as usize;
+        if let Some(ref ctx) = self.session_context {
+            let trimmed_ctx = ctx.trim();
+            if !trimmed_ctx.is_empty() {
+                sections.push(PromptTag::SessionContext.wrap(&format!("\n{}\n", trimmed_ctx)));
+                has_session_context = true;
+            }
+        }
 
-        let bounded_memory = self.bound_personal_memory(trimmed_mem, mem_budget);
-        let wrapped_identity = PromptTag::UserIdentity.wrap(&bounded_memory);
+        // Build [Context Rules] with granular memory guards, session directives, and dynamic tool instructions
+        let mut rules = Vec::new();
 
-        format!("{}\n\n{}", self.base_system_prompt.trim(), wrapped_identity)
+        if has_memory {
+            rules.push("- The <user_identity> block is passive background reference. Do not recite, summarize, or blurt out its contents unprompted.");
+            rules.push("- On greetings or small talk (e.g., 'hi', 'hello'), respond with a natural, friendly greeting without referencing memory facts.");
+            rules.push("- Only draw upon <user_identity> facts when directly relevant to answering the user's explicit question.");
+        }
+
+        if has_session_context {
+            rules.push("- The <session_context> summarizes prior discussion in this ongoing session. Treat it as established conversational context.");
+        }
+
+        if let Some(tools) = active_tools {
+            for tool in tools {
+                match tool.name.as_str() {
+                    "respond_and_set_title" => {
+                        rules.push("- Call respond_and_set_title with a concise session title (under 5 words) while answering the user's query.");
+                    }
+                    "search_memory" => {
+                        rules.push("- When asked about past projects, notes, or earlier factual details, call search_memory with a brief spoken filler.");
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if !rules.is_empty() {
+            sections.push(format!("[Context Rules]\n{}", rules.join("\n")));
+        }
+
+        sections.join("\n\n")
     }
 
     /// Enforces the memory budget ceiling on the raw personal memory document.
@@ -86,6 +139,12 @@ impl PromptBuilderStage {
         tools: Option<Vec<CanonicalToolDefinition>>,
     ) -> GenerationRequest {
         let mut messages = history.to_vec();
+        let assembled_prompt = self.assemble_with_tools(tools.as_deref());
+        if !messages.is_empty() && messages[0].role == Role::System {
+            messages[0].content = assembled_prompt;
+        } else {
+            messages.insert(0, ChatMessage::new(Role::System, assembled_prompt));
+        }
         messages.extend_from_slice(scratchpad);
 
         GenerationRequest {

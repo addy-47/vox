@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import { ErrorBoundary } from "@/shared/components/common";
 import { cn } from "@/shared/lib/utils";
 import { PROFILER_TABS, type ProfilerTabItem } from "@/data/profilerCopy";
-import type { ProfilerSnapshot, JSHeapSample, DOMSample, CSSIndicatorsSample } from "@/services/memoryProfilerService";
+import type { ProfilerSnapshot, JSHeapSample, DOMSample, CSSIndicatorsSample } from "@/services/monitoringService";
 import type { PageMemoryRecord } from "@/shared/hooks/useMemoryProfiler";
 import type { ComponentTraceData } from "@/shared/context/MemoryProfilerContext";
 import { OverviewTab } from "./OverviewTab";

@@ -1,6 +1,6 @@
 import React from "react";
 import { CheckCircle2, AlertTriangle, Sparkles, HelpCircle } from "lucide-react";
-import type { AccuracyLevel } from "@/services/memoryProfilerService";
+import type { AccuracyLevel } from "@/services/monitoringService";
 import { PROFILER_COPY } from "@/data/profilerCopy";
 
 export const AccuracyBadge: React.FC<{ type: AccuracyLevel }> = ({ type }) => {

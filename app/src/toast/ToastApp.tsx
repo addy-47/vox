@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { AlertTriangle, AlertCircle, Info, X } from "lucide-react";
 import { onShowToast, type ToastPayload } from "@/services/eventsService";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
-import { manageToastWindow, getLastToast } from "@/services/toastService";
+import { manageToastWindow, getLastToast } from "@/services/windowService";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const SEVERITY_CONFIG = {

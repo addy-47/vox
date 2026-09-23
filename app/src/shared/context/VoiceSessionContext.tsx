@@ -12,18 +12,14 @@ import {
   pttStart,
   pttStop,
   pttCancel,
-} from "@/services/sessionService";
-import {
   submitTextInput,
   setPlaybackMuted,
   setMicMuted,
   setSessionPrivateMode,
   getRuntimeSnapshot,
-} from "@/services/pipelineService";
-import {
   continueSession as continueSessionIpc,
   createSession as createSessionIpc,
-} from "@/services/historyService";
+} from "@/services/pipelineService";
 import { getSettings } from "@/services/settingsService";
 import { SESSION_COPY } from "@/data/sessionCopy";
 import type { InteractionState, StateChangedPayload } from "@/services/eventsService";
@@ -329,12 +325,22 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     async (text: string) => {
       const trimmed = text.trim();
       if (!trimmed) return;
-      if (!isEngaged) {
-        await engage();
+      try {
+        if (storeApi().interactionState === "Idle") {
+          await engage();
+        }
+        await submitTextInput(trimmed);
+      } catch (err: unknown) {
+        // Defensive re-engagement: if backend was unexpectedly idle, re-engage and retry once
+        try {
+          await engage();
+          await submitTextInput(trimmed);
+        } catch (retryErr: unknown) {
+          console.error("submitText failed after re-engagement retry:", retryErr);
+        }
       }
-      await submitTextInput(trimmed);
     },
-    [isEngaged, engage],
+    [engage],
   );
 
   const toggleTemporarySession = useCallback(async () => {
@@ -373,11 +379,14 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
 
   const selectSession = useCallback(async (sessionId: number) => {
     const s = storeApi();
+    // Scenario 1: User clicks the currently active session -> no-op
     if (sessionId === s.activeSessionId || s.isRestoring) return;
     clearTranscript();
     storeApi().setIsRestoring(true);
     try {
-      const result = await continueSessionIpc(sessionId);
+      // Scenarios 2 & 3: continueSessionIpc handles clean disengagement (if active),
+      // database continuation retrieval, and auto-engagement into Ready state
+      const result = await continueSessionIpc(sessionId, (state) => storeApi().setInteractionState(state));
       const history: DialogueTurn[] = result.turns.map((t) => ({
         user: t.user_text,
         assistant: t.assistant_text,
@@ -407,7 +416,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
     api.setActiveSessionId(null);
     api.setRestoreError(null);
     try {
-      await createSessionIpc(projectId);
+      await createSessionIpc(projectId, (state) => storeApi().setInteractionState(state));
     } catch (err: unknown) {
       storeApi().setRestoreError(err instanceof Error ? err.message : SESSION_COPY.restoreFailedFallback);
     }

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Minus, Square, X, ArrowUpCircle, Copy, Check } from "lucide-react";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { useNavigate } from "react-router-dom";
-import { checkForUpdates, checkForModelUpdates } from "@/services/modelService";
+import { checkForUpdates, checkForModelUpdates } from "@/services/setupService";
 import { copyToClipboard } from "@/shared/lib/clipboard";
 
 export const TitleBar: React.FC = () => {

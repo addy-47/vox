@@ -40,22 +40,8 @@ Manages workspace session grouping folders.
 
 ---
 
-### 2.2 History & Sessions Domain (`ipc/history.rs`) — [ALIGNED]
-Manages conversational sessions, turns, and session continuation.
-
-#### `create_session(projectId: Option<String>)` — [ALIGNED]
-- **Purpose**: Prepares UI and backend state for a fresh session (triggered by user clicking "+ New Session").
-- **Behavior**: If an active voice session is running (`InteractionState != Idle`), disengages the audio pipeline cleanly (`VoxEvent::EndSession`). Clears `conversation_id` to 0. While `Idle`, **zero harness instances exist in memory**. When the user subsequently engages, frontend passes `sessionId: null` to `start_session(None)`, which mints the epoch monotonic session ID and dispatches `SessionStarted`. If a session ends with zero spoken turns, it is automatically swept by `cleanup_zero_turn_sessions`.
-
-#### `continue_session(sessionId: i64)` — [ALIGNED]
-- **Purpose**: Fetches historical session turns and metadata to display a past session in the conversation view.
-- **Behavior**: 
-  1. Queries session metadata and turns from Turso database via `persistence::sessions`.
-  2. If an active voice session is currently running, disengages it cleanly.
-  3. Sets `current_session_id = sessionId`.
-  4. Returns `{ session, turns }` to the frontend.
-  5. **Zero Idle Harness Footprint**: Does NOT instantiate or seed working memory while `Idle`. When the user subsequently clicks "Engage", the frontend passes `sessionId` to `start_session(Some(sessionId))`, which boots the `HarnessSession` and seeds continuation context.
-  6. Does not emit echo events.
+### 2.2 History & Persistence Domain (`ipc/persistence.rs`) — [ALIGNED]
+Manages conversational history queries, turn records, and session metadata.
 
 #### `get_sessions(projectId: Option<String>)`
 - **Purpose**: Returns sessions for a specific project or all active sessions.
@@ -152,8 +138,6 @@ pub struct NotificationFilter {
   - `pipeline_error`: Dispatches error recovery / retry handler.
   Returns `Ok(())` on successful task launch. Does not mutate the notification's attention status (`unread`/`read`), but resolves task status in-place.
 
-
-
 ---
 
 ### 2.5 Pipeline & Audio Domain (`ipc/pipeline.rs` & `ipc/audio.rs`)
@@ -172,6 +156,23 @@ Controls the voice interaction lifecycle and hardware devices.
   - If `sessionId == Some(id)`: Mounts the `HarnessSession` continuing session `id`, loading continuation turns and the latest summary from Turso.
   - If `sessionId == None`: Mounts a fresh `HarnessSession` (minted epoch timestamp `conv_id`, with `SessionStarted` persisted on boot; zero-turn sessions swept on clean exit or restart).
   - Starts audio engine and dispatches `VoxEvent::SessionStart { owner: Assistant, session_id }` to `event_tx`.
+
+#### `create_session(projectId: Option<String>)` — [ALIGNED]
+- **Purpose**: Prepares UI and backend state for a fresh session (triggered by user clicking "+ New Session").
+- **Behavior & Scenario Flow**:
+  - **Scenario 1 (User is Idle)**: Clears `conversation_id` to 0 and clears `pipeline_accumulator`. While `Idle`, zero harness instances exist in memory. Upon subsequent voice or text interaction, `start_session(None)` mints an epoch monotonic session ID and dispatches `SessionStarted`.
+  - **Scenario 2 (User is Not Idle)**: The frontend or `createSession` helper disengages the running session first (`disengageSession` / `endSession`), cleanly transitioning to `Idle`, recording `SessionEnded` in persistence, and resetting working memory for the fresh session.
+
+#### `continue_session(sessionId: i64)` — [ALIGNED]
+- **Purpose**: Fetches historical session turns and metadata to restore a past session into active working memory.
+- **Behavior & Scenario Flow**:
+  1. Sets `state.conversation_id = sessionId`.
+  2. Queries session metadata (`SessionRow`) and all historical turns (`TurnRow[]`) from Turso SQLite (`~/.vox/vox.db`).
+  3. Returns `{ session, turns }` to the frontend.
+  - **Orchestration Contract (`selectSession` in Frontend)**:
+    - **Scenario 1 (Currently Active Session)**: If `sessionId === activeSessionId`, immediate no-op.
+    - **Scenario 2 (User is Idle)**: Fetches historical context (`continueSession`), populates `dialogueHistory`, and immediately auto-engages (`engageSession(sessionId)`) into `Ready` state so the user can speak or type right away.
+    - **Scenario 3 (User is Not Idle)**: Disengages old session first (`disengageSession`), flushing accumulators and finalizing DB records, fetches new session context (`continueSession`), and immediately auto-engages (`engageSession(sessionId)`) into `Ready` state.
 
 #### `pause_session()`, `resume_session()`, `end_session()`
 - **Purpose**: Transitions high-level assistant session states.

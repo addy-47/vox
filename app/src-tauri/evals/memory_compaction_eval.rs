@@ -132,7 +132,7 @@ async fn run(args: Args) -> Result<()> {
         llm_tx,
         true,
     );
-    harness.seed_continuation(None, Vec::new());
+    harness.seed_continuation(None, Vec::new(), false);
 
     // --- Feed the production turn loop until a GENUINE critical trip -------
     // prepare_turn -> commit_turn is exactly what the voice pipeline calls per

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Activity, Layers, Terminal } from "lucide-react";
-import type { ProfilerSnapshot, JSHeapSample } from "@/services/memoryProfilerService";
+import type { ProfilerSnapshot, JSHeapSample } from "@/services/monitoringService";
 import { AccuracyBadge } from "./AccuracyBadge";
 import { cn } from "@/shared/lib/utils";
 import { PROFILER_COPY } from "@/data/profilerCopy";
