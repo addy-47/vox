@@ -113,6 +113,15 @@ export interface NotificationRecord {
   updated_at: number;
 }
 
+/** `turn_metrics` payload emitted on turn start/finish. */
+export interface TurnMetricsPayload {
+  turn_id: number;
+  ttft_ms: number;
+  ttfa_ms: number;
+  total_voice_latency_ms: number;
+  context_tokens_used: number;
+  context_window: number;
+}
 
 /**
  * Canonical IPC Event Map mirroring Rust `IpcEvent` registry in `core/events.rs`.
@@ -125,6 +134,7 @@ export interface IpcEventMap {
   model_progress: ModelProgressPayload;
   telemetry: TelemetryData;
   system_stats: SystemStatsPayload;
+  turn_metrics: TurnMetricsPayload;
   "settings-updated": void;
   toggle_tray: void;
   show_toast: ToastPayload;
@@ -254,4 +264,8 @@ export function onPersonalMemoryUpdated(
   handler: (payload: PersonalMemoryRecord) => void
 ): () => void {
   return on("personal_memory_updated", handler);
+}
+
+export function onTurnMetrics(handler: (payload: TurnMetricsPayload) => void): () => void {
+  return on("turn_metrics", handler);
 }

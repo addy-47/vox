@@ -24,7 +24,7 @@ use common::paths::TempPathsGuard;
 use tempfile::tempdir;
 use vox_lib::persistence::{
     compactions::record_compaction_start,
-    db::VoxDb,
+    VoxDb,
     decode_f32_blob, encode_f32_blob,
     facts::{insert_fact, insert_vector, FactRecord},
     notifications::{create_notification, NewNotification, Severity},

@@ -46,7 +46,8 @@ pub use ml::{
         init_embedder, is_embedder_loaded, PRIMARY_EMBEDDING_MODEL_DIR,
         PRIMARY_EMBEDDING_MODEL_FILENAME,
     },
-    tokenizer::{estimate_tokens, warmup_tokenizer},
+    estimate_tokens,
+    warmup_tokenizer,
     unload_all_onnx_models, unload_memory_pipeline_onnx_models,
 };
 pub use personal::consolidate_personal_memory;

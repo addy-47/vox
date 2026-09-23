@@ -1,7 +1,6 @@
 pub mod actor;
 pub mod audio_bridge;
 pub mod providers;
-pub mod session;
 pub mod transport;
 
 use std::{
@@ -9,12 +8,11 @@ use std::{
     time::Duration,
 };
 
-pub use actor::RealtimeActor;
 use anyhow::Result;
-pub use session::{create_realtime_provider, purge_session_cache};
+pub use actor::{create_realtime_provider, purge_session_cache, RealtimeActor};
 pub use transport::{
-    connection::spawn_harness, FrameAction, HarnessConfig, HarnessHandles, HarnessInit,
-    ProviderDriver, ReconnectFn, WsReader, WsWriter,
+    spawn_harness, FrameAction, HarnessConfig, HarnessHandles, HarnessInit, ProviderDriver,
+    ReconnectFn, WsReader, WsWriter,
 };
 
 use crate::core::settings::InteractionMode;

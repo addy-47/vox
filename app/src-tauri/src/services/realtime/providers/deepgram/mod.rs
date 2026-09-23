@@ -1,5 +1,4 @@
 mod handshake;
-mod protocol;
 mod session;
 
 use std::{
@@ -18,9 +17,7 @@ use crate::{
         state::InteractionState,
     },
     services::realtime::{
-        transport::{
-            connection::spawn_harness, health::tcp_health_check, HarnessConfig, HarnessInit,
-        },
+        transport::{spawn_harness, tcp_health_check, HarnessConfig, HarnessInit},
         RealtimeAudioConfig, RealtimeProviderEvent, RealtimeProviderKind, RealtimeSession,
         RealtimeVoiceProvider, BRIDGE_CHANNEL_CAPACITY, DEEPGRAM_DEFAULT_WS_URL,
         DEEPGRAM_HEALTH_CHECK_ADDR, DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE,

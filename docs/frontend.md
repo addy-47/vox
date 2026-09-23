@@ -1,13 +1,12 @@
 ---
 title: "Vox Frontend Architecture"
 audience: "Internal — agents & contributors needing quick, accurate context"
-last_updated: 2026-09-10
+last_updated: 2026-09-22
 owners: "frontend-engineer role"
 related_docs:
-  - "docs/design.md            — Authoritative design system (tokens, type, elevation)"
+  - "docs/specs/design-spec.md — Authoritative design system (tokens, type, elevation)"
   - "docs/backend.md           — Rust backend, IPC events, provider architecture"
   - "docs/features/performance-memory-optimizations.md — Sole owner of perf/memory details"
-  - "docs/features/memory-architecture.md            — Cognitive memory backend + graph"
   - "docs/features/dictation.md            — Dictation subsystem & output architecture"
   - "AGENTS.md §2, §5          — Workspace map & system invariants"
 ---
@@ -19,7 +18,7 @@ related_docs:
 - **Audience:** internal. Other agents and contributors use this to get accurate, fast context on the React/Tauri UI without reading every file.
 - **Scope:** the frontend only — `app/src/`. Backend pipeline logic, IPC event contracts, and design tokens live in the referenced docs (see header). This file *consumes and points*, it does not duplicate them.
 - **Convention:** every technical claim uses a `path/to/file.ts` or `dir/` pointer, never invented code. Schemas and types are linked, not pasted.
-- **Non-goals:** not a design-token reference (→ `docs/design.md`), not a backend/IPC spec (→ `docs/backend.md` §8), not a performance ledger (→ `docs/features/performance-memory-optimizations.md`).
+- **Non-goals:** not a design-token reference (→ `docs/specs/design-spec.md`), not a backend/IPC spec (→ `docs/backend.md` §8), not a performance ledger (→ `docs/features/performance-memory-optimizations.md`).
 
 ## 1. Overview — dual-surface model
 
@@ -43,7 +42,7 @@ Pinned versions live in `app/package.json`. Summary:
 | Build | Vite 7 | `pnpm build` = `tsc && vite build` |
 | Desktop runtime | Tauri 2.11 | Two/three webviews over a Rust core |
 | State | Zustand 5 | Single settings store, draft/committed pattern |
-| Styling | Tailwind 4 + shadcn primitives | Glassmorphism "Liquid Space" system (→ `docs/design.md`) |
+| Styling | Tailwind 4 + shadcn primitives | Glassmorphism "Liquid Space" system (→ `docs/specs/design-spec.md`) |
 | Animation | Framer Motion 12 | Mood-synced, frame-throttled |
 | 3D / WebGL | Three 0.184 | Memory graph engine only |
 | Routing | react-router-dom 7 | File-based lazy routes in `App.tsx` |
@@ -69,7 +68,9 @@ Package manager is **pnpm** (never npm/yarn).
 ## 5. State management
 
 - **Store** — `app/src/store/settingsStore.ts` is the single source of truth for `VoxSettings` (full schema: `settingsStore.ts:108-207`). It uses a draft/committed pattern: edits mutate `draftSettings`; `commitChanges()` diffs against `settings` and writes only changed keys via `updateSetting`, collecting `restartKeys` for `Restart`-policy domains.
-- **SSOT Schema Consistency (`vad_backend`)** — VAD backend selection is strictly standardized on `vad_backend: "earshot" | "ten_vad"` across Rust backend (`core::settings::VadSettings`), IPC serialization, Zustand store, and React view components.
+- **Stores** — 5 Zustand stores: `settingsStore`, `sessionStore`, `memoryStore`, `notificationStore`, `historyFilterStore`.
+- **Contexts** — 4 React contexts: `SettingsContext`, `MemoryProfilerContext`, `VoiceSessionContext`, `PageDrawerContext`.
+- **SSOT Schema Consistency (`vad_backend`)** — VAD backend selection is strictly standardized on `vad_backend: "earshot" | "ten_vad" | "silero_vad"` across Rust backend (`core::settings::VadSettings`), IPC serialization, Zustand store, and React view components.
 - **Category-Scoped Dirty State & Rollback** — In addition to domain-level checks (`isDomainDirty`), the store exposes `isCategoryDirty(category)` and `discardCategoryChanges(category)` (`stt`, `llm`, `tts`, `vad`, `auxiliary`). This decouples stage tabs in `InteractionCard` and `ModelsTopologyMap` so unsaved drafts in one category (e.g. LLM) do not trigger false Save footer prompts when inspecting another clean category (e.g. STT).
 - **Selector discipline** — components read with fine-grained selectors (e.g. `useSettingsStore(s => s.ui.theme)`) to avoid re-render cascades.
 - **`InteractionMode` normalization** — `shared/lib/interactionMode.ts` exports `InteractionModeUpper = "PASSIVE" | "PTT"` and `normalizeToInteractionModeUpper()`; all components use this canonical vocabulary instead of ad-hoc string literals.
@@ -86,8 +87,12 @@ Raw `@tauri-apps/api` `invoke` calls are **banned inside components** (code-styl
 |---|---|
 | `services/settingsService.ts` | Boot state, settings get/update, model catalog, provider health, model capability probing & token cap validation, input/output audio devices |
 | `services/pipelineService.ts` | Engine lifecycle (`stopEngine`, `launchEngine`), discrete session verbs (`startSession`, `endSession`, `pauseSession`, `resumeSession`), PTT (`pttStart`, `pttStop`, `pttCancel`), test clips (`testClip`, `testClipCancel`), runtime snapshots, voice library (`listVoices`, `renameVoice`, `addVoiceFromFile`, `addVoiceFromRecording`, `deleteVoice`), remote deploy |
-| `services/eventsService.ts` | Typed Tauri `listen` wrappers for canonical IPC events (`state_changed`, `transcript_partial`/`final`, `llm_token`, `model_progress`, `telemetry`, `system_stats`, `settings-updated`, `toggle_tray`, `show_toast`, `notification_created`/`updated`, `personal_memory_updated`, `sessions_changed`); `on<T>` sync-cleanup wrapper with `beforeunload`/`pagehide` registry |
+| `services/eventsService.ts` | Typed Tauri `listen` wrappers for canonical IPC events (`state_changed`, `transcript_partial`/`final`, `llm_token`, `model_progress`, `telemetry`, `system_stats`, `settings-updated`, `toggle_tray`, `show_toast`, `notification_created`/`updated`, `personal_memory_updated`, `sessions_changed`, `turn_metrics`); `on<T>` sync-cleanup wrapper with `beforeunload`/`pagehide` registry |
+| `services/notificationService.ts` | Notification center CRUD, actions, router |
+| `services/projectService.ts` | Project list, active session label sync, project creation/move |
+| `services/sessionService.ts` | Session continuation, hydration, `activeSessionId` management |
 | `services/historyService.ts` | Session/turn CRUD, transcript history, delete |
+| `services/helpService.ts` | Onboarding status, help content |
 | `services/memoryService.ts` | Memory graph topology, stats, fact mutations, personal memory commands, `getActiveFacts` |
 | `services/memoryProfilerService.ts` | Multi-dimensional RAM/heap/DOM profiling snapshots |
 | `services/modelService.ts` | Onboarding status, model download/setup, manifest |
@@ -100,33 +105,38 @@ Raw `@tauri-apps/api` `invoke` calls are **banned inside components** (code-styl
 
 | Page | Entry | Key components (under `shared/components/`) | Notes |
 |---|---|---|---|
-| Home (Orb) | `pages/Home.tsx` | `home/AdvancedOrb`, `home/PipelineField`, `home/StatusCapsule`, `home/ActiveTranscript`, `home/TestClipsPopover` | Orchestrates engage/pause/PTT via `VoiceSessionContext` + `hooks/useHomePage.ts`. Mode-adaptive toolbar (Passive: Pause/Resume + Disengage; PTT: central hold-to-talk Orb); canonical 7-state ambient mood sync + Space/Escape global PTT bindings; decoupled test clips simulation popover. |
+| Home (Orb) | `pages/Home.tsx` | `home/AdvancedOrb`, `home/PipelineField`, `home/StatusCapsule`, `home/ActiveTranscript`, `home/TurnMetricsBadge`, `home/ActiveSessionHeader` | Orchestrates engage/pause/PTT via `VoiceSessionContext` + `hooks/useHomePage.ts`. Mode-adaptive toolbar (Passive: Pause/Resume + Disengage; PTT: central hold-to-talk Orb); canonical 7-state ambient mood sync + Space/Escape global PTT bindings; live turn metrics badge (TTFT/TTFA/voice latency) in bottom-right; header typewriter with `activeSessionLabel` project sync. |
 | History | `pages/History.tsx` | `history/HistoryListView`, `history/OrbitCarousel`, `history/CentralClockNode`, `history/DetailPanel`, `history/ChamberOrbitRings` | Dual-view via `ViewSelector` — list + holographic 2.5D single-ring CSS ellipse carousel (`history/orbitMath.ts`), windowed chunking, global `Drawer` detail. (`Purged obsolete `VoiceDial.tsx` and dead `clearHistory` API.)` |
-| Memory | `pages/Memory.tsx` | `memory/MemoryGraph`, `memory/MemoryNodeTooltip`, `memory/MemoryLegendCard` | SVG-based spatial graph — central gold sphere (PersonalMemory, click → bottom drawer), Ring 1 identity facts (cyan), Ring 2 session clusters (5 fact types). `MemoryPipelineDrawer` deprecated (`@deprecated` JSDoc + `@ts-nocheck`); 7 legacy graph components tombstoned. Edge panels (`HelpPanel`, `NotificationPanel`, `SessionPanel`) mounted via `EdgePanel`/`usePanelState`. |
-| Settings | `pages/Settings.tsx` | `settings/RadialHub` + domain cards (`appearance/`, `interaction/`, `models/`, `memory/`, `persona/`, `history/`, `realtime/`) | Radial hub of 6 cards with unified typography (`font-display text-[13px] font-black uppercase tracking-[0.2em]`) and `size={17}` icons. Re-architected `InteractionCard` (2-level drilldown: Level 1 has full-width `CategorySelector` text carousel $\to$ `ProviderSelectorView` centered cards with persistent saved active highlight; Level 2 replaces the entire inner panel with `LlmConfigDesk` taking full height, left-aligned `← Providers` breadcrumbs + title, right-aligned status badge, high-density hardware/runtime spec cards dynamically bound to `modelCatalog` with zero hardcoded model names, and auto-discard on back or category switch); `MemoryCard` redesign (top two `ToggleTile` cards for Conversational Recall and Background Auto-Save $\to$ dedicated 5-subtab `MemoryConfigDesk` with `Depth`, `Cutoff`, `Graph`, `Budget`, `Window` following HistoryCard side-by-side ergonomics); `TtsVoiceManager` redesign (3 distributed tabs `Select Voice` \| `Speech Rate` \| `Compute Allocation`, paragraph-embedded inline accent region carousel `‹ ALL ›`, and in-place search); `AsrWorkspace` settings (3 tabs: `Streaming Rate` \| `Transliterate` \| `Compute Allocation` — `Microchip` icon, presets Auto/Eco/Max/Custom, maps to `stt.embedded.threads`, SettingReloadPolicy::Restart); `ModelsCard` workspace sizing (`h-auto max-h-[235px]` compact, `h-full` desktop); `AppearanceCard` calibrated unclipped `130px` HexColorPicker; `RotaryKnob` travel calibration (280px denominator) without wheel scroll capture. |
+| Memory | `pages/Memory.tsx` | `memory/MemoryGraph`, `memory/MemoryNodeTooltip`, `memory/MemoryLegendOverlay` | Three.js WebGL spatial graph — central gold sphere (PersonalMemory, click → bottom drawer), Ring 1 identity facts (cyan), Ring 2 session clusters (5 fact types). `MemoryPipelineDrawer` deprecated (`@deprecated` JSDoc + `@ts-nocheck`); 7 legacy graph components tombstoned. Edge panels (`HelpPanel`, `NotificationPanel`, `SessionPanel`) mounted via `EdgePanel`/`usePanelState`. |
+| Settings | `pages/Settings.tsx` | `settings/RadialHub` + domain cards (`appearance/`, `interaction/`, `models/`, `working_memory/`, `personal_memory/`, `persona/`, `history/`, `realtime/`) | Radial hub of 6 cards with unified typography (`font-display text-[13px] font-black uppercase tracking-[0.2em]`) and `size={17}` icons. Re-architected `InteractionCard` (2-level drilldown: Level 1 has full-width `CategorySelector` text carousel $\to$ `ProviderSelectorView` centered cards with persistent saved active highlight; Level 2 replaces the entire inner panel with `LlmConfigDesk` taking full height, left-aligned `← Providers` breadcrumbs + title, right-aligned status badge, high-density hardware/runtime spec cards dynamically bound to `modelCatalog` with zero hardcoded model names, and auto-discard on back or category switch); `MemoryCard` redesign (top two `ToggleTile` cards for Conversational Recall and Background Auto-Save $\to$ dedicated 5-subtab `MemoryConfigDesk` with `Depth`, `Cutoff`, `Graph`, `Budget`, `Window` following HistoryCard side-by-side ergonomics); `TtsVoiceManager` redesign (3 distributed tabs `Select Voice` \| `Speech Rate` \| `Compute Allocation`, paragraph-embedded inline accent region carousel `‹ ALL ›`, and in-place search); `AsrWorkspace` settings (3 tabs: `Streaming Rate` \| `Transliterate` \| `Compute Allocation` — `Microchip` icon, presets Auto/Eco/Max/Custom, maps to `stt.embedded.threads`, SettingReloadPolicy::Restart); `ModelsCard` workspace sizing (`h-auto max-h-[235px]` compact, `h-full` desktop); `AppearanceCard` calibrated unclipped `130px` HexColorPicker; `RotaryKnob` travel calibration (280px denominator) without wheel scroll capture. |
 | Monitoring | `pages/Monitoring.tsx` | `monitoring/MetricCarousel`, `monitoring/LiquidChamber` + `profiler/*` | Runtime metrics dashboard; offload/reload dual-button engine control; 30 FPS throttled canvas; integrated memory profiler drawer. |
 
 ## 8. Shared layer
 
 `shared/` is organized by domain (code-style-guide §2 — flat dirs banned):
 
-- **`shared/components/`** — `common/` (ErrorBoundary, AmbientBackground, LiveWaveform, OrbitalLoader, GlassSkeleton, AudioLevelMeter), `home/`, `history/`, `memory/`, `settings/` (`interaction/ProviderSelectorView`, `interaction/LlmConfigDesk`, `interaction/CategorySelector`, `memory/MemoryConfigDesk`, `models/ModelsTopologyMap`, `models/LlmSettingsView`, `models/VadWorkspace`, ...), `monitoring/`, `profiler/`.
+- **`shared/components/`** — `common/` (ErrorBoundary, AmbientBackground, LiveWaveform, OrbitalLoader, GlassSkeleton, AudioLevelMeter), `home/`, `history/`, `memory/`, `settings/` (`interaction/ProviderSelectorView`, `interaction/LlmConfigDesk`, `interaction/CategorySelector`, `memory/MemoryConfigDesk`, `models/ModelsTopologyMap`, `models/LlmSettingsView`, `models/VadWorkspace`, ...), `monitoring/`, `profiler/`. (EdgePanel lives in `shared/ui/`, not `shared/components/edge/`.)
 - **`shared/hooks/`** — reusable stateful logic (used in 2+ components):
+  - `useConversationList`, `useHistory`, `useModelDownloads`, `useRuntimeSnapshot` — data/navigation helpers
   - `useDynamicFPS` — unified frame-rate-targeted RAF loop (60/15/0 tiers). Owner: `features/performance-memory-optimizations.md` §2.2.
   - `useInteraction` — logical interaction-session continuity (committed/partial text, id stability, 4000-char cap).
   - `useVisibility` — Tray HUD ephemeral state machine (`HIDDEN→APPEARING→ACTIVE→FADING`).
   - `useStreamingRenderer` — character-stream animation for transcripts with mutable catch-up refs.
   - `useOverlay` — registers a surface with the global `overlayStack`.
   - `useHomePage` — `toMood()` + mode-adaptive toolbar derivation (`shared/hooks/useHomePage.ts`).
-  - `useTelemetry`, `useMonitoringMetrics`, `useMemoryProfiler`, `useMemoryTrace`, `useVoxFootprint`, `useSettings`, `useSettingsPage`.
-- **`shared/ui/`** — primitives: `Drawer` (the single bottom-sheet, `position="page"|"global"` with clean pointer capture release), `Tooltip` (the **only** sanctioned tooltip — native `title` banned for tooltips), `Card`, `SegmentedControl`, `SliderField`, `RotaryKnob` (calibrated drag travel), `Badge`, `SearchInput`, `ProgressBar`, `ToggleTile`, `icons/VendorLogos`.
-- **`shared/lib/`** — `overlayStack.ts` (global FILO dismissal authority), `fuzzy.ts` (catalog search), `utils.ts` (`cn`, `hexToRgb`).
-- **`shared/context/`** — `VoiceSessionContext` (root pipeline state with memoized context value, discrete session verbs `engage`/`disengage`/`pause`/`resume` + PTT `handlePttStart/Stop/Cancel`, mutable `kbStateRef` global Space/Escape bindings, throttled listeners), `SettingsContext` (adapter), `MemoryProfilerContext` (memoized value, clean diagnostic interval disposal).
+  - `useMemoryGraphScene`, `useMemoryProfiler`, `useMemoryTrace`, `useVoxFootprint` — memory/monitoring hooks
+  - `useTelemetry`, `useMonitoringMetrics`, `useSessionEvents`, `useSessionHydration`, `useSessionPanel` — session hooks
+  - `useSettings`, `useSettingsPage`, `useRemoteLlmProbing` — settings/probing hooks
+  - `usePanelState`, `useStreamingRenderer` — layout/renderer hooks
+- **`shared/ui/`** — primitives: `Drawer` (the single bottom-sheet, `position="page"|"global"` with clean pointer capture release), `Tooltip` (the **only** sanctioned tooltip — native `title` banned for tooltips), `Card`, `SegmentedControl`, `SliderField`, `RotaryKnob` (calibrated drag travel), `Badge`, `SearchInput`, `ProgressBar`, `ToggleTile`, `EdgePanel`, `SessionContextMenu`, `Markdown`, `VoiceCarousel`, `ApiKeyField`, `BottomDockFeather`, `CarouselSelector`, `TemporaryChatIcon`, `TopRightCluster`, `UnderlineInput`, `icons/VendorLogos`.
+- **`shared/lib/`** — `overlayStack.ts` (global FILO dismissal authority), `fuzzy.ts` (catalog search), `utils.ts` (`cn`, `hexToRgb`), `spatialNavigation.ts`, `interactionMode.ts`, `realtimeProviders.ts`, `dateTime.ts`, `voiceDisplay.ts`.
+- **`shared/data/`** — all static copy (homeCopy, settingsCopy, memoryCopy, ...); copy-fragmentation sweep eliminated dead exports (`providersCopy`, `modelsCopy`, `welcomeCopy` synced). `app/src/data/shortcuts.ts` is the keyboard SSOT.
+- **`shared/context/`** — `VoiceSessionContext` (root pipeline state with memoized context value, discrete session verbs `engage`/`disengage`/`pause`/`resume` + PTT `handlePttStart/Stop/Cancel`, mutable `kbStateRef` global Space/Escape bindings, throttled listeners), `SettingsContext` (adapter), `MemoryProfilerContext` (memoized value, clean diagnostic interval disposal), `PageDrawerContext` (page-level drawer state).
 - **`shared/data/`** — all static copy (homeCopy, settingsCopy, memoryCopy, ...); copy-fragmentation sweep eliminated dead exports (`providersCopy`, `modelsCopy`, `welcomeCopy` synced)
 
 ## 9. IPC & events — consumer view
 
-The Rust event contract is authoritative in `docs/backend.md` §8. The frontend consumes it through typed wrappers in `services/eventsService.ts` — `on<T>` provides synchronous `unlisten` via `beforeunload`/`pagehide` registry (`eventsService.ts:122-176`). Handler-level routing detail is in `docs/features/voice-flow.md` §9. Key events and their consumers:
+The Rust event contract is authoritative in `docs/backend.md` §8. The frontend consumes it through typed wrappers in `services/eventsService.ts` — `on<T>` provides synchronous `unlisten` via `beforeunload`/`pagehide` registry (`eventsService.ts:122-176`). Handler-level routing detail is in `docs/specs/events-spec.md` §9. Key events and their consumers:
 
 | Event | Payload source | Consumer surface |
 |---|---|---|
@@ -147,13 +157,13 @@ Commands are issued via the service modules in §6 — `pipelineService.ts` (`st
 
 ## 10. Design system consumption
 
-Frontend consumes — it does not redefine — the design system in `docs/design.md`:
+Frontend consumes — it does not redefine — the design system in `docs/specs/design-spec.md`:
 
-- **Tokens** are CSS variables (`rgb(var(--token))`) declared in `app/src/index.css` and mirrored in `design.md` frontmatter.
+- **Tokens** are CSS variables (`rgb(var(--token))`) declared in `app/src/index.css` and mirrored in `design-spec.md` frontmatter.
 - **Elevation** uses the closed glass system (`.glass-whisper` / `.glass-surface` / `.glass-card`). Do not invent a new level.
-- **Type roles** (`font-display` / `font-sans` / `font-mono`) and the uppercase policy are enforced by `design.md` §4.
+- **Type roles** (`font-display` / `font-sans` / `font-mono`) and the uppercase policy are enforced by `design-spec.md` §4.
 - **Custom Tooltip** (`shared/ui/Tooltip.tsx`) is mandatory for hover explanations.
-- The `impeccable` design-system detector enforces token/size compliance against `design.md`.
+- The `impeccable` design-system detector enforces token/size compliance against `docs/specs/design-spec.md`.
 
 ## 11. Performance & memory invariants
 
@@ -174,7 +184,7 @@ General rule from `frontend-engineer.md`: anything visually heavy is memoized an
 
 - **Breakpoints** — desktop `≥1024px` (floating `EdgeNav` capsule + monitoring popover bottom-left); compact `<1024px` (monitoring becomes a 4th `EdgeNav` tab routed to `/monitoring`, soft glass fade mask, `pb-[110px]` scroll padding). Viewport transitions are handled bidirectionally in `ResponsiveLayout.tsx:32-53` — never break this (code-style-guide layout rules).
 - **Orb scaling** — mobile `min(92vw, 85vh)`, desktop `min(70vw, 65vh)`; do not change without design review.
-- **Overlay stack** — `shared/lib/overlayStack.ts` is the single FILO authority. `installOverlayStack()` (called once in `App.tsx`) installs capture-phase `keydown` (Escape pops topmost) and `pointerdown` (outside-click dismisses topmost if `dismissOnOutside`). Surfaces register via `useOverlay` (`shared/hooks/useOverlay.ts`) and `Drawer` (`shared/ui/Drawer.tsx`). Tier model: `design.md` §13 (Tier 0 accordion cards, Tier 1 popovers, Tier 2 bottom drawers). Surfaces must not add their own Escape listeners. Edge panels (`EdgePanel`/`usePanelState`) provide per-edge exclusivity (left sessions + right help/notifications open simultaneously).
+- **Overlay stack** — `shared/lib/overlayStack.ts` is the single FILO authority. `installOverlayStack()` (called once in `App.tsx`) installs capture-phase `keydown` (Escape pops topmost) and `pointerdown` (outside-click dismisses topmost if `dismissOnOutside`). Surfaces register via `useOverlay` (`shared/hooks/useOverlay.ts`) and `Drawer` (`shared/ui/Drawer.tsx`). Tier model: `docs/specs/design-spec.md` §13 (Tier 0 accordion cards, Tier 1 popovers, Tier 2 bottom drawers). Surfaces must not add their own Escape listeners. Edge panels (`EdgePanel`/`usePanelState`) provide per-edge exclusivity (left sessions + right help/notifications open simultaneously).
 
 ## 13. Resilience
 
@@ -200,20 +210,19 @@ app/src/
 ├── store/                      # settingsStore.ts (Zustand)
 └── shared/
      ├── components/             # common/ home/ history/ memory/ settings/ monitoring/ profiler/
-     ├── hooks/                  # useDynamicFPS, useInteraction, useVisibility, useOverlay, ...
-     ├── ui/                     # Drawer, Tooltip, Card, SegmentedControl, SliderField, ...
-     ├── lib/                    # overlayStack, fuzzy, utils
-     ├── context/                # SettingsContext, MemoryProfilerContext
-     ├── data/                   # All static copy (homeCopy, settingsCopy, memoryCopy, ...)
-     └── components/edge/        # EdgePanel, usePanelState, HelpPanel, NotificationPanel, SessionPanel
+     ├── hooks/                  # useConversationList, useDynamicFPS, useHistory, useHomePage, useInteraction, useMemoryGraphScene, useMemoryProfiler, useMemoryTrace, useModelDownloads, useMonitoringMetrics, useOverlay, usePanelState, useRemoteLlmProbing, useRuntimeSnapshot, useSessionEvents, useSessionHydration, useSessionPanel, useSettings, useSettingsPage, useStreamingRenderer, useTelemetry, useTranscriptStream, useVisibility, useVoxFootprint
+     ├── ui/                     # Drawer, Tooltip, Card, SegmentedControl, SliderField, RotaryKnob, Badge, EdgePanel, SessionContextMenu, Markdown, VoiceCarousel, ApiKeyField, BottomDockFeather, CarouselSelector, TemporaryChatIcon, TopRightCluster, UnderlineInput
+     ├── context/                # SettingsContext, MemoryProfilerContext, VoiceSessionContext, PageDrawerContext
+     ├── data/                   # All static copy; shortcuts.ts SSOT for keyboard
+     └── components/edge/        # (obsolete — EdgePanel moved to shared/ui/)
 ```
 
 ## Appendix B — Cross-links
 
-- `docs/design.md` — tokens, type system, elevation, motion, accessibility (authoritative).
+- `docs/specs/design-spec.md` — tokens, type system, elevation, motion, accessibility (authoritative).
 - `docs/backend.md` — Rust architecture, IPC event contract (§8), settings reload policies (§10).
 - `docs/features/performance-memory-optimizations.md` — **SSOT for all perf/memory detail** (frontend §11 + backend §1).
-- `docs/features/memory-architecture.md` — cognitive memory backend, graph topology, pipeline.
 - `docs/features/dictation.md` — dictation subsystem & output architecture.
 - `AGENTS.md §2` — workspace directory map. `AGENTS.md §5` — system invariants (dictation axes, lazy windows, drawer portal).
+Keyboard contract: `app/src/data/shortcuts.ts` (SSOT) + `docs/specs/design-spec.md` §14; spatial nav zones via `shared/lib/spatialNavigation.ts`.
 - `.agents/rules/frontend-engineer.md` — frontend role invariants. `.agents/rules/code-style-guide.md` — Rust + TS standards.

@@ -4,7 +4,7 @@ use crate::services::{
         CanonicalToolDefinition, ConversationInput, GenerationOptions, GenerationPurpose,
         GenerationRequest, OutputConstraint,
     },
-    memory::ml::tokenizer::estimate_tokens,
+    memory::ml::estimate_tokens,
 };
 
 /// Plugin managing system prompt assembly, user identity grounding, and system budget ceiling enforcement.

@@ -11,7 +11,7 @@
 //! ============================================================================
 
 use vox_lib::{
-    pipeline::assistant::accumulator::TurnAccumulator,
+    pipeline::assistant::TurnAccumulator,
     services::harness::stages::streaming::ClauseChunker,
 };
 

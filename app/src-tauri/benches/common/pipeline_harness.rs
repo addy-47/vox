@@ -145,9 +145,9 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
 
     // RAII isolated bench paths guard: copies benches/assets/bench_vox.db to temp VOX_HOME
     let _bench_guard = BenchPathsGuard::new();
-    let rt_handle = vox_lib::persistence::db::get_tokio_handle();
+    let rt_handle = vox_lib::persistence::get_tokio_handle();
     let db_conn = rt_handle
-        .block_on(vox_lib::persistence::db::VoxDb::open(
+        .block_on(vox_lib::persistence::VoxDb::open(
             &vox_lib::utils::paths::db_path(),
         ))
         .expect("Failed to open bench database");
@@ -170,6 +170,7 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx: event_tx.clone(),
         is_playback_muted: state.pipeline.is_playback_muted.clone(),
+        turn_metrics: Some(state.turn_metrics.clone()),
     };
     let playback_engine = Arc::new(PlaybackEngine::from_parts(
         pb_prod,

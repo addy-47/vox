@@ -5,7 +5,7 @@ use std::{
 
 use parking_lot::Mutex;
 
-use crate::monitoring::telemetry::TelemetryState;
+use crate::{core::events::TurnMetricsPayload, monitoring::telemetry::TelemetryState};
 
 /// Tracks timestamp milestones and computes exact latencies for assistant conversational turns.
 #[derive(Debug, Default)]
@@ -20,6 +20,8 @@ pub struct TurnMetricsCollector {
     pub llm_finish_ms: AtomicU64,
     pub llm_tokens: AtomicU32,
     pub llm_chars: AtomicU32,
+    pub context_tokens_used: AtomicU32,
+    pub context_window: AtomicU32,
     pub tool_name: Mutex<Option<String>>,
     pub tool_duration_ms: AtomicU64,
     pub tool_error: AtomicBool,
@@ -57,6 +59,8 @@ impl TurnMetricsCollector {
         self.llm_finish_ms.store(0, Ordering::Relaxed);
         self.llm_tokens.store(0, Ordering::Relaxed);
         self.llm_chars.store(0, Ordering::Relaxed);
+        self.context_tokens_used.store(0, Ordering::Relaxed);
+        self.context_window.store(0, Ordering::Relaxed);
         *self.tool_name.lock() = None;
         self.tool_duration_ms.store(0, Ordering::Relaxed);
         self.tool_error.store(false, Ordering::Relaxed);
@@ -158,8 +162,67 @@ impl TurnMetricsCollector {
         }
     }
 
+    /// Records the context tokens tracked and the total context window size.
+    pub fn record_context_budget(&self, used_tokens: usize, window: usize) {
+        self.context_tokens_used
+            .store(used_tokens as u32, Ordering::Relaxed);
+        self.context_window
+            .store(window as u32, Ordering::Relaxed);
+    }
+
+    /// Builds a strongly-typed turn metrics payload reflecting current turn milestones and token utilization.
+    pub fn build_payload(&self, turn_id: u32) -> TurnMetricsPayload {
+        let speech_end = self.speech_end_ms.load(Ordering::Relaxed);
+        let llm_dispatch = self.llm_dispatch_ms.load(Ordering::Relaxed);
+        let llm_first_token = self.llm_first_token_ms.load(Ordering::Relaxed);
+        let tts_dispatch = self.tts_chunk0_dispatch_ms.load(Ordering::Relaxed);
+        let tts_first_audio = self.tts_first_audio_ms.load(Ordering::Relaxed);
+        let playback_start = self.playback_start_ms.load(Ordering::Relaxed);
+
+        let ttft_ms = if llm_first_token > llm_dispatch && llm_dispatch > 0 {
+            (llm_first_token - llm_dispatch) as u32
+        } else {
+            0
+        };
+
+        let ttfa_ms = if tts_first_audio > tts_dispatch && tts_dispatch > 0 {
+            (tts_first_audio - tts_dispatch) as u32
+        } else {
+            0
+        };
+
+        let total_voice_latency_ms = if speech_end > 0
+            && playback_start > speech_end
+            && (playback_start - speech_end <= 30000)
+        {
+            (playback_start - speech_end) as u32
+        } else if llm_dispatch > 0 && playback_start > llm_dispatch {
+            (playback_start - llm_dispatch) as u32
+        } else {
+            0
+        };
+
+        let prompt_tokens = self.context_tokens_used.load(Ordering::Relaxed);
+        let completion_tokens = self.llm_tokens.load(Ordering::Relaxed);
+        let total_context_used = prompt_tokens + completion_tokens;
+        let context_win = self.context_window.load(Ordering::Relaxed);
+
+        TurnMetricsPayload {
+            turn_id,
+            ttft_ms,
+            ttfa_ms,
+            total_voice_latency_ms,
+            context_tokens_used: total_context_used,
+            context_window: context_win,
+        }
+    }
+
     /// Records playback start, logs the complete timing breakdown, and updates telemetry.
-    pub fn record_playback_started(&self, turn_id: u32, telemetry: &TelemetryState) {
+    pub fn record_playback_started(
+        &self,
+        turn_id: u32,
+        telemetry: &TelemetryState,
+    ) -> TurnMetricsPayload {
         let playback_ts = now_ms();
         self.playback_start_ms.store(playback_ts, Ordering::Relaxed);
 
@@ -172,7 +235,10 @@ impl TurnMetricsCollector {
         let tts_dispatch = self.tts_chunk0_dispatch_ms.load(Ordering::Relaxed);
         let tts_first_audio = self.tts_first_audio_ms.load(Ordering::Relaxed);
 
-        let stt_ms = if transcript_final > speech_end && speech_end > 0 {
+        let stt_ms = if transcript_final > speech_end
+            && speech_end > 0
+            && (transcript_final - speech_end <= 15000)
+        {
             transcript_final - speech_end
         } else {
             0
@@ -220,8 +286,13 @@ impl TurnMetricsCollector {
             0
         };
 
-        let total_voice_latency_ms = if speech_end > 0 && playback_ts > speech_end {
+        let total_voice_latency_ms = if speech_end > 0
+            && playback_ts > speech_end
+            && (playback_ts - speech_end <= 30000)
+        {
             playback_ts - speech_end
+        } else if llm_dispatch > 0 && playback_ts > llm_dispatch {
+            playback_ts - llm_dispatch
         } else {
             0
         };
@@ -309,6 +380,8 @@ impl TurnMetricsCollector {
             perceived_str,
             total_voice_latency_ms
         );
+
+        self.build_payload(turn_id)
     }
 
     /// Records playback finish and logs turn audio completion summary.

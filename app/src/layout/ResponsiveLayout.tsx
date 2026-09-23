@@ -3,7 +3,7 @@ import { EdgeNav } from "./EdgeNav";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { TitleBar } from "./TitleBar";
 import { AmbientBackground, HelpPanel, NotificationPanel, ErrorBoundary } from "@/shared/components/common";
-import { ActiveSessionHeader } from "@/shared/components/home";
+import { ActiveSessionHeader, TurnMetricsBadge } from "@/shared/components/home";
 import { EdgePanel, TopRightCluster, BottomDockFeather } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -451,7 +451,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         </ErrorBoundary>
 
         {/* ── Status Info & Default Reset Controls Area — bottom-right ── */}
-        {isSettings && (
+        {isSettings ? (
           <div className="hidden lg:flex fixed bottom-4 right-4 z-40 pointer-events-none items-center gap-2 lg:gap-3 max-w-[calc(50vw-180px)]">
             {/* Standard bottom-dock feather: dissolves scrolled content behind the dock */}
             <BottomDockFeather className="absolute -inset-x-8 -bottom-4 -top-10" />
@@ -462,7 +462,15 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
               <RestoreDefaultsButton />
             </div>
           </div>
-        )}
+        ) : interactionState !== "Idle" ? (
+          /* ── Turn Performance & Context Utilization Metrics — bottom-right ── */
+          <div className="hidden lg:flex fixed bottom-4 right-4 z-40 pointer-events-none items-center">
+            <BottomDockFeather className="absolute -inset-x-6 bottom-[calc(100%-2px)] h-10" />
+            <div className="relative pointer-events-auto">
+              <TurnMetricsBadge />
+            </div>
+          </div>
+        ) : null}
 
         {/* Bottom navigation (topmost in bottom layer) */}
         <EdgeNav />

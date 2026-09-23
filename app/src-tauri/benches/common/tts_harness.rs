@@ -90,6 +90,7 @@ pub fn benchmark_tts_provider(
         playback_intent: Arc::new(AtomicU8::new(0)),
         event_tx: event_tx.clone(),
         is_playback_muted: Arc::new(AtomicBool::new(false)),
+        turn_metrics: None,
     };
 
     let playback = Arc::new(PlaybackEngine::from_parts(
@@ -116,6 +117,7 @@ pub fn benchmark_tts_provider(
         cancel_flag: Arc::clone(&cancel_flag),
         pending_synthesis_jobs: Some(Arc::clone(&pending_jobs)),
         telemetry_rtf: Some(Arc::clone(&rtf_atomic)),
+        turn_metrics: None,
     };
 
     let handle = std::thread::Builder::new()

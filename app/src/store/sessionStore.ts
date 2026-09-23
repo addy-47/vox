@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { InteractionState } from "@/services/eventsService";
+import type { InteractionState, TurnMetricsPayload } from "@/services/eventsService";
 import type { InteractionModeUpper } from "@/shared/lib/interactionMode";
 
 export interface DialogueTurn {
@@ -31,6 +31,7 @@ export interface SessionStoreState {
   activeSessionId: number | null;
   dialogueHistory: DialogueTurn[];
   turnIdCounter: number;
+  latestTurnMetrics: TurnMetricsPayload | null;
 
   // Session Continuation / Restore State
   isRestoring: boolean;
@@ -54,6 +55,7 @@ export interface SessionStoreState {
   setActiveSessionId: (id: number | null) => void;
   setDialogueHistory: (history: DialogueTurn[] | ((prev: DialogueTurn[]) => DialogueTurn[])) => void;
   setTurnIdCounter: (counter: number | ((prev: number) => number)) => void;
+  setLatestTurnMetrics: (metrics: TurnMetricsPayload | null) => void;
   setIsRestoring: (restoring: boolean) => void;
   setRestoreError: (error: string | null) => void;
   setRestoreSignal: (signal: number) => void;
@@ -80,6 +82,7 @@ const INITIAL_STATE = {
   activeSessionId: null,
   dialogueHistory: [],
   turnIdCounter: 0,
+  latestTurnMetrics: null as TurnMetricsPayload | null,
   isRestoring: false,
   restoreError: null,
   restoreSignal: 0,
@@ -117,6 +120,7 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
           ? counterOrUpdater(state.turnIdCounter)
           : counterOrUpdater,
     })),
+  setLatestTurnMetrics: (latestTurnMetrics) => set({ latestTurnMetrics }),
   setIsRestoring: (isRestoring) => set({ isRestoring }),
   setRestoreError: (restoreError) => set({ restoreError }),
   setRestoreSignal: (restoreSignal) => set({ restoreSignal }),
@@ -131,5 +135,6 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
       activeSessionId: null,
       dialogueHistory: [],
       turnIdCounter: 0,
+      latestTurnMetrics: null,
     }),
 }));

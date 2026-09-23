@@ -41,7 +41,7 @@ fn wire_persistence_worker(state: &AppState) {
 
 /// Helper: Seeds active Identity facts in personal_memory to verify preloading during session start.
 async fn seed_test_identity_facts(db_path: &std::path::Path) -> anyhow::Result<()> {
-    let db = vox_lib::persistence::db::VoxDb::open(db_path).await?;
+    let db = vox_lib::persistence::VoxDb::open(db_path).await?;
     let conn = db.connect()?;
     vox_lib::persistence::schema::run_migrations(&conn).await?;
 
@@ -818,7 +818,7 @@ async fn test_session_boot_capability_probe_and_cache_lifecycle() {
         // Initialize TOKIO_HANDLE so background probe tasks spawned from the
         // router thread execute on the test's tokio runtime (not the undriven
         // fallback current-thread runtime).
-        let _ = vox_lib::persistence::db::TOKIO_HANDLE.set(tokio::runtime::Handle::current());
+        let _ = vox_lib::persistence::TOKIO_HANDLE.set(tokio::runtime::Handle::current());
 
         let db_path = vox_lib::utils::paths::db_path();
         seed_test_identity_facts(&db_path)

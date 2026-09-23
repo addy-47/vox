@@ -5,9 +5,11 @@ import {
   onTranscriptFinal,
   onLlmToken,
   onSettingsUpdated,
+  onTurnMetrics,
   type StateChangedPayload,
   type TranscriptPayload,
   type LlmTokenPayload,
+  type TurnMetricsPayload,
 } from "@/services/eventsService";
 import type { InteractionState } from "@/services/eventsService";
 
@@ -25,6 +27,7 @@ interface SessionEventHandlers {
   onTranscriptFinal: (payload: TranscriptPayload) => void;
   onLlmToken: (payload: LlmTokenPayload) => void;
   onSettingsUpdated: () => void;
+  onTurnMetrics?: (payload: TurnMetricsPayload) => void;
 }
 
 export function useSessionEvents(handlers: SessionEventHandlers): void {
@@ -73,6 +76,13 @@ export function useSessionEvents(handlers: SessionEventHandlers): void {
       onSettingsUpdated(() => {
         if (!mounted.current) return;
         handlersRef.current.onSettingsUpdated();
+      }),
+    );
+
+    cleanups.push(
+      onTurnMetrics((payload: TurnMetricsPayload) => {
+        if (!mounted.current) return;
+        handlersRef.current.onTurnMetrics?.(payload);
       }),
     );
 

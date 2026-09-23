@@ -4,6 +4,7 @@ use tauri::AppHandle;
 
 use crate::{
     core::{
+        events::{emit_ipc, IpcEvent},
         settings::PipelineMode,
         state::{AppState, InteractionState},
     },
@@ -113,6 +114,12 @@ fn evaluate_synthesis_latch<R: tauri::Runtime>(
 
     if should_transition {
         state.pipeline.clear_drained_while_open();
+        if state.turn_metrics.playback_start_ms.load(Ordering::Relaxed) == 0 {
+            let payload = state.turn_metrics.build_payload(turn_id);
+            if let Some(app_handle) = app {
+                let _ = emit_ipc(app_handle, IpcEvent::TurnMetrics(payload));
+            }
+        }
         if let Some(app_handle) = app {
             transition(InteractionState::Ready, ctx, app_handle, state);
         } else {

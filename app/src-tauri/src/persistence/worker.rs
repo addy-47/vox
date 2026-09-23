@@ -17,7 +17,7 @@ use super::{
 };
 use crate::{
     core::error::PersistenceError,
-    persistence::db::{get_tokio_handle, VoxDb},
+    persistence::{get_tokio_handle, VoxDb},
 };
 
 /// Spawns the persistence worker on a dedicated OS thread holding an isolated database connection.

@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-use super::protocol::{encode_activity_end, encode_activity_start};
+use super::handshake::{encode_activity_end, encode_activity_start};
 use crate::services::realtime::{
     transport::{FrameAction, ProviderDriver},
     OutboundCommand, RealtimeProviderEvent, RealtimeSession, LOG_INTERVAL_PACKETS,

@@ -14,7 +14,7 @@ use crate::{
         state::InteractionOwner,
     },
     pipeline::{
-        assistant::accumulator::TurnAccumulator,
+        assistant::TurnAccumulator,
         target_window,
     },
     services::{

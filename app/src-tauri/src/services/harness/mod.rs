@@ -12,8 +12,8 @@ use crate::{
         events::VoxEvent,
         state::{AppState, InteractionOwner},
     },
-    persistence::db::VoxDb,
-    pipeline::{assistant::accumulator::TurnAccumulator, router::RoutingContext},
+    persistence::VoxDb,
+    pipeline::{assistant::TurnAccumulator, router::RoutingContext},
     services::{
         llm::{actor::LlmCommand, LlmProvider},
         translit::is_devanagari,

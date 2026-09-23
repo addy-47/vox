@@ -26,7 +26,7 @@ use vox_lib::{
     },
     pipeline::assistant::ptt::{ptt_cancel, ptt_start, ptt_stop},
     services::{
-        realtime::{session::create_realtime_provider, RealtimeActor},
+        realtime::{create_realtime_provider, RealtimeActor},
         stt::actor::SttCommand,
         vad::{actor::VadActorConfig, VadCommand},
     },

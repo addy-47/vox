@@ -1,5 +1,4 @@
 mod handshake;
-mod protocol;
 mod session;
 
 use std::sync::{atomic::AtomicU32, Arc};
@@ -15,9 +14,7 @@ use crate::{
     },
     services::realtime::{
         transport::{
-            connection::spawn_harness,
-            health::{resolve_or_fallback, tcp_health_check},
-            HarnessConfig, HarnessInit,
+            resolve_or_fallback, spawn_harness, tcp_health_check, HarnessConfig, HarnessInit,
         },
         RealtimeAudioConfig, RealtimeProviderEvent, RealtimeProviderKind, RealtimeSession,
         RealtimeVoiceProvider, BRIDGE_CHANNEL_CAPACITY, DEFAULT_INPUT_SAMPLE_RATE,
