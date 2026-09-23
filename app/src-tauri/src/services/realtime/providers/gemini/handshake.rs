@@ -6,9 +6,12 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
     core::settings::GeminiRealtimeConfig,
-    services::realtime::{
-        transport::{WsReader, WsWriter},
-        GEMINI_DEFAULT_WS_URL_BASE, WS_HANDSHAKE_TIMEOUT,
+    services::{
+        llm::CanonicalToolDefinition,
+        realtime::{
+            transport::{WsReader, WsWriter},
+            GEMINI_DEFAULT_WS_URL_BASE, WS_HANDSHAKE_TIMEOUT,
+        },
     },
 };
 
@@ -25,6 +28,7 @@ pub(super) async fn perform_handshake(
     model: &str,
     config: &GeminiRealtimeConfig,
     system_prompt: &str,
+    tools: &[CanonicalToolDefinition],
     is_ptt: bool,
     resume_handle: Option<&str>,
 ) -> Result<(WsWriter, WsReader)> {
@@ -46,7 +50,7 @@ pub(super) async fn perform_handshake(
 
     let (mut ws_write, mut ws_read) = ws_stream.split();
 
-    let setup = build_setup_frame(model, config, system_prompt, is_ptt, resume_handle);
+    let setup = build_setup_frame(model, config, system_prompt, tools, is_ptt, resume_handle);
     ws_write
         .send(Message::Text(setup.to_string().into()))
         .await
@@ -121,6 +125,7 @@ pub(super) fn build_setup_frame(
     model: &str,
     config: &GeminiRealtimeConfig,
     system_prompt: &str,
+    tools: &[CanonicalToolDefinition],
     is_ptt: bool,
     resume_handle: Option<&str>,
 ) -> serde_json::Value {
@@ -158,8 +163,27 @@ pub(super) fn build_setup_frame(
         }
     });
 
+    let mut tool_list = Vec::new();
     if config.enable_web_search {
-        frame["setup"]["tools"] = serde_json::json!([{ "googleSearchRetrieval": {} }]);
+        tool_list.push(serde_json::json!({ "googleSearchRetrieval": {} }));
+    }
+    if !tools.is_empty() {
+        let function_declarations: Vec<serde_json::Value> = tools
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.parameters,
+                })
+            })
+            .collect();
+        tool_list.push(serde_json::json!({
+            "functionDeclarations": function_declarations
+        }));
+    }
+    if !tool_list.is_empty() {
+        frame["setup"]["tools"] = serde_json::Value::Array(tool_list);
     }
 
     if !system_prompt.is_empty() {
@@ -197,4 +221,40 @@ pub(super) fn encode_activity_start() -> String {
 
 pub(super) fn encode_activity_end() -> String {
     serde_json::json!({ "realtimeInput": { "activityEnd": {} } }).to_string()
+}
+
+pub(super) fn encode_tool_response(
+    id: &str,
+    name: &str,
+    result: &serde_json::Value,
+) -> String {
+    serde_json::json!({
+        "toolResponse": {
+            "functionResponses": [
+                {
+                    "id": id,
+                    "name": name,
+                    "response": {
+                        "output": result
+                    }
+                }
+            ]
+        }
+    })
+    .to_string()
+}
+
+pub(super) fn encode_text_turn(text: &str) -> String {
+    serde_json::json!({
+        "clientContent": {
+            "turns": [
+                {
+                    "role": "user",
+                    "parts": [{ "text": text }]
+                }
+            ],
+            "turnComplete": true
+        }
+    })
+    .to_string()
 }

@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     core::{
         events::{emit_ipc_to, AudioIntent, IpcEvent, LlmTokenPayload},
+        settings::PipelineMode,
         state::{AppState, AppWindow, InteractionState},
     },
     persistence::PersistenceEvent,
@@ -357,6 +358,7 @@ pub fn step4_assemble_request(
     let tools = if harness.supports_tools && allow_tools {
         let is_first_turn = harness.history.messages().len() <= 2;
         let filter = ToolFilter {
+            mode: PipelineMode::Modular,
             is_first_turn,
             title_is_unset: !harness.title_set,
             memory_retrieval_enabled: harness.memory_retrieval_enabled,
@@ -478,7 +480,8 @@ pub async fn step6_handle_terminal_tool<R: tauri::Runtime + 'static>(
         on_sessions_changed: make_sessions_changed_callback(&ctx.req.app),
     };
 
-    let outcome = ToolExecutor::execute_tool(ctx.tool_registry, call, tool_ctx).await;
+    let outcome =
+        ToolExecutor::execute_tool(ctx.tool_registry, PipelineMode::Modular, call, tool_ctx).await;
     if ctx.req.cancel.is_cancelled() {
         log::info!(
             "[Harness::Tools] Terminal tool cancelled (turn {})",
@@ -589,7 +592,13 @@ pub async fn step6_handle_non_terminal_tool<R: tauri::Runtime + 'static>(
         on_sessions_changed: make_sessions_changed_callback(&ctx.req.app),
     };
 
-    let outcome = ToolExecutor::execute_tool(ctx.tool_registry, call.clone(), tool_ctx).await;
+    let outcome = ToolExecutor::execute_tool(
+        ctx.tool_registry,
+        PipelineMode::Modular,
+        call.clone(),
+        tool_ctx,
+    )
+    .await;
     if ctx.req.cancel.is_cancelled() {
         log::info!(
             "[Harness::Tools] Non-terminal tool cancelled (turn {})",

@@ -25,7 +25,11 @@ use std::{
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use vox_lib::{
-    core::{events::AudioIntent, settings::VoxSettings, state::InteractionOwner},
+    core::{
+        events::AudioIntent,
+        settings::{PipelineMode, VoxSettings},
+        state::InteractionOwner,
+    },
     persistence::{
         facts::{insert_fact, insert_vector, FactRecord},
         schema::run_migrations,
@@ -218,6 +222,7 @@ async fn test_terminal_tool_title_and_accumulator_parity() {
 
         // 6. Assert Turn 2 tool filter suppresses respond_and_set_title
         let turn2_filter = ToolFilter {
+            mode: PipelineMode::Modular,
             is_first_turn: false, // Turn 2 has >2 messages in history
             title_is_unset: false,
             memory_retrieval_enabled: true,

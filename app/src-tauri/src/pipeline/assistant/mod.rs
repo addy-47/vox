@@ -5,6 +5,7 @@ pub mod playback;
 pub mod ptt;
 pub mod session;
 pub mod speech;
+pub mod text;
 pub mod transcript;
 
 use std::mem::take;

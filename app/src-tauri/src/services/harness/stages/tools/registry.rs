@@ -1,11 +1,19 @@
 use std::{collections::HashMap, sync::Arc};
 
-use super::{memory::MemorySearchTool, title::RespondAndSetTitleTool, ToolDefinition};
-use crate::services::llm::CanonicalToolDefinition;
+use super::{
+    respond_and_set_title::{RespondAndSetTitleTool, SetSessionTitleTool},
+    search_memory::MemorySearchTool,
+    ToolDefinition,
+};
+use crate::{
+    core::settings::PipelineMode,
+    services::llm::CanonicalToolDefinition,
+};
 
 /// Contextual filters governing tool availability on a per-turn basis.
 #[derive(Debug, Clone, Default)]
 pub struct ToolFilter {
+    pub mode: PipelineMode,
     pub is_first_turn: bool,
     pub title_is_unset: bool,
     pub memory_retrieval_enabled: bool,
@@ -29,6 +37,7 @@ impl ToolRegistry {
     pub fn with_default_tools() -> Self {
         let mut reg = Self::new();
         reg.register(Arc::new(RespondAndSetTitleTool));
+        reg.register(Arc::new(SetSessionTitleTool));
         reg.register(Arc::new(MemorySearchTool));
         reg
     }
@@ -47,6 +56,9 @@ impl ToolRegistry {
     pub fn active_definitions(&self, filter: &ToolFilter) -> Vec<CanonicalToolDefinition> {
         let mut defs = Vec::new();
         for (name, tool) in &self.tools {
+            if !tool.domain().matches(filter.mode) {
+                continue;
+            }
             if name == "respond_and_set_title" && !(filter.is_first_turn && filter.title_is_unset) {
                 log::info!(
                     "[Harness::Tools] '{}' excluded: requires first turn with unset title (first_turn={}, title_unset={})",
@@ -63,16 +75,20 @@ impl ToolRegistry {
                 );
                 continue;
             }
-            defs.push(tool.to_canonical());
+            defs.push(tool.to_canonical(filter.mode));
         }
         defs.sort_by(|a, b| a.name.cmp(&b.name));
         defs
     }
 
-    /// Returns canonical definitions for all registered tools unconditionally.
-    pub fn canonical_definitions(&self) -> Vec<CanonicalToolDefinition> {
-        let mut defs: Vec<CanonicalToolDefinition> =
-            self.tools.values().map(|t| t.to_canonical()).collect();
+    /// Returns canonical definitions for all registered tools matching the requested pipeline mode.
+    pub fn canonical_definitions(&self, mode: PipelineMode) -> Vec<CanonicalToolDefinition> {
+        let mut defs: Vec<CanonicalToolDefinition> = self
+            .tools
+            .values()
+            .filter(|t| t.domain().matches(mode))
+            .map(|t| t.to_canonical(mode))
+            .collect();
         defs.sort_by(|a, b| a.name.cmp(&b.name));
         defs
     }

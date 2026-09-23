@@ -79,7 +79,7 @@ pub enum DictationOutputMode {
     Tray,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum PipelineMode {
     #[default]

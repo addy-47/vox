@@ -240,8 +240,11 @@ mod tests {
     fn test_chunker_prosody_preserves_periods() {
         let mut c = ClauseChunker::new();
         let chunks = c.push_str("Hai Addy. I'm Vox. I help you do things today.");
-        assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], "Hai Addy. I'm Vox. I help you do things today.");
+        assert_eq!(chunks, vec!["Hai Addy."]);
+        assert_eq!(
+            c.flush(),
+            Some("I'm Vox. I help you do things today.".to_string())
+        );
     }
 
     /// Tests period does not split on decimal like 3.14

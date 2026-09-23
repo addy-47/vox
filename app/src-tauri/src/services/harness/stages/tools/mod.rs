@@ -4,19 +4,42 @@ use futures_util::future::BoxFuture;
 use serde_json::Value;
 
 use crate::{
-    core::state::AppState,
+    core::{
+        settings::PipelineMode,
+        state::AppState,
+    },
     services::llm::{CanonicalToolDefinition, ToolFlow},
 };
 
 pub mod executor;
-pub mod memory;
 pub mod registry;
-pub mod title;
+pub mod respond_and_set_title;
+pub mod search_memory;
 
 pub use executor::{ToolExecutionOutcome, ToolExecutor};
-pub use memory::MemorySearchTool;
 pub use registry::{ToolFilter, ToolRegistry};
-pub use title::RespondAndSetTitleTool;
+pub use respond_and_set_title::{RespondAndSetTitleTool, SetSessionTitleTool};
+pub use search_memory::MemorySearchTool;
+
+/// Operational domain classification defining where a tool can be utilized.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ToolDomain {
+    Modular,
+    Realtime,
+    #[default]
+    All,
+}
+
+impl ToolDomain {
+    /// Evaluates whether this tool domain is eligible for the active pipeline mode.
+    pub fn matches(&self, mode: PipelineMode) -> bool {
+        match self {
+            ToolDomain::All => true,
+            ToolDomain::Modular => mode == PipelineMode::Modular,
+            ToolDomain::Realtime => mode == PipelineMode::Realtime,
+        }
+    }
+}
 
 /// Execution context passed to cognitive tools during turn evaluation.
 pub struct ToolExecutionContext {
@@ -25,6 +48,21 @@ pub struct ToolExecutionContext {
     pub turn_id: u32,
     pub cancel: tokio_util::sync::CancellationToken,
     pub on_sessions_changed: Option<Arc<dyn Fn() + Send + Sync>>,
+}
+
+impl ToolExecutionContext {
+    /// Checks if a non-placeholder title is already persisted for the active session.
+    pub async fn is_title_already_set(&self) -> bool {
+        if let Ok(conn) = self.app_state.db.connect() {
+            if let Ok(Some(session)) = crate::persistence::sessions::fetch_session_by_id(&conn, self.session_id).await {
+                if let Some(ref title) = session.title {
+                    let trimmed = title.trim();
+                    return !trimmed.is_empty() && trimmed != "Untitled Session" && trimmed != "New Session";
+                }
+            }
+        }
+        false
+    }
 }
 
 /// Normalized result of an executed cognitive tool.
@@ -72,6 +110,9 @@ pub enum ToolError {
 
     #[error("Tool execution cancelled")]
     Cancelled,
+
+    #[error("Tool '{0}' does not support pipeline mode {1:?}")]
+    UnsupportedDomain(String, PipelineMode),
 }
 
 /// Object-safe definition contract implemented by all cognitive tools in the Vox runtime.
@@ -79,11 +120,16 @@ pub trait ToolDefinition: Send + Sync {
     /// Canonical identifier of the tool matching the model invocation name.
     fn name(&self) -> &str;
 
-    /// Plain-language description exposed in model system prompt / function declaration.
-    fn description(&self) -> &str;
+    /// Declares the operational domain affinity for this tool. Defaults to Universal (`ToolDomain::All`).
+    fn domain(&self) -> ToolDomain {
+        ToolDomain::All
+    }
 
-    /// JSON schema describing the required and optional arguments for this tool.
-    fn parameters_schema(&self) -> Value;
+    /// Plain-language description exposed in model system prompt / function declaration.
+    fn description(&self, mode: PipelineMode) -> &str;
+
+    /// JSON schema describing the required and optional arguments for this tool in the active mode.
+    fn parameters_schema(&self, mode: PipelineMode) -> Value;
 
     /// Behavioral flow category governing state transitions and speech delivery.
     fn flow(&self) -> ToolFlow;
@@ -91,16 +137,17 @@ pub trait ToolDefinition: Send + Sync {
     /// Executes the tool asynchronously, returning a structured observation or error.
     fn execute<'a>(
         &'a self,
+        mode: PipelineMode,
         args: Value,
         ctx: &'a ToolExecutionContext,
     ) -> BoxFuture<'a, Result<ToolResult, ToolError>>;
 
-    /// Produces a provider-neutral canonical tool definition for model declaration.
-    fn to_canonical(&self) -> CanonicalToolDefinition {
+    /// Produces a provider-neutral canonical tool definition for model declaration in the active mode.
+    fn to_canonical(&self, mode: PipelineMode) -> CanonicalToolDefinition {
         CanonicalToolDefinition {
             name: self.name().to_string(),
-            description: self.description().to_string(),
-            parameters: self.parameters_schema(),
+            description: self.description(mode).to_string(),
+            parameters: self.parameters_schema(mode),
             flow: self.flow(),
         }
     }

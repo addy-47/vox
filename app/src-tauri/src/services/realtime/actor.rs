@@ -6,16 +6,20 @@ use std::{
 use anyhow::Result;
 use tokio::task::JoinHandle;
 
+use tauri::Manager;
+
 use crate::{
     core::{
         error::PipelineError,
         events::{emit_ipc_to, IpcEvent, LlmTokenPayload, TranscriptPayload, VoxEvent},
-        settings::{InteractionMode, RealtimeProviderKind},
-        state::{AppState, InteractionOwner},
+        settings::{InteractionMode, PipelineMode, RealtimeProviderKind},
+        state::{AppState, AppWindow, InteractionOwner},
     },
     pipeline::target_window,
     services::{
         audio::PlaybackEngine,
+        harness::stages::tools::{ToolExecutionContext, ToolExecutor, ToolRegistry},
+        llm::CanonicalToolCall,
         realtime::{
             audio_bridge::AudioBridge,
             providers::{DeepgramVoiceAgentProvider, GeminiLiveProvider},
@@ -73,10 +77,14 @@ impl RealtimeActor {
         self.session = Some(session_arc.clone());
 
         self.audio_bridge
-            .start(session_arc, config, &self.tokio_handle);
+            .start(session_arc.clone(), config, &self.tokio_handle);
 
         let loop_playback_tx = playback_tx.clone();
         let loop_event_tx = event_tx.clone();
+        let tool_registry = Arc::new(ToolRegistry::with_default_tools());
+        let state_arc: Option<Arc<AppState>> =
+            app.try_state::<Arc<AppState>>().map(|s| s.inner().clone());
+        let sessions_callback = make_sessions_changed_callback(&app);
 
         let event_loop_task = self.tokio_handle.spawn(async move {
             while let Some(event) = provider_event_rx.recv().await {
@@ -155,6 +163,69 @@ impl RealtimeActor {
                     RealtimeProviderEvent::SessionResumptionHandle { handle, model } => {
                         write_session_cache_non_blocking(&handle, &model).await;
                     }
+                    RealtimeProviderEvent::ToolCall { id, name, args } => {
+                        let session_clone = session_arc.clone();
+                        let registry_clone = tool_registry.clone();
+                        let state_clone = state_arc.clone();
+                        let cb_clone = sessions_callback.clone();
+                        tokio::spawn(async move {
+                            log::info!(
+                                "[RealtimeActor] Processing inbound ToolCall: name={} id={}",
+                                name,
+                                id
+                            );
+                            let Some(app_state) = state_clone else {
+                                log::error!("[RealtimeActor] AppState unavailable for tool execution");
+                                return;
+                            };
+                            let session_id = app_state
+                                .conversation_id
+                                .load(std::sync::atomic::Ordering::Relaxed)
+                                as i64;
+                            let turn_id = app_state
+                                .pipeline
+                                .turn_id
+                                .load(std::sync::atomic::Ordering::Relaxed);
+                            let tool_ctx = ToolExecutionContext {
+                                app_state: app_state.clone(),
+                                session_id,
+                                turn_id,
+                                cancel: tokio_util::sync::CancellationToken::new(),
+                                on_sessions_changed: cb_clone,
+                            };
+                            let call = CanonicalToolCall {
+                                id: id.clone(),
+                                name: name.clone(),
+                                arguments: args,
+                            };
+                            let outcome = ToolExecutor::execute_tool(
+                                &registry_clone,
+                                PipelineMode::Realtime,
+                                call,
+                                tool_ctx,
+                            )
+                            .await;
+                            let result_val: serde_json::Value =
+                                match serde_json::from_str(&outcome.result.content) {
+                                    Ok(v) => v,
+                                    Err(_) => serde_json::json!({ "output": outcome.result.content }),
+                                };
+                            if let Err(e) =
+                                session_clone.send_tool_response(&id, &name, &result_val)
+                            {
+                                log::warn!(
+                                    "[RealtimeActor] Failed to dispatch tool response: {:?}",
+                                    e
+                                );
+                            } else {
+                                log::info!(
+                                    "[RealtimeActor] Dispatched tool response for {} (id: {})",
+                                    name,
+                                    id
+                                );
+                            }
+                        });
+                    }
                 }
             }
             log::info!("[RealtimeActor] Provider event translation loop terminated.");
@@ -211,6 +282,35 @@ impl RealtimeActor {
             Ok(())
         }
     }
+
+    /// Dispatches a typed user text message to the active realtime provider session.
+    pub fn send_text(&self, text: &str) -> Result<()> {
+        log::info!(
+            "[RealtimeActor] Sending text input to provider session (chars: {})",
+            text.len()
+        );
+        if let Some(ref session) = self.session {
+            session.send_text(text)
+        } else {
+            anyhow::bail!("No active realtime session");
+        }
+    }
+}
+
+fn make_sessions_changed_callback<R: tauri::Runtime + 'static>(
+    app: &tauri::AppHandle<R>,
+) -> Option<Arc<dyn Fn() + Send + Sync>> {
+    let app_clone = app.clone();
+    Some(Arc::new(move || {
+        if let Err(e) = emit_ipc_to(&app_clone, AppWindow::Main, IpcEvent::SessionsChanged) {
+            log::warn!(
+                "[RealtimeActor::Tools] Failed to emit SessionsChanged IPC: {}",
+                e
+            );
+        } else {
+            log::info!("[RealtimeActor::Tools] Emitted SessionsChanged IPC");
+        }
+    }))
 }
 
 /// Asynchronously saves the session resumption handle to disk without blocking the Tokio runtime.
@@ -284,10 +384,13 @@ pub fn create_realtime_provider(
         settings.realtime.gemini_live.resume_handle = Some(handle);
     }
 
+    let tools = ToolRegistry::with_default_tools().canonical_definitions(PipelineMode::Realtime);
+
     match settings.realtime.active {
         RealtimeProviderKind::GeminiLive => Ok(Box::new(GeminiLiveProvider::new(
             settings.realtime.gemini_live.clone(),
             assembled_prompt,
+            tools,
             state.pipeline.state_rx.clone(),
             state.pipeline.turn_id.clone(),
         ))),

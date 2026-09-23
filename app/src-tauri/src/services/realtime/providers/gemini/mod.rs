@@ -12,21 +12,25 @@ use crate::{
         settings::{GeminiRealtimeConfig, InteractionMode},
         state::InteractionState,
     },
-    services::realtime::{
-        transport::{
-            resolve_or_fallback, spawn_harness, tcp_health_check, HarnessConfig, HarnessInit,
+    services::{
+        llm::CanonicalToolDefinition,
+        realtime::{
+            transport::{
+                resolve_or_fallback, spawn_harness, tcp_health_check, HarnessConfig, HarnessInit,
+            },
+            RealtimeAudioConfig, RealtimeProviderEvent, RealtimeProviderKind, RealtimeSession,
+            RealtimeVoiceProvider, BRIDGE_CHANNEL_CAPACITY, DEFAULT_INPUT_SAMPLE_RATE,
+            DEFAULT_OUTPUT_SAMPLE_RATE, GEMINI_HEALTH_CHECK_ADDR,
+            GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR, MAX_RECONNECT_ATTEMPTS,
+            RECONNECT_BASE_DELAY_SECS, RECONNECT_FACTOR_SECS, WS_HEALTH_CHECK_TIMEOUT,
         },
-        RealtimeAudioConfig, RealtimeProviderEvent, RealtimeProviderKind, RealtimeSession,
-        RealtimeVoiceProvider, BRIDGE_CHANNEL_CAPACITY, DEFAULT_INPUT_SAMPLE_RATE,
-        DEFAULT_OUTPUT_SAMPLE_RATE, GEMINI_HEALTH_CHECK_ADDR,
-        GEMINI_HEALTH_CHECK_FALLBACK_SOCKET_ADDR, MAX_RECONNECT_ATTEMPTS,
-        RECONNECT_BASE_DELAY_SECS, RECONNECT_FACTOR_SECS, WS_HEALTH_CHECK_TIMEOUT,
     },
 };
 
 pub struct GeminiLiveProvider {
     config: GeminiRealtimeConfig,
     system_prompt: String,
+    tools: Vec<CanonicalToolDefinition>,
     state_rx: tokio::sync::watch::Receiver<InteractionState>,
     turn_id: Arc<AtomicU32>,
 }
@@ -35,12 +39,14 @@ impl GeminiLiveProvider {
     pub fn new(
         config: GeminiRealtimeConfig,
         system_prompt: String,
+        tools: Vec<CanonicalToolDefinition>,
         state_rx: tokio::sync::watch::Receiver<InteractionState>,
         turn_id: Arc<AtomicU32>,
     ) -> Self {
         Self {
             config,
             system_prompt,
+            tools,
             state_rx,
             turn_id,
         }
@@ -87,6 +93,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
             &model,
             &self.config,
             &self.system_prompt,
+            &self.tools,
             is_ptt,
             resume_handle.as_deref(),
         ))?;
@@ -108,6 +115,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
 
         let config_clone = self.config.clone();
         let system_prompt_clone = self.system_prompt.clone();
+        let tools_clone = self.tools.clone();
         let url_clone = url.clone();
         let model_clone = model.clone();
         let driver_clone = driver.clone();
@@ -117,6 +125,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
             let model = model_clone.clone();
             let config = config_clone.clone();
             let system_prompt = system_prompt_clone.clone();
+            let tools = tools_clone.clone();
             let driver = driver_clone.clone();
             Box::pin(async move {
                 let resume_handle = driver.state.lock().resume_handle.clone();
@@ -125,6 +134,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
                     &model,
                     &config,
                     &system_prompt,
+                    &tools,
                     is_ptt,
                     resume_handle.as_deref(),
                 )
