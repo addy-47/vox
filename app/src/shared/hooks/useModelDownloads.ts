@@ -4,7 +4,7 @@ import {
   downloadOptionalModel,
   deleteModel,
   checkModelExists,
-} from "@/services/modelService";
+} from "@/services/setupService";
 import * as eventsService from "@/services/eventsService";
 
 export interface ModelStatus {

@@ -1,7 +1,7 @@
 import React from "react";
 import { Layers, AlertTriangle, Code, Palette, Box, Activity } from "lucide-react";
 import type { PageMemoryRecord } from "@/shared/hooks/useMemoryProfiler";
-import type { JSHeapSample, DOMSample, CSSIndicatorsSample } from "@/services/memoryProfilerService";
+import type { JSHeapSample, DOMSample, CSSIndicatorsSample } from "@/services/monitoringService";
 import { AccuracyBadge } from "./AccuracyBadge";
 import { cn } from "@/shared/lib/utils";
 import { TRACKED_PAGES, PROFILER_COPY } from "@/data/profilerCopy";

@@ -1,5 +1,53 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export interface RuntimeSnapshot {
+  pipeline_state: string;
+  current_turn_id: number;
+  conversation_id: number;
+  playback_active: boolean;
+  system_cpu_usage: number;
+  system_ram_mb: number;
+  vox_cpu_usage: number;
+  vox_ram_mb: number;
+  total_ram_mb: number;
+  cpu_cores: number;
+  vad_energy: number;
+  vad_probability: number;
+  stt_latency_ms: number | null;
+  ttft_ms: number | null;
+  total_voice_latency_ms: number | null;
+  persistence_queue_depth: number;
+  dropped_persistence_events: number;
+  playback_buffer_samples: number;
+  playback_underruns: number;
+  active_owner: string;
+  active_threads: number;
+  tts_rtf: number | null;
+  playback_start_ms: number | null;
+  persistence_writes_per_sec: number;
+  is_db_healthy: boolean;
+  is_llm_loaded: boolean;
+  llm_provider_kind: string;
+  is_tts_loaded: boolean;
+  is_stt_loaded: boolean;
+  is_vad_loaded: boolean;
+  is_embedder_loaded: boolean;
+  is_query_classifier_loaded: boolean;
+  is_intra_edge_classifier_loaded: boolean;
+  is_inter_edge_classifier_loaded: boolean;
+  is_translit_loaded: boolean;
+  cpu_governor: string;
+  cpu_governor_optimal: boolean;
+  timestamp_ms?: number;
+}
+
+/** RuntimeSnapshot with a local performance.now() timestamp for sparkline age calc. */
+export type LocalSnapshot = RuntimeSnapshot & { localTime: number };
+
+export function getRuntimeSnapshot(): Promise<RuntimeSnapshot | null> {
+  return invoke("get_runtime_snapshot");
+}
+
 export type AccuracyLevel = "Measured" | "Estimated" | "Correlated" | "Unattributed";
 
 export interface ProcessMemoryEntry {

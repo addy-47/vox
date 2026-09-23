@@ -272,13 +272,19 @@ pub fn on_session_start<R: Runtime + 'static>(
 
     let tokio_handle = get_tokio_handle();
     let conn = state.db.connect().ok();
-    let (personal_memory, summary, turns) =
+    let (personal_memory, summary, turns, max_turn_id, title_is_set) =
         if let (Some(sid), Some(conn)) = (session_id, conn.as_ref()) {
             match tokio_handle.block_on(fetch_session_continuation(conn, sid)) {
-                Ok(data) => (data.personal_memory, data.latest_summary, data.turns),
+                Ok(data) => (
+                    data.personal_memory,
+                    data.latest_summary,
+                    data.turns,
+                    data.max_turn_id,
+                    data.title_is_set,
+                ),
                 Err(e) => {
                     log::warn!("[Pipeline::Session] Failed to fetch continuation: {}", e);
-                    (None, None, Vec::new())
+                    (None, None, Vec::new(), 0, false)
                 }
             }
         } else if let Some(conn) = conn.as_ref() {
@@ -292,10 +298,21 @@ pub fn on_session_start<R: Runtime + 'static>(
                         Some(r.content)
                     }
                 });
-            (mem, None, Vec::new())
+            (mem, None, Vec::new(), 0, false)
         } else {
-            (None, None, Vec::new())
+            (None, None, Vec::new(), 0, false)
         };
+
+    state
+        .pipeline
+        .turn_id
+        .store(max_turn_id, Ordering::Relaxed);
+    state.pipeline.rearm_turn_token();
+    log::info!(
+        "[Pipeline::Session] Synchronized turn counter to {} for session {}",
+        max_turn_id,
+        conv_id
+    );
 
     match session_ctx.pipeline_mode {
         PipelineMode::Modular => {
@@ -315,7 +332,7 @@ pub fn on_session_start<R: Runtime + 'static>(
                     supports_tools,
                 );
                 if !turns.is_empty() || summary.is_some() {
-                    harness.seed_continuation(summary, turns);
+                    harness.seed_continuation(summary, turns, title_is_set);
                 }
                 *state.harness.lock() = Some(harness);
             } else {
@@ -325,7 +342,7 @@ pub fn on_session_start<R: Runtime + 'static>(
         PipelineMode::Realtime => {
             let mut harness = Harness::new_realtime(session_id, prompt, personal_memory, &settings);
             if !turns.is_empty() || summary.is_some() {
-                harness.seed_continuation(summary, turns);
+                harness.seed_continuation(summary, turns, title_is_set);
             }
             *state.harness.lock() = Some(harness);
         }

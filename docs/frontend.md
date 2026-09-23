@@ -85,19 +85,17 @@ Raw `@tauri-apps/api` `invoke` calls are **banned inside components** (code-styl
 
 | Service file | Responsibility |
 |---|---|
-| `services/settingsService.ts` | Boot state, settings get/update, model catalog, provider health, model capability probing & token cap validation, input/output audio devices |
-| `services/pipelineService.ts` | Engine lifecycle (`stopEngine`, `launchEngine`), discrete session verbs (`startSession`, `endSession`, `pauseSession`, `resumeSession`), PTT (`pttStart`, `pttStop`, `pttCancel`), test clips (`testClip`, `testClipCancel`), runtime snapshots, voice library (`listVoices`, `renameVoice`, `addVoiceFromFile`, `addVoiceFromRecording`, `deleteVoice`), remote deploy |
-| `services/eventsService.ts` | Typed Tauri `listen` wrappers for canonical IPC events (`state_changed`, `transcript_partial`/`final`, `llm_token`, `model_progress`, `telemetry`, `system_stats`, `settings-updated`, `toggle_tray`, `show_toast`, `notification_created`/`updated`, `personal_memory_updated`, `sessions_changed`, `turn_metrics`); `on<T>` sync-cleanup wrapper with `beforeunload`/`pagehide` registry |
-| `services/notificationService.ts` | Notification center CRUD, actions, router |
-| `services/projectService.ts` | Project list, active session label sync, project creation/move |
-| `services/sessionService.ts` | Session continuation, hydration, `activeSessionId` management |
-| `services/historyService.ts` | Session/turn CRUD, transcript history, delete |
-| `services/helpService.ts` | Onboarding status, help content |
+| `services/settingsService.ts` | Boot state, settings get/update, model catalog, provider health, model capability probing & token cap validation, input/output audio devices, remote server setup (`setupRemoteServer`) |
+| `services/pipelineService.ts` | Engine lifecycle (`stopEngine`, `launchEngine`, `restartEngine`), session creation & continuation (`createSession`, `continueSession`), session orchestration (`engageSession`, `disengageSession`), discrete session verbs (`startSession`, `endSession`, `pauseSession`, `resumeSession`), PTT controls, typed text input, audio output/mic mute, ephemeral private mode |
+| `services/voiceService.ts` | Voice library & cloning (`listVoices`, `renameVoice`, `addVoiceFromFile`, `addVoiceFromRecording`, `deleteVoice`, `startBackendRecording`, `stopBackendRecording`) |
+| `services/monitoringService.ts` | Throttled runtime snapshots (`getRuntimeSnapshot`), multi-dimensional RAM/heap/DOM memory profiler snapshots, and memory telemetry logging |
+| `services/setupService.ts` | Onboarding status (`getOnboardingStatus`), model download/setup, runtime report, update check, and manifest |
+| `services/historyService.ts` | Persistent database session & turn queries (`getSessions`, `getTurns`, `updateSession`, `deleteSession`), tray transcript history |
 | `services/memoryService.ts` | Memory graph topology, stats, fact mutations, personal memory commands, `getActiveFacts` |
-| `services/memoryProfilerService.ts` | Multi-dimensional RAM/heap/DOM profiling snapshots |
-| `services/modelService.ts` | Onboarding status, model download/setup, manifest |
-| `services/windowService.ts` | Main window show, Tray window hide, mouse click-through toggling (`setWindowClickThrough`) |
-| `services/toastService.ts` | Native toast overlay window lifecycle (`manageToastWindow`) and late-joining replay buffer (`getLastToast`) |
+| `services/windowService.ts` | Window presentation (`showMainWindow`, `hideTrayWindow`), mouse click-through toggling, and native toast overlay management (`manageToastWindow`, `getLastToast`) |
+| `services/projectService.ts` | Workspace project categorization, project CRUD, active session label synchronization |
+| `services/eventsService.ts` | Typed Tauri `listen` wrappers for canonical IPC events (`state_changed`, `transcript_partial`/`final`, `llm_token`, `model_progress`, `telemetry`, `system_stats`, `settings-updated`, `toggle_tray`, `show_toast`, `notification_created`/`updated`, `personal_memory_updated`, `sessions_changed`, `turn_metrics`); `on<T>` sync-cleanup wrapper with `beforeunload`/`pagehide` registry |
+| `services/notificationService.ts` | Notification center CRUD, task resolution actions, router |
 
 **Rule:** pages compose layout only (`code-style-guide.md` §2). Business logic, data transforms, and IPC belong in `services/`, `hooks/`, or `store/`.
 

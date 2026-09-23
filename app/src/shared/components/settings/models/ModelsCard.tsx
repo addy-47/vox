@@ -1,12 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
-import {
-  setupRemoteServer,
-  listVoices,
-} from "@/services/pipelineService";
+import { listVoices } from "@/services/voiceService";
 import {
   checkTtsProviderHealth,
   getProviderCaps,
+  setupRemoteServer,
 } from "@/services/settingsService";
 import * as eventsService from "@/services/eventsService";
 import {

@@ -1,52 +1,43 @@
 import { invoke } from "@tauri-apps/api/core";
-
+import { getRuntimeSnapshot } from "./monitoringService";
+import type { InteractionState } from "@/services/eventsService";
+import type { SessionRow, TurnRow } from "./historyService";
 
 export type InteractionOwner = "Assistant" | "Dictation";
 
-export interface RuntimeSnapshot {
-  pipeline_state: string;
-  current_turn_id: number;
-  conversation_id: number;
-  playback_active: boolean;
-  system_cpu_usage: number;
-  system_ram_mb: number;
-  vox_cpu_usage: number;
-  vox_ram_mb: number;
-  total_ram_mb: number;
-  cpu_cores: number;
-  vad_energy: number;
-  vad_probability: number;
-  stt_latency_ms: number | null;
-  ttft_ms: number | null;
-  total_voice_latency_ms: number | null;
-  persistence_queue_depth: number;
-  dropped_persistence_events: number;
-  playback_buffer_samples: number;
-  playback_underruns: number;
-  active_owner: string;
-  active_threads: number;
-  tts_rtf: number | null;
-  playback_start_ms: number | null;
-  persistence_writes_per_sec: number;
-  is_db_healthy: boolean;
-  is_llm_loaded: boolean;
-  llm_provider_kind: string;
-  is_tts_loaded: boolean;
-  is_stt_loaded: boolean;
-  is_vad_loaded: boolean;
-  is_embedder_loaded: boolean;
-  is_query_classifier_loaded: boolean;
-  is_intra_edge_classifier_loaded: boolean;
-  is_inter_edge_classifier_loaded: boolean;
-  is_translit_loaded: boolean;
-  cpu_governor: string;
-  cpu_governor_optimal: boolean;
-  timestamp_ms: number;
+export type VoxIpcError = {
+  readonly error_type: string;
+  readonly message: string;
+};
+
+export function isVoxIpcError(err: unknown): err is VoxIpcError {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "error_type" in err &&
+    "message" in err
+  );
 }
 
-/** RuntimeSnapshot with a local performance.now() timestamp for sparkline age calc. */
-export type LocalSnapshot = RuntimeSnapshot & { localTime: number };
+export function isInvalidStateError(err: VoxIpcError): boolean {
+  return err.error_type === "InvalidState";
+}
 
+export interface SessionOrchestrationResult {
+  readonly success: boolean;
+  readonly reason?: "invalid_state" | "timeout" | "error";
+}
+
+const VALID_STATES = new Set<InteractionState>([
+  "Idle", "Ready", "Listening", "Thinking", "Speaking", "Paused", "Error", "Sleeping", "Working",
+]);
+
+export interface ContinueSessionResult {
+  session: SessionRow;
+  turns: TurnRow[];
+}
+
+// ── Engine Lifecycle ────────────────────────────────────────────────────────
 
 export function stopEngine(): Promise<void> {
   return invoke("stop_engine");
@@ -59,6 +50,8 @@ export function launchEngine(): Promise<void> {
 export function restartEngine(): Promise<void> {
   return invoke("restart_engine");
 }
+
+// ── Session Lifecycle (ipc/pipeline.rs) ──────────────────────────────────────
 
 export function startSession(sessionId?: number | null): Promise<void> {
   return invoke("start_session", { sessionId: sessionId ?? null });
@@ -76,6 +69,154 @@ export function resumeSession(): Promise<void> {
   return invoke("resume_session");
 }
 
+export async function createSession(
+  projectId?: string,
+  notifyState?: (state: InteractionState) => void,
+): Promise<SessionRow | null> {
+  try {
+    const snap = await getRuntimeSnapshot();
+    if (snap && snap.pipeline_state !== "Idle") {
+      if (notifyState) {
+        await disengageSession(notifyState);
+      } else {
+        await endSession();
+      }
+    }
+  } catch {
+    // Best-effort cleanup prior to creating new session
+  }
+  return invoke("create_session", { projectId: projectId ?? null });
+}
+
+export async function continueSession(
+  sessionId: number,
+  notifyState?: (state: InteractionState) => void,
+): Promise<ContinueSessionResult> {
+  try {
+    const snap = await getRuntimeSnapshot();
+    if (snap && snap.pipeline_state !== "Idle") {
+      if (notifyState) {
+        await disengageSession(notifyState);
+      } else {
+        await endSession();
+      }
+    }
+  } catch {
+    // Best-effort cleanup prior to continuing session
+  }
+
+  const result = await invoke<ContinueSessionResult>("continue_session", { sessionId });
+
+  try {
+    if (notifyState) {
+      await engageSession(notifyState, 8000, sessionId);
+    } else {
+      await startSession(sessionId);
+    }
+  } catch {
+    // Best-effort engagement
+  }
+
+  return result;
+}
+
+// ── Orchestration Helpers ───────────────────────────────────────────────────
+
+export async function engageSession(
+  notifyState: (state: InteractionState) => void,
+  timeoutMs: number = 8000,
+  sessionId?: number | null,
+): Promise<SessionOrchestrationResult> {
+  try {
+    await startSession(sessionId);
+  } catch (err: unknown) {
+    if (isVoxIpcError(err) && isInvalidStateError(err)) {
+      const synced = await resyncFromSnapshot();
+      return { success: synced.success, reason: synced.success ? undefined : "invalid_state" };
+    }
+    return { success: false, reason: "error" };
+  }
+
+  try {
+    const reached = await waitForState("Ready", notifyState, timeoutMs);
+    if (!reached) {
+      const synced = await resyncFromSnapshot();
+      return { success: synced.success, reason: synced.success ? undefined : "timeout" };
+    }
+    return { success: true };
+  } catch {
+    const synced = await resyncFromSnapshot();
+    return { success: synced.success, reason: synced.success ? undefined : "timeout" };
+  }
+}
+
+export async function disengageSession(
+  notifyState: (state: InteractionState) => void,
+  timeoutMs: number = 8000,
+): Promise<SessionOrchestrationResult> {
+  try {
+    await endSession();
+  } catch (err: unknown) {
+    if (isVoxIpcError(err) && isInvalidStateError(err)) {
+      const synced = await resyncFromSnapshot();
+      return { success: synced.success, reason: synced.success ? undefined : "invalid_state" };
+    }
+    return { success: false, reason: "error" };
+  }
+
+  try {
+    const reached = await waitForState("Idle", notifyState, timeoutMs);
+    if (!reached) {
+      const synced = await resyncFromSnapshot();
+      return { success: synced.success, reason: synced.success ? undefined : "timeout" };
+    }
+    return { success: true };
+  } catch {
+    const synced = await resyncFromSnapshot();
+    return { success: synced.success, reason: synced.success ? undefined : "timeout" };
+  }
+}
+
+async function waitForState(
+  target: InteractionState,
+  notifyState: (state: InteractionState) => void,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const snap = await getRuntimeSnapshot();
+      const state = snap?.pipeline_state as InteractionState | undefined;
+      if (state && VALID_STATES.has(state)) {
+        notifyState(state);
+        if (state === target) return true;
+      }
+    } catch {
+      // Best-effort; keep polling until deadline.
+    }
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
+async function resyncFromSnapshot(): Promise<{ success: boolean }> {
+  try {
+    const snap = await getRuntimeSnapshot();
+    if (snap?.pipeline_state && VALID_STATES.has(snap.pipeline_state as InteractionState)) {
+      return { success: true };
+    }
+    return { success: false };
+  } catch {
+    return { success: false };
+  }
+}
+
+// ── Input & Controls ────────────────────────────────────────────────────────
+
+export function submitTextInput(query: string): Promise<void> {
+  return invoke("submit_text_input", { query });
+}
+
 export function pttStart(): Promise<void> {
   return invoke("ptt_start");
 }
@@ -86,10 +227,6 @@ export function pttStop(): Promise<void> {
 
 export function pttCancel(): Promise<void> {
   return invoke("ptt_cancel");
-}
-
-export function submitTextInput(query: string): Promise<void> {
-  return invoke("submit_text_input", { query });
 }
 
 export function setPlaybackMuted(muted: boolean): Promise<void> {
@@ -104,70 +241,18 @@ export function setSessionPrivateMode(enabled: boolean): Promise<void> {
   return invoke("set_session_private_mode", { enabled });
 }
 
-export function getRuntimeSnapshot(): Promise<RuntimeSnapshot | null> {
-  return invoke("get_runtime_snapshot");
-}
+// ── Re-exports for Backward Compatibility ────────────────────────────────────
 
-
-export interface VoiceEntryDto {
-  id: string;
-  name: string;
-  source_kind: string;
-  has_preview: boolean;
-  created_at: number;
-}
-
-export interface EdgeTtsVoiceDto {
-  name: string;
-  short_name: string;
-  gender: string;
-  locale: string;
-  friendly_name: string;
-}
-
-export function startBackendRecording(): Promise<void> {
-  return invoke("start_backend_recording");
-}
-
-export function stopBackendRecording(): Promise<[number[], number]> {
-  return invoke("stop_backend_recording");
-}
-
-export function listVoices(provider?: "custom" | "edge" | "kokoro" | "supertonic"): Promise<VoiceEntryDto[]> {
-  return invoke("list_voices", { provider });
-}
-
-export function renameVoice(id: string, name: string): Promise<void> {
-  return invoke("rename_voice", { id, name });
-}
-
-export function addVoiceFromFile(name: string, filePath: string): Promise<VoiceEntryDto> {
-  return invoke("add_voice_from_file", { name, file_path: filePath });
-}
-
-export function addVoiceFromRecording(name: string, pcmF32: number[], sampleRate: number): Promise<VoiceEntryDto> {
-  return invoke("add_voice_from_recording", { name, pcm_f32: pcmF32, sample_rate: sampleRate });
-}
-
-export function deleteVoice(id: string): Promise<void> {
-  return invoke("delete_voice", { id });
-}
-
-
-export interface RemoteServerConfig {
-  connectionString: string;
-  sshPort: number | null;
-  identityKeyPath: string | null;
-  remotePath: string;
-  serverPort: number;
-}
-
-export function setupRemoteServer(config: RemoteServerConfig): Promise<void> {
-  return invoke("setup_remote_server", {
-    connection_string: config.connectionString,
-    ssh_port: config.sshPort,
-    identity_key_path: config.identityKeyPath,
-    remote_path: config.remotePath,
-    server_port: config.serverPort,
-  });
-}
+export { getRuntimeSnapshot, type RuntimeSnapshot, type LocalSnapshot } from "./monitoringService";
+export {
+  listVoices,
+  renameVoice,
+  addVoiceFromFile,
+  addVoiceFromRecording,
+  deleteVoice,
+  startBackendRecording,
+  stopBackendRecording,
+  type VoiceEntryDto,
+  type EdgeTtsVoiceDto,
+} from "./voiceService";
+export { setupRemoteServer, type RemoteServerConfig } from "./settingsService";

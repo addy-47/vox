@@ -20,7 +20,7 @@ use crate::{
                 streaming::StreamRoutingStage,
                 tools::ToolRegistry,
             },
-            ChatMessage, Role,
+            ChatMessage,
         },
         llm::{
             actor::LlmCommand, ConversationInput, GenerationOptions, GenerationPurpose,
@@ -288,12 +288,19 @@ impl Harness {
         }
     }
 
-    pub fn seed_continuation(&mut self, session_context: Option<String>, turns: Vec<TurnRow>) {
-        if !turns.is_empty() {
-            self.title_set = true;
-        }
+    pub fn seed_continuation(
+        &mut self,
+        session_context: Option<String>,
+        turns: Vec<TurnRow>,
+        title_set: bool,
+    ) {
+        self.title_set = title_set;
         if let Some(ref mut compaction) = self.compaction {
-            compaction.set_session_context(session_context);
+            compaction.set_session_context(session_context.clone());
+        }
+        if session_context.is_some() {
+            self.prompt.set_session_context(session_context);
+            self.history.reset(self.prompt.assemble());
         }
         for turn in turns {
             self.history.push_user_turn(turn.user_text);
@@ -302,19 +309,15 @@ impl Harness {
     }
 
     pub fn apply_session_context(&mut self, session_context: &str, active_query: &str) {
-        let Some(ref mut compaction) = self.compaction else {
-            return;
-        };
-        compaction.apply_session_context(session_context);
-        let pruned_messages =
-            compaction.prune_history_with_summary(&self.prompt.assemble(), active_query);
+        self.prompt.set_session_context(Some(session_context.to_string()));
+        if let Some(ref mut compaction) = self.compaction {
+            compaction.apply_session_context(session_context);
+        }
+        let assembled_prompt = self.prompt.assemble();
         self.history.clear();
-        for msg in pruned_messages {
-            match msg.role {
-                Role::System => self.history.reset(msg.content),
-                Role::User => self.history.push_user_turn(msg.content),
-                Role::Assistant | Role::Tool => self.history.push_assistant_turn(msg.content),
-            }
+        self.history.reset(assembled_prompt);
+        if !active_query.trim().is_empty() {
+            self.history.push_user_turn(active_query.to_string());
         }
         log::info!(
             "[Harness::Chassis] History rebuilt with session context. Total turns: {}",

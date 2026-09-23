@@ -49,20 +49,8 @@ export function getTranscriptHistory(): Promise<string[]> {
   return invoke("get_transcript_history");
 }
 
-/**
- * Initializes a fresh conversation session on the backend, resetting working memory.
- * Follows lazy persistence (persisted to database on first spoken turn).
- */
-export function createSession(projectId?: string): Promise<SessionRow | null> {
-  return invoke("create_session", { projectId: projectId ?? null });
-}
-
-/**
- * Restores a past session into working memory and returns its full context.
- */
-export function continueSession(sessionId: number): Promise<ContinueSessionResult> {
-  return invoke("continue_session", { sessionId });
-}
+// Lifecycle functions moved to pipelineService to match ipc/pipeline.rs domain
+export { createSession, continueSession } from "./pipelineService";
 
 const sessionsInFlight = new Map<string, Promise<SessionRow[]>>();
 

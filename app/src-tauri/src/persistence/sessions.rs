@@ -19,6 +19,8 @@ pub struct SessionContinuationData {
     pub personal_memory: Option<String>,
     pub latest_summary: Option<String>,
     pub turns: Vec<TurnRow>,
+    pub max_turn_id: u32,
+    pub title_is_set: bool,
 }
 
 /// Representation of a stored conversation session.
@@ -386,16 +388,49 @@ pub async fn fetch_session_continuation(
                         None
                     }
                 });
-                (summary, run.to_turn_id)
+                let compacted_turn = if summary.is_some() { run.to_turn_id } else { 0 };
+                (summary, compacted_turn)
             }
             _ => (None, 0),
         };
 
     let turns = fetch_turns_for_compaction(conn, session_id, last_compacted + 1, u32::MAX).await?;
 
+    let max_turn_id = {
+        let mut rows = conn
+            .query(
+                "SELECT COALESCE(MAX(turn_id), 0) FROM turns WHERE session_id = ?",
+                (session_id,),
+            )
+            .await?;
+        if let Some(row) = rows.next().await? {
+            let mt: i64 = row.get(0)?;
+            mt as u32
+        } else {
+            0
+        }
+    };
+
+    let title_is_set = {
+        let mut rows = conn
+            .query(
+                "SELECT title FROM sessions WHERE id = ?",
+                (session_id,),
+            )
+            .await?;
+        if let Some(row) = rows.next().await? {
+            let t: Option<String> = row.get(0)?;
+            t.map(|s| !s.trim().is_empty()).unwrap_or(false)
+        } else {
+            false
+        }
+    };
+
     Ok(SessionContinuationData {
         personal_memory,
         latest_summary,
         turns,
+        max_turn_id,
+        title_is_set,
     })
 }

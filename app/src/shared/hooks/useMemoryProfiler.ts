@@ -10,7 +10,7 @@ import {
   type JSHeapSample,
   type DOMSample,
   type CSSIndicatorsSample,
-} from "@/services/memoryProfilerService";
+} from "@/services/monitoringService";
 import { useMemoryProfilerContext } from "@/shared/context/MemoryProfilerContext";
 
 export interface PageMemoryRecord {

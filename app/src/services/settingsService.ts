@@ -155,3 +155,22 @@ export function listInputDevices(): Promise<AudioDevice[]> {
 export function completeSetupWizard(): Promise<void> {
   return invoke("complete_setup_wizard");
 }
+
+export interface RemoteServerConfig {
+  connectionString: string;
+  sshPort: number | null;
+  identityKeyPath: string | null;
+  remotePath: string;
+  serverPort: number;
+}
+
+export function setupRemoteServer(config: RemoteServerConfig): Promise<void> {
+  return invoke("setup_remote_server", {
+    connection_string: config.connectionString,
+    ssh_port: config.sshPort,
+    identity_key_path: config.identityKeyPath,
+    remote_path: config.remotePath,
+    server_port: config.serverPort,
+  });
+}
+

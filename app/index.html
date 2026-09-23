@@ -304,7 +304,10 @@
         showError(msg + ' (' + url + ':' + line + ':' + col + ')', err ? err.stack : '');
       };
       window.addEventListener('unhandledrejection', function(e) {
-        showError('Unhandled Promise: ' + (e.reason?.message || e.reason || 'unknown'), e.reason?.stack);
+        const msg = e.reason?.message || e.reason || 'unknown';
+        const stack = e.reason?.stack || '';
+        window.__VOX_ERRORS.push({ msg: 'Unhandled Promise: ' + msg, stack, time: new Date().toISOString() });
+        console.error('Unhandled Promise Rejection:', e.reason);
       });
     </script>
   </body>

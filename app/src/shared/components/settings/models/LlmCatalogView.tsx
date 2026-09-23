@@ -477,27 +477,27 @@ export const LlmCatalogView = memo(({
                         <Tooltip
                           side="top"
                           align="start"
-                          className="p-3 min-w-[220px] whitespace-normal text-left z-50 border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-2xl backdrop-blur-2xl"
+                          className="p-3 w-[210px] whitespace-normal text-left z-50 border border-[rgba(var(--foreground),0.14)] bg-[rgb(var(--card))]/98 shadow-2xl backdrop-blur-2xl"
                           label={
-                            <div className="space-y-1.5 text-[11px] font-sans">
-                              <div className="font-bold text-[rgb(var(--foreground))] border-b border-[rgba(var(--foreground),0.08)] pb-1 flex items-center justify-between">
+                            <div className="space-y-1.5 text-[11px] font-sans w-full">
+                              <div className="font-bold text-[rgb(var(--foreground))] border-b border-[rgba(var(--foreground),0.08)] pb-1 flex items-center justify-between gap-2">
                                 <span>{LLM_CATALOG_COPY.modelCapabilities}</span>
                                 {isGpu ? (
-                                  <span className="text-purple-400 font-mono text-[10px] font-bold">{LLM_CATALOG_COPY.gpuBadge}</span>
+                                  <span className="text-purple-400 font-mono text-[10px] font-bold shrink-0">{LLM_CATALOG_COPY.gpuBadge}</span>
                                 ) : probed?.server_has_gpu ? (
-                                  <span className="text-amber-400 font-mono text-[10px] font-bold">{LLM_CATALOG_COPY.cpuBadge}</span>
+                                  <span className="text-amber-400 font-mono text-[10px] font-bold shrink-0">{LLM_CATALOG_COPY.cpuBadge}</span>
                                 ) : null}
                               </div>
-                              <div className="space-y-1 font-mono text-[10.5px]">
+                              <div className="space-y-1 font-mono text-[10.5px] w-full">
                                 {probed.tps != null && probed.tps > 0 && (
-                                  <div className="flex justify-between gap-3">
+                                  <div className="flex items-center justify-between gap-3">
                                     <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.speed}</span>
-                                    <span className="text-emerald-400 font-bold">⚡ {probed.tps.toFixed(1)} tps</span>
+                                    <span className="text-emerald-400 font-bold shrink-0">⚡ {probed.tps.toFixed(1)} tps</span>
                                   </div>
                                 )}
-                                <div className="flex justify-between gap-3">
-                                    <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.context}</span>
-                                  <span className="text-[rgb(var(--foreground))]">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.context}</span>
+                                  <span className="text-[rgb(var(--foreground))] shrink-0">
                                     {probed.context_window
                                       ? probed.context_window >= 1000000
                                         ? `${(probed.context_window / 1000000).toFixed(1)}M tokens`
@@ -506,20 +506,20 @@ export const LlmCatalogView = memo(({
                                   </span>
                                 </div>
                                 {probed.vram_bytes ? (
-                                  <div className="flex justify-between gap-3">
+                                  <div className="flex items-center justify-between gap-3">
                                     <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.vram}</span>
-                                    <span className="text-purple-300">{(probed.vram_bytes / (1024 * 1024)).toFixed(0)} MB</span>
+                                    <span className="text-purple-300 shrink-0">{(probed.vram_bytes / (1024 * 1024)).toFixed(0)} MB</span>
                                   </div>
                                 ) : null}
-                                <div className="flex justify-between gap-3">
-                                    <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.tools}</span>
-                                  <span className={probed.supports_tools ? "text-blue-400 font-bold" : "text-[rgb(var(--foreground-muted))]/60"}>
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.tools}</span>
+                                  <span className={cn("shrink-0", probed.supports_tools ? "text-blue-400 font-bold" : "text-[rgb(var(--foreground-muted))]/60")}>
                                     {probed.supports_tools ? LLM_CATALOG_COPY.toolsSupported : LLM_CATALOG_COPY.toolsNone}
                                   </span>
                                 </div>
-                                <div className="flex justify-between gap-3">
-                                    <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.languages}</span>
-                                  <span className="text-[rgb(var(--foreground))] font-bold">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-[rgb(var(--foreground-muted))]">{LLM_CATALOG_COPY.languages}</span>
+                                  <span className="text-[rgb(var(--foreground))] font-bold shrink-0">
                                     {[
                                       probed.supports_latin && "EN",
                                       probed.supports_devanagari && "HIN",

@@ -187,6 +187,14 @@ The `Harness` orchestrator coordinates six distinct, decoupled functional stages
 
 ### 4.3 PromptBuilderStage (`stages/prompt.rs`)
 - **Responsibility**: Assembles the static persona and dynamic memory documents into the canonical root system prompt string (Message 0), and shapes the complete `GenerationRequest` payload.
+- **Decoupled Persona & KV-Cache Prefix Stability**:
+  - The user-facing persona prompt (`settings.persona.modular_prompt`) contains strictly persona, tone, brevity, and voice constraints. It contains zero tool names or internal tag directives.
+  - The System Prompt string (Message 0) enforces a **fixed prefix order** to maximize KV-cache reuse and eliminate prefill latency across turns:
+    1. Base Persona Prompt (static prefix).
+    2. `<user_identity>` (passive personal memory facts, if present).
+    3. `<session_context>` (prior session narrative summary, if present on continuation).
+    4. Passive Memory Rules (fixed negative guard: passive reference only; do not recite or acknowledge on greetings/small talk).
+  - Tool Calling is governed strictly by the JSON schema in the API `tools` parameter of `GenerationRequest`. Tool instructions are not injected into the system prompt text, ensuring the system prompt prefix remains stable across all conversational turns.
 - **Memory Share Ceiling**: Injected `<user_identity>` Personal Memory must not exceed 20% of the total context window. Any excess is truncated deterministically at character boundaries.
 - **Tag Formatting**: Opening and closing delimiters are generated strictly via the typed `PromptTag` enum.
 - **Payload Assembly Authority**: `PromptBuilderStage` owns `build_generation_request(&self, history: &[ChatMessage], query: &str) -> GenerationRequest`. The `Harness` delegates all prompt assembly and token structuring directly to this stage.
@@ -391,20 +399,22 @@ To minimize the occurrence of critical in-turn compaction, background compaction
 
 ---
 
-## 7. Strongly-Typed Prompt XML Tag Schema
+## 7. Strongly-Typed Prompt XML Tag Schema & Conversation History Format
 
-To eliminate ad-hoc string formatting, prompt tags are governed by a strictly typed enum rather than loose string literals:
+Prompt XML tags are governed by a strictly typed enum rather than loose string literals to eliminate ad-hoc string formatting:
 
 1. **`PromptTag::UserIdentity` (`<user_identity>...</user_identity>`)**:
    - **Content**: The active Personal Memory markdown document retrieved from the database.
-   - **Placement**: Injected into the root System Prompt message, trailing base persona instructions.
+   - **Placement**: Injected into the root System Prompt message (Message 0), directly following base persona instructions.
    - **Budget Guard**: Bounded by the 20% system prompt share ceiling (`context_window * max_context_share`). Truncated deterministically if exceeded.
 2. **`PromptTag::SessionContext` (`<session_context>...</session_context>`)**:
-   - **Content**: The structured output of the latest compaction pass, containing both Bucket 1 (personal facts) and Bucket 2 (working session state: `objective`, `workdone`, `blocker`, `next_step`, `pitfall`).
-   - **Placement**: Injected into the root System Prompt message, framing historical continuity for subsequent turns.
-3. **`PromptTag::PastTurns` (`<past_turns>...</past_turns>`)**:
-   - **Content**: Restored uncompacted historical dialog turns upon session continuation.
-   - **Placement**: Encloses historical message turns preceding the active user query.
+   - **Content**: The structured output of the latest compaction pass (narrative summary of prior compacted turns).
+   - **Placement**: Injected into the root System Prompt message (Message 0) upon session continuation, framing historical continuity.
+3. **Dialogue History Representation (Past Turns)**:
+   - **Deprecation**: The `<past_turns>` XML tag is formally deprecated and removed from prompt assembly. Modern chat completion APIs natively attend to discrete message roles rather than squashed XML blocks.
+   - **Format**: All past turns (whether uncompacted recent turns or fallback turns when compaction summary is absent) are represented strictly as discrete `ChatMessage` entries in `ConversationHistoryStage` with alternating roles:
+     `{"role": "user", "content": "..."}`, `{"role": "assistant", "content": "..."}`.
+   - **Budget Ceiling**: Seeded continuation turns are bounded by the conversational context budget, retaining the most recent turns up to the ceiling.
 4. **Implementation Invariant**: All prompt assembly logic must utilize the strongly typed tag enum for opening and closing delimiters, guaranteeing syntactic determinism and preventing raw string drift.
 
 ---

@@ -294,6 +294,18 @@ async fn test_session_continuation_seeds_harness() {
             );
         }
 
+        // Verify turn counter synchronized to max turn_id (2)
+        assert_eq!(
+            state.pipeline.peek_turn_id(),
+            2,
+            "Turn counter must synchronize to max persisted turn_id (2)"
+        );
+        let next_bundle = state.pipeline.next_turn();
+        assert_eq!(
+            next_bundle.0, 3,
+            "Next allocated turn must be 3, avoiding UNIQUE constraint collision"
+        );
+
         // Teardown router
         let _ = event_tx.send(VoxEvent::Shutdown);
         let _ = tokio::time::timeout(
@@ -305,6 +317,82 @@ async fn test_session_continuation_seeds_harness() {
     })
     .await
     .expect("test_session_continuation_seeds_harness timed out");
+}
+
+#[tokio::test]
+async fn test_session_continuation_fallback_when_compaction_empty() {
+    let test_timeout = Duration::from_secs(10);
+    tokio::time::timeout(test_timeout, async {
+        let (app, state) = setup_test_context().await;
+        let existing_sid = 999_888_777i64;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+
+        let db_conn = state.db.connect().expect("Failed to connect to db");
+        db_conn
+            .execute(
+                "INSERT INTO sessions (id, project_id, is_pinned, created_at, updated_at) VALUES (?, 'default', 0, ?, ?);",
+                (existing_sid, now, now),
+            )
+            .await
+            .expect("Failed to insert existing session");
+
+        db_conn
+            .execute(
+                "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, created_at) VALUES (?, ?, ?, ?, ?);",
+                (
+                    existing_sid,
+                    1,
+                    "First raw turn before mock compaction",
+                    "Acknowledged first turn",
+                    now,
+                ),
+            )
+            .await
+            .expect("Failed to insert existing turn 1");
+
+        db_conn
+            .execute(
+                "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, created_at) VALUES (?, ?, ?, ?, ?);",
+                (
+                    existing_sid,
+                    2,
+                    "Second raw turn before mock compaction",
+                    "Acknowledged second turn",
+                    now,
+                ),
+            )
+            .await
+            .expect("Failed to insert existing turn 2");
+
+        // Compaction with status='completed' but compaction_output='{}' (the exact mock bug)
+        db_conn
+            .execute(
+                "INSERT INTO session_compactions (session_id, trigger_kind, from_turn_id, to_turn_id, compaction_output, status, created_at) VALUES (?, 'periodic', ?, ?, ?, 'completed', ?);",
+                (
+                    existing_sid,
+                    0,
+                    100,
+                    "{}",
+                    now,
+                ),
+            )
+            .await
+            .expect("Failed to insert empty compaction");
+
+        let continuation = vox_lib::persistence::fetch_session_continuation(&db_conn, existing_sid)
+            .await
+            .expect("fetch_session_continuation must succeed");
+
+        // Must fallback to 0 compacted turns and load raw turns
+        assert!(continuation.latest_summary.is_none());
+        assert_eq!(continuation.turns.len(), 2, "Must fall back and load all raw turns");
+        assert_eq!(continuation.max_turn_id, 2, "Max turn id must be 2");
+    })
+    .await
+    .expect("test_session_continuation_fallback_when_compaction_empty timed out");
 }
 
 // ============================================================================

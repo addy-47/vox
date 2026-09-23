@@ -1,15 +1,24 @@
-//! Strongly-typed IPC command handlers for assistant pipeline control.
-
 use std::sync::{atomic::Ordering, Arc};
 
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
-use crate::core::{
-    engine::{start_audio_engine, stop_audio_engine},
-    error::VoxIpcError,
-    events::VoxEvent,
-    state::{AppState, InteractionOwner, InteractionState},
+use crate::{
+    core::{
+        engine::{start_audio_engine, stop_audio_engine},
+        error::VoxIpcError,
+        events::VoxEvent,
+        state::{AppState, InteractionOwner, InteractionState},
+    },
+    persistence::sessions::{fetch_session_by_id, fetch_turns, SessionRow, TurnRow},
 };
+
+/// Result payload for continuing an existing session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContinueSessionResult {
+    pub session: SessionRow,
+    pub turns: Vec<TurnRow>,
+}
 
 /// Launches and initializes the 3-tier audio engine.
 #[tauri::command]
@@ -301,4 +310,51 @@ pub async fn set_session_private_mode<R: tauri::Runtime>(
         .store(enabled, Ordering::Relaxed);
     log::info!("[IPC::Pipeline] Session private mode set to: {}", enabled);
     Ok(())
+}
+
+/// Initializes a fresh conversational session, resetting working memory with Personal Memory
+/// and resetting session identifiers. Follows lazy persistence (DB row created upon first spoken turn).
+#[tauri::command]
+pub async fn create_session(
+    _project_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<SessionRow>, VoxIpcError> {
+    // Clear conversation and turn tracking
+    state.conversation_id.store(0, Ordering::Relaxed);
+    state.pipeline_accumulator.lock().clear();
+
+    log::info!("[IPC::Pipeline] Reset conversation state for fresh session");
+    Ok(None)
+}
+
+/// Restores a past session into working memory and returns its metadata and turns.
+#[tauri::command]
+pub async fn continue_session(
+    session_id: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<ContinueSessionResult, VoxIpcError> {
+    state
+        .conversation_id
+        .store(session_id as u64, Ordering::Relaxed);
+
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+
+    let session = fetch_session_by_id(&conn, session_id)
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+        .ok_or_else(|| VoxIpcError::NotFound(format!("Session {} not found", session_id)))?;
+
+    let turns = fetch_turns(&conn, session_id)
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+
+    log::info!(
+        "[IPC::Pipeline] Restored continuation for session {} into working memory",
+        session_id
+    );
+
+    Ok(ContinueSessionResult { session, turns })
 }

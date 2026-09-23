@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { startModelSetup, fetchManifest, getRuntimeReport, type VoxManifest } from '@/services/modelService';
+import { startModelSetup, fetchManifest, getRuntimeReport, type VoxManifest } from '@/services/setupService';
 import { onModelProgress } from '@/services/eventsService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 

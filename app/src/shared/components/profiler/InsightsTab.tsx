@@ -1,6 +1,6 @@
 import React from "react";
 import { Lightbulb, AlertTriangle, CheckCircle2, ShieldCheck, Clock, Navigation, Activity, FileCode } from "lucide-react";
-import type { ProfilerSnapshot, DOMSample, CSSIndicatorsSample } from "@/services/memoryProfilerService";
+import type { ProfilerSnapshot, DOMSample, CSSIndicatorsSample } from "@/services/monitoringService";
 import type { PageMemoryRecord } from "@/shared/hooks/useMemoryProfiler";
 import type { ComponentTraceData } from "@/shared/context/MemoryProfilerContext";
 import { AccuracyBadge } from "./AccuracyBadge";
