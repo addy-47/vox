@@ -59,6 +59,29 @@ impl ProviderDriver for DeepgramDriver {
                 Some(Message::Text(msg.into()))
             }
             OutboundCommand::ActivityStart | OutboundCommand::ActivityEnd => None,
+            OutboundCommand::ToolResponse { id, result, .. } => {
+                let output_str = if result.is_string() {
+                    result.as_str().unwrap().to_string()
+                } else {
+                    result.to_string()
+                };
+                let msg = serde_json::json!({
+                    "type": "FunctionCallResponse",
+                    "function_call_id": id,
+                    "output": output_str
+                })
+                .to_string();
+                Some(Message::Text(msg.into()))
+            }
+            OutboundCommand::Text(text) => {
+                let msg = serde_json::json!({
+                    "type": "ConversationText",
+                    "role": "user",
+                    "content": text
+                })
+                .to_string();
+                Some(Message::Text(msg.into()))
+            }
         }
     }
 
@@ -133,6 +156,30 @@ impl RealtimeSession for DeepgramVoiceAgentSession {
         }
         Ok(())
     }
+
+    fn send_tool_response(&self, id: &str, name: &str, result: &serde_json::Value) -> Result<()> {
+        if self.terminated.load(Ordering::Relaxed) {
+            bail!("Deepgram Voice Agent session is terminated");
+        }
+        self.outbound_tx
+            .try_send(OutboundCommand::ToolResponse {
+                id: id.to_string(),
+                name: name.to_string(),
+                result: result.clone(),
+            })
+            .map_err(|e| anyhow!("Failed to send ToolResponse: {:?}", e))?;
+        Ok(())
+    }
+
+    fn send_text(&self, text: &str) -> Result<()> {
+        if self.terminated.load(Ordering::Relaxed) {
+            bail!("Deepgram Voice Agent session is terminated");
+        }
+        self.outbound_tx
+            .try_send(OutboundCommand::Text(text.to_string()))
+            .map_err(|e| anyhow!("Failed to send Text: {:?}", e))?;
+        Ok(())
+    }
 }
 
 fn dispatch_deepgram_server_message(
@@ -167,7 +214,24 @@ fn dispatch_deepgram_server_message(
                 }
             }
             "FunctionCallRequest" => {
-                log::debug!("[DeepgramVoiceAgent] Received FunctionCallRequest frame (client-side execution hook reserved): {:?}", val);
+                log::info!("[DeepgramVoiceAgent] Received FunctionCallRequest frame: {:?}", val);
+                let id = val
+                    .get("function_call_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let name = val
+                    .get("function_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let args = val
+                    .get("input")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
+                if let Err(e) = provider_event_tx.try_send(RealtimeProviderEvent::ToolCall { id, name, args }) {
+                    log::warn!("[DeepgramVoiceAgent] Failed to forward ToolCall: {:?}", e);
+                }
             }
             "ConversationText" => {
                 let role = val.get("role").and_then(|v| v.as_str()).unwrap_or("");

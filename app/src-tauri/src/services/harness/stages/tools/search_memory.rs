@@ -3,8 +3,9 @@ use std::{collections::HashMap, time::Instant};
 use futures_util::future::{BoxFuture, FutureExt};
 use serde_json::{json, Value};
 
-use super::{ToolDefinition, ToolError, ToolExecutionContext, ToolResult};
+use super::{ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolResult};
 use crate::{
+    core::settings::PipelineMode,
     persistence::{fetch_active_episodic_memory, EpisodicFactCandidate},
     services::{
         llm::ToolFlow,
@@ -22,25 +23,41 @@ impl ToolDefinition for MemorySearchTool {
         "search_memory"
     }
 
-    fn description(&self) -> &str {
+    fn domain(&self) -> ToolDomain {
+        ToolDomain::All
+    }
+
+    fn description(&self, _mode: PipelineMode) -> &str {
         "Searches personal cognitive memory for user facts, preferences, background context, or past conversational details."
     }
 
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Semantic search query to locate relevant user facts or context in memory."
+    fn parameters_schema(&self, mode: PipelineMode) -> Value {
+        match mode {
+            PipelineMode::Modular => json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Semantic search query to locate relevant user facts or context in memory."
+                    },
+                    "spoken_filler": {
+                        "type": "string",
+                        "description": "A brief, natural 3-5 word spoken phrase delivered while memory search is evaluated."
+                    }
                 },
-                "spoken_filler": {
-                    "type": "string",
-                    "description": "A brief, natural 3-5 word spoken phrase delivered while memory search is evaluated."
-                }
-            },
-            "required": ["query", "spoken_filler"]
-        })
+                "required": ["query", "spoken_filler"]
+            }),
+            PipelineMode::Realtime => json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Semantic search query to locate relevant user facts or context in memory."
+                    }
+                },
+                "required": ["query"]
+            }),
+        }
     }
 
     fn flow(&self) -> ToolFlow {
@@ -49,19 +66,13 @@ impl ToolDefinition for MemorySearchTool {
 
     fn execute<'a>(
         &'a self,
+        mode: PipelineMode,
         args: Value,
         ctx: &'a ToolExecutionContext,
     ) -> BoxFuture<'a, Result<ToolResult, ToolError>> {
         async move {
             let query = args
                 .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .trim()
-                .to_string();
-
-            let spoken_filler = args
-                .get("spoken_filler")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .trim()
@@ -74,8 +85,9 @@ impl ToolDefinition for MemorySearchTool {
             }
 
             log::info!(
-                "[MemorySearchTool] Turn {}: hybrid episodic search for: '{}'",
+                "[MemorySearchTool] Turn {} ({:?}): hybrid episodic search for: '{}'",
                 ctx.turn_id,
+                mode,
                 query
             );
 
@@ -83,7 +95,21 @@ impl ToolDefinition for MemorySearchTool {
             let observation = perform_hybrid_search(ctx, &query).await?;
             let retrieval_dur = retrieval_start.elapsed().as_millis() as u64;
             ctx.app_state.turn_metrics.record_retrieval(retrieval_dur);
-            Ok(ToolResult::new(observation).with_spoken_filler(spoken_filler))
+
+            let mut result = ToolResult::new(observation);
+            if mode == PipelineMode::Modular {
+                let spoken_filler = args
+                    .get("spoken_filler")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                if !spoken_filler.is_empty() {
+                    result = result.with_spoken_filler(spoken_filler);
+                }
+            }
+
+            Ok(result)
         }
         .boxed()
     }

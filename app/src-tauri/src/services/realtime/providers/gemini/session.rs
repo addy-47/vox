@@ -11,7 +11,9 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-use super::handshake::{encode_activity_end, encode_activity_start};
+use super::handshake::{
+    encode_activity_end, encode_activity_start, encode_text_turn, encode_tool_response,
+};
 use crate::services::realtime::{
     transport::{FrameAction, ProviderDriver},
     OutboundCommand, RealtimeProviderEvent, RealtimeSession, LOG_INTERVAL_PACKETS,
@@ -64,6 +66,12 @@ impl ProviderDriver for GeminiDriver {
                 Some(Message::Text(encode_activity_start().into()))
             }
             OutboundCommand::KeepAlive => None,
+            OutboundCommand::ToolResponse { id, name, result } => {
+                Some(Message::Text(encode_tool_response(&id, &name, &result).into()))
+            }
+            OutboundCommand::Text(text) => {
+                Some(Message::Text(encode_text_turn(&text).into()))
+            }
         }
     }
 
@@ -154,6 +162,30 @@ impl RealtimeSession for GeminiLiveSession {
                 log::warn!("[GeminiLive] Shutdown signal drop: {:?}", e);
             }
         }
+        Ok(())
+    }
+
+    fn send_tool_response(&self, id: &str, name: &str, result: &serde_json::Value) -> Result<()> {
+        if self.terminated.load(Ordering::Relaxed) {
+            bail!("Gemini Live session is terminated");
+        }
+        self.outbound_tx
+            .try_send(OutboundCommand::ToolResponse {
+                id: id.to_string(),
+                name: name.to_string(),
+                result: result.clone(),
+            })
+            .map_err(|e| anyhow!("Failed to send ToolResponse: {:?}", e))?;
+        Ok(())
+    }
+
+    fn send_text(&self, text: &str) -> Result<()> {
+        if self.terminated.load(Ordering::Relaxed) {
+            bail!("Gemini Live session is terminated");
+        }
+        self.outbound_tx
+            .try_send(OutboundCommand::Text(text.to_string()))
+            .map_err(|e| anyhow!("Failed to send Text: {:?}", e))?;
         Ok(())
     }
 }
@@ -255,10 +287,28 @@ fn dispatch_server_message(
     }
 
     if let Some(tool_call) = server_content.get("toolCall") {
-        log::debug!(
-            "[GeminiLive] toolCall received (hook reserved): {:?}",
-            tool_call
-        );
+        if let Some(calls) = tool_call.get("functionCalls").and_then(|c| c.as_array()) {
+            for call in calls {
+                let name = call
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let id = call
+                    .get("id")
+                    .and_then(|i| i.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                let args = call
+                    .get("args")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
+                log::info!("[GeminiLive] Forwarding ToolCall: name={} id={}", name, id);
+                if let Err(e) = event_tx.try_send(RealtimeProviderEvent::ToolCall { id, name, args }) {
+                    log::warn!("[GeminiLive] ToolCall dropped: {:?}", e);
+                }
+            }
+        }
     }
 
     if !interrupt_active {

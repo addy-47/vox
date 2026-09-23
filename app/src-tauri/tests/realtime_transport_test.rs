@@ -63,6 +63,10 @@ impl ProviderDriver for TestDriver {
             OutboundCommand::ActivityEnd => Some(Message::Text("activity_end".into())),
             OutboundCommand::Interrupt => Some(Message::Text("interrupt".into())),
             OutboundCommand::KeepAlive => Some(Message::Text("ping".into())),
+            OutboundCommand::ToolResponse { id, name, result } => {
+                Some(Message::Text(format!("tool_response:{id}:{name}:{result}").into()))
+            }
+            OutboundCommand::Text(text) => Some(Message::Text(format!("text:{text}").into())),
         }
     }
 

@@ -925,13 +925,13 @@ async fn test_session_boot_capability_probe_and_cache_lifecycle() {
 
         // Seed model_capabilities.json with supported model
         let supported_model = "test-agentic-model".to_string();
-        let key = format!("server:{}", supported_model);
+        let key = format!("{}:{}", vox_lib::core::settings::CAP_KIND_OPENAI_COMPAT, supported_model);
         let mut caps_map = std::collections::HashMap::new();
         caps_map.insert(
             key,
             vox_lib::core::settings::ModelCapabilities {
                 model_id: supported_model.clone(),
-                provider_kind: "server".to_string(),
+                provider_kind: vox_lib::core::settings::CAP_KIND_OPENAI_COMPAT.to_string(),
                 supports_tools: true,
                 supports_latin: true,
                 supports_devanagari: true,

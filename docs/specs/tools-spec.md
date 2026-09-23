@@ -90,15 +90,32 @@ Every tool registered in the runtime must strictly declare one of two behavioral
 - **Context Inclusion Invariant**: The tool call and structured observation result remain present in the turn-local ephemeral scratchpad during the active turn.
 - **Persistence Invariant**: The invocation parameters and execution result must be recorded into `session_tool_calls`.
 
-### 4.3 Domain Projections (`ToolDomain::Modular` vs `ToolDomain::Realtime`)
-Every tool definition co-locates schemas and descriptions for both interaction domains within its implementation:
+### 4.3 Tool Domain Classification (`ToolDomain { Modular, Realtime, All }`)
+Every tool definition declares its operational domain scope via the `ToolDomain` enum:
 1. **`ToolDomain::Modular`**:
+   - Tool is valid strictly in Modular Assistant sessions (`PipelineMode::Modular`).
    - Embeds speech coordination parameters (`spoken_response` for `Terminal`, `spoken_filler` for `NonTerminal`).
-   - Driven by `Harness::execute_turn` and local `TtsActor`.
+   - Filtered out and hidden from Realtime sessions.
 2. **`ToolDomain::Realtime`**:
+   - Tool is valid strictly in Realtime S2S sessions (`PipelineMode::Realtime`).
    - Strips all speech parameters; exposes clean business fields (`query`, `title`).
    - The remote realtime model synthesizes PCM audio natively over the WebSocket; local `TtsActor` is dormant.
-   - Driven event-driven via `RealtimeActor` / `RealtimeSession` over WebSocket without local reentrant prompt assembly.
+   - Filtered out and hidden from Modular sessions.
+3. **`ToolDomain::All`**:
+   - Universal tool valid across all interaction modes (`PipelineMode::Modular` and `PipelineMode::Realtime`).
+   - Parameter schemas and descriptions adapt dynamically based on the active session's `PipelineMode`.
+
+```rust
+impl ToolDomain {
+    pub fn matches(&self, mode: PipelineMode) -> bool {
+        match self {
+            ToolDomain::All => true,
+            ToolDomain::Modular => mode == PipelineMode::Modular,
+            ToolDomain::Realtime => mode == PipelineMode::Realtime,
+        }
+    }
+}
+```
 
 ---
 

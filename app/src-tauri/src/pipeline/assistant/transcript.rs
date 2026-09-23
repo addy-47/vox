@@ -18,8 +18,8 @@ use crate::{
     },
 };
 
-/// Spawns the background asynchronous task to execute conversational turn through Harness.
-fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
+/// Spawns the background asynchronous task to execute a modular conversational turn through the Harness.
+pub(crate) fn spawn_harness_turn_task<R: tauri::Runtime + 'static>(
     turn_id: u32,
     query: String,
     app: &AppHandle<R>,
@@ -110,7 +110,7 @@ fn spawn_modular_llm_task<R: tauri::Runtime + 'static>(
     });
 }
 
-/// Handles finalized speech transcript or direct text input, validating non-empty text and routing to LLM.
+/// Handles finalized speech transcripts from the STT engine, validating text and routing to the Harness.
 pub fn on_transcript_final<R: tauri::Runtime>(
     turn_id: u32,
     text: String,
@@ -201,10 +201,10 @@ pub fn on_transcript_final<R: tauri::Runtime>(
     transition(InteractionState::Thinking, ctx, app, state);
 
     match ctx.pipeline_mode {
-        PipelineMode::Modular => spawn_modular_llm_task(turn_id, query, app, state, ctx),
+        PipelineMode::Modular => spawn_harness_turn_task(turn_id, query, app, state, ctx),
         PipelineMode::Realtime => {
             log::info!(
-                "[Pipeline::Transcript] Turn {} transcript processed in Realtime mode",
+                "[Pipeline::Transcript] Turn {} voice transcript processed in Realtime mode",
                 turn_id
             );
         }

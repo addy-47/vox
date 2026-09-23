@@ -80,6 +80,11 @@ pub enum RealtimeProviderEvent {
         handle: String,
         model: String,
     },
+    ToolCall {
+        id: String,
+        name: String,
+        args: serde_json::Value,
+    },
 }
 
 /// Typed commands dispatched outbound from session callers to the WebSocket connection writer.
@@ -90,6 +95,12 @@ pub enum OutboundCommand {
     ActivityEnd,
     Interrupt,
     KeepAlive,
+    ToolResponse {
+        id: String,
+        name: String,
+        result: serde_json::Value,
+    },
+    Text(String),
 }
 
 /// Configuration defining input/output sampling rates and resampling requirements for realtime streaming.
@@ -122,4 +133,6 @@ pub trait RealtimeSession: Send + Sync {
     fn commit_speech_turn(&self, pcm: &[i16]) -> Result<()>;
     fn cancel(&self) -> Result<()>;
     fn disconnect(&self) -> Result<()>;
+    fn send_tool_response(&self, id: &str, name: &str, result: &serde_json::Value) -> Result<()>;
+    fn send_text(&self, text: &str) -> Result<()>;
 }

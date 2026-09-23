@@ -6,22 +6,25 @@ use std::sync::{
 use parking_lot::Mutex;
 use tauri::{async_runtime::spawn as spawn_task, Runtime};
 
-use crate::services::{
-    harness::{
-        chassis::Harness,
-        stages::{
-            streaming::{StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage},
-            tools::{ToolFilter, ToolRegistry},
+use crate::{
+    core::settings::PipelineMode,
+    services::{
+        harness::{
+            chassis::Harness,
+            stages::{
+                streaming::{StreamPassOutcome, StreamRoutingHandles, StreamRoutingStage},
+                tools::{ToolFilter, ToolRegistry},
+            },
+            steps::{
+                step1_intake, step3_execute_compaction, step4_assemble_request, step5_dispatch_llm,
+                step6_handle_non_terminal_tool, step6_handle_terminal_tool, step6_run_stream_pass,
+                step7_commit_completed, step7_handle_cancelled, step7_handle_error,
+                CancelledTurnContext, IntakeResult,
+            },
+            ChatMessage, TurnExecutionRequest, TurnOutcome,
         },
-        steps::{
-            step1_intake, step3_execute_compaction, step4_assemble_request, step5_dispatch_llm,
-            step6_handle_non_terminal_tool, step6_handle_terminal_tool, step6_run_stream_pass,
-            step7_commit_completed, step7_handle_cancelled, step7_handle_error,
-            CancelledTurnContext, IntakeResult,
-        },
-        ChatMessage, TurnExecutionRequest, TurnOutcome,
+        llm::ToolFlow,
     },
-    llm::ToolFlow,
 };
 
 const MAX_TOOL_ITERATIONS: usize = 5;
@@ -92,7 +95,7 @@ async fn run_cognitive_loop<R: Runtime + 'static>(
         "[Harness::Loop] Turn {} cognitive loop: supports_tools={} registered_tools={}",
         turn_id,
         supports_tools,
-        tool_registry.canonical_definitions().len()
+        tool_registry.canonical_definitions(PipelineMode::Modular).len()
     );
 
     let Some(ref pipeline_tx) = req.pipeline_tx else {
@@ -235,6 +238,7 @@ fn check_loop_budget<R: Runtime>(
         if let Some(ref budget) = harness.budget {
             let tools = if allow_tools && harness.supports_tools {
                 let filter = ToolFilter {
+                    mode: PipelineMode::Modular,
                     is_first_turn: harness.history.messages().len() <= 2,
                     title_is_unset: !harness.title_set,
                     memory_retrieval_enabled: harness.memory_retrieval_enabled,

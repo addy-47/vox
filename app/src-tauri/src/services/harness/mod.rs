@@ -35,8 +35,9 @@ pub use stages::{
     prompt::PromptBuilderStage,
     streaming::{ClauseChunker, StreamRoutingHandles, StreamRoutingStage},
     tools::{
-        MemorySearchTool, RespondAndSetTitleTool, ToolDefinition, ToolError, ToolExecutionContext,
-        ToolExecutionOutcome, ToolExecutor, ToolFilter, ToolRegistry, ToolResult,
+        MemorySearchTool, RespondAndSetTitleTool, SetSessionTitleTool, ToolDefinition, ToolDomain,
+        ToolError, ToolExecutionContext, ToolExecutionOutcome, ToolExecutor, ToolFilter,
+        ToolRegistry, ToolResult,
     },
 };
 pub use steps::{
