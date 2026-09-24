@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use turso::Connection;
@@ -51,10 +53,20 @@ pub struct IngestionCycleSummary {
 
 /// Executes a complete deduplication cycle: Stage 1 exact Jaccard dedup followed by Stage 2 semantic cosine dedup.
 pub async fn run_ingestion_cycle(conn: &Connection) -> Result<IngestionCycleSummary> {
+    let started = Instant::now();
     let stage1 = run_stage1_exact_dedup(conn).await?;
     let stage2 = run_stage2_cosine_dedup(conn).await?;
-
-    Ok(IngestionCycleSummary { stage1, stage2 })
+    let summary = IngestionCycleSummary { stage1, stage2 };
+    log::info!(
+        "[Memory::Ingestion] Cycle completed in {:?}; stage1_processed={} stage2_processed={} stage2_inserted={} stage1_errors={} stage2_errors={}",
+        started.elapsed(),
+        summary.stage1.processed,
+        summary.stage2.processed,
+        summary.stage2.inserted,
+        summary.stage1.errors,
+        summary.stage2.errors,
+    );
+    Ok(summary)
 }
 
 /// Executes an ingestion cycle using an injected embedding function for deterministic testing.

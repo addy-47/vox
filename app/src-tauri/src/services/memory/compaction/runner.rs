@@ -1,4 +1,7 @@
-use std::{sync::mpsc, time::Duration};
+use std::{
+    sync::mpsc,
+    time::{Duration, Instant},
+};
 
 use anyhow::{anyhow, Result};
 use tokio_util::sync::CancellationToken;
@@ -46,6 +49,7 @@ async fn execute_compaction_attempt(
 
     let mut summary_content = String::new();
 
+    let gen_started = Instant::now();
     let gen_res =
         tokio::time::timeout(Duration::from_secs(COMPACTION_TIMEOUT_SECS), gen_future).await;
     drop(tx);
@@ -69,6 +73,11 @@ async fn execute_compaction_attempt(
                     }
                 }
             }
+            log::info!(
+                "[MemoryCompaction] Generation completed in {:?}; output_chars={}",
+                gen_started.elapsed(),
+                summary_content.len()
+            );
         }
         Ok(Err(e)) => {
             if let Err(join_err) = pump_handle.await {
@@ -78,7 +87,8 @@ async fn execute_compaction_attempt(
                 );
             }
             log::warn!(
-                "[MemoryCompaction] Provider generation returned error: {}",
+                "[MemoryCompaction] Provider generation returned error after {:?}: {}",
+                gen_started.elapsed(),
                 e
             );
         }
@@ -90,7 +100,8 @@ async fn execute_compaction_attempt(
                 );
             }
             log::warn!(
-                "[MemoryCompaction] Compaction attempt timed out after {}s",
+                "[MemoryCompaction] Compaction attempt timed out after {:?} (limit={}s)",
+                gen_started.elapsed(),
                 COMPACTION_TIMEOUT_SECS
             );
         }

@@ -1038,6 +1038,11 @@ fn resolve_path(path: PathBuf) -> PathBuf {
 
 fn optional_api_key(value: &str) -> Option<String> {
     let value = value.trim();
+    if value == "env:OPENROUTER_API_KEY" {
+        return std::env::var("OPENROUTER_API_KEY")
+            .ok()
+            .filter(|key| !key.trim().is_empty());
+    }
     (!value.is_empty()).then(|| value.to_string())
 }
 

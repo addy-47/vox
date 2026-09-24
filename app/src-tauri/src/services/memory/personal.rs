@@ -326,10 +326,22 @@ async fn execute_personal_llm_pass(
     request.options.context_window = Some(settings.context_window);
 
     log::info!(
-        "[Memory::Personal] Dispatching LLM pass: prompt={} chars, user_content={} chars, model={}",
-        system_prompt.len(),
-        user_content.len(),
-        settings.active_model()
+        "[Memory::Personal::Request] model={} purpose={:?} output={:?} temperature={:?} max_output_tokens={:?} context_window={:?} reasoning={:?} top_p={:?} top_k={:?} seed={:?} stop_count={} tools_present={} messages={} system_chars={} user_chars={}",
+        settings.active_model(),
+        request.purpose,
+        request.output,
+        request.options.temperature,
+        request.options.max_output_tokens,
+        request.options.context_window,
+        request.options.reasoning,
+        request.options.top_p,
+        request.options.top_k,
+        request.options.seed,
+        request.options.stop.len(),
+        request.tools.is_some(),
+        request.input.messages.len(),
+        request.input.messages.first().map_or(0, |message| message.content.len()),
+        request.input.messages.get(1).map_or(0, |message| message.content.len()),
     );
     let gen_start = std::time::Instant::now();
 

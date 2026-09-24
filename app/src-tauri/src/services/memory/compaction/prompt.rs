@@ -13,44 +13,48 @@ use crate::{
 
 /// Prompt instructions instructing the LLM to extract durable facts into the unified memory schema.
 pub const COMPACTION_SYSTEM_PROMPT: &str = r#"<role>
-You are a session state and memory extraction engine for an AI assistant.
-Analyze the dialogue to extract:
-1. "personal": Durable facts, traits, and preferences about the user.
-2. "objective", "workdone", "blocker", "next_step", "pitfall": The assistant's operational state for this thread.
-The entire JSON output is injected into working memory (<session_context>) so the assistant retains full context after turns are pruned.
+You extract durable memory and current task state from a conversation.
+You are a conservative extractor: preserve what the speakers explicitly establish, and do not fill gaps with plausible inference.
+The complete JSON object becomes the session's working context after the raw turns are pruned.
 </role>
 
 <schema>
 {
-  "personal": ["<durable user facts, traits, or preferences>"],
-  "objective": ["<overarching goal, topic, or problem the assistant is addressing>"],
-  "workdone": ["<concrete progress, deliverables, decisions, or answers completed>"],
-  "blocker": ["<missing information, pending decisions, or hurdles blocking progress>"],
-  "next_step": ["<immediate planned actions or agreed follow-ups for upcoming turns>"],
-  "pitfall": ["<mistakes made, user corrections, dead-ends, or approaches to avoid>"]
+  "personal": ["<explicit durable fact stated by the user>"],
+  "objective": ["<active mission, question, project, or topic being addressed>"],
+  "workdone": ["<completed progress or answer explicitly supported by the dialogue>"],
+  "blocker": ["<unresolved obstacle, missing information, or pending decision>"],
+  "next_step": ["<planned, promised, intended, or scheduled action not yet completed>"],
+  "pitfall": ["<explicit correction, failed approach, dead end, or constraint to avoid>"]
 }
 </schema>
 
-<category_definitions>
-- personal: Facts about the user (identity, preferences, habits, traits, background).
-- objective: The mission, question, or goal assigned to the assistant for this session.
-- workdone: What the assistant has already investigated, completed, produced, or answered.
-- blocker: What is currently unresolved, missing, or waiting on clarification before progress can resume.
-- next_step: Concrete actions or next turns planned to advance the objective.
-- pitfall: What failed, user corrections received, or constraints/methods explicitly ruled out.
-</category_definitions>
+<attribution>
+- Only the user's explicit statements establish facts in "personal".
+- A question, search request, topic, or location mentioned by the user does not establish residence, identity, ownership, preference, or habit.
+- Assistant suggestions, recommendations, examples, and hypothetical answers are not user facts or user preferences.
+- A user asking for options is not evidence that the user likes, enjoys, prefers, or owns any option.
+- Do not convert an assistant claim into a completed action unless the dialogue explicitly records successful execution or a successful tool/action result.
+- Preserve modality: "will", "plans to", "intends to", "reminds me to", and "I'll" are next steps, not completed work.
+</attribution>
 
-<rules>
-- Concise, self-contained declarative statements only. No conversational filler ("The user said...", "In this chat...").
-- "personal" describes the user; the other 5 categories describe the assistant's operational task state.
-- Completely ignore small-talk, greetings, and pleasantries. Output an empty list [] for categories with no substantive content.
-- Dialogue often repeats the same topics: deduplicate, but capture each distinct durable fact once — repetition is emphasis, not noise.
-- "personal" is mandatory whenever the dialogue states user identity, preferences, habits, background, or health constraints: put such facts in "personal" itself, never nested inside other buckets behind prefixes like "profile_recorded:" or "preference_recorded:".
-- Extract every distinct durable fact across the whole slice; do not stop after the first few.
-- System/hardware configuration, people and their organizational roles, health constraints, and locations are always durable: never omit them.
-- If <prior_summary> is present, update the state incrementally; do not repeat unchanged facts.
-- Output ONLY the raw JSON object adhering to <schema>. No markdown formatting, backticks, or commentary.
-</rules>"#;
+<definitions>
+- "personal": Explicit user identity, durable background, habits, goals, or preferences.
+- "objective": The mission or topic being addressed, including a request for information or suggestions.
+- "workdone": Only completed, explicitly supported progress, decisions, or answers.
+- "blocker": Something unresolved, missing, waiting for clarification, or preventing progress.
+- "next_step": A concrete future action, intention, commitment, or scheduled follow-up.
+- "pitfall": A user correction, failed approach, or constraint explicitly recorded in the dialogue.
+</definitions>
+
+<precision_rules>
+- Use concise third-person declarative statements without conversational filler.
+- Deduplicate repeated statements while preserving distinct supported facts.
+- Prefer an empty array over an uncertain or weakly supported claim.
+- Do not invent details, completion status, preferences, locations, identities, or external side effects.
+- If <prior_summary> is present, update it incrementally without duplicating unchanged facts.
+- Output only the raw JSON object matching the schema. Do not add markdown, commentary, or provenance fields.
+</precision_rules>"#;
 
 pub const COMPACTION_OUTPUT_RATIO: f32 = 0.15;
 pub const COMPACTION_MIN_OUTPUT_TOKENS: u32 = 256;
@@ -172,9 +176,29 @@ pub fn build_compaction_request(
     // INVARIANT: compaction reasoning is always disabled, even if the user
     // later enables reasoning for agentic conversation. Voice-native default.
     request.options.reasoning = ReasoningMode::Disabled;
+    request.options.context_window = Some(eff_ctx);
     // Universal compaction contract: strict schema where the backend supports
     // it, JSON-object baseline otherwise (transports negotiate down on 400s).
     request.output = compaction_output_constraint(model);
+
+    log::info!(
+        "[CompactionLLM::Request] model={} purpose={:?} output={:?} temperature={:?} max_output_tokens={:?} context_window={:?} reasoning={:?} top_p={:?} top_k={:?} seed={:?} stop_count={} tools_present={} messages={} system_chars={} user_chars={}",
+        effective_settings.active_model(),
+        request.purpose,
+        request.output,
+        request.options.temperature,
+        request.options.max_output_tokens,
+        request.options.context_window,
+        request.options.reasoning,
+        request.options.top_p,
+        request.options.top_k,
+        request.options.seed,
+        request.options.stop.len(),
+        request.tools.is_some(),
+        request.input.messages.len(),
+        request.input.messages.first().map_or(0, |message| message.content.len()),
+        request.input.messages.get(1).map_or(0, |message| message.content.len()),
+    );
 
     if let (Some(sys), Some(usr)) = (
         request.input.messages.first(),
