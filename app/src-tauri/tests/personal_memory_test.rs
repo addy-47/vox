@@ -608,8 +608,13 @@ async fn test_personal_memory_versions_and_compaction_preemption() {
     tokio::time::timeout(Duration::from_secs(30), async {
         let _guard = TempPathsGuard::new();
         let (_app, state) = get_test_app_and_state().await;
-        let conn = state.db.connect().expect("Failed to connect to test database");
-        vox_lib::persistence::schema::run_migrations(&conn).await.unwrap();
+        let conn = state
+            .db
+            .connect()
+            .expect("Failed to connect to test database");
+        vox_lib::persistence::schema::run_migrations(&conn)
+            .await
+            .unwrap();
 
         // 1. Initial version is created (v1)
         let v1 = get_personal_memory(&conn, None).await.unwrap();
@@ -640,7 +645,9 @@ async fn test_personal_memory_versions_and_compaction_preemption() {
         assert_eq!(versions[2].is_active, 0);
 
         // 4. Switch active version back to v2
-        let restored = set_active_personal_memory_version(&conn, None, 2).await.unwrap();
+        let restored = set_active_personal_memory_version(&conn, None, 2)
+            .await
+            .unwrap();
         assert_eq!(restored.version, 2);
         assert_eq!(restored.is_active, 1);
 
@@ -650,17 +657,17 @@ async fn test_personal_memory_versions_and_compaction_preemption() {
         assert!(active.content.contains("Version 2 Content"));
 
         // 5. Test Preemption: Record an in-progress compaction
-        let session_id = create_session_with_id(&conn, 14302, Some("default")).await.unwrap();
-        let _run_id = record_compaction_start(&conn, session_id, "manual", 1, 10).await.unwrap();
+        let session_id = create_session_with_id(&conn, 14302, Some("default"))
+            .await
+            .unwrap();
+        let _run_id = record_compaction_start(&conn, session_id, "manual", 1, 10)
+            .await
+            .unwrap();
         assert!(has_in_progress_compaction(&conn).await.unwrap());
 
         // Consolidating with PauseCompaction policy must pause in-progress compaction back to pending
-        let conn_cfg = ConnectionConfig::new(
-            REMOTE_OLLAMA_URL,
-            REMOTE_OLLAMA_MODEL,
-            None,
-            Some("ollama"),
-        );
+        let conn_cfg =
+            ConnectionConfig::new(REMOTE_OLLAMA_URL, REMOTE_OLLAMA_MODEL, None, Some("ollama"));
         let provider = RemoteTransport::new(conn_cfg);
 
         let preemption_res = consolidate_personal_memory(
@@ -670,9 +677,13 @@ async fn test_personal_memory_versions_and_compaction_preemption() {
             None,
             None,
             Some(ConsolidationConflictPolicy::PauseCompaction),
-        ).await;
+        )
+        .await;
 
-        assert!(preemption_res.is_ok(), "PauseCompaction policy must preempt compaction and succeed");
+        assert!(
+            preemption_res.is_ok(),
+            "PauseCompaction policy must preempt compaction and succeed"
+        );
         // Compaction should now no longer be in_progress
         assert!(
             !has_in_progress_compaction(&conn).await.unwrap(),

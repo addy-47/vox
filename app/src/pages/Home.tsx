@@ -328,6 +328,7 @@ export const Home = memo(() => {
             onTogglePlaybackMute={togglePlaybackMute}
             isMicMuted={isMicMuted}
             onToggleMicMute={toggleMicMute}
+            initialHistory={dialogueHistory.map((d) => d.user).filter(Boolean)}
           />
         ) : (
           <div className="flex items-center gap-4 relative">

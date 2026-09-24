@@ -9,21 +9,7 @@ This document contains durable standards for designing, implementing, and runnin
 
 ---
 
-## 1. Hardware Tiers & Feature Mapping
-
-Architecture capabilities and memory ceilings are gated by hardware tier. Tests and benchmarks must validate features within these physical constraints.
-
-| Tier | Hardware | Pipeline Mode | Memory Ingestion | Memory Retrieval | Tool Calling |
-| :--- | :------- | :-----------: | :--------------: | :--------------: | :----------: |
-| **1A** | 8GB, CPU-only, no GPU | Modular (Local) | ❌ None (FIFO only) | ✅ Working Memory context window only | ❌ Unavailable |
-| **1B** ⭐ | 8GB+, dedicated GPU | Modular (Local) | ✅ Full async ingestion | ✅ Full retrieval (episodic + semantic) | ⚠️ Depends on local LLM capability |
-| **2A** ⭐ | Hybrid (Remote LLM + Local Audio) | Modular (Remote LLM) | ✅ Full async ingestion | ✅ Full retrieval | ⚠️ Depends on remote LLM capability |
-| **2B** ⭐ default | Hybrid (Cloud LLM + Local Audio) | Modular (Cloud LLM) | ✅ Full async ingestion | ✅ Full retrieval | ✅ All cloud models support tool calling |
-| **3** | Any (Realtime S2S) | Realtime (WebSocket) | ✅ Provider-managed | ✅ Via early tool calls in provider | ✅ Via early tool calls |
-
----
-
-## 2. Testing Taxonomy & Scope
+## 1. Testing Taxonomy & Scope
 
 | Category | File Location | Command | Access Scope | Primary Output |
 | :--- | :--- | :--- | :--- | :--- |
@@ -35,7 +21,7 @@ Architecture capabilities and memory ceilings are gated by hardware tier. Tests 
 
 ---
 
-## 3. Testing Principles
+## 2. Testing Principles
 
 A test earns its place by covering behavior that could fail in production in a way that would matter. The test taxonomy in §2 defines where each test lives; these principles define what makes each type worth having.
 
@@ -47,7 +33,7 @@ A test earns its place by covering behavior that could fail in production in a w
 
 ---
 
-## 4. Benchmark & Evaluation Execution Standards
+## 3. Benchmark & Evaluation Execution Standards
 
 The sequential execution and optimized build requirements in `AGENTS.md §2.1` apply to all Vox tests, benchmarks, and evaluations. Vox-specific elaboration:
 
@@ -60,7 +46,7 @@ The sequential execution and optimized build requirements in `AGENTS.md §2.1` a
 
 ---
 
-## 5. Mandatory Header Format
+## 4. Mandatory Header Format
 
 Every file in `tests/`, `evals/`, `benches/`, and `examples/` must include this standard header:
 
@@ -78,11 +64,11 @@ Every file in `tests/`, `evals/`, `benches/`, and `examples/` must include this 
 
 ---
 
-## 6. Documentation Standards
+## 5. Documentation Standards
 
 Root architecture and feature docs in `docs/*.md` follow a uniform frontmatter + "How to read" convention:
 
-### 6.1 Required Frontmatter (YAML)
+### 5.1 Required Frontmatter (YAML)
 ```yaml
 ---
 title: "Doc Title"
@@ -94,7 +80,7 @@ related_docs:
 ---
 ```
 
-### 6.2 Required "How to read this doc" Section
+### 5.2 Required "How to read this doc" Section
 Immediately after the title, include:
 - **Audience:** who the doc is for.
 - **Scope:** what it covers.
@@ -104,14 +90,14 @@ Immediately after the title, include:
 
 ---
 
-## 7. Multi-Threaded, Async & Model Test Invariants (Mandatory)
+## 6. Multi-Threaded, Async & Model Test Invariants (Mandatory)
 
-### 7.1 Hard Timeout Enforcement per Test Function
+### 6.1 Hard Timeout Enforcement per Test Function
 - **Zero Unbounded Receives or Awaits:** NEVER use unbounded `.recv()` on channels or unbounded `.await` on tasks.
 - **Top-Level Timeout Wrapper:** Every `#[tokio::test]` MUST be wrapped in a top-level `tokio::time::timeout(Duration::from_secs(N), ...)` to guarantee that deadlocks, missing events, or infinite loops terminate immediately with a clear panic rather than hanging the test suite indefinitely.
 - **Synchronous Test Deadline:** In synchronous `#[test]` functions, bounded channel loops (`recv_timeout`) MUST have an explicit `Instant::now() + Duration::from_secs(N)` overall deadline that panics if exceeded.
 
-### 7.2 Zero Silent Background Panics
+### 6.2 Zero Silent Background Panics
 - **Thread Handle Joins:** Every background worker thread spawned in test harnesses (`std::thread::spawn`) MUST have its `JoinHandle` saved, gracefully shut down, joined via `.join().expect("Worker thread panicked")`, and asserted for clean execution during test teardown.
 - **No False Greens on Crashing Workers:** If a background actor or async task panics or aborts mid-test, the test must catch and report this failure rather than silently passing.
 
@@ -170,5 +156,3 @@ All benchmarks, evals, and CLI simulation tools must serialize structured JSON r
      - The specific dependency, deadlocking primitive, or architectural blocker identified.
      - What is required to unblock progress.
   3. Never silently bypass, stub with mock data, remove assertions, or delete tests to fake a green result.
-
-

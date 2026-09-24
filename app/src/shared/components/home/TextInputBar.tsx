@@ -11,6 +11,7 @@ export interface TextInputBarProps {
   isMicMuted: boolean;
   onToggleMicMute: () => void;
   disabled?: boolean;
+  initialHistory?: string[];
 }
 
 export const TextInputBar = memo(({
@@ -21,8 +22,12 @@ export const TextInputBar = memo(({
   isMicMuted,
   onToggleMicMute,
   disabled = false,
+  initialHistory,
 }: TextInputBarProps) => {
   const [value, setValue] = useState("");
+  const [history, setHistory] = useState<string[]>(() => (initialHistory ? [...initialHistory] : []));
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const draftRef = useRef<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
   const copy = HOME_CONTROLS_COPY.textMode;
 
@@ -30,10 +35,37 @@ export const TextInputBar = memo(({
     inputRef.current?.focus();
   }, []);
 
+  // Sync any newly arriving turns into the history stack
+  useEffect(() => {
+    if (initialHistory && initialHistory.length > 0) {
+      setHistory((prev) => {
+        const merged = [...initialHistory];
+        for (const item of prev) {
+          if (!merged.includes(item)) {
+            merged.push(item);
+          }
+        }
+        return merged;
+      });
+    }
+  }, [initialHistory]);
+
+  const setCaretToEnd = useCallback(() => {
+    requestAnimationFrame(() => {
+      if (inputRef.current) {
+        const len = inputRef.current.value.length;
+        inputRef.current.setSelectionRange(len, len);
+      }
+    });
+  }, []);
+
   const handleSubmit = useCallback((e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const trimmed = value.trim();
     if (!trimmed || disabled) return;
+    setHistory((prev) => (prev.length > 0 && prev[prev.length - 1] === trimmed ? prev : [...prev, trimmed]));
+    setHistoryIndex(-1);
+    draftRef.current = "";
     onSubmit(trimmed);
     setValue("");
   }, [value, disabled, onSubmit]);
@@ -45,8 +77,36 @@ export const TextInputBar = memo(({
     } else if (e.key === "Escape") {
       e.preventDefault();
       onClose();
+    } else if (e.key === "ArrowUp") {
+      if (history.length === 0) return;
+      e.preventDefault();
+      if (historyIndex === -1) {
+        draftRef.current = value;
+        const newIndex = history.length - 1;
+        setHistoryIndex(newIndex);
+        setValue(history[newIndex]);
+        setCaretToEnd();
+      } else if (historyIndex > 0) {
+        const newIndex = historyIndex - 1;
+        setHistoryIndex(newIndex);
+        setValue(history[newIndex]);
+        setCaretToEnd();
+      }
+    } else if (e.key === "ArrowDown") {
+      if (historyIndex === -1) return;
+      e.preventDefault();
+      if (historyIndex < history.length - 1) {
+        const newIndex = historyIndex + 1;
+        setHistoryIndex(newIndex);
+        setValue(history[newIndex]);
+        setCaretToEnd();
+      } else {
+        setHistoryIndex(-1);
+        setValue(draftRef.current);
+        setCaretToEnd();
+      }
     }
-  }, [handleSubmit, onClose]);
+  }, [handleSubmit, onClose, history, historyIndex, value, setCaretToEnd]);
 
   return (
     <div className="flex items-center w-full max-w-xl mx-auto gap-3 px-4 py-2  transition-all duration-300">

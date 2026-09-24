@@ -20,7 +20,6 @@ use crate::{
             current_timestamp_ms,
             r#loop::TurnLoopContext,
             stages::{
-                budget::ContextStatus,
                 compaction::{CompactionParams, CompactionStage},
                 streaming::{
                     normalizer::TextNormalizer, StreamPassOutcome, StreamRoutingHandles,
@@ -83,50 +82,11 @@ pub fn step1_intake<R: tauri::Runtime>(
         return IntakeResult::Terminal(TurnOutcome::DuplicateIgnored { turn_id });
     }
 
-    harness.has_played_filler = false;
-    harness.history.push_user_turn(req.query.clone());
-
-    let assembled_system = harness.prompt.assemble();
-    harness.history.sync_system_prompt(&assembled_system);
-
-    let can_compact = evaluate_compaction_eligibility(harness, turn_id);
+    let can_compact = harness.intake_recorded_turn(req.query.clone());
 
     IntakeResult::Proceed {
         can_compact,
         stream_stage: harness.stream.clone(),
-    }
-}
-
-/// Evaluates context utilization to determine whether in-turn compaction is triggered.
-fn evaluate_compaction_eligibility(harness: &mut Harness, turn_id: u32) -> bool {
-    let Some(ref budget) = harness.budget else {
-        return false;
-    };
-    let tracked_tokens = budget.calculate_tracked_tokens(harness.history.messages());
-    let (utilization, status) = budget.evaluate_utilization(tracked_tokens);
-    log::info!(
-        "[Harness::Intake] Turn {} context utilization: {:.1}% ({:?})",
-        turn_id,
-        utilization * 100.0,
-        status
-    );
-
-    if status != ContextStatus::Critical {
-        return false;
-    }
-
-    let eligible = harness
-        .compaction
-        .as_ref()
-        .map(|c| c.can_perform_inline_compaction(harness.history.messages().len()))
-        .unwrap_or(false);
-
-    if !eligible {
-        log::warn!("[Harness::Intake] Compaction ineligible. Executing degraded FIFO shift.");
-        budget.execute_fifo_shift(&mut harness.history);
-        false
-    } else {
-        true
     }
 }
 
@@ -311,27 +271,8 @@ fn apply_compaction_result(
     query: &str,
 ) {
     let mut guard = harness_arc.lock();
-    let Some(ref mut harness) = *guard else {
-        return;
-    };
-    match compaction_res {
-        Ok(result) => {
-            if !result.session_context.trim().is_empty() {
-                harness.apply_session_context(&result.session_context, query);
-                harness.set_last_compacted_to_turn(to_turn);
-                log::info!("[Harness::Compaction] Inline compaction succeeded; history refreshed.");
-            } else {
-                log::warn!("[Harness::Compaction] Inline compaction empty; degraded FIFO shift.");
-                harness.fallback_fifo_shift();
-            }
-        }
-        Err(err) => {
-            log::warn!(
-                "[Harness::Compaction] Inline compaction failed (0-retry): {}. FIFO fallback.",
-                err
-            );
-            harness.fallback_fifo_shift();
-        }
+    if let Some(ref mut harness) = *guard {
+        harness.apply_compaction_result(&compaction_res, to_turn, query);
     }
 }
 

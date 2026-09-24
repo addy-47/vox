@@ -152,6 +152,10 @@ path = "evals/memory_consolidation_eval.rs"
 name = "agentic_tool_eval"
 path = "evals/agentic_tool_eval.rs"
 
+[[bin]]
+name = "memory_pipeline_eval"
+path = "evals/memory_pipeline_eval.rs"
+
 [[bench]]
 name = "stt_bench"
 harness = false

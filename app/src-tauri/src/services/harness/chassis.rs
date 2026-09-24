@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use super::{execute_turn, PipelineDomain, TurnExecutionRequest, TurnOutcome};
 use crate::{
     core::{
-        settings::{LlmProviderConfig, VoxSettings},
+        settings::{LlmProviderConfig, PipelineMode, VoxSettings},
         state::AppState,
     },
     persistence::TurnRow,
@@ -18,7 +18,7 @@ use crate::{
                 history::ConversationHistoryStage,
                 prompt::PromptBuilderStage,
                 streaming::StreamRoutingStage,
-                tools::ToolRegistry,
+                tools::{ToolFilter, ToolRegistry},
             },
             ChatMessage,
         },
@@ -26,6 +26,7 @@ use crate::{
             actor::LlmCommand, ConversationInput, GenerationOptions, GenerationPurpose,
             GenerationRequest, OutputConstraint, ReasoningMode,
         },
+        memory::compaction::CompactionResult,
     },
 };
 
@@ -158,6 +159,27 @@ impl Harness {
         self.prompt.assemble()
     }
 
+    /// Returns the exact system prompt that will be dispatched on the first generation turn.
+    pub fn initial_warmup_prompt(&self) -> String {
+        let tools = if self.supports_tools {
+            let filter = ToolFilter {
+                mode: PipelineMode::Modular,
+                is_first_turn: true,
+                title_is_unset: !self.title_set,
+                memory_retrieval_enabled: self.memory_retrieval_enabled,
+            };
+            let active = self.tool_registry.active_definitions(&filter);
+            if active.is_empty() {
+                None
+            } else {
+                Some(active)
+            }
+        } else {
+            None
+        };
+        self.prompt.assemble_with_tools(tools.as_deref())
+    }
+
     pub fn generation_options(&self) -> &GenerationOptions {
         &self.generation_options
     }
@@ -175,8 +197,61 @@ impl Harness {
         }
     }
 
-    pub fn update_personal_memory(&mut self, personal_memory: Option<String>) {
-        self.prompt.set_personal_memory(personal_memory);
+    /// Records a user turn and applies the production intake and critical-compaction decision.
+    pub fn intake_recorded_turn(&mut self, query: String) -> bool {
+        self.has_played_filler = false;
+        self.history.push_user_turn(query);
+        let assembled_system = self.prompt.assemble();
+        self.history.sync_system_prompt(&assembled_system);
+        let Some(budget) = self.budget.as_ref() else {
+            return false;
+        };
+        let tracked_tokens = budget.calculate_tracked_tokens(self.history.messages());
+        let (_, status) = budget.evaluate_utilization(tracked_tokens);
+        if status != ContextStatus::Critical {
+            return false;
+        }
+        let eligible = self
+            .compaction
+            .as_ref()
+            .map(|compaction| {
+                compaction.can_perform_inline_compaction(self.history.messages().len())
+            })
+            .unwrap_or(false);
+        if eligible {
+            true
+        } else {
+            if let Some(ref budget) = self.budget {
+                budget.execute_fifo_shift(&mut self.history);
+            }
+            false
+        }
+    }
+
+    /// Applies a production compaction result, including the degraded FIFO fallback.
+    pub fn apply_compaction_result(
+        &mut self,
+        result: &anyhow::Result<CompactionResult>,
+        to_turn: u32,
+        active_query: &str,
+    ) {
+        match result {
+            Ok(result) if !result.session_context.trim().is_empty() => {
+                self.apply_session_context(&result.session_context, active_query);
+                self.set_last_compacted_to_turn(to_turn);
+                log::info!("[Harness::Compaction] Inline compaction succeeded; history refreshed.");
+            }
+            Ok(_) => {
+                log::warn!("[Harness::Compaction] Inline compaction empty; degraded FIFO shift.");
+                self.fallback_fifo_shift();
+            }
+            Err(error) => {
+                log::warn!(
+                    "[Harness::Compaction] Inline compaction failed (0-retry): {error}. FIFO fallback."
+                );
+                self.fallback_fifo_shift();
+            }
+        }
     }
 
     pub fn commit_turn(&mut self, assistant_text: String) {

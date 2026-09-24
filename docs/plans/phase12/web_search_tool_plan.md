@@ -389,3 +389,10 @@ If Batch 0 vetting fails (O-4 weight, O-5 unwritable dotfiles, O-3 reqwest fallo
 ---
 
 *Draft authored 2026-09-23. Pending external-agent review of §2 Open Issues before any batch is executed.*
+
+
+
+## a stupid idea too 
+what is write a js playbook  that opens a broswer of user then send the model query to open llm websites with tmeprary chat like chatpgt , tell me it to do websarch and give reposnse , we scrape theat repsonse and send that to our local llm 
+
+explore google ai search optoins , if gcp vertex ai asearch provices free qouata or not 

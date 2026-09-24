@@ -329,3 +329,107 @@ Upon completion of remediation:
 
 - **C.2 scope:** `ContextBudgetStage::calculate_tracked_tokens` must include **registered tool schemas** in addition to the scratchpad — the Phase 2 Step 4 formula counts system prompt, memory, summary, history, tool schemas, and scratchpad.
 - **D.2 path:** the private-mode flag lives at `app_state.telemetry.is_private_mode` (`core/state.rs:162`, wired in `core/engine.rs:77`), not `app_state.is_private_mode`. Title tool (`stages/tools/title.rs:70-81`) must gate its direct `set_session_title` write on this flag per the ratified private-mode decision.
+
+
+
+### Review: Dead Code Audit v2 (`audit_dead_code_v2.py` output)
+
+Script raw numbers: clippy **0** · heuristic Rust **53** · knip **76 exports / 2 files / 82 types**. Every claim below was re-verified against source (module-specific import resolution, file-text analysis, backend grep), not taken from the script.
+
+---
+
+## Backend (Rust)
+
+#### 50 × `test_*` functions (heuristic hits==1)
+**Verdict:** ❌ False Positive (tool limitation) · **Confidence:** 100%
+**What the code does:** All 50 carry `#[test]` / `#[tokio::test]`; the harness invokes them by symbol, so `rg` total==1 is expected for every unit test in the codebase.
+**Why it's this way:** The hits==1 heuristic cannot see test-harness dispatch. clippy `-W dead_code` = 0 confirms.
+
+#### `webview_created` — `window_customizer.rs:13`
+**Verdict:** ❌ False Positive (framework trait dispatch) · **Confidence:** 100%
+**What the code does:** `impl<R: Runtime> Plugin<R> for PinchZoomDisablePlugin`; Tauri calls it when each webview is created. Plugin is registered at `lib.rs:179` (`.plugin(window_customizer::PinchZoomDisablePlugin)`). Zero textual call sites is correct and irrelevant.
+
+#### `update_personal_memory` — `services/harness/chassis.rs:178`
+**Verdict:** ✅ **Confirmed dead** · **Confidence:** 95%
+**What the code does:** `pub fn` wrapper → `self.prompt.set_personal_memory(...)`. Zero callers anywhere in the repo. Live personal-memory injection happens at prompt-stage construction (`chassis.rs:71`, `chassis.rs:120`) and session load (`persistence/sessions.rs:376`), never through this method. Clippy misses it because it's `pub` in a lib crate.
+**Why it's this way:** Looks like a leftover mid-session-update API superseded by construction-time injection — no doc/comment confirms, but the two live call patterns are unambiguous.
+
+#### `run_ingestion_cycle_with_embedder` — `services/memory/ingestion/mod.rs:61`
+**Verdict:** ✅ **Confirmed dead** · **Confidence:** 98%
+**What the code does:** Doc says "injected embedding function for deterministic testing" — but **no test or prod code calls it**. The real path `run_ingestion_cycle` is used (`services/memory/mod.rs:104`, `tests/memory_ingestion_test.rs:316`). The lower-level `run_stage2_cosine_dedup_with_embedder` *is* used by its own test (`stage2_embed.rs:290`) — only this cycle-level wrapper was never wired.
+
+**Backend true-dead total: 2 functions.**
+
+---
+
+## Frontend
+
+### A. True-dead symbols — safe to delete entirely (zero refs besides definition/barrel passthrough)
+
+**Services / hooks / data (19):**
+| Symbol | File |
+|---|---|
+| `cancelModelSetup` | `setupService.ts:93` (wizard has no cancel path) |
+| `completeSetupWizard` | `setupService.ts:98` — **duplicate**; live copy is `settingsService.ts:155` (used by `CompletedStep`) |
+| `showMainWindow` | `windowService.ts:6` |
+| `checkSttProviderHealth` | `settingsService.ts:85` (LLM/TTS siblings used, STT orphaned) |
+| `validateLlmTokenCap` | `settingsService.ts:132` (superseded by `probeModelCapabilities`) |
+| `renameProject`, `deleteProject` | `projectService.ts:31,39` (`getProjects`/`createProject` used) |
+| `onPersonalMemoryUpdated` | `eventsService.ts:263` — backend event variant exists (`events.rs:226`), never subscribed |
+| `getStackIds` | `overlayStack.ts:76` (`getStackSize` used by `ResponsiveLayout`) |
+| `SPATIAL_CONTAINERS` | `spatialNavigation.ts:7` (rest of module live) |
+| `normalizeToInteractionModeLower` | `interactionMode.ts:26` (Upper variant used) |
+| `MEMORY_CONFIG_DESK_COPY`, `HISTORY_SETTINGS_COPY` | `settingsCopy.ts:383,595` — **dead aliases** of `PERSONAL_MEMORY_*` / `WORKING_MEMORY_*` |
+| `getShortcutsForRoute`, `shortcutSuffix` | `shortcuts.ts:96,102` |
+| `getLatestSnapshot` | `useRuntimeSnapshot.ts:84` (hook itself used) |
+| `OpenAiLogo`, `ElevenLabsLogo`, `CLOUD_PROVIDER_HOSTS` | `providersCopy.tsx` — see Ambiguous below |
+
+**Dead components (2):**
+- **`Badge` + `BadgeProps`** — `shared/ui/Badge.tsx` — **no JSX usage anywhere** (all `\bBadge\b` hits are comments/`TurnMetricsBadge`). Delete file + `shared/ui/index.ts:3` barrel line. *TurnMetricsBadge is separate and live.*
+- **`ViewSelector` + `ViewSelectorProps`** — `history/ViewSelector.tsx:12` — never rendered; only `HistoryView` type is imported (`CentralClockNode.tsx:5`) and must stay. Barrel `history/index.ts:7` line dead.
+
+**Dead orbit-memory helpers (zero in-file uses):** `ORBIT_Z_BACK_MAX`, `ORBIT_Z_CLOCK`, `ORBIT_Z_FRONT_MIN`, `ORBIT_GUIDE_OPACITY`, `ellipseAngleFromFraction`, `daysInMonthKey`, `timeToDialAngle`, `dayToDialAngle`, `dialDegrees`, `dialDotRadius`, `formatDuration`, `formatDayShortLabel` (all `orbitMath.ts`); `getThemeCollectionColors` (`memoryGraphTypes.ts:70`).
+
+**Fully dead types (6):** `InteractionOwner`@`pipelineService`, `ContinueSessionResult`@`historyService:35` (**duplicate** of live `pipelineService:35`), `ModelMetadata`@`settingsStore:118`, `LocalSnapshot`@`monitoringService:45`, `EdgeTtsVoiceDto`@`voiceService:11`, `HelpTier`@`helpCopy.ts:25` (not even used in-file).
+
+**Dead files (2):**
+- `src/shared/hooks/useConversationList.ts` — 0 importers; its job lives in `useSessionPanel` / `ActiveSessionHeader` / `MemorySessionRail` (all call `getSessions`/`sortSessionsNewestFirst`/`onSessionsChanged` directly).
+- `src/shared/components/help/index.ts` — dead barrel; children are imported directly / `lazy()`-loaded by `HelpPanel.tsx`.
+
+### B. Dead re-export lines (symbol alive elsewhere — remove the line only)
+
+- `historyService.ts:53` — `export { createSession, continueSession } from "./pipelineService"` — comment itself says "moved to pipelineService"; `VoiceSessionContext` imports from pipelineService (`:20-21`).
+- `pipelineService.ts` "Backward Compatibility" block (§249): dead members = `listVoices`, `setupRemoteServer`, `type LocalSnapshot`, `type VoiceEntryDto`, `type EdgeTtsVoiceDto`, `type RemoteServerConfig` (+ their source-side twins flagged where no other importer exists). **Note:** `renameVoice`/`addVoiceFromFile`/etc. in the same block *are* imported via pipelineService — partial block only. This block is a ZBC violation by construction.
+- `useHomePage.ts:20` — `export { toMood }` (the other two re-exports are used).
+- `MemoryGraph.tsx:26` — `export { getCollectionColor, getCollectionIcon }`; consumers import from `memoryGraphTypes` directly (`MemoryNodeTooltip`, `MemorySessionRail`). `getCollectionIcon` import at `:21` is also body-unused.
+- `SettingsContext.tsx:5` — re-exports of `ModelMetadata` + `VoiceProfile` have zero importers.
+- `memory/index.ts` star-orphans: `ClusterBadgeData` has no importer at all → full chain dead (counts in A's type story).
+
+### C. Export-keyword-only noise (symbol used in-file; NOT dead code — 39 exports + 71 types)
+
+Knip's largest bucket. Examples: `checkUpdates` (used by `checkForUpdates`), `startSession`/`endSession`/`isVoxIpcError` (used inside `pipelineService`), all `ORBIT_RADIUS_*`/`formatDayLabel`-style orbitMath internals, `PANEL_EDGE_MAP`, `selectRolledUpNotifications`, `closeTopmost`, `KNOWN_CATEGORIES`, `SHORTCUTS`, `VOICE_INFO`, `REALTIME_SUBKEY_MAP`, `fuzzyMatch`, `listAudioDevices`, `GeminiLogo`/`DeepgramLogo` (in-file in `REALTIME_PROVIDERS`), `on` (workhorse of `eventsService`, called at `:209+`), and ~71 types (the entire `settingsStore` settings-shape cluster composing `VoxSettings`, `BadgeProps`-style props types, etc.). **Action if desired: drop the `export` keyword — do not delete the symbols.**
+
+---
+
+### Missed by the script (cross-boundary findings)
+
+1. **Orphaned backend IPC handlers** once the dead FE wrappers go: `rename_project`, `delete_project` (`ipc/projects.rs:49,71`), `show_main_window`, `manage_models` action `"cancel"` — FE is their only client.
+2. **`PersonalMemoryUpdated` event**: backend maps the name; no FE listener exists (dead `onPersonalMemoryUpdated`). Whether the backend ever *emits* it wasn't fully traced.
+3. **Knip has no config file** (`knip.json` absent, no `knip` key in `package.json`) — defaults only; results happened to hold up under manual verification, but worth pinning entry patterns.
+
+### Ambiguous — needs your call
+
+- **`OpenAiLogo` / `ElevenLabsLogo` (and empty slots in `REALTIME_PROVIDERS`):** backend `RealtimeSettings` defines all 4 providers (`gemini_live`, `openai_realtime`, `deepgram_voice_agent`, `elevenlabs_convai`); FE carousel only lists gemini + deepgram. Dead code, or half-wired feature awaiting two `REALTIME_PROVIDERS` rows? **Cannot verdict without you.**
+
+---
+
+### Summary
+
+**Confirmed dead (backend):** 2 — `chassis.rs::update_personal_memory`, `ingestion/mod.rs::run_ingestion_cycle_with_embedder`.
+**Confirmed dead (frontend):** ~37 value symbols (19 services/hooks/data + 16 orbit helpers + 2 components incl. props), 6 types, 2 full files, plus ~6 dead re-export lines/partial blocks.
+**False positives:** 51 Rust (50 tests + `webview_created`) — remove from any cleanup plan. Of knip's 82 types, ~71 are export-keyword noise, not dead code.
+**Partial:** pipelineService compat re-export block (some members live, some dead); `MemoryGraph:26` line dead while both symbols live in `memoryGraphTypes`.
+**Missed:** 4+ orphaned backend IPC commands/events; missing knip config.
+**Ambiguous:** OpenAI/ElevenLabs realtime logos — delete or finish wiring?
+
+**Overall assessment:** The script is directionally right on the frontend (knip) and badly wrong on the Rust heuristic (53 → **2** real). Manual verification was necessary and changed the verdict on 51/53 backend items and cleanly split knip's 76/82 into dead vs. export-keyword noise. True cleanup scope is modest and surgical; the only judgment call left is the OpenAI/ElevenLabs realtime pair. No implementation performed — awaiting your instruction on each bucket (delete / drop-export / wire / leave).
