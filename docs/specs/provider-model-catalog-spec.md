@@ -81,9 +81,12 @@ This specification establishes a language-agnostic contract for:
      `transport` is **authoritative**: transports dispatch on it, never on URL suffixes.
    - `token_limit`: wire path for `max_output_tokens`
      (e.g. `max_tokens`, `max_completion_tokens`, `options.num_predict`).
-   - `reasoning_off`: `{ path, value }` emitted when reasoning is Disabled
-     (e.g. `{think, false}`, `{reasoning_effort, "none"}`), or `null` = send nothing
-     (plain chat models; Responses transport additionally logs one warning).
+    - `reasoning_off`: `{ path, value }` emitted when reasoning is Disabled
+      (e.g. `{think, false}`, `{reasoning_effort, "none"}`), or `null` = send nothing
+      (plain chat models; Responses transport additionally logs one warning).
+    - `reasoning_on`: optional `{ path, value }` emitted when reasoning is Enabled;
+      omission means the provider receives no explicit enable control.
+
    - `tool_choice`: value sent when tools are present (e.g. `"auto"`), or `null` =
      omit even when tools exist (Ollama native + `/v1` reject the field).
    - `stream_usage`: send `stream_options:{include_usage:true}` or omit it
@@ -143,7 +146,9 @@ This specification establishes a language-agnostic contract for:
    | Canonical | ollama_native | ollama `/v1` | openai chat | responses |
    |---|---|---|---|---|
    | `max_output_tokens` | `options.num_predict` | `max_tokens` | `max_completion_tokens` (o-series) / `max_tokens` | `max_output_tokens` |
-   | `ReasoningMode::Disabled` | `think:false` | `reasoning_effort:"none"` | `reasoning_effort:"none"` (reasoning models) else omit | warn + omit |
+    | `ReasoningMode::Disabled` | `think:false` | `reasoning_effort:"none"` | `reasoning_effort:"none"` (reasoning models) else omit | warn + omit |
+    | `ReasoningMode::Enabled` | provider-defined enable control | provider-defined enable control | provider-defined enable control | provider-defined enable control |
+
    | tools present | `tools[]`, no `tool_choice` | `tools[]`, no `tool_choice` | `tools[]` + `tool_choice:"auto"` | `tools[]` per Responses envelope |
    | `JsonSchema` | `format:<schema>` | `response_format:{json_schema}` | `response_format:{json_schema}` | `text:{format:{json_schema}}` |
    | stream usage | n/a (NDJSON) | `stream_options:{include_usage:true}` iff policy allows | same as `/v1` | n/a |

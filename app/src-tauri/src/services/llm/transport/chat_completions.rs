@@ -200,8 +200,14 @@ fn populate_sampling_options(
                 WireValue::Bool(flag) => serde_json::json!(flag),
                 WireValue::Str(level) => serde_json::json!(level),
             };
-            body.insert(off.path.to_string(), value);
+            super::insert_dotted(body, off.path, value);
         }
+    } else if let Some(on) = &config.policy.reasoning_on {
+        let value = match on.value {
+            WireValue::Bool(flag) => serde_json::json!(flag),
+            WireValue::Str(level) => serde_json::json!(level),
+        };
+        super::insert_dotted(body, on.path, value);
     }
 }
 

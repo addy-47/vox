@@ -8,5 +8,5 @@ pub use probe::{list_models, probe_capabilities, CapabilityProbeEngine};
 pub use sync::{get_baseline_spec, load_local_baseline_cache, spawn_catalog_sync};
 pub use types::{
     CapabilityProvenance, CatalogAuthScheme, ModelProbeResult, ModelSpec, ProviderPresetMeta,
-    ReasoningOff, ResponseEnvelope, ToolStreamShape, WireValue,
+    ReasoningOff, ReasoningOn, ResponseEnvelope, ToolStreamShape, WireValue,
 };

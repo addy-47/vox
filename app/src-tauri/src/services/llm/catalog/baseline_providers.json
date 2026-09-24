@@ -24,7 +24,14 @@
     "auth_scheme": "bearer",
     "transport": "chat_completions",
     "token_limit": "max_tokens",
-    "reasoning_off": null,
+    "reasoning_off": {
+      "path": "reasoning.effort",
+      "value": "none"
+    },
+    "reasoning_on": {
+      "path": "reasoning.effort",
+      "value": "minimal"
+    },
     "tool_choice": "auto",
     "stream_usage": true,
     "response_envelope": "chat",

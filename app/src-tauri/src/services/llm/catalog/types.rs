@@ -70,6 +70,12 @@ pub struct ReasoningOff {
     pub value: WireValue,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReasoningOn {
+    pub path: &'static str,
+    pub value: WireValue,
+}
+
 /// Envelope selecting the `OutputConstraint` serialization per transport.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -99,6 +105,8 @@ pub struct ProviderPresetMeta {
     pub transport: TransportType,
     pub token_limit: &'static str,
     pub reasoning_off: Option<ReasoningOff>,
+    #[serde(default)]
+    pub reasoning_on: Option<ReasoningOn>,
     pub tool_choice: Option<&'static str>,
     pub stream_usage: bool,
     pub response_envelope: ResponseEnvelope,
@@ -121,6 +129,7 @@ impl Default for ProviderPresetMeta {
             transport: TransportType::ChatCompletions,
             token_limit: "max_tokens",
             reasoning_off: None,
+            reasoning_on: None,
             tool_choice: Some("auto"),
             stream_usage: true,
             response_envelope: ResponseEnvelope::Chat,
