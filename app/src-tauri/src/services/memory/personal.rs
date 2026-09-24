@@ -51,9 +51,7 @@ Your task is to update and reorganize the user's Personal Memory markdown docume
 4. Output ONLY the raw markdown text. Start directly with the first heading or bullet. Never enclose the response in markdown code blocks or triple backticks.
 </rules>"#;
 
-pub use crate::persistence::{
-    list_personal_memory_versions, set_active_personal_memory_version,
-};
+pub use crate::persistence::{list_personal_memory_versions, set_active_personal_memory_version};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum ConsolidationConflictPolicy {
@@ -134,13 +132,21 @@ pub async fn consolidate_personal_memory(
                 log::info!("[Memory::Personal] Preempting/pausing in-progress compaction for personal consolidation.");
                 crate::persistence::pause_in_progress_compactions(conn, None).await?;
                 // Run an ingestion deduplication pass on any pending items
-                if let Err(e) = crate::services::memory::ingestion::run_ingestion_cycle(conn).await {
-                    log::warn!("[Memory::Personal] Ingestion cycle error during compaction preemption: {}", e);
+                if let Err(e) = crate::services::memory::ingestion::run_ingestion_cycle(conn).await
+                {
+                    log::warn!(
+                        "[Memory::Personal] Ingestion cycle error during compaction preemption: {}",
+                        e
+                    );
                 }
             }
             ConsolidationConflictPolicy::QueueBehind => {
-                log::info!("[Memory::Personal] Consolidation queued behind in-progress compaction.");
-                return Err(anyhow!("CompactionQueued: consolidation queued behind in-progress compaction"));
+                log::info!(
+                    "[Memory::Personal] Consolidation queued behind in-progress compaction."
+                );
+                return Err(anyhow!(
+                    "CompactionQueued: consolidation queued behind in-progress compaction"
+                ));
             }
             ConsolidationConflictPolicy::PromptIfBusy => {
                 log::info!("[Memory::Personal] Active compaction in progress; prompting user for resolution.");
@@ -246,7 +252,8 @@ async fn regenerate_with_comments(
     )
     .await?;
 
-    let saved = save_personal_memory(conn, project_id, &updated_markdown, current_record.version).await?;
+    let saved =
+        save_personal_memory(conn, project_id, &updated_markdown, current_record.version).await?;
     log::info!(
         "[Memory::Personal] Comment regeneration successful: saved v{} ({} chars)",
         saved.version,
@@ -265,7 +272,9 @@ async fn verify_ingestion_quiescence(conn: &Connection) -> Result<()> {
     }
 
     if has_unfinished_items(conn).await? {
-        log::warn!("[Memory::Personal] Quiescence check failed: pending items in memory ingestion queue");
+        log::warn!(
+            "[Memory::Personal] Quiescence check failed: pending items in memory ingestion queue"
+        );
         return Err(anyhow!(
             "Precondition failed: pending items in memory ingestion queue; personal consolidation deferred"
         ));

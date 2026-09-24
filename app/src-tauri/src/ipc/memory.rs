@@ -116,13 +116,10 @@ pub async fn consolidate_personal_memory(
 
     let parsed_policy = conflict_policy.and_then(|s| s.parse().ok());
 
-    let conn = state
-        .db
-        .connect()
-        .map_err(|e| {
-            log::error!("[IPC::Memory] Database connection error: {}", e);
-            VoxIpcError::Database(e.to_string())
-        })?;
+    let conn = state.db.connect().map_err(|e| {
+        log::error!("[IPC::Memory] Database connection error: {}", e);
+        VoxIpcError::Database(e.to_string())
+    })?;
     let record = service_consolidate_personal_memory(
         &conn,
         provider.as_ref(),

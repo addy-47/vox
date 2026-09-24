@@ -38,6 +38,54 @@ pub async fn open_fresh_eval_db(path: &std::path::Path) -> Result<(VoxDb, Connec
 }
 
 /// Opens an existing rung DB file produced by a previous rung (ladder input).
+pub async fn create_session_at_timestamp(
+    conn: &Connection,
+    timestamp_ms: i64,
+    project_id: Option<&str>,
+) -> Result<i64> {
+    let project_id = project_id.unwrap_or("default");
+    let mut rows = conn
+        .query(
+            "INSERT INTO sessions (project_id, is_pinned, created_at, updated_at)
+             VALUES (?, 0, ?, ?) RETURNING id;",
+            (project_id, timestamp_ms, timestamp_ms),
+        )
+        .await?;
+    let row = rows
+        .next()
+        .await?
+        .context("No session id returned after creating session")?;
+    Ok(row.get(0)?)
+}
+
+pub async fn persist_turn_at_timestamp(
+    conn: &Connection,
+    session_id: i64,
+    turn_id: u32,
+    user_text: &str,
+    assistant_text: &str,
+    timestamp_ms: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO turns (session_id, turn_id, user_text, assistant_text, created_at)
+         VALUES (?, ?, ?, ?, ?);",
+        (
+            session_id,
+            i64::from(turn_id),
+            user_text,
+            assistant_text,
+            timestamp_ms,
+        ),
+    )
+    .await?;
+    conn.execute(
+        "UPDATE sessions SET updated_at = ? WHERE id = ?;",
+        (timestamp_ms, session_id),
+    )
+    .await?;
+    Ok(())
+}
+
 pub async fn open_existing_eval_db(path: &std::path::Path) -> Result<(VoxDb, Connection)> {
     if !path.exists() {
         anyhow::bail!(

@@ -53,8 +53,6 @@ fn start_modular_session(state: &AppState, ctx: &RoutingContext) -> Result<(), S
         InteractionMode::PTT => VadOperationalMode::WindowedValidation,
     };
 
-    let prompt = state.resolve_base_prompt();
-
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             if let Err(e) = engine.vad_tx.send(VadCommand::SetOperationalMode(vad_mode)) {
@@ -62,13 +60,6 @@ fn start_modular_session(state: &AppState, ctx: &RoutingContext) -> Result<(), S
                     "[Pipeline::Session] Failed to set VAD operational mode: {}",
                     e
                 );
-            }
-            if let Some(ref llm_tx) = engine.llm_tx {
-                if let Err(e) = llm_tx.send(LlmCommand::Warmup {
-                    system_prompt: prompt,
-                }) {
-                    log::warn!("[Pipeline::Session] Failed to dispatch LLM Warmup: {}", e);
-                }
             }
         }
     }
@@ -332,11 +323,17 @@ pub fn on_session_start<R: Runtime + 'static>(
                     prompt,
                     personal_memory,
                     &settings,
-                    llm_tx,
+                    llm_tx.clone(),
                     supports_tools,
                 );
                 if !turns.is_empty() || summary.is_some() {
                     harness.seed_continuation(summary, turns, title_is_set);
+                }
+                let warmup_prompt = harness.initial_warmup_prompt();
+                if let Err(e) = llm_tx.send(LlmCommand::Warmup {
+                    system_prompt: warmup_prompt,
+                }) {
+                    log::warn!("[Pipeline::Session] Failed to dispatch LLM Warmup: {}", e);
                 }
                 *state.harness.lock() = Some(harness);
             } else {

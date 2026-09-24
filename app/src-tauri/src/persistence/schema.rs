@@ -165,8 +165,15 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
 
         if current_version > 0 && current_version < 6 {
-            let _ = conn.execute("ALTER TABLE personal_memory ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;", ()).await;
-            let _ = conn.execute("DROP INDEX IF EXISTS idx_personal_memory_project;", ()).await;
+            let _ = conn
+                .execute(
+                    "ALTER TABLE personal_memory ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;",
+                    (),
+                )
+                .await;
+            let _ = conn
+                .execute("DROP INDEX IF EXISTS idx_personal_memory_project;", ())
+                .await;
         }
 
         for stmt in V2_TABLE_STATEMENTS {
