@@ -300,6 +300,15 @@ async fn handle_setting_side_effects<R: tauri::Runtime>(
                 });
             }
         }
+    } else if domain == "working_memory" && key == "web_search_enabled" {
+        let enabled = value.as_bool().unwrap_or(false);
+        if let Some(ref mut h) = *state.harness.lock() {
+            h.set_web_search_enabled(enabled);
+        }
+        log::info!(
+            "[Settings] Working memory web search runtime enabled={}",
+            enabled
+        );
     }
 }
 

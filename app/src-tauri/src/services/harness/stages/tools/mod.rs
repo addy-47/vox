@@ -12,11 +12,13 @@ pub mod executor;
 pub mod registry;
 pub mod respond_and_set_title;
 pub mod search_memory;
+pub mod web_search;
 
 pub use executor::{ToolExecutionOutcome, ToolExecutor};
 pub use registry::{ToolFilter, ToolRegistry};
 pub use respond_and_set_title::{RespondAndSetTitleTool, SetSessionTitleTool};
 pub use search_memory::MemorySearchTool;
+pub use web_search::WebSearchTool;
 
 /// Operational domain classification defining where a tool can be utilized.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]

@@ -12,7 +12,9 @@
 //! per-bin dead-code lints are disabled for this subtree.
 #![allow(dead_code)]
 
+pub mod audio;
 pub mod db;
+pub mod harness;
 pub mod judge;
 pub mod report;
 pub mod settings_cfg;

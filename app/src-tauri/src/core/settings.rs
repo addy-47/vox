@@ -31,7 +31,8 @@ use crate::{
         DEFAULT_VAD_MAX_SPEECH_DURATION_S, DEFAULT_VAD_PTT_NOISE_GATE,
         DEFAULT_VAD_SILENCE_DURATION_MS, DEFAULT_VAD_SPEECH_ONSET_MS, DEFAULT_VAD_THRESHOLD,
         DEFAULT_WORKING_MEMORY_AUTO_COMPACTION, DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE,
-        DEFAULT_WORKING_MEMORY_PRIVATE_MODE, MIN_LLM_CONTEXT_WINDOW,
+        DEFAULT_WORKING_MEMORY_PRIVATE_MODE, DEFAULT_WORKING_MEMORY_WEB_SEARCH_ENABLED,
+        MIN_LLM_CONTEXT_WINDOW,
     },
     utils::paths,
 };
@@ -789,6 +790,7 @@ pub struct WorkingMemorySettings {
     pub private_mode: bool,
     pub auto_compaction: bool,
     pub max_context_share: f32,
+    pub web_search_enabled: bool,
 }
 
 impl Default for WorkingMemorySettings {
@@ -797,6 +799,7 @@ impl Default for WorkingMemorySettings {
             private_mode: DEFAULT_WORKING_MEMORY_PRIVATE_MODE,
             auto_compaction: DEFAULT_WORKING_MEMORY_AUTO_COMPACTION,
             max_context_share: DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE,
+            web_search_enabled: DEFAULT_WORKING_MEMORY_WEB_SEARCH_ENABLED,
         }
     }
 }
@@ -958,7 +961,6 @@ impl Default for SystemSettings {
         }
     }
 }
-
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct VoxSettings {

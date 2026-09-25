@@ -232,7 +232,7 @@ async fn run(args: Args) -> Result<()> {
         Err(error) => {
             let failure = failed_setup_report(&format!("{error:#}"));
             write_final_report(
-                &eval_name,
+                eval_name,
                 &run_id,
                 &args,
                 &db_path,
@@ -286,7 +286,7 @@ async fn run(args: Args) -> Result<()> {
                 reports.push(failure);
                 unload_embedder();
                 write_final_report(
-                    &eval_name,
+                    eval_name,
                     &run_id,
                     &args,
                     &db_path,
@@ -321,7 +321,7 @@ async fn run(args: Args) -> Result<()> {
         "failed"
     };
     write_final_report(
-        &eval_name,
+        eval_name,
         &run_id,
         &args,
         &db_path,
@@ -429,9 +429,7 @@ async fn load_cases(dataset_dir: &Path) -> Result<Vec<EvalCase>> {
             .context("Case filename has no UTF-8 stem")?
             .to_string();
         let manual_compaction = name.contains("under_threshold");
-        let expected_compactions = if manual_compaction {
-            1
-        } else if name.contains("one_crossing") {
+        let expected_compactions = if manual_compaction || name.contains("one_crossing") {
             1
         } else if name.contains("two_crossings") {
             2
@@ -861,6 +859,7 @@ async fn run_case(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_final_report(
     eval_name: &str,
     run_id: &str,
@@ -1056,7 +1055,7 @@ fn case_start_ms(case_index: usize) -> i64 {
         .expect("valid eval date")
         .checked_add_signed(ChronoDuration::days(case_index as i64))
         .expect("valid eval date range");
-    let hour = (7 + (case_index as u32 * 5) % 12) as u32;
+    let hour = 7 + (case_index as u32 * 5) % 12;
     day.and_hms_opt(hour, 0, 0)
         .expect("valid eval time")
         .and_utc()
