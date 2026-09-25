@@ -184,7 +184,6 @@ export const Home = memo(() => {
     return dialogueHistory.slice(-10);
   }, [dialogueHistory]);
 
-  const isPttActive = isEngaged && interactionMode === "PTT" && !isPaused && interactionState !== "Error";
 
   return (
     <div className="relative flex-1 flex flex-col items-center justify-between h-full w-full overflow-hidden bg-transparent select-none">
@@ -271,13 +270,7 @@ export const Home = memo(() => {
 
       {/* ── Orb Stage (Vertically centered in stage distance between top edge & EdgeNav) ── */}
       <div
-        className={cn(
-          "absolute z-10 flex items-center justify-center select-none transition-all duration-700 ease-out",
-          isPttActive ? "pointer-events-auto cursor-pointer" : "pointer-events-none"
-        )}
-        onPointerDown={isPttActive ? () => handlePttStart() : undefined}
-        onPointerUp={isPttActive ? () => handlePttStop() : undefined}
-        onPointerLeave={isPttActive ? () => { if (pttStatus === "RECORDING") handlePttCancel(); } : undefined}
+        className="absolute z-10 flex items-center justify-center select-none transition-all duration-700 ease-out pointer-events-none"
         style={{
           left: "50%",
           top: "calc(50% - 36px)",

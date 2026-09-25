@@ -672,6 +672,16 @@ input[type="range"]:active::-webkit-slider-thumb {
   opacity: 0;
   pointer-events: none;
   will-change: opacity;
+  transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.amb-background-container.is-paused .rp-wrapper {
+  opacity: 0 !important;
+}
+
+.amb-background-container.is-paused .rp-ring,
+.amb-background-container.is-paused .amb-blob {
+  animation-play-state: paused !important;
 }
 
 .rp-layer {

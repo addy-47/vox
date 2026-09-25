@@ -26,6 +26,10 @@ export interface PageMemoryRecord {
   activeComponentsOnMount: string[];
 }
 
+function primaryMemoryMb(snapshot: ProfilerSnapshot): number {
+  return snapshot.cgroup_current_mb ?? snapshot.total_pss_mb ?? snapshot.total_vox_ram_mb;
+}
+
 export function useMemoryProfiler(enabled = true) {
   const location = useLocation();
 
@@ -86,10 +90,10 @@ export function useMemoryProfiler(enabled = true) {
         const domCount = domSample.nodeCount || document.querySelectorAll("*").length;
         const fontCount = domSample.fontFaceCount || (document.fonts ? document.fonts.size : 0);
 
-        const currentTotal = snap.total_vox_ram_mb;
-        const baselineTotal = existing?.baseline ? existing.baseline.total_vox_ram_mb : currentTotal;
-        const peakTotal = Math.max(existing?.peak ? existing.peak.total_vox_ram_mb : 0, currentTotal);
-        const isNewPeak = !existing?.peak || currentTotal > existing.peak.total_vox_ram_mb;
+        const currentTotal = primaryMemoryMb(snap);
+        const baselineTotal = existing?.baseline ? primaryMemoryMb(existing.baseline) : currentTotal;
+        const peakTotal = Math.max(existing?.peak ? primaryMemoryMb(existing.peak) : 0, currentTotal);
+        const isNewPeak = !existing?.peak || currentTotal > primaryMemoryMb(existing.peak);
         const updatedPeak = isNewPeak ? snap : (existing?.peak ?? snap);
         const peakDelta = Math.round((peakTotal - baselineTotal) * 100) / 100;
 
@@ -128,6 +132,16 @@ export function useMemoryProfiler(enabled = true) {
             current_ram_mb: currentTotal,
             core_app_ram_mb: snap.core_app_ram_mb,
             devtools_ram_mb: snap.devtools_ram_mb,
+            development_tools_ram_mb: snap.development_tools_ram_mb,
+            scope_kind: snap.scope_kind,
+            runtime_pss_mb: snap.runtime_pss_mb,
+            dev_tool_pss_mb: snap.dev_tool_pss_mb,
+            cgroup_current_mb: snap.cgroup_current_mb,
+            cgroup_swap_mb: snap.cgroup_swap_mb,
+            cgroup_anon_mb: snap.cgroup_anon_mb,
+            cgroup_file_mb: snap.cgroup_file_mb,
+            cgroup_kernel_mb: snap.cgroup_kernel_mb,
+            cgroup_shmem_mb: snap.cgroup_shmem_mb,
             total_pss_mb: snap.total_pss_mb,
             peak_ram_mb: peakTotal,
             peak_delta_mb: peakDelta,
@@ -221,9 +235,21 @@ export function useMemoryProfiler(enabled = true) {
         await recordMemoryProfileEvent({
           route,
           event_type: "poll",
-          baseline_ram_mb: rec?.baseline?.total_vox_ram_mb ?? null,
-          current_ram_mb: snap.total_vox_ram_mb,
-          peak_ram_mb: rec?.peak?.total_vox_ram_mb ?? null,
+          baseline_ram_mb: rec?.baseline ? primaryMemoryMb(rec.baseline) : null,
+          current_ram_mb: primaryMemoryMb(snap),
+          core_app_ram_mb: snap.core_app_ram_mb,
+          development_tools_ram_mb: snap.development_tools_ram_mb,
+          scope_kind: snap.scope_kind,
+          runtime_pss_mb: snap.runtime_pss_mb,
+          dev_tool_pss_mb: snap.dev_tool_pss_mb,
+          cgroup_current_mb: snap.cgroup_current_mb,
+          cgroup_swap_mb: snap.cgroup_swap_mb,
+          cgroup_anon_mb: snap.cgroup_anon_mb,
+          cgroup_file_mb: snap.cgroup_file_mb,
+          cgroup_kernel_mb: snap.cgroup_kernel_mb,
+          cgroup_shmem_mb: snap.cgroup_shmem_mb,
+          total_pss_mb: snap.total_pss_mb,
+          peak_ram_mb: rec?.peak ? primaryMemoryMb(rec.peak) : null,
           peak_delta_mb: rec?.peakDeltaMb ?? null,
           retained_ram_mb: null,
           retained_delta_mb: null,
