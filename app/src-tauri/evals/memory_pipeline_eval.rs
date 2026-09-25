@@ -20,7 +20,7 @@ use std::{
 use anyhow::{Context, Result};
 use chrono::{Duration as ChronoDuration, NaiveDate};
 use clap::Parser;
-use common::{db, report, settings_cfg, turns::DatasetTurn};
+use common::{db, paths, report, settings_cfg, turns::DatasetTurn};
 use serde::Serialize;
 use turso::Connection;
 use vox_lib::{
@@ -194,11 +194,11 @@ async fn main() -> Result<()> {
     match result {
         Ok(result) => result,
         Err(_) => {
-            let dataset_dir = resolve_path(args.dataset_dir.clone().unwrap_or_else(|| {
+            let dataset_dir = paths::resolve(args.dataset_dir.clone().unwrap_or_else(|| {
                 PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("../../sandbox/datasets/eval-sessions")
             }));
-            let db_path = resolve_path(args.db_path.clone());
+            let db_path = paths::resolve(args.db_path.clone());
             let run_id = report::new_run_id();
             let failure = failed_setup_report("Memory pipeline eval top-level timeout exceeded");
             write_final_report(
@@ -221,10 +221,10 @@ async fn run(args: Args) -> Result<()> {
     let started = Instant::now();
     let run_id = report::new_run_id();
     let eval_name = "memory_pipeline";
-    let dataset_dir = resolve_path(args.dataset_dir.clone().unwrap_or_else(|| {
+    let dataset_dir = paths::resolve(args.dataset_dir.clone().unwrap_or_else(|| {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sandbox/datasets/eval-sessions")
     }));
-    let db_path = resolve_path(args.db_path.clone());
+    let db_path = paths::resolve(args.db_path.clone());
     let is_subset = args.case.is_some();
     let prepared = prepare_run(&args, &dataset_dir).await;
     let (selected_cases, is_subset, settings, provider, _db, conn) = match prepared {
@@ -364,8 +364,8 @@ async fn prepare_run(
         &args.server_url,
         &args.server_model,
         args.context_window,
-        optional_api_key(&args.server_api_key),
-        optional_provider(&args.server_provider),
+        settings_cfg::optional_api_key(&args.server_api_key),
+        settings_cfg::optional_provider(&args.server_provider),
     );
     settings.working_memory.auto_compaction = true;
     settings.personal_memory.context_retrieval_enabled = false;
@@ -393,7 +393,7 @@ async fn prepare_run(
         "Configured model is not available on the provider: {}",
         args.server_model
     );
-    let (database, conn) = db::open_fresh_eval_db(&resolve_path(args.db_path.clone())).await?;
+    let (database, conn) = db::open_fresh_eval_db(&paths::resolve(args.db_path.clone())).await?;
     Ok((
         selected_cases,
         is_subset,
@@ -514,7 +514,7 @@ async fn run_case(
     settings: &vox_lib::core::settings::VoxSettings,
 ) -> Result<CaseReport> {
     let session_start_ms = case_start_ms(case.ordinal);
-    let facts_before = count_facts(conn).await?;
+    let facts_before = db::count_facts(conn).await?;
     let personal_memory_before = get_personal_memory(conn, None).await?;
     let session_id =
         db::create_session_at_timestamp(conn, session_start_ms, Some("default")).await?;
@@ -561,7 +561,7 @@ async fn run_case(
         );
     }
 
-    let queue_before = count_queue_items(conn).await?;
+    let queue_before = db::count_queue_items(conn).await?;
     let mut crossing_turns = Vec::new();
     let mut critical_turns = Vec::new();
     let mut manual_compactions = 0;
@@ -659,13 +659,13 @@ async fn run_case(
         harness.apply_compaction_result(&Ok(result), to_turn, "");
     }
 
-    let actual_compactions = count_case_compactions(conn, session_id).await?;
+    let actual_compactions = db::count_case_compactions(conn, session_id).await?;
     anyhow::ensure!(
         actual_compactions as usize == crossing_turns.len() + manual_compactions as usize,
         "Compaction ledger count {actual_compactions} differs from critical plus manual count {}",
         crossing_turns.len() + manual_compactions as usize
     );
-    let incomplete_compactions = count_incomplete_compactions(conn, session_id).await?;
+    let incomplete_compactions = db::count_incomplete_compactions(conn, session_id).await?;
     anyhow::ensure!(
         incomplete_compactions == 0,
         "{incomplete_compactions} compaction records are not completed"
@@ -681,11 +681,11 @@ async fn run_case(
         .unwrap_or(0);
     let final_watermark_valid = final_watermark_turn == 0
         || harness.from_turn_id() == final_watermark_turn.saturating_add(1);
-    let queue_after_compaction = count_queue_items(conn).await?;
+    let queue_after_compaction = db::count_queue_items(conn).await?;
     let max_cycles = ((queue_after_compaction as usize / 16) + 2).clamp(1, MAX_INGESTION_CYCLES);
     let mut ingestion_cycle_reports = Vec::new();
     for cycle in 0..max_cycles {
-        let before = count_queue_items(conn).await?;
+        let before = db::count_queue_items(conn).await?;
         if cycle > 0 && before == 0 {
             break;
         }
@@ -697,7 +697,7 @@ async fn run_case(
         .await
         .context("Production ingestion cycle timed out")?
         .context("Production ingestion cycle failed")?;
-        let after = count_queue_items(conn).await?;
+        let after = db::count_queue_items(conn).await?;
         if before > 0 && after >= before {
             anyhow::bail!("Ingestion cycle made no queue progress: {before} -> {after}");
         }
@@ -717,8 +717,8 @@ async fn run_case(
         !has_unfinished_items(conn).await?,
         "Ingestion queue still has unfinished items after bounded drain"
     );
-    let queue_after = count_queue_items(conn).await?;
-    let failed_queue_items = count_failed_queue_items(conn).await?;
+    let queue_after = db::count_queue_items(conn).await?;
+    let failed_queue_items = db::count_failed_queue_items(conn).await?;
     anyhow::ensure!(
         failed_queue_items == 0,
         "{failed_queue_items} ingestion queue items are failed"
@@ -757,7 +757,7 @@ async fn run_case(
     let active_personal_before = fetch_active_facts_by_type(conn, "personal").await?.len() as i64;
     let personal_before_consolidation = get_personal_memory(conn, None).await?;
     let prior_memory_document = personal_before_consolidation.content.trim().to_string();
-    let prior_memory_anchors = memory_anchors(&prior_memory_document);
+    let prior_memory_anchors = report::memory_anchors(&prior_memory_document);
     let consolidation_started = Instant::now();
     tokio::time::timeout(
         Duration::from_secs(STAGE_TIMEOUT_SECS),
@@ -795,7 +795,7 @@ async fn run_case(
             .all(|anchor| personal_memory_after.content.contains(anchor))
     };
     let prior_memory_prefix_preserved = prior_memory_full_document_preserved;
-    let facts_after = count_facts(conn).await?;
+    let facts_after = db::count_facts(conn).await?;
     let actual_compactions_u32 =
         u32::try_from(actual_compactions).context("Compaction count does not fit in u32")?;
     let classification_match = actual_compactions_u32 == case.expected_compactions;
@@ -919,16 +919,6 @@ fn write_final_report(
     Ok(())
 }
 
-fn memory_anchors(content: &str) -> Vec<String> {
-    content
-        .lines()
-        .map(str::trim)
-        .filter(|line| line.len() >= 8)
-        .take(5)
-        .map(ToOwned::to_owned)
-        .collect()
-}
-
 fn failed_setup_report(error: &str) -> CaseReport {
     CaseReport {
         case: "<setup>".to_string(),
@@ -1027,35 +1017,12 @@ fn failed_case_report(case: &EvalCase, error: &str) -> CaseReport {
     }
 }
 
-fn resolve_path(path: PathBuf) -> PathBuf {
-    if path.is_absolute() {
-        path
-    } else {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path)
-    }
-}
-
-fn optional_api_key(value: &str) -> Option<String> {
-    let value = value.trim();
-    if value == "env:OPENROUTER_API_KEY" {
-        return std::env::var("OPENROUTER_API_KEY")
-            .ok()
-            .filter(|key| !key.trim().is_empty());
-    }
-    (!value.is_empty()).then(|| value.to_string())
-}
-
-fn optional_provider(value: &str) -> Option<String> {
-    let value = value.trim();
-    (!value.is_empty()).then(|| value.to_string())
-}
-
 fn case_start_ms(case_index: usize) -> i64 {
     let day = NaiveDate::from_ymd_opt(2026, 1, 2)
         .expect("valid eval date")
         .checked_add_signed(ChronoDuration::days(case_index as i64))
         .expect("valid eval date range");
-    let hour = 7 + (case_index as u32 * 5) % 12;
+    let hour = 7;
     day.and_hms_opt(hour, 0, 0)
         .expect("valid eval time")
         .and_utc()
@@ -1096,52 +1063,4 @@ fn validate_compaction_ranges(observations: &[CompactionObservation]) -> bool {
         previous_to = observation.to_turn;
     }
     true
-}
-
-async fn count_facts(conn: &Connection) -> Result<i64> {
-    scalar_i64(conn, "SELECT COUNT(*) FROM memory_facts;").await
-}
-
-async fn count_queue_items(conn: &Connection) -> Result<i64> {
-    scalar_i64(
-        conn,
-        "SELECT COUNT(*) FROM memory_ingestion_queue WHERE status NOT IN ('completed', 'failed');",
-    )
-    .await
-}
-
-async fn count_failed_queue_items(conn: &Connection) -> Result<i64> {
-    scalar_i64(
-        conn,
-        "SELECT COUNT(*) FROM memory_ingestion_queue WHERE status = 'failed';",
-    )
-    .await
-}
-
-async fn count_case_compactions(conn: &Connection, session_id: i64) -> Result<i64> {
-    let mut rows = conn
-        .query(
-            "SELECT COUNT(*) FROM session_compactions WHERE session_id = ? AND status = 'completed';",
-            (session_id,),
-        )
-        .await?;
-    let row = rows.next().await?.context("Scalar query returned no row")?;
-    Ok(row.get(0)?)
-}
-
-async fn count_incomplete_compactions(conn: &Connection, session_id: i64) -> Result<i64> {
-    let mut rows = conn
-        .query(
-            "SELECT COUNT(*) FROM session_compactions WHERE session_id = ? AND status != 'completed';",
-            (session_id,),
-        )
-        .await?;
-    let row = rows.next().await?.context("Scalar query returned no row")?;
-    Ok(row.get(0)?)
-}
-
-async fn scalar_i64(conn: &Connection, sql: &str) -> Result<i64> {
-    let mut rows = conn.query(sql, ()).await?;
-    let row = rows.next().await?.context("Scalar query returned no row")?;
-    Ok(row.get(0)?)
 }

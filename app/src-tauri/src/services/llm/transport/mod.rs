@@ -238,6 +238,8 @@ fn degrade_request_on_unsupported(request: &mut GenerationRequest, msg_lower: &s
     if msg_lower.contains("response_format")
         || msg_lower.contains("json_schema")
         || msg_lower.contains("json_object")
+        || msg_lower.contains("structured-outputs")
+        || msg_lower.contains("structured outputs")
     {
         match &request.output {
             OutputConstraint::JsonSchema { .. } => {

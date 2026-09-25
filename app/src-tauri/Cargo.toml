@@ -43,7 +43,7 @@ ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray"] }  
 ndarray = "0.17.2"                                                                            # N-dimensional array processing for ONNX tensors
 chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "2fa6883", default-features = false } # Local voice cloning TTS
 query-sieve = { git = "https://github.com/addy-47/query-sieve-rs.git" }                       # ModernBERT intent classifier
-nexus = { package = "nexus-rs", git = "https://github.com/addy-47/nexus-rs.git", rev = "d526dcb" } # Local multi-engine web search, DOM extraction, and RRF hybrid ranking
+nexus = { package = "nexuss", version = "0.1.1" } # Local multi-engine web search, DOM extraction, and RRF hybrid ranking
 tokenizers = { version = "0.21.0", default-features = false, features = ["fancy-regex"] }    # HuggingFace tokenizers (BPE / WordPiece)
 tiktoken-rs = "0.6.0"                                                                         # OpenAI BPE tokenizer for context budgeting
 

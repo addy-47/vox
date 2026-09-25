@@ -32,7 +32,7 @@ dependencies = [
  "llama-cpp-sys-4",
  "log",
  "ndarray",
- "nexus-rs",
+ "nexuss",
  "nnnoiseless",
  "num2words",
  "once_cell",
@@ -4379,9 +4379,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
-name = "nexus-rs"
-version = "0.1.0"
-source = "git+https://github.com/addy-47/nexus-rs.git?rev=d526dcb#d526dcb1581fac981ea026e40bf2dd9fa3149095"
+name = "nexuss"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "680a6f4cb1536a84d7d9da2b59ac378feb8fac92da27002547b218478c544273"
 dependencies = [
  "async-trait",
  "base64 0.22.1",

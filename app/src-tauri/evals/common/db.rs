@@ -170,3 +170,51 @@ pub async fn seed_session_with_turns(
     }
     Ok((session_id, turn_rows))
 }
+
+pub async fn count_facts(conn: &Connection) -> Result<i64> {
+    scalar_i64(conn, "SELECT COUNT(*) FROM memory_facts;").await
+}
+
+pub async fn count_queue_items(conn: &Connection) -> Result<i64> {
+    scalar_i64(
+        conn,
+        "SELECT COUNT(*) FROM memory_ingestion_queue WHERE status NOT IN ('completed', 'failed');",
+    )
+    .await
+}
+
+pub async fn count_failed_queue_items(conn: &Connection) -> Result<i64> {
+    scalar_i64(
+        conn,
+        "SELECT COUNT(*) FROM memory_ingestion_queue WHERE status = 'failed';",
+    )
+    .await
+}
+
+pub async fn count_case_compactions(conn: &Connection, session_id: i64) -> Result<i64> {
+    let mut rows = conn
+        .query(
+            "SELECT COUNT(*) FROM session_compactions WHERE session_id = ? AND status = 'completed';",
+            (session_id,),
+        )
+        .await?;
+    let row = rows.next().await?.context("Scalar query returned no row")?;
+    Ok(row.get(0)?)
+}
+
+pub async fn count_incomplete_compactions(conn: &Connection, session_id: i64) -> Result<i64> {
+    let mut rows = conn
+        .query(
+            "SELECT COUNT(*) FROM session_compactions WHERE session_id = ? AND status != 'completed';",
+            (session_id,),
+        )
+        .await?;
+    let row = rows.next().await?.context("Scalar query returned no row")?;
+    Ok(row.get(0)?)
+}
+
+async fn scalar_i64(conn: &Connection, sql: &str) -> Result<i64> {
+    let mut rows = conn.query(sql, ()).await?;
+    let row = rows.next().await?.context("Scalar query returned no row")?;
+    Ok(row.get(0)?)
+}

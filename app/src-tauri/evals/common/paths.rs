@@ -1,22 +1,19 @@
 //! ============================================================================
-//! mod.rs — Shared harness for the memory evals
+//! paths.rs — Shared eval path resolution
 //! ============================================================================
 //! Category     : Evaluation (shared harness, not a runnable eval)
 //! Component    : evals/common
-//! Prerequisites: None (pure helpers; runnables declare their own)
+//! Prerequisites: None
 //! Execution    : Included via #[path] from evals/memory_*_eval.rs
 //! Metrics      : N/A
 //! ============================================================================
 
-//! Shared across all three memory eval bins; each bin uses a subset, so
-//! per-bin dead-code lints are disabled for this subtree.
-#![allow(dead_code)]
+use std::path::PathBuf;
 
-pub mod audio;
-pub mod db;
-pub mod harness;
-pub mod judge;
-pub mod paths;
-pub mod report;
-pub mod settings_cfg;
-pub mod turns;
+pub fn resolve(path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        path
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path)
+    }
+}

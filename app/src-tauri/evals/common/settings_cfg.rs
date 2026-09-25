@@ -38,3 +38,18 @@ pub fn server_llm_settings(
 pub fn llm_settings_of(settings: &VoxSettings) -> LlmSettings {
     settings.llm.clone()
 }
+
+pub fn optional_api_key(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value == "env:OPENROUTER_API_KEY" {
+        return std::env::var("OPENROUTER_API_KEY")
+            .ok()
+            .filter(|key| !key.trim().is_empty());
+    }
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+pub fn optional_provider(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}

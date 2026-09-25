@@ -181,14 +181,14 @@ impl ToolDefinition for WebSearchTool {
                 chunk_overlap_words: DEFAULT_CHUNK_OVERLAP_WORDS,
             };
 
-            let fanout_policy = nexus::FanoutPolicy {
+            let fanout_policy = nexus::model::FanoutPolicy {
                 min_reporting_engines: DEFAULT_MIN_REPORTING_ENGINES,
                 min_distinct_domains: DEFAULT_MIN_DISTINCT_DOMAINS,
                 min_candidate_hits: DEFAULT_MIN_CANDIDATE_HITS,
                 max_fanout_deadline_ms: DEFAULT_FANOUT_DEADLINE_MS,
             };
 
-            let ranking_policy = nexus::RankingPolicy {
+            let ranking_policy = nexus::model::RankingPolicy {
                 two_stage_reranking: DEFAULT_TWO_STAGE_RERANK,
                 ..Default::default()
             };
