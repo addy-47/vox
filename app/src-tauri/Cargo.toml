@@ -43,6 +43,7 @@ ort = { version = "2.0.0-rc.13", features = ["download-binaries", "ndarray"] }  
 ndarray = "0.17.2"                                                                            # N-dimensional array processing for ONNX tensors
 chatterbox-rs = { git = "https://github.com/addy-47/chatterbox-rs.git", rev = "2fa6883", default-features = false } # Local voice cloning TTS
 query-sieve = { git = "https://github.com/addy-47/query-sieve-rs.git" }                       # ModernBERT intent classifier
+nexus = { package = "nexus-rs", git = "https://github.com/addy-47/nexus-rs.git", rev = "d526dcb" } # Local multi-engine web search, DOM extraction, and RRF hybrid ranking
 tokenizers = { version = "0.21.0", default-features = false, features = ["fancy-regex"] }    # HuggingFace tokenizers (BPE / WordPiece)
 tiktoken-rs = "0.6.0"                                                                         # OpenAI BPE tokenizer for context budgeting
 
@@ -50,6 +51,7 @@ tiktoken-rs = "0.6.0"                                                           
 tokio = { version = "1", features = ["full"] } # Primary async runtime
 tokio-util = "0.7"                             # Tokio utilities (codecs, framers)
 futures-util = "0.3"                           # Futures streams & combinators
+async-trait = "0.1"                            # Asynchronous trait definitions
 crossbeam-channel = "0.5"                      # High-throughput lock-free multi-producer telemetry channels
 parking_lot = "0.12"                           # Fast, non-poisoning mutexes & RwLocks
 thread-priority = "1.1"                        # OS thread priority controls for audio capture
@@ -83,7 +85,7 @@ chrono = "0.4"                                   # Date and timestamp calculatio
 sysinfo = "0.30"                                 # System hardware & process memory telemetry
 dirs = "6"                                       # Standard OS directory discovery
 uuid = { version = "1.23.3", features = ["v4"] } # Unique identifier generation
-regex = "1.12.3"                                 # Regular expressions
+regex = "1.13"                                   # Regular expressions
 encoding_rs = "0.8.35"                           # Character encoding conversions
 base64 = "0.22.1"                                # Base64 encoder/decoder
 sha2 = "0.10"                                    # SHA-256 model verification

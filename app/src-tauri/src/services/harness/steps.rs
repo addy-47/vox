@@ -303,15 +303,17 @@ pub fn step4_assemble_request(
             is_first_turn,
             title_is_unset: !harness.title_set,
             memory_retrieval_enabled: harness.memory_retrieval_enabled,
+            web_search_enabled: harness.web_search_enabled,
         };
         let active = harness.tool_registry.active_definitions(&filter);
         if active.is_empty() {
             log::info!(
-                "[Harness::Assemble] Turn {}: tools omitted (none active; first_turn={}, title_set={}, memory_enabled={})",
+                "[Harness::Assemble] Turn {}: tools omitted (none active; first_turn={}, title_set={}, memory_enabled={}, web_search_enabled={})",
                 turn_id,
                 is_first_turn,
                 !filter.title_is_unset,
-                filter.memory_retrieval_enabled
+                filter.memory_retrieval_enabled,
+                filter.web_search_enabled
             );
             None
         } else {

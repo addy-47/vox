@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use super::{
     respond_and_set_title::{RespondAndSetTitleTool, SetSessionTitleTool},
     search_memory::MemorySearchTool,
+    web_search::WebSearchTool,
     ToolDefinition,
 };
 use crate::{core::settings::PipelineMode, services::llm::CanonicalToolDefinition};
@@ -14,6 +15,7 @@ pub struct ToolFilter {
     pub is_first_turn: bool,
     pub title_is_unset: bool,
     pub memory_retrieval_enabled: bool,
+    pub web_search_enabled: bool,
 }
 
 /// Registry managing active tool definitions and dynamic per-turn filtering.
@@ -36,6 +38,7 @@ impl ToolRegistry {
         reg.register(Arc::new(RespondAndSetTitleTool));
         reg.register(Arc::new(SetSessionTitleTool));
         reg.register(Arc::new(MemorySearchTool));
+        reg.register(Arc::new(WebSearchTool));
         reg
     }
 
@@ -63,6 +66,13 @@ impl ToolRegistry {
             if name == "search_memory" && !filter.memory_retrieval_enabled {
                 log::info!(
                     "[Harness::Tools] '{}' excluded: memory retrieval disabled in settings",
+                    name
+                );
+                continue;
+            }
+            if name == "web_search" && !filter.web_search_enabled {
+                log::info!(
+                    "[Harness::Tools] '{}' excluded: web search disabled in settings",
                     name
                 );
                 continue;

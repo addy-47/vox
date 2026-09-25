@@ -171,6 +171,11 @@ impl TurnMetricsCollector {
         self.context_window.store(window as u32, Ordering::Relaxed);
     }
 
+    /// Returns the live tracked context tokens for the ongoing turn.
+    pub fn context_tokens_used(&self) -> usize {
+        self.context_tokens_used.load(Ordering::Relaxed) as usize
+    }
+
     /// Builds a strongly-typed turn metrics payload reflecting current turn milestones and token utilization.
     pub fn build_payload(&self, turn_id: u32) -> TurnMetricsPayload {
         let speech_end = self.speech_end_ms.load(Ordering::Relaxed);

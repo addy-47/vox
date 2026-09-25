@@ -115,12 +115,14 @@ The tool runtime decouples retrieval into three distinct operational phases:
 ### 4.1 Stage 1: Raw Search & Ingestion
 1. **Search Engine Fanout**: Concurrently queries keyless search providers with TLS browser impersonation. Extracts SERP hits containing `title`, `url`, and `snippet`.
 2. **Egress Security & SSRF Defense Guard**:
-   - Every candidate URL is vetted prior to connection.
-   - Scheme allowlist: `http` and `https` only.
-   - **DNS Resolution & Address Pinning**: Hostname is resolved once; connections are pinned to the verified IP address to eliminate DNS rebinding attacks.
-   - **Private IP Blocking**: Connections to loopback (`127.0.0.0/8`, `::1`), RFC1918 private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local/cloud metadata (`169.254.0.0/16`), multicast, and IPv6 equivalents are strictly rejected.
-   - **Redirect Re-Validation**: HTTP redirects (301, 302, 307, 308) are followed manually up to a maximum of 5 hops, re-executing DNS validation and pinning on every hop.
-3. **Bounded Page Download**: Parallel download for top candidate URLs (default: top 3) enforcing a strict per-page response cap (`max_response_bytes = 512,000`).
+   - **Architectural Decision (`polyc-egress` Pattern)**: To guarantee hermetic network defense without reinventing low-level socket security, the egress fetcher adopts the `polyc-egress` DNS-pinning connector pattern over `reqwest 0.13`.
+   - Every candidate URL is vetted prior to connection across five sequential security checks:
+     - **Scheme Allowlist**: `http` and `https` only; all other schemes (e.g., `file://`, `gopher://`, `ftp://`) are rejected.
+     - **Pre-Flight DNS Resolution & IP Classification**: Hostname is resolved before connection; resolved IP addresses are evaluated against forbidden IP spaces. Connections to loopback (`127.0.0.0/8`, `::1`), RFC1918 private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local/cloud metadata (`169.254.0.0/16`, AWS/GCP/Azure instance metadata `169.254.169.254`), broadcast, multicast, and IPv6 equivalents are strictly rejected.
+     - **Socket Address Pinning (Anti-DNS Rebinding)**: The HTTP client forces connection directly to the verified socket IP address obtained in DNS classification, defeating time-of-check to time-of-use (TOCTOU) DNS rebinding attacks where an attacker-controlled domain resolves to an external IP initially and rebinds to `127.0.0.1` upon socket connect.
+     - **Manual Hop-by-Hop Redirect Re-Validation**: Automatic client redirect following is disabled. Redirects (301, 302, 303, 307, 308) are followed manually up to a maximum of 5 hops; every intermediate target URL undergoes full DNS resolution, IP classification, and address pinning before following.
+     - **System Proxy & Ambient Transport Stripping**: The egress client disables ambient system proxies to prevent routing agent queries through unverified local proxy daemons.
+3. **Bounded Page Download**: Parallel download for top candidate URLs (default: top 3) enforcing a strict per-page response stream cap (`max_response_bytes = 512,000`). Downloads exceeding 512KB terminate early and process the retained stream prefix.
 4. **DOM Normalization & Extraction**:
    - Recovers malformed HTML trees via DOM parsing.
    - Strips non-content selectors (`head`, `script`, `style`, `svg`, `nav`, `header`, `footer`, `aside`, `form`, cookie modals).
@@ -210,13 +212,46 @@ The system prompt (Message 0) enforces an explicit negative invariant regarding 
 
 ---
 
-## 7. Future Capabilities (Phase 12.2+ / v2 Roadmap)
+## 7. Future Capabilities & v2 Architecture Roadmap
 
-The following capabilities are architecturally anticipated by the 3-stage lifecycle design but deferred from initial v1 implementation:
+The following capabilities are formally architected for the v2 evolution of `nexus-rs` and Vox's retrieval subsystem:
 
-1. **In-Session Retrieval Pagination (`web_search_more`)**:
-   - Because Stage 2 persists the entire scored passage corpus in memory during the active session turn, follow-up queries requesting deeper evidence (e.g. *"Tell me more about that second point"*) can slice subsequent passages (`offset = 5..10`) directly from the pre-scored Stage 2 cache in $<5\text{ms}$, bypassing Stage 1 network downloads entirely.
-2. **Domain Whitelist & Blacklist Policy**:
-   - User-configurable domain filters in Settings (e.g., exclude paywalled sites or pin searches to technical documentation subdomains).
-3. **Realtime S2S Projection**:
+### 7.1 Deep Research Mode (`deep_research`)
+1. **Multi-Hop Sub-Query Plan**:
+   - For open-ended, comparative, or investigative prompts (e.g. *"Perform a comprehensive architectural comparison between Burn and Candle with benchmarks"*), the model proposes a research strategy deconstructed into 2 to 4 targeted sub-queries.
+2. **Recursive Citation & Link Traversal**:
+   - Extends Stage 1 by parsing outbound hyperlinks (`<a href>`) from high-ranking pages.
+   - Evaluates link relevance against sub-queries and conducts a breadth-first 2nd-degree fetch across official whitepapers, technical documentation subdomains, or primary announcement pages.
+3. **Evidence Synthesis & Contradiction Resolution**:
+   - Consolidates passages across 6–10 distinct domains into a unified multi-source evidence matrix.
+   - Employs BM25 + ONNX cross-passage deduplication to eliminate redundant text blocks and flags contradictory data points for the LLM to reconcile.
+4. **Voice-First Interim Progress Stream**:
+   - Because deep research spans 15 to 30 seconds of egress I/O and neural ranking, the tool emits staged progress notifications (`AudioIntent::InterimFiller`) across the dialogue pipe:
+     - *"Exploring initial sources on..."*
+     - *"Analyzing official documentation and benchmark figures..."*
+     - *"Synthesizing cross-source evidence..."*
+   - Prevents dead conversational airtime while preserving the non-terminal working state.
+
+### 7.2 DonSeTch Algorithmic Strategies Adopted for v2
+
+1. **Heuristic Intent Classification & Vertical Routing**:
+   - Implements a zero-overhead regex/token classifier on incoming queries:
+     - `Intent::News`: Enforces `time_filter: "day"` or `"week"`, prioritizes Google WML and Bing News, and applies exponential recency decay to older articles.
+     - `Intent::Technical`: Bypasses general web engines and dispatches directly to keyless developer vertical endpoints (GitHub Code/Issues API, StackExchange API, crates.io, docs.rs).
+     - `Intent::Academic`: Dispatches directly to the keyless arXiv API for peer-reviewed research papers and abstracts.
+2. **Single-Flight Request Coalescing & Intent-Aware In-Memory Cache**:
+   - Multiple concurrent or consecutive user turns querying the same normalized intent (`norm_query + intent`) share a single in-flight fanout wave via single-flight mutex synchronization.
+   - Cached outcomes maintain dynamic TTLs:
+     - `News`: 15-minute TTL.
+     - `Technical / Documentation`: 4-hour TTL.
+     - `General Web`: 1-hour TTL.
+3. **Host Quarantine & Circuit Breaker**:
+   - Search engines or individual target egress hosts experiencing consecutive HTTP 429 rate limits, CAPTCHA walls, or connection timeouts enter an automatic 10-minute quarantine (`QUARANTINE_TTL = 600s`).
+   - Quarantined engines are skipped during fanout, saving 1.2s of unnecessary timeout overhead.
+4. **Domain Diversity Floor & Ceiling (`max_per_domain`)**:
+   - Enforces a hard ceiling of $\le 1$ (or $\le 2$) candidate pages from any single apex domain during Stage 1 ingestion.
+   - Prevents SERP monopolization (e.g. 3 candidate pages all from Wikipedia or a single aggregator), ensuring genuine cross-domain corroboration.
+5. **In-Session Retrieval Pagination (`web_search_more`)**:
+   - Because Stage 2 persists the entire scored passage corpus in memory during the active session turn, follow-up queries requesting deeper evidence (e.g. *"Tell me more about that second point"*) slice subsequent passages (`offset = 5..10`) directly from the pre-scored Stage 2 cache in $<5\text{ms}$, bypassing Stage 1 network downloads entirely.
+6. **Realtime S2S Projection**:
    - Projecting the `web_search` schema into WebSocket session setups for realtime speech models lacking native server-side search grounding.

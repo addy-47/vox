@@ -474,6 +474,11 @@ fn apply_working_memory_mutation(
             }
             settings.working_memory.max_context_share = val;
         }
+        "web_search_enabled" => {
+            settings.working_memory.web_search_enabled = value
+                .as_bool()
+                .ok_or("web_search_enabled must be a boolean")?;
+        }
         _ => return Ok(false),
     }
     Ok(true)

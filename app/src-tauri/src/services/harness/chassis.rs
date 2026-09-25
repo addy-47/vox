@@ -47,6 +47,7 @@ pub struct Harness {
     pub(crate) supports_tools: bool,
     pub(crate) title_set: bool,
     pub(crate) memory_retrieval_enabled: bool,
+    pub(crate) web_search_enabled: bool,
     pub(crate) has_played_filler: bool,
 }
 
@@ -103,6 +104,7 @@ impl Harness {
             supports_tools,
             title_set: false,
             memory_retrieval_enabled: settings.personal_memory.context_retrieval_enabled,
+            web_search_enabled: settings.working_memory.web_search_enabled,
             has_played_filler: false,
         }
     }
@@ -139,6 +141,7 @@ impl Harness {
             supports_tools: true,
             title_set: false,
             memory_retrieval_enabled: settings.personal_memory.context_retrieval_enabled,
+            web_search_enabled: settings.working_memory.web_search_enabled,
             has_played_filler: false,
         }
     }
@@ -167,6 +170,7 @@ impl Harness {
                 is_first_turn: true,
                 title_is_unset: !self.title_set,
                 memory_retrieval_enabled: self.memory_retrieval_enabled,
+                web_search_enabled: self.web_search_enabled,
             };
             let active = self.tool_registry.active_definitions(&filter);
             if active.is_empty() {
@@ -345,8 +349,20 @@ impl Harness {
         self.supports_tools
     }
 
+    pub fn tool_registry(&self) -> &ToolRegistry {
+        &self.tool_registry
+    }
+
+    pub fn set_tool_registry(&mut self, registry: ToolRegistry) {
+        self.tool_registry = registry;
+    }
+
     pub fn title_set(&self) -> bool {
         self.title_set
+    }
+
+    pub fn set_title_set(&mut self, title_set: bool) {
+        self.title_set = title_set;
     }
 
     pub fn memory_retrieval_enabled(&self) -> bool {
@@ -355,6 +371,14 @@ impl Harness {
 
     pub fn set_memory_retrieval_enabled(&mut self, enabled: bool) {
         self.memory_retrieval_enabled = enabled;
+    }
+
+    pub fn web_search_enabled(&self) -> bool {
+        self.web_search_enabled
+    }
+
+    pub fn set_web_search_enabled(&mut self, enabled: bool) {
+        self.web_search_enabled = enabled;
     }
 
     pub fn check_critical_compaction_eligibility(&self) -> Option<Vec<ChatMessage>> {
