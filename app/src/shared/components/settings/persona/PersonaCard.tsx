@@ -15,8 +15,8 @@ const INSTRUCTION_TABS = [
 ];
 
 const VIEW_TABS = [
-  { id: "edit" as const, icon: Code2, label: PERSONA_COPY.viewEdit, title: PERSONA_COPY.viewEdit },
   { id: "preview" as const, icon: Eye, label: PERSONA_COPY.viewPreview, title: PERSONA_COPY.viewPreview },
+  { id: "edit" as const, icon: Code2, label: PERSONA_COPY.viewEdit, title: PERSONA_COPY.viewEdit },
 ];
 
 /**
@@ -217,7 +217,7 @@ export const PersonaCard = memo(({ layoutMode = "full-max" }: PersonaCardProps) 
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
   const [activeTab, setActiveTab] = useState<"modular" | "realtime">("modular");
-  const [viewMode, setViewMode] = useState<"edit" | "preview">("edit");
+  const [viewMode, setViewMode] = useState<"edit" | "preview">("preview");
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);

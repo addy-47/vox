@@ -306,7 +306,6 @@ fn process_sse_line(
     pending_tool_calls: &mut BTreeMap<usize, PendingToolCall>,
     tx: &mpsc::Sender<super::super::LlmStreamEvent>,
 ) -> bool {
-    println!("[DEBUG SSE] {}", line);
     if line == "[DONE]" {
         flush_pending_tool_calls(pending_tool_calls, tx);
         if let Err(e) = tx.send(super::super::LlmStreamEvent::Finished) {
@@ -357,11 +356,6 @@ pub async fn stream_chat_completions(
         url
     );
     let req_body = build_request_body(config, request);
-    println!("[DEBUG LLM URL] POST {}", url);
-    println!(
-        "[DEBUG LLM REQ] {}",
-        serde_json::to_string(&req_body).unwrap_or_default()
-    );
 
     let mut builder = client.post(&url).json(&req_body);
     builder = super::inject_auth_headers(builder, &config.auth);

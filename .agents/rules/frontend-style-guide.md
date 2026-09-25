@@ -112,6 +112,9 @@ These invariants apply to every component, hook, context, and page in `app/src/`
 - **Orb Responsive Scaling:** Mobile Orb scales to `min(92vw, 85vh)`. Desktop Orb is `min(70vw, 65vh)`.
 - **Glass Elevation is a Closed System:** Use only defined design token elevation levels. Do not invent arbitrary ad-hoc shadows or glass backgrounds.
 - **Mood Sync:** Visual elements must reflect backend pipeline states (`Idle`, `Ready`, `Listening`, `Thinking`, `Speaking`, `Paused`, `Error`).
+- **Pill Containers for Buttons ONLY (Zero Faux-Pill Copy):** Any element styled with `rounded-full` / `rounded-pill`, background tint, and border is strictly reserved for interactive, clickable controls (buttons, segmented choice items, switches, nav capsule). NEVER wrap static text, status labels, metrics, or kickers in pill containers.
+- **Zero Redundant Value/Status Badges:** Never place a pill badge next to a section or card title that parrots the value or state of an adjacent control (e.g. repeating `"300 ms"`, `"1.05x"`, `"Active"`, `"Manual"`). When an active control is present, title badges are banned.
+- **Frameless Clean Vector SVG Pattern:** Vector illustrations and diagrams (`WebSearchGlobe`, `TransliterationToggle`, `RemoteComputeGraphic`, `ManagedContextGraphic`) must never be enclosed in heavy outer pill-shaped container boxes with backgrounds and borders. They must breathe as pure, frameless vector wireframes with crisp geometric strokes (0.8px – 1.25px) and unboxed accompanying typography.
 
 ---
 

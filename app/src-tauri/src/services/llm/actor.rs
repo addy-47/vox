@@ -157,6 +157,14 @@ fn handle_warmup(
     provider: &Arc<dyn LlmProvider>,
     system_prompt: String,
 ) {
+    if provider.kind() != super::ProviderKind::Embedded {
+        log::debug!(
+            "[Llm::Worker] Skipping KV warmup for non-embedded provider ({:?})",
+            provider.kind()
+        );
+        return;
+    }
+
     let (stream_tx, stream_rx) = mpsc::channel::<super::LlmStreamEvent>();
     let provider_clone = Arc::clone(provider);
     let cancel = tokio_util::sync::CancellationToken::new();

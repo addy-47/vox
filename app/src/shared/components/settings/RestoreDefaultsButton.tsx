@@ -1,56 +1,71 @@
-import { memo, useState, useEffect } from "react";
-import { RotateCcw, AlertTriangle } from "lucide-react";
+import { memo, useState, useCallback } from "react";
+import { RotateCcw, Check, X } from "lucide-react";
 import { useSettings } from "@/shared/hooks/useSettings";
-import { cn } from "@/shared/lib/utils";
+import { Tooltip } from "@/shared/ui/Tooltip";
 import { SETTINGS_COPY } from "@/data/settingsCopy";
 
+/**
+ * Clean 2-step Restore Defaults control for Settings view.
+ * Step 1: Idle reset trigger button in the top-right cluster.
+ * Step 2: Unboxed inline transition: accent-colored "Restore settings" copy,
+ *         red tick (confirm), and grey cross (cancel). Zero pill container, zero red background.
+ */
 export const RestoreDefaultsButton = memo(() => {
   const { restoreDefaults } = useSettings();
   const [isConfirming, setIsConfirming] = useState(false);
 
-  useEffect(() => {
-    if (!isConfirming) return;
-    const timer = setTimeout(() => setIsConfirming(false), 4000);
-    return () => clearTimeout(timer);
-  }, [isConfirming]);
+  const handleConfirm = useCallback(() => {
+    restoreDefaults();
+    setIsConfirming(false);
+  }, [restoreDefaults]);
 
-  const handleRestore = () => {
-    if (isConfirming) {
-      restoreDefaults();
-      setIsConfirming(false);
-    } else {
-      setIsConfirming(true);
-    }
-  };
+  const handleCancel = useCallback(() => {
+    setIsConfirming(false);
+  }, []);
+
+  if (isConfirming) {
+    return (
+      <div className="inline-flex items-center gap-1.5 h-8 animate-fade-in shrink-0">
+        <span className="text-[11px] font-bold tracking-wide text-[rgb(var(--accent))] select-none whitespace-nowrap">
+          Restore settings
+        </span>
+        <div className="flex items-center gap-0.5">
+          <Tooltip label="Confirm restore" side="bottom">
+            <button
+              type="button"
+              onClick={handleConfirm}
+              className="p-1 text-[rgb(var(--danger))] hover:text-rose-400 hover:scale-115 transition-all cursor-pointer"
+              aria-label="Confirm restore defaults"
+            >
+              <Check size={13} strokeWidth={2.5} />
+            </button>
+          </Tooltip>
+          <Tooltip label="Cancel" side="bottom">
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="p-1 text-[rgb(var(--foreground-muted))]/60 hover:text-[rgb(var(--foreground))] hover:scale-115 transition-all cursor-pointer"
+              aria-label="Cancel restore defaults"
+            >
+              <X size={13} strokeWidth={2} />
+            </button>
+          </Tooltip>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <button
-      onClick={handleRestore}
-      className={cn(
-        "flex items-center justify-center w-11 h-11 rounded-full border transition-all duration-300 hover:scale-105 cursor-pointer relative group",
-        isConfirming
-          ? "border-[rgb(var(--danger))]/80 bg-[rgba(var(--danger),0.18)] text-[rgb(var(--danger))] shadow-[0_0_18px_rgba(var(--danger),0.3)]"
-          : "bg-[rgb(var(--accent))]/10 border-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] dark:bg-[rgba(var(--foreground),0.12)] dark:border-[rgba(var(--accent),0.35)] hover:bg-[rgb(var(--accent))]/20"
-      )}
-      aria-label={isConfirming ? SETTINGS_COPY.restoreConfirmAria : SETTINGS_COPY.restoreAria}
-    >
-      {isConfirming ? (
-        <AlertTriangle size={22} />
-      ) : (
-        <RotateCcw size={22} className="group-hover:rotate-45 transition-transform duration-300" />
-      )}
-      {/* Tooltip */}
-      <div 
-        className={cn(
-          "absolute bottom-14 right-0 translate-y-1 scale-95 opacity-0 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-300 ease-out pointer-events-none whitespace-nowrap px-3 py-1.5 rounded-xl border shadow-[0_8px_30px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)] backdrop-blur-md text-[11px] font-bold tracking-wide uppercase z-50",
-          isConfirming
-            ? "bg-[rgba(var(--background),0.95)] border-[rgb(var(--danger))]/40 text-[rgb(var(--danger))]"
-            : "bg-[rgb(var(--background))]/95 dark:bg-zinc-950/95 border border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))]"
-        )}
+    <Tooltip label={SETTINGS_COPY.restoreAria} side="bottom">
+      <button
+        type="button"
+        onClick={() => setIsConfirming(true)}
+        className="inline-flex items-center justify-center w-8 h-8 rounded-xl border border-[rgba(var(--border),0.15)] bg-[rgba(var(--card),0.5)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--accent))] hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.06)] transition-all shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgb(var(--accent))] cursor-pointer"
+        aria-label={SETTINGS_COPY.restoreAria}
       >
-        {isConfirming ? SETTINGS_COPY.restoreConfirmHint : SETTINGS_COPY.restoreAria}
-      </div>
-    </button>
+        <RotateCcw size={14} strokeWidth={1.75} />
+      </button>
+    </Tooltip>
   );
 });
 

@@ -44,7 +44,7 @@ export const MemoryLegendOverlay = memo<MemoryLegendOverlayProps>(({
       className="flex flex-col gap-1.5 select-none pointer-events-auto bg-transparent border-none shadow-none"
     >
       {/* 3x2 Ambient Text Grid — No box, no border, no pill */}
-      <div className="grid grid-cols-3 gap-x-5 gap-y-2 items-center">
+      <div className="grid grid-cols-3 gap-x-6 gap-y-2 items-center">
         {CATEGORIES.map((catKey) => {
           const isSelected = selectedCollection === catKey;
           const count = counts[catKey] ?? 0;
@@ -62,7 +62,7 @@ export const MemoryLegendOverlay = memo<MemoryLegendOverlayProps>(({
                 type="button"
                 onClick={() => onSelectCollection(isSelected ? "all" : catKey)}
                 className={cn(
-                  "flex items-center gap-1.5 text-[11px] font-mono leading-none transition-all cursor-pointer group text-left min-w-0 bg-transparent border-none p-0",
+                  "flex items-center gap-1.5 text-[12px] font-mono leading-none transition-all cursor-pointer group text-left min-w-0 bg-transparent border-none p-0",
                   isSelected
                     ? "text-[rgb(var(--foreground))] font-semibold"
                     : isFiltered
@@ -74,7 +74,7 @@ export const MemoryLegendOverlay = memo<MemoryLegendOverlayProps>(({
                 {/* Category Chromatic Jewel Dot */}
                 <span
                   className={cn(
-                    "w-1.5 h-1.5 rounded-full shrink-0 transition-transform duration-200",
+                    "w-2 h-2 rounded-full shrink-0 transition-transform duration-200",
                     isSelected
                       ? "scale-125 ring-2 ring-[rgb(var(--foreground))]/30"
                       : "group-hover:scale-110"
@@ -98,15 +98,15 @@ export const MemoryLegendOverlay = memo<MemoryLegendOverlayProps>(({
       {/* Active Filter Clear Prompt (Subtle inline text when filtered) */}
       {isFiltered && (
         <div className="flex items-center gap-2 pt-0.5">
-          <span className="text-[9px] font-mono text-[rgb(var(--accent))] font-medium">
+          <span className="text-[10px] font-mono text-[rgb(var(--accent))] font-medium">
             Filtered: {MEMORY_COPY.categories[selectedCollection as MemoryCategory] || selectedCollection}
           </span>
           <button
             type="button"
             onClick={() => onSelectCollection("all")}
-            className="flex items-center gap-1 text-[9px] font-mono text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer bg-transparent border-none p-0"
+            className="flex items-center gap-1 text-[10px] font-mono text-[rgb(var(--foreground-muted))]/70 hover:text-[rgb(var(--accent))] transition-colors cursor-pointer bg-transparent border-none p-0"
           >
-            <RotateCcw size={9} />
+            <RotateCcw size={10} />
             <span>{MEMORY_COPY.clearSearch}</span>
           </button>
         </div>

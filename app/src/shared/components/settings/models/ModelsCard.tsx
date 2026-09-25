@@ -240,8 +240,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       if (document.hidden || !draftSettings?.tts?.provider || activePipelineTab !== "tts") return;
       setCheckingTtsHealth(true);
       try {
-        const healthy = await checkTtsProviderHealth(draftSettings.tts.provider);
-        setIsRemoteTtsHealthy(healthy);
+        const res = await checkTtsProviderHealth(draftSettings.tts.provider);
+        setIsRemoteTtsHealthy(res.healthy);
       } catch (_) {
         setIsRemoteTtsHealthy(false);
       } finally {
@@ -264,7 +264,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           error: payload.error || undefined,
         });
         if ((payload.step === "completed" || payload.step === "Completed") && draftSettings?.tts?.provider) {
-          checkTtsProviderHealth(draftSettings.tts.provider).then((healthy) => setIsRemoteTtsHealthy(healthy));
+          checkTtsProviderHealth(draftSettings.tts.provider).then((res) => setIsRemoteTtsHealthy(res.healthy));
         }
       }
     });

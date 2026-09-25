@@ -10,6 +10,7 @@ import { useSessionStore } from "@/store/sessionStore";
 import { setSessionPrivateMode } from "@/services/pipelineService";
 import { NOTIFICATION_COPY } from "@/data/notificationCopy";
 import { HOME_CONTROLS_COPY } from "@/data/homeCopy";
+import { RestoreDefaultsButton } from "@/shared/components/settings/RestoreDefaultsButton";
 
 interface TopRightClusterProps {
   className?: string;
@@ -21,6 +22,7 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
     const unreadCount = useNotificationStore(selectBadgeCount);
     const location = useLocation();
     const isHome = location.pathname === "/";
+    const isSettings = location.pathname === "/settings";
     const isTemporarySession = useSessionStore((s) => s.isTemporarySession);
 
     const toggleTemporarySession = useCallback(async () => {
@@ -38,6 +40,7 @@ export const TopRightCluster: React.FC<TopRightClusterProps> = memo(
 
     return (
       <div data-spatial-zone="cluster" className={cn("flex items-center gap-1.5", className)}>
+        {isSettings && <RestoreDefaultsButton />}
         {isHome && (
           <Tooltip label={HOME_CONTROLS_COPY.temporary.toggleTooltip} side="bottom">
             <button

@@ -11,6 +11,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::{
+    discovery::{discover_server_dialect, ServerDialect},
     presets::lookup_preset,
     sync::get_baseline_spec,
     types::{CapabilityProvenance, ModelProbeResult},
@@ -318,6 +319,11 @@ impl CapabilityProbeEngine {
                 Self::probe_ollama_metadata(client, config, &mut meta).await;
             }
             TransportType::ChatCompletions | TransportType::Responses => {
+                let dialect = discover_server_dialect(client, &config.base_url, &config.auth).await;
+                if matches!(dialect, ServerDialect::Ollama { .. }) {
+                    Self::probe_ollama_metadata(client, config, &mut meta).await;
+                }
+
                 if let Some(meta_preset) = preset_meta {
                     if meta.context_window.is_none() {
                         meta.context_window = meta_preset.context_window;
@@ -374,7 +380,8 @@ impl CapabilityProbeEngine {
         meta: &mut EndpointMeta,
     ) {
         let base_url = config.base_url.trim_end_matches('/');
-        let show_url = format!("{}/api/show", base_url);
+        let root = base_url.strip_suffix("/v1").unwrap_or(base_url);
+        let show_url = format!("{}/api/show", root);
         let show_payload = json!({ "name": config.model });
         let mut builder = client.post(&show_url).json(&show_payload);
         builder = inject_auth_headers(builder, &config.auth);
@@ -407,7 +414,7 @@ impl CapabilityProbeEngine {
             }
         }
 
-        let ps_url = format!("{}/api/ps", base_url);
+        let ps_url = format!("{}/api/ps", root);
         let mut ps_builder = client.get(&ps_url);
         ps_builder = inject_auth_headers(ps_builder, &config.auth);
 

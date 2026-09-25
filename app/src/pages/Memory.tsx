@@ -30,7 +30,7 @@ import {
 } from "@/services/memoryService";
 import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
-import { EdgePanel, Tooltip, Markdown } from "@/shared/ui";
+import { EdgePanel, Tooltip, Markdown, BottomDockFeather } from "@/shared/ui";
 import { usePanelStateContext } from "@/shared/hooks/usePanelState";
 import { useProfilerDrawer } from "@/shared/components/profiler/ProfilerDrawer";
 import { useRegisterPageDrawer } from "@/shared/context/PageDrawerContext";
@@ -679,16 +679,19 @@ export const Memory: React.FC = memo(() => {
         onToggleSelectMode={handleToggleSelectMode}
       />
 
-      {/* ── Bottom Right: Category Legend Overlay — hidden when drawer is open to prevent z-bleed ── */}
+      {/* ── Bottom Right: Category Legend Overlay — matches ModelStatusOverlay dock position & feather ── */}
       {!drawerOpen && typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed bottom-4 right-6 z-[55] pointer-events-auto">
-            <MemoryLegendOverlay
-              selectedCollection={selectedCollection}
-              onSelectCollection={setSelectedCollection}
-              counts={categoryCounts}
-              isLightMode={isLightMode}
-            />
+          <div className="hidden lg:flex fixed bottom-4 right-4 z-40 pointer-events-none items-center">
+            <BottomDockFeather className="absolute -inset-x-8 -bottom-4 -top-10" />
+            <div className="relative pointer-events-auto flex items-center px-3 lg:px-4 py-2.5 bg-transparent border-transparent shadow-none">
+              <MemoryLegendOverlay
+                selectedCollection={selectedCollection}
+                onSelectCollection={setSelectedCollection}
+                counts={categoryCounts}
+                isLightMode={isLightMode}
+              />
+            </div>
           </div>,
           document.body
         )}

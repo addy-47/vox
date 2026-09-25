@@ -97,6 +97,12 @@ impl ToolDefinition for MemorySearchTool {
             ctx.app_state.turn_metrics.record_retrieval(retrieval_dur);
 
             let mut result = ToolResult::new(observation);
+            log::info!(
+                "[MemorySearchTool] Turn {} ({:?}): final observation for LLM: '{}'",
+                ctx.turn_id,
+                mode,
+                result.content
+            );
             if mode == PipelineMode::Modular {
                 let spoken_filler = args
                     .get("spoken_filler")
@@ -130,6 +136,21 @@ async fn perform_hybrid_search(
         .await
         .map_err(|e| ToolError::ExecutionFailed(format!("Episodic memory query error: {}", e)))?;
 
+    log::info!(
+        "[MemorySearchTool] Retrieved {} active episodic candidates for query '{}'",
+        candidates.len(),
+        query
+    );
+    for candidate in &candidates {
+        log::info!(
+            "[MemorySearchTool] Candidate id={} type={} embedding_present={} text='{}'",
+            candidate.id,
+            candidate.fact_type,
+            candidate.embedding.is_some(),
+            candidate.text
+        );
+    }
+
     if candidates.is_empty() {
         return Ok(format!(
             "Memory search completed for query '{}'. No relevant historical records found.",
@@ -156,6 +177,11 @@ async fn perform_hybrid_search(
             None
         }
     };
+    log::info!(
+        "[MemorySearchTool] Query embedding available={} dimensions={}",
+        query_embedding.is_some(),
+        query_embedding.as_ref().map_or(0, Vec::len)
+    );
 
     let results = rank_candidates(
         &candidates,
@@ -194,6 +220,13 @@ fn rank_candidates<'a>(
         for c in candidates {
             if let Some(ref c_vec) = c.embedding {
                 let sim = cosine_similarity(q_vec, c_vec);
+                log::info!(
+                    "[MemorySearchTool] Dense candidate id={} similarity={} cutoff={} admitted={}",
+                    c.id,
+                    sim,
+                    cutoff,
+                    sim >= cutoff
+                );
                 if sim >= cutoff {
                     vector_scores.insert(c.id.clone(), sim);
                 }
@@ -228,15 +261,36 @@ fn rank_candidates<'a>(
         if let Some(lex_count) = lexical_scores.get(&c.id) {
             score += (*lex_count as f32) / (RRF_K + 1.0);
         }
+        let dense_admitted = vector_scores.contains_key(&c.id);
+        let lexical_matches = lexical_scores.get(&c.id).copied().unwrap_or(0);
+        log::info!(
+            "[MemorySearchTool] Fused candidate id={} type={} dense_admitted={} lexical_matches={} rrf_score={} final_admitted={}",
+            c.id,
+            c.fact_type,
+            dense_admitted,
+            lexical_matches,
+            score,
+            score > 0.0
+        );
         if score > 0.0 {
             rrf_scores.push((c, score));
         }
     }
 
     rrf_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    rrf_scores
+    let selected = rrf_scores
         .into_iter()
         .take(top_k.max(1))
         .map(|(c, _)| c)
-        .collect()
+        .collect::<Vec<_>>();
+    log::info!(
+        "[MemorySearchTool] Ranking complete: selected={} top_k={} ids={:?}",
+        selected.len(),
+        top_k.max(1),
+        selected
+            .iter()
+            .map(|candidate| candidate.id.as_str())
+            .collect::<Vec<_>>()
+    );
+    selected
 }

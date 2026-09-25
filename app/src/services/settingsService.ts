@@ -77,17 +77,28 @@ export function resetSettings(): Promise<VoxSettings> {
   return invoke<VoxSettings>("reset_settings");
 }
 
+export interface ProviderHealthCheckResult {
+  healthy: boolean;
+  dialect?: string | null;
+}
+
 /** Check health/connectivity for a specific provider. */
-export async function checkLlmProviderHealth(provider?: LlmProviderConfig): Promise<boolean> {
-  return invoke<boolean>("check_provider_health", { kind: "llm", provider });
+export async function checkLlmProviderHealth(
+  provider?: LlmProviderConfig
+): Promise<ProviderHealthCheckResult> {
+  return invoke<ProviderHealthCheckResult>("check_provider_health", { kind: "llm", provider });
 }
 
-export async function checkSttProviderHealth(provider?: SttProviderConfig): Promise<boolean> {
-  return invoke<boolean>("check_provider_health", { kind: "stt", provider });
+export async function checkSttProviderHealth(
+  provider?: SttProviderConfig
+): Promise<ProviderHealthCheckResult> {
+  return invoke<ProviderHealthCheckResult>("check_provider_health", { kind: "stt", provider });
 }
 
-export async function checkTtsProviderHealth(provider?: TtsProviderConfig): Promise<boolean> {
-  return invoke<boolean>("check_provider_health", { kind: "tts", provider });
+export async function checkTtsProviderHealth(
+  provider?: TtsProviderConfig
+): Promise<ProviderHealthCheckResult> {
+  return invoke<ProviderHealthCheckResult>("check_provider_health", { kind: "tts", provider });
 }
 
 /** Fetch dynamic list of models available from a remote or local LLM server. */

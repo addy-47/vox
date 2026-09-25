@@ -30,7 +30,7 @@ pub async fn check_provider_health(
     state: State<'_, Arc<AppState>>,
     kind: String,
     provider: Option<ProviderConfigPayload>,
-) -> Result<bool, VoxIpcError> {
+) -> Result<health_svc::ProviderHealthCheckResult, VoxIpcError> {
     health_svc::check_health(&state, &kind, provider)
         .await
         .map_err(VoxIpcError::Engine)

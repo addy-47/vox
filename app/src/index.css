@@ -396,6 +396,12 @@ input[type="range"]:active::-webkit-slider-thumb {
   100% { stroke-dashoffset: -560; opacity: 0; }
 }
 
+/* ── Working Memory · Web Search globe ── */
+@keyframes wm-globe-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
 .engage-btn-loading {
   position: relative;
   overflow: visible;

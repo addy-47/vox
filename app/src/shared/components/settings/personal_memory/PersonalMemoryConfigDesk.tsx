@@ -1,8 +1,7 @@
-import { useState, memo, useCallback, useMemo, useEffect } from "react";
-import {  Clock } from "lucide-react";
+import { useState, memo, useCallback, useEffect, useRef } from "react";
+import { Clock } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
-import { SegmentedControl } from "@/shared/ui";
 import { PERSONAL_MEMORY_CONFIG_DESK_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
 
 export interface PersonalMemoryConfigDeskProps {
@@ -121,13 +120,19 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
 
   const nextRunText = computeNextRunText(consolidationCadence, consolidationTime, copy.consolidation);
 
-  const cadenceOptions = useMemo(
-    () => [
-      { id: "manual", label: copy.consolidation.manualLabel },
-      { id: "daily", label: copy.consolidation.dailyLabel },
-    ],
-    [copy.consolidation.manualLabel, copy.consolidation.dailyLabel]
-  );
+  // Format HH:MM to H:MM AM/PM for display
+  const formatTimeDisplay = useCallback((t: string) => {
+    const [hStr, mStr] = t.split(":");
+    const h = parseInt(hStr, 10);
+    const m = mStr ?? "00";
+    if (isNaN(h)) return t;
+    const ampm = h >= 12 ? "PM" : "AM";
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}:${m} ${ampm}`;
+  }, []);
+
+  const timeInputRef = useRef<HTMLInputElement>(null);
+
 
   return (
     <div className="w-full flex-1 flex flex-col justify-between select-none animate-fade-in">
@@ -193,44 +198,128 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
               )}
             </div>
 
-            {/* Right: Segmented Control + Time Input */}
-            <div className="shrink-0 flex flex-col items-center justify-center gap-2">
-              <SegmentedControl
-                options={cadenceOptions}
-                value={consolidationCadence}
-                onChange={(val) =>
-                  updateDraft("personal_memory", "consolidation_cadence", val)
+            {/* Right: Clock SVG schedule control */}
+            <div className="shrink-0 flex flex-col items-center justify-center">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={consolidationCadence === "daily"}
+                aria-label={consolidationCadence === "daily" ? copy.consolidation.dailyLabel : copy.consolidation.manualLabel}
+                onClick={() =>
+                  updateDraft(
+                    "personal_memory",
+                    "consolidation_cadence",
+                    consolidationCadence === "daily" ? "manual" : "daily"
+                  )
                 }
-                size="sm"
-              />
-
-              {consolidationCadence === "daily" ? (
-                <div className="flex flex-col items-center text-[rgb(var(--foreground))]">
-                  <div className="flex items-center gap-1.5">
-                    <Clock
-                      size={12}
-                      className="text-[rgb(var(--accent))] shrink-0"
+                className={cn(
+                  "group flex flex-col items-center select-none cursor-pointer rounded-2xl px-3 py-2 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--accent))]",
+                  consolidationCadence === "daily"
+                    ? "text-[rgb(var(--accent))]"
+                    : "text-[rgb(var(--foreground-muted))]/40 hover:text-[rgb(var(--foreground-muted))]/70"
+                )}
+              >
+                {/* Line-style clock SVG */}
+                <div
+                  className="relative w-[48px] h-[48px] transition-transform duration-300 group-hover:scale-105"
+                  style={{
+                    animation: consolidationCadence === "daily" ? "wm-globe-float 3.6s ease-in-out infinite" : "none",
+                  }}
+                >
+                  <svg
+                    viewBox="0 0 52 52"
+                    className="w-full h-full overflow-visible select-none"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    {/* Outer ring */}
+                    <circle
+                      cx="26" cy="26" r="20"
+                      stroke="currentColor"
+                      strokeWidth="1.25"
+                      className={cn("transition-opacity duration-300", consolidationCadence === "daily" ? "opacity-90" : "opacity-35")}
                     />
-
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={timeDraft}
-                      onChange={handleTimeChange}
-                      onBlur={handleTimeBlur}
-                      placeholder="14:00"
-                      maxLength={5}
-                      aria-label={copy.consolidation.timeFormatHint}
-                      className="w-12 bg-transparent font-mono text-[12.5px] font-bold outline-none text-[rgb(var(--foreground))] text-center tracking-wider caret-[rgb(var(--accent))] selection:bg-[rgba(var(--accent),0.25)]"
+                    {/* 12 tick marks */}
+                    {Array.from({ length: 12 }).map((_, i) => {
+                      const angle = (i * 30 * Math.PI) / 180;
+                      const inner = i % 3 === 0 ? 15.5 : 17;
+                      const outer = 19;
+                      return (
+                        <line
+                          key={i}
+                          x1={26 + inner * Math.sin(angle)}
+                          y1={26 - inner * Math.cos(angle)}
+                          x2={26 + outer * Math.sin(angle)}
+                          y2={26 - outer * Math.cos(angle)}
+                          stroke="currentColor"
+                          strokeWidth={i % 3 === 0 ? "1.3" : "0.8"}
+                          strokeLinecap="round"
+                          className={cn("transition-opacity duration-300", consolidationCadence === "daily" ? "opacity-70" : "opacity-25")}
+                        />
+                      );
+                    })}
+                    {/* Hour hand — pointing to ~9 o'clock position */}
+                    <line
+                      x1="26" y1="26"
+                      x2="18.5" y2="22"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      className={cn("transition-opacity duration-300", consolidationCadence === "daily" ? "opacity-90" : "opacity-35")}
                     />
-                  </div>
+                    {/* Minute hand — pointing to ~12 o'clock position */}
+                    <line
+                      x1="26" y1="26"
+                      x2="26" y2="10"
+                      stroke="currentColor"
+                      strokeWidth="1.1"
+                      strokeLinecap="round"
+                      className={cn("transition-opacity duration-300", consolidationCadence === "daily" ? "opacity-90" : "opacity-35")}
+                    />
+                    {/* Center dot */}
+                    <circle
+                      cx="26" cy="26" r="1.5"
+                      fill="currentColor"
+                      className={cn("transition-opacity duration-300", consolidationCadence === "daily" ? "opacity-90" : "opacity-40")}
+                    />
+                  </svg>
                 </div>
-              ) : (
-                <div className="text-[9.5px] font-mono font-medium text-[rgb(var(--foreground-muted))]/40 py-0.5 tracking-tight">
-                  {copy.consolidation.onDemandStatus}
-                </div>
+
+                {/* Badge: MANUAL label or nothing (time input is outside the button) */}
+                {consolidationCadence !== "daily" && (
+                  <span className="mt-3 px-2.5 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-[0.14em] leading-none transition-all duration-300 text-[rgb(var(--foreground-muted))]/50">
+                    {copy.consolidation.manualLabel}
+                  </span>
+                )}
+              </button>
+
+              {/* Time input badge — only in Daily mode, outside the toggle button */}
+              {consolidationCadence === "daily" && (
+                <button
+                  type="button"
+                  onClick={() => timeInputRef.current?.focus()}
+                  className="mt-0 flex items-center gap-1 px-2 py-0.5 rounded-full cursor-text transition-all duration-200 hover:bg-[rgba(var(--accent),0.08)] group/time"
+                  tabIndex={-1}
+                  aria-label={copy.consolidation.timeFormatHint}
+                >
+                  <input
+                    ref={timeInputRef}
+                    type="text"
+                    inputMode="numeric"
+                    value={timeDraft}
+                    onChange={handleTimeChange}
+                    onBlur={handleTimeBlur}
+                    placeholder="09:00"
+                    maxLength={5}
+                    aria-label={copy.consolidation.timeFormatHint}
+                    className="w-[3.2rem] bg-transparent font-mono text-[11px] font-bold outline-none text-[rgb(var(--accent))] text-center tracking-wider caret-[rgb(var(--accent))] selection:bg-[rgba(var(--accent),0.25)] cursor-text"
+                  />
+                  <span className="text-[9px] font-mono font-bold uppercase tracking-[0.12em] text-[rgb(var(--accent))]/70">
+                    {formatTimeDisplay(consolidationTime).split(" ")[1]}
+                  </span>
+                </button>
               )}
-</div>
+            </div>
           </div>
         )}
 
@@ -241,9 +330,6 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
               <div className="flex items-center gap-2">
                 <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
                   {copy.depth.title}
-                </span>
-                <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
-                  {topKFacts} {copy.depth.unit}
                 </span>
               </div>
               <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">
@@ -296,9 +382,6 @@ export const PersonalMemoryConfigDesk = memo(({ layoutMode }: PersonalMemoryConf
               <div className="flex items-center gap-2">
                 <span className="text-[12px] font-bold uppercase tracking-wider text-[rgb(var(--foreground))]">
                   {copy.cutoff.title}
-                </span>
-                <span className="text-[11px] font-mono font-bold text-[rgb(var(--accent))]">
-                  {cutoffPct}%
                 </span>
               </div>
               <p className="text-[11px] sm:text-[11.5px] text-[rgb(var(--foreground-muted))]/75 leading-relaxed font-medium">

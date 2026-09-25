@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getRuntimeSnapshot } from "./monitoringService";
 import type { InteractionState } from "@/services/eventsService";
 import type { SessionRow, TurnRow } from "./historyService";
+import { useSessionStore } from "@/store/sessionStore";
 
 export type InteractionOwner = "Assistant" | "Dictation";
 
@@ -189,18 +190,24 @@ async function waitForState(
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
+    // 1. Fast-path: check if push event already reached the target state
+    if (useSessionStore.getState().interactionState === target) {
+      return true;
+    }
+
     try {
       const snap = await getRuntimeSnapshot();
       const state = snap?.pipeline_state as InteractionState | undefined;
-      if (state && VALID_STATES.has(state)) {
-        notifyState(state);
-        if (state === target) return true;
+      // Only notify when target is actually confirmed — never push stale intermediate states back to the store
+      if (state === target) {
+        notifyState(target);
+        return true;
       }
     } catch {
       // Best-effort; keep polling until deadline.
     }
     if (Date.now() >= deadline) return false;
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 100));
   }
 }
 
