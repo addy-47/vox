@@ -265,18 +265,7 @@ fn apply_llm_mutation(
                         api_key,
                         provider_name,
                     } => {
-                        let is_cloud = provider_name.as_deref().is_some_and(|p| {
-                            let pl = p.to_lowercase();
-                            pl.contains("nvidia")
-                                || pl.contains("groq")
-                                || pl.contains("openrouter")
-                                || pl.contains("together")
-                                || pl.contains("openai")
-                                || pl.contains("gemini")
-                                || pl.contains("mistral")
-                        });
-                        if is_cloud {
-                            settings.llm.active = LlmActiveProvider::Cloud;
+                        if settings.llm.active == LlmActiveProvider::Cloud {
                             settings.llm.cloud = LlmRemoteConfig {
                                 base_url,
                                 model,

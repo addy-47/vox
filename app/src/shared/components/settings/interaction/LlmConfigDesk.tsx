@@ -32,6 +32,7 @@ export const LlmConfigDesk = memo(({
 
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
+  const [detectedDialect, setDetectedDialect] = useState<string | null>(null);
   const [checkingHealth, setCheckingHealth] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -152,6 +153,7 @@ export const LlmConfigDesk = memo(({
   useEffect(() => {
     if (providerKind !== "open_ai_compat" || !providerBaseUrl) {
       setIsHealthy(null);
+      setDetectedDialect(null);
       setModelsError(null);
       return;
     }
@@ -163,19 +165,17 @@ export const LlmConfigDesk = memo(({
         setCheckingHealth(true);
         setModelsError(null);
         try {
-          const healthy = await checkLlmProviderHealth(currentProvider);
+          const res = await checkLlmProviderHealth(currentProvider);
           if (!isMounted) return;
-          setIsHealthy(healthy);
+          setIsHealthy(res.healthy);
+          setDetectedDialect(res.dialect ?? null);
 
-          if (healthy && activeLlmProvider === "server") {
-            const detectedName = providerBaseUrl?.includes("11434")
-              ? "Ollama"
-              : "Remote Host";
+          if (res.healthy && res.dialect && activeLlmProvider === "server") {
             const currentServer = useSettingsStore.getState().draftSettings?.llm?.server;
-            if (currentServer && currentServer.provider_name !== detectedName) {
+            if (currentServer && currentServer.provider_name !== res.dialect) {
               updateDraft("llm", "server", {
                 ...currentServer,
-                provider_name: detectedName,
+                provider_name: res.dialect,
               });
             }
           }
@@ -183,6 +183,7 @@ export const LlmConfigDesk = memo(({
           if (!isMounted) return;
           console.error(err);
           setIsHealthy(false);
+          setDetectedDialect(null);
           setModelsError("Connection failed");
         } finally {
           if (isMounted) {
@@ -314,13 +315,18 @@ export const LlmConfigDesk = memo(({
     badge?: React.ReactNode
   ) => {
     const defaultBadge = () => {
-      const statusText = checkingHealth
+      const baseStatus = checkingHealth
         ? INTERACTION_CONFIG_DESK_COPY.status.testing
         : isHealthy === false
         ? INTERACTION_CONFIG_DESK_COPY.status.offline
         : isHealthy === true
         ? INTERACTION_CONFIG_DESK_COPY.status.online
         : INTERACTION_CONFIG_DESK_COPY.status.active;
+
+      const statusText =
+        isHealthy === true && detectedDialect && activeLlmProvider === "server"
+          ? `${detectedDialect} • ${baseStatus}`
+          : baseStatus;
 
       return (
         <span className="text-[10px] font-mono font-bold tracking-wider text-[rgb(var(--accent))] uppercase">

@@ -289,6 +289,7 @@ export interface WorkingMemorySettings {
   private_mode: boolean;
   auto_compaction: boolean;
   max_context_share: number;
+  web_search_enabled: boolean;
 }
 
 export interface AppearanceSettings {

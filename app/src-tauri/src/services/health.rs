@@ -22,16 +22,34 @@ pub enum ProviderConfigPayload {
     Tts(TtsProviderConfig),
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ProviderHealthCheckResult {
+    pub healthy: bool,
+    pub dialect: Option<String>,
+}
+
 /// Verify health status across LLM, STT, and TTS providers.
 pub async fn check_health(
     state: &Arc<AppState>,
     kind: &str,
     provider: Option<ProviderConfigPayload>,
-) -> Result<bool, String> {
+) -> Result<ProviderHealthCheckResult, String> {
     match kind.to_lowercase().as_str() {
         "llm" => check_llm_health(state, provider).await,
-        "stt" => check_stt_health(state, provider).await,
-        "tts" => check_tts_health(state, provider).await,
+        "stt" => {
+            let healthy = check_stt_health(state, provider).await?;
+            Ok(ProviderHealthCheckResult {
+                healthy,
+                dialect: None,
+            })
+        }
+        "tts" => {
+            let healthy = check_tts_health(state, provider).await?;
+            Ok(ProviderHealthCheckResult {
+                healthy,
+                dialect: None,
+            })
+        }
         _ => Err(format!("Unknown provider health check kind: {}", kind)),
     }
 }
@@ -39,7 +57,7 @@ pub async fn check_health(
 pub async fn check_llm_health(
     state: &Arc<AppState>,
     provider: Option<ProviderConfigPayload>,
-) -> Result<bool, String> {
+) -> Result<ProviderHealthCheckResult, String> {
     let (config, llm_model) = match provider {
         Some(ProviderConfigPayload::Llm(prov)) => (prov, "".to_string()),
         _ => {
@@ -70,7 +88,15 @@ pub async fn check_llm_health(
                 models_dir.join(QWEN_MODEL_DIR).join(QWEN_MODEL_FILE)
             };
 
-            Ok(llm_path.exists())
+            let healthy = llm_path.exists();
+            Ok(ProviderHealthCheckResult {
+                healthy,
+                dialect: if healthy {
+                    Some("Embedded".to_string())
+                } else {
+                    None
+                },
+            })
         }
         LlmProviderConfig::OpenAiCompat {
             base_url,
@@ -84,8 +110,24 @@ pub async fn check_llm_health(
                 api_key.as_deref(),
                 provider_name.as_deref(),
             );
-            let provider = RemoteTransport::new(conn_cfg);
-            Ok(provider.health_check().await.is_ok())
+            let provider = RemoteTransport::new(conn_cfg.clone());
+            let healthy = provider.health_check().await.is_ok();
+            let dialect = if healthy {
+                let client = reqwest::Client::builder()
+                    .timeout(Duration::from_secs(2))
+                    .build()
+                    .unwrap_or_default();
+                let discovered = crate::services::llm::catalog::discover_server_dialect(
+                    &client,
+                    &base_url,
+                    &conn_cfg.auth,
+                )
+                .await;
+                Some(discovered.display_name().to_string())
+            } else {
+                None
+            };
+            Ok(ProviderHealthCheckResult { healthy, dialect })
         }
     }
 }

@@ -26,6 +26,7 @@ The tool is governed by four system axioms:
 - **Identifier**: `web_search`
 - **Domain Availability**: `ToolDomain::Modular` (Modular Assistant sessions only). Realtime S2S models (e.g. Gemini Live) manage web grounding via native provider protocols.
 - **Flow Category**: `ToolFlow::NonTerminal`. Invocation immediately triggers `NonTerminalPhase`, dispatches interim filler audio, transitions the pipeline to `InteractionState::Working`, and initiates a reentrant cognitive turn loop upon evidence acquisition.
+- **User Settings Gate**: A single user-facing boolean `working_memory.web_search_enabled` (default: `true`) gates the tool. When `false`, `web_search` is suppressed from the active tool registry for Modular sessions and the model never sees it in its tool list; all other behaviors in this specification are unchanged. The gate is surfaced in the frontend Working Memory settings card under the "Web Search" tab, and applies live without restart.
 
 ---
 

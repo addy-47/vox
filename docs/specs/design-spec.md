@@ -235,7 +235,7 @@ Sizes come from the scale ramp only (frontmatter `typography.scale`). No arbitra
 Uppercase (`uppercase`) is a **label voice, not a design voice**. It is reserved for:
 
 1. Display headings that are intentionally shout-y (`font-display` page titles).
-2. Short labels and kickers (1–3 words): badge text, pill labels, tab labels, section kickers.
+2. Short labels and kickers (1–3 words): tab labels, section kickers, active controls.
 3. Short button text (≤ 4 words).
 
 Uppercase is **forbidden** on:
@@ -267,13 +267,34 @@ Radii come from the `rounded` scale only (frontmatter `rounded`):
 | `base` | 0.5rem | Default inputs, small cards |
 | `sm2` | 9px (0.5625rem) | Scrollbar track end caps |
 | `md` | 0.75rem | Cards, popovers |
-| `lg` | 1rem | Large panels, buttons |
+| `lg` | 1rem | Large panels, standard buttons |
 | `xl` | 1.25rem | Dialog boxes |
 | `2xl` | 1.75rem | Hero panels, drawers |
-| `pill` | 9999px | Fully rounded pills, badges, the nav capsule |
+| `pill` | 9999px | **Interactive buttons and controls only** (never static copy) |
 
 Roundness should read as **consistent and calm** — do not mix `rounded-lg` and `rounded-xl`
 on sibling cards within the same group.
+
+### 5.1 Pill Container Invariant: Buttons Only (Zero Faux-Pill Copy)
+
+Pill-shaped containers (`rounded-full` / `rounded-pill` with background, border, and inset padding) are **strictly reserved for clickable, interactive controls**:
+
+* **Permitted on:**
+  1. Interactive action buttons, preset choices, and pills in `SegmentedControl`.
+  2. Toggle triggers and switches (e.g. `WebSearchGlobe`, `TransliterationToggle`).
+  3. The main navigation floating capsule dock (`EdgeNav`).
+* **Strictly Forbidden on Static Copy:**
+  1. **Never wrap descriptive text, labels, or static metrics in pill containers.** Text with background fill and border looks like an interactive button and confuses the visual hierarchy.
+  2. **No Redundant Value / Status Badges Next to Titles:** Never add a pill badge next to a section or card title that parrots adjacent control settings (e.g. repeating `"300 ms"`, `"1.05x"`, `"Active"`, `"Manual"`). When an active control, button grid, or toggle switch is visible on the card, any duplicate status pill is redundant visual clutter and strictly banned.
+  3. Static readouts, kickers, and titles must render as clean, unboxed typography (using font weight, tracking, opacity, or accent text color directly on the card surface).
+
+### 5.2 Clean Vector SVG Pattern (Frameless Linework)
+
+All vector illustrations, domain diagrams, and custom toggle widgets (e.g. `WebSearchGlobe`, `TransliterationToggle`, `RemoteComputeGraphic`, `ManagedContextGraphic`):
+
+* **Frameless Linework:** Vector illustrations must never be enclosed in heavy outer rounded-rectangle or pill-shaped container boxes (`border border-[rgba(var(--accent),...)] bg-[rgba(var(--accent),...)] w-full h-[68px]`). The graphic must breathe cleanly on the transparent surface.
+* **Crisp Engineering Geometry:** Use delicate stroke weights (0.8px – 1.25px), subtle opacity ramps (0.25 – 0.85), and theme accent accents. Avoid drawing generic rounded pills to represent compute or context; use authentic structural representations (isometric lattices, blade chassis with data traces, stacked memory planes, or script vectors).
+* **Unboxed Accompanying Typography:** Text accompanying an SVG graphic must render as clean, unboxed typography below or beside the illustration (e.g. `text-[9px] font-mono font-bold tracking-[0.14em] uppercase text-[rgb(var(--accent))]`), never wrapped in a faux-button pill box.
 
 ---
 

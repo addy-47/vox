@@ -64,7 +64,7 @@ export const SETTINGS_SCOPE_KEYS: Record<SettingsScope, readonly string[]> = {
   ],
   interaction: ["mode", "auto_sleep_timeout", "pipeline_mode"],
   dictation: ["enabled", "interaction_mode", "hotkey", "output_mode"],
-  working_memory: ["private_mode", "auto_compaction", "max_context_share"],
+  working_memory: ["private_mode", "auto_compaction", "max_context_share", "web_search_enabled"],
   personal_memory: [
     "context_retrieval_enabled",
     "pipeline_processing_enabled",
@@ -535,30 +535,27 @@ export const LLM_SETTINGS_COPY = {
   },
   compute: {
     title: "Compute Allocation",
-    description:
-      "Allocate local CPU worker threads for model reasoning. Auto balances thermal load and latency.",
+    description: "Allocate local CPU worker threads for in-process model reasoning.",
     remoteTitleLocal: "Cloud Infrastructure",
     remoteTitleRemote: "Remote Compute",
     remoteActive: "Active",
     remoteDescription:
-      "Inference computation is offloaded entirely to the remote provider. Zero local CPU or RAM is consumed.",
+      "Inference computation and KV-cache allocation are offloaded entirely to the remote endpoint.",
     remoteManaged: "Managed",
   },
   tokens: {
     title: "Token Limit",
     native: "Native",
-    description:
-      "Maximum token generation per reply. Concise caps prevent rambling; Native lets the model complete reasoning.",
+    description: "Maximum output token budget per conversational turn.",
   },
   context: {
     title: "Context Window",
     description:
-      "RAM-allocated token budget for conversation history and retrieved memory facts.",
+      "Token budget allocated for conversation history, system persona instructions, and memory facts.",
   },
   creativity: {
     title: "Creativity",
-    description:
-      "Sampling temperature. Lower values produce strict facts; higher values encourage conversational flair.",
+    description: "Controls randomness and creativity of generated text responses.",
   },
 };
 
@@ -570,8 +567,10 @@ export const APPEARANCE_COPY = {
 
 export const WORKING_MEMORY_SETTINGS_COPY = {
   cardTitle: "Working Memory",
-  engineTitle: "Session History Engine",
-  engineBadge: "Turso Engine",
+  tabs: {
+    webSearch: "Web Search",
+    contentShare: "Content Share",
+  },
   privateModeTitle: "Session Storage",
   privateModeActive: "Incognito Active",
   privateModeInactive: "Logging Active",
@@ -582,10 +581,19 @@ export const WORKING_MEMORY_SETTINGS_COPY = {
   autoCompactionInactive: "Manual Review",
   autoCompactionActiveSub: "Summarizes on idle",
   autoCompactionInactiveSub: "Prompt on uncompacted",
-  budgetTitle: "Context Share Budget",
-  budgetDesc: "Percentage of LLM context window reserved for personal profile and working dialogue history.",
-  budgetAllocation: "Allocated Context",
-  budgetRemaining: "Free Horizon",
+  webSearch: {
+    title: "Web Search",
+    description:
+      "Let Vox search the live web for current facts mid-conversation. Keyless built-in engine, Modular sessions only.",
+    enabled: "Enabled",
+    disabled: "Disabled",
+    toggleAria: "Toggle web search",
+  },
+  contentShare: {
+    title: "Context Share Budget",
+    description:
+      "Percentage of LLM context window reserved for personal profile and working dialogue history.",
+  },
 };
 
 // Direct alias for backward-compatibility during component refactor
@@ -600,23 +608,19 @@ export const VAD_SETTINGS_COPY = {
   },
   sensitivity: {
     title: "Voice Sensitivity",
-    description:
-      "Speech detection probability threshold. Lower values catch whispers; higher values prevent ambient room triggers.",
+    description: "Speech detection probability threshold for microphone capture.",
   },
   silence: {
     title: "Silence Cutoff",
-    description:
-      "Pause duration before speech turn finishes and initiates response reasoning. Snappy for quick orders; patient for contemplation.",
+    description: "Pause duration before a speech turn is finalized and response reasoning begins.",
   },
   speechOnset: {
     title: "Speech Onset Duration",
-    description:
-      "Minimum continuous speech duration required before starting an active turn. Rejects transient clicks and coughs.",
+    description: "Minimum continuous voice duration required before initiating an active turn.",
   },
   noiseGate: {
     title: "Noise Gate Floor",
-    description:
-      "Minimum microphone energy threshold to discard ambient PC fans, air conditioners, and mechanical keyboard clicks.",
+    description: "Energy floor threshold to filter steady background noise before detection.",
   },
 };
 
@@ -627,18 +631,15 @@ export const STT_SETTINGS_COPY = {
   },
   compute: {
     title: "Compute Allocation",
-    description:
-      "CPU worker threads allocated for speech recognition inference. Requires restart to apply.",
+    description: "Dedicated CPU worker threads allocated for speech recognition inference.",
   },
   streamingRate: {
     title: "Subtitle Cadence",
-    description:
-      "Interim partial transcription update frequency. Faster updates give immediate feedback; slower updates preserve CPU.",
+    description: "Update frequency for interim real-time transcription streaming.",
   },
   transliteration: {
     title: "Script Transliteration",
-    description:
-      "Automatically normalizes and maps recognized multilingual phonemes into target orthography during live transcription.",
+    description: "Converts recognized regional scripts into phonetic Latin text in real-time.",
   },
 };
 

@@ -128,8 +128,14 @@ impl Default for ProviderPresetMeta {
             auth_scheme: CatalogAuthScheme::None,
             transport: TransportType::ChatCompletions,
             token_limit: "max_tokens",
-            reasoning_off: None,
-            reasoning_on: None,
+            reasoning_off: Some(ReasoningOff {
+                path: "reasoning_effort",
+                value: WireValue::Str("none"),
+            }),
+            reasoning_on: Some(ReasoningOn {
+                path: "reasoning_effort",
+                value: WireValue::Str("medium"),
+            }),
             tool_choice: Some("auto"),
             stream_usage: true,
             response_envelope: ResponseEnvelope::Chat,
