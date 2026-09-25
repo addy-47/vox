@@ -127,9 +127,8 @@ async fn run(args: Args) -> Result<()> {
         context_window: args.context_window,
     };
 
-    let ctx =
-        harness::setup_isolated_eval_context(&eval_cfg, &manifest_dir.join("evals/results"))
-            .await?;
+    let ctx = harness::setup_isolated_eval_context(&eval_cfg, &manifest_dir.join("evals/results"))
+        .await?;
 
     println!("=== Agentic Tool Evaluation: Run {} ===", ctx.run_id);
     println!("Query       : {}", args.query);

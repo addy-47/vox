@@ -16,6 +16,7 @@ pub mod audio;
 pub mod db;
 pub mod harness;
 pub mod judge;
+pub mod paths;
 pub mod report;
 pub mod settings_cfg;
 pub mod turns;

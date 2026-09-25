@@ -36,6 +36,16 @@ pub fn system_info() -> Value {
     })
 }
 
+pub fn memory_anchors(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.len() >= 8)
+        .take(5)
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
 /// Writes `report.json` under `results/<eval_name>/<run_id>/` and mirrors it
 /// to `results/<eval_name>/latest.json`. Returns the run directory.
 pub fn write_report(

@@ -63,6 +63,9 @@
 ### 4.1 Critical Architectural & Logical Invariants (Non-Negotiable Concepts)
 0. **Zero Backward Compatibility (ZBC):** Backward compatibility is not a requirement unless explicitly stated. Break, replace, or redesign existing interfaces when that produces the better architecture. Never introduce compatibility layers, legacy paths, 
 1. **Exploration hook:** Before any codebase exploration, architecture lookup, graph query, or broad search, read `.agents/rules/codebase-memory-mcp.md` and follow its graph-first workflow.
+2. **rtk CLI hook** Any cli cmd must be prefixed with rtk cli. Example:
+    - `rtk cli cargo test ...` instead of `cargo test`
+    - `rtk cli cargo build ...` instead of `cargo build`
 
 ### 4.2. HARD GATE: Code Modification Gate
 
@@ -88,7 +91,7 @@
 4. **[IPC Command & Event Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/ipc-spec.md)** — *Status: Approved / Target Spec*. Grouped frontend-to-backend commands and backend-to-frontend IPC events.
 5. **[LLM Agent Harness & Plugin Runtime Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/harness-spec.md)** — *Status: Approved Target Spec*. Plugin chassis, 1:1 session lifecycle (`start_session(Option<sessionId>)`), decoupled LLM actor with duplex dialogue pipe, `InteractionState::Working` with audio intent gating, and clean-slate deletion of legacy harness code.
 6. **[Notification Center Behavioral & Interface Specification (v2)](file:///home/addy/projects/apps/vox/docs/specs/notifications-spec.md)** — *Status: Proposed Target Spec*. Append storage with correlation key, task idempotency, and frontend stream rollup.
-7. **[Agentic Tools & Tool Runtime Specification (v1)](file:///home/addy/projects/apps/vox/docs/specs/tools-spec.md)** — *Status: Approved Target Spec*. Dual classification (`SideEffect` vs `Observation`), capability gating, RRF hybrid retrieval, and scratchpad rollback.
+7. **[Agentic Tools & Tool Runtime Specification (v1)](file:///home/addy/projects/apps/vox/docs/specs/tools-spec.md )** — *Status: Approved Target Spec*. Dual classification (`Terminal  vs Non-Terminal`), capability gating, RRF hybrid retrieval, and scratchpad rollback.
 
 ---
 
@@ -99,8 +102,5 @@
 - **Agentic runtime & provider SSOT shipped:** Full tool taxonomy, reentrant harness loop, session gating, provider wire policy mapping, and 122 integration tests with 73% mutation kill rate.
 - **Realtime, memory, and UX foundations:** Streaming TTS/metrics, realtime tool translation, session continuation, boundary compaction fixes, and deterministic frontend invariant/stress tooling.
 - **Memory pipeline evaluation & semantic audit:** Built 14-case eval suite, executed operational baseline (Case 1), audited memory grounding overclaims, hardened extraction prompts, and stabilized `evals/memory_pipeline_eval.rs`.
-- **Web search tool integration & adversarial audits:** Conducted production-scale architectural, security, and contract audits of `submodules/nexus-rs` and `web_search.rs` to prepare verified implementation.
-- **Web search remediation & live eval passed:** Resolved all findings from adversarial audit across `submodules/nexus-rs` (body-cap prefix retention, 5-hop redirect bound, bounded SERP chunk stream, engine time_filter mapping) and `web_search.rs` (live turn-budget integration, persistent injection guard across evidence passes, C0 control stripping, XML query escaping, Stage 3 timeout encapsulation, runtime IPC settings); 6/6 Seam 21 integration tests green; executed live OpenRouter eval with `inclusionai/ling-3.0-flash-sante:free` achieving 1/1 tool execution in 4.7s and grounded synthesis in 12.4s.
-- **Agentic tool eval genericization & step telemetry:** Refactored `evals/agentic_tool_eval.rs` to be generic (zero temp/.env or tool-specific logic, queries fed via CLI, Kokoro TTS audio capture, shared `evals/common/` helpers); instrumented granular step latencies across `submodules/nexus-rs` (per-engine fanout, URL dedup, per-page fetch/extract) and `WebSearchTool`; verified September 2026 Apple event query producing grounded synthesis and 29.86s Kokoro audio in `response.wav`.
-- **10-query web search benchmark & latency profiling:** Executed full 10-query September 2026 evaluation with pre-warmed MiniLM embedder and Kokoro TTS; achieved average 3.37s tool latency (Fanout: 1.82s, Fetch: 0.85s, Extract: 25ms, Rank: 0.68s) and 9.1/10 factual grounding score; isolated Yahoo fanout tail (1.81s vs Bing 0.44s/DDG 0.32s) and dense ONNX batch sizing as primary bottlenecks with quorum early-exit and 2-stage reranking optimization plan.
-- **Adaptive fanout quorum, fast extraction & 2-stage reranking:** Enhanced `submodules/nexus-rs` with configurable `FanoutPolicy` and `RankingPolicy`, Google WML scraper, URL consensus multiplier, and single-pass title extraction; kept tuning parameters as internal Level 3 domain constants in `web_search.rs` with only `web_search_enabled` user-facing; all 25 nexus tests and 6 Seam 21 integration tests green; reduced live tool latency from 4.75s to 2.16s.
+- **Web search tool & `nexuss` published:** Built and optimized multi-engine search engine (`nexuss v0.1.1` on crates.io), wired into `web_search` tool with adaptive fanout quorum and hybrid ranking (2.16s latency), integrated via Cargo, and verified across all 6 Seam 21 tests and live Gemini eval.
+
