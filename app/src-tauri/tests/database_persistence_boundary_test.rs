@@ -5,7 +5,7 @@
 //! Component    : persistence/{db,schema,worker,sessions,projects,facts,compactions}
 //! Prerequisites: Turso SQLite engine (vox.db), isolated temporary database
 //! Execution    : cargo nextest run --test database_persistence_boundary_test --release --nocapture --test-threads=1
-//! Metrics      : Schema migrations user_version = 5, foreign key RESTRICT / CASCADE / SET NULL,
+//! Metrics      : Schema migrations (SCHEMA_VERSION, currently 7), foreign key RESTRICT / CASCADE / SET NULL,
 //!                unique partial index concurrency enforcement, multi-threaded MVCC read/write,
 //!                F32_BLOB 384-dimensional vector float precision
 //! ============================================================================
@@ -29,7 +29,7 @@ use vox_lib::persistence::{
     notifications::{create_notification, NewNotification, Severity},
     personal_memory::get_personal_memory,
     projects::{delete_project, get_project_by_id},
-    schema::run_migrations,
+    schema::{run_migrations, SCHEMA_VERSION},
     sessions::{create_session_with_id, delete_session},
     worker::spawn_persistence_worker,
     PersistenceEvent, VoxDb,
@@ -42,7 +42,8 @@ use vox_lib::persistence::{
 ///
 /// Verifies:
 ///   - Database opens and applies pragmas (foreign_keys = ON, busy_timeout).
-///   - `run_migrations` transitions database to schema version 5 (`PRAGMA user_version = 5`).
+///   - `run_migrations` transitions the database to `SCHEMA_VERSION` (`PRAGMA user_version`).
+///     Asserted symbolically so the next migration bump cannot desynchronise this comment.
 ///   - Seed project `'default'` is created.
 ///   - Seed global personal memory document (project_id = NULL, version = 1) is created.
 ///   - Core v2 tables exist in `sqlite_master`.
@@ -60,15 +61,16 @@ async fn test_schema_migration_and_seed_data() {
             .await
             .expect("Failed to execute schema migrations");
 
-        // 1. Verify PRAGMA user_version = 5
+        // 1. Verify PRAGMA user_version == SCHEMA_VERSION
         let mut rows = conn
             .query("PRAGMA user_version;", ())
             .await
             .expect("Failed to query user_version");
         let version: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(
-            version, 7,
-            "Database user_version must be 7 after migration"
+            version,
+            SCHEMA_VERSION as i64,
+            "Database user_version must match SCHEMA_VERSION after migration",
         );
 
         // 2. Verify foreign_keys = ON
@@ -525,7 +527,6 @@ async fn test_concurrent_mvcc_wal_readers_and_persistence_worker() {
 
         // Shutdown persistence worker cleanly
         let _ = persistence_tx.send(PersistenceEvent::Shutdown);
-        tokio::time::sleep(Duration::from_millis(100)).await;
 
         assert_eq!(
             finished_readers.load(Ordering::SeqCst),
@@ -541,17 +542,35 @@ async fn test_concurrent_mvcc_wal_readers_and_persistence_worker() {
             "Persistence worker must report healthy status (zero DB errors)"
         );
 
-        // Verify turns were written
+        // Verify turns were written.
+        //
+        // This previously slept a fixed 100ms after Shutdown and then counted rows.
+        // That is a sleep-as-proxy-for-completion (testing-style-guide.md §6.1) and it
+        // was systematically too short: the worker had only drained 19-21 of 25 queued
+        // events in that window, so the test failed deterministically on unmodified
+        // code as well as after any change. Replaced with a deadline poll: if the worker
+        // is correct this converges in milliseconds, and if it genuinely drops events the
+        // deadline expires and the assertion below still fails with the true count.
         let verify_conn = db.connect().unwrap();
-        let mut final_turns = verify_conn
-            .query(
-                "SELECT COUNT(*) FROM turns WHERE session_id = ?;",
-                (session_id,),
-            )
-            .await
-            .unwrap();
-        let final_count: i64 = final_turns.next().await.unwrap().unwrap().get(0).unwrap();
-        assert_eq!(final_count, 25, "All 25 turns must be persisted by worker");
+        let drain_deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let final_count: i64 = loop {
+            let mut rows = verify_conn
+                .query(
+                    "SELECT COUNT(*) FROM turns WHERE session_id = ?;",
+                    (session_id,),
+                )
+                .await
+                .unwrap();
+            let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+            if count >= 25 || std::time::Instant::now() >= drain_deadline {
+                break count;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        };
+        assert_eq!(
+            final_count, 25,
+            "All 25 turns must be persisted by the worker (waited up to 10s for the drain)"
+        );
     })
     .await
     .expect("test_concurrent_mvcc_wal_readers_and_persistence_worker timed out");
@@ -652,7 +671,7 @@ async fn test_f32_blob_vector_precision_roundtrip() {
 // ============================================================================
 // Subtest 12: test_session_tool_calls_persistence_and_indexes
 // ============================================================================
-/// Verifies Seam 20 Phase 12 Schema v5 & Persistence Worker Contracts:
+/// Verifies Seam 20 Phase 12 Schema & Persistence Worker Contracts:
 /// 1. Verifies `session_tool_calls` table and both `idx_tool_calls_session_turn` and `idx_tool_calls_created` indexes.
 /// 2. Verifies self-healing foreign key parent insertion on `ToolCallExecuted` event.
 /// 3. Verifies private mode suppression of `session_tool_calls` insertion.
@@ -666,7 +685,7 @@ async fn test_session_tool_calls_persistence_and_indexes() {
         let conn = db.connect().expect("Failed to vend connection");
         run_migrations(&conn).await.expect("Failed to run migrations");
 
-        // 1. Verify schema v5 and indexes exist
+        // 1. Verify the schema migrated and the expected indexes exist
         let mut idx_rows = conn
             .query(
                 "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'session_tool_calls';",

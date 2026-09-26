@@ -1,7 +1,7 @@
 //! ============================================================================
 //! ptt_window_modular_test.rs — PTT Window Validation (Modular) Integration Test
 //! ============================================================================
-//! Category     : Integration Test
+//! Category     : Integration Test (Seam 2)
 //! Component    : pipeline/assistant/ptt.rs + services/vad/actor.rs + services/stt/actor.rs
 //! Prerequisites: Local Nemotron STT + Earshot VAD weights in ~/.vox/models/
 //! Execution    : cargo nextest run --test ptt_window_modular_test --release --nocapture --test-threads=1

@@ -227,17 +227,22 @@ Merges newly accumulated personal facts into the existing document via an audite
    - Linked facts in `memory_facts` transition from `status = 'active'` to `status = 'staged'`.
    - The staging slate (`PersonalMemoryStagingCard`) enters an exclusive `"review"` mode displaying diff cards with `[✓]` (Accept) and `[✕]` (Reject) alongside `Accept All` and `Discard All`.
    - While pending suggestions exist, manual text editing, markdown import, and new comment submissions are locked to eliminate concurrent mutation races.
+   - **INVARIANT 5.3-A (Candidate Partition):** every candidate fact presented to the LLM is partitioned into exactly two disjoint sets — those referenced by a generated operation's `source_fact_ids` (→ `'staged'`), and those referenced by none (→ `'consolidated'`, via `mark_facts_consolidated`). No candidate fact may remain `'active'` and **no candidate fact may be left in `'staged'` without a corresponding pending suggestion row**. A `'staged'` fact is only ever reachable from a live pending suggestion, so accepting or rejecting that suggestion always resolves the fact. Enforced in `services/memory/personal.rs` at the staging step.
 5. **Suggestion Resolution**:
    - Suggestions are resolved individually or in bulk via `resolve_memory_suggestion(id: Option<String>, action: String)`.
+   - **Action Validation:** `action` MUST be exactly `"accept"` or `"reject"`. Any other value is rejected with `Invalid suggestion resolution action: <action>` and performs **no** writes. Resolving with `target_id = Some(id)` for an id that is not `pending` MUST error with `Pending suggestion '<id>' not found` and perform no writes. `action = "accept"` without `new_content` MUST error with `new_content required when accepting suggestions`.
+   - Resolution is **atomic**: all suggestion, document, fact, and vector writes for one resolution commit together or roll back together (`resolve_suggestions_transaction`).
    - **Acceptance (`action = 'accept'`)**:
      1. Applies patch delta(s) to the active `personal_memory` markdown.
      2. Inserts a new record in `personal_memory` with `version = max_version + 1`, `is_active = 1`, and `last_consolidated_at = now()`. The previous version flips to `is_active = 0`.
      3. Suggestion rows flip to `status = 'accepted', resolved_at = now()`.
-     4. Linked facts in `memory_facts` flip from `'staged'` to `'consolidated'`.
+     4. Linked facts in `memory_facts` flip from `'staged'` to `'consolidated'`, and their rows in `memory_facts_vectors` flip to `'consolidated'` in the same transaction.
+     5. **INVARIANT 5.3-B (Re-anchor on Accept — the anchor-erosion fix):** every *other* suggestion still in `status = 'pending'` MUST have its `base_memory_version` re-anchored to the newly written `version` (`max_version + 1`). Re-anchoring MUST NOT change a pending suggestion's `status`, so it remains returned by `fetch_pending_suggestions` and remains individually resolvable. Without this, a second pending suggestion's `target_text` anchors were computed against a document version that no longer exists, and it becomes permanently unappliable — the anchor-erosion failure. Implemented in `persistence/personal_memory.rs` (`reanchor_sql`, scoped by `project_id` and `id NOT IN (<resolved ids>)`).
    - **Rejection (`action = 'reject'`)**:
      1. Suggestion rows flip to `status = 'rejected', resolved_at = now()`.
-     2. Linked facts in `memory_facts` flip from `'staged'` to `'rejected'`, ensuring they are not repeatedly re-suggested in subsequent consolidation cycles.
-     3. Active document remains unchanged.
+     2. Linked facts in `memory_facts` flip from `'staged'` to `'rejected'` (and vectors likewise), ensuring they are not repeatedly re-suggested in subsequent consolidation cycles.
+     3. Active document remains unchanged — `version` is NOT bumped, and no new `personal_memory` row is written.
+   - **Bulk resolution** (`target_id = None`) resolves every pending suggestion in one transaction and therefore also re-anchors nothing (no pending rows remain).
 
 ### 5.4 Suggestion Policies & Cadence
 - **Suggestion Policy** (`settings.memory.suggestion_policy`):

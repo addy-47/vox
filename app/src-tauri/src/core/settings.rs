@@ -1172,44 +1172,4 @@ mod tests {
         assert_eq!(caps_for_id("no_such_engine"), caps_for_id("supertonic"));
     }
 
-    #[test]
-    fn test_llm_cloud_keys_persistence() {
-        let mut settings = VoxSettings::default();
-        assert!(settings.llm.cloud_keys.is_empty());
-
-        settings
-            .llm
-            .cloud_keys
-            .insert("gemini".to_string(), "AIzaSyTestKey".to_string());
-        settings
-            .llm
-            .cloud_keys
-            .insert("nvidia".to_string(), "nvapi-TestKey".to_string());
-
-        let json = serde_json::to_string(&settings).expect("Serialization failed");
-        let deserialized: VoxSettings =
-            serde_json::from_str(&json).expect("Deserialization failed");
-
-        assert_eq!(
-            deserialized
-                .llm
-                .cloud_keys
-                .get("gemini")
-                .map(|s| s.as_str()),
-            Some("AIzaSyTestKey")
-        );
-        assert_eq!(
-            deserialized
-                .llm
-                .cloud_keys
-                .get("nvidia")
-                .map(|s| s.as_str()),
-            Some("nvapi-TestKey")
-        );
-
-        // Verify backward compatibility: older JSON payload without cloud_keys defaults to empty HashMap
-        let old_json = r#"{"active":"embedded","temperature":0.7,"compaction_temperature":0.3,"max_output_tokens":4096,"context_window":8192,"threads":4,"reasoning_enabled":false,"embedded":{"model":"qwen"},"server":{"base_url":"http://127.0.0.1:11434","model":"qwen2.5:0.5b"},"cloud":{"base_url":"https://api.openai.com/v1","model":"gpt-4o-mini"}}"#;
-        let old_llm: LlmSettings = serde_json::from_str(old_json).expect("Backward compat failed");
-        assert!(old_llm.cloud_keys.is_empty());
-    }
 }

@@ -1,7 +1,7 @@
 //! ============================================================================
 //! passive_streaming_test.rs — Passive Streaming Audio Pipeline Integration Test
 //! ============================================================================
-//! Category     : Integration Test
+//! Category     : Integration Test (Seam 1)
 //! Component    : services/vad/actor.rs + services/stt/actor.rs
 //! Prerequisites: Local Nemotron STT + Earshot VAD weights in ~/.vox/models/
 //! Execution    : cargo nextest run --test passive_streaming_test --release --nocapture --test-threads=1

@@ -972,4 +972,118 @@ mod tests {
         let raw = "{\"operations\": []}";
         assert_eq!(extract_json_payload(raw), "{\"operations\": []}");
     }
+
+    /// Tests that operations apply SEQUENTIALLY to one shared buffer, so operation N
+    /// observes the mutations made by operation N-1.
+    ///
+    /// This is the anchor-erosion interaction: the LLM emits a batch of operations in
+    /// one response, and a batch that only works when applied in isolation would
+    /// corrupt the document. Previously untested — every other test in this module
+    /// supplied exactly one operation.
+    #[test]
+    fn test_patch_multi_operation_sequencing_is_order_dependent() {
+        let ops = vec![
+            MemoryPatchOperation {
+                op: "insert".to_string(),
+                section: "## Technical Projects".to_string(),
+                target_text: None,
+                proposed_text: "Adopted Rust.".to_string(),
+                source_fact_ids: vec!["fact_1".to_string()],
+            },
+            // Targets text produced by the PREVIOUS operation. Can only match if the
+            // insert landed first and the buffer is shared.
+            MemoryPatchOperation {
+                op: "replace".to_string(),
+                section: "## Technical Projects".to_string(),
+                target_text: Some("Adopted Rust.".to_string()),
+                proposed_text: "Adopted Rust and Go.".to_string(),
+                source_fact_ids: vec!["fact_2".to_string()],
+            },
+        ];
+
+        let result = apply_patch_operations(SAMPLE_DOC, &ops).expect("Patch failed");
+        assert!(
+            !result.contains("Adopted Rust.\n"),
+            "intermediate text from op 1 must not survive op 2"
+        );
+        assert!(
+            result.contains("Adopted Rust and Go."),
+            "op 2 must observe op 1's insert; result was: {result}"
+        );
+    }
+
+    /// Tests that a `replace` whose target is created by a LATER operation is skipped
+    /// rather than corrupting the document, and that reordering the batch changes the
+    /// outcome — proving the sequence, not just the set, is what is applied.
+    #[test]
+    fn test_patch_multi_operation_out_of_order_target_is_skipped() {
+        let ops = vec![
+            MemoryPatchOperation {
+                op: "replace".to_string(),
+                section: "## Technical Projects".to_string(),
+                target_text: Some("Adopted Rust.".to_string()),
+                proposed_text: "Adopted Rust and Go.".to_string(),
+                source_fact_ids: vec!["fact_1".to_string()],
+            },
+            MemoryPatchOperation {
+                op: "insert".to_string(),
+                section: "## Technical Projects".to_string(),
+                target_text: None,
+                proposed_text: "Adopted Rust.".to_string(),
+                source_fact_ids: vec!["fact_2".to_string()],
+            },
+        ];
+
+        let result = apply_patch_operations(SAMPLE_DOC, &ops).expect("Patch failed");
+        assert!(
+            !result.contains("Adopted Rust and Go."),
+            "a replace targeting not-yet-inserted text must be skipped, not applied"
+        );
+        assert!(
+            result.contains("Adopted Rust."),
+            "the insert must still apply. Result was: {result}"
+        );
+    }
+
+    /// Tests that an unrecognised `op` is skipped without error and without discarding
+    /// the rest of the batch.
+    ///
+    /// This is a silent-data-loss guard: the model may emit `"update"`, `"modify"` or
+    /// `"patch"` instead of `"replace"`. Production logs a warning and continues, so
+    /// without this test a model vocabulary drift would drop facts with no error
+    /// surfaced anywhere the user or a test would see.
+    #[test]
+    fn test_patch_unknown_operation_is_skipped_without_error() {
+        let ops = vec![
+            MemoryPatchOperation {
+                op: "update".to_string(),
+                section: "## Personal Information".to_string(),
+                target_text: Some("User lives in Chicago.".to_string()),
+                proposed_text: "User lives in Denver.".to_string(),
+                source_fact_ids: vec!["fact_1".to_string()],
+            },
+            MemoryPatchOperation {
+                op: "insert".to_string(),
+                section: "## Personal Information".to_string(),
+                target_text: None,
+                proposed_text: "User enjoys hiking.".to_string(),
+                source_fact_ids: vec!["fact_2".to_string()],
+            },
+        ];
+
+        let result = apply_patch_operations(SAMPLE_DOC, &ops)
+            .expect("an unknown op must not surface as an error to the caller");
+        assert!(
+            !result.contains("User lives in Denver."),
+            "unknown op 'update' must not be applied as a replace"
+        );
+        assert!(
+            result.contains("User lives in Chicago."),
+            "the unknown op must leave its target untouched. Result was: {result}"
+        );
+        assert!(
+            result.contains("User enjoys hiking."),
+            "the remaining valid operation in the batch must still apply. Result was: {result}"
+        );
+    }
 }

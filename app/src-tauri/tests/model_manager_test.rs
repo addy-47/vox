@@ -21,6 +21,7 @@ use tempfile::tempdir;
 use vox_lib::setup::{
     manager_ops::{delete_model_file, is_model_file_present},
     manifest::VerifiedMarker,
+    model_manager::ModelManager,
 };
 
 // ============================================================================
@@ -133,33 +134,92 @@ fn test_model_manager_corrupted_payload_detection() {
 
 // ============================================================================
 // Subtest 3: Zip-Slip and Tar-Slip path traversal rejection
+//
+// These tests drive the REAL guard: `ModelManager::do_extract`.
+//
+// The previous versions of these tests asserted the third-party `zip`/`tar` crate's
+// own `enclosed_name()` / `Component::ParentDir` behaviour and then asserted a file
+// was absent that nothing had ever attempted to create. They passed even if
+// `do_extract`'s guards were deleted entirely — advertising "Zip-Slip guard" as a
+// covered metric while providing no security coverage at all (integration-test-spec.md
+// §0.1.3 Self-Execution Ban).
+//
+// Each test now asserts BOTH directions:
+//   1. NEGATIVE — a malicious archive is rejected with the specific guard error, and
+//      no file is written outside (or inside) the destination directory.
+//   2. POSITIVE CONTROL — a benign archive extracts successfully, proving the guard
+//      rejects *traversal specifically* rather than rejecting everything.
 // ============================================================================
-#[test]
-fn test_model_manager_zip_slip_rejection() {
-    let _guard = TempPathsGuard::new();
+
+/// Extracts `archive_path` via the production guard and asserts a traversal rejection.
+fn assert_traversal_rejected(archive_path: &std::path::Path, archive_type: &str, guard: &str) {
     let dir = tempdir().expect("Failed to create tempdir");
     let base_dir = dir.path();
     let extract_dir = base_dir.join("extract");
     std::fs::create_dir_all(&extract_dir).unwrap();
 
-    let zip_path = base_dir.join("evil.zip");
-    let evil_entry = ("../../evil.txt", b"malicious content" as &[u8]);
-    create_test_zip_archive(&zip_path, &[evil_entry]).expect("Failed to create zip archive");
+    let res = ModelManager::do_extract(archive_path, archive_type, &extract_dir);
+    let err = res.expect_err("do_extract MUST reject an archive containing a traversal path");
 
-    // Test Zip-Slip detection by reading through zip archive enclosed_name
-    let file = std::fs::File::open(&zip_path).unwrap();
-    let mut archive = zip::ZipArchive::new(file).unwrap();
-    let entry = archive.by_index(0).unwrap();
     assert!(
-        entry.enclosed_name().is_none(),
-        "Path with parent directory traversal must be rejected by enclosed_name()"
+        err.to_string().contains(guard),
+        "do_extract must report the {} guard, got: {}",
+        guard,
+        err
     );
-
-    // Verify evil file was never extracted outside extract_dir
-    let evil_file = base_dir.join("evil.txt");
     assert!(
-        !evil_file.exists(),
-        "Zip slip file must not exist on filesystem"
+        !base_dir.join("evil.txt").exists(),
+        "{}: no file may be written OUTSIDE extract_dir",
+        guard
+    );
+    assert!(
+        !extract_dir.join("evil.txt").exists(),
+        "{}: the traversal entry must not be extracted at all",
+        guard
+    );
+    assert!(
+        !base_dir.join("../../evil.txt").exists(),
+        "{}: no file may escape the tempdir root",
+        guard
+    );
+}
+
+#[test]
+fn test_model_manager_zip_slip_rejection() {
+    let _guard = TempPathsGuard::new();
+    let dir = tempdir().expect("Failed to create tempdir");
+
+    // Malicious: entry name escapes via parent-directory traversal.
+    let evil_zip = dir.path().join("evil.zip");
+    let malicious_payload: &[u8] = b"malicious content";
+    let evil_entries: &[(&str, &[u8])] = &[("../../evil.txt", malicious_payload)];
+    create_test_zip_archive(&evil_zip, evil_entries)
+        .expect("Failed to create malicious zip archive");
+    assert_traversal_rejected(&evil_zip, "zip", "Zip-Slip");
+
+    // POSITIVE CONTROL: a benign archive must still extract successfully.
+    let benign_zip = dir.path().join("benign.zip");
+    create_test_zip_archive(
+        &benign_zip,
+        &[
+            ("model.onnx", b"benign model weights" as &[u8]),
+            ("nested/config.json", b"{}" as &[u8]),
+        ],
+    )
+    .expect("Failed to create benign zip archive");
+    let extract_dir = dir.path().join("benign_extract");
+    std::fs::create_dir_all(&extract_dir).unwrap();
+    ModelManager::do_extract(&benign_zip, "zip", &extract_dir)
+        .expect("a benign zip archive MUST extract successfully");
+    assert_eq!(
+        std::fs::read(extract_dir.join("model.onnx")).unwrap(),
+        b"benign model weights",
+        "benign archive content must be written verbatim"
+    );
+    assert_eq!(
+        std::fs::read(extract_dir.join("nested/config.json")).unwrap(),
+        b"{}",
+        "benign nested entries must be extracted"
     );
 }
 
@@ -167,28 +227,39 @@ fn test_model_manager_zip_slip_rejection() {
 fn test_model_manager_tar_slip_rejection() {
     let _guard = TempPathsGuard::new();
     let dir = tempdir().expect("Failed to create tempdir");
-    let base_dir = dir.path();
-    let extract_dir = base_dir.join("extract");
+
+    // Malicious: entry path escapes via parent-directory traversal.
+    let evil_tar = dir.path().join("evil.tar.gz");
+    let malicious_payload: &[u8] = b"malicious content";
+    let evil_entries: &[(&str, &[u8])] = &[("../../evil.txt", malicious_payload)];
+    create_test_tar_gz_archive(&evil_tar, evil_entries)
+        .expect("Failed to create malicious tar.gz archive");
+    assert_traversal_rejected(&evil_tar, "tar.gz", "Tar-Slip");
+
+    // POSITIVE CONTROL: a benign archive must still extract successfully.
+    let benign_tar = dir.path().join("benign.tar.gz");
+    create_test_tar_gz_archive(
+        &benign_tar,
+        &[
+            ("model.onnx", b"benign model weights" as &[u8]),
+            ("nested/config.json", b"{}" as &[u8]),
+        ],
+    )
+    .expect("Failed to create benign tar.gz archive");
+    let extract_dir = dir.path().join("benign_extract");
     std::fs::create_dir_all(&extract_dir).unwrap();
-
-    let tar_path = base_dir.join("evil.tar.gz");
-    let evil_entry = ("../../evil.txt", b"malicious content" as &[u8]);
-    create_test_tar_gz_archive(&tar_path, &[evil_entry]).expect("Failed to create tar.gz archive");
-
-    let file = std::fs::File::open(&tar_path).unwrap();
-    let tar_gz = flate2::read::GzDecoder::new(file);
-    let mut archive = tar::Archive::new(tar_gz);
-    for entry_res in archive.entries().unwrap() {
-        let entry = entry_res.unwrap();
-        let path = entry.path().unwrap();
-        let has_parent = path
-            .components()
-            .any(|c| c == std::path::Component::ParentDir);
-        assert!(
-            has_parent,
-            "Tar archive traversal component ParentDir must be detected"
-        );
-    }
+    ModelManager::do_extract(&benign_tar, "tar.gz", &extract_dir)
+        .expect("a benign tar.gz archive MUST extract successfully");
+    assert_eq!(
+        std::fs::read(extract_dir.join("model.onnx")).unwrap(),
+        b"benign model weights",
+        "benign archive content must be written verbatim"
+    );
+    assert_eq!(
+        std::fs::read(extract_dir.join("nested/config.json")).unwrap(),
+        b"{}",
+        "benign nested entries must be extracted"
+    );
 }
 
 // ============================================================================

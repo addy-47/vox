@@ -264,7 +264,7 @@ impl CompactionCoordinator {
 }
 
 /// Helper building ChatMessage list from turns with optional prior summary.
-fn build_history_messages(turns: &[TurnRow], prior_summary: Option<&str>) -> Vec<ChatMessage> {
+pub fn build_history_messages(turns: &[TurnRow], prior_summary: Option<&str>) -> Vec<ChatMessage> {
     let mut messages = Vec::with_capacity(turns.len() * 2 + 1);
     if let Some(summary) = prior_summary {
         let trimmed = summary.trim();

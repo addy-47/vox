@@ -15,14 +15,155 @@ related_docs:
   - "docs/specs/tools-spec.md — Agentic tool runtime, taxonomy & capability gating"
 ---
 
-# Phase 12 — Target Integration Test Specification (v2.4)
+# Phase 12 — Target Integration Test Specification (v2.5)
 
 > **Specification Ground Truth:**
 >
 > - **Approved Baseline:** Phase 12 (App Version **0.8.9**).
-> - **Architectural SSOT:** Unified across Harness Agentic Loop (`services/harness/`), Tool Taxonomy (`services/harness/stages/tools/`), Memory v2 (`persistence/` & `services/memory/`), Schema v5 (`session_tool_calls`), and 6-Domain Event Contracts (`pipeline/assistant/`, `pipeline/dictation/`).
+> - **Architectural SSOT:** Unified across Harness Agentic Loop (`services/harness/`), Tool Taxonomy (`services/harness/stages/tools/`), Memory v2 (`persistence/` & `services/memory/`), **Schema v7** (`personal_memory_suggestions`, `session_tool_calls`), and 6-Domain Event Contracts (`pipeline/assistant/`, `pipeline/dictation/`).
 > - **Testing Standard:** Strictly complies with `.agents/rules/testing-style-guide.md` and `.agents/rules/test-engineer.md`. Zero mocks when local models, assets, or API keys exist.
 > - **Execution Discipline:** `cargo nextest run --test <file> --release --nocapture --test-threads=1`. Single-thread isolation, release builds only.
+
+> ## ⚠️ v2.5 Amendment — Authority Notice (2026-09-26)
+>
+> A 139-function audit of the full suite (`docs/tests/seam_audit_report.md`) established that the
+> per-seam sections below had drifted from production code. **Section 0.1 is now normative and overrides
+> any conflicting statement in Sections 1–21.** The per-seam sections are retained as design intent and
+> must be reconciled against Section 0.1 before being cited as current.
+>
+> Specifically, the following claims in this document are **stale**:
+> - Schema version references to **v5** (now **v7** — `SCHEMA_VERSION` in `persistence/schema.rs`).
+> - Seam 20's "schema version 5" migration assertions.
+> - Seam 12's characterisation of `memory_compaction_test.rs` as covering the `CompactionCoordinator`.
+> - Any seam section asserting a coverage property that `docs/tests/seam_audit_report.md` records as
+>   `MISCLASSIFIED`, `EYE-CANDY`, or `REFACTOR`.
+
+---
+
+## 0.1 Normative Test-Placement & Evidence Rules (v2.5 — OVERRIDES SECTIONS 1–21)
+
+These rules are binding. They exist because the audit found 11 `MISCLASSIFIED`, 6 `EYE-CANDY` and 2
+`REFACTOR` functions, the majority of which were level errors or self-fulfilling assertions rather than
+missing coverage.
+
+### 0.1.1 Level Selection (the Level Test)
+
+A test in `tests/` **MUST** cross a real boundary with a real upstream trigger. Classify before writing:
+
+| Level | Entry condition | Location |
+| :--- | :--- | :--- |
+| **Unit** | Pure/algorithmic fn, no upstream producer, no cross-boundary handoff. Calling it directly is correct. | `#[cfg(test)] mod tests` in the owning `src/` file |
+| **Integration** | Driven in production by an upstream actor, queue, channel, event, request, or user action. | `tests/<feature>_test.rs` |
+| **Persistence contract** | Exercises a `persistence::*` function against real Turso. No event, no router, no actor. | `tests/database_persistence_boundary_test.rs` |
+| **Evaluation** | The assertion is about model output quality, semantic correctness, or LLM judgement. | `evals/<capability>/` |
+
+**Banned:** a test that calls a `persistence::*` leaf, constructs no `AppState`/router/actor, and asserts
+only on a returned struct or row count **while living in a feature seam file**. That is a *Persistence
+contract* test filed under a feature name. Move it to the Seam 20 file.
+
+### 0.1.2 The Direction Check (binding)
+
+If the function a test calls to *initiate* is the same function production calls to *deliver a result*, the
+test exercises the **sink**, not the trigger. Canonical violations, all found in this audit:
+
+- Calling `commit_compaction_output` / `fetch_turns_for_compaction` directly and asserting rows landed.
+- Calling `persistence::notifications::resolve_notification_in_place` directly when production reaches it
+  via `CompactionCoordinator`.
+
+**Rule:** every feature-seam test MUST name the production trigger it drives in a header comment, and that
+trigger MUST be a public function or a real event dispatch.
+
+### 0.1.3 The Self-Execution Ban (binding)
+
+**A test MUST NOT perform a production step itself and then assert the result of that step.** This is the
+single highest-severity failure mode found, and it produces tests that pass while production is deleted.
+
+Prohibited patterns, each confirmed present in this codebase before v2.5:
+
+| Anti-pattern | Where it was found | Required instead |
+| :--- | :--- | :--- |
+| Calling `harness.push_assistant_turn(...)` then asserting history contains the response | `llm_to_tts_test.rs` Exit 6 (production commits at `harness/steps.rs`) | Assert against state production left behind |
+| Rebuilding a payload in a loop, then asserting the payload's contents | `memory_compaction_test.rs` test 6 | Call the production assembler (make it `pub`) |
+| Re-implementing a production predicate/branch inside the test body, then asserting it | `vad/actor.rs` trimming test; `model_manager_test.rs` tar-slip test | Extract the logic to a callable `pub`/`pub(crate)` fn first |
+| Asserting a third-party crate's behaviour instead of Vox's use of it | `model_manager_test.rs` zip-slip test | Call `ModelManager::do_extract` |
+| Asserting a file is absent when nothing ever attempted to create it | `model_manager_test.rs` zip-slip test | Assert on the *return value* of the operation that could have created it |
+
+**Visibility:** per `.agents/rules/backend-style-guide.md` §2, `pub` is sanctioned for items the `tests/`
+crate must reach. Visibility widening (`pub(crate)` → `pub`) is the expected remedy, not a workaround.
+
+### 0.1.4 Mandatory Negative Assertions (binding)
+
+For every suppression, gate, or exclusion path, at least one test MUST assert the gated output is
+**absent**, and MUST do so deterministically. Preferred forms, in order:
+
+1. **Capture-channel interception** (strongest) — attach a sink *before* the boundary and assert nothing
+   was sent. Reference: `dictation_window_test.rs` "LLM Zero Invariant".
+2. **Storage-layer count** — assert `SELECT COUNT(*) … == 0`. Reference:
+   `notifications_crud_test.rs` zero-DB invariant.
+3. **Flag + booby-trapped callback** — the callback sets a flag *and* returns an error. Reference:
+   `realtime_transport_test.rs` paused-state suppression.
+4. `assert_channel_empty_after(&rx, Duration, msg)` — the sanctioned helper in `tests/common/harness.rs`.
+
+**Banned:** a bare `sleep(Nms)` followed by a non-blocking `try_recv` for an absence claim
+(`testing-style-guide.md` §6.1). Waits must be deadline polls or event-ordered sentinels.
+
+### 0.1.5 Model Lens (binding for a model-oriented system)
+
+Every test MUST be classified on whether it touches a model, and the classification MUST be recorded in the
+file header's `Metrics` line.
+
+| Test touches a model? | Then the assertions must be | Verdict if it asserts quality |
+| :--- | :--- | :--- |
+| **Yes** | **Wiring** only: right model, right payload, right channel, non-empty output, streaming order | `EVAL-DEFER` |
+| **No** | Structural/persistence/routing behaviour | `MISCLASSIFIED` if filed as a feature-seam IT |
+
+A wiring assertion is *"tokens reached the accumulator"*, *"clause was dispatched before `LlmFinished`"*,
+*"RMS > 0.001"*. A quality assertion is *"the answer is Paris"*, *"facts were extracted"*, *"the summary is
+coherent"*. **Never assert model correctness inside an IT** — that is `evals/` with an LLM judge.
+
+When a seam genuinely has both dimensions, **split it** (reference: `tts_to_playback_test.rs` — real model
+for flow, deterministic stub for the threshold boundary).
+
+### 0.1.6 `#[ignore]` Constraint (binding — new in v2.5)
+
+An `#[ignore]` reason MUST enumerate **which specific assertions require the external dependency**.
+
+- **Permitted:** the whole test requires a live third-party service, and the offline surface is covered by a
+  sibling test. Reference: `realtime_transport_test.rs` live handshake.
+- **Banned:** the test bundles offline-verifiable assertions behind a paid key or unreachable endpoint.
+  Reference: `ptt_window_realtime_test.rs` — 6 of 7 assertions need no key; the zero-STT-leak invariant is
+  the seam's most valuable property and was dark in CI.
+
+If an external dependency is unavailable, the offline subset MUST run against a real in-process substitute
+(TCP listener + WebSocket, or an HTTP server capturing the request body — reference:
+`agentic_tool_runtime_test.rs::spawn_mock_wire_server`).
+
+### 0.1.7 Matrix Bundling (reconciles `testing-style-guide.md` §7.3 with `/create-test` Phase 3)
+
+§7.3 mandates consolidated matrix tests **for backend initialisation only** (no ONNX/GGUF re-warming). It
+does **not** license merging assertions. Binding rule:
+
+- **Backend initialisation:** one worker/model session per test binary or per consolidated test fn. (§7.3)
+- **Scenarios:** separately reported, order-independent, no cross-scenario state. (`/create-test` Ph. 3)
+- **Channel drains:** a drain between scenarios MUST NOT silently discard. Either assert on what is drained
+  or eliminate the drain by giving each scenario its own actors.
+
+### 0.1.8 Reference Implementations (new tests MUST follow these)
+
+| Concern | Reference file | What to copy |
+| :--- | :--- | :--- |
+| Provider wire contract, inbound + outbound | `tests/agentic_tool_runtime_test.rs` | `spawn_mock_wire_server` captures the real request body; assert both directions |
+| Real persistence, MVCC, float precision | `tests/database_persistence_boundary_test.rs` | Real Turso in tempdir; distinctive inputs, not uniform fills |
+| Suppression-gate assertion | `tests/dictation_window_test.rs` | Capture-channel "LLM Zero Invariant" |
+| Boundary-gate assertion with a stub | `tests/tts_to_playback_test.rs` | In-file false-green audit note; both gate directions |
+| Latch lifecycle | `tests/playback_interrupt_test.rs` | Arm → hold → release → clear, in order |
+| Test-harness self-justification | `tests/tts_to_playback_test.rs` | `// NOTE (false-green audit): …` comment on every stub |
+
+### 0.1.9 Mandatory Header (extends `testing-style-guide.md` §4)
+
+Every file in `tests/` MUST carry `(Seam N)` in its `Category` line, and — where a test touches a model —
+a `Model: <none|wired-only|quality-asserted>` line. `Category: Integration Test` without a seam number is
+non-conforming.
 
 ---
 
