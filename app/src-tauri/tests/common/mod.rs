@@ -9,6 +9,7 @@ pub mod audio;
 pub mod harness;
 pub mod paths;
 pub mod scoring;
+pub mod wire;
 
 // ============================================================================
 // Ground Truth Constants for Test Clips (`test-clips/README.md` & `tests/assets/`)

@@ -1,7 +1,7 @@
 //! ============================================================================
 //! ptt_window_realtime_test.rs — PTT Window Validation (Realtime) Integration Test
 //! ============================================================================
-//! Category     : Integration Test
+//! Category     : Integration Test (Seam 3)
 //! Component    : pipeline/assistant/ptt.rs + services/vad/actor.rs + services/realtime/actor.rs
 //! Prerequisites: DEEPGRAM_API_KEY in temp/.env, Earshot VAD weights in ~/.vox/models/
 //! Execution    : cargo nextest run --test ptt_window_realtime_test --release --nocapture --test-threads=1 -- --ignored

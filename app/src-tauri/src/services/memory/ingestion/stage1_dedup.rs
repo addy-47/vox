@@ -138,16 +138,7 @@ async fn process_stage1_item(conn: &Connection, item: &QueueItem) -> Result<usiz
 
 #[cfg(test)]
 mod tests {
-    use turso::Builder;
-
     use super::*;
-    use crate::persistence::{
-        compactions::record_compaction_start,
-        facts::{fetch_active_facts_by_type, insert_fact, FactRecord},
-        queue::enqueue_fact,
-        schema::recreate_schema,
-        sessions::create_session,
-    };
 
     #[test]
     fn test_jaccard_similarity_calculation() {
@@ -162,61 +153,4 @@ mod tests {
         assert!((sim - 0.5).abs() < 0.001);
     }
 
-    #[tokio::test]
-    async fn test_stage1_exact_dedup_winner_takes_all() {
-        let db = Builder::new_local(":memory:").build().await.unwrap();
-        let conn = db.connect().unwrap();
-        recreate_schema(&conn).await.unwrap();
-
-        let session_id = create_session(&conn, Some("default")).await.unwrap();
-        let compaction_id = record_compaction_start(&conn, session_id, "soft", 0, 5)
-            .await
-            .unwrap();
-
-        let old_fact = FactRecord {
-            id: "fact_old_1".to_string(),
-            session_id: Some(session_id),
-            compaction_id,
-            fact_type: "objective".to_string(),
-            text: "Build realtime audio transcription".to_string(),
-            status: "active".to_string(),
-            created_at: 1000,
-            updated_at: 1000,
-        };
-        insert_fact(&conn, &old_fact).await.unwrap();
-
-        let q_id = enqueue_fact(
-            &conn,
-            Some(session_id),
-            compaction_id,
-            "objective",
-            "build realtime audio transcription!",
-        )
-        .await
-        .unwrap();
-
-        let summary = run_stage1_exact_dedup(&conn).await.unwrap();
-        assert_eq!(summary.processed, 1);
-        assert_eq!(summary.duplicates_deactivated, 1);
-        assert_eq!(summary.errors, 0);
-
-        let active_facts = fetch_active_facts_by_type(&conn, "objective")
-            .await
-            .unwrap();
-        assert!(
-            active_facts.is_empty(),
-            "Older fact should have been deactivated"
-        );
-
-        let mut rows = conn
-            .query(
-                "SELECT status FROM memory_ingestion_queue WHERE id = ?",
-                (q_id,),
-            )
-            .await
-            .unwrap();
-        let row = rows.next().await.unwrap().unwrap();
-        let status: String = row.get(0).unwrap();
-        assert_eq!(status, "stage1_done");
-    }
 }

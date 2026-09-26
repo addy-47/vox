@@ -123,9 +123,11 @@ fn test_chunking_determinism_across_fragmentations() {
     assert!(acc_a.chunker.is_empty());
 }
 
-/// Subtest 2: Unpunctuated stream exceeding 25 words triggers emergency cap at 20 words.
-/// Testing across two fragmentations proves that the 20-word emergency chunk and
-/// remainder are identical.
+/// Subtest 2: Unpunctuated stream exceeding the adaptive word-count target is force-chunked.
+/// `ClauseChunker::current_word_thresholds` escalates the `w_target` by chunk index:
+/// 8 -> 15 -> 24. Testing across two fragmentations proves the forced chunk and its
+/// remainder are identical. (An earlier revision of this comment claimed a fixed
+/// "20-word cap"; no such constant exists in `chunker.rs`.)
 #[test]
 fn test_chunking_determinism_emergency_cap() {
     // 30 unpunctuated words

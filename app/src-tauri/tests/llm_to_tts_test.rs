@@ -264,22 +264,27 @@ async fn test_harness_cognitive_stage_to_tts_matrix() {
         }
 
         // ---------------------------------------------------------------------
-        // Observable Exit 6: Harness commits turn to history & watcher
+        // Observable Exit 6: Harness committed the turn to history in production
+        //
+        // PRODUCTION performs this commit inside step7_handle_complete
+        // (services/harness/steps.rs: `harness.history.push_assistant_turn(...)`),
+        // which is the code path that produced the `TurnOutcome::Completed` matched
+        // above. This test MUST NOT perform the commit itself — the previous version
+        // of this block called `harness.push_assistant_turn()` and then asserted the
+        // history contained the response, which passed even if the production commit
+        // were deleted. See integration-test-spec.md §0.1.3 Self-Execution Ban.
         // ---------------------------------------------------------------------
         {
-            let mut guard = state.harness.lock();
-            let harness = guard.as_mut().expect("Harness must be mounted");
-            harness.push_assistant_turn(full_text.clone());
-            harness.on_turn_completed(Arc::clone(&state), Arc::clone(&state.harness));
-
+            let guard = state.harness.lock();
+            let harness = guard.as_ref().expect("Harness must be mounted");
             let msgs = harness.messages();
             assert!(
                 msgs.iter().any(|m| m.content == user_query),
-                "History must contain the user query"
+                "Production must have committed the user query to history"
             );
             assert!(
                 msgs.iter().any(|m| m.content == full_text),
-                "History must contain the committed assistant response"
+                "Production must have committed the assistant response to history"
             );
         }
 

@@ -1,5 +1,4 @@
 use std::{
-    mem::take,
     panic::{catch_unwind, AssertUnwindSafe},
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -263,16 +262,7 @@ fn process_vad_commands(
             VadCommand::StopWindowValidation { response_tx } => {
                 state.window_active = false;
                 let raw_len = state.window_buffer.len();
-                let start = state.window_first_speech_sample.min(raw_len);
-                let end = state.window_last_speech_sample.min(raw_len);
-                let trimmed_audio =
-                    if state.window_speech_detected && start < end && (end - start) >= 256 {
-                        state.window_buffer[start..end].to_vec()
-                    } else if state.window_speech_detected {
-                        take(&mut state.window_buffer)
-                    } else {
-                        Vec::new()
-                    };
+                let trimmed_audio = trim_window(state, raw_len);
                 let trimmed_len = trimmed_audio.len();
                 let turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
                 log::info!(
@@ -321,6 +311,27 @@ fn process_vad_commands(
     }
     false
 }
+
+/// Extracts the speech region from a PTT window buffer for `StopWindowValidation`.
+///
+/// Returns the slice between the first and last speech samples when that span reaches
+/// `MIN_WINDOWED_SPEECH_SAMPLES`, otherwise falls back to the whole buffer when speech was
+/// detected, and returns an empty buffer when no speech was detected. Sample indices are
+/// clamped to `raw_len` so a stale marker can never panic the actor.
+pub fn trim_window(state: &VadActorState, raw_len: usize) -> Vec<f32> {
+    let start = state.window_first_speech_sample.min(raw_len);
+    let end = state.window_last_speech_sample.min(raw_len);
+    if state.window_speech_detected && start < end && (end - start) >= MIN_WINDOWED_SPEECH_SAMPLES {
+        state.window_buffer[start..end].to_vec()
+    } else if state.window_speech_detected {
+        state.window_buffer.clone()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Minimum in-buffer sample span required before a windowed speech region is trimmed.
+const MIN_WINDOWED_SPEECH_SAMPLES: usize = 256;
 
 /// Checks whether audio processing should be ducked due to speaker output or explicit suppression.
 fn should_suppress_audio(
@@ -537,9 +548,14 @@ mod tests {
         assert!(should_suppress_audio(&suppressed2, &atomic2, &state2));
     }
 
-    /// Tests VadValidationResult trimming: speech window within buffer bounds.
+    /// Tests trim_window: the extracted production trimming logic, across all three branches.
+    ///
+    /// Branch 1 (sliced trim): speech span >= 256 samples -> only [first, last) is returned.
+    /// Branch 2 (fallback):    speech detected but span < 256 -> whole buffer returned.
+    /// Branch 3 (no speech):   no speech detected -> empty buffer returned.
+    /// Clamp:                  markers beyond raw_len are clamped, never panicking.
     #[test]
-    fn test_window_validation_trimming_logic() {
+    fn test_trim_window_branches() {
         let mut s = VadActorState::new(
             0.5,
             0.001,
@@ -548,16 +564,42 @@ mod tests {
             InteractionMode::PTT,
             AudioOutputMode::Speaker,
         );
-        s.window_active = true;
-        s.window_buffer = vec![0.0; 1000];
+        s.window_buffer = (0..1000).map(|i| i as f32).collect();
+        let raw_len = s.window_buffer.len();
+
+        // Branch 1: speech span of 800 samples (>= 256) is sliced out of the buffer.
         s.window_speech_detected = true;
         s.window_first_speech_sample = 100;
         s.window_last_speech_sample = 900;
-        let raw_len = s.window_buffer.len();
-        let start = s.window_first_speech_sample.min(raw_len);
-        let end = s.window_last_speech_sample.min(raw_len);
-        assert_eq!(start, 100);
-        assert_eq!(end, 900);
-        assert!(start < end && (end - start) >= 256);
+        let sliced = trim_window(&s, raw_len);
+        assert_eq!(sliced.len(), 800, "800-sample span must be trimmed to 800 samples");
+        assert_eq!(sliced.first().copied(), Some(100.0));
+        assert_eq!(sliced.last().copied(), Some(899.0));
+
+        // Branch 2: speech detected but span below the 256 minimum -> whole buffer.
+        s.window_first_speech_sample = 10;
+        s.window_last_speech_sample = 200; // span = 190 < 256
+        let fallback = trim_window(&s, raw_len);
+        assert_eq!(
+            fallback.len(),
+            raw_len,
+            "sub-minimum speech span must fall back to the whole buffer"
+        );
+
+        // Branch 3: no speech detected -> empty buffer regardless of markers.
+        s.window_speech_detected = false;
+        s.window_first_speech_sample = 100;
+        s.window_last_speech_sample = 900;
+        assert!(
+            trim_window(&s, raw_len).is_empty(),
+            "no speech must yield an empty buffer"
+        );
+
+        // Clamp: markers past raw_len are clamped instead of panicking.
+        s.window_speech_detected = true;
+        s.window_first_speech_sample = 5;
+        s.window_last_speech_sample = 99_999;
+        let clamped = trim_window(&s, raw_len);
+        assert_eq!(clamped.len(), raw_len - 5, "oversized end marker must clamp to raw_len");
     }
 }

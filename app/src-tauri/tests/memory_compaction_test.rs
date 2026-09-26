@@ -1,7 +1,7 @@
 //! ============================================================================
 //! tests/memory_compaction_test.rs — Memory Compaction Coordinator & Plugin v2 Integration Tests
 //! ============================================================================
-//! Category     : Integration Test
+//! Category     : Integration Test (Seam 12)
 //! Component    : services/memory/compaction, services/harness/plugins/compaction, persistence/compactions
 //! Prerequisites: Turso SQLite engine (vox.db), remote GPU server (http://100.67.98.126:11434/v1, gemma3:12b)
 //! Execution    : cargo nextest run --test memory_compaction_test --release --nocapture --test-threads=1
@@ -30,7 +30,7 @@ use vox_lib::{
     },
     services::{
         harness::stages::compaction::{CompactionStage, MIN_MESSAGES_FOR_COMPACTION},
-        memory::compaction::coordinator::CompactionCoordinator,
+        memory::compaction::coordinator::{build_history_messages, CompactionCoordinator},
     },
     utils::json::parse_unified_compaction_json,
 };
@@ -456,27 +456,33 @@ async fn test_compaction_boundary_multi_slice_preserves_prior_summary() {
     let summary_str = continuation.latest_summary.unwrap();
     assert!(summary_str.contains("Build rolling compaction pipeline"));
 
-    // 5. Query turns for next slice (turn 4+) and verify build_compaction_request receives prior summary
+    // 5. Verify the PRODUCTION assembler injects the prior summary into the request.
+    //
+    // The previous version of this step rebuilt `history_messages` inside the test
+    // and then asserted the resulting request contained `<prior_summary>` — i.e. it
+    // asserted a payload it had just built itself, and passed even if the
+    // coordinator's real assembly were deleted. We now call the production
+    // assembler `build_history_messages` directly. See
+    // integration-test-spec.md §0.1.3 Self-Execution Ban.
     let next_turns = fetch_turns_for_compaction(&conn, session_id, 4, u32::MAX)
         .await
         .unwrap();
     assert_eq!(next_turns.len(), 2);
 
-    let mut history_messages = Vec::new();
-    history_messages.push(vox_lib::services::harness::ChatMessage::new(
-        vox_lib::services::harness::Role::System,
-        vox_lib::services::harness::PromptTag::SessionContext.wrap(&summary_str),
-    ));
-    for t in next_turns {
-        history_messages.push(vox_lib::services::harness::ChatMessage::new(
-            vox_lib::services::harness::Role::User,
-            t.user_text,
-        ));
-        history_messages.push(vox_lib::services::harness::ChatMessage::new(
-            vox_lib::services::harness::Role::Assistant,
-            t.assistant_text,
-        ));
-    }
+    let history_messages = build_history_messages(&next_turns, Some(&summary_str));
+
+    // INVARIANT: the production assembler must emit a System message carrying the
+    // prior summary, followed by the User/Assistant turn pairs.
+    assert_eq!(
+        history_messages.first().map(|m| m.role),
+        Some(vox_lib::services::harness::Role::System),
+        "production assembler must lead with a System message carrying session context"
+    );
+    assert_eq!(
+        history_messages.len(),
+        5,
+        "assembler must emit 1 System + 2 User + 2 Assistant messages"
+    );
 
     let request = vox_lib::services::memory::compaction::prompt::build_compaction_request(
         &history_messages,

@@ -19,11 +19,15 @@ use serde::Deserialize;
 use vox_lib::{
     persistence::{
         compactions::{commit_compaction_output, record_compaction_start},
-        facts::{fetch_active_facts_by_type, insert_fact, FactRecord},
+        facts::{
+            fetch_active_facts_by_type, insert_fact, insert_vector, mark_facts_consolidated,
+            mark_facts_staged, FactRecord,
+        },
         has_in_progress_compaction,
         personal_memory::{
-            get_personal_memory, list_personal_memory_versions, save_personal_memory,
-            set_active_personal_memory_version,
+            fetch_pending_suggestions, get_personal_memory, insert_personal_memory_suggestions,
+            list_personal_memory_versions, resolve_suggestions_transaction, save_personal_memory,
+            set_active_personal_memory_version, PersonalMemorySuggestionRecord,
         },
         queue::enqueue_fact,
         sessions::{create_session_with_id, fetch_session_continuation},
@@ -424,65 +428,6 @@ async fn test_consolidation_quiescence_precondition_gating() {
 }
 
 // ============================================================================
-// Subtest 4: Document Direct Edit Persistence
-// ============================================================================
-/// Entry Seams C: `save_personal_memory` / `get_personal_memory`
-///
-/// Verifies:
-///   - Direct manual edits save cleanly and increment version.
-///   - Database reflects updated content accurately.
-#[tokio::test]
-async fn test_manual_edit_persistence() {
-    tokio::time::timeout(Duration::from_secs(15), async {
-        let _guard = TempPathsGuard::new();
-        let (_app, state) = get_test_app_and_state().await;
-        let conn = state
-            .db
-            .connect()
-            .expect("Failed to connect to test database");
-
-        let dataset_facts = load_dataset_facts("personal", 4);
-        assert!(
-            dataset_facts.len() >= 4,
-            "Need at least 4 dataset facts for manual edit test"
-        );
-
-        let initial_doc = format!(
-            "# Personal Profile\n\n- {}\n- {}\n",
-            dataset_facts[0].text, dataset_facts[1].text
-        );
-
-        // 1. Save initial document to DB (version 1 -> 2)
-        let saved = save_personal_memory(&conn, None, &initial_doc, 1)
-            .await
-            .unwrap();
-        assert_eq!(saved.version, 2);
-        assert_eq!(saved.content, initial_doc);
-
-        // 2. Overwrite document directly (simulating user pasting/importing external content)
-        let updated_doc = format!(
-            "# Personal Profile Updated\n\n- {}\n- {}\n- {}\n",
-            dataset_facts[0].text, dataset_facts[2].text, dataset_facts[3].text
-        );
-        let updated = save_personal_memory(&conn, None, &updated_doc, 2)
-            .await
-            .unwrap();
-        assert_eq!(
-            updated.version, 3,
-            "Manual edit must increment personal memory version"
-        );
-        assert_eq!(updated.content, updated_doc);
-
-        // 3. Verify database reflects the updated content
-        let current = get_personal_memory(&conn, None).await.unwrap();
-        assert_eq!(current.version, 3);
-        assert_eq!(current.content, updated_doc);
-    })
-    .await
-    .expect("test_manual_edit_persistence timed out");
-}
-
-// ============================================================================
 // Subtest 5: Session Continuation Data Assembly & Slicing Past Watermark
 // ============================================================================
 /// Entry Seam D: `fetch_session_continuation(conn, session_id)`
@@ -692,4 +637,552 @@ async fn test_personal_memory_versions_and_compaction_preemption() {
     })
     .await
     .expect("test_personal_memory_versions_and_compaction_preemption timed out");
+}
+
+// ============================================================================
+// Suggestion Lifecycle — memory-spec.md §5.3 INVARIANT 5.3-A / 5.3-B
+// ---------------------------------------------------------------------------
+// These four tests cover the transactional surface introduced by the structured
+// delta consolidation refactor (schema v7 `personal_memory_suggestions`).
+// Before this block the table was referenced only as a *name* in a schema list;
+// no behavioural test existed for insert, re-anchoring, rejection, or the
+// candidate partition.
+//
+// Entry seams:
+//   persistence::personal_memory::insert_personal_memory_suggestions
+//   persistence::personal_memory::fetch_pending_suggestions
+//   persistence::personal_memory::resolve_suggestions_transaction
+//   persistence::facts::{mark_facts_staged, mark_facts_consolidated}
+//
+// Model: none. These are transactional/persistence contracts. The *selection* of
+// which facts an operation references is LLM behaviour and is eval-grade
+// (evals/memory_consolidation_eval.rs), not asserted here.
+// ============================================================================
+
+/// Builds a pending suggestion record anchored at `base_version`.
+fn pending_suggestion(
+    id: &str,
+    base_version: i64,
+    op: &str,
+    proposed_text: &str,
+    source_fact_ids: Vec<String>,
+    created_at: i64,
+) -> PersonalMemorySuggestionRecord {
+    PersonalMemorySuggestionRecord {
+        id: id.to_string(),
+        base_memory_version: base_version,
+        project_id: None,
+        op: op.to_string(),
+        section: "## Personal Information".to_string(),
+        target_text: None,
+        proposed_text: proposed_text.to_string(),
+        source_fact_ids,
+        status: "pending".to_string(),
+        created_at,
+        resolved_at: None,
+    }
+}
+
+/// Seeds one active fact plus its 384-dim vector row so status transitions are observable.
+async fn seed_staged_candidate(
+    conn: &turso::Connection,
+    session_id: i64,
+    compaction_id: i64,
+    fact_id: &str,
+    fact_type: &str,
+    text: &str,
+) {
+    insert_fact(
+        conn,
+        &FactRecord {
+            id: fact_id.to_string(),
+            session_id: Some(session_id),
+            compaction_id,
+            fact_type: fact_type.to_string(),
+            text: text.to_string(),
+            status: "active".to_string(),
+            created_at: 1_700_000_000_000,
+            updated_at: 1_700_000_000_000,
+        },
+    )
+    .await
+    .expect("insert_fact must succeed");
+
+    insert_vector(
+        conn,
+        fact_id,
+        fact_type,
+        "active",
+        None,
+        &vec![0.25f32; 384],
+    )
+    .await
+    .expect("insert_vector must succeed");
+}
+
+/// Reads the live `status` of a single fact row.
+async fn fact_status(conn: &turso::Connection, fact_id: &str) -> String {
+    let mut rows = conn
+        .query("SELECT status FROM memory_facts WHERE id = ?", (fact_id,))
+        .await
+        .expect("fact status query must succeed");
+    let row = rows
+        .next()
+        .await
+        .expect("query must yield a row")
+        .expect("fact row must exist");
+    row.get(0).expect("status column must be readable")
+}
+
+/// Reads the live `status` of a single suggestion row.
+async fn suggestion_status(conn: &turso::Connection, id: &str) -> String {
+    let mut rows = conn
+        .query(
+            "SELECT status FROM personal_memory_suggestions WHERE id = ?",
+            (id,),
+        )
+        .await
+        .expect("suggestion status query must succeed");
+    let row = rows
+        .next()
+        .await
+        .expect("query must yield a row")
+        .expect("suggestion row must exist");
+    row.get(0).expect("status column must be readable")
+}
+
+/// Reads the live `base_memory_version` of a single suggestion row.
+async fn suggestion_base_version(conn: &turso::Connection, id: &str) -> i64 {
+    let mut rows = conn
+        .query(
+            "SELECT base_memory_version FROM personal_memory_suggestions WHERE id = ?",
+            (id,),
+        )
+        .await
+        .expect("suggestion base version query must succeed");
+    let row = rows
+        .next()
+        .await
+        .expect("query must yield a row")
+        .expect("suggestion row must exist");
+    row.get(0).expect("base_memory_version column must be readable")
+}
+
+/// Subtest 7: `insert_personal_memory_suggestions` persists rows and preserves fact linkage.
+///
+/// Covers the write path plus the `fetch_pending_suggestions` read-back contract:
+/// `status = 'pending'`, `source_fact_ids` round-tripped as a JSON array, ordering
+/// oldest-created-first, and an empty slice is a no-op rather than an error.
+#[tokio::test]
+async fn test_suggestion_insert_and_fetch_pending_roundtrip() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _guard = TempPathsGuard::new();
+        let (_app, state) = get_test_app_and_state().await;
+        let conn = state.db.connect().expect("test db must connect");
+
+        // Empty slice must be a clean no-op.
+        insert_personal_memory_suggestions(&conn, &[])
+            .await
+            .expect("empty suggestion slice must be a no-op Ok");
+        let empty = fetch_pending_suggestions(&conn, None)
+            .await
+            .expect("fetch must succeed");
+        assert!(
+            empty.is_empty(),
+            "empty insert must not create suggestion rows"
+        );
+
+        // Two pending suggestions over three distinct source facts.
+        let older = pending_suggestion(
+            "sug_older",
+            1,
+            "insert",
+            "User enjoys badminton.",
+            vec!["fact_a".to_string(), "fact_b".to_string()],
+            1_000,
+        );
+        let newer = pending_suggestion(
+            "sug_newer",
+            1,
+            "insert",
+            "User relocated to Seattle.",
+            vec!["fact_c".to_string()],
+            2_000,
+        );
+        insert_personal_memory_suggestions(&conn, &[older, newer])
+            .await
+            .expect("insert_personal_memory_suggestions must succeed");
+
+        // Only pending rows are returned, ordered oldest created_at first.
+        let pending = fetch_pending_suggestions(&conn, None)
+            .await
+            .expect("fetch_pending_suggestions must succeed");
+        assert_eq!(pending.len(), 2, "both suggestions must be pending");
+        assert_eq!(pending[0].id, "sug_older", "ordering must be created_at ASC");
+        assert_eq!(pending[1].id, "sug_newer");
+
+        // source_fact_ids must survive the JSON round-trip with order preserved.
+        assert_eq!(
+            pending[0].source_fact_ids,
+            vec!["fact_a".to_string(), "fact_b".to_string()],
+            "source_fact_ids must round-trip through JSON with order preserved"
+        );
+        assert_eq!(pending[1].source_fact_ids, vec!["fact_c".to_string()]);
+
+        // Both anchored to the memory version current at staging time.
+        assert_eq!(suggestion_base_version(&conn, "sug_older").await, 1);
+        assert_eq!(suggestion_base_version(&conn, "sug_newer").await, 1);
+    })
+    .await
+    .expect("test_suggestion_insert_and_fetch_pending_roundtrip timed out");
+}
+
+/// Subtest 8: Accepting `sug_1` re-anchors `sug_2` so it stays fetchable and resolvable.
+///
+/// This is INVARIANT 5.3-B — the anchor-erosion fix. `sug_2`'s `target_text` anchors
+/// were computed against document version 1; accepting `sug_1` writes version 2. If
+/// `sug_2` is not re-anchored it becomes permanently unappliable, and if re-anchoring
+/// wrongly cleared its status it would silently vanish from the review slate.
+///
+/// Asserts: version bumped, sug_1 accepted, sug_1's facts consolidated,
+/// sug_2 still pending, sug_2 re-anchored to the new version, and sug_2 still
+/// individually resolvable afterwards.
+#[tokio::test]
+async fn test_suggestion_accept_reanchors_remaining_pending() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _guard = TempPathsGuard::new();
+        let (_app, state) = get_test_app_and_state().await;
+        let conn = state.db.connect().expect("test db must connect");
+
+        let session_id = create_session_with_id(&conn, 14401, Some("default"))
+            .await
+            .expect("session must be created");
+        let compaction_id = record_compaction_start(&conn, session_id, "manual", 1, 2)
+            .await
+            .expect("compaction run must be recorded");
+
+        seed_staged_candidate(
+            &conn,
+            session_id,
+            compaction_id,
+            "fact_for_sug_1",
+            "personal",
+            "User enjoys badminton.",
+        )
+        .await;
+        seed_staged_candidate(
+            &conn,
+            session_id,
+            compaction_id,
+            "fact_for_sug_2",
+            "personal",
+            "User relocated to Seattle.",
+        )
+        .await;
+
+        // Both suggestions staged against memory version 1.
+        let v1_doc = "# Profile\n\n- User lives in Chicago.\n";
+        save_personal_memory(&conn, None, v1_doc, 1)
+            .await
+            .expect("v2 document must be saved");
+        let staged = ["fact_for_sug_1", "fact_for_sug_2"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>();
+        mark_facts_staged(&conn, &staged)
+            .await
+            .expect("facts must be staged");
+        insert_personal_memory_suggestions(
+            &conn,
+            &[
+                pending_suggestion(
+                    "sug_1",
+                    2,
+                    "insert",
+                    "User enjoys badminton.",
+                    vec!["fact_for_sug_1".to_string()],
+                    1_000,
+                ),
+                pending_suggestion(
+                    "sug_2",
+                    2,
+                    "insert",
+                    "User relocated to Seattle.",
+                    vec!["fact_for_sug_2".to_string()],
+                    2_000,
+                ),
+            ],
+        )
+        .await
+        .expect("suggestions must be inserted");
+
+        // Accept ONLY sug_1, supplying the merged document.
+        let v3_doc = "# Profile\n\n- User lives in Chicago.\n- User enjoys badminton.\n";
+        let updated = resolve_suggestions_transaction(
+            &conn,
+            None,
+            Some("sug_1"),
+            "accept",
+            Some(v3_doc),
+        )
+        .await
+        .expect("accepting sug_1 must succeed");
+
+        assert_eq!(
+            updated.version, 3,
+            "accept must bump the document version from 2 to 3"
+        );
+        assert_eq!(
+            updated.content, v3_doc,
+            "accept must persist the supplied new_content"
+        );
+        assert_eq!(
+            suggestion_status(&conn, "sug_1").await,
+            "accepted",
+            "resolved suggestion must flip to 'accepted'"
+        );
+        assert_eq!(
+            fact_status(&conn, "fact_for_sug_1").await,
+            "consolidated",
+            "facts of the accepted suggestion must flip 'staged' -> 'consolidated'"
+        );
+
+        // INVARIANT 5.3-B — sug_2 must survive as pending AND be re-anchored to v3.
+        assert_eq!(
+            suggestion_status(&conn, "sug_2").await,
+            "pending",
+            "re-anchoring must NOT change a pending suggestion's status"
+        );
+        assert_eq!(
+            suggestion_base_version(&conn, "sug_2").await,
+            3,
+            "remaining pending suggestion must be re-anchored to the newly written version"
+        );
+        assert_eq!(
+            fact_status(&conn, "fact_for_sug_2").await,
+            "staged",
+            "re-anchored suggestion's facts must remain staged, not consolidated"
+        );
+
+        // sug_2 must still be returned by the review slate and still be resolvable.
+        let still_pending = fetch_pending_suggestions(&conn, None)
+            .await
+            .expect("fetch must succeed after accept");
+        assert_eq!(
+            still_pending.len(),
+            1,
+            "exactly one suggestion (sug_2) must remain on the review slate"
+        );
+        assert_eq!(still_pending[0].id, "sug_2");
+
+        let v4_doc = "# Profile\n\n- User lives in Chicago.\n- User enjoys badminton.\n- User relocated to Seattle.\n";
+        let final_record = resolve_suggestions_transaction(
+            &conn,
+            None,
+            Some("sug_2"),
+            "accept",
+            Some(v4_doc),
+        )
+        .await
+        .expect("re-anchored sug_2 must still be individually resolvable");
+        assert_eq!(
+            final_record.version, 4,
+            "sug_2 must resolve on top of the re-anchored base version"
+        );
+        assert_eq!(
+            fact_status(&conn, "fact_for_sug_2").await,
+            "consolidated",
+            "sug_2's fact must consolidate once sug_2 is accepted"
+        );
+    })
+    .await
+    .expect("test_suggestion_accept_reanchors_remaining_pending timed out");
+}
+
+/// Subtest 9: Rejecting a suggestion marks its facts `'rejected'` and leaves the document intact.
+///
+/// Covers INVARIANT 5.3-A on the reject path: fact status must leave `'staged'` so the
+/// fact is not re-suggested on the next consolidation cycle, and rejection must NOT bump
+/// the document version.
+#[tokio::test]
+async fn test_suggestion_reject_marks_facts_rejected_and_preserves_version() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _guard = TempPathsGuard::new();
+        let (_app, state) = get_test_app_and_state().await;
+        let conn = state.db.connect().expect("test db must connect");
+
+        let session_id = create_session_with_id(&conn, 14402, Some("default"))
+            .await
+            .expect("session must be created");
+        let compaction_id = record_compaction_start(&conn, session_id, "manual", 1, 1)
+            .await
+            .expect("compaction run must be recorded");
+
+        seed_staged_candidate(
+            &conn,
+            session_id,
+            compaction_id,
+            "fact_to_reject",
+            "personal",
+            "User dislikes morning meetings.",
+        )
+        .await;
+
+        let doc = "# Profile\n\n- User lives in Chicago.\n";
+        save_personal_memory(&conn, None, doc, 1)
+            .await
+            .expect("document must be saved");
+        mark_facts_staged(&conn, &["fact_to_reject".to_string()])
+            .await
+            .expect("fact must be staged");
+        insert_personal_memory_suggestions(
+            &conn,
+            &[pending_suggestion(
+                "sug_reject",
+                2,
+                "insert",
+                "User dislikes morning meetings.",
+                vec!["fact_to_reject".to_string()],
+                1_000,
+            )],
+        )
+        .await
+        .expect("suggestion must be inserted");
+
+        let record = resolve_suggestions_transaction(&conn, None, Some("sug_reject"), "reject", None)
+            .await
+            .expect("rejecting must succeed");
+
+        assert_eq!(
+            record.version, 2,
+            "reject must NOT bump the document version"
+        );
+        assert_eq!(
+            record.content, doc,
+            "reject must leave the active document byte-identical"
+        );
+        assert_eq!(
+            suggestion_status(&conn, "sug_reject").await,
+            "rejected",
+            "resolved suggestion must flip to 'rejected'"
+        );
+        assert_eq!(
+            fact_status(&conn, "fact_to_reject").await,
+            "rejected",
+            "rejected suggestion's facts must flip 'staged' -> 'rejected' so they are not re-suggested"
+        );
+
+        // A rejected fact must no longer appear in the retrieval-visible active set.
+        let active = fetch_active_facts_by_type(&conn, "personal")
+            .await
+            .expect("active fact query must succeed");
+        assert!(
+            active.iter().all(|f| f.id != "fact_to_reject"),
+            "a rejected fact must not remain retrieval-visible as 'active'"
+        );
+    })
+    .await
+    .expect("test_suggestion_reject_marks_facts_rejected_and_preserves_version timed out");
+}
+
+/// Subtest 10: Candidate partition — unselected facts are `'consolidated'`, never left `'staged'`.
+///
+/// This is INVARIANT 5.3-A at the persistence-contract level. Production performs the
+/// partition in `services/memory/personal.rs`; here we verify the two primitives it
+/// composes and, critically, that NO fact is left in `'staged'` without a live pending
+/// suggestion. A fact staged for a suggestion that is then accepted or rejected always
+/// leaves `'staged'`, so the partition is exhaustive.
+#[tokio::test]
+async fn test_candidate_partition_leaves_no_fact_trapped_in_staged() {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        let _guard = TempPathsGuard::new();
+        let (_app, state) = get_test_app_and_state().await;
+        let conn = state.db.connect().expect("test db must connect");
+
+        let session_id = create_session_with_id(&conn, 14403, Some("default"))
+            .await
+            .expect("session must be created");
+        let compaction_id = record_compaction_start(&conn, session_id, "manual", 1, 3)
+            .await
+            .expect("compaction run must be recorded");
+
+        for (id, text) in [
+            ("fact_selected", "User enjoys badminton."),
+            ("fact_unselected", "User drinks oat milk."),
+            ("fact_second_unselected", "User cycles to work."),
+        ] {
+            seed_staged_candidate(&conn, session_id, compaction_id, id, "personal", text).await;
+        }
+
+        // The production partition: only fact_selected is referenced by an operation.
+        let selected = vec!["fact_selected".to_string()];
+        let unselected = vec![
+            "fact_unselected".to_string(),
+            "fact_second_unselected".to_string(),
+        ];
+        mark_facts_staged(&conn, &selected)
+            .await
+            .expect("selected facts must be staged");
+        mark_facts_consolidated(&conn, &unselected)
+            .await
+            .expect("unselected facts must be marked consolidated");
+        insert_personal_memory_suggestions(
+            &conn,
+            &[pending_suggestion(
+                "sug_partition",
+                1,
+                "insert",
+                "User enjoys badminton.",
+                selected,
+                1_000,
+            )],
+        )
+        .await
+        .expect("suggestion must be inserted");
+
+        assert_eq!(
+            fact_status(&conn, "fact_selected").await,
+            "staged",
+            "a fact referenced by a pending suggestion must be 'staged'"
+        );
+        for id in ["fact_unselected", "fact_second_unselected"] {
+            assert_eq!(
+                fact_status(&conn, id).await,
+                "consolidated",
+                "candidate '{}' referenced by no operation must be 'consolidated', never 'staged'",
+                id
+            );
+        }
+
+        // Storage-level invariant: zero facts may remain 'staged' without a live
+        // pending suggestion referencing them.
+        let mut rows = conn
+            .query(
+                "SELECT COUNT(*) FROM memory_facts f
+                 WHERE f.status = 'staged'
+                   AND NOT EXISTS (
+                     SELECT 1 FROM personal_memory_suggestions s
+                     WHERE s.status = 'pending'
+                       AND f.id IN (
+                         SELECT value FROM json_each(s.source_fact_ids)
+                       )
+                   )",
+                (),
+            )
+            .await
+            .expect("orphan staged query must succeed");
+        let orphaned: i64 = rows
+            .next()
+            .await
+            .expect("query must yield a row")
+            .expect("count row must exist")
+            .get(0)
+            .expect("count must be readable");
+        assert_eq!(
+            orphaned, 0,
+            "no fact may remain 'staged' without a live pending suggestion"
+        );
+    })
+    .await
+    .expect("test_candidate_partition_leaves_no_fact_trapped_in_staged timed out");
 }

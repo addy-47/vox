@@ -14,7 +14,6 @@
 mod common;
 
 use std::{
-    io::{Read, Write},
     sync::{
         atomic::{AtomicBool, AtomicU32},
         mpsc, Arc,
@@ -499,75 +498,6 @@ async fn test_clause_buffering_and_prefix_drop_on_tool_call() {
 // Wire harness: std-only mock HTTP server speaking canned SSE / NDJSON.
 // Exercises the REAL path: manifest mapping -> request bytes -> stream parser.
 // ============================================================================
-/// Serves one canned HTTP response, captures the JSON request body, then exits.
-fn spawn_mock_wire_server(
-    response_body: Vec<u8>,
-    content_type: &'static str,
-    captured: Arc<Mutex<Option<serde_json::Value>>>,
-) -> (String, std::thread::JoinHandle<()>) {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("mock wire server must bind");
-    let addr = listener
-        .local_addr()
-        .expect("mock wire server needs an addr");
-    let handle = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("mock wire server must accept");
-        stream
-            .set_read_timeout(Some(Duration::from_secs(10)))
-            .expect("mock read timeout");
-        stream
-            .set_write_timeout(Some(Duration::from_secs(10)))
-            .expect("mock write timeout");
-        let mut raw = Vec::new();
-        let mut buf = [0u8; 4096];
-        loop {
-            let n = stream.read(&mut buf).expect("mock wire server must read");
-            if n == 0 {
-                break;
-            }
-            raw.extend_from_slice(&buf[..n]);
-            if let Some(end) = raw
-                .windows(4)
-                .position(|w| w == b"\r\n\r\n")
-                .map(|pos| pos + 4)
-            {
-                let head = String::from_utf8_lossy(&raw[..end]).to_lowercase();
-                let len = head
-                    .lines()
-                    .find_map(|l| l.strip_prefix("content-length:"))
-                    .and_then(|v| v.trim().parse::<usize>().ok())
-                    .unwrap_or(0);
-                while raw.len() < end + len {
-                    let n = stream
-                        .read(&mut buf)
-                        .expect("mock wire server must read body");
-                    if n == 0 {
-                        break;
-                    }
-                    raw.extend_from_slice(&buf[..n]);
-                }
-                let have = raw.len().saturating_sub(end).min(len);
-                if let Ok(body) = serde_json::from_slice::<serde_json::Value>(&raw[end..end + have])
-                {
-                    *captured.lock() = Some(body);
-                }
-                break;
-            }
-        }
-        let head = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            content_type,
-            response_body.len()
-        );
-        stream
-            .write_all(head.as_bytes())
-            .expect("mock must write head");
-        stream
-            .write_all(&response_body)
-            .expect("mock must write body");
-    });
-    (format!("http://{}", addr), handle)
-}
-
 /// Builds the turn-1 `respond_and_set_title` generation request used by wire tests.
 fn turn1_title_request() -> GenerationRequest {
     GenerationRequest {
@@ -641,7 +571,11 @@ async fn test_nvidia_preset_wire_request_and_tool_stream() {
             "data: [DONE]\n\n",
         );
         let (base_url, server) =
-            spawn_mock_wire_server(sse.as_bytes().to_vec(), "text/event-stream", Arc::clone(&captured));
+            common::wire::spawn_mock_wire_server(
+                sse.as_bytes().to_vec(),
+                "text/event-stream",
+                Arc::clone(&captured),
+            );
 
         let config = ConnectionConfig::new(&base_url, "test-model", Some("k"), Some("nvidia_nim"));
         let transport = RemoteTransport::new(config);
@@ -715,7 +649,7 @@ async fn test_ollama_native_wire_request_and_tool_stream() {
             "{\"message\":{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"function\":{\"name\":\"respond_and_set_title\",\"arguments\":{\"title\":\"T\",\"spoken_response\":\"hi\"}}}]},\"done\":false}\n",
             "{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true}\n",
         );
-        let (base_url, server) = spawn_mock_wire_server(
+        let (base_url, server) = common::wire::spawn_mock_wire_server(
             ndjson.as_bytes().to_vec(),
             "application/x-ndjson",
             Arc::clone(&captured),
