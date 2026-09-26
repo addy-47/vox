@@ -47,7 +47,7 @@ struct DatasetTurn {
 
 fn load_dataset(max_turns: usize) -> Vec<DatasetTurn> {
     let mut turns: Vec<DatasetTurn> =
-        common::paths::load_json_dataset("100-turns/dataset_session-2.json");
+        common::paths::load_json_dataset("legacy/dataset_session-2.json");
     turns.truncate(max_turns);
     turns
 }

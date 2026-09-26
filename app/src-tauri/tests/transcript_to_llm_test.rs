@@ -327,6 +327,10 @@ async fn test_transcript_to_llm_matrix() {
         )
         .await;
         assert!(join_res.is_ok(), "LLM worker thread join timed out");
+
+        state.harness.lock().take();
+        *state.llm_provider.write() = None;
+        tokio::time::sleep(Duration::from_millis(200)).await;
     })
     .await
     .expect("test_transcript_to_llm_matrix timed out");

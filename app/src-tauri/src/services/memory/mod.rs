@@ -48,7 +48,10 @@ pub use ml::{
     },
     estimate_tokens, unload_all_onnx_models, unload_memory_pipeline_onnx_models, warmup_tokenizer,
 };
-pub use personal::consolidate_personal_memory;
+pub use personal::{
+    apply_patch_operations, consolidate_personal_memory, MemoryPatchOperation,
+    PersonalConsolidationOutput,
+};
 pub use scheduler::{
     check_missed_consolidation_on_boot, spawn_consolidation_scheduler,
     start_consolidation_scheduler, stop_consolidation_scheduler,

@@ -99,10 +99,14 @@ pub fn get_gemma_model_path() -> PathBuf {
 /// directory (crate root or `app/src-tauri/`). Single home for the candidate
 /// path arrays previously duplicated in every memory test loader.
 pub fn find_dataset_file(relative: &str) -> PathBuf {
+    let clean_relative = relative.strip_prefix("100-turns/").unwrap_or(relative);
     let candidates = [
         PathBuf::from("sandbox/datasets").join(relative),
         PathBuf::from("../../sandbox/datasets").join(relative),
         PathBuf::from("../sandbox/datasets").join(relative),
+        PathBuf::from("sandbox/datasets/legacy").join(clean_relative),
+        PathBuf::from("../../sandbox/datasets/legacy").join(clean_relative),
+        PathBuf::from("../sandbox/datasets/legacy").join(clean_relative),
     ];
     candidates
         .into_iter()

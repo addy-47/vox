@@ -36,9 +36,9 @@ This checklist tracks backend tasks for the Structured Delta Memory Consolidatio
 - [ ] `app/src-tauri/src/lib.rs`
   - Register `get_memory_suggestions` and `resolve_memory_suggestion` in `tauri::generate_handler!`.
 
-## Batch 4: Eval & Integration Verification
-- [ ] `app/src-tauri/evals/memory_consolidation_eval.rs`
-  - Update test harness to expect staged suggestions and execute resolution.
-  - Assert zero anchor loss on pre-existing text.
+## Batch 4: Backend Unit & Integration Tests (Test Engineer Owns Live Evals)
+- [ ] Unit tests for `apply_patch_operations` in `app/src-tauri/src/services/memory/personal.rs` (covering insert, replace, delete, missing section creation, whitespace normalization, skipping missing targets).
+- [ ] Integration test in `app/src-tauri/tests/personal_memory_test.rs` verifying suggestion staging, retrieval, accept (vN+1, consolidated facts), and reject (vN, rejected facts).
 - [ ] Run full nextest suite:
   - `RAYON_NUM_THREADS=$(nproc) OMP_NUM_THREADS=$(nproc) cargo nextest run --release --test-threads=1 --no-fail-fast`
+- [ ] Note: Standalone consolidation eval (`memory_consolidation_eval.rs`) and multi-phase evals on GPU server will be executed by Test Engineer in Phase 1 & 2 verification.

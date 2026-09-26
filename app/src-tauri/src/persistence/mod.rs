@@ -30,13 +30,15 @@ pub use compactions::{
 };
 pub use facts::{
     deactivate_fact, deactivate_facts_batch, fetch_active_episodic_memory,
-    fetch_active_facts_by_type, fetch_all_active_facts, EpisodicFactCandidate, FactRecord,
+    fetch_active_facts_by_type, fetch_all_active_facts, mark_facts_consolidated,
+    mark_facts_rejected, mark_facts_staged, EpisodicFactCandidate, FactRecord,
 };
 pub use notifications::{NewNotification, NotificationRecord};
 pub use personal_memory::{
-    get_personal_memory, list_personal_memory_versions, save_consolidated_memory,
+    fetch_pending_suggestions, get_personal_memory, insert_personal_memory_suggestions,
+    list_personal_memory_versions, resolve_suggestions_transaction, save_consolidated_memory,
     save_personal_memory, set_active_personal_memory_version, update_consolidated_memory,
-    PersonalMemoryRecord,
+    MemorySuggestionRecord, PersonalMemoryRecord, PersonalMemorySuggestionRecord,
 };
 pub use projects::ProjectRow;
 pub use queue::{
