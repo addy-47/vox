@@ -58,347 +58,285 @@ The model consolidated successfully, but rewrote or dropped prior memory anchors
 
 This is exactly where structured consolidation helps.
 
-# Proposed structured consolidation
 
-Instead of asking:
+# Implementation Plan: Structured Delta Personal Memory Consolidation
 
-```text
-Return the complete updated Personal Memory Markdown document.
+> **Role & Perspective:** System Architect $\to$ Backend Engineer  
+> **Status:** Ready for Execution  
+> **Target Specs:** [memory-spec.md](file:///home/addy/projects/apps/vox/docs/specs/memory-spec.md), [db-spec.md](file:///home/addy/projects/apps/vox/docs/specs/db-spec.md), [ipc-spec.md](file:///home/addy/projects/apps/vox/docs/specs/ipc-spec.md)  
+> **Checklist:** [structured-consolidation-checklist.md](file:///home/addy/projects/apps/vox/docs/plans/phase12/structured-consolidation-checklist.md)
+
+---
+
+## 1. Goal Description & Target End-State
+
+The existing Personal Memory consolidation and comment regeneration pipelines instruct the LLM to rewrite the entire Markdown dossier from scratch. In multi-case evals, this caused anchor erosion in 8 of 14 runs (stochastic loss of previously learned user traits).
+
+**The Target End-State:**
+* The LLM operates strictly as a **change proposer**, returning a structured JSON payload containing atomic patch operations (`replace`, `insert`, `delete`).
+* Proposed patches are staged in a dedicated Turso database table: `personal_memory_suggestions`.
+* Document lines not explicitly targeted by an operation are mathematically immutable.
+* A single polymorphic IPC command `resolve_memory_suggestion(id, action)` allows the user (or auto-apply policy) to accept or reject suggestions individually or in bulk.
+* When accepted, a deterministic patch engine applies the delta to the base markdown and bumps `personal_memory` version. When rejected, facts are marked `'rejected'` so they are never re-suggested.
+
+```mermaid
+flowchart TD
+    A["Active Facts in memory_facts"] --> B["Single LLM Call (JSON mode)"]
+    M["Current personal_memory (vN)"] --> B
+    B --> C["Parse MemoryPatchOperation[]"]
+    C --> D[("Insert into personal_memory_suggestions (status='pending')")]
+    A --> E[("Update memory_facts (status='staged')")]
+    
+    D --> F{"User Review via resolve_memory_suggestion"}
+    F -- "action = 'accept'" --> G["apply_patch_operations(base_md, ops)"]
+    G --> H[("Insert personal_memory (vN+1, is_active=1)")]
+    H --> I[("Update personal_memory_suggestions (status='accepted')")]
+    H --> J[("Update memory_facts (status='consolidated')")]
+    
+    F -- "action = 'reject'" --> K[("Update personal_memory_suggestions (status='rejected')")]
+    K --> L[("Update memory_facts (status='rejected')")]
+    L --> M_untouched["personal_memory remains vN (untouched)"]
 ```
 
-Ask for only changes:
+---
 
-```json
-{
-  "operations": [
-    {
-      "op": "replace",
-      "line_id": "pl_018",
-      "old_text": "Currently studying Spanish",
-      "new_text": "Currently studying Spanish and Japanese",
-      "reason": "The user explicitly added Japanese."
-    },
-    {
-      "op": "insert_after",
-      "line_id": "pl_021",
-      "text": "Studies Rust memory-management primitives.",
-      "section": "Technical Projects"
-    }
-  ]
+## 2. Architecture & Design Resolutions
+
+Every design decision has been vetted against pipeline invariants:
+
+1. **No Synthetic Line Numbers:** The LLM targets content via `section` heading and exact `target_text`. This avoids line-arithmetic hallucinations and index drift under insertions.
+2. **Simplified Atomic Operators:** We dropped the redundant `insert_after` operator. The protocol supports only three operations: `replace`, `insert`, and `delete`.
+3. **Zero `reason` Noise:** We explicitly eliminated the `reason` field from prompt, schema, and database. The diff (`target_text` $\to$ `proposed_text`) is self-evident.
+4. **Modal Exclusivity:** The Staging Card in the frontend owns review mode. While suggestions are pending, direct document edits and imports are disabled, preventing base-version race conditions by design.
+5. **Unified Comments & Facts Engine:** Comment-driven regeneration uses the exact same structured delta schema and lands in `personal_memory_suggestions` for user verification.
+6. **Polymorphic IPC Surface:** `resolve_memory_suggestion(id: Option<String>, action: String)` handles single cards (`id = Some(id)`) as well as `Accept All` / `Discard All` (`id = None`).
+
+---
+
+## 3. Execution Batches (Ordered by Real Dependency)
+
+```mermaid
+flowchart LR
+    Batch1["Batch 1: Persistence & Schema"] --> Batch2["Batch 2: Patch Engine & Prompts"]
+    Batch2 --> Batch3["Batch 3: IPC Layer"]
+    Batch3 --> Batch4["Batch 4: Evals & Tests"]
+```
+
+---
+
+### Batch 1: Database Migration & Persistence Layer (Turso) [MODIFIED]
+
+* **Blast Radius:** `schema.rs`, `personal_memory.rs`, `facts.rs`.
+* **Structural Dependency:** None (foundational).
+* **Build Health:** Must compile green with tests passing.
+
+#### 1.1 `schema.rs` Changes [MODIFIED]
+Bump `SCHEMA_VERSION = 7`. Add `personal_memory_suggestions` table DDL and index to `V2_TABLE_STATEMENTS`:
+
+```rust
+"CREATE TABLE IF NOT EXISTS personal_memory_suggestions (
+    id TEXT PRIMARY KEY,
+    base_memory_version INTEGER NOT NULL REFERENCES personal_memory(version) ON DELETE CASCADE,
+    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+    op TEXT NOT NULL,
+    section TEXT NOT NULL,
+    target_text TEXT,
+    proposed_text TEXT NOT NULL,
+    source_fact_ids TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at INTEGER NOT NULL,
+    resolved_at INTEGER
+);",
+"CREATE INDEX IF NOT EXISTS idx_suggestions_pending ON personal_memory_suggestions(base_memory_version, status);",
+"CREATE INDEX IF NOT EXISTS idx_suggestions_created ON personal_memory_suggestions(created_at DESC);"
+```
+
+In `run_migrations`, add migration block for `current_version < 7` to execute `CREATE TABLE IF NOT EXISTS personal_memory_suggestions` and its indices on existing databases.
+
+#### 1.2 `persistence/personal_memory.rs` Changes [MODIFIED]
+Add the strongly-typed DTO and persistence queries (using `i64` for `base_memory_version` and atomic resolution transaction):
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonalMemorySuggestionRecord {
+    pub id: String,
+    pub base_memory_version: i64,
+    pub project_id: Option<String>,
+    pub op: String,
+    pub section: String,
+    pub target_text: Option<String>,
+    pub proposed_text: String,
+    pub source_fact_ids: Vec<String>,
+    pub status: String,
+    pub created_at: i64,
+    pub resolved_at: Option<i64>,
+}
+
+pub type MemorySuggestionRecord = PersonalMemorySuggestionRecord;
+
+pub async fn insert_personal_memory_suggestions(
+    conn: &Connection,
+    suggestions: &[PersonalMemorySuggestionRecord],
+) -> Result<()>;
+
+pub async fn fetch_pending_suggestions(
+    conn: &Connection,
+    base_version: i64,
+    project_id: Option<&str>,
+) -> Result<Vec<PersonalMemorySuggestionRecord>>;
+
+pub async fn resolve_suggestions_transaction(
+    conn: &Connection,
+    project_id: Option<&str>,
+    target_id: Option<&str>,
+    action: &str,
+    new_content: Option<&str>,
+) -> Result<PersonalMemoryRecord>;
+```
+
+#### 1.3 `persistence/facts.rs` Changes [MODIFIED]
+Add helper functions to transition fact status across both `memory_facts` and `memory_facts_vectors`:
+* `mark_facts_staged(conn: &Connection, fact_ids: &[String]) -> Result<()>`: Updates facts from `'active'` to `'staged'`.
+* `mark_facts_rejected(conn: &Connection, fact_ids: &[String]) -> Result<()>`: Updates facts from `'staged'` to `'rejected'`.
+
+---
+
+### Batch 2: Structured Delta Patch Engine & Prompts [MODIFIED]
+
+* **Blast Radius:** `services/memory/personal.rs`, `services/memory/mod.rs`.
+* **Structural Dependency:** Batch 1.
+* **Build Health:** Must compile green with comprehensive unit tests.
+
+#### 2.1 Structs & Model Output Payload
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MemoryPatchOperation {
+    pub op: String, // "replace" | "insert" | "delete"
+    pub section: String,
+    #[serde(default)]
+    pub target_text: Option<String>,
+    #[serde(default)]
+    pub proposed_text: String,
+    #[serde(default)]
+    pub source_fact_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersonalConsolidationOutput {
+    pub operations: Vec<MemoryPatchOperation>,
 }
 ```
 
-Supported operations:
-
-```text
-replace
-insert
-insert_after
-delete
-conflict
+#### 2.2 Deterministic Markdown Patch Application Engine [MODIFIED]
+Implement a pure, robustly unit-tested function:
+```rust
+pub fn apply_patch_operations(
+    base_markdown: &str,
+    operations: &[MemoryPatchOperation],
+) -> Result<String>
 ```
 
-The model does **not** return unchanged lines.
+**Implementation Invariants for `apply_patch_operations`:**
+1. **Section Discovery:** Scans markdown for headings matching `section` (normalizes `## Header` vs `Header`).
+2. **`insert` Logic:**
+   - If `section` exists: appends `proposed_text` formatted as a bullet (`- `) under that section before the next heading.
+   - If `section` does not exist: appends the section heading and the bullet at the bottom of the document.
+3. **`replace` Logic:**
+   - Locates exact `target_text` inside `section`.
+   - If exact match fails, falls back to whitespace-trimmed / punctuation-trimmed matching.
+   - Replaces `target_text` with `proposed_text`. If no match found, logs warning and skips op without failing whole batch.
+4. **`delete` Logic:**
+   - Locates exact `target_text` inside `section` and removes the entire line/bullet.
+5. **Preservation Guarantee:** Any lines or sections outside the targeted operations remain byte-for-byte identical.
 
-## Why line numbers alone are not enough
+#### 2.3 System Prompts Refactor
+Refactor `PERSONAL_CONSOLIDATION_SYSTEM_PROMPT` and `COMMENT_REGENERATION_SYSTEM_PROMPT`:
+* The prompt defines the exact role: emit a raw JSON object with `{"operations": [...]}`.
+* Explicitly forbids line numbers or wrapping in markdown code fences.
+* Requires valid `source_fact_ids` matching the input candidates.
 
-Raw line numbers are unstable:
+#### 2.4 Service Pipeline Updates [MODIFIED]
+Refactor `consolidate_personal_memory` & `regenerate_with_comments`:
+1. Gating & quiescence checks remain intact.
+2. Formats `<current_personal_memory>` and `<new_personal_facts>` with their `id`s.
+3. Executes LLM pass with `OutputConstraint::JsonObject`, `ReasoningMode::Disabled`, and markdown fence stripping.
+4. Deserializes `PersonalConsolidationOutput`.
+5. Inserts records into `personal_memory_suggestions`.
+6. For facts: calls `mark_facts_staged(conn, &fact_ids)`.
+7. Returns current record with staged suggestions pending review.
 
-```text
-Old document:
-12: Currently studying Spanish
-13: Learning Japanese
+---
 
-After inserting a line:
-12: New heading
-13: Currently studying Spanish
-14: Learning Japanese
+### Batch 3: IPC Layer & Command Exposure [MODIFIED]
+
+* **Blast Radius:** `ipc/memory.rs`, `lib.rs`.
+* **Structural Dependency:** Batch 1 & 2.
+* **Build Health:** Must compile green.
+
+#### 3.1 `ipc/memory.rs` Commands
+```rust
+#[tauri::command]
+pub async fn get_memory_suggestions(
+    project_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<PersonalMemorySuggestionRecord>, VoxIpcError>;
+
+#[tauri::command]
+pub async fn resolve_memory_suggestion(
+    app: AppHandle,
+    id: Option<String>,
+    action: String,
+    project_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<PersonalMemoryRecord, VoxIpcError>;
 ```
 
-The model’s next reference to line 13 would now point to the wrong content.
-
-Use stable IDs:
-
-```json
-{
-  "line_id": "pl_018",
-  "display_line": 12,
-  "text": "Currently studying Spanish"
-}
-```
-
-The UI can display line numbers, but the backend should validate using `line_id` plus the expected old text or hash.
-
-# Conflict handling
-
-This is the strongest part of the idea.
-
-For a contradiction such as:
-
-```text
-Existing: User lives in Chicago.
-New evidence: User lives in Austin.
-```
-
-The model should not silently choose one. It should emit:
-
-```json
-{
-  "op": "conflict",
-  "line_id": "pl_004",
-  "existing_text": "User lives in Chicago.",
-  "proposed_text": "User lives in Austin.",
-  "reason": "The new user statement contradicts the existing location.",
-  "choices": [
-    "Keep existing memory",
-    "Replace with proposed memory"
-  ]
-}
-```
-
-The UI can show:
-
-```text
-Existing                         Proposed
-User lives in Chicago.           User lives in Austin.
-
-[Accept replacement] [Discard]
-```
-
-The backend should:
-
-1. Store the conflict as pending.
-2. Leave the active personal-memory document unchanged.
-3. Show it in the UI.
-4. Apply or reject only after user action.
-5. Create a new immutable memory version when accepted.
-
-That preserves the current versioning model while making edits auditable.
-
-# Important safety rule
-
-Not every operation should auto-apply.
-
-Recommended policy:
-
-| Operation | Default behavior |
-|---|---|
-| `insert` for new supported fact | Auto-apply |
-| `replace` with exact existing line and clear evidence | Auto-apply or preview |
-| `delete` | Require user confirmation |
-| `conflict` | Require user choice |
-| Fact contradicting identity/location/preferences | Require user confirmation |
-| External action claim | Require action/tool evidence |
-
-A model should not be able to delete a durable memory merely because it decides the memory is stale.
-
-# Personal-memory storage change
-
-The current database stores a full Markdown document. Structured consolidation would require:
-
-1. Stable memory lines or memory nodes.
-2. Pending patch operations.
-3. Conflict records.
-4. Accepted/rejected audit metadata.
-5. A new immutable personal-memory version for accepted changes.
-
-Conceptually:
-
-```text
-personal_memory_versions
-personal_memory_lines
-personal_memory_pending_edits
-personal_memory_conflicts
-```
-
-A simpler MVP can keep the Markdown document as the rendered output while adding:
-
-```text
-personal_memory_edit_operations
-```
-
-with the current document version and stable line IDs.
-
-This is feasible, but it is a database/spec/IPC/frontend change—not just a prompt rewrite.
-
-# Should compaction use the same patch format?
-
-Not exactly.
-
-Personal-memory consolidation benefits from line patches because it edits a stable document.
-
-Compaction is different: it maintains rolling operational state across categories:
-
-```text
-personal
-objective
-workdone
-blocker
-next_step
-pitfall
-```
-
-A better compaction design would be a structured state delta:
-
-```json
-{
-  "retain": {
-    "objective": ["Continue the Rust project"]
-  },
-  "upsert": {
-    "personal": [
-      {
-        "text": "Studying Spanish and Japanese",
-        "evidence_turn_ids": [10, 16, 28]
-      }
-    ]
-  },
-  "remove": {
-    "workdone": ["Old completed action"]
-  },
-  "next_step": [
-    "Practice Japanese greetings"
-  ]
-}
-```
-
-That requires turn IDs in the compaction input. The current prompt does not provide turn IDs, so the model cannot reliably produce evidence references yet.
-
-For compaction, the immediate priorities are:
-
-- Structured output already exists.
-- Use a reliable JSON schema when supported.
-- Use provider capability probing for Ling.
-- Fall back to a strict parser only when necessary.
-- Add deterministic validation for action claims.
-
-# Reasoning for compaction
-
-Your hesitation is valid. Reasoning can improve attribution, but it can also:
-
-- Consume many reasoning tokens.
-- Increase latency.
-- Make output longer.
-- Still produce confident semantic errors.
-- Expose reasoning content if the provider streams it.
-
-The current `ReasoningMode` is only `Enabled`/`Disabled`, which is too coarse. I would make it provider-aware:
-
-```text
-Disabled
-Minimal
-Low
-Medium
-High
-```
-
-For OpenRouter, the wire request should be able to express:
-
-```json
-{
-  "reasoning": {
-    "effort": "low",
-    "exclude": true
-  }
-}
-```
-
-Important distinctions:
-
-- `exclude: true` hides reasoning from the visible response.
-- It does **not** mean reasoning tokens are free or omitted from billing.
-- The model may still reason internally.
-- Usage must record reasoning-token count separately.
-
-Recommended policy:
-
-```text
-Normal low-risk compaction: Disabled or Minimal
-Semantic/attribution-sensitive compaction: Low
-High-risk contradiction handling: Low or Medium
-```
-
-Do not enable high reasoning globally. Keep it bounded by:
-
-- Maximum reasoning effort.
-- Maximum completion tokens.
-- Hard wall-clock timeout.
-- Separate reasoning-token telemetry.
-- A semantic validator after generation.
-
-Reasoning should improve extraction; it should not be the only defense.
-
-# Action-claim fix
-
-The full eval showed that the model still records unsupported actions such as:
-
-```text
-Updated the project tracker.
-Set a daily reminder.
-```
-
-The prompt alone is insufficient.
-
-Compaction input should include explicit evidence metadata:
-
-```json
-{
-  "turn_id": 18,
-  "speaker": "assistant",
-  "content": "Done. I've set a daily reminder.",
-  "action_evidence": null
-}
-```
-
-Then validation can enforce:
-
-```text
-External action completed
-requires:
-  action_evidence present
-  OR explicit user confirmation
-```
-
-Without evidence, the claim becomes:
-
-```text
-next_step: "Set a Japanese reminder for 9 PM"
-```
-
-or is omitted.
-
-This requires turn IDs and, for real actions, persisted tool/action receipts. It is separate from line-based personal-memory patches.
-
-# Recommended implementation order
-
-1. **Fix eval classification**
-   - Separate trigger correctness from model-specific compaction-count baselines.
-   - Add a per-model calibration count.
-
-2. **Implement structured consolidation patches**
-   - Stable line IDs.
-   - `replace`, `insert`, `delete`, `conflict`.
-   - Exact old-text/hash validation.
-   - Pending conflicts.
-   - Immutable accepted versions.
-
-3. **Add UI conflict review**
-   - Side-by-side existing/proposed text.
-   - Accept, reject, edit before accept.
-   - Show provenance/evidence.
-
-4. **Add compaction action validation**
-   - Require tool/action evidence for external completion claims.
-   - Convert unsupported completion claims into next steps or omit them.
-
-5. **Add bounded reasoning effort**
-   - Minimal/Low by default for semantic compaction.
-   - Hide reasoning tokens from visible output.
-   - Measure reasoning-token cost separately.
-
-6. **Rerun the full matrix**
-   - First with reasoning disabled as the baseline.
-   - Then with `minimal` or `low`.
-   - Compare trigger correctness, memory continuity, semantic gaps, and latency.
-
-The structured consolidation idea is worth doing. The main risk is not feasibility; it is implementing it as an unvalidated text-diff feature. It should be a transactional, versioned, evidence-aware patch protocol with explicit user-controlled conflict resolution.
+**Resolution Execution Flow (`resolve_memory_suggestion`):**
+1. Fetch active `personal_memory` (version $V$).
+2. Fetch target suggestion(s) where `status = 'pending'` and `base_memory_version = V`.
+3. If `action == "accept"`:
+   - Compute patched markdown: `apply_patch_operations(&current.content, &patch_ops)`.
+   - Call `resolve_suggestions_transaction(&conn, project_id, id.as_deref(), "accept", Some(&new_content))`.
+   - Emit `IpcEvent::PersonalMemoryUpdated(record.clone())`.
+   - Return updated `PersonalMemoryRecord`.
+4. If `action == "reject"`:
+   - Call `resolve_suggestions_transaction(&conn, project_id, id.as_deref(), "reject", None)`.
+   - Emit `IpcEvent::PersonalMemoryUpdated(record.clone())`.
+   - Return current `PersonalMemoryRecord`.
+
+#### 3.2 `lib.rs` Wiring
+Register `get_memory_suggestions` and `resolve_memory_suggestion` in `tauri::generate_handler!`.
+
+---
+
+### Batch 4: Backend Unit & Integration Tests (Test Engineer Owns Live Evals) [MODIFIED]
+
+* **Blast Radius:** `app/src-tauri/tests/personal_memory_test.rs`, pure unit tests in `personal.rs`.
+* **Structural Dependency:** Batch 1, 2, 3.
+* **Build Health:** Must compile green and local test suite pass.
+
+1. **Unit Tests in `personal.rs`**:
+   - Comprehensive test suite for `apply_patch_operations` (`insert`, `replace`, `delete`, section creation, fallback trimming, empty/multiple ops).
+2. **Integration Tests in `tests/personal_memory_test.rs`**:
+   - Integration test exercising `insert_personal_memory_suggestions`, `fetch_pending_suggestions`, and atomic `resolve_suggestions_transaction` for accept and reject.
+3. **Role Boundary Note on Remote Evals**:
+   - Standalone consolidation eval (`memory_consolidation_eval.rs`) and multi-phase pipeline eval runs on the GPU server are owned and executed by the Test Engineer in subsequent phases.
+
+---
+
+## 4. Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Model outputs slightly inexact `target_text` (e.g. trailing period) | `replace` or `delete` fails to find match | Normalize whitespace and punctuation trimming fallback in `apply_patch_operations`. If match still fails, log error and skip only that single op rather than failing the transaction. |
+| Model invents non-existent `source_fact_ids` | Staging references ghost facts | Filter `source_fact_ids` against candidate set before inserting into DB. |
+| Ingestion runs concurrently with suggestion review | Staged facts get overwritten | `QueueStatus` and `memory_facts.status = 'staged'` isolates facts from duplicate Stage 1/2 processing. |
+
+---
+
+## 5. Architectural Approval Gate
+
+This plan conforms to:
+* Zero Backward Compatibility (ZBC): Replaces legacy full-rewrite interfaces directly.
+* Native Turso Invariant: Pure transactional SQLite operations in `persistence/`.
+* Fixed Pipeline Hierarchy: Memory consolidation runs in background, isolated from real-time audio.

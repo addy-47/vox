@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
-pub use crate::persistence::personal_memory::PersonalMemoryRecord;
+pub use crate::persistence::personal_memory::{
+    PersonalMemoryRecord, PersonalMemorySuggestionRecord,
+};
 use crate::{
     core::{
         error::VoxIpcError,
@@ -202,4 +204,118 @@ pub async fn get_active_facts(
     fetch_all_active_facts(&conn, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
+}
+
+/// Lists all uncommitted delta suggestions pending review for the active personal memory document.
+#[tauri::command]
+pub async fn get_memory_suggestions(
+    project_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<PersonalMemorySuggestionRecord>, VoxIpcError> {
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+    crate::persistence::fetch_pending_suggestions(
+        &conn,
+        project_id.as_deref(),
+    )
+    .await
+    .map_err(|e| VoxIpcError::Database(e.to_string()))
+}
+
+/// Resolves a single pending suggestion or all pending suggestions for personal memory.
+#[tauri::command]
+pub async fn resolve_memory_suggestion(
+    app: AppHandle,
+    id: Option<String>,
+    action: String,
+    project_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<PersonalMemoryRecord, VoxIpcError> {
+    if action != "accept" && action != "reject" {
+        return Err(VoxIpcError::InvalidArgument(format!(
+            "Invalid suggestion resolution action: {action}. Expected 'accept' or 'reject'"
+        )));
+    }
+
+    let conn = state
+        .db
+        .connect()
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+
+    let active_memory = db_get_personal_memory(&conn, project_id.as_deref())
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+
+    let pending = crate::persistence::fetch_pending_suggestions(
+        &conn,
+        project_id.as_deref(),
+    )
+    .await
+    .map_err(|e| VoxIpcError::Database(e.to_string()))?;
+
+    let to_resolve: Vec<PersonalMemorySuggestionRecord> = if let Some(ref target_id) = id {
+        let matching: Vec<_> = pending.into_iter().filter(|s| &s.id == target_id).collect();
+        if matching.is_empty() {
+            return Err(VoxIpcError::NotFound(format!(
+                "Suggestion '{target_id}' not found among pending suggestions"
+            )));
+        }
+        matching
+    } else {
+        pending
+    };
+
+    if to_resolve.is_empty() {
+        return Ok(active_memory);
+    }
+
+    let updated_record = if action == "accept" {
+        let patch_ops: Vec<crate::services::memory::MemoryPatchOperation> = to_resolve
+            .iter()
+            .map(|s| crate::services::memory::MemoryPatchOperation {
+                op: s.op.clone(),
+                section: s.section.clone(),
+                target_text: s.target_text.clone(),
+                proposed_text: s.proposed_text.clone(),
+                source_fact_ids: s.source_fact_ids.clone(),
+            })
+            .collect();
+
+        let patched_content =
+            crate::services::memory::apply_patch_operations(&active_memory.content, &patch_ops)
+                .map_err(|e| {
+                    VoxIpcError::Engine(format!("Failed to apply patch operations: {e}"))
+                })?;
+
+        crate::persistence::resolve_suggestions_transaction(
+            &conn,
+            project_id.as_deref(),
+            id.as_deref(),
+            "accept",
+            Some(&patched_content),
+        )
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+    } else {
+        crate::persistence::resolve_suggestions_transaction(
+            &conn,
+            project_id.as_deref(),
+            id.as_deref(),
+            "reject",
+            None,
+        )
+        .await
+        .map_err(|e| VoxIpcError::Database(e.to_string()))?
+    };
+
+    if let Err(e) = emit_ipc(
+        &app,
+        IpcEvent::PersonalMemoryUpdated(updated_record.clone()),
+    ) {
+        log::warn!("[IPC::Memory] Failed to emit PersonalMemoryUpdated: {}", e);
+    }
+
+    Ok(updated_record)
 }

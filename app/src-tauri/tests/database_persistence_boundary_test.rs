@@ -67,8 +67,8 @@ async fn test_schema_migration_and_seed_data() {
             .expect("Failed to query user_version");
         let version: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(
-            version, 5,
-            "Database user_version must be 5 after migration"
+            version, 7,
+            "Database user_version must be 7 after migration"
         );
 
         // 2. Verify foreign_keys = ON
@@ -106,6 +106,7 @@ async fn test_schema_migration_and_seed_data() {
             "personal_memory",
             "voices",
             "session_tool_calls",
+            "personal_memory_suggestions",
         ];
 
         for table in &expected_tables {

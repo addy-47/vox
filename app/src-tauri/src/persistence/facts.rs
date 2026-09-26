@@ -250,6 +250,100 @@ pub async fn mark_facts_consolidated(conn: &Connection, fact_ids: &[String]) -> 
     }
 }
 
+/// Marks a list of personal facts as staged for review in personal memory suggestions.
+pub async fn mark_facts_staged(conn: &Connection, fact_ids: &[String]) -> Result<()> {
+    if fact_ids.is_empty() {
+        return Ok(());
+    }
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    conn.execute("BEGIN IMMEDIATE;", ()).await?;
+
+    let tx_res: Result<()> = async {
+        let quoted_ids: Vec<String> = fact_ids.iter().map(|id| format!("'{}'", id)).collect();
+        let in_clause = quoted_ids.join(",");
+
+        let sql_facts = format!(
+            "UPDATE memory_facts SET status = 'staged', updated_at = ? WHERE id IN ({})",
+            in_clause
+        );
+        conn.execute(&sql_facts, (now,)).await?;
+
+        let sql_vectors = format!(
+            "UPDATE memory_facts_vectors SET status = 'staged' WHERE fact_id IN ({})",
+            in_clause
+        );
+        conn.execute(&sql_vectors, ()).await?;
+
+        Ok(())
+    }
+    .await;
+
+    match tx_res {
+        Ok(_) => {
+            conn.execute("COMMIT;", ()).await?;
+            Ok(())
+        }
+        Err(e) => {
+            if let Err(rb_err) = conn.execute("ROLLBACK;", ()).await {
+                log::warn!("[Persistence::Facts] Rollback failed: {}", rb_err);
+            }
+            Err(e)
+        }
+    }
+}
+
+/// Marks a list of personal facts as rejected so they are not re-suggested in future consolidations.
+pub async fn mark_facts_rejected(conn: &Connection, fact_ids: &[String]) -> Result<()> {
+    if fact_ids.is_empty() {
+        return Ok(());
+    }
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    conn.execute("BEGIN IMMEDIATE;", ()).await?;
+
+    let tx_res: Result<()> = async {
+        let quoted_ids: Vec<String> = fact_ids.iter().map(|id| format!("'{}'", id)).collect();
+        let in_clause = quoted_ids.join(",");
+
+        let sql_facts = format!(
+            "UPDATE memory_facts SET status = 'rejected', updated_at = ? WHERE id IN ({})",
+            in_clause
+        );
+        conn.execute(&sql_facts, (now,)).await?;
+
+        let sql_vectors = format!(
+            "UPDATE memory_facts_vectors SET status = 'rejected' WHERE fact_id IN ({})",
+            in_clause
+        );
+        conn.execute(&sql_vectors, ()).await?;
+
+        Ok(())
+    }
+    .await;
+
+    match tx_res {
+        Ok(_) => {
+            conn.execute("COMMIT;", ()).await?;
+            Ok(())
+        }
+        Err(e) => {
+            if let Err(rb_err) = conn.execute("ROLLBACK;", ()).await {
+                log::warn!("[Persistence::Facts] Rollback failed: {}", rb_err);
+            }
+            Err(e)
+        }
+    }
+}
+
 /// Inserts a dense float vector embedding for a fact into `memory_facts_vectors`.
 pub async fn insert_vector(
     conn: &Connection,

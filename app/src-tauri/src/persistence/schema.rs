@@ -12,7 +12,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-const SCHEMA_VERSION: u32 = 6;
+const SCHEMA_VERSION: u32 = 7;
 
 const V2_TABLE_STATEMENTS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS projects (
@@ -142,6 +142,22 @@ const V2_TABLE_STATEMENTS: &[&str] = &[
     );",
     "CREATE INDEX IF NOT EXISTS idx_tool_calls_session_turn ON session_tool_calls(session_id, turn_id);",
     "CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON session_tool_calls(created_at DESC);",
+    "CREATE TABLE IF NOT EXISTS personal_memory_suggestions (
+        id TEXT PRIMARY KEY,
+        base_memory_version INTEGER NOT NULL,
+        project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+        op TEXT NOT NULL,
+        section TEXT NOT NULL,
+        target_text TEXT,
+        proposed_text TEXT NOT NULL,
+        source_fact_ids TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at INTEGER NOT NULL,
+        resolved_at INTEGER
+    );",
+    "CREATE INDEX IF NOT EXISTS idx_suggestions_pending ON personal_memory_suggestions(base_memory_version, status);",
+    "CREATE INDEX IF NOT EXISTS idx_suggestions_status_proj ON personal_memory_suggestions(project_id, status);",
+    "CREATE INDEX IF NOT EXISTS idx_suggestions_created ON personal_memory_suggestions(created_at DESC);",
 ];
 
 /// Runs schema migrations, dropping obsolete legacy tables and initializing v2 schema.
@@ -174,6 +190,41 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
             let _ = conn
                 .execute("DROP INDEX IF EXISTS idx_personal_memory_project;", ())
                 .await;
+        }
+
+        if current_version < 7 {
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS personal_memory_suggestions (
+                    id TEXT PRIMARY KEY,
+                    base_memory_version INTEGER NOT NULL,
+                    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+                    op TEXT NOT NULL,
+                    section TEXT NOT NULL,
+                    target_text TEXT,
+                    proposed_text TEXT NOT NULL,
+                    source_fact_ids TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at INTEGER NOT NULL,
+                    resolved_at INTEGER
+                );",
+                (),
+            )
+            .await?;
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_suggestions_pending ON personal_memory_suggestions(base_memory_version, status);",
+                (),
+            )
+            .await?;
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_suggestions_status_proj ON personal_memory_suggestions(project_id, status);",
+                (),
+            )
+            .await?;
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_suggestions_created ON personal_memory_suggestions(created_at DESC);",
+                (),
+            )
+            .await?;
         }
 
         for stmt in V2_TABLE_STATEMENTS {
@@ -327,9 +378,9 @@ mod tests {
             .expect("Row exists")
             .get(0)
             .expect("Version column");
-        assert_eq!(version, 6, "Schema version must be 6");
+        assert_eq!(version, 7, "Schema version must be 7");
 
-        // Verify all 11 tables exist
+        // Verify all 12 tables exist
         let expected_tables = [
             "projects",
             "sessions",
@@ -342,6 +393,7 @@ mod tests {
             "notifications",
             "voices",
             "session_tool_calls",
+            "personal_memory_suggestions",
         ];
 
         for table in &expected_tables {
