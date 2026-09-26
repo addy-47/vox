@@ -96,6 +96,19 @@ Manages the single evolving Personal Memory markdown document.
 - **Purpose**: Restores a historical version as the active personal memory profile.
 - **Behavior**: Inside a transaction, updates `is_active = 0` for all versions of that project and sets `is_active = 1` for the specified version. Broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
+#### `get_memory_suggestions(projectId: Option<String>)` — [NEW]
+- **Purpose**: Lists all uncommitted delta suggestions pending review for the active personal memory document.
+- **Behavior**: Queries `personal_memory_suggestions WHERE status = 'pending' AND base_memory_version = active_version`. Returns `Vec<MemorySuggestionRecord>`.
+
+#### `resolve_memory_suggestion(id: Option<String>, action: String, projectId: Option<String>)` — [NEW]
+- **Purpose**: Polymorphic resolver to accept or reject pending memory suggestions individually or in bulk.
+- **Behavior**:
+  - If `id` is `Some(suggestionId)`: resolves that specific suggestion.
+  - If `id` is `None`: resolves all pending suggestions for the active document version.
+  - If `action == "accept"`: applies patch delta(s) to the markdown text, increments `version`, inserts new `personal_memory` row (`is_active = 1`), marks suggestion(s) `'accepted'`, and marks associated facts in `memory_facts` as `'consolidated'`.
+  - If `action == "reject"`: marks suggestion(s) `'rejected'`, marks associated facts in `memory_facts` as `'rejected'` (preventing repeated re-extraction), and leaves document unchanged.
+  - Broadcasts `IpcEvent::PersonalMemoryUpdated`.
+
 #### `get_active_facts(projectId: Option<String>)` — [NEW]
 - **Purpose**: Returns all `status = 'active'` facts from `memory_facts` for memory graph visualization.
 - **Behavior**: Queries all active fact rows (all `fact_type` values: `personal`, `objective`, `workdone`, `blocker`, `next_step`, `pitfall`), optionally scoped by `project_id` via the session join. Returns `Vec<FactRecord>` ordered by `created_at DESC`. Read-only; no working memory mutation.
@@ -272,7 +285,7 @@ Every event emitted by the backend via `emit_ipc` or `emit_ipc_to` is mapped dir
 | `llm_token` | `LlmTokenPayload { turn_id, token }` | High-frequency streaming text token delta for live assistant response render. |
 | `model_progress` | `ModelProgressPayload { model_id, step, progress, bytes_downloaded, total_bytes, error }` | Real-time download/extraction progress for model management. |
 | `telemetry` | `TelemetryData { energy, vad_prob, low, mid, high }` | 60Hz audio frequency visualizer data. |
-| `system_stats` | `SystemStatsPayload { system_cpu, system_ram_pct, vox_cpu, vox_ram_mb, threads, ... }` | CPU/RAM resource usage metrics for profiler drawer. |
+| `system_stats` | `SystemStatsPayload { system_cpu, system_ram_pct, vox_cpu, vox_ram_mb, threads, ... }` | One-second full launch-scope CPU and resident RAM usage. Release builds include the application and owned descendants; debug builds also include the `tauri dev` process tree. |
 | `show_toast` | `ToastPayload { title, message, level, duration_ms? }` | Ephemeral toast popups for user feedback. |
 | `notification_created` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when a persistent actionable notification or alert is created. |
 | `notification_updated` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when an active notification status changes (e.g. marked read or updated). |

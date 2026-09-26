@@ -11,6 +11,10 @@ interface OverviewTabProps {
   jsHeap: JSHeapSample;
 }
 
+function primaryMemoryMb(snapshot: ProfilerSnapshot): number {
+  return snapshot.cgroup_current_mb ?? snapshot.total_pss_mb ?? snapshot.total_vox_ram_mb;
+}
+
 export const OverviewTab: React.FC<OverviewTabProps> = ({
   latestSnapshot,
   history,
@@ -19,6 +23,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const [selectedPid, setSelectedPid] = useState<number | null>(null);
 
   const totalRss = latestSnapshot?.total_vox_ram_mb ?? 0;
+  const primaryRam = latestSnapshot ? primaryMemoryMb(latestSnapshot) : 0;
   const mainWebview = latestSnapshot?.main_webview_ram_mb ?? 0;
   const trayWebview = latestSnapshot?.tray_webview_ram_mb ?? 0;
   const rustCore = latestSnapshot?.main_process_ram_mb ?? 0;
@@ -31,8 +36,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const paddingY = 24;
 
   const historyPoints = history.length > 0 ? history : latestSnapshot ? [latestSnapshot] : [];
-  const maxHistoryRss = Math.max(...historyPoints.map((h) => h.total_vox_ram_mb), 100);
-  const minHistoryRss = Math.max(0, Math.min(...historyPoints.map((h) => h.total_vox_ram_mb)) - 25);
+  const maxHistoryRss = Math.max(...historyPoints.map(primaryMemoryMb), 100);
+  const minHistoryRss = Math.max(0, Math.min(...historyPoints.map(primaryMemoryMb)) - 25);
 
   const getSvgCoordinates = (index: number, val: number) => {
     if (historyPoints.length <= 1) {
@@ -44,7 +49,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     return { x, y };
   };
 
-  const totalPathPoints = historyPoints.map((h, i) => getSvgCoordinates(i, h.total_vox_ram_mb));
+  const totalPathPoints = historyPoints.map((h, i) => getSvgCoordinates(i, primaryMemoryMb(h)));
   const totalLinePath =
     totalPathPoints.length > 0
       ? `M ${totalPathPoints.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" L ")}`
@@ -83,21 +88,21 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         <div className="p-4 rounded-2xl border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--card),0.92)] shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]">
-              {PROFILER_COPY.overview.totalVoxRss}
+              {PROFILER_COPY.overview.fullScopeRam}
             </span>
             <AccuracyBadge type="Measured" />
           </div>
           <div className="mt-2.5 flex items-baseline gap-1.5">
             <span className="font-mono text-2xl lg:text-3xl font-bold text-[rgb(var(--accent))]">
-              {totalRss > 0 ? totalRss.toFixed(1) : "--"}
+              {primaryRam > 0 ? primaryRam.toFixed(1) : "--"}
             </span>
             <span className="font-mono text-xs text-[rgb(var(--foreground-muted))]">MB</span>
           </div>
           <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] mt-1 truncate">
-            {latestSnapshot?.devtools_ram_mb
-              ? `Core: ${(latestSnapshot.core_app_ram_mb ?? totalRss).toFixed(1)} MB (+${latestSnapshot.devtools_ram_mb.toFixed(1)}M DevTools)`
+            {latestSnapshot?.cgroup_current_mb
+              ? `${PROFILER_COPY.overview.runtimePss} ${latestSnapshot.runtime_pss_mb.toFixed(1)} MB · ${PROFILER_COPY.overview.developmentTools} ${latestSnapshot.dev_tool_pss_mb.toFixed(1)} MB · ${PROFILER_COPY.overview.shmem} ${(latestSnapshot.cgroup_shmem_mb ?? 0).toFixed(1)} MB`
               : latestSnapshot?.total_pss_mb
-              ? `PSS: ${latestSnapshot.total_pss_mb.toFixed(1)} MB (Unique Physical)`
+              ? `${PROFILER_COPY.overview.runtimePss} ${latestSnapshot.runtime_pss_mb.toFixed(1)} MB`
               : PROFILER_COPY.overview.processTreeAggregate}
           </p>
         </div>
@@ -183,7 +188,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <div className="flex items-center gap-2">
               <Activity size={17} className="text-[rgb(var(--accent))]" />
               <h3 className="font-display text-sm font-bold tracking-wide text-[rgb(var(--foreground))]">
-                {PROFILER_COPY.overview.memoryOverTime}
+                {PROFILER_COPY.overview.fullScopeMemoryOverTime}
               </h3>
             </div>
             <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">

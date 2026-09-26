@@ -177,40 +177,79 @@ Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_
 
 ### 5.2 User Interaction Modes
 1. **View & Copy**: User views formatted markdown in the UI and can copy the raw markdown text directly to their clipboard.
-2. **Direct Manual Edit**: User directly edits markdown text in the UI and saves changes.
-3. **Comment-Driven Regeneration**: User leaves directive comments. The backend triggers an LLM pass taking `[Current Document] + [User Comments]` to regenerate the document. This operation is a pure text edit pass and is NEVER blocked by background ingestion queue items or compactions.
+2. **Direct Manual Edit**: User directly edits markdown text in the UI and saves changes (modal exclusive: disabled while uncommitted patch suggestions are pending review).
+3. **Comment-Driven Structured Edits**: User leaves directive comments on specific lines/quotes. The backend triggers a structured patch LLM pass taking `[Current Document] + [User Comments]` to generate targeted delta suggestions (`replace`, `insert`, `delete`) displayed on the staging slate for user review.
 4. **Version Carousel Navigation**: User flips between previous versions of personal memory to inspect changes over time or restore an earlier version as the active document.
 
-### 5.3 Background Consolidation Pipeline
-Merges newly accumulated personal facts into the existing document:
+### 5.3 Structured Delta Consolidation Pipeline
+Merges newly accumulated personal facts into the existing document via an audited patch protocol rather than full-document regeneration:
 1. **Candidate Query**:
    `SELECT * FROM memory_facts WHERE type = 'personal' AND status = 'active'`
 2. **Execution Gating & Preconditions**:
    Consolidation is NEVER hard-blocked by an active compaction or pending queue items:
-   - **Comment-Driven Regeneration**: Executes immediately regardless of ingestion queue state or ongoing compactions.
-   - **Fact Consolidation (Manual UI)**:
+   - **Comment-Driven Edits**: Executes immediately regardless of ingestion queue state or ongoing compactions.
+   - **Fact Integration ("Integrate Learned Facts" in UI)**:
      - If an active compaction is in progress (`session_compactions.status = 'in_progress'`), the UI provides a non-blocking resolution choice:
        1. **Pause / Preempt Compaction & Consolidate Now**: Signals cancellation on the active compaction task, resets its DB record status from `'in_progress'` back to `'pending'` (allowing auto-compaction to resume/pick it back up once consolidation completes), processes pending ingestion items, and immediately runs consolidation.
        2. **Queue Consolidation**: Registers the consolidation request in `PendingConsolidationState` to run automatically as soon as the ongoing compaction finishes.
-   - **Fact Consolidation (Daily / Scheduled Cadence)**:
+   - **Headless Scheduled Runs**:
      - Headless scheduled runs never raise errors. If a compaction is in progress, the scheduled run is automatically queued in `PendingConsolidationState` and executes as soon as the active compaction and its ingestion cycle finish.
-3. **Consolidation Prompt & Merge**:
-   - The LLM receives `[Current Personal Memory] + [Active Personal Facts]`.
-   - Reorganizes sections and resolves contradictions using model reasoning (zero NLI or secondary classifier models).
-4. **State Transition on Success**:
-   - On successful merge, a new row is inserted with `version = max_version + 1`, `is_active = 1`, and `last_consolidated_at` stamped to now. The prior active row is flipped to `is_active = 0`.
-   - Merged personal facts transition from `status = 'active'` to `status = 'consolidated'`.
-5. **UI Lock**:
-   - While consolidation or regeneration executes, the UI locks the editor to prevent concurrent edit collisions.
+3. **Structured Patch LLM Pass**:
+   - The LLM receives `[Current Personal Memory Document] + [Active Personal Facts]`.
+   - The LLM acts strictly as a **change proposer** rather than a document re-writer. It emits a structured JSON object containing an array of atomic patch operations without synthetic line numbers:
+     ```json
+     {
+       "operations": [
+         {
+           "op": "replace",
+           "section": "## Personal Information",
+           "target_text": "Lives in Chicago.",
+           "proposed_text": "Lives in Austin.",
+           "source_fact_ids": ["fact_101"]
+         },
+         {
+           "op": "insert",
+           "section": "## Technical Projects",
+           "target_text": null,
+           "proposed_text": "Building a voice orchestrator in Rust.",
+           "source_fact_ids": ["fact_204"]
+         }
+       ]
+     }
+     ```
+   - **Atomic Operators**:
+     - `insert`: Appends `proposed_text` under the designated `section` heading. If `section` does not exist, it is created.
+     - `replace`: Locates exact `target_text` within `section` and substitutes it with `proposed_text`.
+     - `delete`: Locates exact `target_text` within `section` and removes it.
+   - Any document text not explicitly targeted by an operation is mathematically immutable and preserved.
+4. **Staging & Modal Isolation Lifecycle**:
+   - Generated operations are inserted into `personal_memory_suggestions` with `status = 'pending'`.
+   - Linked facts in `memory_facts` transition from `status = 'active'` to `status = 'staged'`.
+   - The staging slate (`PersonalMemoryStagingCard`) enters an exclusive `"review"` mode displaying diff cards with `[✓]` (Accept) and `[✕]` (Reject) alongside `Accept All` and `Discard All`.
+   - While pending suggestions exist, manual text editing, markdown import, and new comment submissions are locked to eliminate concurrent mutation races.
+5. **Suggestion Resolution**:
+   - Suggestions are resolved individually or in bulk via `resolve_memory_suggestion(id: Option<String>, action: String)`.
+   - **Acceptance (`action = 'accept'`)**:
+     1. Applies patch delta(s) to the active `personal_memory` markdown.
+     2. Inserts a new record in `personal_memory` with `version = max_version + 1`, `is_active = 1`, and `last_consolidated_at = now()`. The previous version flips to `is_active = 0`.
+     3. Suggestion rows flip to `status = 'accepted', resolved_at = now()`.
+     4. Linked facts in `memory_facts` flip from `'staged'` to `'consolidated'`.
+   - **Rejection (`action = 'reject'`)**:
+     1. Suggestion rows flip to `status = 'rejected', resolved_at = now()`.
+     2. Linked facts in `memory_facts` flip from `'staged'` to `'rejected'`, ensuring they are not repeatedly re-suggested in subsequent consolidation cycles.
+     3. Active document remains unchanged.
 
-### 5.4 Consolidation Cadence
-Configurable in `settings.memory.consolidation_cadence` (`"manual"` default, `"daily"` with `settings.memory.consolidation_time` as `"HH:MM"`):
-- **Manual**: Runs strictly when triggered by `[Consolidate Now]` or comment regeneration.
-- **Scheduled Time**: Runs daily at the configured time. If an active compaction or ingestion cycle is running at scheduled time, the run is queued behind it rather than deferred or failed.
-- **Missed & Failed Runs**: A run due while the app was down emits a persistent `personal_consolidation` notification card (`pending`, tap-to-run). A failed run flips its card to `failed` with the error; successes complete silently.
+### 5.4 Suggestion Policies & Cadence
+- **Suggestion Policy** (`settings.memory.suggestion_policy`):
+  - `"manual_review"` (default): All fact integration and comment edits land in `personal_memory_suggestions` for user review.
+  - `"auto_apply"`: Non-conflicting `insert` and `replace` operations automatically commit into a new document version; deletions are held for user confirmation.
+- **Cadence** (`settings.memory.consolidation_cadence`):
+  - `"manual"` (default): Triggered on-demand via the `"Integrate Learned Facts"` button or comment regeneration.
+  - `"daily"` (with `settings.memory.consolidation_time` as `"HH:MM"`): Runs daily at configured time.
+  - **Missed & Failed Runs**: Runs due while the app was down emit a persistent `personal_consolidation` notification card (`pending`, tap-to-run). A failed run flips its card to `failed` with the error; successes complete silently.
 
 ### 5.5 Project Scope (Current)
-Memory is global: the merge folds all `status = 'active'` personal facts into the single document regardless of `project_id` (which is reserved scaffolding for future project-specific memory). Direct manual edits replace only the document text and leave waiting facts active by design.
+Memory is global: the merge folds all `status = 'active'` personal facts into the single document regardless of `project_id` (reserved scaffolding for future project-specific memory). Direct manual edits replace only the document text and leave waiting facts active by design.
 
 ---
 

@@ -292,6 +292,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
   const isSettings = location.pathname === "/settings";
   const isHome = location.pathname === "/";
   const isMonitoring = location.pathname === "/monitoring";
+  const rippleSpeedMultiplier = isSettings ? 1.5 : location.pathname === "/history" ? 1.25 : 1.0;
   // Ambient origin — standardized across all views (Home, History, Settings, Memory) to calc(50% - 36px)
   const ambientOriginY = "calc(50% - 36px)";
 
@@ -326,6 +327,7 @@ export const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children }) 
         <AmbientBackground
           originY={ambientOriginY}
           paused={interactionState === "Speaking"}
+          rippleSpeedMultiplier={rippleSpeedMultiplier}
           rippleShape={
             location.pathname === "/history" && historyDisplayMode === "orbit"
               ? "orbit"

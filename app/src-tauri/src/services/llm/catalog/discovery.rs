@@ -71,43 +71,55 @@ pub async fn discover_server_dialect(
     ServerDialect::GenericOpenAiCompat
 }
 
-async fn probe_ollama_endpoint(client: &Client, root: &str, auth: &AuthScheme) -> Option<ServerDialect> {
+async fn probe_ollama_endpoint(
+    client: &Client,
+    root: &str,
+    auth: &AuthScheme,
+) -> Option<ServerDialect> {
     let url = format!("{}/api/version", root);
     let mut builder = client.get(&url).timeout(Duration::from_secs(1));
     builder = inject_auth_headers(builder, auth);
 
     let resp = builder.send().await.ok()?;
     if resp.status().is_success() {
-        let version = resp
-            .json::<serde_json::Value>()
-            .await
-            .ok()
-            .and_then(|v| v.get("version").and_then(|s| s.as_str()).map(ToString::to_string));
+        let version = resp.json::<serde_json::Value>().await.ok().and_then(|v| {
+            v.get("version")
+                .and_then(|s| s.as_str())
+                .map(ToString::to_string)
+        });
         Some(ServerDialect::Ollama { version })
     } else {
         None
     }
 }
 
-async fn probe_vllm_endpoint(client: &Client, root: &str, auth: &AuthScheme) -> Option<ServerDialect> {
+async fn probe_vllm_endpoint(
+    client: &Client,
+    root: &str,
+    auth: &AuthScheme,
+) -> Option<ServerDialect> {
     let url = format!("{}/version", root);
     let mut builder = client.get(&url).timeout(Duration::from_secs(1));
     builder = inject_auth_headers(builder, auth);
 
     let resp = builder.send().await.ok()?;
     if resp.status().is_success() {
-        let version = resp
-            .json::<serde_json::Value>()
-            .await
-            .ok()
-            .and_then(|v| v.get("version").and_then(|s| s.as_str()).map(ToString::to_string));
+        let version = resp.json::<serde_json::Value>().await.ok().and_then(|v| {
+            v.get("version")
+                .and_then(|s| s.as_str())
+                .map(ToString::to_string)
+        });
         Some(ServerDialect::Vllm { version })
     } else {
         None
     }
 }
 
-async fn probe_llama_endpoint(client: &Client, root: &str, auth: &AuthScheme) -> Option<ServerDialect> {
+async fn probe_llama_endpoint(
+    client: &Client,
+    root: &str,
+    auth: &AuthScheme,
+) -> Option<ServerDialect> {
     let url = format!("{}/props", root);
     let mut builder = client.get(&url).timeout(Duration::from_secs(1));
     builder = inject_auth_headers(builder, auth);
@@ -120,7 +132,11 @@ async fn probe_llama_endpoint(client: &Client, root: &str, auth: &AuthScheme) ->
     }
 }
 
-async fn probe_models_endpoint(client: &Client, base: &str, auth: &AuthScheme) -> Option<ServerDialect> {
+async fn probe_models_endpoint(
+    client: &Client,
+    base: &str,
+    auth: &AuthScheme,
+) -> Option<ServerDialect> {
     let url = if base.ends_with("/v1") {
         format!("{}/models", base)
     } else {

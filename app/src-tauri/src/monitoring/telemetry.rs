@@ -8,7 +8,7 @@ use std::{
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 use serde::Serialize;
-use sysinfo::{Pid, System};
+use sysinfo::System;
 use tauri::{AppHandle, Manager};
 
 use crate::{
@@ -17,6 +17,7 @@ use crate::{
         state::{AppState, AppWindow, InteractionOwner, InteractionState},
     },
     monitoring::{
+        resource_scope::{new_resource_system, refresh_resource_system, ResourceScopeSampler},
         SYSTEM_MONITOR_INTERVAL, TELEMETRY_AGGREGATOR_CHANNEL_CAPACITY, TELEMETRY_EMITTER_INTERVAL,
     },
 };
@@ -200,20 +201,32 @@ impl TelemetryAggregator {
 pub fn spawn_system_monitor(app: AppHandle) {
     let state_arc: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
     let telemetry_tx = state_arc.telemetry.telemetry_tx.clone();
-    let pid = sysinfo::get_current_pid().ok();
+    let sampler = sysinfo::get_current_pid()
+        .ok()
+        .map(ResourceScopeSampler::new);
 
     tauri::async_runtime::spawn(async move {
         log::info!("[Monitoring::SystemMonitor] System monitor task started");
-        let mut sys = System::new_all();
+        let mut sys = new_resource_system();
 
         loop {
             tokio::time::sleep(SYSTEM_MONITOR_INTERVAL).await;
 
-            sys.refresh_all();
+            refresh_resource_system(&mut sys);
 
             let system_cpu = sys.global_cpu_info().cpu_usage();
             let system_ram_pct = (sys.used_memory() as f32 / sys.total_memory() as f32) * 100.0;
-            let (vox_cpu, vox_ram_mb, thread_count) = collect_process_metrics(&sys, pid);
+            let (vox_cpu, vox_ram_mb, thread_count) = match &sampler {
+                Some(sampler) => {
+                    let scope = sampler.sample(&sys, sys.cpus().len());
+                    (
+                        scope.process.cpu_percent,
+                        (scope.resident_bytes() / 1024 / 1024) as u32,
+                        scope.process.thread_count,
+                    )
+                }
+                None => (0.0, 0, 0),
+            };
 
             update_shared_metrics(
                 &state_arc,
@@ -280,60 +293,6 @@ pub fn spawn_telemetry_emitter(app: AppHandle) {
             }
         }
     });
-}
-
-/// Sums CPU, RAM, and thread counts across the current process and its descendants.
-fn collect_process_metrics(sys: &System, pid: Option<Pid>) -> (f32, u32, u32) {
-    let target_pid = match pid {
-        Some(p) => p,
-        None => return (0.0, 0, 0),
-    };
-
-    let mut total_memory: u64 = 0;
-    let mut total_cpu: f32 = 0.0;
-    let mut total_threads: u32 = 0;
-
-    for (&p_pid, proc) in sys.processes() {
-        // On Linux, sysinfo lists both process-group-leaders and individual thread
-        // entries under sys.processes(). Thread entries have thread_kind() == Some(_).
-        // Skip thread entries to avoid double-counting memory with their parent process.
-        #[cfg(target_os = "linux")]
-        if proc.thread_kind().is_some() {
-            continue;
-        }
-
-        if is_descendant_process(sys, p_pid, target_pid) {
-            total_memory += proc.memory();
-            total_cpu += proc.cpu_usage();
-            total_threads += proc.tasks().map(|t| t.len()).unwrap_or(1) as u32;
-        }
-    }
-
-    let cpu_cores = sys.cpus().len().max(1) as f32;
-    (
-        total_cpu / cpu_cores,
-        (total_memory / 1024 / 1024) as u32,
-        total_threads,
-    )
-}
-
-/// Reports whether a process is the target or descends from it via parent links.
-fn is_descendant_process(sys: &System, p_pid: Pid, target_pid: Pid) -> bool {
-    if p_pid == target_pid {
-        return true;
-    }
-    let mut curr = sys.process(p_pid);
-    while let Some(proc) = curr {
-        if let Some(parent_pid) = proc.parent() {
-            if parent_pid == target_pid {
-                return true;
-            }
-            curr = sys.process(parent_pid);
-        } else {
-            break;
-        }
-    }
-    false
 }
 
 /// Stores the latest system and process metrics into the shared telemetry atomics.

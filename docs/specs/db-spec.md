@@ -168,6 +168,29 @@ Evolving user knowledge document with append-only historical versioning, structu
 
 ---
 
+### 2.5.1 `personal_memory_suggestions`
+Uncommitted delta operations proposed by consolidation or comment processing, pending user acceptance or auto-apply.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | TEXT | PRIMARY KEY | Suggestion ID: `sug_{timestamp}_{uuid}` |
+| `base_memory_version` | INTEGER | NOT NULL REFERENCES `personal_memory(version)` ON DELETE CASCADE | Target document version this patch applies to |
+| `project_id` | TEXT | NULLABLE REFERENCES `projects(id)` ON DELETE CASCADE | Associated project scope |
+| `op` | TEXT | NOT NULL | `'insert'`, `'replace'`, `'delete'` |
+| `section` | TEXT | NOT NULL | Markdown section heading (e.g. `'## Personal Information'`) |
+| `target_text` | TEXT | NULLABLE | Exact text to replace or delete (NULL for insert) |
+| `proposed_text` | TEXT | NOT NULL | New text to insert or replace |
+| `source_fact_ids` | TEXT | NOT NULL | JSON array of `memory_facts.id` provenance |
+| `status` | TEXT | NOT NULL DEFAULT 'pending' | `'pending'`, `'accepted'`, `'rejected'` |
+| `created_at` | INTEGER | NOT NULL | Millisecond epoch |
+| `resolved_at` | INTEGER | NULLABLE | Millisecond epoch |
+
+*Indexes:*
+- `idx_suggestions_pending`: `(base_memory_version, status)`
+- `idx_suggestions_created`: `(created_at DESC)`
+
+---
+
 ### 2.6 `memory_ingestion_queue` (Staging)
 Temporary batch-processing staging queue for extracted facts awaiting deduplication.
 
@@ -207,14 +230,16 @@ Permanent fact registry storing deduped, active and historical facts.
 | `compaction_id` | INTEGER | NOT NULL REFERENCES `session_compactions(id)` ON DELETE CASCADE | Source compaction provenance |
 | `type` | TEXT | NOT NULL | `'personal'`, `'objective'`, `'workdone'`, `'blocker'`, `'next_step'`, `'pitfall'` |
 | `text` | TEXT | NOT NULL | Deduped fact text |
-| `status` | TEXT | NOT NULL DEFAULT 'active' | Strictly `'active'`, `'inactive'`, or `'consolidated'` |
+| `status` | TEXT | NOT NULL DEFAULT 'active' | Strictly `'active'`, `'inactive'`, `'staged'`, `'consolidated'`, or `'rejected'` |
 | `created_at` | INTEGER | NOT NULL | Millisecond epoch |
 | `updated_at` | INTEGER | NOT NULL | Millisecond epoch |
 
 *Status Values:*
 - `'active'`: Currently valid fact available for retrieval or consolidation.
 - `'inactive'`: Deactivated fact (superseded by newer duplicate in dedup).
-- `'consolidated'`: Personal fact merged into the `personal_memory` markdown document.
+- `'staged'`: Personal fact linked to a pending uncommitted suggestion.
+- `'consolidated'`: Personal fact merged into the `personal_memory` markdown document upon suggestion acceptance.
+- `'rejected'`: Personal fact rejected by user during suggestion review (preventing re-extraction).
 
 *Indexes:*
 - `idx_facts_status_type`: `(status, type)`
