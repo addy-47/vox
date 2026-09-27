@@ -79,7 +79,10 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
-            if let Err(e) = engine.vad_tx.send(VadCommand::StartWindowValidation) {
+            if let Err(e) = engine.vad_tx.send(VadCommand::StartWindowValidation {
+                auto_stop_silence_ms: None,
+                stream_partials: false,
+            }) {
                 log::warn!("[Pipeline::Ptt] Failed to start window validation: {}", e);
             }
         }

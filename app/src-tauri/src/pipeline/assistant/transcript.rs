@@ -118,6 +118,13 @@ pub fn on_transcript_final<R: tauri::Runtime>(
     state: &AppState,
     ctx: &RoutingContext,
 ) {
+    log::info!(
+        "[Pipeline::Transcript::Trace] assistant_final_entry turn={} owner={:?} target={} chars={}",
+        turn_id,
+        ctx.owner,
+        target_window(ctx.owner),
+        text.chars().count()
+    );
     let current_state = state.pipeline.state();
     if current_state != InteractionState::Thinking {
         log::debug!(

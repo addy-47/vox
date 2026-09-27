@@ -51,7 +51,10 @@ pub enum VadCommand {
     UpdateMode(InteractionMode),
     UpdateAudioMode(AudioOutputMode),
     SetOperationalMode(VadOperationalMode),
-    StartWindowValidation,
+    StartWindowValidation {
+        auto_stop_silence_ms: Option<u64>,
+        stream_partials: bool,
+    },
     StopWindowValidation {
         response_tx: mpsc::Sender<VadValidationResult>,
     },
@@ -102,6 +105,9 @@ pub struct VadActorState {
     pub window_first_speech_sample: usize,
     pub window_last_speech_sample: usize,
     pub window_buffer: Vec<f32>,
+    pub window_autostop_silence_ms: Option<u64>,
+    pub window_autostop_fired: bool,
+    pub window_stream_partials: bool,
 }
 
 /// Configuration settings for the VAD actor.
@@ -184,6 +190,9 @@ impl VadActorState {
             window_first_speech_sample: 0,
             window_last_speech_sample: 0,
             window_buffer: Vec::new(),
+            window_autostop_silence_ms: None,
+            window_autostop_fired: false,
+            window_stream_partials: false,
         }
     }
 }
@@ -247,9 +256,13 @@ fn process_vad_commands(
                 }
                 state.operational_mode = op;
             }
-            VadCommand::StartWindowValidation => {
+            VadCommand::StartWindowValidation {
+                auto_stop_silence_ms,
+                stream_partials,
+            } => {
                 let turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
                 log::info!("[VAD Actor] Windowed validation started (turn {})", turn_id);
+                state.current_turn_id = turn_id;
                 state.window_active = true;
                 state.window_buffer.clear();
                 state.pre_roll_buffer.copy_into(&mut state.window_buffer);
@@ -258,6 +271,9 @@ fn process_vad_commands(
                 state.window_speech_detected = false;
                 state.window_first_speech_sample = 0;
                 state.window_last_speech_sample = 0;
+                state.window_autostop_silence_ms = auto_stop_silence_ms;
+                state.window_autostop_fired = false;
+                state.window_stream_partials = stream_partials;
             }
             VadCommand::StopWindowValidation { response_tx } => {
                 state.window_active = false;
@@ -442,7 +458,9 @@ where
                         );
                     }
                     VadOperationalMode::WindowedValidation => {
-                        process_windowed_validation(&chunk, raw_energy, &mut vad, &mut state);
+                        process_windowed_validation(
+                            &chunk, raw_energy, &mut vad, &mut state, &channels,
+                        );
                     }
                 }
             } else {

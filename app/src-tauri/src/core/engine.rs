@@ -8,7 +8,7 @@ use std::{
 };
 
 use ringbuf::traits::Split;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::{
     core::{
@@ -29,6 +29,7 @@ use crate::{
             LlmCommand, QWEN_MODEL_DIR, QWEN_MODEL_FILE,
         },
         memory::{ensure_embedder_loaded, is_embedder_loaded, trim_heap, unload_all_onnx_models},
+        notifications::lifecycle::dictation_live_update,
         stt::{
             actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand},
             create_stt_instance_from_settings, SttProvider,
@@ -232,20 +233,37 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
 
     let app_handle = app.clone();
     let partial_emitter = Some(Arc::new(move |turn_id: u32, text: String| {
-        let target = target_window(InteractionOwner::Assistant);
+        let owner: InteractionOwner = app_handle
+            .state::<Arc<AppState>>()
+            .owner
+            .load(Ordering::Relaxed)
+            .into();
+        let target = target_window(owner);
+        log::debug!(
+            "[STT::Partial::Trace] turn={} owner={:?} target={} chars={} tray_exists={} main_exists={}",
+            turn_id,
+            owner,
+            target,
+            text.chars().count(),
+            app_handle.get_webview_window("tray").is_some(),
+            app_handle.get_webview_window("main").is_some()
+        );
         if let Err(e) = emit_ipc_to(
             &app_handle,
             target,
             IpcEvent::TranscriptPartial(TranscriptPayload {
                 turn_id,
-                text,
-                owner: Some(InteractionOwner::Assistant),
+                text: text.clone(),
+                owner: Some(owner),
             }),
         ) {
             log::trace!(
                 "[Core::Engine] Failed to emit partial transcript IPC: {}",
                 e
             );
+        }
+        if owner == InteractionOwner::Dictation {
+            dictation_live_update(&text);
         }
     }) as Arc<dyn Fn(u32, String) + Send + Sync>);
 

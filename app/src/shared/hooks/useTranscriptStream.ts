@@ -77,6 +77,7 @@ export function useTranscriptStream(
     const cleanups = [
       onTranscriptPartial((payload: TranscriptPayload) => {
         if (cancelled) return;
+        if (payload.owner === "Dictation") return;
         if (
           payload.turn_id !== undefined &&
           activeTurnIdRef.current !== null &&
@@ -104,6 +105,7 @@ export function useTranscriptStream(
       }),
       onTranscriptFinal((payload: TranscriptPayload) => {
         if (cancelled) return;
+        if (payload.owner === "Dictation") return;
         if (partialThrottleTimer.current) {
           clearTimeout(partialThrottleTimer.current);
           partialThrottleTimer.current = null;

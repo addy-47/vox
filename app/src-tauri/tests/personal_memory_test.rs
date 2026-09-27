@@ -21,7 +21,7 @@ use vox_lib::{
         compactions::{commit_compaction_output, record_compaction_start},
         facts::{
             fetch_active_facts_by_type, insert_fact, insert_vector, mark_facts_consolidated,
-            mark_facts_staged, FactRecord,
+            FactRecord,
         },
         has_in_progress_compaction,
         personal_memory::{
@@ -664,8 +664,8 @@ fn pending_suggestion(
     id: &str,
     base_version: i64,
     op: &str,
-    proposed_text: &str,
-    source_fact_ids: Vec<String>,
+    target_index: u32,
+    content: &str,
     created_at: i64,
 ) -> PersonalMemorySuggestionRecord {
     PersonalMemorySuggestionRecord {
@@ -673,10 +673,8 @@ fn pending_suggestion(
         base_memory_version: base_version,
         project_id: None,
         op: op.to_string(),
-        section: "## Personal Information".to_string(),
-        target_text: None,
-        proposed_text: proposed_text.to_string(),
-        source_fact_ids,
+        target_index,
+        content: content.to_string(),
         status: "pending".to_string(),
         created_at,
         resolved_at: None,
@@ -765,14 +763,32 @@ async fn suggestion_base_version(conn: &turso::Connection, id: &str) -> i64 {
         .await
         .expect("query must yield a row")
         .expect("suggestion row must exist");
-    row.get(0).expect("base_memory_version column must be readable")
+    row.get(0)
+        .expect("base_memory_version column must be readable")
 }
 
-/// Subtest 7: `insert_personal_memory_suggestions` persists rows and preserves fact linkage.
+/// Reads the live `target_index` of a single suggestion row.
+async fn suggestion_target_index(conn: &turso::Connection, id: &str) -> u32 {
+    let mut rows = conn
+        .query(
+            "SELECT target_index FROM personal_memory_suggestions WHERE id = ?",
+            (id,),
+        )
+        .await
+        .expect("suggestion target_index query must succeed");
+    let row = rows
+        .next()
+        .await
+        .expect("query must yield a row")
+        .expect("suggestion row must exist");
+    let idx: i64 = row.get(0).expect("target_index column must be readable");
+    idx as u32
+}
+
+/// Subtest 7: `insert_personal_memory_suggestions` persists rows and preserves index properties.
 ///
 /// Covers the write path plus the `fetch_pending_suggestions` read-back contract:
-/// `status = 'pending'`, `source_fact_ids` round-tripped as a JSON array, ordering
-/// oldest-created-first, and an empty slice is a no-op rather than an error.
+/// `status = 'pending'`, ordering oldest-created-first, and an empty slice is a no-op.
 #[tokio::test]
 async fn test_suggestion_insert_and_fetch_pending_roundtrip() {
     tokio::time::timeout(Duration::from_secs(15), async {
@@ -792,21 +808,21 @@ async fn test_suggestion_insert_and_fetch_pending_roundtrip() {
             "empty insert must not create suggestion rows"
         );
 
-        // Two pending suggestions over three distinct source facts.
+        // Two pending suggestions with target indices.
         let older = pending_suggestion(
             "sug_older",
             1,
-            "insert",
-            "User enjoys badminton.",
-            vec!["fact_a".to_string(), "fact_b".to_string()],
+            "insert_after",
+            1,
+            "- User enjoys badminton.",
             1_000,
         );
         let newer = pending_suggestion(
             "sug_newer",
             1,
-            "insert",
-            "User relocated to Seattle.",
-            vec!["fact_c".to_string()],
+            "insert_after",
+            2,
+            "- User relocated to Seattle.",
             2_000,
         );
         insert_personal_memory_suggestions(&conn, &[older, newer])
@@ -818,16 +834,14 @@ async fn test_suggestion_insert_and_fetch_pending_roundtrip() {
             .await
             .expect("fetch_pending_suggestions must succeed");
         assert_eq!(pending.len(), 2, "both suggestions must be pending");
-        assert_eq!(pending[0].id, "sug_older", "ordering must be created_at ASC");
+        assert_eq!(
+            pending[0].id, "sug_older",
+            "ordering must be created_at ASC"
+        );
         assert_eq!(pending[1].id, "sug_newer");
 
-        // source_fact_ids must survive the JSON round-trip with order preserved.
-        assert_eq!(
-            pending[0].source_fact_ids,
-            vec!["fact_a".to_string(), "fact_b".to_string()],
-            "source_fact_ids must round-trip through JSON with order preserved"
-        );
-        assert_eq!(pending[1].source_fact_ids, vec!["fact_c".to_string()]);
+        assert_eq!(pending[0].content, "- User enjoys badminton.");
+        assert_eq!(pending[1].content, "- User relocated to Seattle.");
 
         // Both anchored to the memory version current at staging time.
         assert_eq!(suggestion_base_version(&conn, "sug_older").await, 1);
@@ -837,16 +851,11 @@ async fn test_suggestion_insert_and_fetch_pending_roundtrip() {
     .expect("test_suggestion_insert_and_fetch_pending_roundtrip timed out");
 }
 
-/// Subtest 8: Accepting `sug_1` re-anchors `sug_2` so it stays fetchable and resolvable.
+/// Subtest 8: Accepting `sug_1` re-anchors `sug_2` and arithmetically shifts its `target_index`.
 ///
-/// This is INVARIANT 5.3-B — the anchor-erosion fix. `sug_2`'s `target_text` anchors
-/// were computed against document version 1; accepting `sug_1` writes version 2. If
-/// `sug_2` is not re-anchored it becomes permanently unappliable, and if re-anchoring
-/// wrongly cleared its status it would silently vanish from the review slate.
-///
-/// Asserts: version bumped, sug_1 accepted, sug_1's facts consolidated,
-/// sug_2 still pending, sug_2 re-anchored to the new version, and sug_2 still
-/// individually resolvable afterwards.
+/// This is INVARIANT 5.3-B — arithmetic index re-anchoring. `sug_2` was anchored at index 3;
+/// accepting an `insert_after` at index 2 shifts subsequent pending suggestions (index > 2)
+/// by +1, so `sug_2`'s `target_index` becomes 4.
 #[tokio::test]
 async fn test_suggestion_accept_reanchors_remaining_pending() {
     tokio::time::timeout(Duration::from_secs(15), async {
@@ -880,35 +889,32 @@ async fn test_suggestion_accept_reanchors_remaining_pending() {
         )
         .await;
 
-        // Both suggestions staged against memory version 1.
-        let v1_doc = "# Profile\n\n- User lives in Chicago.\n";
-        save_personal_memory(&conn, None, v1_doc, 1)
+        // Base document at version 2.
+        let v2_doc = "# Profile\n\n- User lives in Chicago.\n";
+        save_personal_memory(&conn, None, v2_doc, 1)
             .await
             .expect("v2 document must be saved");
-        let staged = ["fact_for_sug_1", "fact_for_sug_2"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<String>>();
-        mark_facts_staged(&conn, &staged)
-            .await
-            .expect("facts must be staged");
+
+        // Two suggestions anchored to version 2:
+        // sug_1: insert after element 2
+        // sug_2: insert after element 3
         insert_personal_memory_suggestions(
             &conn,
             &[
                 pending_suggestion(
                     "sug_1",
                     2,
-                    "insert",
-                    "User enjoys badminton.",
-                    vec!["fact_for_sug_1".to_string()],
+                    "insert_after",
+                    2,
+                    "- User enjoys badminton.",
                     1_000,
                 ),
                 pending_suggestion(
                     "sug_2",
                     2,
-                    "insert",
-                    "User relocated to Seattle.",
-                    vec!["fact_for_sug_2".to_string()],
+                    "insert_after",
+                    3,
+                    "- User relocated to Seattle.",
                     2_000,
                 ),
             ],
@@ -941,13 +947,9 @@ async fn test_suggestion_accept_reanchors_remaining_pending() {
             "accepted",
             "resolved suggestion must flip to 'accepted'"
         );
-        assert_eq!(
-            fact_status(&conn, "fact_for_sug_1").await,
-            "consolidated",
-            "facts of the accepted suggestion must flip 'staged' -> 'consolidated'"
-        );
 
-        // INVARIANT 5.3-B — sug_2 must survive as pending AND be re-anchored to v3.
+        // INVARIANT 5.3-B — sug_2 must survive as pending AND be re-anchored to v3,
+        // and its target_index must shift from 3 to 4.
         assert_eq!(
             suggestion_status(&conn, "sug_2").await,
             "pending",
@@ -959,9 +961,9 @@ async fn test_suggestion_accept_reanchors_remaining_pending() {
             "remaining pending suggestion must be re-anchored to the newly written version"
         );
         assert_eq!(
-            fact_status(&conn, "fact_for_sug_2").await,
-            "staged",
-            "re-anchored suggestion's facts must remain staged, not consolidated"
+            suggestion_target_index(&conn, "sug_2").await,
+            4,
+            "remaining pending suggestion target_index must shift arithmetically by +1"
         );
 
         // sug_2 must still be returned by the review slate and still be resolvable.
@@ -989,21 +991,12 @@ async fn test_suggestion_accept_reanchors_remaining_pending() {
             final_record.version, 4,
             "sug_2 must resolve on top of the re-anchored base version"
         );
-        assert_eq!(
-            fact_status(&conn, "fact_for_sug_2").await,
-            "consolidated",
-            "sug_2's fact must consolidate once sug_2 is accepted"
-        );
     })
     .await
     .expect("test_suggestion_accept_reanchors_remaining_pending timed out");
 }
 
-/// Subtest 9: Rejecting a suggestion marks its facts `'rejected'` and leaves the document intact.
-///
-/// Covers INVARIANT 5.3-A on the reject path: fact status must leave `'staged'` so the
-/// fact is not re-suggested on the next consolidation cycle, and rejection must NOT bump
-/// the document version.
+/// Subtest 9: Rejecting a suggestion marks it `'rejected'` and leaves the document intact.
 #[tokio::test]
 async fn test_suggestion_reject_marks_facts_rejected_and_preserves_version() {
     tokio::time::timeout(Duration::from_secs(15), async {
@@ -1011,47 +1004,29 @@ async fn test_suggestion_reject_marks_facts_rejected_and_preserves_version() {
         let (_app, state) = get_test_app_and_state().await;
         let conn = state.db.connect().expect("test db must connect");
 
-        let session_id = create_session_with_id(&conn, 14402, Some("default"))
-            .await
-            .expect("session must be created");
-        let compaction_id = record_compaction_start(&conn, session_id, "manual", 1, 1)
-            .await
-            .expect("compaction run must be recorded");
-
-        seed_staged_candidate(
-            &conn,
-            session_id,
-            compaction_id,
-            "fact_to_reject",
-            "personal",
-            "User dislikes morning meetings.",
-        )
-        .await;
-
         let doc = "# Profile\n\n- User lives in Chicago.\n";
         save_personal_memory(&conn, None, doc, 1)
             .await
             .expect("document must be saved");
-        mark_facts_staged(&conn, &["fact_to_reject".to_string()])
-            .await
-            .expect("fact must be staged");
+
         insert_personal_memory_suggestions(
             &conn,
             &[pending_suggestion(
                 "sug_reject",
                 2,
-                "insert",
-                "User dislikes morning meetings.",
-                vec!["fact_to_reject".to_string()],
+                "insert_after",
+                2,
+                "- User dislikes morning meetings.",
                 1_000,
             )],
         )
         .await
         .expect("suggestion must be inserted");
 
-        let record = resolve_suggestions_transaction(&conn, None, Some("sug_reject"), "reject", None)
-            .await
-            .expect("rejecting must succeed");
+        let record =
+            resolve_suggestions_transaction(&conn, None, Some("sug_reject"), "reject", None)
+                .await
+                .expect("rejecting must succeed");
 
         assert_eq!(
             record.version, 2,
@@ -1066,32 +1041,12 @@ async fn test_suggestion_reject_marks_facts_rejected_and_preserves_version() {
             "rejected",
             "resolved suggestion must flip to 'rejected'"
         );
-        assert_eq!(
-            fact_status(&conn, "fact_to_reject").await,
-            "rejected",
-            "rejected suggestion's facts must flip 'staged' -> 'rejected' so they are not re-suggested"
-        );
-
-        // A rejected fact must no longer appear in the retrieval-visible active set.
-        let active = fetch_active_facts_by_type(&conn, "personal")
-            .await
-            .expect("active fact query must succeed");
-        assert!(
-            active.iter().all(|f| f.id != "fact_to_reject"),
-            "a rejected fact must not remain retrieval-visible as 'active'"
-        );
     })
     .await
     .expect("test_suggestion_reject_marks_facts_rejected_and_preserves_version timed out");
 }
 
-/// Subtest 10: Candidate partition — unselected facts are `'consolidated'`, never left `'staged'`.
-///
-/// This is INVARIANT 5.3-A at the persistence-contract level. Production performs the
-/// partition in `services/memory/personal.rs`; here we verify the two primitives it
-/// composes and, critically, that NO fact is left in `'staged'` without a live pending
-/// suggestion. A fact staged for a suggestion that is then accepted or rejected always
-/// leaves `'staged'`, so the partition is exhaustive.
+/// Subtest 10: Invariant 5.3-A — all candidate facts transition directly to `'consolidated'`.
 #[tokio::test]
 async fn test_candidate_partition_leaves_no_fact_trapped_in_staged() {
     tokio::time::timeout(Duration::from_secs(15), async {
@@ -1106,81 +1061,41 @@ async fn test_candidate_partition_leaves_no_fact_trapped_in_staged() {
             .await
             .expect("compaction run must be recorded");
 
-        for (id, text) in [
-            ("fact_selected", "User enjoys badminton."),
-            ("fact_unselected", "User drinks oat milk."),
-            ("fact_second_unselected", "User cycles to work."),
-        ] {
-            seed_staged_candidate(&conn, session_id, compaction_id, id, "personal", text).await;
+        let fact_ids = ["fact_alpha", "fact_beta", "fact_gamma"];
+        for id in fact_ids {
+            seed_staged_candidate(
+                &conn,
+                session_id,
+                compaction_id,
+                id,
+                "personal",
+                "Fact text",
+            )
+            .await;
         }
 
-        // The production partition: only fact_selected is referenced by an operation.
-        let selected = vec!["fact_selected".to_string()];
-        let unselected = vec![
-            "fact_unselected".to_string(),
-            "fact_second_unselected".to_string(),
-        ];
-        mark_facts_staged(&conn, &selected)
+        // All candidate facts are transitioned to 'consolidated' immediately on staging/synthesis
+        let facts_to_consolidate = fact_ids.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        mark_facts_consolidated(&conn, &facts_to_consolidate)
             .await
-            .expect("selected facts must be staged");
-        mark_facts_consolidated(&conn, &unselected)
-            .await
-            .expect("unselected facts must be marked consolidated");
-        insert_personal_memory_suggestions(
-            &conn,
-            &[pending_suggestion(
-                "sug_partition",
-                1,
-                "insert",
-                "User enjoys badminton.",
-                selected,
-                1_000,
-            )],
-        )
-        .await
-        .expect("suggestion must be inserted");
+            .expect("facts must be marked consolidated");
 
-        assert_eq!(
-            fact_status(&conn, "fact_selected").await,
-            "staged",
-            "a fact referenced by a pending suggestion must be 'staged'"
-        );
-        for id in ["fact_unselected", "fact_second_unselected"] {
+        for id in fact_ids {
             assert_eq!(
                 fact_status(&conn, id).await,
                 "consolidated",
-                "candidate '{}' referenced by no operation must be 'consolidated', never 'staged'",
+                "fact '{}' must be 'consolidated', never left 'staged' or 'active'",
                 id
             );
         }
 
-        // Storage-level invariant: zero facts may remain 'staged' without a live
-        // pending suggestion referencing them.
-        let mut rows = conn
-            .query(
-                "SELECT COUNT(*) FROM memory_facts f
-                 WHERE f.status = 'staged'
-                   AND NOT EXISTS (
-                     SELECT 1 FROM personal_memory_suggestions s
-                     WHERE s.status = 'pending'
-                       AND f.id IN (
-                         SELECT value FROM json_each(s.source_fact_ids)
-                       )
-                   )",
-                (),
-            )
+        // Verify zero facts remain in 'staged' or 'active' for this personal scope
+        let active = fetch_active_facts_by_type(&conn, "personal")
             .await
-            .expect("orphan staged query must succeed");
-        let orphaned: i64 = rows
-            .next()
-            .await
-            .expect("query must yield a row")
-            .expect("count row must exist")
-            .get(0)
-            .expect("count must be readable");
-        assert_eq!(
-            orphaned, 0,
-            "no fact may remain 'staged' without a live pending suggestion"
+            .expect("active query must succeed");
+        assert!(
+            active.is_empty(),
+            "zero candidate facts must remain 'active'"
         );
     })
     .await

@@ -9,9 +9,9 @@ use std::{
 use crossbeam_channel::Sender;
 
 use super::{
-    actor::{VadActorHandles, VadActorState},
+    actor::{VadActorChannels, VadActorHandles, VadActorState},
     providers::VadBackend,
-    VadEngine as _, VAD_MIN_UTTERANCE_SAMPLES, VAD_PRE_ROLL_CAPACITY,
+    VadEngine as _, VAD_INPUT_SAMPLE_RATE, VAD_MIN_UTTERANCE_SAMPLES, VAD_PRE_ROLL_CAPACITY,
 };
 use crate::{
     core::events::VoxEvent, monitoring::TelemetryEvent, services::stt::SttCommand,
@@ -268,6 +268,7 @@ pub fn process_windowed_validation(
     raw_energy: f32,
     vad: &mut VadBackend,
     state: &mut VadActorState,
+    channels: &VadActorChannels,
 ) {
     if !state.window_active {
         state.pre_roll_buffer.push(chunk);
@@ -289,6 +290,42 @@ pub fn process_windowed_validation(
 
     state.window_sample_offset += chunk.len();
     state.pre_roll_buffer.push(chunk);
+    if state.window_stream_partials {
+        if let Err(e) = channels.stt_tx.send(SttCommand::StreamChunk {
+            turn_id: state.current_turn_id,
+            audio: chunk.to_vec(),
+        }) {
+            log::warn!("[VAD Actor] Failed to send windowed chunk to STT: {}", e);
+        }
+    }
+    check_window_autostop(state, channels.vox_event_tx.as_ref());
+}
+
+/// Fires a single auto-stop event once post-speech silence exceeds the caller-configured threshold.
+fn check_window_autostop(state: &mut VadActorState, vox_event_tx: Option<&mpsc::Sender<VoxEvent>>) {
+    if !state.window_active || !state.window_speech_detected || state.window_autostop_fired {
+        return;
+    }
+    let Some(autostop_ms) = state.window_autostop_silence_ms else {
+        return;
+    };
+    let threshold_samples = autostop_ms as usize * VAD_INPUT_SAMPLE_RATE as usize / 1000;
+    let silence_samples = state
+        .window_sample_offset
+        .saturating_sub(state.window_last_speech_sample);
+    if silence_samples < threshold_samples {
+        return;
+    }
+    state.window_autostop_fired = true;
+    log::info!(
+        "[VAD Actor] Windowed silence auto-stop (silence {:.2}s)",
+        silence_samples as f32 / VAD_INPUT_SAMPLE_RATE as f32
+    );
+    if let Some(tx) = vox_event_tx {
+        if let Err(e) = tx.send(VoxEvent::PttStop) {
+            log::warn!("[VAD Actor] Failed to send auto-stop PttStop event: {}", e);
+        }
+    }
 }
 
 /// Executes StreamPassthrough mode for direct low-latency routing to realtime cloud sinks.
@@ -308,6 +345,7 @@ pub fn process_stream_passthrough(chunk: &[f32], state: &mut VadActorState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::settings::{AudioOutputMode, InteractionMode};
 
     #[test]
     fn test_preroll_push_and_capacity() {
@@ -363,5 +401,74 @@ mod tests {
         assert_eq!(out[3], 32767);
         assert_eq!(out[4], -32767);
         assert_eq!(out[5], (0.5 * 32767.0) as i16);
+    }
+
+    #[test]
+    fn test_window_autostop_fires_after_threshold() {
+        let mut state = VadActorState::new(
+            0.5,
+            0.01,
+            400,
+            32,
+            InteractionMode::PTT,
+            AudioOutputMode::Speaker,
+        );
+        state.window_active = true;
+        state.window_speech_detected = true;
+        state.window_sample_offset = 50_000;
+        state.window_last_speech_sample = 20_000;
+        state.window_autostop_silence_ms = Some(1200);
+
+        let (tx, rx) = mpsc::channel();
+        check_window_autostop(&mut state, Some(&tx));
+
+        assert!(state.window_autostop_fired);
+        assert!(matches!(rx.try_recv().ok(), Some(VoxEvent::PttStop)));
+    }
+
+    #[test]
+    fn test_window_autostop_ignores_prespeech_silence() {
+        let mut state = VadActorState::new(
+            0.5,
+            0.01,
+            400,
+            32,
+            InteractionMode::PTT,
+            AudioOutputMode::Speaker,
+        );
+        state.window_active = true;
+        state.window_speech_detected = false;
+        state.window_sample_offset = 100_000;
+        state.window_last_speech_sample = 0;
+        state.window_autostop_silence_ms = Some(1200);
+
+        let (tx, rx) = mpsc::channel();
+        check_window_autostop(&mut state, Some(&tx));
+
+        assert!(!state.window_autostop_fired);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_window_autostop_disabled_without_config() {
+        let mut state = VadActorState::new(
+            0.5,
+            0.01,
+            400,
+            32,
+            InteractionMode::PTT,
+            AudioOutputMode::Speaker,
+        );
+        state.window_active = true;
+        state.window_speech_detected = true;
+        state.window_sample_offset = 100_000;
+        state.window_last_speech_sample = 0;
+        state.window_autostop_silence_ms = None;
+
+        let (tx, rx) = mpsc::channel();
+        check_window_autostop(&mut state, Some(&tx));
+
+        assert!(!state.window_autostop_fired);
+        assert!(rx.try_recv().is_err());
     }
 }

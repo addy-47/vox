@@ -59,6 +59,12 @@ pub struct WaylandInputAdapter;
 impl SystemInputAdapter for WaylandInputAdapter {
     /// Attempts paste simulation on Wayland compositors.
     fn simulate_paste(&self) -> Result<(), DictationError> {
+        if is_blocking_compositor() {
+            log::warn!(
+                "[Dictation::Input] Wayland compositor swallows synthetic keystrokes without error; treating injection as unverified (transcript stays on clipboard)"
+            );
+            return Err(unverified_injection_error());
+        }
         match Enigo::new(&Settings::default()) {
             Ok(mut enigo) => {
                 let press_res = enigo.key(Key::Control, Direction::Press);
@@ -67,7 +73,7 @@ impl SystemInputAdapter for WaylandInputAdapter {
 
                 if press_res.is_ok() && click_res.is_ok() && release_res.is_ok() {
                     log::debug!(
-                        "[Dictation::Input] Wayland simulated paste executed successfully."
+                        "[Dictation::Input] Wayland simulated paste dispatched (delivery unverifiable by the compositor)."
                     );
                     return Ok(());
                 }
@@ -80,9 +86,7 @@ impl SystemInputAdapter for WaylandInputAdapter {
             }
         }
 
-        Err(DictationError::InputSimulationFailed {
-            message: "Direct simulated paste is restricted by the Wayland compositor. Transcript remains available on clipboard.".into(),
-        })
+        Err(unverified_injection_error())
     }
 }
 
@@ -179,6 +183,21 @@ impl SystemInputAdapter for WindowsInputAdapter {
         log::debug!("[Dictation::Input] Windows simulated paste (Ctrl+V) executed successfully.");
         Ok(())
     }
+}
+
+/// Builds the shared unverified-injection error for blocked Wayland compositors.
+fn unverified_injection_error() -> DictationError {
+    DictationError::InputSimulationFailed {
+        message: "Direct simulated paste is restricted by the Wayland compositor. Transcript remains available on clipboard.".into(),
+    }
+}
+
+/// Reports whether the session compositor is known to swallow synthetic keystrokes without error.
+fn is_blocking_compositor() -> bool {
+    let desktop = var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default()
+        .to_lowercase();
+    desktop.contains("gnome") || desktop.contains("ubuntu")
 }
 
 /// Factory function to return the appropriate SystemInputAdapter for the current platform/session.

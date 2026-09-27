@@ -127,15 +127,6 @@ impl From<&str> for Severity {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToastPayload {
-    pub title: String,
-    pub message: String,
-    pub severity: Severity,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub duration_ms: Option<u64>,
-}
-
 /// Strongly-typed universal notification record serialized across Tauri IPC.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationRecord {
@@ -181,7 +172,6 @@ pub enum IpcEvent {
     TurnMetrics(TurnMetricsPayload),
     SettingsUpdated,
     ToggleTray,
-    ShowToast(ToastPayload),
     NotificationCreated(NotificationRecord),
     NotificationUpdated(NotificationRecord),
     PersonalMemoryUpdated(PersonalMemoryRecord),
@@ -220,7 +210,6 @@ impl IpcEvent {
             Self::TurnMetrics(_) => "turn_metrics",
             Self::SettingsUpdated => "settings-updated",
             Self::ToggleTray => "toggle_tray",
-            Self::ShowToast(_) => "show_toast",
             Self::NotificationCreated(_) => "notification_created",
             Self::NotificationUpdated(_) => "notification_updated",
             Self::PersonalMemoryUpdated(_) => "personal_memory_updated",
@@ -243,7 +232,6 @@ pub fn emit_ipc<R: Runtime>(app: &AppHandle<R>, event: IpcEvent) -> Result<(), t
         IpcEvent::TurnMetrics(payload) => app.emit(name, payload),
         IpcEvent::SettingsUpdated => app.emit(name, ()),
         IpcEvent::ToggleTray => app.emit(name, ()),
-        IpcEvent::ShowToast(payload) => app.emit(name, payload),
         IpcEvent::NotificationCreated(payload) => app.emit(name, payload),
         IpcEvent::NotificationUpdated(payload) => app.emit(name, payload),
         IpcEvent::PersonalMemoryUpdated(payload) => app.emit(name, payload),
@@ -270,7 +258,6 @@ pub fn emit_ipc_to<R: Runtime>(
         IpcEvent::TurnMetrics(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::SettingsUpdated => app.emit_to(target_str, name, ()),
         IpcEvent::ToggleTray => app.emit_to(target_str, name, ()),
-        IpcEvent::ShowToast(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::NotificationCreated(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::NotificationUpdated(payload) => app.emit_to(target_str, name, payload),
         IpcEvent::PersonalMemoryUpdated(payload) => app.emit_to(target_str, name, payload),

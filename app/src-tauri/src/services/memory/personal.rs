@@ -730,13 +730,8 @@ pub async fn batch_resolve_memory_suggestions(
         let patched_content = apply_patch_operations(&active_memory.content, &accepted_ops)
             .map_err(|e| MemorySuggestionError::PatchEngine(e.to_string()))?;
 
-        resolve_batch_suggestions_transaction(
-            conn,
-            project_id,
-            decisions,
-            Some(&patched_content),
-        )
-        .await?
+        resolve_batch_suggestions_transaction(conn, project_id, decisions, Some(&patched_content))
+            .await?
     } else {
         resolve_batch_suggestions_transaction(conn, project_id, decisions, None).await?
     };

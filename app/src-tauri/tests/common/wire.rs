@@ -28,9 +28,12 @@
 //! Reference usage: `tests/agentic_tool_runtime_test.rs` (SSE + NDJSON tool-call
 //! streams), `tests/transcript_to_llm_test.rs` (assembled request contract).
 
+use std::{
+    io::{Read, Write},
+    sync::Arc,
+};
+
 use parking_lot::Mutex;
-use std::io::{Read, Write};
-use std::sync::Arc;
 
 /// Captured request bodies, keyed by call order.
 pub type CapturedBody = Arc<Mutex<Option<serde_json::Value>>>;

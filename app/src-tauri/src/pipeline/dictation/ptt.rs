@@ -12,6 +12,8 @@ use crate::{
     },
     pipeline::dictation::{error, transition_dictation},
     services::{
+        dictation::DICTATION_SILENCE_AUTOSTOP_MS,
+        notifications::lifecycle::{self, LifecycleCard},
         stt::SttCommand,
         vad::{VadCommand, VAD_VALIDATION_TIMEOUT_MS},
     },
@@ -20,8 +22,13 @@ use crate::{
 /// Starts Push-To-Talk dictation recording on hotkey press.
 pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
     let current = state.pipeline.dictation_state();
+    log::debug!(
+        "[Dictation::Trace] on_ptt_start invoked (current state: {:?})",
+        current
+    );
     match current {
         InteractionState::Idle => {
+            log::warn!("[Dictation::Trace] Dictation disabled in settings; aborting PTT");
             error::on_error(
                 PipelineError {
                     turn_id: 0,
@@ -34,12 +41,22 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
             );
             return;
         }
-        InteractionState::Listening => return,
+        InteractionState::Listening => {
+            log::debug!("[Dictation::Trace] Already Listening; ignoring duplicate PttStart");
+            return;
+        }
         InteractionState::Thinking => {
-            // Pipelined overlap: start turn N+1 non-destructively while turn N is still transcribing.
+            log::debug!("[Dictation] Already Thinking (transcribing previous speech); ignoring overlapping PttStart");
+            return;
         }
         InteractionState::Ready => {}
-        _ => return,
+        _ => {
+            log::warn!(
+                "[Dictation::Trace] State {:?} does not accept PttStart; aborting",
+                current
+            );
+            return;
+        }
     }
 
     let (turn_id, _token) = state.pipeline.next_turn();
@@ -47,14 +64,28 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
 
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
-            if let Err(e) = engine.vad_tx.send(VadCommand::StartWindowValidation) {
-                log::warn!("[Dictation::PTT] Failed to start window validation: {}", e);
+            if let Err(e) = engine.vad_tx.send(VadCommand::StartWindowValidation {
+                auto_stop_silence_ms: Some(DICTATION_SILENCE_AUTOSTOP_MS),
+                stream_partials: true,
+            }) {
+                log::warn!(
+                    "[Dictation::Trace] Failed to start window validation: {}",
+                    e
+                );
+            } else {
+                log::info!(
+                    "[Dictation::Trace] VAD window validation started for turn: {}",
+                    turn_id
+                );
             }
         }
     }
 
     transition_dictation(InteractionState::Listening, app, state);
-    log::info!("[Dictation::PTT] PTT recording started (turn: {})", turn_id);
+    log::info!(
+        "[Dictation::Trace] PTT recording started (turn: {}) -> dictation state: Listening",
+        turn_id
+    );
 }
 
 /// Finalizes Push-To-Talk dictation recording on hotkey release and dispatches to STT.
@@ -69,11 +100,15 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
     stt_tx: Option<&mpsc::Sender<SttCommand>>,
 ) {
     if state.pipeline.dictation_state() != InteractionState::Listening {
-        log::debug!("[Dictation::PTT] PttStop dropped: state is not Listening");
+        log::debug!(
+            "[Dictation::Trace] PttStop dropped: state is not Listening ({:?})",
+            state.pipeline.dictation_state()
+        );
         return;
     }
 
     let turn_id = state.pipeline.peek_turn_id();
+    log::info!("[Dictation::Trace] on_ptt_stop invoked (turn: {})", turn_id);
 
     let (vad_tx_opt, engine_stt_tx_opt) = match state.engine.try_lock() {
         Ok(guard) => (
@@ -81,7 +116,9 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
             guard.as_ref().map(|e| e.stt_tx.clone()),
         ),
         Err(_) => {
-            log::warn!("[Dictation::PTT] Engine lock contended; could not access vad_tx / stt_tx");
+            log::warn!(
+                "[Dictation::Trace] Engine lock contended; could not access vad_tx / stt_tx"
+            );
             (None, None)
         }
     };
@@ -106,35 +143,79 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
         None => (false, Vec::new()),
     };
 
-    if !is_speech || audio.is_empty() {
+    log::debug!(
+        "[Dictation] VAD validation complete (turn: {}, is_speech: {}, audio_samples: {})",
+        turn_id,
+        is_speech,
+        audio.len()
+    );
+
+    if !is_speech || audio.len() < 1600 {
         log::info!(
-            "[Dictation::PTT] Non-speech hotkey hold discarded (turn: {})",
+            "[Dictation] Non-speech/short audio (<100ms) discarded (turn: {}) -> notifying user and returning to Ready",
             turn_id
         );
+        let notify_app = app.clone();
+        let notify_db = state.db.clone();
+        tauri::async_runtime::spawn(async move {
+            lifecycle::dictation_terminal(
+                &notify_app,
+                &notify_db,
+                LifecycleCard {
+                    title: "⚠️ Dictation: No Speech",
+                    message: "<b>No speech recognized</b>\nSpeak clearly into the microphone",
+                    severity: crate::core::events::Severity::Warning,
+                    duration_ms: 3000,
+                },
+            )
+            .await;
+        });
         transition_dictation(InteractionState::Ready, app, state);
         return;
     }
+
+    log::info!(
+        "[Dictation] Valid speech captured (turn: {}, {:.2}s) -> transcribing...",
+        turn_id,
+        audio.len() as f32 / 16000.0
+    );
+
+    let notify_app = app.clone();
+    let notify_db = state.db.clone();
+    tauri::async_runtime::spawn(async move {
+        lifecycle::dictation_transcribing(&notify_app, &notify_db).await;
+    });
 
     transition_dictation(InteractionState::Thinking, app, state);
 
     if let Some(tx) = stt_tx {
         if let Err(e) = tx.send(SttCommand::Final(turn_id, audio)) {
             log::warn!(
-                "[Dictation::PTT] Failed to dispatch Final audio to direct STT sender: {}",
+                "[Dictation::Trace] Failed to dispatch Final audio to direct STT sender: {}",
                 e
+            );
+        } else {
+            log::info!(
+                "[Dictation::Trace] Dispatched final audio to direct STT sender (turn: {})",
+                turn_id
             );
         }
     } else if let Some(stt_tx) = engine_stt_tx_opt {
         if let Err(e) = stt_tx.send(SttCommand::Final(turn_id, audio)) {
             log::warn!(
-                "[Dictation::PTT] Failed to dispatch Final audio to STT: {}",
+                "[Dictation::Trace] Failed to dispatch Final audio to STT: {}",
                 e
+            );
+        } else {
+            log::info!(
+                "[Dictation::Trace] Dispatched final audio to STT engine (turn: {})",
+                turn_id
             );
         }
     }
 
     log::info!(
-        "[Dictation::PTT] Hotkey recording finalized (turn: {})",
+        "[Dictation::Trace] Hotkey recording finalized (turn: {}) -> dictation state: Thinking",
         turn_id
     );
 }
@@ -145,6 +226,7 @@ pub fn on_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
         return;
     }
 
+    log::info!("[Dictation::Trace] on_ptt_cancel invoked");
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             let (resp_tx, _) = mpsc::channel();
@@ -152,7 +234,7 @@ pub fn on_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
                 response_tx: resp_tx,
             }) {
                 log::warn!(
-                    "[Dictation::PTT] Failed to send StopWindowValidation: {}",
+                    "[Dictation::Trace] Failed to send StopWindowValidation: {}",
                     e
                 );
             }
@@ -160,5 +242,20 @@ pub fn on_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
     }
 
     transition_dictation(InteractionState::Ready, app, state);
-    log::info!("[Dictation::PTT] PTT cancelled");
+    let notify_app = app.clone();
+    let notify_db = state.db.clone();
+    tauri::async_runtime::spawn(async move {
+        lifecycle::dictation_terminal(
+            &notify_app,
+            &notify_db,
+            LifecycleCard {
+                title: "🎙️ Dictation",
+                message: "Dictation cancelled",
+                severity: crate::core::events::Severity::Info,
+                duration_ms: 1500,
+            },
+        )
+        .await;
+    });
+    log::info!("[Dictation::Trace] PTT cancelled -> dictation state: Ready");
 }

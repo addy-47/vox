@@ -500,7 +500,10 @@ pub async fn resolve_batch_suggestions_transaction(
 
     for d in decisions {
         if d.action != "accept" && d.action != "reject" {
-            return Err(anyhow!("Invalid suggestion resolution action: {}", d.action));
+            return Err(anyhow!(
+                "Invalid suggestion resolution action: {}",
+                d.action
+            ));
         }
     }
 
@@ -520,15 +523,11 @@ pub async fn resolve_batch_suggestions_transaction(
         .unwrap_or_default()
         .as_millis() as i64;
 
-    let accepted: Vec<&SuggestionDecision> = decisions
-        .iter()
-        .filter(|d| d.action == "accept")
-        .collect();
+    let accepted: Vec<&SuggestionDecision> =
+        decisions.iter().filter(|d| d.action == "accept").collect();
 
-    let rejected: Vec<&SuggestionDecision> = decisions
-        .iter()
-        .filter(|d| d.action == "reject")
-        .collect();
+    let rejected: Vec<&SuggestionDecision> =
+        decisions.iter().filter(|d| d.action == "reject").collect();
 
     let all_resolved_ids: Vec<String> = decisions.iter().map(|d| d.id.clone()).collect();
 

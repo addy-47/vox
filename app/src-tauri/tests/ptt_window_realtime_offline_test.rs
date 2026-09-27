@@ -128,9 +128,7 @@ async fn test_realtime_ptt_never_dispatches_to_local_stt() {
         );
 
         common::audio::stream_test_clip(common::ASSET_SUPERTONIC_01_EN_FILENAME, &mut producer);
-        ptt_stop(&app, &state)
-            .await
-            .expect("ptt_stop must succeed");
+        ptt_stop(&app, &state).await.expect("ptt_stop must succeed");
 
         // The speech window was validated, so the pipeline must have advanced.
         assert_eq!(
@@ -156,9 +154,7 @@ async fn test_realtime_ptt_never_dispatches_to_local_stt() {
 
         common::audio::stream_silence_frames(&mut producer, 30);
         common::audio::wait_for_buffer_drain(&producer, 5);
-        ptt_stop(&app, &state)
-            .await
-            .expect("ptt_stop must succeed");
+        ptt_stop(&app, &state).await.expect("ptt_stop must succeed");
 
         assert_eq!(
             state.pipeline.state(),

@@ -1,6 +1,15 @@
-Yes, the structured-consolidation idea is feasible and is likely the correct long-term design. But it should be implemented as a **validated patch protocol**, not as “Markdown with line numbers” that the model can freely rewrite.
+# Personal Memory Consolidation — Evaluation Findings
 
-## What failed in the full run
+> **Status:** Investigation report. The structured-delta implementation plan that
+> previously lived in this file has been **removed**: the plan was executed, and
+> the evaluation of that execution is recorded here instead.
+> **Contents:** Part 1 — the failure analysis that triggered the refactor.
+> Part 2 — failures observed in the refactored delta logic during the
+> re-evaluation run.
+
+---
+
+# Part 1 — What failed in the original full run
 
 The pipeline itself was mechanically healthy:
 
@@ -12,331 +21,336 @@ The pipeline itself was mechanically healthy:
 - 1,625 facts persisted.
 - Ingestion accounting passed for every case.
 
-The 11 failed cases came from two separate problems:
+The 11 failed cases came from two separate problems.
 
-### 1. Compaction-count classification: 6 cases
+## 1. Compaction-count classification: 6 cases
 
 - Case 04: expected 1, actual 0.
 - Cases 10–14: expected 3, actual 4 or 5.
 - Actual total: 33 compactions versus 28 expected.
 
-This is not a broken compactor. The expected counts were calibrated to a different model’s compaction output size. Ling’s generated context has a different size, so later sessions cross the threshold earlier or later.
+This is not a broken compactor. The expected counts were calibrated to a different model's compaction output size. That model's generated context has a different size, so later sessions cross the threshold earlier or later.
 
-**Fix:** separate these assertions:
+**Conclusion:** compaction counts are model-specific calibration data, not a correctness specification. The model-independent assertion is **trigger correctness** — every compaction fires at a critical turn, with a contiguous ledger and a valid watermark.
 
-1. **Trigger correctness:** every actual compaction occurs at a critical turn, with a contiguous ledger and valid watermark.
-2. **Count baseline:** expected counts are model-specific calibration data, not universal correctness.
+## 2. Personal-memory continuity: 8 cases
 
-For a new model, the correct check is:
+Failed cases: 03, 05, 06, 07, 08, 11, 13, 14.
 
-```text
-actual_count == model_calibrated_count
-```
+The model consolidated successfully, but rewrote or dropped prior memory anchors. The original prompt said "preserve existing memory", but that is only a behavioral instruction; the model can still regenerate the whole document and violate it.
 
-not:
-
-```text
-actual_count == count from another model
-```
-
-The existing count matrix should be retained as a regression baseline for the original model, not treated as a model-independent specification.
-
-### 2. Personal-memory continuity: 8 cases
-
-Failed cases:
-
-- 03
-- 05
-- 06
-- 07
-- 08
-- 11
-- 13
-- 14
-
-The model consolidated successfully, but rewrote or dropped prior memory anchors. The current prompt says “preserve existing memory,” but that is only a behavioral instruction; the model can still regenerate the whole document and violate it.
-
-This is exactly where structured consolidation helps.
-
-
-# Implementation Plan: Structured Delta Personal Memory Consolidation
-
-> **Role & Perspective:** System Architect $\to$ Backend Engineer  
-> **Status:** Ready for Execution  
-> **Target Specs:** [memory-spec.md](file:///home/addy/projects/apps/vox/docs/specs/memory-spec.md), [db-spec.md](file:///home/addy/projects/apps/vox/docs/specs/db-spec.md), [ipc-spec.md](file:///home/addy/projects/apps/vox/docs/specs/ipc-spec.md)  
-> **Checklist:** [structured-consolidation-checklist.md](file:///home/addy/projects/apps/vox/docs/plans/phase12/structured-consolidation-checklist.md)
+This is what motivated replacing full-document regeneration with an audited patch protocol.
 
 ---
 
-## 1. Goal Description & Target End-State
+# Part 2 — Failures observed in the structured-delta logic
 
-The existing Personal Memory consolidation and comment regeneration pipelines instruct the LLM to rewrite the entire Markdown dossier from scratch. In multi-case evals, this caused anchor erosion in 8 of 14 runs (stochastic loss of previously learned user traits).
+Re-evaluation of the shipped delta implementation surfaced **eleven** defects. Several are upstream generation/capability failures; the majority trace to a single structural root cause documented in §2.4.
 
-**The Target End-State:**
-* The LLM operates strictly as a **change proposer**, returning a structured JSON payload containing atomic patch operations (`replace`, `insert`, `delete`).
-* Proposed patches are staged in a dedicated Turso database table: `personal_memory_suggestions`.
-* Document lines not explicitly targeted by an operation are mathematically immutable.
-* A single polymorphic IPC command `resolve_memory_suggestion(id, action)` allows the user (or auto-apply policy) to accept or reject suggestions individually or in bulk.
-* When accepted, a deterministic patch engine applies the delta to the base markdown and bumps `personal_memory` version. When rejected, facts are marked `'rejected'` so they are never re-suggested.
+Run context: executor and judge both `qwen3.5:9b` on the remote Ollama server, 14-case shared-DB ladder, fresh database.
 
-```mermaid
-flowchart TD
-    A["Active Facts in memory_facts"] --> B["Single LLM Call (JSON mode)"]
-    M["Current personal_memory (vN)"] --> B
-    B --> C["Parse MemoryPatchOperation[]"]
-    C --> D[("Insert into personal_memory_suggestions (status='pending')")]
-    A --> E[("Update memory_facts (status='staged')")]
-    
-    D --> F{"User Review via resolve_memory_suggestion"}
-    F -- "action = 'accept'" --> G["apply_patch_operations(base_md, ops)"]
-    G --> H[("Insert personal_memory (vN+1, is_active=1)")]
-    H --> I[("Update personal_memory_suggestions (status='accepted')")]
-    H --> J[("Update memory_facts (status='consolidated')")]
-    
-    F -- "action = 'reject'" --> K[("Update personal_memory_suggestions (status='rejected')")]
-    K --> L[("Update memory_facts (status='rejected')")]
-    L --> M_untouched["personal_memory remains vN (untouched)"]
+## 2.1 Truncated model output aborts the entire consolidation
+
+**Severity: blocking.** The 14-case matrix could not complete.
+
+```
+case_02: status=FAILED error=Production personal-memory consolidation failed
+  Failed to parse consolidation JSON patch output:
+  EOF while parsing a string at line 170 column 316
 ```
 
----
+The response was cut off mid-string by the 4096-token output ceiling
+(`token_limit: options.num_predict`). `consolidate_personal_memory` treats
+unparseable output as fatal: the whole cycle is lost, candidate facts remain
+`active`, and the calling evaluation aborts. There is no retry and no salvage of
+the operations that were already syntactically complete.
 
-## 2. Architecture & Design Resolutions
+A second, distinct fatal path was also observed: `LLM generated empty personal
+memory document!` when the model returned an empty payload.
 
-Every design decision has been vetted against pipeline invariants:
+## 2.2 Root cause of the degenerate output: reasoning force-disabled
 
-1. **No Synthetic Line Numbers:** The LLM targets content via `section` heading and exact `target_text`. This avoids line-arithmetic hallucinations and index drift under insertions.
-2. **Simplified Atomic Operators:** We dropped the redundant `insert_after` operator. The protocol supports only three operations: `replace`, `insert`, and `delete`.
-3. **Zero `reason` Noise:** We explicitly eliminated the `reason` field from prompt, schema, and database. The diff (`target_text` $\to$ `proposed_text`) is self-evident.
-4. **Modal Exclusivity:** The Staging Card in the frontend owns review mode. While suggestions are pending, direct document edits and imports are disabled, preventing base-version race conditions by design.
-5. **Unified Comments & Facts Engine:** Comment-driven regeneration uses the exact same structured delta schema and lands in `personal_memory_suggestions` for user verification.
-6. **Polymorphic IPC Surface:** `resolve_memory_suggestion(id: Option<String>, action: String)` handles single cards (`id = Some(id)`) as well as `Accept All` / `Discard All` (`id = None`).
+The model was emitting whole-document echo operations — every `target_text` and
+`proposed_text` was a near-verbatim multi-line copy of the entire document
+(445 characters) — against a base document of only 445 characters. Five full
+copies exhausted the output budget and produced the truncation in §2.1.
 
----
+Cause: `execute_personal_llm_pass` hard-set `request.options.reasoning =
+ReasoningMode::Disabled`. Via the Ollama wire policy
+(`reasoning_off: {path: "think", value: false}`) this sent `think: false`.
 
-## 3. Execution Batches (Ordered by Real Dependency)
+This setting was inherited, not chosen. Memory compaction carries an explicit,
+documented invariant that reasoning is always disabled because it is a
+voice-latency summarization pass. Consolidation is a different class of task —
+background, correctness-critical, once per session — but it shared
+compaction's `GenerationPurpose`, so it silently inherited compaction's
+invariant.
 
-```mermaid
-flowchart LR
-    Batch1["Batch 1: Persistence & Schema"] --> Batch2["Batch 2: Patch Engine & Prompts"]
-    Batch2 --> Batch3["Batch 3: IPC Layer"]
-    Batch3 --> Batch4["Batch 4: Evals & Tests"]
-```
+Measured directly against the server on an equivalent input:
 
----
-
-### Batch 1: Database Migration & Persistence Layer (Turso) [MODIFIED]
-
-* **Blast Radius:** `schema.rs`, `personal_memory.rs`, `facts.rs`.
-* **Structural Dependency:** None (foundational).
-* **Build Health:** Must compile green with tests passing.
-
-#### 1.1 `schema.rs` Changes [MODIFIED]
-Bump `SCHEMA_VERSION = 7`. Add `personal_memory_suggestions` table DDL and index to `V2_TABLE_STATEMENTS`:
-
-```rust
-"CREATE TABLE IF NOT EXISTS personal_memory_suggestions (
-    id TEXT PRIMARY KEY,
-    base_memory_version INTEGER NOT NULL REFERENCES personal_memory(version) ON DELETE CASCADE,
-    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
-    op TEXT NOT NULL,
-    section TEXT NOT NULL,
-    target_text TEXT,
-    proposed_text TEXT NOT NULL,
-    source_fact_ids TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at INTEGER NOT NULL,
-    resolved_at INTEGER
-);",
-"CREATE INDEX IF NOT EXISTS idx_suggestions_pending ON personal_memory_suggestions(base_memory_version, status);",
-"CREATE INDEX IF NOT EXISTS idx_suggestions_created ON personal_memory_suggestions(created_at DESC);"
-```
-
-In `run_migrations`, add migration block for `current_version < 7` to execute `CREATE TABLE IF NOT EXISTS personal_memory_suggestions` and its indices on existing databases.
-
-#### 1.2 `persistence/personal_memory.rs` Changes [MODIFIED]
-Add the strongly-typed DTO and persistence queries (using `i64` for `base_memory_version` and atomic resolution transaction):
-
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PersonalMemorySuggestionRecord {
-    pub id: String,
-    pub base_memory_version: i64,
-    pub project_id: Option<String>,
-    pub op: String,
-    pub section: String,
-    pub target_text: Option<String>,
-    pub proposed_text: String,
-    pub source_fact_ids: Vec<String>,
-    pub status: String,
-    pub created_at: i64,
-    pub resolved_at: Option<i64>,
-}
-
-pub type MemorySuggestionRecord = PersonalMemorySuggestionRecord;
-
-pub async fn insert_personal_memory_suggestions(
-    conn: &Connection,
-    suggestions: &[PersonalMemorySuggestionRecord],
-) -> Result<()>;
-
-pub async fn fetch_pending_suggestions(
-    conn: &Connection,
-    base_version: i64,
-    project_id: Option<&str>,
-) -> Result<Vec<PersonalMemorySuggestionRecord>>;
-
-pub async fn resolve_suggestions_transaction(
-    conn: &Connection,
-    project_id: Option<&str>,
-    target_id: Option<&str>,
-    action: &str,
-    new_content: Option<&str>,
-) -> Result<PersonalMemoryRecord>;
-```
-
-#### 1.3 `persistence/facts.rs` Changes [MODIFIED]
-Add helper functions to transition fact status across both `memory_facts` and `memory_facts_vectors`:
-* `mark_facts_staged(conn: &Connection, fact_ids: &[String]) -> Result<()>`: Updates facts from `'active'` to `'staged'`.
-* `mark_facts_rejected(conn: &Connection, fact_ids: &[String]) -> Result<()>`: Updates facts from `'staged'` to `'rejected'`.
-
----
-
-### Batch 2: Structured Delta Patch Engine & Prompts [MODIFIED]
-
-* **Blast Radius:** `services/memory/personal.rs`, `services/memory/mod.rs`.
-* **Structural Dependency:** Batch 1.
-* **Build Health:** Must compile green with comprehensive unit tests.
-
-#### 2.1 Structs & Model Output Payload
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct MemoryPatchOperation {
-    pub op: String, // "replace" | "insert" | "delete"
-    pub section: String,
-    #[serde(default)]
-    pub target_text: Option<String>,
-    #[serde(default)]
-    pub proposed_text: String,
-    #[serde(default)]
-    pub source_fact_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PersonalConsolidationOutput {
-    pub operations: Vec<MemoryPatchOperation>,
-}
-```
-
-#### 2.2 Deterministic Markdown Patch Application Engine [MODIFIED]
-Implement a pure, robustly unit-tested function:
-```rust
-pub fn apply_patch_operations(
-    base_markdown: &str,
-    operations: &[MemoryPatchOperation],
-) -> Result<String>
-```
-
-**Implementation Invariants for `apply_patch_operations`:**
-1. **Section Discovery:** Scans markdown for headings matching `section` (normalizes `## Header` vs `Header`).
-2. **`insert` Logic:**
-   - If `section` exists: appends `proposed_text` formatted as a bullet (`- `) under that section before the next heading.
-   - If `section` does not exist: appends the section heading and the bullet at the bottom of the document.
-3. **`replace` Logic:**
-   - Locates exact `target_text` inside `section`.
-   - If exact match fails, falls back to whitespace-trimmed / punctuation-trimmed matching.
-   - Replaces `target_text` with `proposed_text`. If no match found, logs warning and skips op without failing whole batch.
-4. **`delete` Logic:**
-   - Locates exact `target_text` inside `section` and removes the entire line/bullet.
-5. **Preservation Guarantee:** Any lines or sections outside the targeted operations remain byte-for-byte identical.
-
-#### 2.3 System Prompts Refactor
-Refactor `PERSONAL_CONSOLIDATION_SYSTEM_PROMPT` and `COMMENT_REGENERATION_SYSTEM_PROMPT`:
-* The prompt defines the exact role: emit a raw JSON object with `{"operations": [...]}`.
-* Explicitly forbids line numbers or wrapping in markdown code fences.
-* Requires valid `source_fact_ids` matching the input candidates.
-
-#### 2.4 Service Pipeline Updates [MODIFIED]
-Refactor `consolidate_personal_memory` & `regenerate_with_comments`:
-1. Gating & quiescence checks remain intact.
-2. Formats `<current_personal_memory>` and `<new_personal_facts>` with their `id`s.
-3. Executes LLM pass with `OutputConstraint::JsonObject`, `ReasoningMode::Disabled`, and markdown fence stripping.
-4. Deserializes `PersonalConsolidationOutput`.
-5. Inserts records into `personal_memory_suggestions`.
-6. For facts: calls `mark_facts_staged(conn, &fact_ids)`.
-7. Returns current record with staged suggestions pending review.
-
----
-
-### Batch 3: IPC Layer & Command Exposure [MODIFIED]
-
-* **Blast Radius:** `ipc/memory.rs`, `lib.rs`.
-* **Structural Dependency:** Batch 1 & 2.
-* **Build Health:** Must compile green.
-
-#### 3.1 `ipc/memory.rs` Commands
-```rust
-#[tauri::command]
-pub async fn get_memory_suggestions(
-    project_id: Option<String>,
-    state: State<'_, Arc<AppState>>,
-) -> Result<Vec<PersonalMemorySuggestionRecord>, VoxIpcError>;
-
-#[tauri::command]
-pub async fn resolve_memory_suggestion(
-    app: AppHandle,
-    id: Option<String>,
-    action: String,
-    project_id: Option<String>,
-    state: State<'_, Arc<AppState>>,
-) -> Result<PersonalMemoryRecord, VoxIpcError>;
-```
-
-**Resolution Execution Flow (`resolve_memory_suggestion`):**
-1. Fetch active `personal_memory` (version $V$).
-2. Fetch target suggestion(s) where `status = 'pending'` and `base_memory_version = V`.
-3. If `action == "accept"`:
-   - Compute patched markdown: `apply_patch_operations(&current.content, &patch_ops)`.
-   - Call `resolve_suggestions_transaction(&conn, project_id, id.as_deref(), "accept", Some(&new_content))`.
-   - Emit `IpcEvent::PersonalMemoryUpdated(record.clone())`.
-   - Return updated `PersonalMemoryRecord`.
-4. If `action == "reject"`:
-   - Call `resolve_suggestions_transaction(&conn, project_id, id.as_deref(), "reject", None)`.
-   - Emit `IpcEvent::PersonalMemoryUpdated(record.clone())`.
-   - Return current `PersonalMemoryRecord`.
-
-#### 3.2 `lib.rs` Wiring
-Register `get_memory_suggestions` and `resolve_memory_suggestion` in `tauri::generate_handler!`.
-
----
-
-### Batch 4: Backend Unit & Integration Tests (Test Engineer Owns Live Evals) [MODIFIED]
-
-* **Blast Radius:** `app/src-tauri/tests/personal_memory_test.rs`, pure unit tests in `personal.rs`.
-* **Structural Dependency:** Batch 1, 2, 3.
-* **Build Health:** Must compile green and local test suite pass.
-
-1. **Unit Tests in `personal.rs`**:
-   - Comprehensive test suite for `apply_patch_operations` (`insert`, `replace`, `delete`, section creation, fallback trimming, empty/multiple ops).
-2. **Integration Tests in `tests/personal_memory_test.rs`**:
-   - Integration test exercising `insert_personal_memory_suggestions`, `fetch_pending_suggestions`, and atomic `resolve_suggestions_transaction` for accept and reject.
-3. **Role Boundary Note on Remote Evals**:
-   - Standalone consolidation eval (`memory_consolidation_eval.rs`) and multi-phase pipeline eval runs on the GPU server are owned and executed by the Test Engineer in subsequent phases.
-
----
-
-## 4. Risks & Mitigations
-
-| Risk | Impact | Mitigation |
+| Reasoning | Output | Operation shape |
 |---|---|---|
-| Model outputs slightly inexact `target_text` (e.g. trailing period) | `replace` or `delete` fails to find match | Normalize whitespace and punctuation trimming fallback in `apply_patch_operations`. If match still fails, log error and skip only that single op rather than failing the transaction. |
-| Model invents non-existent `source_fact_ids` | Staging references ghost facts | Filter `source_fact_ids` against candidate set before inserting into DB. |
-| Ingestion runs concurrently with suggestion review | Staged facts get overwritten | `QueueStatus` and `memory_facts.status = 'staged'` isolates facts from duplicate Stage 1/2 processing. |
+| disabled | 1,244 chars | 4-line and 3-line quoted targets (degenerate) |
+| enabled | 488 chars | 2 clean single-line operations |
+
+With reasoning enabled the model reasons about the diff first and then emits
+minimal, correctly-targeted edits. Omitting `think` is sufficient to enable it —
+the server defaults to thinking on.
+
+**Temperature was already correct** at `0.2`, matching compaction. No change was
+needed there.
+
+## 2.3 Strict JSON schema was silently disabled by a catalog defect
+
+**Severity: blocking, and app-wide.** Both memory compaction and personal
+consolidation were falling back from a strict JSON schema to bare
+`format: "json"`, on every run, with this warning:
+
+```
+[Memory::Personal] Model qwen3.5:9b lacks structured-output support;
+using JSON-object baseline.
+```
+
+`get_baseline_spec` resolved unknown models by substring and family-prefix
+matching over 4,595 catalog entries, returning whichever entry the `HashMap`
+iterator happened to visit first. `qwen3.5:9b` matched `family = "qwen"`, a
+family tag shared by 66 models whose capabilities disagree with each other:
+
+| `supports_structured` | `context_window` | model count |
+|---|---|---|
+| `false` | 32768 | 6 |
+| `false` | 131072 | 26 |
+| `false` | 262144 | 12 |
+| `true` | 131072 | 4 |
+| `true` | 262144 | 22 |
+| `true` | 1000000 | 6 |
+| (plus `false` at 1000000 and 1048576) | | |
+
+Consequences:
+
+- `supports_structured` resolved to `false`, disabling strict schema output.
+- The answer was **non-deterministic**, dependent on hash iteration order.
+- `context_window` and `supports_tools` were equally arbitrary.
+- The correct entry for a qwen3.5 model exists and reports
+  `supports_structured: true`.
+
+**Status: fixed.** `get_baseline_spec` now performs exact-match lookup only.
+Unknown models return `None`, which callers already treat as "capabilities
+unknown" and handle with optimistic defaults plus negotiate-down on a provider
+400. Two regression tests were added to lock the behaviour in.
+
+## 2.4 `section` was empty in 100% of operations — the structural root cause
+
+Every operation emitted across every case carried an unusable section name:
+
+```
+case_01  op=insert   section=''
+case_02  op=replace  section='## '   (x5)   op=insert section='## '
+case_03  op=insert   section='## '   (x3)
+case_05  op=insert   section='##'    (x4)
+```
+
+The document at that point:
+
+```
+## 
+- The user has decided to slow down on Japanese studies while focusing more on Spanish instead.
+
+## 
+- The user has decided to focus more on their Spanish studies while slowing down on Japanese for a while.
+
+## 
+- The user wants hard sci-fi books for reading on weekends.
+
+## 
+- The user likes to read hard sci-fi books on weekends and specifically enjoys 'Children of Memory'.
+```
+
+Every heading is a bare `##` with no title, and the content is a flat,
+append-only bullet list.
+
+**Mechanism — self-perpetuating corruption:**
+
+1. Case 01 starts from an empty document. The model has no heading to copy and
+   emits `section: ''`.
+2. `apply_insert_op` finds no match and mints a heading. Because
+   `op.section.trim_start().starts_with('#')` is false, it writes
+   `format!("## {}", heading_title)` where `heading_title` is
+   `normalize_heading("")` = `""` — a nameless `## ` heading.
+3. From v2 onward the document's only headings are literally `## `. The model
+   is faithfully copying them, exactly as the prompt instructed.
+4. `find_section_range("## ")` → `normalize_heading` → `""` → returns `None`. A
+   nameless section can never be matched, by construction.
+5. Every subsequent insert therefore appends yet another nameless heading.
+
+There is no code path that appends a bullet under the last existing heading, and
+none that seeds a default section into an empty document.
+
+## 2.5 The document degenerates into an append-only list of bullets
+
+Version history from a partial ladder run:
+
+```
+v2 (51 ch)  ⊂  v3 (618 ch)  ⊂  v5 (731 ch)  ⊂  v7 (932 ch)  ⊂  v9 (1361 ch)
+```
+
+Strictly append-only. Nothing is ever replaced, deleted, deduplicated, or
+reorganised. Observed consequences:
+
+- **Duplicates:** "slow down on Japanese / focus on Spanish" appears twice in
+  near-identical wording; hard sci-fi appears twice; sourdough appears three
+  times.
+- **Stale facts survive supersession:** "trip to Mexico City in approximately 20
+  days" persists alongside a newer "in approximately 3 weeks".
+- **No structure:** headings never form, so the document cannot be read as a
+  coherent profile of the user.
+
+## 2.6 The "anchor erosion" framing was incorrect
+
+`memory-spec.md §5.1` defines the artifact only as "an evolving markdown document
+capturing consolidated knowledge about the user". It never specifies a shape, so
+nothing prevented the drift to a bullet dump.
+
+The document has therefore **never had structure**. Anchor erosion was a symptom
+of a malformed document, not an independent defect. Converting consolidation
+from a full rewrite into a delta protocol converted a silent full-document
+rewrite into a safe append — which **masked** the malformation rather than
+fixing it. The symptom changed shape; the cause was untouched.
+
+The current document is a bare fact list, not the semantic memory of the user
+that the feature is supposed to produce.
+
+## 2.7 Loss-only assertions are structurally blind to this failure class
+
+The new deterministic preservation check reports `unexplained_lost_lines`,
+computed by diffing base-document lines against the accepted document. In this
+failure mode it is **always empty**, because nothing is ever lost — only
+accumulated. Every case passed the preservation check while the document was
+visibly degrading.
+
+This is the same class of false green the seam audit flagged: an assertion that
+cannot fail for the defect it appears to cover. Detecting this class requires
+*accumulation* assertions — nameless-heading count, duplicate-bullet count,
+monotonic-growth detection — not loss detection.
+
+The judge was intended as the second layer and was also insufficient: it returned
+`PASS` on cases whose documents had nameless headings and heavy duplication,
+because the prompt weighted anchor survival heavily and did not score structure
+or duplication. It also returned `UNKNOWN` (no parseable `VERDICT` line) on 2 of
+4 judged cases, so the semantic signal was both incomplete and unreliable.
+
+One judge catch was independently **verified correct**: in the case-03 smoke it
+reported a dropped fact ("roomate who enjoys the baked goods and wants to try
+new recipes"), which is genuinely absent from the accepted document — confirmed
+against `memory_facts` in the run database. The judge is capable of real
+detection; the prompt scope was wrong.
+
+## 2.8 `source_fact_ids` provides no hallucination guard
+
+```rust
+let filtered_fact_ids: Vec<String> = op.source_fact_ids.into_iter()
+    .filter(|id| valid_fact_ids.contains(id))
+    .collect();
+```
+
+This strips invented ids out of the *recorded list* only. It does not verify
+that `proposed_text` derives from the cited facts, and it does not reject the
+operation. An operation citing three hallucinated ids is staged and applied with
+`source_fact_ids: []`. It is data hygiene, not a grounding guarantee.
+
+## 2.9 Design error: operations are located by retyped prose
+
+`apply_patch_operations` matches targets literally:
+
+```rust
+if line.contains(target) { ... }
+```
+
+Any `target_text` that is not character-identical to a document line is
+**silently skipped** — no error, no counter. This is why the prompt had to
+demand verbatim quoting: the design makes the LLM perform the string matching
+that the engine should perform, and LLMs are unreliable at exact reproduction of
+long strings. It is the direct cause of the malformed targets in §2.2 and the
+skipped operations observed in the runs.
+
+Two further incoherences in the same area:
+
+- `section` and `target_text` are two overlapping ways to express "where", and
+  the model half-fills both. `section` is the half that is broken.
+- There is no operation type for renaming or moving a section, so a wrong heading
+  can never be repaired by the protocol.
+
+## 2.10 Latent data-loss hazard in the patch engine (proven by probe)
+
+`normalize_for_match` collapses newlines to spaces, so matching ignores line
+structure while application is strictly per-line. A multi-line `target_text` can
+therefore match one unrelated line, which is then wholly replaced:
+
+```
+BASE:    - Languages: Spanish, Reading Preference: Hard sci-fi
+         - Lives in Chicago
+         - Owns a bicycle
+
+target:  "- Languages: Spanish\n- Reading Preference: Hard sci-fi"   (2 lines)
+
+AFTER:   - Languages: Spanish, Japanese      <- whole line replaced
+         - Lives in Chicago
+         - Owns a bicycle
+```
+
+Silent corruption: nothing warns, nothing is logged. This was reproduced with a
+direct unit-test probe.
+
+Blocking multi-line targets is **not** the fix — a legitimate paragraph replace
+must keep working. The actual gap is that the engine has no multi-line-aware
+matching, so it silently degrades a multi-line target into "replace some
+arbitrary single line".
+
+## 2.11 Compaction counts remain uncalibrated for this executor
+
+Trigger correctness held for every case that ran, and the count assertion was
+correctly demoted to report-only calibration data. The executor
+(`qwen3.5:9b` at an 8192 context window) has no calibration entry yet, so counts
+are reported as raw deltas against an empty baseline and never gate the run.
+
+## 2.12 Open items not reached
+
+- The 14-case matrix never completed. Best partial result: cases 01–05 passing
+  mechanically, with case 02 no longer aborting.
+- INVARIANT 5.3-B (re-anchor on accept) was exercised successfully in every case
+  that staged ≥2 suggestions (`reanchor=Some(true)`), but never in a run that
+  completed all 14 cases.
+- The reject path was never probed in a live run.
+- `settings.memory.suggestion_policy = "auto_apply"` is declared in
+  `memory-spec.md §5.4` but has no implementation anywhere in `src/`.
 
 ---
 
-## 5. Architectural Approval Gate
+# Summary of root causes
 
-This plan conforms to:
-* Zero Backward Compatibility (ZBC): Replaces legacy full-rewrite interfaces directly.
-* Native Turso Invariant: Pure transactional SQLite operations in `persistence/`.
-* Fixed Pipeline Hierarchy: Memory consolidation runs in background, isolated from real-time audio.
+Ordered by leverage:
+
+1. **No document structure contract.** The artifact shape is unspecified in the
+   spec and unchecked in code, so the document is a bullet dump (§2.4, §2.5,
+   §2.6). Everything else compounds this.
+2. **Operations located by retyped prose.** Literal string matching against LLM
+   output makes every operation fragile and silently skippable (§2.9, §2.10).
+3. **Generation request misconfigured for the task class.** Consolidation
+   inherited compaction's reasoning-off invariant, and a catalog defect silently
+   downgraded schema enforcement (§2.2, §2.3).
+4. **Failure handling is fatal-or-nothing.** No retry, no salvage, no
+   accumulation-side assertions (§2.1, §2.7).
+
+# Recommendation
+
+Fix the structure contract first. A personal memory document should be a
+coherent, sectioned profile of the user, not an append-only fact list, and the
+code should assert that (reject nameless headings, detect duplicate bullets)
+rather than trusting the model to maintain it.
+
+Then relocate operation targeting from retyped prose to stable identity — the
+`memory_facts` table already keys every fact by id, so an operation can name the
+fact it revises rather than quoting a line back. That removes the entire class of
+malformed-target, skipped-operation, and hallucinated-id failures at once, and
+leaves the LLM doing only the two things it is reliable at: deciding which facts
+changed, and writing the new wording.
