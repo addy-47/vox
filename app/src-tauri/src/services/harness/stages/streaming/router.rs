@@ -328,6 +328,7 @@ impl StreamRoutingStage {
     fn emit_cancelled<R: Runtime>(&self, handles: &StreamRoutingHandles<R>) {
         let event = VoxEvent::Cancelled {
             turn_id: handles.turn_id,
+            owner: InteractionOwner::Assistant,
         };
         if let Err(e) = handles.event_tx.send(event) {
             log::warn!("[Harness::Stream] Failed to dispatch Cancelled: {}", e);

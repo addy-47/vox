@@ -1,7 +1,4 @@
-use std::{
-    sync::{atomic::Ordering, Arc},
-    time::Duration,
-};
+use std::sync::{atomic::Ordering, Arc};
 
 #[cfg(target_os = "linux")]
 use gtk::prelude::WidgetExt;
@@ -29,13 +26,26 @@ pub fn ensure_tray_window<R: tauri::Runtime>(
     }
 
     log::info!("[Tray] Lazily constructing 'tray' HUD webview window...");
+
+    #[cfg(target_os = "linux")]
+    let (init_w, init_h) = {
+        let mon = app.primary_monitor().ok().flatten();
+        if let Some(m) = mon {
+            (m.size().width as f64, m.size().height as f64)
+        } else {
+            (1920.0, 1080.0)
+        }
+    };
+    #[cfg(not(target_os = "linux"))]
+    let (init_w, init_h) = (420.0, 250.0);
+
     let window = WebviewWindowBuilder::new(
         app,
         AppWindow::Tray.as_str(),
         WebviewUrl::App("/tray".into()),
     )
     .title("vox-live")
-    .inner_size(420.0, 250.0)
+    .inner_size(init_w, init_h)
     .transparent(true)
     .decorations(false)
     .always_on_top(true)
@@ -149,17 +159,7 @@ pub fn refresh_tray_menu(app: &AppHandle<tauri::Wry>) {
 pub async fn position_tray_window<R: tauri::Runtime>(window: &WebviewWindow<R>) {
     #[cfg(target_os = "linux")]
     {
-        if let Err(e) = window.show() {
-            log::debug!(
-                "[Tray] Failed to show tray window during positioning: {}",
-                e
-            );
-        }
-        let win_clone = window.clone();
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            setup_linux_virtual_layer(win_clone.app_handle(), AppWindow::Tray.as_str());
-        });
+        setup_linux_virtual_layer(window.app_handle(), AppWindow::Tray.as_str());
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -167,9 +167,6 @@ pub async fn position_tray_window<R: tauri::Runtime>(window: &WebviewWindow<R>) 
         use tauri_plugin_positioner::{Position, WindowExt};
         if let Err(e) = window.move_window(Position::TopRight) {
             log::debug!("[Tray] Failed to position window: {}", e);
-        }
-        if let Err(e) = window.show() {
-            log::debug!("[Tray] Failed to show window: {}", e);
         }
     }
 }

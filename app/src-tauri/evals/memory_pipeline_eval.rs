@@ -26,11 +26,16 @@ use common::{
     pipeline_report::{
         case_start_ms, failed_case_report, failed_setup_report, fetch_compaction_observations,
         validate_compaction_ranges, write_final_report, CaseReport, ConsolidationObservation,
-        ConsolidationOutcome, FinalReportConfig, IngestionCycleReport, SuggestionObservation,
-        TurnTelemetry,
+        ConsolidationOutcome, EngineReplayObservation, FinalReportConfig, IngestionCycleReport,
+        ReanchorArithmeticObservation, StructureDefectRecord, StructureObservation,
+        SuggestionObservation, TurnTelemetry,
     },
     preservation::untargeted_preservation,
     report, settings_cfg,
+    structure::{
+        account_operations, measure_document, verify_reanchor_arithmetic,
+        verify_section_membership,
+    },
     turns::DatasetTurn,
 };
 use turso::Connection;
@@ -98,6 +103,13 @@ struct Args {
     db_path: PathBuf,
     #[arg(long)]
     case: Option<u32>,
+    /// Run only the first N cases of the ladder on a fresh shared DB. Unlike `--case`,
+    /// which selects a single case in isolation, this preserves the cumulative document
+    /// evolution the incremental index-addressed path depends on: case 1 is the only
+    /// cold-start (Prompt 1) case, and every later case is an incremental (Prompt 2)
+    /// cycle on the document the earlier cases accumulated.
+    #[arg(long)]
+    max_cases: Option<u32>,
     #[arg(long, default_value_t = 8192)]
     context_window: u32,
     #[arg(long, default_value = DEFAULT_SERVER_URL)]
@@ -188,7 +200,12 @@ async fn run(args: Args) -> Result<()> {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sandbox/datasets/eval-sessions")
     }));
     let db_path = paths::resolve(args.db_path.clone());
-    let is_subset = args.case.is_some();
+    let is_subset = args.case.is_some() || args.max_cases.is_some();
+    // A prefix run of two or more cases still has to demonstrate the incremental
+    // index-addressed path, because that is the only thing the new patch engine does.
+    // A single-case run in isolation, and a one-case prefix, cannot: both are cold-start only.
+    let requires_incremental_coverage = args.case.is_none()
+        && args.max_cases.unwrap_or(u32::MAX) >= 2;
     let prepared = prepare_run(&args, &dataset_dir).await;
     let (selected_cases, is_subset, settings, provider, _db, conn) = match prepared {
         Ok(prepared) => prepared,
@@ -259,7 +276,8 @@ async fn run(args: Args) -> Result<()> {
                     .as_ref()
                     .map(|observation| {
                         format!(
-                            " staged={} skipped_ops={} unexplained_lost={} reanchor={:?} judge={}",
+                            " path={} staged={} skipped_ops={} unexplained_lost={} reanchor={:?} judge={} | struct: ok={} hdg={} bul={} dup_hdg={} dup_bul={} above_hdg={} | engine: replay_applicable={} replay_match={} | sect: viol={} | gate_rejected={}",
+                            observation.consolidation_path,
                             observation.staged_suggestions,
                             observation.skipped_operations,
                             observation.unexplained_lost_lines.len(),
@@ -268,7 +286,17 @@ async fn run(args: Args) -> Result<()> {
                                 .judge
                                 .as_ref()
                                 .map(|judge| format!("{}:{}", judge.model, judge.verdict))
-                                .unwrap_or_else(|| "skipped".to_string())
+                                .unwrap_or_else(|| "skipped".to_string()),
+                            observation.accepted_structure.contract_satisfied,
+                            observation.accepted_structure.headings_total,
+                            observation.accepted_structure.bullets_total,
+                            observation.accepted_structure.duplicate_headings.len(),
+                            observation.accepted_structure.duplicate_bullets.len(),
+                            observation.accepted_structure.bullets_above_first_heading,
+                            observation.engine_replay.replay_applicable,
+                            observation.engine_replay.matches_committed_document,
+                            observation.section_membership_violations.len(),
+                            observation.structure_gate_rejected,
                         )
                     })
                     .unwrap_or_else(|| " no_candidates".to_string());
@@ -327,7 +355,7 @@ async fn run(args: Args) -> Result<()> {
     let memory_pipeline_exercised = reports
         .iter()
         .any(|report| report.memory_consolidation_exercised);
-    let all_passed = cases_passed && (is_subset || memory_pipeline_exercised);
+    let all_passed = cases_passed && (!requires_incremental_coverage || memory_pipeline_exercised);
     if args.write_calibration {
         let case_compactions: Vec<(String, u32)> = reports
             .iter()
@@ -393,8 +421,8 @@ async fn prepare_run(
 )> {
     let cases = load_cases(dataset_dir).await?;
     validate_manifest(&cases)?;
-    let is_subset = args.case.is_some();
-    let selected_cases = select_cases(cases, args.case)?;
+    let is_subset = args.case.is_some() || args.max_cases.is_some();
+    let selected_cases = select_cases(cases, args.case, args.max_cases)?;
     anyhow::ensure!(
         args.context_window > DEFAULT_LLM_MAX_OUTPUT_TOKENS,
         "Context window must exceed reserved output tokens"
@@ -528,15 +556,32 @@ fn validate_manifest(cases: &[EvalCase]) -> Result<()> {
     Ok(())
 }
 
-fn select_cases(cases: Vec<EvalCase>, case: Option<u32>) -> Result<Vec<EvalCase>> {
-    let Some(case) = case else {
+fn select_cases(cases: Vec<EvalCase>, case: Option<u32>, max_cases: Option<u32>) -> Result<Vec<EvalCase>> {
+    if let Some(case) = case {
+        let selected = cases
+            .into_iter()
+            .find(|candidate| candidate.ordinal == case as usize)
+            .with_context(|| format!("Case {case} is out of range"))?;
+        return Ok(vec![selected]);
+    }
+    let Some(max_cases) = max_cases else {
         return Ok(cases);
     };
-    let selected = cases
-        .into_iter()
-        .find(|candidate| candidate.ordinal == case as usize)
-        .with_context(|| format!("Case {case} is out of range"))?;
-    Ok(vec![selected])
+    anyhow::ensure!(max_cases > 0, "--max-cases must be at least 1");
+    anyhow::ensure!(
+        max_cases as usize <= cases.len(),
+        "--max-cases {max_cases} exceeds the {} cases in the ladder",
+        cases.len()
+    );
+    // Keep the ladder prefix in order: the personal-memory document accumulates across
+    // cases, so a prefix must start at case 1 to reach the cold-start path first.
+    let mut prefix: Vec<EvalCase> = cases.into_iter().take(max_cases as usize).collect();
+    anyhow::ensure!(
+        prefix.first().is_some_and(|first| first.ordinal == 1),
+        "--max-cases prefix must begin at case 1"
+    );
+    prefix.shrink_to_fit();
+    Ok(prefix)
 }
 
 async fn run_case(
@@ -841,9 +886,39 @@ async fn run_case(
         && final_watermark_valid
         && empty_context_compactions == 0;
 
+    // Mechanical gate. `structure_valid` is the accumulation-side counterpart to the
+    // loss-only preservation check: without it this gate cannot fail for the append-only
+    // degeneration that the previous two consolidation approaches both produced, and a
+    // visibly degrading document would read as `passed`.
+    let structure_valid = consolidation.as_ref().is_none_or(|outcome| {
+        let observation = &outcome.observation;
+        observation.accepted_structure.contract_satisfied
+            && !observation.structure_gate_rejected
+            && (!observation.engine_replay.replay_applicable
+                || observation.engine_replay.matches_committed_document)
+    });
+
+    let patch_fidelity_valid = consolidation.as_ref().is_none_or(|outcome| {
+        let observation = &outcome.observation;
+        observation.skipped_operations == 0
+            && observation
+                .reanchor_arithmetic
+                .version_mismatch
+                .is_empty()
+            && observation.section_membership_violations.is_empty()
+    });
+
     let consolidation_valid = consolidation.as_ref().is_none_or(|outcome| {
         let observation = &outcome.observation;
-        observation.document_unchanged_after_staging
+        // Staging immutability is a Prompt 2/3 invariant. Prompt 1 commits the synthesized
+        // document directly, so on the cold-start path the document is *expected* to change;
+        // requiring it to be untouched there would assert the opposite of the spec.
+        let staging_immutable = if observation.consolidation_path == "cold_start" {
+            true
+        } else {
+            observation.document_unchanged_after_staging
+        };
+        staging_immutable
             && observation.candidate_partition_valid
             && observation.pending_anchored_to_base_version
             && observation.untargeted_preservation_valid
@@ -851,6 +926,10 @@ async fn run_case(
             && observation.skipped_operations == 0
             && observation.facts_left_active == 0
             && observation.reanchor_valid != Some(false)
+            && observation
+                .reanchor_arithmetic
+                .arithmetic_valid
+            && observation.section_membership_violations.is_empty()
     });
 
     Ok(CaseReport {
@@ -904,6 +983,8 @@ async fn run_case(
             && ingestion_accounting_valid
             && personal_memory_injected
             && consolidation_valid
+            && structure_valid
+            && patch_fidelity_valid
         {
             "passed".to_string()
         } else {
@@ -948,27 +1029,29 @@ async fn run_consolidation_and_accept(
         .filter(|suggestion| !pending_before_ids.contains(&suggestion.id))
         .collect();
 
-    let operations: Vec<SuggestionObservation> = staged
+    // The two consolidation paths carry different invariants. Naming the path keeps the
+    // path-specific assertions from being scored against the wrong contract.
+    let consolidation_path = if base_document.trim().is_empty() {
+        "cold_start"
+    } else if staged.is_empty() {
+        "staged_no_edits"
+    } else {
+        "incremental"
+    };
+
+    // Real-engine accounting replaces the previous stub, which only tested for non-empty
+    // content and therefore could not fail for an out-of-range index.
+    let op_tuples: Vec<(String, u32, String)> = staged
         .iter()
         .map(|suggestion| {
-            let engine_would_match = match suggestion.op.as_str() {
-                "insert_after" | "insert" => !suggestion.content.trim().is_empty(),
-                "replace" => !suggestion.content.trim().is_empty(),
-                "delete" => true,
-                _ => false,
-            };
-            SuggestionObservation {
-                op: suggestion.op.clone(),
-                target_index: suggestion.target_index,
-                content: suggestion.content.clone(),
-                engine_would_match,
-            }
+            (
+                suggestion.op.clone(),
+                suggestion.target_index,
+                suggestion.content.clone(),
+            )
         })
         .collect();
-    let skipped_operations = operations
-        .iter()
-        .filter(|operation| !operation.engine_would_match)
-        .count() as u32;
+    let mut engine = account_operations(base_document, &op_tuples);
 
     let pending_anchored_to_base_version = staged
         .iter()
@@ -979,32 +1062,119 @@ async fn run_consolidation_and_accept(
 
     let mut reanchor_probe_exercised = false;
     let mut reanchor_valid: Option<bool> = None;
+    let mut reanchor_arithmetic = ReanchorArithmeticObservation {
+        probe_exercised: false,
+        resolved_op: String::new(),
+        resolved_index: 0,
+        remaining_pending_count: 0,
+        shifted: Vec::new(),
+        missed_shifts: Vec::new(),
+        spurious_shifts: Vec::new(),
+        version_mismatch: Vec::new(),
+        arithmetic_valid: true,
+    };
+    let mut structure_gate_rejected = false;
+    let mut accepted = after_stage.clone();
     let mut expected_version = base_version;
+
     if staged.len() >= 2 {
         reanchor_probe_exercised = true;
-        let first = resolve_memory_suggestions(conn, None, Some(&staged[0].id), "accept")
-            .await
-            .context("Single-suggestion accept failed")?;
-        let remaining = fetch_pending_suggestions(conn, None).await?;
-        reanchor_valid = Some(
-            remaining
-                .iter()
-                .all(|suggestion| suggestion.base_memory_version == first.version)
-                && remaining.len() == staged.len() - 1,
-        );
-        expected_version = first.version;
+        let resolved = staged[0].clone();
+        // Sample the remaining rows *before* the accept so the arithmetic can be
+        // recomputed independently rather than inferred from the base_version bump alone.
+        let remaining_before: Vec<(String, String, u32)> = staged[1..]
+            .iter()
+            .map(|suggestion| {
+                (
+                    suggestion.id.clone(),
+                    suggestion.op.clone(),
+                    suggestion.target_index,
+                )
+            })
+            .collect();
+
+        match resolve_memory_suggestions(conn, None, Some(&resolved.id), "accept").await {
+            Ok(first) => {
+                let remaining = fetch_pending_suggestions(conn, None).await?;
+                let remaining_after: Vec<(String, String, u32)> = remaining
+                    .iter()
+                    .map(|suggestion| {
+                        (
+                            suggestion.id.clone(),
+                            suggestion.op.clone(),
+                            suggestion.target_index,
+                        )
+                    })
+                    .collect();
+                let arithmetic = verify_reanchor_arithmetic(
+                    &resolved.op,
+                    resolved.target_index,
+                    &remaining_before,
+                    &remaining_after,
+                );
+                reanchor_arithmetic = ReanchorArithmeticObservation {
+                    probe_exercised: true,
+                    resolved_op: resolved.op.clone(),
+                    resolved_index: resolved.target_index,
+                    remaining_pending_count: remaining.len(),
+                    shifted: arithmetic.shifted,
+                    missed_shifts: arithmetic.missed_shifts,
+                    spurious_shifts: arithmetic.spurious_shifts,
+                    version_mismatch: remaining
+                        .iter()
+                        .filter(|suggestion| suggestion.base_memory_version != first.version)
+                        .map(|suggestion| suggestion.id.clone())
+                        .collect(),
+                    arithmetic_valid: arithmetic.arithmetic_valid,
+                };
+                reanchor_valid = Some(
+                    reanchor_arithmetic.version_mismatch.is_empty()
+                        && reanchor_arithmetic.arithmetic_valid
+                        && remaining.len() == staged.len() - 1,
+                );
+                expected_version = first.version;
+                accepted = first;
+            }
+            Err(error) if is_structure_gate(&error) => {
+                // The gate fired: the patched candidate violated the §5.1 contract and
+                // nothing was committed. This is a production-correct protection and a
+                // model-output defect at the same time. Do not abort the ladder — record it.
+                println!(
+                    "[consolidation] structure gate rejected the case-{} accept: {error}",
+                    base_version
+                );
+                structure_gate_rejected = true;
+                reanchor_probe_exercised = false;
+            }
+            Err(error) => {
+                return Err(error).context("Single-suggestion accept failed");
+            }
+        }
     }
 
-    let accepted = resolve_memory_suggestions(conn, None, None, "accept")
-        .await
-        .context("Accept-all suggestion resolution failed")?;
+    if !structure_gate_rejected {
+        accepted = resolve_memory_suggestions(conn, None, None, "accept")
+            .await
+            .context("Accept-all suggestion resolution failed")?;
+    }
     let latency_ms = started.elapsed().as_millis();
     anyhow::ensure!(
-        accepted.version == expected_version + 1,
+        structure_gate_rejected || accepted.version == expected_version + 1,
         "Accept-all produced version {} but {} was expected",
         accepted.version,
         expected_version + 1
     );
+
+    // The gate must have left the active version and every suggestion row untouched.
+    let gate_protected_state = if structure_gate_rejected {
+        let still_pending = fetch_pending_suggestions(conn, None).await?;
+        let current = get_personal_memory(conn, None).await?;
+        still_pending.len() == staged.len()
+            && current.version == base_version
+            && current.content.trim() == base_document.trim()
+    } else {
+        true
+    };
 
     let still_pending = fetch_pending_suggestions(conn, None).await?;
     let accepted_count = still_pending.len() as u32;
@@ -1012,8 +1182,78 @@ async fn run_consolidation_and_accept(
     let rejected_in_db = db::count_facts_by_status(conn, "personal", "rejected").await?;
     let active_after = db::count_facts_by_status(conn, "personal", "active").await?;
 
+    // Section membership is resolved before the operation records are built, because each
+    // record carries its landing section alongside what the engine did with its index.
+    let section_violations = verify_section_membership(base_document, &op_tuples, &accepted.content);
+    let operations: Vec<SuggestionObservation> = staged
+        .iter()
+        .enumerate()
+        .map(|(position, suggestion)| {
+            let trace = engine.per_operation.get(position);
+            let membership = section_violations
+                .iter()
+                .find(|violation| violation.content.trim() == suggestion.content.trim());
+            SuggestionObservation {
+                op: suggestion.op.clone(),
+                target_index: suggestion.target_index,
+                content: suggestion.content.clone(),
+                engine_would_match: trace.is_some_and(|trace| {
+                    !trace.engine_action.starts_with("skipped")
+                        && trace.engine_action != "clamped_to_append_out_of_range"
+                }),
+                element_count_at_stage: trace.map_or(0, |trace| trace.element_count_at_stage),
+                index_in_bounds: trace.is_some_and(|trace| trace.index_in_bounds),
+                engine_action: trace
+                    .map_or("unaccounted", |trace| trace.engine_action)
+                    .to_string(),
+                landed_under_section: membership.and_then(|v| v.landed_under.clone()),
+                intended_under_section: membership.and_then(|v| v.intended_under.clone()),
+            }
+        })
+        .collect();
+    let skipped_operations = operations
+        .iter()
+        .filter(|operation| !operation.engine_would_match)
+        .count() as u32;
+    let section_membership_violations: Vec<SuggestionObservation> = section_violations
+        .iter()
+        .filter_map(|violation| {
+            operations
+                .iter()
+                .find(|operation| operation.content.trim() == violation.content.trim())
+                .cloned()
+        })
+        .collect();
+
     let (untargeted_total, untargeted_preserved, unexplained_lost_lines) =
         untargeted_preservation(base_document, &accepted.content, &operations);
+
+    // Accumulation-side structure measurement. The preservation check above is loss-only
+    // and is structurally blind to an append-only bullet dump; these checks are not.
+    let base_structure = measure_document(base_document);
+    let accepted_structure = measure_document(&accepted.content);
+
+    // Independent replay: the engine's own output must equal what production committed,
+    // otherwise every per-operation reading above is untrustworthy. On the cold-start path
+    // there is no operation to replay — Prompt 1 synthesizes the document whole — so the
+    // comparison is recorded as not applicable instead of being scored as a mismatch.
+    let replay_applicable = engine.operations_total > 0;
+    engine.engine_replay_matches_committed = !structure_gate_rejected
+        && engine.engine_replay_document.trim() == accepted.content.trim();
+    let engine_replay = EngineReplayObservation {
+        operations_total: engine.operations_total,
+        skipped_by_engine: engine.skipped_by_engine,
+        replay_applicable,
+        matches_committed_document: engine.engine_replay_matches_committed,
+        replay_chars: engine.engine_replay_document.len(),
+        committed_chars: accepted.content.len(),
+        replay_headings: engine
+            .engine_replay_document
+            .lines()
+            .filter(|line| line.trim_start().starts_with('#'))
+            .map(|line| line.trim().to_string())
+            .collect(),
+    };
 
     let judge_observation = match judge {
         Some(settings) if settings.enabled => Some(
@@ -1033,6 +1273,7 @@ async fn run_consolidation_and_accept(
     Ok(Some(ConsolidationOutcome {
         observation: ConsolidationObservation {
             base_memory_version: base_version,
+            consolidation_path: consolidation_path.to_string(),
             staged_suggestions: staged.len() as u32,
             candidate_facts: candidate_count as i64,
             candidate_fact_texts: candidate_texts,
@@ -1055,11 +1296,53 @@ async fn run_consolidation_and_accept(
             facts_left_active: active_after,
             reject_probe: false,
             document_unchanged_after_reject: false,
+            accepted_structure: to_structure_observation(&accepted_structure, &base_structure),
+            base_structure: to_structure_observation(&base_structure, &base_structure),
+            engine_replay,
+            reanchor_arithmetic,
+            section_membership_violations,
+            structure_gate_rejected: structure_gate_rejected && !gate_protected_state,
             judge: judge_observation,
         },
         accepted_document: accepted.content,
         latency_ms,
     }))
+}
+
+/// True when the error is the §5.3 accept-path structure gate refusing a candidate document.
+fn is_structure_gate(error: &vox_lib::services::memory::MemorySuggestionError) -> bool {
+    matches!(
+        error,
+        vox_lib::services::memory::MemorySuggestionError::StructureGate(_)
+    )
+}
+
+fn to_structure_observation(
+    measured: &common::structure::StructureReport,
+    base: &common::structure::StructureReport,
+) -> StructureObservation {
+    StructureObservation {
+        bullets_total: measured.bullets_total,
+        headings_total: measured.headings_total,
+        base_bullets_total: base.bullets_total,
+        base_headings_total: base.headings_total,
+        nameless_headings: measured.nameless_headings.clone(),
+        duplicate_headings: measured.duplicate_headings.clone(),
+        duplicate_bullets: measured.duplicate_bullets.clone(),
+        has_any_heading: measured.has_any_heading,
+        is_empty: measured.is_empty,
+        bullets_above_first_heading: measured.bullets_above_first_heading,
+        bullets_per_section: measured.bullets_per_section.clone(),
+        contract_satisfied: measured.contract_satisfied(),
+        defects: measured
+            .defects
+            .iter()
+            .map(|defect| StructureDefectRecord {
+                kind: defect.kind.to_string(),
+                detail: defect.detail.clone(),
+            })
+            .collect(),
+    }
 }
 
 async fn run_reject_probe(
@@ -1090,6 +1373,7 @@ async fn run_reject_probe(
     Ok(Some(ConsolidationOutcome {
         observation: ConsolidationObservation {
             base_memory_version: base_version,
+            consolidation_path: "reject_probe".to_string(),
             staged_suggestions: staged.len() as u32,
             candidate_facts: candidates.len() as i64,
             candidate_fact_texts: candidates.iter().map(|fact| fact.text.clone()).collect(),
@@ -1115,6 +1399,37 @@ async fn run_reject_probe(
             facts_left_active: db::count_facts_by_status(conn, "personal", "active").await?,
             reject_probe: true,
             document_unchanged_after_reject,
+            accepted_structure: to_structure_observation(
+                &measure_document(&rejected.content),
+                &measure_document(base_document),
+            ),
+            base_structure: to_structure_observation(
+                &measure_document(base_document),
+                &measure_document(base_document),
+            ),
+            engine_replay: EngineReplayObservation {
+                operations_total: 0,
+                skipped_by_engine: 0,
+                // No operation was applied, so the committed document must equal the base.
+                replay_applicable: false,
+                matches_committed_document: true,
+                replay_chars: base_document.len(),
+                committed_chars: rejected.content.len(),
+                replay_headings: Vec::new(),
+            },
+            reanchor_arithmetic: ReanchorArithmeticObservation {
+                probe_exercised: false,
+                resolved_op: String::new(),
+                resolved_index: 0,
+                remaining_pending_count: 0,
+                shifted: Vec::new(),
+                missed_shifts: Vec::new(),
+                spurious_shifts: Vec::new(),
+                version_mismatch: Vec::new(),
+                arithmetic_valid: true,
+            },
+            section_membership_violations: Vec::new(),
+            structure_gate_rejected: false,
             judge: None,
         },
         accepted_document: rejected.content,

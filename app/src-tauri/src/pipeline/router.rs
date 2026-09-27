@@ -118,7 +118,7 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
     );
 
     match event {
-        // Session lifecycle — always routed to assistant track
+        // Session lifecycle (Assistant only)
         VoxEvent::SessionStart { owner, session_id } => {
             super::assistant::session::on_session_start(owner, session_id, app, state, &ctx);
         }
@@ -126,31 +126,87 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
         VoxEvent::ResumeSession => super::assistant::session::on_resume(app, state, &ctx),
         VoxEvent::EndSession => super::assistant::session::on_end(app, state, &ctx),
 
-        // Speech/PTT/Transcript/Error — route by owner
-        VoxEvent::SpeechStart
-        | VoxEvent::SpeechEnd
-        | VoxEvent::PttStart
-        | VoxEvent::PttStop
-        | VoxEvent::PttCancel
-        | VoxEvent::TranscriptFinal { .. }
-        | VoxEvent::Cancelled { .. }
-        | VoxEvent::Error { .. }
-            if ctx.owner == InteractionOwner::Dictation =>
-        {
-            log::debug!(
-                "[Dictation::Trace] Router routing event: {:?} (owner: Dictation, dictation_state: {:?})",
-                event,
-                state.pipeline.dictation_state()
-            );
-            super::dictation::handle_event(app, state, event);
+        // Dictation Track Dispatch
+        VoxEvent::PttStart {
+            owner: InteractionOwner::Dictation,
+        } => {
+            super::dictation::ptt::on_ptt_start(app, state);
+        }
+        VoxEvent::PttStop {
+            owner: InteractionOwner::Dictation,
+        } => {
+            super::dictation::ptt::on_ptt_stop(app, state);
+        }
+        VoxEvent::PttCancel {
+            owner: InteractionOwner::Dictation,
+        } => {
+            super::dictation::ptt::on_ptt_cancel(app, state);
+        }
+        VoxEvent::SpeechStart {
+            owner: InteractionOwner::Dictation,
+        } => {
+            super::dictation::speech::on_speech_start(app, state);
+        }
+        VoxEvent::SpeechEnd {
+            owner: InteractionOwner::Dictation,
+        } => {
+            super::dictation::speech::on_speech_end(app, state);
+        }
+        VoxEvent::TranscriptFinal {
+            owner: InteractionOwner::Dictation,
+            turn_id,
+            text,
+        } => {
+            super::dictation::transcript::on_transcript_final(turn_id, text, app, state);
+        }
+        VoxEvent::Cancelled {
+            owner: InteractionOwner::Dictation,
+            turn_id,
+        } => {
+            super::dictation::error::on_cancelled(turn_id, app, state);
         }
 
-        // Remaining assistant events (playback, LLM, speech, PTT, transcript, error)
-        VoxEvent::SpeechStart => super::assistant::speech::on_speech_start(app, state, &ctx),
-        VoxEvent::SpeechEnd => super::assistant::speech::on_speech_end(app, state, &ctx),
-        VoxEvent::TranscriptFinal { turn_id, text } => {
+        // Assistant Track Dispatch
+        VoxEvent::PttStart {
+            owner: InteractionOwner::Assistant,
+        } => {
+            super::assistant::ptt::on_ptt_start(app, state, &ctx);
+        }
+        VoxEvent::PttStop {
+            owner: InteractionOwner::Assistant,
+        } => {
+            super::assistant::ptt::on_ptt_stop(app, state, &ctx);
+        }
+        VoxEvent::PttCancel {
+            owner: InteractionOwner::Assistant,
+        } => {
+            super::assistant::ptt::on_ptt_cancel(app, state, &ctx);
+        }
+        VoxEvent::SpeechStart {
+            owner: InteractionOwner::Assistant,
+        } => {
+            super::assistant::speech::on_speech_start(app, state, &ctx);
+        }
+        VoxEvent::SpeechEnd {
+            owner: InteractionOwner::Assistant,
+        } => {
+            super::assistant::speech::on_speech_end(app, state, &ctx);
+        }
+        VoxEvent::TranscriptFinal {
+            owner: InteractionOwner::Assistant,
+            turn_id,
+            text,
+        } => {
             super::assistant::transcript::on_transcript_final(turn_id, text, app, state, &ctx);
         }
+        VoxEvent::Cancelled {
+            owner: InteractionOwner::Assistant,
+            turn_id,
+        } => {
+            super::assistant::error::on_cancelled(turn_id, app, state, &ctx);
+        }
+
+        // Assistant Cognitive / Generation Events
         VoxEvent::TextInput { text } => {
             super::assistant::text::on_text_input(text, app, state, &ctx);
         }
@@ -163,15 +219,15 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
         VoxEvent::PlaybackFinished { turn_id, intent } => {
             super::assistant::playback::on_playback_finished(turn_id, intent, app, state, &ctx);
         }
+
+        // System
         VoxEvent::Error(err) => {
-            super::assistant::error::on_error(err, app, state, &ctx);
+            if err.source.starts_with("Dictation") {
+                super::dictation::error::on_error(err, app, state);
+            } else {
+                super::assistant::error::on_error(err, app, state, &ctx);
+            }
         }
-        VoxEvent::Cancelled { turn_id } => {
-            super::assistant::error::on_cancelled(turn_id, app, state, &ctx);
-        }
-        VoxEvent::PttStart => super::assistant::ptt::on_ptt_start(app, state, &ctx),
-        VoxEvent::PttStop => super::assistant::ptt::on_ptt_stop(app, state, &ctx),
-        VoxEvent::PttCancel => super::assistant::ptt::on_ptt_cancel(app, state, &ctx),
         VoxEvent::Shutdown => {}
     }
 }

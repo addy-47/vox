@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   Key,
   RotateCcw,
+  Timer,
 } from "lucide-react";
 import type { HelpControlItem } from "@/shared/components/help/HelpControlCard";
 
@@ -269,10 +270,24 @@ export const SETTINGS_PAGE_HELP: {
         },
         {
           icon: Keyboard,
-          name: "System Dictation",
-          badge: "Type Anywhere",
-          action: "Set a global keyboard shortcut for dictation.",
-          outcome: "Press the shortcut anywhere on your computer (browser, code editor, notes) to speak and have your words typed automatically.",
+          name: "Dictation Activation Hotkey",
+          badge: "Global Key",
+          action: "Press or rebind your system-wide dictation trigger shortcut (Alt+V default).",
+          outcome: "Engages the dynamic acoustic transcriber instantly from anywhere on your OS without focusing Vox.",
+        },
+        {
+          icon: FileText,
+          name: "Dictation Output Destination",
+          badge: "Paste / Clipboard / Tray",
+          action: "Select where dictated transcripts are delivered.",
+          outcome: "Paste simulates direct keypresses into the active window. Clipboard copies silently without paste. Tray opens the mini HUD with live waveform.",
+        },
+        {
+          icon: Timer,
+          name: "Silence Auto-Stop Watchdog",
+          badge: "Acoustic Chronometer",
+          action: "Set silence timeout duration in seconds, or toggle off for manual hotkey release.",
+          outcome: "Automatically finalizes and commits your dictation when a quiet pause is detected, preventing trailing background noise.",
         },
         {
           icon: Key,
@@ -291,6 +306,8 @@ export const SETTINGS_PAGE_HELP: {
       ],
       tips: [
         "If you work in a noisy room, Push-to-Talk prevents background chatter from accidentally triggering responses.",
+        "On Linux Wayland desktops, use Clipboard mode if your target terminal emulator restricts synthetic key events.",
+        "The Silence Auto-Stop Watchdog automatically commits transcripts when you finish speaking—ideal for hands-free dictation.",
       ],
     },
     {

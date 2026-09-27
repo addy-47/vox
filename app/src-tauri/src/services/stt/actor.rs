@@ -11,7 +11,10 @@ use super::{
     SttProvider, STT_DEFAULT_INFERENCE_DURATION_MS, STT_MIN_PARTIAL_THROTTLE_MS,
     STT_PARTIAL_ERROR_PENALTY_MS, STT_WORKER_RECV_TIMEOUT_MS, STT_WORKER_THREAD_PRIORITY,
 };
-use crate::{core::events::VoxEvent, services::audio::SAMPLE_RATE};
+use crate::{
+    core::events::{InteractionOwner, VoxEvent},
+    services::audio::SAMPLE_RATE,
+};
 
 pub enum SttCommand {
     StreamChunk {
@@ -23,7 +26,11 @@ pub enum SttCommand {
         audio: Vec<f32>,
         recycle_tx: mpsc::SyncSender<Vec<f32>>,
     },
-    Final(u32, Vec<f32>),
+    Final {
+        turn_id: u32,
+        audio: Vec<f32>,
+        owner: InteractionOwner,
+    },
     ResetStream,
     Shutdown,
 }
@@ -214,11 +221,12 @@ fn handle_stream_chunk_command(
 }
 
 /// Emits the final turn event to the pipeline event channel.
-fn emit_final_events(ctx: &WorkerContext<'_>, tid: u32, transcript: String) {
+fn emit_final_events(ctx: &WorkerContext<'_>, tid: u32, transcript: String, owner: InteractionOwner) {
     if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
         if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptFinal {
             turn_id: tid,
             text: transcript,
+            owner,
         }) {
             log::warn!("[STT] Error sending final transcript event: {:?}", e);
         }
@@ -230,16 +238,18 @@ fn handle_final_command(
     ctx: &WorkerContext<'_>,
     tid: u32,
     utterance: &[f32],
+    owner: InteractionOwner,
     state: &mut WorkerState,
 ) {
     let cancelled = ctx.cancel_flag.load(Ordering::Relaxed);
     log::info!(
-        "[STT] Final received (turn {}, samples {}, {:.2}s, cancelled {}, active_turn {})",
+        "[STT] Final received (turn {}, samples {}, {:.2}s, cancelled {}, active_turn {}, owner {:?})",
         tid,
         utterance.len(),
         utterance.len() as f32 / SAMPLE_RATE as f32,
         cancelled,
-        state.current_active_turn
+        state.current_active_turn,
+        owner,
     );
     if cancelled || tid < state.current_active_turn {
         log::info!("[STT] Final rejected as stale/cancelled (turn {})", tid);
@@ -248,7 +258,10 @@ fn handle_final_command(
             log::warn!("[STT] Error resetting state on stale final: {:?}", e);
         }
         if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
-            if let Err(e) = pipeline_tx.send(VoxEvent::Cancelled { turn_id: tid }) {
+            if let Err(e) = pipeline_tx.send(VoxEvent::Cancelled {
+                turn_id: tid,
+                owner,
+            }) {
                 log::warn!(
                     "[STT] Error sending cancelled event on stale final: {:?}",
                     e
@@ -278,7 +291,7 @@ fn handle_final_command(
         transcript.split_whitespace().count()
     );
 
-    emit_final_events(ctx, tid, transcript);
+    emit_final_events(ctx, tid, transcript, owner);
 
     state.last_transcript.clear();
     state.last_emit_time = Instant::now();
@@ -311,7 +324,7 @@ fn drain_reset_stream(
                 continue;
             }
             SttCommand::ResetStream => continue,
-            SttCommand::Final(..) => {
+            SttCommand::Final { .. } => {
                 *pending_cmd = Some(cmd);
                 break;
             }
@@ -384,8 +397,12 @@ fn run_worker_loop(
                     );
                 }
             }
-            SttCommand::Final(tid, utterance) => {
-                handle_final_command(&ctx, tid, &utterance, &mut state);
+            SttCommand::Final {
+                turn_id,
+                audio,
+                owner,
+            } => {
+                handle_final_command(&ctx, turn_id, &audio, owner, &mut state);
             }
             SttCommand::ResetStream => {
                 if drain_reset_stream(&channels.rx, ctx.provider, &mut state, &mut pending_cmd) {

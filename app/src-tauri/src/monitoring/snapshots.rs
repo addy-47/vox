@@ -71,9 +71,6 @@ pub struct RuntimeSnapshot {
     pub is_stt_loaded: bool,
     pub is_vad_loaded: bool,
     pub is_embedder_loaded: bool,
-    pub is_query_classifier_loaded: bool,
-    pub is_intra_edge_classifier_loaded: bool,
-    pub is_inter_edge_classifier_loaded: bool,
     pub is_translit_loaded: bool,
 
     /// CPU frequency governor (Linux only, e.g. "powersave", "performance"). Empty string if unavailable.
@@ -353,9 +350,6 @@ fn collect_snapshot(
             })
             .unwrap_or(false),
         is_embedder_loaded: is_embedder_loaded(),
-        is_query_classifier_loaded: false,
-        is_intra_edge_classifier_loaded: false,
-        is_inter_edge_classifier_loaded: false,
         is_translit_loaded: is_transliteration_engine_loaded(),
         cpu_governor: state.cpu_governor.lock().clone(),
         cpu_governor_optimal: state.cpu_governor_optimal.load(Ordering::Relaxed),

@@ -22,7 +22,7 @@ use super::{
 };
 use crate::{
     core::{
-        events::VoxEvent,
+        events::{InteractionOwner, VoxEvent},
         settings::{AudioOutputMode, InteractionMode},
         state::InteractionState,
     },
@@ -54,6 +54,7 @@ pub enum VadCommand {
     StartWindowValidation {
         auto_stop_silence_ms: Option<u64>,
         stream_partials: bool,
+        owner: InteractionOwner,
     },
     StopWindowValidation {
         response_tx: mpsc::Sender<VadValidationResult>,
@@ -108,6 +109,7 @@ pub struct VadActorState {
     pub window_autostop_silence_ms: Option<u64>,
     pub window_autostop_fired: bool,
     pub window_stream_partials: bool,
+    pub window_owner: InteractionOwner,
 }
 
 /// Configuration settings for the VAD actor.
@@ -130,6 +132,7 @@ pub struct VadActorHandles {
     pub engine_shutdown: Arc<AtomicBool>,
     pub dropped_counter: Arc<AtomicU64>,
     pub ingestion_gate: Arc<AtomicBool>,
+    pub owner_atomic: Arc<AtomicU32>,
 }
 
 /// Communication channels utilized by the VAD actor.
@@ -193,6 +196,7 @@ impl VadActorState {
             window_autostop_silence_ms: None,
             window_autostop_fired: false,
             window_stream_partials: false,
+            window_owner: InteractionOwner::Dictation,
         }
     }
 }
@@ -259,10 +263,17 @@ fn process_vad_commands(
             VadCommand::StartWindowValidation {
                 auto_stop_silence_ms,
                 stream_partials,
+                owner,
             } => {
                 let turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
-                log::info!("[VAD Actor] Windowed validation started (turn {})", turn_id);
+                log::info!(
+                    "[VAD Actor] Windowed validation started (turn {}, owner {:?})",
+                    turn_id,
+                    owner
+                );
+                state.operational_mode = VadOperationalMode::WindowedValidation;
                 state.current_turn_id = turn_id;
+                state.window_owner = owner;
                 state.window_active = true;
                 state.window_buffer.clear();
                 state.pre_roll_buffer.copy_into(&mut state.window_buffer);

@@ -13,7 +13,7 @@ use tauri::{AppHandle, Manager};
 use crate::{
     core::{
         events::{emit_ipc_to, IpcEvent, TranscriptPayload, VoxEvent},
-        settings::{TtsActiveProvider, VoxSettings},
+        settings::{DictationInteractionMode, InteractionMode, TtsActiveProvider, VoxSettings},
         state::{AppState, InteractionOwner, InteractionState},
     },
     monitoring::TelemetryEvent,
@@ -176,12 +176,20 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
             .settings
             .read()
             .map_err(|e| format!("[Core::Engine] Settings lock poisoned: {}", e))?;
+        let active_owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
+        let mode = match active_owner {
+            InteractionOwner::Dictation => match s.dictation.interaction_mode {
+                DictationInteractionMode::Passive => InteractionMode::Passive,
+                DictationInteractionMode::Ptt => InteractionMode::PTT,
+            },
+            InteractionOwner::Assistant => s.interaction.mode.clone(),
+        };
         (
             s.vad.threshold,
             s.vad.ptt_noise_gate,
             s.vad.silence_duration_ms,
             s.vad.speech_onset_ms,
-            s.interaction.mode.clone(),
+            mode,
             s.audio.output_mode.clone(),
         )
     };
@@ -210,6 +218,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
         engine_shutdown: Arc::clone(&state.pipeline.engine_shutdown),
         dropped_counter: Arc::clone(&state.telemetry.dropped_telemetry_events),
         ingestion_gate: Arc::clone(&state.pipeline.ingestion_gate),
+        owner_atomic: Arc::clone(&state.owner),
     };
 
     let vad_channels = VadActorChannels {

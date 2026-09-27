@@ -157,8 +157,8 @@ async fn test_ptt_realtime_matrix() {
             while tokio::time::Instant::now() < deadline {
                 match event_rx.try_recv() {
                     Ok(event) => match event {
-                        VoxEvent::SpeechStart
-                        | VoxEvent::SpeechEnd
+                        VoxEvent::SpeechStart { .. }
+                        | VoxEvent::SpeechEnd { .. }
                         | VoxEvent::TranscriptFinal { .. }
                         | VoxEvent::LlmFinished { .. } => {
                             server_response = Some(event);

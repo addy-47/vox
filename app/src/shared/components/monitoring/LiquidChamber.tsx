@@ -10,6 +10,7 @@ interface LiquidChamberProps {
   colors: DynamicColors;
   isEngineLoaded: boolean;
   activeModelsCount: number;
+  totalModelsCount: number;
   cpuPct: number;
   ramMb?: number;
   ramGb: string;
@@ -28,6 +29,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
   colors,
   isEngineLoaded,
   activeModelsCount,
+  totalModelsCount,
   cpuPct,
   ramMb = 0,
   ramGb,
@@ -396,7 +398,7 @@ export const LiquidChamber = memo<LiquidChamberProps>(({
             {activeModelsCount}
           </span>
           <span className="text-2xl font-mono font-bold text-[rgb(var(--foreground-muted))] tracking-tight">
-            / 8
+            / {totalModelsCount}
           </span>
         </div>
 

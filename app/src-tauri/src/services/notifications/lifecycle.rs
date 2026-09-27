@@ -1,5 +1,8 @@
 use std::{
-    sync::atomic::{AtomicU32, AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicU32, AtomicU64, Ordering},
+        Arc,
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -34,18 +37,44 @@ pub struct LifecycleCard<'a> {
     pub duration_ms: u64,
 }
 
+fn is_tray_mode<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
+    use tauri::Manager;
+    if let Some(state) = app.try_state::<Arc<crate::core::state::AppState>>() {
+        if let Ok(s) = state.settings.read() {
+            return s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray;
+        }
+    }
+    false
+}
+
 /// Starts the persistent dictation lifecycle card in Listening state.
 pub async fn dictation_listening<R: tauri::Runtime>(app: &AppHandle<R>, db: &VoxDb) {
+    if is_tray_mode(app) {
+        return;
+    }
+
+    use tauri::Manager;
+    let auto_stop_ms = app
+        .try_state::<Arc<crate::core::state::AppState>>()
+        .and_then(|st| st.settings.read().ok().map(|s| s.dictation.silence_auto_stop_ms))
+        .unwrap_or(1200);
+
+    let auto_stop_text = if auto_stop_ms > 0 {
+        format!(" · a {:.1}s pause auto-finishes", auto_stop_ms as f32 / 1000.0)
+    } else {
+        String::new()
+    };
+
     let title = "🎙️ Dictation";
-    let message = "<b>Listening...</b> Speak clearly · a 1.2s pause auto-finishes";
-    let server_id = show_replaceable_toast(title, message, Severity::Info, LIFECYCLE_RESIDENT_MS);
+    let message = format!("<b>Listening...</b> Speak clearly{}", auto_stop_text);
+    let server_id = show_replaceable_toast(title, &message, Severity::Info, LIFECYCLE_RESIDENT_MS);
     if server_id == 0 {
         notify_transient(
             app,
             db,
             LifecycleCard {
                 title,
-                message,
+                message: &message,
                 severity: Severity::Info,
                 duration_ms: LIFECYCLE_RESIDENT_MS,
             },
@@ -84,6 +113,9 @@ pub fn dictation_live_update(partial_text: &str) {
 
 /// Replaces the lifecycle card with the Transcribing state.
 pub async fn dictation_transcribing<R: tauri::Runtime>(app: &AppHandle<R>, db: &VoxDb) {
+    if is_tray_mode(app) {
+        return;
+    }
     replace_or_notify(
         app,
         db,
@@ -103,6 +135,10 @@ pub async fn dictation_terminal<R: tauri::Runtime>(
     db: &VoxDb,
     card: LifecycleCard<'_>,
 ) {
+    if is_tray_mode(app) {
+        LIFECYCLE_NOTIFY_ID.store(0, Ordering::Relaxed);
+        return;
+    }
     replace_or_notify(app, db, card).await;
     LIFECYCLE_NOTIFY_ID.store(0, Ordering::Relaxed);
 }

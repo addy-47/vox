@@ -8,18 +8,19 @@ interface HeaderProps {
   hasContent: boolean;
   copied: boolean;
   interactionMode: string;
+  silenceAutoStopMs?: number;
   onCopy: () => void;
   onClose: () => void;
   onTogglePtt: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = React.memo(({ 
-  isListening, hasContent, copied, interactionMode,
+  isListening, hasContent, copied, interactionMode, silenceAutoStopMs,
   onCopy, onClose, onTogglePtt
 }) => {
   return (
     <div className="px-6 py-4 flex items-center justify-between relative z-10" data-tauri-drag-region>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         <div className="relative flex items-center justify-center">
           <motion.div 
             animate={{ 
@@ -31,9 +32,20 @@ export const Header: React.FC<HeaderProps> = React.memo(({
           />
           <div className={`w-2.5 h-2.5 rounded-full z-10 transition-all duration-700 ${isListening ? 'bg-[rgb(var(--accent))] shadow-[0_0_10px_rgba(var(--accent),0.8)]' : 'bg-[rgb(var(--foreground))]/30'}`} />
         </div>
-        <span className="text-[12px] font-black tracking-[0.4em] text-[rgb(var(--foreground))]/90 uppercase">
+        <span className="text-[12px] font-black tracking-[0.3em] text-[rgb(var(--foreground))]/90 uppercase">
           {TRAY_COPY.brand} <span className="text-[rgb(var(--accent))]">{TRAY_COPY.live}</span>
         </span>
+        {silenceAutoStopMs !== undefined && (
+          silenceAutoStopMs > 0 ? (
+            <span className="text-[8.5px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded-md bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))] border border-[rgba(var(--accent),0.25)] select-none">
+              {(silenceAutoStopMs / 1000).toFixed(1)}s Pause
+            </span>
+          ) : (
+            <span className="text-[8.5px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded-md bg-[rgba(var(--foreground),0.06)] text-[rgb(var(--foreground-muted))]/60 select-none">
+              Manual
+            </span>
+          )
+        )}
       </div>
       
       <div className="flex items-center gap-1">

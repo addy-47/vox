@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 
 use anyhow::Result;
 use chrono::{Duration as ChronoDuration, NaiveDate};
@@ -15,6 +15,84 @@ pub struct SuggestionObservation {
     pub content: String,
     /// False when the op carries no usable content (replace or insert with empty content)
     pub engine_would_match: bool,
+    /// Element count of the base document the suggestion was staged against.
+    pub element_count_at_stage: usize,
+    /// Whether `target_index` addresses a real element under the engine's 1-based bounds.
+    pub index_in_bounds: bool,
+    /// What the real engine did with this op: inserted / replaced / deleted /
+    /// prepend / clamped_to_append_out_of_range / skipped_out_of_range /
+    /// skipped_empty_content / skipped_unknown_op.
+    pub engine_action: String,
+    /// For `insert_after` on a bullet: the section the content actually landed under in
+    /// the accepted document, or None when it landed above every heading.
+    pub landed_under_section: Option<String>,
+    /// For `insert_after` on a bullet: the section owning the anchor index in the base
+    /// document. Divergence from `landed_under_section` is a membership inversion.
+    pub intended_under_section: Option<String>,
+}
+
+/// One measured violation of the `memory-spec.md` §5.1 structure contract.
+#[derive(Debug, Clone, Serialize)]
+pub struct StructureDefectRecord {
+    pub kind: String,
+    pub detail: String,
+}
+
+/// Accumulation-side measurement of the accepted document.
+///
+/// These are the checks that make the eval able to fail for the append-only degeneration
+/// documented in `docs/plans/phase12/consolidation-structured--logic-plan.md` §2.5–§2.7,
+/// which the loss-only preservation check cannot detect.
+#[derive(Debug, Clone, Serialize)]
+pub struct StructureObservation {
+    pub bullets_total: usize,
+    pub headings_total: usize,
+    pub base_bullets_total: usize,
+    pub base_headings_total: usize,
+    pub nameless_headings: Vec<String>,
+    pub duplicate_headings: Vec<String>,
+    pub duplicate_bullets: Vec<String>,
+    pub has_any_heading: bool,
+    pub is_empty: bool,
+    pub bullets_above_first_heading: usize,
+    pub bullets_per_section: BTreeMap<String, usize>,
+    /// True only when every §5.1 condition holds and no bullet repeats.
+    pub contract_satisfied: bool,
+    pub defects: Vec<StructureDefectRecord>,
+}
+
+/// Independent re-derivation of the patch outcome from the real engine.
+#[derive(Debug, Clone, Serialize)]
+pub struct EngineReplayObservation {
+    pub operations_total: u32,
+    pub skipped_by_engine: u32,
+    /// False on the cold-start path, where the document is synthesized whole by Prompt 1 and
+    /// no patch operation exists to replay. The comparison below is meaningless there, so
+    /// this flag marks the check as not applicable rather than passed or failed.
+    pub replay_applicable: bool,
+    /// True when the engine's independent replay equals the document the production accept
+    /// path actually committed. False means the eval and production disagree about the
+    /// patch outcome, which invalidates every other per-operation reading. Only meaningful
+    /// when `replay_applicable` is true.
+    pub matches_committed_document: bool,
+    pub replay_chars: usize,
+    pub committed_chars: usize,
+    pub replay_headings: Vec<String>,
+}
+
+/// Verification of INVARIANT 5.3-B index arithmetic against the real suggestion rows.
+#[derive(Debug, Clone, Serialize)]
+pub struct ReanchorArithmeticObservation {
+    pub probe_exercised: bool,
+    pub resolved_op: String,
+    pub resolved_index: u32,
+    pub remaining_pending_count: usize,
+    /// `(id, index_before, index_after)` for rows whose index moved.
+    pub shifted: Vec<(String, u32, u32)>,
+    pub missed_shifts: Vec<String>,
+    pub spurious_shifts: Vec<String>,
+    pub version_mismatch: Vec<String>,
+    pub arithmetic_valid: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -34,9 +112,19 @@ pub struct JudgeObservation {
 #[derive(Debug, Clone, Serialize)]
 pub struct ConsolidationObservation {
     pub base_memory_version: i64,
+    /// Which consolidation contract this cycle ran under. The two paths have genuinely
+    /// different invariants, and scoring one path against the other's assertions produces
+    /// false reds: Prompt 1 (cold start) commits a whole synthesized document directly,
+    /// so both `document_unchanged_after_staging` and the engine replay are inapplicable.
+    /// - `cold_start`      : base document was empty, Prompt 1 synthesized and committed v(n+1)
+    /// - `incremental`     : base document existed, Prompt 2/3 staged operations for review
+    /// - `staged_no_edits` : base document existed but the model proposed no operations
+    pub consolidation_path: String,
     pub staged_suggestions: u32,
     pub candidate_facts: i64,
     pub candidate_fact_texts: Vec<String>,
+    /// INVARIANT (Prompt 2/3 only): staging operations must not mutate the active document.
+    /// Meaningless on the cold-start path, where committing the document is the point.
     pub document_unchanged_after_staging: bool,
     pub candidate_partition_valid: bool,
     pub pending_anchored_to_base_version: bool,
@@ -56,6 +144,18 @@ pub struct ConsolidationObservation {
     pub facts_left_active: i64,
     pub reject_probe: bool,
     pub document_unchanged_after_reject: bool,
+    /// Accumulation-side structure measurement of the committed document.
+    pub accepted_structure: StructureObservation,
+    /// Base-document structure measurement, for growth and section-count comparison.
+    pub base_structure: StructureObservation,
+    pub engine_replay: EngineReplayObservation,
+    pub reanchor_arithmetic: ReanchorArithmeticObservation,
+    /// Inserted bullets that landed under a section other than the one their anchor index
+    /// belonged to. Non-empty means the patch set was mis-ordered by the engine.
+    pub section_membership_violations: Vec<SuggestionObservation>,
+    /// True when the production accept path refused a candidate document and the active
+    /// version was left untouched. Expected whenever the structure gate fires.
+    pub structure_gate_rejected: bool,
     pub judge: Option<JudgeObservation>,
 }
 

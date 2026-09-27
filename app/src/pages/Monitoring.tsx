@@ -51,9 +51,16 @@ export const Monitoring: React.FC<MonitoringProps> = ({
   // Subscribe to settings store to inspect exact variants and reactive theme
   const accentSeed = useSettingsStore((s) => s.settings?.appearance.accent_seed);
   const theme = useSettingsStore((s) => s.settings?.appearance.theme);
+  const vadBackend = useSettingsStore((s) => s.settings?.vad?.vad_backend);
   const llmProvider = useSettingsStore((s) => s.settings?.llm?.active);
   const ttsProvider = useSettingsStore((s) => s.settings?.tts?.active);
   const sttProvider = useSettingsStore((s) => s.settings?.stt?.active);
+  const contextRetrievalEnabled = useSettingsStore(
+    (s) => s.settings?.personal_memory?.context_retrieval_enabled ?? true
+  );
+  const transliterateEnabled = useSettingsStore(
+    (s) => s.settings?.stt?.transliterate_enabled ?? true
+  );
   const modelCatalog = useSettingsStore((s) => s.modelCatalog);
 
   // Dynamic CSS variable observer state
@@ -85,31 +92,60 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     formatLatency,
   } = useMonitoringMetrics(!popover || open);
 
-  const isEngineLoaded = useMemo(() => {
-    return !!(
-      latest?.is_vad_loaded ||
-      latest?.is_stt_loaded ||
-      latest?.is_llm_loaded ||
-      latest?.is_tts_loaded
-    );
-  }, [latest]);
+  const isVadModel = vadBackend !== "earshot";
+  const isSttModel = sttProvider === "embedded";
+  const isLlmModel = llmProvider === "embedded";
+  const isTtsModel =
+    ttsProvider === "supertonic" || ttsProvider === "kokoro" || ttsProvider === "chatterbox";
+  const isEmbedderModel = Boolean(contextRetrievalEnabled);
+  const isTranslitModel = Boolean(transliterateEnabled);
 
-  const isEdgeLoaded = useMemo(() => {
-    return !!(latest?.is_intra_edge_classifier_loaded || latest?.is_inter_edge_classifier_loaded);
-  }, [latest]);
+  const totalResidentModelsCount = useMemo(() => {
+    return (
+      (isVadModel ? 1 : 0) +
+      (isSttModel ? 1 : 0) +
+      (isLlmModel ? 1 : 0) +
+      (isTtsModel ? 1 : 0) +
+      (isEmbedderModel ? 1 : 0) +
+      (isTranslitModel ? 1 : 0)
+    );
+  }, [isVadModel, isSttModel, isLlmModel, isTtsModel, isEmbedderModel, isTranslitModel]);
 
   const activeModelsCount = useMemo(() => {
     return (
-      (latest?.is_vad_loaded ? 1 : 0) +
-      (latest?.is_stt_loaded ? 1 : 0) +
-      (latest?.is_llm_loaded ? 1 : 0) +
-      (latest?.is_tts_loaded ? 1 : 0) +
-      (latest?.is_embedder_loaded ? 1 : 0) +
-      (latest?.is_query_classifier_loaded ? 1 : 0) +
-      (isEdgeLoaded ? 1 : 0) +
-      (latest?.is_translit_loaded ? 1 : 0)
+      (isVadModel && latest?.is_vad_loaded ? 1 : 0) +
+      (isSttModel && latest?.is_stt_loaded ? 1 : 0) +
+      (isLlmModel && latest?.is_llm_loaded ? 1 : 0) +
+      (isTtsModel && latest?.is_tts_loaded ? 1 : 0) +
+      (isEmbedderModel && latest?.is_embedder_loaded ? 1 : 0) +
+      (isTranslitModel && latest?.is_translit_loaded ? 1 : 0)
     );
-  }, [latest, isEdgeLoaded]);
+  }, [
+    isVadModel,
+    isSttModel,
+    isLlmModel,
+    isTtsModel,
+    isEmbedderModel,
+    isTranslitModel,
+    latest?.is_vad_loaded,
+    latest?.is_stt_loaded,
+    latest?.is_llm_loaded,
+    latest?.is_tts_loaded,
+    latest?.is_embedder_loaded,
+    latest?.is_translit_loaded,
+  ]);
+
+  const isEngineLoaded = useMemo(() => {
+    return (
+      activeModelsCount > 0 ||
+      !!(
+        latest?.is_vad_loaded ||
+        latest?.is_stt_loaded ||
+        latest?.is_llm_loaded ||
+        latest?.is_tts_loaded
+      )
+    );
+  }, [activeModelsCount, latest]);
 
   // Derive model variant labels (thinking, hearing, speaking)
   const variants = useMemo(() => {
@@ -293,6 +329,7 @@ export const Monitoring: React.FC<MonitoringProps> = ({
           colors={colors}
           isEngineLoaded={isEngineLoaded}
           activeModelsCount={activeModelsCount}
+          totalModelsCount={totalResidentModelsCount}
           cpuPct={cpuPct}
           ramMb={ramMb}
           ramGb={ramGb}

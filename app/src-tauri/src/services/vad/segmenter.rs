@@ -14,7 +14,9 @@ use super::{
     VadEngine as _, VAD_INPUT_SAMPLE_RATE, VAD_MIN_UTTERANCE_SAMPLES, VAD_PRE_ROLL_CAPACITY,
 };
 use crate::{
-    core::events::VoxEvent, monitoring::TelemetryEvent, services::stt::SttCommand,
+    core::events::{InteractionOwner, VoxEvent},
+    monitoring::TelemetryEvent,
+    services::stt::SttCommand,
     utils::audio_filters::FilterBank,
 };
 
@@ -141,8 +143,10 @@ pub fn handle_speech_start(
 
     log::info!("[VAD Actor] Speech Start (turn: {})", state.current_turn_id);
 
+    let owner: InteractionOwner = handles.owner_atomic.load(Ordering::Relaxed).into();
+
     if let Some(tx) = vox_event_tx {
-        if let Err(e) = tx.send(VoxEvent::SpeechStart) {
+        if let Err(e) = tx.send(VoxEvent::SpeechStart { owner }) {
             log::warn!("[VAD Actor] Failed to send SpeechStart event: {}", e);
         }
     }
@@ -175,8 +179,10 @@ pub fn handle_speech_end(
     state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
     log::info!("[VAD Actor] Speech End (turn: {})", state.current_turn_id);
 
+    let owner: InteractionOwner = handles.owner_atomic.load(Ordering::Relaxed).into();
+
     if let Some(tx) = vox_event_tx {
-        if let Err(e) = tx.send(VoxEvent::SpeechEnd) {
+        if let Err(e) = tx.send(VoxEvent::SpeechEnd { owner }) {
             log::warn!("[VAD Actor] Failed to send SpeechEnd event: {}", e);
         }
     }
@@ -184,10 +190,11 @@ pub fn handle_speech_end(
     vad.flush();
 
     if state.utterance_buffer.len() >= VAD_MIN_UTTERANCE_SAMPLES && state.realtime_tx.is_none() {
-        if let Err(e) = stt_tx.send(SttCommand::Final(
-            state.current_turn_id,
-            state.utterance_buffer.clone(),
-        )) {
+        if let Err(e) = stt_tx.send(SttCommand::Final {
+            turn_id: state.current_turn_id,
+            audio: state.utterance_buffer.clone(),
+            owner,
+        }) {
             log::warn!("[VAD Actor] Failed to send Final audio to STT: {}", e);
         }
     }
@@ -226,11 +233,8 @@ pub fn process_continuous_segmentation(
     vox_event_tx: Option<&mpsc::Sender<VoxEvent>>,
 ) {
     let is_speech = vad.predict(chunk) && vad.is_above_noise_gate(raw_energy, state.noise_gate);
-    let (speech_start_threshold, speech_end_threshold) = if vad.is_onnx() {
-        (1, 1)
-    } else {
-        (state.speech_start_frames, state.speech_end_frames)
-    };
+    let speech_start_threshold = state.speech_start_frames.max(1);
+    let speech_end_threshold = state.speech_end_frames.max(1);
 
     if is_speech {
         state.active_frames += 1;
@@ -322,7 +326,9 @@ fn check_window_autostop(state: &mut VadActorState, vox_event_tx: Option<&mpsc::
         silence_samples as f32 / VAD_INPUT_SAMPLE_RATE as f32
     );
     if let Some(tx) = vox_event_tx {
-        if let Err(e) = tx.send(VoxEvent::PttStop) {
+        if let Err(e) = tx.send(VoxEvent::PttStop {
+            owner: state.window_owner,
+        }) {
             log::warn!("[VAD Actor] Failed to send auto-stop PttStop event: {}", e);
         }
     }
@@ -423,7 +429,7 @@ mod tests {
         check_window_autostop(&mut state, Some(&tx));
 
         assert!(state.window_autostop_fired);
-        assert!(matches!(rx.try_recv().ok(), Some(VoxEvent::PttStop)));
+        assert!(matches!(rx.try_recv().ok(), Some(VoxEvent::PttStop { .. })));
     }
 
     #[test]

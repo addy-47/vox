@@ -153,8 +153,6 @@ export const LlmCatalogView = memo(({
 
   // Remote / OpenAI-Compat Server Catalog
   if (isRemoteLlm) {
-    const remoteUrl = provider && "base_url" in provider ? provider.base_url : undefined;
-
     return (
       <div className="w-full h-full flex flex-col min-h-0 space-y-2 animate-fade-in">
         {/* Connected Server Header with Search Bar / Custom Model Input (Fixed/Sticky at top) */}
@@ -262,9 +260,6 @@ export const LlmCatalogView = memo(({
                       <AlertCircle size={14} />
                     </span>
                   )}
-                </span>
-                <span className="text-[11px] text-[rgb(var(--foreground-muted))] font-mono truncate max-w-[200px] sm:max-w-[280px]">
-                  {remoteUrl || LLM_CATALOG_COPY.noServer}
                 </span>
               </div>
 

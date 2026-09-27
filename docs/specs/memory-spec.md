@@ -170,6 +170,13 @@ Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_
 
 ### 5.1 Personal Memory Document & Historical Versioning
 - An evolving markdown document capturing consolidated knowledge about the user, organized with descriptive `##` section headings and bullet points.
+- **Structure Contract (enforced, not advisory)**: every committed version MUST satisfy all four conditions. The contract is a behavioral requirement, not a formatting preference.
+  1. **Descriptive headings**: every `##` heading carries a non-empty, non-whitespace title. A bare `## ` is a defect.
+  2. **Unique headings**: no two headings in one document share the same title (case-insensitive). A repeated heading is a defect.
+  3. **At least one section**: the document contains one or more headings. A flat bullet list with no headings is a defect.
+  4. **Non-empty body**: the document contains at least one content element.
+  - Rationale: without this contract the document degenerates into an append-only bullet list that duplicates facts and never supersedes stale ones. This is the root cause documented in `docs/plans/phase12/consolidation-structured--logic-plan.md` §2.4–§2.6, and it cannot self-repair once written, because every later pass copies the malformed headings it finds.
+  - Enforcement: the same validator gates cold generation (Prompt 1), regeneration, and the acceptance of every patch set (§5.3 step 3). A violating candidate is never committed.
 - Stored in the `personal_memory` table in Turso DB (schema governed by `db-spec.md §2.5`) with versioning and `is_active` status.
 - **Historical Immutability**: New consolidations or manual saves insert a new record with `version = max_version + 1` and `is_active = 1`, setting previous versions to `is_active = 0`. Older versions remain permanently accessible in the database.
 - **Version Navigation & Activation**: The Memory Drawer UI provides an interactive version carousel (`[ < ] v{X} [ > ]`) allowing users to inspect older archived versions and promote any historical version back to `is_active = 1` via `set_active_personal_memory_version`.
@@ -248,11 +255,12 @@ Consolidates personal knowledge through dedicated LLM passes tailored to documen
    - Suggestions are resolved individually or in bulk via `resolve_memory_suggestion(id: Option<String>, action: String)`.
    - **Action Validation**: `action` MUST be exactly `"accept"` or `"reject"`.
    - **Acceptance (`action = 'accept'`)**:
-     1. Evaluates patch operations against the active document using descending-index sort so earlier element positions remain stable during execution.
-     2. Reconstructs markdown with uniform single blank-line delimiters between sections.
-     3. Inserts a new record in `personal_memory` with `version = max_version + 1`, `is_active = 1`, and `last_consolidated_at = now()`. The previous version flips to `is_active = 0`.
-     4. Suggestion rows flip to `status = 'accepted', resolved_at = now()`.
-     5. **INVARIANT 5.3-B (Deterministic Arithmetic Re-anchoring)**: When resolving a single suggestion, any remaining pending suggestions targeting the same document scope have their `base_memory_version` updated to `max_version + 1` and their `target_index` shifted via deterministic arithmetic:
+      1. Evaluates patch operations against the active document using descending-index sort so earlier element positions remain stable during execution.
+      2. Reconstructs markdown with uniform single blank-line delimiters between sections.
+      3. **Structure Gate**: the reconstructed document is validated with the same contract applied to cold generation — non-empty heading titles, unique heading titles, at least one heading, non-empty body. A candidate document failing this gate MUST NOT be committed; the transaction aborts and no `personal_memory` row is written, so the active version and all suggestion rows are left untouched. This gate exists because a patch set can mint a nameless heading or a duplicate heading, which the append-only failure mode (`docs/plans/phase12/consolidation-structured--logic-plan.md` §2.4) demonstrated cannot self-repair.
+      4. Inserts a new record in `personal_memory` with `version = max_version + 1`, `is_active = 1`, and `last_consolidated_at = now()`. The previous version flips to `is_active = 0`.
+      5. Suggestion rows flip to `status = 'accepted', resolved_at = now()`.
+      6. **INVARIANT 5.3-B (Deterministic Arithmetic Re-anchoring)**: When resolving a single suggestion, any remaining pending suggestions targeting the same document scope have their `base_memory_version` updated to `max_version + 1` and their `target_index` shifted via deterministic arithmetic:
         - An accepted `insert_after` at index $k$ increments the `target_index` of all remaining pending suggestions where `target_index > k` by $+1$.
         - An accepted `delete` at index $k$ decrements the `target_index` of all remaining pending suggestions where `target_index > k` by $-1$.
         - An accepted `replace` at index $k$ leaves all remaining pending indices unchanged.

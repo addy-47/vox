@@ -233,6 +233,7 @@ pub fn setup_e2e_pipeline(settings: VoxSettings) -> E2ePipelineSetup {
         engine_shutdown: state.pipeline.engine_shutdown.clone(),
         dropped_counter: Arc::new(AtomicU64::new(0)),
         ingestion_gate: state.pipeline.ingestion_gate.clone(),
+        owner_atomic: state.owner.clone(),
     };
 
     let vad_handle = std::thread::spawn(move || {

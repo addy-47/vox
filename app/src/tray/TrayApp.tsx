@@ -300,6 +300,7 @@ export const TrayApp: React.FC = () => {
                 hasContent={!!currentTargetText} 
                 copied={copied} 
                 interactionMode={String(settings.dictation?.interaction_mode || "ptt").toUpperCase()}
+                silenceAutoStopMs={settings.dictation?.silence_auto_stop_ms ?? 1200}
                 onCopy={copyToClipboard} 
                 onClose={handleClose}
                 onTogglePtt={togglePtt}

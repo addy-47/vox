@@ -437,6 +437,11 @@ fn apply_dictation_mutation(
             settings.dictation.output_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid output_mode: {}", e))?;
         }
+        "silence_auto_stop_ms" => {
+            settings.dictation.silence_auto_stop_ms = value
+                .as_u64()
+                .ok_or("silence_auto_stop_ms must be an unsigned integer")?;
+        }
         _ => return Ok(false),
     }
     Ok(true)

@@ -283,6 +283,7 @@ export interface DictationSettings {
   interaction_mode: "passive" | "ptt";
   hotkey: string;
   output_mode: "paste" | "clipboard" | "tray";
+  silence_auto_stop_ms?: number;
 }
 
 export interface WorkingMemorySettings {
