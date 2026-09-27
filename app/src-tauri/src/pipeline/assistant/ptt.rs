@@ -8,7 +8,7 @@ use tauri::AppHandle;
 use crate::{
     core::{
         settings::{InteractionMode, PipelineMode},
-        state::{AppState, InteractionState},
+        state::{AppState, InteractionOwner, InteractionState},
     },
     pipeline::{assistant::interrupt::on_interrupt, transition, RoutingContext},
     services::{
@@ -82,6 +82,7 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, ctx
             if let Err(e) = engine.vad_tx.send(VadCommand::StartWindowValidation {
                 auto_stop_silence_ms: None,
                 stream_partials: false,
+                owner: InteractionOwner::Assistant,
             }) {
                 log::warn!("[Pipeline::Ptt] Failed to start window validation: {}", e);
             }
@@ -110,7 +111,11 @@ fn dispatch_ptt_speech_audio<R: tauri::Runtime>(
     transition(InteractionState::Thinking, ctx, app, state);
 
     if ctx.pipeline_mode == PipelineMode::Modular {
-        if let Err(e) = stt_tx.send(SttCommand::Final(turn_id, audio)) {
+        if let Err(e) = stt_tx.send(SttCommand::Final {
+            turn_id,
+            audio,
+            owner: InteractionOwner::Assistant,
+        }) {
             log::warn!("[Pipeline::Ptt] Failed to send Final to STT: {}", e);
             transition(InteractionState::Ready, ctx, app, state);
         }

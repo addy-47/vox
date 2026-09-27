@@ -327,6 +327,9 @@ When an error occurs during a voice turn, the runtime error boundary must execut
 | **Hardware** | `on_error` | `Hardware` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/audio"))` | Title: `"Voice Notice: Audio"`<br/>Msg: `"Microphone device disconnected."` |
 | **Models 404/Missing** | `on_error` | `Models` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/models"))` | Title: `"Voice Notice: Models"`<br/>Msg: `"Model weights or endpoint not found on server."` |
 | **Models Warmup** | `warm_up_llm` | `Models` | `SessionHalted` | `Critical` | `Interactive(Navigate("settings/models"))` | Title: `"Voice Notice: Models"`<br/>Msg: `"LLM provider initialization failed."` |
+| **Pipeline Memory** | `ConversationManager` | `Pipeline` | `Degraded` | `Warning` | `Interactive(Navigate("settings/memory"))` | Title: `"Memory Limit Notice"`<br/>Msg: `"Memory approaching context limit. Consider increasing context_window."` |
+| **Pipeline Compaction** | `transcript.rs` | `SessionCompaction` | `Degraded` | `Warning` | `Transient` | Title: `"Compaction Degraded"`<br/>Msg: `"Compaction failed; falling back to sliding window."` |
+| **Pipeline Context Slot** | `generate.rs` | `Pipeline` | `TurnAborted` | `Critical` | `Interactive(Navigate("settings/ai"))` | Title: `"Voice Notice: Context Slot"`<br/>Msg: `"Turn exceeded KV cache context window (NoKvCacheSlot)."` |
 | **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Info` | `Interactive(CompactSession(id))` | Title: `"Session #X Ready to Compact"`<br/>Msg: `"X uncompacted turns."` |
 | **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Info` | `Receipt` | Title: `"Session #X Compacted"`<br/>Msg: `"Extracted X memory facts."` |
 | **Compaction** | `coordinator.rs` | `SessionCompaction` | `None` | `Warning` | `Receipt` | Title: `"Session #X Compaction Failed"`<br/>Msg: Error description |

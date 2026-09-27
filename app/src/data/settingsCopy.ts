@@ -200,7 +200,7 @@ export const SETTINGS_COPY = {
 
 export const DICTATION_COPY = {
   destinationTitle: "Output Destination",
-  destinationPasteDesc: "Transcribes and automatically pastes into active cursor position",
+  destinationPasteDesc: "Transcribes and routes to active window ",
   destinationClipboardDesc: "Silently copies final transcript to system clipboard without pasting",
   destinationTrayDesc: "Renders live transcription in floating desktop HUD window",
   hotkeyTitle: "Activation Hotkey",
@@ -477,7 +477,7 @@ export const REMOTE_SERVER_COPY = {
   bannerTitle: "Chatterbox Remote Deployment",
   bannerBody:
     "Deploy Chatterbox on a remote CUDA-accelerated GPU host (e.g. RunPod, Vast.ai, or homelab) to offload memory-intensive flow-matching voice synthesis. Enter your SSH connection info below to automatically sync the codebase, download GGUF models, and run the server.",
-  panelTitle: "Setup Remote GPU Server (SSH Setup Required)",
+  panelTitle: "Remote GPU Server",
   online: "Online / Connected",
   offline: "Offline / Unconfigured",
   hostLabel: "SSH Host / Profile",

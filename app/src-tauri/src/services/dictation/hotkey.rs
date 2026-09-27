@@ -8,6 +8,7 @@ use crate::{
     core::{
         error::DictationError,
         events::VoxEvent,
+        settings::DictationInteractionMode,
         state::{AppState, InteractionOwner, InteractionState},
     },
     services::notifications::lifecycle,
@@ -116,6 +117,26 @@ pub fn init_dictation_hotkey_listener<R: tauri::Runtime>(
             use tauri::Manager;
             let state: tauri::State<'_, Arc<AppState>> = app_handle.state();
 
+            let (dictation_enabled, is_ptt) = state
+                .settings
+                .read()
+                .map(|s| {
+                    (
+                        s.dictation.enabled,
+                        s.dictation.interaction_mode == DictationInteractionMode::Ptt,
+                    )
+                })
+                .unwrap_or((false, true));
+
+            if !dictation_enabled || !is_ptt {
+                log::debug!(
+                    "[Dictation] Hotkey action ignored: dictation enabled={}, is_ptt={}",
+                    dictation_enabled,
+                    is_ptt
+                );
+                continue;
+            }
+
             let effective_action = match action {
                 HotkeyAction::Toggle => {
                     let now = std::time::Instant::now();
@@ -160,11 +181,6 @@ pub fn init_dictation_hotkey_listener<R: tauri::Runtime>(
                 other => other,
             };
 
-            // Guarantee owner is explicitly Dictation so pipeline router routes to dictation domain
-            state
-                .owner
-                .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
-
             // On-demand engine launch if inactive (zero-idle-RAM recovery)
             let mut event_tx_opt = state.event_tx.lock().clone();
             if event_tx_opt.is_none() && effective_action == HotkeyAction::Press {
@@ -181,8 +197,24 @@ pub fn init_dictation_hotkey_listener<R: tauri::Runtime>(
             if let Some(event_tx) = event_tx_opt {
                 match effective_action {
                     HotkeyAction::Press => {
+                        let is_tray = state
+                            .settings
+                            .read()
+                            .map(|s| s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray)
+                            .unwrap_or(false);
+                        if is_tray {
+                            if let Ok(window) = crate::tray::ensure_tray_window(&app_handle) {
+                                crate::tray::setup_linux_virtual_layer(&app_handle, crate::core::state::AppWindow::Tray.as_str());
+                                let _ = window.show();
+                                use tauri::Emitter;
+                                let _ = window.emit("toggle_tray", ());
+                            }
+                        }
+
                         log::debug!("[Dictation::Trace] Dispatched VoxEvent::PttStart to central pipeline router");
-                        if let Err(e) = event_tx.send(VoxEvent::PttStart) {
+                        if let Err(e) = event_tx.send(VoxEvent::PttStart {
+                            owner: InteractionOwner::Dictation,
+                        }) {
                             log::error!(
                                 "[Dictation::Trace] Failed to send VoxEvent::PttStart: {}",
                                 e
@@ -191,7 +223,9 @@ pub fn init_dictation_hotkey_listener<R: tauri::Runtime>(
                     }
                     HotkeyAction::Release => {
                         log::debug!("[Dictation::Trace] Dispatched VoxEvent::PttStop to central pipeline router");
-                        if let Err(e) = event_tx.send(VoxEvent::PttStop) {
+                        if let Err(e) = event_tx.send(VoxEvent::PttStop {
+                            owner: InteractionOwner::Dictation,
+                        }) {
                             log::error!(
                                 "[Dictation::Trace] Failed to send VoxEvent::PttStop: {}",
                                 e

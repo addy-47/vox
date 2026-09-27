@@ -20,25 +20,18 @@ static EMBEDDER: parking_lot::RwLock<Option<TextEmbedder>> = parking_lot::RwLock
 pub const EMBEDDING_DIM: usize = 384;
 pub const PRIMARY_EMBEDDING_MODEL_DIR: &str = "minilm-l12-v2";
 pub const PRIMARY_EMBEDDING_MODEL_FILENAME: &str = "model_int8.onnx";
-pub const FALLBACK_EMBEDDING_MODEL_DIR: &str = "bge-m3";
-pub const FALLBACK_EMBEDDING_MODEL_FILENAME: &str = "model_quantized.onnx";
 pub const EMBEDDING_TOKENIZER_FILENAME: &str = "tokenizer.json";
 
 /// Initializes the text embedding model singleton.
-pub fn init_embedder(model_dir: &Path, is_primary: bool) -> Result<bool> {
-    let model_filename = if is_primary {
-        PRIMARY_EMBEDDING_MODEL_FILENAME
-    } else {
-        FALLBACK_EMBEDDING_MODEL_FILENAME
-    };
-    let model_path = model_dir.join(model_filename);
+pub fn init_embedder(model_dir: &Path) -> Result<bool> {
+    let model_path = model_dir.join(PRIMARY_EMBEDDING_MODEL_FILENAME);
     let tokenizer_path = model_dir.join(EMBEDDING_TOKENIZER_FILENAME);
 
     if !model_path.exists() || !tokenizer_path.exists() {
         log::warn!(
             "[Embedder] Model assets missing at {:?}. Required model: {}, tokenizer: {}. Skipping init.",
             model_dir,
-            model_filename,
+            PRIMARY_EMBEDDING_MODEL_FILENAME,
             EMBEDDING_TOKENIZER_FILENAME
         );
         return Ok(false);
@@ -77,7 +70,7 @@ pub fn init_embedder(model_dir: &Path, is_primary: bool) -> Result<bool> {
         session: Mutex::new(session),
         tokenizer,
         has_token_type_ids,
-        dim: if is_primary { EMBEDDING_DIM } else { 1024 },
+        dim: EMBEDDING_DIM,
     };
 
     *lock = Some(embedder);
@@ -119,14 +112,7 @@ pub fn ensure_embedder_loaded(memory_enabled: bool) -> Result<bool> {
     let minilm_dir = models_dir
         .join("embedding")
         .join(PRIMARY_EMBEDDING_MODEL_DIR);
-    if minilm_dir.join(PRIMARY_EMBEDDING_MODEL_FILENAME).exists() {
-        init_embedder(&minilm_dir, true)
-    } else {
-        let bge_dir = models_dir
-            .join("embedding")
-            .join(FALLBACK_EMBEDDING_MODEL_DIR);
-        init_embedder(&bge_dir, false)
-    }
+    init_embedder(&minilm_dir)
 }
 
 /// Generates dense vector embeddings for a batch of input texts in a single ONNX inference pass.

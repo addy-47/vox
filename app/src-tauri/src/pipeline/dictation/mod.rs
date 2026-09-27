@@ -46,15 +46,15 @@ pub fn transition_dictation<R: tauri::Runtime>(
 /// Main event dispatcher for the unified dictation domain.
 pub fn handle_event<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState, event: VoxEvent) {
     match event {
-        VoxEvent::SpeechStart => speech::on_speech_start(app, state),
-        VoxEvent::SpeechEnd => speech::on_speech_end(app, state),
-        VoxEvent::PttStart => ptt::on_ptt_start(app, state),
-        VoxEvent::PttStop => ptt::on_ptt_stop(app, state),
-        VoxEvent::PttCancel => ptt::on_ptt_cancel(app, state),
-        VoxEvent::TranscriptFinal { turn_id, text } => {
+        VoxEvent::SpeechStart { .. } => speech::on_speech_start(app, state),
+        VoxEvent::SpeechEnd { .. } => speech::on_speech_end(app, state),
+        VoxEvent::PttStart { .. } => ptt::on_ptt_start(app, state),
+        VoxEvent::PttStop { .. } => ptt::on_ptt_stop(app, state),
+        VoxEvent::PttCancel { .. } => ptt::on_ptt_cancel(app, state),
+        VoxEvent::TranscriptFinal { turn_id, text, .. } => {
             transcript::on_transcript_final(turn_id, text, app, state)
         }
-        VoxEvent::Cancelled { turn_id } => error::on_cancelled(turn_id, app, state),
+        VoxEvent::Cancelled { turn_id, .. } => error::on_cancelled(turn_id, app, state),
         VoxEvent::Error(err) => error::on_error(err, app, state),
         _ => {}
     }

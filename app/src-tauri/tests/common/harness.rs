@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 use ringbuf::{traits::Split, wrap::caching::Caching, HeapCons, HeapRb};
 use tauri::AppHandle;
 use vox_lib::{
-    core::events::VoxEvent,
+    core::events::{InteractionOwner, VoxEvent},
     services::{
         audio::PlaybackEngine,
         llm::actor::LlmCommand,
@@ -209,6 +209,7 @@ pub fn setup_vad_actor(
         engine_shutdown,
         dropped_counter: Arc::new(AtomicU64::new(0)),
         ingestion_gate,
+        owner_atomic: Arc::new(AtomicU32::new(InteractionOwner::Assistant as u32)),
     };
 
     let join_handle = std::thread::Builder::new()
@@ -231,7 +232,11 @@ pub fn drain_for_final_transcript(
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         match rx.recv_timeout(Duration::from_millis(200)) {
-            Ok(VoxEvent::TranscriptFinal { turn_id, text }) => {
+            Ok(VoxEvent::TranscriptFinal {
+                turn_id,
+                text,
+                ..
+            }) => {
                 if turn_id == expected_turn_id {
                     return Ok(text);
                 }

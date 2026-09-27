@@ -94,12 +94,16 @@ impl RealtimeActor {
                         }
                     }
                     RealtimeProviderEvent::SpeechStart => {
-                        if let Err(e) = loop_event_tx.send(VoxEvent::SpeechStart) {
+                        if let Err(e) = loop_event_tx.send(VoxEvent::SpeechStart {
+                            owner: InteractionOwner::Assistant,
+                        }) {
                             log::warn!("[RealtimeActor] Failed to forward SpeechStart: {:?}", e);
                         }
                     }
                     RealtimeProviderEvent::SpeechEnd => {
-                        if let Err(e) = loop_event_tx.send(VoxEvent::SpeechEnd) {
+                        if let Err(e) = loop_event_tx.send(VoxEvent::SpeechEnd {
+                            owner: InteractionOwner::Assistant,
+                        }) {
                             log::warn!("[RealtimeActor] Failed to forward SpeechEnd: {:?}", e);
                         }
                     }
@@ -121,9 +125,11 @@ impl RealtimeActor {
                         }
                     }
                     RealtimeProviderEvent::TranscriptFinal { turn_id, text } => {
-                        if let Err(e) =
-                            loop_event_tx.send(VoxEvent::TranscriptFinal { turn_id, text })
-                        {
+                        if let Err(e) = loop_event_tx.send(VoxEvent::TranscriptFinal {
+                            turn_id,
+                            text,
+                            owner: InteractionOwner::Assistant,
+                        }) {
                             log::warn!(
                                 "[RealtimeActor] Failed to forward TranscriptFinal: {:?}",
                                 e

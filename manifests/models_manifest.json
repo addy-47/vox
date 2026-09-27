@@ -5,7 +5,7 @@
     "Short user-facing names: name is display-only, description carries detail.",
     "Rule: version bumps never rename an id."
   ],
-  "total_size_bytes": 10219831741,
+  "total_size_bytes": 9658419030,
   "model_groups": [
     {
       "id": "earshot",
@@ -425,36 +425,6 @@
       "files": []
     },
     {
-      "id": "bge_m3",
-      "name": "bge-m3",
-      "category": "embedding",
-      "subcategory": "auxiliary",
-      "description": "Fallback memory vector generator. Creates 1024-dimensional semantic embeddings.",
-      "parameters": "1024-dim ONNX",
-      "ram_usage": "~280 MB",
-      "tradeoffs": "Deep 1024-dim semantic search capability",
-      "version": "1.0.0",
-      "is_built_in": false,
-      "is_cloud": false,
-      "is_remote": false,
-      "files": [
-        {
-          "id": "embedding_bge_m3_onnx",
-          "path": "embedding/bge-m3/model_quantized.onnx",
-          "size": 569694530,
-          "sha256": "0826f8c1ab9edf1801db86c61919d4d108e8bfc0b809ec823ad366882ff0b77d",
-          "required": false
-        },
-        {
-          "id": "embedding_bge_m3_tokenizer",
-          "path": "embedding/bge-m3/tokenizer.json",
-          "size": 17082821,
-          "sha256": "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790",
-          "required": false
-        }
-      ]
-    },
-    {
       "id": "minilm_l12",
       "name": "minilm-l12",
       "category": "embedding",
@@ -480,96 +450,6 @@
           "path": "embedding/minilm-l12-v2/tokenizer.json",
           "size": 17082913,
           "sha256": "b60b6b43406a48bf3638526314f3d232d97058bc93472ff2de930d43686fa441",
-          "required": true
-        }
-      ]
-    },
-    {
-      "id": "nli_deberta_v3_base",
-      "name": "deberta-nli",
-      "category": "nli",
-      "subcategory": "auxiliary",
-      "description": "Memory contradiction checker. Verifies facts before saving to prevent incorrect memories.",
-      "parameters": "22M ONNX",
-      "ram_usage": "~90 MB",
-      "tradeoffs": "Prevents duplicate or conflicting memories",
-      "version": "2.0.0",
-      "is_built_in": false,
-      "is_cloud": false,
-      "is_remote": false,
-      "files": [
-        {
-          "id": "nli_deberta_onnx",
-          "path": "nli/nli-deberta-v3-base/model_quantized.onnx",
-          "size": 244288000,
-          "sha256": "9d83d9d0ba179cab8b78b942dcc42756da7712b2bbe101a2a4c25fdfa7968e2f",
-          "required": true
-        },
-        {
-          "id": "nli_deberta_tokenizer",
-          "path": "nli/nli-deberta-v3-base/tokenizer.json",
-          "size": 8656551,
-          "sha256": "a86f883318afa11c8c10466f1bf4efaeb6ded28a52cbe57217a8fa0d0a2a87df",
-          "required": true
-        }
-      ]
-    },
-    {
-      "id": "modernbert_memory_scope",
-      "name": "memory-scope",
-      "category": "classifier",
-      "subcategory": "auxiliary",
-      "description": "Smart intent filter. Checks your speech in under 5ms to route queries without wasting resources.",
-      "parameters": "66M ONNX",
-      "ram_usage": "~130 MB",
-      "tradeoffs": "Instant intent classification",
-      "version": "2.0.0",
-      "is_built_in": false,
-      "is_cloud": false,
-      "is_remote": false,
-      "files": [
-        {
-          "id": "memory_scope_model_quantized",
-          "path": "classifier/modernbert_memory_scope/model_quantized.onnx",
-          "size": 150650880,
-          "sha256": "2a24244f282966ded439a9e1c669d739b3fcbdebd52adeada642b4d364e9ffd8",
-          "required": true
-        },
-        {
-          "id": "memory_scope_tokenizer",
-          "path": "classifier/modernbert_memory_scope/tokenizer.json",
-          "size": 3583200,
-          "sha256": "82d1ca5ef2019321c91a01b78653345e6fe8ef25a38b7d83f7857c380649c7cf",
-          "required": true
-        }
-      ]
-    },
-    {
-      "id": "modernbert_edge_creation",
-      "name": "edge-creation",
-      "category": "classifier",
-      "subcategory": "auxiliary",
-      "description": "Memory relationship builder. Connects related facts together in your memory graph.",
-      "parameters": "66M ONNX",
-      "ram_usage": "~130 MB",
-      "tradeoffs": "Automatic memory graph linking",
-      "version": "1.0.0",
-      "is_built_in": false,
-      "is_cloud": false,
-      "is_remote": false,
-      "files": [
-        {
-          "id": "edge_classifier_model_quantized",
-          "path": "classifier/modernbert_edge_creation/model_quantized.onnx",
-          "size": 150650880,
-          "sha256": "4118dd78d49db25f2d6b44a7f23b31886222f50c85a3f01134578cee5e27f4f7",
-          "required": true
-        },
-        {
-          "id": "edge_classifier_tokenizer",
-          "path": "classifier/modernbert_edge_creation/tokenizer.json",
-          "size": 3583200,
-          "sha256": "9fd55248d51d33976b324fc11592e28071da7d41e0e9401dfb7082e30574b7b1",
           "required": true
         }
       ]

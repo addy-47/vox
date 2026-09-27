@@ -389,7 +389,9 @@ fn test_vad_ducking_resumes_after_playback_and_headset_never_suppresses() {
     let mut saw_speech_start = false;
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline {
-        if let Ok(VoxEvent::SpeechStart) = vox_event_rx.recv_timeout(Duration::from_millis(100)) {
+        if let Ok(VoxEvent::SpeechStart { .. }) =
+            vox_event_rx.recv_timeout(Duration::from_millis(100))
+        {
             saw_speech_start = true;
             break;
         }
@@ -416,7 +418,9 @@ fn test_vad_ducking_resumes_after_playback_and_headset_never_suppresses() {
     let mut saw_headset_speech_start = false;
     let deadline2 = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline2 {
-        if let Ok(VoxEvent::SpeechStart) = vox_event_rx.recv_timeout(Duration::from_millis(100)) {
+        if let Ok(VoxEvent::SpeechStart { .. }) =
+            vox_event_rx.recv_timeout(Duration::from_millis(100))
+        {
             saw_headset_speech_start = true;
             break;
         }
@@ -514,7 +518,9 @@ async fn test_barge_in_cancels_and_advances_turn() {
 
         // 2. Real Production Entry Seam: PttStart arrives while in Speaking
         event_tx
-            .send(VoxEvent::PttStart)
+            .send(VoxEvent::PttStart {
+                owner: InteractionOwner::Assistant,
+            })
             .expect("Failed to send PttStart");
 
         // 3. Wait for router to process interrupt and transition to Listening

@@ -7,12 +7,13 @@ pub const DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE: f32 = 0.15;
 
 pub const DEFAULT_DICTATION_ENABLED: bool = true;
 pub const DEFAULT_DICTATION_HOTKEY: &str = "Alt+V";
+pub const DEFAULT_DICTATION_SILENCE_AUTO_STOP_MS: u64 = 1200;
 
 pub const DEFAULT_VAD_BACKEND: &str = "silero_vad";
 pub const DEFAULT_VAD_THRESHOLD: f32 = 0.5;
 pub const DEFAULT_VAD_PTT_NOISE_GATE: f32 = 0.005;
 pub const DEFAULT_VAD_SILENCE_DURATION_MS: u32 = 400;
-pub const DEFAULT_VAD_SPEECH_ONSET_MS: u32 = 32;
+pub const DEFAULT_VAD_SPEECH_ONSET_MS: u32 = 100;
 pub const DEFAULT_VAD_MAX_SPEECH_DURATION_S: u32 = 30;
 
 pub const DEFAULT_ASR_MODEL: &str = "nvidia_nemotron";

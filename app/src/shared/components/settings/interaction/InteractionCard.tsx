@@ -298,7 +298,14 @@ export const InteractionCard = memo(
               </div>
 
               {/* Dictation Output & Hotkey Configuration Desk */}
-              <DictationConfigDesk layoutMode={layoutMode} disabled={!dictationEnabled} />
+              <div
+                className={cn(
+                  "flex-1 w-full flex flex-col min-h-0 rounded-xl p-2.5 sm:p-3 relative border border-[rgba(var(--accent),0.08)] bg-[rgba(var(--foreground),0.02)] justify-between mt-0.5",
+                  layoutMode === "small" ? "h-auto" : "h-full"
+                )}
+              >
+                <DictationConfigDesk layoutMode={layoutMode} disabled={!dictationEnabled} />
+              </div>
             </>
           )}
         </div>

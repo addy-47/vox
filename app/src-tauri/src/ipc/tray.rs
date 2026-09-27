@@ -9,7 +9,7 @@ use crate::{
         error::VoxIpcError,
         events::{emit_ipc, IpcEvent, VoxEvent},
         settings::DictationOutputMode,
-        state::{AppState, InteractionOwner},
+        state::{AppState, InteractionOwner, InteractionState},
     },
     tray::{ensure_tray_window, position_tray_window},
     window_main::ensure_main_window,
@@ -73,12 +73,16 @@ pub async fn toggle_tray_visibility_internal<R: tauri::Runtime>(app: AppHandle<R
 use gtk::prelude::*;
 
 async fn cancel_active_dictation_turn(state: &AppState) {
-    let owner: InteractionOwner = state.owner.load(Ordering::Relaxed).into();
-
-    if owner == InteractionOwner::Dictation {
+    let dict_state = state.pipeline.dictation_state();
+    if matches!(
+        dict_state,
+        InteractionState::Listening | InteractionState::Thinking
+    ) {
         let event_tx_opt = state.event_tx.lock().clone();
         if let Some(tx) = event_tx_opt {
-            if let Err(e) = tx.send(VoxEvent::PttCancel) {
+            if let Err(e) = tx.send(VoxEvent::PttCancel {
+                owner: InteractionOwner::Dictation,
+            }) {
                 log::warn!("[Tray] Failed to send VoxEvent::PttCancel: {}", e);
             }
         }

@@ -198,7 +198,9 @@ pub async fn ptt_start<R: tauri::Runtime>(
         .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
 
     event_tx
-        .send(VoxEvent::PttStart)
+        .send(VoxEvent::PttStart {
+            owner: InteractionOwner::Assistant,
+        })
         .map_err(|e| VoxIpcError::Engine(format!("Failed to send PttStart: {}", e)))?;
 
     Ok(())
@@ -217,7 +219,9 @@ pub async fn ptt_stop<R: tauri::Runtime>(
         .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
 
     event_tx
-        .send(VoxEvent::PttStop)
+        .send(VoxEvent::PttStop {
+            owner: InteractionOwner::Assistant,
+        })
         .map_err(|e| VoxIpcError::Engine(format!("Failed to send PttStop: {}", e)))?;
 
     Ok(())
@@ -236,7 +240,9 @@ pub async fn ptt_cancel<R: tauri::Runtime>(
         .ok_or_else(|| VoxIpcError::Engine("Event router is not active".into()))?;
 
     event_tx
-        .send(VoxEvent::PttCancel)
+        .send(VoxEvent::PttCancel {
+            owner: InteractionOwner::Assistant,
+        })
         .map_err(|e| VoxIpcError::Engine(format!("Failed to send PttCancel: {}", e)))?;
 
     Ok(())

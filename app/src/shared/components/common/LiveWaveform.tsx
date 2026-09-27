@@ -67,6 +67,7 @@ export const LiveWaveform = memo(({
   const barGradientCacheRef = useRef<CanvasGradient | null>(null)
   const lastWidthRef = useRef(0)
   const lastHeightRef = useRef(0)
+  const lastAccentRef = useRef<string>("")
 
   const heightStyle = typeof height === "number" ? `${height}px` : height
 
@@ -317,8 +318,13 @@ export const LiveWaveform = memo(({
         const totalContentWidth = barCount * step - barGap
         const startX = (width - totalContentWidth) / 2
 
-        if (!barGradientCacheRef.current || lastHeightRef.current !== height) {
-          const accentVal = "0, 219, 233";
+        const rawAccent = typeof window !== "undefined"
+          ? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()
+          : "";
+        const accentVal = rawAccent || "0, 219, 233";
+
+        if (!barGradientCacheRef.current || lastHeightRef.current !== height || lastAccentRef.current !== accentVal) {
+          lastAccentRef.current = accentVal;
           const g = ctx.createLinearGradient(0, 0, 0, height)
           g.addColorStop(0, `rgba(${accentVal}, 0.05)`)
           g.addColorStop(0.3, `rgba(${accentVal}, 0.6)`)

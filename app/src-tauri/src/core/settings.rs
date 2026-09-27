@@ -12,7 +12,8 @@ use crate::{
     core::defaults::{
         DEFAULT_ASR_MODEL, DEFAULT_ASR_TRANSLITERATE_ENABLED, DEFAULT_AUTO_SLEEP_TIMEOUT,
         DEFAULT_DEEPGRAM_MODEL, DEFAULT_DEEPGRAM_TEMP, DEFAULT_DEEPGRAM_VOICE,
-        DEFAULT_DICTATION_ENABLED, DEFAULT_DICTATION_HOTKEY, DEFAULT_GEMINI_REALTIME_LANG,
+        DEFAULT_DICTATION_ENABLED, DEFAULT_DICTATION_HOTKEY,
+        DEFAULT_DICTATION_SILENCE_AUTO_STOP_MS, DEFAULT_GEMINI_REALTIME_LANG,
         DEFAULT_GEMINI_REALTIME_MODEL, DEFAULT_GEMINI_REALTIME_TEMP, DEFAULT_GEMINI_REALTIME_VOICE,
         DEFAULT_LLM_CLOUD_BASE_URL, DEFAULT_LLM_CLOUD_MODEL, DEFAULT_LLM_CLOUD_PROVIDER_NAME,
         DEFAULT_LLM_COMPACTION_TEMPERATURE, DEFAULT_LLM_CONTEXT_WINDOW,
@@ -202,6 +203,7 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
         "stt" if key == "threads" => SettingReloadPolicy::Restart,
         "tts" if key == "threads" => SettingReloadPolicy::Restart,
         "interaction" if key == "auto_sleep_timeout" => SettingReloadPolicy::Hot,
+        "dictation" => SettingReloadPolicy::Hot,
         "system" if key == "telemetry_enabled" || key == "setup_completed" => {
             SettingReloadPolicy::Hot
         }
@@ -771,6 +773,7 @@ pub struct DictationSettings {
     pub interaction_mode: DictationInteractionMode,
     pub hotkey: String,
     pub output_mode: DictationOutputMode,
+    pub silence_auto_stop_ms: u64,
 }
 
 impl Default for DictationSettings {
@@ -780,6 +783,7 @@ impl Default for DictationSettings {
             interaction_mode: DictationInteractionMode::Ptt,
             hotkey: DEFAULT_DICTATION_HOTKEY.into(),
             output_mode: DictationOutputMode::Paste,
+            silence_auto_stop_ms: DEFAULT_DICTATION_SILENCE_AUTO_STOP_MS,
         }
     }
 }

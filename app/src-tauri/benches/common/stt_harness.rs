@@ -115,6 +115,9 @@ pub fn benchmark_streaming_provider(
         engine_shutdown: engine_shutdown.clone(),
         dropped_counter: Arc::new(AtomicU64::new(0)),
         ingestion_gate: Arc::new(AtomicBool::new(true)),
+        owner_atomic: Arc::new(AtomicU32::new(
+            vox_lib::core::events::InteractionOwner::Assistant as u32,
+        )),
     };
 
     let earshot_engine =
@@ -157,7 +160,7 @@ pub fn benchmark_streaming_provider(
 
             // Poll intermediate events
             while let Ok(event) = vox_event_rx.try_recv() {
-                if let VoxEvent::SpeechEnd = event {
+                if let VoxEvent::SpeechEnd { .. } = event {
                     speech_ends_seen += 1;
                 }
             }
@@ -181,7 +184,7 @@ pub fn benchmark_streaming_provider(
             std::thread::sleep(Duration::from_millis(1));
 
             while let Ok(event) = vox_event_rx.try_recv() {
-                if let VoxEvent::SpeechEnd = event {
+                if let VoxEvent::SpeechEnd { .. } = event {
                     speech_ends_seen += 1;
                 }
             }
@@ -211,7 +214,7 @@ pub fn benchmark_streaming_provider(
             // Poll VAD actor events
             while let Ok(event) = vox_event_rx.recv_timeout(Duration::from_millis(50)) {
                 last_activity = Instant::now();
-                if let VoxEvent::SpeechEnd = event {
+                if let VoxEvent::SpeechEnd { .. } = event {
                     speech_ends_seen += 1;
                 }
             }

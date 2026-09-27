@@ -287,7 +287,7 @@ fn main() {
         // Poll pipeline events
         while let Ok(ev) = event_rx.recv_timeout(Duration::from_millis(40)) {
             match ev {
-                VoxEvent::SpeechStart => {
+                VoxEvent::SpeechStart { .. } => {
                     if speech_start_time.is_none() {
                         speech_start_time = Some(Instant::now());
                         println!(
@@ -296,7 +296,7 @@ fn main() {
                         );
                     }
                 }
-                VoxEvent::SpeechEnd => {
+                VoxEvent::SpeechEnd { .. } => {
                     if playback_start_time.is_none() {
                         speech_end_time = Some(Instant::now());
                         println!(
@@ -305,7 +305,11 @@ fn main() {
                         );
                     }
                 }
-                VoxEvent::TranscriptFinal { turn_id, text } => {
+                VoxEvent::TranscriptFinal {
+                    turn_id,
+                    text,
+                    ..
+                } => {
                     transcript_final_time = Some(Instant::now());
                     captured_transcript = text.clone();
                     println!(
@@ -340,7 +344,7 @@ fn main() {
                         run_start.elapsed().as_secs_f64()
                     );
                 }
-                VoxEvent::Cancelled { turn_id } => {
+                VoxEvent::Cancelled { turn_id, .. } => {
                     println!(
                         "  [CANCELLED] Turn {} cancelled at +{:.2}s",
                         turn_id,

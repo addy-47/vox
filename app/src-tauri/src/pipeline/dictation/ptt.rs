@@ -8,6 +8,7 @@ use tauri::AppHandle;
 use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
+        events::InteractionOwner,
         state::{AppState, InteractionState},
     },
     pipeline::dictation::{error, transition_dictation},
@@ -21,6 +22,36 @@ use crate::{
 
 /// Starts Push-To-Talk dictation recording on hotkey press.
 pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
+    let assistant_state = state.pipeline.state();
+    if matches!(
+        assistant_state,
+        InteractionState::Listening
+            | InteractionState::Thinking
+            | InteractionState::Speaking
+            | InteractionState::Working
+    ) {
+        log::info!(
+            "[Dictation] Hotkey pressed while Assistant engaged ({:?}); dropping",
+            assistant_state
+        );
+        let notify_app = app.clone();
+        let notify_db = state.db.clone();
+        tauri::async_runtime::spawn(async move {
+            lifecycle::dictation_terminal(
+                &notify_app,
+                &notify_db,
+                LifecycleCard {
+                    title: "🎙️ Dictation",
+                    message: "Assistant is currently active",
+                    severity: crate::core::events::Severity::Info,
+                    duration_ms: 2000,
+                },
+            )
+            .await;
+        });
+        return;
+    }
+
     let current = state.pipeline.dictation_state();
     log::debug!(
         "[Dictation::Trace] on_ptt_start invoked (current state: {:?})",
@@ -47,6 +78,21 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
         }
         InteractionState::Thinking => {
             log::debug!("[Dictation] Already Thinking (transcribing previous speech); ignoring overlapping PttStart");
+            let notify_app = app.clone();
+            let notify_db = state.db.clone();
+            tauri::async_runtime::spawn(async move {
+                lifecycle::dictation_terminal(
+                    &notify_app,
+                    &notify_db,
+                    LifecycleCard {
+                        title: "🎙️ Dictation",
+                        message: "Previous turn transcribing",
+                        severity: crate::core::events::Severity::Info,
+                        duration_ms: 1500,
+                    },
+                )
+                .await;
+            });
             return;
         }
         InteractionState::Ready => {}
@@ -62,11 +108,23 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
     let (turn_id, _token) = state.pipeline.next_turn();
     state.pipeline.cancel_flag.store(false, Ordering::Relaxed);
 
+    let auto_stop_ms = state
+        .settings
+        .read()
+        .map(|s| s.dictation.silence_auto_stop_ms)
+        .unwrap_or(DICTATION_SILENCE_AUTOSTOP_MS);
+    let auto_stop_silence_ms = if auto_stop_ms > 0 {
+        Some(auto_stop_ms)
+    } else {
+        None
+    };
+
     if let Ok(guard) = state.engine.try_lock() {
         if let Some(ref engine) = *guard {
             if let Err(e) = engine.vad_tx.send(VadCommand::StartWindowValidation {
-                auto_stop_silence_ms: Some(DICTATION_SILENCE_AUTOSTOP_MS),
+                auto_stop_silence_ms,
                 stream_partials: true,
+                owner: InteractionOwner::Dictation,
             }) {
                 log::warn!(
                     "[Dictation::Trace] Failed to start window validation: {}",
@@ -189,7 +247,11 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
     transition_dictation(InteractionState::Thinking, app, state);
 
     if let Some(tx) = stt_tx {
-        if let Err(e) = tx.send(SttCommand::Final(turn_id, audio)) {
+        if let Err(e) = tx.send(SttCommand::Final {
+            turn_id,
+            audio,
+            owner: InteractionOwner::Dictation,
+        }) {
             log::warn!(
                 "[Dictation::Trace] Failed to dispatch Final audio to direct STT sender: {}",
                 e
@@ -201,7 +263,11 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
             );
         }
     } else if let Some(stt_tx) = engine_stt_tx_opt {
-        if let Err(e) = stt_tx.send(SttCommand::Final(turn_id, audio)) {
+        if let Err(e) = stt_tx.send(SttCommand::Final {
+            turn_id,
+            audio,
+            owner: InteractionOwner::Dictation,
+        }) {
             log::warn!(
                 "[Dictation::Trace] Failed to dispatch Final audio to STT: {}",
                 e

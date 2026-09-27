@@ -93,8 +93,8 @@ fn test_passive_streaming_matrix() {
         while Instant::now() < speech_deadline && (!saw_speech_start || !saw_speech_end) {
             if let Ok(ev) = vox_event_rx.recv_timeout(Duration::from_millis(100)) {
                 match ev {
-                    VoxEvent::SpeechStart => saw_speech_start = true,
-                    VoxEvent::SpeechEnd => saw_speech_end = true,
+                    VoxEvent::SpeechStart { .. } => saw_speech_start = true,
+                    VoxEvent::SpeechEnd { .. } => saw_speech_end = true,
                     _ => {}
                 }
             }
@@ -146,8 +146,8 @@ fn test_passive_streaming_matrix() {
         while Instant::now() < speech_deadline && (!saw_speech_start || !saw_speech_end) {
             if let Ok(ev) = vox_event_rx.recv_timeout(Duration::from_millis(100)) {
                 match ev {
-                    VoxEvent::SpeechStart => saw_speech_start = true,
-                    VoxEvent::SpeechEnd => saw_speech_end = true,
+                    VoxEvent::SpeechStart { .. } => saw_speech_start = true,
+                    VoxEvent::SpeechEnd { .. } => saw_speech_end = true,
                     _ => {}
                 }
             }

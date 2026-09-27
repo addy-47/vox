@@ -4,11 +4,13 @@ use tauri::{AppHandle, Emitter, Runtime};
 use crate::{
     core::{
         error::PipelineError,
-        state::{AppWindow, InteractionOwner},
+        state::AppWindow,
     },
     persistence::PersonalMemoryRecord,
     setup::model_manager::ModelSetupStatus,
 };
+
+pub use crate::core::state::InteractionOwner;
 
 /// Audio synthesis intent category governing playback engine state transitions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,14 +29,25 @@ pub enum VoxEvent {
     PauseSession,
     ResumeSession,
     EndSession,
-    PttStart,
-    PttStop,
-    PttCancel,
-    SpeechStart,
-    SpeechEnd,
+    PttStart {
+        owner: InteractionOwner,
+    },
+    PttStop {
+        owner: InteractionOwner,
+    },
+    PttCancel {
+        owner: InteractionOwner,
+    },
+    SpeechStart {
+        owner: InteractionOwner,
+    },
+    SpeechEnd {
+        owner: InteractionOwner,
+    },
     TranscriptFinal {
         turn_id: u32,
         text: String,
+        owner: InteractionOwner,
     },
     TextInput {
         text: String,
@@ -52,6 +65,7 @@ pub enum VoxEvent {
     },
     Cancelled {
         turn_id: u32,
+        owner: InteractionOwner,
     },
     Error(PipelineError),
     Shutdown,

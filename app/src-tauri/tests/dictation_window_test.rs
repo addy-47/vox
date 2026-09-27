@@ -108,7 +108,9 @@ async fn test_dictation_matrix() {
 
             // Trigger PttStart via router and poll for Listening (deadline, not fixed sleep)
             event_tx
-                .send(VoxEvent::PttStart)
+                .send(VoxEvent::PttStart {
+                    owner: InteractionOwner::Dictation,
+                })
                 .expect("Failed to send PttStart");
 
             assert!(
@@ -129,7 +131,9 @@ async fn test_dictation_matrix() {
 
             // Release PTT via router
             event_tx
-                .send(VoxEvent::PttStop)
+                .send(VoxEvent::PttStop {
+                    owner: InteractionOwner::Dictation,
+                })
                 .expect("Failed to send PttStop");
 
             // Poll for Thinking (or Ready if STT finished rapidly) with deadline
@@ -179,6 +183,7 @@ async fn test_dictation_matrix() {
                 .send(VoxEvent::TranscriptFinal {
                     turn_id,
                     text: transcript.clone(),
+                    owner: InteractionOwner::Dictation,
                 })
                 .expect("Failed to send TranscriptFinal to router");
 
@@ -226,7 +231,9 @@ async fn test_dictation_matrix() {
             transition_dictation(InteractionState::Ready, &app, &state);
 
             event_tx
-                .send(VoxEvent::PttStart)
+                .send(VoxEvent::PttStart {
+                    owner: InteractionOwner::Dictation,
+                })
                 .expect("Failed to send PttStart");
             assert!(
                 common::harness::wait_for_dictation_state(
@@ -243,7 +250,9 @@ async fn test_dictation_matrix() {
             common::audio::wait_for_buffer_drain(&producer, 2);
 
             event_tx
-                .send(VoxEvent::PttStop)
+                .send(VoxEvent::PttStop {
+                    owner: InteractionOwner::Dictation,
+                })
                 .expect("Failed to send PttStop");
 
             // Ghost gate: poll for revert to Ready (no STT Final dispatched)
@@ -274,7 +283,9 @@ async fn test_dictation_matrix() {
             transition_dictation(InteractionState::Ready, &app, &state);
 
             event_tx
-                .send(VoxEvent::PttStart)
+                .send(VoxEvent::PttStart {
+                    owner: InteractionOwner::Dictation,
+                })
                 .expect("Failed to send PttStart");
             assert!(
                 common::harness::wait_for_dictation_state(
@@ -295,7 +306,9 @@ async fn test_dictation_matrix() {
 
             // Cancel PTT via event_tx (tray cancellation path)
             event_tx
-                .send(VoxEvent::PttCancel)
+                .send(VoxEvent::PttCancel {
+                    owner: InteractionOwner::Dictation,
+                })
                 .expect("Failed to send PttCancel");
 
             assert!(
@@ -326,7 +339,9 @@ async fn test_dictation_matrix() {
 
             // Trigger passive speech start and poll for Listening
             event_tx
-                .send(VoxEvent::SpeechStart)
+                .send(VoxEvent::SpeechStart {
+                    owner: InteractionOwner::Dictation,
+                })
                 .expect("Failed to send SpeechStart");
             assert!(
                 common::harness::wait_for_dictation_state(
@@ -340,7 +355,9 @@ async fn test_dictation_matrix() {
 
             // Trigger passive speech end and poll for Thinking
             event_tx
-                .send(VoxEvent::SpeechEnd)
+                .send(VoxEvent::SpeechEnd {
+                    owner: InteractionOwner::Dictation,
+                })
                 .expect("Failed to send SpeechEnd");
             assert!(
                 common::harness::wait_for_dictation_state(
@@ -359,6 +376,7 @@ async fn test_dictation_matrix() {
                 .send(VoxEvent::TranscriptFinal {
                     turn_id,
                     text: test_text.clone(),
+                    owner: InteractionOwner::Dictation,
                 })
                 .expect("Failed to send TranscriptFinal");
 
@@ -417,7 +435,9 @@ async fn test_dictation_matrix() {
             // Now initiate a clean PttStart -> PttStop with no new speech
             // and poll for the ghost-gate revert to Ready (proves stale audio was purged)
             event_tx
-                .send(VoxEvent::PttStart)
+                .send(VoxEvent::PttStart {
+                    owner: InteractionOwner::Dictation,
+                })
                 .expect("Failed to send PttStart");
             assert!(
                 common::harness::wait_for_dictation_state(
@@ -430,7 +450,9 @@ async fn test_dictation_matrix() {
             );
 
             event_tx
-                .send(VoxEvent::PttStop)
+                .send(VoxEvent::PttStop {
+                    owner: InteractionOwner::Dictation,
+                })
                 .expect("Failed to send PttStop");
 
             assert!(
@@ -458,7 +480,9 @@ async fn test_dictation_matrix() {
             transition_dictation(InteractionState::Idle, &app, &state);
 
             event_tx
-                .send(VoxEvent::PttStart)
+                .send(VoxEvent::PttStart {
+                    owner: InteractionOwner::Dictation,
+                })
                 .expect("Failed to send PttStart");
 
             // Must NOT enter Listening: poll briefly, then assert still Idle
@@ -496,7 +520,9 @@ async fn test_dictation_matrix() {
 
             // Trigger passive speech start and verify cancel_flag is immediately cleared
             event_tx
-                .send(VoxEvent::SpeechStart)
+                .send(VoxEvent::SpeechStart {
+                    owner: InteractionOwner::Dictation,
+                })
                 .expect("Failed to send SpeechStart");
             assert!(
                 common::harness::wait_for_dictation_state(
@@ -516,7 +542,9 @@ async fn test_dictation_matrix() {
 
             // Complete turn
             event_tx
-                .send(VoxEvent::SpeechEnd)
+                .send(VoxEvent::SpeechEnd {
+                    owner: InteractionOwner::Dictation,
+                })
                 .expect("Failed to send SpeechEnd");
             assert!(
                 common::harness::wait_for_dictation_state(
@@ -534,6 +562,7 @@ async fn test_dictation_matrix() {
                 .send(VoxEvent::TranscriptFinal {
                     turn_id,
                     text: test_text.clone(),
+                    owner: InteractionOwner::Dictation,
                 })
                 .expect("Failed to send TranscriptFinal");
 
