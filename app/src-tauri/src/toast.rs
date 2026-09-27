@@ -315,7 +315,11 @@ fn replace_linux(server_id: u32, title: &str, message: &str, duration_ms: u64) {
         message,
     ]);
     if let Err(e) = cmd.spawn() {
-        log::warn!("[Toast] Failed to replace notification {}: {}", server_id, e);
+        log::warn!(
+            "[Toast] Failed to replace notification {}: {}",
+            server_id,
+            e
+        );
     }
 }
 

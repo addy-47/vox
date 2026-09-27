@@ -1,16 +1,12 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
+pub use crate::core::state::InteractionOwner;
 use crate::{
-    core::{
-        error::PipelineError,
-        state::AppWindow,
-    },
+    core::{error::PipelineError, state::AppWindow},
     persistence::PersonalMemoryRecord,
     setup::model_manager::ModelSetupStatus,
 };
-
-pub use crate::core::state::InteractionOwner;
 
 /// Audio synthesis intent category governing playback engine state transitions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

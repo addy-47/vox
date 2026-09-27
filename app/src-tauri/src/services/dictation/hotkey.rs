@@ -200,11 +200,17 @@ pub fn init_dictation_hotkey_listener<R: tauri::Runtime>(
                         let is_tray = state
                             .settings
                             .read()
-                            .map(|s| s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray)
+                            .map(|s| {
+                                s.dictation.output_mode
+                                    == crate::core::settings::DictationOutputMode::Tray
+                            })
                             .unwrap_or(false);
                         if is_tray {
                             if let Ok(window) = crate::tray::ensure_tray_window(&app_handle) {
-                                crate::tray::setup_linux_virtual_layer(&app_handle, crate::core::state::AppWindow::Tray.as_str());
+                                crate::tray::setup_linux_virtual_layer(
+                                    &app_handle,
+                                    crate::core::state::AppWindow::Tray.as_str(),
+                                );
                                 let _ = window.show();
                                 use tauri::Emitter;
                                 let _ = window.emit("toggle_tray", ());

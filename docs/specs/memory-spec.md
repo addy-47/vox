@@ -230,10 +230,11 @@ Consolidates personal knowledge through dedicated LLM passes tailored to documen
      - *Input*: Current document with numbered content elements (`[1]`, `[2]`, ...) + active personal facts.
      - *Task*: Propose the smallest set of index-addressed atomic edits to integrate the new facts.
      - *Output Constraint*: JSON Schema enforcing `{ "edits": [ { "op": "insert_after" | "replace" | "delete", "index": number, "text": string } ] }`.
-     - *Op Semantics*:
-       - `insert_after(index, text)`: Inserts new element after index N. `index: 0` prepends at the top of the document.
-       - `replace(index, text)`: Replaces the element at index N with `text`.
-       - `delete(index)`: Removes the element at index N (`text` is empty).
+      - *Op Semantics*:
+        - `insert_after(index, text)`: Inserts new element after index N. `index: 0` prepends at the top of the document. An index beyond the last element is clamped to an append; the content is applied, and the clamp is recorded on the suggestion rather than treated as a failure.
+        - `replace(index, text)`: Replaces the element at index N with `text`.
+        - `delete(index)`: Removes the element at index N (`text` is empty).
+      - *Addressing Limits*: operations are applied from the highest index down, so each is applied at the position the previous one vacated. Consequences the LLM must respect: a new section is opened by inserting its `## Heading` after index N and its bullets after index N+1; a bullet must never share an anchor index with the heading it belongs under, or it lands above that heading. An out-of-range `replace` or `delete` target is dropped by the engine.
      - *Provenance*: `source_fact_ids` is omitted from the LLM output schema. Grounding is enforced by prompt context and user review.
    - **Prompt 3: Comment-Directed Edits**:
      - *Trigger*: Invoked when the user submits directive comments on the active document.
@@ -245,6 +246,11 @@ Consolidates personal knowledge through dedicated LLM passes tailored to documen
      - *Input*: Current active personal memory document (raw text, unindexed).
      - *Task*: Reformat and reorganize the personal memory document, improving section groupings, eliminating redundant bullets, and polishing clarity without inventing facts. Operates strictly on the current document text, NOT raw facts.
      - *Commit*: Saved as version `max_version + 1` with `is_active = 1`.
+   - **Generation Settings (all passes)**:
+     - *Reasoning*: **Disabled** for every pass. The indexed protocol is what makes this safe: an operation carries only `op`, `index`, and a short `text`, so the model never re-quotes the document and there is nothing for it to echo degenerately. The earlier prose-targeting protocol required reasoning ON to avoid whole-document echo operations; that constraint does not survive the move to index addressing.
+     - *Evidence*: measured against `qwen3.5:9b` under strict JSON schema, reasoning ON produced `done_reason=length` with ~3.8k eval tokens of reasoning and **zero** content tokens at every ceiling tried (512 / 1024 / 4096) — the model reasons for the entire output budget and never answers, aborting the cycle. Reasoning OFF completed in ~1s with 55–250 eval tokens, valid minimal JSON, and zero out-of-range or multi-line operations across 6 document/fact combinations.
+     - *Temperature*: `0.2`. Separate from the compaction temperature: consolidation runs at most once per session, where a reproducible diff matters more than variety.
+     - *Output ceiling*: 4096 tokens, sized as headroom for a small JSON edit list.
 
 5. **Staging & Suggestion Lifecycle**:
    - Generated operations from Prompt 2 or Prompt 3 are persisted in `personal_memory_suggestions` with `status = 'pending'`.

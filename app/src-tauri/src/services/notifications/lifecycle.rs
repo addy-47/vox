@@ -56,11 +56,19 @@ pub async fn dictation_listening<R: tauri::Runtime>(app: &AppHandle<R>, db: &Vox
     use tauri::Manager;
     let auto_stop_ms = app
         .try_state::<Arc<crate::core::state::AppState>>()
-        .and_then(|st| st.settings.read().ok().map(|s| s.dictation.silence_auto_stop_ms))
+        .and_then(|st| {
+            st.settings
+                .read()
+                .ok()
+                .map(|s| s.dictation.silence_auto_stop_ms)
+        })
         .unwrap_or(1200);
 
     let auto_stop_text = if auto_stop_ms > 0 {
-        format!(" · a {:.1}s pause auto-finishes", auto_stop_ms as f32 / 1000.0)
+        format!(
+            " · a {:.1}s pause auto-finishes",
+            auto_stop_ms as f32 / 1000.0
+        )
     } else {
         String::new()
     };

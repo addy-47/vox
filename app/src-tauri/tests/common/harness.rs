@@ -232,11 +232,7 @@ pub fn drain_for_final_transcript(
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         match rx.recv_timeout(Duration::from_millis(200)) {
-            Ok(VoxEvent::TranscriptFinal {
-                turn_id,
-                text,
-                ..
-            }) => {
+            Ok(VoxEvent::TranscriptFinal { turn_id, text, .. }) => {
                 if turn_id == expected_turn_id {
                     return Ok(text);
                 }
