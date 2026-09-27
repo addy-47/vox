@@ -13,7 +13,8 @@ pub struct SuggestionObservation {
     pub op: String,
     pub target_index: u32,
     pub content: String,
-    /// False when the op carries no usable content (replace or insert with empty content)
+    /// False only when the engine genuinely dropped the op (empty content, or an out-of-range
+    /// `replace`/`delete`). A clamped append is applied successfully and stays true.
     pub engine_would_match: bool,
     /// Element count of the base document the suggestion was staged against.
     pub element_count_at_stage: usize,
@@ -29,6 +30,20 @@ pub struct SuggestionObservation {
     /// For `insert_after` on a bullet: the section owning the anchor index in the base
     /// document. Divergence from `landed_under_section` is a membership inversion.
     pub intended_under_section: Option<String>,
+}
+
+/// What a production structure gate refused to commit, reconstructed locally so the blocked
+/// damage is visible in the report rather than only the refusal.
+#[derive(Debug, Clone, Serialize)]
+pub struct RejectedCandidate {
+    pub blocked_operations: u32,
+    pub candidate_headings: usize,
+    pub active_headings: usize,
+    pub minimum_allowed_headings: usize,
+    pub headings_valid: bool,
+    pub candidate_structure_ok: bool,
+    pub candidate_nameless_headings: Vec<String>,
+    pub candidate_duplicate_headings: Vec<String>,
 }
 
 /// One measured violation of the `memory-spec.md` §5.1 structure contract.
@@ -65,15 +80,28 @@ pub struct StructureObservation {
 #[derive(Debug, Clone, Serialize)]
 pub struct EngineReplayObservation {
     pub operations_total: u32,
-    pub skipped_by_engine: u32,
+    /// Operations the engine genuinely dropped — intent never reached the document.
+    pub dropped_by_engine: u32,
+    /// Operations clamped to an append because their target index exceeded the element count.
+    /// Applied successfully, so informational: it measures the model's index imprecision.
+    pub clamped_to_append: u32,
+    /// Out-of-range anchors that are the documented section-opening pattern rather than
+    /// model imprecision. See `account_operations` in `evals/common/structure.rs`.
+    pub chained_section_anchors: u32,
     /// False on the cold-start path, where the document is synthesized whole by Prompt 1 and
     /// no patch operation exists to replay. The comparison below is meaningless there, so
     /// this flag marks the check as not applicable rather than passed or failed.
     pub replay_applicable: bool,
+    /// SCOPE LIMIT — this is a divergence check, not an engine-correctness check. The replay
+    /// runs the same `apply_patch_operations` that production used to commit, so by
+    /// construction it cannot detect a defect *inside* that function; both sides would move
+    /// together. What it does catch is divergence between the engine and what actually
+    /// reached the database: storage/retrieval corruption, non-canonical rendering on write,
+    /// or any post-commit mutation. Engine correctness is covered by `skipped_operations`,
+    /// `section_membership_violations`, and `accepted_structure`.
+    ///
     /// True when the engine's independent replay equals the document the production accept
-    /// path actually committed. False means the eval and production disagree about the
-    /// patch outcome, which invalidates every other per-operation reading. Only meaningful
-    /// when `replay_applicable` is true.
+    /// path actually committed. Only meaningful when `replay_applicable` is true.
     pub matches_committed_document: bool,
     pub replay_chars: usize,
     pub committed_chars: usize,
@@ -84,6 +112,13 @@ pub struct EngineReplayObservation {
 #[derive(Debug, Clone, Serialize)]
 pub struct ReanchorArithmeticObservation {
     pub probe_exercised: bool,
+    /// True only when the shift rule was actually due to fire: the accepted op was
+    /// `insert_after`/`delete` and some remaining pending row sat above the accepted index.
+    /// When false, `arithmetic_valid` is unverified rather than proven — a vacuous probe
+    /// reports `true` without having tested anything. The invariant is proven
+    /// deterministically by `tests/personal_memory_test.rs`; this field records whether the
+    /// live ladder confirmed it too.
+    pub probe_meaningful: bool,
     pub resolved_op: String,
     pub resolved_index: u32,
     pub remaining_pending_count: usize,
@@ -129,7 +164,11 @@ pub struct ConsolidationObservation {
     pub candidate_partition_valid: bool,
     pub pending_anchored_to_base_version: bool,
     pub operations: Vec<SuggestionObservation>,
-    pub skipped_operations: u32,
+    /// Operations the engine dropped outright. Must be zero: a dropped operation is a fact the
+    /// user was told was consolidated but which never reached the document.
+    pub dropped_operations: u32,
+    /// Operations clamped to an append. Reported, not gated — see `EngineReplayObservation`.
+    pub clamped_operations: u32,
     pub reanchor_probe_exercised: bool,
     pub reanchor_valid: Option<bool>,
     pub accepted_memory_version: i64,
@@ -142,6 +181,21 @@ pub struct ConsolidationObservation {
     pub linked_facts_consolidated: u32,
     pub linked_facts_rejected: u32,
     pub facts_left_active: i64,
+    /// Candidate facts sharing NO content word with the accepted document. INVARIANT 5.3-A
+    /// retired them as `consolidated` without their ever being written down. Each entry is
+    /// `(fact_text, share_of_content_words_present)`. Gated: unambiguous loss.
+    pub absent_candidate_facts: Vec<(String, f64)>,
+    /// Candidate facts only partially represented. Paraphrase and omission are not separable
+    /// without semantics, so this is judge input rather than a failure. Each entry is
+    /// `(fact_text, share_of_content_words_present)`.
+    pub partial_candidate_facts: Vec<(String, f64)>,
+    /// Section accounting for the accepted document. `headings_valid` is false when the
+    /// document lost a section that no `delete` targeted — the signature of a `replace` aimed
+    /// at a heading index, which overwrites the heading and re-parents its bullets.
+    pub heading_count_valid: bool,
+    pub base_headings: usize,
+    pub accepted_headings: usize,
+    pub minimum_allowed_headings: usize,
     pub reject_probe: bool,
     pub document_unchanged_after_reject: bool,
     /// Accumulation-side structure measurement of the committed document.
@@ -156,6 +210,8 @@ pub struct ConsolidationObservation {
     /// True when the production accept path refused a candidate document and the active
     /// version was left untouched. Expected whenever the structure gate fires.
     pub structure_gate_rejected: bool,
+    /// Present when a production gate refused the commit.
+    pub rejected_candidate: Option<RejectedCandidate>,
     pub judge: Option<JudgeObservation>,
 }
 

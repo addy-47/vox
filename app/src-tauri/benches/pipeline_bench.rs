@@ -305,11 +305,7 @@ fn main() {
                         );
                     }
                 }
-                VoxEvent::TranscriptFinal {
-                    turn_id,
-                    text,
-                    ..
-                } => {
+                VoxEvent::TranscriptFinal { turn_id, text, .. } => {
                     transcript_final_time = Some(Instant::now());
                     captured_transcript = text.clone();
                     println!(

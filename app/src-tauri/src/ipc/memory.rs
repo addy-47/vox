@@ -355,9 +355,8 @@ fn map_suggestion_error(error: MemorySuggestionError) -> VoxIpcError {
         MemorySuggestionError::NotPending(message) => VoxIpcError::NotFound(message),
         // The engine refused to commit the patched document. Same taxonomy as `PatchEngine`:
         // the request was well-formed, but the engine would not produce a valid document.
-        MemorySuggestionError::PatchEngine(message) | MemorySuggestionError::StructureGate(message) => {
-            VoxIpcError::Engine(message)
-        }
+        MemorySuggestionError::PatchEngine(message)
+        | MemorySuggestionError::StructureGate(message) => VoxIpcError::Engine(message),
         MemorySuggestionError::Database(inner) => VoxIpcError::Database(inner.to_string()),
     }
 }

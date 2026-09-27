@@ -221,7 +221,12 @@ fn handle_stream_chunk_command(
 }
 
 /// Emits the final turn event to the pipeline event channel.
-fn emit_final_events(ctx: &WorkerContext<'_>, tid: u32, transcript: String, owner: InteractionOwner) {
+fn emit_final_events(
+    ctx: &WorkerContext<'_>,
+    tid: u32,
+    transcript: String,
+    owner: InteractionOwner,
+) {
     if let Some(ref pipeline_tx) = ctx.pipeline_event_tx {
         if let Err(e) = pipeline_tx.send(VoxEvent::TranscriptFinal {
             turn_id: tid,
