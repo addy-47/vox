@@ -6,7 +6,7 @@ pub const DEFAULT_WORKING_MEMORY_AUTO_COMPACTION: bool = false;
 pub const DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE: f32 = 0.15;
 
 pub const DEFAULT_DICTATION_ENABLED: bool = true;
-pub const DEFAULT_DICTATION_HOTKEY: &str = "Alt+Space";
+pub const DEFAULT_DICTATION_HOTKEY: &str = "Alt+V";
 
 pub const DEFAULT_VAD_BACKEND: &str = "silero_vad";
 pub const DEFAULT_VAD_THRESHOLD: f32 = 0.5;

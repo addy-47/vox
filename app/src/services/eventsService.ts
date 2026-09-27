@@ -89,14 +89,6 @@ export interface ModelProgressPayload {
 /** Universal visual priority severity (core/events.rs: Severity). */
 export type Severity = "info" | "warning" | "critical";
 
-/** `show_toast` payload (core/events.rs: ToastPayload). */
-export interface ToastPayload {
-  title: string;
-  message: string;
-  severity: Severity;
-  duration_ms?: number;
-}
-
 export interface NotificationRecord {
   id: string;
   group_key: string;
@@ -137,7 +129,6 @@ export interface IpcEventMap {
   turn_metrics: TurnMetricsPayload;
   "settings-updated": void;
   toggle_tray: void;
-  show_toast: ToastPayload;
   notification_created: NotificationRecord;
   notification_updated: NotificationRecord;
   session_title_updated?: never; // removed in v2 — title changes surface via sessions_changed
@@ -239,10 +230,6 @@ export function onSystemStats(handler: (payload: SystemStatsPayload) => void): (
 
 export function onSettingsUpdated(handler: () => void): () => void {
   return on("settings-updated", handler);
-}
-
-export function onShowToast(handler: (payload: ToastPayload) => void): () => void {
-  return on("show_toast", handler);
 }
 
 export function onNotificationCreated(handler: (payload: NotificationRecord) => void): () => void {

@@ -80,13 +80,18 @@ Manages the single evolving Personal Memory markdown document.
 - **Behavior**: Optimistic concurrency check: updates content and increments version only if `version == expectedVersion`. If version drifted, rejects with `VoxIpcError::Conflict`. Broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
 #### `consolidate_personal_memory(comments: Option<Vec<String>>, projectId: Option<String>, conflictPolicy: Option<String>)` — [UNIFIED]
-- **Purpose**: Merges active personal facts into the document or performs comment-driven LLM regeneration.
+- **Purpose**: Consolidates active personal facts into the document or stages comment-driven LLM edits.
 - **Behavior**: 
-  - If `comments` provided: triggers LLM regeneration taking `[Current Document] + [User Comments]`. Never blocked by background ingestion queue items or compactions.
+  - If `comments` provided: triggers Prompt 3 (comment-directed edits) with numbered content elements, staging index-addressed delta suggestions into `personal_memory_suggestions`. Never blocked by background ingestion queue items or compactions.
   - If `comments` None:
     - If compaction is active: evaluates `conflictPolicy` (`"pause_compaction" | "queue" | "prompt"`). If `pause_compaction`, resets ongoing compaction to `'pending'`, drains queue, and consolidates immediately. If `prompt` (default), raises `CompactionInProgress` error so UI can prompt user.
-    - Merges active personal facts via LLM, marks facts `'consolidated'`, increments version, sets `is_active = 1`, and deactivates previous versions.
+    - If the current document is empty: runs Prompt 1 (cold start), synthesizing a complete structured markdown document from active facts, marking facts `'consolidated'`, and saving version 1 (`is_active = 1`).
+    - If an active document exists: runs Prompt 2 (incremental integration) with numbered content elements, staging index-addressed suggestions into `personal_memory_suggestions`, and marking candidate facts `'consolidated'`.
   - Broadcasts `IpcEvent::PersonalMemoryUpdated`.
+
+#### `regenerate_personal_memory(projectId: Option<String>)` — [NEW]
+- **Purpose**: Reformats and reorganizes the existing consolidated personal memory document.
+- **Behavior**: Triggers the regeneration LLM pass on the existing active personal memory document (reformatting section headings, pruning redundant bullets, and clarifying prose). Operates strictly on the existing document text, NOT raw facts. Inserts a new `personal_memory` record with `version = max_version + 1`, `is_active = 1`, and broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
 #### `get_personal_memory_versions(projectId: Option<String>)` — [NEW]
 - **Purpose**: Lists all historical versions of the personal memory document for carousel browsing.
@@ -100,13 +105,25 @@ Manages the single evolving Personal Memory markdown document.
 - **Purpose**: Lists all uncommitted delta suggestions pending review for the active personal memory document.
 - **Behavior**: Queries `personal_memory_suggestions WHERE status = 'pending' AND base_memory_version = active_version`. Returns `Vec<MemorySuggestionRecord>`.
 
-#### `resolve_memory_suggestion(id: Option<String>, action: String, projectId: Option<String>)` — [NEW]
-- **Purpose**: Polymorphic resolver to accept or reject pending memory suggestions individually or in bulk.
+#### `resolve_memory_suggestions(request: ResolveSuggestionsRequest)` — [REFACTORED BATCH]
+- **Purpose**: Atomically resolves a batch of pending memory suggestions (accept and/or reject) in a single IPC roundtrip.
+- **Parameters**:
+  ```rust
+  pub struct SuggestionDecision {
+      pub id: String,
+      pub action: String, // "accept" | "reject"
+  }
+  pub struct ResolveSuggestionsRequest {
+      pub project_id: Option<String>,
+      pub decisions: Vec<SuggestionDecision>,
+  }
+  ```
 - **Behavior**:
-  - If `id` is `Some(suggestionId)`: resolves that specific suggestion.
-  - If `id` is `None`: resolves all pending suggestions for the active document version.
-  - If `action == "accept"`: applies patch delta(s) to the markdown text, increments `version`, inserts new `personal_memory` row (`is_active = 1`), marks suggestion(s) `'accepted'`, and marks associated facts in `memory_facts` as `'consolidated'`.
-  - If `action == "reject"`: marks suggestion(s) `'rejected'`, marks associated facts in `memory_facts` as `'rejected'` (preventing repeated re-extraction), and leaves document unchanged.
+  - Validates that each item in `decisions` has `action == "accept"` or `action == "reject"`.
+  - For accepted suggestions, applies index-addressed patch operations in descending target index order to the active document text, increments `version`, and inserts new `personal_memory` row (`is_active = 1`).
+  - Marks accepted suggestions as `'accepted'` (`resolved_at = now`) and rejected suggestions as `'rejected'` (`resolved_at = now`).
+  - If un-reviewed suggestions remain pending, updates their `base_memory_version = version + 1`.
+  - Commits all document and suggestion updates in a single atomic database transaction.
   - Broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
 #### `get_active_facts(projectId: Option<String>)` — [NEW]
@@ -286,7 +303,6 @@ Every event emitted by the backend via `emit_ipc` or `emit_ipc_to` is mapped dir
 | `model_progress` | `ModelProgressPayload { model_id, step, progress, bytes_downloaded, total_bytes, error }` | Real-time download/extraction progress for model management. |
 | `telemetry` | `TelemetryData { energy, vad_prob, low, mid, high }` | 60Hz audio frequency visualizer data. |
 | `system_stats` | `SystemStatsPayload { system_cpu, system_ram_pct, vox_cpu, vox_ram_mb, threads, ... }` | One-second full launch-scope CPU and resident RAM usage. Release builds include the application and owned descendants; debug builds also include the `tauri dev` process tree. |
-| `show_toast` | `ToastPayload { title, message, level, duration_ms? }` | Ephemeral toast popups for user feedback. |
 | `notification_created` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when a persistent actionable notification or alert is created. |
 | `notification_updated` | `NotificationRecord { id, group_key, category, severity, title, message, status, ... }` | Emitted when an active notification status changes (e.g. marked read or updated). |
 | `personal_memory_updated`| `PersonalMemoryRecord { id, project_id, content, version, last_consolidated_at, updated_at }` | Emitted when Personal Memory is consolidated, edited, or regenerated. |
@@ -300,3 +316,4 @@ The following backend-to-frontend echo events are permanently deleted:
 1. `notification_dismissed` (decommissioned; frontend updates its local store upon successful `dismiss_notification` invoke promise).
 2. `notifications_marked_read` (decommissioned; frontend updates its local unread badges upon successful `mark_notifications_read` invoke promise).
 3. `sessions_changed` on `continue_session` and synchronous user-driven CRUD (decommissioned; frontend updates its state and triggers refetches upon awaiting the invoke promise without backend echo events).
+4. `show_toast` (decommissioned; all floating ephemeral alerts are delivered via Native OS Desktop Notifications directly from the Rust backend across Linux, macOS, and Windows, completely retiring the custom webview toast window).

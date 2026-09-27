@@ -108,6 +108,14 @@ pub fn transition<R: tauri::Runtime>(
 fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState, event: VoxEvent) {
     let ctx = RoutingContext::from_app_state(state);
     log::debug!("[Router] Routing {:?}", event);
+    log::info!(
+        "[Pipeline::Router::Trace] event={:?} owner={:?} target={} dictation_state={:?} assistant_state={:?}",
+        event,
+        ctx.owner,
+        target_window(ctx.owner),
+        state.pipeline.dictation_state(),
+        state.pipeline.state()
+    );
 
     match event {
         // Session lifecycle — always routed to assistant track
@@ -129,6 +137,11 @@ fn route_event<R: tauri::Runtime + 'static>(app: &AppHandle<R>, state: &AppState
         | VoxEvent::Error { .. }
             if ctx.owner == InteractionOwner::Dictation =>
         {
+            log::debug!(
+                "[Dictation::Trace] Router routing event: {:?} (owner: Dictation, dictation_state: {:?})",
+                event,
+                state.pipeline.dictation_state()
+            );
             super::dictation::handle_event(app, state, event);
         }
 

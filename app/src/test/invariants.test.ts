@@ -32,11 +32,10 @@ describe("Frontend Architectural & Performance Invariants", () => {
 
     for (const file of tsFiles) {
       const relPath = path.relative(SRC_DIR, file);
-      // Skip services directory, test directory, and ToastApp (which manages its own standalone window)
+      // Skip services directory and test directory
       if (
         relPath.startsWith("services/") ||
-        relPath.startsWith("test/") ||
-        relPath === "toast/ToastApp.tsx"
+        relPath.startsWith("test/")
       ) {
         continue;
       }

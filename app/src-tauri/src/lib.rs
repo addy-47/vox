@@ -32,8 +32,6 @@ use std::{
 use tauri::{tray::TrayIconBuilder, Manager, State};
 
 #[cfg(target_os = "linux")]
-use crate::toast::setup_linux_toast_layer;
-#[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
 use crate::{
     core::{
@@ -45,8 +43,9 @@ use crate::{
         audio::list_audio_devices,
         memory::{
             consolidate_personal_memory, get_active_facts, get_memory_suggestions,
-            get_personal_memory, get_personal_memory_versions, resolve_memory_suggestion,
-            save_personal_memory, set_active_personal_memory_version,
+            get_personal_memory, get_personal_memory_versions, regenerate_personal_memory,
+            resolve_memory_suggestion, resolve_memory_suggestions, save_personal_memory,
+            set_active_personal_memory_version,
         },
         monitoring::{get_profiler_snapshot, get_runtime_snapshot, record_memory_profile_event},
         notifications::{
@@ -100,7 +99,6 @@ use crate::{
         vad::VadCommand,
     },
     setup::manifest::{AppManifest, VoxManifest},
-    toast::{get_last_toast, manage_toast_window},
     tray::{build_main_tray_menu, ensure_tray_window, refresh_tray_menu, sync_live_menu_item},
     utils::{check_cpu_governor, hardware::detect_local_gpu, logging, paths},
     wizard::ensure_wizard_window,
@@ -608,14 +606,6 @@ pub fn run() {
                     }
                 }
             }
-            if window.label() == "toast" {
-                if let tauri::WindowEvent::Resized(size) = event {
-                    if size.width > 0 && size.height > 0 {
-                        #[cfg(target_os = "linux")]
-                        setup_linux_toast_layer(window.app_handle(), window.label());
-                    }
-                }
-            }
 
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // Instead of closing, hide the main window to keep app running
@@ -659,8 +649,6 @@ pub fn run() {
             hide_tray_window,
             set_window_click_through,
             show_main_window,
-            manage_toast_window,
-            get_last_toast,
             get_settings,
             get_model_catalog,
             get_provider_caps,
@@ -690,11 +678,13 @@ pub fn run() {
             get_personal_memory,
             save_personal_memory,
             consolidate_personal_memory,
+            regenerate_personal_memory,
             get_personal_memory_versions,
             set_active_personal_memory_version,
             get_active_facts,
             get_memory_suggestions,
             resolve_memory_suggestion,
+            resolve_memory_suggestions,
             // Voices
             list_voices,
             add_voice_from_file,

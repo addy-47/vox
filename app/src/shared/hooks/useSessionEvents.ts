@@ -54,6 +54,7 @@ export function useSessionEvents(handlers: SessionEventHandlers): void {
     cleanups.push(
       onTranscriptPartial((payload: TranscriptPayload) => {
         if (!mounted.current) return;
+        if (payload.owner === "Dictation") return;
         handlersRef.current.onTranscriptPartial(payload);
       }),
     );
@@ -61,6 +62,7 @@ export function useSessionEvents(handlers: SessionEventHandlers): void {
     cleanups.push(
       onTranscriptFinal((payload: TranscriptPayload) => {
         if (!mounted.current) return;
+        if (payload.owner === "Dictation") return;
         handlersRef.current.onTranscriptFinal(payload);
       }),
     );

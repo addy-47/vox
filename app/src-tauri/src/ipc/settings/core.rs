@@ -189,12 +189,12 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
     } else if key == "hotkey" {
         if let Some(new_shortcut) = value.as_str() {
             log::info!(
-                "[Settings::Mutation] Re-registering global dictation hotkey: {}",
+                "[Dictation::Trace] Settings mutation: re-registering global dictation hotkey: '{}'",
                 new_shortcut
             );
             if let Err(e) = init_dictation_hotkey_listener(app, new_shortcut) {
                 log::warn!(
-                    "[Settings::Mutation] Failed to re-register dictation hotkey: {:?}",
+                    "[Dictation::Trace] Failed to re-register dictation hotkey: {:?}",
                     e
                 );
             }

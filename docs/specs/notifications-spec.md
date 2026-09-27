@@ -106,7 +106,7 @@ To keep domain boundaries pristine, responsibilities are partitioned strictly be
    - Owns the 3D routing logic (`resolve_channel`).
    - Owns task idempotency and entity-scoping checks before writing to SQLite.
    - Owns the polymorphic backend action execution dispatcher (`execute_notification_action`).
-   - Manages communication with `WINDOW_TOAST` (HUD overlay) and `persistence/notifications.rs` (SQLite).
+   - Manages communication with native OS desktop notification dispatchers and `persistence/notifications.rs` (SQLite).
 3. **`pipeline/assistant/error.rs` (The Voice Turn Error Boundary)**:
    - Receives `PipelineError` on turn failures.
    - Drives audio engine state machine transitions based on `PipelineImpact`.
@@ -271,12 +271,19 @@ When an error occurs during a voice turn, the runtime error boundary must execut
 ### 8.3 Dual Channel (`ToastAndNotification`)
 - **Atomic Dispatch**: Emits simultaneously to the HUD overlay window and commits a persistent record to SQLite.
 
-### 8.4 HUD Overlay Exclusivity & In-App Delivery Routing
-- **Sole Overlay Surface**: Floating HUD alerts are exclusively delivered via Vox's internal transparent webview window (`AppWindow::Toast` in `toast.rs`). External third-party OS notification crates (`notify-rust`, `tauri-plugin-notification`, libnotify) are strictly excluded to avoid platform daemon hang risks and UI format breakage.
-- **Delivery Outcome Semantics**: `show_toast` returns an explicit delivery outcome (`Shown`, `SuppressedFocused`, `Failed`):
-  - `Shown`: HUD overlay webview displayed the toast to the user outside the app.
-  - `SuppressedFocused`: Floating overlay was suppressed because the main window is focused. The Notification Service emits `IpcEvent::ShowToast` directly to `AppWindow::Main` so in-app users receive visual transient feedback without overlay window jitter.
-  - `Failed`: Webview construction failed or was blocked by the display server compositor. The Notification Service logs the error and gracefully falls back to persistent drawer storage (`NotificationOnly`) so alerts are never swallowed.
+### 8.4 Native OS Desktop Notification Channel (`ToastOnly` / `ToastAndNotification`)
+- **Native OS Surface**: Ephemeral floating alerts are exclusively delivered via native OS desktop notification dispatchers directly from the Rust backend, completely eliminating custom transparent webviews (`AppWindow::Toast`), Cairo shape masks, and compositor black flashes:
+  - **Linux**: FreeDesktop D-Bus via `notify-send` with `-a Vox`, `-i ~/.vox/icons/vox.png`, and Pango markup (slides down from top-center in GNOME).
+  - **macOS**: Apple Notification Center via built-in `osascript` (slides in from top-right with chime and app title).
+  - **Windows**: Windows Action Center via PowerShell WinRT `[Windows.UI.Notifications.ToastNotificationManager]` (pops up in corner).
+- **Non-Stealing / Non-Intrusive Semantics**: Native OS notifications are managed by the host desktop shell outside the application window, so they never steal input focus, never require foreground window suppression, and consume 0MB additional webview RAM.
+- **Delivery Outcome Semantics**: `show_toast` returns an explicit delivery outcome (`Shown`, `Failed`):
+  - `Shown`: Native OS desktop notification successfully spawned via platform dispatcher.
+  - `Failed`: Subprocess dispatch failed. The Notification Service logs the error and gracefully falls back to persistent drawer storage (`NotificationOnly`) so alerts are never swallowed.
+- **Replaceable Live Notifications (Dictation lifecycle, service-owned)**: Multi-phase lifecycles (`Listening` → live partials → `Transcribing` → `Pasted`/`Copied`/`No Speech`) reuse a single notification card instead of stacking popups. Ownership sits strictly inside the Notification Service (`services/notifications/lifecycle.rs`); upstream dictation code calls only the lifecycle API and never the toast dispatcher directly (§11.1):
+  - **Linux**: First dispatch captures the resident replace ID (`notify-send --print-id`); subsequent phases update in place via `notify-send --replace-id` with throttled (~250ms) partial text. Terminal states replace the same ID one final time with terminal title/body and normal expiry. When no resident card exists, terminal states route through the universal `notify()` front door (plain toast + drawer elevation on dispatch failure).
+  - **macOS / Windows**: Dispatchers without replace semantics send a single terminal notification only (no live updates) to avoid popup spam.
+  - **Unverified delivery is failure**: If the platform reports success but delivery cannot be verified (e.g. Wayland compositor swallowing synthetic input), the lifecycle terminates on the fallback card (`📋 Dictation Copied (press Ctrl+V)`) with persistent expiry, and clipboard restore is skipped so the transcript stays pastable.
 
 ---
 

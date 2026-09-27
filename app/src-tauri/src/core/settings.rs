@@ -1171,5 +1171,4 @@ mod tests {
         assert!(!edge.speed && !edge.quality_steps && !edge.clone);
         assert_eq!(caps_for_id("no_such_engine"), caps_for_id("supertonic"));
     }
-
 }

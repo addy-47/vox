@@ -35,7 +35,6 @@ use crate::{
 pub enum AppWindow {
     Main,
     Tray,
-    Toast,
     Wizard,
 }
 
@@ -44,7 +43,6 @@ impl AppWindow {
         match self {
             Self::Main => "main",
             Self::Tray => "tray",
-            Self::Toast => "toast",
             Self::Wizard => "wizard",
         }
     }
@@ -215,4 +213,3 @@ impl AppState {
         }
     }
 }
-

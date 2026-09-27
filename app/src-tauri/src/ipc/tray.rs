@@ -3,8 +3,6 @@ use std::sync::{atomic::Ordering, Arc};
 use tauri::{AppHandle, Manager, State};
 
 #[cfg(target_os = "linux")]
-use crate::toast::setup_linux_toast_layer;
-#[cfg(target_os = "linux")]
 use crate::tray::setup_linux_virtual_layer;
 use crate::{
     core::{
@@ -131,8 +129,6 @@ pub fn set_window_click_through<R: tauri::Runtime>(
             }
         } else if window == "tray" {
             setup_linux_virtual_layer(&app, "tray");
-        } else if window == "toast" {
-            setup_linux_toast_layer(&app, "toast");
         }
     }
     #[cfg(not(target_os = "linux"))]

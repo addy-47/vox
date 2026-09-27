@@ -1,16 +1,15 @@
 ---
 title: "Vox Dictation Subsystem"
 audience: "Internal — backend & frontend contributors"
-last_updated: 2026-09-10
+last_updated: 2026-09-27
 owners: "backend-engineer role"
 related_docs:
   - "docs/backend.md §3, §8 — Pipeline & events"
   - "docs/features/voice-flow.md §8 — Dictation domain"
   - "docs/specs/integration-test-spec.md — Seam 4 post-refactor dictation truth"
-  - "app/src-tauri/src/toast.rs — Toast window lifecycle & emit chain"
-  - "app/src-tauri/src/core/events.rs:128 — ToastPayload / IpcEvent::ShowToast"
-  - "app/src/toast/ToastApp.tsx — Toast presentation & show_toast handling"
-  - "AUDIT_IPC.md §3.D/§8 — Toast IPC surface (86-command audit)"
+  - "app/src-tauri/src/toast.rs — Cross-platform native desktop notification dispatcher"
+  - "docs/specs/notifications-spec.md §8.4 — Native OS Desktop Notification Channel"
+  - "docs/specs/ipc-spec.md §3.4 — Decommissioned show_toast IPC event"
 ---
 
 # 📄 `dictation.md` — Realtime Dictation Subsystem & Output Architecture
@@ -40,7 +39,7 @@ Dictation is **fully decoupled from the desktop Tray HUD and unified**: Passive 
 │                                                                   │                      │
 │                               ┌───────────────────────────────────┴─────────────────┐    │
 │                               ▼                                                     ▼    │
-│                        [Ptt Mode: Alt+Space]                                [Passive Mode]│
+│                        [Ptt Mode: Alt+V]                                    [Passive Mode]│
 └───────────────────┬─────────────────────────────────────────────────────────────┬────┘
                     │                                                     │
                     ▼                                                     ▼
@@ -66,7 +65,7 @@ Dictation configuration is governed by two independent, orthogonal settings axes
 
 ### Axis 1: Interaction Mode (`dictation.interaction_mode`)
 - **`Ptt` (Push-To-Talk, Default)**:
-    - Triggered via global system shortcut (default `Alt+Space`).
+    - Triggered via global system shortcut (default `Alt+V`).
     - **Zero Idle RAM Guarantee**: 0 ONNX models loaded on boot; the unified dictation handler (`pipeline/dictation/mod.rs::handle_event`) lazily initializes audio/STT pipeline on-demand when the hotkey is first pressed.
     - Recording captures speech while held/toggled, and finishes on release.
 - **`Passive` (Continuous Sense)**:
@@ -134,6 +133,11 @@ Simulated paste requires writing text to the system clipboard and dispatching `C
 5. If injection FAILED:
      DO NOT restore clipboard (leaves dictation text intact so user can manual paste)
      Log error with full context and emit `dictation_error` event
+6. If injection is UNVERIFIED (Wayland compositor reports success but swallows synthetic
+   keystrokes without error — `enigo` returns `Ok` while nothing is delivered):
+     Treat exactly as FAILED (no clipboard restore; transcript stays on clipboard).
+     Replace the live notification in place with the persistent `📋 Dictation Copied
+     (press Ctrl+V)` card. Never log a false "successfully pasted" milestone.
 ```
 
 ### 4.2 Platform Adapters
@@ -192,43 +196,41 @@ Dictation's only user-visible confirmation outside `Tray` mode is the **toast ov
 
 ### 6.1 Architecture & Ownership
 
+All dictation lifecycle cards route strictly through the Notification Service front door (`notifications-spec.md` §11.1 — upstream code never touches the toast dispatcher directly):
+
 ```
-output_router.rs (dispatch_to_clipboard / dispatch_to_paste / on_error)
-        │  crate::toast::show_toast(app, title, msg, level)
+output_router.rs / ptt.rs / transcript.rs / hotkey.rs
+        │  services::notifications::lifecycle::{dictation_listening, dictation_live_update,
+        │      dictation_transcribing, dictation_terminal}  (Transient, group "dictation:lifecycle")
         ▼
-toast.rs::show_toast()  ──►  ensure_toast_window("toast")  (lazy, visible:false)
-        │                     LAST_TOAST: LazyLock<Mutex<Option<ToastPayload>>>  (toast.rs:12)
-        ├──► emit_ipc_to("toast", IpcEvent::ShowToast(payload))   immediate (core/events.rs:238)
-        └──► async fallback chain: 420ms emit → 300ms re-emit → 300ms → w.show() if still hidden
-                                   + position_toast_window() → setup_linux_toast_layer()
-        ▼
-Frontend ToastApp.tsx  ──►  onShowToast (eventsService.ts:220)  →  show(payload)
-                             ├─ getCurrentWindow().show() (owns first paint, avoids black flash)
-                             ├─ fallback invoke("show_toast_window")  (toast.rs:163)
-                             ├─ renders 360×96 glass-card, progress bar, auto-dismiss 3400ms
-                             └─ on mount also polls invoke("get_last_toast") at 700ms for late joiners
+lifecycle.rs  ──►  resident replace-ID card (Linux --print-id / --replace-id)
+        │
+        ├──► card exists: update in place (service-owned throttle ~250ms)
+        └──► no card / terminal fallback: notify() front door ──► ToastOnly + drawer elevation
+                │
+                ▼
+        toast.rs (dumb dispatcher)  ──►  dispatch_native_notification()
+                │
+                ├──► Linux:   notify-send -a Vox -i ~/.vox/icons/vox.png -t <duration> <title> <msg>
+                ├──► macOS:   osascript -e 'display notification ... with title ... subtitle "Vox"'
+                └──► Windows: powershell.exe WinRT [Windows.UI.Notifications.ToastNotificationManager]
 ```
 
-* **Window lifecycle:** `ensure_toast_window` (`toast.rs:22`) builds `360×96`, `transparent:true`, `decorations:false`, `always_on_top:true`, `visible:false`, `skip_taskbar:true`. The window **stays hidden** until `ToastApp` has mounted and painted its first frame — this eliminates the WebKitGTK black flash. Backend emits immediately but also retries (420ms + 300ms) and finally falls back to `w.show()` (`toast.rs:254`) if the event was missed. `position_toast_window` (`toast.rs:94`) centers at top with `24px` inset; on Linux it installs a fullscreen transparent GTK virtual layer with a `cairo::Region` input shape so only the 360×96 rect is hit-testable (`setup_linux_toast_layer`, `toast.rs:113`).
-* **IPC contract — SSOT `core/events.rs:128-134`:** `ToastPayload { title: String, message: String, severity: Severity, duration_ms?: u64 }`, `Severity { Info, Warning, Critical }` (`core/events.rs:99-105`), `IpcEvent::ShowToast(ToastPayload)` → `name="show_toast"` (`core/events.rs:207`), `emit_ipc_to("toast", …)` targeted to the toast webview (not broadcast). Mirrored in `services/eventsService.ts:93` (`ToastPayload`, `Severity`, `IpcEventMap["show_toast"]`, `onShowToast`). Every backend call goes through `toast::show_toast`; no raw string literals at emit sites.
-* **Commands (`lib.rs:511` + `toast.rs:162`):** `show_toast_window` (sync, frontend fallback after `getCurrentWindow().show()`), `hide_toast_window` (`toast.rs:176`), `destroy_toast_window_cmd` (`toast.rs:188`, reclaims RAM after 280ms teardown), `get_last_toast` (`toast.rs:197`, returns `LAST_TOAST` clone for late-joining webviews). Frontend currently calls all 4 directly from `ToastApp.tsx:34,37,55,80` — flagged in `AUDIT_IPC.md:185` as `AGENTS.md:4.1#5` violation; recommended move into `services/windowService.ts` or new `services/toastService.ts`.
-* **`should_show_error_toast` (`toast.rs:202`):** Guard that supplements errors with a toast only when the main window (`pipeline::WINDOW_MAIN`) is hidden or destroyed — checked in every `on_error` path (`pipeline/dictation/error.rs`, `pipeline/assistant/error.rs`). Prevents duplicate banners when the user is already looking at the main HUD. |
+* **Zero-Webview Architecture:** All ephemeral floating alerts are delivered natively through host operating system notification daemons outside the application webview. This eliminates the 80MB RAM GTK webview overlay window (`ToastApp.tsx`), transparent Cairo shape masks, and Linux compositor black flashes.
+* **Non-Stealing / Non-Intrusive:** Native OS notifications do not steal focus from the user's active cursor or text editor and require zero complex positioning coordinates.
 
-### 6.2 Dictation-Specific Toast Triggers
+### 6.2 Dictation Lifecycle Notifications (Every Logical Boundary)
 
-| Trigger | Code Path | Title | Message | Severity | Condition |
+| Phase / Trigger | Code Path | Title | Message & Markup | Severity | Condition |
 |---|---|---|---|---|---|
-| Clipboard write succeeded | `output_router.rs:36` `dispatch_to_clipboard` | `Dictation Copied` | `text` (full transcript) | `Success` | `output_mode == Clipboard` |
-| Paste injected (`Ctrl+V`/`Cmd+V`) | `output_router.rs:61` `dispatch_to_paste` `Ok(())` | `Dictation Pasted` | `text` | `Success` | `output_mode == Paste`, `with_clipboard_safe` + `simulate_paste` succeeded |
-| Paste blocked by OS/compositor | `output_router.rs:76` `dispatch_to_paste` `Err` | `Paste Blocked by OS` | `Transcript saved to clipboard — paste manually with Ctrl+V.` | `Warning` | Wayland security block, macOS Accessibility denied, `enigo` failure — transcript **left** on clipboard |
-| Engine/hotkey/STT failure | `pipeline/dictation/error.rs:on_error` | `Voice Error` | `message` (typed `DictationError`) | `Critical` | Dispatches `IpcEvent::ShowToast` via `should_show_error_toast` gate; no `voice_error` event (removed) |
+| **1. Start Listening (persistent)** | `hotkey.rs` | `🎙️ Dictation` | `\n<b>Listening...</b> Speak clearly · a 1.2s pause auto-finishes` | `Info` | Hotkey pressed; turn begins; notification replace-ID retained for in-place updates; 600ms auto-repeat guard armed |
+| **1b. Live Partial (throttled update)** | `transcript.rs` via STT partials | `🎙️ Dictation` | `\n<b>Listening...</b>\n"<live partial text>"` | `Info` | Same notification ID replaced in place (~250ms throttle); never a new popup |
+| **2. Speech Ended (Transcribing)** | `ptt.rs` | `⏳ Dictation` | `\n<b>Transcribing...</b> Processing speech` | `Info` | Same notification ID replaced; manual tap-stop or 1.2s silence auto-stop |
+| **3. Speech Not Detected / Empty** | `ptt.rs` / `transcript.rs` | `⚠️ Dictation: No Speech` | `\n<b>No speech recognized</b>\nSpeak clearly into the microphone` | `Warning` | Audio <100ms or VAD speech not detected or empty STT transcript; replaces live notification in place |
+| **4. Paste Succeeded** | `output_router.rs` | `✓ Dictation Pasted` | `\n"{snippet}"` | `Info` | Mode `Paste`: verified keystroke injection delivered into cursor; replaces live notification in place |
+| **5. Paste Blocked / Unverified (Clipboard Fallback)** | `output_router.rs` | `📋 Dictation Copied` | `\n<b>Saved to clipboard</b> (press Ctrl+V):\n"{snippet}"` | `Warning` | Mode `Paste`: Wayland/OS blocked or unverified injection; clipboard is NOT restored so the transcript stays pastable; replaces live notification in place with persistent expiry |
+| **6. Clipboard Mode** | `output_router.rs` | `📋 Dictation Copied` | `\n<b>Saved to clipboard</b> (press Ctrl+V):\n"{snippet}"` | `Info` | Mode `Clipboard`: written to clipboard |
 
-Notes:
-* `Tray` mode bypasses OS injection entirely (`output_router.rs:20` `DictationOutputMode::Tray => Ok(())`) — **no toast** is emitted; the Tray HUD itself is the presentation surface.
-* Duration is caller-controlled via `ToastPayload.duration_ms`; all dictation paths pass `None` → frontend defaults to `DEFAULT_DURATION_MS = 3400ms` (`ToastApp.tsx:15`) with a linear `scaleX` progress bar.
-* Clipboard safety and toast are coupled: on `Paste` success the 350ms restore window (`clipboard.rs:with_clipboard_safe`) completes **before** the success toast; on failure the clipboard is **not** restored so the warning toast's "saved to clipboard" claim is accurate.
-
-### 6.3 Frontend Presentation — `ToastApp.tsx`
 
 * **Dimensions:** `360px × 96px` (`TOAST_WIDTH/HEIGHT` `toast.rs:8`), positioned top-center with `24px` top inset (`TOAST_PAD_TOP`). Glassmorphism `glass-card` (`rounded-xl`, `border`, `blur(20px) saturate(180%)` via outer window shape), outer wrapper `w-screen h-screen flex items-start justify-center bg-transparent pointer-events-none p-6`.
 * **Stack:** `React` + `framer-motion` `AnimatePresence`; entry `opacity 0→1, y -12→0` `duration 0.36 spring [0.16,1,0.3,1]`, exit `y -12`, inner fade `320ms` before `hide` + `280ms` before `destroy_toast_window_cmd`.
@@ -313,11 +315,25 @@ This section documents all platform-specific behavior, known limitations, and op
 | HUD dims (logical px) | 380×250, padding 55px right, 15vh top | 380×250 | 380×250 |
 
 
-### 10.3 Global PTT Hotkey (`Alt+Space`)
+### 10.3 Global PTT Hotkey (`Alt+V`)
 
-- **Linux**: Registered via `tauri-plugin-global-shortcut`. Works on X11 and Wayland (portal-permitting).
+- **Default Shortcut**: `Alt+V` across all platforms (configurable in Settings → Interaction → Activation Shortcut).
 - **macOS**: Requires Accessibility permission in System Settings → Privacy & Security → Accessibility.
 - **Windows**: Standard Win32 `RegisterHotKey` — no special permissions needed.
+- **Linux X11**: Registered via `tauri-plugin-global-shortcut` (X11 `XGrabKey` on the root window).
+- **Linux Wayland (GNOME Compositor)**:
+  - *Wayland Security Model & RCA*: Under Wayland, compositors (such as GNOME Mutter) intentionally isolate applications from background keyboard snooping. Legacy X11 `XGrabKey` registrations made through `tauri-plugin-global-shortcut` on Xwayland (`:0`) fail silently whenever a native Wayland client (browser, terminal, editor, or Vox's own WebKitGTK surface) has focus. Furthermore, Ubuntu 24.04 (GNOME 46) does not implement `org.freedesktop.portal.GlobalShortcuts` in `xdg-desktop-portal-gnome`, and `org.gnome.Shell.GrabAccelerator` rejects unprivileged applications with `Access denied`.
+  - *Automated Zero-Configuration Solution*: Vox implements a fully automated, native GNOME compositor integration that requires zero sudo or manual user intervention:
+    1. **Local Unix Domain Socket Daemon (`~/.vox/vox.sock`)**: On boot, Vox spawns a lightweight background listener on `~/.vox/vox.sock` managed by the Tokio async runtime.
+    2. **Self-Provisioning Trigger Script (`~/.vox/bin/vox-trigger`)**: Vox automatically generates an executable launcher script that dispatches `"trigger\n"` to `~/.vox/vox.sock` via `nc -U` (or `python3` fallback). If Vox is not running, the script exits immediately in <1ms.
+    3. **Automated GNOME Media-Keys Daemon Registration**: Vox inspects `XDG_CURRENT_DESKTOP`. When running under GNOME, it automatically registers/syncs a custom keybinding via `gsettings` (`org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/vox-dictation/`):
+       - `name`: `'Vox Dictation'`
+       - `command`: `~/.vox/bin/vox-trigger`
+       - `binding`: `<Alt>v` (normalized automatically from Settings format)
+    4. **Interactive Operation (Press-to-Talk Toggle + 1.2s Silence Auto-Stop)**:
+       - **Activation (Press 1)**: Pressing `Alt+V` globally triggers `HotkeyAction::Toggle`. If Vox dictation is in `Ready` or `Idle`, it boots the audio engine on-demand (preserving zero idle RAM), locks `InteractionOwner::Dictation`, and sends `VoxEvent::PttStart` (transitions to `Listening`).
+       - **Finalization (Press 2 or 1.2s Silence)**: Pressing `Alt+V` again sends `VoxEvent::PttStop` immediately (transitions to `Thinking`, validates speech window via VAD, transcribes via STT, and injects/copies via Output Router). Alternatively, the user can simply stop speaking: a silence watchdog in the windowed-validation path auto-dispatches `PttStop` once speech has been detected and no speech frames arrive for **1200ms** (`DICTATION_SILENCE_AUTOSTOP_MS` in `services/dictation/mod.rs`). Pre-speech silence never triggers auto-stop; only post-speech pauses do.
+    5. **Dynamic Settings Sync**: When the user updates the hotkey in the Dictation Settings Desk, Vox automatically updates both `tauri-plugin-global-shortcut` and GNOME's GSettings binding in real time. Disabling dictation cleans up the registration.
 
 ### 10.4 `enigo` Cargo Feature Configuration
 

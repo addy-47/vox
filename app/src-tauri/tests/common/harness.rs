@@ -508,6 +508,12 @@ pub async fn get_test_app_and_state() -> (
     let db_conn = vox_lib::persistence::VoxDb::open(&vox_lib::utils::paths::db_path())
         .await
         .expect("Failed to open test database");
+    let migration_conn = db_conn
+        .connect()
+        .expect("Failed to vend migration connection");
+    vox_lib::persistence::schema::run_migrations(&migration_conn)
+        .await
+        .expect("Failed to run migrations on test database");
     let db = Arc::new(db_conn);
     let state = Arc::new(vox_lib::core::state::AppState::new(
         &app, None, telemetry, db,
@@ -524,6 +530,12 @@ pub async fn get_test_app_state() -> vox_lib::core::state::AppState {
     let db_conn = vox_lib::persistence::VoxDb::open(&vox_lib::utils::paths::db_path())
         .await
         .expect("Failed to open test database");
+    let migration_conn = db_conn
+        .connect()
+        .expect("Failed to vend migration connection");
+    vox_lib::persistence::schema::run_migrations(&migration_conn)
+        .await
+        .expect("Failed to run migrations on test database");
     let db = Arc::new(db_conn);
     let app = get_test_app_handle();
     vox_lib::core::state::AppState::new(&app, None, telemetry, db)

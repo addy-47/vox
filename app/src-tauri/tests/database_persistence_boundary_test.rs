@@ -68,8 +68,7 @@ async fn test_schema_migration_and_seed_data() {
             .expect("Failed to query user_version");
         let version: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(
-            version,
-            SCHEMA_VERSION as i64,
+            version, SCHEMA_VERSION as i64,
             "Database user_version must match SCHEMA_VERSION after migration",
         );
 

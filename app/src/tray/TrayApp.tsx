@@ -190,6 +190,7 @@ export const TrayApp: React.FC = () => {
       localUnlisteners.push(
         onStateChanged((payload) => {
           if (!active || !payload) return;
+          if (payload.owner === "Assistant") return;
           const canonicalState = (payload.state.charAt(0).toUpperCase() + payload.state.slice(1).toLowerCase()) as InteractionState;
           
           if (canonicalState === "Listening") {
@@ -209,6 +210,7 @@ export const TrayApp: React.FC = () => {
       localUnlisteners.push(
         onTranscriptPartial((payload) => {
           if (!active) return;
+          if (payload.owner === "Assistant") return;
           if (payload.text) {
             if (stateRef.current.visibilityState === 'HIDDEN') {
               stateRef.current.callbacks.show();
@@ -221,6 +223,7 @@ export const TrayApp: React.FC = () => {
       localUnlisteners.push(
         onTranscriptFinal((payload) => {
           if (!active) return;
+          if (payload.owner === "Assistant") return;
           if (payload.text) {
             if (stateRef.current.visibilityState === 'HIDDEN') {
               stateRef.current.callbacks.show();
