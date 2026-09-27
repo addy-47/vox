@@ -176,11 +176,9 @@ Uncommitted delta operations proposed by consolidation or comment processing, pe
 | `id` | TEXT | PRIMARY KEY | Suggestion ID: `sug_{timestamp}_{uuid}` |
 | `base_memory_version` | INTEGER | NOT NULL REFERENCES `personal_memory(version)` ON DELETE CASCADE | Target document version this patch applies to |
 | `project_id` | TEXT | NULLABLE REFERENCES `projects(id)` ON DELETE CASCADE | Associated project scope |
-| `op` | TEXT | NOT NULL | `'insert'`, `'replace'`, `'delete'` |
-| `section` | TEXT | NOT NULL | Markdown section heading (e.g. `'## Personal Information'`) |
-| `target_text` | TEXT | NULLABLE | Exact text to replace or delete (NULL for insert) |
-| `proposed_text` | TEXT | NOT NULL | New text to insert or replace |
-| `source_fact_ids` | TEXT | NOT NULL | JSON array of `memory_facts.id` provenance |
+| `op` | TEXT | NOT NULL | `'insert_after'`, `'replace'`, `'delete'` |
+| `target_index` | INTEGER | NOT NULL | 1-based content element index (0 for prepend in `insert_after`) |
+| `content` | TEXT | NOT NULL | New text to insert or replace (empty for delete) |
 | `status` | TEXT | NOT NULL DEFAULT 'pending' | `'pending'`, `'accepted'`, `'rejected'` |
 | `created_at` | INTEGER | NOT NULL | Millisecond epoch |
 | `resolved_at` | INTEGER | NULLABLE | Millisecond epoch |

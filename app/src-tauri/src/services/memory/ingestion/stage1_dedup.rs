@@ -152,5 +152,4 @@ mod tests {
         let sim = jaccard_similarity("apple orange banana", "apple orange pear");
         assert!((sim - 0.5).abs() < 0.001);
     }
-
 }

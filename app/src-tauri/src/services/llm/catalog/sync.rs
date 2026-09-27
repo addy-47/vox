@@ -146,34 +146,11 @@ pub fn load_local_baseline_cache() {
     }
 }
 
-/// Look up baseline specification by model ID or family match.
+/// Look up baseline specification by model ID.
 pub fn get_baseline_spec(model_id: &str) -> Option<ModelSpec> {
     let lower_id = model_id.to_lowercase();
     if let Ok(lock) = BASELINE_REGISTRY.read() {
-        // 1. Exact match
-        if let Some(spec) = lock.get(&lower_id) {
-            return Some(spec.clone());
-        }
-
-        // 2. Substring or family match
-        for (k, spec) in lock.iter() {
-            if lower_id.contains(k) || k.contains(&lower_id) {
-                return Some(ModelSpec {
-                    model_id: model_id.to_string(),
-                    provenance: CapabilityProvenance::FamilyBaseline,
-                    ..spec.clone()
-                });
-            }
-            if let Some(ref family) = spec.family {
-                if lower_id.contains(family) {
-                    return Some(ModelSpec {
-                        model_id: model_id.to_string(),
-                        provenance: CapabilityProvenance::FamilyBaseline,
-                        ..spec.clone()
-                    });
-                }
-            }
-        }
+        return lock.get(&lower_id).cloned();
     }
     None
 }
@@ -260,6 +237,43 @@ mod tests {
     use std::time::Instant;
 
     use super::*;
+
+    /// A model absent from the bundled catalog must NOT inherit capabilities
+    /// from an unrelated model that happens to share a family prefix.
+    ///
+    /// `qwen3.5:9b` is the concrete regression: 66 catalog models are tagged
+    /// `family = "qwen"` with mutually inconsistent `supports_structured` /
+    /// `context_window`, so the old substring+family fallback resolved to a
+    /// random one of them and silently turned off strict JSON-schema output
+    /// for both memory compaction and personal consolidation.
+    #[test]
+    fn test_baseline_lookup_does_not_inherit_capabilities_by_family_prefix() {
+        assert!(
+            get_baseline_spec("qwen3.5:9b").is_none(),
+            "unknown model must not resolve a family baseline"
+        );
+        assert!(
+            get_baseline_spec("qwen2.5-coder-0.5b").is_some(),
+            "a genuine catalog entry must still resolve"
+        );
+    }
+
+    /// The family field must never be reachable as a capability source again.
+    /// If a future change reintroduces fuzzy matching, this fails.
+    #[test]
+    fn test_family_field_alone_never_resolves_a_spec() {
+        let lower = "qwen3.5:9b";
+        for (key, spec) in parse_catalog_json(BUNDLED_MODELS_JSON) {
+            if let Some(family) = spec.family.as_deref() {
+                if lower.contains(&family.to_lowercase()) {
+                    assert_ne!(
+                        key, lower,
+                        "family match on '{family}' must not resolve '{lower}'"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_parse_catalog_json_performance_and_accuracy() {

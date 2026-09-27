@@ -175,6 +175,48 @@ pub async fn count_facts(conn: &Connection) -> Result<i64> {
     scalar_i64(conn, "SELECT COUNT(*) FROM memory_facts;").await
 }
 
+/// Counts facts of one type in one lifecycle status. The consolidation
+/// contract is expressed entirely in `memory_facts.status` transitions
+/// (`active` -> `staged` -> `consolidated` / `rejected`), so the eval needs to
+/// read that column rather than a total.
+pub async fn count_facts_by_status(
+    conn: &Connection,
+    fact_type: &str,
+    status: &str,
+) -> Result<i64> {
+    let mut rows = conn
+        .query(
+            "SELECT COUNT(*) FROM memory_facts WHERE type = ? AND status = ?;",
+            (fact_type.to_string(), status.to_string()),
+        )
+        .await?;
+    let row = rows
+        .next()
+        .await?
+        .context("Fact status count query returned no row")?;
+    Ok(row.get(0)?)
+}
+
+/// Ids of facts of one type in one lifecycle status, for set comparison against
+/// the fact ids referenced by staged suggestions (INVARIANT 5.3-A).
+pub async fn fetch_fact_ids_by_status(
+    conn: &Connection,
+    fact_type: &str,
+    status: &str,
+) -> Result<Vec<String>> {
+    let mut rows = conn
+        .query(
+            "SELECT id FROM memory_facts WHERE type = ? AND status = ?;",
+            (fact_type.to_string(), status.to_string()),
+        )
+        .await?;
+    let mut ids = Vec::new();
+    while let Some(row) = rows.next().await? {
+        ids.push(row.get::<String>(0)?);
+    }
+    Ok(ids)
+}
+
 pub async fn count_queue_items(conn: &Connection) -> Result<i64> {
     scalar_i64(
         conn,

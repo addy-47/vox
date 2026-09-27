@@ -27,7 +27,7 @@ export interface PageMemoryRecord {
 }
 
 function primaryMemoryMb(snapshot: ProfilerSnapshot): number {
-  return snapshot.cgroup_current_mb ?? snapshot.total_pss_mb ?? snapshot.total_vox_ram_mb;
+  return snapshot.total_vox_ram_mb ?? snapshot.total_pss_mb ?? snapshot.cgroup_current_mb ?? 0;
 }
 
 export function useMemoryProfiler(enabled = true) {

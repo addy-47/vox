@@ -169,7 +169,7 @@ Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_
 ## 5. Stage 3A: Personal Memory & Consolidation Lifecycle
 
 ### 5.1 Personal Memory Document & Historical Versioning
-- An evolving markdown document capturing consolidated knowledge about the user.
+- An evolving markdown document capturing consolidated knowledge about the user, organized with descriptive `##` section headings and bullet points.
 - Stored in the `personal_memory` table in Turso DB (schema governed by `db-spec.md §2.5`) with versioning and `is_active` status.
 - **Historical Immutability**: New consolidations or manual saves insert a new record with `version = max_version + 1` and `is_active = 1`, setting previous versions to `is_active = 0`. Older versions remain permanently accessible in the database.
 - **Version Navigation & Activation**: The Memory Drawer UI provides an interactive version carousel (`[ < ] v{X} [ > ]`) allowing users to inspect older archived versions and promote any historical version back to `is_active = 1` via `set_active_personal_memory_version`.
@@ -178,13 +178,16 @@ Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_
 ### 5.2 User Interaction Modes
 1. **View & Copy**: User views formatted markdown in the UI and can copy the raw markdown text directly to their clipboard.
 2. **Direct Manual Edit**: User directly edits markdown text in the UI and saves changes (modal exclusive: disabled while uncommitted patch suggestions are pending review).
-3. **Comment-Driven Structured Edits**: User leaves directive comments on specific lines/quotes. The backend triggers a structured patch LLM pass taking `[Current Document] + [User Comments]` to generate targeted delta suggestions (`replace`, `insert`, `delete`) displayed on the staging slate for user review.
+3. **Comment-Driven Structured Edits**: User leaves directive comments on specific lines/quotes. The backend triggers the comment-directed LLM pass (Prompt 3) taking `[Current Document] + [User Comments]` to generate targeted index-based delta suggestions displayed on the staging slate for user review.
 4. **Version Carousel Navigation**: User flips between previous versions of personal memory to inspect changes over time or restore an earlier version as the active document.
+5. **Regeneration (User-Triggered Reformat)**: User triggers a full reorganization and reformatting of the existing consolidated memory document. The backend runs the regeneration LLM pass on the current document (improving headings, removing duplicate information, improving clarity) and saves the result as a new active version. Regeneration operates strictly on the existing document, NOT on raw facts.
 
-### 5.3 Structured Delta Consolidation Pipeline
-Merges newly accumulated personal facts into the existing document via an audited patch protocol rather than full-document regeneration:
+### 5.3 Three-Prompt Personal Memory Consolidation Pipeline
+Consolidates personal knowledge through dedicated LLM passes tailored to document state and intent, using a content-element indexed patch engine for incremental edits:
+
 1. **Candidate Query**:
    `SELECT * FROM memory_facts WHERE type = 'personal' AND status = 'active'`
+
 2. **Execution Gating & Preconditions**:
    Consolidation is NEVER hard-blocked by an active compaction or pending queue items:
    - **Comment-Driven Edits**: Executes immediately regardless of ingestion queue state or ongoing compactions.
@@ -194,60 +197,76 @@ Merges newly accumulated personal facts into the existing document via an audite
        2. **Queue Consolidation**: Registers the consolidation request in `PendingConsolidationState` to run automatically as soon as the ongoing compaction finishes.
    - **Headless Scheduled Runs**:
      - Headless scheduled runs never raise errors. If a compaction is in progress, the scheduled run is automatically queued in `PendingConsolidationState` and executes as soon as the active compaction and its ingestion cycle finish.
-3. **Structured Patch LLM Pass**:
-   - The LLM receives `[Current Personal Memory Document] + [Active Personal Facts]`.
-   - The LLM acts strictly as a **change proposer** rather than a document re-writer. It emits a structured JSON object containing an array of atomic patch operations without synthetic line numbers:
-     ```json
-     {
-       "operations": [
-         {
-           "op": "replace",
-           "section": "## Personal Information",
-           "target_text": "Lives in Chicago.",
-           "proposed_text": "Lives in Austin.",
-           "source_fact_ids": ["fact_101"]
-         },
-         {
-           "op": "insert",
-           "section": "## Technical Projects",
-           "target_text": null,
-           "proposed_text": "Building a voice orchestrator in Rust.",
-           "source_fact_ids": ["fact_204"]
-         }
-       ]
-     }
+
+3. **Document Addressing & Content-Element Indexing Model**:
+   - For all incremental edit passes, the runtime parses the current markdown document into a sequence of content elements (headings and bullets). Blank lines and pure whitespace lines are stripped prior to indexing.
+   - Elements are indexed sequentially starting at 1:
      ```
-   - **Atomic Operators**:
-     - `insert`: Appends `proposed_text` under the designated `section` heading. If `section` does not exist, it is created.
-     - `replace`: Locates exact `target_text` within `section` and substitutes it with `proposed_text`.
-     - `delete`: Locates exact `target_text` within `section` and removes it.
-   - Any document text not explicitly targeted by an operation is mathematically immutable and preserved.
-4. **Staging & Modal Isolation Lifecycle**:
-   - Generated operations are inserted into `personal_memory_suggestions` with `status = 'pending'`.
-   - Linked facts in `memory_facts` transition from `status = 'active'` to `status = 'staged'`.
-   - The staging slate (`PersonalMemoryStagingCard`) enters an exclusive `"review"` mode displaying diff cards with `[✓]` (Accept) and `[✕]` (Reject) alongside `Accept All` and `Discard All`.
-   - While pending suggestions exist, manual text editing, markdown import, and new comment submissions are locked to eliminate concurrent mutation races.
-   - **INVARIANT 5.3-A (Candidate Partition):** every candidate fact presented to the LLM is partitioned into exactly two disjoint sets — those referenced by a generated operation's `source_fact_ids` (→ `'staged'`), and those referenced by none (→ `'consolidated'`, via `mark_facts_consolidated`). No candidate fact may remain `'active'` and **no candidate fact may be left in `'staged'` without a corresponding pending suggestion row**. A `'staged'` fact is only ever reachable from a live pending suggestion, so accepting or rejecting that suggestion always resolves the fact. Enforced in `services/memory/personal.rs` at the staging step.
-5. **Suggestion Resolution**:
+     [1] ## Languages & Learning
+     [2] - Studying Spanish, has slowed down on Japanese
+     [3] - Reads hard sci-fi books on weekends
+     [4] ## Food & Cooking
+     [5] - Enjoys baking sourdough bread
+     ```
+   - Content-element indices provide a deterministic, stable coordinate system. The LLM references element indices directly rather than retyping prose targets or relying on fuzzy string matching.
+
+4. **Generation Passes & Prompt Architecture**:
+   - **Prompt 1: Cold Generation (Initial Document)**:
+     - *Trigger*: Invoked when no personal memory document exists yet (empty content / version 0).
+     - *Input*: Active personal facts.
+     - *Task*: Synthesize a comprehensive, well-structured personal profile document in markdown. The LLM freely chooses descriptive `##` section headings and formats facts as bullets.
+     - *Output*: Complete markdown document (not edit operations).
+     - *Validation*: Runtime validates that every heading has a non-empty title, headings are unique, and markdown is well-formed.
+     - *Commit*: Saved directly as version 1 with `is_active = 1`. Candidate facts transition to `'consolidated'`.
+   - **Prompt 2: Incremental Fact Integration**:
+     - *Trigger*: Invoked when an active personal memory document already exists and active personal facts are available.
+     - *Input*: Current document with numbered content elements (`[1]`, `[2]`, ...) + active personal facts.
+     - *Task*: Propose the smallest set of index-addressed atomic edits to integrate the new facts.
+     - *Output Constraint*: JSON Schema enforcing `{ "edits": [ { "op": "insert_after" | "replace" | "delete", "index": number, "text": string } ] }`.
+     - *Op Semantics*:
+       - `insert_after(index, text)`: Inserts new element after index N. `index: 0` prepends at the top of the document.
+       - `replace(index, text)`: Replaces the element at index N with `text`.
+       - `delete(index)`: Removes the element at index N (`text` is empty).
+     - *Provenance*: `source_fact_ids` is omitted from the LLM output schema. Grounding is enforced by prompt context and user review.
+   - **Prompt 3: Comment-Directed Edits**:
+     - *Trigger*: Invoked when the user submits directive comments on the active document.
+     - *Input*: Current document with numbered content elements + user comment directives.
+     - *Task*: Propose atomic edits (`insert_after`, `replace`, `delete`) directly applying the user directives.
+     - *Output Constraint*: Identical JSON Schema to Prompt 2, executed through the same patch engine.
+   - **Regeneration Pass (Reformat Existing Document)**:
+     - *Trigger*: User-initiated "Regenerate" / "Reformat Memory" action.
+     - *Input*: Current active personal memory document (raw text, unindexed).
+     - *Task*: Reformat and reorganize the personal memory document, improving section groupings, eliminating redundant bullets, and polishing clarity without inventing facts. Operates strictly on the current document text, NOT raw facts.
+     - *Commit*: Saved as version `max_version + 1` with `is_active = 1`.
+
+5. **Staging & Suggestion Lifecycle**:
+   - Generated operations from Prompt 2 or Prompt 3 are persisted in `personal_memory_suggestions` with `status = 'pending'`.
+   - **INVARIANT 5.3-A (Simplified Fact Transition)**: All candidate personal facts presented to consolidation transition from `status = 'active'` to `status = 'consolidated'` immediately upon staging the suggestions. No facts are trapped in an intermediate `'staged'` state, and candidate facts do not depend on individual suggestion acceptance.
+   - While pending suggestions exist, direct manual editing is locked in the UI to prevent concurrent write races.
+
+6. **Suggestion Resolution**:
    - Suggestions are resolved individually or in bulk via `resolve_memory_suggestion(id: Option<String>, action: String)`.
-   - **Action Validation:** `action` MUST be exactly `"accept"` or `"reject"`. Any other value is rejected with `Invalid suggestion resolution action: <action>` and performs **no** writes. Resolving with `target_id = Some(id)` for an id that is not `pending` MUST error with `Pending suggestion '<id>' not found` and perform no writes. `action = "accept"` without `new_content` MUST error with `new_content required when accepting suggestions`.
-   - Resolution is **atomic**: all suggestion, document, fact, and vector writes for one resolution commit together or roll back together (`resolve_suggestions_transaction`).
+   - **Action Validation**: `action` MUST be exactly `"accept"` or `"reject"`.
    - **Acceptance (`action = 'accept'`)**:
-     1. Applies patch delta(s) to the active `personal_memory` markdown.
-     2. Inserts a new record in `personal_memory` with `version = max_version + 1`, `is_active = 1`, and `last_consolidated_at = now()`. The previous version flips to `is_active = 0`.
-     3. Suggestion rows flip to `status = 'accepted', resolved_at = now()`.
-     4. Linked facts in `memory_facts` flip from `'staged'` to `'consolidated'`, and their rows in `memory_facts_vectors` flip to `'consolidated'` in the same transaction.
-     5. **INVARIANT 5.3-B (Re-anchor on Accept — the anchor-erosion fix):** every *other* suggestion still in `status = 'pending'` MUST have its `base_memory_version` re-anchored to the newly written `version` (`max_version + 1`). Re-anchoring MUST NOT change a pending suggestion's `status`, so it remains returned by `fetch_pending_suggestions` and remains individually resolvable. Without this, a second pending suggestion's `target_text` anchors were computed against a document version that no longer exists, and it becomes permanently unappliable — the anchor-erosion failure. Implemented in `persistence/personal_memory.rs` (`reanchor_sql`, scoped by `project_id` and `id NOT IN (<resolved ids>)`).
+     1. Evaluates patch operations against the active document using descending-index sort so earlier element positions remain stable during execution.
+     2. Reconstructs markdown with uniform single blank-line delimiters between sections.
+     3. Inserts a new record in `personal_memory` with `version = max_version + 1`, `is_active = 1`, and `last_consolidated_at = now()`. The previous version flips to `is_active = 0`.
+     4. Suggestion rows flip to `status = 'accepted', resolved_at = now()`.
+     5. **INVARIANT 5.3-B (Deterministic Arithmetic Re-anchoring)**: When resolving a single suggestion, any remaining pending suggestions targeting the same document scope have their `base_memory_version` updated to `max_version + 1` and their `target_index` shifted via deterministic arithmetic:
+        - An accepted `insert_after` at index $k$ increments the `target_index` of all remaining pending suggestions where `target_index > k` by $+1$.
+        - An accepted `delete` at index $k$ decrements the `target_index` of all remaining pending suggestions where `target_index > k` by $-1$.
+        - An accepted `replace` at index $k$ leaves all remaining pending indices unchanged.
+        - Pending suggestions remain in `status = 'pending'` and individually resolvable.
    - **Rejection (`action = 'reject'`)**:
      1. Suggestion rows flip to `status = 'rejected', resolved_at = now()`.
-     2. Linked facts in `memory_facts` flip from `'staged'` to `'rejected'` (and vectors likewise), ensuring they are not repeatedly re-suggested in subsequent consolidation cycles.
-     3. Active document remains unchanged — `version` is NOT bumped, and no new `personal_memory` row is written.
-   - **Bulk resolution** (`target_id = None`) resolves every pending suggestion in one transaction and therefore also re-anchors nothing (no pending rows remain).
+     2. Active document remains unchanged — `version` is NOT bumped, and no new `personal_memory` row is written.
+   - **Bulk Resolution (`target_id = None`)**:
+     - Resolves all pending suggestions in a single atomic transaction. On accept, all edits are sorted descending by index and applied together, bumping version once with zero remaining pending suggestions.
 
 ### 5.4 Suggestion Policies & Cadence
 - **Suggestion Policy** (`settings.memory.suggestion_policy`):
   - `"manual_review"` (default): All fact integration and comment edits land in `personal_memory_suggestions` for user review.
-  - `"auto_apply"`: Non-conflicting `insert` and `replace` operations automatically commit into a new document version; deletions are held for user confirmation.
+  - `"auto_apply"`: Non-conflicting `insert_after` and `replace` operations automatically commit into a new document version; deletions are held for user confirmation.
 - **Cadence** (`settings.memory.consolidation_cadence`):
   - `"manual"` (default): Triggered on-demand via the `"Integrate Learned Facts"` button or comment regeneration.
   - `"daily"` (with `settings.memory.consolidation_time` as `"HH:MM"`): Runs daily at configured time.

@@ -5,10 +5,7 @@ use turso::Connection;
 
 use super::{resolve_channel, Action, DeliveryChannel, NotificationParams};
 use crate::{
-    core::{
-        events::{emit_ipc, emit_ipc_to, IpcEvent, Severity, ToastPayload},
-        state::AppWindow,
-    },
+    core::events::{emit_ipc, IpcEvent, Severity},
     persistence::{
         notifications::{
             create_notification, find_active_interactive_by_group, update_interactive_notification,
@@ -38,20 +35,6 @@ pub async fn notify<R: tauri::Runtime>(
         );
         match outcome {
             ToastDeliveryOutcome::Shown => {}
-            ToastDeliveryOutcome::SuppressedFocused => {
-                let payload = ToastPayload {
-                    title: params.title.to_string(),
-                    message: params.message.to_string(),
-                    severity: params.severity,
-                    duration_ms: params.duration_ms,
-                };
-                if let Err(e) = emit_ipc_to(app, AppWindow::Main, IpcEvent::ShowToast(payload)) {
-                    log::warn!(
-                        "[Notifications] In-app ShowToast emit to Main failed: {}",
-                        e
-                    );
-                }
-            }
             ToastDeliveryOutcome::Failed => {
                 if channel == DeliveryChannel::ToastOnly {
                     let conn = db.connect()?;

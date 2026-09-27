@@ -36,14 +36,65 @@ pub fn system_info() -> Value {
     })
 }
 
-pub fn memory_anchors(content: &str) -> Vec<String> {
-    content
-        .lines()
-        .map(str::trim)
-        .filter(|line| line.len() >= 8)
-        .take(5)
-        .map(ToOwned::to_owned)
-        .collect()
+/// Reads an integer score from a `TAG: <0-100>` line, tolerating markdown
+/// emphasis and surrounding prose on the same line.
+pub fn extract_score(report: &str, tag: &str) -> Option<u32> {
+    for line in report.lines() {
+        let trimmed = line
+            .trim()
+            .trim_start_matches(['#', '*', '_', ' ', '-', '`']);
+        let Some(rest) = trimmed.strip_prefix(tag) else {
+            continue;
+        };
+        let digits: String = rest
+            .trim_start_matches([':', ' ', '*', '`'])
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        if let Ok(score) = digits.parse::<u32>() {
+            return Some(score.min(100));
+        }
+    }
+    None
+}
+
+/// Collects the items of a repeated `TAG: <item>` block. `TAG: NONE` yields an
+/// empty list. A missing tag yields an empty list too, which is deliberately
+/// indistinguishable from "NONE" — callers must not read an absent tag as an
+/// all-clear, only as an unproven claim.
+pub fn extract_tagged_items(report: &str, tag: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    let mut in_block = false;
+    for line in report.lines() {
+        let trimmed = line.trim();
+        let is_tag = trimmed
+            .trim_start_matches(['#', '*', '_', ' ', '-', '`'])
+            .starts_with(tag);
+        if is_tag {
+            in_block = true;
+            let value = trimmed
+                .trim_start_matches(['#', '*', '_', ' ', '-', '`'])
+                .strip_prefix(tag)
+                .unwrap_or_default()
+                .trim_start_matches([':', ' ', '*', '`'])
+                .trim();
+            if !value.is_empty() && !value.eq_ignore_ascii_case("none") {
+                items.push(value.to_string());
+            }
+            continue;
+        }
+        // Continuation lines of a multi-item block are indented list items.
+        if in_block && (trimmed.starts_with('-') || trimmed.starts_with('*')) && !trimmed.is_empty()
+        {
+            let value = trimmed.trim_start_matches(['-', '*', ' ']).trim();
+            if !value.is_empty() && !value.eq_ignore_ascii_case("none") {
+                items.push(value.to_string());
+            }
+        } else if !trimmed.is_empty() {
+            in_block = false;
+        }
+    }
+    items
 }
 
 /// Writes `report.json` under `results/<eval_name>/<run_id>/` and mirrors it

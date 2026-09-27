@@ -225,6 +225,11 @@ export const DICTATION_COPY = {
   rebindHint: "Click to rebind activation shortcut",
   savedFeedback: "Saved!",
   hotkeyTip: "Hold modifiers (Ctrl, Alt, Shift) then press your key",
+  cancelBtn: "Cancel",
+  saveBtn: "Save",
+  resetDefault: "Reset (Alt+V)",
+  defaultHotkey: "Alt+V",
+  recordingActive: "Press shortcut keys...",
 };
 
 export const CATEGORY_SWITCH_COPY = {

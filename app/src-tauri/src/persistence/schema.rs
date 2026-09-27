@@ -12,7 +12,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-pub const SCHEMA_VERSION: u32 = 7;
+pub const SCHEMA_VERSION: u32 = 8;
 
 const V2_TABLE_STATEMENTS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS projects (
@@ -192,17 +192,17 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
                 .await;
         }
 
-        if current_version < 7 {
+        if current_version < 8 {
+            conn.execute("DROP TABLE IF EXISTS personal_memory_suggestions;", ())
+                .await?;
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS personal_memory_suggestions (
                     id TEXT PRIMARY KEY,
                     base_memory_version INTEGER NOT NULL,
                     project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
                     op TEXT NOT NULL,
-                    section TEXT NOT NULL,
-                    target_text TEXT,
-                    proposed_text TEXT NOT NULL,
-                    source_fact_ids TEXT NOT NULL,
+                    target_index INTEGER NOT NULL,
+                    content TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'pending',
                     created_at INTEGER NOT NULL,
                     resolved_at INTEGER
@@ -341,4 +341,3 @@ pub async fn rebuild_fixture_db(path: &Path) -> Result<()> {
     );
     Ok(())
 }
-

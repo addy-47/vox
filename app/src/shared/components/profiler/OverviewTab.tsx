@@ -12,7 +12,7 @@ interface OverviewTabProps {
 }
 
 function primaryMemoryMb(snapshot: ProfilerSnapshot): number {
-  return snapshot.cgroup_current_mb ?? snapshot.total_pss_mb ?? snapshot.total_vox_ram_mb;
+  return snapshot.total_vox_ram_mb ?? snapshot.total_pss_mb ?? snapshot.cgroup_current_mb ?? 0;
 }
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({
@@ -99,10 +99,12 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <span className="font-mono text-xs text-[rgb(var(--foreground-muted))]">MB</span>
           </div>
           <p className="text-[11px] font-sans text-[rgb(var(--foreground-muted))] mt-1 truncate">
-            {latestSnapshot?.cgroup_current_mb
-              ? `${PROFILER_COPY.overview.runtimePss} ${latestSnapshot.runtime_pss_mb.toFixed(1)} MB · ${PROFILER_COPY.overview.developmentTools} ${latestSnapshot.dev_tool_pss_mb.toFixed(1)} MB · ${PROFILER_COPY.overview.shmem} ${(latestSnapshot.cgroup_shmem_mb ?? 0).toFixed(1)} MB`
-              : latestSnapshot?.total_pss_mb
+            {latestSnapshot?.runtime_pss_mb && latestSnapshot.dev_tool_pss_mb > 0
+              ? `${PROFILER_COPY.overview.runtimePss} ${latestSnapshot.runtime_pss_mb.toFixed(1)} MB · ${PROFILER_COPY.overview.developmentTools} ${latestSnapshot.dev_tool_pss_mb.toFixed(1)} MB`
+              : latestSnapshot?.runtime_pss_mb
               ? `${PROFILER_COPY.overview.runtimePss} ${latestSnapshot.runtime_pss_mb.toFixed(1)} MB`
+              : latestSnapshot?.total_pss_mb
+              ? `${PROFILER_COPY.overview.runtimePss} ${latestSnapshot.total_pss_mb.toFixed(1)} MB`
               : PROFILER_COPY.overview.processTreeAggregate}
           </p>
         </div>
