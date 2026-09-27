@@ -309,7 +309,7 @@
       "name": "kokoro",
       "category": "tts",
       "subcategory": "main",
-      "description": "High-fidelity local speech synthesis for English and Hindi voices.",
+      "description": "High-fidelity local speech synthesis for English voices.",
       "parameters": "82M (ONNX)",
       "ram_usage": "~180 MB",
       "tradeoffs": "Rich multilingual prosody, requires espeak-ng phoneme table",
@@ -329,7 +329,7 @@
           "id": "tts_kokoro_voices",
           "path": "tts/kokoro/voices.bin",
           "size": 5755904,
-          "sha256": "a372c67b056ef0b695c375d39b99630d23fb07ad4c8d87aa32a19a62fca523ad",
+          "sha256": "5f49e75bdf70cc64e7b9b013731b331e050e90afa4d03c590355b5575afa8600",
           "required": false
         },
         {
@@ -345,6 +345,13 @@
           "size": 8990857,
           "sha256": "7ddfb7247e98108baeab2a3f9c79c29247e58ae7d60d837b32e28999f555bf8d",
           "archive": "tar.gz",
+          "required": false
+        },
+        {
+          "id": "tts_kokoro_lexicon",
+          "path": "tts/kokoro/lexicon-us-en.txt",
+          "size": 5956885,
+          "sha256": "7daaab53a181be9885b853a8582bf1838186317e5dadacbcef9c426d6fa0da14",
           "required": false
         }
       ]

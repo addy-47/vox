@@ -23,10 +23,8 @@ pub struct PersonalMemorySuggestionRecord {
     pub base_memory_version: i64,
     pub project_id: Option<String>,
     pub op: String,
-    pub section: String,
-    pub target_text: Option<String>,
-    pub proposed_text: String,
-    pub source_fact_ids: Vec<String>,
+    pub target_index: u32,
+    pub content: String,
     pub status: String,
     pub created_at: i64,
     pub resolved_at: Option<i64>,
@@ -403,22 +401,18 @@ pub async fn insert_personal_memory_suggestions(
 
     let tx_res: Result<()> = async {
         for s in suggestions {
-            let fact_ids_json =
-                serde_json::to_string(&s.source_fact_ids).unwrap_or_else(|_| "[]".to_string());
             conn.execute(
                 "INSERT INTO personal_memory_suggestions (
-                    id, base_memory_version, project_id, op, section,
-                    target_text, proposed_text, source_fact_ids, status, created_at, resolved_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    id, base_memory_version, project_id, op,
+                    target_index, content, status, created_at, resolved_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     s.id.clone(),
                     s.base_memory_version,
                     s.project_id.clone(),
                     s.op.clone(),
-                    s.section.clone(),
-                    s.target_text.clone(),
-                    s.proposed_text.clone(),
-                    fact_ids_json,
+                    s.target_index,
+                    s.content.clone(),
                     s.status.clone(),
                     s.created_at,
                     s.resolved_at,
@@ -449,7 +443,7 @@ pub async fn fetch_pending_suggestions(
 ) -> Result<Vec<PersonalMemorySuggestionRecord>> {
     let mut rows = if let Some(pid) = project_id {
         conn.query(
-            "SELECT id, base_memory_version, project_id, op, section, target_text, proposed_text, source_fact_ids, status, created_at, resolved_at
+            "SELECT id, base_memory_version, project_id, op, target_index, content, status, created_at, resolved_at
              FROM personal_memory_suggestions
              WHERE project_id = ? AND status = 'pending'
              ORDER BY created_at ASC",
@@ -458,7 +452,7 @@ pub async fn fetch_pending_suggestions(
         .await?
     } else {
         conn.query(
-            "SELECT id, base_memory_version, project_id, op, section, target_text, proposed_text, source_fact_ids, status, created_at, resolved_at
+            "SELECT id, base_memory_version, project_id, op, target_index, content, status, created_at, resolved_at
              FROM personal_memory_suggestions
              WHERE project_id IS NULL AND status = 'pending'
              ORDER BY created_at ASC",
@@ -469,61 +463,56 @@ pub async fn fetch_pending_suggestions(
 
     let mut suggestions = Vec::new();
     while let Some(row) = rows.next().await? {
-        let fact_ids_str: String = row.get(7)?;
-        let fact_ids: Vec<String> = serde_json::from_str(&fact_ids_str).unwrap_or_default();
         suggestions.push(PersonalMemorySuggestionRecord {
             id: row.get(0)?,
             base_memory_version: row.get(1)?,
             project_id: row.get(2).ok(),
             op: row.get(3)?,
-            section: row.get(4)?,
-            target_text: row.get(5).ok(),
-            proposed_text: row.get(6)?,
-            source_fact_ids: fact_ids,
-            status: row.get(8)?,
-            created_at: row.get(9)?,
-            resolved_at: row.get(10).ok(),
+            target_index: row.get(4)?,
+            content: row.get(5)?,
+            status: row.get(6)?,
+            created_at: row.get(7)?,
+            resolved_at: row.get(8).ok(),
         });
     }
 
     Ok(suggestions)
 }
 
-/// Resolves personal memory suggestions in a single atomic transaction.
-/// Either accepts suggestions (applying new_content, bumping version, marking facts 'consolidated')
-/// or rejects suggestions (marking suggestions and associated facts 'rejected').
-pub async fn resolve_suggestions_transaction(
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SuggestionDecision {
+    pub id: String,
+    pub action: String, // "accept" | "reject"
+}
+
+/// Resolves a batch of personal memory suggestions in a single atomic transaction.
+/// Either accepts suggestions (applying new_content, bumping version, marking suggestions 'accepted')
+/// and/or rejects suggestions (marking suggestions 'rejected').
+pub async fn resolve_batch_suggestions_transaction(
     conn: &Connection,
     project_id: Option<&str>,
-    target_id: Option<&str>,
-    action: &str,
+    decisions: &[SuggestionDecision],
     new_content: Option<&str>,
 ) -> Result<PersonalMemoryRecord> {
-    if action != "accept" && action != "reject" {
-        return Err(anyhow!("Invalid suggestion resolution action: {}", action));
+    if decisions.is_empty() {
+        return get_personal_memory(conn, project_id).await;
+    }
+
+    for d in decisions {
+        if d.action != "accept" && d.action != "reject" {
+            return Err(anyhow!("Invalid suggestion resolution action: {}", d.action));
+        }
     }
 
     let current = get_personal_memory(conn, project_id).await?;
     let pending = fetch_pending_suggestions(conn, project_id).await?;
+    let pending_map: std::collections::HashMap<String, PersonalMemorySuggestionRecord> =
+        pending.into_iter().map(|s| (s.id.clone(), s)).collect();
 
-    let to_resolve: Vec<PersonalMemorySuggestionRecord> = if let Some(tid) = target_id {
-        let found = pending
-            .into_iter()
-            .filter(|s| s.id == tid)
-            .collect::<Vec<_>>();
-        if found.is_empty() {
-            return Err(anyhow!(
-                "Pending suggestion '{}' not found",
-                tid
-            ));
+    for d in decisions {
+        if !pending_map.contains_key(&d.id) {
+            return Err(anyhow!("Pending suggestion '{}' not found", d.id));
         }
-        found
-    } else {
-        pending
-    };
-
-    if to_resolve.is_empty() {
-        return Ok(current);
     }
 
     let now = SystemTime::now()
@@ -531,27 +520,27 @@ pub async fn resolve_suggestions_transaction(
         .unwrap_or_default()
         .as_millis() as i64;
 
-    let suggestion_ids: Vec<String> = to_resolve.iter().map(|s| s.id.clone()).collect();
-    let mut all_fact_ids: Vec<String> = Vec::new();
-    for s in &to_resolve {
-        for fid in &s.source_fact_ids {
-            if !fid.is_empty() && !all_fact_ids.contains(fid) {
-                all_fact_ids.push(fid.clone());
-            }
-        }
-    }
+    let accepted: Vec<&SuggestionDecision> = decisions
+        .iter()
+        .filter(|d| d.action == "accept")
+        .collect();
+
+    let rejected: Vec<&SuggestionDecision> = decisions
+        .iter()
+        .filter(|d| d.action == "reject")
+        .collect();
+
+    let all_resolved_ids: Vec<String> = decisions.iter().map(|d| d.id.clone()).collect();
 
     conn.execute("BEGIN IMMEDIATE;", ()).await?;
 
     let tx_res: Result<PersonalMemoryRecord> = async {
-        let quoted_sug_ids: Vec<String> = suggestion_ids.iter().map(|id| format!("'{}'", id)).collect();
-        let sug_in_clause = quoted_sug_ids.join(",");
+        let proj_arg = current.project_id.clone();
 
-        if action == "accept" {
+        if !accepted.is_empty() {
             let updated_markdown = new_content
                 .ok_or_else(|| anyhow!("new_content required when accepting suggestions"))?;
 
-            let proj_arg = current.project_id.clone();
             if let Some(ref pid) = proj_arg {
                 conn.execute(
                     "UPDATE personal_memory SET is_active = 0 WHERE project_id = ?",
@@ -578,26 +567,79 @@ pub async fn resolve_suggestions_transaction(
                 .await?;
             }
 
-            let update_sug_sql = format!(
+            let quoted_accepted: Vec<String> = accepted.iter().map(|d| format!("'{}'", d.id)).collect();
+            let accept_sql = format!(
                 "UPDATE personal_memory_suggestions SET status = 'accepted', resolved_at = ? WHERE id IN ({})",
-                sug_in_clause
+                quoted_accepted.join(",")
             );
-            conn.execute(&update_sug_sql, (now,)).await?;
+            conn.execute(&accept_sql, (now,)).await?;
 
-            // Re-anchor any remaining un-resolved pending suggestions to the new base memory version
+            // If a single suggestion was accepted and others remain pending, apply INVARIANT 5.3-B arithmetic re-anchoring
+            if accepted.len() == 1 {
+                let resolved_sug = &pending_map[&accepted[0].id];
+                let k = resolved_sug.target_index;
+                let sug_in_clause = quoted_accepted.join(",");
+
+                if resolved_sug.op == "insert_after" {
+                    let shift_sql = if proj_arg.is_some() {
+                        format!(
+                            "UPDATE personal_memory_suggestions \
+                             SET target_index = target_index + 1 \
+                             WHERE project_id = ? AND status = 'pending' AND id NOT IN ({}) AND target_index > ?",
+                            sug_in_clause
+                        )
+                    } else {
+                        format!(
+                            "UPDATE personal_memory_suggestions \
+                             SET target_index = target_index + 1 \
+                             WHERE project_id IS NULL AND status = 'pending' AND id NOT IN ({}) AND target_index > ?",
+                            sug_in_clause
+                        )
+                    };
+                    if let Some(ref pid) = proj_arg {
+                        conn.execute(&shift_sql, (pid.clone(), k)).await?;
+                    } else {
+                        conn.execute(&shift_sql, (k,)).await?;
+                    }
+                } else if resolved_sug.op == "delete" {
+                    let shift_sql = if proj_arg.is_some() {
+                        format!(
+                            "UPDATE personal_memory_suggestions \
+                             SET target_index = target_index - 1 \
+                             WHERE project_id = ? AND status = 'pending' AND id NOT IN ({}) AND target_index > ?",
+                            sug_in_clause
+                        )
+                    } else {
+                        format!(
+                            "UPDATE personal_memory_suggestions \
+                             SET target_index = target_index - 1 \
+                             WHERE project_id IS NULL AND status = 'pending' AND id NOT IN ({}) AND target_index > ?",
+                            sug_in_clause
+                        )
+                    };
+                    if let Some(ref pid) = proj_arg {
+                        conn.execute(&shift_sql, (pid.clone(), k)).await?;
+                    } else {
+                        conn.execute(&shift_sql, (k,)).await?;
+                    }
+                }
+            }
+
+            // Update base_memory_version for all remaining pending suggestions
+            let quoted_all: Vec<String> = all_resolved_ids.iter().map(|id| format!("'{}'", id)).collect();
             let reanchor_sql = if proj_arg.is_some() {
                 format!(
                     "UPDATE personal_memory_suggestions \
                      SET base_memory_version = ? \
                      WHERE project_id = ? AND status = 'pending' AND id NOT IN ({})",
-                    sug_in_clause
+                    quoted_all.join(",")
                 )
             } else {
                 format!(
                     "UPDATE personal_memory_suggestions \
                      SET base_memory_version = ? \
                      WHERE project_id IS NULL AND status = 'pending' AND id NOT IN ({})",
-                    sug_in_clause
+                    quoted_all.join(",")
                 )
             };
             if let Some(ref pid) = proj_arg {
@@ -605,48 +647,18 @@ pub async fn resolve_suggestions_transaction(
             } else {
                 conn.execute(&reanchor_sql, (current.version + 1,)).await?;
             }
-
-            if !all_fact_ids.is_empty() {
-                let quoted_fact_ids: Vec<String> = all_fact_ids.iter().map(|id| format!("'{}'", id)).collect();
-                let fact_in_clause = quoted_fact_ids.join(",");
-                let sql_facts = format!(
-                    "UPDATE memory_facts SET status = 'consolidated', updated_at = ? WHERE id IN ({})",
-                    fact_in_clause
-                );
-                conn.execute(&sql_facts, (now,)).await?;
-                let sql_vectors = format!(
-                    "UPDATE memory_facts_vectors SET status = 'consolidated' WHERE fact_id IN ({})",
-                    fact_in_clause
-                );
-                conn.execute(&sql_vectors, ()).await?;
-            }
-
-            get_personal_memory(conn, project_id).await
-
-        } else {
-            let update_sug_sql = format!(
-                "UPDATE personal_memory_suggestions SET status = 'rejected', resolved_at = ? WHERE id IN ({})",
-                sug_in_clause
-            );
-            conn.execute(&update_sug_sql, (now,)).await?;
-
-            if !all_fact_ids.is_empty() {
-                let quoted_fact_ids: Vec<String> = all_fact_ids.iter().map(|id| format!("'{}'", id)).collect();
-                let fact_in_clause = quoted_fact_ids.join(",");
-                let sql_facts = format!(
-                    "UPDATE memory_facts SET status = 'rejected', updated_at = ? WHERE id IN ({})",
-                    fact_in_clause
-                );
-                conn.execute(&sql_facts, (now,)).await?;
-                let sql_vectors = format!(
-                    "UPDATE memory_facts_vectors SET status = 'rejected' WHERE fact_id IN ({})",
-                    fact_in_clause
-                );
-                conn.execute(&sql_vectors, ()).await?;
-            }
-
-            Ok(current)
         }
+
+        if !rejected.is_empty() {
+            let quoted_rejected: Vec<String> = rejected.iter().map(|d| format!("'{}'", d.id)).collect();
+            let reject_sql = format!(
+                "UPDATE personal_memory_suggestions SET status = 'rejected', resolved_at = ? WHERE id IN ({})",
+                quoted_rejected.join(",")
+            );
+            conn.execute(&reject_sql, (now,)).await?;
+        }
+
+        get_personal_memory(conn, project_id).await
     }
     .await;
 
@@ -660,4 +672,49 @@ pub async fn resolve_suggestions_transaction(
             Err(e)
         }
     }
+}
+
+/// Resolves personal memory suggestions in a single atomic transaction.
+/// Either accepts suggestions (applying new_content, bumping version, marking facts 'consolidated')
+/// or rejects suggestions (marking suggestions and associated facts 'rejected').
+pub async fn resolve_suggestions_transaction(
+    conn: &Connection,
+    project_id: Option<&str>,
+    target_id: Option<&str>,
+    action: &str,
+    new_content: Option<&str>,
+) -> Result<PersonalMemoryRecord> {
+    if action != "accept" && action != "reject" {
+        return Err(anyhow!("Invalid suggestion resolution action: {}", action));
+    }
+
+    let current = get_personal_memory(conn, project_id).await?;
+    let pending = fetch_pending_suggestions(conn, project_id).await?;
+
+    let to_resolve: Vec<PersonalMemorySuggestionRecord> = if let Some(tid) = target_id {
+        let found = pending
+            .into_iter()
+            .filter(|s| s.id == tid)
+            .collect::<Vec<_>>();
+        if found.is_empty() {
+            return Err(anyhow!("Pending suggestion '{}' not found", tid));
+        }
+        found
+    } else {
+        pending
+    };
+
+    if to_resolve.is_empty() {
+        return Ok(current);
+    }
+
+    let decisions: Vec<SuggestionDecision> = to_resolve
+        .into_iter()
+        .map(|s| SuggestionDecision {
+            id: s.id,
+            action: action.to_string(),
+        })
+        .collect();
+
+    resolve_batch_suggestions_transaction(conn, project_id, &decisions, new_content).await
 }

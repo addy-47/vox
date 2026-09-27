@@ -1,0 +1,27 @@
+{
+  "note": "Model-specific compaction-count baselines for memory_pipeline_eval. How many times a context window trips depends on the executor model's summary size, NOT on pipeline correctness. Trigger correctness (every compaction fired at a critical turn, contiguous ledger, valid watermark) is the model-independent gate and is asserted in code. Counts here are a regression baseline only: a delta is reported, never failed.",
+  "models": {
+    "inclusionai/ling-3.0-flash-sante:free": {
+      "context_window": 8192,
+      "source_run": "20260925_043703_a2fc0a38",
+      "status": "historical_baseline",
+      "note": "The run that surfaced anchor erosion in 8 of 14 cases. Retained for comparison; not a correctness specification.",
+      "counts": {
+        "case_01_under_threshold_035_turns": 1,
+        "case_02_under_threshold_075_turns": 1,
+        "case_03_under_threshold_090_turns": 1,
+        "case_04_one_crossing_180_turns": 0,
+        "case_05_one_crossing_200_turns": 1,
+        "case_06_one_crossing_220_turns": 1,
+        "case_07_two_crossings_350_turns": 2,
+        "case_08_two_crossings_450_turns": 2,
+        "case_09_three_crossings_500_turns": 3,
+        "case_10_three_crossings_550_turns": 4,
+        "case_11_three_crossings_600_turns": 4,
+        "case_12_three_crossings_620_turns": 4,
+        "case_13_three_crossings_650_turns": 4,
+        "case_14_three_crossings_680_turns": 5
+      }
+    }
+  }
+}

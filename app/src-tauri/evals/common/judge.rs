@@ -48,10 +48,34 @@ pub fn load_prompt(name: &str) -> Result<String> {
     std::fs::read_to_string(&path).with_context(|| format!("Failed to read judge prompt at {path}"))
 }
 
-/// Calls the Nvidia-hosted judge model once (temperature 0) and returns the
-/// markdown report as-is. The closing `VERDICT: PASS|FAIL` line is extracted
-/// for loop control; a missing line yields `Unknown` (treated as FAIL by
-/// callers — a judge that won't commit to a verdict proves nothing).
+/// Transport-specific request knobs. The default (`None`) leaves the request
+/// body exactly as the hosted OpenAI-compatible providers expect.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct JudgeTransport {
+    /// Ollama-only `options.num_ctx`. Without it Ollama falls back to a small
+    /// default context window and silently truncates the middle of a long
+    /// BASE_DOCUMENT / DOCUMENT payload, which destroys the very evidence the
+    /// judge is asked to reason over.
+    pub ollama_num_ctx: Option<u32>,
+    /// Ollama's Modelfile defaults `presence_penalty` to 1.5, which actively
+    /// discourages the verbatim re-quoting of document lines that the anchor
+    /// analysis depends on.
+    pub presence_penalty: Option<f32>,
+}
+
+impl JudgeTransport {
+    pub fn ollama(num_ctx: u32) -> Self {
+        Self {
+            ollama_num_ctx: Some(num_ctx),
+            presence_penalty: Some(0.0),
+        }
+    }
+}
+
+/// Calls the judge model once (temperature 0) and returns the markdown report
+/// as-is. The closing `VERDICT: PASS|FAIL` line is extracted for loop control;
+/// a missing line yields `Unknown` (treated as FAIL by callers — a judge that
+/// won't commit to a verdict proves nothing).
 /// The full report is returned inside the eval report for audit; this function
 /// never grades — it only transports the judge's words.
 pub async fn run_judge(
@@ -62,6 +86,27 @@ pub async fn run_judge(
     user_content: &str,
     max_tokens: u32,
 ) -> Result<JudgeOutput> {
+    run_judge_with_transport(
+        base_url,
+        api_key,
+        model,
+        system_prompt,
+        user_content,
+        max_tokens,
+        JudgeTransport::default(),
+    )
+    .await
+}
+
+pub async fn run_judge_with_transport(
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    system_prompt: &str,
+    user_content: &str,
+    max_tokens: u32,
+    transport: JudgeTransport,
+) -> Result<JudgeOutput> {
     let url = if base_url.trim().is_empty() {
         DEFAULT_JUDGE_URL.to_string()
     } else {
@@ -69,6 +114,21 @@ pub async fn run_judge(
     };
     let started = Instant::now();
     let client = reqwest::Client::new();
+    let mut body = json!({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        "temperature": 0,
+        "max_tokens": max_tokens,
+    });
+    if let Some(num_ctx) = transport.ollama_num_ctx {
+        body["options"] = json!({ "num_ctx": num_ctx });
+    }
+    if let Some(penalty) = transport.presence_penalty {
+        body["presence_penalty"] = json!(penalty);
+    }
     // Retry transient failures (transport errors, 429/5xx) up to 3 attempts;
     // a 4xx other than 429 is a real request error and fails immediately.
     let mut attempt = 0;
@@ -77,15 +137,7 @@ pub async fn run_judge(
         let resp = client
             .post(&url)
             .bearer_auth(api_key)
-            .json(&json!({
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content},
-                ],
-                "temperature": 0,
-                "max_tokens": max_tokens,
-            }))
+            .json(&body)
             .send()
             .await;
         let (status, body) = match resp {

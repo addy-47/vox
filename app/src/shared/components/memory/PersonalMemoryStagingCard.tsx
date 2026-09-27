@@ -12,8 +12,20 @@ import {
 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
+import { SuggestionCard } from "./SuggestionCard";
+import { LearnedFactsList } from "./LearnedFactsList";
+import type {
+  PersonalMemorySuggestionRecord,
+  FactRecord,
+} from "@/services/memoryService";
 
-export type StagingMode = "idle" | "import" | "edit" | "comment";
+export type StagingMode =
+  | "idle"
+  | "import"
+  | "edit"
+  | "comment"
+  | "facts"
+  | "suggestions";
 
 export interface MemoryComment {
   id: string;
@@ -29,7 +41,10 @@ export interface PersonalMemoryStagingCardProps {
   mode: StagingMode;
   onModeChange: (mode: StagingMode) => void;
   onSave: (content: string) => Promise<void>;
-  onRegenerateWithComments?: (comments: MemoryComment[], policy?: "pause_compaction" | "queue") => Promise<void>;
+  onRegenerateWithComments?: (
+    comments: MemoryComment[],
+    policy?: "pause_compaction" | "queue"
+  ) => Promise<void>;
   comments?: MemoryComment[];
   onDeleteComment?: (id: string) => void;
   onUpdateComment?: (id: string, text: string) => void;
@@ -38,6 +53,12 @@ export interface PersonalMemoryStagingCardProps {
   isSaving: boolean;
   isConsolidating?: boolean;
   isCommitting: boolean;
+  suggestions?: PersonalMemorySuggestionRecord[];
+  onApplySuggestions?: (
+    decisions: Record<string, "accept" | "reject">
+  ) => Promise<void>;
+  isApplyingSuggestions?: boolean;
+  candidateFacts?: FactRecord[];
 }
 
 export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps> = memo(
@@ -55,11 +76,16 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
     isSaving,
     isConsolidating = false,
     isCommitting,
+    suggestions = [],
+    onApplySuggestions,
+    isApplyingSuggestions = false,
+    candidateFacts = [],
   }) => {
     const [draft, setDraft] = useState("");
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [editingCommentText, setEditingCommentText] = useState("");
     const [conflictInPlace, setConflictInPlace] = useState(false);
+    const [decisions, setDecisions] = useState<Record<string, "accept" | "reject">>({});
 
     const prevModeRef = useRef(mode);
 
@@ -73,6 +99,41 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
       if (mode === "edit") setDraft(canonicalContent ?? "");
       else if (mode === "import") setDraft("");
     }, [mode]); // deliberately omit canonicalContent
+
+    const handleSelectDecision = (id: string, action: "accept" | "reject") => {
+      setDecisions((prev) => {
+        if (prev[id] === action) {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        }
+        return { ...prev, [id]: action };
+      });
+    };
+
+    const handleAcceptAll = () => {
+      const all: Record<string, "accept" | "reject"> = {};
+      for (const s of suggestions) {
+        all[s.id] = "accept";
+      }
+      setDecisions(all);
+    };
+
+    const handleRejectAll = () => {
+      const all: Record<string, "accept" | "reject"> = {};
+      for (const s of suggestions) {
+        all[s.id] = "reject";
+      }
+      setDecisions(all);
+    };
+
+    const stagedCount = Object.keys(decisions).length;
+
+    const handleApplyAllDecisions = async () => {
+      if (!onApplySuggestions || stagedCount === 0) return;
+      await onApplySuggestions(decisions);
+      setDecisions({});
+    };
 
     const handleCommit = async () => {
       if (!draft.trim()) return;
@@ -99,10 +160,15 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
         className={cn(
           "relative w-full h-full min-h-0 rounded-2xl p-5 sm:p-6 flex flex-col transition-all duration-500 overflow-hidden",
           "glass-card border bg-[rgba(var(--card),0.45)] backdrop-blur-sm contain-paint transform-gpu",
-          mode === "edit" || mode === "import" || mode === "comment"
+          mode === "edit" ||
+          mode === "import" ||
+          mode === "comment" ||
+          mode === "suggestions" ||
+          mode === "facts"
             ? "border-[rgba(var(--accent),0.25)] shadow-lg"
             : "border-[rgba(var(--accent),0.18)] hover:border-[rgba(var(--accent),0.35)] shadow-2xl",
-          (isSaving || isConsolidating || isCommitting) && "opacity-40 pointer-events-none select-none"
+          (isSaving || isConsolidating || isCommitting || isApplyingSuggestions) &&
+            "opacity-40 pointer-events-none select-none"
         )}
       >
         {/* Dynamic Header Bar */}
@@ -111,7 +177,7 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
             <div
               className={cn(
                 "w-8 h-8 rounded-xl border flex items-center justify-center transition-colors shadow-sm",
-                mode === "comment"
+                mode === "comment" || mode === "suggestions" || mode === "facts"
                   ? "bg-[rgba(var(--accent),0.15)] border-[rgba(var(--accent),0.35)] text-[rgb(var(--accent))]"
                   : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.15)] text-[rgb(var(--foreground-muted))]"
               )}
@@ -122,6 +188,8 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
                 <Edit3 size={16} className="text-[rgb(var(--accent))]" />
               ) : mode === "import" ? (
                 <Upload size={16} className="text-[rgb(var(--accent))]" />
+              ) : mode === "suggestions" || mode === "facts" ? (
+                <Sparkles size={16} className="text-[rgb(var(--accent))]" />
               ) : (
                 <Layers size={16} />
               )}
@@ -135,6 +203,10 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
                   ? "Direct In-Place Edit"
                   : mode === "import"
                   ? "Import / Paste Memory"
+                  : mode === "suggestions"
+                  ? MEMORY_COPY.suggestionsTitle
+                  : mode === "facts"
+                  ? MEMORY_COPY.learnedFactsTitle
                   : "Staging Mirror"}
               </span>
               <span className="text-[11px] font-mono text-[rgb(var(--foreground-muted))]">
@@ -144,6 +216,10 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
                   ? "Changes flow directly to persistent memory"
                   : mode === "import"
                   ? "Paste markdown to replace current profile"
+                  : mode === "suggestions"
+                  ? `${suggestions.length} suggestion${suggestions.length === 1 ? "" : "s"} ready for batch review`
+                  : mode === "facts"
+                  ? `${candidateFacts.length} active identity fact${candidateFacts.length === 1 ? "" : "s"} queued`
                   : "Interactive draft workspace"}
               </span>
             </div>
@@ -234,6 +310,36 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
                   <X size={13} /> {MEMORY_COPY.cancel}
                 </button>
               </>
+            ) : mode === "suggestions" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleApplyAllDecisions}
+                  disabled={isApplyingSuggestions || stagedCount === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono font-medium bg-[rgba(var(--accent),0.2)] border border-[rgba(var(--accent),0.4)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.3)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-sm"
+                >
+                  <Check size={13} className={cn(isApplyingSuggestions && "animate-spin")} />
+                  {isApplyingSuggestions
+                    ? MEMORY_COPY.applyingDecisions
+                    : `${MEMORY_COPY.applyDecisions}${stagedCount > 0 ? ` (${stagedCount})` : ""}`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onModeChange("idle")}
+                  disabled={isApplyingSuggestions}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+                >
+                  <X size={13} /> {MEMORY_COPY.cancel}
+                </button>
+              </>
+            ) : mode === "facts" ? (
+              <button
+                type="button"
+                onClick={() => onModeChange("idle")}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
+              >
+                <X size={13} /> {MEMORY_COPY.backToActions}
+              </button>
             ) : null}
           </div>
         </div>
@@ -478,6 +584,74 @@ export const PersonalMemoryStagingCard: React.FC<PersonalMemoryStagingCardProps>
               <span>Saving streams updates directly to the canonical database.</span>
               <span>~{Math.ceil(draft.length / 4).toLocaleString()} tokens</span>
             </div>
+          </div>
+        )}
+
+        {/* Mode 5: Suggestions Review (Google Docs-style diff cards) */}
+        {mode === "suggestions" && (
+          <div className="flex-1 min-h-0 flex flex-col justify-between pt-3 transition-opacity duration-500">
+            {suggestions.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-[rgba(var(--accent),0.1)] border border-[rgba(var(--accent),0.2)] flex items-center justify-center text-[rgb(var(--accent))] mb-3">
+                  <Sparkles size={20} />
+                </div>
+                <h4 className="text-[13px] font-semibold text-[rgb(var(--foreground))] mb-1">
+                  {MEMORY_COPY.noPendingSuggestions}
+                </h4>
+                <p className="text-[11px] font-mono text-[rgb(var(--foreground-muted))] max-w-xs">
+                  No profile modification proposals awaiting review.
+                </p>
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 space-y-2.5">
+                {suggestions.map((sug) => (
+                  <SuggestionCard
+                    key={sug.id}
+                    suggestion={sug}
+                    decision={decisions[sug.id]}
+                    onSelectDecision={handleSelectDecision}
+                    disabled={isApplyingSuggestions}
+                  />
+                ))}
+              </div>
+            )}
+
+            {suggestions.length > 0 && (
+              <div className="shrink-0 flex items-center justify-between text-[10.5px] font-mono text-[rgb(var(--foreground-muted))] pt-3 border-t border-[rgba(var(--border),0.08)]">
+                <span>
+                  {stagedCount} of {suggestions.length} decisions staged
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAcceptAll}
+                    disabled={isApplyingSuggestions}
+                    className="text-emerald-400 hover:underline cursor-pointer transition-colors"
+                  >
+                    {MEMORY_COPY.acceptAll}
+                  </button>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={handleRejectAll}
+                    disabled={isApplyingSuggestions}
+                    className="text-rose-400 hover:underline cursor-pointer transition-colors"
+                  >
+                    {MEMORY_COPY.rejectAll}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Mode 6: Candidate Active Facts Inspector */}
+        {mode === "facts" && (
+          <div className="flex-1 min-h-0 flex flex-col pt-3 transition-opacity duration-500">
+            <LearnedFactsList
+              facts={candidateFacts}
+              isConsolidating={isConsolidating}
+            />
           </div>
         )}
 

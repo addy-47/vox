@@ -36,9 +36,10 @@ pub use facts::{
 pub use notifications::{NewNotification, NotificationRecord};
 pub use personal_memory::{
     fetch_pending_suggestions, get_personal_memory, insert_personal_memory_suggestions,
-    list_personal_memory_versions, resolve_suggestions_transaction, save_consolidated_memory,
-    save_personal_memory, set_active_personal_memory_version, update_consolidated_memory,
-    MemorySuggestionRecord, PersonalMemoryRecord, PersonalMemorySuggestionRecord,
+    list_personal_memory_versions, resolve_batch_suggestions_transaction,
+    resolve_suggestions_transaction, save_consolidated_memory, save_personal_memory,
+    set_active_personal_memory_version, update_consolidated_memory, MemorySuggestionRecord,
+    PersonalMemoryRecord, PersonalMemorySuggestionRecord, SuggestionDecision,
 };
 pub use projects::ProjectRow;
 pub use queue::{

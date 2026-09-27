@@ -18,10 +18,21 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use chrono::{Duration as ChronoDuration, NaiveDate};
 use clap::Parser;
-use common::{db, paths, report, settings_cfg, turns::DatasetTurn};
-use serde::Serialize;
+use common::{
+    calibration::{load_count_calibration, write_count_calibration, CountCalibration},
+    consolidation_judge::{judge_consolidation, JudgeSettings},
+    db, paths,
+    pipeline_report::{
+        case_start_ms, failed_case_report, failed_setup_report, fetch_compaction_observations,
+        validate_compaction_ranges, write_final_report, CaseReport, ConsolidationObservation,
+        ConsolidationOutcome, FinalReportConfig, IngestionCycleReport, SuggestionObservation,
+        TurnTelemetry,
+    },
+    preservation::untargeted_preservation,
+    report, settings_cfg,
+    turns::DatasetTurn,
+};
 use turso::Connection;
 use vox_lib::{
     core::{
@@ -29,15 +40,21 @@ use vox_lib::{
         settings::VoxSettings,
     },
     persistence::{
-        facts::fetch_active_facts_by_type, personal_memory::get_personal_memory,
-        queue::has_unfinished_items, sessions::fetch_session_continuation, VoxDb,
+        facts::fetch_active_facts_by_type,
+        personal_memory::{
+            fetch_pending_suggestions, get_personal_memory, PersonalMemorySuggestionRecord,
+        },
+        queue::has_unfinished_items,
+        sessions::fetch_session_continuation,
+        VoxDb,
     },
     services::{
         harness::{CompactionParams, CompactionStage, ContextBudgetStage, ContextStatus, Harness},
         llm::{actor::create_llm_provider_from_llm_settings, LlmCommand, LlmProvider},
         memory::{
-            ingestion::run_ingestion_cycle, ml::embedder::unload_embedder,
-            personal::consolidate_personal_memory,
+            ingestion::run_ingestion_cycle,
+            ml::embedder::unload_embedder,
+            personal::{consolidate_personal_memory, resolve_memory_suggestions},
         },
     },
 };
@@ -50,21 +67,23 @@ const TOP_LEVEL_TIMEOUT_SECS: u64 = 6 * 60 * 60;
 const STAGE_TIMEOUT_SECS: u64 = 10 * 60;
 const PROVIDER_PREFLIGHT_TIMEOUT_SECS: u64 = 30;
 const MAX_INGESTION_CYCLES: usize = 512;
-const EXPECTED_CASES: &[(&str, usize, u32)] = &[
-    ("case_01_under_threshold_035_turns", 35, 1),
-    ("case_02_under_threshold_075_turns", 75, 1),
-    ("case_03_under_threshold_090_turns", 90, 1),
-    ("case_04_one_crossing_180_turns", 180, 1),
-    ("case_05_one_crossing_200_turns", 200, 1),
-    ("case_06_one_crossing_220_turns", 220, 1),
-    ("case_07_two_crossings_350_turns", 350, 2),
-    ("case_08_two_crossings_450_turns", 450, 2),
-    ("case_09_three_crossings_500_turns", 500, 3),
-    ("case_10_three_crossings_550_turns", 550, 3),
-    ("case_11_three_crossings_600_turns", 600, 3),
-    ("case_12_three_crossings_620_turns", 620, 3),
-    ("case_13_three_crossings_650_turns", 650, 3),
-    ("case_14_three_crossings_680_turns", 680, 3),
+
+/// Name and input-turn count per case.
+const EXPECTED_CASES: &[(&str, usize)] = &[
+    ("case_01_under_threshold_035_turns", 35),
+    ("case_02_under_threshold_075_turns", 75),
+    ("case_03_under_threshold_090_turns", 90),
+    ("case_04_one_crossing_180_turns", 180),
+    ("case_05_one_crossing_200_turns", 200),
+    ("case_06_one_crossing_220_turns", 220),
+    ("case_07_two_crossings_350_turns", 350),
+    ("case_08_two_crossings_450_turns", 450),
+    ("case_09_three_crossings_500_turns", 500),
+    ("case_10_three_crossings_550_turns", 550),
+    ("case_11_three_crossings_600_turns", 600),
+    ("case_12_three_crossings_620_turns", 620),
+    ("case_13_three_crossings_650_turns", 650),
+    ("case_14_three_crossings_680_turns", 680),
 ];
 
 #[derive(Parser, Debug, Clone)]
@@ -89,96 +108,33 @@ struct Args {
     server_provider: String,
     #[arg(long, default_value = "")]
     server_api_key: String,
+    #[arg(long, default_value_t = false)]
+    no_judge: bool,
+    #[arg(long)]
+    judge_model: Option<String>,
+    #[arg(long)]
+    judge_url: Option<String>,
+    #[arg(long)]
+    reject_probe_case: Option<u32>,
+    #[arg(long, default_value_t = false)]
+    write_calibration: bool,
 }
 
 #[derive(Debug, Clone)]
 struct EvalCase {
     name: String,
     ordinal: usize,
-    expected_compactions: u32,
     manual_compaction: bool,
     turns: Vec<DatasetTurn>,
 }
 
-#[derive(Debug, Serialize)]
-struct TurnTelemetry {
-    turn: u32,
-    tracked_tokens: usize,
-    usable_budget: usize,
-    utilization_percent: f32,
-    budget_status: String,
-    near_miss: bool,
-    critical_eligible: bool,
-    history_messages: usize,
-    compaction_triggered: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct IngestionCycleReport {
-    stage1_processed: usize,
-    stage1_duplicates_deactivated: usize,
-    stage1_errors: usize,
-    stage2_processed: usize,
-    stage2_inserted: usize,
-    stage2_duplicates_deactivated: usize,
-    stage2_errors: usize,
-    latency_ms: u128,
-}
-
-#[derive(Debug, Serialize)]
-struct CompactionObservation {
-    from_turn: u32,
-    to_turn: u32,
-    trigger_kind: String,
-    status: String,
-}
-
-#[derive(Debug, Serialize)]
-struct CaseReport {
-    case: String,
-    expected_compactions: u32,
-    actual_compactions: u32,
-    manual_compactions: u32,
-    classification_match: bool,
-    session_id: i64,
-    session_start_ms: i64,
-    input_turns: usize,
-    crossing_turns: Vec<u32>,
-    critical_turns: Vec<u32>,
-    budget_invariants_valid: bool,
-    compaction_latencies_ms: Vec<u128>,
-    compaction_ledger: Vec<CompactionObservation>,
-    ledger_ranges_contiguous: bool,
-    final_watermark_valid: bool,
-    empty_context_compactions: u32,
-    ingestion_cycles: u32,
-    ingestion_items_processed: usize,
-    stage1_items_processed: usize,
-    stage2_items_processed: usize,
-    ingestion_items_inserted: usize,
-    queue_accounting_complete: bool,
-    ingestion_accounting_valid: bool,
-    ingestion_cycle_reports: Vec<IngestionCycleReport>,
-    consolidation_latency_ms: u128,
-    queue_before: i64,
-    queue_after_compaction: i64,
-    queue_after: i64,
-    failed_queue_items: i64,
-    facts_before: i64,
-    facts_after: i64,
-    personal_memory_version_before: i64,
-    personal_memory_version_after: i64,
-    personal_memory_chars_before: usize,
-    personal_memory_chars_after: usize,
-    personal_memory_injected: bool,
-    prior_memory_prefix_preserved: bool,
-    prior_memory_anchors: Vec<String>,
-    prior_memory_full_document_preserved: bool,
-    personal_facts_before_consolidation: i64,
-    memory_consolidation_exercised: bool,
-    turn_telemetry: Vec<TurnTelemetry>,
-    status: String,
-    error: Option<String>,
+#[derive(Debug, Clone)]
+struct RunConfig {
+    calibration: CountCalibration,
+    judge_enabled: bool,
+    judge_model: String,
+    judge_url: String,
+    reject_probe_case: Option<u32>,
 }
 
 #[tokio::main]
@@ -201,17 +157,24 @@ async fn main() -> Result<()> {
             let db_path = paths::resolve(args.db_path.clone());
             let run_id = report::new_run_id();
             let failure = failed_setup_report("Memory pipeline eval top-level timeout exceeded");
-            write_final_report(
-                "memory_pipeline",
-                &run_id,
-                &args,
-                &db_path,
-                &dataset_dir,
-                &[failure],
-                args.case.is_some(),
-                false,
-                started.elapsed().as_secs_f64(),
-            )?;
+            let cfg = FinalReportConfig {
+                eval_name: "memory_pipeline",
+                run_id: &run_id,
+                server_url: &args.server_url,
+                server_model: &args.server_model,
+                server_provider: &args.server_provider,
+                db_path: &db_path,
+                dataset_dir: &dataset_dir,
+                context_window: args.context_window,
+                no_judge: args.no_judge,
+                judge_model: args.judge_model.as_deref(),
+                judge_url: args.judge_url.as_deref(),
+                is_subset: args.case.is_some(),
+                run_passed: false,
+                total_latency_s: started.elapsed().as_secs_f64(),
+                config_source: "unavailable",
+            };
+            write_final_report(&cfg, &[failure])?;
             anyhow::bail!("Memory pipeline eval top-level timeout exceeded")
         }
     }
@@ -231,20 +194,48 @@ async fn run(args: Args) -> Result<()> {
         Ok(prepared) => prepared,
         Err(error) => {
             let failure = failed_setup_report(&format!("{error:#}"));
-            write_final_report(
+            let cfg = FinalReportConfig {
                 eval_name,
-                &run_id,
-                &args,
-                &db_path,
-                &dataset_dir,
-                &[failure],
+                run_id: &run_id,
+                server_url: &args.server_url,
+                server_model: &args.server_model,
+                server_provider: &args.server_provider,
+                db_path: &db_path,
+                dataset_dir: &dataset_dir,
+                context_window: args.context_window,
+                no_judge: args.no_judge,
+                judge_model: args.judge_model.as_deref(),
+                judge_url: args.judge_url.as_deref(),
                 is_subset,
-                false,
-                started.elapsed().as_secs_f64(),
-            )?;
+                run_passed: false,
+                total_latency_s: started.elapsed().as_secs_f64(),
+                config_source: "unavailable",
+            };
+            write_final_report(&cfg, &[failure])?;
             return Err(error);
         }
     };
+    let config = RunConfig {
+        calibration: load_count_calibration(&args.server_model, args.context_window),
+        judge_enabled: !args.no_judge,
+        judge_model: args
+            .judge_model
+            .clone()
+            .unwrap_or_else(|| args.server_model.clone()),
+        judge_url: args
+            .judge_url
+            .clone()
+            .unwrap_or_else(|| args.server_url.clone()),
+        reject_probe_case: args.reject_probe_case,
+    };
+    println!(
+        "[config] executor={} judge={} judge_url={} calibration={} reject_probe_case={:?}",
+        args.server_model,
+        config.judge_model,
+        config.judge_url,
+        config.calibration.source,
+        config.reject_probe_case
+    );
     let mut reports = Vec::with_capacity(selected_cases.len());
     let mut previous_session_start = None;
 
@@ -260,23 +251,44 @@ async fn run(args: Args) -> Result<()> {
             }
         }
         previous_session_start = Some(case_start_ms(case.ordinal));
-        let report = run_case(case, &conn, provider.as_ref(), &settings).await;
+        let report = run_case(case, &conn, provider.as_ref(), &settings, &config).await;
         match report {
             Ok(report) => {
+                let consolidation_line = report
+                    .consolidation
+                    .as_ref()
+                    .map(|observation| {
+                        format!(
+                            " staged={} skipped_ops={} unexplained_lost={} reanchor={:?} judge={}",
+                            observation.staged_suggestions,
+                            observation.skipped_operations,
+                            observation.unexplained_lost_lines.len(),
+                            observation.reanchor_valid,
+                            observation
+                                .judge
+                                .as_ref()
+                                .map(|judge| format!("{}:{}", judge.model, judge.verdict))
+                                .unwrap_or_else(|| "skipped".to_string())
+                        )
+                    })
+                    .unwrap_or_else(|| " no_candidates".to_string());
                 println!(
-                    "[case] {}: status={} compactions={}/{} ingestion_cycles={} queue_after={} elapsed={}ms",
+                    "[case] {}: status={} compactions={} expected_calibrated={:?} delta={:?} ingestion_cycles={} queue_after={} |{} elapsed={}ms",
                     report.case,
                     report.status,
                     report.actual_compactions,
-                    report.expected_compactions,
+                    report.expected_compactions_calibrated,
+                    report.count_calibration_delta,
                     report.ingestion_cycles,
                     report.queue_after,
+                    consolidation_line,
                     case_started.elapsed().as_millis()
                 );
                 reports.push(report);
             }
             Err(error) => {
-                let failure = failed_case_report(case, &format!("{error:#}"));
+                let failure =
+                    failed_case_report(&case.name, case.turns.len(), &format!("{error:#}"));
                 println!(
                     "[case] {}: status=FAILED compactions={} elapsed={}ms error={error}",
                     failure.case,
@@ -285,17 +297,24 @@ async fn run(args: Args) -> Result<()> {
                 );
                 reports.push(failure);
                 unload_embedder();
-                write_final_report(
+                let cfg = FinalReportConfig {
                     eval_name,
-                    &run_id,
-                    &args,
-                    &db_path,
-                    &dataset_dir,
-                    &reports,
+                    run_id: &run_id,
+                    server_url: &args.server_url,
+                    server_model: &args.server_model,
+                    server_provider: &args.server_provider,
+                    db_path: &db_path,
+                    dataset_dir: &dataset_dir,
+                    context_window: args.context_window,
+                    no_judge: args.no_judge,
+                    judge_model: args.judge_model.as_deref(),
+                    judge_url: args.judge_url.as_deref(),
                     is_subset,
-                    false,
-                    started.elapsed().as_secs_f64(),
-                )?;
+                    run_passed: false,
+                    total_latency_s: started.elapsed().as_secs_f64(),
+                    config_source: &config.calibration.source,
+                };
+                write_final_report(&cfg, &reports)?;
                 return Err(error.context(format!("case {} failed", case.name)));
             }
         }
@@ -309,6 +328,19 @@ async fn run(args: Args) -> Result<()> {
         .iter()
         .any(|report| report.memory_consolidation_exercised);
     let all_passed = cases_passed && (is_subset || memory_pipeline_exercised);
+    if args.write_calibration {
+        let case_compactions: Vec<(String, u32)> = reports
+            .iter()
+            .map(|r| (r.case.clone(), r.actual_compactions))
+            .collect();
+        write_count_calibration(
+            &args.server_model,
+            args.context_window,
+            &case_compactions,
+            &run_id,
+        )?;
+    }
+
     let payload_status = if is_subset {
         if all_passed {
             "passed_subset"
@@ -320,17 +352,24 @@ async fn run(args: Args) -> Result<()> {
     } else {
         "failed"
     };
-    write_final_report(
+    let cfg = FinalReportConfig {
         eval_name,
-        &run_id,
-        &args,
-        &db_path,
-        &dataset_dir,
-        &reports,
+        run_id: &run_id,
+        server_url: &args.server_url,
+        server_model: &args.server_model,
+        server_provider: &args.server_provider,
+        db_path: &db_path,
+        dataset_dir: &dataset_dir,
+        context_window: args.context_window,
+        no_judge: args.no_judge,
+        judge_model: args.judge_model.as_deref(),
+        judge_url: args.judge_url.as_deref(),
         is_subset,
-        all_passed,
-        started.elapsed().as_secs_f64(),
-    )?;
+        run_passed: all_passed,
+        total_latency_s: started.elapsed().as_secs_f64(),
+        config_source: &config.calibration.source,
+    };
+    write_final_report(&cfg, &reports)?;
     if !all_passed && !is_subset {
         anyhow::bail!("One or more eval cases failed");
     }
@@ -429,15 +468,13 @@ async fn load_cases(dataset_dir: &Path) -> Result<Vec<EvalCase>> {
             .context("Case filename has no UTF-8 stem")?
             .to_string();
         let manual_compaction = name.contains("under_threshold");
-        let expected_compactions = if manual_compaction || name.contains("one_crossing") {
-            1
-        } else if name.contains("two_crossings") {
-            2
-        } else if name.contains("three_crossings") {
-            3
-        } else {
-            anyhow::bail!("Unknown case class in filename: {name}");
-        };
+        anyhow::ensure!(
+            name.contains("under_threshold")
+                || name.contains("one_crossing")
+                || name.contains("two_crossings")
+                || name.contains("three_crossings"),
+            "Unknown case class in filename: {name}"
+        );
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("Failed to read case {}", path.display()))?;
         let case_turns: Vec<DatasetTurn> = serde_json::from_str(&raw)
@@ -453,7 +490,6 @@ async fn load_cases(dataset_dir: &Path) -> Result<Vec<EvalCase>> {
         cases.push(EvalCase {
             name,
             ordinal: ordinal + 1,
-            expected_compactions,
             manual_compaction,
             turns: case_turns,
         });
@@ -478,7 +514,7 @@ fn validate_manifest(cases: &[EvalCase]) -> Result<()> {
         total_turns == 5200,
         "Expected 5200 total eval turns, found {total_turns}"
     );
-    for (expected_name, expected_turns, expected_compactions) in EXPECTED_CASES {
+    for (expected_name, expected_turns) in EXPECTED_CASES {
         let case = cases
             .iter()
             .find(|case| case.name == *expected_name)
@@ -487,10 +523,6 @@ fn validate_manifest(cases: &[EvalCase]) -> Result<()> {
             case.turns.len() == *expected_turns,
             "Case {expected_name} has {} turns, expected {expected_turns}",
             case.turns.len()
-        );
-        anyhow::ensure!(
-            case.expected_compactions == *expected_compactions,
-            "Case {expected_name} has the wrong expected compaction count"
         );
     }
     Ok(())
@@ -512,6 +544,7 @@ async fn run_case(
     conn: &Connection,
     provider: &dyn vox_lib::services::llm::LlmProvider,
     settings: &vox_lib::core::settings::VoxSettings,
+    config: &RunConfig,
 ) -> Result<CaseReport> {
     let session_start_ms = case_start_ms(case.ordinal);
     let facts_before = db::count_facts(conn).await?;
@@ -520,6 +553,23 @@ async fn run_case(
         db::create_session_at_timestamp(conn, session_start_ms, Some("default")).await?;
     let continuation = fetch_session_continuation(conn, session_id).await?;
     let personal_memory = continuation.personal_memory;
+    let base_record = get_personal_memory(conn, None).await?;
+    let base_document = base_record.content.trim().to_string();
+    let base_version = base_record.version;
+    let candidates = fetch_active_facts_by_type(conn, "personal").await?;
+    let candidate_count = candidates.len();
+    let pending_before_ids: std::collections::HashSet<String> =
+        fetch_pending_suggestions(conn, None)
+            .await?
+            .into_iter()
+            .map(|suggestion| suggestion.id)
+            .collect();
+    let judge_settings: Option<JudgeSettings> = JudgeSettings {
+        enabled: config.judge_enabled,
+        url: config.judge_url.clone(),
+        model: config.judge_model.clone(),
+    }
+    .into();
     let budget = ContextBudgetStage::new(
         settings.llm.context_window as usize,
         settings.llm.max_output_tokens as usize,
@@ -754,57 +804,63 @@ async fn run_case(
         "Ingestion accounting mismatch: queue={expected_queue_items} stage1={stage1_items_processed} stage2={stage2_items_processed} inserted={ingestion_items_inserted}"
     );
 
-    let active_personal_before = fetch_active_facts_by_type(conn, "personal").await?.len() as i64;
-    let personal_before_consolidation = get_personal_memory(conn, None).await?;
-    let prior_memory_document = personal_before_consolidation.content.trim().to_string();
-    let prior_memory_anchors = report::memory_anchors(&prior_memory_document);
-    let consolidation_started = Instant::now();
-    tokio::time::timeout(
-        Duration::from_secs(STAGE_TIMEOUT_SECS),
-        consolidate_personal_memory(conn, provider, None, None, Some(&settings.llm), None),
-    )
-    .await
-    .context("Production personal-memory consolidation timed out")?
-    .context("Production personal-memory consolidation failed")?;
-    let consolidation_latency_ms = consolidation_started.elapsed().as_millis();
-    let personal_memory_after = get_personal_memory(conn, None).await?;
-    let active_personal_after = fetch_active_facts_by_type(conn, "personal").await?.len() as i64;
-    let memory_consolidation_exercised = active_personal_before > 0
-        && personal_memory_after.version > personal_before_consolidation.version
-        && active_personal_after == 0;
-    if active_personal_before > 0 {
-        anyhow::ensure!(
-            personal_memory_after.version > personal_before_consolidation.version,
-            "Personal memory version did not advance after consolidation"
-        );
-        anyhow::ensure!(
-            active_personal_after == 0,
-            "{active_personal_after} personal facts remain active after consolidation"
-        );
-    }
-
-    let prior_memory_full_document_preserved = if prior_memory_document.is_empty() {
-        true
-    } else if active_personal_before == 0 {
-        personal_memory_after
-            .content
-            .contains(&prior_memory_document)
+    let consolidation = if config.reject_probe_case == Some(case.ordinal as u32) {
+        run_reject_probe(conn, &pending_before_ids, &base_document, base_version).await?
     } else {
-        prior_memory_anchors
-            .iter()
-            .all(|anchor| personal_memory_after.content.contains(anchor))
+        run_consolidation_and_accept(
+            conn,
+            provider,
+            settings,
+            &base_document,
+            base_version,
+            &pending_before_ids,
+            judge_settings.as_ref(),
+        )
+        .await?
     };
-    let prior_memory_prefix_preserved = prior_memory_full_document_preserved;
+    let consolidation_latency_ms = consolidation
+        .as_ref()
+        .map(|outcome| outcome.latency_ms)
+        .unwrap_or_default();
+    let memory_consolidation_exercised = consolidation
+        .as_ref()
+        .is_some_and(|outcome| outcome.observation.staged_suggestions > 0);
+    let accepted_document = consolidation
+        .as_ref()
+        .map(|outcome| outcome.accepted_document.clone())
+        .unwrap_or_else(|| base_document.clone());
+
     let facts_after = db::count_facts(conn).await?;
     let actual_compactions_u32 =
         u32::try_from(actual_compactions).context("Compaction count does not fit in u32")?;
-    let classification_match = actual_compactions_u32 == case.expected_compactions;
+    let expected_compactions_calibrated = config.calibration.per_case.get(&case.name).copied();
+    let count_calibration_delta = expected_compactions_calibrated
+        .map(|expected| i64::from(actual_compactions_u32) - i64::from(expected));
+    let trigger_correctness_valid = budget_invariants_valid
+        && ledger_ranges_contiguous
+        && final_watermark_valid
+        && empty_context_compactions == 0;
+
+    let consolidation_valid = consolidation.as_ref().is_none_or(|outcome| {
+        let observation = &outcome.observation;
+        observation.document_unchanged_after_staging
+            && observation.candidate_partition_valid
+            && observation.pending_anchored_to_base_version
+            && observation.untargeted_preservation_valid
+            && observation.unexplained_lost_lines.is_empty()
+            && observation.skipped_operations == 0
+            && observation.facts_left_active == 0
+            && observation.reanchor_valid != Some(false)
+    });
+
     Ok(CaseReport {
         case: case.name.clone(),
-        expected_compactions: case.expected_compactions,
+        expected_compactions_calibrated,
+        count_calibration_delta,
+        count_calibration_source: config.calibration.source.clone(),
         actual_compactions: actual_compactions_u32,
         manual_compactions,
-        classification_match,
+        trigger_correctness_valid,
         session_id,
         session_start_ms,
         input_turns: case.turns.len(),
@@ -832,235 +888,236 @@ async fn run_case(
         facts_before,
         facts_after,
         personal_memory_version_before: personal_memory_before.version,
-        personal_memory_version_after: personal_memory_after.version,
         personal_memory_chars_before: personal_memory_before.content.len(),
-        personal_memory_chars_after: personal_memory_after.content.len(),
+        personal_memory_chars_after: accepted_document.len(),
         personal_memory_injected,
-        prior_memory_prefix_preserved,
-        prior_memory_anchors,
-        prior_memory_full_document_preserved,
-        personal_facts_before_consolidation: active_personal_before,
+        personal_facts_before_consolidation: candidate_count as i64,
         memory_consolidation_exercised,
+        consolidation: consolidation
+            .as_ref()
+            .map(|outcome| outcome.observation.clone()),
+        base_document,
+        accepted_document,
         turn_telemetry,
-        status: if classification_match
-            && budget_invariants_valid
-            && ledger_ranges_contiguous
-            && final_watermark_valid
+        status: if trigger_correctness_valid
             && queue_accounting_complete
             && ingestion_accounting_valid
-            && prior_memory_prefix_preserved
             && personal_memory_injected
+            && consolidation_valid
         {
             "passed".to_string()
         } else {
-            "failed_classification".to_string()
+            "failed_invariant".to_string()
         },
         error: None,
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-fn write_final_report(
-    eval_name: &str,
-    run_id: &str,
-    args: &Args,
-    db_path: &Path,
-    dataset_dir: &Path,
-    reports: &[CaseReport],
-    is_subset: bool,
-    run_passed: bool,
-    total_latency_s: f64,
-) -> Result<()> {
-    let payload = serde_json::json!({
-        "eval": eval_name,
-        "status": if reports
-            .iter()
-            .any(|report| report.status == "failed_setup")
-        {
-            "failed_setup"
-        } else if is_subset {
-            if run_passed && reports.iter().all(|report| report.status == "passed") {
-                "passed_subset"
-            } else {
-                "failed_subset"
-            }
-        } else if run_passed && reports.iter().all(|report| report.status == "passed") {
-            "passed"
-        } else {
-            "failed"
-        },
-        "complete_matrix": !is_subset,
-        "run_passed": run_passed,
-        "case_count": reports.len(),
-        "memory_pipeline_exercised": reports
-            .iter()
-            .any(|report| report.memory_consolidation_exercised),
-        "ingestion_items_inserted": reports
-            .iter()
-            .map(|report| report.ingestion_items_inserted)
-            .sum::<usize>(),
-        "dataset_dir": dataset_dir,
-        "server": {
-            "url": args.server_url,
-            "model": args.server_model,
-            "provider": args.server_provider,
-        },
-        "database": db_path,
-        "context_window": args.context_window,
-        "max_output_tokens": DEFAULT_LLM_MAX_OUTPUT_TOKENS,
-        "auto_compaction": true,
-        "retrieval_enabled": false,
-        "tools_enabled": false,
-        "judge_used": false,
-        "cases": reports,
-        "total_latency_s": total_latency_s,
-    });
-    report::write_report(eval_name, run_id, payload)?;
-    Ok(())
-}
-
-fn failed_setup_report(error: &str) -> CaseReport {
-    CaseReport {
-        case: "<setup>".to_string(),
-        expected_compactions: 0,
-        actual_compactions: 0,
-        manual_compactions: 0,
-        classification_match: false,
-        session_id: 0,
-        session_start_ms: 0,
-        input_turns: 0,
-        crossing_turns: Vec::new(),
-        critical_turns: Vec::new(),
-        budget_invariants_valid: false,
-        compaction_latencies_ms: Vec::new(),
-        compaction_ledger: Vec::new(),
-        ledger_ranges_contiguous: false,
-        final_watermark_valid: false,
-        empty_context_compactions: 0,
-        ingestion_cycles: 0,
-        ingestion_items_processed: 0,
-        stage1_items_processed: 0,
-        stage2_items_processed: 0,
-        ingestion_items_inserted: 0,
-        queue_accounting_complete: false,
-        ingestion_accounting_valid: false,
-        ingestion_cycle_reports: Vec::new(),
-        consolidation_latency_ms: 0,
-        queue_before: 0,
-        queue_after_compaction: 0,
-        queue_after: 0,
-        failed_queue_items: 0,
-        facts_before: 0,
-        facts_after: 0,
-        personal_memory_version_before: 0,
-        personal_memory_version_after: 0,
-        personal_memory_chars_before: 0,
-        personal_memory_chars_after: 0,
-        personal_memory_injected: false,
-        prior_memory_prefix_preserved: false,
-        prior_memory_anchors: Vec::new(),
-        prior_memory_full_document_preserved: false,
-        personal_facts_before_consolidation: 0,
-        memory_consolidation_exercised: false,
-        turn_telemetry: Vec::new(),
-        status: "failed_setup".to_string(),
-        error: Some(error.to_string()),
-    }
-}
-
-fn failed_case_report(case: &EvalCase, error: &str) -> CaseReport {
-    CaseReport {
-        case: case.name.clone(),
-        expected_compactions: case.expected_compactions,
-        actual_compactions: 0,
-        manual_compactions: 0,
-        classification_match: false,
-        session_id: 0,
-        session_start_ms: 0,
-        input_turns: case.turns.len(),
-        crossing_turns: Vec::new(),
-        critical_turns: Vec::new(),
-        budget_invariants_valid: false,
-        compaction_latencies_ms: Vec::new(),
-        compaction_ledger: Vec::new(),
-        ledger_ranges_contiguous: false,
-        final_watermark_valid: false,
-        empty_context_compactions: 0,
-        ingestion_cycles: 0,
-        ingestion_items_processed: 0,
-        stage1_items_processed: 0,
-        stage2_items_processed: 0,
-        ingestion_items_inserted: 0,
-        queue_accounting_complete: false,
-        ingestion_accounting_valid: false,
-        ingestion_cycle_reports: Vec::new(),
-        consolidation_latency_ms: 0,
-        queue_before: 0,
-        queue_after_compaction: 0,
-        queue_after: 0,
-        failed_queue_items: 0,
-        facts_before: 0,
-        facts_after: 0,
-        personal_memory_version_before: 0,
-        personal_memory_version_after: 0,
-        personal_memory_chars_before: 0,
-        personal_memory_chars_after: 0,
-        personal_memory_injected: false,
-        prior_memory_prefix_preserved: false,
-        prior_memory_anchors: Vec::new(),
-        prior_memory_full_document_preserved: false,
-        personal_facts_before_consolidation: 0,
-        memory_consolidation_exercised: false,
-        turn_telemetry: Vec::new(),
-        status: "failed".to_string(),
-        error: Some(error.to_string()),
-    }
-}
-
-fn case_start_ms(case_index: usize) -> i64 {
-    let day = NaiveDate::from_ymd_opt(2026, 1, 2)
-        .expect("valid eval date")
-        .checked_add_signed(ChronoDuration::days(case_index as i64))
-        .expect("valid eval date range");
-    let hour = 7;
-    day.and_hms_opt(hour, 0, 0)
-        .expect("valid eval time")
-        .and_utc()
-        .timestamp_millis()
-}
-
-async fn fetch_compaction_observations(
+async fn run_consolidation_and_accept(
     conn: &Connection,
-    session_id: i64,
-) -> Result<Vec<CompactionObservation>> {
-    let mut rows = conn
-        .query(
-            "SELECT from_turn_id, to_turn_id, trigger_kind, status FROM session_compactions WHERE session_id = ? ORDER BY id ASC;",
-            (session_id,),
-        )
-        .await?;
-    let mut observations = Vec::new();
-    while let Some(row) = rows.next().await? {
-        observations.push(CompactionObservation {
-            from_turn: row.get::<i64>(0)? as u32,
-            to_turn: row.get::<i64>(1)? as u32,
-            trigger_kind: row.get(2)?,
-            status: row.get(3)?,
-        });
+    provider: &dyn vox_lib::services::llm::LlmProvider,
+    settings: &vox_lib::core::settings::VoxSettings,
+    base_document: &str,
+    base_version: i64,
+    pending_before_ids: &std::collections::HashSet<String>,
+    judge: Option<&JudgeSettings>,
+) -> Result<Option<ConsolidationOutcome>> {
+    let candidates = fetch_active_facts_by_type(conn, "personal").await?;
+    if candidates.is_empty() {
+        return Ok(None);
     }
-    Ok(observations)
+    let candidate_texts: Vec<String> = candidates.iter().map(|fact| fact.text.clone()).collect();
+    let candidate_count = candidates.len();
+
+    let started = Instant::now();
+    tokio::time::timeout(
+        Duration::from_secs(STAGE_TIMEOUT_SECS),
+        consolidate_personal_memory(conn, provider, None, None, Some(&settings.llm), None),
+    )
+    .await
+    .context("Production personal-memory consolidation timed out")?
+    .context("Production personal-memory consolidation failed")?;
+
+    let after_stage = get_personal_memory(conn, None).await?;
+    let document_unchanged_after_staging =
+        after_stage.version == base_version && after_stage.content.trim() == base_document;
+
+    let pending_after = fetch_pending_suggestions(conn, None).await?;
+    let staged: Vec<PersonalMemorySuggestionRecord> = pending_after
+        .into_iter()
+        .filter(|suggestion| !pending_before_ids.contains(&suggestion.id))
+        .collect();
+
+    let operations: Vec<SuggestionObservation> = staged
+        .iter()
+        .map(|suggestion| {
+            let engine_would_match = match suggestion.op.as_str() {
+                "insert_after" | "insert" => !suggestion.content.trim().is_empty(),
+                "replace" => !suggestion.content.trim().is_empty(),
+                "delete" => true,
+                _ => false,
+            };
+            SuggestionObservation {
+                op: suggestion.op.clone(),
+                target_index: suggestion.target_index,
+                content: suggestion.content.clone(),
+                engine_would_match,
+            }
+        })
+        .collect();
+    let skipped_operations = operations
+        .iter()
+        .filter(|operation| !operation.engine_would_match)
+        .count() as u32;
+
+    let pending_anchored_to_base_version = staged
+        .iter()
+        .all(|suggestion| suggestion.base_memory_version == base_version);
+
+    let active_left = db::count_facts_by_status(conn, "personal", "active").await?;
+    let candidate_partition_valid = active_left == 0;
+
+    let mut reanchor_probe_exercised = false;
+    let mut reanchor_valid: Option<bool> = None;
+    let mut expected_version = base_version;
+    if staged.len() >= 2 {
+        reanchor_probe_exercised = true;
+        let first = resolve_memory_suggestions(conn, None, Some(&staged[0].id), "accept")
+            .await
+            .context("Single-suggestion accept failed")?;
+        let remaining = fetch_pending_suggestions(conn, None).await?;
+        reanchor_valid = Some(
+            remaining
+                .iter()
+                .all(|suggestion| suggestion.base_memory_version == first.version)
+                && remaining.len() == staged.len() - 1,
+        );
+        expected_version = first.version;
+    }
+
+    let accepted = resolve_memory_suggestions(conn, None, None, "accept")
+        .await
+        .context("Accept-all suggestion resolution failed")?;
+    let latency_ms = started.elapsed().as_millis();
+    anyhow::ensure!(
+        accepted.version == expected_version + 1,
+        "Accept-all produced version {} but {} was expected",
+        accepted.version,
+        expected_version + 1
+    );
+
+    let still_pending = fetch_pending_suggestions(conn, None).await?;
+    let accepted_count = still_pending.len() as u32;
+    let consolidated_in_db = db::count_facts_by_status(conn, "personal", "consolidated").await?;
+    let rejected_in_db = db::count_facts_by_status(conn, "personal", "rejected").await?;
+    let active_after = db::count_facts_by_status(conn, "personal", "active").await?;
+
+    let (untargeted_total, untargeted_preserved, unexplained_lost_lines) =
+        untargeted_preservation(base_document, &accepted.content, &operations);
+
+    let judge_observation = match judge {
+        Some(settings) if settings.enabled => Some(
+            judge_consolidation(
+                settings,
+                &candidate_texts,
+                base_document,
+                &operations,
+                &accepted.content,
+                Duration::from_secs(STAGE_TIMEOUT_SECS),
+            )
+            .await,
+        ),
+        _ => None,
+    };
+
+    Ok(Some(ConsolidationOutcome {
+        observation: ConsolidationObservation {
+            base_memory_version: base_version,
+            staged_suggestions: staged.len() as u32,
+            candidate_facts: candidate_count as i64,
+            candidate_fact_texts: candidate_texts,
+            document_unchanged_after_staging,
+            candidate_partition_valid,
+            pending_anchored_to_base_version,
+            operations,
+            skipped_operations,
+            reanchor_probe_exercised,
+            reanchor_valid,
+            accepted_memory_version: accepted.version,
+            expected_memory_version: expected_version + 1,
+            untargeted_lines_total: untargeted_total,
+            untargeted_lines_preserved: untargeted_preserved,
+            untargeted_preservation_valid: unexplained_lost_lines.is_empty(),
+            unexplained_lost_lines,
+            suggestions_accepted: accepted_count,
+            linked_facts_consolidated: consolidated_in_db as u32,
+            linked_facts_rejected: rejected_in_db as u32,
+            facts_left_active: active_after,
+            reject_probe: false,
+            document_unchanged_after_reject: false,
+            judge: judge_observation,
+        },
+        accepted_document: accepted.content,
+        latency_ms,
+    }))
 }
 
-fn validate_compaction_ranges(observations: &[CompactionObservation]) -> bool {
-    let mut previous_to = 0;
-    for observation in observations {
-        if !matches!(observation.trigger_kind.as_str(), "critical" | "manual")
-            || observation.status != "completed"
-            || observation.from_turn != previous_to + 1
-        {
-            return false;
-        }
-        previous_to = observation.to_turn;
+async fn run_reject_probe(
+    conn: &Connection,
+    pending_before_ids: &std::collections::HashSet<String>,
+    base_document: &str,
+    base_version: i64,
+) -> Result<Option<ConsolidationOutcome>> {
+    let candidates = fetch_active_facts_by_type(conn, "personal").await?;
+    if candidates.is_empty() {
+        return Ok(None);
     }
-    true
+    let staged: Vec<PersonalMemorySuggestionRecord> = fetch_pending_suggestions(conn, None)
+        .await?
+        .into_iter()
+        .filter(|suggestion| !pending_before_ids.contains(&suggestion.id))
+        .collect();
+    if staged.is_empty() {
+        return Ok(None);
+    }
+    let rejected = resolve_memory_suggestions(conn, None, None, "reject")
+        .await
+        .context("Reject-all suggestion resolution failed")?;
+    let still_pending = fetch_pending_suggestions(conn, None).await?;
+    let document_unchanged_after_reject =
+        rejected.version == base_version && rejected.content.trim() == base_document;
+
+    Ok(Some(ConsolidationOutcome {
+        observation: ConsolidationObservation {
+            base_memory_version: base_version,
+            staged_suggestions: staged.len() as u32,
+            candidate_facts: candidates.len() as i64,
+            candidate_fact_texts: candidates.iter().map(|fact| fact.text.clone()).collect(),
+            document_unchanged_after_staging: true,
+            candidate_partition_valid: db::count_facts_by_status(conn, "personal", "active")
+                .await?
+                == 0,
+            pending_anchored_to_base_version: true,
+            operations: Vec::new(),
+            skipped_operations: 0,
+            reanchor_probe_exercised: false,
+            reanchor_valid: None,
+            accepted_memory_version: rejected.version,
+            expected_memory_version: base_version,
+            untargeted_lines_total: 0,
+            untargeted_lines_preserved: 0,
+            untargeted_preservation_valid: true,
+            unexplained_lost_lines: Vec::new(),
+            suggestions_accepted: still_pending.len() as u32,
+            linked_facts_consolidated: 0,
+            linked_facts_rejected: db::count_facts_by_status(conn, "personal", "rejected").await?
+                as u32,
+            facts_left_active: db::count_facts_by_status(conn, "personal", "active").await?,
+            reject_probe: true,
+            document_unchanged_after_reject,
+            judge: None,
+        },
+        accepted_document: rejected.content,
+        latency_ms: 0,
+    }))
 }

@@ -78,6 +78,57 @@ export function consolidatePersonalMemory(
   });
 }
 
+/**
+ * Reformats and clarifies the existing personal memory document using LLM on demand.
+ * Operates on current markdown content, not on raw facts.
+ */
+export function regeneratePersonalMemory(projectId?: string): Promise<PersonalMemoryRecord> {
+  return invoke("regenerate_personal_memory", { projectId: projectId ?? null });
+}
+
+export interface PersonalMemorySuggestionRecord {
+  id: string;
+  base_memory_version: number;
+  project_id: string | null;
+  op: string;
+  target_index: number;
+  content: string | null;
+  status: string;
+  created_at: number;
+  resolved_at: number | null;
+}
+
+export interface SuggestionDecision {
+  id: string;
+  action: "accept" | "reject";
+}
+
+export interface ResolveSuggestionsRequest {
+  projectId?: string | null;
+  decisions: SuggestionDecision[];
+}
+
+export function getMemorySuggestions(projectId?: string): Promise<PersonalMemorySuggestionRecord[]> {
+  return invoke("get_memory_suggestions", { projectId: projectId ?? null });
+}
+
+export function resolveMemorySuggestions(
+  request: ResolveSuggestionsRequest,
+): Promise<PersonalMemoryRecord> {
+  return invoke("resolve_memory_suggestions", { request });
+}
+
+export function resolveMemorySuggestion(
+  id: string,
+  action: "accept" | "reject",
+  projectId?: string,
+): Promise<PersonalMemoryRecord> {
+  return invoke("resolve_memory_suggestion", {
+    id,
+    action,
+    projectId: projectId ?? null,
+  });
+}
 
 /**
  * Mirror of `FactRecord` (persistence/facts.rs).

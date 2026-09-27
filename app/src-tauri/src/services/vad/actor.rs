@@ -572,7 +572,11 @@ mod tests {
         s.window_first_speech_sample = 100;
         s.window_last_speech_sample = 900;
         let sliced = trim_window(&s, raw_len);
-        assert_eq!(sliced.len(), 800, "800-sample span must be trimmed to 800 samples");
+        assert_eq!(
+            sliced.len(),
+            800,
+            "800-sample span must be trimmed to 800 samples"
+        );
         assert_eq!(sliced.first().copied(), Some(100.0));
         assert_eq!(sliced.last().copied(), Some(899.0));
 
@@ -600,6 +604,10 @@ mod tests {
         s.window_first_speech_sample = 5;
         s.window_last_speech_sample = 99_999;
         let clamped = trim_window(&s, raw_len);
-        assert_eq!(clamped.len(), raw_len - 5, "oversized end marker must clamp to raw_len");
+        assert_eq!(
+            clamped.len(),
+            raw_len - 5,
+            "oversized end marker must clamp to raw_len"
+        );
     }
 }

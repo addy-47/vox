@@ -17,6 +17,7 @@ import {
   MessageSquare,
   Hand,
   X,
+  Tag,
 } from "lucide-react";
 import {
   getPersonalMemory,
@@ -25,8 +26,11 @@ import {
   savePersonalMemory,
   consolidatePersonalMemory,
   getActiveFacts,
+  getMemorySuggestions,
+  resolveMemorySuggestions,
   type PersonalMemoryRecord,
   type FactRecord,
+  type PersonalMemorySuggestionRecord,
 } from "@/services/memoryService";
 import { AmbientBackground, ErrorBoundary } from "@/shared/components/common";
 import { Drawer } from "@/shared/ui/Drawer";
@@ -69,6 +73,8 @@ export const Memory: React.FC = memo(() => {
   const [personalMemory, setPersonalMemory] = useState<PersonalMemoryRecord | null>(null);
   const [versions, setVersions] = useState<PersonalMemoryRecord[]>([]);
   const [displayedRecord, setDisplayedRecord] = useState<PersonalMemoryRecord | null>(null);
+  const [suggestions, setSuggestions] = useState<PersonalMemorySuggestionRecord[]>([]);
+  const [isApplyingSuggestions, setIsApplyingSuggestions] = useState(false);
   const [isRestoringVersion, setIsRestoringVersion] = useState(false);
   const [conflictInPlace, setConflictInPlace] = useState(false);
   const [facts, setFacts] = useState<FactRecord[]>([]);
@@ -165,15 +171,17 @@ export const Memory: React.FC = memo(() => {
     if (!isSilent) setLoading(true);
     setRefreshing(true);
     try {
-      const [mem, allFacts, allVersions] = await Promise.all([
+      const [mem, allFacts, allVersions, allSuggestions] = await Promise.all([
         getPersonalMemory(),
         getActiveFacts(),
         getPersonalMemoryVersions(),
+        getMemorySuggestions().catch(() => []),
       ]);
       setPersonalMemory(mem);
       setDisplayedRecord(mem);
       setVersions(allVersions);
       setFacts(allFacts);
+      setSuggestions(allSuggestions);
     } catch (e) {
       console.error("[Memory] Failed to load data:", e);
     } finally {
@@ -243,10 +251,12 @@ export const Memory: React.FC = memo(() => {
     return counts;
   }, [facts]);
 
-  // Unconsolidated personal identity facts count
-  const unconsolidatedIdentityCount = useMemo(() => {
-    return facts.filter((f) => f.fact_type === "personal").length;
+  // Unconsolidated personal identity candidate facts
+  const identityCandidateFacts = useMemo(() => {
+    return facts.filter((f) => f.fact_type === "personal");
   }, [facts]);
+
+  const unconsolidatedIdentityCount = identityCandidateFacts.length;
 
   // ── Node & Core Click Handlers ─────────────────────────────────────────────
   const handleSelectNode = useCallback((fact: FactRecord | null, pos?: { x: number; y: number }) => {
@@ -363,11 +373,20 @@ export const Memory: React.FC = memo(() => {
         await new Promise((resolve) => setTimeout(resolve, 250));
         setPersonalMemory(updated);
         setDisplayedRecord(updated);
-        const allVersions = await getPersonalMemoryVersions();
+
+        const [allVersions, pendingSuggestions] = await Promise.all([
+          getPersonalMemoryVersions(),
+          getMemorySuggestions().catch(() => []),
+        ]);
         setVersions(allVersions);
+        setSuggestions(pendingSuggestions);
         await refresh(true);
         setIsCommitting(true);
         setConflictInPlace(false);
+
+        if (pendingSuggestions.length > 0) {
+          setStagingMode("suggestions");
+        }
 
         // 3. Smoothly fade overlay out to reveal new content
         setTimeout(() => {
@@ -388,6 +407,52 @@ export const Memory: React.FC = memo(() => {
       }
     },
     [consolidating, unconsolidatedIdentityCount, refresh]
+  );
+
+  const handleApplySuggestions = useCallback(
+    async (decisionsMap: Record<string, "accept" | "reject">) => {
+      const decisionList = Object.entries(decisionsMap).map(([id, action]) => ({
+        id,
+        action,
+      }));
+      if (decisionList.length === 0) return;
+      setIsApplyingSuggestions(true);
+      setLeftFlash(true);
+
+      try {
+        const updated = await resolveMemorySuggestions({
+          projectId: undefined,
+          decisions: decisionList,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        setPersonalMemory(updated);
+        setDisplayedRecord(updated);
+
+        const [allVersions, remainingSuggestions] = await Promise.all([
+          getPersonalMemoryVersions(),
+          getMemorySuggestions().catch(() => []),
+        ]);
+        setVersions(allVersions);
+        setSuggestions(remainingSuggestions);
+        await refresh(true);
+        setIsCommitting(true);
+
+        if (remainingSuggestions.length === 0) {
+          setStagingMode("idle");
+        }
+
+        setTimeout(() => {
+          setIsCommitting(false);
+          setLeftFlash(false);
+        }, 900);
+      } catch (e) {
+        console.error("[Memory] Apply suggestions failed:", e);
+        setLeftFlash(false);
+      } finally {
+        setIsApplyingSuggestions(false);
+      }
+    },
+    [refresh]
   );
 
   const handleCopyDoc = useCallback(async () => {
@@ -792,6 +857,46 @@ export const Memory: React.FC = memo(() => {
         }
         headerActions={
           <div className="flex items-center gap-2 flex-wrap">
+            {unconsolidatedIdentityCount > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setStagingMode((prev) => (prev === "facts" ? "idle" : "facts"))
+                }
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all cursor-pointer shadow-sm",
+                  stagingMode === "facts"
+                    ? "bg-[rgba(var(--accent),0.25)] border-[rgba(var(--accent),0.55)] text-[rgb(var(--accent))]"
+                    : "bg-[rgba(var(--foreground),0.04)] border-[rgba(var(--border),0.18)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:border-[rgba(var(--accent),0.3)]"
+                )}
+                title="View candidate facts queued for integration"
+              >
+                <Tag
+                  size={12}
+                  className={stagingMode === "facts" ? "text-[rgb(var(--accent))]" : ""}
+                />
+                <span>{MEMORY_COPY.learnedFacts}</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-medium text-[rgb(var(--accent))]">
+                  {unconsolidatedIdentityCount}
+                </span>
+              </button>
+            )}
+
+            {suggestions.length > 0 && stagingMode !== "suggestions" && (
+              <button
+                type="button"
+                onClick={() => setStagingMode("suggestions")}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all cursor-pointer shadow-sm animate-pulse"
+                title="Review pending suggestions"
+              >
+                <Sparkles size={12} />
+                <span>Review Suggestions</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-medium bg-emerald-500/20">
+                  {suggestions.length}
+                </span>
+              </button>
+            )}
+
             {conflictInPlace ? (
               <div className="flex items-center gap-1.5 p-0.5 rounded-xl bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.3)] animate-in fade-in duration-150">
                 <button
@@ -1005,6 +1110,10 @@ export const Memory: React.FC = memo(() => {
                 isSaving={saving}
                 isConsolidating={consolidating}
                 isCommitting={isCommitting}
+                suggestions={suggestions}
+                onApplySuggestions={handleApplySuggestions}
+                isApplyingSuggestions={isApplyingSuggestions}
+                candidateFacts={identityCandidateFacts}
               />
             </div>
           </div>

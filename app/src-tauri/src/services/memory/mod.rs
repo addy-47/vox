@@ -49,8 +49,9 @@ pub use ml::{
     estimate_tokens, unload_all_onnx_models, unload_memory_pipeline_onnx_models, warmup_tokenizer,
 };
 pub use personal::{
-    apply_patch_operations, consolidate_personal_memory, MemoryPatchOperation,
-    PersonalConsolidationOutput,
+    apply_patch_operations, batch_resolve_memory_suggestions, consolidate_personal_memory,
+    regenerate_personal_memory, resolve_memory_suggestions, MemoryPatchOperation,
+    MemorySuggestionError, PersonalConsolidationOutput,
 };
 pub use scheduler::{
     check_missed_consolidation_on_boot, spawn_consolidation_scheduler,

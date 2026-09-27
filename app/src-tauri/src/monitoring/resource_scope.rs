@@ -102,10 +102,11 @@ pub struct ResourceScopeSnapshot {
 
 impl ResourceScopeSnapshot {
     pub fn resident_bytes(&self) -> u64 {
-        self.cgroup
-            .as_ref()
-            .map(|cgroup| cgroup.current_bytes)
-            .unwrap_or(self.process.pss_bytes)
+        if self.process.rss_bytes > 0 {
+            self.process.rss_bytes
+        } else {
+            self.process.pss_bytes
+        }
     }
 }
 
@@ -390,6 +391,17 @@ fn read_cgroup_path(pid: u32) -> Option<PathBuf> {
         .find_map(|line| line.strip_prefix("0::"))?
         .trim_start_matches('/');
     if relative.is_empty() {
+        return None;
+    }
+    let lower = relative.to_lowercase();
+    // Systemd user slices and session scopes contain the entire desktop session.
+    // Only accept cgroups that are isolated containers or specifically named for Vox.
+    if !lower.contains("vox")
+        && (lower.contains("user.slice")
+            || lower.contains("session-")
+            || lower.contains("user@")
+            || lower.starts_with("app.slice"))
+    {
         return None;
     }
     Some(Path::new("/sys/fs/cgroup").join(relative))

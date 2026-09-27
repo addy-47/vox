@@ -13,10 +13,14 @@
 #![allow(dead_code)]
 
 pub mod audio;
+pub mod calibration;
+pub mod consolidation_judge;
 pub mod db;
 pub mod harness;
 pub mod judge;
 pub mod paths;
+pub mod pipeline_report;
+pub mod preservation;
 pub mod report;
 pub mod settings_cfg;
 pub mod turns;
