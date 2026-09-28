@@ -162,10 +162,12 @@ fn test_settings_json_roundtrip_persistence() {
             .expect("tts.speed mutation failed"),
         "tts.speed should be recognized"
     );
+    // Diffusion steps are a fixed per-provider constant, not a setting.
+    // A stale client must not be able to reintroduce the knob.
     assert!(
-        apply_setting_mutation(&mut settings, "tts", "quality_steps", &serde_json::json!(8))
-            .expect("tts.quality_steps mutation failed"),
-        "tts.quality_steps should be recognized"
+        !apply_setting_mutation(&mut settings, "tts", "quality_steps", &serde_json::json!(8))
+            .expect("tts.quality_steps mutation should not error"),
+        "tts.quality_steps must no longer be a recognized setting key"
     );
 
     // Interaction & Dictation
@@ -296,7 +298,6 @@ fn test_settings_json_roundtrip_persistence() {
     assert_eq!(reloaded.tts.active, TtsActiveProvider::Supertonic);
     assert_eq!(reloaded.tts.voice_index, 42);
     assert!((reloaded.tts.speed - 1.15).abs() < 1e-5);
-    assert_eq!(reloaded.tts.quality_steps, 8);
     assert_eq!(reloaded.interaction.pipeline_mode, PipelineMode::Realtime);
     assert!(reloaded.dictation.enabled);
     assert_eq!(reloaded.dictation.output_mode, DictationOutputMode::Tray);
@@ -394,6 +395,7 @@ fn test_settings_partial_section_recovery() {
         "tts": {
             "active": "kokoro",
             "voice_index": 77,
+            // Stale key from a pre-0.5 settings.json: must be ignored, not fatal.
             "quality_steps": 5,
             "speed": 1.05,
             "threads": 4

@@ -308,105 +308,45 @@ export const TtsVoiceManager = memo(({
             description={copy.compute.description}
             layoutMode={layoutMode}
             rightSlot={
-              caps?.quality_steps ? (
-                <div className="flex items-center gap-3">
-                  <div className="grid grid-cols-2 gap-1.5 w-full max-w-[155px]">
-                    <PresetButton
-                      mono={false}
-                      selected={currentProfile === "balanced"}
-                      onClick={() => updateDraft("tts", "threads", balancedThreads)}
-                    >
-                      <Zap size={11} className="text-[rgb(var(--accent))]" />
-                      <span>{COMPUTE_PROFILE_COPY.auto}</span>
-                    </PresetButton>
-                    <PresetButton
-                      mono={false}
-                      selected={currentProfile === "eco"}
-                      onClick={() => updateDraft("tts", "threads", ecoThreads)}
-                    >
-                      <Battery size={11} className="text-emerald-400" />
-                      <span>{COMPUTE_PROFILE_COPY.eco}</span>
-                    </PresetButton>
-                    <PresetButton
-                      mono={false}
-                      selected={currentProfile === "max"}
-                      onClick={() => updateDraft("tts", "threads", totalCores)}
-                    >
-                      <Gauge size={11} className="text-amber-400" />
-                      <span>{COMPUTE_PROFILE_COPY.max}</span>
-                    </PresetButton>
-                    <PresetInput
-                      selected={currentProfile === "custom"}
-                      value={currentProfile === "custom" ? `${currentThreads}T` : ""}
-                      placeholder={COMPUTE_PROFILE_COPY.custom}
-                      onChange={(e) => {
-                        const clean = e.target.value.replace(/[^0-9]/g, "");
-                        if (!clean) return;
-                        const num = parseInt(clean, 10);
-                        if (!isNaN(num) && num >= 1 && num <= 64) {
-                          updateDraft("tts", "threads", num);
-                        }
-                      }}
-                    />
-                  </div>
-                  <div className="flex flex-col items-center justify-center pl-2.5 border-l border-[rgba(var(--accent),0.12)]">
-                    <RotaryKnob
-                      value={draftSettings.tts.quality_steps || 6}
-                      min={4}
-                      max={8}
-                      step={1}
-                      formatValue={(v) => `${Math.round(v)}`}
-                      formatPreset={(v) => `${v}s`}
-                      onChange={(v) => updateDraft("tts", "quality_steps", Math.round(v))}
-                      presetSteps={[4, 6, 8]}
-                    />
-                    <span className="text-[9.5px] font-mono uppercase tracking-wider text-[rgb(var(--foreground-muted))]/70 mt-1">Steps</span>
-                  </div>
-                </div>
-              ) : undefined
-            }
-            controls={
-              !caps?.quality_steps ? (
-                <>
-                  <PresetButton
-                    mono={false}
-                    selected={currentProfile === "balanced"}
-                    onClick={() => updateDraft("tts", "threads", balancedThreads)}
-                  >
-                    <Zap size={11} className="text-[rgb(var(--accent))]" />
-                    <span>{COMPUTE_PROFILE_COPY.auto}</span>
-                  </PresetButton>
-                  <PresetButton
-                    mono={false}
-                    selected={currentProfile === "eco"}
-                    onClick={() => updateDraft("tts", "threads", ecoThreads)}
-                  >
-                    <Battery size={11} className="text-emerald-400" />
-                    <span>{COMPUTE_PROFILE_COPY.eco}</span>
-                  </PresetButton>
-                  <PresetButton
-                    mono={false}
-                    selected={currentProfile === "max"}
-                    onClick={() => updateDraft("tts", "threads", totalCores)}
-                  >
-                    <Gauge size={11} className="text-amber-400" />
-                    <span>{COMPUTE_PROFILE_COPY.max}</span>
-                  </PresetButton>
-                  <PresetInput
-                    selected={currentProfile === "custom"}
-                    value={currentProfile === "custom" ? `${currentThreads}T` : ""}
-                    placeholder={COMPUTE_PROFILE_COPY.custom}
-                    onChange={(e) => {
-                      const clean = e.target.value.replace(/[^0-9]/g, "");
-                      if (!clean) return;
-                      const num = parseInt(clean, 10);
-                      if (!isNaN(num) && num >= 1 && num <= 64) {
-                        updateDraft("tts", "threads", num);
-                      }
-                    }}
-                  />
-                </>
-              ) : undefined
+              <div className="grid grid-cols-2 gap-1.5 w-full max-w-[155px]">
+                <PresetButton
+                  mono={false}
+                  selected={currentProfile === "balanced"}
+                  onClick={() => updateDraft("tts", "threads", balancedThreads)}
+                >
+                  <Zap size={11} className="text-[rgb(var(--accent))]" />
+                  <span>{COMPUTE_PROFILE_COPY.auto}</span>
+                </PresetButton>
+                <PresetButton
+                  mono={false}
+                  selected={currentProfile === "eco"}
+                  onClick={() => updateDraft("tts", "threads", ecoThreads)}
+                >
+                  <Battery size={11} className="text-emerald-400" />
+                  <span>{COMPUTE_PROFILE_COPY.eco}</span>
+                </PresetButton>
+                <PresetButton
+                  mono={false}
+                  selected={currentProfile === "max"}
+                  onClick={() => updateDraft("tts", "threads", totalCores)}
+                >
+                  <Gauge size={11} className="text-amber-400" />
+                  <span>{COMPUTE_PROFILE_COPY.max}</span>
+                </PresetButton>
+                <PresetInput
+                  selected={currentProfile === "custom"}
+                  value={currentProfile === "custom" ? `${currentThreads}T` : ""}
+                  placeholder={COMPUTE_PROFILE_COPY.custom}
+                  onChange={(e) => {
+                    const clean = e.target.value.replace(/[^0-9]/g, "");
+                    if (!clean) return;
+                    const num = parseInt(clean, 10);
+                    if (!isNaN(num) && num >= 1 && num <= 64) {
+                      updateDraft("tts", "threads", num);
+                    }
+                  }}
+                />
+              </div>
             }
           />
         );

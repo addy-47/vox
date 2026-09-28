@@ -217,7 +217,7 @@ fn main() {
     println!("  Supertonic (16 steps) : {:?}", supertonic_dir);
     println!("  Kokoro v1.1 (multi)   : {:?}", kokoro_dir);
     println!("  Chatterbox (10 steps) : {:?}", chatterbox_dir);
-    println!("  ZipVoice (6 steps)    : {:?}", zipvoice_dir);
+    println!("  ZipVoice (4 steps)    : {:?}", zipvoice_dir);
     println!("Configuration:");
     println!("  Target Model : {}", args.model);
     println!("  Clip Filter  : {:?}", args.clip);
@@ -225,7 +225,7 @@ fn main() {
     println!("  Voice (base) : {}", args.voice);
     println!("  Output Dir   : {:?}", args.output_dir);
     println!("  WAV Dir      : {:?}", args.wav_dir);
-    println!("  Max Quality  : Supertonic=16 steps, Chatterbox=10 steps, Kokoro=speed 1.0, ZipVoice=6 steps");
+    println!("  Fixed steps : Supertonic=12, Chatterbox=10, Kokoro=n/a, ZipVoice=4 (flow-distilled)");
     println!("  Kokoro Policy: diff voice per clip (voice = idx % 10)");
 
     let prompts = load_benchmark_prompts(&args);
@@ -263,17 +263,17 @@ fn main() {
 
     let base_voice = args.voice;
 
-    // 1) Supertonic — max 16 steps, speed 1.0, realtime via production seam (hot-swap voice not needed)
+    // 1) Supertonic — 12 fixed steps, speed 1.0, realtime via production seam (hot-swap voice not needed)
     if run_supertonic {
         if supertonic_dir.exists() {
             let supertonic_path_str = supertonic_dir.to_string_lossy().to_string();
             let voice = base_voice;
             let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(
-                vox_lib::services::tts::TtsEngine::new(&supertonic_dir, voice, 16, 1.0, 2)
+                vox_lib::services::tts::TtsEngine::new(&supertonic_dir, voice, 1.0, 2)
                     .expect("Failed to init Supertonic"),
             );
             let run = benchmark_tts_provider(
-                "Supertonic 3 Multilingual (max 16 steps, speed 1.0)",
+                "Supertonic 3 Multilingual (12 fixed steps, speed 1.0)",
                 "supertonic",
                 &supertonic_path_str,
                 &prompts,
@@ -316,17 +316,17 @@ fn main() {
         }
     }
 
-    // 3) Chatterbox — max 10 steps
+    // 3) Chatterbox — 10 fixed steps
     if run_chatterbox {
         if chatterbox_dir.join("t3-q4_0.gguf").exists() {
             let cd_str = chatterbox_dir.to_string_lossy().to_string();
             let voice = base_voice;
             let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(
-                vox_lib::services::tts::ChatterboxEngine::new(&chatterbox_dir, "en", 10, 1.0, None)
+                vox_lib::services::tts::ChatterboxEngine::new(&chatterbox_dir, "en", 1.0, None)
                     .expect("Failed to init Chatterbox"),
             );
             let run = benchmark_tts_provider(
-                "Chatterbox Local (max 10 steps, speed 1.0)",
+                "Chatterbox Local (10 fixed steps, speed 1.0)",
                 "chatterbox",
                 &cd_str,
                 &prompts,
@@ -340,7 +340,7 @@ fn main() {
         }
     }
 
-    // 4) ZipVoice — 6 quality steps, guidance 1.0, speed 1.0, zero-shot reference voice
+    // 4) ZipVoice — 4 fixed steps (distilled target), guidance 1.0, speed 1.0, zero-shot reference voice
     if run_zipvoice {
         if zipvoice_dir.exists() && zipvoice_dir.join("decoder.int8.onnx").exists() {
             let zd_str = zipvoice_dir.to_string_lossy().to_string();
@@ -352,13 +352,12 @@ fn main() {
                     &zipvoice_dir,
                     1.0,
                     1.0,
-                    6,
                     2,
                     initial_ref,
                 ).expect("Failed to init ZipVoice"),
             );
             let run = benchmark_tts_provider(
-                "ZipVoice Distill Int8 (6 steps, guidance 1.0, speed 1.0)",
+                "ZipVoice Distill Int8 (4 steps, guidance 1.0, speed 1.0)",
                 "zipvoice",
                 &zd_str,
                 &prompts,

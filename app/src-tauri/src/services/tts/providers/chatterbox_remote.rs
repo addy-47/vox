@@ -14,19 +14,20 @@ use crate::{
     core::events::AudioIntent,
     services::{
         audio::PlaybackEngine,
-        tts::{
-            MAX_QUALITY_STEPS_CHATTERBOX, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED, TTS_CHUNK_SIZE,
-            TTS_SAMPLE_RATE,
-        },
+        tts::{MAX_SPEED, MIN_SPEED, TTS_CHUNK_SIZE, TTS_SAMPLE_RATE},
     },
 };
+
+/// Fixed conditional-flow-matching step count for remote Chatterbox.
+/// Not user-configurable. Declared independently of `CHATTERBOX_STEPS` so the
+/// local and remote engines can diverge without coupling.
+pub const CHATTERBOX_REMOTE_STEPS: u32 = 10;
 
 /// Remote speech synthesis provider offloading Chatterbox inference to a GPU server via HTTP streaming.
 pub struct ChatterboxRemoteProvider {
     client: reqwest::blocking::Client,
     endpoint: String,
     language: String,
-    quality_steps: AtomicU32,
     speed: AtomicU32,
 }
 
@@ -35,7 +36,6 @@ impl ChatterboxRemoteProvider {
     pub fn new(
         endpoint: &str,
         language: &str,
-        quality_steps: u32,
         speed: f32,
         remote_path: &str,
     ) -> Result<Self> {
@@ -60,9 +60,6 @@ impl ChatterboxRemoteProvider {
             client,
             endpoint: endpoint.to_string(),
             language: clean_lang.to_string(),
-            quality_steps: AtomicU32::new(
-                quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_CHATTERBOX),
-            ),
             speed: AtomicU32::new(speed.clamp(MIN_SPEED, MAX_SPEED).to_bits()),
         };
 
@@ -225,13 +222,6 @@ fn stream_pcm_response(
 }
 
 impl TtsProvider for ChatterboxRemoteProvider {
-    /// Hot-updates the number of remote diffusion quality steps.
-    fn set_quality_steps(&self, steps: u32) {
-        let clamped = steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_CHATTERBOX);
-        self.quality_steps.store(clamped, Ordering::Relaxed);
-        log::info!("[ChatterboxRemote] Quality steps set to {}", clamped);
-    }
-
     /// Hot-updates the speech playback speed multiplier.
     fn set_speed(&self, speed: f32) {
         let clamped = speed.clamp(MIN_SPEED, MAX_SPEED);
@@ -263,13 +253,13 @@ impl TtsProvider for ChatterboxRemoteProvider {
         );
 
         let start = Instant::now();
-        let quality_steps = self.quality_steps.load(Ordering::Relaxed);
         let speed = f32::from_bits(self.speed.load(Ordering::Relaxed));
 
+        // `quality_steps` is the remote server's wire key, not a local setting.
         let payload = serde_json::json!({
             "text": text,
             "language": self.language,
-            "quality_steps": quality_steps,
+            "quality_steps": CHATTERBOX_REMOTE_STEPS,
             "speed": speed
         });
 

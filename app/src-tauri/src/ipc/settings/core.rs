@@ -321,7 +321,6 @@ pub async fn update_setting<R: tauri::Runtime>(
     app: AppHandle<R>,
 ) -> Result<SettingUpdateResult, VoxIpcError> {
     let state: State<'_, Arc<AppState>> = app.state();
-    let policy = get_setting_reload_policy(&domain, &key);
 
     let applied = {
         let mut settings = state
@@ -332,15 +331,18 @@ pub async fn update_setting<R: tauri::Runtime>(
             .map_err(VoxIpcError::InvalidArgument)?
     };
 
-    if applied {
-        handle_setting_side_effects(&app, &state, &domain, &key, &value).await;
-    } else {
-        return Ok(SettingUpdateResult {
-            applied: false,
-            reload_policy: policy.as_str().to_string(),
-            message: format!("Unknown setting: {}.{}", domain, key),
-        });
+    // An unrecognised key is a client bug, not a no-op. Returning Ok() here
+    // made a rejected write indistinguishable from a successful one: the
+    // frontend never read `applied`, so the value was silently dropped.
+    if !applied {
+        return Err(VoxIpcError::InvalidArgument(format!(
+            "Unknown setting: {}.{}",
+            domain, key
+        )));
     }
+
+    let policy = get_setting_reload_policy(&domain, &key);
+    handle_setting_side_effects(&app, &state, &domain, &key, &value).await;
 
     if policy == SettingReloadPolicy::WorkerCommand {
         dispatch_worker_command(&app, &domain, &key, &value).await;
@@ -497,26 +499,6 @@ async fn dispatch_worker_command<R: tauri::Runtime>(
                             log::warn!("[Settings] Failed to send TtsCommand::SetSpeed: {}", e);
                         }
                         log::debug!("[Settings] TtsCommand::SetSpeed({}) dispatched", speed);
-                    }
-                }
-            }
-            ("tts", "quality_steps") => {
-                if let Some(ref tts_tx) = engine.tts_tx {
-                    let steps_opt = value
-                        .as_u64()
-                        .map(|v| v as u32)
-                        .or_else(|| value.as_str().and_then(|s| s.parse::<u32>().ok()));
-                    if let Some(steps) = steps_opt {
-                        if let Err(e) = tts_tx.send(TtsCommand::SetQualitySteps(steps)) {
-                            log::warn!(
-                                "[Settings] Failed to send TtsCommand::SetQualitySteps: {}",
-                                e
-                            );
-                        }
-                        log::debug!(
-                            "[Settings] TtsCommand::SetQualitySteps({}) dispatched",
-                            steps
-                        );
                     }
                 }
             }

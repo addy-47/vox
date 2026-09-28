@@ -27,7 +27,7 @@ use crate::{
         DEFAULT_STT_CLOUD_LANGUAGE, DEFAULT_STT_CLOUD_MODEL, DEFAULT_STT_CLOUD_PROVIDER,
         DEFAULT_STT_CLOUD_REGION, DEFAULT_STT_PARTIAL_THROTTLE_MS, DEFAULT_STT_THREADS,
         DEFAULT_SYSTEM_PROMPT_MODULAR, DEFAULT_SYSTEM_PROMPT_REALTIME, DEFAULT_TELEMETRY_ENABLED,
-        DEFAULT_TELEMETRY_LOG_LEVEL, DEFAULT_TTS_QUALITY_STEPS, DEFAULT_TTS_SPEED,
+        DEFAULT_TELEMETRY_LOG_LEVEL, DEFAULT_TTS_SPEED,
         DEFAULT_TTS_THREADS, DEFAULT_TTS_VOICE_INDEX, DEFAULT_UI_ACCENT_SEED, DEFAULT_UI_THEME,
         DEFAULT_VAD_MAX_SPEECH_DURATION_S, DEFAULT_VAD_PTT_NOISE_GATE,
         DEFAULT_VAD_SILENCE_DURATION_MS, DEFAULT_VAD_SPEECH_ONSET_MS, DEFAULT_VAD_THRESHOLD,
@@ -171,12 +171,7 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
         "appearance" | "working_memory" | "personal_memory" | "persona" | "realtime" => {
             SettingReloadPolicy::Hot
         }
-        "tts"
-            if key == "quality_steps"
-                || key == "speed"
-                || key == "voice_index"
-                || key == "voice" =>
-        {
+        "tts" if key == "speed" || key == "voice_index" || key == "voice" => {
             SettingReloadPolicy::WorkerCommand
         }
         "llm"
@@ -640,7 +635,6 @@ pub enum TtsProviderConfig {
     Kokoro,
     Chatterbox {
         language: String,
-        quality_steps: u32,
         speed: f32,
         #[serde(default)]
         voice_id: Option<String>,
@@ -648,7 +642,6 @@ pub enum TtsProviderConfig {
     ChatterboxRemote {
         endpoint: String,
         language: String,
-        quality_steps: u32,
         speed: f32,
         remote_path: String,
         #[serde(default)]
@@ -677,44 +670,34 @@ pub enum TtsVoiceSource {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderCaps {
     pub voices: TtsVoiceSource,
-    pub speed: bool,
-    pub quality_steps: bool,
     pub clone: bool,
 }
 
-pub fn caps_for_id(provider_id: &str) -> ProviderCaps {
-    match provider_id {
+pub fn caps_for_id(provider_id: &str) -> Result<ProviderCaps, String> {
+    let caps = match provider_id {
         "supertonic" | "kokoro" => ProviderCaps {
             voices: TtsVoiceSource::Catalog,
-            speed: true,
-            quality_steps: false,
             clone: false,
         },
         "chatterbox" | "chatterbox_remote" => ProviderCaps {
             voices: TtsVoiceSource::Custom,
-            speed: true,
-            quality_steps: true,
             clone: true,
         },
         "edge_tts" => ProviderCaps {
             voices: TtsVoiceSource::Edge,
-            speed: false,
-            quality_steps: false,
             clone: false,
         },
         "zipvoice" => ProviderCaps {
             voices: TtsVoiceSource::Custom,
-            speed: true,
-            quality_steps: true,
             clone: false,
         },
-        _ => ProviderCaps {
-            voices: TtsVoiceSource::Catalog,
-            speed: true,
-            quality_steps: false,
-            clone: false,
-        },
-    }
+        // Unknown ids must fail loudly. A fabricated catalog answer is
+        // indistinguishable from a real one at the call site, which is how a
+        // provider that was never registered ends up rendering as though it
+        // supports catalog voices.
+        other => return Err(format!("Unknown TTS provider id: {other}")),
+    };
+    Ok(caps)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -723,7 +706,6 @@ pub struct TtsSettings {
     pub active: TtsActiveProvider,
     #[serde(alias = "voice")]
     pub voice_index: i32,
-    pub quality_steps: u32,
     pub speed: f32,
     pub threads: u32,
     pub edge_tts: TtsEdgeConfig,
@@ -739,7 +721,6 @@ impl Default for TtsSettings {
         Self {
             active: TtsActiveProvider::EdgeTts,
             voice_index: DEFAULT_TTS_VOICE_INDEX,
-            quality_steps: DEFAULT_TTS_QUALITY_STEPS,
             speed: DEFAULT_TTS_SPEED,
             threads: DEFAULT_TTS_THREADS,
             edge_tts: TtsEdgeConfig::default(),
@@ -762,14 +743,12 @@ impl TtsSettings {
             TtsActiveProvider::Kokoro => TtsProviderConfig::Kokoro,
             TtsActiveProvider::Chatterbox => TtsProviderConfig::Chatterbox {
                 language: self.chatterbox.language.clone(),
-                quality_steps: self.quality_steps,
                 speed: self.speed,
                 voice_id: self.chatterbox.voice_id.clone(),
             },
             TtsActiveProvider::ChatterboxRemote => TtsProviderConfig::ChatterboxRemote {
                 endpoint: self.chatterbox_remote.endpoint.clone(),
                 language: self.chatterbox_remote.language.clone(),
-                quality_steps: self.quality_steps,
                 speed: self.speed,
                 remote_path: self.chatterbox_remote.remote_path.clone(),
                 voice_id: self.chatterbox_remote.voice_id.clone(),
@@ -1191,25 +1170,42 @@ mod tests {
     #[test]
     fn test_caps_for_id_matrix() {
         assert_eq!(
-            caps_for_id("supertonic"),
+            caps_for_id("supertonic").expect("supertonic caps"),
             ProviderCaps {
                 voices: TtsVoiceSource::Catalog,
-                speed: true,
-                quality_steps: false,
                 clone: false,
             }
         );
-        assert_eq!(caps_for_id("kokoro"), caps_for_id("supertonic"));
-        let chatterbox = caps_for_id("chatterbox");
+        assert_eq!(
+            caps_for_id("kokoro").expect("kokoro caps"),
+            caps_for_id("supertonic").expect("supertonic caps")
+        );
+        let chatterbox = caps_for_id("chatterbox").expect("chatterbox caps");
         assert_eq!(chatterbox.voices, TtsVoiceSource::Custom);
-        assert!(chatterbox.speed && chatterbox.quality_steps && chatterbox.clone);
-        assert_eq!(caps_for_id("chatterbox_remote"), chatterbox);
-        let edge = caps_for_id("edge_tts");
+        assert!(chatterbox.clone);
+        assert_eq!(
+            caps_for_id("chatterbox_remote").expect("chatterbox_remote caps"),
+            chatterbox
+        );
+        let edge = caps_for_id("edge_tts").expect("edge_tts caps");
         assert_eq!(edge.voices, TtsVoiceSource::Edge);
-        assert!(!edge.speed && !edge.quality_steps && !edge.clone);
-        let zipvoice = caps_for_id("zipvoice");
+        assert!(!edge.clone);
+        let zipvoice = caps_for_id("zipvoice").expect("zipvoice caps");
         assert_eq!(zipvoice.voices, TtsVoiceSource::Custom);
-        assert!(zipvoice.speed && zipvoice.quality_steps && !zipvoice.clone);
-        assert_eq!(caps_for_id("no_such_engine"), caps_for_id("supertonic"));
+        assert!(!zipvoice.clone);
+    }
+
+    #[test]
+    fn test_caps_for_id_rejects_unknown() {
+        // An unknown id must error rather than fabricate catalog capabilities:
+        // a fabricated answer is indistinguishable from a real one downstream.
+        let err = caps_for_id("no_such_engine")
+            .expect_err("unknown provider id must not resolve");
+        assert!(err.contains("no_such_engine"), "error should name the id");
+        assert!(caps_for_id("").is_err(), "empty id must not resolve");
+        assert!(
+            caps_for_id("Kokoro").is_err(),
+            "matching must be exact, not case-insensitive"
+        );
     }
 }

@@ -92,11 +92,16 @@ export const Monitoring: React.FC<MonitoringProps> = ({
     formatLatency,
   } = useMonitoringMetrics(!popover || open);
 
-  const isVadModel = vadBackend !== "earshot";
+  // Residency is a property of the manifest group, not of provider names.
+  // Cloud and remote providers run off-device and are never resident; a
+  // built-in VAD backend has no weights to load.
+  const activeVadGroup = modelCatalog?.vad?.find((m) => m.id === vadBackend);
+  const activeTtsGroup = modelCatalog?.tts?.find((m) => m.id === ttsProvider);
+
+  const isVadModel = activeVadGroup ? !activeVadGroup.is_built_in : false;
   const isSttModel = sttProvider === "embedded";
   const isLlmModel = llmProvider === "embedded";
-  const isTtsModel =
-    ttsProvider === "supertonic" || ttsProvider === "kokoro" || ttsProvider === "chatterbox";
+  const isTtsModel = activeTtsGroup ? !activeTtsGroup.is_cloud && !activeTtsGroup.is_remote : false;
   const isEmbedderModel = Boolean(contextRetrievalEnabled);
   const isTranslitModel = Boolean(transliterateEnabled);
 

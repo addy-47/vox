@@ -45,14 +45,13 @@ pub fn create_tts_provider(
 ) -> Result<Box<dyn TtsProvider>, String> {
     let provider_config = settings.tts.to_provider_config();
     let voice = settings.tts.voice_index;
-    let quality_steps = settings.tts.quality_steps;
     let speed = settings.tts.speed;
     let num_threads = settings.tts.threads;
 
     match &provider_config {
         TtsProviderConfig::Supertonic => {
             log::info!("[TTS Factory] Initializing Supertonic engine");
-            SupertonicEngine::new(super_tts_path, voice, quality_steps, speed, num_threads)
+            SupertonicEngine::new(super_tts_path, voice, speed, num_threads)
                 .map(|e| Box::new(e) as Box<dyn TtsProvider>)
                 .map_err(|e| format!("Failed to create Supertonic engine: {}", e))
         }
@@ -65,38 +64,24 @@ pub fn create_tts_provider(
         }
         TtsProviderConfig::Chatterbox {
             language,
-            quality_steps: cb_quality,
             speed: cb_speed,
             voice_id: _,
         } => {
             log::info!("[TTS Factory] Initializing Chatterbox engine");
             let chatterbox_path = model_dir(CHATTERBOX_MODEL_DIR);
-            ChatterboxEngine::new(
-                &chatterbox_path,
-                language,
-                *cb_quality,
-                *cb_speed,
-                reference_audio,
-            )
+            ChatterboxEngine::new(&chatterbox_path, language, *cb_speed, reference_audio)
             .map(|e| Box::new(e) as Box<dyn TtsProvider>)
             .map_err(|e| format!("Failed to create Chatterbox engine: {}", e))
         }
         TtsProviderConfig::ChatterboxRemote {
             endpoint,
             language,
-            quality_steps: remote_quality,
             speed: remote_speed,
             remote_path,
             voice_id: _,
         } => {
             log::info!("[TTS Factory] Initializing ChatterboxRemote provider");
-            ChatterboxRemoteProvider::new(
-                endpoint,
-                language,
-                *remote_quality,
-                *remote_speed,
-                remote_path,
-            )
+            ChatterboxRemoteProvider::new(endpoint, language, *remote_speed, remote_path)
             .map(|p| Box::new(p) as Box<dyn TtsProvider>)
             .map_err(|e| format!("Failed to create ChatterboxRemote provider: {}", e))
         }
@@ -112,14 +97,7 @@ pub fn create_tts_provider(
             let zipvoice_path = model_dir(ZIPVOICE_MODEL_DIR);
             let voices_dir = zipvoice_path.join("voices");
             let initial_ref = resolve_zipvoice_reference(&voices_dir, voice_id.as_deref()).ok();
-            ZipvoiceEngine::new(
-                &zipvoice_path,
-                speed,
-                *guidance_scale,
-                quality_steps,
-                num_threads,
-                initial_ref,
-            )
+            ZipvoiceEngine::new(&zipvoice_path, speed, *guidance_scale, num_threads, initial_ref)
             .map(|e| Box::new(e) as Box<dyn TtsProvider>)
             .map_err(|e| format!("Failed to create ZipVoice engine: {}", e))
         }
