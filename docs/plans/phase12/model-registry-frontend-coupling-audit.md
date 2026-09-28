@@ -538,13 +538,38 @@ decisions in §1. Invariants 6-9 make it total.
 **Exit:** `pnpm test` fails on the current tree. That is the point — the guard
 must be red before the fixes are green.
 
-### Batch 3 — Capabilities become a trait contract (3-4 days, backend)
+### Batch 3 — Capabilities become a trait contract (DONE 2026-09-28)
 
-**Supersedes the original manifest-schema design.** Capabilities are properties
-of the engine implementation, so they belong beside the code, not in a data
-file that describes code. A JSON `capabilities` block would be a third copy of
-ranges that already live in Rust next to the clamp that enforces them, and a
-typo'd key (`"qualiy_steps"`) would be silently ignored.
+Capabilities are properties of the engine implementation, so they live beside
+the code — not in a data file that describes code.
+
+**As built (supersedes the draft below where they differ):**
+
+- `fn caps() -> ProviderCaps where Self: Sized` on `TtsProvider`, implemented
+  explicitly on all 6 providers. Not derived from setter overrides — §3.3 proves
+  that inference wrong in both directions.
+- `ProviderCaps` is `{ voices, clone, speed_range }`. `quality_steps: bool` went
+  with the Batch 0.5 deletion; `speed: bool` was deleted as decorative
+  (uniformly true, zero consumers) and replaced by the range that actually varies.
+- `SPEED_RANGE` is an inherent const on each engine, and each `set_speed` clamps
+  through it. Verified all six: only `edge_tts` differs (`0.5..=2.0`, the rest
+  `0.7..=2.0`).
+- `caps_for_id` lives in `services::tts::factory` and dispatches over
+  `TtsActiveProvider` — exhaustive, so a new variant is a compile error. The id
+  is validated by deserialising into the enum. A first attempt placed this in
+  `core::settings` via inline paths; that was a layering inversion (`core` had
+  never imported `services`) and a style violation, so it was moved.
+- `TtsProviderKind` and `TtsProvider::kind()` deleted — dead parallel enum, zero
+  readers.
+- `FALLBACK_CAPS` / `DEFAULT_CAPS` deleted. `getProviderCaps` returns `null` on
+  failure; the component already renders that as its loading state.
+- Speed knob bounds come from `caps.speed_range`. Edge regains its `0.5` floor.
+- Tests live in `factory.rs` alongside the function.
+- **Deferred:** 3.7 (manifest `files[].id` replacing `MODEL_FILE_TTS_*`). Backend-
+  internal, zero frontend impact, touches every engine constructor. Filed
+  separately, not folded in.
+
+**Original draft (kept for the record):**
 
 - **3.1** Add `fn caps() -> ProviderCaps where Self: Sized` to `TtsProvider`
   (`providers/mod.rs:46`). **Explicit declaration — NOT derived from which

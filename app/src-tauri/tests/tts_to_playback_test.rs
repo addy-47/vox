@@ -22,14 +22,12 @@ use ringbuf::traits::Consumer;
 use vox_lib::{
     core::{
         events::{AudioIntent, VoxEvent},
+        settings::ProviderCaps,
         state::InteractionState,
     },
     services::tts::{
         actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
-        providers::{
-            supertonic::TtsEngine as SupertonicEngine, SynthesisContext, TtsProvider,
-            TtsProviderKind,
-        },
+        providers::{supertonic::TtsEngine as SupertonicEngine, SynthesisContext, TtsProvider},
     },
 };
 
@@ -261,6 +259,10 @@ async fn test_tts_to_playback_short_utterance_flush() {
         }
 
         impl TtsProvider for ShortUtteranceProvider {
+            fn caps() -> ProviderCaps {
+                SupertonicEngine::caps()
+            }
+
             fn synthesize_chunk(
                 &self,
                 _text: &str,
@@ -278,10 +280,6 @@ async fn test_tts_to_playback_short_utterance_flush() {
                 );
                 self.pushed_flag.store(true, Ordering::Relaxed);
                 Ok(())
-            }
-
-            fn kind(&self) -> TtsProviderKind {
-                TtsProviderKind::Supertonic
             }
 
             fn health_check(&self) -> bool {

@@ -95,7 +95,11 @@ pub fn apply_patch_operations(
     let sorted_ops: Vec<(usize, bool, MemoryPatchOperation)> = absolute_ops
         .into_iter()
         .map(|(position, _, op)| (position, false, op))
-        .chain(append_ops.into_iter().map(|(position, op)| (position, true, op)))
+        .chain(
+            append_ops
+                .into_iter()
+                .map(|(position, op)| (position, true, op)),
+        )
         .collect();
 
     let mut rejected: Vec<RejectedOperation> = Vec::new();
@@ -114,7 +118,8 @@ pub fn apply_patch_operations(
                     });
                     continue;
                 }
-                let insert_pos = if is_append || (op_index != 0 && (op_index as usize) > raw_lines.len())
+                let insert_pos = if is_append
+                    || (op_index != 0 && (op_index as usize) > raw_lines.len())
                 {
                     if !is_append {
                         log::debug!(

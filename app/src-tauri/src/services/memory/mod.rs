@@ -59,6 +59,7 @@ pub use scheduler::{
 };
 
 pub use crate::core::error::MemoryError;
+pub use crate::persistence::has_unfinished_items;
 
 pub const QUIET_INGESTION_DEBOUNCE_SECS: u64 = 30;
 pub const COMPACTION_SENTINEL_TURN_ID: u32 = 999_999;
@@ -102,7 +103,7 @@ pub fn spawn_quiet_ingestion_observer(state: Arc<AppState>) {
                         if still_enabled && is_quiet_state(latest) {
                             match db.connect() {
                                 Ok(conn) => {
-                                    match crate::persistence::has_unfinished_items(&conn).await {
+                                    match has_unfinished_items(&conn).await {
                                         Ok(true) => {
                                             log::info!("[Memory::Ingestion] 30s sustained quiet state reached. Running ingestion deduplication cycle.");
                                             if let Err(e) = ingestion::run_ingestion_cycle(&conn).await {

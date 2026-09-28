@@ -225,7 +225,9 @@ fn main() {
     println!("  Voice (base) : {}", args.voice);
     println!("  Output Dir   : {:?}", args.output_dir);
     println!("  WAV Dir      : {:?}", args.wav_dir);
-    println!("  Fixed steps : Supertonic=12, Chatterbox=10, Kokoro=n/a, ZipVoice=4 (flow-distilled)");
+    println!(
+        "  Fixed steps : Supertonic=12, Chatterbox=10, Kokoro=n/a, ZipVoice=4 (flow-distilled)"
+    );
     println!("  Kokoro Policy: diff voice per clip (voice = idx % 10)");
 
     let prompts = load_benchmark_prompts(&args);
@@ -346,7 +348,12 @@ fn main() {
             let zd_str = zipvoice_dir.to_string_lossy().to_string();
             let voice = base_voice;
             let voices_dir = zipvoice_dir.join("voices");
-            let initial_ref = vox_lib::services::tts::providers::zipvoice::resolve_zipvoice_reference(&voices_dir, Some("atlas")).ok();
+            let initial_ref =
+                vox_lib::services::tts::providers::zipvoice::resolve_zipvoice_reference(
+                    &voices_dir,
+                    Some("atlas"),
+                )
+                .ok();
             let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(
                 vox_lib::services::tts::ZipvoiceEngine::new(
                     &zipvoice_dir,
@@ -354,7 +361,8 @@ fn main() {
                     1.0,
                     2,
                     initial_ref,
-                ).expect("Failed to init ZipVoice"),
+                )
+                .expect("Failed to init ZipVoice"),
             );
             let run = benchmark_tts_provider(
                 "ZipVoice Distill Int8 (4 steps, guidance 1.0, speed 1.0)",

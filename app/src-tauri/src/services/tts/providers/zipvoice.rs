@@ -17,11 +17,12 @@ use sherpa_onnx::{
     OfflineTtsZipvoiceModelConfig,
 };
 
-use super::{edge_tts::EdgeTtsProvider, SynthesisContext, TtsProvider, TtsProviderKind};
+use super::{edge_tts::EdgeTtsProvider, speed_range, SynthesisContext, TtsProvider};
 use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
         events::VoxEvent,
+        settings::{ParamRange, ProviderCaps, TtsVoiceSource},
     },
     services::{
         translit::is_devanagari,
@@ -101,15 +102,21 @@ pub struct ZipvoiceEngine {
 }
 
 impl TtsProvider for ZipvoiceEngine {
-    /// Hot-updates the playback speed factor.
-    fn set_speed(&self, speed: f32) {
-        self.speed
-            .store(speed.clamp(MIN_SPEED, MAX_SPEED), Ordering::Relaxed);
+    /// Declares this provider's capabilities.
+    fn caps() -> ProviderCaps {
+        ProviderCaps {
+            voices: TtsVoiceSource::Custom,
+            clone: false,
+            speed_range: Self::SPEED_RANGE,
+        }
     }
 
-    /// Returns TtsProviderKind::Zipvoice variant identifier.
-    fn kind(&self) -> TtsProviderKind {
-        TtsProviderKind::Zipvoice
+    /// Hot-updates the playback speed factor.
+    fn set_speed(&self, speed: f32) {
+        self.speed.store(
+            speed.clamp(Self::SPEED_RANGE.min, Self::SPEED_RANGE.max),
+            Ordering::Relaxed,
+        );
     }
 
     /// Returns true confirming the engine is loaded in memory.
@@ -144,6 +151,8 @@ impl TtsProvider for ZipvoiceEngine {
 }
 
 impl ZipvoiceEngine {
+    pub const SPEED_RANGE: ParamRange = speed_range(MIN_SPEED, MAX_SPEED);
+
     /// Initializes ZipVoice offline TTS components from the specified model directory.
     pub fn new(
         model_path: &Path,
@@ -154,8 +163,9 @@ impl ZipvoiceEngine {
     ) -> Result<Self> {
         let mp = |f: &str| -> String { model_path.join(f).to_string_lossy().into() };
 
-        let clamped_guidance = guidance_scale.clamp(MIN_ZIPVOICE_GUIDANCE_SCALE, MAX_ZIPVOICE_GUIDANCE_SCALE);
-        let clamped_speed = speed.clamp(MIN_SPEED, MAX_SPEED);
+        let clamped_guidance =
+            guidance_scale.clamp(MIN_ZIPVOICE_GUIDANCE_SCALE, MAX_ZIPVOICE_GUIDANCE_SCALE);
+        let clamped_speed = speed.clamp(Self::SPEED_RANGE.min, Self::SPEED_RANGE.max);
 
         let config = OfflineTtsConfig {
             model: OfflineTtsModelConfig {
@@ -202,7 +212,10 @@ impl ZipvoiceEngine {
     pub fn set_reference(&self, reference: Arc<ZipvoiceReference>) {
         let slug = reference.slug.clone();
         *self.reference.write() = Some(reference);
-        log::info!("[Tts::Zipvoice] Active reference voice updated to '{}'", slug);
+        log::info!(
+            "[Tts::Zipvoice] Active reference voice updated to '{}'",
+            slug
+        );
     }
 
     /// Hot-updates the flow-matching classifier-free guidance scale.
@@ -219,7 +232,8 @@ impl ZipvoiceEngine {
         );
         if let Err(e) = ctx.event_tx.send(VoxEvent::Error(PipelineError {
             turn_id: ctx.turn_id,
-            message: "Configured TTS does not support Hindi (Devanagari). Routing to Edge TTS.".to_string(),
+            message: "Configured TTS does not support Hindi (Devanagari). Routing to Edge TTS."
+                .to_string(),
             source: "ZipVoice".to_string(),
             impact: PipelineImpact::Degraded,
         })) {
@@ -272,12 +286,13 @@ impl ZipvoiceEngine {
             return Ok(());
         }
 
-        let audio_ref = audio.ok_or_else(|| {
-            anyhow!("[Tts::Zipvoice] Generation failed and yielded zero samples")
-        })?;
+        let audio_ref = audio
+            .ok_or_else(|| anyhow!("[Tts::Zipvoice] Generation failed and yielded zero samples"))?;
         let samples = audio_ref.samples();
         if samples.is_empty() {
-            return Err(anyhow!("[Tts::Zipvoice] Generated audio contained 0 samples"));
+            return Err(anyhow!(
+                "[Tts::Zipvoice] Generated audio contained 0 samples"
+            ));
         }
 
         check_peak_clipping(samples);
@@ -292,7 +307,11 @@ impl ZipvoiceEngine {
         } else {
             0.0
         };
-        let rtf = if audio_dur > 0.0 { elapsed / audio_dur } else { 0.0 };
+        let rtf = if audio_dur > 0.0 {
+            elapsed / audio_dur
+        } else {
+            0.0
+        };
 
         log::info!(
             "[Tts::Zipvoice] Synthesis complete turn={} dur={:.2}s rtf={:.3}",
@@ -316,8 +335,10 @@ pub fn load_voice_pack(voices_dir: &Path) -> Result<Vec<ZipvoiceVoiceEntry>> {
         let file = File::open(&manifest_path)
             .with_context(|| format!("Failed to open voice manifest at {:?}", manifest_path))?;
         let reader = BufReader::new(file);
-        let entries: Vec<ZipvoiceVoiceEntry> = serde_json::from_reader(reader)
-            .with_context(|| format!("Failed to parse JSON voice manifest at {:?}", manifest_path))?;
+        let entries: Vec<ZipvoiceVoiceEntry> =
+            serde_json::from_reader(reader).with_context(|| {
+                format!("Failed to parse JSON voice manifest at {:?}", manifest_path)
+            })?;
 
         let mut validated = Vec::with_capacity(entries.len());
         for entry in entries {
@@ -426,11 +447,8 @@ pub fn resolve_zipvoice_reference(
         ));
     }
 
-    let target_slug = voice_id.map(|id| {
-        id.strip_prefix("zipvoice_voice_")
-            .unwrap_or(id)
-            .to_string()
-    });
+    let target_slug =
+        voice_id.map(|id| id.strip_prefix("zipvoice_voice_").unwrap_or(id).to_string());
 
     let selected_entry = match target_slug {
         Some(ref slug) => pack

@@ -10,7 +10,10 @@ use crate::{
         state::AppState,
     },
     persistence::notifications::{fetch_notification_by_id, resolve_notification_in_place},
-    services::memory::compaction::coordinator::CompactionCoordinator,
+    services::memory::{
+        compaction::coordinator::CompactionCoordinator,
+        scheduler::run_consolidation_once,
+    },
 };
 
 /// Executes the backend remediation action associated with an interactive notification.
@@ -103,7 +106,7 @@ pub async fn execute_notification_action<R: tauri::Runtime + 'static>(
             let db = state.db.clone();
 
             tauri::async_runtime::spawn(async move {
-                match crate::services::memory::scheduler::run_consolidation_once(
+                match run_consolidation_once(
                     &app_handle,
                     &app_state,
                 )

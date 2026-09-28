@@ -39,24 +39,15 @@ export function requestModelCatalog(): Promise<ModelCatalog> {
   return invoke("get_model_catalog");
 }
 
-/** Static fallback caps when the backend is unreachable (mirrors caps_for_id). */
-const FALLBACK_CAPS: Record<string, ProviderCaps> = {
-  supertonic: { voices: "catalog", clone: false },
-  kokoro: { voices: "catalog", clone: false },
-  chatterbox: { voices: "custom", clone: true },
-  chatterbox_remote: { voices: "custom", clone: true },
-  edge_tts: { voices: "edge", clone: false },
-  zipvoice: { voices: "custom", clone: false },
-};
-
-const DEFAULT_CAPS: ProviderCaps = { voices: "catalog", clone: false };
-
-/** Settings capabilities for a TTS provider id (ipc/settings/catalog.rs). */
-export async function getProviderCaps(providerId: string): Promise<ProviderCaps> {
+/** Settings capabilities for a TTS provider id (ipc/settings/catalog.rs).
+ * Returns null when the backend is unreachable or rejects the id. A fabricated
+ * fallback would render controls for capabilities that may not exist. */
+export async function getProviderCaps(providerId: string): Promise<ProviderCaps | null> {
   try {
     return await invoke<ProviderCaps>("get_provider_caps", { provider_id: providerId });
-  } catch {
-    return FALLBACK_CAPS[providerId] || DEFAULT_CAPS;
+  } catch (err) {
+    console.error(`[Settings] get_provider_caps failed for ${providerId}:`, err);
+    return null;
   }
 }
 

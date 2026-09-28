@@ -6,6 +6,11 @@ use std::{
 
 use turso::{Builder, Connection, Database};
 
+use crate::{
+    core::error::PersistenceError,
+    services::llm::ToolFlow,
+};
+
 pub const PERSISTENCE_CHANNEL_CAPACITY: usize = 128;
 pub const WORKER_EVENT_POLL_TIMEOUT: Duration = Duration::from_millis(100);
 pub const PERSISTENCE_RATE_INTERVAL: Duration = Duration::from_secs(1);
@@ -73,7 +78,7 @@ pub enum PersistenceEvent {
         session_id: i64,
         turn_id: u32,
         tool_name: String,
-        tool_flow: crate::services::llm::ToolFlow,
+        tool_flow: ToolFlow,
         arguments: serde_json::Value,
         result: String,
         is_error: bool,
@@ -136,9 +141,7 @@ pub struct VoxDb {
 
 impl VoxDb {
     /// Opens the local database engine and runs initial pragmas on a bootstrap connection.
-    pub async fn open(
-        path: impl AsRef<Path>,
-    ) -> Result<Self, crate::core::error::PersistenceError> {
+    pub async fn open(path: impl AsRef<Path>) -> Result<Self, PersistenceError> {
         let path_buf = path.as_ref().to_path_buf();
         let path_str = path_buf.to_string_lossy().to_string();
         let db = Builder::new_local(&path_str)
@@ -165,7 +168,7 @@ impl VoxDb {
     }
 
     /// Vends an independent connection execution context sharing the underlying page cache & WAL.
-    pub fn connect(&self) -> Result<Connection, crate::core::error::PersistenceError> {
+    pub fn connect(&self) -> Result<Connection, PersistenceError> {
         let conn = self.db.connect()?;
         if let Err(e) = conn.busy_timeout(Duration::from_millis(SQLITE_BUSY_TIMEOUT_MS as u64)) {
             log::warn!(

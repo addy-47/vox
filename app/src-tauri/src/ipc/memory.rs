@@ -13,6 +13,9 @@ use crate::{
     },
     persistence::{
         fetch_all_active_facts,
+        list_personal_memory_versions,
+        set_active_personal_memory_version as db_set_active_personal_memory_version,
+        fetch_pending_suggestions,
         personal_memory::{
             get_personal_memory as db_get_personal_memory,
             save_personal_memory as db_save_personal_memory,
@@ -165,7 +168,7 @@ pub async fn get_personal_memory_versions(
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    crate::persistence::list_personal_memory_versions(&conn, project_id.as_deref())
+    list_personal_memory_versions(&conn, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }
@@ -182,7 +185,7 @@ pub async fn set_active_personal_memory_version(
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    let record = crate::persistence::set_active_personal_memory_version(
+    let record = db_set_active_personal_memory_version(
         &conn,
         project_id.as_deref(),
         version,
@@ -222,7 +225,7 @@ pub async fn get_memory_suggestions(
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    crate::persistence::fetch_pending_suggestions(&conn, project_id.as_deref())
+    fetch_pending_suggestions(&conn, project_id.as_deref())
         .await
         .map_err(|e| VoxIpcError::Database(e.to_string()))
 }

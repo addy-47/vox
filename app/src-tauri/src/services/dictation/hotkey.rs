@@ -1,17 +1,19 @@
 use std::sync::{atomic::Ordering, Arc};
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     core::{
+        engine::start_audio_engine,
         error::DictationError,
         events::VoxEvent,
-        settings::DictationInteractionMode,
-        state::{AppState, InteractionOwner, InteractionState},
+        settings::{DictationInteractionMode, DictationOutputMode},
+        state::{AppState, AppWindow, InteractionOwner, InteractionState},
     },
     services::notifications::lifecycle,
+    tray::{ensure_tray_window, setup_linux_virtual_layer},
 };
 
 /// Actions triggered by the global dictation shortcut.
@@ -187,7 +189,7 @@ pub fn init_dictation_hotkey_listener<R: tauri::Runtime>(
                 log::info!(
                     "[Dictation] Audio engine inactive on hotkey press. Booting on-demand..."
                 );
-                if let Err(e) = crate::core::engine::start_audio_engine(&app_handle, &state).await {
+                if let Err(e) = start_audio_engine(&app_handle, &state).await {
                     log::error!("[Dictation] On-demand engine launch failed: {}", e);
                     continue;
                 }
@@ -200,19 +202,12 @@ pub fn init_dictation_hotkey_listener<R: tauri::Runtime>(
                         let is_tray = state
                             .settings
                             .read()
-                            .map(|s| {
-                                s.dictation.output_mode
-                                    == crate::core::settings::DictationOutputMode::Tray
-                            })
+                            .map(|s| s.dictation.output_mode == DictationOutputMode::Tray)
                             .unwrap_or(false);
                         if is_tray {
-                            if let Ok(window) = crate::tray::ensure_tray_window(&app_handle) {
-                                crate::tray::setup_linux_virtual_layer(
-                                    &app_handle,
-                                    crate::core::state::AppWindow::Tray.as_str(),
-                                );
+                            if let Ok(window) = ensure_tray_window(&app_handle) {
+                                setup_linux_virtual_layer(&app_handle, AppWindow::Tray.as_str());
                                 let _ = window.show();
-                                use tauri::Emitter;
                                 let _ = window.emit("toggle_tray", ());
                             }
                         }

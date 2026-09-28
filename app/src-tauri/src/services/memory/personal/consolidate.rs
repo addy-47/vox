@@ -21,12 +21,14 @@ use crate::{
     persistence::{
         facts::{fetch_active_facts_by_type, mark_facts_consolidated},
         has_in_progress_compaction, has_unfinished_items,
+        pause_in_progress_compactions,
         personal_memory::{
             get_personal_memory, insert_personal_memory_suggestions, save_consolidated_memory,
             PersonalMemoryRecord, PersonalMemorySuggestionRecord,
         },
     },
     services::llm::LlmProvider,
+    services::memory::ingestion::run_ingestion_cycle,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -103,8 +105,8 @@ pub async fn consolidate_personal_memory(
         match policy {
             ConsolidationConflictPolicy::PauseCompaction => {
                 log::info!("[Memory::Personal] Preempting/pausing in-progress compaction for personal consolidation.");
-                crate::persistence::pause_in_progress_compactions(conn, None).await?;
-                if let Err(e) = crate::services::memory::ingestion::run_ingestion_cycle(conn).await
+                pause_in_progress_compactions(conn, None).await?;
+                if let Err(e) = run_ingestion_cycle(conn).await
                 {
                     log::warn!(
                         "[Memory::Personal] Ingestion cycle error during compaction preemption: {}",
