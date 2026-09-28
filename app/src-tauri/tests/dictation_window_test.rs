@@ -582,6 +582,118 @@ async fn test_dictation_matrix() {
         }
 
         // =====================================================================
+        // Subtest 8: Simulated Paste Output Routing with Real WAV Audio Clip
+        // =====================================================================
+        {
+            // Configure Dictation specifically for Paste output mode
+            {
+                let mut settings = state.settings.write().unwrap();
+                settings.dictation.enabled = true;
+                settings.dictation.interaction_mode = DictationInteractionMode::Ptt;
+                settings.dictation.output_mode = DictationOutputMode::Paste;
+            }
+
+            state
+                .owner
+                .store(InteractionOwner::Dictation as u32, Ordering::Relaxed);
+            transition_dictation(InteractionState::Ready, &app, &state);
+            state.pipeline.update_ingestion_gate();
+
+            // 1. Trigger PttStart via router
+            event_tx
+                .send(VoxEvent::PttStart {
+                    owner: InteractionOwner::Dictation,
+                })
+                .expect("Failed to send PttStart");
+
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Listening,
+                    Duration::from_secs(5),
+                )
+                .await,
+                "Dictation state must transition to Listening on PttStart for Paste subtest"
+            );
+
+            // 2. Stream real WAV audio clip into VAD producer
+            common::audio::stream_test_clip(
+                common::ASSET_SUPERTONIC_01_EN_FILENAME,
+                &mut producer,
+            );
+
+            // 3. Release PTT via router
+            event_tx
+                .send(VoxEvent::PttStop {
+                    owner: InteractionOwner::Dictation,
+                })
+                .expect("Failed to send PttStop");
+
+            // 4. Poll for Thinking (or Ready if STT was fast)
+            {
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                loop {
+                    let current_state = state.pipeline.dictation_state();
+                    if current_state == InteractionState::Thinking
+                        || current_state == InteractionState::Ready
+                    {
+                        break;
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            }
+
+            // 5. Await TranscriptFinal from pipeline_event_rx
+            let transcript = common::harness::collect_all_final_transcripts(
+                &pipeline_event_rx,
+                1,
+                Duration::from_secs(15),
+            );
+            assert!(
+                !transcript.is_empty(),
+                "Transcript must not be empty for validated speech in Paste subtest"
+            );
+
+            // 6. Send TranscriptFinal into router to trigger route_transcript(..., Paste, ...)
+            let turn_id = state.pipeline.peek_turn_id();
+            event_tx
+                .send(VoxEvent::TranscriptFinal {
+                    turn_id,
+                    text: transcript.clone(),
+                    owner: InteractionOwner::Dictation,
+                })
+                .expect("Failed to send TranscriptFinal to router");
+
+            // 7. Verify routing completion and recovery to Ready
+            assert!(
+                common::harness::wait_for_dictation_state(
+                    &state,
+                    InteractionState::Ready,
+                    Duration::from_secs(5),
+                )
+                .await,
+                "Dictation router must return state to Ready after simulated paste"
+            );
+
+            // 8. Invariant: dictation_last_transcript contains processed text
+            assert_eq!(
+                state.dictation_last_transcript.lock().as_deref(),
+                Some(transcript.as_str()),
+                "dictation_last_transcript must match the transcribed text in Paste subtest"
+            );
+
+            // 9. Invariant: LLM Zero Invariant holds
+            common::harness::assert_channel_empty_after(
+                &llm_rx,
+                Duration::from_millis(500),
+                "Dictation Paste LLM Zero Invariant",
+            );
+        }
+
+        // =====================================================================
         // Teardown
         // =====================================================================
         let _ = event_tx.send(VoxEvent::Shutdown);

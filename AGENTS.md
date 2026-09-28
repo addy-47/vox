@@ -94,17 +94,17 @@
 
 > 📖 **Full History:** [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase12/recent_work.md) | Phase 11 Archive: [phase11/recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase11/recent_work.md)
 
-- **Agentic runtime & tool taxonomy:** Reentrant tool loop, 122 integration tests (73% mutation kill), `nexuss` v0.1.1 with adaptive fanout, and structured JSON provider wire policies.
-- **Cognitive memory stack & eval modularization:** Indexed-block consolidation (Schema v8, 4-prompt split), suggestion review with atomic block ops, and Approach 4 JSON semantic personal memory spec/plan.
-- **Platform ownership & dictation overhaul:** Owner-stamped `VoxEvent` pipeline eliminating TOCTOU races, deterministic hotkey preemption, resident notification lifecycle, and acoustic chronometer UI.
-- **Model-agnostic TTS stack (Batches 0.5–4, 2026-09-28):** Native `ZipvoiceEngine`, 6-batch decoupling plan; `tts.quality_steps` deleted end-to-end; `fn caps()` trait contract with per-engine `SPEED_RANGE`; `caps_for_id` returns `Result`; `list_voices` provider scoping with `slug` column (schema v9); single-seed voice names; Invariants 6–7; fallback/dead-code deletions (`FALLBACK_CAPS`, `TtsProviderKind`, FE prefix filters, phantom union). Full detail in `recent_work.md` §2026-09-28.
-- **Batches 7–10 sprint completion (2026-09-28):** Batch 7 deleted the realtime dual-shape (`Record<string,any>` config, 8-literal branch, legacy reads in 4 files; shape-driven `in`-narrowing, zero casts). Batch 8 audited all 27 settings structs field-by-field — deleted dead `auto_sleep_timeout`/`log_level`/`telemetry_enabled`/STT credential blobs/`resume_handle` (rehomed to constructor param, spec line fixed), killed 7 FE phantoms, exact mirror verified by script. Batch 9 unionized `output_mode`, centralized the `"default"` sentinel. Batch 10: model-registry checklist + DoD gate in §4.2. Full verification green: clippy clean, pnpm build clean, vitest 8/8, nextest 149/149 (4 ignored externals skipped). One real bug found by the suite (v9 migration assumed `voices` exists; guarded by sqlite_master check).
+- **Model-agnostic TTS stack (Batches 0.5–10):** trait-contract caps, voice scoping, wire-format retirement, frontend knowledge deletion; all green (clippy, build, vitest 8/8, nextest 149/149).
+- **STT boundary-clipping fix (2026-09-28):** VAD onset-frame retention + 300ms transducer warmup; bench-verified abrupt-onset recovery; exposed vera pack reference.txt mismatch.
+- **Cognitive memory & agentic runtime:** indexed-block consolidation, Approach 4 JSON memory spec, reentrant tool loop with 122 integration tests.
+- **Ownership, dictation & desk cleanups:** owner-stamped events, hotkey preemption, notification lifecycle, LlmConfigDesk simplification.
+- **Wayland paste dynamic loading & hotkey fix (2026-09-28):** Replaced static AT-SPI symbols with runtime dynamic dlopen loader to eliminate linker errors; migrated default shortcut to `Ctrl+Alt+V` to eliminate bare-Alt menu-bar focus stealing on Wayland.
 
 ---
 
 ## 6. Backlog
 
-- **[STT / RCA Needed] Nemotron-3.5 initial boundary clipping:** During TTS reference pack verification via `stt_bench`, Nemotron-3.5 dropped leading tokens on abrupt audio starts (e.g. dropped "The" on `voice_02.wav` and "I didn't" on `voice_05.wav`) where Qwen3-ASR detected them; requires RCA on VAD chunking and CTC prefix blank search window.
+- **[STT / Fixed 2026-09-28] Nemotron-3.5 initial boundary clipping:** Root-caused to (1) VAD onset gate dropping one 16ms frame + (2) streaming transducer blank-lock on zero-context onsets (no CTC path exists — backlog terminology was wrong). Fixed via pre-roll retention (`segmenter.rs`) + 300ms stream warmup (`NEMOTRON_WARMUP_SILENCE_SAMPLES`); bench-verified. Follow-up data bug: `vera` pack `reference.txt` omits the spoken lead-in "transcript" (confirmed by Qwen).
 - **[TTS / RCA Needed] ZipVoice voice quality & acoustic profile:** Synthesized audio exhibits muffled frequency response due to reference audio cutoff (<4 kHz dominance) and ODE trajectory blur at >4 steps; requires testing 4-step distilled inference with high-frequency shelved/clean reference clips.
 - **[Benchmark] Pipeline bench & Kokoro vs ZipVoice comparative report:** Execute `pipeline_bench` sequentially across Kokoro and ZipVoice baselines and produce comparative TTFA, RTF, E2E latency, and audio quality assessment report.
 

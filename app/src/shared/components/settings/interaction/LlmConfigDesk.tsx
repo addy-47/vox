@@ -26,7 +26,6 @@ export const LlmConfigDesk = memo(({
   onBack,
   layoutMode,
 }: LlmConfigDeskProps) => {
-  const settings = useSettingsStore((s) => s.settings);
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
@@ -84,6 +83,17 @@ export const LlmConfigDesk = memo(({
     [draftSettings?.llm?.cloud_keys]
   );
 
+  /** Resolves the stored API key for a cloud provider: explicit keyring entry
+   * first, live draft key when it is the active provider. Single source for
+   * the sort comparator and the list renderer below. */
+  const getProviderKey = useCallback(
+    (providerId: string) =>
+      cloudKeys[providerId] ||
+      (activeCloudProviderId === providerId ? draftSettings?.llm?.cloud?.api_key : "") ||
+      "",
+    [cloudKeys, activeCloudProviderId, draftSettings?.llm?.cloud?.api_key]
+  );
+
   const filteredProviders = useMemo(() => {
     let list = CLOUD_PROVIDERS;
     if (searchQuery.trim()) {
@@ -96,8 +106,8 @@ export const LlmConfigDesk = memo(({
       );
     }
     return [...list].sort((a, b) => {
-      const aKey = Boolean((cloudKeys[a.id] || (activeCloudProviderId === a.id ? draftSettings?.llm?.cloud?.api_key : ""))?.trim());
-      const bKey = Boolean((cloudKeys[b.id] || (activeCloudProviderId === b.id ? draftSettings?.llm?.cloud?.api_key : ""))?.trim());
+      const aKey = Boolean(getProviderKey(a.id)?.trim());
+      const bKey = Boolean(getProviderKey(b.id)?.trim());
 
       // Connected / configured providers appear at top
       if (aKey && !bKey) return -1;
@@ -107,21 +117,10 @@ export const LlmConfigDesk = memo(({
       const cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
       return sortOrder === "asc" ? cmp : -cmp;
     });
-  }, [searchQuery, sortOrder, cloudKeys, activeCloudProviderId, draftSettings?.llm?.cloud?.api_key]);
+    }, [searchQuery, sortOrder, getProviderKey]);
 
-  const url =
-    activeLlmProvider === "server"
-      ? draftSettings?.llm?.server?.base_url ?? ""
-      : activeLlmProvider === "cloud"
-      ? draftSettings?.llm?.cloud?.base_url ?? ""
-      : "";
-
-  const apiKey =
-    activeLlmProvider === "server"
-      ? draftSettings?.llm?.server?.api_key ?? ""
-      : activeLlmProvider === "cloud"
-      ? draftSettings?.llm?.cloud?.api_key ?? ""
-      : "";
+  const url = currentRemoteConfig?.base_url ?? "";
+  const apiKey = currentRemoteConfig?.api_key ?? "";
 
   const remoteTtsEndpoint = draftSettings?.tts?.chatterbox_remote?.endpoint ?? "";
   const remoteTtsPath = draftSettings?.tts?.chatterbox_remote?.remote_path ?? "";
@@ -275,7 +274,7 @@ export const LlmConfigDesk = memo(({
   const handleSaveInlineKey = useCallback(
     (providerId: string) => {
       const trimmed = editingKeyValue.trim();
-      const currentKeys = { ...(draftSettings?.llm?.cloud_keys || {}) };
+      const currentKeys = { ...(draftSettings?.llm?.cloud_keys ?? {}) };
       if (trimmed) {
         currentKeys[providerId] = trimmed;
       } else {
@@ -285,15 +284,20 @@ export const LlmConfigDesk = memo(({
       updateDraft("llm", "cloud_keys", currentKeys);
 
       const targetProvider = CLOUD_PROVIDERS.find((p) => p.id === providerId);
+      if (!targetProvider) {
+        setEditingProviderId(null);
+        setEditingKeyValue("");
+        return;
+      }
       const isCurrentlyActive =
         activeCloudProviderId === providerId ||
-        draftSettings?.llm?.cloud?.provider_name?.toLowerCase() === targetProvider?.name.toLowerCase();
+        draftSettings?.llm?.cloud?.provider_name?.toLowerCase() === targetProvider.name.toLowerCase();
 
       if (isCurrentlyActive) {
         updateDraft("llm", "cloud", {
           ...draftSettings?.llm?.cloud,
-          base_url: targetProvider?.url || draftSettings?.llm?.cloud?.base_url || "",
-          provider_name: targetProvider?.name || draftSettings?.llm?.cloud?.provider_name || "",
+          base_url: targetProvider.url,
+          provider_name: targetProvider.name,
           api_key: trimmed || null,
         });
       }
@@ -304,7 +308,7 @@ export const LlmConfigDesk = memo(({
     [editingKeyValue, draftSettings?.llm?.cloud_keys, draftSettings?.llm?.cloud, activeCloudProviderId, updateDraft]
   );
 
-  if (!draftSettings || !settings) return null;
+  if (!draftSettings) return null;
 
   // ── Standard Level-2 Header ──────────────────────────────────────────────
   // Left: breadcrumb back button + stage/modality title
@@ -369,6 +373,24 @@ export const LlmConfigDesk = memo(({
 
   const copy = INTERACTION_CONFIG_DESK_COPY;
 
+  /** Static description panel: header + centered copy. The six embedded/cloud
+   * blurbs below share this exact layout; only icon, title, and text vary. */
+  const renderBlurb = (
+    icon: React.ReactNode,
+    title: string,
+    description: string,
+    badge?: React.ReactNode
+  ) => (
+    <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
+      {renderHeader(icon, title, badge)}
+      <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
+        <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
+          {description}
+        </p>
+      </div>
+    </div>
+  );
+
   return (
     <div
       className={cn(
@@ -396,66 +418,42 @@ export const LlmConfigDesk = memo(({
 
       {/* ─── SECTION 1: STT CATEGORY ─── */}
       {isModular && activeCategory === "STT" && activePill === "embedded" && (
-        <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
-          {renderHeader(
-            <Mic size={14} className="text-[rgb(var(--accent))]" />,
-            copy.stt.embedded.title
-          )}
-          <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
-            <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
-              {copy.stt.embedded.description}
-            </p>
-          </div>
-        </div>
+        renderBlurb(
+          <Mic size={14} className="text-[rgb(var(--accent))]" />,
+          copy.stt.embedded.title,
+          copy.stt.embedded.description
+        )
       )}
 
       {isModular && activeCategory === "STT" && activePill === "server" && (
-        <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
-          {renderHeader(
-            <Server size={14} className="text-[rgb(var(--accent))]" />,
-            copy.stt.server.title,
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
-              {copy.stt.server.badge}
-            </span>
-          )}
-          <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
-            <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
-              {copy.stt.server.description}
-            </p>
-          </div>
-        </div>
+        renderBlurb(
+          <Server size={14} className="text-[rgb(var(--accent))]" />,
+          copy.stt.server.title,
+          copy.stt.server.description,
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
+            {copy.stt.server.badge}
+          </span>
+        )
       )}
 
       {isModular && activeCategory === "STT" && activePill === "cloud" && (
-        <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
-          {renderHeader(
-            <Cloud size={14} className="text-[rgb(var(--accent))]" />,
-            copy.stt.cloud.title,
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
-              {copy.stt.cloud.badge}
-            </span>
-          )}
-          <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
-            <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
-              {copy.stt.cloud.description}
-            </p>
-          </div>
-        </div>
+        renderBlurb(
+          <Cloud size={14} className="text-[rgb(var(--accent))]" />,
+          copy.stt.cloud.title,
+          copy.stt.cloud.description,
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
+            {copy.stt.cloud.badge}
+          </span>
+        )
       )}
 
       {/* ─── SECTION 2: LLM CATEGORY ─── */}
       {isModular && activeCategory === "LLM" && activePill === "embedded" && (
-        <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
-          {renderHeader(
-            <Brain size={14} className="text-[rgb(var(--accent))]" />,
-            copy.llm.embedded.title
-          )}
-          <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
-            <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
-              {copy.llm.embedded.description}
-            </p>
-          </div>
-        </div>
+        renderBlurb(
+          <Brain size={14} className="text-[rgb(var(--accent))]" />,
+          copy.llm.embedded.title,
+          copy.llm.embedded.description
+        )
       )}
 
       {isModular && activeCategory === "LLM" && activePill === "server" && (
@@ -548,7 +546,7 @@ export const LlmConfigDesk = memo(({
           <div className="flex-1 min-h-0 overflow-y-auto max-h-[160px] sm:max-h-[180px] pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2 content-start custom-scrollbar">
             {filteredProviders.map((provider) => {
               const isSelected = activeCloudProviderId === provider.id;
-              const savedKey = cloudKeys[provider.id] || (isSelected ? draftSettings?.llm?.cloud?.api_key : "") || "";
+              const savedKey = getProviderKey(provider.id);
               const isEditing = editingProviderId === provider.id;
               const hasKey = Boolean(savedKey?.trim());
 
@@ -667,17 +665,11 @@ export const LlmConfigDesk = memo(({
 
       {/* ─── SECTION 3: TTS CATEGORY ─── */}
       {isModular && activeCategory === "TTS" && activePill === "embedded" && (
-        <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
-          {renderHeader(
-            <Volume2 size={14} className="text-[rgb(var(--accent))]" />,
-            copy.tts.embedded.title
-          )}
-          <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
-            <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
-              {copy.tts.embedded.description}
-            </p>
-          </div>
-        </div>
+        renderBlurb(
+          <Volume2 size={14} className="text-[rgb(var(--accent))]" />,
+          copy.tts.embedded.title,
+          copy.tts.embedded.description
+        )
       )}
 
       {isModular && activeCategory === "TTS" && activePill === "server" && (
@@ -702,20 +694,14 @@ export const LlmConfigDesk = memo(({
       )}
 
       {isModular && activeCategory === "TTS" && activePill === "cloud" && (
-        <div className="flex flex-col justify-between h-full gap-2 animate-fade-in">
-          {renderHeader(
-            <Sparkles size={14} className="text-[rgb(var(--accent))]" />,
-            copy.tts.cloud.title,
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
-              {copy.tts.cloud.badge}
-            </span>
-          )}
-          <div className="flex-1 flex items-center p-3 rounded-lg bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--accent),0.06)]">
-            <p className="text-[11.5px] sm:text-[12px] text-[rgb(var(--foreground-muted))]/85 leading-relaxed font-medium">
-              {copy.tts.cloud.description}
-            </p>
-          </div>
-        </div>
+        renderBlurb(
+          <Sparkles size={14} className="text-[rgb(var(--accent))]" />,
+          copy.tts.cloud.title,
+          copy.tts.cloud.description,
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] uppercase font-mono border border-[rgb(var(--accent))]/20">
+            {copy.tts.cloud.badge}
+          </span>
+        )
       )}
     </div>
   );

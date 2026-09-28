@@ -9,7 +9,7 @@ use crate::services::{
     audio::SAMPLE_RATE,
     stt::{
         MODEL_FILE_ASR_DECODER, MODEL_FILE_ASR_ENCODER, MODEL_FILE_ASR_JOINER,
-        MODEL_FILE_ASR_TOKENS,
+        MODEL_FILE_ASR_TOKENS, NEMOTRON_WARMUP_SILENCE_SAMPLES,
     },
 };
 
@@ -72,7 +72,7 @@ impl SttEngineTrait for SttEngine {
 
         let mut inner = self.inner.lock();
         if inner.stream.is_none() {
-            inner.stream = Some(inner.recognizer.create_stream());
+            inner.stream = Some(create_warmed_stream(&inner.recognizer));
             inner.stream_start = Some(Instant::now());
             inner.fed_samples = 0;
         }
@@ -162,7 +162,7 @@ impl SttEngineTrait for SttEngine {
             }
             stream
         } else {
-            let stream = inner.recognizer.create_stream();
+            let stream = create_warmed_stream(&inner.recognizer);
             stream.accept_waveform(SAMPLE_RATE as i32, audio);
             stream
         };
@@ -198,4 +198,13 @@ impl SttEngineTrait for SttEngine {
 
         Ok(full_text)
     }
+}
+
+/// Creates a fresh online stream primed with leading silence so the chunked encoder opens with acoustic context on abrupt onsets.
+// INVARIANT: warmup samples are encoder context only and are never counted in fed_samples.
+fn create_warmed_stream(recognizer: &OnlineRecognizer) -> OnlineStream {
+    let stream = recognizer.create_stream();
+    let warmup = vec![0.0f32; NEMOTRON_WARMUP_SILENCE_SAMPLES];
+    stream.accept_waveform(SAMPLE_RATE as i32, &warmup);
+    stream
 }
