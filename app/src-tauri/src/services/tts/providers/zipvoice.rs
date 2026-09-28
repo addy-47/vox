@@ -26,11 +26,11 @@ use crate::{
     services::{
         translit::is_devanagari,
         tts::{
-            EDGE_TTS_HINDI_VOICE, MAX_QUALITY_STEPS_ZIPVOICE, MAX_SPEED,
-            MAX_ZIPVOICE_GUIDANCE_SCALE, MIN_QUALITY_STEPS, MIN_SPEED, MIN_ZIPVOICE_GUIDANCE_SCALE,
-            MODEL_DIRNAME_TTS_ZIPVOICE_ESPEAK, MODEL_FILE_TTS_ZIPVOICE_DECODER,
-            MODEL_FILE_TTS_ZIPVOICE_ENCODER, MODEL_FILE_TTS_ZIPVOICE_LEXICON,
-            MODEL_FILE_TTS_ZIPVOICE_TOKENS, MODEL_FILE_TTS_ZIPVOICE_VOCODER, ZIPVOICE_SILENCE_SCALE,
+            EDGE_TTS_HINDI_VOICE, MAX_SPEED, MAX_ZIPVOICE_GUIDANCE_SCALE, MIN_SPEED,
+            MIN_ZIPVOICE_GUIDANCE_SCALE, MODEL_DIRNAME_TTS_ZIPVOICE_ESPEAK,
+            MODEL_FILE_TTS_ZIPVOICE_DECODER, MODEL_FILE_TTS_ZIPVOICE_ENCODER,
+            MODEL_FILE_TTS_ZIPVOICE_LEXICON, MODEL_FILE_TTS_ZIPVOICE_TOKENS,
+            MODEL_FILE_TTS_ZIPVOICE_VOCODER, ZIPVOICE_SILENCE_SCALE,
         },
     },
 };
@@ -38,6 +38,15 @@ use crate::{
 const DEFAULT_ZIPVOICE_FEAT_SCALE: f32 = 0.1;
 const DEFAULT_ZIPVOICE_T_SHIFT: f32 = 0.5;
 const DEFAULT_ZIPVOICE_TARGET_RMS: f32 = 0.1;
+
+/// Fixed flow-matching step count for ZipVoice. Not user-configurable.
+///
+/// ZipVoice-Distill is a *flow-distilled* model (arXiv 2506.13053): distillation
+/// exists specifically to cut sampling steps, and the released checkpoint is
+/// trained for a small fixed count. Overshooting it blurs the ODE trajectory
+/// rather than improving quality — every reference implementation ships
+/// `numSteps = 4`, and sherpa-onnx's own `GenerationConfig` default is 5.
+pub const ZIPVOICE_STEPS: i32 = 4;
 
 struct AtomicF32 {
     inner: AtomicU32,
@@ -87,7 +96,6 @@ pub struct ZipvoiceReference {
 pub struct ZipvoiceEngine {
     tts: Mutex<OfflineTts>,
     speed: AtomicF32,
-    quality_steps: AtomicU32,
     guidance_scale: AtomicF32,
     reference: RwLock<Option<Arc<ZipvoiceReference>>>,
 }
@@ -97,13 +105,6 @@ impl TtsProvider for ZipvoiceEngine {
     fn set_speed(&self, speed: f32) {
         self.speed
             .store(speed.clamp(MIN_SPEED, MAX_SPEED), Ordering::Relaxed);
-    }
-
-    /// Hot-updates the flow-matching generation steps (NFE).
-    fn set_quality_steps(&self, steps: u32) {
-        let clamped = steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_ZIPVOICE);
-        self.quality_steps.store(clamped, Ordering::Relaxed);
-        log::debug!("[Tts::Zipvoice] Quality steps updated to {}", clamped);
     }
 
     /// Returns TtsProviderKind::Zipvoice variant identifier.
@@ -148,14 +149,12 @@ impl ZipvoiceEngine {
         model_path: &Path,
         speed: f32,
         guidance_scale: f32,
-        quality_steps: u32,
         num_threads: u32,
         initial_reference: Option<Arc<ZipvoiceReference>>,
     ) -> Result<Self> {
         let mp = |f: &str| -> String { model_path.join(f).to_string_lossy().into() };
 
         let clamped_guidance = guidance_scale.clamp(MIN_ZIPVOICE_GUIDANCE_SCALE, MAX_ZIPVOICE_GUIDANCE_SCALE);
-        let clamped_steps = quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_ZIPVOICE);
         let clamped_speed = speed.clamp(MIN_SPEED, MAX_SPEED);
 
         let config = OfflineTtsConfig {
@@ -187,14 +186,13 @@ impl ZipvoiceEngine {
             "[Tts::Zipvoice] Initialized ZipVoice TTS (speed={:.2}, guidance={:.2}, steps={}, threads={})",
             clamped_speed,
             clamped_guidance,
-            clamped_steps,
+            ZIPVOICE_STEPS,
             num_threads
         );
 
         Ok(Self {
             tts: Mutex::new(tts),
             speed: AtomicF32::new(clamped_speed),
-            quality_steps: AtomicU32::new(clamped_steps),
             guidance_scale: AtomicF32::new(clamped_guidance),
             reference: RwLock::new(initial_reference),
         })
@@ -240,7 +238,6 @@ impl ZipvoiceEngine {
     ) -> Result<()> {
         let start = Instant::now();
         let speed = self.speed.load(Ordering::Relaxed);
-        let num_steps = self.quality_steps.load(Ordering::Relaxed) as i32;
 
         let mut extra = std::collections::HashMap::new();
         extra.insert("min_char_in_sentence".to_string(), serde_json::json!(10));
@@ -252,7 +249,7 @@ impl ZipvoiceEngine {
             reference_audio: Some(reference.samples.clone()),
             reference_sample_rate: reference.sample_rate as i32,
             reference_text: Some(reference.text.clone()),
-            num_steps,
+            num_steps: ZIPVOICE_STEPS,
             extra: Some(extra),
         };
 

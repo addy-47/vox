@@ -48,9 +48,9 @@ async fn test_real_tts_to_playback_synthesis_and_preroll() {
             supertonic_model_dir
         );
 
-        // 1. Create real Supertonic ONNX engine (voice 0, quality_steps 2 for test speed, speed 1.0, 4 threads)
+        // 1. Create real Supertonic ONNX engine (voice 0, speed 1.0, 4 threads; steps are a fixed 12)
         let provider = Box::new(
-            SupertonicEngine::new(&supertonic_model_dir, 0, 2, 1.0, 4)
+            SupertonicEngine::new(&supertonic_model_dir, 0, 1.0, 4)
                 .expect("Failed to initialize Supertonic ONNX engine"),
         ) as Box<dyn TtsProvider>;
 

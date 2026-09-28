@@ -80,10 +80,6 @@ async fn test_tts_voice_switch_without_worker_restart() {
                 self.inner.set_voice(voice);
             }
 
-            fn set_quality_steps(&self, steps: u32) {
-                self.inner.set_quality_steps(steps);
-            }
-
             fn set_speed(&self, speed: f32) {
                 self.inner.set_speed(speed);
             }
@@ -99,7 +95,7 @@ async fn test_tts_voice_switch_without_worker_restart() {
 
         let active_voice = Arc::new(AtomicI32::new(0));
         let inner_engine = Box::new(
-            SupertonicEngine::new(&supertonic_model_dir, 0, 2, 1.0, 4)
+            SupertonicEngine::new(&supertonic_model_dir, 0, 1.0, 4)
                 .expect("Failed to initialize Supertonic ONNX engine"),
         ) as Box<dyn TtsProvider>;
 

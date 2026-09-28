@@ -307,15 +307,6 @@ fn apply_tts_mutation(
             }
             settings.tts.voice_index = val;
         }
-        "quality_steps" => {
-            let val = value
-                .as_u64()
-                .ok_or("quality_steps must be a positive integer")? as u32;
-            if !(1..=20).contains(&val) {
-                return Err("quality_steps must be between 1 and 20".to_string());
-            }
-            settings.tts.quality_steps = val;
-        }
         "speed" => {
             settings.tts.speed = value.as_f64().ok_or("speed must be a number")? as f32;
         }
@@ -361,20 +352,17 @@ fn apply_tts_mutation(
                     }
                     TtsProviderConfig::Chatterbox {
                         language,
-                        quality_steps,
                         speed,
                         voice_id,
                     } => {
                         settings.tts.active = TtsActiveProvider::Chatterbox;
                         settings.tts.chatterbox.language = language;
                         settings.tts.chatterbox.voice_id = voice_id;
-                        settings.tts.quality_steps = quality_steps;
                         settings.tts.speed = speed;
                     }
                     TtsProviderConfig::ChatterboxRemote {
                         endpoint,
                         language,
-                        quality_steps,
                         speed,
                         remote_path,
                         voice_id,
@@ -384,7 +372,6 @@ fn apply_tts_mutation(
                         settings.tts.chatterbox_remote.language = language;
                         settings.tts.chatterbox_remote.remote_path = remote_path;
                         settings.tts.chatterbox_remote.voice_id = voice_id;
-                        settings.tts.quality_steps = quality_steps;
                         settings.tts.speed = speed;
                     }
                     TtsProviderConfig::Zipvoice {

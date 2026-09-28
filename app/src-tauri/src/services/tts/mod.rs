@@ -20,10 +20,10 @@ pub const TTS_SAMPLE_RATE: u32 = 24000;
 pub const SUPER_SAMPLE_RATE: u32 = 44100;
 pub const TTS_CHUNK_SIZE: usize = 2048;
 
-pub const MIN_QUALITY_STEPS: u32 = 2;
-pub const MAX_QUALITY_STEPS_CHATTERBOX: u32 = 10;
-pub const MAX_QUALITY_STEPS_SUPERTONIC: u32 = 16;
-pub const MAX_QUALITY_STEPS_ZIPVOICE: u32 = 8;
+// Diffusion step counts are fixed per provider and are NOT user settings.
+// Each is the model's validated optimum, not a ceiling: a flow-distilled model
+// degrades when overshot, so the constant is declared and owned by the engine
+// that applies it rather than in this shared table.
 pub const MIN_SPEED: f32 = 0.7;
 pub const MAX_SPEED: f32 = 2.0;
 pub const MIN_SPEED_EDGE: f32 = 0.5;

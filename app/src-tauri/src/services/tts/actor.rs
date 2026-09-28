@@ -31,7 +31,6 @@ pub enum TtsCommand {
     },
     SetVoice(i32),
     SetSpeed(f32),
-    SetQualitySteps(u32),
     Shutdown,
 }
 
@@ -171,10 +170,6 @@ pub fn spawn_tts_worker(
             TtsCommand::SetSpeed(speed) => {
                 log::info!("[TTS Worker] Setting speech speed to: {}", speed);
                 provider.set_speed(speed);
-            }
-            TtsCommand::SetQualitySteps(steps) => {
-                log::info!("[TTS Worker] Setting synthesis quality steps to: {}", steps);
-                provider.set_quality_steps(steps);
             }
             TtsCommand::Shutdown => {
                 log::info!("[TTS Worker] Shutdown command received. Exiting loop.");

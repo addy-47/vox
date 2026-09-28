@@ -13,14 +13,17 @@ use parking_lot::Mutex;
 
 use super::{SynthesisContext, TtsProvider, TtsProviderKind};
 use crate::services::tts::{
-    MAX_QUALITY_STEPS_CHATTERBOX, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED,
-    MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3, TTS_CHUNK_SIZE, TTS_SAMPLE_RATE,
+    MAX_SPEED, MIN_SPEED, MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3,
+    TTS_CHUNK_SIZE, TTS_SAMPLE_RATE,
 };
+
+/// Fixed conditional-flow-matching step count for local Chatterbox.
+/// Not user-configurable. Declared here, beside the engine that applies it.
+pub const CHATTERBOX_STEPS: i32 = 10;
 
 /// Speech synthesis engine wrapping the local Chatterbox GGUF model via chatterbox-rs.
 pub struct ChatterboxEngine {
     engine: Mutex<Engine>,
-    quality_steps: AtomicU32,
     speed: AtomicU32,
 }
 
@@ -29,7 +32,6 @@ impl ChatterboxEngine {
     pub fn new(
         model_path: &Path,
         language: &str,
-        quality_steps: u32,
         speed: f32,
         reference_audio: Option<&str>,
     ) -> Result<Self> {
@@ -49,7 +51,7 @@ impl ChatterboxEngine {
             ));
         }
 
-        let cfm = quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_CHATTERBOX) as i32;
+        let cfm = CHATTERBOX_STEPS;
         let ref_audio = reference_audio.unwrap_or("").to_string();
 
         let clean_lang = if language.len() != 2 || language.starts_with("chatterbox_voice_") {
@@ -113,7 +115,6 @@ impl ChatterboxEngine {
 
         Ok(Self {
             engine: Mutex::new(engine),
-            quality_steps: AtomicU32::new(cfm as u32),
             speed: AtomicU32::new(speed.to_bits()),
         })
     }
@@ -142,13 +143,6 @@ impl ChatterboxEngine {
 }
 
 impl TtsProvider for ChatterboxEngine {
-    /// Hot-updates the number of diffusion quality steps.
-    fn set_quality_steps(&self, steps: u32) {
-        let clamped = steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_CHATTERBOX);
-        self.quality_steps.store(clamped, Ordering::Relaxed);
-        log::info!("[Chatterbox] Quality steps set to {} (cfm_steps)", clamped);
-    }
-
     /// Hot-updates the speech playback speed factor.
     fn set_speed(&self, speed: f32) {
         let clamped = speed.clamp(MIN_SPEED, MAX_SPEED);

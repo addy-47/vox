@@ -20,13 +20,21 @@ use super::{SynthesisContext, TtsProvider, TtsProviderKind};
 use crate::services::{
     translit::is_devanagari,
     tts::{
-        MAX_QUALITY_STEPS_SUPERTONIC, MAX_SPEED, MIN_QUALITY_STEPS, MIN_SPEED,
-        MODEL_FILE_TTS_SUPER_CONFIG, MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR,
-        MODEL_FILE_TTS_SUPER_INDEXER, MODEL_FILE_TTS_SUPER_TEXT_ENCODER,
-        MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR, MODEL_FILE_TTS_SUPER_VOCODER,
-        MODEL_FILE_TTS_SUPER_VOICE, SUPER_SAMPLE_RATE, TTS_SAMPLE_RATE,
+        MAX_SPEED, MIN_SPEED, MODEL_FILE_TTS_SUPER_CONFIG,
+        MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR, MODEL_FILE_TTS_SUPER_INDEXER,
+        MODEL_FILE_TTS_SUPER_TEXT_ENCODER, MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR,
+        MODEL_FILE_TTS_SUPER_VOCODER, MODEL_FILE_TTS_SUPER_VOICE, SUPER_SAMPLE_RATE,
+        TTS_SAMPLE_RATE,
     },
 };
+
+/// Fixed flow-matching step count for Supertonic. Not user-configurable.
+///
+/// This is the model's validated optimum, not a ceiling. The reference
+/// implementation documents a usable band of 5-12 with a default of 8
+/// (Supertone Inc. `supertonic` PyPI); the paper evaluates at 32. Twelve sits
+/// at the top of the documented band.
+pub const SUPERTONIC_STEPS: i32 = 12;
 
 struct BiquadFilter {
     b0: f32,
@@ -92,7 +100,6 @@ fn resample_44100_to_24000(input: &[f32], lpf: &mut BiquadFilter) -> Vec<f32> {
 /// Speech synthesis engine wrapping the Supertonic ONNX model via Sherpa-ONNX.
 pub struct TtsEngine {
     tts: Mutex<OfflineTts>,
-    quality_steps: AtomicU32,
     speed: AtomicF32,
     voice: AtomicI32,
 }
@@ -125,7 +132,6 @@ impl TtsEngine {
     pub fn new(
         model_path: &Path,
         voice: i32,
-        quality_steps: u32,
         speed: f32,
         num_threads: u32,
     ) -> Result<Self> {
@@ -160,9 +166,6 @@ impl TtsEngine {
 
         Ok(Self {
             tts: Mutex::new(tts),
-            quality_steps: AtomicU32::new(
-                quality_steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_SUPERTONIC),
-            ),
             speed: AtomicF32::new(speed.clamp(MIN_SPEED, MAX_SPEED)),
             voice: AtomicI32::new(voice.clamp(0, 9)),
         })
@@ -170,14 +173,6 @@ impl TtsEngine {
 }
 
 impl TtsProvider for TtsEngine {
-    /// Hot-updates the number of Supertonic diffusion quality steps.
-    fn set_quality_steps(&self, steps: u32) {
-        self.quality_steps.store(
-            steps.clamp(MIN_QUALITY_STEPS, MAX_QUALITY_STEPS_SUPERTONIC),
-            Ordering::Relaxed,
-        );
-    }
-
     /// Hot-updates the playback speed factor.
     fn set_speed(&self, speed: f32) {
         self.speed
@@ -223,14 +218,13 @@ impl TtsProvider for TtsEngine {
 
         let start = Instant::now();
         let speed = self.speed.load(Ordering::Relaxed);
-        let quality_steps = self.quality_steps.load(Ordering::Relaxed);
 
         let mut extra = HashMap::new();
         extra.insert("lang".to_string(), json!(lang));
 
         let gen_config = GenerationConfig {
             sid,
-            num_steps: quality_steps as i32,
+            num_steps: SUPERTONIC_STEPS,
             speed,
             silence_scale: 0.1,
             extra: Some(extra),

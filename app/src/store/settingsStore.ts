@@ -39,17 +39,16 @@ export interface SttProviderConfig {
 export type TtsProviderConfig =
   | { kind: "supertonic" }
   | { kind: "kokoro" }
-  | { kind: "chatterbox"; language: string; quality_steps: number; speed: number }
+  | { kind: "chatterbox"; language: string; speed: number }
   | {
       kind: "chatterbox_remote";
       endpoint: string;
       language: string;
-      quality_steps: number;
       speed: number;
       remote_path: string;
     }
   | { kind: "edge_tts"; voice?: string }
-  | { kind: "zipvoice"; guidance_scale: number; quality_steps: number; speed: number };
+  | { kind: "zipvoice"; guidance_scale: number; speed: number };
 
 export interface ModelCapabilities {
   model_id: string;
@@ -110,8 +109,6 @@ export type TtsVoiceSource = "catalog" | "custom" | "edge" | "none";
 
 export interface ProviderCaps {
   voices: TtsVoiceSource;
-  speed: boolean;
-  quality_steps: boolean;
   clone: boolean;
 }
 
@@ -224,7 +221,6 @@ export interface TtsZipvoiceConfig {
 export interface TtsSettings {
   active: TtsActiveProvider;
   voice_index: number;
-  quality_steps: number;
   speed: number;
   threads: number;
   edge_tts: TtsEdgeTtsConfig;
@@ -372,7 +368,32 @@ interface SettingsState {
   autoSavedDomain: string | null;
   lastSavedTimestamp: number;
   triggerAutoSaveToast: (domainId: string) => void;
+  /** Domains whose most recent commit was rejected by the backend. */
+  failedSaveDomains: Record<string, true>;
+  failedSaveKeys: string[];
+  triggerSaveFailure: (domainId: string, keys: string[]) => void;
 }
+
+/**
+ * Maps a settings scope (the IPC `domain`) to the settings card that owns it.
+ * Single definition: the auto-save toast and the save-failure banner must
+ * agree on which card a rejected key belongs to.
+ */
+const SETTINGS_DOMAIN_TO_UI: Record<string, SettingsDomainId> = {
+  persona: "persona",
+  working_memory: "working_memory",
+  personal_memory: "personal_memory",
+  appearance: "appearance",
+  interaction: "interaction",
+  dictation: "interaction",
+  realtime: "models",
+  audio: "models",
+  vad: "models",
+  stt: "models",
+  llm: "models",
+  tts: "models",
+  system: "models",
+};
 
 function applyAppearance(appearance?: AppearanceSettings) {
   if (!appearance) return;
@@ -461,6 +482,22 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   lastSavedTimestamp: 0,
   autoSavedDomain: null as string | null,
+  failedSaveDomains: {} as Record<string, true>,
+  failedSaveKeys: [] as string[],
+  triggerSaveFailure: (domainId: string, keys: string[]) => {
+    set((state) => ({
+      failedSaveDomains: { ...state.failedSaveDomains, [domainId]: true },
+      failedSaveKeys: keys,
+    }));
+    setTimeout(() => {
+      set((state) => {
+        if (!state.failedSaveDomains[domainId]) return {};
+        const next = { ...state.failedSaveDomains };
+        delete next[domainId];
+        return { failedSaveDomains: next };
+      });
+    }, 6000);
+  },
   triggerAutoSaveToast: (domainId: string) => {
     set({ autoSavedDomain: domainId, lastSavedTimestamp: Date.now() });
     setTimeout(() => {
@@ -544,23 +581,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       (domain === "audio" && key === "input_device");
 
     if (!requiresRestart) {
-      // Determine mapped SettingsDomainId for the toast
-      const domainMap: Record<string, SettingsDomainId> = {
-        persona: "persona",
-        working_memory: "working_memory",
-        personal_memory: "personal_memory",
-        appearance: "appearance",
-        interaction: "interaction",
-        dictation: "interaction",
-        realtime: "models",
-        audio: "models",
-        vad: "models",
-        stt: "models",
-        llm: "models",
-        tts: "models",
-        system: "models",
-      };
-      const targetDomainId = explicitDomainId || domainMap[domain as string] || "models";
+      const targetDomainId = explicitDomainId || SETTINGS_DOMAIN_TO_UI[domain as string] || "models";
 
       // Hot or WorkerCommand: Automatically commit with 600ms debounce and flash "Saved" toast on that specific card
       if (settingsAutoSaveTimer) {
@@ -678,8 +699,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!settings || !draftSettings) return;
 
     set({ isCommitting: true });
-    const promises: Promise<any>[] = [];
+    const promises: Promise<unknown>[] = [];
     const restartKeys: string[] = [];
+    const failures: { domain: string; key: string; reason: string }[] = [];
 
     const canonicalDomains: (keyof VoxSettings)[] = [
       "audio",
@@ -698,28 +720,67 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     ];
 
     for (const domain of canonicalDomains) {
-      const draftObj = (draftSettings as any)[domain];
-      const savedObj = (settings as any)[domain];
-      if (!draftObj) continue;
+      const draftObj = draftSettings[domain];
+      const savedObj = settings[domain];
+      if (!draftObj || typeof draftObj !== "object") continue;
 
-      for (const key in draftObj) {
-        const val = draftObj[key];
-        const oldVal = savedObj ? savedObj[key] : undefined;
+      const savedMap = new Map<string, unknown>(
+        savedObj && typeof savedObj === "object" ? Object.entries(savedObj) : []
+      );
 
-        if (JSON.stringify(val) !== JSON.stringify(oldVal)) {
-          promises.push(
-            updateSetting(domain, key, val).then((res: any) => {
+      for (const [key, val] of Object.entries(draftObj)) {
+        const oldVal = savedMap.get(key);
+
+        if (JSON.stringify(val) === JSON.stringify(oldVal)) continue;
+
+        promises.push(
+          updateSetting(domain, key, val).then(
+            (res) => {
               if (res?.reload_policy === "restart") {
                 restartKeys.push(`${domain}.${key}`);
               }
-            })
-          );
-        }
+            },
+            (err: unknown) => {
+              // The backend rejects unknown or invalid keys. Recording the
+              // failure instead of swallowing it is what stops a silently
+              // dropped setting from looking like a successful save.
+              const reason = err instanceof Error ? err.message : String(err);
+              failures.push({ domain, key, reason });
+              console.error(`[Settings] Failed to persist ${domain}.${key}:`, err);
+            }
+          )
+        );
       }
     }
 
     try {
       await Promise.all(promises);
+
+      if (failures.length > 0) {
+        // Re-read from the backend so the draft reflects what was actually
+        // stored. A rejected key must not linger in the draft, or the next
+        // commit retries it forever and the UI keeps showing it as changed.
+        const bootState = await getSettings();
+        const fetched = bootState.settings;
+        set({
+          settings: fetched,
+          draftSettings: structuredClone(fetched),
+          hasChanges: false,
+          isLoading: false,
+        });
+        const failedByUiDomain = new Map<string, string[]>();
+        for (const f of failures) {
+          const uiDomain = SETTINGS_DOMAIN_TO_UI[f.domain] ?? "models";
+          const keys = failedByUiDomain.get(uiDomain);
+          if (keys) keys.push(f.key);
+          else failedByUiDomain.set(uiDomain, [f.key]);
+        }
+        for (const [uiDomain, keys] of failedByUiDomain) {
+          get().triggerSaveFailure(uiDomain, keys);
+        }
+        return;
+      }
+
       set({ hasChanges: false });
       const bootState = await getSettings();
       const fetched = bootState.settings;

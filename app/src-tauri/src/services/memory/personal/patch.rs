@@ -72,15 +72,35 @@ pub fn apply_patch_operations(
     // an operation's target kind stays addressable as earlier positions shift.
     let mut kinds: Vec<ElementKind> = elements.iter().map(|e| e.kind.clone()).collect();
 
-    // Sort operations descending by index so that modifying later positions does not affect
-    // earlier indices. Ties keep their input order, so `position` stays meaningful.
-    let mut sorted_ops: Vec<(usize, MemoryPatchOperation)> =
-        operations.iter().cloned().enumerate().collect();
-    sorted_ops.sort_by(|a, b| b.1.index.cmp(&a.1.index));
+    let base_len = raw_lines.len();
+
+    // An operation anchored past the end of the document is an append, not an absolute slot.
+    // Sorting descending is only sound for absolute indices: a clamped index keeps landing at
+    // "wherever the end happens to be", so two appends emitted in order would be applied in
+    // reverse and a new section's heading would end up below its own bullets. Absolute operations
+    // are applied high-to-low so later positions do not shift earlier ones; appends then land in
+    // the order the engine emitted them. This is the shape the consolidation prompt documents
+    // for opening a new section: a heading, then its bullets, each anchored further out.
+    let mut absolute_ops: Vec<(usize, u32, MemoryPatchOperation)> = Vec::new();
+    let mut append_ops: Vec<(usize, MemoryPatchOperation)> = Vec::new();
+    for (position, op) in operations.iter().cloned().enumerate() {
+        if (op.index as usize) > base_len {
+            append_ops.push((position, op));
+        } else {
+            absolute_ops.push((position, op.index, op));
+        }
+    }
+    // Ties keep their input order, so `position` stays meaningful.
+    absolute_ops.sort_by(|a, b| b.1.cmp(&a.1));
+    let sorted_ops: Vec<(usize, bool, MemoryPatchOperation)> = absolute_ops
+        .into_iter()
+        .map(|(position, _, op)| (position, false, op))
+        .chain(append_ops.into_iter().map(|(position, op)| (position, true, op)))
+        .collect();
 
     let mut rejected: Vec<RejectedOperation> = Vec::new();
 
-    for (position, op) in sorted_ops {
+    for (position, is_append, op) in sorted_ops {
         let op_type = op.op.trim().to_lowercase();
         let text = op.text.trim();
         let op_index = op.index;
@@ -94,19 +114,22 @@ pub fn apply_patch_operations(
                     });
                     continue;
                 }
-                let (insert_pos, kind) = if op_index == 0 {
-                    (0, kind_for_text(text))
-                } else if (op_index as usize) <= raw_lines.len() {
-                    (op_index as usize, kind_for_text(text))
+                let insert_pos = if is_append || (op_index != 0 && (op_index as usize) > raw_lines.len())
+                {
+                    if !is_append {
+                        log::debug!(
+                            "[Memory::Personal::Patch] insert_after index {op_index} past the end (max {}), appending",
+                            raw_lines.len()
+                        );
+                    }
+                    raw_lines.len()
+                } else if op_index == 0 {
+                    0
                 } else {
-                    log::warn!(
-                        "[Memory::Personal::Patch] insert_after index {op_index} out of range (max {}), appending",
-                        raw_lines.len()
-                    );
-                    (raw_lines.len(), kind_for_text(text))
+                    op_index as usize
                 };
                 raw_lines.insert(insert_pos, text.to_string());
-                kinds.insert(insert_pos, kind);
+                kinds.insert(insert_pos, kind_for_text(text));
             }
             "replace" => {
                 if text.is_empty() {

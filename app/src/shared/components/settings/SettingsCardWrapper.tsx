@@ -86,6 +86,8 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   };
 
   const isAutoSavedHere = useSettingsStore((s) => s.autoSavedDomain === domain.id);
+  const saveFailure = useSettingsStore((s) => s.failedSaveDomains[domain.id]);
+  const failedKeys = useSettingsStore((s) => s.failedSaveKeys);
 
   return (
     <AnimatePresence>
@@ -145,7 +147,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                     ) : (
                       <>
                         <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5">
-                          <RefreshCw size={14} className={isReloading ? "animate-spin" : undefined} /> {requiresRestart ? "Pipeline Restart Required" : SETTINGS_COPY.unsavedChanges}
+                          <RefreshCw size={14} className={isReloading ? "animate-spin" : undefined} /> {requiresRestart ? SETTINGS_COPY.pipelineRestartRequired : SETTINGS_COPY.unsavedChanges}
                         </span>
                         <div className="flex gap-2">
                           <button
@@ -154,7 +156,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                             className="px-3.5 py-1 rounded-lg bg-[rgb(var(--accent))] text-black dark:text-white font-black text-[12px] uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all cursor-pointer shadow-md flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             {isReloading && <RefreshCw size={12} className="animate-spin" />}
-                            <span>{isReloading ? "Reloading..." : (requiresRestart ? "Apply & Reload" : SETTINGS_COPY.saveChanges)}</span>
+                            <span>{isReloading ? SETTINGS_COPY.reloading : (requiresRestart ? SETTINGS_COPY.applyAndReload : SETTINGS_COPY.saveChanges)}</span>
                           </button>
                           <button
                             onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
@@ -170,7 +172,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                 )}
 
                 {/* Mode B: Debounced "Changes Saved" Auto-Toast (Only on the specific modified card, using Primary Accent) */}
-                {!hasChanges && isAutoSavedHere && (
+                {!hasChanges && !saveFailure && isAutoSavedHere && (
                   <motion.div
                     key="saved-toast-footer"
                     initial={{ opacity: 0, height: 0 }}
@@ -183,6 +185,29 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                       <Check size={14} /> {SETTINGS_COPY.changesSaved}
                     </span>
                     <span className="text-[11px] text-[rgb(var(--accent))]/70 font-mono">{SETTINGS_COPY.autoSynced}</span>
+                  </motion.div>
+                )}
+
+                {/* Mode C: Backend rejected the write. Without this the card
+                    showed a green "Saved" tick for a value that was dropped. */}
+                {!hasChanges && saveFailure && (
+                  <motion.div
+                    key="save-failed-footer"
+                    role="alert"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="w-full py-2 px-5 rounded-b-[1.25rem] rounded-t-none bg-rose-500/10 border border-t-0 border-rose-500/25 flex items-center justify-between gap-4 overflow-hidden text-[12px]"
+                  >
+                    <span className="font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5 shrink-0">
+                      <AlertCircle size={14} /> {SETTINGS_COPY.saveFailedTitle}
+                    </span>
+                    <span className="text-[11px] text-rose-300/80 font-mono truncate">
+                      {failedKeys.length > 0
+                        ? `${SETTINGS_COPY.saveFailedHint} ${failedKeys.join(", ")}`
+                        : SETTINGS_COPY.saveFailedNone}
+                    </span>
                   </motion.div>
                 )}
               </AnimatePresence>

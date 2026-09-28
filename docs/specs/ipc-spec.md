@@ -250,11 +250,15 @@ Manages configuration and model assets.
 #### `get_settings()` & `update_setting(key: String, value: Value)` & `reset_settings()`
 - **Purpose**: Reads, mutates, or resets application configuration.
 - **Behavior**: Atomically updates `settings.json` with schema validation, hot-reloads live workers (VAD thresholds, speech rate, compute threads), and emits `IpcEvent::SettingsUpdated`. Supports provider-specific TTS sub-struct keys: `tts.chatterbox`, `tts.chatterbox_remote`, and `tts.zipvoice` (`{ voice_id: Option<String>, guidance_scale: f32 }`).
+- **Unknown Keys Are Rejected:** An unrecognised `(domain, key)` pair MUST return `InvalidArgument`. It MUST NOT return a success payload with `applied: false` — a rejected write is otherwise indistinguishable from an applied one, and the value is silently dropped. The frontend MUST surface a rejection to the user; a green "Saved" indicator for a value the backend refused is a correctness defect.
 
 #### `get_model_catalog()` & `get_provider_caps()`
 - **Purpose**: Queries verified models and dynamic provider capabilities.
 - **Behavior**: Reads canonical models manifest and inspects hardware acceleration support. Canonical TTS provider IDs: `supertonic`, `kokoro`, `chatterbox`, `chatterbox_remote`, `edge_tts`, and `zipvoice`.
-- **Capability Contract**: Returns `ProviderCaps { voices: ProviderVoiceSource, speed: bool, quality_steps: bool, clone: bool }`. For `zipvoice`, caps are `{ voices: Custom, speed: true, quality_steps: true, clone: false }`. Unknown provider IDs MUST return an explicit error and never silently fall through to default/catalog capabilities.
+- **Capability Contract**: Returns `ProviderCaps { voices: ProviderVoiceSource, clone: bool }`. For `zipvoice`, caps are `{ voices: Custom, clone: false }`. Unknown provider IDs MUST return an explicit error and never silently fall through to default/catalog capabilities.
+- **A Capability Field Must Be Consumed:** `ProviderCaps` carries only facts that vary between providers and that the frontend acts on. A boolean that is uniformly true across every provider is not a capability and MUST NOT be added — a field with no consuming site is dead weight that reads as a contract. Speed is deliberately absent: every provider supports it, so a `speed: bool` was uniformly `true` and read by nobody. Per-provider speed *ranges* are a separate concern, declared beside the clamp that enforces them.
+- **Diffusion Steps Are Not A Setting:** Each TTS provider synthesises at a fixed, per-provider validated step count declared as a constant beside that provider's engine (`zipvoice` 4 — flow-distilled; `supertonic` 12; `chatterbox` 10; `chatterbox_remote` 10). There is no `tts.quality_steps` key, no `quality_steps` capability, and no quality control in the UI. The ceiling is the model's validated optimum, **not** the largest value that would still run — a flow-distilled model degrades when overshot.
+- **Parameter Ranges Are Per-Provider:** Where a provider supports a tunable range, the range is declared beside the clamp that enforces it, not as a UI constant. `speed` is `0.7..=2.0` for every provider except `edge_tts`, which is `0.5..=2.0`.
 
 #### `manage_models(action: String, modelId: String)` & `check_updates()`
 - **Purpose**: Downloads, verifies SHA256 integrity, extracts, or deletes local model weight archives.

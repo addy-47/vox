@@ -149,6 +149,6 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
 }
 
 #[tauri::command]
-pub fn get_provider_caps(provider_id: String) -> ProviderCaps {
-    caps_for_id(&provider_id)
+pub fn get_provider_caps(provider_id: String) -> Result<ProviderCaps, VoxIpcError> {
+    caps_for_id(&provider_id).map_err(VoxIpcError::InvalidArgument)
 }

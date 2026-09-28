@@ -46,7 +46,6 @@ pub struct SynthesisContext<'a> {
 pub trait TtsProvider: Send {
     fn synthesize_chunk(&self, text: &str, ctx: &SynthesisContext<'_>) -> anyhow::Result<()>;
 
-    fn set_quality_steps(&self, _steps: u32) {}
     fn set_speed(&self, _speed: f32) {}
     fn set_voice(&self, _voice: i32) {}
     fn kind(&self) -> TtsProviderKind;
