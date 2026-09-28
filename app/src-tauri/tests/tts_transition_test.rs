@@ -22,6 +22,7 @@ use ringbuf::traits::Consumer;
 use vox_lib::{
     core::{
         events::{AudioIntent, VoxEvent},
+        settings::ProviderCaps,
         state::InteractionState,
     },
     pipeline::{
@@ -35,10 +36,7 @@ use vox_lib::{
         harness::{Harness, TRANSITION_MESSAGES_EN},
         tts::{
             actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
-            providers::{
-                supertonic::TtsEngine as SupertonicEngine, SynthesisContext, TtsProvider,
-                TtsProviderKind,
-            },
+            providers::{supertonic::TtsEngine as SupertonicEngine, SynthesisContext, TtsProvider},
         },
     },
 };
@@ -67,6 +65,10 @@ async fn test_tts_voice_switch_without_worker_restart() {
         }
 
         impl TtsProvider for VoiceTrackingProvider {
+            fn caps() -> ProviderCaps {
+                SupertonicEngine::caps()
+            }
+
             fn synthesize_chunk(
                 &self,
                 text: &str,
@@ -82,10 +84,6 @@ async fn test_tts_voice_switch_without_worker_restart() {
 
             fn set_speed(&self, speed: f32) {
                 self.inner.set_speed(speed);
-            }
-
-            fn kind(&self) -> TtsProviderKind {
-                self.inner.kind()
             }
 
             fn health_check(&self) -> bool {

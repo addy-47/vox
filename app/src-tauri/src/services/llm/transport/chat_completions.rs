@@ -4,9 +4,12 @@ use futures_util::StreamExt;
 use serde::Deserialize;
 
 use super::{config::ConnectionConfig, sse::SseDecoder};
-use crate::services::llm::{
-    catalog::{ResponseEnvelope, WireValue},
-    CanonicalToolCall, GenerationRequest, LlmError, OutputConstraint, ReasoningMode,
+use crate::services::{
+    harness::ChatMessage,
+    llm::{
+        catalog::{ResponseEnvelope, WireValue},
+        CanonicalToolCall, GenerationRequest, LlmError, OutputConstraint, ReasoningMode,
+    },
 };
 
 #[derive(Deserialize)]
@@ -126,7 +129,7 @@ pub fn build_request_body(
 }
 
 fn serialize_messages(
-    messages: &[crate::services::harness::ChatMessage],
+    messages: &[ChatMessage],
 ) -> Vec<serde_json::Value> {
     messages
         .iter()

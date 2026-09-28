@@ -26,11 +26,12 @@ use tokio_tungstenite::{
 };
 use uuid::Uuid;
 
-use super::{SynthesisContext, TtsProvider, TtsProviderKind};
+use super::{speed_range, SynthesisContext, TtsProvider};
 use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
         events::{AudioIntent, VoxEvent},
+        settings::{ParamRange, ProviderCaps, TtsVoiceSource},
     },
     services::{
         audio::playback::PlaybackEngine,
@@ -98,6 +99,8 @@ pub struct EdgeTtsProvider {
 }
 
 impl EdgeTtsProvider {
+    pub const SPEED_RANGE: ParamRange = speed_range(MIN_SPEED_EDGE, MAX_SPEED_EDGE);
+
     /// Creates a new EdgeTtsProvider configured with the given voice name or default Aria.
     pub fn new(voice: Option<&str>) -> Self {
         Self {
@@ -317,6 +320,15 @@ async fn stream_pcm_payload(
 }
 
 impl TtsProvider for EdgeTtsProvider {
+    /// Declares this provider's capabilities.
+    fn caps() -> ProviderCaps {
+        ProviderCaps {
+            voices: TtsVoiceSource::Edge,
+            clone: false,
+            speed_range: Self::SPEED_RANGE,
+        }
+    }
+
     /// Synthesizes text via Microsoft Edge ReadAloud cloud WebSocket and streams 24kHz PCM directly to PlaybackEngine.
     fn synthesize_chunk(&self, text: &str, ctx: &SynthesisContext<'_>) -> Result<()> {
         let text_clean = text.trim();
@@ -403,13 +415,8 @@ impl TtsProvider for EdgeTtsProvider {
 
     /// Hot-updates the speech playback speed factor.
     fn set_speed(&self, speed: f32) {
-        let clamped = speed.clamp(MIN_SPEED_EDGE, MAX_SPEED_EDGE);
+        let clamped = speed.clamp(Self::SPEED_RANGE.min, Self::SPEED_RANGE.max);
         self.speed.store(clamped.to_bits(), Ordering::Relaxed);
-    }
-
-    /// Returns the TtsProviderKind::EdgeTts variant identifier.
-    fn kind(&self) -> TtsProviderKind {
-        TtsProviderKind::EdgeTts
     }
 
     /// Checks network reachability against Microsoft Speech Platform endpoint.

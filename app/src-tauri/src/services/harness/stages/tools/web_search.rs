@@ -4,7 +4,14 @@ use futures_util::future::{BoxFuture, FutureExt};
 use serde_json::{json, Value};
 
 use super::{ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolResult};
-use crate::{core::settings::PipelineMode, services::llm::ToolFlow};
+use crate::{
+    core::settings::PipelineMode,
+    persistence::compactions,
+    services::{
+        llm::ToolFlow,
+        memory::ml::{embedder, estimate_tokens},
+    },
+};
 
 // ─── Level 3 Domain Constants ────────────────────────────────────────────────
 pub const DEFAULT_MAX_PASSAGES: usize = 5;
@@ -36,8 +43,8 @@ pub struct VoxEmbedder;
 #[async_trait::async_trait]
 impl nexus::traits::TextEmbedder for VoxEmbedder {
     async fn embed_text(&self, text: &str) -> Result<Vec<f32>, nexus::NexusError> {
-        let _ = crate::services::memory::ml::embedder::ensure_embedder_loaded(true);
-        crate::services::memory::ml::embedder::generate_embedding(text)
+        let _ = embedder::ensure_embedder_loaded(true);
+        embedder::generate_embedding(text)
             .map_err(|e| nexus::NexusError::Embedding(e.to_string()))?
             .ok_or_else(|| {
                 nexus::NexusError::Embedding("Embedder singleton not available".to_string())
@@ -45,8 +52,8 @@ impl nexus::traits::TextEmbedder for VoxEmbedder {
     }
 
     async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, nexus::NexusError> {
-        let _ = crate::services::memory::ml::embedder::ensure_embedder_loaded(true);
-        crate::services::memory::ml::embedder::generate_embeddings_batch(texts)
+        let _ = embedder::ensure_embedder_loaded(true);
+        embedder::generate_embeddings_batch(texts)
             .map_err(|e| nexus::NexusError::Embedding(e.to_string()))?
             .ok_or_else(|| {
                 nexus::NexusError::Embedding("Embedder singleton not available".to_string())
@@ -351,7 +358,7 @@ async fn render_evidence_xml(
     let current_tracked_tokens = if live_tracked > 0 {
         live_tracked
     } else if let Ok(conn) = ctx.app_state.db.connect() {
-        if let Ok(turns) = crate::persistence::compactions::fetch_turns_for_compaction(
+        if let Ok(turns) = compactions::fetch_turns_for_compaction(
             &conn,
             ctx.session_id,
             1,
@@ -362,8 +369,8 @@ async fn render_evidence_xml(
             turns
                 .iter()
                 .map(|t| {
-                    crate::services::memory::ml::estimate_tokens(&t.user_text)
-                        + crate::services::memory::ml::estimate_tokens(&t.assistant_text)
+                    estimate_tokens(&t.user_text)
+                        + estimate_tokens(&t.assistant_text)
                 })
                 .sum()
         } else {

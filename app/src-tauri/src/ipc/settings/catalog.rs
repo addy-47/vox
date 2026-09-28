@@ -5,13 +5,13 @@ use tauri::{AppHandle, Manager, State};
 use crate::{
     core::{
         error::VoxIpcError,
-        settings::{
-            caps_for_id, get_preset_colors, ProviderCaps, TtsActiveProvider, VoiceProfile,
-            VoxSettings,
-        },
+        settings::{get_preset_colors, ProviderCaps, TtsActiveProvider, VoiceProfile, VoxSettings},
         state::AppState,
     },
-    services::tts::voice::{get_supertonic_voice_profiles, get_voice_profiles},
+    services::tts::{
+        factory::caps_for_id,
+        voice::{get_supertonic_voice_profiles, get_voice_profiles},
+    },
     setup::manifest::{ModelGroup, VoxManifest},
     utils::paths,
 };

@@ -9,9 +9,12 @@ use std::{
 
 use anyhow::{anyhow, Result};
 
-use super::{SynthesisContext, TtsProvider, TtsProviderKind};
+use super::{speed_range, SynthesisContext, TtsProvider};
 use crate::{
-    core::events::AudioIntent,
+    core::{
+        events::AudioIntent,
+        settings::{ParamRange, ProviderCaps, TtsVoiceSource},
+    },
     services::{
         audio::PlaybackEngine,
         tts::{MAX_SPEED, MIN_SPEED, TTS_CHUNK_SIZE, TTS_SAMPLE_RATE},
@@ -32,13 +35,10 @@ pub struct ChatterboxRemoteProvider {
 }
 
 impl ChatterboxRemoteProvider {
+    pub const SPEED_RANGE: ParamRange = speed_range(MIN_SPEED, MAX_SPEED);
+
     /// Creates a new ChatterboxRemoteProvider and performs initial endpoint connectivity verification.
-    pub fn new(
-        endpoint: &str,
-        language: &str,
-        speed: f32,
-        remote_path: &str,
-    ) -> Result<Self> {
+    pub fn new(endpoint: &str, language: &str, speed: f32, remote_path: &str) -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
             .timeout(Some(Duration::from_secs(30)))
             .connect_timeout(Duration::from_secs(5))
@@ -222,16 +222,20 @@ fn stream_pcm_response(
 }
 
 impl TtsProvider for ChatterboxRemoteProvider {
-    /// Hot-updates the speech playback speed multiplier.
-    fn set_speed(&self, speed: f32) {
-        let clamped = speed.clamp(MIN_SPEED, MAX_SPEED);
-        self.speed.store(clamped.to_bits(), Ordering::Relaxed);
-        log::info!("[ChatterboxRemote] Speed set to {:.2}", clamped);
+    /// Declares this provider's capabilities.
+    fn caps() -> ProviderCaps {
+        ProviderCaps {
+            voices: TtsVoiceSource::Custom,
+            clone: true,
+            speed_range: Self::SPEED_RANGE,
+        }
     }
 
-    /// Returns the provider kind identifier.
-    fn kind(&self) -> TtsProviderKind {
-        TtsProviderKind::ChatterboxRemote
+    /// Hot-updates the speech playback speed multiplier.
+    fn set_speed(&self, speed: f32) {
+        let clamped = speed.clamp(Self::SPEED_RANGE.min, Self::SPEED_RANGE.max);
+        self.speed.store(clamped.to_bits(), Ordering::Relaxed);
+        log::info!("[ChatterboxRemote] Speed set to {:.2}", clamped);
     }
 
     /// Checks if remote GPU server is reachable and active.

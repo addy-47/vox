@@ -10,7 +10,11 @@ use tauri::AppHandle;
 
 use super::{notify, Action, NotificationCategory, NotificationParams};
 use crate::{
-    core::events::Severity,
+    core::{
+        events::Severity,
+        state::AppState,
+        settings::DictationOutputMode
+    },    
     persistence::VoxDb,
     services::dictation::DICTATION_PARTIAL_UPDATE_THROTTLE_MS,
     toast::{show_replaceable_toast, update_replaceable_toast},
@@ -39,9 +43,9 @@ pub struct LifecycleCard<'a> {
 
 fn is_tray_mode<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
     use tauri::Manager;
-    if let Some(state) = app.try_state::<Arc<crate::core::state::AppState>>() {
+    if let Some(state) = app.try_state::<Arc<AppState>>() {
         if let Ok(s) = state.settings.read() {
-            return s.dictation.output_mode == crate::core::settings::DictationOutputMode::Tray;
+            return s.dictation.output_mode == DictationOutputMode::Tray;
         }
     }
     false
@@ -55,7 +59,7 @@ pub async fn dictation_listening<R: tauri::Runtime>(app: &AppHandle<R>, db: &Vox
 
     use tauri::Manager;
     let auto_stop_ms = app
-        .try_state::<Arc<crate::core::state::AppState>>()
+        .try_state::<Arc<AppState>>()
         .and_then(|st| {
             st.settings
                 .read()

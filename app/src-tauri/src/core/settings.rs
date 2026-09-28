@@ -27,8 +27,9 @@ use crate::{
         DEFAULT_STT_CLOUD_LANGUAGE, DEFAULT_STT_CLOUD_MODEL, DEFAULT_STT_CLOUD_PROVIDER,
         DEFAULT_STT_CLOUD_REGION, DEFAULT_STT_PARTIAL_THROTTLE_MS, DEFAULT_STT_THREADS,
         DEFAULT_SYSTEM_PROMPT_MODULAR, DEFAULT_SYSTEM_PROMPT_REALTIME, DEFAULT_TELEMETRY_ENABLED,
-        DEFAULT_TELEMETRY_LOG_LEVEL, DEFAULT_TTS_SPEED,
-        DEFAULT_TTS_THREADS, DEFAULT_TTS_VOICE_INDEX, DEFAULT_UI_ACCENT_SEED, DEFAULT_UI_THEME,
+        DEFAULT_TELEMETRY_LOG_LEVEL, DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS,
+        DEFAULT_TTS_VOICE_INDEX, DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE, DEFAULT_UI_ACCENT_SEED,
+        DEFAULT_UI_THEME,
         DEFAULT_VAD_MAX_SPEECH_DURATION_S, DEFAULT_VAD_PTT_NOISE_GATE,
         DEFAULT_VAD_SILENCE_DURATION_MS, DEFAULT_VAD_SPEECH_ONSET_MS, DEFAULT_VAD_THRESHOLD,
         DEFAULT_WORKING_MEMORY_AUTO_COMPACTION, DEFAULT_WORKING_MEMORY_MAX_CONTEXT_SHARE,
@@ -622,7 +623,7 @@ impl Default for TtsZipvoiceConfig {
     fn default() -> Self {
         Self {
             voice_id: None,
-            guidance_scale: crate::core::defaults::DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
+            guidance_scale: DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
         }
     }
 }
@@ -667,37 +668,19 @@ pub enum TtsVoiceSource {
     None,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+/// Inclusive, quantised bounds a frontend control must respect.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct ParamRange {
+    pub min: f32,
+    pub max: f32,
+    pub step: f32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct ProviderCaps {
     pub voices: TtsVoiceSource,
     pub clone: bool,
-}
-
-pub fn caps_for_id(provider_id: &str) -> Result<ProviderCaps, String> {
-    let caps = match provider_id {
-        "supertonic" | "kokoro" => ProviderCaps {
-            voices: TtsVoiceSource::Catalog,
-            clone: false,
-        },
-        "chatterbox" | "chatterbox_remote" => ProviderCaps {
-            voices: TtsVoiceSource::Custom,
-            clone: true,
-        },
-        "edge_tts" => ProviderCaps {
-            voices: TtsVoiceSource::Edge,
-            clone: false,
-        },
-        "zipvoice" => ProviderCaps {
-            voices: TtsVoiceSource::Custom,
-            clone: false,
-        },
-        // Unknown ids must fail loudly. A fabricated catalog answer is
-        // indistinguishable from a real one at the call site, which is how a
-        // provider that was never registered ends up rendering as though it
-        // supports catalog voices.
-        other => return Err(format!("Unknown TTS provider id: {other}")),
-    };
-    Ok(caps)
+    pub speed_range: ParamRange,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1160,52 +1143,5 @@ impl VoxSettings {
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_caps_for_id_matrix() {
-        assert_eq!(
-            caps_for_id("supertonic").expect("supertonic caps"),
-            ProviderCaps {
-                voices: TtsVoiceSource::Catalog,
-                clone: false,
-            }
-        );
-        assert_eq!(
-            caps_for_id("kokoro").expect("kokoro caps"),
-            caps_for_id("supertonic").expect("supertonic caps")
-        );
-        let chatterbox = caps_for_id("chatterbox").expect("chatterbox caps");
-        assert_eq!(chatterbox.voices, TtsVoiceSource::Custom);
-        assert!(chatterbox.clone);
-        assert_eq!(
-            caps_for_id("chatterbox_remote").expect("chatterbox_remote caps"),
-            chatterbox
-        );
-        let edge = caps_for_id("edge_tts").expect("edge_tts caps");
-        assert_eq!(edge.voices, TtsVoiceSource::Edge);
-        assert!(!edge.clone);
-        let zipvoice = caps_for_id("zipvoice").expect("zipvoice caps");
-        assert_eq!(zipvoice.voices, TtsVoiceSource::Custom);
-        assert!(!zipvoice.clone);
-    }
-
-    #[test]
-    fn test_caps_for_id_rejects_unknown() {
-        // An unknown id must error rather than fabricate catalog capabilities:
-        // a fabricated answer is indistinguishable from a real one downstream.
-        let err = caps_for_id("no_such_engine")
-            .expect_err("unknown provider id must not resolve");
-        assert!(err.contains("no_such_engine"), "error should name the id");
-        assert!(caps_for_id("").is_err(), "empty id must not resolve");
-        assert!(
-            caps_for_id("Kokoro").is_err(),
-            "matching must be exact, not case-insensitive"
-        );
     }
 }

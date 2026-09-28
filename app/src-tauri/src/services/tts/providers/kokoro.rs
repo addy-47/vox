@@ -15,17 +15,18 @@ use sherpa_onnx::{
     OfflineTtsModelConfig,
 };
 
-use super::{edge_tts::EdgeTtsProvider, SynthesisContext, TtsProvider, TtsProviderKind};
+use super::{edge_tts::EdgeTtsProvider, speed_range, SynthesisContext, TtsProvider};
 use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
         events::VoxEvent,
+        settings::{ParamRange, ProviderCaps, TtsVoiceSource},
     },
     services::{
         translit::is_devanagari,
         tts::{
-            EDGE_TTS_HINDI_VOICE, KOKORO_SILENCE_SCALE, KOKORO_VOICE_ROW_BYTES, MAX_SPEED, MIN_SPEED,
-            MODEL_DIRNAME_TTS_KOKORO_ESPEAK, MODEL_FILE_TTS_KOKORO_LEXICON_US,
+            EDGE_TTS_HINDI_VOICE, KOKORO_SILENCE_SCALE, KOKORO_VOICE_ROW_BYTES, MAX_SPEED,
+            MIN_SPEED, MODEL_DIRNAME_TTS_KOKORO_ESPEAK, MODEL_FILE_TTS_KOKORO_LEXICON_US,
             MODEL_FILE_TTS_KOKORO_MODEL, MODEL_FILE_TTS_KOKORO_TOKENS,
             MODEL_FILE_TTS_KOKORO_VOICES,
         },
@@ -60,6 +61,8 @@ pub struct KokoroEngine {
 }
 
 impl KokoroEngine {
+    pub const SPEED_RANGE: ParamRange = speed_range(MIN_SPEED, MAX_SPEED);
+
     /// Initializes Kokoro multi-lang v1.1 offline TTS components from the specified model directory.
     pub fn new(model_path: &Path, voice: i32, speed: f32, num_threads: u32) -> Result<Self> {
         let mp = |f: &str| -> String { model_path.join(f).to_string_lossy().into() };
@@ -106,17 +109,28 @@ impl KokoroEngine {
 
         Ok(Self {
             tts: Mutex::new(tts),
-            speed: AtomicF32::new(speed.clamp(MIN_SPEED, MAX_SPEED)),
+            speed: AtomicF32::new(speed.clamp(Self::SPEED_RANGE.min, Self::SPEED_RANGE.max)),
             voice: AtomicI32::new(clamped_voice),
         })
     }
 }
 
 impl TtsProvider for KokoroEngine {
+    /// Declares this provider's capabilities.
+    fn caps() -> ProviderCaps {
+        ProviderCaps {
+            voices: TtsVoiceSource::Catalog,
+            clone: false,
+            speed_range: Self::SPEED_RANGE,
+        }
+    }
+
     /// Hot-updates the playback speed factor.
     fn set_speed(&self, speed: f32) {
-        self.speed
-            .store(speed.clamp(MIN_SPEED, MAX_SPEED), Ordering::Relaxed);
+        self.speed.store(
+            speed.clamp(Self::SPEED_RANGE.min, Self::SPEED_RANGE.max),
+            Ordering::Relaxed,
+        );
     }
 
     /// Hot-updates the active Kokoro speaker voice ID.
@@ -124,11 +138,6 @@ impl TtsProvider for KokoroEngine {
         let clamped = voice.max(0);
         self.voice.store(clamped, Ordering::Relaxed);
         log::debug!("[Kokoro] Active speaker voice updated to {}", clamped);
-    }
-
-    /// Returns the TtsProviderKind::Kokoro variant identifier.
-    fn kind(&self) -> TtsProviderKind {
-        TtsProviderKind::Kokoro
     }
 
     /// Returns true confirming the engine is loaded in memory.
@@ -149,7 +158,8 @@ impl TtsProvider for KokoroEngine {
             );
             if let Err(e) = ctx.event_tx.send(VoxEvent::Error(PipelineError {
                 turn_id: ctx.turn_id,
-                message: "Configured TTS does not support Hindi (Devanagari). Routing to Edge TTS.".to_string(),
+                message: "Configured TTS does not support Hindi (Devanagari). Routing to Edge TTS."
+                    .to_string(),
                 source: "Kokoro".to_string(),
                 impact: PipelineImpact::Degraded,
             })) {

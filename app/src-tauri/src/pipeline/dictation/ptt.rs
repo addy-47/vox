@@ -8,7 +8,7 @@ use tauri::AppHandle;
 use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
-        events::InteractionOwner,
+        events::{InteractionOwner, Severity},
         state::{AppState, InteractionState},
     },
     pipeline::dictation::{error, transition_dictation},
@@ -43,7 +43,7 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
                 LifecycleCard {
                     title: "🎙️ Dictation",
                     message: "Assistant is currently active",
-                    severity: crate::core::events::Severity::Info,
+                    severity: Severity::Info,
                     duration_ms: 2000,
                 },
             )
@@ -87,7 +87,7 @@ pub fn on_ptt_start<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
                     LifecycleCard {
                         title: "🎙️ Dictation",
                         message: "Previous turn transcribing",
-                        severity: crate::core::events::Severity::Info,
+                        severity: Severity::Info,
                         duration_ms: 1500,
                     },
                 )
@@ -222,7 +222,7 @@ pub fn on_ptt_stop_with_sender<R: tauri::Runtime>(
                 LifecycleCard {
                     title: "⚠️ Dictation: No Speech",
                     message: "<b>No speech recognized</b>\nSpeak clearly into the microphone",
-                    severity: crate::core::events::Severity::Warning,
+                    severity: Severity::Warning,
                     duration_ms: 3000,
                 },
             )
@@ -317,7 +317,7 @@ pub fn on_ptt_cancel<R: tauri::Runtime>(app: &AppHandle<R>, state: &AppState) {
             LifecycleCard {
                 title: "🎙️ Dictation",
                 message: "Dictation cancelled",
-                severity: crate::core::events::Severity::Info,
+                severity: Severity::Info,
                 duration_ms: 1500,
             },
         )

@@ -107,9 +107,16 @@ export interface ModelGroupInfo {
 
 export type TtsVoiceSource = "catalog" | "custom" | "edge" | "none";
 
+export interface ParamRange {
+  min: number;
+  max: number;
+  step: number;
+}
+
 export interface ProviderCaps {
   voices: TtsVoiceSource;
   clone: boolean;
+  speed_range: ParamRange;
 }
 
 // Alias for backwards compatibility during component migration

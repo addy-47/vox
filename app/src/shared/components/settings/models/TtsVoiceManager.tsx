@@ -267,28 +267,33 @@ export const TtsVoiceManager = memo(({
       )}
 
       {/* TAB 2: SPEECH SPEED / RATE */}
-      {activeSubTab === "speed" && (
-        <SettingsTabPane
-          icon={Metronome}
-          title={copy.speed.title}
-          description={copy.speed.description}
-          layoutMode={layoutMode}
-          rightSlot={
-            <div className="w-full flex items-center justify-center">
-              <RotaryKnob
-                value={draftSettings.tts.speed || 1.0}
-                min={0.7}
-                max={2.0}
-                step={0.05}
-                formatValue={(v) => `${v.toFixed(2)}x`}
-                formatPreset={(v) => `${v}x`}
-                onChange={(v) => updateDraft("tts", "speed", v)}
-                presetSteps={[0.8, 1.0, 1.25]}
-              />
-            </div>
-          }
-        />
-      )}
+      {activeSubTab === "speed" && (() => {
+        // Bounds come from the provider, not the UI. Loading fallback matches
+        // five of six providers and is replaced when caps arrive.
+        const range = caps?.speed_range ?? { min: 0.7, max: 2.0, step: 0.05 };
+        return (
+          <SettingsTabPane
+            icon={Metronome}
+            title={copy.speed.title}
+            description={copy.speed.description}
+            layoutMode={layoutMode}
+            rightSlot={
+              <div className="w-full flex items-center justify-center">
+                <RotaryKnob
+                  value={draftSettings.tts.speed || 1.0}
+                  min={range.min}
+                  max={range.max}
+                  step={range.step}
+                  formatValue={(v) => `${v.toFixed(2)}x`}
+                  formatPreset={(v) => `${v}x`}
+                  onChange={(v) => updateDraft("tts", "speed", v)}
+                  presetSteps={[0.8, 1.0, 1.25]}
+                />
+              </div>
+            }
+          />
+        );
+      })()}
 
       {/* TAB 3: COMPUTE ALLOCATION */}
       {activeSubTab === "compute" && (() => {

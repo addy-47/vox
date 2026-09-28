@@ -11,10 +11,13 @@ use anyhow::{anyhow, Result};
 use chatterbox_rs::{Engine, EngineOptions};
 use parking_lot::Mutex;
 
-use super::{SynthesisContext, TtsProvider, TtsProviderKind};
-use crate::services::tts::{
-    MAX_SPEED, MIN_SPEED, MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3,
-    TTS_CHUNK_SIZE, TTS_SAMPLE_RATE,
+use super::{speed_range, SynthesisContext, TtsProvider};
+use crate::{
+    core::settings::{ParamRange, ProviderCaps, TtsVoiceSource},
+    services::tts::{
+        MAX_SPEED, MIN_SPEED, MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3,
+        TTS_CHUNK_SIZE, TTS_SAMPLE_RATE,
+    },
 };
 
 /// Fixed conditional-flow-matching step count for local Chatterbox.
@@ -28,6 +31,8 @@ pub struct ChatterboxEngine {
 }
 
 impl ChatterboxEngine {
+    pub const SPEED_RANGE: ParamRange = speed_range(MIN_SPEED, MAX_SPEED);
+
     /// Loads Chatterbox T3 and S3Gen GGUF models and initializes the inference engine.
     pub fn new(
         model_path: &Path,
@@ -143,16 +148,20 @@ impl ChatterboxEngine {
 }
 
 impl TtsProvider for ChatterboxEngine {
-    /// Hot-updates the speech playback speed factor.
-    fn set_speed(&self, speed: f32) {
-        let clamped = speed.clamp(MIN_SPEED, MAX_SPEED);
-        self.speed.store(clamped.to_bits(), Ordering::Relaxed);
-        log::info!("[Chatterbox] Speed set to {:.2}", clamped);
+    /// Declares this provider's capabilities.
+    fn caps() -> ProviderCaps {
+        ProviderCaps {
+            voices: TtsVoiceSource::Custom,
+            clone: true,
+            speed_range: Self::SPEED_RANGE,
+        }
     }
 
-    /// Returns the TtsProviderKind::Chatterbox variant identifier.
-    fn kind(&self) -> TtsProviderKind {
-        TtsProviderKind::Chatterbox
+    /// Hot-updates the speech playback speed factor.
+    fn set_speed(&self, speed: f32) {
+        let clamped = speed.clamp(Self::SPEED_RANGE.min, Self::SPEED_RANGE.max);
+        self.speed.store(clamped.to_bits(), Ordering::Relaxed);
+        log::info!("[Chatterbox] Speed set to {:.2}", clamped);
     }
 
     /// Returns true confirming the engine is initialized and available.

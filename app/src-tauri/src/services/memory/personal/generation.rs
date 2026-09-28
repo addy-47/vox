@@ -14,6 +14,7 @@ use crate::{
     services::{
         harness::{ChatMessage, Role},
         llm::{
+            catalog::get_baseline_spec,
             ConversationInput, GenerationPolicy, GenerationPurpose, LlmProvider, LlmStreamEvent,
             OutputConstraint, ReasoningMode,
         },
@@ -27,7 +28,7 @@ use crate::{
 /// `compaction_output_constraint` so both structured passes negotiate the same
 /// way; the transport additionally negotiates down on a provider 400.
 fn consolidation_output_constraint(model: &str) -> OutputConstraint {
-    let supported = crate::services::llm::catalog::get_baseline_spec(model)
+    let supported = get_baseline_spec(model)
         .map(|spec| spec.supports_structured)
         .unwrap_or(true);
     if supported {
