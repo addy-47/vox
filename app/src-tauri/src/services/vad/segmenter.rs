@@ -247,6 +247,11 @@ pub fn process_continuous_segmentation(
         if state.in_speech {
             state.current_turn_id = handles.turn_id_atomic.load(Ordering::Relaxed);
             accumulate_speech_frames(chunk, state, stt_tx);
+        } else {
+            // INVARIANT: sub-threshold onset frames are retained in pre-roll so the
+            // gate frame is flushed into the utterance at SpeechStart instead of
+            // being dropped (abrupt onsets lose their leading 16ms otherwise).
+            state.pre_roll_buffer.push(chunk);
         }
     } else {
         state.inactive_frames += 1;
@@ -271,7 +276,7 @@ pub fn process_windowed_validation(
     chunk: &[f32],
     raw_energy: f32,
     vad: &mut VadBackend,
-    state: &mut VadActorState,
+    state: &mut VadActorState, 
     channels: &VadActorChannels,
 ) {
     if !state.window_active {

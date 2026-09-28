@@ -29,3 +29,7 @@ pub const STT_MIN_PARTIAL_THROTTLE_MS: u64 = 300;
 pub const STT_PARTIAL_ERROR_PENALTY_MS: u64 = 500;
 pub const STT_WORKER_RECV_TIMEOUT_MS: u64 = 150;
 pub const STT_WORKER_THREAD_PRIORITY: u8 = 80;
+
+/// Leading silence (samples at 16kHz) priming each fresh Nemotron streaming
+/// session so the chunked encoder opens with acoustic context on abrupt onsets.
+pub const NEMOTRON_WARMUP_SILENCE_SAMPLES: usize = 4800;

@@ -342,38 +342,49 @@ fn main() {
         }
     }
 
-    // 4) ZipVoice — 4 fixed steps (distilled target), guidance 1.0, speed 1.0, zero-shot reference voice
+    // 4) ZipVoice — 4 fixed steps (distilled target), guidance 1.0, speed 1.0, one provider per packaged voice
     if run_zipvoice {
         if zipvoice_dir.exists() && zipvoice_dir.join("decoder.int8.onnx").exists() {
             let zd_str = zipvoice_dir.to_string_lossy().to_string();
             let voice = base_voice;
             let voices_dir = zipvoice_dir.join("voices");
-            let initial_ref =
-                vox_lib::services::tts::providers::zipvoice::resolve_zipvoice_reference(
-                    &voices_dir,
-                    Some("atlas"),
-                )
-                .ok();
-            let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(
-                vox_lib::services::tts::ZipvoiceEngine::new(
-                    &zipvoice_dir,
-                    1.0,
-                    1.0,
-                    2,
-                    initial_ref,
-                )
-                .expect("Failed to init ZipVoice"),
-            );
-            let run = benchmark_tts_provider(
-                "ZipVoice Distill Int8 (4 steps, guidance 1.0, speed 1.0)",
-                "zipvoice",
-                &zd_str,
-                &prompts,
-                provider,
-                Some(&wav_run_dir),
-                voice,
-            );
-            engine_runs.push(run);
+            let pack = vox_lib::services::tts::providers::zipvoice::load_voice_pack(&voices_dir)
+                .unwrap_or_default();
+            if pack.is_empty() {
+                eprintln!("[WARN] No ZipVoice reference voices found in {:?}", voices_dir);
+            }
+            for entry in &pack {
+                let initial_ref =
+                    vox_lib::services::tts::providers::zipvoice::resolve_zipvoice_reference(
+                        &voices_dir,
+                        Some(&entry.slug),
+                    )
+                    .ok();
+                let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> =
+                    Box::new(
+                        vox_lib::services::tts::ZipvoiceEngine::new(
+                            &zipvoice_dir,
+                            1.0,
+                            1.0,
+                            2,
+                            initial_ref,
+                        )
+                        .expect("Failed to init ZipVoice"),
+                    );
+                let run = benchmark_tts_provider(
+                    &format!(
+                        "ZipVoice Distill Int8 [{}] (4 steps, guidance 1.0, speed 1.0)",
+                        entry.slug
+                    ),
+                    &format!("zipvoice_{}", entry.slug),
+                    &zd_str,
+                    &prompts,
+                    provider,
+                    Some(&wav_run_dir),
+                    voice,
+                );
+                engine_runs.push(run);
+            }
         } else {
             eprintln!("[WARN] ZipVoice model not found at {:?}", zipvoice_dir);
         }
