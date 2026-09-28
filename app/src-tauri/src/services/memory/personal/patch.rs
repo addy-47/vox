@@ -74,11 +74,8 @@ pub fn apply_patch_operations(
 
     // Sort operations descending by index so that modifying later positions does not affect
     // earlier indices. Ties keep their input order, so `position` stays meaningful.
-    let mut sorted_ops: Vec<(usize, MemoryPatchOperation)> = operations
-        .iter()
-        .cloned()
-        .enumerate()
-        .collect();
+    let mut sorted_ops: Vec<(usize, MemoryPatchOperation)> =
+        operations.iter().cloned().enumerate().collect();
     sorted_ops.sort_by(|a, b| b.1.index.cmp(&a.1.index));
 
     let mut rejected: Vec<RejectedOperation> = Vec::new();

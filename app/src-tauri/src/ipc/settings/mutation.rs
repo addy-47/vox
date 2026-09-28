@@ -342,6 +342,10 @@ fn apply_tts_mutation(
             settings.tts.chatterbox_remote = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid chatterbox_remote config: {}", e))?;
         }
+        "zipvoice" => {
+            settings.tts.zipvoice = serde_json::from_value(value.clone())
+                .map_err(|e| format!("Invalid zipvoice config: {}", e))?;
+        }
         "provider" => {
             if let Ok(prov) = serde_json::from_value::<TtsProviderConfig>(value.clone()) {
                 match prov {
@@ -382,6 +386,14 @@ fn apply_tts_mutation(
                         settings.tts.chatterbox_remote.voice_id = voice_id;
                         settings.tts.quality_steps = quality_steps;
                         settings.tts.speed = speed;
+                    }
+                    TtsProviderConfig::Zipvoice {
+                        voice_id,
+                        guidance_scale,
+                    } => {
+                        settings.tts.active = TtsActiveProvider::Zipvoice;
+                        settings.tts.zipvoice.voice_id = voice_id;
+                        settings.tts.zipvoice.guidance_scale = guidance_scale;
                     }
                 }
             }

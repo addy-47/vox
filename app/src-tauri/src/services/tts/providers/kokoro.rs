@@ -15,7 +15,7 @@ use sherpa_onnx::{
     OfflineTtsModelConfig,
 };
 
-use super::{SynthesisContext, TtsProvider, TtsProviderKind};
+use super::{edge_tts::EdgeTtsProvider, SynthesisContext, TtsProvider, TtsProviderKind};
 use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
@@ -24,7 +24,7 @@ use crate::{
     services::{
         translit::is_devanagari,
         tts::{
-            KOKORO_SILENCE_SCALE, KOKORO_VOICE_ROW_BYTES, MAX_SPEED, MIN_SPEED,
+            EDGE_TTS_HINDI_VOICE, KOKORO_SILENCE_SCALE, KOKORO_VOICE_ROW_BYTES, MAX_SPEED, MIN_SPEED,
             MODEL_DIRNAME_TTS_KOKORO_ESPEAK, MODEL_FILE_TTS_KOKORO_LEXICON_US,
             MODEL_FILE_TTS_KOKORO_MODEL, MODEL_FILE_TTS_KOKORO_TOKENS,
             MODEL_FILE_TTS_KOKORO_VOICES,
@@ -143,19 +143,20 @@ impl TtsProvider for KokoroEngine {
         }
 
         if is_devanagari(text) {
-            log::error!(
-                "[Kokoro] Devanagari script detected in turn {}: Kokoro does not support Hindi synthesis",
+            log::warn!(
+                "[Kokoro] Devanagari script detected in turn {}: routing to Edge TTS fallback",
                 ctx.turn_id
             );
             if let Err(e) = ctx.event_tx.send(VoxEvent::Error(PipelineError {
                 turn_id: ctx.turn_id,
-                message: "Kokoro TTS does not support Hindi (Devanagari).".to_string(),
+                message: "Configured TTS does not support Hindi (Devanagari). Routing to Edge TTS.".to_string(),
                 source: "Kokoro".to_string(),
                 impact: PipelineImpact::Degraded,
             })) {
                 log::warn!("[Kokoro] Failed to emit error event: {}", e);
             }
-            return Ok(());
+            let fallback_provider = EdgeTtsProvider::new(Some(EDGE_TTS_HINDI_VOICE));
+            return fallback_provider.synthesize_chunk(text, ctx);
         }
 
         let sid = self.voice.load(Ordering::Relaxed);

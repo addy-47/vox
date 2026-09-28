@@ -565,6 +565,7 @@ pub enum TtsActiveProvider {
     Kokoro,
     Chatterbox,
     ChatterboxRemote,
+    Zipvoice,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
@@ -615,6 +616,22 @@ impl Default for TtsChatterboxRemoteConfig {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(default)]
+pub struct TtsZipvoiceConfig {
+    pub voice_id: Option<String>,
+    pub guidance_scale: f32,
+}
+
+impl Default for TtsZipvoiceConfig {
+    fn default() -> Self {
+        Self {
+            voice_id: None,
+            guidance_scale: crate::core::defaults::DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TtsProviderConfig {
@@ -640,6 +657,11 @@ pub enum TtsProviderConfig {
     EdgeTts {
         #[serde(default)]
         voice: Option<String>,
+    },
+    Zipvoice {
+        #[serde(default)]
+        voice_id: Option<String>,
+        guidance_scale: f32,
     },
 }
 
@@ -680,6 +702,12 @@ pub fn caps_for_id(provider_id: &str) -> ProviderCaps {
             quality_steps: false,
             clone: false,
         },
+        "zipvoice" => ProviderCaps {
+            voices: TtsVoiceSource::Custom,
+            speed: true,
+            quality_steps: true,
+            clone: false,
+        },
         _ => ProviderCaps {
             voices: TtsVoiceSource::Catalog,
             speed: true,
@@ -703,6 +731,7 @@ pub struct TtsSettings {
     pub kokoro: TtsKokoroConfig,
     pub chatterbox: TtsChatterboxConfig,
     pub chatterbox_remote: TtsChatterboxRemoteConfig,
+    pub zipvoice: TtsZipvoiceConfig,
 }
 
 impl Default for TtsSettings {
@@ -718,6 +747,7 @@ impl Default for TtsSettings {
             kokoro: TtsKokoroConfig::default(),
             chatterbox: TtsChatterboxConfig::default(),
             chatterbox_remote: TtsChatterboxRemoteConfig::default(),
+            zipvoice: TtsZipvoiceConfig::default(),
         }
     }
 }
@@ -743,6 +773,10 @@ impl TtsSettings {
                 speed: self.speed,
                 remote_path: self.chatterbox_remote.remote_path.clone(),
                 voice_id: self.chatterbox_remote.voice_id.clone(),
+            },
+            TtsActiveProvider::Zipvoice => TtsProviderConfig::Zipvoice {
+                voice_id: self.zipvoice.voice_id.clone(),
+                guidance_scale: self.zipvoice.guidance_scale,
             },
         }
     }
@@ -1173,6 +1207,9 @@ mod tests {
         let edge = caps_for_id("edge_tts");
         assert_eq!(edge.voices, TtsVoiceSource::Edge);
         assert!(!edge.speed && !edge.quality_steps && !edge.clone);
+        let zipvoice = caps_for_id("zipvoice");
+        assert_eq!(zipvoice.voices, TtsVoiceSource::Custom);
+        assert!(zipvoice.speed && zipvoice.quality_steps && !zipvoice.clone);
         assert_eq!(caps_for_id("no_such_engine"), caps_for_id("supertonic"));
     }
 }

@@ -7,7 +7,10 @@ use turso::{Builder, Connection};
 
 use crate::{
     core::error::PersistenceError,
-    persistence::{voices::seed_packaged_voices, SQLITE_BUSY_TIMEOUT_MS},
+    persistence::{
+        voices::{seed_packaged_voices, seed_zipvoice_voices},
+        SQLITE_BUSY_TIMEOUT_MS,
+    },
 };
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
@@ -260,6 +263,13 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
     if let Err(e) = seed_packaged_voices(conn).await {
         log::warn!(
             "[Persistence::Schema] Failed to seed packaged voices: {}",
+            e
+        );
+    }
+
+    if let Err(e) = seed_zipvoice_voices(conn).await {
+        log::warn!(
+            "[Persistence::Schema] Failed to seed zipvoice voices: {}",
             e
         );
     }

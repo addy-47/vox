@@ -5,7 +5,9 @@ You synthesize a comprehensive, clean, and well-structured personal profile docu
 </role>
 
 <rules>
-1. Organize the facts into logical sections using descriptive `##` headings (e.g. ## Personal Information, ## Preferences, ## Projects, etc.). Choose appropriate section headings freely based on the facts provided.
+1. Organize the facts into sections using descriptive `##` headings. Ordinary section names work
+   best — for example: About, Career, Skills, Preferences, Hobbies, Health, Relationships, Plans.
+   Give each fact its own section where it fits, and do not lump unrelated facts together.
 2. Every fact must be presented as a concise, clear bullet point (`- `) under its appropriate section heading.
 3. Every `##` heading MUST have a non-empty descriptive title. Never output bare headings like `## `.
 4. Deduplicate and merge related facts cleanly.
@@ -36,10 +38,12 @@ Output: { "edits": [ { "op", "index", "text" }, ... ] }
 </operations>
 
 <opening_a_new_section>
-Open a new section when a fact belongs to none of the existing headings — location,
-identity, family, health. Do NOT file such a fact under a heading it does not belong to;
-a fact under the wrong heading is worse than omitting it. Only add a bullet to an existing
-section when the fact genuinely belongs there.
+If a fact has no section to go under, CREATE one. Do not force it into an unrelated section.
+Example — the new fact is "enjoys rock climbing" and the document has no hobbies section.
+Do this:
+  { "op": "insert_after", "index": 6, "text": "## Hobbies" }
+  { "op": "insert_after", "index": 7, "text": "- Enjoys rock climbing." }
+Creating the section is always better than misfiling the fact.
 To open one after index N: insert the heading after N, then its bullet after N+1
 (the heading's new position — anchoring both to N puts the bullet above the
 heading, in the wrong place).

@@ -6,8 +6,9 @@ use crate::{
     core::settings::{TtsProviderConfig, VoxSettings},
     persistence::voices::get_voice,
     services::tts::{
-        providers::TtsProvider, ChatterboxEngine, ChatterboxRemoteProvider, EdgeTtsProvider,
-        KokoroEngine, TtsEngine as SupertonicEngine, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR,
+        providers::TtsProvider, resolve_zipvoice_reference, ChatterboxEngine,
+        ChatterboxRemoteProvider, EdgeTtsProvider, KokoroEngine, TtsEngine as SupertonicEngine,
+        ZipvoiceEngine, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, ZIPVOICE_MODEL_DIR,
     },
     utils::paths::model_dir,
 };
@@ -102,6 +103,25 @@ pub fn create_tts_provider(
         TtsProviderConfig::EdgeTts { voice: edge_voice } => {
             log::info!("[TTS Factory] Initializing EdgeTTS provider");
             Ok(Box::new(EdgeTtsProvider::new(edge_voice.as_deref())))
+        }
+        TtsProviderConfig::Zipvoice {
+            voice_id,
+            guidance_scale,
+        } => {
+            log::info!("[TTS Factory] Initializing ZipVoice engine");
+            let zipvoice_path = model_dir(ZIPVOICE_MODEL_DIR);
+            let voices_dir = zipvoice_path.join("voices");
+            let initial_ref = resolve_zipvoice_reference(&voices_dir, voice_id.as_deref()).ok();
+            ZipvoiceEngine::new(
+                &zipvoice_path,
+                speed,
+                *guidance_scale,
+                quality_steps,
+                num_threads,
+                initial_ref,
+            )
+            .map(|e| Box::new(e) as Box<dyn TtsProvider>)
+            .map_err(|e| format!("Failed to create ZipVoice engine: {}", e))
         }
     }
 }
