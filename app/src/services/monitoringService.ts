@@ -175,7 +175,9 @@ export function sampleJSHeap(): JSHeapSample {
     return { usedMb: null, totalMb: null, limitMb: null, available: false, accuracy: "Unattributed" };
   }
 
-  const perf = window.performance as any;
+  const perf = window.performance as Performance & {
+    memory?: { usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number };
+  };
   if (perf && perf.memory && typeof perf.memory.usedJSHeapSize === "number") {
     const usedMb = Math.round((perf.memory.usedJSHeapSize / 1024 / 1024) * 100) / 100;
     const totalMb = Math.round((perf.memory.totalJSHeapSize / 1024 / 1024) * 100) / 100;

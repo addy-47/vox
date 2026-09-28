@@ -51,6 +51,7 @@ import {
   SearchBar,
   GraphControlDock,
   MemoryCategory,
+  toMemoryCategory,
   PersonalMemoryStagingCard,
   type StagingMode,
   type MemoryComment,
@@ -245,8 +246,8 @@ export const Memory: React.FC = memo(() => {
   const categoryCounts = useMemo(() => {
     const counts: Partial<Record<MemoryCategory, number>> = {};
     for (const f of facts) {
-      const cat = f.fact_type as MemoryCategory;
-      counts[cat] = (counts[cat] || 0) + 1;
+      const cat = toMemoryCategory(f.fact_type);
+      if (cat !== undefined) counts[cat] = (counts[cat] || 0) + 1;
     }
     return counts;
   }, [facts]);

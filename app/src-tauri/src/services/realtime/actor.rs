@@ -359,7 +359,7 @@ async fn write_session_cache_non_blocking(handle: &str, model: &str) {
 pub fn create_realtime_provider(
     state: &AppState,
 ) -> Result<Box<dyn RealtimeVoiceProvider>, String> {
-    let mut settings = state
+    let settings = state
         .settings
         .read()
         .unwrap_or_else(|p| p.into_inner())
@@ -389,10 +389,6 @@ pub fn create_realtime_provider(
         }
     }
 
-    if let Some(handle) = cached_handle {
-        settings.realtime.gemini_live.resume_handle = Some(handle);
-    }
-
     let tools = ToolRegistry::with_default_tools().canonical_definitions(PipelineMode::Realtime);
 
     match settings.realtime.active {
@@ -402,6 +398,7 @@ pub fn create_realtime_provider(
             tools,
             state.pipeline.state_rx.clone(),
             state.pipeline.turn_id.clone(),
+            cached_handle,
         ))),
         RealtimeProviderKind::DeepgramVoiceAgent => Ok(Box::new(DeepgramVoiceAgentProvider::new(
             settings.realtime.deepgram_voice_agent.clone(),

@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import { cn } from "@/shared/lib/utils";
 
 export type MarkdownVariant = "document" | "bubble" | "preview";
@@ -59,45 +59,45 @@ export const Markdown = memo(
       [content, autoHeadings]
     );
 
-    const components = useMemo(() => {
+    const components = useMemo((): Components => {
       if (variant === "bubble") {
         return {
-          h1: ({ children, ...props }: any) => (
+          h1: ({ children, ...props }) => (
             <h1 className="font-display text-[13.5px] font-bold text-[rgb(var(--accent))] mt-2 mb-1" {...props}>
               {children}
             </h1>
           ),
-          h2: ({ children, ...props }: any) => (
+          h2: ({ children, ...props }) => (
             <h2 className="font-display text-[13px] font-bold text-[rgb(var(--accent))] mt-2 mb-1" {...props}>
               {children}
             </h2>
           ),
-          h3: ({ children, ...props }: any) => (
+          h3: ({ children, ...props }) => (
             <h3 className="font-display text-[12.5px] font-semibold text-[rgb(var(--foreground))] mt-1.5 mb-1" {...props}>
               {children}
             </h3>
           ),
-          p: ({ children, ...props }: any) => (
+          p: ({ children, ...props }) => (
             <p className="mb-1.5 last:mb-0 leading-relaxed break-words" {...props}>
               {children}
             </p>
           ),
-          ul: ({ children, ...props }: any) => (
+          ul: ({ children, ...props }) => (
             <ul className="list-disc pl-4 my-1.5 space-y-0.5 marker:text-[rgb(var(--accent))]" {...props}>
               {children}
             </ul>
           ),
-          ol: ({ children, ...props }: any) => (
+          ol: ({ children, ...props }) => (
             <ol className="list-decimal pl-4 my-1.5 space-y-0.5 marker:text-[rgb(var(--accent))]" {...props}>
               {children}
             </ol>
           ),
-          li: ({ children, ...props }: any) => (
+          li: ({ children, ...props }) => (
             <li className="leading-relaxed" {...props}>
               {children}
             </li>
           ),
-          code: ({ children, ...props }: any) => (
+          code: ({ children, ...props }) => (
             <code
               className="px-1 py-0.5 rounded bg-[rgba(var(--foreground),0.08)] border border-[rgba(var(--border),0.12)] font-mono text-[11px] text-[rgb(var(--accent))]"
               {...props}
@@ -105,7 +105,7 @@ export const Markdown = memo(
               {children}
             </code>
           ),
-          pre: ({ children, ...props }: any) => (
+          pre: ({ children, ...props }) => (
             <pre
               className="p-2.5 my-2 rounded-xl bg-[rgba(var(--card),0.9)] border border-[rgba(var(--accent),0.2)] overflow-x-auto font-mono text-[11.5px]"
               {...props}
@@ -113,12 +113,12 @@ export const Markdown = memo(
               {children}
             </pre>
           ),
-          strong: ({ children, ...props }: any) => (
+          strong: ({ children, ...props }) => (
             <strong className="font-bold text-[rgb(var(--accent))]" {...props}>
               {children}
             </strong>
           ),
-          blockquote: ({ children, ...props }: any) => (
+          blockquote: ({ children, ...props }) => (
             <blockquote
               className="border-l-2 border-[rgb(var(--accent))] pl-2.5 py-0.5 my-1.5 bg-[rgba(var(--accent),0.04)] rounded-r italic text-[rgb(var(--foreground-muted))]"
               {...props}
@@ -131,38 +131,38 @@ export const Markdown = memo(
 
       if (variant === "preview") {
         return {
-          h1: ({ children, ...props }: any) => (
+          h1: ({ children, ...props }) => (
             <h1 className="text-[13px] font-bold mt-2 mb-1 text-[rgb(var(--accent))]" {...props}>
               {children}
             </h1>
           ),
-          h2: ({ children, ...props }: any) => (
+          h2: ({ children, ...props }) => (
             <h2 className="text-[12.5px] font-bold mt-2 mb-1 text-[rgb(var(--accent))]" {...props}>
               {children}
             </h2>
           ),
-          h3: ({ children, ...props }: any) => (
+          h3: ({ children, ...props }) => (
             <h3 className="text-[12px] font-bold mt-1.5 mb-1 text-[rgb(var(--accent))]" {...props}>
               {children}
             </h3>
           ),
-          p: ({ children, ...props }: any) => (
+          p: ({ children, ...props }) => (
             <p className="mb-1.5 last:mb-0 text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed" {...props}>
               {children}
             </p>
           ),
-          ul: ({ children, ...props }: any) => (
+          ul: ({ children, ...props }) => (
             <ul className="list-disc list-inside mb-2 pl-1 space-y-1 text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed marker:text-[rgb(var(--accent))]" {...props}>
               {children}
             </ul>
           ),
-          ol: ({ children, ...props }: any) => (
+          ol: ({ children, ...props }) => (
             <ol className="list-decimal list-inside mb-2 pl-1 space-y-1 text-[12px] text-[rgb(var(--foreground))]/80 leading-relaxed marker:text-[rgb(var(--accent))]" {...props}>
               {children}
             </ol>
           ),
-          li: ({ children, ...props }: any) => <li className="ml-1" {...props}>{children}</li>,
-          code: ({ children, ...props }: any) => {
+          li: ({ children, ...props }) => <li className="ml-1" {...props}>{children}</li>,
+          code: ({ children, ...props }) => {
             const str = String(children);
             if (str === "<lang>" || str === "<script>") {
               return (
@@ -177,12 +177,12 @@ export const Markdown = memo(
               </code>
             );
           },
-          pre: ({ children, ...props }: any) => (
+          pre: ({ children, ...props }) => (
             <pre className="bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--accent),0.1)] rounded-lg p-2 font-mono text-[11px] overflow-x-auto my-1.5 w-full" {...props}>
               {children}
             </pre>
           ),
-          strong: ({ children, ...props }: any) => (
+          strong: ({ children, ...props }) => (
             <strong className="font-bold text-[rgb(var(--accent))]" {...props}>
               {children}
             </strong>
@@ -192,7 +192,7 @@ export const Markdown = memo(
 
       // Default: "document"
       return {
-        h1: ({ children, ...props }: any) => (
+        h1: ({ children, ...props }) => (
           <h1
             className="font-display text-[14.5px] font-bold text-[rgb(var(--foreground))] border-b border-[rgba(var(--accent),0.18)] pb-1.5 mb-2.5 mt-5 first:mt-0 tracking-wider uppercase"
             {...props}
@@ -200,7 +200,7 @@ export const Markdown = memo(
             {children}
           </h1>
         ),
-        h2: ({ children, ...props }: any) => (
+        h2: ({ children, ...props }) => (
           <h2
             className="font-display text-[13px] font-bold text-[rgb(var(--accent))] border-b border-[rgba(var(--border),0.08)] pb-1 mb-2 mt-4 first:mt-0 tracking-wider uppercase"
             {...props}
@@ -208,7 +208,7 @@ export const Markdown = memo(
             {children}
           </h2>
         ),
-        h3: ({ children, ...props }: any) => (
+        h3: ({ children, ...props }) => (
           <h3
             className="font-display text-[12px] font-semibold text-[rgb(var(--foreground))] mb-1.5 mt-3 tracking-wide"
             {...props}
@@ -216,7 +216,7 @@ export const Markdown = memo(
             {children}
           </h3>
         ),
-        p: ({ children, ...props }: any) => (
+        p: ({ children, ...props }) => (
           <p
             className="text-[13px] text-[rgb(var(--foreground))]/85 leading-[1.7] mb-3 last:mb-0"
             {...props}
@@ -224,7 +224,7 @@ export const Markdown = memo(
             {children}
           </p>
         ),
-        ul: ({ children, ...props }: any) => (
+        ul: ({ children, ...props }) => (
           <ul
             className="space-y-1.5 my-2.5 list-disc pl-5 marker:text-[rgb(var(--accent))]/70"
             {...props}
@@ -232,7 +232,7 @@ export const Markdown = memo(
             {children}
           </ul>
         ),
-        ol: ({ children, ...props }: any) => (
+        ol: ({ children, ...props }) => (
           <ol
             className="space-y-1.5 my-2.5 list-decimal pl-5 marker:text-[rgb(var(--accent))]/70"
             {...props}
@@ -240,22 +240,22 @@ export const Markdown = memo(
             {children}
           </ol>
         ),
-        li: ({ children, ...props }: any) => (
+        li: ({ children, ...props }) => (
           <li className="text-[13px] text-[rgb(var(--foreground))]/85 leading-[1.65]" {...props}>
             {children}
           </li>
         ),
-        strong: ({ children, ...props }: any) => (
+        strong: ({ children, ...props }) => (
           <strong className="font-bold text-[rgb(var(--accent))]" {...props}>
             {children}
           </strong>
         ),
-        em: ({ children, ...props }: any) => (
+        em: ({ children, ...props }) => (
           <em className="italic text-[rgb(var(--foreground))]/80" {...props}>
             {children}
           </em>
         ),
-        blockquote: ({ children, ...props }: any) => (
+        blockquote: ({ children, ...props }) => (
           <blockquote
             className="border-l-2 border-[rgb(var(--accent))] pl-3 py-1 my-2.5 bg-[rgba(var(--accent),0.04)] rounded-r text-[13px] italic text-[rgb(var(--foreground-muted))]"
             {...props}
@@ -263,7 +263,7 @@ export const Markdown = memo(
             {children}
           </blockquote>
         ),
-        code: ({ children, ...props }: any) => (
+        code: ({ children, ...props }) => (
           <code
             className="px-1.5 py-0.5 rounded-md bg-[rgba(var(--foreground),0.08)] border border-[rgba(var(--border),0.15)] font-mono text-[11.5px] text-[rgb(var(--accent))]"
             {...props}
@@ -271,7 +271,7 @@ export const Markdown = memo(
             {children}
           </code>
         ),
-        pre: ({ children, ...props }: any) => (
+        pre: ({ children, ...props }) => (
           <pre
             className="p-3 my-2.5 rounded-xl bg-[rgba(var(--card),0.95)] border border-[rgba(var(--accent),0.25)] overflow-x-auto font-mono text-[12px] text-[rgb(var(--foreground))]"
             {...props}
@@ -279,7 +279,7 @@ export const Markdown = memo(
             {children}
           </pre>
         ),
-        a: ({ children, ...props }: any) => (
+        a: ({ children, ...props }) => (
           <a
             className="text-[rgb(var(--accent))] underline hover:opacity-80 transition-opacity"
             target="_blank"
@@ -289,7 +289,7 @@ export const Markdown = memo(
             {children}
           </a>
         ),
-        hr: ({ ...props }: any) => (
+        hr: ({ ...props }) => (
           <hr className="my-4 border-[rgba(var(--border),0.15)]" {...props} />
         ),
       };

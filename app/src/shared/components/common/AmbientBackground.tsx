@@ -3,11 +3,9 @@ import { useTelemetry } from "@/shared/hooks/useTelemetry";
 import { useMemoryTrace } from "@/shared/hooks/useMemoryTrace";
 import { cn } from "@/shared/lib/utils";
 
-type AmbientMood = "calm" | "active" | "thinking" | "speaking";
 type RippleShape = "circle" | "orbit";
 
 interface AmbientBackgroundProps {
-  mood?: AmbientMood;
   /** X origin of the orb — ripples expand from this point */
   originX?: string;
   /** Y origin of the orb — ripples expand from this point */
@@ -20,44 +18,13 @@ interface AmbientBackgroundProps {
   paused?: boolean;
 }
 
-interface MoodConfig {
-  rippleDuration: number;   // seconds per ripple cycle
-  rippleOpacity: number;    // max opacity at ring origin
-  blobSpeed: number;        // seconds for blob morph cycle
-  blobOpacity: number;      // max blob opacity
-  glowOpacity: number;      // core glow under the orb
-}
-
-const MOOD_CONFIG: Record<AmbientMood, MoodConfig> = {
-  calm: {
-    rippleDuration: 28, // slightly increased (was 24)
-    rippleOpacity: 0.10,
-    blobSpeed: 40,
-    blobOpacity: 0.032,
-    glowOpacity: 0.05,
-  },
-  thinking: {
-    rippleDuration: 18, // slightly increased (was 15)
-    rippleOpacity: 0.14,
-    blobSpeed: 25,
-    blobOpacity: 0.045,
-    glowOpacity: 0.08,
-  },
-  active: {
-    rippleDuration: 26, // slightly increased (was 22.5)
-    rippleOpacity: 0.18,
-    blobSpeed: 18,
-    blobOpacity: 0.055,
-    glowOpacity: 0.1,
-  },
-  speaking: {
-    rippleDuration: 24, // slightly increased (was 21)
-    rippleOpacity: 0.16,
-    blobSpeed: 22,
-    blobOpacity: 0.05,
-    glowOpacity: 0.09,
-  },
-};
+/** Fixed ambient tuning. The mood prop never had a caller, so the four mood
+ * presets collapsed to the one reachable set of values. */
+const RIPPLE_DURATION = 28; // seconds per ripple cycle
+const RIPPLE_OPACITY = 0.10; // max opacity at ring origin
+const BLOB_SPEED = 40; // seconds for blob morph cycle
+const BLOB_OPACITY = 0.032; // max blob opacity
+const GLOW_OPACITY = 0.05; // core glow under the orb
 
 interface BlobDef {
   x: string;
@@ -76,7 +43,6 @@ const BLOBS: BlobDef[] = [
 const RIPPLE_COUNT = 5;
 
 export const AmbientBackground = React.memo(({
-  mood = "calm",
   originX = "50%",
   originY = "50%",
   rippleSpeedMultiplier = 1.0,
@@ -85,8 +51,7 @@ export const AmbientBackground = React.memo(({
 }: AmbientBackgroundProps) => {
   useMemoryTrace("AmbientBackground (rAF Dynamic Glow)");
 
-  const cfg = MOOD_CONFIG[mood];
-  const effectiveRippleDuration = cfg.rippleDuration * rippleSpeedMultiplier;
+  const effectiveRippleDuration = RIPPLE_DURATION * rippleSpeedMultiplier;
   const telemetryRef = useTelemetry();
   const glowRef = React.useRef<HTMLDivElement>(null);
   const rippleRef = React.useRef<HTMLDivElement>(null);
@@ -150,10 +115,10 @@ export const AmbientBackground = React.memo(({
       // organic, fluid interpolation
       smoothedEnergy += (energy - smoothedEnergy) * 0.15;
 
-      const baseGlow = cfg.glowOpacity * glowOpacityMultiplier;
+      const baseGlow = GLOW_OPACITY * glowOpacityMultiplier;
       const dynamicGlow = baseGlow + smoothedEnergy * 0.12 * glowOpacityMultiplier;
 
-      const baseRipple = cfg.rippleOpacity * rippleOpacityMultiplier;
+      const baseRipple = RIPPLE_OPACITY * rippleOpacityMultiplier;
       const dynamicRipple = baseRipple + smoothedEnergy * 0.18 * rippleOpacityMultiplier;
 
       if (glowRef.current) {
@@ -207,10 +172,7 @@ export const AmbientBackground = React.memo(({
       clearInterval(checkInterval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [cfg, glowOpacityMultiplier, rippleOpacityMultiplier, telemetryRef, paused]);
-
-  const isInward = mood === "active" || (mood as string) === "listening";
-  const effectiveInwardDuration = effectiveRippleDuration * 1.6;
+  }, [glowOpacityMultiplier, rippleOpacityMultiplier, telemetryRef, paused]);
 
   return (
     <div
@@ -219,7 +181,6 @@ export const AmbientBackground = React.memo(({
         "--origin-x": originX,
         "--origin-y": originY,
         "--rp-dur": `${effectiveRippleDuration}s`,
-        "--rp-in-dur": `${effectiveInwardDuration}s`,
       } as React.CSSProperties}
       aria-hidden="true"
     >
@@ -239,8 +200,8 @@ export const AmbientBackground = React.memo(({
             top: blob.y,
             width: blob.size,
             height: blob.size,
-            background: `radial-gradient(circle, rgba(var(--accent), ${cfg.blobOpacity * blobOpacityMultiplier}) 0%, transparent 68%)`,
-            animation: `${blob.animName} ${cfg.blobSpeed}s ease-in-out infinite`,
+            background: `radial-gradient(circle, rgba(var(--accent), ${BLOB_OPACITY * blobOpacityMultiplier}) 0%, transparent 68%)`,
+            animation: `${blob.animName} ${BLOB_SPEED}s ease-in-out infinite`,
             animationPlayState: paused ? "paused" : "running",
             animationDelay: `${blob.delay}s`,
             borderRadius: blob.borderRadius,
@@ -252,14 +213,11 @@ export const AmbientBackground = React.memo(({
       {/* Core glow — centered at orb origin */}
       <div ref={glowRef} className="amb-glow" />
 
-      {/* Ripple rings — cross-fading Outward and Inward layers for seamless bi-directional transitions */}
+      {/* Ripple rings */}
       <div ref={rippleRef} className="rp-wrapper">
         {/* Outward layer */}
         <div
           className="rp-layer"
-          style={{
-            opacity: isInward ? 0 : 1,
-          }}
         >
           {Array.from({ length: RIPPLE_COUNT }, (_, i) => (
             <div
@@ -267,24 +225,6 @@ export const AmbientBackground = React.memo(({
               className={rippleShape === "orbit" ? "rp-ring rp-ring-out rp-ring-orbit" : "rp-ring rp-ring-out"}
               style={{
                 animationDelay: `${(i * effectiveRippleDuration) / RIPPLE_COUNT}s`,
-              }}
-            />
-          ))}
-        </div>
-
-        {/* Inward layer */}
-        <div
-          className="rp-layer"
-          style={{
-            opacity: isInward ? 1 : 0,
-          }}
-        >
-          {Array.from({ length: RIPPLE_COUNT }, (_, i) => (
-            <div
-              key={`in-${i}`}
-              className={rippleShape === "orbit" ? "rp-ring rp-ring-in rp-ring-orbit" : "rp-ring rp-ring-in"}
-              style={{
-                animationDelay: `${(i * effectiveInwardDuration) / RIPPLE_COUNT}s`,
               }}
             />
           ))}

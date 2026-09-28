@@ -1,4 +1,4 @@
-import { memo, useState, useEffect, useRef, useCallback } from "react";
+import { memo, useState, useEffect, useRef, useCallback, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
@@ -176,7 +176,7 @@ export const Drawer = memo(
         {open && (
           <div
             className={cn("fixed inset-0 z-[var(--drawer-z)] pointer-events-none", className)}
-            style={{ ["--drawer-z" as string]: effectiveZ }}
+            style={{ ["--drawer-z"]: effectiveZ } as CSSProperties}
           >
             {backdrop && (
               <motion.div

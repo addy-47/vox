@@ -15,7 +15,7 @@ use tauri::State;
 
 use crate::{
     core::{error::VoxIpcError, state::AppState},
-    persistence::voices::{self, VoiceEntry},
+    persistence::voices::{self, VoiceEntry, VoiceListScope, VoiceSourceKind},
     services::tts::voice::{
         convert_and_validate_audio, fetch_remote_edge_voices, pre_bake_speaker_tensors,
         start_recording, stop_recording, write_pcm_to_wav, EdgeTtsVoiceEntry,
@@ -39,7 +39,7 @@ impl From<VoiceEntry> for VoiceEntryDto {
             has_preview: e.preview_wav.is_some(),
             id: e.id,
             name: e.name,
-            source_kind: e.source_kind,
+            source_kind: e.source_kind.as_str().to_string(),
             created_at: e.created_at,
         }
     }
@@ -54,7 +54,8 @@ fn now_epoch() -> i64 {
         .as_secs() as i64
 }
 
-/// Return saved voices from SQLite database or remote Edge TTS voices based on provider.
+/// Return voices scoped to the requesting provider. Catalog providers own no
+/// database rows (their voices come from the manifest), so they resolve empty.
 #[tauri::command]
 pub async fn list_voices(
     provider: Option<String>,
@@ -70,7 +71,7 @@ pub async fn list_voices(
                 .map(|e| VoiceEntryDto {
                     id: e.short_name.clone(),
                     name: e.friendly_name,
-                    source_kind: "edge".to_string(),
+                    source_kind: VoiceSourceKind::Edge.as_str().to_string(),
                     has_preview: true,
                     created_at: 0,
                 })
@@ -79,11 +80,24 @@ pub async fn list_voices(
         }
     }
 
+    let scope = match provider.as_deref().map(|p| p.to_lowercase()) {
+        None => VoiceListScope::All,
+        Some(p) if p == "zipvoice" => VoiceListScope::ZipvoicePack,
+        Some(p) if p == "chatterbox" || p == "chatterbox_remote" => VoiceListScope::Custom,
+        Some(p) if p == "supertonic" || p == "kokoro" => return Ok(Vec::new()),
+        Some(unknown) => {
+            return Err(VoxIpcError::InvalidArgument(format!(
+                "Unknown TTS provider id: {unknown} (expected one of supertonic, kokoro, \
+                 chatterbox, chatterbox_remote, edge_tts, zipvoice)"
+            )));
+        }
+    };
+
     let conn = state
         .db
         .connect()
         .map_err(|e| VoxIpcError::Database(e.to_string()))?;
-    voices::list_voices(&conn)
+    voices::list_voices(&conn, scope)
         .await
         .map(|entries| entries.into_iter().map(VoiceEntryDto::from).collect())
         .map_err(|e| VoxIpcError::Database(format!("Failed to list voices: {}", e)))
@@ -147,7 +161,8 @@ pub async fn add_voice_from_file(
     let entry = VoiceEntry {
         id: id.clone(),
         name: name.clone(),
-        source_kind: "pre_baked".to_string(),
+        source_kind: VoiceSourceKind::PreBaked,
+        slug: None,
         wav_path: Some(dest.to_string_lossy().into_owned()),
         voice_dir: Some(baked_dir.to_string_lossy().into_owned()),
         created_at: now_epoch(),
@@ -227,7 +242,8 @@ pub async fn add_voice_from_recording(
     let entry = VoiceEntry {
         id: id.clone(),
         name: name.clone(),
-        source_kind: "pre_baked".to_string(),
+        source_kind: VoiceSourceKind::PreBaked,
+        slug: None,
         wav_path: Some(dest.to_string_lossy().into_owned()),
         voice_dir: Some(baked_dir.to_string_lossy().into_owned()),
         created_at: now_epoch(),

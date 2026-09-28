@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { SubModelCard } from "../SubModelCard";
+import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
 import { useSettingsStore } from "@/store/settingsStore";
 
@@ -8,7 +9,7 @@ interface AuxiliaryWorkspaceProps {
   confirmDeleteId: string | null;
   setConfirmDeleteId: (id: string | null) => void;
   modelPresence: Record<string, boolean>;
-  downloadStatuses: Record<string, any>;
+  downloadStatuses: Record<string, ModelStatus>;
   startDownload: (id: string) => void;
   deleteModel: (id: string) => void;
 }

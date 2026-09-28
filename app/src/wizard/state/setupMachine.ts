@@ -1,6 +1,6 @@
-import { createMachine, assign } from 'xstate';
+import { setup, assign } from 'xstate';
 
-export type SetupStep = 
+export type SetupStep =
   | 'welcome'
   | 'checking'
   | 'downloading'
@@ -21,7 +21,23 @@ export interface SetupContext {
   maxReachedIndex: number;
 }
 
-export const setupMachine = createMachine({
+export type SetupEvent =
+  | { type: 'GO_TO'; targetStep: SetupStep }
+  | { type: 'MANIFEST_READY' }
+  | { type: 'NEXT' }
+  | { type: 'SUCCESS' }
+  | { type: 'FAILURE'; message: string }
+  | { type: 'BACK' }
+  | { type: 'FINISH' }
+  | { type: 'ERROR'; message: string }
+  | { type: 'RETRY' };
+
+export const setupMachine = setup({
+  types: {
+    context: {} as SetupContext,
+    events: {} as SetupEvent,
+  },
+}).createMachine({
   id: 'setup',
   initial: 'welcome',
   context: {
@@ -29,16 +45,16 @@ export const setupMachine = createMachine({
     manifestReady: false,
     setupComplete: false,
     maxReachedIndex: 0,
-  } as SetupContext,
+  },
 
   on: {
     GO_TO: [
-      { target: '.welcome', guard: ({ context, event }) => (event as any).targetStep === 'welcome' && context.maxReachedIndex >= 0 },
-      { target: '.checking', guard: ({ context, event }) => (event as any).targetStep === 'checking' && context.maxReachedIndex >= 1 },
-      { target: '.downloading', guard: ({ context, event }) => (event as any).targetStep === 'downloading' && context.maxReachedIndex >= 2 },
-      { target: '.audio', guard: ({ context, event }) => (event as any).targetStep === 'audio' && context.maxReachedIndex >= 3 },
-      { target: '.testing', guard: ({ context, event }) => (event as any).targetStep === 'testing' && context.maxReachedIndex >= 4 },
-      { target: '.completed', guard: ({ context, event }) => (event as any).targetStep === 'completed' && context.maxReachedIndex >= 5 }
+      { target: '.welcome', guard: ({ context, event }) => event.targetStep === 'welcome' && context.maxReachedIndex >= 0 },
+      { target: '.checking', guard: ({ context, event }) => event.targetStep === 'checking' && context.maxReachedIndex >= 1 },
+      { target: '.downloading', guard: ({ context, event }) => event.targetStep === 'downloading' && context.maxReachedIndex >= 2 },
+      { target: '.audio', guard: ({ context, event }) => event.targetStep === 'audio' && context.maxReachedIndex >= 3 },
+      { target: '.testing', guard: ({ context, event }) => event.targetStep === 'testing' && context.maxReachedIndex >= 4 },
+      { target: '.completed', guard: ({ context, event }) => event.targetStep === 'completed' && context.maxReachedIndex >= 5 }
     ]
   },
   states: {
@@ -55,18 +71,18 @@ export const setupMachine = createMachine({
       }
     },
     checking: {
-      entry: assign({ currentStep: 'checking' as SetupStep, maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 1) }),
+      entry: assign({ currentStep: 'checking', maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 1) }),
       on: {
         SUCCESS: 'downloading',
         FAILURE: {
           target: 'error',
-          actions: assign({ error: ({ event }) => (event as any).message || 'System check failed' })
+          actions: assign({ error: ({ event }) => event.message || 'System check failed' })
         },
         BACK: 'welcome'
       }
     },
     downloading: {
-      entry: assign({ currentStep: 'downloading' as SetupStep, maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 2) }),
+      entry: assign({ currentStep: 'downloading', maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 2) }),
       on: {
         FINISH: {
           target: 'audio',
@@ -75,7 +91,7 @@ export const setupMachine = createMachine({
         BACK: 'checking',
         ERROR: {
           target: 'downloading', // Stay in downloading but show error in UI
-          actions: assign({ error: ({ event }) => (event as any).message })
+          actions: assign({ error: ({ event }) => event.message })
         },
         RETRY: {
           target: 'downloading',
@@ -84,21 +100,21 @@ export const setupMachine = createMachine({
       }
     },
     audio: {
-      entry: assign({ currentStep: 'audio' as SetupStep, maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 3) }),
+      entry: assign({ currentStep: 'audio', maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 3) }),
       on: {
         NEXT: 'testing',
         BACK: 'downloading'
       }
     },
     testing: {
-      entry: assign({ currentStep: 'testing' as SetupStep, maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 4) }),
+      entry: assign({ currentStep: 'testing', maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 4) }),
       on: {
         NEXT: 'completed',
         BACK: 'audio'
       }
     },
     completed: {
-      entry: assign({ currentStep: 'completed' as SetupStep, maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 5) }),
+      entry: assign({ currentStep: 'completed', maxReachedIndex: ({ context }) => Math.max(context.maxReachedIndex, 5) }),
       on: {
         BACK: 'testing'
       }

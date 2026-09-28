@@ -53,7 +53,7 @@ const App: React.FC = () => {
   // ensures the user sees the animated loader during Vite cold start and
   // React tree mount, with a smooth cross-fade to the React OrbitalLoader.
   useEffect(() => {
-    (window as unknown as { __VOX_HIDE_BOOT_LOADER?: () => void }).__VOX_HIDE_BOOT_LOADER?.();
+    window.__VOX_HIDE_BOOT_LOADER?.();
   }, []);
 
   useEffect(() => {
@@ -135,7 +135,7 @@ const App: React.FC = () => {
   // user has interacted with any overlay (drawer, popover, panel), so a
   // 100-500ms delay after first paint is imperceptible.
   useEffect(() => {
-    const schedule = (window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+    const schedule = window.requestIdleCallback;
     const cb = () => installOverlayStack();
     if (typeof schedule === "function") {
       schedule(cb, { timeout: 1000 });

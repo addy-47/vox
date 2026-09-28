@@ -35,7 +35,7 @@ export type SettingsScope =
   | "realtime"
   | "system";
 
-export const SETTINGS_SCOPE_KEYS: Record<SettingsScope, readonly string[]> = {
+export const SETTINGS_SCOPE_KEYS: Partial<Record<SettingsScope, readonly string[]>> = {
   appearance: ["theme", "accent_seed"],
   audio: ["output_mode", "input_device"],
   vad: ["threshold", "ptt_noise_gate", "vad_backend"],
@@ -51,18 +51,7 @@ export const SETTINGS_SCOPE_KEYS: Record<SettingsScope, readonly string[]> = {
     "server",
     "cloud",
   ],
-  tts: [
-    "active",
-    "voice_index",
-    "speed",
-    "edge_tts",
-    "supertonic",
-    "kokoro",
-    "chatterbox",
-    "chatterbox_remote",
-    "zipvoice",
-  ],
-  interaction: ["mode", "auto_sleep_timeout", "pipeline_mode"],
+  interaction: ["mode", "pipeline_mode"],
   dictation: ["enabled", "interaction_mode", "hotkey", "output_mode"],
   working_memory: ["private_mode", "auto_compaction", "max_context_share", "web_search_enabled"],
   personal_memory: [
@@ -81,7 +70,7 @@ export const SETTINGS_SCOPE_KEYS: Record<SettingsScope, readonly string[]> = {
     "deepgram_voice_agent",
     "elevenlabs_convai",
   ],
-  system: ["log_level", "telemetry_enabled", "setup_completed"],
+  system: ["setup_completed"],
 };
 
 export interface DomainDirtyKey {

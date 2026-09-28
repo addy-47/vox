@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback, memo } from "react";
 import { Search, X } from "lucide-react";
 import { FactRecord } from "@/services/memoryService";
-import { getActiveDynamicPalette, MemoryCategory } from "./memoryGraphTypes";
+import { getActiveDynamicPalette, toMemoryCategory } from "./memoryGraphTypes";
 import { cn } from "@/shared/lib/utils";
 import { MEMORY_COPY } from "@/data/memoryCopy";
 
@@ -153,7 +153,8 @@ export const SearchBar = memo<SearchBarProps>(({
             <span className="opacity-70 font-bold">{results.length}</span>
           </div>
           {results.map((fact, index) => {
-            const col = palette[fact.fact_type as MemoryCategory] ?? palette.objective;
+            const kind = toMemoryCategory(fact.fact_type);
+            const col = (kind !== undefined ? palette[kind] : undefined) ?? palette.objective;
             return (
               <button
                 key={fact.id}

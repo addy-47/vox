@@ -16,7 +16,7 @@ export const useTelemetry = () => {
     let unlisten: (() => void) | null = null;
 
     try {
-      if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+      if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
         unlisten = onTelemetry((payload) => {
           if (isMounted) {
             telemetryRef.current = payload;

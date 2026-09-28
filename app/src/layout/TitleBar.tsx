@@ -2,15 +2,15 @@ import React, { useEffect, useState } from "react";
 import { Minus, Square, X, ArrowUpCircle, Copy, Check } from "lucide-react";
 import { LAYOUT_COPY } from "@/data/layoutCopy";
 import { useNavigate } from "react-router-dom";
-import { checkForUpdates, checkForModelUpdates } from "@/services/setupService";
+import { checkForUpdates, checkForModelUpdates, type UpdateReport, type ModelUpdateReport } from "@/services/setupService";
 import { copyToClipboard } from "@/shared/lib/clipboard";
 
 export const TitleBar: React.FC = () => {
   const navigate = useNavigate();
   const [isTauri, setIsTauri] = useState(false);
   const [isCloseHovered, setIsCloseHovered] = useState(false);
-  const [appUpdate, setAppUpdate] = useState<any>(null);
-  const [modelUpdate, setModelUpdate] = useState<any>(null);
+  const [appUpdate, setAppUpdate] = useState<UpdateReport | null>(null);
+  const [modelUpdate, setModelUpdate] = useState<ModelUpdateReport | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -52,9 +52,9 @@ export const TitleBar: React.FC = () => {
 
   useEffect(() => {
     // Check if we are running in Tauri
-    const hasTauri = !!(window as any).__TAURI__ || 
-                     !!(window as any).__TAURI_INTERNALS__ || 
-                     !!(window as any).__TAURI_METADATA__;
+    const hasTauri = !!window.__TAURI__ ||
+                     !!window.__TAURI_INTERNALS__ ||
+                     !!window.__TAURI_METADATA__;
     setIsTauri(hasTauri);
 
     if (hasTauri) {

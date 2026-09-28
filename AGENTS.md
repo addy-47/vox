@@ -69,6 +69,8 @@
 > 🛑 **MANDATORY CONTEXT GATE:**
 > - **ANY WRITE TASK whether its Backend/Frontend/Tests:** You MUST read the corresponding style guide and engineer rule file for the specific area you are working on located in .agents/rules/.
 
+> 📖 **MODEL-AGNOSTICISM DEFINITION OF DONE (Phase 12+):** Adding a model = edit the manifest + write the engine ([checklist](file:///home/addy/projects/apps/vox/docs/plans/phase12/model-registry-checklist.md)). No `app/src/**` edit, no capability table copy, no `as any`, no unconsumed capability field — Invariants 6 and 8 fail the build otherwise.
+
 ### 4.3 Specifications, Behavioral Contracts & Non-Drift Hook [MANDATORY]
 
 > 🛑 **MANDATORY SPEC ALIGNMENT HOOK (NON-NEGOTIABLE):**
@@ -95,9 +97,8 @@
 - **Agentic runtime & tool taxonomy:** Reentrant tool loop, 122 integration tests (73% mutation kill), `nexuss` v0.1.1 with adaptive fanout, and structured JSON provider wire policies.
 - **Cognitive memory stack & eval modularization:** Indexed-block consolidation (Schema v8, 4-prompt split), suggestion review with atomic block ops, and Approach 4 JSON semantic personal memory spec/plan.
 - **Platform ownership & dictation overhaul:** Owner-stamped `VoxEvent` pipeline eliminating TOCTOU races, deterministic hotkey preemption, resident notification lifecycle, and acoustic chronometer UI.
-- **TTS provider integration & model registry audit:** Native `ZipvoiceEngine` in `zipvoice.rs`, Hindi routing fallback, 6-batch plan decoupling model registry from frontend, and `tts_bench` profiling.
-- **Model-agnostic TTS capabilities (Batches 0.5–3, 2026-09-28):** Deleted `tts.quality_steps` end-to-end; per-provider fixed step constants (`ZIPVOICE_STEPS=4` — corrected 8→4 as flow-distilled); `caps_for_id` returns `Result`; `update_setting` rejects unknown keys; frontend surfaces rejections per-card; Invariants 6–7 in `invariants.test.ts`; `fn caps()` trait contract with per-engine `SPEED_RANGE`; `FALLBACK_CAPS` deleted; monitoring residency derived from manifest flags. Full detail in `recent_work.md` §2026-09-28.
-- **Commit 21:09 2026-09-28 — TTS caps trait contract + hygiene:** `fn caps()` explicit on all 6 providers with `SPEED_RANGE` consts, exhaustive `caps_for_id` in `factory.rs`, `TtsProviderKind`/`FALLBACK_CAPS` deleted, speed knob from `caps.speed_range`, backend import grouping fixes, `patch.rs` chained-anchor ordering fix.
+- **Model-agnostic TTS stack (Batches 0.5–4, 2026-09-28):** Native `ZipvoiceEngine`, 6-batch decoupling plan; `tts.quality_steps` deleted end-to-end; `fn caps()` trait contract with per-engine `SPEED_RANGE`; `caps_for_id` returns `Result`; `list_voices` provider scoping with `slug` column (schema v9); single-seed voice names; Invariants 6–7; fallback/dead-code deletions (`FALLBACK_CAPS`, `TtsProviderKind`, FE prefix filters, phantom union). Full detail in `recent_work.md` §2026-09-28.
+- **Batches 7–10 sprint completion (2026-09-28):** Batch 7 deleted the realtime dual-shape (`Record<string,any>` config, 8-literal branch, legacy reads in 4 files; shape-driven `in`-narrowing, zero casts). Batch 8 audited all 27 settings structs field-by-field — deleted dead `auto_sleep_timeout`/`log_level`/`telemetry_enabled`/STT credential blobs/`resume_handle` (rehomed to constructor param, spec line fixed), killed 7 FE phantoms, exact mirror verified by script. Batch 9 unionized `output_mode`, centralized the `"default"` sentinel. Batch 10: model-registry checklist + DoD gate in §4.2. Full verification green: clippy clean, pnpm build clean, vitest 8/8, nextest 149/149 (4 ignored externals skipped). One real bug found by the suite (v9 migration assumed `voices` exists; guarded by sqlite_master check).
 
 ---
 

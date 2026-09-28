@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { startModelSetup, fetchManifest, getRuntimeReport, type VoxManifest } from '@/services/setupService';
-import { onModelProgress } from '@/services/eventsService';
+import { onModelProgress, type ModelProgressPayload } from '@/services/eventsService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Database, BrainCircuit, Mic, 
@@ -22,15 +22,6 @@ const VolumeIcon = ({ className }: { className?: string }) => (
     </svg>
 );
 
-interface ModelProgress {
-  model_id: string;
-  progress: number;
-  step: string;
-  bytes_downloaded: number;
-  total_bytes: number;
-  error?: string;
-}
-
 interface Props {
   onNext: () => void;
   onBack: () => void;
@@ -42,7 +33,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
   const [view, setView] = useState<'catalog' | 'progress' | 'complete'>(isAlreadyComplete ? 'complete' : 'catalog');
   const [manifest, setManifest] = useState<VoxManifest | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [progress, setProgress] = useState<Record<string, ModelProgress>>({});
+  const [progress, setProgress] = useState<Record<string, ModelProgressPayload>>({});
   const [isFetching, setIsFetching] = useState(false);
   const [internalError, setInternalError] = useState<string | null>(null);
   const [installPath, setInstallPath] = useState<string>('Detecting path...');
@@ -55,8 +46,8 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
         const data = await fetchManifest();
         setManifest(data);
         const required = data.model_groups
-            .filter((g: any) => g.files.some((f: any) => f.required))
-            .map((g: any) => g.id);
+            .filter((g) => g.files.some((f) => f.required))
+            .map((g) => g.id);
         setSelectedIds(new Set(required));
       } catch (e) {
         console.error('Failed to load model catalog', e);
@@ -67,7 +58,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     };
     fetchCatalog();
 
-    getRuntimeReport().then((report: any) => {
+    getRuntimeReport().then((report) => {
         if (report.models_verified && !isAlreadyComplete) {
             setIsFinished(true);
             setView('complete');
@@ -79,7 +70,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
   }, [isAlreadyComplete]);
 
   useEffect(() => {
-    const unlisten = onModelProgress((p: any) => {
+    const unlisten = onModelProgress((p) => {
       setProgress(prev => ({ ...prev, [p.model_id]: p }));
       const normalizedStep = typeof p.step === 'string' ? p.step.toLowerCase() : '';
       if (normalizedStep === 'completed' || normalizedStep === 'complete') {
@@ -125,7 +116,7 @@ export const ModelSetupStep: React.FC<Props> = ({ onNext, onBack, error: externa
     try {
       await startModelSetup(Array.from(selectedIds));
     } catch (e) {
-      setInternalError(e as string);
+      setInternalError(e instanceof Error ? e.message : String(e));
     }
   };
 

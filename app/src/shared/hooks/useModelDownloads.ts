@@ -33,8 +33,8 @@ export function useModelDownloads() {
         ...(prev[modelId] || { step: "idle", progress: 0, bytesDownloaded: 0, totalBytes: 100 }),
         ...status,
       };
-      globalDownloadStatuses[modelId] = updated as ModelStatus;
-      return { ...prev, [modelId]: updated as ModelStatus };
+      globalDownloadStatuses[modelId] = updated;
+      return { ...prev, [modelId]: updated };
     });
   }, []);
 
@@ -71,7 +71,18 @@ export function useModelDownloads() {
       const { model_id, step, progress, bytes_downloaded, total_bytes, error } = payload || {};
       if (!model_id) return;
 
-      const stepLower = String(step || "downloading").toLowerCase() as ModelStatus["step"];
+      const rawStep = String(step || "downloading").toLowerCase();
+      const canonicalStep = rawStep === "complete" ? "completed" : rawStep;
+      const stepLower: ModelStatus["step"] =
+        canonicalStep === "idle" ||
+        canonicalStep === "downloading" ||
+        canonicalStep === "extracting" ||
+        canonicalStep === "verifying" ||
+        canonicalStep === "completed" ||
+        canonicalStep === "failed" ||
+        canonicalStep === "cancelled"
+          ? canonicalStep
+          : "downloading";
       const fileProgress = typeof progress === "number" ? progress : 0;
       const fileBytes = bytes_downloaded || 0;
       const fileTotal = total_bytes || 100;
@@ -80,7 +91,7 @@ export function useModelDownloads() {
         progress: fileProgress,
         bytesDownloaded: fileBytes,
         totalBytes: fileTotal,
-        done: stepLower === "completed" || (stepLower as string) === "complete",
+        done: stepLower === "completed",
       };
 
       const groups = modelCatalog?.model_groups || [];
@@ -138,7 +149,7 @@ export function useModelDownloads() {
         error: error || undefined,
       });
 
-      if (stepLower === "completed" || (stepLower as string) === "complete") {
+      if (stepLower === "completed") {
         refreshPresence();
       }
     });
@@ -158,11 +169,11 @@ export function useModelDownloads() {
         error: undefined,
       });
       await downloadOptionalModel(modelId);
-    } catch (e: any) {
+    } catch (e) {
       console.error("Failed to start download:", e);
       updateDownloadStatus(modelId, {
         step: "failed",
-        error: String(e),
+        error: e instanceof Error ? e.message : String(e),
       });
     }
   };

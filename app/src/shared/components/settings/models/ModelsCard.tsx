@@ -90,8 +90,8 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   const isCloudLlm = activeProviderKind === "cloud";
 
   // Preview selection: the clicked card's group id IS the settings active key.
-  // Tier and health gating derive from manifest flags — never from id literals
-  // and never from the stale derived `draftSettings.tts.provider.kind`.
+  // Tier and health gating derive from manifest flags and backend-derived
+  // configs — the backend owns the provider union, the frontend never echoes it.
   const previewTtsGroup = modelCatalog?.tts?.find((g) => g.id === draftSettings?.tts?.active);
   const isCloudTts = !!previewTtsGroup?.is_cloud;
   const isRemoteTts = !!previewTtsGroup?.is_remote;
@@ -187,14 +187,16 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
   }, [activePipelineTab]);
 
   // 2. Custom Voices & Edge TTS
+  // Scoped by the active TTS provider id: the backend resolves which rows
+  // belong to the provider, so the list needs no client-side id filtering.
   const loadCustomVoices = useCallback(async () => {
     try {
-      const list = await listVoices();
+      const list = await listVoices(draftSettings?.tts?.active);
       setCustomVoices(list);
     } catch (e) {
       console.error("Failed to list voices", e);
     }
-  }, []);
+  }, [draftSettings?.tts?.active]);
 
   const loadEdgeVoices = useCallback(async () => {
     setLoadingEdgeVoices(true);
@@ -209,9 +211,9 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
         friendly_name: v.name,
       }));
       setEdgeTtsVoices(mapped);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Failed to fetch Edge TTS voices:", err);
-      setEdgeTtsError(String(err));
+      setEdgeTtsError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoadingEdgeVoices(false);
     }
@@ -237,10 +239,10 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
 
     const checkHealth = async () => {
-      if (document.hidden || !draftSettings?.tts?.provider || activePipelineTab !== "tts") return;
+      if (document.hidden || activePipelineTab !== "tts") return;
       setCheckingTtsHealth(true);
       try {
-        const res = await checkTtsProviderHealth(draftSettings.tts.provider);
+        const res = await checkTtsProviderHealth();
         setIsRemoteTtsHealthy(res.healthy);
       } catch (_) {
         setIsRemoteTtsHealthy(false);
@@ -252,7 +254,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     checkHealth();
     const interval = setInterval(checkHealth, 5000);
     return () => clearInterval(interval);
-  }, [draftSettings?.tts?.provider, activePipelineTab]);
+  }, [isRemoteTts, activePipelineTab, draftSettings?.tts?.active]);
 
   useEffect(() => {
     return eventsService.onModelProgress((payload) => {
@@ -263,12 +265,12 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
           log_line: payload.error ? `Error: ${payload.error}` : `Step: ${payload.step}`,
           error: payload.error || undefined,
         });
-        if ((payload.step === "completed" || payload.step === "Completed") && draftSettings?.tts?.provider) {
-          checkTtsProviderHealth(draftSettings.tts.provider).then((res) => setIsRemoteTtsHealthy(res.healthy));
+        if ((payload.step === "completed" || payload.step === "Completed") && isRemoteTts) {
+          checkTtsProviderHealth().then((res) => setIsRemoteTtsHealthy(res.healthy));
         }
       }
     });
-  }, [draftSettings?.tts?.provider]);
+  }, [isRemoteTts]);
 
   useEffect(() => {
     localStorage.setItem("vox_ssh_conn", sshConnectionString);
@@ -284,15 +286,9 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     if (!isRemoteTts) return;
     setSetupStatus({ progress: 10, step: "initiating", log_line: "Starting connection..." });
     try {
-      const ttsProvider = draftSettings?.tts?.provider;
-      const endpoint =
-        ttsProvider && ttsProvider.kind === "chatterbox_remote"
-          ? ttsProvider.endpoint
-          : "http://127.0.0.1:7860";
-      const remotePath =
-        ttsProvider && ttsProvider.kind === "chatterbox_remote"
-          ? ttsProvider.remote_path
-          : "~/.vox";
+      const remoteCfg = draftSettings?.tts?.chatterbox_remote;
+      const endpoint = remoteCfg?.endpoint || "http://127.0.0.1:7860";
+      const remotePath = remoteCfg?.remote_path || "~/.vox";
 
       let srvPort = 7860;
       try {

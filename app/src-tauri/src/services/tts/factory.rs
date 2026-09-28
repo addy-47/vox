@@ -117,7 +117,13 @@ pub fn create_tts_provider(
             log::info!("[TTS Factory] Initializing ZipVoice engine");
             let zipvoice_path = model_dir(ZIPVOICE_MODEL_DIR);
             let voices_dir = zipvoice_path.join("voices");
-            let initial_ref = resolve_zipvoice_reference(&voices_dir, voice_id.as_deref()).ok();
+            let initial_ref = match resolve_zipvoice_reference(&voices_dir, voice_id.as_deref()) {
+                Ok(reference) => Some(reference),
+                Err(e) => {
+                    log::warn!("[TTS Factory] ZipVoice reference resolution failed: {}", e);
+                    None
+                }
+            };
             ZipvoiceEngine::new(
                 &zipvoice_path,
                 speed,

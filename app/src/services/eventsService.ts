@@ -179,7 +179,7 @@ export function on<K extends keyof IpcEventMap>(
 
   activeListeners.add(cleanup);
 
-  listen<IpcEventMap[K]>(eventName as string, (event) => handler(event.payload))
+  listen<IpcEventMap[K]>(eventName, (event) => handler(event.payload))
     .then((u) => {
       if (cancelled) {
         u();

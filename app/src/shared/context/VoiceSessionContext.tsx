@@ -432,7 +432,7 @@ export const VoiceSessionProvider: React.FC<{ children: ReactNode }> = ({ childr
   const value = useMemo<VoiceSessionContextValue>(
     () => ({
       interactionState,
-      interactionMode: interactionMode as InteractionMode,
+      interactionMode,
       pipelineMode,
       isEngaged,
       isSleeping,

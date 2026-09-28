@@ -135,7 +135,7 @@ export const VoiceCarousel = memo(function VoiceCarousel({
   };
 
   useEffect(() => {
-    let interval: any;
+    let interval: ReturnType<typeof setInterval> | undefined;
     if (isRecording) {
       interval = setInterval(() => {
         setRecordingDuration((prev) => {

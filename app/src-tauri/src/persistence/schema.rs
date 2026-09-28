@@ -15,7 +15,7 @@ use crate::{
 
 pub type Result<T> = std::result::Result<T, PersistenceError>;
 
-pub const SCHEMA_VERSION: u32 = 8;
+pub const SCHEMA_VERSION: u32 = 9;
 
 const V2_TABLE_STATEMENTS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS projects (
@@ -125,6 +125,7 @@ const V2_TABLE_STATEMENTS: &[&str] = &[
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         source_kind TEXT NOT NULL,
+        slug TEXT,
         wav_path TEXT,
         voice_dir TEXT,
         preview_wav TEXT,
@@ -195,8 +196,7 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
                 .await;
         }
 
-        if current_version < 8 {
-            conn.execute("DROP TABLE IF EXISTS personal_memory_suggestions;", ())
+        if current_version < 8 {            conn.execute("DROP TABLE IF EXISTS personal_memory_suggestions;", ())
                 .await?;
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS personal_memory_suggestions (
@@ -228,6 +228,43 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
                 (),
             )
             .await?;
+        }
+
+        if current_version < 9 {
+            let voices_exists = conn
+                .query(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'voices';",
+                    (),
+                )
+                .await?
+                .next()
+                .await?
+                .is_some();
+            if voices_exists {
+                let _ = conn
+                    .execute("ALTER TABLE voices ADD COLUMN slug TEXT;", ())
+                    .await;
+                conn.execute(
+                    "UPDATE voices SET slug = SUBSTR(id, 16) WHERE slug IS NULL AND id LIKE 'zipvoice_voice_%';",
+                    (),
+                )
+                .await?;
+                conn.execute(
+                    "UPDATE voices SET slug = SUBSTR(id, 18) WHERE slug IS NULL AND id LIKE 'chatterbox_voice_%';",
+                    (),
+                )
+                .await?;
+                conn.execute(
+                    "UPDATE voices SET id = slug WHERE id LIKE 'zipvoice_voice_%' AND slug IS NOT NULL;",
+                    (),
+                )
+                .await?;
+                conn.execute(
+                    "UPDATE voices SET name = UPPER(SUBSTR(slug, 1, 1)) || SUBSTR(slug, 2) WHERE source_kind = 'zipvoice_pack' AND slug IS NOT NULL;",
+                    (),
+                )
+                .await?;
+            }
         }
 
         for stmt in V2_TABLE_STATEMENTS {

@@ -1,5 +1,5 @@
 import { memo, useCallback } from "react";
-import { useSettingsStore, RealtimeActiveProvider } from "@/store/settingsStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import { REALTIME_PROVIDERS } from "@/data/providersCopy";
 import { REALTIME_CONFIG_DESK_COPY } from "@/data/settingsCopy";
 import { Radio } from "lucide-react";
@@ -16,7 +16,6 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
 
   const currentProviderId =
     draftSettings?.realtime?.active ||
-    draftSettings?.realtime?.provider ||
     "gemini_live";
 
   const providerIndex = Math.max(
@@ -27,14 +26,12 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
   );
   const activeProvider = REALTIME_PROVIDERS[providerIndex] || REALTIME_PROVIDERS[0];
 
-  const activeSubkey = activeProvider.subkey as "gemini_live" | "deepgram_voice_agent";
+  const activeSubkey = activeProvider.subkey;
   const rt = draftSettings?.realtime;
   const activeConfig =
-    (activeSubkey === "gemini_live"
-      ? rt?.gemini_live || rt?.gemini
-      : rt?.deepgram_voice_agent || rt?.deepgram) || {};
+    activeSubkey === "gemini_live" ? rt?.gemini_live : rt?.deepgram_voice_agent;
 
-  const apiKey = (activeConfig as { api_key?: string }).api_key || "";
+  const apiKey = activeConfig?.api_key || "";
 
   const handleApiKeyChange = useCallback(
     (key: string) => {
@@ -55,7 +52,7 @@ export const RealtimeConfigDesk = memo(({ layoutMode }: RealtimeConfigDeskProps)
       updateDraft(
         "realtime",
         "active",
-        REALTIME_PROVIDERS[nextIndex].id as RealtimeActiveProvider,
+        REALTIME_PROVIDERS[nextIndex].id,
         "interaction"
       );
     },

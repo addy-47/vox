@@ -1,5 +1,5 @@
 import React, { useState, useMemo, memo, useCallback } from "react";
-import { useSettingsStore, type ProviderCaps } from "@/store/settingsStore";
+import { useSettingsStore, type ProviderCaps, type TtsSettings } from "@/store/settingsStore";
 import { Metronome, Microchip, Zap, Battery, Gauge } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { RotaryKnob, VoiceCarousel } from "@/shared/ui";
@@ -44,6 +44,10 @@ export type TtsSubTab = "voice" | "speed" | "compute";
 
 const REGIONS = ["ALL", "US", "UK", "AU", "GLOBAL"] as const;
 
+// Built-in engine voice sentinel. Null voice_id means the same thing
+// downstream; the string exists only because the carousel needs a key.
+const BUILT_IN_VOICE_ID = "default";
+
 export const TtsVoiceManager = memo(({
   layoutMode,
   providerId,
@@ -60,11 +64,11 @@ export const TtsVoiceManager = memo(({
   const updateDraft = useSettingsStore((s) => s.updateDraft);
 
   // Region bucket filter for Edge TTS
-  const [selectedRegion, setSelectedRegion] = useState<string>("ALL");
+  const [selectedRegion, setSelectedRegion] = useState<(typeof REGIONS)[number]>("ALL");
 
   const handlePrevRegion = useCallback(() => {
     setSelectedRegion((curr) => {
-      const idx = REGIONS.indexOf(curr as any);
+      const idx = REGIONS.indexOf(curr);
       const prevIdx = idx <= 0 ? REGIONS.length - 1 : idx - 1;
       return REGIONS[prevIdx];
     });
@@ -72,7 +76,7 @@ export const TtsVoiceManager = memo(({
 
   const handleNextRegion = useCallback(() => {
     setSelectedRegion((curr) => {
-      const idx = REGIONS.indexOf(curr as any);
+      const idx = REGIONS.indexOf(curr);
       const nextIdx = idx >= REGIONS.length - 1 ? 0 : idx + 1;
       return REGIONS[nextIdx];
     });
@@ -133,51 +137,40 @@ export const TtsVoiceManager = memo(({
   const allowClone = caps?.clone ?? !!previewGroup?.is_remote;
   const isEdgeTts = voiceSource === "edge";
   const isCustomVoices = voiceSource === "custom";
-  const isRemoteGroup = !!previewGroup?.is_remote;
-  const isZipvoice = providerId === "zipvoice";
 
-  const defaultZipvoiceList = [
-    { id: "zipvoice_voice_atlas", name: "Atlas" },
-    { id: "zipvoice_voice_nova", name: "Nova" },
-    { id: "zipvoice_voice_alfred", name: "Alfred" },
-    { id: "zipvoice_voice_vera", name: "Vera" },
-    { id: "zipvoice_voice_sage", name: "Sage" },
-    { id: "zipvoice_voice_maya", name: "Maya" },
-    { id: "zipvoice_voice_claire", name: "Claire" },
-    { id: "zipvoice_voice_iris", name: "Iris" },
-  ];
+  // The settings key is the provider id itself — no map. Configs carrying a
+  // voice are read by shape (voice_id / language), never by provider name.
+  const hasVoiceId = (
+    c: unknown
+  ): c is { voice_id?: string | null; language?: string } =>
+    typeof c === "object" && c !== null && "voice_id" in c;
+  const rawConfig: unknown = draftSettings.tts[providerId as keyof TtsSettings];
+  const voiceConfig = hasVoiceId(rawConfig) ? rawConfig : undefined;
+  const usesLanguageVoice = !!voiceConfig && "language" in voiceConfig;
 
-  const zipvoicePackagedVoices = customVoices
-    .filter((v) => v.source_kind === "zipvoice" || v.id.startsWith("zipvoice_voice_"))
+  // Backend-scoped voice list: the parent loads listVoices(activeProviderId),
+  // so these rows already belong to this provider. No id filtering here.
+  const scopedPackagedVoices = customVoices
     .map((v) => ({ id: v.id, name: displayName(v.name), isCustom: false }));
 
   const localVoices = isCustomVoices
-    ? isZipvoice
-      ? zipvoicePackagedVoices.length > 0 ? zipvoicePackagedVoices : defaultZipvoiceList
-      : [
-          { id: "default", name: "Default" },
+    ? usesLanguageVoice
+      ? [
+          { id: BUILT_IN_VOICE_ID, name: "Default" },
           ...customVoices
-            .filter((v) => v.source_kind !== "zipvoice" && !v.id.startsWith("zipvoice_voice_"))
             .map((v) => ({ id: v.id, name: displayName(v.name), isCustom: true })),
         ]
+      : scopedPackagedVoices
     : (modelCatalog?.voices || []).map((v) => ({ id: String(v.id), name: displayName(v.name) }));
 
   const activeVoices = isEdgeTts ? edgeVoicesList : localVoices;
 
-  const customConfigMap: Record<string, "chatterbox" | "chatterbox_remote" | "zipvoice"> = {
-    chatterbox: "chatterbox",
-    chatterbox_remote: "chatterbox_remote",
-    zipvoice: "zipvoice",
-  };
-  const customConfigKey = customConfigMap[providerId] || (isRemoteGroup ? "chatterbox_remote" : "chatterbox");
-  const customConfig = draftSettings.tts[customConfigKey];
-
   const selectedVoiceId = isEdgeTts
     ? draftSettings.tts.edge_tts?.voice || (edgeVoicesList[0]?.id || "en-US-AriaNeural")
     : isCustomVoices
-      ? isZipvoice
-        ? draftSettings.tts.zipvoice?.voice_id || (localVoices[0]?.id || "zipvoice_voice_atlas")
-        : (customConfig as any)?.voice_id || "default"
+      ? usesLanguageVoice
+        ? voiceConfig?.voice_id || BUILT_IN_VOICE_ID
+        : voiceConfig?.voice_id || localVoices[0]?.id || ""
       : String(draftSettings.tts.voice_index ?? 0);
 
   const handleVoiceChange = (id: string) => {
@@ -187,16 +180,17 @@ export const TtsVoiceManager = memo(({
         voice: id,
       });
     } else if (isCustomVoices) {
-      if (isZipvoice) {
-        updateDraft("tts", "zipvoice", {
-          ...draftSettings.tts.zipvoice,
-          voice_id: id,
+      if (!voiceConfig) return;
+      if (usesLanguageVoice) {
+        updateDraft("tts", providerId, {
+          ...voiceConfig,
+          voice_id: id === BUILT_IN_VOICE_ID ? null : id,
+          language: voiceConfig.language || "en",
         });
       } else {
-        updateDraft("tts", customConfigKey, {
-          ...(customConfig as any),
-          voice_id: id === "default" ? null : id,
-          language: (customConfig as any)?.language || "en",
+        updateDraft("tts", providerId, {
+          ...voiceConfig,
+          voice_id: id,
         });
       }
     } else {

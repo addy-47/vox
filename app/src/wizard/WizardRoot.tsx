@@ -1,6 +1,6 @@
 import React from 'react';
 import { useMachine } from '@xstate/react';
-import { setupMachine } from './state/setupMachine';
+import { setupMachine, type SetupStep } from './state/setupMachine';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WelcomeStep } from "./steps/WelcomeStep";
 import { SystemCheckStep } from "./steps/SystemCheckStep";
@@ -90,7 +90,7 @@ export const WizardRoot: React.FC = () => {
     }
   };
 
-  const getStepStatus = (id: string) => {
+  const getStepStatus = (id: SetupStep) => {
     const stepIndex = steps.findIndex(s => s.id === id);
     
     if (state.matches(id)) return 'active';
@@ -151,7 +151,7 @@ export const WizardRoot: React.FC = () => {
                         : 'glass border-[rgba(var(--border),0.06)]'
                   )}>
                     {status === 'completed' ? <CheckCircle2 className="w-4 h-4 text-[rgb(var(--accent))]" /> : 
-                     React.cloneElement(s.icon as React.ReactElement<{ className?: string }>, { 
+                     React.cloneElement(s.icon, { 
                        className: cn("w-4 h-4", status === 'active' ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--foreground-muted))]') 
                      })}
                   </div>
@@ -184,7 +184,7 @@ export const WizardRoot: React.FC = () => {
         <main className="flex-1 relative z-10 flex flex-col px-12 py-8 overflow-hidden">
           <AnimatePresence mode="popLayout">
             <motion.div
-              key={state.value as string}
+              key={state.value}
               initial={{ x: 10, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -10, opacity: 0 }}

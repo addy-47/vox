@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     core::defaults::{
-        DEFAULT_ASR_MODEL, DEFAULT_ASR_TRANSLITERATE_ENABLED, DEFAULT_AUTO_SLEEP_TIMEOUT,
+        DEFAULT_ASR_MODEL, DEFAULT_ASR_TRANSLITERATE_ENABLED,
         DEFAULT_DEEPGRAM_MODEL, DEFAULT_DEEPGRAM_TEMP, DEFAULT_DEEPGRAM_VOICE,
         DEFAULT_DICTATION_ENABLED, DEFAULT_DICTATION_HOTKEY,
         DEFAULT_DICTATION_SILENCE_AUTO_STOP_MS, DEFAULT_GEMINI_REALTIME_LANG,
@@ -26,8 +26,8 @@ use crate::{
         DEFAULT_PERSONAL_MEMORY_SEMANTIC_SIMILARITY_CUTOFF, DEFAULT_PERSONAL_MEMORY_TOP_K_FACTS,
         DEFAULT_STT_CLOUD_LANGUAGE, DEFAULT_STT_CLOUD_MODEL, DEFAULT_STT_CLOUD_PROVIDER,
         DEFAULT_STT_CLOUD_REGION, DEFAULT_STT_PARTIAL_THROTTLE_MS, DEFAULT_STT_THREADS,
-        DEFAULT_SYSTEM_PROMPT_MODULAR, DEFAULT_SYSTEM_PROMPT_REALTIME, DEFAULT_TELEMETRY_ENABLED,
-        DEFAULT_TELEMETRY_LOG_LEVEL, DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS,
+        DEFAULT_SYSTEM_PROMPT_MODULAR, DEFAULT_SYSTEM_PROMPT_REALTIME,
+        DEFAULT_TTS_SPEED, DEFAULT_TTS_THREADS,
         DEFAULT_TTS_VOICE_INDEX, DEFAULT_TTS_ZIPVOICE_GUIDANCE_SCALE, DEFAULT_UI_ACCENT_SEED,
         DEFAULT_UI_THEME,
         DEFAULT_VAD_MAX_SPEECH_DURATION_S, DEFAULT_VAD_PTT_NOISE_GATE,
@@ -198,9 +198,8 @@ pub fn get_setting_reload_policy(domain: &str, key: &str) -> SettingReloadPolicy
         }
         "stt" if key == "threads" => SettingReloadPolicy::Restart,
         "tts" if key == "threads" => SettingReloadPolicy::Restart,
-        "interaction" if key == "auto_sleep_timeout" => SettingReloadPolicy::Hot,
         "dictation" => SettingReloadPolicy::Hot,
-        "system" if key == "telemetry_enabled" || key == "setup_completed" => {
+        "system" if key == "setup_completed" => {
             SettingReloadPolicy::Hot
         }
         _ => SettingReloadPolicy::Restart,
@@ -296,8 +295,6 @@ pub struct SttCloudConfig {
     pub model: String,
     pub language: String,
     pub region: String,
-    pub credentials_path: Option<String>,
-    pub credentials_json: Option<String>,
     pub project_id: Option<String>,
     pub endpoint: Option<String>,
 }
@@ -309,8 +306,6 @@ impl Default for SttCloudConfig {
             model: DEFAULT_STT_CLOUD_MODEL.to_string(),
             language: DEFAULT_STT_CLOUD_LANGUAGE.to_string(),
             region: DEFAULT_STT_CLOUD_REGION.to_string(),
-            credentials_path: None,
-            credentials_json: None,
             project_id: None,
             endpoint: None,
         }
@@ -327,10 +322,6 @@ pub enum SttProviderConfig {
     },
     Cloud {
         provider: String,
-        #[serde(default)]
-        credentials_path: Option<String>,
-        #[serde(default)]
-        credentials_json: Option<String>,
         #[serde(default)]
         project_id: Option<String>,
         #[serde(default = "default_cloud_region")]
@@ -400,8 +391,6 @@ impl SttSettings {
             },
             SttActiveProvider::Cloud => SttProviderConfig::Cloud {
                 provider: self.cloud.provider.clone(),
-                credentials_path: self.cloud.credentials_path.clone(),
-                credentials_json: self.cloud.credentials_json.clone(),
                 project_id: self.cloud.project_id.clone(),
                 region: self.cloud.region.clone(),
                 model: self.cloud.model.clone(),
@@ -748,7 +737,6 @@ impl TtsSettings {
 #[serde(default)]
 pub struct InteractionSettings {
     pub mode: InteractionMode,
-    pub auto_sleep_timeout: u32,
     pub pipeline_mode: PipelineMode,
 }
 
@@ -756,7 +744,6 @@ impl Default for InteractionSettings {
     fn default() -> Self {
         Self {
             mode: InteractionMode::Passive,
-            auto_sleep_timeout: DEFAULT_AUTO_SLEEP_TIMEOUT,
             pipeline_mode: PipelineMode::Modular,
         }
     }
@@ -863,7 +850,6 @@ pub struct GeminiRealtimeConfig {
     pub language_code: String,
     pub temperature: f32,
     pub enable_web_search: bool,
-    pub resume_handle: Option<String>,
 }
 
 impl Default for GeminiRealtimeConfig {
@@ -875,7 +861,6 @@ impl Default for GeminiRealtimeConfig {
             language_code: DEFAULT_GEMINI_REALTIME_LANG.to_string(),
             temperature: DEFAULT_GEMINI_REALTIME_TEMP,
             enable_web_search: true,
-            resume_handle: None,
         }
     }
 }
@@ -944,22 +929,10 @@ impl Default for RealtimeSettings {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
 pub struct SystemSettings {
-    pub log_level: String,
-    pub telemetry_enabled: bool,
     pub setup_completed: bool,
-}
-
-impl Default for SystemSettings {
-    fn default() -> Self {
-        Self {
-            log_level: DEFAULT_TELEMETRY_LOG_LEVEL.into(),
-            telemetry_enabled: DEFAULT_TELEMETRY_ENABLED,
-            setup_completed: false,
-        }
-    }
 }
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(default)]
@@ -980,12 +953,23 @@ pub struct VoxSettings {
 }
 
 impl VoxSettings {
+    /// Strips the retired `zipvoice_voice_` id prefix from the stored voice
+    /// selection. Schema v9 stores bare slugs; older files carry prefixes.
+    fn normalize_retired_voice_ids(&mut self) {
+        if let Some(id) = self.tts.zipvoice.voice_id.as_mut() {
+            if let Some(slug) = id.strip_prefix("zipvoice_voice_").map(|s| s.to_string()) {
+                *id = slug;
+            }
+        }
+    }
+
     pub fn load() -> Self {
         let path = paths::get().settings.clone();
 
         if let Ok(content) = fs::read_to_string(&path) {
             // Fast path: clean monolithic deserialization
-            if let Ok(settings) = serde_json::from_str::<Self>(&content) {
+            if let Ok(mut settings) = serde_json::from_str::<Self>(&content) {
+                settings.normalize_retired_voice_ids();
                 log::info!("[Settings] Loaded configuration from {:?}", path);
                 return settings;
             }
@@ -1074,6 +1058,7 @@ impl VoxSettings {
                         settings.system = v;
                     }
                 }
+                settings.normalize_retired_voice_ids();
                 return settings;
             }
 

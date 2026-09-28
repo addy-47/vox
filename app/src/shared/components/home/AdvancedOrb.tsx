@@ -693,7 +693,7 @@ export const VoxOrb = React.memo(({
     container.appendChild(renderer.domElement);
 
     if (typeof window !== "undefined") {
-      (window as any).__VOX_THREE_METRICS__ = {
+      window.__VOX_THREE_METRICS__ = {
         getMetrics: () => ({
           geometries: renderer.info.memory.geometries,
           textures: renderer.info.memory.textures,
@@ -861,7 +861,7 @@ export const VoxOrb = React.memo(({
       outerMat.dispose();
       discMats.forEach((m) => m.dispose());
       if (typeof window !== "undefined") {
-        delete (window as any).__VOX_THREE_METRICS__;
+        delete window.__VOX_THREE_METRICS__;
       }
       if (renderer.domElement) {
         renderer.domElement.width = 1;

@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
+import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { cn } from "@/shared/lib/utils";
 import { Microchip, Zap, Battery, Gauge } from "lucide-react";
 import { STT_SETTINGS_COPY, COMPUTE_PROFILE_COPY } from "@/data/settingsCopy";
@@ -14,7 +15,7 @@ interface AsrWorkspaceProps {
   confirmDeleteId: string | null;
   setConfirmDeleteId: (id: string | null) => void;
   modelPresence: Record<string, boolean>;
-  downloadStatuses: Record<string, any>;
+  downloadStatuses: Record<string, ModelStatus>;
   startDownload: (id: string) => void;
   deleteModel: (id: string) => void;
   isGroupRequired: (id: string) => boolean;
