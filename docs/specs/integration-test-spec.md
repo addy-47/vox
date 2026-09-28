@@ -2234,7 +2234,7 @@ Production Path C — Session Cache TTL Management:
   create_realtime_provider(&state)
   ├─► Checks cache_dir().join("realtime_session.json")
   ├─► Reads expires_at:
-  │   ├─► If now_ms < expires_at: injects cached handle into settings.resume_handle
+  │   ├─► If now_ms < expires_at: passes cached handle as GeminiLiveProvider constructor param (never written into settings)
   │   └─► If now_ms >= expires_at: calls purge_session_cache(), deletes file from disk
 
 Observable Exit:

@@ -1,7 +1,7 @@
 import { useMemo, useCallback, useState, memo } from "react";
 import { AlertCircle, Check, RefreshCw } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { useSettingsStore } from "@/store/settingsStore";
+import { useSettingsStore, type SettingsState } from "@/store/settingsStore";
 import { restartEngine } from "@/services/pipelineService";
 import { ErrorBoundary } from "@/shared/components/common";
 import { AnimatePresence, motion } from "framer-motion";
@@ -21,7 +21,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   const draftSettings = useSettingsStore((s) => s.draftSettings);
   const commitChanges = useSettingsStore((s) => s.commitChanges);
 
-  const hasChanges = useSettingsStore(useCallback((s: any) => Boolean(s.isDomainDirty(domain.id)), [domain.id]));
+  const hasChanges = useSettingsStore(useCallback((s: SettingsState) => Boolean(s.isDomainDirty(domain.id)), [domain.id]));
 
 
   const requiresRestart = useMemo(() => {
@@ -51,8 +51,8 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   const isCloudSttMissingKey = false;
   const isRealtimeMissingKey =
     draftSettings?.interaction?.pipeline_mode === "realtime" &&
-    ((draftSettings?.realtime?.active === "gemini_live" && !(draftSettings?.realtime?.gemini_live?.api_key || (draftSettings?.realtime as any)?.gemini?.api_key)?.trim()) ||
-     (draftSettings?.realtime?.active === "deepgram_voice_agent" && !(draftSettings?.realtime?.deepgram_voice_agent?.api_key || (draftSettings?.realtime as any)?.deepgram?.api_key)?.trim()));
+    ((draftSettings?.realtime?.active === "gemini_live" && !(draftSettings?.realtime?.gemini_live?.api_key)?.trim()) ||
+     (draftSettings?.realtime?.active === "deepgram_voice_agent" && !(draftSettings?.realtime?.deepgram_voice_agent?.api_key)?.trim()));
 
   const isDomainMissingCloudKey = useMemo(() => {
     if (domain.id === "models") {

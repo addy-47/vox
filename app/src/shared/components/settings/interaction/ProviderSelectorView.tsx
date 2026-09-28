@@ -71,7 +71,7 @@ const PROVIDER_OPTIONS: Record<"STT" | "LLM" | "TTS", ProviderOption[]> = {
     {
       id: "server",
       label: "Server",
-      sublabel: "Chatterbox GPU",
+      sublabel: "Remote GPU",
       icon: Server,
     },
     {

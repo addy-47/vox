@@ -17,26 +17,14 @@ const MANIFEST = path.join(REPO_DIR, "manifests", "models_manifest.json");
  * listed must render from capabilities and manifest flags alone.
  */
 const ALLOWED_MODEL_NAME_SITES: Record<string, string> = {
-  "data/settingsCopy.ts":
-    "SETTINGS_SCOPE_KEYS lists every settings key. Deriving it from the boot payload is Batch 5.3.",
-  "services/settingsService.ts":
-    "FALLBACK_CAPS duplicates the backend caps table. Deleting it needs the degraded-UI state (Batch 3.5).",
-  "services/voiceService.ts":
-    "listVoices() takes a provider union the backend ignores for all non-Edge values. Batch 4.5 replaces the phantom union with the real scoped call.",
-  "store/settingsStore.ts":
-    "TtsActiveProvider / TtsProviderConfig / VadSettings are generated-from-Rust candidates (Batch 5.5).",
-  "pages/Monitoring.tsx":
-    "D8 fixed the residency derivation; remaining names are scope-key lookups pending Batch 5.",
   "shared/components/settings/models/TtsVoiceManager.tsx":
-    "isZipvoice / customConfigMap / voice-name fallbacks. Batch 4.3 and 5.1 remove these.",
-  "shared/components/settings/ModelStatusOverlay.tsx":
-    "isCatalogVoice allowlist (D7) becomes caps.voices === 'catalog' in Batch 5.2.",
+    "Settings-key writes still name the edge_tts sub-key; voice-list branching is shape-driven since Batch 5.1.",
+  "store/settingsStore.ts":
+    "TtsActiveProvider / VadSettings mirror the backend enums for the active-id fields. TtsProviderConfig union and tts phantoms deleted in Batch 5.5.",
   "shared/components/settings/models/ModelsCard.tsx":
     "chatterbox_remote remote-deploy branch. Deferred to Batch 6 pending a second remote model.",
   "shared/components/settings/interaction/LlmConfigDesk.tsx":
     "chatterbox_remote endpoint fields. Same remote-deploy deferral as ModelsCard.",
-  "shared/components/settings/interaction/ProviderSelectorView.tsx":
-    "TTS tier taxonomy is a 3-way UX enum unrelated to TtsActiveProvider. Batch 5.6.",
   "shared/components/settings/models/VadWorkspace.tsx":
     "vad_backend fallback default. Derivable from is_built_in once Batch 5 lands.",
 };
@@ -337,5 +325,36 @@ If a field has no consumer, delete it — do not keep an unconsumed capability a
 (see ipc-spec.md "A Capability Field Must Be Consumed")`
     ).toMatchObject({ totalReaders: expect.any(Number) });
     expect(totalReaders).toBeGreaterThan(0);
+  });
+
+  it("Invariant 8 (No Escape Hatches): No `any` type annotations or `as any` casts", () => {
+    // Every `any` is a hole in the exact checking that caught the ModelProgress
+    // drift and the wizard step-id drift in Batch 6. Narrow with a guard, a
+    // union, or a precise type — never punch through.
+    const escapePattern = /[(:<,]\s*any\b|\bas\s+any\b/g;
+
+    const violations: { file: string; line: number; match: string }[] = [];
+
+    for (const file of tsFiles) {
+      const relPath = path.relative(SRC_DIR, file);
+      if (relPath.startsWith("test/")) continue;
+
+      const lines = fs.readFileSync(file, "utf-8").split("\n");
+      lines.forEach((line, idx) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("//") || trimmed.startsWith("*")) return;
+        escapePattern.lastIndex = 0;
+        if (escapePattern.test(line)) {
+          violations.push({ file: relPath, line: idx + 1, match: trimmed.slice(0, 110) });
+        }
+      });
+    }
+
+    expect(
+      violations,
+      `Explicit \`any\` escapes detected. Narrow the value instead:\n${violations
+        .map((v) => `  ${v.file}:${v.line} -> ${v.match}`)
+        .join("\n")}`
+    ).toEqual([]);
   });
 });

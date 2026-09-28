@@ -15,8 +15,9 @@ export function useSettingsPage() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get("tab");
-      if (tab && DOMAINS.some((d) => d.id === tab)) {
-        return [tab as DomainId];
+      const match = tab ? DOMAINS.find((d) => d.id === tab) : undefined;
+      if (match) {
+        return [match.id];
       }
     }
     return [];

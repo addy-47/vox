@@ -22,7 +22,7 @@ import { cn } from "@/shared/lib/utils";
 import {
   getActiveDynamicPalette,
   getCollectionIcon,
-  type MemoryCategory,
+  toMemoryCategory,
 } from "./memoryGraphTypes";
 
 interface MemorySessionRailProps {
@@ -240,9 +240,10 @@ export const MemorySessionRail = memo<MemorySessionRailProps>(({
                       <div className="p-2 border-t border-[rgba(var(--border),0.08)] bg-[rgba(var(--background),0.25)] space-y-1.5">
                         {group.facts.map((fact) => {
                           const isFactSelected = selectedFactId === fact.id;
-                          const col = palette[fact.fact_type as MemoryCategory] ?? palette.objective;
+                          const kind = toMemoryCategory(fact.fact_type);
+                          const col = (kind !== undefined ? palette[kind] : undefined) ?? palette.objective;
                           const Icon = getCollectionIcon(fact.fact_type);
-                          const catLabel = MEMORY_COPY.categories[fact.fact_type as MemoryCategory] || fact.fact_type;
+                          const catLabel = (kind !== undefined ? MEMORY_COPY.categories[kind] : undefined) || fact.fact_type;
 
                           return (
                             <button

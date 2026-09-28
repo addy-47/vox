@@ -1,6 +1,7 @@
 import { memo, useState, useMemo, useRef, useEffect } from "react";
 import { useSettingsStore, type LlmModelInfo, type ModelCapabilities, type LlmProviderConfig } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
+import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { Loader2, Network, RefreshCw, AlertCircle, Sparkles, Search, X, Plus } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip } from "@/shared/ui/Tooltip";
@@ -11,7 +12,7 @@ export interface LlmCatalogViewProps {
   layoutMode?: "full-max" | "full-min" | "small";
   selectedLlmId: string;
   modelPresence: Record<string, boolean>;
-  downloadStatuses: Record<string, any>;
+  downloadStatuses: Record<string, ModelStatus>;
   confirmDeleteId: string | null;
   setConfirmDeleteId: (id: string | null) => void;
   startDownload: (id: string) => void;

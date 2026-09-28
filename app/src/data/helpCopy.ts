@@ -21,6 +21,7 @@ import {
   RotateCcw,
   Timer,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { HelpControlItem } from "@/shared/components/help/HelpControlCard";
 
 export type HelpTier = "1A" | "1B" | "2A" | "2B" | "3";
@@ -198,7 +199,7 @@ export interface SettingsCardHelp {
   id: SettingsCardId;
   label: string;
   badge: string;
-  icon: any;
+  icon: LucideIcon;
   overview: string;
   controls: HelpControlItem[];
   tips?: string[];

@@ -80,7 +80,7 @@ export const LlmConfigDesk = memo(({
   }, [draftSettings?.llm?.cloud?.base_url, draftSettings?.llm?.cloud?.provider_name]);
 
   const cloudKeys = useMemo(
-    () => draftSettings?.llm?.cloud_keys || {},
+    () => draftSettings?.llm?.cloud_keys ?? {},
     [draftSettings?.llm?.cloud_keys]
   );
 
@@ -242,7 +242,7 @@ export const LlmConfigDesk = memo(({
 
   const handleSelectCloudProvider = useCallback(
     (provider: CloudProvider) => {
-      const keys = draftSettings?.llm?.cloud_keys || {};
+      const keys = draftSettings?.llm?.cloud_keys ?? {};
       const savedKey = keys[provider.id] || "";
 
       updateDraft("llm", "cloud", {

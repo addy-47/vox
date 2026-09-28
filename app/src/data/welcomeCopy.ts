@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import type { SetupStep } from "@/wizard/state/setupMachine";
 import {
   Activity,
   CheckCircle2,
@@ -13,7 +14,7 @@ import {
 } from "lucide-react";
 
 export interface WizardStep {
-  id: string;
+  id: SetupStep;
   label: string;
   icon: LucideIcon;
 }

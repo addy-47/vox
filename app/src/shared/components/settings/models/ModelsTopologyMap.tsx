@@ -1,5 +1,6 @@
 import { memo, useCallback } from "react";
 import { AudioWaveform, Ear, BrainCircuit, AudioLines, LifeBuoy } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { cn } from "@/shared/lib/utils";
 import { DIRTY_STATE_COPY } from "@/data/settingsCopy";
@@ -32,12 +33,12 @@ export const ModelsTopologyMap = memo(
   }: ModelsTopologyMapProps) => {
     const isCategoryDirty = useSettingsStore((s) => s.isCategoryDirty);
 
-    const PIPELINE_NODES = [
-      { id: "vad" as PipelineTab, label: "Voice Detection", Icon: AudioWaveform, isVerified: isVadVerified },
-      { id: "stt" as PipelineTab, label: "Listening", Icon: Ear, isVerified: isAsrVerified },
-      { id: "llm" as PipelineTab, label: "Reasoning", Icon: BrainCircuit, isVerified: isLlmDownloaded },
-      { id: "tts" as PipelineTab, label: "Speaking", Icon: AudioLines, isVerified: isTtsVerified },
-      { id: "auxiliary" as PipelineTab, label: "Support", Icon: LifeBuoy, isVerified: isAuxiliaryVerified },
+    const PIPELINE_NODES: Array<{ id: PipelineTab; label: string; Icon: LucideIcon; isVerified: boolean }> = [
+      { id: "vad", label: "Voice Detection", Icon: AudioWaveform, isVerified: isVadVerified },
+      { id: "stt", label: "Listening", Icon: Ear, isVerified: isAsrVerified },
+      { id: "llm", label: "Reasoning", Icon: BrainCircuit, isVerified: isLlmDownloaded },
+      { id: "tts", label: "Speaking", Icon: AudioLines, isVerified: isTtsVerified },
+      { id: "auxiliary", label: "Support", Icon: LifeBuoy, isVerified: isAuxiliaryVerified },
     ];
 
   const handleKeyDown = useCallback(

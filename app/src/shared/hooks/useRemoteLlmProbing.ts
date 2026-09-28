@@ -59,9 +59,9 @@ export function useRemoteLlmProbing(
     try {
       const list = await listLlmModels(provider);
       setRemoteModels(list);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Failed to list remote models:", err);
-      setRemoteModelsError(String(err));
+      setRemoteModelsError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoadingRemoteModels(false);
     }

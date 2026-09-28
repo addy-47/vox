@@ -10,6 +10,21 @@ import { FactRecord } from "@/services/memoryService";
 
 export type MemoryCategory = "personal" | "objective" | "workdone" | "blocker" | "next_step" | "pitfall";
 
+const MEMORY_CATEGORIES: readonly MemoryCategory[] = [
+  "personal",
+  "objective",
+  "workdone",
+  "blocker",
+  "next_step",
+  "pitfall",
+];
+
+/** Validates a stored fact type into a palette category. Unknown values yield
+ * undefined so call sites fall back instead of indexing with a lie. */
+export function toMemoryCategory(value: string): MemoryCategory | undefined {
+  return MEMORY_CATEGORIES.find((c) => c === value);
+}
+
 export interface GNode {
   id: string;
   label: string;
@@ -73,7 +88,8 @@ export function getThemeCollectionColors(isLight: boolean) {
 
 export function getCollectionColor(collection: string, _isInactive = false, isLight = false) {
   const palette = getActiveDynamicPalette(isLight);
-  return palette[collection as MemoryCategory] ?? palette.objective;
+  const kind = toMemoryCategory(collection);
+  return (kind !== undefined ? palette[kind] : undefined) ?? palette.objective;
 }
 
 

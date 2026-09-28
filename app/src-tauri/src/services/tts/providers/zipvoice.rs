@@ -434,10 +434,11 @@ pub fn load_reference(entry: &ZipvoiceVoiceEntry, voices_dir: &Path) -> Result<Z
     })
 }
 
-/// Resolves an optional voice ID/slug into a loaded and shared ZipvoiceReference.
+/// Resolves an optional pack slug into a loaded and shared ZipvoiceReference.
+/// Slugs travel verbatim from settings and the voices table; no id decoding.
 pub fn resolve_zipvoice_reference(
     voices_dir: &Path,
-    voice_id: Option<&str>,
+    voice_slug: Option<&str>,
 ) -> Result<Arc<ZipvoiceReference>> {
     let pack = load_voice_pack(voices_dir)?;
     if pack.is_empty() {
@@ -447,15 +448,17 @@ pub fn resolve_zipvoice_reference(
         ));
     }
 
-    let target_slug =
-        voice_id.map(|id| id.strip_prefix("zipvoice_voice_").unwrap_or(id).to_string());
-
-    let selected_entry = match target_slug {
-        Some(ref slug) => pack
+    let selected_entry = match voice_slug {
+        Some(slug) => pack
             .iter()
-            .find(|e| e.slug == *slug)
-            .or_else(|| pack.first())
-            .ok_or_else(|| anyhow!("Failed to select voice entry"))?,
+            .find(|e| e.slug == slug)
+            .ok_or_else(|| {
+                anyhow!(
+                    "Unknown ZipVoice voice slug '{}' ({} packaged voices available)",
+                    slug,
+                    pack.len()
+                )
+            })?,
         None => pack
             .first()
             .ok_or_else(|| anyhow!("Voice pack is unexpectedly empty"))?,

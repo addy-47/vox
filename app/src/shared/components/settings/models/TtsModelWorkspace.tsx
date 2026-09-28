@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import { SubModelCard } from "../SubModelCard";
+import type { ModelStatus } from "@/shared/hooks/useModelDownloads";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
 
@@ -9,7 +10,7 @@ interface TtsModelWorkspaceProps {
   confirmDeleteId: string | null;
   setConfirmDeleteId: (id: string | null) => void;
   modelPresence: Record<string, boolean>;
-  downloadStatuses: Record<string, any>;
+  downloadStatuses: Record<string, ModelStatus>;
   startDownload: (id: string) => void;
   deleteModel: (id: string) => void;
   isRemoteTtsHealthy: boolean | null;

@@ -123,7 +123,7 @@ export function useMemoryProfiler(enabled = true) {
           });
           console.info(`[MemoryProfiler] Manual snapshot captured (${currentTotal.toFixed(1)} MB) -> temp/${filename}`, snap);
 
-          const threeMetrics = (typeof window !== "undefined" && (window as any).__VOX_THREE_METRICS__?.getMetrics?.()) || undefined;
+          const threeMetrics = (typeof window !== "undefined" && window.__VOX_THREE_METRICS__?.getMetrics?.()) || undefined;
 
           await recordMemoryProfileEvent({
             route: r,

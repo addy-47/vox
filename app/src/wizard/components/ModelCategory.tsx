@@ -23,7 +23,7 @@ interface CategoryProps {
     id: string;
     label: string;
     subLabel: string;
-    icon: React.ReactNode;
+    icon: React.ReactElement<{ className?: string }>;
     groups: ModelGroup[];
     selected: boolean;
     required: boolean;
@@ -78,7 +78,7 @@ export const ModelCategory = ({
                         "w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-500 shrink-0",
                         selected ? "bg-[rgb(var(--accent))]/10 text-[rgb(var(--accent))] shadow-[0_0_20px_rgba(var(--accent),0.1)]" : "bg-[rgba(var(--foreground),0.05)] text-[rgb(var(--foreground-muted))]"
                     )}>
-                        {React.cloneElement(icon as React.ReactElement<any>, { className: "w-5 h-5" })}
+                        {React.cloneElement(icon, { className: "w-5 h-5" })}
                     </div>
                     <div className="flex flex-col flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">

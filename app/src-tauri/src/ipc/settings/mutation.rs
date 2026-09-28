@@ -145,8 +145,6 @@ fn apply_stt_mutation(
                         model,
                         language,
                         region,
-                        credentials_path,
-                        credentials_json,
                         project_id,
                         endpoint,
                     } => {
@@ -156,8 +154,6 @@ fn apply_stt_mutation(
                             model,
                             language,
                             region,
-                            credentials_path,
-                            credentials_json,
                             project_id,
                             endpoint,
                         };
@@ -400,12 +396,6 @@ fn apply_interaction_mutation(
             settings.interaction.mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid interaction mode: {}", e))?;
         }
-        "auto_sleep_timeout" => {
-            settings.interaction.auto_sleep_timeout = value
-                .as_u64()
-                .ok_or("auto_sleep_timeout must be a positive integer")?
-                as u32;
-        }
         "pipeline_mode" => {
             settings.interaction.pipeline_mode = serde_json::from_value(value.clone())
                 .map_err(|e| format!("Invalid pipeline_mode: {}", e))?;
@@ -593,17 +583,6 @@ fn apply_system_mutation(
     value: &serde_json::Value,
 ) -> Result<bool, String> {
     match key {
-        "telemetry_enabled" => {
-            settings.system.telemetry_enabled = value
-                .as_bool()
-                .ok_or("telemetry_enabled must be a boolean")?;
-        }
-        "log_level" => {
-            settings.system.log_level = value
-                .as_str()
-                .ok_or("log_level must be a string")?
-                .to_string();
-        }
         "setup_completed" => {
             settings.system.setup_completed =
                 value.as_bool().ok_or("setup_completed must be a boolean")?;

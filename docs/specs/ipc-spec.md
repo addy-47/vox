@@ -275,7 +275,7 @@ Window visibility and custom TTS voice management.
 
 #### `list_voices()`, `add_voice_from_file()`, `add_voice_from_recording()`, `delete_voice()`, `rename_voice()`
 - **Purpose**: Custom voice profile CRUD for Chatterbox and Sherpa-ONNX (Kokoro, ZipVoice).
-- **Behavior**: Manages reference WAV audio files and metadata in Turso `voices` table. ZipVoice reads packaged directory sidecars (`voices/<slug>/clip.wav` + `reference.txt` with ID prefix `zipvoice_voice_<slug>`); arbitrary user-uploaded clone clips are disabled (`clone: false`) until database schema migration support for sidecar transcripts is added.
+- **Behavior**: Manages reference WAV audio files and metadata in Turso `voices` table. The `provider` argument scopes server-side: `edge`/`edge_tts` returns the live remote Edge list; `zipvoice` returns packaged ZipVoice pack rows; `chatterbox`/`chatterbox_remote` returns user-cloned and packaged custom rows; `supertonic`/`kokoro` return empty (catalog voices come from the manifest, never the DB); omitted returns the full table; an unrecognised id returns `InvalidArgument`. ZipVoice reads packaged directory sidecars (`voices/<slug>/clip.wav` + `reference.txt`); pack voice ids ARE the slugs (`atlas`), and `tts.zipvoice.voice_id` carries a slug — the `zipvoice_voice_<slug>` prefix convention is retired, and schema v9 migrates stored ids and display names to the slug form; arbitrary user-uploaded clone clips are disabled (`clone: false`) until database schema migration support for sidecar transcripts is added.
 
 ---
 

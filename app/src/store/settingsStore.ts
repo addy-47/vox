@@ -9,6 +9,13 @@ import {
 import { hexToRgb } from "@/shared/lib/utils";
 import { DOMAIN_DIRTY_KEYS, SETTINGS_SCOPE_KEYS, type SettingsDomainId, type SettingsScope } from "@/data/settingsCopy";
 
+/** Reads a settings scope as a key-value map for dynamic key access. The
+ * single guarded cast in the store; every dynamic read funnels through here. */
+function scopeEntries(scope: unknown): Record<string, unknown> {
+  if (typeof scope !== "object" || scope === null) return {};
+  return scope as Record<string, unknown>;
+}
+
 export type PipelineMode = "modular" | "realtime";
 export type LlmActiveProvider = "embedded" | "server" | "cloud";
 export type SttActiveProvider = "embedded" | "cloud";
@@ -35,20 +42,6 @@ export interface SttProviderConfig {
   kind: SttProviderKind;
   model_type?: string;
 }
-
-export type TtsProviderConfig =
-  | { kind: "supertonic" }
-  | { kind: "kokoro" }
-  | { kind: "chatterbox"; language: string; speed: number }
-  | {
-      kind: "chatterbox_remote";
-      endpoint: string;
-      language: string;
-      speed: number;
-      remote_path: string;
-    }
-  | { kind: "edge_tts"; voice?: string }
-  | { kind: "zipvoice"; guidance_scale: number; speed: number };
 
 export interface ModelCapabilities {
   model_id: string;
@@ -138,8 +131,10 @@ export interface ModelCatalog {
   preset_colors: string[];
 }
 
+export type AudioOutputMode = "Speaker" | "Headset";
+
 export interface AudioSettings {
-  output_mode: string;
+  output_mode: AudioOutputMode;
   input_device: string | null;
 }
 
@@ -147,24 +142,24 @@ export interface VadSettings {
   threshold: number;
   ptt_noise_gate: number;
   vad_backend: "earshot" | "ten_vad" | "silero_vad";
-  silence_duration_ms?: number;
-  speech_onset_ms?: number;
-  max_speech_duration_s?: number;
+  silence_duration_ms: number;
+  speech_onset_ms: number;
+  max_speech_duration_s: number;
 }
 
 export interface SttEmbeddedConfig {
   model: string;
-  partial_throttle_ms?: number;
-  threads?: number;
+  partial_throttle_ms: number;
+  threads: number;
 }
 
 export interface SttCloudConfig {
   provider: string;
   model: string;
   language: string;
-  region?: string | null;
+  region: string;
+  project_id?: string | null;
   endpoint?: string | null;
-  api_key?: string | null;
 }
 
 export interface SttSettings {
@@ -172,8 +167,6 @@ export interface SttSettings {
   transliterate_enabled: boolean;
   embedded: SttEmbeddedConfig;
   cloud: SttCloudConfig;
-  model?: string;
-  provider?: SttProviderConfig;
 }
 
 export interface LlmEmbeddedConfig {
@@ -198,11 +191,11 @@ export interface LlmSettings {
   embedded: LlmEmbeddedConfig;
   server: LlmRemoteConfig;
   cloud: LlmRemoteConfig;
-  cloud_keys?: Record<string, string>;
+  cloud_keys: Record<string, string>;
 }
 
 export interface TtsEdgeTtsConfig {
-  voice: string;
+  voice: string | null;
 }
 
 export interface TtsSupertonicConfig {}
@@ -222,7 +215,7 @@ export interface TtsChatterboxRemoteConfig {
 
 export interface TtsZipvoiceConfig {
   voice_id?: string | null;
-  guidance_scale?: number;
+  guidance_scale: number;
 }
 
 export interface TtsSettings {
@@ -236,18 +229,15 @@ export interface TtsSettings {
   chatterbox: TtsChatterboxConfig;
   chatterbox_remote: TtsChatterboxRemoteConfig;
   zipvoice: TtsZipvoiceConfig;
-  provider?: TtsProviderConfig;
-  voice?: number;
 }
 
-export interface GeminiLiveConfig {
+export interface GeminiRealtimeConfig {
   api_key: string;
   model: string;
   voice_name: string;
   language_code: string;
   temperature: number;
   enable_web_search: boolean;
-  resume_handle: string | null;
 }
 
 export interface OpenAiRealtimeConfig {
@@ -271,20 +261,14 @@ export interface ElevenLabsConvaiConfig {
 
 export interface RealtimeSettings {
   active: RealtimeActiveProvider;
-  gemini_live: GeminiLiveConfig;
+  gemini_live: GeminiRealtimeConfig;
   openai_realtime: OpenAiRealtimeConfig;
   deepgram_voice_agent: DeepgramVoiceAgentConfig;
   elevenlabs_convai: ElevenLabsConvaiConfig;
-  provider?: RealtimeActiveProvider;
-  gemini?: GeminiLiveConfig;
-  openai?: OpenAiRealtimeConfig;
-  deepgram?: DeepgramVoiceAgentConfig;
-  elevenlabs?: ElevenLabsConvaiConfig;
 }
 
 export interface InteractionSettings {
   mode: "Passive" | "PTT";
-  auto_sleep_timeout: number;
   pipeline_mode: PipelineMode;
 }
 
@@ -323,8 +307,6 @@ export interface PersonaSettings {
 }
 
 export interface SystemSettings {
-  log_level: string;
-  telemetry_enabled: boolean;
   setup_completed: boolean;
 }
 
@@ -344,7 +326,7 @@ export interface VoxSettings {
   system: SystemSettings;
 }
 
-interface SettingsState {
+export interface SettingsState {
   settings: VoxSettings | null;
   draftSettings: VoxSettings | null;
   modelCatalog: ModelCatalog | null;
@@ -360,7 +342,7 @@ interface SettingsState {
   updateDraft: (
     domain: keyof VoxSettings,
     key: string,
-    value: any,
+    value: unknown,
     explicitDomainId?: SettingsDomainId
   ) => void;
   commitChanges: () => Promise<void>;
@@ -462,9 +444,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         };
       });
       applyAppearance(fetched.appearance);
-    } catch (err: any) {
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
       console.error("Failed to load settings:", err);
-      set({ isLoading: false, error: err?.message || String(err) || "Failed to load settings" });
+      set({ isLoading: false, error: reason || "Failed to load settings" });
     }
   },
 
@@ -472,9 +455,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     try {
       const catalog = await requestModelCatalog();
       set({ modelCatalog: catalog, error: null });
-    } catch (err: any) {
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
       console.error("Failed to load model catalog:", err);
-      set({ error: err?.message || String(err) || "Failed to load model catalog" });
+      set({ error: reason || "Failed to load model catalog" });
     }
   },
 
@@ -515,19 +499,19 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   updateDraft: (
     domain: keyof VoxSettings,
     key: string,
-    value: any,
+    value: unknown,
     explicitDomainId?: SettingsDomainId
   ) => {
     const { settings, draftSettings } = get();
     if (!draftSettings || !settings) return;
 
-    const currentVal = (draftSettings[domain] as any)?.[key];
+    const currentVal = scopeEntries(draftSettings[domain])[key];
     if (JSON.stringify(currentVal) === JSON.stringify(value)) return;
 
     const newDraft = {
       ...draftSettings,
       [domain]: {
-        ...(draftSettings[domain] as any),
+        ...scopeEntries(draftSettings[domain]),
         [key]: value,
       },
     };
@@ -574,36 +558,24 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     ].some((d) => get().isDomainDirty(d));
     set({ hasChanges });
 
-    // Check if the modified key requires a heavy restart
-    const requiresRestart =
-      (domain === "stt" && key === "embedded") ||
-      (domain === "stt" && key === "active") ||
-      (domain === "stt" && key === "threads") ||
-      (domain === "llm" && key === "embedded") ||
-      (domain === "llm" && key === "active") ||
-      (domain === "llm" && key === "context_window") ||
-      (domain === "llm" && key === "threads") ||
-      (domain === "tts" && key === "active") ||
-      (domain === "vad" && key === "vad_backend") ||
-      (domain === "audio" && key === "input_device");
+    // Every key hot-applies through the same debounced auto-commit. Whether a
+    // restart is required comes from the backend's reload_policy after commit
+    // (surfaced as restartKeys) — never from a hand-maintained key list.
+    const targetDomainId = explicitDomainId || SETTINGS_DOMAIN_TO_UI[domain as string] || "models";
 
-    if (!requiresRestart) {
-      const targetDomainId = explicitDomainId || SETTINGS_DOMAIN_TO_UI[domain as string] || "models";
-
-      // Hot or WorkerCommand: Automatically commit with 600ms debounce and flash "Saved" toast on that specific card
-      if (settingsAutoSaveTimer) {
-        clearTimeout(settingsAutoSaveTimer);
-      }
-      settingsAutoSaveTimer = setTimeout(() => {
-        get()
-          .commitChanges()
-          .then(() => {
-            get().triggerAutoSaveToast(targetDomainId);
-          })
-          .catch(console.error);
-        settingsAutoSaveTimer = null;
-      }, 600);
+    // Hot or WorkerCommand: Automatically commit with 600ms debounce and flash "Saved" toast on that specific card
+    if (settingsAutoSaveTimer) {
+      clearTimeout(settingsAutoSaveTimer);
     }
+    settingsAutoSaveTimer = setTimeout(() => {
+      get()
+        .commitChanges()
+        .then(() => {
+          get().triggerAutoSaveToast(targetDomainId);
+        })
+        .catch(console.error);
+      settingsAutoSaveTimer = null;
+    }, 600);
   },
 
   isDomainDirty: (domainId: string) => {
@@ -615,8 +587,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     for (const rule of dirtyKeys) {
       const scope = rule.scope as keyof VoxSettings;
-      const draftScope = draftSettings[scope] as any;
-      const savedScope = settings[scope] as any;
+      const draftScope = scopeEntries(draftSettings[scope]);
+      const savedScope = scopeEntries(settings[scope]);
 
       if (!draftScope && !savedScope) continue;
       if (!draftScope || !savedScope) return true;
@@ -644,8 +616,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!settings || !draftSettings) return false;
 
     const scope = category.toLowerCase() as keyof VoxSettings;
-    const draftScope = (draftSettings as any)?.[scope];
-    const savedScope = (settings as any)?.[scope];
+    const draftScope = scopeEntries(draftSettings?.[scope]);
+    const savedScope = scopeEntries(settings?.[scope]);
 
     if (!draftScope && !savedScope) return false;
     if (!draftScope || !savedScope) return true;
@@ -669,7 +641,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (!settings) return;
 
     const scope = category.toLowerCase() as keyof VoxSettings;
-    const savedScope = (settings as any)?.[scope];
+    const savedScope = scopeEntries(settings?.[scope]);
     if (!savedScope) return;
 
     const keys = SETTINGS_SCOPE_KEYS[scope as SettingsScope];
@@ -689,7 +661,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     for (const rule of dirtyKeys) {
       const scope = rule.scope as keyof VoxSettings;
-      const savedScope = settings[scope] as any;
+      const savedScope = scopeEntries(settings[scope]);
       if (savedScope) {
         if (rule.keys) {
           rule.keys.forEach((k) => updateDraft(scope, k, savedScope[k], domainId as SettingsDomainId));

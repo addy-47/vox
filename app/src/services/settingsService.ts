@@ -4,7 +4,6 @@ import type {
   ModelCatalog,
   LlmProviderConfig,
   SttProviderConfig,
-  TtsProviderConfig,
   ModelCapabilities,
   LlmModelInfo,
   ProviderCaps,
@@ -87,10 +86,10 @@ export async function checkSttProviderHealth(
   return invoke<ProviderHealthCheckResult>("check_provider_health", { kind: "stt", provider });
 }
 
-export async function checkTtsProviderHealth(
-  provider?: TtsProviderConfig
-): Promise<ProviderHealthCheckResult> {
-  return invoke<ProviderHealthCheckResult>("check_provider_health", { kind: "tts", provider });
+/** Check health/connectivity for the saved active TTS provider. No payload:
+ * the backend derives the config from its own settings via to_provider_config. */
+export async function checkTtsProviderHealth(): Promise<ProviderHealthCheckResult> {
+  return invoke<ProviderHealthCheckResult>("check_provider_health", { kind: "tts" });
 }
 
 /** Fetch dynamic list of models available from a remote or local LLM server. */

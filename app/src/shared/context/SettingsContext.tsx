@@ -10,7 +10,7 @@ interface SettingsContextType {
   draftSettings: VoxSettings | null;
   isLoading: boolean;
   hasChanges: boolean;
-  updateDraft: (domain: keyof VoxSettings, key: string, value: any) => void;
+  updateDraft: (domain: keyof VoxSettings, key: string, value: unknown) => void;
   commitChanges: () => Promise<void>;
   discardChanges: () => void;
   restoreDefaults: () => Promise<void>;

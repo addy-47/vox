@@ -23,7 +23,7 @@ export type LiveWaveformProps = HTMLAttributes<HTMLDivElement> & {
   onError?: (error: Error) => void
   onStreamReady?: (stream: MediaStream) => void
   onStreamEnd?: () => void
-  telemetryRef?: React.RefObject<any>
+  telemetryRef?: React.RefObject<number | { energy: number }>
 }
 
 export const LiveWaveform = memo(({
@@ -157,7 +157,7 @@ export const LiveWaveform = memo(({
         streamRef.current = stream
         onStreamReady?.(stream)
 
-        const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext
+        const AudioContextConstructor = window.AudioContext || window.webkitAudioContext
         const audioContext = new AudioContextConstructor()
         if (cancelled) {
           audioContext.close()

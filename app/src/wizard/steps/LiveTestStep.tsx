@@ -29,9 +29,9 @@ export const LiveTestStep: React.FC<Props> = ({ onNext, onBack }) => {
     try {
       await launchEngine();
       setIsEngineReady(true);
-    } catch (e: any) {
+    } catch (e) {
       console.error('Engine launch failed', e);
-      setError(e.toString());
+      setError(e instanceof Error ? e.message : String(e));
     }
   };
 

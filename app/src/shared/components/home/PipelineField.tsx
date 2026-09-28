@@ -49,10 +49,10 @@ export const PipelineField = React.memo(({ state, volume = 0 }: PipelineFieldPro
       className="absolute inset-0 pointer-events-none transition-all duration-700 ease-out overflow-hidden"
       style={{
         zIndex: 1,
-        ["--field-energy" as any]: "0.12",
-        ["--field-scale" as any]: "0.85",
-        ["--border-alpha" as any]: "0.06",
-      }}
+        ["--field-energy"]: "0.12",
+        ["--field-scale"]: "0.85",
+        ["--border-alpha"]: "0.06",
+      } as React.CSSProperties}
     >
       {/* Sentient Field Ambient Heatmap */}
       <div

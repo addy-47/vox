@@ -33,6 +33,7 @@ pub struct GeminiLiveProvider {
     tools: Vec<CanonicalToolDefinition>,
     state_rx: tokio::sync::watch::Receiver<InteractionState>,
     turn_id: Arc<AtomicU32>,
+    initial_resume_handle: Option<String>,
 }
 
 impl GeminiLiveProvider {
@@ -42,6 +43,7 @@ impl GeminiLiveProvider {
         tools: Vec<CanonicalToolDefinition>,
         state_rx: tokio::sync::watch::Receiver<InteractionState>,
         turn_id: Arc<AtomicU32>,
+        initial_resume_handle: Option<String>,
     ) -> Self {
         Self {
             config,
@@ -49,6 +51,7 @@ impl GeminiLiveProvider {
             tools,
             state_rx,
             turn_id,
+            initial_resume_handle,
         }
     }
 }
@@ -86,7 +89,6 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
         };
         let url = handshake::build_url(&self.config.api_key);
         let is_ptt = interaction_mode == InteractionMode::PTT;
-        let resume_handle = self.config.resume_handle.clone();
 
         let (ws_write, ws_read) = tokio_handle.block_on(handshake::perform_handshake(
             &url,
@@ -95,7 +97,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
             &self.system_prompt,
             &self.tools,
             is_ptt,
-            resume_handle.as_deref(),
+            self.initial_resume_handle.as_deref(),
         ))?;
 
         let (provider_event_tx, provider_event_rx) =
@@ -103,7 +105,7 @@ impl RealtimeVoiceProvider for GeminiLiveProvider {
 
         let session_state = Arc::new(Mutex::new(GeminiSessionState {
             interrupt_active: false,
-            resume_handle: self.config.resume_handle.clone(),
+            resume_handle: self.initial_resume_handle.clone(),
             model: model.clone(),
             turn_id: self.turn_id.clone(),
             server_turn_cursor: None,

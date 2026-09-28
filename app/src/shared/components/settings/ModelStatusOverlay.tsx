@@ -1,5 +1,7 @@
 import { memo, useState, useEffect, useCallback } from "react";
 import { checkModelExists } from "@/services/setupService";
+import { getProviderCaps } from "@/services/settingsService";
+import type { ProviderCaps } from "@/store/settingsStore";
 import { useSettings } from "@/shared/hooks/useSettings";
 import { Ear, BrainCircuit, AudioLines, AlertTriangle, AlertCircle } from "lucide-react";
 import { MODEL_HUB_COPY } from "@/data/settingsCopy";
@@ -23,6 +25,7 @@ const compactModelName = (name: string): string => {
 export const ModelStatusOverlay = memo(() => {
   const { draftSettings, modelCatalog } = useSettings();
   const [presence, setPresence] = useState<Record<string, boolean>>({});
+  const [ttsCaps, setTtsCaps] = useState<ProviderCaps | null>(null);
   const [vw, setVw] = useState(typeof window !== "undefined" ? window.innerWidth : 1200);
 
   useEffect(() => {
@@ -73,13 +76,29 @@ export const ModelStatusOverlay = memo(() => {
     checkPresence();
   }, [checkPresence]);
 
+  useEffect(() => {
+    let isMounted = true;
+    if (!ttsKind) {
+      setTtsCaps(null);
+      return;
+    }
+    getProviderCaps(ttsKind).then((caps) => {
+      if (isMounted) setTtsCaps(caps);
+    }).catch(() => {
+      if (isMounted) setTtsCaps(null);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [ttsKind]);
+
   if (!draftSettings || !modelCatalog) return null;
 
   // Direct dynamic lookups from catalog using saved IDs in draftSettings
   const activeLlm = modelCatalog.llm.find((m) => m.id === llmId) || modelCatalog.llm[0];
   const activeAsr = modelCatalog.stt.find((m) => m.id === asrId) || modelCatalog.stt[0];
-  const activeTts = modelCatalog.tts.find((m) => m.id === ttsKind || m.id.includes(ttsKind)) || modelCatalog.tts[0];
-  const isCatalogVoice = activeTts?.id === "supertonic" || activeTts?.id === "kokoro";
+  const activeTts = modelCatalog.tts.find((m) => m.id === ttsKind) || modelCatalog.tts[0];
+  const isCatalogVoice = ttsCaps?.voices === "catalog";
   const activeVoice = isCatalogVoice
     ? (modelCatalog.voices.find((v) => v.id === draftSettings.tts.voice_index) || modelCatalog.voices[0])
     : null;
