@@ -12,8 +12,8 @@ pub use consolidate::{
 };
 pub use document::{
     clean_markdown_payload, format_indexed_document, heading_count, parse_content_elements,
-    render_content_elements, validate_document_structure, validate_no_heading_loss,
-    ContentElement, ElementKind,
+    render_content_elements, validate_document_structure, validate_no_heading_loss, ContentElement,
+    ElementKind,
 };
 pub use patch::{apply_patch_operations, MemoryPatchOperation, PersonalConsolidationOutput};
 pub use prompts::consolidation_json_schema;

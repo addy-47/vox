@@ -58,7 +58,11 @@ fn test_validate_no_heading_loss_accepts_rename_and_growth() {
     // Renaming a section changes its title but not its count.
     assert!(validate_no_heading_loss(before, "## Career\n- Job A\n\n## Home\n- Job B\n").is_ok());
     // Adding a section is fine.
-    assert!(validate_no_heading_loss(before, "## Work\n- Job A\n\n## Home\n- Job B\n\n## Pets\n- Dog\n").is_ok());
+    assert!(validate_no_heading_loss(
+        before,
+        "## Work\n- Job A\n\n## Home\n- Job B\n\n## Pets\n- Dog\n"
+    )
+    .is_ok());
 }
 
 #[test]
@@ -88,7 +92,9 @@ fn test_chained_section_anchor_lands_under_its_heading() {
             text: "- Lives in Chicago.".to_string(),
         },
     ];
-    let result = apply_patch_operations(base, &ops).expect("Patch failed").document;
+    let result = apply_patch_operations(base, &ops)
+        .expect("Patch failed")
+        .document;
     let lines: Vec<&str> = result.lines().map(str::trim).collect();
     let heading = lines.iter().position(|line| *line == "## Location");
     let bullet = lines.iter().position(|line| *line == "- Lives in Chicago.");
@@ -108,7 +114,9 @@ fn test_patch_insert_after_existing_bullet() {
         text: "- User enjoys playing badminton.".to_string(),
     }];
 
-    let result = apply_patch_operations(SAMPLE_DOC, &ops).expect("Patch failed").document;
+    let result = apply_patch_operations(SAMPLE_DOC, &ops)
+        .expect("Patch failed")
+        .document;
     assert!(result.contains("- User enjoys playing badminton."));
     assert!(result.contains("- User lives in Chicago."));
     assert!(result.contains("- Building a voice orchestrator in Rust."));
@@ -122,7 +130,9 @@ fn test_patch_insert_after_prepend_zero() {
         text: "<!-- Profile Top -->".to_string(),
     }];
 
-    let result = apply_patch_operations(SAMPLE_DOC, &ops).expect("Patch failed").document;
+    let result = apply_patch_operations(SAMPLE_DOC, &ops)
+        .expect("Patch failed")
+        .document;
     assert!(result.starts_with("<!-- Profile Top -->"));
 }
 
@@ -134,7 +144,9 @@ fn test_patch_replace() {
         text: "- User lives in Austin.".to_string(),
     }];
 
-    let result = apply_patch_operations(SAMPLE_DOC, &ops).expect("Patch failed").document;
+    let result = apply_patch_operations(SAMPLE_DOC, &ops)
+        .expect("Patch failed")
+        .document;
     assert!(result.contains("- User lives in Austin."));
     assert!(!result.contains("- User lives in Chicago."));
     // Anchors preserved
@@ -149,7 +161,9 @@ fn test_patch_delete() {
         text: String::new(),
     }];
 
-    let result = apply_patch_operations(SAMPLE_DOC, &ops).expect("Patch failed").document;
+    let result = apply_patch_operations(SAMPLE_DOC, &ops)
+        .expect("Patch failed")
+        .document;
     assert!(!result.contains("Works with Turso embedded database."));
     assert!(result.contains("- Building a voice orchestrator in Rust."));
 }
@@ -169,7 +183,9 @@ fn test_patch_out_of_bounds_resilience() {
         },
     ];
 
-    let result = apply_patch_operations(SAMPLE_DOC, &ops).expect("Patch should not error").document;
+    let result = apply_patch_operations(SAMPLE_DOC, &ops)
+        .expect("Patch should not error")
+        .document;
     assert!(result.contains("- Added valid fact."));
     assert!(!result.contains("- Phantom fact."));
 }
@@ -194,7 +210,9 @@ fn test_patch_descending_sort_prevents_index_drift() {
         },
     ];
 
-    let result = apply_patch_operations(SAMPLE_DOC, &ops).expect("Patch failed").document;
+    let result = apply_patch_operations(SAMPLE_DOC, &ops)
+        .expect("Patch failed")
+        .document;
     assert!(result.contains("- User lives in Austin."));
     assert!(!result.contains("- User lives in Chicago."));
     assert!(result.contains("- User enjoys hiking."));

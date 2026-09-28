@@ -24,7 +24,7 @@ export function stopBackendRecording(): Promise<[number[], number]> {
   return invoke("stop_backend_recording");
 }
 
-export function listVoices(provider?: "custom" | "edge" | "kokoro" | "supertonic"): Promise<VoiceEntryDto[]> {
+export function listVoices(provider?: "custom" | "edge" | "kokoro" | "supertonic" | "zipvoice"): Promise<VoiceEntryDto[]> {
   return invoke("list_voices", { provider });
 }
 

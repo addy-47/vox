@@ -92,11 +92,16 @@
 
 > 📖 **Full History:** [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase12/recent_work.md) | Phase 11 Archive: [phase11/recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase11/recent_work.md)
 
-- **Agentic runtime & tool taxonomy (Phase 12):** Reentrant tool loop, 122 integration tests (73% mutation kill), `nexuss` v0.1.1 with adaptive fanout, and structured JSON provider wire policies.
-- **Cognitive memory stack & eval modularization:** Indexed-block consolidation (Schema v8, 4-prompt split), suggestion review with atomic block ops, and modular `memory_pipeline_eval.rs`.
-- **Platform ownership & dictation overhaul (2026-09-27):** Owner-stamped `VoxEvent` pipeline eliminating TOCTOU races; deterministic hotkey preemption; resident notification lifecycle; tray HUD direct-to-monitor sync; dynamic mechanical keycap SVG controls.
-- **Silence auto-stop persistence & acoustic chronometer UX (2026-09-27):** Fixed backend IPC mutation handler missing `silence_auto_stop_ms` case that reverted disable toggles; removed redundant parrot title badges; redesigned Auto Silence to minimal line-art Acoustic Chronometer vector SVG with enabled/disabled states and `>0s` guarded numeric seconds input; migrated secondary grey subtitles into Info tooltips; aligned subtab cards with balanced vertical centering, viewBox adjustments, and status indicators; `clippy` and `pnpm build` clean.
-- **TTS remote server workspace redesign & embedder dimension alignment (2026-09-27):** Eliminated nested double-card borders in `RemoteServerSetup.tsx`; balanced single-row crunch into a clean 2-row grid (Host/Port + full-width Key Path); anchored action footer with status note and deploy button; replaced text badge with glowing accent/offline sphere; migrated description into header Info tooltip; purged 1024-dim `bge_m3` fallback from manifests and `embedder.rs` to prevent vector dimension mismatch against 384-dim MiniLM-L12 DB schema; `cargo clippy` and `pnpm build` clean.
-- **Triangular cyclic loop shared UI & dictation output selector (2026-09-27):** Built reusable `TriangularLoopSelector.tsx` shared component with 3-node orbital cycle geometry (Paste ➔ Clipboard ➔ Tray ➔ Paste), curved bezier guide arcs, active accent glow filters, dual direct-click and loop-advance interaction, and dynamic status subtitle; tightened aspect ratio (~15% narrower to 184px, ~7% taller to 92px) with dedicated 14px vertical clearance between icons and text labels; integrated into `DictationConfigDesk.tsx`; `pnpm build` clean.
-- **Minimalist keyboard skeleton hotkey visualizer (2026-09-27):** Built shared `KeyboardHotkeySkeleton.tsx` component with 5-row ANSI 60% chassis wireframe, blank uncluttered keycaps with dynamic active key illumination (`rgb(var(--accent))` glow filter), pulsing recording border, and interactive bottom combination pill with inline `Pencil` edit button; replaced 180 lines of ad-hoc keycap SVG in `DictationConfigDesk.tsx`; `pnpm build` clean.
+- **Agentic runtime & tool taxonomy:** Reentrant tool loop, 122 integration tests (73% mutation kill), `nexuss` v0.1.1 with adaptive fanout, and structured JSON provider wire policies.
+- **Cognitive memory stack & eval modularization:** Indexed-block consolidation (Schema v8, 4-prompt split), suggestion review with atomic block ops, and Approach 4 JSON semantic personal memory spec/plan.
+- **Platform ownership & dictation overhaul:** Owner-stamped `VoxEvent` pipeline eliminating TOCTOU races, deterministic hotkey preemption, resident notification lifecycle, and acoustic chronometer UI.
+- **TTS provider integration & model registry audit:** Native `ZipvoiceEngine` in `zipvoice.rs`, Hindi routing fallback, 6-batch plan decoupling model registry from frontend, and `tts_bench` profiling.
+
+---
+
+## 6. Backlog
+
+- **[STT / RCA Needed] Nemotron-3.5 initial boundary clipping:** During TTS reference pack verification via `stt_bench`, Nemotron-3.5 dropped leading tokens on abrupt audio starts (e.g. dropped "The" on `voice_02.wav` and "I didn't" on `voice_05.wav`) where Qwen3-ASR detected them; requires RCA on VAD chunking and CTC prefix blank search window.
+- **[TTS / RCA Needed] ZipVoice voice quality & acoustic profile:** Synthesized audio exhibits muffled frequency response due to reference audio cutoff (<4 kHz dominance) and ODE trajectory blur at >4 steps; requires testing 4-step distilled inference with high-frequency shelved/clean reference clips.
+- **[Benchmark] Pipeline bench & Kokoro vs ZipVoice comparative report:** Execute `pipeline_bench` sequentially across Kokoro and ZipVoice baselines and produce comparative TTFA, RTF, E2E latency, and audio quality assessment report.
 

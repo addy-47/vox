@@ -144,7 +144,7 @@ The system interaction topology is partitioned into 6 distinct, mutually exclusi
    - **Trigger:** An asynchronous observer monitors sustained duration in `InteractionState::Paused`.
    - **Threshold:** 5 continuous minutes ($300\text{s}$) in `Paused` state without user resumption.
    - **Offload Action (Reclaiming ~2.0 GB – 2.8 GB RAM):**
-     - **Always Offload LLM & TTS:** Unloads local LLM (Qwen) and TTS (Chatterbox/Sherpa) model weights from RAM, releasing ~2.5 GB.
+     - **Always Offload LLM & TTS:** Unloads local LLM (Qwen) and TTS (Chatterbox/Sherpa/ZipVoice) model weights from RAM, releasing ~2.5 GB (ZipVoice footprint is ~164 MB).
      - **Conditional STT Retention:**
        - If dictation is active (`dictation_state != Idle`): **STT (Nemotron/Whisper) remains resident in RAM.** This guarantees that user hotkey dictation into external applications remains instantaneous (<10ms onset).
        - If dictation is disabled (`dictation_state == Idle`): **STT model is also offloaded**, reclaiming 100% of model memory.
@@ -250,6 +250,8 @@ Every pipeline error decouples state transition impact from user UI actionabilit
   
 ### 2. Subsystem Error Domains & Notifications
 Subsystem-specific error triggers, categorizations, toast/notification rules, and mitigation strategies are specified exclusively in the **[Notification Center Behavioral & Interface Specification](file:///home/addy/projects/apps/vox/docs/specs/notifications-spec.md)**. Context budgeting and personal identity memory limits are specified in the **[Minimal Cognitive Memory & Session Continuation Spec](file:///home/addy/projects/apps/vox/docs/specs/memory-spec.md)**.
+
+- **ZipVoice Zero-Shot TTS Decoding Failure Mode**: If any required floating-point configuration (`feat_scale`, `t_shift`, `target_rms`, `guidance_scale`) is zero or uninitialized, or if reference audio/text is empty, the native engine returns empty audio samples (silence) rather than an explicit C++ error. The engine wraps this condition into an immediate `VoxEvent::Error` (`TurnAborted` or `Degraded`), preventing silent playback hangs.
 
 ### 3. Panic Containment Architecture
 - **Global Panic Hook:** `vox_lib::run()` registers `std::panic::set_hook` to log thread backtraces at `FATAL` and write an emergency crash log to `~/.vox/crash_reports/`.

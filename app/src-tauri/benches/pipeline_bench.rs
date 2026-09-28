@@ -63,7 +63,7 @@ struct CliArgs {
     #[arg(long)]
     model: Option<String>,
 
-    /// TTS Provider: 'kokoro', 'supertonic', 'edge'
+    /// TTS Provider: 'kokoro', 'supertonic', 'zipvoice', 'edge'
     #[arg(long, default_value = "kokoro")]
     tts: String,
 
@@ -144,6 +144,7 @@ fn main() {
     match args.tts.to_lowercase().as_str() {
         "supertonic" => settings.tts.active = TtsActiveProvider::Supertonic,
         "edge" | "edge_tts" => settings.tts.active = TtsActiveProvider::EdgeTts,
+        "zipvoice" => settings.tts.active = TtsActiveProvider::Zipvoice,
         _ => settings.tts.active = TtsActiveProvider::Kokoro,
     }
 

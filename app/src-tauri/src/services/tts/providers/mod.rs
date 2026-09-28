@@ -3,6 +3,7 @@ pub mod chatterbox_remote;
 pub mod edge_tts;
 pub mod kokoro;
 pub mod supertonic;
+pub mod zipvoice;
 
 use std::sync::{
     atomic::{AtomicBool, AtomicU32},
@@ -12,6 +13,7 @@ use std::sync::{
 
 pub use edge_tts::EdgeTtsProvider;
 pub use kokoro::KokoroEngine;
+pub use zipvoice::{ZipvoiceEngine, ZipvoiceReference};
 
 use crate::{
     core::events::{AudioIntent, VoxEvent},
@@ -27,6 +29,7 @@ pub enum TtsProviderKind {
     Chatterbox,
     ChatterboxRemote,
     EdgeTts,
+    Zipvoice,
 }
 
 /// Execution handles and context passed to a `TtsProvider` for synthesizing a text chunk.

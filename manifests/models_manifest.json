@@ -1,11 +1,11 @@
 {
-  "models_version": "1.6.0",
+  "models_version": "1.7.0",
   "release_notes": [
-    "Stable short group ids: id is the single internal key (kokoro, supertonic, chatterbox, minilm_l12).",
+    "Stable short group ids: id is the single internal key (kokoro, supertonic, chatterbox, minilm_l12, zipvoice).",
     "Short user-facing names: name is display-only, description carries detail.",
     "Rule: version bumps never rename an id."
   ],
-  "total_size_bytes": 9658419030,
+  "total_size_bytes": 9853525622,
   "model_groups": [
     {
       "id": "earshot",
@@ -352,6 +352,65 @@
           "path": "tts/kokoro/lexicon-us-en.txt",
           "size": 5956885,
           "sha256": "7daaab53a181be9885b853a8582bf1838186317e5dadacbcef9c426d6fa0da14",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "zipvoice",
+      "name": "zipvoice",
+      "category": "tts",
+      "subcategory": "main",
+      "description": "Zero-shot flow-matching speech synthesis with Vocos vocoder.",
+      "parameters": "123M (ONNX)",
+      "ram_usage": "~164 MB",
+      "tradeoffs": "Zero-shot reference cloning from 2-3s audio clips, English and Chinese",
+      "version": "1.0.0",
+      "is_built_in": false,
+      "is_cloud": false,
+      "is_remote": false,
+      "files": [
+        {
+          "id": "tts_zipvoice_encoder",
+          "path": "tts/zipvoice/encoder.int8.onnx",
+          "size": 5570211,
+          "sha256": "f2de9a761a85e5ddd125dee6e05bad1c7ee92c11b83b4d775dab216a6aa41379",
+          "required": false
+        },
+        {
+          "id": "tts_zipvoice_decoder",
+          "path": "tts/zipvoice/decoder.int8.onnx",
+          "size": 124657100,
+          "sha256": "3cc2e08a96610d7ea1b227398e97cdbbe0414499741d3aec0b8113db2a2ab251",
+          "required": false
+        },
+        {
+          "id": "tts_zipvoice_vocoder",
+          "path": "tts/zipvoice/vocos_24khz.onnx",
+          "size": 54157409,
+          "sha256": "bcb3b970e384161c4d634f0bb9e999ff1c471b34c9bc0b1049a5014065ed3cc0",
+          "required": false
+        },
+        {
+          "id": "tts_zipvoice_tokens",
+          "path": "tts/zipvoice/tokens.txt",
+          "size": 2570,
+          "sha256": "ce98c1afc5f7a20c2484dffdd68a1fff0a4a2cc707328833750c4476c37cdbda",
+          "required": false
+        },
+        {
+          "id": "tts_zipvoice_lexicon",
+          "path": "tts/zipvoice/lexicon.txt",
+          "size": 1727147,
+          "sha256": "c94b049d970e971acdc2a7e5e7b23ca594222a9d640e417c711f2ad1e7bb7d46",
+          "required": false
+        },
+        {
+          "id": "tts_zipvoice_espeak",
+          "path": "tts/zipvoice/espeak-ng-data.tar.gz",
+          "size": 8992155,
+          "sha256": "225a86c0a34be0d0ea2166ab4455729317869b1e2c64cd5708e40646d035c1c3",
+          "archive": "tar.gz",
           "required": false
         }
       ]

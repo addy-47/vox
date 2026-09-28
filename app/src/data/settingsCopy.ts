@@ -61,6 +61,7 @@ export const SETTINGS_SCOPE_KEYS: Record<SettingsScope, readonly string[]> = {
     "kokoro",
     "chatterbox",
     "chatterbox_remote",
+    "zipvoice",
   ],
   interaction: ["mode", "auto_sleep_timeout", "pipeline_mode"],
   dictation: ["enabled", "interaction_mode", "hotkey", "output_mode"],

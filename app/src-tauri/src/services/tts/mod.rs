@@ -5,9 +5,13 @@ pub mod voice;
 pub use actor::{cool_down_tts, spawn_tts_worker, warm_up_tts, TtsCommand};
 pub use factory::{create_tts_provider, resolve_reference_audio};
 pub use providers::{
-    chatterbox::ChatterboxEngine, chatterbox_remote::ChatterboxRemoteProvider,
-    edge_tts::EdgeTtsProvider, kokoro::KokoroEngine, supertonic::TtsEngine, TtsProvider,
-    TtsProviderKind,
+    chatterbox::ChatterboxEngine,
+    chatterbox_remote::ChatterboxRemoteProvider,
+    edge_tts::EdgeTtsProvider,
+    kokoro::KokoroEngine,
+    supertonic::TtsEngine,
+    zipvoice::{resolve_zipvoice_reference, ZipvoiceEngine, ZipvoiceReference, ZipvoiceVoiceEntry},
+    TtsProvider, TtsProviderKind,
 };
 
 pub use crate::core::error::TtsError;
@@ -19,6 +23,7 @@ pub const TTS_CHUNK_SIZE: usize = 2048;
 pub const MIN_QUALITY_STEPS: u32 = 2;
 pub const MAX_QUALITY_STEPS_CHATTERBOX: u32 = 10;
 pub const MAX_QUALITY_STEPS_SUPERTONIC: u32 = 16;
+pub const MAX_QUALITY_STEPS_ZIPVOICE: u32 = 8;
 pub const MIN_SPEED: f32 = 0.7;
 pub const MAX_SPEED: f32 = 2.0;
 pub const MIN_SPEED_EDGE: f32 = 0.5;
@@ -35,6 +40,7 @@ pub const EDGE_TTS_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)
 pub const EDGE_TTS_SEC_MS_GEC_VERSION: &str = "1-143.0.3650.75";
 pub const EDGE_TTS_WIN_EPOCH: u64 = 11_644_473_600;
 pub const EDGE_TTS_DEFAULT_VOICE: &str = "en-US-AriaNeural";
+pub const EDGE_TTS_HINDI_VOICE: &str = "hi-IN-SwaraNeural";
 pub const EDGE_TTS_VOICES_URL_BASE: &str = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=";
 pub const EDGE_TTS_WS_URL_BASE: &str =
     "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
@@ -64,3 +70,16 @@ pub const CHATTERBOX_MODEL_DIR: &str = "tts/chatterbox";
 pub const MODEL_DIRNAME_CHATTERBOX: &str = "chatterbox";
 pub const MODEL_FILE_TTS_CHATTERBOX_T3: &str = "t3-q4_0.gguf";
 pub const MODEL_FILE_TTS_CHATTERBOX_S3GEN: &str = "s3gen-f16.gguf";
+
+pub const ZIPVOICE_MODEL_DIR: &str = "tts/zipvoice";
+pub const MODEL_FILE_TTS_ZIPVOICE_ENCODER: &str = "encoder.int8.onnx";
+pub const MODEL_FILE_TTS_ZIPVOICE_DECODER: &str = "decoder.int8.onnx";
+pub const MODEL_FILE_TTS_ZIPVOICE_VOCODER: &str = "vocos_24khz.onnx";
+pub const MODEL_FILE_TTS_ZIPVOICE_TOKENS: &str = "tokens.txt";
+pub const MODEL_FILE_TTS_ZIPVOICE_LEXICON: &str = "lexicon.txt";
+pub const MODEL_DIRNAME_TTS_ZIPVOICE_ESPEAK: &str = "espeak-ng-data";
+/// Silence scale for ZipVoice. Must remain 1.0 because sherpa-onnx scales silence after callback generation,
+/// which would cause callback streaming audio to diverge from final audio.
+pub const ZIPVOICE_SILENCE_SCALE: f32 = 1.0;
+pub const MIN_ZIPVOICE_GUIDANCE_SCALE: f32 = 1.0;
+pub const MAX_ZIPVOICE_GUIDANCE_SCALE: f32 = 3.0;

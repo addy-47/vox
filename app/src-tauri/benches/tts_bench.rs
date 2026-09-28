@@ -28,7 +28,7 @@ use common::{
     about = "Vox TTS Synthesis Benchmark (max quality, production seam)"
 )]
 struct CliArgs {
-    /// Model to benchmark: 'supertonic', 'kokoro', 'chatterbox', 'edge' or 'all' (default: all local)
+    /// Model to benchmark: 'supertonic', 'kokoro', 'chatterbox', 'zipvoice', 'edge' or 'all' (default: all local)
     #[arg(long, default_value = "all")]
     model: String,
 
@@ -211,11 +211,13 @@ fn main() {
     let supertonic_dir = home.join(".vox/models/tts/supertonic-3");
     let kokoro_dir = home.join(".vox/models/tts/kokoro");
     let chatterbox_dir = home.join(".vox/models/tts/chatterbox");
+    let zipvoice_dir = home.join(".vox/models/tts/zipvoice");
 
     println!("Model Paths:");
     println!("  Supertonic (16 steps) : {:?}", supertonic_dir);
     println!("  Kokoro v1.1 (multi)   : {:?}", kokoro_dir);
     println!("  Chatterbox (10 steps) : {:?}", chatterbox_dir);
+    println!("  ZipVoice (6 steps)    : {:?}", zipvoice_dir);
     println!("Configuration:");
     println!("  Target Model : {}", args.model);
     println!("  Clip Filter  : {:?}", args.clip);
@@ -223,7 +225,7 @@ fn main() {
     println!("  Voice (base) : {}", args.voice);
     println!("  Output Dir   : {:?}", args.output_dir);
     println!("  WAV Dir      : {:?}", args.wav_dir);
-    println!("  Max Quality  : Supertonic=16 steps, Chatterbox=10 steps, Kokoro=speed 1.0");
+    println!("  Max Quality  : Supertonic=16 steps, Chatterbox=10 steps, Kokoro=speed 1.0, ZipVoice=6 steps");
     println!("  Kokoro Policy: diff voice per clip (voice = idx % 10)");
 
     let prompts = load_benchmark_prompts(&args);
@@ -244,6 +246,7 @@ fn main() {
     let run_supertonic = matches!(model_arg.as_str(), "supertonic" | "super" | "all");
     let run_kokoro = matches!(model_arg.as_str(), "kokoro" | "all");
     let run_chatterbox = matches!(model_arg.as_str(), "chatterbox" | "cb" | "all");
+    let run_zipvoice = matches!(model_arg.as_str(), "zipvoice" | "zv" | "all");
     let run_edge = matches!(model_arg.as_str(), "edge" | "edge_tts");
 
     // Wav persistence: per-run wav dir under report dir + optional extra dir
@@ -334,6 +337,38 @@ fn main() {
             engine_runs.push(run);
         } else {
             eprintln!("[WARN] Chatterbox model not found at {:?}", chatterbox_dir);
+        }
+    }
+
+    // 4) ZipVoice — 6 quality steps, guidance 1.0, speed 1.0, zero-shot reference voice
+    if run_zipvoice {
+        if zipvoice_dir.exists() && zipvoice_dir.join("decoder.int8.onnx").exists() {
+            let zd_str = zipvoice_dir.to_string_lossy().to_string();
+            let voice = base_voice;
+            let voices_dir = zipvoice_dir.join("voices");
+            let initial_ref = vox_lib::services::tts::providers::zipvoice::resolve_zipvoice_reference(&voices_dir, Some("atlas")).ok();
+            let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> = Box::new(
+                vox_lib::services::tts::ZipvoiceEngine::new(
+                    &zipvoice_dir,
+                    1.0,
+                    1.0,
+                    6,
+                    2,
+                    initial_ref,
+                ).expect("Failed to init ZipVoice"),
+            );
+            let run = benchmark_tts_provider(
+                "ZipVoice Distill Int8 (6 steps, guidance 1.0, speed 1.0)",
+                "zipvoice",
+                &zd_str,
+                &prompts,
+                provider,
+                Some(&wav_run_dir),
+                voice,
+            );
+            engine_runs.push(run);
+        } else {
+            eprintln!("[WARN] ZipVoice model not found at {:?}", zipvoice_dir);
         }
     }
 

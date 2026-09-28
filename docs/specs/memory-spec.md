@@ -168,29 +168,45 @@ Deduplication runs via a background quiet ingestion observer task (`spawn_quiet_
 
 ## 5. Stage 3A: Personal Memory & Consolidation Lifecycle
 
-### 5.1 Personal Memory Document & Historical Versioning
-- An evolving markdown document capturing consolidated knowledge about the user, organized with descriptive `##` section headings and bullet points.
-- **Structure Contract (enforced, not advisory)**: every committed version MUST satisfy all four conditions. The contract is a behavioral requirement, not a formatting preference.
-  1. **Descriptive headings**: every `##` heading carries a non-empty, non-whitespace title. A bare `## ` is a defect.
-  2. **Unique headings**: no two headings in one document share the same title (case-insensitive). A repeated heading is a defect.
-  3. **At least one section**: the document contains one or more headings. A flat bullet list with no headings is a defect.
-  4. **Non-empty body**: the document contains at least one content element.
-  - Rationale: without this contract the document degenerates into an append-only bullet list that duplicates facts and never supersedes stale ones. This is the root cause documented in `docs/plans/phase12/consolidation-structured--logic-plan.md` §2.4–§2.6, and it cannot self-repair once written, because every later pass copies the malformed headings it finds.
-  - Enforcement: the same validator gates cold generation (Prompt 1), regeneration, and the acceptance of every patch set (§5.3 step 3). A violating candidate is never committed.
-- Stored in the `personal_memory` table in Turso DB (schema governed by `db-spec.md §2.5`) with versioning and `is_active` status.
+### 5.1 Personal Memory — Semantic Structured Model & Historical Versioning
+- **Canonical Representation**: Personal Memory is a structured semantic JSON object composed of sections and prose blocks. Markdown is a derived rendering for display and system-prompt injection — never the source of truth.
+- **Semantic Object Schema**:
+  ```json
+  {
+    "sections": [
+      {
+        "id": "sec_a1b2c3",
+        "title": "Vox Development",
+        "blocks": [
+          { "id": "blk_x7y8z9", "text": "Addy is building Vox, a voice-first AI assistant." },
+          { "id": "blk_k4m5n6", "text": "He is redesigning its memory system to use semantic prose blocks." }
+        ]
+      }
+    ]
+  }
+  ```
+- **Block Identity**: A block is a semantic unit — 1–3 sentences expressing one coherent idea, chosen by the LLM. Block boundaries are part of the semantic structure that consolidation maintains. IDs are persistent: if `blk_x7y8z9` is rewritten, its ID is preserved. If a block needs to become two independent ideas, the LLM proposes `delete_block` + `create_block` × 2.
+- **ID Assignment**: The application assigns all persistent IDs. The LLM never sees or generates persistent IDs. Format: `sec_{timestamp_hex}_{4-char-uuid}` and `blk_{timestamp_hex}_{4-char-uuid}`.
+- **Structure Contract (enforced, not advisory)**: Every committed version MUST satisfy all four conditions:
+  1. **Non-empty section titles**: every section has a non-empty, non-whitespace title.
+  2. **Unique section titles**: no two sections share the same title (case-insensitive).
+  3. **At least one section**: the memory contains one or more sections.
+  4. **Non-empty blocks**: every block has non-empty text.
+  - Enforcement: the same validator (`PersonalMemory::validate()`) gates cold generation, regeneration, and the acceptance of every revision batch. A violating candidate is never committed.
+- Stored in the `personal_memory` table in Turso DB (schema governed by `db-spec.md §2.5`) with versioning and `is_active` status. The `content` column stores the canonical JSON string.
 - **Historical Immutability**: New consolidations or manual saves insert a new record with `version = max_version + 1` and `is_active = 1`, setting previous versions to `is_active = 0`. Older versions remain permanently accessible in the database.
 - **Version Navigation & Activation**: The Memory Drawer UI provides an interactive version carousel (`[ < ] v{X} [ > ]`) allowing users to inspect older archived versions and promote any historical version back to `is_active = 1` via `set_active_personal_memory_version`.
-- **System Prompt Injection**: Only the currently active version (`is_active = 1`) is injected into the conversational system prompt.
+- **System Prompt Injection**: Only the currently active version (`is_active = 1`) is rendered to Markdown via `PersonalMemory::render_to_markdown()` and injected into the conversational system prompt.
+- **Empty-Section Auto-Pruning**: After any mutation that deletes blocks, sections with zero remaining blocks are automatically pruned. No explicit `delete_section` operation exists.
 
 ### 5.2 User Interaction Modes
-1. **View & Copy**: User views formatted markdown in the UI and can copy the raw markdown text directly to their clipboard.
-2. **Direct Manual Edit**: User directly edits markdown text in the UI and saves changes (modal exclusive: disabled while uncommitted patch suggestions are pending review).
-3. **Comment-Driven Structured Edits**: User leaves directive comments on specific lines/quotes. The backend triggers the comment-directed LLM pass (Prompt 3) taking `[Current Document] + [User Comments]` to generate targeted index-based delta suggestions displayed on the staging slate for user review.
-4. **Version Carousel Navigation**: User flips between previous versions of personal memory to inspect changes over time or restore an earlier version as the active document.
-5. **Regeneration (User-Triggered Reformat)**: User triggers a full reorganization and reformatting of the existing consolidated memory document. The backend runs the regeneration LLM pass on the current document (improving headings, removing duplicate information, improving clarity) and saves the result as a new active version. Regeneration operates strictly on the existing document, NOT on raw facts.
+1. **View & Copy**: User views rendered Markdown in the UI and can copy the raw text directly to their clipboard.
+2. **Comment-Driven Structured Edits**: User leaves directive comments. The backend triggers the comment-directed LLM pass taking `[Current Memory in handle format] + [User Comments]` to generate targeted semantic operation revisions displayed on the staging slate for user review.
+3. **Version Carousel Navigation**: User flips between previous versions of personal memory to inspect changes over time or restore an earlier version as the active document.
+4. **Regeneration (User-Triggered Reorganization)**: User triggers a full reorganization of the existing Personal Memory. The backend runs the regeneration LLM pass on the current semantic memory, producing a complete new structure with fresh IDs, and saves the result as a new active version. Regeneration operates strictly on the existing semantic memory, NOT on raw observations.
 
-### 5.3 Three-Prompt Personal Memory Consolidation Pipeline
-Consolidates personal knowledge through dedicated LLM passes tailored to document state and intent, using a content-element indexed patch engine for incremental edits:
+### 5.3 Personal Memory Consolidation Pipeline (Semantic Operations)
+Consolidates personal knowledge through dedicated LLM passes tailored to memory state and intent, using a semantic operation engine for all mutations:
 
 1. **Candidate Query**:
    `SELECT * FROM memory_facts WHERE type = 'personal' AND status = 'active'`
@@ -198,96 +214,126 @@ Consolidates personal knowledge through dedicated LLM passes tailored to documen
 2. **Execution Gating & Preconditions**:
    Consolidation is NEVER hard-blocked by an active compaction or pending queue items:
    - **Comment-Driven Edits**: Executes immediately regardless of ingestion queue state or ongoing compactions.
-   - **Fact Integration ("Integrate Learned Facts" in UI)**:
+   - **Observation Integration ("Integrate Learned Observations" in UI)**:
      - If an active compaction is in progress (`session_compactions.status = 'in_progress'`), the UI provides a non-blocking resolution choice:
-       1. **Pause / Preempt Compaction & Consolidate Now**: Signals cancellation on the active compaction task, resets its DB record status from `'in_progress'` back to `'pending'` (allowing auto-compaction to resume/pick it back up once consolidation completes), processes pending ingestion items, and immediately runs consolidation.
+       1. **Pause / Preempt Compaction & Consolidate Now**: Signals cancellation on the active compaction task, resets its DB record status from `'in_progress'` back to `'pending'`, processes pending ingestion items, and immediately runs consolidation.
        2. **Queue Consolidation**: Registers the consolidation request in `PendingConsolidationState` to run automatically as soon as the ongoing compaction finishes.
    - **Headless Scheduled Runs**:
      - Headless scheduled runs never raise errors. If a compaction is in progress, the scheduled run is automatically queued in `PendingConsolidationState` and executes as soon as the active compaction and its ingestion cycle finish.
 
-3. **Document Addressing & Content-Element Indexing Model**:
-   - For all incremental edit passes, the runtime parses the current markdown document into a sequence of content elements (headings and bullets). Blank lines and pure whitespace lines are stripped prior to indexing.
-   - Elements are indexed sequentially starting at 1:
+3. **LLM Wire Format — Per-Request Handles**:
+   - For all passes that operate on an existing memory, the runtime renders the current semantic memory into a handle-labelled text format:
      ```
-     [1] ## Languages & Learning
-     [2] - Studying Spanish, has slowed down on Japanese
-     [3] - Reads hard sci-fi books on weekends
-     [4] ## Food & Cooking
-     [5] - Enjoys baking sourdough bread
-     ```
-   - Content-element indices provide a deterministic, stable coordinate system. The LLM references element indices directly rather than retyping prose targets or relying on fuzzy string matching.
+     [s1] Vox Development
+       [b1] Addy is building Vox, a voice-first AI assistant.
+       [b2] He is redesigning its memory system to use semantic prose blocks.
 
-4. **Generation Passes & Prompt Architecture**:
-   - **Prompt 1: Cold Generation (Initial Document)**:
-     - *Trigger*: Invoked when no personal memory document exists yet (empty content / version 0).
-     - *Input*: Active personal facts.
-     - *Task*: Synthesize a comprehensive, well-structured personal profile document in markdown. The LLM freely chooses descriptive `##` section headings and formats facts as bullets.
-     - *Output*: Complete markdown document (not edit operations).
-     - *Validation*: Runtime validates that every heading has a non-empty title, headings are unique, and markdown is well-formed.
-     - *Commit*: Saved directly as version 1 with `is_active = 1`. Candidate facts transition to `'consolidated'`.
-   - **Prompt 2: Incremental Fact Integration**:
-     - *Trigger*: Invoked when an active personal memory document already exists and active personal facts are available.
-     - *Input*: Current document with numbered content elements (`[1]`, `[2]`, ...) + active personal facts.
-     - *Task*: Propose the smallest set of index-addressed atomic edits to integrate the new facts.
-     - *Output Constraint*: JSON Schema enforcing `{ "edits": [ { "op": "insert_after" | "replace" | "delete", "index": number, "text": string } ] }`.
-      - *Op Semantics*:
-        - `insert_after(index, text)`: Inserts new element after index N. `index: 0` prepends at the top of the document. An index beyond the last element is clamped to an append; the content is applied, and the clamp is recorded on the suggestion rather than treated as a failure.
-        - `replace(index, text)`: Replaces the element at index N with `text`.
-        - `delete(index)`: Removes the element at index N (`text` is empty).
-      - *Addressing Limits*: operations are applied from the highest index down, so each is applied at the position the previous one vacated. Consequences the LLM must respect: a new section is opened by inserting its `## Heading` after index N and its bullets after index N+1; a bullet must never share an anchor index with the heading it belongs under, or it lands above that heading. An out-of-range `replace` or `delete` target is dropped by the engine.
-     - *Provenance*: `source_fact_ids` is omitted from the LLM output schema. Grounding is enforced by prompt context and user review.
-   - **Prompt 3: Comment-Directed Edits**:
-     - *Trigger*: Invoked when the user submits directive comments on the active document.
-     - *Input*: Current document with numbered content elements + user comment directives.
-     - *Task*: Propose atomic edits (`insert_after`, `replace`, `delete`) directly applying the user directives.
-     - *Output Constraint*: Identical JSON Schema to Prompt 2, executed through the same patch engine.
-   - **Regeneration Pass (Reformat Existing Document)**:
+     [s2] Reading & Interests
+       [b3] Reads hard sci-fi on weekends.
+     ```
+   - Handles are short per-request labels (`s1`, `s2`, … for sections; `b1`, `b2`, … for blocks, numbered sequentially across all sections). The engine maintains a bidirectional `HandleMap` mapping handles to persistent IDs.
+   - The LLM never sees or assigns persistent IDs. A handle that doesn't exist in the map is a validation error, cleanly rejected.
+
+4. **LLM Output Schema — Flat Grouped Operations**:
+   All four passes share the same `OutputConstraint::JsonSchema` with flat grouped arrays:
+   ```json
+   {
+     "new_sections": [{ "title": "...", "blocks": ["...", "..."] }],
+     "creates": [{ "section": "s1", "text": "..." }],
+     "updates": [{ "block": "b2", "text": "..." }],
+     "deletes": [{ "block": "b3" }]
+   }
+   ```
+   - `new_sections`: create a new section with title and initial blocks. Application assigns `sec_*` and `blk_*` IDs.
+   - `creates`: append a new block to an existing section identified by handle. Application assigns `blk_*` ID.
+   - `updates`: replace the text of an existing block identified by handle. ID is preserved.
+   - `deletes`: remove an existing block identified by handle.
+   - **Deferred operations**: `delete_section` (auto-pruning replaces it), `update_section` / rename (regeneration handles it), `move_block` (regeneration handles it).
+   - **No inter-operation dependencies**: each operation is independently applicable. No `temp_id`, no `after_block_id`. `create_block` appends to the end of its target section.
+
+5. **Generation Passes & Prompt Architecture**:
+   - **Cold Generation (Initial Memory)**:
+     - *Trigger*: Invoked when no personal memory exists yet (empty content / version 0).
+     - *Input*: Active personal observations.
+     - *Task*: Synthesize a coherent semantic memory model. The LLM determines sections, groups related observations into prose blocks (1–3 sentences, one idea each), deduplicates, and removes redundancy.
+     - *Output*: `new_sections` populated; `creates`, `updates`, `deletes` empty.
+     - *Validation*: `PersonalMemory::validate()` — non-empty titles, unique titles, at least one section, non-empty blocks.
+     - *Commit*: Application assigns all IDs, serializes to JSON, saves as version 1 with `is_active = 1`. Candidate observations transition to `'integrated'`.
+   - **Incremental Observation Integration**:
+     - *Trigger*: Invoked when an active personal memory exists and active personal observations are available.
+     - *Input*: Current memory in handle format + active personal observations as a bullet list.
+     - *Task*: Propose the minimal set of semantic operations to integrate the new observations.
+     - *Output*: Flat grouped JSON with `new_sections`, `creates`, `updates`, `deletes` as needed.
+     - *Handle Resolution*: Engine maps per-request handles to persistent IDs. Unresolvable handles are rejected per-operation; the rest of the batch is applied.
+     - *Staging*: Resolved operations are persisted as `personal_memory_revisions` rows with `status = 'pending'`.
+   - **Comment-Directed Edits**:
+     - *Trigger*: Invoked when the user submits directive comments on the active memory.
+     - *Input*: Current memory in handle format + user comment directives.
+     - *Task*: Propose semantic operations applying the user directives.
+     - *Output*: Same flat grouped JSON, staged as pending revisions.
+   - **Regeneration (Reformat Existing Memory)**:
      - *Trigger*: User-initiated "Regenerate" / "Reformat Memory" action.
-     - *Input*: Current active personal memory document (raw text, unindexed).
-     - *Task*: Reformat and reorganize the personal memory document, improving section groupings, eliminating redundant bullets, and polishing clarity without inventing facts. Operates strictly on the current document text, NOT raw facts.
-     - *Commit*: Saved as version `max_version + 1` with `is_active = 1`.
+     - *Input*: Current semantic memory in handle format.
+     - *Task*: Reorganize the memory into a new coherent structure, improving section groupings, eliminating redundancy, polishing clarity without inventing information.
+     - *Output*: `new_sections` only. All IDs are fresh — application assigns new `sec_*` and `blk_*` IDs to every entity.
+     - *Commit*: Saved as version `max_version + 1` with `is_active = 1`. Pending revisions targeting old IDs are bulk-rejected as stale.
    - **Generation Settings (all passes)**:
-     - *Reasoning*: **Disabled** for every pass. The indexed protocol is what makes this safe: an operation carries only `op`, `index`, and a short `text`, so the model never re-quotes the document and there is nothing for it to echo degenerately. The earlier prose-targeting protocol required reasoning ON to avoid whole-document echo operations; that constraint does not survive the move to index addressing.
-     - *Evidence*: measured against `qwen3.5:9b` under strict JSON schema, reasoning ON produced `done_reason=length` with ~3.8k eval tokens of reasoning and **zero** content tokens at every ceiling tried (512 / 1024 / 4096) — the model reasons for the entire output budget and never answers, aborting the cycle. Reasoning OFF completed in ~1s with 55–250 eval tokens, valid minimal JSON, and zero out-of-range or multi-line operations across 6 document/fact combinations.
+     - *JSON Schema Mode*: **`OutputConstraint::JsonSchema` for all four passes.** The previous split where cold generation and regeneration used `OutputConstraint::Text` (raw Markdown) is eliminated. Every pass emits the flat grouped JSON schema.
+     - *Reasoning*: **Disabled** for every pass. Measured against `qwen3.5:9b`: reasoning ON consumed the entire output budget with zero content tokens at every ceiling tried (512 / 1024 / 4096). The flat grouped schema is even smaller than the prior index-addressed edits, so this is strictly safer.
      - *Temperature*: `0.2`. Separate from the compaction temperature: consolidation runs at most once per session, where a reproducible diff matters more than variety.
-     - *Output ceiling*: 4096 tokens, sized as headroom for a small JSON edit list.
+     - *Output ceiling*: 4096 tokens, generous headroom for the compact flat grouped JSON.
 
-5. **Staging & Suggestion Lifecycle**:
-   - Generated operations from Prompt 2 or Prompt 3 are persisted in `personal_memory_suggestions` with `status = 'pending'`.
-   - **INVARIANT 5.3-A (Simplified Fact Transition)**: All candidate personal facts presented to consolidation transition from `status = 'active'` to `status = 'consolidated'` immediately upon staging the suggestions. No facts are trapped in an intermediate `'staged'` state, and candidate facts do not depend on individual suggestion acceptance.
-   - While pending suggestions exist, direct manual editing is locked in the UI to prevent concurrent write races.
+6. **Staging & Revision Lifecycle**:
+   - Generated operations from incremental integration or comment-directed edits are persisted in `personal_memory_revisions` with `status = 'pending'`.
+   - **INVARIANT 5.3-A (Simplified Observation Transition)**: All candidate personal observations presented to consolidation transition from `status = 'active'` to `status = 'integrated'` immediately upon staging the revisions. No observations are trapped in an intermediate state, and candidate observations do not depend on individual revision acceptance.
+   - While pending revisions exist, direct manual editing is locked in the UI to prevent concurrent write races.
 
-6. **Suggestion Resolution**:
-   - Suggestions are resolved individually or in bulk via `resolve_memory_suggestion(id: Option<String>, action: String)`.
+7. **Revision Resolution**:
+   - Revisions are resolved individually or in bulk via `resolve_memory_revisions(decisions: Vec<RevisionDecision>)`.
    - **Action Validation**: `action` MUST be exactly `"accept"` or `"reject"`.
    - **Acceptance (`action = 'accept'`)**:
-      1. Evaluates patch operations against the active document using descending-index sort so earlier element positions remain stable during execution.
-      2. Reconstructs markdown with uniform single blank-line delimiters between sections.
-      3. **Structure Gate**: the reconstructed document is validated with the same contract applied to cold generation — non-empty heading titles, unique heading titles, at least one heading, non-empty body. A candidate document failing this gate MUST NOT be committed; the transaction aborts and no `personal_memory` row is written, so the active version and all suggestion rows are left untouched. This gate exists because a patch set can mint a nameless heading or a duplicate heading, which the append-only failure mode (`docs/plans/phase12/consolidation-structured--logic-plan.md` §2.4) demonstrated cannot self-repair.
-      4. Inserts a new record in `personal_memory` with `version = max_version + 1`, `is_active = 1`, and `last_consolidated_at = now()`. The previous version flips to `is_active = 0`.
-      5. Suggestion rows flip to `status = 'accepted', resolved_at = now()`.
-      6. **INVARIANT 5.3-B (Deterministic Arithmetic Re-anchoring)**: When resolving a single suggestion, any remaining pending suggestions targeting the same document scope have their `base_memory_version` updated to `max_version + 1` and their `target_index` shifted via deterministic arithmetic:
-        - An accepted `insert_after` at index $k$ increments the `target_index` of all remaining pending suggestions where `target_index > k` by $+1$.
-        - An accepted `delete` at index $k$ decrements the `target_index` of all remaining pending suggestions where `target_index > k` by $-1$.
-        - An accepted `replace` at index $k$ leaves all remaining pending indices unchanged.
-        - Pending suggestions remain in `status = 'pending'` and individually resolvable.
+      1. Loads the current `PersonalMemory` from the active version's JSON content.
+      2. Deserializes the `ResolvedOp` from each accepted revision row.
+      3. Applies operations:
+         - `create_block`: append block to target section (by persistent ID), assign new `blk_*` ID.
+         - `update_block`: find block by persistent ID, replace text.
+         - `delete_block`: find block by persistent ID, remove. Auto-prune empty sections.
+         - `create_section`: append section with blocks, assign `sec_*` and `blk_*` IDs.
+      4. **Per-operation rejection**: If an operation targets an ID that no longer exists (deleted by another accepted operation in the same batch, or by a prior accept), that operation is auto-rejected with a reason. The rest of the batch is still applied.
+      5. Validates the result with `PersonalMemory::validate()`.
+      6. Serializes to JSON and inserts a new record in `personal_memory` with `version = max_version + 1`, `is_active = 1`, and `last_consolidated_at = now()`. The previous version flips to `is_active = 0`.
+      7. Revision rows flip to `status = 'accepted', resolved_at = now()`.
+      8. **No re-anchoring required.** Operations address persistent semantic IDs, not positional indices. Accepting one revision never shifts the target of another. Each revision is independently resolvable.
    - **Rejection (`action = 'reject'`)**:
-     1. Suggestion rows flip to `status = 'rejected', resolved_at = now()`.
-     2. Active document remains unchanged — `version` is NOT bumped, and no new `personal_memory` row is written.
-   - **Bulk Resolution (`target_id = None`)**:
-     - Resolves all pending suggestions in a single atomic transaction. On accept, all edits are sorted descending by index and applied together, bumping version once with zero remaining pending suggestions.
+     1. Revision rows flip to `status = 'rejected', resolved_at = now()`.
+     2. Active memory remains unchanged — `version` is NOT bumped, and no new `personal_memory` row is written.
+   - **Bulk Resolution**:
+     - Resolves all decisions in a single atomic transaction. On accept, all operations are applied in one pass, version is bumped once. Per-operation rejection handles conflicts within the batch.
 
-### 5.4 Suggestion Policies & Cadence
-- **Suggestion Policy** (`settings.memory.suggestion_policy`):
-  - `"manual_review"` (default): All fact integration and comment edits land in `personal_memory_suggestions` for user review.
-  - `"auto_apply"`: Non-conflicting `insert_after` and `replace` operations automatically commit into a new document version; deletions are held for user confirmation.
+### 5.4 Revision Policies & Cadence
+- **Revision Policy** (`settings.memory.suggestion_policy`):
+  - `"manual_review"` (default): All observation integration and comment edits land in `personal_memory_revisions` for user review.
+  - `"auto_apply"`: Non-destructive operations (`create_block`, `create_section`, `update_block`) automatically commit into a new memory version; deletions are held for user confirmation.
 - **Cadence** (`settings.memory.consolidation_cadence`):
-  - `"manual"` (default): Triggered on-demand via the `"Integrate Learned Facts"` button or comment regeneration.
+  - `"manual"` (default): Triggered on-demand via the `"Integrate Learned Observations"` button or comment regeneration.
   - `"daily"` (with `settings.memory.consolidation_time` as `"HH:MM"`): Runs daily at configured time.
   - **Missed & Failed Runs**: Runs due while the app was down emit a persistent `personal_consolidation` notification card (`pending`, tap-to-run). A failed run flips its card to `failed` with the error; successes complete silently.
 
-### 5.5 Project Scope (Current)
-Memory is global: the merge folds all `status = 'active'` personal facts into the single document regardless of `project_id` (reserved scaffolding for future project-specific memory). Direct manual edits replace only the document text and leave waiting facts active by design.
+### 5.5 Markdown Rendering
+- `PersonalMemory::render_to_markdown()` is a pure function with zero semantic intelligence:
+  ```
+  ## {section.title}
+  {block.text}
+  {block.text}
+
+  ## {section.title}
+  {block.text}
+  ```
+- Used for: system prompt injection, frontend display, clipboard copy.
+- Contains no IDs, no handles, no structural metadata.
+
+### 5.6 Project Scope (Current)
+Memory is global: the merge folds all `status = 'active'` personal observations into the single semantic memory regardless of `project_id` (reserved scaffolding for future project-specific memory).
 
 ---
 

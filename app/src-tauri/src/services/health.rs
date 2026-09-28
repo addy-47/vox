@@ -9,7 +9,7 @@ use crate::{
     services::{
         llm::{ConnectionConfig, LlmProvider, RemoteTransport, QWEN_MODEL_DIR, QWEN_MODEL_FILE},
         stt::{create_stt_provider, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
-        tts::{CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, SUPERTONIC_MODEL_DIR},
+        tts::{CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, SUPERTONIC_MODEL_DIR, ZIPVOICE_MODEL_DIR},
     },
     utils::paths,
 };
@@ -218,6 +218,10 @@ pub async fn check_tts_health(
                 Ok(resp) => Ok(resp.status().is_success() || resp.status().as_u16() < 500),
                 _ => Ok(false),
             }
+        }
+        TtsProviderConfig::Zipvoice { .. } => {
+            let models_dir = paths::get().models.clone();
+            Ok(models_dir.join(ZIPVOICE_MODEL_DIR).exists())
         }
     }
 }

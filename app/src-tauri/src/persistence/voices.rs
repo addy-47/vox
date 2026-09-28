@@ -206,3 +206,91 @@ async fn seed_single_voice(conn: &Connection, name_str: &str, path: &Path) -> Re
     }
     Ok(())
 }
+
+pub async fn seed_zipvoice_voices(conn: &Connection) -> Result<()> {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => return Ok(()),
+    };
+    let packaged_voices_dir = home
+        .join(".vox")
+        .join("models")
+        .join("tts")
+        .join("zipvoice")
+        .join("voices");
+    if !packaged_voices_dir.exists() {
+        return Ok(());
+    }
+
+    let entries = read_dir(&packaged_voices_dir)?;
+
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(slug) = path.file_name().and_then(|n| n.to_str()) {
+                if path.join("clip.wav").exists() && path.join("reference.txt").exists() {
+                    seed_single_zipvoice(conn, slug, &path).await?;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn seed_single_zipvoice(conn: &Connection, slug: &str, path: &Path) -> Result<()> {
+    let id = format!("zipvoice_voice_{}", slug);
+    let mut rows = conn
+        .query("SELECT 1 FROM voices WHERE id = ?", (id.clone(),))
+        .await?;
+
+    let exists = rows.next().await?.is_some();
+    if !exists {
+        let name = match slug {
+            "atlas" => "Atlas (Calm)".to_string(),
+            "nova" => "Nova (Warm)".to_string(),
+            "alfred" => "Alfred (Formal)".to_string(),
+            "vera" => "Vera (Energetic)".to_string(),
+            "sage" => "Sage (Measured)".to_string(),
+            "maya" => "Maya (Approachable)".to_string(),
+            "claire" => "Claire (Polished)".to_string(),
+            "iris" => "Iris (Empathetic)".to_string(),
+            other => {
+                let mut c = other.chars();
+                match c.next() {
+                    None => String::new(),
+                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                }
+            }
+        };
+
+        let wav_path = path.join("clip.wav").to_string_lossy().into_owned();
+        let voice_dir = path.to_string_lossy().into_owned();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        conn.execute(
+            "INSERT INTO voices (id, name, source_kind, wav_path, voice_dir, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                id.clone(),
+                name.clone(),
+                "zipvoice_pack".to_string(),
+                Some(wav_path),
+                Some(voice_dir),
+                now,
+            ),
+        )
+        .await?;
+        log::info!(
+            "[Persistence::Schema] Seeded ZipVoice packaged voice '{}' (id={})",
+            name,
+            id
+        );
+    }
+    Ok(())
+}
+

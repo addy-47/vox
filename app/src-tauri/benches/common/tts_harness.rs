@@ -122,6 +122,7 @@ pub fn benchmark_tts_provider(
 
     let handle = std::thread::Builder::new()
         .name("bench-tts-persistent".to_string())
+        .stack_size(8 * 1024 * 1024)
         .spawn(move || {
             spawn_tts_worker(rx, provider, worker_handles);
         })

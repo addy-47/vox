@@ -46,6 +46,7 @@ const FALLBACK_CAPS: Record<string, ProviderCaps> = {
   chatterbox: { voices: "custom", speed: true, quality_steps: true, clone: true },
   chatterbox_remote: { voices: "custom", speed: true, quality_steps: true, clone: true },
   edge_tts: { voices: "edge", speed: false, quality_steps: false, clone: false },
+  zipvoice: { voices: "custom", speed: true, quality_steps: true, clone: false },
 };
 
 const DEFAULT_CAPS: ProviderCaps = { voices: "catalog", speed: true, quality_steps: false, clone: false };

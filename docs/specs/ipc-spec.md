@@ -244,16 +244,17 @@ Controls the voice interaction lifecycle and hardware devices.
 
 ---
 
-### 2.6 Settings & Setup Domain (`ipc/settings.rs` & `ipc/setup.rs`)
+### 2.6 Settings & Setup Domain (`ipc/settings/{catalog,core,mutation}.rs` & `ipc/setup.rs`)
 Manages configuration and model assets.
 
 #### `get_settings()` & `update_setting(key: String, value: Value)` & `reset_settings()`
 - **Purpose**: Reads, mutates, or resets application configuration.
-- **Behavior**: Atomically updates `settings.json` with schema validation, hot-reloads live workers (VAD thresholds, speech rate, compute threads), and emits `IpcEvent::SettingsUpdated`.
+- **Behavior**: Atomically updates `settings.json` with schema validation, hot-reloads live workers (VAD thresholds, speech rate, compute threads), and emits `IpcEvent::SettingsUpdated`. Supports provider-specific TTS sub-struct keys: `tts.chatterbox`, `tts.chatterbox_remote`, and `tts.zipvoice` (`{ voice_id: Option<String>, guidance_scale: f32 }`).
 
 #### `get_model_catalog()` & `get_provider_caps()`
 - **Purpose**: Queries verified models and dynamic provider capabilities.
-- **Behavior**: Reads canonical models manifest and inspects hardware acceleration support.
+- **Behavior**: Reads canonical models manifest and inspects hardware acceleration support. Canonical TTS provider IDs: `supertonic`, `kokoro`, `chatterbox`, `chatterbox_remote`, `edge_tts`, and `zipvoice`.
+- **Capability Contract**: Returns `ProviderCaps { voices: ProviderVoiceSource, speed: bool, quality_steps: bool, clone: bool }`. For `zipvoice`, caps are `{ voices: Custom, speed: true, quality_steps: true, clone: false }`. Unknown provider IDs MUST return an explicit error and never silently fall through to default/catalog capabilities.
 
 #### `manage_models(action: String, modelId: String)` & `check_updates()`
 - **Purpose**: Downloads, verifies SHA256 integrity, extracts, or deletes local model weight archives.
@@ -269,8 +270,8 @@ Window visibility and custom TTS voice management.
 - **Behavior**: Controls native WebKitGTK / platform window visibility and focus states.
 
 #### `list_voices()`, `add_voice_from_file()`, `add_voice_from_recording()`, `delete_voice()`, `rename_voice()`
-- **Purpose**: Custom voice profile CRUD for Sherpa-ONNX / Kokoro TTS.
-- **Behavior**: Manages reference WAV audio files and metadata in Turso `voices` table.
+- **Purpose**: Custom voice profile CRUD for Chatterbox and Sherpa-ONNX (Kokoro, ZipVoice).
+- **Behavior**: Manages reference WAV audio files and metadata in Turso `voices` table. ZipVoice reads packaged directory sidecars (`voices/<slug>/clip.wav` + `reference.txt` with ID prefix `zipvoice_voice_<slug>`); arbitrary user-uploaded clone clips are disabled (`clone: false`) until database schema migration support for sidecar transcripts is added.
 
 ---
 

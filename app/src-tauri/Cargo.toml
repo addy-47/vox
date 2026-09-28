@@ -109,10 +109,10 @@ enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 tauri = { version = "2", features = ["macos-private-api"] }
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
-sherpa-onnx = { version = "1.13.6", default-features = false, features = ["static"] }
+sherpa-onnx = { version = "1.13.8", default-features = false, features = ["shared"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-sherpa-onnx = { version = "1.13.6", default-features = false, features = ["shared"] }
+sherpa-onnx = { version = "1.13.8", default-features = false, features = ["shared"] }
 
 [dev-dependencies]
 tempfile = "3"
@@ -137,26 +137,6 @@ name = "voice_clone"
 
 [[example]]
 name = "generate_simulation_dataset_clips"
-
-[[bin]]
-name = "memory_compaction_eval"
-path = "evals/memory_compaction_eval.rs"
-
-[[bin]]
-name = "memory_ingestion_eval"
-path = "evals/memory_ingestion_eval.rs"
-
-[[bin]]
-name = "memory_consolidation_eval"
-path = "evals/memory_consolidation_eval.rs"
-
-[[bin]]
-name = "agentic_tool_eval"
-path = "evals/agentic_tool_eval.rs"
-
-[[bin]]
-name = "memory_pipeline_eval"
-path = "evals/memory_pipeline_eval.rs"
 
 [[bench]]
 name = "stt_bench"
