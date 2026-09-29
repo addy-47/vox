@@ -288,10 +288,8 @@ pub fn init_transliteration_engine() -> Result<(), String> {
     let models_dir = if let Some(p) = try_get() {
         p.models.clone()
     } else {
-        dirs::home_dir()
-            .unwrap_or_default()
-            .join(".vox")
-            .join("models")
+        crate::utils::paths::init();
+        crate::utils::paths::models_dir()
     };
 
     let model_path = models_dir.join(TRANSLIT_MODEL_DIR);

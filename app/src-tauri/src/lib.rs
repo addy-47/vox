@@ -135,8 +135,8 @@ pub fn run() {
             backtrace
         );
 
-        // Emergency write to crash_reports if paths are available
-        let crash_dir = paths::get().root.join("crash_reports");
+        // Emergency write to crashes directory if paths are available
+        let crash_dir = paths::try_get().map(|p| p.crashes).unwrap_or_else(paths::crashes_dir);
         if create_dir_all(&crash_dir).is_ok() {
             let timestamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -207,20 +207,13 @@ pub fn run() {
                 .spawn(warmup_tokenizer)
                 .ok();
 
-            // ── 0. Paths Singleton (must be first) ──────────────────────────────────
+            // ── 0. Paths Singleton & Migration (must be first) ──────────────────────
             paths::init();
+            paths::migrate_legacy_layout(&paths::get().root);
             paths::ensure_dirs().ok();
 
-            // Clear ephemeral dictation history cache on boot
-            let dictation_cache = paths::cache_dir().join("dictation_history.jsonl");
-            if dictation_cache.exists() {
-                if let Err(e) = std::fs::remove_file(&dictation_cache) {
-                    log::warn!("[Bootstrap] Failed to clear ephemeral dictation cache: {}", e);
-                }
-            }
-
             // ── 0.1 Logging (must be initialized immediately after paths) ───────────
-            let log_guard = logging::init(paths::get().logs.clone());
+            let log_guard = logging::init(paths::logs_dir());
 
             // ── Background Manifest Caching (fetches once at boot) ──────────────────
             tauri::async_runtime::spawn(async {

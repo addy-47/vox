@@ -1,6 +1,7 @@
 pub mod audio_filters;
 pub mod hardware;
 pub mod json;
+pub mod jsonc;
 pub mod logging;
 pub mod paths;
 

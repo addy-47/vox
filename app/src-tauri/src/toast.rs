@@ -71,7 +71,7 @@ fn dispatch_linux_notification(
     message: &str,
     duration_ms: Option<u64>,
 ) -> ToastDeliveryOutcome {
-    let icon_path = ensure_vox_icon_on_disk();
+    let icon_path = crate::utils::paths::notification_icon();
     let duration_str = duration_ms.unwrap_or(3500).to_string();
 
     let mut cmd = Command::new("notify-send");
@@ -267,7 +267,7 @@ pub fn update_replaceable_toast(
 /// Dispatches a first-show Linux card and captures the server ID via `notify-send --print-id`.
 #[cfg(target_os = "linux")]
 fn first_show_linux(title: &str, message: &str, duration_ms: u64) -> u32 {
-    let icon_path = ensure_vox_icon_on_disk();
+    let icon_path = crate::utils::paths::notification_icon();
     let duration_str = duration_ms.to_string();
 
     let mut cmd = Command::new("notify-send");
@@ -296,7 +296,7 @@ fn first_show_linux(title: &str, message: &str, duration_ms: u64) -> u32 {
 /// Replaces a live Linux card in place via `notify-send --replace-id`.
 #[cfg(target_os = "linux")]
 fn replace_linux(server_id: u32, title: &str, message: &str, duration_ms: u64) {
-    let icon_path = ensure_vox_icon_on_disk();
+    let icon_path = crate::utils::paths::notification_icon();
     let duration_str = duration_ms.to_string();
 
     let mut cmd = Command::new("notify-send");
@@ -327,21 +327,4 @@ fn replace_linux(server_id: u32, title: &str, message: &str, duration_ms: u64) {
 #[cfg(target_os = "linux")]
 fn parse_notify_server_id(stdout: &[u8]) -> u32 {
     String::from_utf8_lossy(stdout).trim().parse().unwrap_or(0)
-}
-
-#[cfg(target_os = "linux")]
-fn ensure_vox_icon_on_disk() -> String {
-    if let Some(home) = dirs::home_dir() {
-        let icon_dir = home.join(".vox").join("icons");
-        let icon_file = icon_dir.join("vox.png");
-        if icon_file.exists() {
-            return icon_file.to_string_lossy().to_string();
-        }
-        let _ = std::fs::create_dir_all(&icon_dir);
-        static VOX_ICON_BYTES: &[u8] = include_bytes!("../icons/128x128.png");
-        if std::fs::write(&icon_file, VOX_ICON_BYTES).is_ok() {
-            return icon_file.to_string_lossy().to_string();
-        }
-    }
-    "dialog-information".to_string()
 }

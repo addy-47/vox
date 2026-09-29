@@ -142,18 +142,20 @@ impl TempPathsGuard {
         let dir = tempfile::tempdir().expect("Failed to create temporary directory for test");
         let temp_path = dir.path().to_path_buf();
 
-        // Seed test database from tests/assets/test_vox.db if available
+        // Seed test database from tests/assets/test_vox.db into canonical data/db/
         let asset_db = get_asset_path(TEST_DB_FILENAME);
+        let data_db_dir = temp_path.join("data").join("db");
+        let _ = std::fs::create_dir_all(&data_db_dir);
         if asset_db.exists() {
-            let target_test_db = temp_path.join(TEST_DB_FILENAME);
-            let _ = std::fs::copy(&asset_db, &target_test_db);
-            let target_db = temp_path.join(vox_lib::utils::paths::DB_FILENAME);
+            let target_db = data_db_dir.join(vox_lib::utils::paths::DB_FILENAME);
             let _ = std::fs::copy(&asset_db, &target_db);
         }
 
-        // Symlink models directory from ~/.vox/models if available to enable test fixtures
+        // Symlink models directory from real models if available to enable test fixtures
         if let Some(home) = dirs::home_dir() {
-            let real_models = home.join(".vox").join("models");
+            let real_models = std::env::var("VOX_MODELS_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| home.join(".vox").join("models"));
             if real_models.exists() {
                 let target_models = temp_path.join("models");
                 #[cfg(unix)]
@@ -164,6 +166,7 @@ impl TempPathsGuard {
         let prev_vox_home = std::env::var("VOX_HOME").ok();
         std::env::set_var("VOX_HOME", &temp_path);
         vox_lib::utils::paths::init_with_root(temp_path);
+        let _ = vox_lib::utils::paths::ensure_dirs();
 
         Self {
             _dir: dir,

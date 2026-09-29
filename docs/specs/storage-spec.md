@@ -73,7 +73,8 @@ Provider API keys and tokens must reside strictly in `providers.jsonc` (or syste
 ├── cache/                           # Tier 4: Disposable Scratch (Safe to wipe anytime)
 │   ├── catalog/                     # Remote provider model catalog cache
 │   ├── updates/                     # Update check cache (app_manifest.json)
-│   └── temp/                        # Audio resampling scratch & transient IPC buffers
+│   ├── temp/                        # Audio resampling scratch & transient IPC buffers
+│   └── vox.png                      # Materialized desktop icon for Linux notify-send
 │
 ├── diagnostics/                     # Tier 5: Observability & Diagnostics
 │   ├── logs/
