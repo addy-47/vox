@@ -249,20 +249,9 @@ pub fn init_dictation_hotkey_listener<R: tauri::Runtime>(
 
 #[cfg(target_os = "linux")]
 fn init_linux_wayland_hotkey_daemon(shortcut_str: &str) {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => {
-            log::warn!(
-                "[Dictation::Wayland] Could not determine home dir; skipping Wayland socket daemon"
-            );
-            return;
-        }
-    };
-
-    let vox_dir = home.join(".vox");
-    let bin_dir = vox_dir.join("bin");
-    let socket_path = vox_dir.join("vox.sock");
-    let trigger_path = bin_dir.join("vox-trigger");
+    let p = crate::utils::paths::get();
+    let socket_path = p.socket.clone();
+    let trigger_path = p.trigger_script.clone();
 
     // 1. Ensure trigger script is present and executable
     if let Err(e) = ensure_trigger_script(&trigger_path, &socket_path) {

@@ -23,7 +23,7 @@ pub use crate::{
 pub async fn get_transcript_history(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<String>, VoxIpcError> {
-    let file_path = paths::cache_dir().join("dictation_history.jsonl");
+    let file_path = paths::dictation_history_file();
     if !file_path.exists() {
         return Ok(Vec::new());
     }

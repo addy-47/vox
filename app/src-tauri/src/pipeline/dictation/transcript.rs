@@ -21,8 +21,6 @@ use crate::{
     utils::paths,
 };
 
-const DICTATION_HISTORY_FILENAME: &str = "dictation_history.jsonl";
-
 /// Routes finalized transcript directly to OS input simulation without invoking LLM or TTS.
 pub fn on_transcript_final<R: tauri::Runtime>(
     turn_id: u32,
@@ -152,10 +150,9 @@ pub fn on_transcript_final<R: tauri::Runtime>(
     }
 }
 
-/// Appends a finalized dictation transcript record into the JSONL cache.
+/// Appends a finalized dictation transcript record into durable JSONL history.
 fn append_to_cache_history(text: &str) {
-    let cache_dir = paths::cache_dir();
-    let file_path = cache_dir.join(DICTATION_HISTORY_FILENAME);
+    let file_path = paths::dictation_history_file();
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

@@ -266,18 +266,50 @@ fn test_settings_json_roundtrip_persistence() {
 
     // Validate raw JSON schema contains mutated values
     let json_val: serde_json::Value =
-        serde_json::from_str(&raw_content).expect("settings.json must be valid JSON");
+        vox_lib::utils::jsonc::from_jsonc_str(&raw_content).expect("settings.jsonc must be valid JSONC");
     assert_eq!(
         json_val["tts"]["voice_index"], 42,
         "Raw JSON must contain mutated tts.voice_index == 42"
     );
     assert_eq!(
-        json_val["llm"]["context_window"], 16384,
-        "Raw JSON must contain mutated llm.context_window == 16384"
+        json_val["llm"]["active"], "server",
+        "Raw JSON must contain mutated llm.active == server"
     );
     assert_eq!(
         json_val["appearance"]["accent_seed"], "#8B5CF6",
         "Raw JSON must contain mutated appearance.accent_seed"
+    );
+
+    // Verify providers.jsonc existence and 0600 permissions
+    let providers_path = vox_lib::utils::paths::providers_path();
+    assert!(
+        providers_path.exists(),
+        "providers.jsonc must exist at paths::providers_path() after save"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = fs::metadata(&providers_path).unwrap().permissions();
+        assert_eq!(perms.mode() & 0o777, 0o600, "providers.jsonc must be chmod 0600");
+    }
+
+    // Verify agent.jsonc contains cognitive params
+    let agent_path = vox_lib::utils::paths::agent_path();
+    assert!(
+        agent_path.exists(),
+        "agent.jsonc must exist at paths::agent_path() after save"
+    );
+    let agent_raw =
+        fs::read_to_string(&agent_path).expect("agent.jsonc must be readable after save");
+    let agent_val: serde_json::Value =
+        vox_lib::utils::jsonc::from_jsonc_str(&agent_raw).expect("agent.jsonc must be valid JSONC");
+    assert_eq!(
+        agent_val["cognitive"]["context_window"], 16384,
+        "Raw JSON must contain mutated cognitive.context_window == 16384"
+    );
+    assert_eq!(
+        agent_val["working_memory"]["private_mode"], true,
+        "Raw JSON must contain mutated working_memory.private_mode == true"
     );
 
     // 5. Reload settings from disk via SUT: VoxSettings::load
@@ -322,7 +354,7 @@ fn test_settings_malformed_fallback_to_default() {
 
     let settings_path = vox_lib::utils::paths::settings_path();
 
-    // Write completely malformed JSON to settings.json
+    // Write completely malformed JSON to settings.jsonc
     fs::write(&settings_path, b"{\"corrupt_json_unclosed: true, ")
         .expect("Failed to write corrupt settings file");
 
@@ -345,7 +377,7 @@ fn test_settings_malformed_fallback_to_default() {
         defaults.personal_memory.context_retrieval_enabled
     );
 
-    // 2. Assert the corrupt file was backed up to settings.corrupt.<ts>.json
+    // 2. Assert the corrupt file was backed up to settings.corrupt.<ts>.jsonc
     let parent = settings_path
         .parent()
         .expect("settings_path parent must exist");
@@ -353,7 +385,7 @@ fn test_settings_malformed_fallback_to_default() {
     if let Ok(entries) = fs::read_dir(parent) {
         for entry in entries.flatten() {
             let filename = entry.file_name().to_string_lossy().to_string();
-            if filename.starts_with("settings.corrupt.") && filename.ends_with(".json") {
+            if filename.starts_with("settings.corrupt.") && (filename.ends_with(".jsonc") || filename.ends_with(".json")) {
                 found_corrupt_backup = true;
                 let backup_content =
                     fs::read_to_string(entry.path()).expect("Backup file must be readable");
@@ -367,7 +399,7 @@ fn test_settings_malformed_fallback_to_default() {
     }
     assert!(
         found_corrupt_backup,
-        "A timestamped backup settings.corrupt.<ts>.json must be created on corrupt parse"
+        "A timestamped backup settings.corrupt.<ts>.jsonc must be created on corrupt parse"
     );
 
     assert!(
@@ -395,7 +427,7 @@ fn test_settings_partial_section_recovery() {
         "tts": {
             "active": "kokoro",
             "voice_index": 77,
-            // Stale key from a pre-0.5 settings.json: must be ignored, not fatal.
+            // Stale key from a pre-0.5 settings.jsonc: must be ignored, not fatal.
             "quality_steps": 5,
             "speed": 1.05,
             "threads": 4
@@ -431,3 +463,113 @@ fn test_settings_partial_section_recovery() {
         "test_settings_partial_section_recovery exceeded 10s deadline"
     );
 }
+
+// ============================================================================
+// Subtest 4: test_settings_jsonc_with_comments_support
+// ============================================================================
+#[test]
+fn test_settings_jsonc_with_comments_support() {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let _guard = TempPathsGuard::new();
+
+    let settings_path = vox_lib::utils::paths::settings_path();
+    let providers_path = vox_lib::utils::paths::providers_path();
+    let agent_path = vox_lib::utils::paths::agent_path();
+
+    let settings_jsonc = r##"
+    // Global hardware and audio configuration
+    {
+        /* Audio output settings */
+        "audio": {
+            "output_mode": "Headset", // User wears headphones
+            "input_device": null
+        },
+        // DSP noise gate threshold
+        "vad": {
+            "threshold": 0.65,
+            "ptt_noise_gate": 0.02,
+            "vad_backend": "earshot",
+            "silence_duration_ms": 350,
+            "speech_onset_ms": 32,
+            "max_speech_duration_s": 25
+        },
+        "appearance": {
+            "theme": "dark_modern",
+            "accent_seed": "#10B981"
+        }
+    }
+    "##;
+
+    let providers_jsonc = r#"
+    // Cloud and server model endpoints
+    {
+        /* Remote LLM provider configuration */
+        "llm": {
+            "server": {
+                "base_url": "http://100.67.98.126:11435", // Ollama server URL
+                "model": "qwen3.5:9b",
+                "api_key": null,
+                "provider_name": "Ollama"
+            },
+            "cloud": {
+                "base_url": "https://api.together.xyz/v1",
+                "model": "meta/llama-3.1",
+                "api_key": "test-key-12345",
+                "provider_name": "Together"
+            },
+            "cloud_keys": {}
+        }
+    }
+    "#;
+
+    let agent_jsonc = r#"
+    // Persona and memory policies
+    {
+        /* Cognitive reasoning parameters */
+        "cognitive": {
+            "temperature": 0.42,
+            "compaction_temperature": 0.3,
+            "max_output_tokens": 150,
+            "context_window": 12000,
+            "reasoning_enabled": true
+        },
+        // Incognito mode setting
+        "working_memory": {
+            "private_mode": true,
+            "auto_compaction": true,
+            "max_context_share": 0.25,
+            "web_search_enabled": false
+        }
+    }
+    "#;
+
+    fs::write(&settings_path, settings_jsonc).expect("Failed to write settings.jsonc");
+    fs::write(&providers_path, providers_jsonc).expect("Failed to write providers.jsonc");
+    fs::write(&agent_path, agent_jsonc).expect("Failed to write agent.jsonc");
+
+    // SUT: VoxSettings::load on JSONC files with comments
+    let loaded = VoxSettings::load();
+
+    // Verify parsed values from JSONC comments files
+    assert_eq!(loaded.audio.output_mode, AudioOutputMode::Headset);
+    assert!((loaded.vad.threshold - 0.65).abs() < 1e-5);
+    assert_eq!(loaded.vad.vad_backend, VadBackendOption::Earshot);
+    assert_eq!(loaded.appearance.theme, "dark_modern");
+    assert_eq!(loaded.appearance.accent_seed, "#10B981");
+
+    assert_eq!(loaded.llm.server.base_url, "http://100.67.98.126:11435");
+    assert_eq!(loaded.llm.server.model, "qwen3.5:9b");
+    assert_eq!(loaded.llm.cloud.api_key.as_deref(), Some("test-key-12345"));
+
+    assert!((loaded.llm.temperature - 0.42).abs() < 1e-5);
+    assert_eq!(loaded.llm.context_window, 12000);
+    assert!(loaded.llm.reasoning_enabled);
+    assert!(loaded.working_memory.private_mode);
+    assert!(loaded.working_memory.auto_compaction);
+
+    assert!(
+        Instant::now() < deadline,
+        "test_settings_jsonc_with_comments_support exceeded 10s deadline"
+    );
+}
+

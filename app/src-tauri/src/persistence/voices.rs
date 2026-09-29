@@ -185,13 +185,11 @@ pub async fn rename_voice(conn: &Connection, id: &str, name: &str) -> Result<()>
 }
 
 pub async fn seed_packaged_voices(conn: &Connection) -> Result<()> {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
+    let models_dir = match crate::utils::paths::try_get() {
+        Some(p) => p.models,
         None => return Ok(()),
     };
-    let packaged_voices_dir = home
-        .join(".vox")
-        .join("models")
+    let packaged_voices_dir = models_dir
         .join("tts")
         .join("chatterbox")
         .join("voices");
@@ -265,13 +263,11 @@ async fn seed_single_voice(conn: &Connection, name_str: &str, path: &Path) -> Re
 }
 
 pub async fn seed_zipvoice_voices(conn: &Connection) -> Result<()> {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
+    let models_dir = match crate::utils::paths::try_get() {
+        Some(p) => p.models,
         None => return Ok(()),
     };
-    let packaged_voices_dir = home
-        .join(".vox")
-        .join("models")
+    let packaged_voices_dir = models_dir
         .join("tts")
         .join("zipvoice")
         .join("voices");

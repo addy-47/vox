@@ -5,7 +5,7 @@ use ndarray::Array2;
 use parking_lot::Mutex;
 use tokenizers::Tokenizer;
 
-use crate::utils::paths::try_get;
+use crate::utils::paths::{try_get, init, models_dir};
 
 /// ONNX session container for running dense sentence text embeddings.
 pub struct TextEmbedder {
@@ -103,10 +103,8 @@ pub fn ensure_embedder_loaded(memory_enabled: bool) -> Result<bool> {
     let models_dir = if let Some(p) = try_get() {
         p.models.clone()
     } else {
-        dirs::home_dir()
-            .unwrap_or_default()
-            .join(".vox")
-            .join("models")
+        init();
+        models_dir()
     };
 
     let minilm_dir = models_dir
