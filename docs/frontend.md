@@ -7,7 +7,7 @@ related_docs:
   - "docs/specs/design-spec.md — Authoritative design system (tokens, type, elevation)"
   - "docs/backend.md           — Rust backend, IPC events, provider architecture"
   - "docs/features/performance-memory-optimizations.md — Sole owner of perf/memory details"
-  - "docs/features/dictation.md            — Dictation subsystem & output architecture"
+  - "docs/specs/dictation-spec.md            — Dictation subsystem & output architecture"
   - "AGENTS.md §2, §5          — Workspace map & system invariants"
 ---
 
@@ -220,7 +220,7 @@ app/src/
 - `docs/specs/design-spec.md` — tokens, type system, elevation, motion, accessibility (authoritative).
 - `docs/backend.md` — Rust architecture, IPC event contract (§8), settings reload policies (§10).
 - `docs/features/performance-memory-optimizations.md` — **SSOT for all perf/memory detail** (frontend §11 + backend §1).
-- `docs/features/dictation.md` — dictation subsystem & output architecture.
+- `docs/specs/dictation-spec.md` — dictation subsystem & output architecture.
 - `AGENTS.md §2` — workspace directory map. `AGENTS.md §5` — system invariants (dictation axes, lazy windows, drawer portal).
 Keyboard contract: `app/src/data/shortcuts.ts` (SSOT) + `docs/specs/design-spec.md` §14; spatial nav zones via `shared/lib/spatialNavigation.ts`.
 - `.agents/rules/frontend-engineer.md` — frontend role invariants. `.agents/rules/code-style-guide.md` — Rust + TS standards.

@@ -52,6 +52,38 @@ struct CliArgs {
     #[arg(long, default_value_t = 0)]
     voice: i32,
 
+    /// ZipVoice-only: restrict to a single pack slug (e.g. atlas). Default: all voices.
+    #[arg(long)]
+    slug: Option<String>,
+
+    /// ZipVoice-only: flow-matching steps (default 4).
+    #[arg(long, default_value_t = 4)]
+    zv_steps: i32,
+
+    /// ZipVoice-only: classifier-free guidance scale (default 1.0).
+    #[arg(long, default_value_t = 1.0)]
+    zv_guidance: f32,
+
+    /// ZipVoice-only: prompt mel log scaling factor (default 0.1).
+    #[arg(long, default_value_t = 0.1)]
+    zv_feat_scale: f32,
+
+    /// ZipVoice-only: decoder timestep shift (default 0.5).
+    #[arg(long, default_value_t = 0.5)]
+    zv_t_shift: f32,
+
+    /// ZipVoice-only: prompt RMS normalization target (default 0.1).
+    #[arg(long, default_value_t = 0.1)]
+    zv_target_rms: f32,
+
+    /// ZipVoice-only: min sentence-chunk chars (default 10).
+    #[arg(long, default_value_t = 10)]
+    zv_min_char: i32,
+
+    /// ZipVoice-only: ONNX threads per provider (default 2).
+    #[arg(long, default_value_t = 2)]
+    zv_threads: u32,
+
     /// Passed by cargo bench harness runner (ignored)
     #[arg(long, hide = true)]
     bench: bool,
@@ -342,7 +374,7 @@ fn main() {
         }
     }
 
-    // 4) ZipVoice — 4 fixed steps (distilled target), guidance 1.0, speed 1.0, one provider per packaged voice
+    // 4) ZipVoice — distilled target, one provider per packaged voice (or --slug), bench-driven tuning
     if run_zipvoice {
         if zipvoice_dir.exists() && zipvoice_dir.join("decoder.int8.onnx").exists() {
             let zd_str = zipvoice_dir.to_string_lossy().to_string();
@@ -353,30 +385,48 @@ fn main() {
             if pack.is_empty() {
                 eprintln!("[WARN] No ZipVoice reference voices found in {:?}", voices_dir);
             }
+            let tuning = vox_lib::services::tts::providers::zipvoice::ZipvoiceTuning {
+                steps: args.zv_steps,
+                guidance_scale: args.zv_guidance,
+                feat_scale: args.zv_feat_scale,
+                t_shift: args.zv_t_shift,
+                target_rms: args.zv_target_rms,
+                min_char_in_sentence: args.zv_min_char,
+            };
             for entry in &pack {
+                if let Some(ref want) = args.slug {
+                    if entry.slug != *want {
+                        continue;
+                    }
+                }
                 let initial_ref =
                     vox_lib::services::tts::providers::zipvoice::resolve_zipvoice_reference(
                         &voices_dir,
                         Some(&entry.slug),
                     )
                     .ok();
+                let engine = vox_lib::services::tts::ZipvoiceEngine::new(
+                    &zipvoice_dir,
+                    1.0,
+                    1.0,
+                    args.zv_threads,
+                    initial_ref,
+                )
+                .expect("Failed to init ZipVoice");
+                engine.set_tuning(&tuning);
                 let provider: Box<dyn vox_lib::services::tts::providers::TtsProvider> =
-                    Box::new(
-                        vox_lib::services::tts::ZipvoiceEngine::new(
-                            &zipvoice_dir,
-                            1.0,
-                            1.0,
-                            2,
-                            initial_ref,
-                        )
-                        .expect("Failed to init ZipVoice"),
-                    );
+                    Box::new(engine);
                 let run = benchmark_tts_provider(
                     &format!(
-                        "ZipVoice Distill Int8 [{}] (4 steps, guidance 1.0, speed 1.0)",
-                        entry.slug
+                        "ZipVoice Distill Int8 [{}] (steps {}, guidance {:.1}, threads {})",
+                        entry.slug, args.zv_steps, args.zv_guidance, args.zv_threads
                     ),
-                    &format!("zipvoice_{}", entry.slug),
+                    &format!(
+                        "zipvoice_{}_s{}_g{:.1}",
+                        entry.slug,
+                        args.zv_steps,
+                        args.zv_guidance
+                    ),
                     &zd_str,
                     &prompts,
                     provider,

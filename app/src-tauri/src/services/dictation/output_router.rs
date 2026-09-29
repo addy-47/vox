@@ -122,14 +122,14 @@ async fn dispatch_to_paste<R: tauri::Runtime>(
     }
 }
 
-/// Formats text paste snippet: “<start> ... <end>” (up to 40 characters).
+/// Formats text paste snippet preserving full multi-line text up to 240 characters.
 fn format_paste_snippet(text: &str) -> String {
+    const MAX_PASTE_SNIPPET_CHARS: usize = 240;
     let chars: Vec<char> = text.chars().collect();
-    if chars.len() <= 40 {
+    if chars.len() <= MAX_PASTE_SNIPPET_CHARS {
         format!("“{}”", text)
     } else {
-        let prefix: String = chars[..18].iter().collect();
-        let suffix: String = chars[chars.len() - 18..].iter().collect();
-        format!("“{} ... {}”", prefix, suffix)
+        let head: String = chars[..MAX_PASTE_SNIPPET_CHARS].iter().collect();
+        format!("“{}…”", head)
     }
 }

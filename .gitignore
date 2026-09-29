@@ -46,3 +46,5 @@ results/
 backend-review/
 sandbox/seed_notification*
 *review*
+sandbox/cb_extended
+sandbox/zipvoice_prompts

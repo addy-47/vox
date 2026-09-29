@@ -24,6 +24,10 @@ use crate::{
 /// Not user-configurable. Declared here, beside the engine that applies it.
 pub const CHATTERBOX_STEPS: i32 = 10;
 
+/// Default CFG/pace weight for local Chatterbox. Upstream default is 0.5;
+/// 0.3 gives slower, more deliberate pacing (user-verified on voice clones).
+pub const DEFAULT_CHATTERBOX_CFG_WEIGHT: f32 = 0.3;
+
 /// Speech synthesis engine wrapping the local Chatterbox GGUF model via chatterbox-rs.
 pub struct ChatterboxEngine {
     engine: Mutex<Engine>,
@@ -101,6 +105,7 @@ impl ChatterboxEngine {
             top_k: 1000,
             top_p: 0.95,
             repeat_penalty: 1.2,
+            cfg_weight: DEFAULT_CHATTERBOX_CFG_WEIGHT,
             verbose: false,
             ..Default::default()
         };
