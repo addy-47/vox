@@ -113,7 +113,7 @@ pub fn dictation_live_update(partial_text: &str) {
     }
     LIFECYCLE_LAST_UPDATE_MS.store(now, Ordering::Relaxed);
     let snippet = truncate_partial(partial_text);
-    let body = format!("<b>Listening...</b>\n\"{}\"", snippet);
+    let body = format!("<b>Listening...</b>\n<i>\"{}\"</i>", snippet);
     update_replaceable_toast(
         server_id,
         "🎙️ Dictation",
@@ -212,7 +212,7 @@ fn now_ms() -> u64 {
 
 /// Truncates live partial text to a notification-friendly snippet.
 fn truncate_partial(text: &str) -> String {
-    const MAX_SNIPPET_CHARS: usize = 140;
+    const MAX_SNIPPET_CHARS: usize = 240;
     let chars: Vec<char> = text.chars().collect();
     if chars.len() <= MAX_SNIPPET_CHARS {
         text.to_string()

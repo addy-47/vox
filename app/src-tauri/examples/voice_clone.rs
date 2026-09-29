@@ -93,6 +93,18 @@ struct Args {
     /// Language code for synthesis (default: "en").
     #[arg(long = "lang", default_value = "en")]
     language: String,
+
+    /// CFG/pace weight (0.2-1.0, default 0.5). Lower (~0.3) slows pacing, more deliberate.
+    #[arg(long = "cfg-weight", default_value = "0.5")]
+    cfg_weight: f32,
+
+    /// Expressiveness exaggeration (0.25-2.0, default 0.5). Higher speeds speech up.
+    #[arg(long = "exaggeration", default_value = "0.5")]
+    exaggeration: f32,
+
+    /// Random seed for generation (default 42). Change to escape stalls/loops.
+    #[arg(long = "seed", default_value = "42")]
+    seed: i32,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -162,6 +174,9 @@ fn main() -> anyhow::Result<()> {
             args._speed,
             max_duration,
             &args.en_prompt,
+            args.cfg_weight,
+            args.exaggeration,
+            args.seed,
         ) {
             Ok(()) => {
                 println!("  ✅ Voice '{}' cloned successfully!", name);
@@ -199,6 +214,9 @@ fn process_one_voice(
     _speed: f32,
     max_duration: f32,
     en_prompt: &str,
+    cfg_weight: f32,
+    exaggeration: f32,
+    seed: i32,
 ) -> anyhow::Result<()> {
     // Create output directories
     let voice_dir = output_dir.join(sanitise_name(name));
@@ -275,7 +293,7 @@ fn process_one_voice(
             reference_audio: source_wav_path.to_string_lossy().into_owned(),
             cfm_steps: quality_steps as i32,
             verbose: false,
-            seed: 42,
+            seed,
             temperature: 0.8,
             ..Default::default()
         })
@@ -308,8 +326,10 @@ fn process_one_voice(
             language: language.to_string(),
             cfm_steps: quality_steps as i32,
             verbose: false,
-            seed: 42,
+            seed,
             temperature: 0.8,
+            cfg_weight,
+            exaggeration,
             ..Default::default()
         })
         .map_err(|e| anyhow::anyhow!("Failed to initialise synthesis engine: {}", e))?;

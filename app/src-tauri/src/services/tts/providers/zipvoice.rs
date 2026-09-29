@@ -3,7 +3,7 @@ use std::{
     io::{BufReader, Read},
     path::Path,
     sync::{
-        atomic::{AtomicU32, Ordering},
+        atomic::{AtomicI32, AtomicU32, Ordering},
         Arc,
     },
     time::Instant,
@@ -48,6 +48,35 @@ const DEFAULT_ZIPVOICE_TARGET_RMS: f32 = 0.1;
 /// rather than improving quality — every reference implementation ships
 /// `numSteps = 4`, and sherpa-onnx's own `GenerationConfig` default is 5.
 pub const ZIPVOICE_STEPS: i32 = 4;
+
+/// Default minimum sentence-chunk length merged by sherpa's chunker.
+const DEFAULT_ZIPVOICE_MIN_CHAR: i32 = 10;
+
+/// Hot-swappable ZipVoice inference tuning. All fields default to the
+/// production values; the bench drives these per-run, production never sends
+/// them so default behavior is unchanged.
+#[derive(Debug, Clone)]
+pub struct ZipvoiceTuning {
+    pub steps: i32,
+    pub guidance_scale: f32,
+    pub feat_scale: f32,
+    pub t_shift: f32,
+    pub target_rms: f32,
+    pub min_char_in_sentence: i32,
+}
+
+impl Default for ZipvoiceTuning {
+    fn default() -> Self {
+        Self {
+            steps: ZIPVOICE_STEPS,
+            guidance_scale: 1.0,
+            feat_scale: DEFAULT_ZIPVOICE_FEAT_SCALE,
+            t_shift: DEFAULT_ZIPVOICE_T_SHIFT,
+            target_rms: DEFAULT_ZIPVOICE_TARGET_RMS,
+            min_char_in_sentence: DEFAULT_ZIPVOICE_MIN_CHAR,
+        }
+    }
+}
 
 struct AtomicF32 {
     inner: AtomicU32,
@@ -98,6 +127,11 @@ pub struct ZipvoiceEngine {
     tts: Mutex<OfflineTts>,
     speed: AtomicF32,
     guidance_scale: AtomicF32,
+    steps: AtomicI32,
+    feat_scale: AtomicF32,
+    t_shift: AtomicF32,
+    target_rms: AtomicF32,
+    min_char_in_sentence: AtomicI32,
     reference: RwLock<Option<Arc<ZipvoiceReference>>>,
 }
 
@@ -204,6 +238,11 @@ impl ZipvoiceEngine {
             tts: Mutex::new(tts),
             speed: AtomicF32::new(clamped_speed),
             guidance_scale: AtomicF32::new(clamped_guidance),
+            steps: AtomicI32::new(ZIPVOICE_STEPS),
+            feat_scale: AtomicF32::new(DEFAULT_ZIPVOICE_FEAT_SCALE),
+            t_shift: AtomicF32::new(DEFAULT_ZIPVOICE_T_SHIFT),
+            target_rms: AtomicF32::new(DEFAULT_ZIPVOICE_TARGET_RMS),
+            min_char_in_sentence: AtomicI32::new(DEFAULT_ZIPVOICE_MIN_CHAR),
             reference: RwLock::new(initial_reference),
         })
     }
@@ -219,10 +258,39 @@ impl ZipvoiceEngine {
     }
 
     /// Hot-updates the flow-matching classifier-free guidance scale.
-    pub fn set_guidance_scale(&self, scale: f32) {
+    fn set_guidance_scale(&self, scale: f32) {
         let clamped = scale.clamp(MIN_ZIPVOICE_GUIDANCE_SCALE, MAX_ZIPVOICE_GUIDANCE_SCALE);
         self.guidance_scale.store(clamped, Ordering::Relaxed);
         log::debug!("[Tts::Zipvoice] Guidance scale updated to {:.2}", clamped);
+    }
+
+    /// Hot-swaps the full inference tuning set without restarting the engine.
+    pub fn set_tuning(&self, tuning: &ZipvoiceTuning) {
+        self.steps
+            .store(tuning.steps.clamp(1, 16), Ordering::Relaxed);
+        self.set_guidance_scale(tuning.guidance_scale);
+        if tuning.feat_scale > 0.0 {
+            self.feat_scale.store(tuning.feat_scale, Ordering::Relaxed);
+        }
+        if tuning.t_shift >= 0.0 {
+            self.t_shift.store(tuning.t_shift, Ordering::Relaxed);
+        }
+        if tuning.target_rms > 0.0 {
+            self.target_rms.store(tuning.target_rms, Ordering::Relaxed);
+        }
+        if tuning.min_char_in_sentence > 0 {
+            self.min_char_in_sentence
+                .store(tuning.min_char_in_sentence, Ordering::Relaxed);
+        }
+        log::info!(
+            "[Tts::Zipvoice] Tuning updated: steps={} guidance={:.2} feat={:.3} tshift={:.2} rms={:.3} minchar={}",
+            self.steps.load(Ordering::Relaxed),
+            self.guidance_scale.load(Ordering::Relaxed),
+            self.feat_scale.load(Ordering::Relaxed),
+            self.t_shift.load(Ordering::Relaxed),
+            self.target_rms.load(Ordering::Relaxed),
+            self.min_char_in_sentence.load(Ordering::Relaxed),
+        );
     }
 
     fn handle_unsupported_script(&self, text: &str, ctx: &SynthesisContext<'_>) -> Result<()> {
@@ -254,7 +322,26 @@ impl ZipvoiceEngine {
         let speed = self.speed.load(Ordering::Relaxed);
 
         let mut extra = std::collections::HashMap::new();
-        extra.insert("min_char_in_sentence".to_string(), serde_json::json!(10));
+        extra.insert(
+            "min_char_in_sentence".to_string(),
+            serde_json::json!(self.min_char_in_sentence.load(Ordering::Relaxed)),
+        );
+        extra.insert(
+            "feat_scale".to_string(),
+            serde_json::json!(self.feat_scale.load(Ordering::Relaxed)),
+        );
+        extra.insert(
+            "t_shift".to_string(),
+            serde_json::json!(self.t_shift.load(Ordering::Relaxed)),
+        );
+        extra.insert(
+            "target_rms".to_string(),
+            serde_json::json!(self.target_rms.load(Ordering::Relaxed)),
+        );
+        extra.insert(
+            "guidance_scale".to_string(),
+            serde_json::json!(self.guidance_scale.load(Ordering::Relaxed)),
+        );
 
         let gen_config = GenerationConfig {
             silence_scale: ZIPVOICE_SILENCE_SCALE,
@@ -263,7 +350,7 @@ impl ZipvoiceEngine {
             reference_audio: Some(reference.samples.clone()),
             reference_sample_rate: reference.sample_rate as i32,
             reference_text: Some(reference.text.clone()),
-            num_steps: ZIPVOICE_STEPS,
+            num_steps: self.steps.load(Ordering::Relaxed),
             extra: Some(extra),
         };
 
