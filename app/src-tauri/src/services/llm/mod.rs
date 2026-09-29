@@ -1,5 +1,6 @@
 pub mod actor;
 pub mod catalog;
+pub mod config;
 pub mod embedded;
 pub mod factory;
 pub mod provider;
@@ -11,7 +12,11 @@ pub use actor::{
 };
 pub use catalog::{
     list_models, list_presets, lookup_preset, probe_capabilities, provider_catalog,
-    CapabilityProbeEngine, CapabilityProvenance, ModelProbeResult, ModelSpec, ProviderPresetMeta,
+    CapabilityProbeEngine, CapabilityProvenance, ModelCapabilities, ModelProbeResult, ModelSpec,
+    ProviderPresetMeta, CAP_KIND_EMBEDDED, CAP_KIND_OPENAI_COMPAT, LlmModelInfo,
+};
+pub use config::{
+    LlmActiveProvider, LlmEmbeddedConfig, LlmProviderConfig, LlmRemoteConfig, LlmSettings,
 };
 pub use embedded::{EmbeddedProvider, LlmWorker, ModelFamily};
 pub use factory::{create_llm_provider, create_llm_provider_from_llm_settings};

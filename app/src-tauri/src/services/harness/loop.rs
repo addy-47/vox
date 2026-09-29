@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use tauri::{async_runtime::spawn as spawn_task, Runtime};
 
 use crate::{
-    core::settings::PipelineMode,
+    core::events::PipelineMode,
     services::{
         harness::{
             chassis::Harness,

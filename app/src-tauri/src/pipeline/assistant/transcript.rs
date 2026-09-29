@@ -5,8 +5,7 @@ use tauri::{AppHandle, Manager};
 use crate::{
     core::{
         error::PipelineImpact,
-        events::{emit_ipc_to, IpcEvent, Severity, TranscriptPayload},
-        settings::PipelineMode,
+        events::{emit_ipc_to, IpcEvent, PipelineMode, Severity, TranscriptPayload},
         state::{AppState, InteractionState},
     },
     pipeline::{target_window, transition, RoutingContext},

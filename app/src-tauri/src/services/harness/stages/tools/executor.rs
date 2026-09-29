@@ -5,7 +5,7 @@ use std::{
 
 use super::{registry::ToolRegistry, ToolDefinition, ToolExecutionContext, ToolResult};
 use crate::{
-    core::settings::PipelineMode,
+    core::events::PipelineMode,
     persistence::PersistenceEvent,
     services::{
         harness::TOOL_EXECUTION_TIMEOUT,

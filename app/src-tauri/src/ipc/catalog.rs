@@ -3,26 +3,26 @@ use std::{fs::read_to_string, sync::Arc};
 use tauri::{AppHandle, Manager, State};
 
 use crate::{
-    core::{
-        error::VoxIpcError,
-        settings::{get_preset_colors, ProviderCaps, TtsActiveProvider, VoiceProfile, VoxSettings},
-        state::AppState,
+    config::get_preset_colors,
+    core::{error::VoxIpcError, state::AppState},
+    services::{
+        health::{self as health_svc, ProviderConfigPayload},
+        llm::{
+            catalog::{self as llm_catalog, LlmModelInfo, ModelProbeResult},
+            LlmProviderConfig,
+        },
+        tts::{
+            factory::caps_for_id,
+            voice::{get_supertonic_voice_profiles, get_voice_profiles},
+            ProviderCaps, TtsActiveProvider, VoiceProfile,
+        },
     },
-    services::tts::{
-        factory::caps_for_id,
-        voice::{get_supertonic_voice_profiles, get_voice_profiles},
+    setup::{
+        manifest::{ModelGroup, VoxManifest},
+        remote_server,
     },
-    setup::manifest::{ModelGroup, VoxManifest},
     utils::paths,
 };
-
-/// Initial boot payload returned to the frontend during application initialization.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct BootState {
-    pub settings: VoxSettings,
-    pub models_dir_exists: bool,
-    pub settings_path: String,
-}
 
 /// Categorized catalog of available local and cloud AI models.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -35,31 +35,6 @@ pub struct ModelCatalog {
     pub model_groups: Vec<ModelGroup>,
     pub voices: Vec<VoiceProfile>,
     pub preset_colors: Vec<String>,
-}
-
-/// Called by the frontend on mount to load initial settings snapshot and model paths.
-#[tauri::command]
-pub async fn get_settings<R: tauri::Runtime>(app: AppHandle<R>) -> Result<BootState, VoxIpcError> {
-    let state: State<'_, Arc<AppState>> = app.state();
-    let settings = state
-        .settings
-        .read()
-        .map_err(|e| VoxIpcError::Internal(e.to_string()))?
-        .clone();
-    let models_dir_exists = paths::get().models.exists();
-    let settings_path = paths::get().settings.to_string_lossy().to_string();
-
-    log::debug!(
-        "[Settings] Boot state requested. models_dir={}, settings={}",
-        models_dir_exists,
-        settings_path
-    );
-
-    Ok(BootState {
-        settings,
-        models_dir_exists,
-        settings_path,
-    })
 }
 
 /// Query the model manifest catalog filtered into distinct model categories.
@@ -151,4 +126,61 @@ pub async fn get_model_catalog<R: tauri::Runtime>(
 #[tauri::command]
 pub fn get_provider_caps(provider_id: String) -> Result<ProviderCaps, VoxIpcError> {
     caps_for_id(&provider_id).map_err(VoxIpcError::InvalidArgument)
+}
+
+/// Unified health-check command across LLM, STT, and TTS engine providers.
+#[tauri::command]
+pub async fn check_provider_health(
+    state: State<'_, Arc<AppState>>,
+    kind: String,
+    provider: Option<ProviderConfigPayload>,
+) -> Result<health_svc::ProviderHealthCheckResult, VoxIpcError> {
+    health_svc::check_health(&state, &kind, provider)
+        .await
+        .map_err(VoxIpcError::Engine)
+}
+
+/// List available LLM models for embedded GGUFs or OpenAI-compatible remote servers.
+#[tauri::command]
+pub async fn list_llm_models(
+    state: State<'_, Arc<AppState>>,
+    provider: Option<LlmProviderConfig>,
+) -> Result<Vec<LlmModelInfo>, VoxIpcError> {
+    llm_catalog::list_models(&state, provider)
+        .await
+        .map_err(VoxIpcError::Engine)
+}
+
+/// Probe capabilities for an LLM model and return capabilities, ceiling token cap, and cached map.
+#[tauri::command]
+pub async fn probe_model_capabilities(
+    state: State<'_, Arc<AppState>>,
+    provider: Option<LlmProviderConfig>,
+    model_id: Option<String>,
+    target_cap: Option<u32>,
+) -> Result<ModelProbeResult, VoxIpcError> {
+    llm_catalog::probe_capabilities(&state, provider, model_id, target_cap)
+        .await
+        .map_err(VoxIpcError::Engine)
+}
+
+/// Execute remote server bootstrap script over SSH and stream progress events.
+#[tauri::command]
+pub async fn setup_remote_server<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    connection_string: String,
+    ssh_port: Option<u16>,
+    identity_key_path: Option<String>,
+    remote_path: String,
+    server_port: u16,
+) -> Result<(), VoxIpcError> {
+    remote_server::start_remote_setup(
+        app,
+        connection_string,
+        ssh_port,
+        identity_key_path,
+        remote_path,
+        server_port,
+    )
+    .map_err(VoxIpcError::Network)
 }

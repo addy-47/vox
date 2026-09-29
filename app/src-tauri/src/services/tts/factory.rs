@@ -3,11 +3,11 @@ use std::path::Path;
 use turso::Connection;
 
 use crate::{
-    core::settings::{ProviderCaps, TtsActiveProvider, TtsProviderConfig, VoxSettings},
     persistence::voices::get_voice,
     services::tts::{
         providers::TtsProvider, resolve_zipvoice_reference, ChatterboxEngine,
-        ChatterboxRemoteProvider, EdgeTtsProvider, KokoroEngine, TtsEngine as SupertonicEngine,
+        ChatterboxRemoteProvider, EdgeTtsProvider, KokoroEngine, ProviderCaps,
+        TtsActiveProvider, TtsEngine as SupertonicEngine, TtsProviderConfig, TtsSettings,
         ZipvoiceEngine, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, ZIPVOICE_MODEL_DIR,
     },
     utils::paths::model_dir,
@@ -60,14 +60,14 @@ pub async fn resolve_reference_audio(conn: &Connection, voice_id: Option<&str>) 
 
 /// Creates a boxed TTS provider based on settings configuration.
 pub fn create_tts_provider(
-    settings: &VoxSettings,
+    settings: &TtsSettings,
     super_tts_path: &Path,
     reference_audio: Option<&str>,
 ) -> Result<Box<dyn TtsProvider>, String> {
-    let provider_config = settings.tts.to_provider_config();
-    let voice = settings.tts.voice_index;
-    let speed = settings.tts.speed;
-    let num_threads = settings.tts.threads;
+    let provider_config = settings.to_provider_config();
+    let voice = settings.voice_index;
+    let speed = settings.speed;
+    let num_threads = settings.threads;
 
     match &provider_config {
         TtsProviderConfig::Supertonic => {
@@ -140,7 +140,7 @@ pub fn create_tts_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::settings::{ProviderCaps, TtsVoiceSource};
+    use crate::services::tts::{ProviderCaps, TtsVoiceSource};
 
     #[test]
     fn test_caps_for_id_matrix() {

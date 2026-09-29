@@ -28,17 +28,17 @@ export interface AudioDevice {
   is_default: boolean;
 }
 
-/** Full settings snapshot, model paths, and directory health (ipc/settings/catalog.rs:28). */
+/** Full settings snapshot, model paths, and directory health (ipc/settings.rs:36). */
 export function getSettings(): Promise<BootState> {
   return invoke("get_settings");
 }
 
-/** Model catalog (ipc/settings/catalog.rs:55). */
+/** Model catalog (ipc/catalog.rs:24). */
 export function requestModelCatalog(): Promise<ModelCatalog> {
   return invoke("get_model_catalog");
 }
 
-/** Settings capabilities for a TTS provider id (ipc/settings/catalog.rs).
+/** Settings capabilities for a TTS provider id (ipc/catalog.rs:51).
  * Returns null when the backend is unreachable or rejects the id. A fabricated
  * fallback would render controls for capabilities that may not exist. */
 export async function getProviderCaps(providerId: string): Promise<ProviderCaps | null> {
@@ -53,7 +53,7 @@ export async function getProviderCaps(providerId: string): Promise<ProviderCaps 
 /**
  * Persist a single setting. Domain/key must match the backend convention
  * (e.g. "ui"/"theme", snake_case keys). Returns the reload policy.
- * (ipc/settings.rs:98)
+ * (ipc/settings.rs:59)
  */
 export function updateSetting(
   domain: string,
@@ -63,9 +63,15 @@ export function updateSetting(
   return invoke<SettingUpdateResult>("update_setting", { domain, key, value });
 }
 
-/** Reset all settings to factory defaults. (ipc/settings/mutation.rs:267) */
-export function resetSettings(): Promise<VoxSettings> {
-  return invoke<VoxSettings>("reset_settings");
+export interface ResetSettingsResult {
+  settings: VoxSettings;
+  reload_policy: string;
+  message: string;
+}
+
+/** Reset all settings to factory defaults. (ipc/settings.rs:118) */
+export function resetSettings(): Promise<ResetSettingsResult> {
+  return invoke<ResetSettingsResult>("reset_settings");
 }
 
 export interface ProviderHealthCheckResult {

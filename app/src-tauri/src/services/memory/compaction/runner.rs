@@ -8,10 +8,9 @@ use tokio_util::sync::CancellationToken;
 
 use super::prompt::build_compaction_request;
 use crate::{
-    core::settings::LlmSettings,
     services::{
         harness::ChatMessage,
-        llm::{GenerationRequest, LlmProvider, LlmStreamEvent},
+        llm::{GenerationRequest, LlmProvider, LlmSettings, LlmStreamEvent},
         memory::COMPACTION_SENTINEL_TURN_ID,
     },
     utils::json::parse_unified_compaction_json,

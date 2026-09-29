@@ -5,7 +5,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
-    core::settings::GeminiRealtimeConfig,
+    config::GeminiRealtimeConfig,
     services::{
         llm::CanonicalToolDefinition,
         realtime::{

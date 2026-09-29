@@ -1,13 +1,23 @@
 pub mod actor;
+pub mod config;
 pub mod factory;
 pub mod providers;
 pub mod voice;
 pub use actor::{cool_down_tts, spawn_tts_worker, warm_up_tts, TtsCommand};
+pub use config::{
+    ParamRange, ProviderCaps, TtsActiveProvider, TtsChatterboxConfig, TtsChatterboxRemoteConfig,
+    TtsEdgeConfig, TtsKokoroConfig, TtsProviderConfig, TtsSettings, TtsSupertonicConfig,
+    TtsVoiceSource, TtsZipvoiceConfig,
+};
 pub use factory::{caps_for_id, create_tts_provider, resolve_reference_audio};
+pub use voice::VoiceProfile;
 pub use providers::{
     chatterbox::ChatterboxEngine,
     chatterbox_remote::ChatterboxRemoteProvider,
-    edge_tts::EdgeTtsProvider,
+    edge_tts::{
+        EdgeTtsProvider, EDGE_TTS_DEFAULT_VOICE, EDGE_TTS_HINDI_VOICE, EDGE_TTS_USER_AGENT,
+        EDGE_TTS_VOICES_URL_BASE,
+    },
     kokoro::KokoroEngine,
     supertonic::TtsEngine,
     zipvoice::{resolve_zipvoice_reference, ZipvoiceEngine, ZipvoiceReference, ZipvoiceVoiceEntry},
@@ -26,56 +36,9 @@ pub const MIN_SPEED_EDGE: f32 = 0.5;
 pub const MAX_SPEED_EDGE: f32 = 2.0;
 pub const DEFAULT_SPEED: f32 = 1.0;
 
-pub const MIN_VOICE_CLONE_DURATION_SECS: f32 = 1.0;
-pub const TARGET_VOICE_SAMPLE_DURATION_SECS: f32 = 30.0;
-
-pub const EDGE_TTS_HOST: &str = "speech.platform.bing.com";
-pub const EDGE_TTS_PORT: u16 = 443;
-pub const EDGE_TTS_ORIGIN: &str = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
-pub const EDGE_TTS_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0";
-pub const EDGE_TTS_SEC_MS_GEC_VERSION: &str = "1-143.0.3650.75";
-pub const EDGE_TTS_WIN_EPOCH: u64 = 11_644_473_600;
-pub const EDGE_TTS_DEFAULT_VOICE: &str = "en-US-AriaNeural";
-pub const EDGE_TTS_HINDI_VOICE: &str = "hi-IN-SwaraNeural";
-pub const EDGE_TTS_VOICES_URL_BASE: &str = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=";
-pub const EDGE_TTS_WS_URL_BASE: &str =
-    "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
-
-pub const MODEL_DIR_TTS: &str = "tts";
 pub const SUPERTONIC_MODEL_DIR: &str = "tts/supertonic-3";
-pub const MODEL_FILE_TTS_SUPER_TEXT_ENCODER: &str = "text_encoder.int8.onnx";
-pub const MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR: &str = "duration_predictor.int8.onnx";
-pub const MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR: &str = "vector_estimator.int8.onnx";
-pub const MODEL_FILE_TTS_SUPER_VOCODER: &str = "vocoder.int8.onnx";
-pub const MODEL_FILE_TTS_SUPER_CONFIG: &str = "tts.json";
-pub const MODEL_FILE_TTS_SUPER_INDEXER: &str = "unicode_indexer.bin";
-pub const MODEL_FILE_TTS_SUPER_VOICE: &str = "voice.bin";
-
 pub const KOKORO_MODEL_DIR: &str = "tts/kokoro";
-pub const MODEL_FILE_TTS_KOKORO_MODEL: &str = "model.onnx";
-pub const MODEL_FILE_TTS_KOKORO_VOICES: &str = "voices.bin";
-pub const MODEL_FILE_TTS_KOKORO_TOKENS: &str = "tokens.txt";
-pub const MODEL_DIRNAME_TTS_KOKORO_ESPEAK: &str = "espeak-ng-data";
-pub const MODEL_FILE_TTS_KOKORO_LEXICON_US: &str = "lexicon-us-en.txt";
-/// Inter-phrase silence scale matching the sherpa-onnx crate default (0.2).
-pub const KOKORO_SILENCE_SCALE: f32 = 0.2;
-/// Stride of one voice row in voices.bin (511 frames x 256 dims x f32), from model metadata style_dim.
-pub const KOKORO_VOICE_ROW_BYTES: u64 = 523264;
-
 pub const CHATTERBOX_MODEL_DIR: &str = "tts/chatterbox";
-pub const MODEL_DIRNAME_CHATTERBOX: &str = "chatterbox";
 pub const MODEL_FILE_TTS_CHATTERBOX_T3: &str = "t3-q4_0.gguf";
 pub const MODEL_FILE_TTS_CHATTERBOX_S3GEN: &str = "s3gen-f16.gguf";
-
 pub const ZIPVOICE_MODEL_DIR: &str = "tts/zipvoice";
-pub const MODEL_FILE_TTS_ZIPVOICE_ENCODER: &str = "encoder.int8.onnx";
-pub const MODEL_FILE_TTS_ZIPVOICE_DECODER: &str = "decoder.int8.onnx";
-pub const MODEL_FILE_TTS_ZIPVOICE_VOCODER: &str = "vocos_24khz.onnx";
-pub const MODEL_FILE_TTS_ZIPVOICE_TOKENS: &str = "tokens.txt";
-pub const MODEL_FILE_TTS_ZIPVOICE_LEXICON: &str = "lexicon.txt";
-pub const MODEL_DIRNAME_TTS_ZIPVOICE_ESPEAK: &str = "espeak-ng-data";
-/// Silence scale for ZipVoice. Must remain 1.0 because sherpa-onnx scales silence after callback generation,
-/// which would cause callback streaming audio to diverge from final audio.
-pub const ZIPVOICE_SILENCE_SCALE: f32 = 1.0;
-pub const MIN_ZIPVOICE_GUIDANCE_SCALE: f32 = 1.0;
-pub const MAX_ZIPVOICE_GUIDANCE_SCALE: f32 = 3.0;

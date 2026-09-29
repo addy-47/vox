@@ -8,10 +8,8 @@ use parking_lot::Mutex;
 use session::{GeminiDriver, GeminiLiveSession, GeminiSessionState};
 
 use crate::{
-    core::{
-        settings::{GeminiRealtimeConfig, InteractionMode},
-        state::InteractionState,
-    },
+    config::GeminiRealtimeConfig,
+    core::{events::InteractionMode, state::InteractionState},
     services::{
         llm::CanonicalToolDefinition,
         realtime::{

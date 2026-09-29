@@ -17,26 +17,23 @@ use sherpa_onnx::{
 };
 
 use super::{speed_range, SynthesisContext, TtsProvider};
-use crate::{
-    core::settings::{ParamRange, ProviderCaps, TtsVoiceSource},
-    services::{
-        translit::is_devanagari,
-        tts::{
-            MAX_SPEED, MIN_SPEED, MODEL_FILE_TTS_SUPER_CONFIG,
-            MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR, MODEL_FILE_TTS_SUPER_INDEXER,
-            MODEL_FILE_TTS_SUPER_TEXT_ENCODER, MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR,
-            MODEL_FILE_TTS_SUPER_VOCODER, MODEL_FILE_TTS_SUPER_VOICE, SUPER_SAMPLE_RATE,
-            TTS_SAMPLE_RATE,
-        },
+use crate::services::{
+    translit::is_devanagari,
+    tts::{
+        ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED,
+        SUPER_SAMPLE_RATE, TTS_SAMPLE_RATE,
     },
 };
 
-/// Fixed flow-matching step count for Supertonic. Not user-configurable.
-///
-/// This is the model's validated optimum, not a ceiling. The reference
-/// implementation documents a usable band of 5-12 with a default of 8
-/// (Supertone Inc. `supertonic` PyPI); the paper evaluates at 32. Twelve sits
-/// at the top of the documented band.
+pub const MODEL_FILE_TTS_SUPER_TEXT_ENCODER: &str = "text_encoder.int8.onnx";
+pub const MODEL_FILE_TTS_SUPER_DURATION_PREDICTOR: &str = "duration_predictor.int8.onnx";
+pub const MODEL_FILE_TTS_SUPER_VECTOR_ESTIMATOR: &str = "vector_estimator.int8.onnx";
+pub const MODEL_FILE_TTS_SUPER_VOCODER: &str = "vocoder.int8.onnx";
+pub const MODEL_FILE_TTS_SUPER_CONFIG: &str = "tts.json";
+pub const MODEL_FILE_TTS_SUPER_INDEXER: &str = "unicode_indexer.bin";
+pub const MODEL_FILE_TTS_SUPER_VOICE: &str = "voice.bin";
+
+/// Fixed flow-matching step count for Supertonic.
 pub const SUPERTONIC_STEPS: i32 = 12;
 
 struct BiquadFilter {

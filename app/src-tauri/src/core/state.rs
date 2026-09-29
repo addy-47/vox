@@ -19,10 +19,10 @@ pub use crate::{
     services::memory::MemoryAppState,
 };
 use crate::{
+    config::VoxSettings,
     core::{
-        events::VoxEvent,
+        events::{PipelineMode, VoxEvent},
         metrics::TurnMetricsCollector,
-        settings::{PipelineMode, VoxSettings},
     },
     monitoring::snapshots::MonitoringState,
     persistence::{PersistenceEvent, VoxDb},

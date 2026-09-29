@@ -4,9 +4,9 @@ use futures_util::future::BoxFuture;
 use llama_cpp_4::llama_backend::LlamaBackend;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    core::settings::LlmModelInfo,
-    services::harness::{ChatMessage, ConversationContext},
+use crate::services::{
+    harness::{ChatMessage, ConversationContext},
+    llm::LlmModelInfo,
 };
 
 /// Purpose of generation, allowing default policy selection.

@@ -9,10 +9,9 @@ use tauri::{AppHandle, Manager};
 use crate::{
     core::{
         events::{emit_ipc_to, IpcEvent, Severity, TranscriptPayload},
-        settings::DictationOutputMode,
         state::{AppState, AppWindow, InteractionOwner, InteractionState},
     },
-    pipeline::dictation::transition_dictation,
+    pipeline::dictation::{transition_dictation, DictationOutputMode},
     services::{
         dictation::output_router::route_transcript,
         notifications::lifecycle::{self, LifecycleCard},
@@ -90,7 +89,7 @@ pub fn on_transcript_final<R: tauri::Runtime>(
     let output_mode = state
         .settings
         .read()
-        .map(|s| s.dictation.output_mode.clone())
+        .map(|s| s.dictation.output_mode)
         .unwrap_or(DictationOutputMode::Paste);
 
     log::info!(

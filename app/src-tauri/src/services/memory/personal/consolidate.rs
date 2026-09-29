@@ -17,7 +17,6 @@ use super::{
     },
 };
 use crate::{
-    core::settings::LlmSettings,
     persistence::{
         facts::{fetch_active_facts_by_type, mark_facts_consolidated},
         has_in_progress_compaction, has_unfinished_items,
@@ -27,7 +26,7 @@ use crate::{
             PersonalMemoryRecord, PersonalMemorySuggestionRecord,
         },
     },
-    services::llm::LlmProvider,
+    services::llm::{LlmProvider, LlmSettings},
     services::memory::ingestion::run_ingestion_cycle,
 };
 

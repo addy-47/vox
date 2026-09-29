@@ -2,7 +2,44 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{core::settings::ModelCapabilities, services::llm::transport::TransportType};
+use crate::services::llm::transport::TransportType;
+
+/// Canonical capability-cache provider-kind labels. Writer (probe) and reader (session boot) must agree.
+pub const CAP_KIND_EMBEDDED: &str = "embedded";
+pub const CAP_KIND_OPENAI_COMPAT: &str = "openai_compat";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModelCapabilities {
+    pub model_id: String,
+    pub provider_kind: String,
+    pub supports_tools: bool,
+    pub supports_latin: bool,
+    pub supports_devanagari: bool,
+    pub context_window: Option<u32>,
+    pub max_output_tokens: Option<u32>,
+    pub provenance: Option<String>,
+    pub tps: Option<f32>,
+    pub ttft_ms: Option<u32>,
+    pub server_has_gpu: bool,
+    pub is_gpu_accelerated: bool,
+    pub gpu_status: String,
+    pub vram_bytes: Option<u64>,
+    pub parameter_size: Option<String>,
+    pub quantization: Option<String>,
+    pub family: Option<String>,
+    pub tested_at_epoch: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LlmModelInfo {
+    pub id: String,   // e.g. "gemma4:31b"
+    pub name: String, // display name derived from id
+    pub size_bytes: Option<u64>,
+    pub quantization: Option<String>, // e.g. "Q4_K_M"
+    pub family: Option<String>,       // e.g. "Gemma"
+    pub provider_kind: String,        // e.g. "open_ai_compat", "embedded"
+    pub capabilities: Option<ModelCapabilities>,
+}
 
 /// Provenance tier identifying the source and confidence of a discovered capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

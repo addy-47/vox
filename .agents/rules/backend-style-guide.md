@@ -11,7 +11,7 @@ This document contains durable coding standards for the Vox native Rust backend 
 
 ## 1. Hardware Tiers & Feature Mapping
 
-Architecture capabilities are gated by hardware tier. Vox must dynamically degrade or upgrade based on what the user's system supports. **Tier 2 is the recommended baseline.**
+Architecture capabilities are gated by hardware tier. Vox dynamically degrades or upgrades based on what the user's system supports. **Tier 2 is the recommended baseline.**
 
 | Tier | Hardware | Pipeline Mode | Memory Ingestion | Memory Retrieval | Tool Calling |
 | :--- | :------- | :-----------: | :--------------: | :--------------: | :----------: |
@@ -28,7 +28,7 @@ Architecture capabilities are gated by hardware tier. Vox must dynamically degra
 - **Domain over type:** Group code by domain (`services/memory/nli.rs`), never by Rust construct (`models.rs`).
 - **Single responsibility:** 1 responsibility per file. If a file cannot be described in 1 sentence, split it.
 - **File size ceiling:** Flag and justify files exceeding ~600 lines.
-- **`mod.rs` & `lib.rs`:** `mod.rs` is for module declarations, re-exports, and **subsystem-level constants**. Zero business logic. `lib.rs` is for module declarations + Tauri app setup only. Zero business logic.
+- **`mod.rs` & `lib.rs`:** `mod.rs` is for module declarations, re-exports, and **subsystem-level shared constants**. Zero business logic. `lib.rs` is for module declarations + Tauri app setup only. Zero business logic.
 - **Visibility:** Use `pub(crate)` over `pub` unless crossing the crate boundary. Use `pub` only for Tauri IPC command handlers and types that must be accessible from the integration test crate (`tests/`).
 
 ### 2.1 Standard Rust File Grammar Order (CRITICAL)
@@ -38,7 +38,7 @@ All Rust source files must strictly follow this top-to-bottom grammar ordering:
    - Grouped imports: `std::...`, external third-party crates, internal `crate::...`, `super::...`.
    - Do not include crate/file header doc comment blocks (`//! ...`). Comments should strictly be concise doc comments directly on top of functions, types, and traits (`/// ...`).
 2. **File-Local Constants & Type Aliases:**
-   - `const ...`, `pub type ...`.
+   - `const ...`, `pub(crate) type ...`.
 3. **Data Structures (Structs & Enums):**
    - Public and internal `struct` and `enum` declarations with `#[derive(...)]`.
 4. **Trait Implementations:**
@@ -52,21 +52,60 @@ All Rust source files must strictly follow this top-to-bottom grammar ordering:
 
 ## 3. Constant Hierarchy & Placement (CRITICAL)
 
-Never scatter or bury magic numbers or configuration values across internal actor loops. All constants follow a strict 4-level hierarchy:
+Never scatter or bury magic numbers or configuration values across internal actor loops. All constants follow a strict 3-tier hierarchy:
 
-1. **Global Constants (`app/src-tauri/src/core/constants.rs`):**
-   - App-wide constants shared across multiple subsystems (e.g., `SAMPLE_RATE`, `RING_BUFFER_SIZE`, `DB_FILENAME`, system event strings, global prompt templates).
-2. **Settings Defaults (`app/src-tauri/src/core/defaults.rs`):**
-   - Default values for user-configurable settings and catalog options (e.g., default STT provider, default TTS voice, default LLM temperature).
-3. **Subsystem / Domain Constants (`app/src-tauri/src/services/<subsystem>/mod.rs` or domain `mod.rs`):**
-   - Domain-specific thresholds, frame limits, buffer sizes, model filenames, and directory paths must be placed at the **top of that domain's `mod.rs`** (e.g. `MODEL_DIR_VAD`, `VAD_CHUNK_SIZE`, `INACTIVE_FRAMES_THRESHOLD` in `services/vad/mod.rs`; `CTX_FLOOR_NON_EMBEDDED`, `DEFAULT_CLOUD_MODEL_CTX` in `services/llm/mod.rs`).
-   - Anyone inspecting a subsystem must immediately find its tuning parameters in `mod.rs` without searching through 10 internal worker files.
-4. **Single-File Internal Constants (Top of `.rs` file):**
-   - Constants purely local to a single struct or algorithm implementation (not shared across sibling modules) live at the very top of that specific file.
+1. **User-Facing Settings Defaults ([`app/src-tauri/src/core/defaults.rs`](file:///home/addy/projects/apps/vox/app/src-tauri/src/core/defaults.rs)):**
+   - Default values for user-configurable settings, options catalog, fallback timeouts, and model parameters (e.g., `DEFAULT_UI_THEME`, `DEFAULT_VAD_THRESHOLD`, `DEFAULT_ASR_MODEL`, `DEFAULT_LLM_TEMPERATURE`, `DEFAULT_TTS_VOICE_INDEX`).
+2. **Subsystem / Domain Shared Constants (`app/src-tauri/src/services/<domain>/mod.rs` or domain `mod.rs`):**
+   - Shared thresholds, buffer sizes, sample rates, frame limits, model filenames, and directory paths used across multiple files within that subsystem (e.g., `TTS_SAMPLE_RATE`, `TTS_CHUNK_SIZE`, `ZIPVOICE_MODEL_DIR` in `services/tts/mod.rs`; `CTX_FLOOR_NON_EMBEDDED`, `DEFAULT_CLOUD_MODEL_CTX` in `services/llm/mod.rs`).
+   - Anyone inspecting a subsystem must immediately find its tuning parameters in `mod.rs` without searching through internal worker files.
+3. **File-Local Internal Constants (Top of `.rs` file):**
+   - Constants used strictly by a particular file and only that file live directly at the top of that specific file beneath imports, following the standard grammar order.
 
 ---
 
-## 4. Function Standards & Code Cleanliness
+## 4. Spec-First Invariant Grounding (Authoritative Source of Truth)
+
+Do **not** invent or duplicate subsystem invariants in general style guides or actor implementations. Each domain in Vox is governed by an authoritative specification in `docs/specs/`. When designing, implementing, or refactoring code, always consult and align with the corresponding spec:
+
+- **Pipeline Events, State Machines & Turn Lifecycle:** [events-spec.md](file:///home/addy/projects/apps/vox/docs/specs/events-spec.md)
+  - Canonical `VoxEvent` registry, `InteractionState` and `DictationState` state machines, event-driven state transitions (IPC commands never mutate state directly), monotonic turn counter (`PipelineAtomics::next_turn()`), and 6-domain event contracts.
+- **Tiered Storage, Paths & Configuration Persistence:** [storage-spec.md](file:///home/addy/projects/apps/vox/docs/specs/storage-spec.md)
+  - 6-tier POSIX layout (`config/`, `data/`, `models/`, `cache/`, `diagnostics/`, `run/`), 3-way configuration decomposition (`settings.jsonc`, `providers.jsonc` [0600], `agent.jsonc`), paths singletons, and atomic writes with fallback recovery.
+- **Dictation & OS Keystroke Output:** [dictation-spec.md](file:///home/addy/projects/apps/vox/docs/specs/dictation-spec.md)
+  - Dictation lifecycle, silence auto-stop, pre-roll audio buffering, AT-SPI/Wayland typing injection, and shortcut bindings.
+- **LLM Harness & Streaming Inference:** [harness-spec.md](file:///home/addy/projects/apps/vox/docs/specs/harness-spec.md)
+  - Execution contexts, token limits, streaming protocol, prompt assembly, memory injection, and tool-call contracts.
+- **Tauri IPC Command Contracts & Error Enums:** [ipc-spec.md](file:///home/addy/projects/apps/vox/docs/specs/ipc-spec.md)
+  - Tauri command signatures, typed `thiserror` boundaries, payload validation, and frontend IPC bridge invariants.
+- **Database Architecture & Queries:** [db-spec.md](file:///home/addy/projects/apps/vox/docs/specs/db-spec.md)
+  - Turso SQLite schemas, migrations, connection pooling, vector embeddings, and query constraints.
+- **Working & Personal Memory Systems:** [memory-spec.md](file:///home/addy/projects/apps/vox/docs/specs/memory-spec.md)
+  - Dual-tier memory architecture, auto-compaction triggers, semantic similarity cutoffs, and consolidation pipelines.
+- **Resource Ownership & Lifetimes:** [ownership-spec.md](file:///home/addy/projects/apps/vox/docs/specs/ownership-spec.md)
+  - Actor ownership hierarchies, worker threads, `CancellationToken` hierarchies, drop guards, and graceful teardown semantics.
+- **Provider & Model Catalog:** [provider-model-catalog-spec.md](file:///home/addy/projects/apps/vox/docs/specs/provider-model-catalog-spec.md)
+  - Provider capabilities (`ProviderCaps`), voice profiles, model manifests, dynamic resolution, and fallback routing.
+- **Notifications & Diagnostics:** [notifications-spec.md](file:///home/addy/projects/apps/vox/docs/specs/notifications-spec.md)
+  - Desktop notifications, system tray states, toast centralization, and telemetry reporting.
+
+---
+
+## 5. State, Flag & Boolean Discipline
+
+- ❌ **STRICTLY BANNED (Synthetic Booleans & State Flag Bags):**
+  - **Derived Lifecycle Flags:** Never create boolean atomics, struct fields, or query methods that duplicate, shadow, or approximate lifecycle state (e.g. `is_connected`, `is_idle`, `is_engaged`, `is_sleeping`, `is_paused`, `is_assistant`, `is_passive`, `is_private`, `is_recording`, `is_speech_detected`). Query the state enum and settings directly.
+  - **Model Readiness Bags:** Never model model availability or subsystem readiness as a flat bag of loose atomics (e.g. `is_stt_loaded`, `is_llm_loaded`, `is_tts_loaded`). Subsystem/engine availability must be derived from `Option<Engine>` / `Arc<RwLock<Option<...>>>` or explicit status enums.
+  - **Ghost Flags:** Booleans that are written to but never read, or read without coordinated mutex guards leading to race conditions.
+- ✅ **JUSTIFIED / PERMITTED:**
+  - **Pure Binary Hardware / Signal Status:** A true, independent binary condition that is not a pipeline lifecycle phase (e.g. `mic_muted: bool`, `noise_gate_active: bool`).
+  - **Static / Persistent Feature Configuration Flags:** Immutable or user-configured binary settings (e.g. `enable_vad: bool`, `echo_cancellation: bool`).
+  - **Transient Flow Control within Single Function Scope:** A local variable tracking immediate iteration state (e.g. `let has_speech = ...;` or `let mut seen_first_token = false;`).
+  - **Atomic Cancellation / Shutdown Tokens:** `tokio_util::sync::CancellationToken` or worker shutdown flags (`AtomicBool` for loop termination only).
+
+---
+
+## 6. Function Standards & Code Cleanliness
 
 - **Function line cap (soft):** No function exceeds 50 lines without documented justification.
 - **Docstrings:** Exactly one `///` doc comment per function that states what it does, what it takes, and what it returns. No narrative step-comments inside function bodies; runtime traces belong in `log::info!` / `log::warn!`. Exception: `// SAFETY:` blocks (required for `unsafe`) and `// INVARIANT:` comments explaining non-obvious preconditions are always permitted.
@@ -79,7 +118,7 @@ Never scatter or bury magic numbers or configuration values across internal acto
 
 ---
 
-## 5. Error Handling & Resilience
+## 7. Error Handling & Resilience
 
 - **No `unwrap()` in `src/`:** Banned except on poisoned `RwLock`/`Mutex` guards.
 - **Propagation:** Use `?` with `.context("...")` (`anyhow`) in services and persistence.
@@ -94,7 +133,7 @@ Never scatter or bury magic numbers or configuration values across internal acto
 
 ---
 
-## 6. Concurrency, Threading & Audio Hot Path
+## 8. Concurrency, Threading & Audio Hot Path
 
 - **Actor-Engine Separation:** The actor owns the OS thread and state machine. The engine owns inference logic. They never merge into one struct or file.
 - **Thread Placement:**
@@ -108,68 +147,12 @@ Never scatter or bury magic numbers or configuration values across internal acto
 
 ---
 
-## 7. State, Event, and Flag Discipline (CRITICAL)
-
-### 7.1 Single Source of Truth (The Law of State)
-- `InteractionState` (`Idle=0, Ready=1, Listening=2, Thinking=3, Speaking=4, Paused=5, Error=6`) is the **SOLE SOURCE OF TRUTH** for the assistant pipeline lifecycle.
-- `DictationState` (`Idle=0, Recording=1, Transcribing=2, Error=3`) is the **SOLE SOURCE OF TRUTH** for dictation.
-
-### 7.2 When Using a `bool` is Justified vs. Banned
-- ❌ **STRICTLY BANNED (Synthetic Booleans & State Flag Bags):**
-  - **Derived Lifecycle Flags:** Never create boolean atomics, struct fields, or query methods that duplicate, shadow, or approximate lifecycle state (e.g. `is_connected`, `is_idle`, `is_engaged`, `is_sleeping`, `is_paused`, `is_assistant`, `is_passive`, `is_private`, `is_recording`, `is_speech_detected`). Query the state enum (`state.pipeline.state() == InteractionState::...`) and settings directly.
-  - **Model Readiness Bags:** Never model model availability or subsystem readiness as a flat bag of loose atomics (e.g. `is_stt_loaded`, `is_llm_loaded`, `is_tts_loaded`). Subsystem/engine availability must be derived from `Option<Engine>` / `Arc<RwLock<Option<...>>>` or explicit status enums.
-  - **Ghost Flags:** Booleans that are written to but never read, or read without coordinated mutex guards leading to race conditions.
-- ✅ **JUSTIFIED / PERMITTED:**
-  - **Pure Binary Hardware / Signal Status:** A true, independent binary condition that is not a pipeline lifecycle phase (e.g. `mic_muted: bool`, `noise_gate_active: bool`, `VadBackend::is_above_noise_gate(&self) -> bool`).
-  - **Static / Persistent Feature Configuration Flags:** Immutable or user-configured binary settings (e.g. `enable_vad: bool`, `echo_cancellation: bool`, `save_transcripts: bool`).
-  - **Transient Flow Control within Single Function Scope:** A local variable tracking immediate iteration state (e.g. `let has_speech = ...;` or `let mut seen_first_token = false;`).
-  - **Atomic Cancellation / Shutdown Tokens:** `tokio_util::sync::CancellationToken` or worker shutdown flags (`AtomicBool` for loop termination only).
-
-### 7.3 State Transitions are Event-Driven (IPC Calls Must Never Mutate State Directly)
-- **Event-Driven SSOT:** Pipeline lifecycle state (`InteractionState`, `DictationState`) is driven strictly and exclusively by internal pipeline events (`VoxEvent`) processed sequentially through the pipeline router.
-- **No Direct IPC State Mutation:** IPC command handlers (`src/ipc/`) must **NEVER** directly mutate lifecycle state atomics (e.g. calling `state.set_state(...)` or `state_atomic.store(...)`).
-- **Command Intent Pattern:** IPC handlers express intent solely by dispatching commands to actors (e.g. `session_tx.send(SessionCommand::...)` or `ptt_tx.send(...)`). The owning subsystem or pipeline router processes the command, evaluates domain invariants, emits the corresponding event, and the event router executes the canonical state transition. Direct state mutation bypasses lifecycle gates, corrupts turn lifecycles, and creates race conditions across actors.
-
-### 7.4 Centralized Monotonic Turn Generation
-- Turn IDs must be monotonically allocated strictly at the turn boundary via `PipelineAtomics::next_turn()`. Never call raw `fetch_add` on `turn_id` inside actors or subsystems; never reset to `0` or pass dummy turn IDs. Subsystems receive a `(turn_id: u32, token: CancellationToken)` pair at the turn boundary — they never own or advance the counter.
-
-### 7.5 Event Contracts
-Events are registry-owned and must have exactly one canonical definition. Internal pipeline events belong in `core/events.rs` (`VoxEvent`); IPC events belong in the typed IPC event registry (`IpcEvent`); telemetry and other subsystem buses use their own dedicated enums (`TelemetryEvent`, `PersistenceEvent`, `MemoryWorkerEvent`). Never introduce raw event-name strings, ad-hoc event variants, or undocumented payloads at call sites. Every new event requires a registry entry, a strongly typed payload, an explicit producer, an explicit consumer or documented reason for being producer-only, and corresponding contract tests. If an event is not present in the canonical registry, it does not exist. Do not duplicate or rename an existing event to represent the same state; extend the existing contract instead. Commands are not events and must remain in their owning actor/service command enum.
-
----
-
-## 8. Production Rust Best Practices
+## 9. Production Rust Best Practices
 
 - **Structured Logging:** All logs must specify domain tags: `log::info!("[Domain::Subsystem] Action completed status=ok")`. Never use `println!` or `eprintln!` in `src/`.
 - **Dropped Counter Telemetry:** High-throughput channel `try_send` calls must increment an atomic dropped-counter handle and log warnings if backpressure occurs.
 - **Newtype Pattern:** Prefer lightweight typed wrappers or domain aliases over raw primitives for identifiers (e.g. `TurnId(u32)`).
 - **Exhaustive Enums for State:** Model lifecycles using explicit state enums with transition functions rather than coordinating bags of loose booleans.
-
----
-
-## 9. Documentation Standards
-
-Root architecture and feature docs in `docs/*.md` follow a uniform frontmatter + "How to read" convention:
-
-### 9.1 Required Frontmatter (YAML)
-```yaml
----
-title: "Doc Title"
-audience: "Internal — <who this is for>"
-last_updated: YYYY-MM-DD
-owners: "backend-engineer role"
-related_docs:
-  - "docs/other.md — one-line relationship"
----
-```
-
-### 9.2 Required "How to read this doc" Section
-Immediately after the title, include:
-- **Audience:** who the doc is for.
-- **Scope:** what it covers.
-- **Convention:** how claims are cited (`path/file.rs` pointers; no invented code blocks).
-- **Non-goals:** what it is explicitly NOT (with cross-links).
-- **SSOT:** where the authoritative detail lives.
 
 ---
 

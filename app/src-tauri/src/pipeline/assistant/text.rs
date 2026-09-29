@@ -2,8 +2,7 @@ use tauri::AppHandle;
 
 use crate::{
     core::{
-        events::{emit_ipc_to, IpcEvent, TranscriptPayload},
-        settings::PipelineMode,
+        events::{emit_ipc_to, IpcEvent, PipelineMode, TranscriptPayload},
         state::{AppState, InteractionState},
     },
     pipeline::{target_window, transition, RoutingContext},

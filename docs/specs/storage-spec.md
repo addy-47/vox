@@ -105,133 +105,34 @@ Provider API keys and tokens must reside strictly in `providers.jsonc` (or syste
 
 ### 4.2 `config/settings.jsonc` (Hardware & Runtime Wiring)
 
-Governs physical devices, input/output hardware, audio DSP sensitivity, and selected engine backends.
-
-```jsonc
-{
-  "$schema": "./schemas/settings.schema.json",
-  "appearance": {
-    "theme": "dark",
-    "accent_seed": "hyper-violet"
-  },
-  "audio": {
-    "output_mode": "speaker",         // "speaker" | "headset"
-    "input_device": null              // null = system default, or device name string
-  },
-  "vad": {
-    "backend": "silero_vad",          // "silero_vad" | "earshot" | "ten_vad"
-    "threshold": 0.5,
-    "ptt_noise_gate": 0.005,
-    "silence_duration_ms": 400,
-    "speech_onset_ms": 32,
-    "max_speech_duration_s": 30
-  },
-  "pipeline": {
-    "mode": "modular",                // "modular" | "realtime"
-    "stt_engine": "embedded",         // "embedded" | "cloud"
-    "tts_engine": "kokoro",           // "kokoro" | "zipvoice" | "chatterbox"
-    "llm_engine": "server"            // "embedded" | "server" | "cloud"
-  },
-  "dictation": {
-    "enabled": true,
-    "hotkey": "Ctrl+Alt+V",
-    "interaction_mode": "ptt",        // "ptt" | "passive"
-    "output_mode": "paste",           // "paste" | "clipboard" | "tray"
-    "silence_auto_stop_ms": 800
-  },
-  "system": {
-    "setup_completed": true
-  }
-}
-```
+Governs physical devices, input/output hardware, audio DSP sensitivity, appearance, and selected engine backends. Mode `0644`.
+- **`appearance`**: UI theme and accent styling.
+- **`audio`**: Output mode (`Speaker` | `Headset`) and audio input device selection.
+- **`vad`**: Sensitivity threshold, PTT noise gate, silence cutoff duration, speech onset pre-roll, and max speech duration.
+- **`interaction`**: Interaction mode (`Passive` | `PTT`) and pipeline mode (`modular` | `realtime`).
+- **`dictation`**: Enablement, interaction mode, global hotkey, output mode (`paste` | `clipboard` | `tray`), and auto-stop silence duration.
+- **`system`**: First-run setup completion state.
+- **`stt` / `llm` / `tts` Wiring**: Active provider selectors and local compute options (thread pools, GPU layers, model references).
 
 ---
 
-### 4.3 `config/providers.jsonc` (Infrastructure & Credentials)
+### 4.3 `config/providers.jsonc` (Infrastructure & Credentials, Mode 0600)
 
-Governs network connections to AI model hosts, API tokens, and provider mappings.
-
-```jsonc
-{
-  "$schema": "./schemas/providers.schema.json",
-  "providers": {
-    "ollama": {
-      "kind": "ollama",
-      "base_url": "http://100.67.98.126:11435",
-      "api_key": null,
-      "default_model": "qwen3.5:9b"
-    },
-    "nvidia": {
-      "kind": "openai_compatible",
-      "base_url": "https://integrate.api.nvidia.com/v1",
-      "api_key": "nvapi-secret-key-goes-here",
-      "default_model": "meta/llama-3.1-8b-instruct"
-    },
-    "google_cloud_stt": {
-      "kind": "google_speech",
-      "project_id": "vox-production",
-      "credentials_path": null,
-      "language": "en-US",
-      "model": "chirp_3"
-    },
-    "deepgram": {
-      "kind": "deepgram",
-      "api_key": "dg-secret-key-goes-here",
-      "default_model": "nova-2",
-      "default_voice": "aura-asteria-en"
-    }
-  }
-}
-```
+Governs network connections to AI model hosts, API tokens, and provider parameters per subsystem. Strictly restricted to POSIX mode `0600`.
+- **`llm`**: Local server endpoints (`ollama`) and cloud provider configurations (`base_url`, `model`, `api_key`).
+- **`stt`**: Cloud STT provider settings and credentials.
+- **`tts`**: Provider configs for EdgeTTS, Chatterbox, remote Chatterbox worker, and ZipVoice synthesis.
+- **`realtime`**: Active provider selector and service credentials (`gemini_live`, `openai_realtime`, `deepgram_voice_agent`, `elevenlabs_convai`).
 
 ---
 
-### 4.4 `config/agent.jsonc` (Cognitive Policy & Phase 13 Harness)
+### 4.4 `config/agent.jsonc` (Cognitive Policy & Harness)
 
-Governs prompt engineering, LLM reasoning parameters, context share, memory retrieval filters, and tool/MCP integrations.
-
-```jsonc
-{
-  "$schema": "./schemas/agent.schema.json",
-  "persona": {
-    "name": "Vox Assistant",
-    "system_prompt": "You are Vox, a high-performance voice-native assistant.",
-    "temperature": 0.6,
-    "max_output_tokens": 120,
-    "context_window": 8192,
-    "reasoning_enabled": false
-  },
-  "memory": {
-    "working": {
-      "auto_compaction": true,
-      "max_context_share": 0.4,
-      "private_mode": false,
-      "web_search_enabled": false
-    },
-    "personal": {
-      "context_retrieval_enabled": true,
-      "top_k_facts": 5,
-      "semantic_similarity_cutoff": 0.65,
-      "consolidation_cadence": "Daily",
-      "consolidation_time": "03:00"
-    }
-  },
-  "capabilities": {
-    "tools_enabled": true,
-    "mcp_servers": [
-      {
-        "name": "codebase-memory",
-        "transport": "stdio",
-        "command": "codebase-memory-mcp",
-        "args": []
-      }
-    ],
-    "skills_paths": [
-      "~/.vox/skills"
-    ]
-  }
-}
-```
+Governs prompt engineering, LLM reasoning parameters, context share, and memory policies. Mode `0644`.
+- **`persona`**: System prompt definitions (`modular_prompt`, `realtime_prompt`).
+- **`working_memory`**: Privacy mode, automatic background compaction, context budget limit (`max_context_share`), and web search enablement.
+- **`personal_memory`**: Context retrieval enablement, fact count budgets (`top_k_facts`), similarity cutoffs, and consolidation schedule.
+- **`cognitive`**: LLM generation temperature, compaction temperature, output token ceiling, effective context window, and reasoning flag.
 
 ---
 
@@ -241,11 +142,11 @@ When any configuration file is updated via IPC or external file modification:
 
 | Configuration Target | Reload Trigger | Action Taken by Runtime | Latency Budget |
 | :--- | :--- | :--- | :--- |
-| **`settings.jsonc` (Audio/VAD)** | File watch or IPC mutate | Drops active CPAL stream, rebinds OS audio device/DSP thread. | $\le 100\text{ ms}$ |
-| **`settings.jsonc` (Engine Switch)** | File watch or IPC mutate | Unloads active ONNX model weights, loads requested model into RAM/VRAM. | $\le 1.5\text{ s}$ |
-| **`providers.jsonc` (Credentials/URLs)** | File watch or IPC mutate | Updates HTTP client connection pool; no pipeline interruption. | **$0\text{ ms}$ (Lockless)** |
-| **`agent.jsonc` (Prompt/Temperature)** | File watch or IPC mutate | Hot-swaps `Arc<AgentConfig>` applied on the immediate next LLM turn. | **$0\text{ ms}$ (Atomic pointer swap)** |
-| **`agent.jsonc` (MCP / Tools)** | File watch or IPC mutate | Connects/disconnects MCP stdio processes in background; active turn uses current snapshot. | Non-blocking async |
+| **`settings.jsonc` (Audio/VAD)** | IPC mutate | Sends `VadCommand` to audio DSP worker thread live. | $\le 100\text{ ms}$ |
+| **`settings.jsonc` (Engine Switch)** | IPC mutate | Rebuilds pipeline subsystem on restart or engine re-init. | Restart / Rebind |
+| **`providers.jsonc` (Credentials/URLs)** | IPC mutate | Updates provider records; LLM cloud provider constructed on engine boot. | Restart required |
+| **`agent.jsonc` (Prompt/Temperature)** | IPC mutate | Read live per LLM chassis turn or prompt builder (`Hot`). | **$0\text{ ms}$** |
+| **`agent.jsonc` (Memory Policies)** | IPC mutate | Updates working/personal memory subsystem live via side-effects (`Hot`). | Immediate |
 
 ---
 
@@ -258,17 +159,12 @@ During startup, before any database engine or audio stream is mounted, Vox execu
     │
     ▼
 Is `~/.vox/vox.db` present in root?
-    ├── YES ──► Create `data/db/` ──► Move `vox.db*` to `data/db/` ──► Create symlink `~/.vox/vox.db` -> `data/db/vox.db`
+    ├── YES ──► Create `data/db/` ──► Move `vox.db*` to `data/db/` (Zero Backward Compatibility — no symlinks)
     └── NO  ──► Proceed
     │
     ▼
-Is `~/.vox/settings.json` present in root?
-    ├── YES ──► Create `config/`
-    │           ├── Extract provider keys/urls to `config/providers.jsonc`
-    │           ├── Extract system prompt/memory to `config/agent.jsonc`
-    │           └── Migrate remaining fields to `config/settings.jsonc`
-    │           └── Archive legacy `settings.json` -> `cache/settings.json.bak`
-    └── NO  ──► Proceed
+Sweep stale config debris
+    └── Remove `config/*.tmp` and `config/*.corrupt.*`
     │
     ▼
 Is `~/.vox/cache/dictation_history.jsonl` present?

@@ -8,8 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     core::{
-        events::{emit_ipc_to, AudioIntent, IpcEvent, LlmTokenPayload},
-        settings::PipelineMode,
+        events::{emit_ipc_to, AudioIntent, IpcEvent, LlmTokenPayload, PipelineMode},
         state::{AppState, AppWindow, InteractionState},
     },
     persistence::PersistenceEvent,

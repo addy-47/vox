@@ -151,10 +151,8 @@ const V2_TABLE_STATEMENTS: &[&str] = &[
         base_memory_version INTEGER NOT NULL,
         project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
         op TEXT NOT NULL,
-        section TEXT NOT NULL,
-        target_text TEXT,
-        proposed_text TEXT NOT NULL,
-        source_fact_ids TEXT NOT NULL,
+        target_index INTEGER NOT NULL,
+        content TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending',
         created_at INTEGER NOT NULL,
         resolved_at INTEGER
@@ -183,89 +181,6 @@ pub async fn run_migrations(conn: &Connection) -> Result<()> {
         );
         conn.execute("PRAGMA foreign_keys = OFF;", ()).await?;
         conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
-
-        if current_version > 0 && current_version < 6 {
-            let _ = conn
-                .execute(
-                    "ALTER TABLE personal_memory ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;",
-                    (),
-                )
-                .await;
-            let _ = conn
-                .execute("DROP INDEX IF EXISTS idx_personal_memory_project;", ())
-                .await;
-        }
-
-        if current_version < 8 {            conn.execute("DROP TABLE IF EXISTS personal_memory_suggestions;", ())
-                .await?;
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS personal_memory_suggestions (
-                    id TEXT PRIMARY KEY,
-                    base_memory_version INTEGER NOT NULL,
-                    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
-                    op TEXT NOT NULL,
-                    target_index INTEGER NOT NULL,
-                    content TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    created_at INTEGER NOT NULL,
-                    resolved_at INTEGER
-                );",
-                (),
-            )
-            .await?;
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_suggestions_pending ON personal_memory_suggestions(base_memory_version, status);",
-                (),
-            )
-            .await?;
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_suggestions_status_proj ON personal_memory_suggestions(project_id, status);",
-                (),
-            )
-            .await?;
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_suggestions_created ON personal_memory_suggestions(created_at DESC);",
-                (),
-            )
-            .await?;
-        }
-
-        if current_version < 9 {
-            let voices_exists = conn
-                .query(
-                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'voices';",
-                    (),
-                )
-                .await?
-                .next()
-                .await?
-                .is_some();
-            if voices_exists {
-                let _ = conn
-                    .execute("ALTER TABLE voices ADD COLUMN slug TEXT;", ())
-                    .await;
-                conn.execute(
-                    "UPDATE voices SET slug = SUBSTR(id, 16) WHERE slug IS NULL AND id LIKE 'zipvoice_voice_%';",
-                    (),
-                )
-                .await?;
-                conn.execute(
-                    "UPDATE voices SET slug = SUBSTR(id, 18) WHERE slug IS NULL AND id LIKE 'chatterbox_voice_%';",
-                    (),
-                )
-                .await?;
-                conn.execute(
-                    "UPDATE voices SET id = slug WHERE id LIKE 'zipvoice_voice_%' AND slug IS NOT NULL;",
-                    (),
-                )
-                .await?;
-                conn.execute(
-                    "UPDATE voices SET name = UPPER(SUBSTR(slug, 1, 1)) || SUBSTR(slug, 2) WHERE source_kind = 'zipvoice_pack' AND slug IS NOT NULL;",
-                    (),
-                )
-                .await?;
-            }
-        }
 
         for stmt in V2_TABLE_STATEMENTS {
             conn.execute(stmt, ()).await?;

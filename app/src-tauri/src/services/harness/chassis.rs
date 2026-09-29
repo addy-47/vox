@@ -5,10 +5,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::{execute_turn, PipelineDomain, TurnExecutionRequest, TurnOutcome};
 use crate::{
-    core::{
-        settings::{LlmProviderConfig, PipelineMode, VoxSettings},
-        state::AppState,
-    },
+    config::VoxSettings,
+    core::{events::PipelineMode, state::AppState},
     persistence::TurnRow,
     services::{
         harness::{
@@ -24,7 +22,7 @@ use crate::{
         },
         llm::{
             actor::LlmCommand, ConversationInput, GenerationOptions, GenerationPurpose,
-            GenerationRequest, OutputConstraint, ReasoningMode,
+            GenerationRequest, LlmActiveProvider, OutputConstraint, ReasoningMode,
         },
         memory::compaction::CompactionResult,
     },
@@ -61,11 +59,7 @@ impl Harness {
         llm_tx: mpsc::Sender<LlmCommand>,
         supports_tools: bool,
     ) -> Self {
-        let is_cloud = matches!(
-            settings.llm.to_provider_config(),
-            LlmProviderConfig::OpenAiCompat { .. }
-        );
-        let is_embedded = !is_cloud;
+        let is_embedded = settings.llm.active == LlmActiveProvider::Embedded;
         let ctx_window = settings.llm.context_window as usize;
         let max_share = settings.working_memory.max_context_share;
 

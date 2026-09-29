@@ -20,11 +20,13 @@ use std::{
 use common::harness::attach_lifecycle_mock_engine;
 use vox_lib::{
     core::{
-        events::VoxEvent,
-        settings::{DictationInteractionMode, PipelineMode},
+        events::{PipelineMode, VoxEvent},
         state::{AppState, InteractionOwner, InteractionState},
     },
-    pipeline::{dictation::transition_dictation, router::spawn_router},
+    pipeline::{
+        dictation::{transition_dictation, DictationInteractionMode},
+        router::spawn_router,
+    },
     services::vad::{VadCommand, VadOperationalMode},
 };
 
@@ -934,7 +936,7 @@ async fn test_session_boot_capability_probe_and_cache_lifecycle() {
         let test_model = "test-model-404".to_string();
         {
             let mut settings = state.settings.write().unwrap();
-            settings.llm.active = vox_lib::core::settings::LlmActiveProvider::Server;
+            settings.llm.active = vox_lib::services::llm::LlmActiveProvider::Server;
             settings.llm.server.model = test_model.clone();
             settings.llm.server.base_url = "http://127.0.0.1:9999".to_string(); // unresponsive dummy port
         }
@@ -1013,13 +1015,13 @@ async fn test_session_boot_capability_probe_and_cache_lifecycle() {
 
         // Seed model_capabilities.json with supported model
         let supported_model = "test-agentic-model".to_string();
-        let key = format!("{}:{}", vox_lib::core::settings::CAP_KIND_OPENAI_COMPAT, supported_model);
+        let key = format!("{}:{}", vox_lib::services::llm::catalog::CAP_KIND_OPENAI_COMPAT, supported_model);
         let mut caps_map = std::collections::HashMap::new();
         caps_map.insert(
             key,
-            vox_lib::core::settings::ModelCapabilities {
+            vox_lib::services::llm::catalog::ModelCapabilities {
                 model_id: supported_model.clone(),
-                provider_kind: vox_lib::core::settings::CAP_KIND_OPENAI_COMPAT.to_string(),
+                provider_kind: vox_lib::services::llm::catalog::CAP_KIND_OPENAI_COMPAT.to_string(),
                 supports_tools: true,
                 supports_latin: true,
                 supports_devanagari: true,

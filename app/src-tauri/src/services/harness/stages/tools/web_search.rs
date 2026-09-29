@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 
 use super::{ToolDefinition, ToolDomain, ToolError, ToolExecutionContext, ToolResult};
 use crate::{
-    core::settings::PipelineMode,
+    core::events::PipelineMode,
     persistence::compactions,
     services::{
         llm::ToolFlow,

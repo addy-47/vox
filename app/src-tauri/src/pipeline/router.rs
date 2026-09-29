@@ -6,10 +6,12 @@ use std::{
 use tauri::{AppHandle, Manager};
 
 use super::ROUTER_THREAD_NAME;
-use crate::core::{
-    events::{emit_ipc_to, IpcEvent, StateChangedPayload, VoxEvent},
-    settings::{DictationInteractionMode, InteractionMode, PipelineMode},
-    state::{AppState, AppWindow, InteractionOwner, InteractionState},
+use crate::{
+    core::{
+        events::{emit_ipc_to, InteractionMode, IpcEvent, PipelineMode, StateChangedPayload, VoxEvent},
+        state::{AppState, AppWindow, InteractionOwner, InteractionState},
+    },
+    pipeline::dictation::DictationInteractionMode,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -34,7 +36,7 @@ impl RoutingContext {
             }
             InteractionOwner::Assistant => (
                 settings.interaction.pipeline_mode,
-                settings.interaction.mode.clone(),
+                settings.interaction.mode,
             ),
         };
 

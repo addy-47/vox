@@ -31,17 +31,27 @@ use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
         events::{AudioIntent, VoxEvent},
-        settings::{ParamRange, ProviderCaps, TtsVoiceSource},
     },
     services::{
         audio::playback::PlaybackEngine,
         tts::{
-            EDGE_TTS_DEFAULT_VOICE, EDGE_TTS_HOST, EDGE_TTS_ORIGIN, EDGE_TTS_PORT,
-            EDGE_TTS_SEC_MS_GEC_VERSION, EDGE_TTS_USER_AGENT, EDGE_TTS_WIN_EPOCH,
-            EDGE_TTS_WS_URL_BASE, MAX_SPEED_EDGE, MIN_SPEED_EDGE, TTS_CHUNK_SIZE, TTS_SAMPLE_RATE,
+            ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED_EDGE, MIN_SPEED_EDGE,
+            TTS_CHUNK_SIZE, TTS_SAMPLE_RATE,
         },
     },
 };
+
+pub const EDGE_TTS_HOST: &str = "speech.platform.bing.com";
+pub const EDGE_TTS_PORT: u16 = 443;
+pub const EDGE_TTS_ORIGIN: &str = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
+pub const EDGE_TTS_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0";
+pub const EDGE_TTS_SEC_MS_GEC_VERSION: &str = "1-143.0.3650.75";
+pub const EDGE_TTS_WIN_EPOCH: u64 = 11_644_473_600;
+pub const EDGE_TTS_DEFAULT_VOICE: &str = "en-US-AriaNeural";
+pub const EDGE_TTS_HINDI_VOICE: &str = "hi-IN-SwaraNeural";
+pub const EDGE_TTS_VOICES_URL_BASE: &str = "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=";
+pub const EDGE_TTS_WS_URL_BASE: &str =
+    "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
 
 /// Returns the Microsoft Edge ReadAloud client token bytes as a decoded UTF-8 string.
 pub fn get_trusted_client_token() -> String {

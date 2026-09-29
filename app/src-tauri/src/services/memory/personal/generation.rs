@@ -9,17 +9,14 @@ use tokio_util::sync::CancellationToken;
 use super::prompts::{
     consolidation_json_schema, CONSOLIDATION_MAX_OUTPUT_TOKENS, PERSONAL_CONSOLIDATION_TEMPERATURE,
 };
-use crate::{
-    core::settings::LlmSettings,
-    services::{
-        harness::{ChatMessage, Role},
-        llm::{
-            catalog::get_baseline_spec,
-            ConversationInput, GenerationPolicy, GenerationPurpose, LlmProvider, LlmStreamEvent,
-            OutputConstraint, ReasoningMode,
-        },
-        memory::COMPACTION_SENTINEL_TURN_ID,
+use crate::services::{
+    harness::{ChatMessage, Role},
+    llm::{
+        catalog::get_baseline_spec,
+        ConversationInput, GenerationPolicy, GenerationPurpose, LlmProvider, LlmSettings,
+        LlmStreamEvent, OutputConstraint, ReasoningMode,
     },
+    memory::COMPACTION_SENTINEL_TURN_ID,
 };
 
 /// Dispatches an LLM generation pass and gathers streamed tokens into a single text output.

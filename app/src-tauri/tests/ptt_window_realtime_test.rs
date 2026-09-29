@@ -19,9 +19,9 @@ use std::{
 };
 
 use vox_lib::{
+    config::{AudioOutputMode, RealtimeProviderKind},
     core::{
-        events::VoxEvent,
-        settings::{AudioOutputMode, InteractionMode, PipelineMode, RealtimeProviderKind},
+        events::{InteractionMode, PipelineMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
     },
     pipeline::assistant::ptt::{ptt_cancel, ptt_start, ptt_stop},

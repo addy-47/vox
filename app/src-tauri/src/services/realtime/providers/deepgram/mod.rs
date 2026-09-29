@@ -12,10 +12,8 @@ use parking_lot::Mutex;
 use session::{DeepgramDriver, DeepgramSessionState, DeepgramVoiceAgentSession};
 
 use crate::{
-    core::{
-        settings::{DeepgramVoiceAgentConfig, InteractionMode},
-        state::InteractionState,
-    },
+    config::DeepgramVoiceAgentConfig,
+    core::{events::InteractionMode, state::InteractionState},
     services::realtime::{
         transport::{spawn_harness, tcp_health_check, HarnessConfig, HarnessInit},
         RealtimeAudioConfig, RealtimeProviderEvent, RealtimeProviderKind, RealtimeSession,

@@ -8,6 +8,22 @@ use crate::{
     setup::model_manager::ModelSetupStatus,
 };
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PipelineMode {
+    #[default]
+    Modular,
+    Realtime,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum InteractionMode {
+    #[default]
+    Passive,
+    PTT,
+}
+
 /// Audio synthesis intent category governing playback engine state transitions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -15,6 +31,7 @@ pub enum AudioIntent {
     InterimFiller,
     TurnResponse,
 }
+
 
 #[derive(Debug, Clone)]
 pub enum VoxEvent {

@@ -15,14 +15,24 @@ use serde::{Deserialize, Serialize};
 use symphonia_core::audio::{Audio, GenericAudioBufferRef};
 
 use crate::{
-    core::settings::VoiceProfile,
     services::tts::{
         providers::edge_tts::get_trusted_client_token, CHATTERBOX_MODEL_DIR, EDGE_TTS_USER_AGENT,
-        EDGE_TTS_VOICES_URL_BASE, MIN_VOICE_CLONE_DURATION_SECS, MODEL_FILE_TTS_CHATTERBOX_S3GEN,
-        MODEL_FILE_TTS_CHATTERBOX_T3, TARGET_VOICE_SAMPLE_DURATION_SECS, TTS_SAMPLE_RATE,
+        EDGE_TTS_VOICES_URL_BASE, MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3, TTS_SAMPLE_RATE,
     },
     utils::paths::model_dir,
 };
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct VoiceProfile {
+    pub id: i32,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gender: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+}
 
 /// Metadata describing an online Edge TTS neural voice.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +43,9 @@ pub struct EdgeTtsVoiceEntry {
     pub locale: String,
     pub friendly_name: String,
 }
+
+pub const MIN_VOICE_CLONE_DURATION_SECS: f32 = 1.0;
+pub const TARGET_VOICE_SAMPLE_DURATION_SECS: f32 = 30.0;
 
 fn extract_mono_f32_samples(buf_ref: GenericAudioBufferRef<'_>, raw_samples: &mut Vec<f32>) {
     match buf_ref {

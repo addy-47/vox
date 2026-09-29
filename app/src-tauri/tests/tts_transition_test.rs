@@ -22,7 +22,6 @@ use ringbuf::traits::Consumer;
 use vox_lib::{
     core::{
         events::{AudioIntent, VoxEvent},
-        settings::ProviderCaps,
         state::InteractionState,
     },
     pipeline::{
@@ -37,6 +36,7 @@ use vox_lib::{
         tts::{
             actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
             providers::{supertonic::TtsEngine as SupertonicEngine, SynthesisContext, TtsProvider},
+            ProviderCaps,
         },
     },
 };
@@ -164,7 +164,7 @@ async fn test_tts_voice_switch_without_worker_restart() {
             .expect("Failed to send first Generate command");
 
         // Send hot-swap command through real Settings IPC entry seam
-        vox_lib::ipc::settings::core::update_setting(
+        vox_lib::ipc::settings::update_setting(
             "tts".to_string(),
             "voice_index".to_string(),
             serde_json::json!(2),

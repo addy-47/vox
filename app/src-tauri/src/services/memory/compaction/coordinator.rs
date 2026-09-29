@@ -8,7 +8,6 @@ use turso::Connection;
 use crate::{
     core::{
         events::{emit_ipc, IpcEvent, Severity},
-        settings::LlmSettings,
         state::{AppState, InteractionState},
     },
     persistence::{
@@ -22,7 +21,7 @@ use crate::{
     services::{
         harness::{ChatMessage, PromptTag, Role},
         llm::{
-            actor::create_llm_provider_from_llm_settings, LlmProvider, QWEN_MODEL_DIR,
+            actor::create_llm_provider_from_llm_settings, LlmProvider, LlmSettings, QWEN_MODEL_DIR,
             QWEN_MODEL_FILE,
         },
         memory::compaction::runner::run_compaction,

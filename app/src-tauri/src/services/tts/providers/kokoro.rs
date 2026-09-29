@@ -20,18 +20,25 @@ use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
         events::VoxEvent,
-        settings::{ParamRange, ProviderCaps, TtsVoiceSource},
     },
     services::{
         translit::is_devanagari,
         tts::{
-            EDGE_TTS_HINDI_VOICE, KOKORO_SILENCE_SCALE, KOKORO_VOICE_ROW_BYTES, MAX_SPEED,
-            MIN_SPEED, MODEL_DIRNAME_TTS_KOKORO_ESPEAK, MODEL_FILE_TTS_KOKORO_LEXICON_US,
-            MODEL_FILE_TTS_KOKORO_MODEL, MODEL_FILE_TTS_KOKORO_TOKENS,
-            MODEL_FILE_TTS_KOKORO_VOICES,
+            ParamRange, ProviderCaps, TtsVoiceSource, EDGE_TTS_HINDI_VOICE, MAX_SPEED,
+            MIN_SPEED,
         },
     },
 };
+
+pub const MODEL_FILE_TTS_KOKORO_MODEL: &str = "model.onnx";
+pub const MODEL_FILE_TTS_KOKORO_VOICES: &str = "voices.bin";
+pub const MODEL_FILE_TTS_KOKORO_TOKENS: &str = "tokens.txt";
+pub const MODEL_DIRNAME_TTS_KOKORO_ESPEAK: &str = "espeak-ng-data";
+pub const MODEL_FILE_TTS_KOKORO_LEXICON_US: &str = "lexicon-us-en.txt";
+/// Inter-phrase silence scale matching the sherpa-onnx crate default (0.2).
+pub const KOKORO_SILENCE_SCALE: f32 = 0.2;
+/// Stride of one voice row in voices.bin (511 frames x 256 dims x f32), from model metadata style_dim.
+pub const KOKORO_VOICE_ROW_BYTES: u64 = 523264;
 
 struct AtomicF32 {
     inner: AtomicU32,

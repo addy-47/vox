@@ -4,7 +4,7 @@ use tauri::AppHandle;
 
 use crate::{
     core::{
-        settings::InteractionMode,
+        events::InteractionMode,
         state::{AppState, InteractionState},
     },
     pipeline::{assistant::interrupt::on_interrupt, transition, RoutingContext},

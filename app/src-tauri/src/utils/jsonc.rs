@@ -57,10 +57,66 @@ pub fn strip_comments(input: &str) -> String {
     out
 }
 
+/// Drops `,` that is followed only by whitespace and then `}` or `]`,
+/// strictly preserving string literals (including escaped quotes).
+pub fn strip_trailing_commas(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    let mut in_string = false;
+    let mut escaped = false;
+
+    while let Some(c) = chars.next() {
+        if in_string {
+            out.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if c == '"' {
+            in_string = true;
+            out.push(c);
+            continue;
+        }
+
+        if c == ',' {
+            let mut is_trailing = false;
+            let mut clone_iter = chars.clone();
+            for next_c in clone_iter.by_ref() {
+                if next_c.is_whitespace() {
+                    continue;
+                }
+                if next_c == '}' || next_c == ']' {
+                    is_trailing = true;
+                }
+                break;
+            }
+
+            if is_trailing {
+                continue;
+            }
+        }
+
+        out.push(c);
+    }
+
+    out
+}
+
 /// Deserializes an instance of type `T` from a JSON with Comments (JSONC) string.
+/// Tolerates UTF-8 BOM (`\u{feff}`), single/multi-line comments, and trailing commas.
 pub fn from_jsonc_str<T: DeserializeOwned>(input: &str) -> Result<T, serde_json::Error> {
-    let stripped = strip_comments(input);
-    serde_json::from_str(&stripped)
+    let mut s = strip_comments(input);
+    if s.starts_with('\u{feff}') {
+        s.remove(0);
+    }
+    let cleaned = strip_trailing_commas(&s);
+    serde_json::from_str(&cleaned)
 }
 
 #[cfg(test)]
@@ -107,5 +163,22 @@ mod tests {
 
         let sample: Sample = from_jsonc_str(jsonc).expect("Failed to parse jsonc with escaped quotes");
         assert_eq!(sample.name, "He said \"hello // world\" /* not a comment */");
+    }
+
+    #[test]
+    fn test_trailing_commas_and_bom() {
+        let jsonc = "\u{feff}{\n  \"name\": \"Vox\",\n  \"url\": \"https://example.com\",\n  \"count\": 10,\n}";
+        let sample: Sample = from_jsonc_str(jsonc).expect("Failed to parse jsonc with BOM and trailing comma");
+        assert_eq!(sample.name, "Vox");
+        assert_eq!(sample.count, 10);
+
+        #[derive(Debug, Deserialize, PartialEq, Eq)]
+        struct ArraySample {
+            items: Vec<String>,
+        }
+
+        let array_jsonc = "{\n  \"items\": [\"a\", \"b\", \"c\",],\n}";
+        let parsed: ArraySample = from_jsonc_str(array_jsonc).expect("Failed to parse array with trailing comma");
+        assert_eq!(parsed.items, vec!["a", "b", "c"]);
     }
 }

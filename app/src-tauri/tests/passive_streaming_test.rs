@@ -19,9 +19,9 @@ use std::{
 };
 
 use vox_lib::{
+    config::AudioOutputMode,
     core::{
-        events::VoxEvent,
-        settings::{AudioOutputMode, InteractionMode},
+        events::{InteractionMode, VoxEvent},
         state::InteractionState,
     },
     services::{

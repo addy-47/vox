@@ -13,8 +13,8 @@ use crate::{
     core::{
         events::Severity,
         state::AppState,
-        settings::DictationOutputMode
-    },    
+    },
+    pipeline::dictation::DictationOutputMode,    
     persistence::VoxDb,
     services::dictation::DICTATION_PARTIAL_UPDATE_THROTTLE_MS,
     toast::{show_replaceable_toast, update_replaceable_toast},

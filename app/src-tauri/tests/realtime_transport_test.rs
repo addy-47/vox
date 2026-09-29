@@ -26,9 +26,10 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::{net::TcpListener, sync::mpsc};
 use tokio_tungstenite::tungstenite::Message;
 use vox_lib::{
+    config::RealtimeProviderKind,
     core::{
         error::PipelineImpact,
-        settings::{InteractionMode, RealtimeProviderKind},
+        events::InteractionMode,
         state::InteractionState,
     },
     services::realtime::{

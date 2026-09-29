@@ -14,13 +14,10 @@ use futures_util::future::BoxFuture;
 use parking_lot::RwLock;
 use serde::Deserialize;
 
-use crate::{
-    core::settings::LlmModelInfo,
-    services::llm::{
-        CanonicalToolDefinition, GenerationRequest, LlmError, LlmStreamEvent, OutputConstraint,
-        ProviderCapabilities, ProviderKind, ReasoningMode, Support,
-        DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS, DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS,
-    },
+use crate::services::llm::{
+    CanonicalToolDefinition, GenerationRequest, LlmError, LlmModelInfo, LlmStreamEvent,
+    OutputConstraint, ProviderCapabilities, ProviderKind, ReasoningMode, Support,
+    DEFAULT_CLIENT_CONNECT_TIMEOUT_SECS, DEFAULT_CLIENT_REQUEST_TIMEOUT_SECS,
 };
 
 #[derive(Deserialize)]

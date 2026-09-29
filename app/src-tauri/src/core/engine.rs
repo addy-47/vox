@@ -11,14 +11,14 @@ use ringbuf::traits::Split;
 use tauri::{AppHandle, Manager};
 
 use crate::{
+    config::VoxSettings,
     core::{
-        events::{emit_ipc_to, IpcEvent, TranscriptPayload, VoxEvent},
-        settings::{DictationInteractionMode, InteractionMode, TtsActiveProvider, VoxSettings},
+        events::{emit_ipc_to, InteractionMode, IpcEvent, TranscriptPayload, VoxEvent},
         state::{AppState, InteractionOwner, InteractionState},
     },
     monitoring::TelemetryEvent,
     persistence::{get_tokio_handle, worker::spawn_persistence_worker, PersistenceEvent},
-    pipeline::{router::spawn_router, target_window},
+    pipeline::{dictation::DictationInteractionMode, router::spawn_router, target_window},
     services::{
         audio::{
             playback::{PlaybackEngineHandles, PlaybackTelemetryHandles},
@@ -36,7 +36,7 @@ use crate::{
         },
         tts::{
             actor::{cool_down_tts, warm_up_tts, TtsWarmUpHandles},
-            resolve_reference_audio, TtsCommand, SUPERTONIC_MODEL_DIR,
+            resolve_reference_audio, TtsActiveProvider, TtsCommand, SUPERTONIC_MODEL_DIR,
         },
         vad::{
             actor::{spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles},
@@ -182,7 +182,7 @@ pub async fn start_audio_engine<R: tauri::Runtime + 'static>(
                 DictationInteractionMode::Passive => InteractionMode::Passive,
                 DictationInteractionMode::Ptt => InteractionMode::PTT,
             },
-            InteractionOwner::Assistant => s.interaction.mode.clone(),
+            InteractionOwner::Assistant => s.interaction.mode,
         };
         (
             s.vad.threshold,
@@ -495,7 +495,7 @@ pub async fn ensure_modular_workers(state: &AppState) -> Result<(), String> {
                 telemetry_rtf: Some(Arc::clone(&state.telemetry.latest_tts_rtf)),
                 turn_metrics: Some(Arc::clone(&state.turn_metrics)),
             },
-            &settings,
+            &settings.tts,
             &tts_path,
             reference_audio.as_deref(),
             pipeline_tx,

@@ -10,17 +10,15 @@ use tauri::{async_runtime::spawn as spawn_task, AppHandle, Manager, Runtime, Sta
 use tokio::time::{sleep, timeout};
 
 use crate::{
+    config::VoxSettings,
     core::{
         engine::{ensure_memory_embedder, ensure_modular_workers_sync, stop_audio_engine_sync},
         error::PipelineImpact,
-        events::Severity,
-        settings::{
-            DictationInteractionMode, InteractionMode, LlmActiveProvider, ModelCapabilities,
-            PipelineMode, VoxSettings, CAP_KIND_EMBEDDED, CAP_KIND_OPENAI_COMPAT,
-        },
+        events::{InteractionMode, PipelineMode, Severity},
         state::{AppState, InteractionOwner, InteractionState},
     },
     paths::get,
+    services::llm::catalog::{ModelCapabilities, CAP_KIND_EMBEDDED, CAP_KIND_OPENAI_COMPAT},
     persistence::{
         compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
         get_tokio_handle,
@@ -28,13 +26,14 @@ use crate::{
         sessions::fetch_session_continuation,
         PersistenceEvent,
     },
-    pipeline::{spawn_idle_monitor, transition, RoutingContext},
+    pipeline::{dictation::DictationInteractionMode, spawn_idle_monitor, transition, RoutingContext},
     services::{
         self,
         harness::Harness,
         llm::{
             actor::{cool_down_llm, LlmCommand},
             catalog::probe_capabilities,
+            LlmActiveProvider,
         },
         memory::{compaction::coordinator::CompactionCoordinator, trim_heap},
         notifications::{Action, ActionPayload, NotificationCategory, NotificationParams},
@@ -97,7 +96,7 @@ fn start_realtime_session<R: Runtime + 'static>(
 
     rt_actor
         .start(
-            ctx.interaction_mode.clone(),
+            ctx.interaction_mode,
             playback_engine,
             pipeline_tx,
             app.clone(),
@@ -151,7 +150,7 @@ fn resume_realtime<R: Runtime + 'static>(
         rt_actor.stop();
         rt_actor
             .start(
-                ctx.interaction_mode.clone(),
+                ctx.interaction_mode,
                 playback_engine,
                 pipeline_tx,
                 app.clone(),
@@ -404,7 +403,7 @@ pub fn on_pause<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingC
     let dictation_mode = state
         .settings
         .read()
-        .map(|s| s.dictation.interaction_mode.clone())
+        .map(|s| s.dictation.interaction_mode)
         .unwrap_or(DictationInteractionMode::Ptt);
     let vad_op_mode = match dictation_mode {
         DictationInteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
@@ -601,7 +600,7 @@ pub fn on_end<R: Runtime>(app: &AppHandle<R>, state: &AppState, ctx: &RoutingCon
                 let dictation_mode = state
                     .settings
                     .read()
-                    .map(|s| s.dictation.interaction_mode.clone())
+                    .map(|s| s.dictation.interaction_mode)
                     .unwrap_or(DictationInteractionMode::Ptt);
                 let vad_op_mode = match dictation_mode {
                     DictationInteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,

@@ -12,14 +12,11 @@ pub use family::ModelFamily;
 use futures_util::future::BoxFuture;
 pub use worker::LlmWorker;
 
-use crate::{
-    core::settings::LlmModelInfo,
-    services::{
-        harness::ConversationContext,
-        llm::{
-            GenerationRequest, LlmEngine, LlmError, LlmProvider, LlmStreamEvent, OutputConstraint,
-            ProviderCapabilities, ProviderKind, Support,
-        },
+use crate::services::{
+    harness::ConversationContext,
+    llm::{
+        GenerationRequest, LlmEngine, LlmError, LlmModelInfo, LlmProvider, LlmStreamEvent,
+        OutputConstraint, ProviderCapabilities, ProviderKind, Support,
     },
 };
 

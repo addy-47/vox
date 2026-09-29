@@ -8,10 +8,10 @@ use tauri::Manager;
 use tokio::task::JoinHandle;
 
 use crate::{
+    config::RealtimeProviderKind,
     core::{
         error::PipelineError,
-        events::{emit_ipc_to, IpcEvent, LlmTokenPayload, TranscriptPayload, VoxEvent},
-        settings::{InteractionMode, PipelineMode, RealtimeProviderKind},
+        events::{emit_ipc_to, InteractionMode, IpcEvent, LlmTokenPayload, PipelineMode, TranscriptPayload, VoxEvent},
         state::{AppState, AppWindow, InteractionOwner},
     },
     pipeline::target_window,
