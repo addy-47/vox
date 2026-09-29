@@ -9,9 +9,9 @@ use crate::{
         engine::start_audio_engine,
         error::DictationError,
         events::VoxEvent,
-        settings::{DictationInteractionMode, DictationOutputMode},
         state::{AppState, AppWindow, InteractionOwner, InteractionState},
     },
+    pipeline::dictation::{DictationInteractionMode, DictationOutputMode},
     services::notifications::lifecycle,
     tray::{ensure_tray_window, setup_linux_virtual_layer},
 };

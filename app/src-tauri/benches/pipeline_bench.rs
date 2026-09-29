@@ -31,14 +31,13 @@ use common::{
 };
 use ringbuf::traits::{Observer, Producer};
 use vox_lib::{
+    config::VoxSettings,
     core::{
-        events::VoxEvent,
-        settings::{
-            InteractionMode, LlmActiveProvider, PipelineMode, TtsActiveProvider, VoxSettings,
-        },
+        events::{InteractionMode, PipelineMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
     },
     pipeline::{assistant::session::on_session_start, RoutingContext},
+    services::{llm::LlmActiveProvider, tts::TtsActiveProvider},
 };
 
 #[derive(Parser, Debug)]

@@ -1,11 +1,8 @@
 use std::path::Path;
 
-use crate::{
-    core::settings::{VadBackendOption, VadSettings},
-    services::vad::{
-        providers::{EarshotVadEngine, SileroVadEngine, TenVadEngine, VadBackend},
-        MODEL_DIR_VAD, MODEL_FILE_VAD, MODEL_FILE_VAD_SILERO,
-    },
+use crate::services::vad::{
+    providers::{EarshotVadEngine, SileroVadEngine, TenVadEngine, VadBackend},
+    VadBackendOption, VadSettings, MODEL_DIR_VAD, MODEL_FILE_VAD, MODEL_FILE_VAD_SILERO,
 };
 
 /// Resolves model paths and instantiates the configured VAD backend with automatic fallback.

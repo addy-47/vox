@@ -16,9 +16,9 @@ use std::{
 };
 
 use vox_lib::{
+    config::AudioOutputMode,
     core::{
-        events::{AudioIntent, VoxEvent},
-        settings::{AudioOutputMode, InteractionMode, LlmActiveProvider, PipelineMode},
+        events::{AudioIntent, InteractionMode, PipelineMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
     },
     pipeline::{assistant::llm::on_llm_finished, RoutingContext},
@@ -26,7 +26,7 @@ use vox_lib::{
         harness::{Harness, TurnExecutionRequest, TurnOutcome},
         llm::{
             actor::{spawn_llm_worker, LlmCommand},
-            EmbeddedProvider,
+            EmbeddedProvider, LlmActiveProvider,
         },
         tts::TtsCommand,
     },

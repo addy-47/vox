@@ -24,9 +24,9 @@ use std::{
 
 use ringbuf::traits::Observer;
 use vox_lib::{
+    config::AudioOutputMode,
     core::{
-        events::{AudioIntent, VoxEvent},
-        settings::{AudioOutputMode, InteractionMode},
+        events::{AudioIntent, InteractionMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
     },
     pipeline::router::spawn_router,

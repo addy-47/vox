@@ -17,10 +17,8 @@ use common::{harness::get_test_app_and_state, paths::TempPathsGuard};
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use vox_lib::{
-    core::{
-        settings::{LlmActiveProvider, LlmRemoteConfig},
-        state::InteractionState,
-    },
+    core::state::InteractionState,
+    services::llm::{LlmActiveProvider, LlmRemoteConfig},
     persistence::{
         compactions::{
             commit_compaction_output, fetch_latest_compaction_run, fetch_turns_for_compaction,
@@ -86,6 +84,7 @@ async fn test_memory_compaction_100_turns_live_server() {
         settings.llm.server = LlmRemoteConfig {
             base_url: REMOTE_OLLAMA_URL.to_string(),
             model: REMOTE_OLLAMA_MODEL.to_string(),
+            protocol: None,
             api_key: None,
             provider_name: Some("ollama".to_string()),
         };

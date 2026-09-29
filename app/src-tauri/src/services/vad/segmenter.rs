@@ -356,7 +356,7 @@ pub fn process_stream_passthrough(chunk: &[f32], state: &mut VadActorState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::settings::{AudioOutputMode, InteractionMode};
+    use crate::{config::AudioOutputMode, core::events::InteractionMode};
 
     #[test]
     fn test_preroll_push_and_capacity() {

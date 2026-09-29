@@ -190,7 +190,7 @@ Every AI domain uses a **trait-based provider system** — the pipeline dispatch
 | **SileroVad** (default)  | Rust-native, embedded weights | ~1ms | 0.5 | ~20× faster than TenVAD, zero ONNX overhead |
 | **TenVAD** (legacy)                                          | ONNX via sherpa-onnx          |   ~15ms | 0.5                                                    | Requires `ten_vad.onnx` model file          |
 
-Runtime selection via `VadBackendOption` in `core/settings.rs:VadSettings`; actor is `services/vad/actor.rs` (high-priority OS thread, emits `VoxEvent::SpeechStart/SpeechEnd`).
+Runtime selection via `VadBackendOption` in `services/vad/config.rs:VadSettings`; actor is `services/vad/actor.rs` (high-priority OS thread, emits `VoxEvent::SpeechStart/SpeechEnd`).
 
 ### 4.2 STT — Speech-to-Text
 
@@ -210,7 +210,7 @@ Throttling: partials dynamically throttled with floor at 300ms (`STT_MIN_PARTIAL
 | **OpenAiCompatProvider** | `reqwest` (streaming)                | `provider_name` → URL mapping (openai, gemini, anthropic, nvidia, groq, openrouter, together) |  0 MB (local)  |
 | **Ollama / LMStudio**    | `reqwest`                            | Local server `http://localhost:11434`                                                         |  0 MB (local)  |
 
-Selection is `LlmActiveProvider::{Embedded, Server, Cloud}` (`core/settings.rs:398-405`). Cloud routing is automatic: `provider_name = "openai"` → `api.openai.com`, `"gemini"` → `generativelanguage.googleapis.com/v1beta/openai`, `"nvidia"` → `integrate.api.nvidia.com/v1`, etc. Default local model is `qwen_3_5_0_8b` (`core/defaults.rs:30`); defaults for server/cloud are `gemma3:4b` / `meta/llama-3.1-8b-instruct`.
+Selection is `LlmActiveProvider::{Embedded, Server, Cloud}` (`services/llm/config.rs:LlmSettings`). Cloud routing is automatic: `provider_name = "openai"` → `api.openai.com`, `"gemini"` → `generativelanguage.googleapis.com/v1beta/openai`, `"nvidia"` → `integrate.api.nvidia.com/v1`, etc. Default local model is `qwen_3_5_0_8b` (`core/defaults.rs:30`); defaults for server/cloud are `gemma3:4b` / `meta/llama-3.1-8b-instruct`.
 
 #### Capability Probing & Settings Engine (`services/llm/catalog/probe.rs`)
 
@@ -236,7 +236,7 @@ Selection is `LlmActiveProvider::{Embedded, Server, Cloud}` (`core/settings.rs:3
 | **Chatterbox** (local clone) | GGML, chatterbox-rs                    | 340M Q4 |   ~1.1 GB    | 24kHz native | Voice cloning from 5s reference                            |
 | **Chatterbox Remote**      | reqwest blocking HTTP                     |    340M | 0 MB (local) | 24kHz        | Offloads to remote CUDA GPU                                |
 
-Selection is `TtsActiveProvider::{EdgeTts,Supertonic,Kokoro,Chatterbox,ChatterboxRemote}` (`core/settings.rs:558-565`). Quality steps, speed, and `threads` (default `DEFAULT_TTS_THREADS=2`) are `WorkerCommand` hot-reloadable.
+Selection is `TtsActiveProvider::{EdgeTts,Supertonic,Kokoro,Chatterbox,ChatterboxRemote,Zipvoice}` (`services/tts/config.rs:TtsSettings`). Speed and voice are `WorkerCommand` hot-reloadable; threads is `Restart`.
 
 ### 4.5 Realtime S2S — Speech-to-Speech
 
@@ -376,15 +376,15 @@ Full consumer map is in `docs/frontend.md:§9` and typed wrappers in `services/e
 VoxSettings → 13 domains (appearance, audio, vad, stt, llm, tts, realtime, interaction, dictation, history, memory, persona, system)
 ```
 
-### Reload Policies (`core/settings.rs:171-190`)
+### Reload Policies (`config/mod.rs:get_setting_reload_policy`)
 
 | Policy          | Effect                                                 | Examples                                                                                                                                                       |
 | --------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Hot`           | Apply immediately (no restart)                         | UI theme, private mode, prompts, `vad.threshold`, `stt.transliterate_enabled`, `llm.temperature`, `interaction.auto_sleep_timeout`, `system.telemetry_enabled` |
-| `WorkerCommand` | Send via channel                                       | `tts.quality_steps`, `tts.speed`, `tts.threads`                                                                                                                |
-| `Restart`       | Full pipeline restart (`stop_engine` → `start_engine`) | Model changes, provider switches, engine config, `vad.backend`, `tts.active`, `stt.active`                                                                     |
+| `Hot`           | Apply immediately (no restart)                         | UI theme, private mode, prompts, `interaction.mode`, `dictation.*`, `llm.temperature`, `stt.transliterate_enabled`                                             |
+| `WorkerCommand` | Send via channel                                       | `vad.threshold`, `vad.ptt_noise_gate`, `vad.silence_duration_ms`, `vad.speech_onset_ms`, `audio.output_mode`, `tts.speed`, `tts.voice_index`                  |
+| `Restart`       | Full pipeline restart (`stop_engine` → `start_engine`) | Model changes, provider switches, engine config, `vad.vad_backend`, `vad.max_speech_duration_s`, `tts.active`, `stt.active`, `llm.cloud_keys`, `threads`      |
 
-Every agent domain has a `ProviderConfig` tagged enum (`LlmProviderConfig`, `TtsProviderConfig`, `SttProviderConfig`, `RealtimeProviderKind`) for provider selection at worker construction time. Dispatch is via `ipc/settings/mutation.rs:dispatch_worker_command`. Dictation settings (`dictation.enabled`, `dictation.interaction_mode`, `dictation.hotkey`, `dictation.output_mode`) are handled by `apply_dictation_mutation` in `ipc/settings/mutation.rs`; `enabled` and `interaction_mode` changes trigger `transition_dictation(Ready|Idle)` via `ipc/settings/core.rs`.
+Every agent domain has a `ProviderConfig` tagged enum (`LlmProviderConfig`, `TtsProviderConfig`, `SttProviderConfig`, `RealtimeProviderKind`) for provider selection at worker construction time. Dispatch is via `config/dispatch.rs:dispatch_worker_command`. Dictation settings (`dictation.enabled`, `dictation.interaction_mode`, `dictation.hotkey`, `dictation.output_mode`) are handled by `apply_setting_mutation` in `config/mutation.rs`; `enabled` and `interaction_mode` changes trigger `transition_dictation(Ready|Idle)` via `config/dispatch.rs`.
 
 ---
 

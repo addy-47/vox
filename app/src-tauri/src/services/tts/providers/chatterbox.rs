@@ -12,12 +12,9 @@ use chatterbox_rs::{Engine, EngineOptions};
 use parking_lot::Mutex;
 
 use super::{speed_range, SynthesisContext, TtsProvider};
-use crate::{
-    core::settings::{ParamRange, ProviderCaps, TtsVoiceSource},
-    services::tts::{
-        MAX_SPEED, MIN_SPEED, MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3,
-        TTS_CHUNK_SIZE, TTS_SAMPLE_RATE,
-    },
+use crate::services::tts::{
+    ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED,
+    MODEL_FILE_TTS_CHATTERBOX_S3GEN, MODEL_FILE_TTS_CHATTERBOX_T3, TTS_CHUNK_SIZE, TTS_SAMPLE_RATE,
 };
 
 /// Fixed conditional-flow-matching step count for local Chatterbox.

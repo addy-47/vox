@@ -13,11 +13,10 @@ use crate::{
         error::{PipelineError, PipelineImpact},
         events::{AudioIntent, VoxEvent},
         metrics::TurnMetricsCollector,
-        settings::VoxSettings,
     },
     services::{
         audio::PlaybackEngine,
-        tts::{factory::create_tts_provider, providers::TtsProvider},
+        tts::{factory::create_tts_provider, providers::TtsProvider, TtsSettings},
     },
 };
 
@@ -195,7 +194,7 @@ pub struct TtsWarmUpHandles<'a> {
 /// Spawns and initializes a persistent TTS worker actor thread.
 pub fn warm_up_tts(
     handles: TtsWarmUpHandles<'_>,
-    settings: &VoxSettings,
+    settings: &TtsSettings,
     super_tts_path: &Path,
     reference_audio: Option<&str>,
     event_tx: mpsc::Sender<VoxEvent>,

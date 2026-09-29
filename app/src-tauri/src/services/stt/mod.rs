@@ -1,9 +1,13 @@
 pub mod actor;
+pub mod config;
 pub mod factory;
 pub mod providers;
 pub mod stitcher;
 
 pub use actor::{spawn_stt_worker, SttActorChannels, SttActorHandles, SttCommand};
+pub use config::{
+    SttActiveProvider, SttCloudConfig, SttEmbeddedConfig, SttProviderConfig, SttSettings,
+};
 pub use factory::{create_stt_instance_from_settings, create_stt_provider};
 pub use providers::{
     EmbeddedSttProvider, NemotronEngine, QwenEngine, SttEngine, SttProvider, SttProviderKind,

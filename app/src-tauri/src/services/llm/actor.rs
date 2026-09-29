@@ -7,13 +7,11 @@ use std::{
 pub use super::factory::{create_llm_provider, create_llm_provider_from_llm_settings};
 use super::{
     ConversationInput, GenerationOptions, GenerationPurpose, GenerationRequest, LlmProvider,
-    OutputConstraint, ReasoningMode,
+    LlmSettings, OutputConstraint, ReasoningMode,
 };
 use crate::{
-    core::{
-        error::{PipelineError, PipelineImpact},
-        settings::{LlmSettings, VoxSettings},
-    },
+    config::VoxSettings,
+    core::error::{PipelineError, PipelineImpact},
     services::harness::{ChatMessage, Role},
 };
 

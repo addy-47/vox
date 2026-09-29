@@ -1,12 +1,12 @@
+use super::VoxSettings;
 use crate::{
-    core::{
-        defaults::MIN_LLM_CONTEXT_WINDOW,
-        settings::{
-            LlmActiveProvider, LlmProviderConfig, LlmRemoteConfig, SttActiveProvider,
-            SttCloudConfig, SttProviderConfig, TtsActiveProvider, TtsProviderConfig, VoxSettings,
-        },
+    core::defaults::MIN_LLM_CONTEXT_WINDOW,
+    services::{
+        llm::{LlmActiveProvider, LlmProviderConfig, LlmRemoteConfig},
+        memory::scheduler::parse_consolidation_time,
+        stt::{SttActiveProvider, SttCloudConfig, SttProviderConfig},
+        tts::{TtsActiveProvider, TtsProviderConfig},
     },
-    services::memory::scheduler::parse_consolidation_time,
 };
 
 fn apply_appearance_mutation(
@@ -145,8 +145,10 @@ fn apply_stt_mutation(
                         model,
                         language,
                         region,
-                        project_id,
-                        endpoint,
+                        sample_rate,
+                        channels,
+                        interim_results,
+                        punctuate,
                     } => {
                         settings.stt.active = SttActiveProvider::Cloud;
                         settings.stt.cloud = SttCloudConfig {
@@ -154,8 +156,10 @@ fn apply_stt_mutation(
                             model,
                             language,
                             region,
-                            project_id,
-                            endpoint,
+                            sample_rate,
+                            channels,
+                            interim_results,
+                            punctuate,
                         };
                     }
                 }
@@ -255,28 +259,37 @@ fn apply_llm_mutation(
                     LlmProviderConfig::Embedded => {
                         settings.llm.active = LlmActiveProvider::Embedded;
                     }
-                    LlmProviderConfig::OpenAiCompat {
+                    LlmProviderConfig::Server {
                         base_url,
                         model,
-                        api_key,
                         provider_name,
+                        protocol,
+                        api_key,
                     } => {
-                        if settings.llm.active == LlmActiveProvider::Cloud {
-                            settings.llm.cloud = LlmRemoteConfig {
-                                base_url,
-                                model,
-                                api_key,
-                                provider_name,
-                            };
-                        } else {
-                            settings.llm.active = LlmActiveProvider::Server;
-                            settings.llm.server = LlmRemoteConfig {
-                                base_url,
-                                model,
-                                api_key,
-                                provider_name,
-                            };
-                        }
+                        settings.llm.active = LlmActiveProvider::Server;
+                        settings.llm.server = LlmRemoteConfig {
+                            base_url,
+                            model,
+                            provider_name,
+                            protocol,
+                            api_key,
+                        };
+                    }
+                    LlmProviderConfig::Cloud {
+                        base_url,
+                        model,
+                        provider_name,
+                        protocol,
+                        api_key,
+                    } => {
+                        settings.llm.active = LlmActiveProvider::Cloud;
+                        settings.llm.cloud = LlmRemoteConfig {
+                            base_url,
+                            model,
+                            provider_name,
+                            protocol,
+                            api_key,
+                        };
                     }
                 }
             }

@@ -3,7 +3,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
-    core::settings::DeepgramVoiceAgentConfig,
+    config::DeepgramVoiceAgentConfig,
     services::realtime::{
         transport::{WsReader, WsWriter},
         DEFAULT_INPUT_SAMPLE_RATE, DEFAULT_OUTPUT_SAMPLE_RATE, WS_HANDSHAKE_TIMEOUT,

@@ -2,6 +2,7 @@
 
 extern crate symphonia_core;
 
+pub mod config;
 pub mod core;
 pub mod ipc;
 pub mod monitoring;
@@ -36,9 +37,9 @@ use crate::tray::setup_linux_virtual_layer;
 use crate::{
     core::{
         events::VoxEvent,
-        settings::{DictationInteractionMode, DictationOutputMode},
         state::{AppState, InteractionState, RuntimeStatus, TelemetryState},
     },
+    pipeline::dictation::{DictationInteractionMode, DictationOutputMode},
     ipc::{
         audio::list_audio_devices,
         memory::{
@@ -62,11 +63,11 @@ use crate::{
             submit_text_input,
         },
         projects::{create_project, delete_project, get_projects, rename_project},
-        settings::{
-            catalog::get_provider_caps, check_provider_health, get_model_catalog, get_settings,
-            list_llm_models, probe_model_capabilities, reset_settings, setup_remote_server,
-            update_setting,
+        catalog::{
+            check_provider_health, get_model_catalog, get_provider_caps, list_llm_models,
+            probe_model_capabilities, setup_remote_server,
         },
+        settings::{get_settings, reset_settings, update_setting},
         setup::{
             check_updates, complete_setup_wizard, fetch_manifest, get_onboarding_status,
             get_runtime_report, manage_models, reveal_wizard,
@@ -542,7 +543,7 @@ pub fn run() {
 
                     (
                         settings.dictation.enabled,
-                        settings.dictation.interaction_mode.clone(),
+                        settings.dictation.interaction_mode,
                         settings.system.setup_completed,
                     )
                 };
@@ -713,6 +714,22 @@ pub fn run() {
                 tauri::RunEvent::Exit => {
                     log::info!("[Vox] Shutting down engine...");
                     let state: State<'_, Arc<AppState>> = app_handle.state();
+
+                    // Flush any pending debounced settings save immediately
+                    let debounce = state.save_debounce.blocking_lock().take();
+                    if let Some(handle) = debounce {
+                        handle.abort();
+                        let snapshot = state
+                            .settings
+                            .read()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .clone();
+                        if let Err(e) = snapshot.save() {
+                            log::error!("[Vox] Final settings flush failed: {}", e);
+                        } else {
+                            log::info!("[Vox] Final settings flush completed.");
+                        }
+                    }
 
                     // Clear engine (this will drop VoxEngine and close channels)
                     let mut engine_lock = state.engine.blocking_lock();

@@ -21,9 +21,9 @@ use super::{
     VAD_PARTIAL_INTERVAL_SAMPLES, VAD_PRE_ROLL_CAPACITY,
 };
 use crate::{
+    config::AudioOutputMode,
     core::{
-        events::{InteractionOwner, VoxEvent},
-        settings::{AudioOutputMode, InteractionMode},
+        events::{InteractionMode, InteractionOwner, VoxEvent},
         state::InteractionState,
     },
     monitoring::TelemetryEvent,
@@ -493,7 +493,10 @@ where
 mod tests {
 
     use super::*;
-    use crate::core::{settings::AudioOutputMode, state::InteractionState};
+    use crate::{
+        config::AudioOutputMode,
+        core::{events::InteractionMode, state::InteractionState},
+    };
 
     fn make_state(
         audio_mode: AudioOutputMode,

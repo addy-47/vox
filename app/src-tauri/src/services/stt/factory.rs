@@ -1,11 +1,8 @@
 use std::path::Path;
 
-use crate::{
-    core::settings::{SttProviderConfig, SttSettings},
-    services::stt::{
-        providers::{EmbeddedSttProvider, SttProvider},
-        NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR,
-    },
+use super::{
+    providers::{EmbeddedSttProvider, SttProvider},
+    NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR, SttProviderConfig, SttSettings,
 };
 
 /// Instantiates an `SttProvider` instance from the specified configuration and model path.
@@ -32,7 +29,7 @@ pub fn create_stt_instance_from_settings(
     models_dir: &Path,
 ) -> Result<Box<dyn SttProvider>, String> {
     let provider_config = settings.to_provider_config();
-    let num_threads = settings.embedded.threads;
+    let num_threads = settings.effective_threads();
 
     match provider_config {
         SttProviderConfig::Embedded { ref model_type } => {

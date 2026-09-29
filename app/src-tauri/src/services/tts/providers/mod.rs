@@ -16,11 +16,11 @@ pub use kokoro::KokoroEngine;
 pub use zipvoice::{ZipvoiceEngine, ZipvoiceReference};
 
 use crate::{
-    core::{
-        events::{AudioIntent, VoxEvent},
-        settings::{ParamRange, ProviderCaps},
+    core::events::{AudioIntent, VoxEvent},
+    services::{
+        audio::PlaybackEngine,
+        tts::{ParamRange, ProviderCaps},
     },
-    services::audio::PlaybackEngine,
 };
 
 /// Declares the bounds a shared speed control must respect.

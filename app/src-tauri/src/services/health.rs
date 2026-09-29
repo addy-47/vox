@@ -1,15 +1,17 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use crate::{
-    core::{
-        defaults::DEFAULT_STT_THREADS,
-        settings::{LlmProviderConfig, SttProviderConfig, TtsProviderConfig},
-        state::AppState,
-    },
+    core::{defaults::DEFAULT_STT_THREADS, state::AppState},
     services::{
-        llm::{ConnectionConfig, LlmProvider, RemoteTransport, QWEN_MODEL_DIR, QWEN_MODEL_FILE},
-        stt::{create_stt_provider, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
-        tts::{CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, SUPERTONIC_MODEL_DIR, ZIPVOICE_MODEL_DIR},
+        llm::{
+            ConnectionConfig, LlmProvider, LlmProviderConfig, RemoteTransport, QWEN_MODEL_DIR,
+            QWEN_MODEL_FILE,
+        },
+        stt::{create_stt_provider, SttProviderConfig, NEMOTRON_MODEL_DIR, QWEN_ASR_MODEL_DIR},
+        tts::{
+            TtsProviderConfig, CHATTERBOX_MODEL_DIR, KOKORO_MODEL_DIR, SUPERTONIC_MODEL_DIR,
+            ZIPVOICE_MODEL_DIR,
+        },
     },
     utils::paths,
 };
@@ -98,11 +100,19 @@ pub async fn check_llm_health(
                 },
             })
         }
-        LlmProviderConfig::OpenAiCompat {
+        LlmProviderConfig::Server {
             base_url,
             model,
             api_key,
             provider_name,
+            ..
+        }
+        | LlmProviderConfig::Cloud {
+            base_url,
+            model,
+            api_key,
+            provider_name,
+            ..
         } => {
             let conn_cfg = ConnectionConfig::new(
                 &base_url,

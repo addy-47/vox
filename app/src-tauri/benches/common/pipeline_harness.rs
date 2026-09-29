@@ -13,9 +13,9 @@ use std::{
 use ringbuf::{traits::Split, HeapCons, HeapRb};
 use tauri::AppHandle;
 use vox_lib::{
+    config::{AudioOutputMode, VoxSettings},
     core::{
-        events::VoxEvent,
-        settings::{AudioOutputMode, InteractionMode, VoxSettings},
+        events::{InteractionMode, VoxEvent},
         state::{AppState, TelemetryState, VoxEngine},
     },
     services::{

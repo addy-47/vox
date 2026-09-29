@@ -6,7 +6,7 @@ use super::{
     web_search::WebSearchTool,
     ToolDefinition,
 };
-use crate::{core::settings::PipelineMode, services::llm::CanonicalToolDefinition};
+use crate::{core::events::PipelineMode, services::llm::CanonicalToolDefinition};
 
 /// Contextual filters governing tool availability on a per-turn basis.
 #[derive(Debug, Clone, Default)]

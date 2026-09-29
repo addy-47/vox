@@ -784,10 +784,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   restoreDefaults: async () => {
     try {
-      const defaults = await resetSettings();
+      const res = await resetSettings();
+      const defaults = res.settings;
       const cloned = structuredClone(defaults);
       applyAppearance(defaults.appearance);
-      set({ settings: defaults, draftSettings: cloned, hasChanges: false });
+      const restartKeys = res.reload_policy === "restart" ? ["all"] : [];
+      set({ settings: defaults, draftSettings: cloned, hasChanges: false, restartKeys });
     } catch (err) {
       console.error("Failed to restore defaults:", err);
     }

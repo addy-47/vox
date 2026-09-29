@@ -22,12 +22,12 @@ use ringbuf::traits::Consumer;
 use vox_lib::{
     core::{
         events::{AudioIntent, VoxEvent},
-        settings::ProviderCaps,
         state::InteractionState,
     },
     services::tts::{
         actor::{spawn_tts_worker, TtsCommand, TtsWorkerHandles},
         providers::{supertonic::TtsEngine as SupertonicEngine, SynthesisContext, TtsProvider},
+        ProviderCaps,
     },
 };
 

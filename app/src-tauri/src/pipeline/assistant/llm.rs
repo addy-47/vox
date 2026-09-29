@@ -4,8 +4,7 @@ use tauri::AppHandle;
 
 use crate::{
     core::{
-        events::{emit_ipc, IpcEvent},
-        settings::PipelineMode,
+        events::{emit_ipc, IpcEvent, PipelineMode},
         state::{AppState, InteractionState},
     },
     persistence::PersistenceEvent,

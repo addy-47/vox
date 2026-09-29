@@ -1,7 +1,10 @@
+pub mod config;
 pub mod error;
 pub mod ptt;
 pub mod speech;
 pub mod transcript;
+
+pub use config::*;
 
 use tauri::AppHandle;
 

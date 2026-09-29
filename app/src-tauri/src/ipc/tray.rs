@@ -8,9 +8,9 @@ use crate::{
     core::{
         error::VoxIpcError,
         events::{emit_ipc, IpcEvent, VoxEvent},
-        settings::DictationOutputMode,
         state::{AppState, InteractionOwner, InteractionState},
     },
+    pipeline::dictation::DictationOutputMode,
     tray::{ensure_tray_window, position_tray_window},
     window_main::ensure_main_window,
 };

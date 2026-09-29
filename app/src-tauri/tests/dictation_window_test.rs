@@ -19,14 +19,12 @@ use std::{
 };
 
 use vox_lib::{
+    config::AudioOutputMode,
     core::{
-        events::VoxEvent,
-        settings::{
-            AudioOutputMode, DictationInteractionMode, DictationOutputMode, InteractionMode,
-        },
+        events::{InteractionMode, VoxEvent},
         state::{InteractionOwner, InteractionState},
     },
-    pipeline::dictation::transition_dictation,
+    pipeline::dictation::{transition_dictation, DictationInteractionMode, DictationOutputMode},
     services::{
         llm::LlmCommand,
         vad::{actor::VadActorConfig, VadCommand},

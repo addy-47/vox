@@ -30,7 +30,7 @@ Neither the Router, VAD, STT, nor any pipeline actor ever reads raw settings (e.
 - **`dictation_state == InteractionState::Idle`** $\iff$ Dictation is disabled.
 - **`dictation_state == InteractionState::Ready`** $\iff$ Dictation is enabled and standing by.
 
-Settings mutations in `ipc/settings/core.rs` exclusively drive `transition_dictation(Ready | Idle)`. All runtime code branches strictly on `dictation_state`.
+Settings mutations in `config/dispatch.rs` exclusively drive `transition_dictation(Ready | Idle)`. All runtime code branches strictly on `dictation_state`.
 
 ### Invariant 2: Strict IPC User-Command Ownership Driver
 `state.owner` is mutated **exclusively** by explicit user-facing session lifecycle actions:

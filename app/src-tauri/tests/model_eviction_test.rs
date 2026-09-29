@@ -19,7 +19,8 @@ use std::{
 };
 
 use vox_lib::{
-    core::{events::VoxEvent, settings::VoxSettings},
+    config::VoxSettings,
+    core::events::VoxEvent,
     services::{
         memory::ml::{
             ensure_embedder_loaded, generate_embedding, is_embedder_loaded, unload_all_onnx_models,
@@ -123,7 +124,7 @@ async fn test_tts_worker_cool_down_clears_handles_and_joins() {
         assert!(supertonic_model_dir.exists());
 
         let mut settings = VoxSettings::default();
-        settings.tts.active = vox_lib::core::settings::TtsActiveProvider::Supertonic;
+        settings.tts.active = vox_lib::services::tts::TtsActiveProvider::Supertonic;
 
         let (event_tx, _event_rx) = mpsc::channel::<VoxEvent>();
         let (playback_engine, _consumer) = common::harness::create_mock_playback_engine();
@@ -144,7 +145,7 @@ async fn test_tts_worker_cool_down_clears_handles_and_joins() {
             turn_metrics: None,
         };
 
-        let warm_res = warm_up_tts(handles, &settings, &supertonic_model_dir, None, event_tx);
+        let warm_res = warm_up_tts(handles, &settings.tts, &supertonic_model_dir, None, event_tx);
         assert!(warm_res.is_ok(), "warm_up_tts must return Ok(())");
         assert!(tts_tx.is_some(), "tts_tx must be populated after warm-up");
         assert!(

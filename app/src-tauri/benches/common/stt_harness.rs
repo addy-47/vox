@@ -12,9 +12,9 @@ use ringbuf::{
 };
 use tauri::AppHandle;
 use vox_lib::{
+    config::AudioOutputMode,
     core::{
-        events::VoxEvent,
-        settings::{AudioOutputMode, InteractionMode},
+        events::{InteractionMode, VoxEvent},
     },
     services::{
         stt::{

@@ -169,43 +169,18 @@ pub fn migrate_legacy_layout(root: &Path) {
         log::info!("[Storage] Migrated legacy vox.db to data/db/vox.db");
     }
 
+    // Debris sweep: clean up stale *.tmp and *.corrupt.* files in config/
     let target_config_dir = root.join("config");
-    let target_settings = target_config_dir.join(SETTINGS_FILENAME);
-
-    // Root legacy settings migration: root/settings.json or root/settings.jsonc -> config/settings.jsonc
-    let legacy_root_json = root.join("settings.json");
-    let legacy_root_jsonc = root.join("settings.jsonc");
-    if (legacy_root_json.exists() || legacy_root_jsonc.exists())
-        && !target_settings.exists()
-        && create_dir_all(&target_config_dir).is_ok()
-    {
-        if legacy_root_jsonc.exists() {
-            let _ = rename(&legacy_root_jsonc, &target_settings);
-        } else {
-            let _ = rename(&legacy_root_json, &target_settings);
+    if let Ok(entries) = read_dir(&target_config_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|f| f.to_str()) {
+                if name.ends_with(".tmp") || name.contains(".corrupt.") {
+                    let _ = remove_file(&path);
+                    log::debug!("[Storage] Swept stale config debris: {:?}", path);
+                }
+            }
         }
-        log::info!("[Storage] Migrated legacy root settings to config/settings.jsonc");
-    }
-
-    // Config folder extension migration: config/*.json -> config/*.jsonc
-    let cfg_settings_json = target_config_dir.join("settings.json");
-    if cfg_settings_json.exists() && !target_settings.exists() {
-        let _ = rename(&cfg_settings_json, &target_settings);
-        log::info!("[Storage] Migrated config/settings.json to config/settings.jsonc");
-    }
-
-    let target_providers = target_config_dir.join(PROVIDERS_FILENAME);
-    let cfg_providers_json = target_config_dir.join("providers.json");
-    if cfg_providers_json.exists() && !target_providers.exists() {
-        let _ = rename(&cfg_providers_json, &target_providers);
-        log::info!("[Storage] Migrated config/providers.json to config/providers.jsonc");
-    }
-
-    let target_agent = target_config_dir.join(AGENT_FILENAME);
-    let cfg_agent_json = target_config_dir.join("agent.json");
-    if cfg_agent_json.exists() && !target_agent.exists() {
-        let _ = rename(&cfg_agent_json, &target_agent);
-        log::info!("[Storage] Migrated config/agent.json to config/agent.jsonc");
     }
 
     let legacy_history = root.join("cache").join("dictation_history.jsonl");

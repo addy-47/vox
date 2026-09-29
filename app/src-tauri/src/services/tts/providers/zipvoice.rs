@@ -22,19 +22,28 @@ use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
         events::VoxEvent,
-        settings::{ParamRange, ProviderCaps, TtsVoiceSource},
     },
     services::{
         translit::is_devanagari,
         tts::{
-            EDGE_TTS_HINDI_VOICE, MAX_SPEED, MAX_ZIPVOICE_GUIDANCE_SCALE, MIN_SPEED,
-            MIN_ZIPVOICE_GUIDANCE_SCALE, MODEL_DIRNAME_TTS_ZIPVOICE_ESPEAK,
-            MODEL_FILE_TTS_ZIPVOICE_DECODER, MODEL_FILE_TTS_ZIPVOICE_ENCODER,
-            MODEL_FILE_TTS_ZIPVOICE_LEXICON, MODEL_FILE_TTS_ZIPVOICE_TOKENS,
-            MODEL_FILE_TTS_ZIPVOICE_VOCODER, ZIPVOICE_SILENCE_SCALE,
+            ParamRange, ProviderCaps, TtsVoiceSource, EDGE_TTS_HINDI_VOICE, MAX_SPEED, MIN_SPEED,   
         },
     },
 };
+
+pub const MODEL_FILE_TTS_ZIPVOICE_ENCODER: &str = "encoder.int8.onnx";
+pub const MODEL_FILE_TTS_ZIPVOICE_DECODER: &str = "decoder.int8.onnx";
+pub const MODEL_FILE_TTS_ZIPVOICE_VOCODER: &str = "vocos_24khz.onnx";
+pub const MODEL_FILE_TTS_ZIPVOICE_TOKENS: &str = "tokens.txt";
+pub const MODEL_FILE_TTS_ZIPVOICE_LEXICON: &str = "lexicon.txt";
+pub const MODEL_DIRNAME_TTS_ZIPVOICE_ESPEAK: &str = "espeak-ng-data";
+
+/// Silence scale for ZipVoice. Must remain 1.0 because sherpa-onnx scales silence after callback generation,
+/// which would cause callback streaming audio to diverge from final audio.
+pub const ZIPVOICE_SILENCE_SCALE: f32 = 1.0;
+pub const MIN_ZIPVOICE_GUIDANCE_SCALE: f32 = 1.0;
+pub const MAX_ZIPVOICE_GUIDANCE_SCALE: f32 = 3.0;
+
 
 const DEFAULT_ZIPVOICE_FEAT_SCALE: f32 = 0.1;
 const DEFAULT_ZIPVOICE_T_SHIFT: f32 = 0.5;

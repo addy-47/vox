@@ -15,10 +15,10 @@ pub use transport::{
     ReconnectFn, WsReader, WsWriter,
 };
 
-use crate::core::settings::InteractionMode;
-pub use crate::core::{
-    error::{PipelineError, PipelineImpact},
-    settings::RealtimeProviderKind,
+use crate::core::events::InteractionMode;
+pub use crate::{
+    config::RealtimeProviderKind,
+    core::error::{PipelineError, PipelineImpact},
 };
 
 pub const DEFAULT_INPUT_SAMPLE_RATE: u32 = 16000;

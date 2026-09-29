@@ -14,22 +14,20 @@ use super::{
     discovery::{discover_server_dialect, ServerDialect},
     presets::lookup_preset,
     sync::get_baseline_spec,
-    types::{CapabilityProvenance, ModelProbeResult},
+    types::{
+        CapabilityProvenance, ModelCapabilities, ModelProbeResult, CAP_KIND_EMBEDDED,
+        CAP_KIND_OPENAI_COMPAT, LlmModelInfo,
+    },
 };
 use crate::{
-    core::{
-        settings::{
-            LlmModelInfo, LlmProviderConfig, ModelCapabilities, CAP_KIND_EMBEDDED,
-            CAP_KIND_OPENAI_COMPAT,
-        },
-        state::AppState,
-    },
+    core::state::AppState,
     services::llm::{
         transport::{
             chat_completions, inject_auth_headers, ollama, responses, sse::SseDecoder,
             ConnectionConfig, TransportType,
         },
-        EmbeddedProvider, LlmProvider, RemoteTransport, QWEN_MODEL_DIR,
+        EmbeddedProvider, LlmProvider, LlmProviderConfig, RemoteTransport,
+        QWEN_MODEL_DIR,
     },
     utils::paths,
 };
@@ -105,11 +103,19 @@ pub async fn list_models(
             let llm_dir = paths::get().models.join(QWEN_MODEL_DIR);
             EmbeddedProvider::list_models_in_dir(&llm_dir).map_err(|e| e.to_string())
         }
-        LlmProviderConfig::OpenAiCompat {
+        LlmProviderConfig::Server {
             base_url,
             model,
             api_key,
             provider_name,
+            ..
+        }
+        | LlmProviderConfig::Cloud {
+            base_url,
+            model,
+            api_key,
+            provider_name,
+            ..
         } => {
             let conn_cfg = ConnectionConfig::new(
                 &base_url,
@@ -212,11 +218,19 @@ impl CapabilityProbeEngine {
                 let model_id = target_model.unwrap_or("embedded-default.gguf");
                 Ok(Self::probe_local_embedded(model_id, None, now))
             }
-            LlmProviderConfig::OpenAiCompat {
+            LlmProviderConfig::Server {
                 base_url,
                 model,
                 api_key,
                 provider_name,
+                ..
+            }
+            | LlmProviderConfig::Cloud {
+                base_url,
+                model,
+                api_key,
+                provider_name,
+                ..
             } => {
                 let model_id = target_model.unwrap_or(model);
                 let conn_cfg = ConnectionConfig::new(
@@ -602,11 +616,19 @@ impl CapabilityProbeEngine {
         target_cap: u32,
     ) -> Result<Option<u32>, String> {
         let (base_url, model, api_key, provider_name) = match config {
-            LlmProviderConfig::OpenAiCompat {
+            LlmProviderConfig::Server {
                 base_url,
                 model,
                 api_key,
                 provider_name,
+                ..
+            }
+            | LlmProviderConfig::Cloud {
+                base_url,
+                model,
+                api_key,
+                provider_name,
+                ..
             } => (base_url, model, api_key, provider_name),
             LlmProviderConfig::Embedded => return Ok(None),
         };

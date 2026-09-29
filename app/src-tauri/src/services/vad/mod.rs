@@ -1,8 +1,10 @@
 pub mod actor;
+pub mod config;
 pub mod factory;
 pub mod providers;
 pub mod segmenter;
 
+pub use config::{VadBackendOption, VadSettings};
 pub use actor::{
     spawn_vad_actor, VadActorChannels, VadActorConfig, VadActorHandles, VadCommand,
     VadOperationalMode, VadValidationResult,

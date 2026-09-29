@@ -9,16 +9,13 @@ use tokio_util::sync::CancellationToken;
 use turso::Connection;
 
 use crate::{
-    core::{
-        settings::LlmSettings,
-        state::{AppState, InteractionState},
-    },
+    core::state::{AppState, InteractionState},
     persistence::compactions::{
         commit_compaction_output, record_compaction_finish, record_compaction_start,
     },
     services::{
         harness::{ChatMessage, Harness, PromptTag, Role},
-        llm::LlmProvider,
+        llm::{LlmProvider, LlmSettings},
         memory::compaction::runner::{run_compaction, CompactionResult},
     },
 };

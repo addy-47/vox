@@ -4,7 +4,7 @@ use futures_util::future::BoxFuture;
 use serde_json::Value;
 
 use crate::{
-    core::{settings::PipelineMode, state::AppState},
+    core::{events::PipelineMode, state::AppState},
     services::llm::{CanonicalToolDefinition, ToolFlow},
 };
 

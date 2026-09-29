@@ -5,20 +5,15 @@ use std::{
 
 use tauri::{AppHandle, Manager, State};
 
-use super::mutation::apply_setting_mutation;
+use super::AudioOutputMode;
 use crate::{
     core::{
         engine::{ensure_memory_embedder, start_audio_engine, stop_audio_engine},
-        error::VoxIpcError,
-        events::{emit_ipc, IpcEvent},
-        settings::{
-            get_setting_reload_policy, AudioOutputMode, DictationInteractionMode,
-            DictationOutputMode, InteractionMode, SettingReloadPolicy, VoxSettings,
-        },
+        events::InteractionMode,
         state::{AppState, InteractionOwner, InteractionState},
     },
     ipc::pipeline::{launch_engine, stop_engine},
-    pipeline::dictation::transition_dictation,
+    pipeline::dictation::{transition_dictation, DictationInteractionMode, DictationOutputMode},
     services::{
         dictation::init_dictation_hotkey_listener,
         memory::{
@@ -33,14 +28,7 @@ use crate::{
 
 /// Disk write is deferred by this duration after the last setting change.
 /// Prevents thrashing disk on rapid slider updates (dozens of changes/sec).
-const SETTINGS_SAVE_DEBOUNCE_MS: u64 = 1500;
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SettingUpdateResult {
-    pub applied: bool,
-    pub reload_policy: String,
-    pub message: String,
-}
+pub const SETTINGS_SAVE_DEBOUNCE_MS: u64 = 1500;
 
 async fn handle_dictation_side_effects<R: tauri::Runtime>(
     app: &AppHandle<R>,
@@ -64,7 +52,7 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
             let dictation_mode = state
                 .settings
                 .read()
-                .map(|s| s.dictation.interaction_mode.clone())
+                .map(|s| s.dictation.interaction_mode)
                 .unwrap_or(DictationInteractionMode::Ptt);
             let vad_op_mode = match dictation_mode {
                 DictationInteractionMode::Passive => VadOperationalMode::ContinuousSegmentation,
@@ -137,7 +125,7 @@ async fn handle_dictation_side_effects<R: tauri::Runtime>(
         let (enabled, output_mode) = state
             .settings
             .read()
-            .map(|s| (s.dictation.enabled, s.dictation.output_mode.clone()))
+            .map(|s| (s.dictation.enabled, s.dictation.output_mode))
             .unwrap_or((false, DictationOutputMode::Paste));
         let is_tray_mode = output_mode == DictationOutputMode::Tray;
         let is_clickable = enabled && is_tray_mode;
@@ -212,7 +200,7 @@ async fn handle_interaction_side_effects<R: tauri::Runtime>(
         let (dictation_enabled, interaction_mode) = state
             .settings
             .read()
-            .map(|s| (s.dictation.enabled, s.interaction.mode.clone()))
+            .map(|s| (s.dictation.enabled, s.interaction.mode))
             .unwrap_or((false, InteractionMode::PTT));
 
         if !dictation_enabled
@@ -247,7 +235,7 @@ async fn handle_interaction_side_effects<R: tauri::Runtime>(
     }
 }
 
-async fn handle_setting_side_effects<R: tauri::Runtime>(
+pub async fn handle_setting_side_effects<R: tauri::Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
     domain: &str,
@@ -312,97 +300,9 @@ async fn handle_setting_side_effects<R: tauri::Runtime>(
     }
 }
 
-/// Generic settings update command.
-#[tauri::command]
-pub async fn update_setting<R: tauri::Runtime>(
-    domain: String,
-    key: String,
-    value: serde_json::Value,
-    app: AppHandle<R>,
-) -> Result<SettingUpdateResult, VoxIpcError> {
-    let state: State<'_, Arc<AppState>> = app.state();
-
-    let applied = {
-        let mut settings = state
-            .settings
-            .write()
-            .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
-        apply_setting_mutation(&mut settings, &domain, &key, &value)
-            .map_err(VoxIpcError::InvalidArgument)?
-    };
-
-    // An unrecognised key is a client bug, not a no-op. Returning Ok() here
-    // made a rejected write indistinguishable from a successful one: the
-    // frontend never read `applied`, so the value was silently dropped.
-    if !applied {
-        return Err(VoxIpcError::InvalidArgument(format!(
-            "Unknown setting: {}.{}",
-            domain, key
-        )));
-    }
-
-    let policy = get_setting_reload_policy(&domain, &key);
-    handle_setting_side_effects(&app, &state, &domain, &key, &value).await;
-
-    if policy == SettingReloadPolicy::WorkerCommand {
-        dispatch_worker_command(&app, &domain, &key, &value).await;
-    }
-
-    schedule_debounced_save(state.clone()).await;
-
-    let action_label = match policy {
-        SettingReloadPolicy::Hot => "hot-applied",
-        SettingReloadPolicy::WorkerCommand => "dispatched to worker",
-        SettingReloadPolicy::Restart => "restart required",
-    };
-
-    let message = format!("{}.{} = {} — {}", domain, key, value, action_label);
-    log::info!("[Settings] Updated: {}", message);
-
-    if let Err(e) = emit_ipc(&app, IpcEvent::SettingsUpdated) {
-        log::warn!(
-            "[Settings::Mutation] Failed to emit settings-updated: {}",
-            e
-        );
-    }
-
-    Ok(SettingUpdateResult {
-        applied: true,
-        reload_policy: policy.as_str().to_string(),
-        message,
-    })
-}
-
-/// Resets all settings to system defaults.
-#[tauri::command]
-pub async fn reset_settings<R: tauri::Runtime>(
-    app: AppHandle<R>,
-) -> Result<VoxSettings, VoxIpcError> {
-    let state: State<'_, Arc<AppState>> = app.state();
-    let defaults = VoxSettings::default();
-    {
-        let mut settings = state
-            .settings
-            .write()
-            .map_err(|e| VoxIpcError::Internal(e.to_string()))?;
-        *settings = defaults.clone();
-    }
-
-    if let Err(e) = emit_ipc(&app, IpcEvent::SettingsUpdated) {
-        log::warn!(
-            "[Settings::Mutation] Failed to emit settings-updated: {}",
-            e
-        );
-    }
-
-    schedule_debounced_save(state.clone()).await;
-
-    Ok(defaults)
-}
-
 /// Dispatches a hot-update command to the appropriate worker thread.
 /// Called only for `WorkerCommand` policy settings.
-async fn dispatch_worker_command<R: tauri::Runtime>(
+pub async fn dispatch_worker_command<R: tauri::Runtime>(
     app: &AppHandle<R>,
     domain: &str,
     key: &str,
@@ -507,9 +407,23 @@ async fn dispatch_worker_command<R: tauri::Runtime>(
     }
 }
 
+/// Returns true if `dispatch_worker_command` handles the given `(domain, key)` combination.
+pub fn dispatch_worker_command_has_arm(domain: &str, key: &str) -> bool {
+    matches!(
+        (domain, key),
+        ("vad", "threshold")
+            | ("vad", "ptt_noise_gate")
+            | ("vad", "silence_duration_ms")
+            | ("vad", "speech_onset_ms")
+            | ("audio", "output_mode")
+            | ("tts", "voice_index" | "voice")
+            | ("tts", "speed")
+    )
+}
+
 /// Schedules a debounced settings save: cancels any pending save, spawns a new
 /// task that waits `SETTINGS_SAVE_DEBOUNCE_MS` then writes to disk.
-async fn schedule_debounced_save(state: State<'_, Arc<AppState>>) {
+pub async fn schedule_debounced_save(state: Arc<AppState>) {
     let mut debounce = state.save_debounce.lock().await;
 
     // Cancel the previous pending write

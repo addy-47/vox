@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sysinfo::{Disks, System};
 
 use crate::{
-    core::settings::VoxSettings,
+    config::VoxSettings,
     setup::manifest::{VerifiedMarker, VoxManifest},
     utils::paths,
 };

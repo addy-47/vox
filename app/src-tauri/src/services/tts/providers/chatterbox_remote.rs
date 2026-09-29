@@ -11,13 +11,13 @@ use anyhow::{anyhow, Result};
 
 use super::{speed_range, SynthesisContext, TtsProvider};
 use crate::{
-    core::{
-        events::AudioIntent,
-        settings::{ParamRange, ProviderCaps, TtsVoiceSource},
-    },
+    core::events::AudioIntent,
     services::{
         audio::PlaybackEngine,
-        tts::{MAX_SPEED, MIN_SPEED, TTS_CHUNK_SIZE, TTS_SAMPLE_RATE},
+        tts::{
+            ParamRange, ProviderCaps, TtsVoiceSource, MAX_SPEED, MIN_SPEED, TTS_CHUNK_SIZE,
+            TTS_SAMPLE_RATE,
+        },
     },
 };
 

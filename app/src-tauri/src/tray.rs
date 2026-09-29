@@ -7,9 +7,9 @@ use tauri::{
     AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
 
-use crate::core::{
-    settings::DictationOutputMode,
-    state::{AppState, AppWindow},
+use crate::{
+    core::state::{AppState, AppWindow},
+    pipeline::dictation::DictationOutputMode,
 };
 
 const TRAY_HUD_WIDTH_LOGICAL: f64 = 380.0;

@@ -24,10 +24,10 @@ use std::{
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use vox_lib::{
+    config::VoxSettings,
     core::{
-        events::AudioIntent,
+        events::{AudioIntent, PipelineMode},
         metrics::TurnMetricsCollector,
-        settings::{PipelineMode, VoxSettings},
         state::InteractionOwner,
     },
     persistence::{

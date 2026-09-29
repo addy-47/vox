@@ -56,8 +56,8 @@
 
 ### 4.1 Critical Architectural & Logical Invariants (Non-Negotiable Concepts)
 **Zero Backward Compatibility (ZBC):** Backward compatibility is not a requirement unless explicitly stated. Break, replace, or redesign existing interfaces when that produces the better architecture. Never introduce compatibility layers, legacy paths, 
-> 🛑 **MANDATORY CONTEXT GATE:
-**Exploration hook:** Before any codebase exploration, architecture lookup, graph query, or broad search, read `.agents/rules/codebase-memory-mcp.md` and follow its graph-first workflow.
+> 🛑 **MANDATORY PRE-EXPLORATION HOOK:**
+> - Before any codebase exploration, architecture lookup, graph query, or broad search, read `.agents/rules/codebase-memory-mcp.md` and follow its graph-first workflow.
 >
 **Local Turso Database CLI (`tursodb`):** For inspecting or querying the local Turso SQLite database (`~/.vox/vox.db`), use the native `tursodb` CLI tool:
    ```bash
@@ -66,8 +66,8 @@
 
 ### 4.2. HARD GATE: Code Modification Gate
 
-> 🛑 **MANDATORY CONTEXT GATE:**
-> - **ANY WRITE TASK whether its Backend/Frontend/Tests:** You MUST read the corresponding style guide and engineer rule file for the specific area you are working on located in .agents/rules/.
+> 🛑 **MANDATORY PRE-MODIFICATION HOOK:**
+> - You MUST read the corresponding style guide and engineer rule file for the specific area you are working on located in .agents/rules/.
 
 ### 4.3 Specifications, Behavioral Contracts & Non-Drift Hook [MANDATORY]
 
@@ -85,13 +85,12 @@ Authoritative system specifications reside in [`docs/specs/`](file:///home/addy/
 
 > 📖 **Full History:** [recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase12/recent_work.md) | Phase 11 Archive: [phase11/recent_work.md](file:///home/addy/projects/apps/vox/docs/plans/phase11/recent_work.md)
 
-- **Model-agnostic TTS stack & voice scoping (2026-09-28):** Trait-contract caps, bare-slug voice scoping, wire-format retirement, frontend knowledge deletion; all green (clippy, build, vitest 8/8, nextest 149/149).
-- **STT boundary-clipping fix & Wayland paste dynamic loader (2026-09-28):** Pre-roll retention + 300ms stream warmup fixing onset clipping; dynamic dlopen AT-SPI loader + `Ctrl+Alt+V` default shortcut; full nextest suite passing.
-- **ZipVoice acoustic profiling & Chatterbox pacing sweeps (2026-09-29):** Prompt-swap root cause exonerated weights/params; 8-voice audition sweeps completed; winners installed (vera/alfred/maya/claire/sage).
-- **Storage, Filesystem & Configuration Architecture Spec (2026-09-29):** Authored `docs/specs/storage-spec.md` formalizing 6-tier filesystem layout (`config/`, `data/`, `models/`, `cache/`, `diagnostics/`, `run/`), 3-way configuration decomposition, and automated boot migration.
-- **Tiered Storage & Filesystem Refactor (2026-09-29):** Implemented 6-tier POSIX layout in `paths.rs`, purged hardcoded `.vox` bypasses across `voices`/`hotkey`/`toast`/`embedder`/`translit`, sandboxed test database in `TempPathsGuard`, and migrated host `~/.vox` directly with zero symlinks (ZBC).
-- **3-Way Configuration Decomposition & Toast Icon Centralization (2026-09-29):** Decomposed `VoxSettings` persistence into `config/settings.json`, `config/providers.json` (chmod 0600), and `config/agent.json` with atomic writes & fallback section recovery; purged ad-hoc icon generation from `toast.rs` into `paths::notification_icon()`; migrated host `~/.vox/config/` directly.
-- **JSONC Configuration & 3-Way Split with Safe DB Voice Seeding (2026-09-29):** Implemented zero-dependency JSONC parser (`jsonc.rs`), switched config persistence to `.jsonc` (`settings.jsonc`, `providers.jsonc` [0600], `agent.jsonc`), migrated host config, and safeguarded DB voice seeding against uninitialized paths singletons in isolated unit tests.
+- **TTS Stack, Dynamic Paste Loader & Audio Profiling (2026-09-28):** Model-agnostic TTS trait contract, bare-slug voice scoping, onset boundary clipping fixes via pre-roll + warmup silence, dynamic dlopen AT-SPI loader, and ZipVoice audition sweeps.
+- **Tiered POSIX Storage & 3-Way JSONC Split (2026-09-29):** Implemented 6-tier POSIX layout in `paths.rs` (ZBC, no symlinks), decomposed settings into `settings.jsonc`, `providers.jsonc` (0600), and `agent.jsonc` with zero-dependency JSONC parser (`jsonc.rs`).
+- **Domain Configuration & IPC Boundary Decoupling (2026-09-29):** Deleted monolithic `core/settings.rs` (~1500 lines), distributed sub-settings to subsystem owners (`services/`, `pipeline/`, `core/`), built modular `src/config/`, and turned settings IPC into lean transport adapters.
+- **Settings & Storage Senior Review Remediation (2026-09-29):** Audited and resolved all 17 findings from `SETTINGS_REFACTOR_REVIEW.md`; aligned reload policies & dispatch tables, added synchronous exit flush, hardened JSONC BOM/trailing commas and 0600 file modes, aligned wiring defaults, pruned dead code, and synchronized specs.
+- **Remediation Verification & Monolith Migration Regression (2026-09-29):** Confirmed 14/17 fixed, 2 partial, 1 regression. Pruning the legacy monolith branch in `VoxSettings::load()` orphaned the `paths.rs` `settings.json` migration: a monolith now parses silently as `SettingsConfigFile` (no `deny_unknown_fields`), so an upgrading user loses API keys, persona, and memory policy on first save. Requires decomposition at the migration site in `paths.rs` or full ZBC removal of the move.
+- **ZBC Migration Purge, Schema Pruning & Settings Sync (2026-09-29):** Purged legacy monolith migration from `paths.rs` under ZBC, added ext4 fsync trade-off note in `persistence.rs`, swept stale config debris (`.tmp`/`.corrupt.*`), synchronized `reset_settings` backend & frontend contract with restart notification, pruned obsolete schema v1..v8 migrations in `schema.rs` to canonical v9, and replaced raw JSON blobs in `storage-spec.md` with concise domain scopes.
 
 ---
 

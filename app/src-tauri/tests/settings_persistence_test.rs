@@ -17,11 +17,13 @@ use std::{
 
 use common::paths::TempPathsGuard;
 use vox_lib::{
-    core::settings::{
-        AudioOutputMode, DictationOutputMode, LlmActiveProvider, PipelineMode, SttActiveProvider,
-        TtsActiveProvider, VadBackendOption, VoxSettings,
+    config::{apply_setting_mutation, AudioOutputMode, VoxSettings},
+    core::events::PipelineMode,
+    pipeline::dictation::DictationOutputMode,
+    services::{
+        llm::LlmActiveProvider, stt::SttActiveProvider, tts::TtsActiveProvider,
+        vad::VadBackendOption,
     },
-    ipc::settings::apply_setting_mutation,
 };
 
 // ============================================================================
@@ -570,6 +572,133 @@ fn test_settings_jsonc_with_comments_support() {
     assert!(
         Instant::now() < deadline,
         "test_settings_jsonc_with_comments_support exceeded 10s deadline"
+    );
+}
+
+// ============================================================================
+// Subtest 7: reload_policy_worker_command_keys_all_have_dispatch_arms
+// ============================================================================
+#[test]
+fn reload_policy_worker_command_keys_all_have_dispatch_arms() {
+    use vox_lib::config::{
+        dispatch_worker_command_has_arm, get_setting_reload_policy, SettingReloadPolicy,
+    };
+
+    let worker_keys = [
+        ("tts", "speed"),
+        ("tts", "voice_index"),
+        ("tts", "voice"),
+        ("vad", "threshold"),
+        ("vad", "ptt_noise_gate"),
+        ("vad", "silence_duration_ms"),
+        ("vad", "speech_onset_ms"),
+        ("audio", "output_mode"),
+    ];
+
+    for (domain, key) in worker_keys {
+        assert_eq!(
+            get_setting_reload_policy(domain, key),
+            SettingReloadPolicy::WorkerCommand,
+            "{}.{} is expected to have SettingReloadPolicy::WorkerCommand",
+            domain,
+            key
+        );
+        assert!(
+            dispatch_worker_command_has_arm(domain, key),
+            "{}.{} is classified WorkerCommand but dispatch_worker_command has no arm",
+            domain,
+            key
+        );
+    }
+
+    // Verify keys that should NOT be WorkerCommand
+    assert_ne!(
+        get_setting_reload_policy("vad", "max_speech_duration_s"),
+        SettingReloadPolicy::WorkerCommand,
+        "vad.max_speech_duration_s must not be WorkerCommand until a VadCommand variant exists"
+    );
+    assert_ne!(
+        get_setting_reload_policy("llm", "cloud_keys"),
+        SettingReloadPolicy::Hot,
+        "llm.cloud_keys must be Restart because LLM provider is cached for engine lifetime"
+    );
+}
+
+// ============================================================================
+// Subtest 8: test_settings_3way_partial_corruption_recovery
+// ============================================================================
+#[test]
+fn test_settings_3way_partial_corruption_recovery() {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let _guard = TempPathsGuard::new();
+
+    let settings_path = vox_lib::utils::paths::settings_path();
+    let providers_path = vox_lib::utils::paths::providers_path();
+    let agent_path = vox_lib::utils::paths::agent_path();
+
+    if let Some(parent) = settings_path.parent() {
+        fs::create_dir_all(parent).expect("Failed to create config dir");
+    }
+
+    // Corrupt type error in settings.jsonc (threshold is a string instead of float)
+    let corrupt_settings = r##"{
+        "vad": {
+            "threshold": "not_a_float",
+            "silence_duration_ms": 500
+        },
+        "appearance": {
+            "theme": "custom_purple",
+            "accent_seed": "#8B5CF6"
+        }
+    }"##;
+
+    // Valid providers.jsonc
+    let valid_providers = r#"{
+        "llm": {
+            "cloud": {
+                "base_url": "https://api.together.xyz/v1",
+                "model": "meta/llama-3.1",
+                "api_key": "my-secret-key-999"
+            }
+        }
+    }"#;
+
+    // Valid agent.jsonc
+    let valid_agent = r#"{
+        "cognitive": {
+            "temperature": 0.35,
+            "context_window": 16384
+        }
+    }"#;
+
+    fs::write(&settings_path, corrupt_settings).expect("Failed to write corrupt settings.jsonc");
+    fs::write(&providers_path, valid_providers).expect("Failed to write valid providers.jsonc");
+    fs::write(&agent_path, valid_agent).expect("Failed to write valid agent.jsonc");
+
+    let loaded = VoxSettings::load();
+
+    // Valid files should remain intact even if settings.jsonc had a type error
+    assert_eq!(
+        loaded.llm.cloud.api_key.as_deref(),
+        Some("my-secret-key-999"),
+        "Valid providers.jsonc must be preserved during settings type-error recovery"
+    );
+    assert_eq!(
+        loaded.llm.context_window, 16384,
+        "Valid agent.jsonc must be preserved during settings type-error recovery"
+    );
+    assert!((loaded.llm.temperature - 0.35).abs() < 1e-5);
+
+    // Uncorrupted section in settings.jsonc (appearance) should be recovered
+    assert_eq!(loaded.appearance.theme, "custom_purple");
+    assert_eq!(loaded.appearance.accent_seed, "#8B5CF6");
+
+    // The corrupt section (vad) should fall back to defaults
+    assert_eq!(loaded.vad.threshold, vox_lib::core::defaults::DEFAULT_VAD_THRESHOLD);
+
+    assert!(
+        Instant::now() < deadline,
+        "test_settings_3way_partial_corruption_recovery exceeded 10s deadline"
     );
 }
 
