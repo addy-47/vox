@@ -6,7 +6,8 @@ use crate::services::llm::transport::TransportType;
 
 /// Canonical capability-cache provider-kind labels. Writer (probe) and reader (session boot) must agree.
 pub const CAP_KIND_EMBEDDED: &str = "embedded";
-pub const CAP_KIND_OPENAI_COMPAT: &str = "openai_compat";
+pub const CAP_KIND_SERVER: &str = "server";
+pub const CAP_KIND_CLOUD: &str = "cloud";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModelCapabilities {
@@ -37,7 +38,7 @@ pub struct LlmModelInfo {
     pub size_bytes: Option<u64>,
     pub quantization: Option<String>, // e.g. "Q4_K_M"
     pub family: Option<String>,       // e.g. "Gemma"
-    pub provider_kind: String,        // e.g. "open_ai_compat", "embedded"
+    pub provider_kind: String,        // e.g. "server", "cloud", "embedded"
     pub capabilities: Option<ModelCapabilities>,
 }
 

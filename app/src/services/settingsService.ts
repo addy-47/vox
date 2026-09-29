@@ -43,7 +43,7 @@ export function requestModelCatalog(): Promise<ModelCatalog> {
  * fallback would render controls for capabilities that may not exist. */
 export async function getProviderCaps(providerId: string): Promise<ProviderCaps | null> {
   try {
-    return await invoke<ProviderCaps>("get_provider_caps", { provider_id: providerId });
+    return await invoke<ProviderCaps>("get_provider_caps", { providerId, provider_id: providerId });
   } catch (err) {
     console.error(`[Settings] get_provider_caps failed for ${providerId}:`, err);
     return null;
@@ -117,6 +117,8 @@ export async function probeModelCapabilities(
 ): Promise<ModelCapabilities> {
   const res = await invoke<ModelProbeResult>("probe_model_capabilities", {
     provider,
+    modelId,
+    targetCap,
     model_id: modelId,
     target_cap: targetCap,
   });
@@ -131,6 +133,8 @@ export function probeModelCapabilitiesFull(
 ): Promise<ModelProbeResult> {
   return invoke<ModelProbeResult>("probe_model_capabilities", {
     provider,
+    modelId,
+    targetCap,
     model_id: modelId,
     target_cap: targetCap,
   });
@@ -144,6 +148,8 @@ export async function validateLlmTokenCap(
 ): Promise<number | null> {
   const res = await invoke<ModelProbeResult>("probe_model_capabilities", {
     provider,
+    modelId,
+    targetCap,
     model_id: modelId,
     target_cap: targetCap,
   });

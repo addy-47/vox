@@ -48,7 +48,7 @@ export function useRemoteLlmProbing(
   const lastFetchedKeyRef = useRef<string>("");
 
   const fetchRemoteModels = useCallback(async (force = false) => {
-    if (!provider || provider.kind !== "open_ai_compat" || !provider.base_url) return;
+    if (!provider || provider.kind === "embedded" || !provider.base_url) return;
     const fetchKey = `${provider.base_url}:${provider.api_key || ""}`;
     if (!force && lastFetchedKeyRef.current === fetchKey && remoteModels.length > 0) {
       return;
@@ -68,7 +68,7 @@ export function useRemoteLlmProbing(
   }, [provider, remoteModels.length]);
 
   useEffect(() => {
-    if (activePipelineTab === "llm" && isRemoteLlm && provider?.kind === "open_ai_compat" && provider.base_url) {
+    if (activePipelineTab === "llm" && isRemoteLlm && provider && provider.kind !== "embedded" && provider.base_url) {
       fetchRemoteModels();
     }
   }, [activePipelineTab, isRemoteLlm, provider, fetchRemoteModels]);
@@ -76,7 +76,7 @@ export function useRemoteLlmProbing(
   const handleProbeCapabilities = useCallback(
     async (modelId?: string) => {
       if (!provider) return;
-      const targetId = modelId || (provider.kind === "open_ai_compat" ? provider.model : "embedded");
+      const targetId = modelId || (provider.kind !== "embedded" ? provider.model : "embedded");
       if (!targetId) return;
 
       setProbingMap((prev) => ({
@@ -115,7 +115,7 @@ export function useRemoteLlmProbing(
     setCustomModelStatus("checking");
     const mId = customModelId.trim();
     const draft = useSettingsStore.getState().draftSettings;
-    const activeLlm = draft?.llm?.active || (provider && "base_url" in provider ? "server" : "embedded");
+    const activeLlm = provider.kind !== "embedded" ? provider.kind : (draft?.llm?.active || "embedded");
 
     try {
       const caps = await probeModelCapabilities(provider, mId);

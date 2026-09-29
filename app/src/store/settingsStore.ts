@@ -26,7 +26,7 @@ export type RealtimeActiveProvider =
   | "deepgram_voice_agent"
   | "elevenlabs_convai";
 
-export type LlmProviderKind = "embedded" | "open_ai_compat";
+export type LlmProviderKind = "embedded" | "server" | "cloud";
 
 export interface LlmProviderConfig {
   kind: LlmProviderKind;

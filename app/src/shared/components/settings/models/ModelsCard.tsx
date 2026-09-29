@@ -122,7 +122,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
     }
     if (activeProviderKind === "server") {
       return {
-        kind: "open_ai_compat",
+        kind: "server",
         base_url: draftSettings?.llm?.server?.base_url || "",
         model: draftSettings?.llm?.server?.model || "",
         api_key: draftSettings?.llm?.server?.api_key || undefined,
@@ -130,7 +130,7 @@ export const ModelsCard = memo(({ layoutMode = "full-max" }: ModelsCardProps) =>
       };
     }
     return {
-      kind: "open_ai_compat",
+      kind: "cloud",
       base_url: draftSettings?.llm?.cloud?.base_url || "",
       model: draftSettings?.llm?.cloud?.model || "",
       api_key: draftSettings?.llm?.cloud?.api_key || undefined,

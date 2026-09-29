@@ -18,7 +18,9 @@ use crate::{
         state::{AppState, InteractionOwner, InteractionState},
     },
     paths::get,
-    services::llm::catalog::{ModelCapabilities, CAP_KIND_EMBEDDED, CAP_KIND_OPENAI_COMPAT},
+    services::llm::catalog::{
+        ModelCapabilities, CAP_KIND_CLOUD, CAP_KIND_EMBEDDED, CAP_KIND_SERVER,
+    },
     persistence::{
         compactions::{fetch_latest_compaction_run, fetch_turns_for_compaction},
         get_tokio_handle,
@@ -714,10 +716,10 @@ fn resolve_model_tool_support<R: Runtime + 'static>(
 ) -> bool {
     let active_model = settings.llm.active_model();
     let is_cloud = matches!(settings.llm.active, LlmActiveProvider::Cloud);
-    let provider_kind = if matches!(settings.llm.active, LlmActiveProvider::Embedded) {
-        CAP_KIND_EMBEDDED
-    } else {
-        CAP_KIND_OPENAI_COMPAT
+    let provider_kind = match settings.llm.active {
+        LlmActiveProvider::Embedded => CAP_KIND_EMBEDDED,
+        LlmActiveProvider::Server => CAP_KIND_SERVER,
+        LlmActiveProvider::Cloud => CAP_KIND_CLOUD,
     };
     let key = format!("{}:{}", provider_kind, active_model);
 

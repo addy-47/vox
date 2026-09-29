@@ -256,6 +256,7 @@ mod tests {
             auth: AuthScheme::Bearer(Some("test".to_string())),
             provider_preset: Some("openai".to_string()),
             policy: ProviderPresetMeta::default(),
+            provider_kind: "cloud".to_string(),
         };
 
         let request = GenerationRequest {

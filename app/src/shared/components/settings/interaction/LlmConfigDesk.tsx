@@ -48,15 +48,25 @@ export const LlmConfigDesk = memo(({
       : null;
 
   const currentProvider: LlmProviderConfig = useMemo(() => {
-    return activeLlmProvider === "embedded"
-      ? { kind: "embedded" }
-      : {
-          kind: "open_ai_compat",
-          base_url: currentRemoteConfig?.base_url || "",
-          model: currentRemoteConfig?.model || "",
-          api_key: currentRemoteConfig?.api_key || undefined,
-          provider_name: currentRemoteConfig?.provider_name || undefined,
-        };
+    if (activeLlmProvider === "embedded") {
+      return { kind: "embedded" };
+    }
+    if (activeLlmProvider === "server") {
+      return {
+        kind: "server",
+        base_url: currentRemoteConfig?.base_url || "",
+        model: currentRemoteConfig?.model || "",
+        api_key: currentRemoteConfig?.api_key || undefined,
+        provider_name: currentRemoteConfig?.provider_name || undefined,
+      };
+    }
+    return {
+      kind: "cloud",
+      base_url: currentRemoteConfig?.base_url || "",
+      model: currentRemoteConfig?.model || "",
+      api_key: currentRemoteConfig?.api_key || undefined,
+      provider_name: currentRemoteConfig?.provider_name || undefined,
+    };
   }, [
     activeLlmProvider,
     currentRemoteConfig?.base_url,
@@ -150,7 +160,7 @@ export const LlmConfigDesk = memo(({
   const providerKind = currentProvider.kind;
 
   useEffect(() => {
-    if (providerKind !== "open_ai_compat" || !providerBaseUrl) {
+    if (providerKind === "embedded" || !providerBaseUrl) {
       setIsHealthy(null);
       setDetectedDialect(null);
       setModelsError(null);
