@@ -67,7 +67,6 @@ export const LlmSettingsView = memo(({
   const activeCapabilities = useMemo(() => {
     if (!activeModel) return undefined;
     return (
-      capabilitiesCache?.[`open_ai_compat:${activeModel}`] ||
       capabilitiesCache?.[`server:${activeModel}`] ||
       capabilitiesCache?.[`cloud:${activeModel}`] ||
       capabilitiesCache?.[`embedded:${activeModel}`] ||

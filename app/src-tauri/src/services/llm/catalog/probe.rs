@@ -16,7 +16,7 @@ use super::{
     sync::get_baseline_spec,
     types::{
         CapabilityProvenance, ModelCapabilities, ModelProbeResult, CAP_KIND_EMBEDDED,
-        CAP_KIND_OPENAI_COMPAT, LlmModelInfo,
+        CAP_KIND_SERVER, LlmModelInfo,
     },
 };
 use crate::{
@@ -368,7 +368,7 @@ impl CapabilityProbeEngine {
 
         Ok(ModelCapabilities {
             model_id: config.model.clone(),
-            provider_kind: CAP_KIND_OPENAI_COMPAT.to_string(),
+            provider_kind: CAP_KIND_SERVER.to_string(),
             supports_tools: meta.supports_tools,
             supports_latin,
             supports_devanagari,

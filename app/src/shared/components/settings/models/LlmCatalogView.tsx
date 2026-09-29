@@ -334,7 +334,6 @@ export const LlmCatalogView = memo(({
               const probed =
                 probingMap[model.id]?.capabilities ||
                 model.capabilities ||
-                capabilitiesCache?.[`open_ai_compat:${model.id}`] ||
                 capabilitiesCache?.[`server:${model.id}`] ||
                 capabilitiesCache?.[`cloud:${model.id}`] ||
                 capabilitiesCache?.[`embedded:${model.id}`] ||
