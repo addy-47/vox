@@ -19,11 +19,7 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
   const draftSettings = useSettingsStore((s) => s.draftSettings);
 
   const hasChanges = useSettingsStore(useCallback((s: SettingsState) => Boolean(s.isDomainDirty(domain.id)), [domain.id]));
-
-  // Reload policy is owned by the backend (`config::get_setting_reload_policy`).
-  // The verdict arrives on `update_setting` and the backend has already acted on
-  // a `Restart` classification, so the card never decides whether to reload.
-  const restartInFlight = useSettingsStore((s) => s.restartInFlight);
+  const isDomainRequiringRestart = useSettingsStore(useCallback((s: SettingsState) => Boolean(s.isDomainRequiringRestart(domain.id)), [domain.id]));
 
   const isCloudLlmMissingKey =
     draftSettings?.llm?.active === "cloud" &&
@@ -109,27 +105,39 @@ export const SettingsCardWrapper = memo(({ domain, isActive, layoutMode, childre
                   </motion.div>
                 )}
 
-                {/* Mode A2: The backend classified a committed key as `Restart`
-                    and is rebuilding the engine. Purely informational: there is
-                    no action to take and no decision for the UI to make. */}
-                {!hasChanges && !saveFailure && restartInFlight && (
+                {/* Mode B: Unsaved changes requiring engine restart -> Explicit "Apply & Restart" */}
+                {hasChanges && !isDomainMissingCloudKey && isDomainRequiringRestart && (
                   <motion.div
-                    key="restarting-footer"
+                    key="apply-restart-footer"
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.2 }}
-                    className="w-full py-2 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
+                    className="w-full p-2.5 px-5 rounded-b-[1.25rem] rounded-t-none bg-[rgba(var(--accent),0.08)] dark:bg-[rgba(var(--accent),0.12)] border border-t-0 border-[rgba(var(--accent),0.2)] flex items-center justify-between overflow-hidden text-[12px]"
                   >
                     <span className="font-bold uppercase tracking-wider text-[rgb(var(--accent))] flex items-center gap-1.5">
-                      <RefreshCw size={14} className="animate-spin" /> {SETTINGS_COPY.restartingEngine}
+                      <RefreshCw size={13} /> {SETTINGS_COPY.restartRequired}
                     </span>
-                    <span className="text-[11px] text-[rgb(var(--accent))]/70 font-mono">{SETTINGS_COPY.applyingProviderChanges}</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => useSettingsStore.getState().commitChanges()}
+                        className="px-3 py-1 rounded-lg bg-[rgb(var(--accent))]/20 hover:bg-[rgb(var(--accent))]/30 text-[rgb(var(--accent))] border border-[rgb(var(--accent))]/35 font-bold text-[12px] uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                      >
+                        <RefreshCw size={12} />
+                        {SETTINGS_COPY.applyAndRestart}
+                      </button>
+                      <button
+                        onClick={() => useSettingsStore.getState().discardDomainChanges(domain.id)}
+                        className="px-3 py-1 rounded-lg bg-transparent text-[rgb(var(--foreground-muted))] hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 text-[12px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                      >
+                        {SETTINGS_COPY.discardChanges}
+                      </button>
+                    </div>
                   </motion.div>
                 )}
 
-                {/* Mode B: Debounced "Changes Saved" Auto-Toast (Only on the specific modified card, using Primary Accent) */}
-                {!hasChanges && !saveFailure && !restartInFlight && isAutoSavedHere && (
+                {/* Mode D: Debounced "Changes Saved" Auto-Toast (Only on the specific modified card) */}
+                {!hasChanges && !saveFailure && isAutoSavedHere && (
                   <motion.div
                     key="saved-toast-footer"
                     initial={{ opacity: 0, height: 0 }}

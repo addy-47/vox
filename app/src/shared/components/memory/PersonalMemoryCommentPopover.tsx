@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, memo } from "react";
 import { MessageSquarePlus } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
-import { MEMORY_COPY } from "@/data/memoryCopy";
 
 export interface SelectionRect {
   top: number;
@@ -99,26 +98,24 @@ export const PersonalMemoryCommentPopover: React.FC<PersonalMemoryCommentPopover
         }}
       >
         {!isOpen ? (
-          /* Sleek opaque button at bottom-right corner of highlighted text */
+          /* Sleek borderless trigger button at bottom-right of highlighted text */
           <button
             type="button"
             onMouseDown={(e) => {
-              // Prevent document mousedown from collapsing selection before opening
               e.preventDefault();
               e.stopPropagation();
               setIsOpen(true);
               onOpenChange?.(true);
             }}
-            className="w-7 h-7 rounded-lg bg-[rgb(var(--card))] border border-[rgb(var(--accent))] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.15)] shadow-xl flex items-center justify-center cursor-pointer transition-transform duration-150 hover:scale-110 active:scale-95"
-            style={{ backgroundColor: "rgb(var(--card))" }}
-            title={MEMORY_COPY.addComment}
+            className="text-[rgb(var(--accent))] hover:scale-115 flex items-center justify-center cursor-pointer transition-transform p-1 opacity-90 hover:opacity-100 drop-shadow-sm"
+            title="Add Comment"
           >
-            <MessageSquarePlus size={15} strokeWidth={2.2} />
+            <MessageSquarePlus size={16} />
           </button>
         ) : (
-          /* Minimal inline comment card: auto-focused textarea + Discard & Save buttons */
+          /* Clean minimal Antigravity-style comment box */
           <div
-            className="w-[280px] sm:w-[310px] rounded-xl border border-[rgba(var(--accent),0.4)] shadow-2xl p-3 flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-150 text-[rgb(var(--foreground))]"
+            className="w-[280px] sm:w-[320px] rounded-lg border border-[rgba(var(--border),0.2)] shadow-2xl p-2.5 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100 text-[rgb(var(--foreground))]"
             style={{ backgroundColor: "rgb(var(--card))" }}
           >
             <textarea
@@ -133,35 +130,36 @@ export const PersonalMemoryCommentPopover: React.FC<PersonalMemoryCommentPopover
                 } else if (e.key === "Escape") {
                   handleDiscard();
                 }
-                // Shift+Enter falls through to textarea default → newline
               }}
-              rows={3}
-              placeholder={MEMORY_COPY.leaveCommentHint}
-              className="w-full bg-[rgba(var(--foreground),0.04)] border border-[rgba(var(--border),0.2)] focus:border-[rgb(var(--accent))] rounded-lg p-2.5 text-[12.5px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/60 resize-none focus:outline-none transition-colors leading-relaxed font-sans"
+              rows={2}
+              placeholder="Leave a comment"
+              className="w-full bg-[rgba(var(--foreground),0.02)] border border-[rgba(var(--border),0.14)] focus:border-[rgba(var(--accent),0.5)] rounded-md p-2 text-[12px] text-[rgb(var(--foreground))] placeholder:text-[rgb(var(--foreground-muted))]/40 resize-none focus:outline-none transition-colors leading-relaxed font-sans"
             />
 
-            <div className="flex items-center justify-end gap-2 pt-0.5">
+            <div className="flex items-center justify-between pt-0.5">
               <button
                 type="button"
                 onClick={handleDiscard}
-                className="px-2.5 py-1 text-[11.5px] font-mono text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] hover:bg-[rgba(var(--foreground),0.05)] rounded-lg transition-colors cursor-pointer"
+                className="px-1.5 py-0.5 text-[11.5px] font-sans text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors cursor-pointer"
               >
-                Discard
+                Cancel
               </button>
 
-              <button
-                type="button"
-                onClick={() => handleSubmit()}
-                disabled={!commentText.trim()}
-                className={cn(
-                  "px-3.5 py-1.5 rounded-lg text-[11.5px] font-mono font-semibold shadow-sm transition-all cursor-pointer flex items-center justify-center min-w-[56px]",
-                  commentText.trim()
-                    ? "bg-[rgba(var(--accent),0.22)] border border-[rgba(var(--accent),0.45)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.32)] active:scale-95 shadow-md"
-                    : "bg-[rgba(var(--foreground),0.04)] text-[rgb(var(--foreground-muted))]/40 border border-[rgba(var(--border),0.12)] cursor-not-allowed"
-                )}
-              >
-                <span>Save</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleSubmit()}
+                  disabled={!commentText.trim()}
+                  className={cn(
+                    "px-3 py-1 rounded-md text-[11.5px] font-medium font-sans transition-all flex items-center justify-center cursor-pointer",
+                    commentText.trim()
+                      ? "bg-[rgb(var(--accent))] text-black hover:opacity-90 active:scale-95 shadow-xs"
+                      : "bg-[rgba(var(--accent),0.12)] text-[rgba(var(--accent),0.3)] cursor-not-allowed"
+                  )}
+                >
+                  <span>Add Comment</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

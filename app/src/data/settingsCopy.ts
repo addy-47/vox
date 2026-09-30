@@ -38,10 +38,25 @@ export type SettingsScope =
 export const SETTINGS_SCOPE_KEYS: Partial<Record<SettingsScope, readonly string[]>> = {
   appearance: ["theme", "accent_seed"],
   audio: ["output_mode", "input_device"],
-  vad: ["threshold", "ptt_noise_gate", "vad_backend"],
-  stt: ["active", "transliterate_enabled", "embedded", "cloud"],
+  vad: [
+    "threshold",
+    "ptt_noise_gate",
+    "silence_duration_ms",
+    "speech_onset_ms",
+    "vad_backend",
+  ],
+  stt: [
+    "active",
+    "model",
+    "threads",
+    "transliterate_enabled",
+    "partial_throttle_ms",
+    "embedded",
+    "cloud",
+  ],
   llm: [
     "active",
+    "model",
     "temperature",
     "compaction_temperature",
     "max_output_tokens",
@@ -50,9 +65,22 @@ export const SETTINGS_SCOPE_KEYS: Partial<Record<SettingsScope, readonly string[
     "embedded",
     "server",
     "cloud",
+    "cloud_keys",
+  ],
+  tts: [
+    "active",
+    "voice_index",
+    "speed",
+    "threads",
+    "zipvoice",
+    "kokoro",
+    "edge_tts",
+    "supertonic",
+    "chatterbox",
+    "chatterbox_remote",
   ],
   interaction: ["mode", "pipeline_mode"],
-  dictation: ["enabled", "interaction_mode", "hotkey", "output_mode"],
+  dictation: ["enabled", "interaction_mode", "hotkey", "output_mode", "silence_auto_stop_ms"],
   working_memory: ["private_mode", "auto_compaction", "max_context_share", "web_search_enabled"],
   personal_memory: [
     "context_retrieval_enabled",
@@ -61,6 +89,7 @@ export const SETTINGS_SCOPE_KEYS: Partial<Record<SettingsScope, readonly string[
     "semantic_similarity_cutoff",
     "consolidation_cadence",
     "consolidation_time",
+    "suggestion_policy",
   ],
   persona: ["modular_prompt", "realtime_prompt"],
   realtime: [
@@ -173,7 +202,9 @@ export const SETTINGS_COPY = {
   restartingEngine: "Restarting Engine",
   applyingProviderChanges: "Applying provider changes",
   apiKeyRequired: "API Key Required for Cloud Provider",
-  restartRequired: "Restart Required to Apply Changes",
+  restartRequired: "Restart Required",
+  applyAndRestart: "Apply & Restart",
+  willRestartEngine: "Will reload voice engine",
   restoreDefaults: "Restore All Defaults",
   restoreAria: "Restore default settings",
   restoreConfirmAria: "Confirm restore defaults",
@@ -343,6 +374,7 @@ export const PERSONAL_MEMORY_CONFIG_DESK_COPY = {
     consolidation: "Schedule",
     depth: "Limit",
     cutoff: "Relevance",
+    suggestions: "Suggestions",
   },
   consolidation: {
     title: "Update Schedule",
@@ -370,6 +402,14 @@ export const PERSONAL_MEMORY_CONFIG_DESK_COPY = {
     title: "Relevance Threshold",
     description: "How closely a memory must match your current conversation to be remembered.",
     knobLabel: "Threshold",
+  },
+  suggestions: {
+    title: "Suggestion Policy",
+    description: "Determine whether extracted memory suggestions require manual review or are automatically applied.",
+    manualLabel: "Manual Review",
+    autoLabel: "Auto-Apply",
+    manualStatus: "Staged for Review",
+    autoStatus: "Direct Integration",
   },
 };
 
@@ -498,6 +538,10 @@ export const MODEL_HUB_COPY = {
   title: "Model Hub",
   missing: "Missing",
   notDownloadedDesc: "This model file is not downloaded yet.",
+  /** Shown under a server/cloud LLM chip, whose weights are not local. */
+  remoteLlm: "Remote endpoint",
+  remoteLlmDesc:
+    "Running against a remote provider. The saved model identifier is shown below.",
   row: {
     cancel: "Cancel",
     confirmDelete: "Confirm Delete",

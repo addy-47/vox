@@ -90,6 +90,11 @@ export const Settings: React.FC = () => {
     ((draftSettings?.realtime?.active === "gemini_live" && !(draftSettings?.realtime?.gemini_live?.api_key)?.trim()) ||
      (draftSettings?.realtime?.active === "deepgram_voice_agent" && !(draftSettings?.realtime?.deepgram_voice_agent?.api_key)?.trim()));
   const isMissingCloudKey = isCloudLlmMissingKey || isCloudSttMissingKey || isRealtimeMissingKey;
+  const anyNeedsRestart = useSettingsStore((s) =>
+    ["models", "interaction", "appearance", "persona", "working_memory", "personal_memory"].some(
+      (d) => s.isDomainRequiringRestart(d)
+    )
+  );
 
   const {
     containerRef,
@@ -272,11 +277,13 @@ export const Settings: React.FC = () => {
               {/* Manual Changes Actions: Tick First (Commit) & Cross Second (Discard) */}
               {hasChanges && (
                 <>
-                  {/* Tick First: Commit Changes */}
+                  {/* Tick / Restart First: Commit Changes */}
                   <Tooltip
                     label={
                       isMissingCloudKey
                         ? SETTINGS_COPY.apiKeyRequired
+                        : anyNeedsRestart
+                        ? SETTINGS_COPY.applyAndRestart
                         : SETTINGS_COPY.saveChanges
                     }
                     side="bottom"
@@ -288,11 +295,13 @@ export const Settings: React.FC = () => {
                         "p-1.5 rounded-xl border transition-all cursor-pointer flex items-center justify-center shrink-0",
                         isMissingCloudKey
                           ? "border-[rgba(var(--border),0.1)] bg-[rgba(var(--foreground),0.03)] text-[rgb(var(--foreground-muted))]/30 cursor-not-allowed"
-                          : "border-emerald-500/30 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+                          : anyNeedsRestart
+                          ? "border-[rgb(var(--accent))]/35 bg-[rgb(var(--accent))]/20 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/30"
+                          : "border-[rgb(var(--accent))]/30 bg-[rgb(var(--accent))]/15 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent))]/25"
                       )}
-                      aria-label={SETTINGS_COPY.saveChanges}
+                      aria-label={anyNeedsRestart ? SETTINGS_COPY.applyAndRestart : SETTINGS_COPY.saveChanges}
                     >
-                      <Check size={14} />
+                      {anyNeedsRestart ? <RefreshCw size={14} /> : <Check size={14} />}
                     </button>
                   </Tooltip>
 

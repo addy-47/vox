@@ -215,12 +215,16 @@ async fn run_incremental_integration(
 ) -> Result<PassResult> {
     let memory = PersonalMemory::from_json(&pass.current_record.content)?;
     let (handle_view, handle_map) = memory.to_handle_format();
+    let valid_section_handles = handle_map.section_handles().join(", ");
     let user_content = format!(
         "<current_memory>\n{}\n</current_memory>\n\n\
+         <valid_section_handles_for_creates>{}</valid_section_handles_for_creates>\n\n\
          <new_observations>\n{}\n</new_observations>\n\n\
          Propose the minimal set of semantic operations that integrates the new observations. \
-         Reference existing content only by the handles shown above.",
+         For `creates`, only use section handles listed in <valid_section_handles_for_creates>. \
+         For brand-new topics not covered by any existing section, use `new_sections` instead.",
         handle_view,
+        valid_section_handles,
         render_observation_bullets(candidates)
     );
 

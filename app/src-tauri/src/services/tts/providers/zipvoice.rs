@@ -3,7 +3,7 @@ use std::{
     io::{BufReader, Read},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicI32, AtomicU32, Ordering},
+        atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering},
         Arc,
     },
     time::Instant,
@@ -17,7 +17,10 @@ use sherpa_onnx::{
     OfflineTtsZipvoiceModelConfig,
 };
 
-use super::{edge_tts::EdgeTtsProvider, speed_range, SynthesisContext, TtsProvider};
+use super::{
+    edge_tts::EdgeTtsProvider, kokoro::trim_and_fade_samples, speed_range, SynthesisContext,
+    TtsProvider,
+};
 use crate::{
     core::{
         error::{PipelineError, PipelineImpact},
@@ -418,6 +421,9 @@ impl ZipvoiceEngine {
 
         let intent = ctx.intent;
         let cancel_cb = ctx.cancel.clone();
+        let playback_cb = Arc::clone(ctx.playback);
+        let streamed_samples_count = Arc::new(AtomicUsize::new(0));
+        let streamed_count_cb = Arc::clone(&streamed_samples_count);
 
         let tts_guard = self.tts.lock();
         let sample_rate = tts_guard.sample_rate() as usize;
@@ -439,8 +445,19 @@ impl ZipvoiceEngine {
         let audio = tts_guard.generate_with_config(
             &clean_text,
             &gen_config,
-            Some(move |_samples: &[f32], _progress: f32| -> bool {
-                !cancel_cb.load(Ordering::Relaxed)
+            Some(move |raw_samples: &[f32], _progress: f32| -> bool {
+                if cancel_cb.load(Ordering::Relaxed) {
+                    return false;
+                }
+                if raw_samples.is_empty() {
+                    return true;
+                }
+                streamed_count_cb.fetch_add(raw_samples.len(), Ordering::Relaxed);
+                let processed = trim_and_fade_samples(raw_samples, sample_rate);
+                if !processed.is_empty() && !cancel_cb.load(Ordering::Relaxed) {
+                    playback_cb.ingest_chunk_with_intent(&processed, intent);
+                }
+                true
             }),
         );
         drop(tts_guard);
@@ -449,21 +466,24 @@ impl ZipvoiceEngine {
             return Ok(());
         }
 
-        let audio_ref = audio
-            .ok_or_else(|| anyhow!("[Tts::Zipvoice] Generation failed and yielded zero samples"))?;
-        let samples = audio_ref.samples();
-        if samples.is_empty() {
-            return Err(anyhow!(
-                "[Tts::Zipvoice] Generated audio contained 0 samples"
-            ));
+        let streamed_total = streamed_samples_count.load(Ordering::Relaxed);
+        let mut total_samples = streamed_total;
+        if streamed_total == 0 {
+            let audio_ref = audio
+                .ok_or_else(|| anyhow!("[Tts::Zipvoice] Generation failed and yielded zero samples"))?;
+            let samples = audio_ref.samples();
+            if samples.is_empty() {
+                return Err(anyhow!(
+                    "[Tts::Zipvoice] Generated audio contained 0 samples"
+                ));
+            }
+            check_peak_clipping(samples);
+            let processed = trim_and_fade_samples(samples, sample_rate);
+            if !processed.is_empty() && !ctx.cancel.load(Ordering::Relaxed) {
+                ctx.playback.ingest_chunk_with_intent(&processed, intent);
+            }
+            total_samples = processed.len();
         }
-
-        check_peak_clipping(samples);
-        if !ctx.cancel.load(Ordering::Relaxed) {
-            ctx.playback.ingest_chunk_with_intent(samples, intent);
-        }
-
-        let total_samples = samples.len();
         let elapsed = start.elapsed().as_secs_f32();
         let audio_dur = if sample_rate > 0 {
             total_samples as f32 / sample_rate as f32

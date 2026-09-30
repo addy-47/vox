@@ -194,7 +194,7 @@ export const Markdown = memo(
       return {
         h1: ({ children, ...props }) => (
           <h1
-            className="font-display text-[14.5px] font-bold text-[rgb(var(--foreground))] border-b border-[rgba(var(--accent),0.18)] pb-1.5 mb-2.5 mt-5 first:mt-0 tracking-wider uppercase"
+            className="font-display text-[15px] font-bold text-[rgb(var(--foreground))] mb-3 mt-7 first:mt-0 tracking-wide uppercase"
             {...props}
           >
             {children}
@@ -202,7 +202,7 @@ export const Markdown = memo(
         ),
         h2: ({ children, ...props }) => (
           <h2
-            className="font-display text-[13px] font-bold text-[rgb(var(--accent))] border-b border-[rgba(var(--border),0.08)] pb-1 mb-2 mt-4 first:mt-0 tracking-wider uppercase"
+            className="font-display text-[13px] font-bold text-[rgb(var(--accent))] mb-2 mt-6 first:mt-0 tracking-wider uppercase"
             {...props}
           >
             {children}
@@ -210,7 +210,7 @@ export const Markdown = memo(
         ),
         h3: ({ children, ...props }) => (
           <h3
-            className="font-display text-[12px] font-semibold text-[rgb(var(--foreground))] mb-1.5 mt-3 tracking-wide"
+            className="font-display text-[12px] font-semibold text-[rgb(var(--foreground))] mb-1.5 mt-4 tracking-wide"
             {...props}
           >
             {children}

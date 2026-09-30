@@ -131,6 +131,10 @@ pub(super) async fn execute_personal_llm_pass(
                 gen_start.elapsed(),
                 output.len()
             );
+            log::debug!(
+                "[Memory::Personal::RawResponse]\n{}",
+                output
+            );
         }
         Ok(Err(e)) => {
             if let Err(join_err) = pump_handle.await {

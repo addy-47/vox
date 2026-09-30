@@ -133,7 +133,7 @@ export const Memory: React.FC = memo(() => {
     isLoadingMore: obsLoadingMore,
     hasMore: obsHasMore,
     loadMore: obsLoadMore,
-  } = useObservationsList(stagingMode === "facts");
+  } = useObservationsList(stagingMode === "facts", undefined, "personal");
   const [saving, setSaving] = useState(false);
   const [consolidating, setConsolidating] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
@@ -380,7 +380,6 @@ export const Memory: React.FC = memo(() => {
       if (consolidating) return;
       setPendingActionType("consolidate");
       setConsolidating(true);
-      setLeftFlash(true);
 
       try {
         const outcome = await consolidatePersonalMemory(
@@ -410,10 +409,8 @@ export const Memory: React.FC = memo(() => {
 
           setTimeout(() => {
             setIsCommitting(false);
-            setLeftFlash(false);
           }, 900);
         } else if (outcome.status === "confirmation_required") {
-          setLeftFlash(false);
           setPendingConfirmation({
             reason: outcome.reason,
             pendingCount: outcome.pending_count,
@@ -421,7 +418,6 @@ export const Memory: React.FC = memo(() => {
         }
       } catch (e: unknown) {
         console.error("[Memory] Consolidate failed:", e);
-        setLeftFlash(false);
       } finally {
         setConsolidating(false);
       }
@@ -444,7 +440,6 @@ export const Memory: React.FC = memo(() => {
           projectId: undefined,
           decisions: decisionList,
         });
-        await new Promise((resolve) => setTimeout(resolve, 250));
         setPersonalMemory(updated);
         setDisplayedRecord(updated);
 
@@ -469,6 +464,7 @@ export const Memory: React.FC = memo(() => {
       } catch (e) {
         console.error("[Memory] Apply suggestions failed:", e);
         setLeftFlash(false);
+        throw e;
       } finally {
         setIsApplyingSuggestions(false);
       }
@@ -1056,7 +1052,7 @@ export const Memory: React.FC = memo(() => {
                       onClick={handleCopyDoc}
                       disabled={!displayedRecord?.markdown && !displayedRecord?.content}
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono bg-[rgba(var(--foreground),0.05)] border border-[rgba(var(--border),0.14)] text-[rgb(var(--foreground-muted))] hover:text-[rgb(var(--foreground))] transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
-                      title="Copy personal memory markdown to clipboard"
+                      title={MEMORY_COPY.copyDocTitle}
                     >
                       {copied ? <Check size={12} className="text-[rgb(var(--accent))]" /> : <Copy size={12} />}
                       {copied ? MEMORY_COPY.copied : MEMORY_COPY.copy}
@@ -1067,7 +1063,7 @@ export const Memory: React.FC = memo(() => {
                 {/* Dossier Document Content with Inner Scrolling */}
                 <div
                   ref={dossierContainerRef}
-                  className="relative flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 pt-3 leading-relaxed max-w-none select-text"
+                  className="relative flex-1 min-h-0 overflow-y-auto custom-scrollbar px-6 pt-6 pb-8 leading-relaxed max-w-none select-text"
                 >
                   {/* Inline text selection comment popover */}
                   <PersonalMemoryCommentPopover
@@ -1102,9 +1098,9 @@ export const Memory: React.FC = memo(() => {
                         <button
                           type="button"
                           onClick={() => setStagingMode("comment")}
-                          className="w-5 h-5 rounded-md bg-[rgb(var(--card))] border border-[rgba(var(--accent),0.45)] text-[rgb(var(--accent))] hover:bg-[rgba(var(--accent),0.15)] shadow-md flex items-center justify-center cursor-pointer transition-colors"
+                          className="w-5 h-5 text-[rgb(var(--accent))] hover:scale-115 flex items-center justify-center cursor-pointer transition-transform opacity-80 hover:opacity-100"
                         >
-                          <MessageSquare size={11} />
+                          <MessageSquare size={13} />
                         </button>
                       </Tooltip>
                     </div>

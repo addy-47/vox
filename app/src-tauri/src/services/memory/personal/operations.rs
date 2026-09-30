@@ -149,7 +149,7 @@ pub fn resolve_operations(
                     section_id: String::new(),
                     text: create.text.clone(),
                 },
-                reason: format!("unknown section handle '{}'", create.section),
+                reason: format!("unknown section handle '{}' — model should use new_sections for new topics", create.section),
             }),
         }
     }

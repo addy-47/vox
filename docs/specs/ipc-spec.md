@@ -147,8 +147,8 @@ pub enum ConfirmationReason { CompactionInProgress, PendingQueueItems }
   - Broadcasts `IpcEvent::PersonalMemoryUpdated`.
 
 #### `get_observations(projectId: Option<String>, status: Option<String>, limit: Option<u32>, offset: Option<u32>) -> Vec<ObservationRecord>`
-- **Purpose**: Returns observations from `memory_facts` across all or filtered statuses (`active`, `integrated`, `deactivated`), optionally scoped by `project_id`, with optional pagination (`limit`, `offset`).
-- **Behavior**: If `status` is supplied (e.g. `'active'`), queries rows matching that status. If omitted or null, returns all observations regardless of status ordered by `created_at DESC`. Applies `LIMIT` and `OFFSET` when provided for efficient windowed scrolling. Read-only; no working memory mutation.
+- **Purpose**: Returns personal observations (`type = 'personal'`) from `memory_facts` across all or filtered statuses (`active`, `integrated`, `deactivated`), optionally scoped by `project_id`, with optional pagination (`limit`, `offset`).
+- **Behavior**: Scopes queries to `type = 'personal'`. If `status` is supplied (e.g. `'active'`), queries rows matching that status. If omitted or null, returns all personal observations regardless of status ordered by `created_at DESC`. Applies `LIMIT` and `OFFSET` when provided for efficient windowed scrolling. Read-only; no working memory mutation.
 
 ---
 

@@ -178,7 +178,8 @@ export async function getObservations(
   projectId?: string,
   status?: string,
   limit?: number,
-  offset?: number
+  offset?: number,
+  observationType?: string
 ): Promise<ObservationRecord[]> {
   const records = await invoke<Array<Omit<ObservationRecord, "fact_type"> & { fact_type?: string }>>(
     "get_observations",
@@ -187,6 +188,7 @@ export async function getObservations(
       status: status ?? null,
       limit: limit ?? null,
       offset: offset ?? null,
+      observationType: observationType ?? null,
     }
   );
   return records.map((r) => ({

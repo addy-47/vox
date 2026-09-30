@@ -62,7 +62,7 @@ export const PendingConfirmationBanner: React.FC<PendingConfirmationBannerProps>
                     type="button"
                     disabled={isConsolidating}
                     onClick={onConfirm}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[12px] font-semibold bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:opacity-90 active:scale-[0.98] transition-all shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[12px] font-semibold bg-[rgb(var(--accent))] text-black hover:opacity-90 active:scale-[0.98] transition-all shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Zap
                       size={13}

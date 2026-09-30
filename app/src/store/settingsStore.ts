@@ -269,7 +269,7 @@ export interface RealtimeSettings {
 }
 
 export interface InteractionSettings {
-  mode: "Passive" | "PTT";
+  mode: "passive" | "ptt" | "Passive" | "PTT";
   pipeline_mode: PipelineMode;
 }
 
@@ -300,6 +300,7 @@ export interface PersonalMemorySettings {
   semantic_similarity_cutoff: number;
   consolidation_cadence: string;
   consolidation_time: string;
+  suggestion_policy?: "manual_review" | "auto_apply" | string;
 }
 
 export interface PersonaSettings {
@@ -357,6 +358,7 @@ export interface SettingsState {
   trackRestartCompletion: () => void;
   discardChanges: () => void;
   isDomainDirty: (domainId: string) => boolean;
+  isDomainRequiringRestart: (domainId: string) => boolean;
   discardDomainChanges: (domainId: string) => void;
   isCategoryDirty: (category: string) => boolean;
   discardCategoryChanges: (category: string) => void;
@@ -427,6 +429,48 @@ let settingsAutoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 const RESTART_POLL_INTERVAL_MS = 400;
 /** Upper bound so a failed restart cannot wedge the UI in "restarting". */
 const RESTART_POLL_MAX_TICKS = 30;
+
+/** Checks if a setting key requires an engine restart according to the backend policy table */
+export function isRestartKey(scope: string, key: string): boolean {
+  if (scope === "audio" && key === "input_device") return true;
+  if (
+    scope === "stt" &&
+    ["active", "model", "provider", "embedded", "cloud", "threads"].includes(key)
+  )
+    return true;
+  if (
+    scope === "llm" &&
+    [
+      "active",
+      "model",
+      "provider",
+      "server",
+      "cloud",
+      "cloud_keys",
+      "embedded",
+      "context_window",
+      "threads",
+    ].includes(key)
+  )
+    return true;
+  if (
+    scope === "tts" &&
+    [
+      "active",
+      "provider",
+      "threads",
+      "edge_tts",
+      "supertonic",
+      "kokoro",
+      "chatterbox",
+      "chatterbox_remote",
+      "zipvoice",
+    ].includes(key)
+  )
+    return true;
+  if (scope === "vad" && key === "vad_backend") return true;
+  return false;
+}
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: null,
@@ -573,16 +617,43 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     ].some((d) => get().isDomainDirty(d));
     set({ hasChanges });
 
-    // Every key hot-applies through the same debounced auto-commit. Whether a
-    // restart is required comes from the backend's reload_policy after commit
-    // (surfaced as restartKeys) — never from a hand-maintained key list.
+    if (!hasChanges) {
+      if (settingsAutoSaveTimer) {
+        clearTimeout(settingsAutoSaveTimer);
+        settingsAutoSaveTimer = null;
+      }
+      return;
+    }
+
     const targetDomainId = explicitDomainId || SETTINGS_DOMAIN_TO_UI[domain as string] || "models";
+    const needsRestart = get().isDomainRequiringRestart(targetDomainId);
+
+    // If this change or domain requires an engine restart, do NOT auto-commit.
+    // Leave the card dirty with "Apply & Restart" button visible.
+    if (needsRestart) {
+      if (settingsAutoSaveTimer) {
+        clearTimeout(settingsAutoSaveTimer);
+        settingsAutoSaveTimer = null;
+      }
+      return;
+    }
 
     // Hot or WorkerCommand: Automatically commit with 600ms debounce and flash "Saved" toast on that specific card
     if (settingsAutoSaveTimer) {
       clearTimeout(settingsAutoSaveTimer);
     }
     settingsAutoSaveTimer = setTimeout(() => {
+      const anyNeedsRestart = [
+        "models",
+        "persona",
+        "working_memory",
+        "personal_memory",
+        "appearance",
+        "interaction",
+      ].some((d) => get().isDomainRequiringRestart(d));
+      if (anyNeedsRestart) {
+        return;
+      }
       get()
         .commitChanges()
         .then(() => {
@@ -619,6 +690,35 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       } else {
         if (JSON.stringify(draftScope) !== JSON.stringify(savedScope)) {
           return true;
+        }
+      }
+    }
+
+    return false;
+  },
+
+  isDomainRequiringRestart: (domainId: string) => {
+    const { settings, draftSettings } = get();
+    if (!settings || !draftSettings) return false;
+
+    const dirtyKeys = DOMAIN_DIRTY_KEYS[domainId as SettingsDomainId];
+    if (!dirtyKeys || dirtyKeys.length === 0) return false;
+
+    for (const rule of dirtyKeys) {
+      const scope = rule.scope as keyof VoxSettings;
+      const draftScope = scopeEntries(draftSettings[scope]);
+      const savedScope = scopeEntries(settings[scope]);
+
+      if (!draftScope || !savedScope) continue;
+
+      const keysToCheck = rule.keys || Object.keys(draftScope);
+      for (const k of keysToCheck) {
+        if (isRestartKey(scope, k)) {
+          const draftVal = draftScope[k];
+          const savedVal = savedScope[k];
+          if (JSON.stringify(draftVal) !== JSON.stringify(savedVal)) {
+            return true;
+          }
         }
       }
     }
@@ -668,23 +768,51 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   discardDomainChanges: (domainId: string) => {
-    const { settings, draftSettings, updateDraft } = get();
+    if (settingsAutoSaveTimer) {
+      clearTimeout(settingsAutoSaveTimer);
+      settingsAutoSaveTimer = null;
+    }
+
+    const { settings, draftSettings } = get();
     if (!settings || !draftSettings) return;
 
     const dirtyKeys = DOMAIN_DIRTY_KEYS[domainId as SettingsDomainId];
     if (!dirtyKeys) return;
 
+    const newDraft = structuredClone(draftSettings);
+
     for (const rule of dirtyKeys) {
       const scope = rule.scope as keyof VoxSettings;
       const savedScope = scopeEntries(settings[scope]);
       if (savedScope) {
+        if (!newDraft[scope]) {
+          (newDraft as unknown as Record<string, Record<string, unknown>>)[scope] = {};
+        }
         if (rule.keys) {
-          rule.keys.forEach((k) => updateDraft(scope, k, savedScope[k], domainId as SettingsDomainId));
+          rule.keys.forEach((k) => {
+            (newDraft as unknown as Record<string, Record<string, unknown>>)[scope][k] = structuredClone(savedScope[k]);
+          });
         } else {
-          Object.keys(savedScope).forEach((k) => updateDraft(scope, k, savedScope[k], domainId as SettingsDomainId));
+          (newDraft as unknown as Record<string, unknown>)[scope] = structuredClone(savedScope);
         }
       }
     }
+
+    if (domainId === "appearance") {
+      applyAppearance(settings.appearance);
+    }
+
+    set({ draftSettings: newDraft, autoSavedDomain: null });
+
+    const hasChanges = [
+      "models",
+      "persona",
+      "working_memory",
+      "personal_memory",
+      "appearance",
+      "interaction",
+    ].some((d) => get().isDomainDirty(d));
+    set({ hasChanges });
   },
 
   isCommitting: false,
@@ -825,11 +953,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   discardChanges: () => {
+    if (settingsAutoSaveTimer) {
+      clearTimeout(settingsAutoSaveTimer);
+      settingsAutoSaveTimer = null;
+    }
     const { settings } = get();
     if (!settings) return;
     const cloned = structuredClone(settings);
     applyAppearance(settings.appearance);
-    set({ draftSettings: cloned, hasChanges: false });
+    set({ draftSettings: cloned, hasChanges: false, autoSavedDomain: null });
   },
 
   restoreDefaults: async () => {
